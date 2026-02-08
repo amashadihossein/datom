@@ -1,7 +1,7 @@
 # Phase 1: Core Utilities
 
-**Status**: 🟡 Not Started  
-**Started**: _TBD_  
+**Status**: � In Progress  
+**Started**: 2026-02-07  
 **Target**: Pure functions with no external dependencies (S3, git)  
 **Estimated Effort**: 1 week
 
@@ -86,41 +86,49 @@ Use `withr::with_tempdir()` for filesystem tests.
 
 ## Current Chunk
 
-**Chunk**: _Not started_  
-**Stage**: ⚪ DESIGN | 🔵 DEVELOP | 🟡 FEEDBACK | ✅ COMPLETE
+**Chunk**: 1 — SHA Computation  
+**Stage**: 🔵 DEVELOP → 🟡 FEEDBACK
 
 ### Chunk Queue
 
 | # | Chunk | Functions | Status |
 |---|-------|-----------|--------|
-| 1 | SHA computation | `.tbit_compute_data_sha()`, `.tbit_compute_metadata_sha()`, `.tbit_compute_file_sha()` | ⚪ Not started |
+| 1 | SHA computation | `.tbit_compute_data_sha()`, `.tbit_compute_metadata_sha()`, `.tbit_compute_file_sha()` | 🟡 Ready for QA |
 | 2 | Path utilities | `.tbit_build_s3_path()`, `.tbit_parse_s3_uri()` | ⚪ Not started |
 | 3 | Name validation | `.tbit_validate_name()` | ⚪ Not started |
 | 4 | Repo validation | `is_valid_tbit_repo()`, `tbit_repository_check()` | ⚪ Not started |
 
 ### Active Chunk Details
 
-_To be filled when chunk starts:_
-
-**Scope**:  
-**Proposed signatures**:  
-**Acceptance criteria**:  
-**Test file**:  
+**Scope**: Three internal SHA-256 functions for content-addressing  
+**Files**: `R/utils-sha.R`, `tests/testthat/test-utils-sha.R`  
+**Design decision**: Column/row sorting OFF by default (input preserved as-is), optional via `sort_columns`/`sort_rows` params  
+**Test file**: `devtools::test(filter = "utils-sha")`  
 **Debug/playground snippet**:
+```r
+devtools::load_all()
+df <- data.frame(x = 1:3, y = c("a", "b", "c"))
+sha1 <- .tbit_compute_data_sha(df)
+sha2 <- .tbit_compute_data_sha(df[, c("y", "x")])  # different — column order matters
+sha3 <- .tbit_compute_data_sha(df[, c("y", "x")], sort_columns = TRUE)  # same as sha1
+
+meta <- list(name = "test", data_sha = sha1)
+.tbit_compute_metadata_sha(meta)  # the "tbit version"
+```
 
 ---
 
 ## Current State
 
-_Not started. Update this section as work progresses._
+Chunk 1 implemented, ready for QA.
 
 ### Completed Chunks
 
-_None yet_
+_None yet — Chunk 1 awaiting QA_
 
 ### Decisions Made
 
-_Record design decisions here as they're made._
+- **Column/row sorting**: OFF by default. Input data is preserved as-is. Optional `sort_columns` and `sort_rows` params available for deduplication use cases.
 
 ### Blockers
 
@@ -138,11 +146,9 @@ Items discovered during this phase but out of scope. Will be moved to backlog on
 
 ## Session Log
 
-_Brief notes from each work session._
-
 | Date | Summary | Next Steps |
 |------|---------|------------|
-| _TBD_ | _Started phase_ | _..._ |
+| 2026-02-07 | Implemented SHA functions with sort options, created tests | QA: run tests, debug walkthrough |
 
 ---
 
