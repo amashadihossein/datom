@@ -86,34 +86,40 @@ Use `withr::with_tempdir()` for filesystem tests.
 
 ## Current Chunk
 
-**Chunk**: 1 — SHA Computation  
-**Stage**: 🔵 DEVELOP → 🟡 FEEDBACK
+**Chunk**: 2 — Path Utilities  
+**Stage**: 🟡 FEEDBACK
 
 ### Chunk Queue
 
 | # | Chunk | Functions | Status |
 |---|-------|-----------|--------|
-| 1 | SHA computation | `.tbit_compute_data_sha()`, `.tbit_compute_metadata_sha()`, `.tbit_compute_file_sha()` | 🟡 Ready for QA |
-| 2 | Path utilities | `.tbit_build_s3_path()`, `.tbit_parse_s3_uri()` | ⚪ Not started |
+| 1 | SHA computation | `.tbit_compute_data_sha()`, `.tbit_compute_metadata_sha()`, `.tbit_compute_file_sha()` | ✅ Complete |
+| 2 | Path utilities | `.tbit_build_s3_key()`, `.tbit_parse_s3_uri()`, `.tbit_build_s3_uri()` | 🟡 Ready for QA |
 | 3 | Name validation | `.tbit_validate_name()` | ⚪ Not started |
 | 4 | Repo validation | `is_valid_tbit_repo()`, `tbit_repository_check()` | ⚪ Not started |
 
 ### Active Chunk Details
 
-**Scope**: Three internal SHA-256 functions for content-addressing  
-**Files**: `R/utils-sha.R`, `tests/testthat/test-utils-sha.R`  
-**Design decision**: Column/row sorting OFF by default (input preserved as-is), optional via `sort_columns`/`sort_rows` params  
-**Test file**: `devtools::test(filter = "utils-sha")`  
+**Scope**: Three internal functions for constructing/parsing S3 paths  
+**Files**: `R/utils-path.R`, `tests/testthat/test-utils-path.R`  
+**Design decision**: `tbit/` segment always inserted between prefix and path segments; prefix is opaque (dpbuild controls nesting for derived tbits)  
+**Test file**: `devtools::test(filter = "utils-path")`  
 **Debug/playground snippet**:
 ```r
 devtools::load_all()
-df <- data.frame(x = 1:3, y = c("a", "b", "c"))
-sha1 <- .tbit_compute_data_sha(df)
-sha2 <- .tbit_compute_data_sha(df[, c("y", "x")])  # different — column order matters
-sha3 <- .tbit_compute_data_sha(df[, c("y", "x")], sort_columns = TRUE)  # same as sha1
 
-meta <- list(name = "test", data_sha = sha1)
-.tbit_compute_metadata_sha(meta)  # the "tbit version"
+# Build keys per S3 storage structure
+.tbit_build_s3_key("proj", "customers", "abc123.parquet")
+.tbit_build_s3_key("proj", "customers", ".metadata", "metadata.json")
+.tbit_build_s3_key(NULL, "orders", "def456.parquet")  # no prefix
+
+# Parse URIs
+.tbit_parse_s3_uri("s3://my-bucket/data/proj")
+
+# Round-trip
+parsed <- .tbit_parse_s3_uri("s3://my-bucket/proj")
+key <- .tbit_build_s3_key(parsed$prefix, "customers", "abc.parquet")
+.tbit_build_s3_uri(parsed$bucket, key)
 ```
 
 ---
@@ -124,7 +130,8 @@ Chunk 1 implemented, ready for QA.
 
 ### Completed Chunks
 
-_None yet — Chunk 1 awaiting QA_
+- **Chunk 1**: SHA computation — 23 tests passing
+- _Chunk 2 awaiting QA_
 
 ### Decisions Made
 
@@ -140,7 +147,7 @@ Items discovered during this phase but out of scope. Will be moved to backlog on
 
 | Item | Why Deferred | Notes |
 |------|--------------|-------|
-| _None yet_ | | |
+| Derived tbit path convention (raw at top level, derived in dp subfolder) | dpbuild concern, not tbit | tbit accommodates this via prefix param — dpbuild sets prefix to `project/dp_name` for derived tbits. Document convention when building dpbuild. |
 
 ---
 
@@ -148,7 +155,7 @@ Items discovered during this phase but out of scope. Will be moved to backlog on
 
 | Date | Summary | Next Steps |
 |------|---------|------------|
-| 2026-02-07 | Implemented SHA functions with sort options, created tests | QA: run tests, debug walkthrough |
+| 2026-02-08 | Implemented path utilities (build key, parse URI, build URI), 29 tests | QA: run tests, debug walkthrough |
 
 ---
 
