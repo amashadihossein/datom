@@ -850,7 +850,7 @@ All stored as parquet regardless of input format.
 
 ### Testing Coverage
 
-- **Unit**: SHA computation (with sorting), routing, metadata operations, redirect following
+- **Unit**: SHA computation (sorting optional, OFF by default for data; alphabetical for metadata), routing, metadata operations, redirect following
 - **Integration**: Full workflow, S3 metadata access, sync verification, migration scenarios
 - **Edge cases**: Network failures, corrupt files, missing metadata, concurrent writes, chained redirects
 
