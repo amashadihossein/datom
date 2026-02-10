@@ -1,5 +1,5 @@
 # Tests for S3 utility functions
-# Phase 2, Chunks 1-2: S3 client, write JSON, upload, download, exists
+# Phase 2, Chunks 1-3: S3 client, write JSON, upload, download, exists, read JSON
 
 # --- .tbit_s3_client() --------------------------------------------------------
 
@@ -372,5 +372,128 @@ test_that("re-throws network errors", {
   expect_error(
     .tbit_s3_exists(mock_client, "b", "k"),
     "Failed to check"
+  )
+})
+
+
+# --- .tbit_s3_read_json() -----------------------------------------------------
+
+test_that("reads and parses valid JSON", {
+  json <- jsonlite::toJSON(list(name = "customers", version = 1L), auto_unbox = TRUE)
+  mock_get <- mockery::mock(list(Body = charToRaw(json)))
+  mock_client <- list(get_object = mock_get)
+
+  result <- .tbit_s3_read_json(mock_client, "my-bucket", "tbit/.metadata/test.json")
+
+  expect_type(result, "list")
+  expect_equal(result$name, "customers")
+  expect_equal(result$version, 1L)
+
+  args <- mockery::mock_args(mock_get)[[1]]
+  expect_equal(args$Bucket, "my-bucket")
+  expect_equal(args$Key, "tbit/.metadata/test.json")
+})
+
+test_that("handles nested JSON structures", {
+  data <- list(
+    table = "customers",
+    columns = list(
+      list(name = "id", type = "integer"),
+      list(name = "name", type = "character")
+    )
+  )
+  json <- jsonlite::toJSON(data, auto_unbox = TRUE)
+  mock_get <- mockery::mock(list(Body = charToRaw(json)))
+  mock_client <- list(get_object = mock_get)
+
+  result <- .tbit_s3_read_json(mock_client, "b", "k")
+
+  expect_equal(result$table, "customers")
+  expect_length(result$columns, 2)
+  expect_equal(result$columns[[1]]$name, "id")
+})
+
+test_that("handles arrays correctly with simplifyVector = FALSE", {
+  json <- '{"tags": ["a", "b", "c"]}'
+  mock_get <- mockery::mock(list(Body = charToRaw(json)))
+  mock_client <- list(get_object = mock_get)
+
+  result <- .tbit_s3_read_json(mock_client, "b", "k")
+
+  # simplifyVector = FALSE keeps arrays as lists
+  expect_type(result$tags, "list")
+  expect_equal(result$tags[[1]], "a")
+  expect_length(result$tags, 3)
+})
+
+test_that("round-trips with .tbit_s3_write_json", {
+  original <- list(
+    name = "ADSL",
+    sha = "abc123",
+    metadata = list(rows = 100L, cols = 5L)
+  )
+
+  # Capture what write_json would send
+  captured_body <- NULL
+  mock_put <- mockery::mock(list())
+  write_client <- list(put_object = mock_put)
+  .tbit_s3_write_json(write_client, "b", "k", original)
+  written_raw <- mockery::mock_args(mock_put)[[1]]$Body
+
+  # Feed that to read_json
+  mock_get <- mockery::mock(list(Body = written_raw))
+  read_client <- list(get_object = mock_get)
+  result <- .tbit_s3_read_json(read_client, "b", "k")
+
+  expect_equal(result$name, original$name)
+  expect_equal(result$sha, original$sha)
+  expect_equal(result$metadata$rows, original$metadata$rows)
+})
+
+test_that("wraps S3 errors with context", {
+  mock_get <- mockery::mock(stop("NoSuchKey: key not found"))
+  mock_client <- list(get_object = mock_get)
+
+  expect_error(
+    .tbit_s3_read_json(mock_client, "my-bucket", "missing/key.json"),
+    "Failed to read JSON"
+  )
+})
+
+test_that("wraps JSON parse errors with context", {
+  mock_get <- mockery::mock(list(Body = charToRaw("not valid json {{{")))
+  mock_client <- list(get_object = mock_get)
+
+  expect_error(
+    .tbit_s3_read_json(mock_client, "my-bucket", "bad.json"),
+    "Failed to parse JSON"
+  )
+})
+
+test_that("error message includes bucket and key on S3 failure", {
+  mock_get <- mockery::mock(stop("AccessDenied"))
+  mock_client <- list(get_object = mock_get)
+
+  tryCatch(
+    .tbit_s3_read_json(mock_client, "test-bucket", "secret/file.json"),
+    error = function(e) {
+      msg <- conditionMessage(e)
+      expect_true(grepl("test-bucket", msg))
+      expect_true(grepl("secret/file.json", msg))
+    }
+  )
+})
+
+test_that("error message includes bucket and key on parse failure", {
+  mock_get <- mockery::mock(list(Body = charToRaw("garbage")))
+  mock_client <- list(get_object = mock_get)
+
+  tryCatch(
+    .tbit_s3_read_json(mock_client, "test-bucket", "corrupt.json"),
+    error = function(e) {
+      msg <- conditionMessage(e)
+      expect_true(grepl("test-bucket", msg))
+      expect_true(grepl("corrupt.json", msg))
+    }
   )
 })

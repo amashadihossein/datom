@@ -172,15 +172,52 @@
 }
 
 
-#' Read JSON from S3
+#' Read and Parse JSON from S3
 #'
-#' @param conn Connection object.
+#' Downloads an S3 object, reads it as text, and parses as JSON.
+#' Uses `simplifyVector = FALSE` to keep lists as lists (matching
+#' how `.tbit_s3_write_json()` writes them).
+#'
+#' @param s3_client A `paws.storage` S3 client.
+#' @param bucket S3 bucket name.
 #' @param s3_key S3 object key.
-#' @return Parsed JSON as list.
+#' @return Parsed R list.
 #' @keywords internal
-.tbit_s3_read_json <- function(conn, s3_key) {
-  # TODO: Implement
-  stop("Not yet implemented")
+.tbit_s3_read_json <- function(s3_client, bucket, s3_key) {
+  resp <- tryCatch(
+    s3_client$get_object(
+      Bucket = bucket,
+      Key = s3_key
+    ),
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Failed to read JSON from S3.",
+          "x" = "Bucket: {.val {bucket}}",
+          "x" = "Key: {.val {s3_key}}",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
+
+  json_text <- rawToChar(resp$Body)
+
+  tryCatch(
+    jsonlite::fromJSON(json_text, simplifyVector = FALSE),
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Failed to parse JSON from S3 object.",
+          "x" = "Bucket: {.val {bucket}}",
+          "x" = "Key: {.val {s3_key}}",
+          "i" = "Parse error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
 }
 
 
