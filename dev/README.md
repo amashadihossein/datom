@@ -45,11 +45,13 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| Phase 1: Core Utilities | 🟡 Not Started | [phase_1_core_utilities.md](phase_1_core_utilities.md) |
+| _None_ | | |
 
 ### Completed Phases
 
-_None yet_
+| Phase | Completed | Tests | Summary |
+|-------|-----------|-------|---------|
+| Phase 1: Core Utilities | 2026-02-09 | 131 | SHA, paths, name validation, repo validation |
 
 ### Backlog (Deferred Features)
 
@@ -57,7 +59,7 @@ Items discovered during development but intentionally deferred. Review periodica
 
 | Item | Discovered In | Reason Deferred | Priority |
 |------|---------------|-----------------|----------|
-| _None yet_ | | | |
+| Derived tbit path convention (raw at top, derived in dp subfolder) | Phase 1 | dpbuild concern — tbit handles via prefix param | Low (dpbuild) |
 
 **Backlog lifecycle**:
 1. Discovered during phase work → add here with context
