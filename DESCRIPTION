@@ -18,11 +18,13 @@ Imports:
     cli,
     digest,
     fs,
+    jsonlite,
+    paws.storage,
     purrr
 Suggests: 
     git2r,
     glue,
-    paws.storage,
+    mockery,
     rio,
     rlang,
     testthat (>= 3.0.0),

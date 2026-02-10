@@ -45,7 +45,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| _None_ | | |
+| Phase 2: S3 Operations | 🟢 In Progress | [phase_2_s3_operations.md](phase_2_s3_operations.md) |
 
 ### Completed Phases
 

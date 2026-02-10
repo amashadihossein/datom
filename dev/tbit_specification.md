@@ -305,7 +305,12 @@ Flexible connection for both developers and readers:
 - Follows redirect chain to resolve current data location
 - Auto-detects developer vs reader based on GITHUB_PAT presence
 
-Returns: Connection object
+Returns: Connection object (`tbit_conn` S3 class)
+
+**Implementation note**: Internal S3 utility functions (Phase 2) initially accept a
+lightweight list (`list(bucket, s3_client)`). Phase 4 introduces the full `tbit_conn`
+S3 class and refactors these functions to accept it. This avoids a circular dependency
+between S3 ops and connection management during development.
 
 ### Core Operations
 
