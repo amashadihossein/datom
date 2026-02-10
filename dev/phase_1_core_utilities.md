@@ -1,7 +1,8 @@
 # Phase 1: Core Utilities
 
-**Status**: � In Progress  
+**Status**: ✅ Complete  
 **Started**: 2026-02-07  
+**Completed**: 2026-02-09  
 **Target**: Pure functions with no external dependencies (S3, git)  
 **Estimated Effort**: 1 week
 
@@ -96,7 +97,7 @@ Use `withr::with_tempdir()` for filesystem tests.
 | 1 | SHA computation | `.tbit_compute_data_sha()`, `.tbit_compute_metadata_sha()`, `.tbit_compute_file_sha()` | ✅ Complete |
 | 2 | Path utilities | `.tbit_build_s3_key()`, `.tbit_parse_s3_uri()`, `.tbit_build_s3_uri()` | ✅ Complete |
 | 3 | Name validation | `.tbit_validate_name()` | ✅ Complete |
-| 4 | Repo validation | `is_valid_tbit_repo()`, `tbit_repository_check()` | 🔵 Design |
+| 4 | Repo validation | `is_valid_tbit_repo()`, `tbit_repository_check()` | ✅ Complete |
 
 ### Active Chunk Details
 
@@ -126,13 +127,14 @@ key <- .tbit_build_s3_key(parsed$prefix, "customers", "abc.parquet")
 
 ## Current State
 
-Chunks 1–3 complete, Chunk 4 in design.
+All 4 chunks complete. 131 tests passing. Phase ready for `devtools::check()`.
 
 ### Completed Chunks
 
-- **Chunk 1**: SHA computation — 23 tests passing
-- **Chunk 2**: Path utilities — 29 tests passing
-- **Chunk 3**: Name validation — 32 tests passing
+- **Chunk 1**: SHA computation — 23 tests
+- **Chunk 2**: Path utilities — 29 tests
+- **Chunk 3**: Name validation — 32 tests
+- **Chunk 4**: Repo validation — 47 tests
 
 ### Decisions Made
 

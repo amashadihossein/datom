@@ -18,16 +18,16 @@ Imports:
     cli,
     digest,
     fs,
-    glue,
-    paws.storage,
-    purrr,
-    rlang,
-    yaml
+    purrr
 Suggests: 
     git2r,
+    glue,
+    paws.storage,
     rio,
+    rlang,
     testthat (>= 3.0.0),
-    withr
+    withr,
+    yaml
 Config/testthat/edition: 3
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
