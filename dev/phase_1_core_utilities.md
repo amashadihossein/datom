@@ -86,17 +86,17 @@ Use `withr::with_tempdir()` for filesystem tests.
 
 ## Current Chunk
 
-**Chunk**: 2 — Path Utilities  
-**Stage**: 🟡 FEEDBACK
+**Chunk**: 4 — Repo Validation  
+**Stage**: 🔵 DESIGN
 
 ### Chunk Queue
 
 | # | Chunk | Functions | Status |
 |---|-------|-----------|--------|
 | 1 | SHA computation | `.tbit_compute_data_sha()`, `.tbit_compute_metadata_sha()`, `.tbit_compute_file_sha()` | ✅ Complete |
-| 2 | Path utilities | `.tbit_build_s3_key()`, `.tbit_parse_s3_uri()`, `.tbit_build_s3_uri()` | 🟡 Ready for QA |
-| 3 | Name validation | `.tbit_validate_name()` | ⚪ Not started |
-| 4 | Repo validation | `is_valid_tbit_repo()`, `tbit_repository_check()` | ⚪ Not started |
+| 2 | Path utilities | `.tbit_build_s3_key()`, `.tbit_parse_s3_uri()`, `.tbit_build_s3_uri()` | ✅ Complete |
+| 3 | Name validation | `.tbit_validate_name()` | ✅ Complete |
+| 4 | Repo validation | `is_valid_tbit_repo()`, `tbit_repository_check()` | 🔵 Design |
 
 ### Active Chunk Details
 
@@ -126,12 +126,13 @@ key <- .tbit_build_s3_key(parsed$prefix, "customers", "abc.parquet")
 
 ## Current State
 
-Chunk 1 implemented, ready for QA.
+Chunks 1–3 complete, Chunk 4 in design.
 
 ### Completed Chunks
 
 - **Chunk 1**: SHA computation — 23 tests passing
-- _Chunk 2 awaiting QA_
+- **Chunk 2**: Path utilities — 29 tests passing
+- **Chunk 3**: Name validation — 32 tests passing
 
 ### Decisions Made
 
