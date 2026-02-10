@@ -53,41 +53,122 @@
 
 #' Upload File to S3
 #'
-#' @param conn Connection object.
-#' @param local_path Local file path.
-#' @param s3_key S3 object key.
-#' @return Invisible TRUE on success.
+#' Reads a local file as raw bytes and uploads via `put_object()`.
+#'
+#' @param s3_client A `paws.storage` S3 client.
+#' @param bucket S3 bucket name.
+#' @param local_path Local file path to upload.
+#' @param s3_key S3 object key (destination).
+#' @return Invisible `TRUE` on success.
 #' @keywords internal
-.tbit_s3_upload <- function(conn, local_path, s3_key) {
-  # TODO: Implement
-  stop("Not yet implemented")
+.tbit_s3_upload <- function(s3_client, bucket, local_path, s3_key) {
+  if (!fs::file_exists(local_path)) {
+    cli::cli_abort(
+      "File not found: {.path {local_path}}"
+    )
+  }
+
+  body <- readBin(local_path, what = "raw", n = fs::file_size(local_path))
+
+  tryCatch(
+    {
+      s3_client$put_object(
+        Bucket = bucket,
+        Key = s3_key,
+        Body = body
+      )
+      invisible(TRUE)
+    },
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Failed to upload file to S3.",
+          "x" = "Bucket: {.val {bucket}}",
+          "x" = "Key: {.val {s3_key}}",
+          "x" = "Local path: {.path {local_path}}",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
 }
 
 
 #' Download File from S3
 #'
-#' @param conn Connection object.
-#' @param s3_key S3 object key.
-#' @param local_path Local destination path.
-#' @return Invisible TRUE on success.
+#' Downloads an S3 object and writes it to a local path. Creates parent
+#' directories if needed.
+#'
+#' @param s3_client A `paws.storage` S3 client.
+#' @param bucket S3 bucket name.
+#' @param s3_key S3 object key (source).
+#' @param local_path Local file path (destination).
+#' @return Invisible `TRUE` on success.
 #' @keywords internal
-.tbit_s3_download <- function(conn, s3_key, local_path) {
-  # TODO: Implement
-  stop("Not yet implemented")
+.tbit_s3_download <- function(s3_client, bucket, s3_key, local_path) {
+  fs::dir_create(fs::path_dir(local_path))
+
+  tryCatch(
+    {
+      resp <- s3_client$get_object(
+        Bucket = bucket,
+        Key = s3_key
+      )
+      writeBin(resp$Body, local_path)
+      invisible(TRUE)
+    },
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Failed to download file from S3.",
+          "x" = "Bucket: {.val {bucket}}",
+          "x" = "Key: {.val {s3_key}}",
+          "x" = "Local path: {.path {local_path}}",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
 }
 
 
 #' Check if S3 Object Exists
 #'
-#' Uses HEAD request for efficiency.
+#' Uses a HEAD request for efficiency. Returns `TRUE` if the object exists,
+#' `FALSE` on 404/NoSuchKey. Any other error (403, network) is re-thrown.
 #'
-#' @param conn Connection object.
+#' @param s3_client A `paws.storage` S3 client.
+#' @param bucket S3 bucket name.
 #' @param s3_key S3 object key.
-#' @return TRUE or FALSE.
+#' @return `TRUE` or `FALSE`.
 #' @keywords internal
-.tbit_s3_exists <- function(conn, s3_key) {
-  # TODO: Implement
-  stop("Not yet implemented")
+.tbit_s3_exists <- function(s3_client, bucket, s3_key) {
+  tryCatch(
+    {
+      s3_client$head_object(
+        Bucket = bucket,
+        Key = s3_key
+      )
+      TRUE
+    },
+    error = function(e) {
+      msg <- conditionMessage(e)
+      if (grepl("404|NoSuchKey|Not Found", msg, ignore.case = TRUE)) {
+        return(FALSE)
+      }
+      cli::cli_abort(
+        c(
+          "Failed to check S3 object existence.",
+          "x" = "Bucket: {.val {bucket}}",
+          "x" = "Key: {.val {s3_key}}",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
 }
 
 

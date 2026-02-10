@@ -1,5 +1,5 @@
 # Tests for S3 utility functions
-# Phase 2, Chunk 1: S3 client + write JSON
+# Phase 2, Chunks 1-2: S3 client, write JSON, upload, download, exists
 
 # --- .tbit_s3_client() --------------------------------------------------------
 
@@ -191,5 +191,186 @@ test_that("error message includes bucket and key", {
       expect_true(grepl("test-bucket", msg))
       expect_true(grepl("path/file.json", msg))
     }
+  )
+})
+
+
+# --- .tbit_s3_upload() --------------------------------------------------------
+
+test_that("uploads file with correct put_object args", {
+  withr::with_tempdir({
+    path <- "test_data.parquet"
+    writeBin(charToRaw("fake parquet content"), path)
+
+    mock_put <- mockery::mock(list(ETag = "\"abc\""))
+    mock_client <- list(put_object = mock_put)
+
+    result <- .tbit_s3_upload(mock_client, "my-bucket", path, "tbit/customers/abc.parquet")
+
+    expect_true(result)
+    mockery::expect_called(mock_put, 1)
+
+    args <- mockery::mock_args(mock_put)[[1]]
+    expect_equal(args$Bucket, "my-bucket")
+    expect_equal(args$Key, "tbit/customers/abc.parquet")
+    expect_equal(args$Body, charToRaw("fake parquet content"))
+  })
+})
+
+test_that("errors when local file does not exist", {
+  mock_client <- list(put_object = mockery::mock())
+
+  expect_error(
+    .tbit_s3_upload(mock_client, "b", "nonexistent.parquet", "k"),
+    "File not found"
+  )
+})
+
+test_that("wraps S3 upload errors with context", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("content"), path)
+
+    mock_put <- mockery::mock(stop("AccessDenied"))
+    mock_client <- list(put_object = mock_put)
+
+    expect_error(
+      .tbit_s3_upload(mock_client, "my-bucket", path, "some/key"),
+      "Failed to upload"
+    )
+  })
+})
+
+test_that("upload error includes bucket, key, and local path", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("content"), path)
+
+    mock_put <- mockery::mock(stop("timeout"))
+    mock_client <- list(put_object = mock_put)
+
+    tryCatch(
+      .tbit_s3_upload(mock_client, "test-bucket", path, "tbit/key.parquet"),
+      error = function(e) {
+        msg <- conditionMessage(e)
+        expect_true(grepl("test-bucket", msg))
+        expect_true(grepl("tbit/key.parquet", msg))
+      }
+    )
+  })
+})
+
+
+# --- .tbit_s3_download() ------------------------------------------------------
+
+test_that("downloads file and writes to local path", {
+  withr::with_tempdir({
+    mock_get <- mockery::mock(list(Body = charToRaw("parquet bytes")))
+    mock_client <- list(get_object = mock_get)
+
+    dest <- fs::path("output", "data.parquet")
+
+    result <- .tbit_s3_download(mock_client, "my-bucket", "tbit/abc.parquet", dest)
+
+    expect_true(result)
+    expect_true(fs::file_exists(dest))
+    expect_equal(readBin(dest, what = "raw", n = 100), charToRaw("parquet bytes"))
+
+    args <- mockery::mock_args(mock_get)[[1]]
+    expect_equal(args$Bucket, "my-bucket")
+    expect_equal(args$Key, "tbit/abc.parquet")
+  })
+})
+
+test_that("creates parent directories automatically", {
+  withr::with_tempdir({
+    mock_get <- mockery::mock(list(Body = charToRaw("data")))
+    mock_client <- list(get_object = mock_get)
+
+    dest <- fs::path("deep", "nested", "dir", "file.parquet")
+
+    .tbit_s3_download(mock_client, "b", "k", dest)
+
+    expect_true(fs::dir_exists(fs::path("deep", "nested", "dir")))
+    expect_true(fs::file_exists(dest))
+  })
+})
+
+test_that("wraps S3 download errors with context", {
+  withr::with_tempdir({
+    mock_get <- mockery::mock(stop("NoSuchKey"))
+    mock_client <- list(get_object = mock_get)
+
+    expect_error(
+      .tbit_s3_download(mock_client, "my-bucket", "missing/key", "out.parquet"),
+      "Failed to download"
+    )
+  })
+})
+
+test_that("download error includes bucket and key", {
+  withr::with_tempdir({
+    mock_get <- mockery::mock(stop("AccessDenied"))
+    mock_client <- list(get_object = mock_get)
+
+    tryCatch(
+      .tbit_s3_download(mock_client, "test-bucket", "tbit/path.parquet", "out.parquet"),
+      error = function(e) {
+        msg <- conditionMessage(e)
+        expect_true(grepl("test-bucket", msg))
+        expect_true(grepl("tbit/path.parquet", msg))
+      }
+    )
+  })
+})
+
+
+# --- .tbit_s3_exists() --------------------------------------------------------
+
+test_that("returns TRUE when object exists", {
+  mock_head <- mockery::mock(list(ContentLength = 1024))
+  mock_client <- list(head_object = mock_head)
+
+  result <- .tbit_s3_exists(mock_client, "my-bucket", "tbit/abc.parquet")
+
+  expect_true(result)
+  mockery::expect_called(mock_head, 1)
+
+  args <- mockery::mock_args(mock_head)[[1]]
+  expect_equal(args$Bucket, "my-bucket")
+  expect_equal(args$Key, "tbit/abc.parquet")
+})
+
+test_that("returns FALSE on 404", {
+  mock_head <- mockery::mock(stop("404 Not Found"))
+  mock_client <- list(head_object = mock_head)
+
+  expect_false(.tbit_s3_exists(mock_client, "b", "missing/key"))
+})
+
+test_that("returns FALSE on NoSuchKey", {
+  mock_head <- mockery::mock(stop("NoSuchKey"))
+  mock_client <- list(head_object = mock_head)
+
+  expect_false(.tbit_s3_exists(mock_client, "b", "missing/key"))
+})
+
+test_that("re-throws 403 errors", {
+  mock_head <- mockery::mock(stop("AccessDenied: 403 Forbidden"))
+  mock_client <- list(head_object = mock_head)
+
+  expect_error(
+    .tbit_s3_exists(mock_client, "b", "forbidden/key"),
+    "Failed to check"
+  )
+})
+
+test_that("re-throws network errors", {
+  mock_head <- mockery::mock(stop("Connection timed out"))
+  mock_client <- list(head_object = mock_head)
+
+  expect_error(
+    .tbit_s3_exists(mock_client, "b", "k"),
+    "Failed to check"
   )
 })
