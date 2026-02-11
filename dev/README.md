@@ -45,12 +45,13 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| Phase 2: S3 Operations | 🟢 In Progress | [phase_2_s3_operations.md](phase_2_s3_operations.md) |
+| _None_ | | |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
+| Phase 2: S3 Operations | 2026-02-10 | 94 | S3 client, upload/download/exists, JSON read/write, redirect resolution |
 | Phase 1: Core Utilities | 2026-02-09 | 131 | SHA, paths, name validation, repo validation |
 
 ### Backlog (Deferred Features)
