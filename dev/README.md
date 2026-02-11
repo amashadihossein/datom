@@ -45,7 +45,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| _None_ | | |
+| Phase 3: Git Operations | 🟢 In Progress | [phase_3_git_operations.md](phase_3_git_operations.md) |
 
 ### Completed Phases
 

@@ -1,48 +1,138 @@
 # Internal git operations
+# Wraps git2r for commit, push, branch, and author operations.
+# git2r is in Suggests — data readers don't need it.
+
+
+# --- Runtime check -----------------------------------------------------------
+
+#' Check git2r Availability
+#'
+#' Aborts with a helpful message if git2r is not installed.
+#'
+#' @return Invisible TRUE if available.
+#' @keywords internal
+.tbit_check_git2r <- function() {
+  if (!requireNamespace("git2r", quietly = TRUE)) {
+    cli::cli_abort(c(
+      "Package {.pkg git2r} is required for git operations.",
+      "i" = "Install with {.code install.packages(\"git2r\")}"
+    ))
+  }
+  invisible(TRUE)
+}
+
+
+# --- Read-only queries --------------------------------------------------------
+
+#' Get Author Info from Git Config
+#'
+#' Reads user.name and user.email from the repository's git config.
+#'
+#' @param path Repository path.
+#' @return Named list with `name` and `email`.
+#' @keywords internal
+.tbit_git_author <- function(path) {
+  .tbit_check_git2r()
+
+  repo <- tryCatch(
+    git2r::repository(path),
+    error = function(e) {
+      cli::cli_abort("Not a git repository: {.path {path}}")
+    }
+  )
+
+  cfg <- git2r::config(repo)
+  local_cfg <- cfg$local %||% list()
+  global_cfg <- cfg$global %||% list()
+
+  name <- local_cfg$user.name %||% global_cfg$user.name %||% NA_character_
+  email <- local_cfg$user.email %||% global_cfg$user.email %||% NA_character_
+
+  if (is.na(name) || is.na(email)) {
+    missing <- c()
+    if (is.na(name)) missing <- c(missing, "user.name")
+    if (is.na(email)) missing <- c(missing, "user.email")
+    cli::cli_abort(c(
+      "Git config incomplete: {.field {missing}} not set.",
+      "i" = "Set with {.code git config --global user.name \"Your Name\"}"
+    ))
+  }
+
+  list(name = name, email = email)
+}
+
+
+#' Get Current Branch
+#'
+#' Returns the name of the currently checked-out branch.
+#' Aborts on detached HEAD (tbit requires a branch).
+#'
+#' @param path Repository path.
+#' @return Branch name as a string.
+#' @keywords internal
+.tbit_git_branch <- function(path) {
+  .tbit_check_git2r()
+
+  repo <- tryCatch(
+    git2r::repository(path),
+    error = function(e) {
+      cli::cli_abort("Not a git repository: {.path {path}}")
+    }
+  )
+
+  if (git2r::is_empty(repo)) {
+    cli::cli_abort(c(
+      "Cannot determine branch \u2014 repository has no commits.",
+      "i" = "Create an initial commit first."
+    ))
+  }
+
+  head_ref <- tryCatch(
+    git2r::repository_head(repo),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Cannot determine branch.",
+        "x" = e$message
+      ))
+    }
+  )
+
+  if (!git2r::is_branch(head_ref)) {
+    cli::cli_abort(c(
+      "HEAD is detached — tbit requires a branch.",
+      "i" = "Check out a branch with {.code git checkout <branch>}"
+    ))
+  }
+
+  head_ref$name
+}
+
+
+# --- Write operations (Chunks 2-3) -------------------------------------------
 
 #' Commit Changes
 #'
+#' Stages the specified files and creates a commit.
+#'
 #' @param path Repository path.
-#' @param files Character vector of files to add.
+#' @param files Character vector of files to add (relative to repo root).
 #' @param message Commit message.
-#' @return Commit SHA.
+#' @return Commit SHA as a string.
 #' @keywords internal
 .tbit_git_commit <- function(path, files, message) {
-  # TODO: Implement using git2r
+  # TODO: Implement in Chunk 2
   stop("Not yet implemented")
 }
 
 
 #' Push to Remote
 #'
-#' Pulls first to check for conflicts.
+#' Pulls first to check for conflicts, then pushes.
 #'
 #' @param path Repository path.
 #' @return Invisible TRUE on success.
 #' @keywords internal
 .tbit_git_push <- function(path) {
-  # TODO: Implement
-  stop("Not yet implemented")
-}
-
-
-#' Get Current Branch
-#'
-#' @param path Repository path.
-#' @return Branch name.
-#' @keywords internal
-.tbit_git_branch <- function(path) {
-  # TODO: Implement
-  stop("Not yet implemented")
-}
-
-
-#' Get Author Info from Git Config
-#'
-#' @param path Repository path.
-#' @return List with name and email.
-#' @keywords internal
-.tbit_git_author <- function(path) {
-  # TODO: Implement
+  # TODO: Implement in Chunk 3
   stop("Not yet implemented")
 }
