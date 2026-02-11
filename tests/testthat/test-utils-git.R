@@ -13,7 +13,8 @@ create_test_repo <- function(name = "Test User", email = "test@example.com",
   list(path = dir, repo = repo)
 }
 
-
+# Alias — all test repos have an initial commit
+create_test_repo_with_commit <- create_test_repo
 # =============================================================================
 # .tbit_check_git2r()
 # =============================================================================
@@ -188,4 +189,102 @@ test_that(".tbit_git_branch aborts on detached HEAD", {
   git2r::checkout(first_commit)
 
   expect_error(.tbit_git_branch(info$path), "detached")
+})
+
+
+# =============================================================================
+# .tbit_git_commit()
+# =============================================================================
+
+test_that(".tbit_git_commit stages and commits files, returns SHA", {
+  info <- create_test_repo_with_commit()
+  writeLines("data", file.path(info$path, "table.json"))
+
+  sha <- .tbit_git_commit(info$path, "table.json", "Add table")
+
+  expect_type(sha, "character")
+  expect_equal(nchar(sha), 40L)
+
+  # Verify commit is in log
+  log <- git2r::commits(info$repo)
+  expect_equal(log[[1]]$sha, sha)
+  expect_equal(log[[1]]$message, "Add table")
+})
+
+test_that(".tbit_git_commit handles multiple files", {
+  info <- create_test_repo_with_commit()
+  writeLines("a", file.path(info$path, "file_a.txt"))
+  writeLines("b", file.path(info$path, "file_b.txt"))
+
+  sha <- .tbit_git_commit(info$path, c("file_a.txt", "file_b.txt"), "Add two files")
+
+  expect_type(sha, "character")
+  # Verify nothing left unstaged/untracked for these files
+  status <- git2r::status(info$repo)
+  untracked <- unlist(status$untracked, use.names = FALSE)
+  expect_false("file_a.txt" %in% untracked)
+  expect_false("file_b.txt" %in% untracked)
+})
+
+test_that(".tbit_git_commit handles files in subdirectories", {
+  info <- create_test_repo_with_commit()
+  fs::dir_create(file.path(info$path, "customers"))
+  writeLines("{}", file.path(info$path, "customers", "metadata.json"))
+
+  sha <- .tbit_git_commit(info$path, "customers/metadata.json", "Add metadata")
+
+  expect_type(sha, "character")
+  expect_equal(nchar(sha), 40L)
+})
+
+test_that(".tbit_git_commit errors on empty files vector", {
+  info <- create_test_repo_with_commit()
+  expect_error(.tbit_git_commit(info$path, character(0), "Nothing"), "No files")
+})
+
+test_that(".tbit_git_commit errors on non-existent files", {
+  info <- create_test_repo_with_commit()
+  expect_error(
+    .tbit_git_commit(info$path, "ghost.txt", "Nope"),
+    "do not exist"
+  )
+})
+
+test_that(".tbit_git_commit errors when files are unchanged", {
+  info <- create_test_repo_with_commit()
+  # README.md is already committed and unchanged
+  expect_error(
+    .tbit_git_commit(info$path, "README.md", "No change"),
+    "unchanged"
+  )
+})
+
+test_that(".tbit_git_commit errors on non-git directory", {
+  dir <- withr::local_tempdir()
+  writeLines("x", file.path(dir, "file.txt"))
+  expect_error(.tbit_git_commit(dir, "file.txt", "Nope"), "Not a git repository")
+})
+
+test_that(".tbit_git_commit uses author from git config", {
+  info <- create_test_repo_with_commit()
+  git2r::config(info$repo, user.name = "Committer X", user.email = "cx@lab.org")
+  writeLines("new", file.path(info$path, "new.txt"))
+
+  sha <- .tbit_git_commit(info$path, "new.txt", "New file")
+
+  commit_obj <- git2r::lookup(info$repo, sha)
+  expect_equal(commit_obj$author$name, "Committer X")
+  expect_equal(commit_obj$author$email, "cx@lab.org")
+})
+
+test_that(".tbit_git_commit can update an existing file", {
+  info <- create_test_repo_with_commit()
+  # Modify README.md (already tracked)
+  writeLines("updated", file.path(info$path, "README.md"))
+
+  sha <- .tbit_git_commit(info$path, "README.md", "Update readme")
+
+  expect_type(sha, "character")
+  log <- git2r::commits(info$repo)
+  expect_equal(log[[1]]$message, "Update readme")
 })

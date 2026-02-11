@@ -120,8 +120,53 @@
 #' @return Commit SHA as a string.
 #' @keywords internal
 .tbit_git_commit <- function(path, files, message) {
-  # TODO: Implement in Chunk 2
-  stop("Not yet implemented")
+  .tbit_check_git2r()
+
+  if (length(files) == 0L) {
+    cli::cli_abort("No files specified to commit.")
+  }
+
+  repo <- tryCatch(
+    git2r::repository(path),
+    error = function(e) {
+      cli::cli_abort("Not a git repository: {.path {path}}")
+    }
+  )
+
+  # Verify all files exist relative to repo root
+  full_paths <- fs::path(path, files)
+  missing <- files[!fs::file_exists(full_paths)]
+  if (length(missing) > 0L) {
+    cli::cli_abort(c(
+      "Cannot stage — files do not exist:",
+      purrr::set_names(missing, rep("x", length(missing)))
+    ))
+  }
+
+  # Stage
+  tryCatch(
+    git2r::add(repo, files),
+    error = function(e) {
+      cli::cli_abort("Failed to stage files: {e$message}")
+    }
+  )
+
+  # Check there's actually something staged
+  status <- git2r::status(repo, staged = TRUE, unstaged = FALSE, untracked = FALSE)
+  staged_files <- unlist(status$staged, use.names = FALSE)
+  if (length(staged_files) == 0L) {
+    cli::cli_abort("Nothing to commit — staged files are unchanged.")
+  }
+
+  # Commit
+  commit_obj <- tryCatch(
+    git2r::commit(repo, message = message),
+    error = function(e) {
+      cli::cli_abort("Failed to commit: {e$message}")
+    }
+  )
+
+  as.character(commit_obj$sha)
 }
 
 
