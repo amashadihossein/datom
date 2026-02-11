@@ -259,3 +259,79 @@
     }
   )
 }
+
+
+#' Resolve S3 Redirect Chain
+#'
+#' Follows `.redirect.json` files placed in old buckets after migration.
+#' Each redirect points to a new `s3://bucket/prefix/tbit/` location and
+#' may include new credentials. Recurses until no redirect is found.
+#'
+#' @param s3_client A `paws.storage` S3 client for the current location.
+#' @param bucket Current S3 bucket.
+#' @param prefix Current S3 prefix (without trailing `/tbit`).
+#' @param max_depth Maximum number of redirects to follow (default 5).
+#' @param .depth Internal counter — do not set manually.
+#' @return A list with `bucket`, `prefix`, and `s3_client` for the resolved
+#'   final location.
+#' @keywords internal
+.tbit_s3_resolve_redirect <- function(s3_client, bucket, prefix,
+                                      max_depth = 5L, .depth = 0L) {
+  if (.depth >= max_depth) {
+    cli::cli_abort(
+      c(
+        "Redirect chain exceeded maximum depth of {max_depth}.",
+        "i" = "This may indicate a circular redirect.",
+        "i" = "Current location: {.val {bucket}}/{.val {prefix}}"
+      )
+    )
+  }
+
+  redirect_key <- .tbit_build_s3_key(prefix, ".redirect.json")
+
+  redirect_exists <- .tbit_s3_exists(s3_client, bucket, redirect_key)
+  if (!redirect_exists) {
+    return(list(bucket = bucket, prefix = prefix, s3_client = s3_client))
+  }
+
+  redirect <- .tbit_s3_read_json(s3_client, bucket, redirect_key)
+
+  if (is.null(redirect$redirect_to) || !nzchar(redirect$redirect_to)) {
+    cli::cli_abort(
+      c(
+        "Invalid redirect: {.field redirect_to} is missing or empty.",
+        "x" = "Bucket: {.val {bucket}}",
+        "x" = "Key: {.val {redirect_key}}"
+      )
+    )
+  }
+
+  # Parse redirect_to URI — expected format: s3://bucket/prefix/tbit/
+  # Strip trailing "tbit/" or "tbit" to get the prefix
+  redirect_uri <- sub("/tbit/?$", "", redirect$redirect_to)
+  parsed <- .tbit_parse_s3_uri(redirect_uri)
+
+  # Build new client if redirect provides credentials
+  new_client <- s3_client
+  if (!is.null(redirect$credentials)) {
+    creds <- redirect$credentials
+    if (is.null(creds$access_key_env) || is.null(creds$secret_key_env)) {
+      cli::cli_abort(
+        c(
+          "Invalid redirect credentials: missing {.field access_key_env} or {.field secret_key_env}.",
+          "x" = "Redirect from: {.val {bucket}}/{.val {redirect_key}}"
+        )
+      )
+    }
+    new_client <- .tbit_s3_client(creds)
+  }
+
+  # Recurse into the new location
+  .tbit_s3_resolve_redirect(
+    s3_client = new_client,
+    bucket = parsed$bucket,
+    prefix = parsed$prefix,
+    max_depth = max_depth,
+    .depth = .depth + 1L
+  )
+}

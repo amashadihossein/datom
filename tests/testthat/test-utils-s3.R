@@ -1,5 +1,5 @@
 # Tests for S3 utility functions
-# Phase 2, Chunks 1-3: S3 client, write JSON, upload, download, exists, read JSON
+# Phase 2, Chunks 1-4: client, write/read JSON, upload, download, exists, redirect
 
 # --- .tbit_s3_client() --------------------------------------------------------
 
@@ -496,4 +496,218 @@ test_that("error message includes bucket and key on parse failure", {
       expect_true(grepl("corrupt.json", msg))
     }
   )
+})
+
+
+# --- .tbit_s3_resolve_redirect() ----------------------------------------------
+
+test_that("returns current location when no redirect exists", {
+  mock_client <- "original-client"
+
+  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_exists", FALSE)
+
+  result <- .tbit_s3_resolve_redirect(mock_client, "bucket-a", "proj")
+
+  expect_equal(result$bucket, "bucket-a")
+  expect_equal(result$prefix, "proj")
+  expect_equal(result$s3_client, "original-client")
+})
+
+test_that("follows single redirect to new bucket", {
+  redirect_data <- list(
+    redirect_to = "s3://bucket-b/proj-new/tbit/",
+    migrated_at = "2026-01-01T00:00:00Z",
+    credentials = list(
+      access_key_env = "TBIT_NEW_ACCESS",
+      secret_key_env = "TBIT_NEW_SECRET"
+    )
+  )
+
+  exists_call <- 0L
+  local_mocked_bindings(
+    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+      exists_call <<- exists_call + 1L
+      exists_call == 1L
+    },
+    .tbit_s3_read_json = function(s3_client, bucket, s3_key) {
+      redirect_data
+    },
+    .tbit_s3_client = function(credentials, region = "us-east-1") {
+      "new-s3-client"
+    }
+  )
+
+  result <- .tbit_s3_resolve_redirect("old-client", "bucket-a", "proj")
+
+  expect_equal(result$bucket, "bucket-b")
+  expect_equal(result$prefix, "proj-new")
+  expect_equal(result$s3_client, "new-s3-client")
+})
+
+test_that("follows chained redirects (2 hops)", {
+  redirect_1 <- list(
+    redirect_to = "s3://bucket-b/proj/tbit/",
+    credentials = list(access_key_env = "K2", secret_key_env = "S2")
+  )
+  redirect_2 <- list(
+    redirect_to = "s3://bucket-c/proj-final/tbit/",
+    credentials = list(access_key_env = "K3", secret_key_env = "S3")
+  )
+
+  exists_call <- 0L
+  read_call <- 0L
+  client_call <- 0L
+  local_mocked_bindings(
+    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+      exists_call <<- exists_call + 1L
+      exists_call <= 2L
+    },
+    .tbit_s3_read_json = function(s3_client, bucket, s3_key) {
+      read_call <<- read_call + 1L
+      if (read_call == 1L) redirect_1 else redirect_2
+    },
+    .tbit_s3_client = function(credentials, region = "us-east-1") {
+      client_call <<- client_call + 1L
+      paste0("client-", client_call + 1L)
+    }
+  )
+
+  result <- .tbit_s3_resolve_redirect("client-a", "bucket-a", "proj")
+
+  expect_equal(result$bucket, "bucket-c")
+  expect_equal(result$prefix, "proj-final")
+})
+
+test_that("reuses client when redirect has no credentials", {
+  redirect_data <- list(
+    redirect_to = "s3://bucket-b/proj/tbit/"
+    # No credentials field
+  )
+
+  exists_call <- 0L
+  local_mocked_bindings(
+    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+      exists_call <<- exists_call + 1L
+      exists_call == 1L
+    },
+    .tbit_s3_read_json = function(s3_client, bucket, s3_key) {
+      redirect_data
+    }
+  )
+
+  result <- .tbit_s3_resolve_redirect("original-client", "bucket-a", "proj")
+
+  expect_equal(result$bucket, "bucket-b")
+  expect_equal(result$s3_client, "original-client")
+})
+
+test_that("errors when max depth exceeded", {
+  redirect_data <- list(
+    redirect_to = "s3://bucket-loop/proj/tbit/"
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(s3_client, bucket, s3_key) TRUE,
+    .tbit_s3_read_json = function(s3_client, bucket, s3_key) redirect_data
+  )
+
+  expect_error(
+    .tbit_s3_resolve_redirect("client", "bucket-a", "proj", max_depth = 3L),
+    "maximum depth"
+  )
+})
+
+test_that("errors when redirect_to is missing", {
+  redirect_data <- list(migrated_at = "2026-01-01")
+
+  mock_exists <- mockery::mock(TRUE)
+  mock_read <- mockery::mock(redirect_data)
+
+  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_exists", mock_exists)
+  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_read_json", mock_read)
+
+  expect_error(
+    .tbit_s3_resolve_redirect("client", "bucket-a", "proj"),
+    "redirect_to.*missing"
+  )
+})
+
+test_that("errors when redirect_to is empty string", {
+  redirect_data <- list(redirect_to = "")
+
+  mock_exists <- mockery::mock(TRUE)
+  mock_read <- mockery::mock(redirect_data)
+
+  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_exists", mock_exists)
+  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_read_json", mock_read)
+
+  expect_error(
+    .tbit_s3_resolve_redirect("client", "bucket-a", "proj"),
+    "redirect_to.*missing|empty"
+  )
+})
+
+test_that("errors when redirect credentials are incomplete", {
+  redirect_data <- list(
+    redirect_to = "s3://bucket-b/proj/tbit/",
+    credentials = list(access_key_env = "ONLY_ACCESS")
+    # missing secret_key_env
+  )
+
+  mock_exists <- mockery::mock(TRUE)
+  mock_read <- mockery::mock(redirect_data)
+
+  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_exists", mock_exists)
+  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_read_json", mock_read)
+
+  expect_error(
+    .tbit_s3_resolve_redirect("client", "bucket-a", "proj"),
+    "missing.*access_key_env|secret_key_env"
+  )
+})
+
+test_that("handles redirect_to with trailing slash correctly", {
+  redirect_data <- list(redirect_to = "s3://bucket-b/new-prefix/tbit/")
+
+  exists_call <- 0L
+  local_mocked_bindings(
+    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+      exists_call <<- exists_call + 1L
+      exists_call == 1L
+    },
+    .tbit_s3_read_json = function(s3_client, bucket, s3_key) redirect_data
+  )
+
+  result <- .tbit_s3_resolve_redirect("client", "bucket-a", "proj")
+
+  expect_equal(result$bucket, "bucket-b")
+  expect_equal(result$prefix, "new-prefix")
+})
+
+test_that("handles redirect_to without trailing slash", {
+  redirect_data <- list(redirect_to = "s3://bucket-b/new-prefix/tbit")
+
+  exists_call <- 0L
+  local_mocked_bindings(
+    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+      exists_call <<- exists_call + 1L
+      exists_call == 1L
+    },
+    .tbit_s3_read_json = function(s3_client, bucket, s3_key) redirect_data
+  )
+
+  result <- .tbit_s3_resolve_redirect("client", "bucket-a", "proj")
+
+  expect_equal(result$bucket, "bucket-b")
+  expect_equal(result$prefix, "new-prefix")
+})
+
+test_that("works with NULL prefix", {
+  mock_exists <- mockery::mock(FALSE)
+  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_exists", mock_exists)
+
+  result <- .tbit_s3_resolve_redirect("client", "bucket", NULL)
+
+  expect_equal(result$bucket, "bucket")
+  expect_null(result$prefix)
 })
