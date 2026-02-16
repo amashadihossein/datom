@@ -152,18 +152,167 @@ tbit_history <- function(conn,
 
 #' Show Repository Status
 #'
-#' Shows uncommitted changes and sync state.
+#' Displays connection info, table count, and (for developers) uncommitted
+#' git changes and input file sync state.
 #'
 #' @param conn A `tbit_conn` object from [tbit_get_conn()].
 #'
-#' @return Status summary (printed, returns invisibly).
+#' @return Invisibly, a list with `connection`, `tables`, and optionally
+#'   `git` and `input_files` status details.
 #' @export
 tbit_status <- function(conn) {
 
   if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("conn must be a tbit_conn object from tbit_get_conn()")
+    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
   }
 
-  # TODO: Implement in Phase 6
-  stop("Not yet implemented")
+  status <- list(
+    connection = list(
+      project_name = conn$project_name,
+      bucket = conn$bucket,
+      prefix = conn$prefix,
+      region = conn$region,
+      role = conn$role,
+      has_path = !is.null(conn$path)
+    )
+  )
+
+  # --- Connection summary ---
+  cli::cli_h2("tbit status")
+  cli::cli_alert_info("Project: {.val {conn$project_name}}")
+  cli::cli_alert_info("Bucket: {.val {conn$bucket}}")
+  if (!is.null(conn$prefix)) {
+    cli::cli_alert_info("Prefix: {.val {conn$prefix}}")
+  }
+  cli::cli_alert_info("Role: {.val {conn$role}}")
+
+  # --- Table count from S3 manifest ---
+  table_info <- tryCatch({
+    manifest <- .tbit_s3_read_json(conn, ".metadata/manifest.json")
+    n <- length(manifest$tables %||% list())
+    list(count = n, available = TRUE)
+  }, error = function(e) {
+    list(count = 0L, available = FALSE, error = conditionMessage(e))
+  })
+
+  status$tables <- table_info
+
+  if (table_info$available) {
+    cli::cli_alert_info("Tables on S3: {.val {table_info$count}}")
+  } else {
+    cli::cli_alert_warning("Could not read S3 manifest.")
+  }
+
+  # --- Developer-only: git + input_files status ---
+  if (!is.null(conn$path)) {
+    # Git status
+    git_info <- .tbit_status_git(conn$path)
+    status$git <- git_info
+
+    if (length(git_info$uncommitted) == 0L) {
+      cli::cli_alert_success("Git: clean (no uncommitted changes)")
+    } else {
+      cli::cli_alert_warning(
+        "Git: {length(git_info$uncommitted)} uncommitted change{?s}"
+      )
+      purrr::walk(git_info$uncommitted, function(f) {
+        cli::cli_bullets(c(" " = "{.file {f}}"))
+      })
+    }
+
+    if (!is.null(git_info$branch)) {
+      cli::cli_alert_info("Branch: {.val {git_info$branch}}")
+    }
+
+    # Input files scan
+    input_dir <- fs::path(conn$path, "input_files")
+    if (fs::dir_exists(input_dir)) {
+      input_info <- .tbit_status_input_files(conn)
+      status$input_files <- input_info
+
+      if (input_info$n_new > 0L || input_info$n_changed > 0L) {
+        cli::cli_alert_warning(
+          "Input files: {input_info$n_new} new, {input_info$n_changed} changed, {input_info$n_unchanged} unchanged"
+        )
+      } else if (input_info$n_total > 0L) {
+        cli::cli_alert_success(
+          "Input files: all {input_info$n_total} unchanged"
+        )
+      } else {
+        cli::cli_alert_info("Input files: directory empty")
+      }
+    }
+  }
+
+  invisible(status)
+}
+
+
+#' Get git status (uncommitted changes + branch)
+#' @noRd
+.tbit_status_git <- function(path) {
+  has_git2r <- requireNamespace("git2r", quietly = TRUE)
+
+  if (!has_git2r || !fs::dir_exists(fs::path(path, ".git"))) {
+    return(list(uncommitted = character(), branch = NULL))
+  }
+
+  repo <- tryCatch(git2r::repository(path), error = function(e) NULL)
+  if (is.null(repo)) {
+    return(list(uncommitted = character(), branch = NULL))
+  }
+
+  # Get uncommitted files (staged + unstaged + untracked)
+  st <- tryCatch(git2r::status(repo), error = function(e) NULL)
+  uncommitted <- character()
+  if (!is.null(st)) {
+    uncommitted <- unique(unlist(st, use.names = FALSE))
+  }
+
+  # Get branch
+  branch <- tryCatch(.tbit_git_branch(path), error = function(e) NULL)
+
+  list(uncommitted = uncommitted, branch = branch)
+}
+
+
+#' Get input files sync state vs manifest
+#' @noRd
+.tbit_status_input_files <- function(conn) {
+  input_dir <- fs::path(conn$path, "input_files")
+
+  files <- fs::dir_ls(input_dir, type = "file")
+
+  if (length(files) == 0L) {
+    return(list(n_total = 0L, n_new = 0L, n_changed = 0L, n_unchanged = 0L))
+  }
+
+  # Read local manifest
+  manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+  manifest <- if (fs::file_exists(manifest_path)) {
+    jsonlite::read_json(manifest_path)
+  } else {
+    list(tables = list())
+  }
+
+  statuses <- purrr::map_chr(files, function(fp) {
+    table_name <- fs::path_ext_remove(fs::path_file(fp))
+    file_sha <- .tbit_compute_file_sha(fp)
+    existing <- manifest$tables[[table_name]]
+
+    if (is.null(existing)) {
+      "new"
+    } else if (!identical(existing$original_file_sha, file_sha)) {
+      "changed"
+    } else {
+      "unchanged"
+    }
+  })
+
+  list(
+    n_total = length(files),
+    n_new = sum(statuses == "new"),
+    n_changed = sum(statuses == "changed"),
+    n_unchanged = sum(statuses == "unchanged")
+  )
 }

@@ -45,12 +45,15 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| Phase 6: Sync & Validation | 🟡 Active | [phase_6_sync_validation.md](phase_6_sync_validation.md) |
+| _None_ | — | — |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
-|-------|-----------|-------|---------|| Phase 5: Read/Write Workflows | 2026-02-15 | 143 | tbit_read (version resolution), tbit_write (change detection, parquet+metadata), .tbit_sync_metadata, tbit_list, tbit_history || Phase 4.5: S3 Refactor | 2026-02-15 | 99 | Refactored S3 utils from (s3_client, bucket, s3_key) to (conn, s3_key), added mock_tbit_conn helper |
+|-------|-----------|-------|---------|
+| Phase 6: Sync & Validation | 2026-02-15 | 130 | tbit_sync_manifest, tbit_sync (rio import), tbit_sync_routing, tbit_validate (git-S3 consistency), tbit_status |
+| Phase 5: Read/Write Workflows | 2026-02-15 | 143 | tbit_read (version resolution), tbit_write (change detection, parquet+metadata), .tbit_sync_metadata, tbit_list, tbit_history |
+| Phase 4.5: S3 Refactor | 2026-02-15 | 99 | Refactored S3 utils from (s3_client, bucket, s3_key) to (conn, s3_key), added mock_tbit_conn helper |
 | Phase 4: Connection & Init | 2026-02-15 | 115 | tbit_conn S3 class, tbit_get_conn (developer/reader), tbit_init_repo, credential derivation |
 | Phase 3: Git Operations | 2026-02-14 | 47 | git2r wrappers: check, author, branch, commit, push (fetch+merge+push) |
 | Phase 2: S3 Operations | 2026-02-10 | 99 | S3 client, upload/download/exists, JSON read/write, redirect resolution |

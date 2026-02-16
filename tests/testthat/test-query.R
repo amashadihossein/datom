@@ -302,3 +302,199 @@ test_that("handles missing fields with NA", {
   expect_true(is.na(result$data_sha))
   expect_true(is.na(result$author))
 })
+
+
+# --- tbit_status() ------------------------------------------------------------
+
+test_that("tbit_status rejects non-tbit_conn", {
+  expect_error(tbit_status("not_conn"), "tbit_conn")
+})
+
+test_that("tbit_status returns connection info for reader", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "reader"
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      list(tables = list(a = list(), b = list()))
+    }
+  )
+
+  result <- tbit_status(conn)
+
+  expect_equal(result$connection$project_name, "test-project")
+  expect_equal(result$connection$role, "reader")
+  expect_equal(result$tables$count, 2)
+  expect_true(result$tables$available)
+  expect_false(result$connection$has_path)
+})
+
+test_that("tbit_status handles S3 manifest read failure", {
+  conn <- mock_tbit_conn(list())
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) stop("S3 error")
+  )
+
+  result <- tbit_status(conn)
+
+  expect_false(result$tables$available)
+  expect_equal(result$tables$count, 0)
+})
+
+test_that("tbit_status shows git info for developer", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .tbit_status_git = function(path) {
+        list(uncommitted = c("R/foo.R"), branch = "main")
+      }
+    )
+
+    result <- tbit_status(conn)
+
+    expect_equal(result$git$branch, "main")
+    expect_equal(result$git$uncommitted, "R/foo.R")
+  })
+})
+
+test_that("tbit_status shows clean git when no changes", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .tbit_status_git = function(path) {
+        list(uncommitted = character(), branch = "main")
+      }
+    )
+
+    result <- tbit_status(conn)
+
+    expect_equal(length(result$git$uncommitted), 0)
+  })
+})
+
+test_that("tbit_status shows input_files sync state", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id\n1", "input_files/new_tbl.csv")
+    writeLines("id\n2", "input_files/existing.csv")
+
+    # Manifest has existing with matching SHA
+    existing_sha <- .tbit_compute_file_sha("input_files/existing.csv")
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(
+      tables = list(
+        existing = list(original_file_sha = existing_sha)
+      )
+    ), ".tbit/manifest.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .tbit_status_git = function(path) {
+        list(uncommitted = character(), branch = "main")
+      }
+    )
+
+    result <- tbit_status(conn)
+
+    expect_equal(result$input_files$n_total, 2)
+    expect_equal(result$input_files$n_new, 1)
+    expect_equal(result$input_files$n_unchanged, 1)
+    expect_equal(result$input_files$n_changed, 0)
+  })
+})
+
+test_that("tbit_status omits input_files when dir missing", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .tbit_status_git = function(path) {
+        list(uncommitted = character(), branch = "main")
+      }
+    )
+
+    result <- tbit_status(conn)
+
+    expect_null(result$input_files)
+  })
+})
+
+test_that("tbit_status detects changed input files", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id\n99", "input_files/orders.csv")
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(
+      tables = list(orders = list(original_file_sha = "old_sha"))
+    ), ".tbit/manifest.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .tbit_status_git = function(path) {
+        list(uncommitted = character(), branch = "main")
+      }
+    )
+
+    result <- tbit_status(conn)
+
+    expect_equal(result$input_files$n_changed, 1)
+    expect_equal(result$input_files$n_new, 0)
+  })
+})
+
+test_that("tbit_status returns correct structure", {
+  conn <- mock_tbit_conn(list())
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) list(tables = list())
+  )
+
+  result <- tbit_status(conn)
+
+  expect_type(result, "list")
+  expect_true("connection" %in% names(result))
+  expect_true("tables" %in% names(result))
+  expect_equal(result$connection$bucket, "test-bucket")
+})
+
+test_that("tbit_status handles empty input_files dir", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+
+    local_mocked_bindings(
+      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .tbit_status_git = function(path) {
+        list(uncommitted = character(), branch = "main")
+      }
+    )
+
+    result <- tbit_status(conn)
+
+    expect_equal(result$input_files$n_total, 0)
+  })
+})
