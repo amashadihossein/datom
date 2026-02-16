@@ -155,6 +155,140 @@ tbit_read <- function(conn,
 }
 
 
+# --- Write infrastructure -----------------------------------------------------
+
+#' Build Metadata Object
+#'
+#' Constructs the metadata list for a table write, including auto-computed
+#' fields (data_sha, dimensions, colnames, timestamp, tbit_version) and
+#' any user-supplied custom metadata.
+#'
+#' @param data Data frame being written.
+#' @param data_sha SHA-256 of the parquet-formatted data.
+#' @param custom Optional named list of user-supplied custom metadata.
+#' @return Named list suitable for writing as metadata.json.
+#' @keywords internal
+.tbit_build_metadata <- function(data, data_sha, custom = NULL) {
+  meta <- list(
+    data_sha = data_sha,
+    nrow = nrow(data),
+    ncol = ncol(data),
+    colnames = names(data),
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    tbit_version = as.character(utils::packageVersion("tbit"))
+  )
+
+  if (!is.null(custom)) {
+    if (!is.list(custom) || is.null(names(custom))) {
+      cli::cli_abort("{.arg metadata} must be a named list.")
+    }
+    meta$custom <- custom
+  }
+
+  meta
+}
+
+
+#' Detect Changes Against Current Metadata
+#'
+#' Compares the proposed metadata_sha against the current version in S3.
+#' Returns the type of change detected.
+#'
+#' @param conn A `tbit_conn` object.
+#' @param name Table name.
+#' @param new_data_sha SHA of the new data.
+#' @param new_metadata_sha SHA of the new metadata (from `.tbit_compute_metadata_sha()`).
+#' @return Character string: `"none"` (no change), `"metadata_only"` (data same,
+#'   metadata changed), or `"full"` (data changed).
+#' @keywords internal
+.tbit_has_changes <- function(conn, name, new_data_sha, new_metadata_sha) {
+  metadata_key <- paste0(name, "/.metadata/metadata.json")
+
+  # If metadata doesn't exist yet, it's a new table → full write
+
+  if (!.tbit_s3_exists(conn, metadata_key)) {
+    return("full")
+  }
+
+  current <- .tbit_s3_read_json(conn, metadata_key)
+  current_metadata_sha <- .tbit_compute_metadata_sha(current)
+
+  if (identical(current_metadata_sha, new_metadata_sha)) {
+    return("none")
+  }
+
+  if (identical(current$data_sha, new_data_sha)) {
+    return("metadata_only")
+  }
+
+  "full"
+}
+
+
+#' Write Metadata Files to Git and S3
+#'
+#' Writes `metadata.json` and appends to `version_history.json` in both
+#' the local git repo and S3. Does NOT commit or push — the caller handles that.
+#'
+#' @param conn A `tbit_conn` object (must be developer with path).
+#' @param name Table name.
+#' @param metadata Named list for metadata.json.
+#' @param metadata_sha SHA of the metadata (the tbit "version").
+#' @param message Commit message (stored in version_history entry).
+#' @return Invisible list with metadata_sha and paths written.
+#' @keywords internal
+.tbit_write_metadata <- function(conn, name, metadata, metadata_sha, message = NULL) {
+  # --- Write to git repo (local) ---
+  repo_path <- conn$path
+  table_dir <- fs::path(repo_path, name)
+  fs::dir_create(table_dir)
+
+  # metadata.json — current state
+  metadata_path <- fs::path(table_dir, "metadata.json")
+  jsonlite::write_json(metadata, metadata_path, auto_unbox = TRUE, pretty = TRUE)
+
+  # version_history.json — append new entry
+  history_path <- fs::path(table_dir, "version_history.json")
+
+  history <- if (fs::file_exists(history_path)) {
+    jsonlite::read_json(history_path)
+  } else {
+    list()
+  }
+
+  author <- tryCatch(
+    .tbit_git_author(repo_path),
+    error = function(e) "unknown"
+  )
+
+  new_entry <- list(
+    version = metadata_sha,
+    data_sha = metadata$data_sha,
+    timestamp = metadata$created_at,
+    author = author,
+    commit_message = message %||% paste0("Update ", name)
+  )
+
+  history <- c(list(new_entry), history)
+  jsonlite::write_json(history, history_path, auto_unbox = TRUE, pretty = TRUE)
+
+  # --- Write to S3 ---
+  s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
+  s3_history_key <- paste0(name, "/.metadata/version_history.json")
+  s3_versioned_key <- paste0(name, "/.metadata/", metadata_sha, ".json")
+
+  .tbit_s3_write_json(conn, s3_metadata_key, metadata)
+  .tbit_s3_write_json(conn, s3_history_key, history)
+  .tbit_s3_write_json(conn, s3_versioned_key, metadata)
+
+  invisible(list(
+    metadata_sha = metadata_sha,
+    git_paths = c(metadata_path, history_path),
+    s3_keys = c(s3_metadata_key, s3_history_key, s3_versioned_key)
+  ))
+}
+
+
 #' Write a tbit Table
 #'
 #' Writes data to a tbit repository. Commits to git, pushes, and syncs to S3.

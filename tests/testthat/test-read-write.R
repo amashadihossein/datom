@@ -393,3 +393,278 @@ test_that("constructs correct S3 key for nested table names", {
 
   expect_equal(captured_key, "ADSL/sha256hash.parquet")
 })
+
+
+# --- .tbit_build_metadata() ---------------------------------------------------
+
+test_that("builds metadata with auto-computed fields", {
+  df <- data.frame(id = 1:3, name = c("a", "b", "c"))
+  result <- .tbit_build_metadata(df, data_sha = "abc123")
+
+  expect_equal(result$data_sha, "abc123")
+  expect_equal(result$nrow, 3)
+  expect_equal(result$ncol, 2)
+  expect_equal(result$colnames, c("id", "name"))
+  expect_true(nzchar(result$created_at))
+  expect_true(nzchar(result$tbit_version))
+})
+
+test_that("includes custom metadata", {
+  df <- data.frame(x = 1)
+  result <- .tbit_build_metadata(df, "sha", custom = list(desc = "test", tags = list("a")))
+
+  expect_equal(result$custom$desc, "test")
+  expect_equal(result$custom$tags, list("a"))
+})
+
+test_that("errors when custom is not a named list", {
+  df <- data.frame(x = 1)
+  expect_error(.tbit_build_metadata(df, "sha", custom = "not_list"), "metadata")
+  expect_error(.tbit_build_metadata(df, "sha", custom = list(1, 2)), "metadata")
+})
+
+test_that("metadata with no custom has no custom field", {
+  df <- data.frame(x = 1)
+  result <- .tbit_build_metadata(df, "sha")
+
+  expect_null(result$custom)
+})
+
+
+# --- .tbit_has_changes() ------------------------------------------------------
+
+test_that("returns 'full' when table is new (no metadata in S3)", {
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) FALSE
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- .tbit_has_changes(conn, "new_table", "sha1", "meta_sha1")
+
+  expect_equal(result, "full")
+})
+
+test_that("returns 'none' when metadata_sha matches", {
+  current_meta <- list(data_sha = "sha1", nrow = 10L, ncol = 3L)
+  current_meta_sha <- .tbit_compute_metadata_sha(current_meta)
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) current_meta
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- .tbit_has_changes(conn, "tbl", "sha1", current_meta_sha)
+
+  expect_equal(result, "none")
+})
+
+test_that("returns 'metadata_only' when data same but metadata different", {
+  current_meta <- list(data_sha = "sha1", nrow = 10L, ncol = 3L)
+
+  # New metadata has different nrow but same data_sha
+  new_meta <- list(data_sha = "sha1", nrow = 20L, ncol = 3L)
+  new_meta_sha <- .tbit_compute_metadata_sha(new_meta)
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) current_meta
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- .tbit_has_changes(conn, "tbl", "sha1", new_meta_sha)
+
+  expect_equal(result, "metadata_only")
+})
+
+test_that("returns 'full' when data changed", {
+  current_meta <- list(data_sha = "sha_old", nrow = 10L, ncol = 3L)
+
+  new_meta <- list(data_sha = "sha_new", nrow = 10L, ncol = 3L)
+  new_meta_sha <- .tbit_compute_metadata_sha(new_meta)
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) current_meta
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- .tbit_has_changes(conn, "tbl", "sha_new", new_meta_sha)
+
+  expect_equal(result, "full")
+})
+
+test_that("checks correct S3 key for metadata", {
+  captured_key <- NULL
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) {
+      captured_key <<- s3_key
+      FALSE
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  .tbit_has_changes(conn, "customers", "sha1", "meta_sha1")
+
+  expect_equal(captured_key, "customers/.metadata/metadata.json")
+})
+
+
+# --- .tbit_write_metadata() ---------------------------------------------------
+
+test_that("writes metadata.json and version_history.json to git repo", {
+  withr::with_tempdir({
+    # Set up a minimal git repo for git author
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test User", user.email = "test@test.com")
+
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(
+      data_sha = "sha1",
+      nrow = 5L,
+      ncol = 2L,
+      colnames = c("id", "val"),
+      created_at = "2026-01-01T00:00:00Z",
+      tbit_version = "0.0.1"
+    )
+    meta_sha <- .tbit_compute_metadata_sha(metadata)
+
+    # Mock S3 writes — just capture calls
+    s3_keys <- character()
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys <<- c(s3_keys, s3_key)
+        invisible(TRUE)
+      }
+    )
+
+    result <- .tbit_write_metadata(conn, "customers", metadata, meta_sha, message = "Add data")
+
+    # Git files written
+    expect_true(fs::file_exists("customers/metadata.json"))
+    expect_true(fs::file_exists("customers/version_history.json"))
+
+    # metadata.json content
+    written_meta <- jsonlite::read_json("customers/metadata.json")
+    expect_equal(written_meta$data_sha, "sha1")
+    expect_equal(written_meta$nrow, 5L)
+
+    # version_history.json content
+    history <- jsonlite::read_json("customers/version_history.json")
+    expect_length(history, 1)
+    expect_equal(history[[1]]$version, meta_sha)
+    expect_equal(history[[1]]$data_sha, "sha1")
+    expect_equal(history[[1]]$commit_message, "Add data")
+    expect_equal(history[[1]]$author$name, "Test User")
+    expect_equal(history[[1]]$author$email, "test@test.com")
+  })
+})
+
+test_that("appends to existing version_history.json", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    # Pre-populate history
+    fs::dir_create("tbl")
+    existing_history <- list(
+      list(version = "old_sha", data_sha = "old_data", timestamp = "2025-12-01")
+    )
+    jsonlite::write_json(existing_history, "tbl/version_history.json",
+                         auto_unbox = TRUE, pretty = TRUE)
+
+    metadata <- list(data_sha = "new_data", nrow = 10L, created_at = "2026-01-01T00:00:00Z")
+    meta_sha <- .tbit_compute_metadata_sha(metadata)
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
+    )
+
+    .tbit_write_metadata(conn, "tbl", metadata, meta_sha)
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_length(history, 2)
+    # New entry is prepended (most recent first)
+    expect_equal(history[[1]]$version, meta_sha)
+    expect_equal(history[[2]]$version, "old_sha")
+  })
+})
+
+test_that("writes versioned metadata snapshot to S3", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
+    meta_sha <- .tbit_compute_metadata_sha(metadata)
+
+    s3_keys <- character()
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys <<- c(s3_keys, s3_key)
+        invisible(TRUE)
+      }
+    )
+
+    result <- .tbit_write_metadata(conn, "tbl", metadata, meta_sha)
+
+    # Should write 3 S3 keys: metadata.json, version_history.json, {meta_sha}.json
+    expect_length(s3_keys, 3)
+    expect_true(any(grepl("metadata.json$", s3_keys)))
+    expect_true(any(grepl("version_history.json$", s3_keys)))
+    expect_true(any(grepl(paste0(meta_sha, ".json$"), s3_keys)))
+  })
+})
+
+test_that("uses default commit message when none provided", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
+    meta_sha <- .tbit_compute_metadata_sha(metadata)
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
+    )
+
+    .tbit_write_metadata(conn, "my_table", metadata, meta_sha)
+
+    history <- jsonlite::read_json("my_table/version_history.json")
+    expect_equal(history[[1]]$commit_message, "Update my_table")
+  })
+})
+
+test_that("returns metadata_sha and paths", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
+    meta_sha <- .tbit_compute_metadata_sha(metadata)
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
+    )
+
+    result <- .tbit_write_metadata(conn, "tbl", metadata, meta_sha)
+
+    expect_equal(result$metadata_sha, meta_sha)
+    expect_length(result$git_paths, 2)
+    expect_length(result$s3_keys, 3)
+  })
+})
