@@ -816,6 +816,22 @@ tbit_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 - Validate all paths for traversal attacks
 - Respect configured file size limits
 
+### Connection Architecture
+
+- `tbit_conn` S3 class wraps project_name, bucket, prefix, region, s3_client, path, role
+- Two modes: **developer** (has local repo path + git) and **reader** (S3 only, no local repo)
+- Role auto-detected: `GITHUB_PAT` present + `path` provided → developer; otherwise → reader
+- `tbit_get_conn(path = ...)` reads `.tbit/project.yaml` (developer path)
+- `tbit_get_conn(bucket = ..., project_name = ...)` builds connection directly (reader path)
+- Credential env var names derived from `project_name`: `TBIT_{NORMALIZED_NAME}_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY`
+- `tbit_init_repo()` sets local git config (`user.name`, `user.email`) from global config or fallback — `git2r::default_signature()` requires local config on freshly init'd repos
+
+### Dependency Strategy
+
+- `paws.storage` (Imports): S3 operations — lightweight, avoids pulling full `paws`
+- `git2r` (Suggests): Git operations — only needed by data developers, checked at runtime via `.tbit_check_git2r()`
+- Data readers never need git2r installed
+
 ---
 
 ## Supported File Formats

@@ -74,32 +74,37 @@ tryCatch(
 
 | # | Chunk | Functions | Status |
 |---|-------|-----------|--------|
-| 1 | Git info (read-only) | `.tbit_check_git2r()`, `.tbit_git_author()`, `.tbit_git_branch()` | 🔵 Design |
-| 2 | Git commit | `.tbit_git_commit()` | ⚪ Not started |
-| 3 | Git push | `.tbit_git_push()` | ⚪ Not started |
+| 1 | Git info (read-only) | `.tbit_check_git2r()`, `.tbit_git_author()`, `.tbit_git_branch()` | ✅ Done |
+| 2 | Git commit | `.tbit_git_commit()` | ✅ Done |
+| 3 | Git push | `.tbit_git_push()` | ✅ Done |
 
 ---
 
 ## Current Chunk
 
-**Chunk**: 1 — Git info (read-only)  
-**Stage**: 🔵 DESIGN
+All chunks complete. Phase ready for `devtools::check()` and finalization.
 
 ---
 
 ## Current State
 
-Phase just started.
+All git utility functions implemented and tested (47 tests, 272 total suite).
 
 ### Completed Chunks
 
-_None yet_
+1. **Git info (read-only)** — `.tbit_check_git2r()`, `.tbit_git_author()`, `.tbit_git_branch()`
+2. **Git commit** — `.tbit_git_commit()` — stage + commit, returns SHA
+3. **Git push** — `.tbit_git_push()` — fetch + merge + push with conflict detection
 
 ### Decisions Made
 
 - git2r stays in Suggests (data readers don't need it)
 - Real temp repos for testing (no mocking git2r)
 - Consistent error wrapping with cli::cli_abort
+- `git2r::merge()` requires `upstream_ref$name` (string), not the branch object
+- Push uses first remote found (typically "origin")
+- Fetch + merge pattern (not pull) for explicit control
+- If no upstream branch yet, skips merge and just pushes
 
 ### Blockers
 
@@ -109,7 +114,7 @@ _None_
 
 | Item | Why Deferred | Notes |
 |------|--------------|-------|
-| _None yet_ | | |
+| _None_ | | |
 
 ---
 
@@ -118,6 +123,7 @@ _None_
 | Date | Summary | Next Steps |
 |------|---------|------------|
 | 2026-02-10 | Phase 3 created, chunk queue defined | Implement Chunk 1 |
+| 2026-02-14 | Chunks 1-3 implemented + tested (47 tests, 272 total) | `devtools::check()`, finalize phase |
 
 ---
 

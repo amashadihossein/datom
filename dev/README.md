@@ -45,12 +45,14 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| Phase 3: Git Operations | 🟢 In Progress | [phase_3_git_operations.md](phase_3_git_operations.md) |
+| _None_ | — | — |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
+| Phase 4: Connection & Init | 2026-02-15 | 115 | tbit_conn S3 class, tbit_get_conn (developer/reader), tbit_init_repo, credential derivation |
+| Phase 3: Git Operations | 2026-02-14 | 47 | git2r wrappers: check, author, branch, commit, push (fetch+merge+push) |
 | Phase 2: S3 Operations | 2026-02-10 | 94 | S3 client, upload/download/exists, JSON read/write, redirect resolution |
 | Phase 1: Core Utilities | 2026-02-09 | 131 | SHA, paths, name validation, repo validation |
 
@@ -61,6 +63,8 @@ Items discovered during development but intentionally deferred. Review periodica
 | Item | Discovered In | Reason Deferred | Priority |
 |------|---------------|-----------------|----------|
 | Derived tbit path convention (raw at top, derived in dp subfolder) | Phase 1 | dpbuild concern — tbit handles via prefix param | Low (dpbuild) |
+| renv::init() in tbit_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
+| Redirect resolution in tbit_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
 
 **Backlog lifecycle**:
 1. Discovered during phase work → add here with context
@@ -128,6 +132,15 @@ At each stage, I will:
 | DEVELOP | Implementation + test file + debug snippet | Run tests, step through, try it out |
 | FEEDBACK | Respond to issues | Confirm done or request changes |
 
+### Chunk Delivery Checklist
+
+After each chunk is implemented, I deliver **four things in order**:
+
+1. **Write tests** — full test coverage for the chunk's functions
+2. **Run tests** — execute and fix until all pass (green suite)
+3. **Minimalist walkthrough snippet** — a clean, self-contained R snippet for you to paste into the console and step through interactively (use `debugonce()` to drop into any function)
+4. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit with a concise message (e.g., `"Phase 4 Chunk 2: tbit_conn class"`), then you push
+
 ### QA Methods
 
 - **Run tests**: `devtools::test(filter = "chunk_name")`
@@ -173,3 +186,24 @@ git push  # ← Good milestone
 5. **Update this README** when phase status changes
 6. **Capture deferrals immediately** — when you skip something, document it
 7. **Review backlog** before starting each phase
+
+## Phase Completion Procedure
+
+When a phase is done, perform these steps **in order before starting the next phase**:
+
+1. **Harvest persistent content** from the phase doc:
+   - Design decisions that affect the overall API → migrate to `dev/tbit_specification.md`
+   - Coding patterns/conventions discovered → migrate to `.github/copilot-instructions.md`
+   - Ecosystem learnings → migrate to `dev/daapr_architecture.md`
+   - Deferred items → move to the **Backlog** table in this README
+
+2. **Update this README**:
+   - Move phase from Active → Completed table (with date, test count, summary)
+   - Update backlog if needed
+
+3. **Delete the phase doc** — it should contain nothing worth keeping at this point
+
+4. **Commit the cleanup** — one commit for the doc housekeeping
+
+**Rule**: No phase doc should survive past its completion. If it feels hard to delete,
+that means persistent content hasn't been migrated yet — do that first.

@@ -100,6 +100,12 @@ cli::cli_alert_success("Wrote {name} ({sha})")
 
 Auto-detected via `GITHUB_PAT` presence.
 
+## Gotchas
+
+- **cli pluralization**: `{?s}` requires a quantity reference immediately before it (e.g., `{length(x)} variable{?s}`). Without the quantity, cli throws a confusing error.
+- **git2r::default_signature()**: Fails on freshly `git2r::init()`'d repos that lack local config. Always call `git2r::config(repo, user.name = ..., user.email = ...)` after init.
+- **git2r::merge()**: Expects a string (branch name), not a branch object. Use `upstream_ref$name`.
+
 ## Don'ts
 
 - No nested if-else chains

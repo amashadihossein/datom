@@ -288,3 +288,143 @@ test_that(".tbit_git_commit can update an existing file", {
   log <- git2r::commits(info$repo)
   expect_equal(log[[1]]$message, "Update readme")
 })
+
+
+# =============================================================================
+# .tbit_git_push()
+# =============================================================================
+
+# --- Helper: create a repo pair (working + bare remote) -----------------------
+create_repo_with_remote <- function(name = "Test User", email = "test@example.com",
+                                    env = parent.frame()) {
+  # Create a bare repo to act as "remote"
+  bare_dir <- withr::local_tempdir(.local_envir = env)
+  bare_repo <- git2r::init(bare_dir, bare = TRUE)
+
+  # Create working repo
+  work_dir <- withr::local_tempdir(.local_envir = env)
+  work_repo <- git2r::init(work_dir)
+  git2r::config(work_repo, user.name = name, user.email = email)
+
+  # Initial commit in working repo
+  writeLines("init", fs::path(work_dir, "README.md"))
+  git2r::add(work_repo, "README.md")
+  git2r::commit(work_repo, "Initial commit")
+
+  # Add bare repo as remote "origin"
+  git2r::remote_add(work_repo, name = "origin", url = bare_dir)
+
+  # Push initial commit to set up tracking
+  git2r::push(work_repo, name = "origin",
+              refspec = glue::glue("refs/heads/{git2r::repository_head(work_repo)$name}"),
+              set_upstream = TRUE)
+
+  list(
+    work_path = work_dir,
+    work_repo = work_repo,
+    bare_path = bare_dir,
+    bare_repo = bare_repo
+  )
+}
+
+
+test_that(".tbit_git_push pushes commits to remote", {
+  info <- create_repo_with_remote()
+
+  # Make a new commit in working repo
+  writeLines("new data", fs::path(info$work_path, "data.json"))
+  git2r::add(info$work_repo, "data.json")
+  git2r::commit(info$work_repo, "Add data")
+
+  result <- .tbit_git_push(info$work_path)
+
+  expect_true(result)
+  expect_invisible(.tbit_git_push(info$work_path))
+
+
+  # Verify bare remote received the commit
+  bare_log <- git2r::commits(info$bare_repo)
+  expect_equal(bare_log[[1]]$message, "Add data")
+})
+
+test_that(".tbit_git_push is idempotent (no-op when nothing to push)", {
+  info <- create_repo_with_remote()
+
+  # Nothing new to push — should succeed silently
+  expect_no_error(.tbit_git_push(info$work_path))
+})
+
+test_that(".tbit_git_push fetches and merges upstream changes", {
+  info <- create_repo_with_remote()
+
+  # Simulate another user by cloning the bare repo
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(info$bare_path, other_dir)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+
+  # Other user commits + pushes
+  writeLines("other work", fs::path(other_dir, "other.txt"))
+  git2r::add(other_repo, "other.txt")
+  git2r::commit(other_repo, "Other user commit")
+  git2r::push(other_repo, name = "origin",
+              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
+
+  # Original user makes a non-conflicting commit
+  writeLines("my work", fs::path(info$work_path, "mine.txt"))
+  git2r::add(info$work_repo, "mine.txt")
+  git2r::commit(info$work_repo, "My commit")
+
+  # Push should fetch, merge, then push
+  expect_no_error(.tbit_git_push(info$work_path))
+
+  # Both commits should be in remote
+  bare_log <- git2r::commits(info$bare_repo)
+  messages <- purrr::map_chr(bare_log, ~ .x$message)
+  expect_true("Other user commit" %in% messages)
+  expect_true("My commit" %in% messages)
+})
+
+test_that(".tbit_git_push aborts on merge conflict", {
+  info <- create_repo_with_remote()
+
+  # Simulate another user modifying README.md
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(info$bare_path, other_dir)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+
+  writeLines("other version", fs::path(other_dir, "README.md"))
+  git2r::add(other_repo, "README.md")
+  git2r::commit(other_repo, "Other edit")
+  git2r::push(other_repo, name = "origin",
+              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
+
+  # Original user modifies the same file differently
+  writeLines("my version", fs::path(info$work_path, "README.md"))
+  git2r::add(info$work_repo, "README.md")
+  git2r::commit(info$work_repo, "My conflicting edit")
+
+  # Should abort with conflict message
+  expect_error(.tbit_git_push(info$work_path), "conflict|merge", ignore.case = TRUE)
+})
+
+test_that(".tbit_git_push aborts when no remote configured", {
+  info <- create_test_repo()
+
+  expect_error(.tbit_git_push(info$path), "No remote")
+})
+
+test_that(".tbit_git_push aborts on non-git directory", {
+  dir <- withr::local_tempdir()
+  expect_error(.tbit_git_push(dir), "Not a git repository")
+})
+
+test_that(".tbit_git_push returns invisible TRUE", {
+  info <- create_repo_with_remote()
+
+  writeLines("more", fs::path(info$work_path, "extra.txt"))
+  git2r::add(info$work_repo, "extra.txt")
+  git2r::commit(info$work_repo, "Extra commit")
+
+  result <- .tbit_git_push(info$work_path)
+  expect_true(result)
+})

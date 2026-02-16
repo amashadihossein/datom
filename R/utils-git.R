@@ -1,6 +1,6 @@
 # Internal git operations
 # Wraps git2r for commit, push, branch, and author operations.
-# git2r is in Suggests — data readers don't need it.
+# git2r is in Suggests -- data readers don't need it.
 
 
 # --- Runtime check -----------------------------------------------------------
@@ -99,7 +99,7 @@
 
   if (!git2r::is_branch(head_ref)) {
     cli::cli_abort(c(
-      "HEAD is detached — tbit requires a branch.",
+      "HEAD is detached \u2014 tbit requires a branch.",
       "i" = "Check out a branch with {.code git checkout <branch>}"
     ))
   }
@@ -138,7 +138,7 @@
   missing <- files[!fs::file_exists(full_paths)]
   if (length(missing) > 0L) {
     cli::cli_abort(c(
-      "Cannot stage — files do not exist:",
+      "Cannot stage \u2014 files do not exist:",
       purrr::set_names(missing, rep("x", length(missing)))
     ))
   }
@@ -155,7 +155,7 @@
   status <- git2r::status(repo, staged = TRUE, unstaged = FALSE, untracked = FALSE)
   staged_files <- unlist(status$staged, use.names = FALSE)
   if (length(staged_files) == 0L) {
-    cli::cli_abort("Nothing to commit — staged files are unchanged.")
+    cli::cli_abort("Nothing to commit \u2014 staged files are unchanged.")
   }
 
   # Commit
@@ -172,12 +172,86 @@
 
 #' Push to Remote
 #'
-#' Pulls first to check for conflicts, then pushes.
+#' Pulls (fetch + merge) first to detect conflicts, then pushes.
+#' Aborts on merge conflicts -- user must resolve manually per spec.
 #'
 #' @param path Repository path.
 #' @return Invisible TRUE on success.
 #' @keywords internal
 .tbit_git_push <- function(path) {
-  # TODO: Implement in Chunk 3
-  stop("Not yet implemented")
+  .tbit_check_git2r()
+
+  repo <- tryCatch(
+    git2r::repository(path),
+    error = function(e) {
+      cli::cli_abort("Not a git repository: {.path {path}}")
+    }
+  )
+
+  # Verify remote exists
+  remotes <- git2r::remotes(repo)
+  if (length(remotes) == 0L) {
+    cli::cli_abort(c(
+      "No remote configured.",
+      "i" = "Add a remote with {.code git remote add origin <url>}"
+    ))
+  }
+
+  remote_name <- remotes[[1L]]
+
+  # Get current branch
+
+  branch_name <- .tbit_git_branch(path)
+
+  # Fetch from remote
+  tryCatch(
+    git2r::fetch(repo, name = remote_name),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Failed to fetch from remote {.val {remote_name}}.",
+        "x" = e$message
+      ))
+    }
+  )
+
+  # Check if upstream branch exists
+  upstream_ref <- tryCatch(
+    git2r::branch_get_upstream(git2r::repository_head(repo)),
+    error = function(e) NULL
+  )
+
+  if (!is.null(upstream_ref)) {
+    # Merge upstream into current branch (merge expects the branch name string)
+    merge_result <- tryCatch(
+      git2r::merge(repo, upstream_ref$name),
+      error = function(e) {
+        cli::cli_abort(c(
+          "Failed to merge upstream changes.",
+          "x" = e$message
+        ))
+      }
+    )
+
+    if (isTRUE(merge_result$conflicts)) {
+      cli::cli_abort(c(
+        "Merge conflict detected \u2014 manual resolution required.",
+        "i" = "Pull latest changes, resolve conflicts, and re-run.",
+        "i" = "Use {.code git status} to see conflicting files."
+      ))
+    }
+  }
+
+  # Push
+  tryCatch(
+    git2r::push(repo, name = remote_name, refspec = glue::glue("refs/heads/{branch_name}")),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Failed to push to remote {.val {remote_name}}.",
+        "x" = e$message,
+        "i" = "Check your credentials and remote access."
+      ))
+    }
+  )
+
+  invisible(TRUE)
 }
