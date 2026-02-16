@@ -18,11 +18,21 @@ tbit_read <- function(conn,
                       ...) {
 
   if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("conn must be a tbit_conn object from tbit_get_conn()")
+    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
   }
 
-  # TODO: Implement
-  stop("Not yet implemented")
+  .tbit_validate_name(name)
+
+  # 1. Read metadata + version history from S3
+  metadata_list <- .tbit_read_metadata(conn, name)
+
+  # 2. Resolve version to data_sha
+
+  data_sha <- .tbit_resolve_version(metadata_list, version = version, name = name)
+
+  # 3. Download and read parquet
+  # TODO: Phase 6 will add routing via context + routing.json
+  .tbit_read_parquet(conn, name, data_sha)
 }
 
 

@@ -1,5 +1,120 @@
 # Tests for read/write infrastructure
-# Phase 5, Chunk 1: .tbit_read_metadata(), .tbit_resolve_version(), .tbit_read_parquet()
+# Phase 5: tbit_read(), tbit_write(), and supporting internals
+
+
+# --- tbit_read() --------------------------------------------------------------
+
+test_that("reads current version end-to-end", {
+  test_df <- data.frame(id = 1:5, val = letters[1:5])
+
+  metadata <- list(data_sha = "sha_current", nrow = 5L, ncol = 2L)
+  history <- list(
+    list(version = "meta_v1", data_sha = "sha_current")
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      if (grepl("metadata.json$", s3_key)) metadata else history
+    },
+    .tbit_s3_download = function(conn, s3_key, local_path) {
+      arrow::write_parquet(test_df, local_path)
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_read(conn, "customers")
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 5)
+  expect_equal(result$id, 1:5)
+})
+
+test_that("reads specific version end-to-end", {
+  df_v1 <- data.frame(x = 1:3)
+  df_v2 <- data.frame(x = 10:12)
+
+  metadata <- list(data_sha = "sha_v2")
+  history <- list(
+    list(version = "meta_v1", data_sha = "sha_v1"),
+    list(version = "meta_v2", data_sha = "sha_v2")
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      if (grepl("metadata.json$", s3_key)) metadata else history
+    },
+    .tbit_s3_download = function(conn, s3_key, local_path) {
+      # Should request sha_v1 since we asked for meta_v1
+      if (grepl("sha_v1", s3_key)) {
+        arrow::write_parquet(df_v1, local_path)
+      } else {
+        arrow::write_parquet(df_v2, local_path)
+      }
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_read(conn, "customers", version = "meta_v1")
+
+  expect_equal(result$x, 1:3)
+})
+
+test_that("errors when conn is not tbit_conn", {
+  expect_error(tbit_read(list(), "tbl"), "tbit_conn")
+  expect_error(tbit_read("not_conn", "tbl"), "tbit_conn")
+})
+
+test_that("validates table name", {
+  conn <- mock_tbit_conn(list())
+  expect_error(tbit_read(conn, ""), "must not be empty")
+  expect_error(tbit_read(conn, "bad name!"), class = "rlang_error")
+})
+
+test_that("errors when version not found", {
+  metadata <- list(data_sha = "sha_current")
+  history <- list(
+    list(version = "meta_v1", data_sha = "sha_v1")
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      if (grepl("metadata.json$", s3_key)) metadata else history
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  expect_error(tbit_read(conn, "tbl", version = "nonexistent"), "not found")
+})
+
+test_that("propagates S3 errors from metadata read", {
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      cli::cli_abort("Failed to read JSON from S3.")
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  expect_error(tbit_read(conn, "customers"), "Failed to read JSON")
+})
+
+test_that("propagates S3 errors from parquet download", {
+  metadata <- list(data_sha = "sha1")
+  history <- list(list(version = "v1", data_sha = "sha1"))
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      if (grepl("metadata.json$", s3_key)) metadata else history
+    },
+    .tbit_s3_download = function(conn, s3_key, local_path) {
+      cli::cli_abort("Failed to download file from S3.")
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  expect_error(tbit_read(conn, "tbl"), "Failed to download")
+})
 
 
 # --- .tbit_read_metadata() ----------------------------------------------------
