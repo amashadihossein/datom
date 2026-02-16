@@ -659,3 +659,328 @@ test_that(".tbit_check_rio errors when rio not available", {
   )
   expect_error(.tbit_check_rio(), "rio")
 })
+
+
+# --- tbit_sync_routing() -----------------------------------------------------
+
+test_that("tbit_sync_routing rejects non-tbit_conn", {
+  expect_error(tbit_sync_routing("not_conn"), "tbit_conn")
+})
+
+test_that("tbit_sync_routing rejects reader role", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "reader"
+  conn$path <- "/tmp"
+  expect_error(tbit_sync_routing(conn), "developer")
+})
+
+test_that("tbit_sync_routing rejects conn without path", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- NULL
+  expect_error(tbit_sync_routing(conn), "local git repo")
+})
+
+test_that("tbit_sync_routing requires interactive confirmation by default", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    # Non-interactive session should fail with .confirm = TRUE
+    expect_error(tbit_sync_routing(conn, .confirm = TRUE), "Interactive")
+  })
+})
+
+test_that("tbit_sync_routing syncs repo-level files to S3", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    # Create repo-level .tbit files
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(methods = list()), ".tbit/routing.json",
+                         auto_unbox = TRUE)
+    jsonlite::write_json(list(tables = list()), ".tbit/manifest.json",
+                         auto_unbox = TRUE)
+
+    s3_keys_written <- character()
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys_written <<- c(s3_keys_written, s3_key)
+        invisible(NULL)
+      }
+    )
+
+    result <- tbit_sync_routing(conn, .confirm = FALSE)
+
+    expect_true(".metadata/routing.json" %in% s3_keys_written)
+    expect_true(".metadata/manifest.json" %in% s3_keys_written)
+    expect_true(".metadata/routing.json" %in% result$repo_files)
+    expect_true(".metadata/manifest.json" %in% result$repo_files)
+  })
+})
+
+test_that("tbit_sync_routing skips missing repo-level files", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    # Only create routing.json, not manifest or migration_history
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(methods = list()), ".tbit/routing.json",
+                         auto_unbox = TRUE)
+
+    s3_keys_written <- character()
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys_written <<- c(s3_keys_written, s3_key)
+        invisible(NULL)
+      }
+    )
+
+    result <- tbit_sync_routing(conn, .confirm = FALSE)
+
+    expect_equal(length(result$repo_files), 1)
+    expect_equal(result$repo_files, ".metadata/routing.json")
+  })
+})
+
+test_that("tbit_sync_routing syncs per-table metadata to S3", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    # Create a table directory with metadata
+    fs::dir_create("customers")
+    jsonlite::write_json(list(data_sha = "abc"), "customers/metadata.json",
+                         auto_unbox = TRUE)
+    jsonlite::write_json(list(versions = list()), "customers/version_history.json",
+                         auto_unbox = TRUE)
+
+    s3_keys_written <- character()
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys_written <<- c(s3_keys_written, s3_key)
+        invisible(NULL)
+      }
+    )
+
+    result <- tbit_sync_routing(conn, .confirm = FALSE)
+
+    expect_true("customers/.metadata/metadata.json" %in% s3_keys_written)
+    expect_true("customers/.metadata/version_history.json" %in% s3_keys_written)
+    expect_equal(result$tables$customers$action, "synced")
+  })
+})
+
+test_that("tbit_sync_routing ignores non-table directories", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    # Directories that should be ignored
+    fs::dir_create("input_files")
+    fs::dir_create("renv")
+    fs::dir_create("R")
+    fs::dir_create("tests")
+
+    # Hidden directories also ignored
+    fs::dir_create(".git")
+
+    s3_keys_written <- character()
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys_written <<- c(s3_keys_written, s3_key)
+        invisible(NULL)
+      }
+    )
+
+    result <- tbit_sync_routing(conn, .confirm = FALSE)
+
+    # Only repo-level files synced, no table-level
+    expect_equal(length(result$tables), 0)
+    expect_equal(result$repo_files, ".metadata/routing.json")
+  })
+})
+
+test_that("tbit_sync_routing handles per-table errors gracefully", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    # Two tables: one good, one will fail
+    fs::dir_create("good_tbl")
+    jsonlite::write_json(list(data_sha = "d1"), "good_tbl/metadata.json",
+                         auto_unbox = TRUE)
+
+    fs::dir_create("bad_tbl")
+    jsonlite::write_json(list(data_sha = "d2"), "bad_tbl/metadata.json",
+                         auto_unbox = TRUE)
+
+    call_count <- 0L
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        call_count <<- call_count + 1L
+        if (grepl("bad_tbl", s3_key)) stop("S3 upload failed")
+        invisible(NULL)
+      }
+    )
+
+    result <- tbit_sync_routing(conn, .confirm = FALSE)
+
+    expect_equal(result$tables$good_tbl$action, "synced")
+    expect_equal(result$tables$bad_tbl$action, "error")
+    expect_match(result$tables$bad_tbl$error, "S3 upload failed")
+  })
+})
+
+test_that("tbit_sync_routing syncs metadata snapshots from .metadata dir", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    # Table with metadata + snapshot
+    fs::dir_create("orders")
+    jsonlite::write_json(list(data_sha = "d1"), "orders/metadata.json",
+                         auto_unbox = TRUE)
+    fs::dir_create("orders/.metadata")
+    jsonlite::write_json(list(version = 1), "orders/.metadata/abc123.json",
+                         auto_unbox = TRUE)
+
+    s3_keys_written <- character()
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys_written <<- c(s3_keys_written, s3_key)
+        invisible(NULL)
+      }
+    )
+
+    result <- tbit_sync_routing(conn, .confirm = FALSE)
+
+    expect_true("orders/.metadata/metadata.json" %in% s3_keys_written)
+    expect_true("orders/.metadata/abc123.json" %in% s3_keys_written)
+  })
+})
+
+test_that("tbit_sync_routing returns correct summary structure", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+    )
+
+    result <- tbit_sync_routing(conn, .confirm = FALSE)
+
+    expect_type(result, "list")
+    expect_true("repo_files" %in% names(result))
+    expect_true("tables" %in% names(result))
+    expect_type(result$repo_files, "character")
+    expect_type(result$tables, "list")
+  })
+})
+
+test_that("tbit_sync_routing handles multiple tables", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    for (nm in c("alpha", "beta", "gamma")) {
+      fs::dir_create(nm)
+      jsonlite::write_json(list(data_sha = nm), paste0(nm, "/metadata.json"),
+                           auto_unbox = TRUE)
+    }
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+    )
+
+    result <- tbit_sync_routing(conn, .confirm = FALSE)
+
+    expect_equal(length(result$tables), 3)
+    expect_true(all(purrr::map_chr(result$tables, "action") == "synced"))
+  })
+})
+
+
+# --- .tbit_sync_table_metadata() ----------------------------------------------
+
+test_that(".tbit_sync_table_metadata uploads metadata and version_history", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    fs::dir_create("tbl")
+    jsonlite::write_json(list(x = 1), "tbl/metadata.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(v = 1), "tbl/version_history.json",
+                         auto_unbox = TRUE)
+
+    s3_keys_written <- character()
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys_written <<- c(s3_keys_written, s3_key)
+        invisible(NULL)
+      }
+    )
+
+    result <- .tbit_sync_table_metadata(conn, "tbl")
+
+    expect_equal(result$action, "synced")
+    expect_true("tbl/.metadata/metadata.json" %in% result$s3_keys)
+    expect_true("tbl/.metadata/version_history.json" %in% result$s3_keys)
+  })
+})
+
+test_that(".tbit_sync_table_metadata handles table with no version_history", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    fs::dir_create("tbl")
+    jsonlite::write_json(list(x = 1), "tbl/metadata.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+    )
+
+    result <- .tbit_sync_table_metadata(conn, "tbl")
+
+    expect_equal(length(result$s3_keys), 1)
+    expect_equal(result$s3_keys, "tbl/.metadata/metadata.json")
+  })
+})

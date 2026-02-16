@@ -1,20 +1,164 @@
 #' Sync Routing Metadata to S3
 #'
-#' Updates all metadata in S3 to match git after migration or routing changes.
-#' Requires interactive confirmation.
+#' Updates all metadata in S3 to match the local git repository. This includes
+#' repo-level files (routing.json, manifest.json, migration_history.json) and
+#' per-table metadata (metadata.json, version_history.json). Requires
+#' interactive confirmation unless `.confirm = FALSE`.
+#'
+#' Used after migration, routing changes, or any situation where S3 metadata
+#' may be out of sync with git.
 #'
 #' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param .confirm If `TRUE` (default), requires interactive confirmation
+#'   before proceeding. Set to `FALSE` for non-interactive use.
 #'
-#' @return Summary of updated files.
+#' @return Invisibly, a list with `repo_files` (character vector of uploaded
+#'   repo-level keys) and `tables` (list of per-table sync results).
 #' @export
-tbit_sync_routing <- function(conn) {
+tbit_sync_routing <- function(conn, .confirm = TRUE) {
 
   if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("conn must be a tbit_conn object from tbit_get_conn()")
+    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
   }
 
-  # TODO: Implement
-  stop("Not yet implemented")
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "Sync routing requires {.val developer} role.",
+      "i" = "Current role: {.val {conn$role}}."
+    ))
+  }
+
+  if (is.null(conn$path)) {
+    cli::cli_abort(c(
+      "Sync routing requires a local git repo path.",
+      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+    ))
+  }
+
+  # Discover tables from git repo (directories with metadata.json)
+  repo_path <- conn$path
+  table_dirs <- fs::dir_ls(repo_path, type = "directory")
+  table_dirs <- table_dirs[!grepl("^\\.", fs::path_file(table_dirs))]
+  table_dirs <- table_dirs[!fs::path_file(table_dirs) %in%
+    c("input_files", "renv", "man", "R", "tests", "vignettes", "src")]
+
+  table_names <- fs::path_file(table_dirs)
+  table_names <- table_names[purrr::map_lgl(table_dirs, function(d) {
+    fs::file_exists(fs::path(d, "metadata.json"))
+  })]
+
+  s3_location <- paste0("s3://", conn$bucket, "/", conn$prefix %||% "", "tbit/")
+
+  # Interactive confirmation
+
+  if (isTRUE(.confirm)) {
+    if (!interactive()) {
+      cli::cli_abort(c(
+        "Interactive confirmation required.",
+        "i" = "Use {.code .confirm = FALSE} for non-interactive use."
+      ))
+    }
+
+    cli::cli_alert_warning(
+      "This will update routing metadata for {length(table_names)} table{?s}."
+    )
+    cli::cli_alert_info("Current location: {.url {s3_location}}")
+
+    answer <- readline("Proceed? [y/N] ")
+    if (!tolower(answer) %in% c("y", "yes")) {
+      cli::cli_alert_info("Sync cancelled.")
+      return(invisible(list(repo_files = character(), tables = list())))
+    }
+  }
+
+  # --- Sync repo-level files ---
+  repo_files_synced <- character()
+
+  repo_level_files <- list(
+    routing.json = fs::path(repo_path, ".tbit", "routing.json"),
+    manifest.json = fs::path(repo_path, ".tbit", "manifest.json"),
+    migration_history.json = fs::path(repo_path, ".tbit", "migration_history.json")
+  )
+
+  for (fname in names(repo_level_files)) {
+    local_path <- repo_level_files[[fname]]
+    if (fs::file_exists(local_path)) {
+      data <- jsonlite::read_json(local_path)
+      s3_key <- paste0(".metadata/", fname)
+      .tbit_s3_write_json(conn, s3_key, data)
+      repo_files_synced <- c(repo_files_synced, s3_key)
+    }
+  }
+
+  cli::cli_alert_success(
+    "Synced {length(repo_files_synced)} repo-level file{?s} to S3."
+  )
+
+  # --- Sync per-table metadata ---
+  table_results <- purrr::map(table_names, function(tbl) {
+    tryCatch({
+      .tbit_sync_table_metadata(conn, tbl)
+    }, error = function(e) {
+      cli::cli_alert_danger("Failed to sync {.val {tbl}}: {conditionMessage(e)}")
+      list(name = tbl, action = "error", error = conditionMessage(e))
+    })
+  })
+  names(table_results) <- table_names
+
+  n_ok <- sum(purrr::map_chr(table_results, ~ .x$action %||% "error") != "error")
+  n_err <- length(table_results) - n_ok
+
+  cli::cli_alert_info(
+    "Sync routing complete: {n_ok} table{?s} synced, {n_err} error{?s}."
+  )
+
+  invisible(list(
+    repo_files = repo_files_synced,
+    tables = table_results
+  ))
+}
+
+
+#' Sync a single table's metadata files to S3
+#' @noRd
+.tbit_sync_table_metadata <- function(conn, name) {
+  repo_path <- conn$path
+  table_dir <- fs::path(repo_path, name)
+
+  s3_keys <- character()
+
+  # metadata.json
+  metadata_path <- fs::path(table_dir, "metadata.json")
+  if (fs::file_exists(metadata_path)) {
+    data <- jsonlite::read_json(metadata_path)
+    s3_key <- paste0(name, "/.metadata/metadata.json")
+    .tbit_s3_write_json(conn, s3_key, data)
+    s3_keys <- c(s3_keys, s3_key)
+  }
+
+  # version_history.json
+  history_path <- fs::path(table_dir, "version_history.json")
+  if (fs::file_exists(history_path)) {
+    data <- jsonlite::read_json(history_path)
+    s3_key <- paste0(name, "/.metadata/version_history.json")
+    .tbit_s3_write_json(conn, s3_key, data)
+    s3_keys <- c(s3_keys, s3_key)
+  }
+
+  # Versioned metadata snapshots ({metadata_sha}.json)
+  meta_dir <- fs::path(table_dir, ".metadata")
+  if (fs::dir_exists(meta_dir)) {
+    snapshot_files <- fs::dir_ls(meta_dir, glob = "*.json")
+    for (snap in snapshot_files) {
+      snap_name <- fs::path_file(snap)
+      data <- jsonlite::read_json(snap)
+      s3_key <- paste0(name, "/.metadata/", snap_name)
+      .tbit_s3_write_json(conn, s3_key, data)
+      s3_keys <- c(s3_keys, s3_key)
+    }
+  }
+
+  list(name = name, action = "synced", s3_keys = s3_keys)
 }
 
 
