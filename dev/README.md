@@ -45,7 +45,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| _None_ | — | — |
+| Phase 6: Sync & Validation | 🟡 Active | [phase_6_sync_validation.md](phase_6_sync_validation.md) |
 
 ### Completed Phases
 
