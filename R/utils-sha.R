@@ -87,6 +87,93 @@
 #' @return Summary of sync operation.
 #' @keywords internal
 .tbit_sync_metadata <- function(conn, name) {
-  # TODO: Implement
-  stop("Not yet implemented")
+  .tbit_validate_name(name)
+
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "Metadata sync requires {.val developer} role.",
+      "i" = "Current role: {.val {conn$role}}."
+    ))
+  }
+
+  if (is.null(conn$path)) {
+    cli::cli_abort(c(
+      "Metadata sync requires a local git repo path.",
+      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+    ))
+  }
+
+  repo_path <- conn$path
+  table_dir <- fs::path(repo_path, name)
+
+  metadata_path <- fs::path(table_dir, "metadata.json")
+  if (!fs::file_exists(metadata_path)) {
+    cli::cli_abort(c(
+      "No metadata found for table {.val {name}}.",
+      "i" = "Expected {.path {metadata_path}} to exist."
+    ))
+  }
+
+  # Read metadata from git repo
+
+  metadata <- jsonlite::read_json(metadata_path, simplifyVector = TRUE)
+  metadata_sha <- .tbit_compute_metadata_sha(metadata)
+
+  # Check for changes against S3
+  change_type <- .tbit_has_changes(conn, name, metadata$data_sha, metadata_sha)
+
+  if (change_type == "none") {
+    cli::cli_alert_info("No metadata changes for {.val {name}}. Skipping sync.")
+    return(invisible(list(
+      name = name,
+      metadata_sha = metadata_sha,
+      action = "none"
+    )))
+  }
+
+  # Sync metadata files to S3
+  s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
+  .tbit_s3_write_json(conn, s3_metadata_key, metadata)
+
+  s3_keys <- s3_metadata_key
+
+  # Sync version_history.json if it exists locally
+  history_path <- fs::path(table_dir, "version_history.json")
+  if (fs::file_exists(history_path)) {
+    history <- jsonlite::read_json(history_path)
+    s3_history_key <- paste0(name, "/.metadata/version_history.json")
+    .tbit_s3_write_json(conn, s3_history_key, history)
+    s3_keys <- c(s3_keys, s3_history_key)
+  }
+
+  # Git commit + push (stage any local changes)
+  git_files <- character()
+  if (fs::file_exists(metadata_path)) {
+    git_files <- c(git_files, fs::path_rel(metadata_path, repo_path))
+  }
+  if (fs::file_exists(history_path)) {
+    git_files <- c(git_files, fs::path_rel(history_path, repo_path))
+  }
+
+  commit_sha <- tryCatch(
+    {
+      sha <- .tbit_git_commit(repo_path, git_files, paste0("Sync metadata for ", name))
+      .tbit_git_push(repo_path)
+      sha
+    },
+    error = function(e) {
+      cli::cli_alert_warning("Git commit/push skipped: {conditionMessage(e)}")
+      NA_character_
+    }
+  )
+
+  cli::cli_alert_success("Synced metadata for {.val {name}} to S3.")
+
+  invisible(list(
+    name = name,
+    metadata_sha = metadata_sha,
+    action = change_type,
+    s3_keys = s3_keys,
+    commit_sha = commit_sha
+  ))
 }

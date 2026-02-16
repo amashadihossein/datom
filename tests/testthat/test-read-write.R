@@ -875,3 +875,190 @@ test_that("data_sha is deterministic for same data", {
 
   expect_equal(shas[1], shas[2])
 })
+
+
+# --- .tbit_sync_metadata() ---------------------------------------------------
+
+test_that("validates table name", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- "/tmp"
+  expect_error(.tbit_sync_metadata(conn, ""), "must not be empty")
+})
+
+test_that("rejects reader role", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "reader"
+  conn$path <- "/tmp"
+  expect_error(.tbit_sync_metadata(conn, "tbl"), "developer")
+})
+
+test_that("rejects conn without path", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- NULL
+  expect_error(.tbit_sync_metadata(conn, "tbl"), "local git repo")
+})
+
+test_that("errors when metadata.json missing from local repo", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    expect_error(.tbit_sync_metadata(conn, "ghost"), "No metadata found")
+  })
+})
+
+test_that("skips sync when no changes detected", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    # Create local metadata
+    fs::dir_create("tbl")
+    meta <- list(data_sha = "sha1", nrow = 5L, ncol = 2L)
+    jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "none"
+    )
+
+    result <- .tbit_sync_metadata(conn, "tbl")
+
+    expect_equal(result$action, "none")
+    expect_equal(result$name, "tbl")
+  })
+})
+
+test_that("syncs metadata.json to S3 on change", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("tbl")
+    meta <- list(data_sha = "sha1", nrow = 5L, ncol = 2L)
+    jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
+
+    s3_keys <- character()
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "metadata_only",
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys <<- c(s3_keys, s3_key)
+        invisible(TRUE)
+      },
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    result <- .tbit_sync_metadata(conn, "tbl")
+
+    expect_equal(result$action, "metadata_only")
+    expect_true(any(grepl("metadata.json$", s3_keys)))
+  })
+})
+
+test_that("syncs version_history.json to S3 when present", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("tbl")
+    meta <- list(data_sha = "sha1", nrow = 5L, ncol = 2L)
+    jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
+    history <- list(list(version = "v1", data_sha = "sha1"))
+    jsonlite::write_json(history, "tbl/version_history.json", auto_unbox = TRUE)
+
+    s3_keys <- character()
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_keys <<- c(s3_keys, s3_key)
+        invisible(TRUE)
+      },
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    result <- .tbit_sync_metadata(conn, "tbl")
+
+    expect_equal(result$action, "full")
+    expect_length(s3_keys, 2)
+    expect_true(any(grepl("metadata.json$", s3_keys)))
+    expect_true(any(grepl("version_history.json$", s3_keys)))
+  })
+})
+
+test_that("commits and pushes after sync", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("tbl")
+    meta <- list(data_sha = "sha1", nrow = 5L, ncol = 2L)
+    jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
+
+    pushed <- FALSE
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "metadata_only",
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .tbit_git_push = function(path) {
+        pushed <<- TRUE
+        invisible(TRUE)
+      }
+    )
+
+    result <- .tbit_sync_metadata(conn, "tbl")
+
+    # Git commit was made
+    log <- git2r::commits(repo)
+    expect_match(log[[1]]$message, "Sync metadata for tbl")
+
+    # Push was called
+    expect_true(pushed)
+    expect_true(nzchar(result$commit_sha))
+  })
+})
+
+test_that("gracefully handles git commit/push failures", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("tbl")
+    meta <- list(data_sha = "sha1", nrow = 5L, ncol = 2L)
+    jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "metadata_only",
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .tbit_git_commit = function(path, files, message) stop("Not a git repo"),
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    # Should not error — commit failure is handled gracefully
+    expect_no_error(result <- .tbit_sync_metadata(conn, "tbl"))
+    expect_true(is.na(result$commit_sha))
+  })
+})
