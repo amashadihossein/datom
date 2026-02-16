@@ -69,19 +69,231 @@ tbit_repository_check <- function(path) {
 
 #' Validate Git-Storage Consistency
 #'
-#' Checks that git metadata matches S3 storage.
+#' Checks that git metadata matches S3 storage for all tables and repo-level
+#' files. Reports mismatches as a structured result.
 #'
 #' @param conn A `tbit_conn` object from [tbit_get_conn()].
-#' @param fix If TRUE, attempts to fix inconsistencies.
+#' @param fix If `TRUE`, attempts to fix inconsistencies by syncing metadata
+#'   to S3 via [tbit_sync_routing()].
 #'
-#' @return Validation results.
+#' @return A list with:
+#'   \describe{
+#'     \item{valid}{Logical — `TRUE` if everything is consistent.}
+#'     \item{repo_files}{Data frame of repo-level file checks.}
+#'     \item{tables}{Data frame of per-table checks.}
+#'     \item{fixed}{Logical — `TRUE` if `fix = TRUE` was applied.}
+#'   }
 #' @export
 tbit_validate <- function(conn, fix = FALSE) {
 
   if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("conn must be a tbit_conn object from tbit_get_conn()")
+    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
   }
 
-  # TODO: Implement
-  stop("Not yet implemented")
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "Validation requires {.val developer} role.",
+      "i" = "Current role: {.val {conn$role}}."
+    ))
+  }
+
+  if (is.null(conn$path)) {
+    cli::cli_abort(c(
+      "Validation requires a local git repo path.",
+      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+    ))
+  }
+
+  # --- Repo-level file checks ---
+  repo_file_checks <- .tbit_validate_repo_files(conn)
+
+  # --- Per-table checks ---
+  table_checks <- .tbit_validate_tables(conn)
+
+  all_repo_ok <- nrow(repo_file_checks) == 0L ||
+    all(repo_file_checks$status == "ok")
+  all_tables_ok <- nrow(table_checks) == 0L ||
+    all(table_checks$status == "ok")
+  is_valid <- all_repo_ok && all_tables_ok
+
+  if (is_valid) {
+    cli::cli_alert_success("All checks passed. Git and S3 are consistent.")
+  } else {
+    n_repo_issues <- sum(repo_file_checks$status != "ok")
+    n_table_issues <- sum(table_checks$status != "ok")
+    cli::cli_alert_warning(
+      "Found {n_repo_issues + n_table_issues} issue{?s}: {n_repo_issues} repo-level, {n_table_issues} table-level."
+    )
+  }
+
+  fixed <- FALSE
+
+  if (!is_valid && isTRUE(fix)) {
+    cli::cli_alert_info("Attempting to fix by syncing metadata to S3...")
+    tryCatch({
+      tbit_sync_routing(conn, .confirm = FALSE)
+      fixed <- TRUE
+      cli::cli_alert_success("Fix applied. Re-run {.fn tbit_validate} to verify.")
+    }, error = function(e) {
+      cli::cli_alert_danger("Fix failed: {conditionMessage(e)}")
+    })
+  }
+
+  invisible(list(
+    valid = is_valid,
+    repo_files = repo_file_checks,
+    tables = table_checks,
+    fixed = fixed
+  ))
+}
+
+
+#' Validate repo-level files exist on S3
+#' @noRd
+.tbit_validate_repo_files <- function(conn) {
+  repo_path <- conn$path
+
+  files_to_check <- list(
+    list(
+      local = fs::path(repo_path, ".tbit", "routing.json"),
+      s3_key = ".metadata/routing.json",
+      name = "routing.json"
+    ),
+    list(
+      local = fs::path(repo_path, ".tbit", "manifest.json"),
+      s3_key = ".metadata/manifest.json",
+      name = "manifest.json"
+    ),
+    list(
+      local = fs::path(repo_path, ".tbit", "migration_history.json"),
+      s3_key = ".metadata/migration_history.json",
+      name = "migration_history.json"
+    )
+  )
+
+  rows <- purrr::map(files_to_check, function(fc) {
+    local_exists <- fs::file_exists(fc$local)
+
+    if (!local_exists) {
+      # File not in git — skip
+      return(NULL)
+    }
+
+    s3_exists <- .tbit_s3_exists(conn, fc$s3_key)
+
+    status <- if (s3_exists) "ok" else "missing_s3"
+
+    data.frame(
+      file = fc$name,
+      local = TRUE,
+      s3 = s3_exists,
+      status = status,
+      stringsAsFactors = FALSE
+    )
+  })
+
+  rows <- purrr::compact(rows)
+
+  if (length(rows) == 0L) {
+    return(data.frame(
+      file = character(), local = logical(),
+      s3 = logical(), status = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  result <- do.call(rbind, rows)
+  rownames(result) <- NULL
+  result
+}
+
+
+#' Validate per-table metadata consistency
+#' @noRd
+.tbit_validate_tables <- function(conn) {
+  repo_path <- conn$path
+
+  # Discover tables (directories with metadata.json)
+  all_dirs <- fs::dir_ls(repo_path, type = "directory")
+  all_dirs <- all_dirs[!grepl("^\\.", fs::path_file(all_dirs))]
+  all_dirs <- all_dirs[!fs::path_file(all_dirs) %in%
+    c("input_files", "renv", "man", "R", "tests", "vignettes", "src")]
+
+  table_dirs <- all_dirs[purrr::map_lgl(all_dirs, function(d) {
+    fs::file_exists(fs::path(d, "metadata.json"))
+  })]
+
+  table_names <- fs::path_file(table_dirs)
+
+  if (length(table_names) == 0L) {
+    return(data.frame(
+      table = character(),
+      metadata_local = logical(),
+      metadata_s3 = logical(),
+      history_local = logical(),
+      history_s3 = logical(),
+      data_s3 = logical(),
+      status = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  rows <- purrr::map(table_names, function(tbl) {
+    .tbit_validate_one_table(conn, tbl)
+  })
+
+  result <- do.call(rbind, rows)
+  rownames(result) <- NULL
+  result
+}
+
+
+#' Validate a single table's git-S3 consistency
+#' @noRd
+.tbit_validate_one_table <- function(conn, name) {
+  repo_path <- conn$path
+
+  # Local checks
+  metadata_local <- fs::file_exists(fs::path(repo_path, name, "metadata.json"))
+  history_local <- fs::file_exists(fs::path(repo_path, name, "version_history.json"))
+
+  # S3 checks
+  metadata_s3 <- .tbit_s3_exists(conn, paste0(name, "/.metadata/metadata.json"))
+  history_s3 <- .tbit_s3_exists(conn, paste0(name, "/.metadata/version_history.json"))
+
+  # Check that data parquet exists (read data_sha from local metadata)
+  data_s3 <- FALSE
+  if (metadata_local) {
+    tryCatch({
+      meta <- jsonlite::read_json(
+        fs::path(repo_path, name, "metadata.json"),
+        simplifyVector = TRUE
+      )
+      if (!is.null(meta$data_sha) && nzchar(meta$data_sha)) {
+        data_key <- paste0(name, "/", meta$data_sha, ".parquet")
+        data_s3 <- .tbit_s3_exists(conn, data_key)
+      }
+    }, error = function(e) {
+      # Leave data_s3 as FALSE
+    })
+  }
+
+  # Determine status
+  issues <- character()
+  if (metadata_local && !metadata_s3) issues <- c(issues, "metadata_missing_s3")
+  if (history_local && !history_s3) issues <- c(issues, "history_missing_s3")
+  if (!data_s3) issues <- c(issues, "data_missing_s3")
+
+  status <- if (length(issues) == 0L) "ok" else paste(issues, collapse = ",")
+
+  data.frame(
+    table = name,
+    metadata_local = metadata_local,
+    metadata_s3 = metadata_s3,
+    history_local = history_local,
+    history_s3 = history_s3,
+    data_s3 = data_s3,
+    status = status,
+    stringsAsFactors = FALSE
+  )
 }

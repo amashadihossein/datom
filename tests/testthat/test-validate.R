@@ -230,3 +230,316 @@ test_that("verbose = FALSE produces no cli output", {
     expect_length(output, 0)
   })
 })
+
+
+# --- tbit_validate() ----------------------------------------------------------
+
+test_that("tbit_validate rejects non-tbit_conn", {
+  expect_error(tbit_validate("not_conn"), "tbit_conn")
+})
+
+test_that("tbit_validate rejects reader role", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "reader"
+  conn$path <- "/tmp"
+  expect_error(tbit_validate(conn), "developer")
+})
+
+test_that("tbit_validate rejects conn without path", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- NULL
+  expect_error(tbit_validate(conn), "local git repo")
+})
+
+test_that("tbit_validate returns valid when everything consistent", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    # Repo-level files
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".tbit/manifest.json", auto_unbox = TRUE)
+
+    # Table with metadata
+    fs::dir_create("customers")
+    jsonlite::write_json(
+      list(data_sha = "abc123"),
+      "customers/metadata.json", auto_unbox = TRUE
+    )
+    jsonlite::write_json(list(), "customers/version_history.json",
+                         auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) TRUE
+    )
+
+    result <- tbit_validate(conn)
+
+    expect_true(result$valid)
+    expect_true(all(result$repo_files$status == "ok"))
+    expect_true(all(result$tables$status == "ok"))
+    expect_false(result$fixed)
+  })
+})
+
+test_that("tbit_validate detects repo-level files missing from S3", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".tbit/manifest.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) FALSE
+    )
+
+    result <- tbit_validate(conn)
+
+    expect_false(result$valid)
+    expect_true(all(result$repo_files$status == "missing_s3"))
+  })
+})
+
+test_that("tbit_validate detects table metadata missing from S3", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    fs::dir_create("orders")
+    jsonlite::write_json(
+      list(data_sha = "d123"),
+      "orders/metadata.json", auto_unbox = TRUE
+    )
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) {
+        # Repo-level files exist, but table metadata does not
+        grepl("^\\.metadata/", s3_key)
+      }
+    )
+
+    result <- tbit_validate(conn)
+
+    expect_false(result$valid)
+    expect_match(result$tables$status[1], "metadata_missing_s3")
+  })
+})
+
+test_that("tbit_validate detects data parquet missing from S3", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+
+    fs::dir_create("tbl")
+    jsonlite::write_json(
+      list(data_sha = "abc"),
+      "tbl/metadata.json", auto_unbox = TRUE
+    )
+    jsonlite::write_json(list(), "tbl/version_history.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) {
+        # metadata files exist, but parquet does not
+        !grepl("\\.parquet$", s3_key)
+      }
+    )
+
+    result <- tbit_validate(conn)
+
+    expect_false(result$valid)
+    expect_match(result$tables$status[1], "data_missing_s3")
+  })
+})
+
+test_that("tbit_validate ignores non-table directories", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    fs::dir_create("input_files")
+    fs::dir_create("renv")
+    fs::dir_create("R")
+    fs::dir_create(".git")
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) TRUE
+    )
+
+    result <- tbit_validate(conn)
+
+    expect_true(result$valid)
+    expect_equal(nrow(result$tables), 0)
+  })
+})
+
+test_that("tbit_validate returns correct structure", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) TRUE
+    )
+
+    result <- tbit_validate(conn)
+
+    expect_type(result, "list")
+    expect_true("valid" %in% names(result))
+    expect_true("repo_files" %in% names(result))
+    expect_true("tables" %in% names(result))
+    expect_true("fixed" %in% names(result))
+    expect_s3_class(result$repo_files, "data.frame")
+    expect_s3_class(result$tables, "data.frame")
+  })
+})
+
+test_that("tbit_validate with fix = TRUE calls tbit_sync_routing on failure", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    sync_called <- FALSE
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) FALSE,
+      tbit_sync_routing = function(conn, .confirm = TRUE) {
+        sync_called <<- TRUE
+        invisible(list(repo_files = character(), tables = list()))
+      }
+    )
+
+    result <- tbit_validate(conn, fix = TRUE)
+
+    expect_true(sync_called)
+    expect_true(result$fixed)
+  })
+})
+
+test_that("tbit_validate with fix = TRUE does not call sync when valid", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+
+    sync_called <- FALSE
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) TRUE,
+      tbit_sync_routing = function(conn, .confirm = TRUE) {
+        sync_called <<- TRUE
+        invisible(list(repo_files = character(), tables = list()))
+      }
+    )
+
+    result <- tbit_validate(conn, fix = FALSE)
+
+    expect_false(sync_called)
+    expect_false(result$fixed)
+  })
+})
+
+test_that("tbit_validate handles multiple tables with mixed status", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+
+    # Good table — everything on S3
+    fs::dir_create("good_tbl")
+    jsonlite::write_json(
+      list(data_sha = "d1"),
+      "good_tbl/metadata.json", auto_unbox = TRUE
+    )
+    jsonlite::write_json(list(), "good_tbl/version_history.json",
+                         auto_unbox = TRUE)
+
+    # Bad table — nothing on S3
+    fs::dir_create("bad_tbl")
+    jsonlite::write_json(
+      list(data_sha = "d2"),
+      "bad_tbl/metadata.json", auto_unbox = TRUE
+    )
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) {
+        grepl("good_tbl", s3_key)
+      }
+    )
+
+    result <- tbit_validate(conn)
+
+    expect_false(result$valid)
+    expect_equal(result$tables$status[result$tables$table == "good_tbl"], "ok")
+    expect_match(result$tables$status[result$tables$table == "bad_tbl"], "missing_s3")
+  })
+})
+
+test_that("tbit_validate handles fix failure gracefully", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) FALSE,
+      tbit_sync_routing = function(conn, .confirm = TRUE) {
+        stop("Sync failed")
+      }
+    )
+
+    result <- tbit_validate(conn, fix = TRUE)
+
+    expect_false(result$fixed)
+    expect_false(result$valid)
+  })
+})
+
+test_that("tbit_validate skips repo files not present locally", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    # .tbit dir exists but no files inside
+    fs::dir_create(".tbit")
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) TRUE
+    )
+
+    result <- tbit_validate(conn)
+
+    # No local repo files → empty repo_files df
+    expect_equal(nrow(result$repo_files), 0)
+    expect_true(result$valid)
+  })
+})
