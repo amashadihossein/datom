@@ -45,7 +45,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| _None_ | — | — |
+| Phase 5: Read/Write Workflows | 🟢 In Progress | [phase_5_read_write_workflows.md](phase_5_read_write_workflows.md) |
 
 ### Completed Phases
 
