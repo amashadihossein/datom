@@ -668,3 +668,210 @@ test_that("returns metadata_sha and paths", {
     expect_length(result$s3_keys, 3)
   })
 })
+
+
+# --- tbit_write() -------------------------------------------------------------
+
+test_that("rejects non-tbit_conn", {
+  expect_error(tbit_write(list(), data = data.frame(x = 1), name = "t"), "tbit_conn")
+})
+
+test_that("rejects non-data-frame data", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- "/tmp"
+  expect_error(tbit_write(conn, data = "nope", name = "t"), "data frame")
+})
+
+test_that("validates table name", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- "/tmp"
+  expect_error(tbit_write(conn, data = data.frame(x = 1), name = ""), "must not be empty")
+})
+
+test_that("rejects reader role", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "reader"
+  conn$path <- "/tmp"
+  expect_error(
+    tbit_write(conn, data = data.frame(x = 1), name = "t"),
+    "developer"
+  )
+})
+
+test_that("rejects conn without path", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- NULL
+  expect_error(
+    tbit_write(conn, data = data.frame(x = 1), name = "t"),
+    "local git repo"
+  )
+})
+
+test_that("NULL data + NULL name delegates to tbit_sync_routing", {
+  conn <- mock_tbit_conn(list())
+  local_mocked_bindings(
+    tbit_sync_routing = function(conn) "sync_routing_called"
+  )
+  result <- tbit_write(conn, data = NULL, name = NULL)
+  expect_equal(result, "sync_routing_called")
+})
+
+test_that("NULL data + name delegates to .tbit_sync_metadata", {
+  conn <- mock_tbit_conn(list())
+  local_mocked_bindings(
+    .tbit_sync_metadata = function(conn, name) paste0("sync_meta_", name)
+  )
+  result <- tbit_write(conn, data = NULL, name = "tbl")
+  expect_equal(result, "sync_meta_tbl")
+})
+
+test_that("skips write when no changes detected", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- "/tmp/fakerepo"
+
+  local_mocked_bindings(
+    .tbit_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "none"
+  )
+
+  df <- data.frame(x = 1:3)
+  result <- tbit_write(conn, data = df, name = "unchanged_tbl")
+
+  expect_equal(result$action, "none")
+  expect_equal(result$name, "unchanged_tbl")
+})
+
+test_that("performs full write: parquet + metadata + git", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    # Need an initial commit for push to work
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    uploaded_keys <- character()
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "full",
+      .tbit_s3_upload = function(conn, local_path, s3_key) {
+        uploaded_keys <<- c(uploaded_keys, s3_key)
+        invisible(TRUE)
+      },
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    df <- data.frame(id = 1:5, val = letters[1:5])
+    result <- tbit_write(conn, data = df, name = "sales", message = "Add sales")
+
+    # Returns correct structure
+    expect_equal(result$name, "sales")
+    expect_equal(result$action, "full")
+    expect_true(nzchar(result$data_sha))
+    expect_true(nzchar(result$metadata_sha))
+    expect_true(nzchar(result$commit_sha))
+
+    # Parquet uploaded to S3
+    expect_length(uploaded_keys, 1)
+    expect_match(uploaded_keys, "\\.parquet$")
+    expect_match(uploaded_keys, "^sales/")
+
+    # Metadata files written to git
+    expect_true(fs::file_exists("sales/metadata.json"))
+    expect_true(fs::file_exists("sales/version_history.json"))
+
+    # Git commit was made
+    log <- git2r::commits(repo)
+    expect_equal(log[[1]]$message, "Add sales")
+  })
+})
+
+test_that("metadata-only write skips parquet upload", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    uploaded_keys <- character()
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "metadata_only",
+      .tbit_s3_upload = function(conn, local_path, s3_key) {
+        uploaded_keys <<- c(uploaded_keys, s3_key)
+        invisible(TRUE)
+      },
+      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    df <- data.frame(x = 1)
+    result <- tbit_write(conn, data = df, name = "tbl")
+
+    expect_equal(result$action, "metadata_only")
+    # No parquet upload
+    expect_length(uploaded_keys, 0)
+
+    # But metadata was written + committed
+    expect_true(fs::file_exists("tbl/metadata.json"))
+    log <- git2r::commits(repo)
+    expect_equal(log[[1]]$message, "Update tbl")
+  })
+})
+
+test_that("uses default commit message when none provided", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    tbit_write(conn, data = data.frame(x = 1), name = "my_table")
+
+    log <- git2r::commits(repo)
+    expect_equal(log[[1]]$message, "Update my_table")
+  })
+})
+
+test_that("data_sha is deterministic for same data", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- "/tmp/fakerepo"
+
+  shas <- character()
+  local_mocked_bindings(
+    .tbit_has_changes = function(conn, name, new_data_sha, new_metadata_sha) {
+      shas <<- c(shas, new_data_sha)
+      "none"
+    }
+  )
+
+  df <- data.frame(x = 1:10, y = letters[1:10])
+  tbit_write(conn, data = df, name = "t1")
+  tbit_write(conn, data = df, name = "t2")
+
+  expect_equal(shas[1], shas[2])
+})

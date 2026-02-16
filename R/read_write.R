@@ -323,9 +323,74 @@ tbit_write <- function(conn,
   }
 
   if (!is.data.frame(data)) {
-    cli::cli_abort("data must be a data frame")
+    cli::cli_abort("{.arg data} must be a data frame.")
   }
 
-  # TODO: Implement normal write
-  stop("Not yet implemented")
+  .tbit_validate_name(name)
+
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "Write operations require {.val developer} role.",
+      "i" = "Current role: {.val {conn$role}}."
+    ))
+  }
+
+  if (is.null(conn$path)) {
+    cli::cli_abort(c(
+      "Write operations require a local git repo path.",
+      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+    ))
+  }
+
+  # 1. Compute SHAs
+  data_sha <- .tbit_compute_data_sha(data)
+  meta <- .tbit_build_metadata(data, data_sha, custom = metadata)
+  metadata_sha <- .tbit_compute_metadata_sha(meta)
+
+  # 2. Change detection
+  change_type <- .tbit_has_changes(conn, name, data_sha, metadata_sha)
+
+  if (change_type == "none") {
+    cli::cli_alert_info("No changes detected for {.val {name}}. Skipping write.")
+    return(invisible(list(
+      name = name,
+      data_sha = data_sha,
+      metadata_sha = metadata_sha,
+      action = "none"
+    )))
+  }
+
+  # 3. Write parquet to S3 (only for full changes)
+  if (change_type == "full") {
+    tmp <- tempfile(fileext = ".parquet")
+    on.exit(unlink(tmp), add = TRUE)
+    arrow::write_parquet(data, tmp)
+
+    parquet_key <- paste0(name, "/", data_sha, ".parquet")
+    .tbit_s3_upload(conn, tmp, parquet_key)
+  }
+
+  # 4. Write metadata to git + S3
+  write_result <- .tbit_write_metadata(
+    conn, name, meta, metadata_sha,
+    message = message
+  )
+
+  # 5. Git commit + push
+  git_files <- fs::path_rel(write_result$git_paths, conn$path)
+  commit_msg <- message %||% paste0("Update ", name)
+  commit_sha <- .tbit_git_commit(conn$path, git_files, commit_msg)
+  .tbit_git_push(conn$path)
+
+  cli::cli_alert_success(
+    "Wrote {.val {name}} ({change_type}): {.val {substr(metadata_sha, 1, 8)}}"
+  )
+
+  invisible(list(
+    name = name,
+    data_sha = data_sha,
+    metadata_sha = metadata_sha,
+    action = change_type,
+    commit_sha = commit_sha
+  ))
 }
