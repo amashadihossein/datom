@@ -1,8 +1,8 @@
 # Internal S3 operations
 #
-# Phase 2: Low-level S3 wrappers around paws.storage.
-# These accept a lightweight list(bucket, s3_client) for now.
-# Phase 4 introduces the full tbit_conn S3 class and refactors the call sites.
+# Low-level S3 wrappers around paws.storage.
+# Functions accept a `tbit_conn` object and an `s3_key` relative to
+# `prefix/tbit/`. The full key is built internally via `.tbit_build_s3_key()`.
 
 
 #' Create an S3 Client from Credential Environment Variables
@@ -55,26 +55,26 @@
 #'
 #' Reads a local file as raw bytes and uploads via `put_object()`.
 #'
-#' @param s3_client A `paws.storage` S3 client.
-#' @param bucket S3 bucket name.
+#' @param conn A `tbit_conn` object.
 #' @param local_path Local file path to upload.
-#' @param s3_key S3 object key (destination).
+#' @param s3_key Relative S3 key (after `prefix/tbit/`).
 #' @return Invisible `TRUE` on success.
 #' @keywords internal
-.tbit_s3_upload <- function(s3_client, bucket, local_path, s3_key) {
+.tbit_s3_upload <- function(conn, local_path, s3_key) {
   if (!fs::file_exists(local_path)) {
     cli::cli_abort(
       "File not found: {.path {local_path}}"
     )
   }
 
+  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
   body <- readBin(local_path, what = "raw", n = fs::file_size(local_path))
 
   tryCatch(
     {
-      s3_client$put_object(
-        Bucket = bucket,
-        Key = s3_key,
+      conn$s3_client$put_object(
+        Bucket = conn$bucket,
+        Key = full_key,
         Body = body
       )
       invisible(TRUE)
@@ -83,8 +83,8 @@
       cli::cli_abort(
         c(
           "Failed to upload file to S3.",
-          "x" = "Bucket: {.val {bucket}}",
-          "x" = "Key: {.val {s3_key}}",
+          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Key: {.val {full_key}}",
           "x" = "Local path: {.path {local_path}}",
           "i" = "Underlying error: {conditionMessage(e)}"
         ),
@@ -100,20 +100,20 @@
 #' Downloads an S3 object and writes it to a local path. Creates parent
 #' directories if needed.
 #'
-#' @param s3_client A `paws.storage` S3 client.
-#' @param bucket S3 bucket name.
-#' @param s3_key S3 object key (source).
+#' @param conn A `tbit_conn` object.
+#' @param s3_key Relative S3 key (after `prefix/tbit/`).
 #' @param local_path Local file path (destination).
 #' @return Invisible `TRUE` on success.
 #' @keywords internal
-.tbit_s3_download <- function(s3_client, bucket, s3_key, local_path) {
+.tbit_s3_download <- function(conn, s3_key, local_path) {
+  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
   fs::dir_create(fs::path_dir(local_path))
 
   tryCatch(
     {
-      resp <- s3_client$get_object(
-        Bucket = bucket,
-        Key = s3_key
+      resp <- conn$s3_client$get_object(
+        Bucket = conn$bucket,
+        Key = full_key
       )
       writeBin(resp$Body, local_path)
       invisible(TRUE)
@@ -122,8 +122,8 @@
       cli::cli_abort(
         c(
           "Failed to download file from S3.",
-          "x" = "Bucket: {.val {bucket}}",
-          "x" = "Key: {.val {s3_key}}",
+          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Key: {.val {full_key}}",
           "x" = "Local path: {.path {local_path}}",
           "i" = "Underlying error: {conditionMessage(e)}"
         ),
@@ -139,17 +139,18 @@
 #' Uses a HEAD request for efficiency. Returns `TRUE` if the object exists,
 #' `FALSE` on 404/NoSuchKey. Any other error (403, network) is re-thrown.
 #'
-#' @param s3_client A `paws.storage` S3 client.
-#' @param bucket S3 bucket name.
-#' @param s3_key S3 object key.
+#' @param conn A `tbit_conn` object.
+#' @param s3_key Relative S3 key (after `prefix/tbit/`).
 #' @return `TRUE` or `FALSE`.
 #' @keywords internal
-.tbit_s3_exists <- function(s3_client, bucket, s3_key) {
+.tbit_s3_exists <- function(conn, s3_key) {
+  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
+
   tryCatch(
     {
-      s3_client$head_object(
-        Bucket = bucket,
-        Key = s3_key
+      conn$s3_client$head_object(
+        Bucket = conn$bucket,
+        Key = full_key
       )
       TRUE
     },
@@ -161,8 +162,8 @@
       cli::cli_abort(
         c(
           "Failed to check S3 object existence.",
-          "x" = "Bucket: {.val {bucket}}",
-          "x" = "Key: {.val {s3_key}}",
+          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Key: {.val {full_key}}",
           "i" = "Underlying error: {conditionMessage(e)}"
         ),
         parent = e
@@ -178,23 +179,24 @@
 #' Uses `simplifyVector = FALSE` to keep lists as lists (matching
 #' how `.tbit_s3_write_json()` writes them).
 #'
-#' @param s3_client A `paws.storage` S3 client.
-#' @param bucket S3 bucket name.
-#' @param s3_key S3 object key.
+#' @param conn A `tbit_conn` object.
+#' @param s3_key Relative S3 key (after `prefix/tbit/`).
 #' @return Parsed R list.
 #' @keywords internal
-.tbit_s3_read_json <- function(s3_client, bucket, s3_key) {
+.tbit_s3_read_json <- function(conn, s3_key) {
+  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
+
   resp <- tryCatch(
-    s3_client$get_object(
-      Bucket = bucket,
-      Key = s3_key
+    conn$s3_client$get_object(
+      Bucket = conn$bucket,
+      Key = full_key
     ),
     error = function(e) {
       cli::cli_abort(
         c(
           "Failed to read JSON from S3.",
-          "x" = "Bucket: {.val {bucket}}",
-          "x" = "Key: {.val {s3_key}}",
+          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Key: {.val {full_key}}",
           "i" = "Underlying error: {conditionMessage(e)}"
         ),
         parent = e
@@ -210,8 +212,8 @@
       cli::cli_abort(
         c(
           "Failed to parse JSON from S3 object.",
-          "x" = "Bucket: {.val {bucket}}",
-          "x" = "Key: {.val {s3_key}}",
+          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Key: {.val {full_key}}",
           "i" = "Parse error: {conditionMessage(e)}"
         ),
         parent = e
@@ -225,22 +227,22 @@
 #'
 #' Serializes `data` to JSON via `jsonlite::toJSON()` and uploads to S3.
 #'
-#' @param s3_client A `paws.storage` S3 client (from `.tbit_s3_client()`).
-#' @param bucket S3 bucket name.
-#' @param s3_key S3 object key (path within bucket).
+#' @param conn A `tbit_conn` object.
+#' @param s3_key Relative S3 key (after `prefix/tbit/`).
 #' @param data An R list to serialize to JSON.
 #' @return Invisible `TRUE` on success.
 #' @keywords internal
-.tbit_s3_write_json <- function(s3_client, bucket, s3_key, data) {
+.tbit_s3_write_json <- function(conn, s3_key, data) {
+  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
   json_raw <- charToRaw(
     jsonlite::toJSON(data, auto_unbox = TRUE, pretty = TRUE)
   )
 
   tryCatch(
     {
-      s3_client$put_object(
-        Bucket = bucket,
-        Key = s3_key,
+      conn$s3_client$put_object(
+        Bucket = conn$bucket,
+        Key = full_key,
         Body = json_raw,
         ContentType = "application/json"
       )
@@ -250,8 +252,8 @@
       cli::cli_abort(
         c(
           "Failed to write JSON to S3.",
-          "x" = "Bucket: {.val {bucket}}",
-          "x" = "Key: {.val {s3_key}}",
+          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Key: {.val {full_key}}",
           "i" = "Underlying error: {conditionMessage(e)}"
         ),
         parent = e
@@ -267,40 +269,35 @@
 #' Each redirect points to a new `s3://bucket/prefix/tbit/` location and
 #' may include new credentials. Recurses until no redirect is found.
 #'
-#' @param s3_client A `paws.storage` S3 client for the current location.
-#' @param bucket Current S3 bucket.
-#' @param prefix Current S3 prefix (without trailing `/tbit`).
+#' @param conn A `tbit_conn` object for the current location.
 #' @param max_depth Maximum number of redirects to follow (default 5).
 #' @param .depth Internal counter — do not set manually.
-#' @return A list with `bucket`, `prefix`, and `s3_client` for the resolved
-#'   final location.
+#' @return A `tbit_conn` object for the resolved final location.
 #' @keywords internal
-.tbit_s3_resolve_redirect <- function(s3_client, bucket, prefix,
-                                      max_depth = 5L, .depth = 0L) {
+.tbit_s3_resolve_redirect <- function(conn, max_depth = 5L, .depth = 0L) {
   if (.depth >= max_depth) {
     cli::cli_abort(
       c(
         "Redirect chain exceeded maximum depth of {max_depth}.",
         "i" = "This may indicate a circular redirect.",
-        "i" = "Current location: {.val {bucket}}/{.val {prefix}}"
+        "i" = "Current location: {.val {conn$bucket}}/{.val {conn$prefix}}"
       )
     )
   }
 
-  redirect_key <- .tbit_build_s3_key(prefix, ".redirect.json")
-
-  redirect_exists <- .tbit_s3_exists(s3_client, bucket, redirect_key)
+  redirect_exists <- .tbit_s3_exists(conn, ".redirect.json")
   if (!redirect_exists) {
-    return(list(bucket = bucket, prefix = prefix, s3_client = s3_client))
+    return(conn)
   }
 
-  redirect <- .tbit_s3_read_json(s3_client, bucket, redirect_key)
+  redirect <- .tbit_s3_read_json(conn, ".redirect.json")
 
   if (is.null(redirect$redirect_to) || !nzchar(redirect$redirect_to)) {
+    redirect_key <- .tbit_build_s3_key(conn$prefix, ".redirect.json")
     cli::cli_abort(
       c(
         "Invalid redirect: {.field redirect_to} is missing or empty.",
-        "x" = "Bucket: {.val {bucket}}",
+        "x" = "Bucket: {.val {conn$bucket}}",
         "x" = "Key: {.val {redirect_key}}"
       )
     )
@@ -312,25 +309,34 @@
   parsed <- .tbit_parse_s3_uri(redirect_uri)
 
   # Build new client if redirect provides credentials
-  new_client <- s3_client
+  new_client <- conn$s3_client
   if (!is.null(redirect$credentials)) {
     creds <- redirect$credentials
     if (is.null(creds$access_key_env) || is.null(creds$secret_key_env)) {
       cli::cli_abort(
         c(
           "Invalid redirect credentials: missing {.field access_key_env} or {.field secret_key_env}.",
-          "x" = "Redirect from: {.val {bucket}}/{.val {redirect_key}}"
+          "x" = "Redirect from: {.val {conn$bucket}}/{.val {(.tbit_build_s3_key(conn$prefix, '.redirect.json'))}}"
         )
       )
     }
     new_client <- .tbit_s3_client(creds)
   }
 
-  # Recurse into the new location
-  .tbit_s3_resolve_redirect(
-    s3_client = new_client,
+  # Build a new conn for the redirect target
+  new_conn <- new_tbit_conn(
+    project_name = conn$project_name,
     bucket = parsed$bucket,
     prefix = parsed$prefix,
+    region = conn$region,
+    s3_client = new_client,
+    path = conn$path,
+    role = conn$role
+  )
+
+  # Recurse into the new location
+  .tbit_s3_resolve_redirect(
+    conn = new_conn,
     max_depth = max_depth,
     .depth = .depth + 1L
   )

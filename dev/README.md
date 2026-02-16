@@ -45,15 +45,16 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| Phase 5: Read/Write Workflows | 🟢 In Progress | [phase_5_read_write_workflows.md](phase_5_read_write_workflows.md) |
+| Phase 5: Read/Write Workflows | 🟡 Active | [phase_5_read_write_workflows.md](phase_5_read_write_workflows.md) |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
+| Phase 4.5: S3 Refactor | 2026-02-15 | 99 | Refactored S3 utils from (s3_client, bucket, s3_key) to (conn, s3_key), added mock_tbit_conn helper |
 | Phase 4: Connection & Init | 2026-02-15 | 115 | tbit_conn S3 class, tbit_get_conn (developer/reader), tbit_init_repo, credential derivation |
 | Phase 3: Git Operations | 2026-02-14 | 47 | git2r wrappers: check, author, branch, commit, push (fetch+merge+push) |
-| Phase 2: S3 Operations | 2026-02-10 | 94 | S3 client, upload/download/exists, JSON read/write, redirect resolution |
+| Phase 2: S3 Operations | 2026-02-10 | 99 | S3 client, upload/download/exists, JSON read/write, redirect resolution |
 | Phase 1: Core Utilities | 2026-02-09 | 131 | SHA, paths, name validation, repo validation |
 
 ### Backlog (Deferred Features)

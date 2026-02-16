@@ -119,17 +119,18 @@ test_that("errors when secret key env var is empty string", {
 test_that("serializes data and calls put_object with correct args", {
   mock_put <- mockery::mock(list(ETag = "\"abc123\""))
   mock_client <- list(put_object = mock_put)
+  conn <- mock_tbit_conn(mock_client, bucket = "my-bucket", prefix = "proj")
 
   data <- list(name = "customers", version = 1L)
 
-  result <- .tbit_s3_write_json(mock_client, "my-bucket", "tbit/.metadata/test.json", data)
+  result <- .tbit_s3_write_json(conn, ".metadata/test.json", data)
 
   expect_true(result)
   mockery::expect_called(mock_put, 1)
 
   call_args <- mockery::mock_args(mock_put)[[1]]
   expect_equal(call_args$Bucket, "my-bucket")
-  expect_equal(call_args$Key, "tbit/.metadata/test.json")
+  expect_equal(call_args$Key, "proj/tbit/.metadata/test.json")
   expect_equal(call_args$ContentType, "application/json")
 
   # Verify body is valid JSON that round-trips
@@ -142,8 +143,9 @@ test_that("serializes data and calls put_object with correct args", {
 test_that("auto-unboxes scalar values in JSON", {
   mock_put <- mockery::mock(list())
   mock_client <- list(put_object = mock_put)
+  conn <- mock_tbit_conn(mock_client)
 
-  .tbit_s3_write_json(mock_client, "b", "k", list(scalar = "one"))
+  .tbit_s3_write_json(conn, "k.json", list(scalar = "one"))
 
   body_json <- rawToChar(mockery::mock_args(mock_put)[[1]]$Body)
   # Should be "one" not ["one"]
@@ -153,6 +155,7 @@ test_that("auto-unboxes scalar values in JSON", {
 test_that("handles nested lists correctly", {
   mock_put <- mockery::mock(list())
   mock_client <- list(put_object = mock_put)
+  conn <- mock_tbit_conn(mock_client)
 
   data <- list(
     table = "customers",
@@ -162,7 +165,7 @@ test_that("handles nested lists correctly", {
     )
   )
 
-  .tbit_s3_write_json(mock_client, "b", "k", data)
+  .tbit_s3_write_json(conn, "k.json", data)
 
   body_json <- rawToChar(mockery::mock_args(mock_put)[[1]]$Body)
   parsed <- jsonlite::fromJSON(body_json, simplifyDataFrame = FALSE)
@@ -173,9 +176,10 @@ test_that("handles nested lists correctly", {
 test_that("wraps S3 errors with context", {
   mock_put <- mockery::mock(stop("AccessDenied: 403"))
   mock_client <- list(put_object = mock_put)
+  conn <- mock_tbit_conn(mock_client, bucket = "my-bucket")
 
   expect_error(
-    .tbit_s3_write_json(mock_client, "my-bucket", "some/key.json", list(a = 1)),
+    .tbit_s3_write_json(conn, "some/key.json", list(a = 1)),
     "Failed to write JSON"
   )
 })
@@ -183,9 +187,10 @@ test_that("wraps S3 errors with context", {
 test_that("error message includes bucket and key", {
   mock_put <- mockery::mock(stop("timeout"))
   mock_client <- list(put_object = mock_put)
+  conn <- mock_tbit_conn(mock_client, bucket = "test-bucket")
 
   tryCatch(
-    .tbit_s3_write_json(mock_client, "test-bucket", "path/file.json", list()),
+    .tbit_s3_write_json(conn, "path/file.json", list()),
     error = function(e) {
       msg <- conditionMessage(e)
       expect_true(grepl("test-bucket", msg))
@@ -204,24 +209,25 @@ test_that("uploads file with correct put_object args", {
 
     mock_put <- mockery::mock(list(ETag = "\"abc\""))
     mock_client <- list(put_object = mock_put)
+    conn <- mock_tbit_conn(mock_client, bucket = "my-bucket", prefix = "proj")
 
-    result <- .tbit_s3_upload(mock_client, "my-bucket", path, "tbit/customers/abc.parquet")
+    result <- .tbit_s3_upload(conn, path, "customers/abc.parquet")
 
     expect_true(result)
     mockery::expect_called(mock_put, 1)
 
     args <- mockery::mock_args(mock_put)[[1]]
     expect_equal(args$Bucket, "my-bucket")
-    expect_equal(args$Key, "tbit/customers/abc.parquet")
+    expect_equal(args$Key, "proj/tbit/customers/abc.parquet")
     expect_equal(args$Body, charToRaw("fake parquet content"))
   })
 })
 
 test_that("errors when local file does not exist", {
-  mock_client <- list(put_object = mockery::mock())
+  conn <- mock_tbit_conn(list(put_object = mockery::mock()))
 
   expect_error(
-    .tbit_s3_upload(mock_client, "b", "nonexistent.parquet", "k"),
+    .tbit_s3_upload(conn, "nonexistent.parquet", "k"),
     "File not found"
   )
 })
@@ -233,9 +239,10 @@ test_that("wraps S3 upload errors with context", {
 
     mock_put <- mockery::mock(stop("AccessDenied"))
     mock_client <- list(put_object = mock_put)
+    conn <- mock_tbit_conn(mock_client, bucket = "my-bucket")
 
     expect_error(
-      .tbit_s3_upload(mock_client, "my-bucket", path, "some/key"),
+      .tbit_s3_upload(conn, path, "some/key"),
       "Failed to upload"
     )
   })
@@ -248,13 +255,14 @@ test_that("upload error includes bucket, key, and local path", {
 
     mock_put <- mockery::mock(stop("timeout"))
     mock_client <- list(put_object = mock_put)
+    conn <- mock_tbit_conn(mock_client, bucket = "test-bucket", prefix = "proj")
 
     tryCatch(
-      .tbit_s3_upload(mock_client, "test-bucket", path, "tbit/key.parquet"),
+      .tbit_s3_upload(conn, path, "key.parquet"),
       error = function(e) {
         msg <- conditionMessage(e)
         expect_true(grepl("test-bucket", msg))
-        expect_true(grepl("tbit/key.parquet", msg))
+        expect_true(grepl("key.parquet", msg))
       }
     )
   })
@@ -267,10 +275,11 @@ test_that("downloads file and writes to local path", {
   withr::with_tempdir({
     mock_get <- mockery::mock(list(Body = charToRaw("parquet bytes")))
     mock_client <- list(get_object = mock_get)
+    conn <- mock_tbit_conn(mock_client, bucket = "my-bucket", prefix = "proj")
 
     dest <- fs::path("output", "data.parquet")
 
-    result <- .tbit_s3_download(mock_client, "my-bucket", "tbit/abc.parquet", dest)
+    result <- .tbit_s3_download(conn, "abc.parquet", dest)
 
     expect_true(result)
     expect_true(fs::file_exists(dest))
@@ -278,7 +287,7 @@ test_that("downloads file and writes to local path", {
 
     args <- mockery::mock_args(mock_get)[[1]]
     expect_equal(args$Bucket, "my-bucket")
-    expect_equal(args$Key, "tbit/abc.parquet")
+    expect_equal(args$Key, "proj/tbit/abc.parquet")
   })
 })
 
@@ -286,10 +295,11 @@ test_that("creates parent directories automatically", {
   withr::with_tempdir({
     mock_get <- mockery::mock(list(Body = charToRaw("data")))
     mock_client <- list(get_object = mock_get)
+    conn <- mock_tbit_conn(mock_client)
 
     dest <- fs::path("deep", "nested", "dir", "file.parquet")
 
-    .tbit_s3_download(mock_client, "b", "k", dest)
+    .tbit_s3_download(conn, "k", dest)
 
     expect_true(fs::dir_exists(fs::path("deep", "nested", "dir")))
     expect_true(fs::file_exists(dest))
@@ -300,9 +310,10 @@ test_that("wraps S3 download errors with context", {
   withr::with_tempdir({
     mock_get <- mockery::mock(stop("NoSuchKey"))
     mock_client <- list(get_object = mock_get)
+    conn <- mock_tbit_conn(mock_client, bucket = "my-bucket")
 
     expect_error(
-      .tbit_s3_download(mock_client, "my-bucket", "missing/key", "out.parquet"),
+      .tbit_s3_download(conn, "missing/key", "out.parquet"),
       "Failed to download"
     )
   })
@@ -312,13 +323,14 @@ test_that("download error includes bucket and key", {
   withr::with_tempdir({
     mock_get <- mockery::mock(stop("AccessDenied"))
     mock_client <- list(get_object = mock_get)
+    conn <- mock_tbit_conn(mock_client, bucket = "test-bucket", prefix = "proj")
 
     tryCatch(
-      .tbit_s3_download(mock_client, "test-bucket", "tbit/path.parquet", "out.parquet"),
+      .tbit_s3_download(conn, "path.parquet", "out.parquet"),
       error = function(e) {
         msg <- conditionMessage(e)
         expect_true(grepl("test-bucket", msg))
-        expect_true(grepl("tbit/path.parquet", msg))
+        expect_true(grepl("path.parquet", msg))
       }
     )
   })
@@ -330,37 +342,41 @@ test_that("download error includes bucket and key", {
 test_that("returns TRUE when object exists", {
   mock_head <- mockery::mock(list(ContentLength = 1024))
   mock_client <- list(head_object = mock_head)
+  conn <- mock_tbit_conn(mock_client, bucket = "my-bucket", prefix = "proj")
 
-  result <- .tbit_s3_exists(mock_client, "my-bucket", "tbit/abc.parquet")
+  result <- .tbit_s3_exists(conn, "abc.parquet")
 
   expect_true(result)
   mockery::expect_called(mock_head, 1)
 
   args <- mockery::mock_args(mock_head)[[1]]
   expect_equal(args$Bucket, "my-bucket")
-  expect_equal(args$Key, "tbit/abc.parquet")
+  expect_equal(args$Key, "proj/tbit/abc.parquet")
 })
 
 test_that("returns FALSE on 404", {
   mock_head <- mockery::mock(stop("404 Not Found"))
   mock_client <- list(head_object = mock_head)
+  conn <- mock_tbit_conn(mock_client)
 
-  expect_false(.tbit_s3_exists(mock_client, "b", "missing/key"))
+  expect_false(.tbit_s3_exists(conn, "missing/key"))
 })
 
 test_that("returns FALSE on NoSuchKey", {
   mock_head <- mockery::mock(stop("NoSuchKey"))
   mock_client <- list(head_object = mock_head)
+  conn <- mock_tbit_conn(mock_client)
 
-  expect_false(.tbit_s3_exists(mock_client, "b", "missing/key"))
+  expect_false(.tbit_s3_exists(conn, "missing/key"))
 })
 
 test_that("re-throws 403 errors", {
   mock_head <- mockery::mock(stop("AccessDenied: 403 Forbidden"))
   mock_client <- list(head_object = mock_head)
+  conn <- mock_tbit_conn(mock_client)
 
   expect_error(
-    .tbit_s3_exists(mock_client, "b", "forbidden/key"),
+    .tbit_s3_exists(conn, "forbidden/key"),
     "Failed to check"
   )
 })
@@ -368,9 +384,10 @@ test_that("re-throws 403 errors", {
 test_that("re-throws network errors", {
   mock_head <- mockery::mock(stop("Connection timed out"))
   mock_client <- list(head_object = mock_head)
+  conn <- mock_tbit_conn(mock_client)
 
   expect_error(
-    .tbit_s3_exists(mock_client, "b", "k"),
+    .tbit_s3_exists(conn, "k"),
     "Failed to check"
   )
 })
@@ -382,8 +399,9 @@ test_that("reads and parses valid JSON", {
   json <- jsonlite::toJSON(list(name = "customers", version = 1L), auto_unbox = TRUE)
   mock_get <- mockery::mock(list(Body = charToRaw(json)))
   mock_client <- list(get_object = mock_get)
+  conn <- mock_tbit_conn(mock_client, bucket = "my-bucket", prefix = "proj")
 
-  result <- .tbit_s3_read_json(mock_client, "my-bucket", "tbit/.metadata/test.json")
+  result <- .tbit_s3_read_json(conn, ".metadata/test.json")
 
   expect_type(result, "list")
   expect_equal(result$name, "customers")
@@ -391,7 +409,7 @@ test_that("reads and parses valid JSON", {
 
   args <- mockery::mock_args(mock_get)[[1]]
   expect_equal(args$Bucket, "my-bucket")
-  expect_equal(args$Key, "tbit/.metadata/test.json")
+  expect_equal(args$Key, "proj/tbit/.metadata/test.json")
 })
 
 test_that("handles nested JSON structures", {
@@ -405,8 +423,9 @@ test_that("handles nested JSON structures", {
   json <- jsonlite::toJSON(data, auto_unbox = TRUE)
   mock_get <- mockery::mock(list(Body = charToRaw(json)))
   mock_client <- list(get_object = mock_get)
+  conn <- mock_tbit_conn(mock_client)
 
-  result <- .tbit_s3_read_json(mock_client, "b", "k")
+  result <- .tbit_s3_read_json(conn, "k.json")
 
   expect_equal(result$table, "customers")
   expect_length(result$columns, 2)
@@ -417,8 +436,9 @@ test_that("handles arrays correctly with simplifyVector = FALSE", {
   json <- '{"tags": ["a", "b", "c"]}'
   mock_get <- mockery::mock(list(Body = charToRaw(json)))
   mock_client <- list(get_object = mock_get)
+  conn <- mock_tbit_conn(mock_client)
 
-  result <- .tbit_s3_read_json(mock_client, "b", "k")
+  result <- .tbit_s3_read_json(conn, "k.json")
 
   # simplifyVector = FALSE keeps arrays as lists
   expect_type(result$tags, "list")
@@ -434,16 +454,17 @@ test_that("round-trips with .tbit_s3_write_json", {
   )
 
   # Capture what write_json would send
-  captured_body <- NULL
   mock_put <- mockery::mock(list())
   write_client <- list(put_object = mock_put)
-  .tbit_s3_write_json(write_client, "b", "k", original)
+  write_conn <- mock_tbit_conn(write_client)
+  .tbit_s3_write_json(write_conn, "k.json", original)
   written_raw <- mockery::mock_args(mock_put)[[1]]$Body
 
   # Feed that to read_json
   mock_get <- mockery::mock(list(Body = written_raw))
   read_client <- list(get_object = mock_get)
-  result <- .tbit_s3_read_json(read_client, "b", "k")
+  read_conn <- mock_tbit_conn(read_client)
+  result <- .tbit_s3_read_json(read_conn, "k.json")
 
   expect_equal(result$name, original$name)
   expect_equal(result$sha, original$sha)
@@ -453,9 +474,10 @@ test_that("round-trips with .tbit_s3_write_json", {
 test_that("wraps S3 errors with context", {
   mock_get <- mockery::mock(stop("NoSuchKey: key not found"))
   mock_client <- list(get_object = mock_get)
+  conn <- mock_tbit_conn(mock_client, bucket = "my-bucket")
 
   expect_error(
-    .tbit_s3_read_json(mock_client, "my-bucket", "missing/key.json"),
+    .tbit_s3_read_json(conn, "missing/key.json"),
     "Failed to read JSON"
   )
 })
@@ -463,9 +485,10 @@ test_that("wraps S3 errors with context", {
 test_that("wraps JSON parse errors with context", {
   mock_get <- mockery::mock(list(Body = charToRaw("not valid json {{{")))
   mock_client <- list(get_object = mock_get)
+  conn <- mock_tbit_conn(mock_client, bucket = "my-bucket")
 
   expect_error(
-    .tbit_s3_read_json(mock_client, "my-bucket", "bad.json"),
+    .tbit_s3_read_json(conn, "bad.json"),
     "Failed to parse JSON"
   )
 })
@@ -473,9 +496,10 @@ test_that("wraps JSON parse errors with context", {
 test_that("error message includes bucket and key on S3 failure", {
   mock_get <- mockery::mock(stop("AccessDenied"))
   mock_client <- list(get_object = mock_get)
+  conn <- mock_tbit_conn(mock_client, bucket = "test-bucket")
 
   tryCatch(
-    .tbit_s3_read_json(mock_client, "test-bucket", "secret/file.json"),
+    .tbit_s3_read_json(conn, "secret/file.json"),
     error = function(e) {
       msg <- conditionMessage(e)
       expect_true(grepl("test-bucket", msg))
@@ -487,9 +511,10 @@ test_that("error message includes bucket and key on S3 failure", {
 test_that("error message includes bucket and key on parse failure", {
   mock_get <- mockery::mock(list(Body = charToRaw("garbage")))
   mock_client <- list(get_object = mock_get)
+  conn <- mock_tbit_conn(mock_client, bucket = "test-bucket")
 
   tryCatch(
-    .tbit_s3_read_json(mock_client, "test-bucket", "corrupt.json"),
+    .tbit_s3_read_json(conn, "corrupt.json"),
     error = function(e) {
       msg <- conditionMessage(e)
       expect_true(grepl("test-bucket", msg))
@@ -501,13 +526,14 @@ test_that("error message includes bucket and key on parse failure", {
 
 # --- .tbit_s3_resolve_redirect() ----------------------------------------------
 
-test_that("returns current location when no redirect exists", {
-  mock_client <- "original-client"
+test_that("returns current conn when no redirect exists", {
+  conn <- mock_tbit_conn("original-client", bucket = "bucket-a", prefix = "proj")
 
   mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_exists", FALSE)
 
-  result <- .tbit_s3_resolve_redirect(mock_client, "bucket-a", "proj")
+  result <- .tbit_s3_resolve_redirect(conn)
 
+  expect_true(is_tbit_conn(result))
   expect_equal(result$bucket, "bucket-a")
   expect_equal(result$prefix, "proj")
   expect_equal(result$s3_client, "original-client")
@@ -523,13 +549,15 @@ test_that("follows single redirect to new bucket", {
     )
   )
 
+  conn <- mock_tbit_conn("old-client", bucket = "bucket-a", prefix = "proj")
+
   exists_call <- 0L
   local_mocked_bindings(
-    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+    .tbit_s3_exists = function(conn, s3_key) {
       exists_call <<- exists_call + 1L
       exists_call == 1L
     },
-    .tbit_s3_read_json = function(s3_client, bucket, s3_key) {
+    .tbit_s3_read_json = function(conn, s3_key) {
       redirect_data
     },
     .tbit_s3_client = function(credentials, region = "us-east-1") {
@@ -537,8 +565,9 @@ test_that("follows single redirect to new bucket", {
     }
   )
 
-  result <- .tbit_s3_resolve_redirect("old-client", "bucket-a", "proj")
+  result <- .tbit_s3_resolve_redirect(conn)
 
+  expect_true(is_tbit_conn(result))
   expect_equal(result$bucket, "bucket-b")
   expect_equal(result$prefix, "proj-new")
   expect_equal(result$s3_client, "new-s3-client")
@@ -554,15 +583,17 @@ test_that("follows chained redirects (2 hops)", {
     credentials = list(access_key_env = "K3", secret_key_env = "S3")
   )
 
+  conn <- mock_tbit_conn("client-a", bucket = "bucket-a", prefix = "proj")
+
   exists_call <- 0L
   read_call <- 0L
   client_call <- 0L
   local_mocked_bindings(
-    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+    .tbit_s3_exists = function(conn, s3_key) {
       exists_call <<- exists_call + 1L
       exists_call <= 2L
     },
-    .tbit_s3_read_json = function(s3_client, bucket, s3_key) {
+    .tbit_s3_read_json = function(conn, s3_key) {
       read_call <<- read_call + 1L
       if (read_call == 1L) redirect_1 else redirect_2
     },
@@ -572,8 +603,9 @@ test_that("follows chained redirects (2 hops)", {
     }
   )
 
-  result <- .tbit_s3_resolve_redirect("client-a", "bucket-a", "proj")
+  result <- .tbit_s3_resolve_redirect(conn)
 
+  expect_true(is_tbit_conn(result))
   expect_equal(result$bucket, "bucket-c")
   expect_equal(result$prefix, "proj-final")
 })
@@ -584,19 +616,22 @@ test_that("reuses client when redirect has no credentials", {
     # No credentials field
   )
 
+  conn <- mock_tbit_conn("original-client", bucket = "bucket-a", prefix = "proj")
+
   exists_call <- 0L
   local_mocked_bindings(
-    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+    .tbit_s3_exists = function(conn, s3_key) {
       exists_call <<- exists_call + 1L
       exists_call == 1L
     },
-    .tbit_s3_read_json = function(s3_client, bucket, s3_key) {
+    .tbit_s3_read_json = function(conn, s3_key) {
       redirect_data
     }
   )
 
-  result <- .tbit_s3_resolve_redirect("original-client", "bucket-a", "proj")
+  result <- .tbit_s3_resolve_redirect(conn)
 
+  expect_true(is_tbit_conn(result))
   expect_equal(result$bucket, "bucket-b")
   expect_equal(result$s3_client, "original-client")
 })
@@ -606,13 +641,15 @@ test_that("errors when max depth exceeded", {
     redirect_to = "s3://bucket-loop/proj/tbit/"
   )
 
+  conn <- mock_tbit_conn("client", bucket = "bucket-a", prefix = "proj")
+
   local_mocked_bindings(
-    .tbit_s3_exists = function(s3_client, bucket, s3_key) TRUE,
-    .tbit_s3_read_json = function(s3_client, bucket, s3_key) redirect_data
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) redirect_data
   )
 
   expect_error(
-    .tbit_s3_resolve_redirect("client", "bucket-a", "proj", max_depth = 3L),
+    .tbit_s3_resolve_redirect(conn, max_depth = 3L),
     "maximum depth"
   )
 })
@@ -620,6 +657,8 @@ test_that("errors when max depth exceeded", {
 test_that("errors when redirect_to is missing", {
   redirect_data <- list(migrated_at = "2026-01-01")
 
+  conn <- mock_tbit_conn("client", bucket = "bucket-a", prefix = "proj")
+
   mock_exists <- mockery::mock(TRUE)
   mock_read <- mockery::mock(redirect_data)
 
@@ -627,7 +666,7 @@ test_that("errors when redirect_to is missing", {
   mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_read_json", mock_read)
 
   expect_error(
-    .tbit_s3_resolve_redirect("client", "bucket-a", "proj"),
+    .tbit_s3_resolve_redirect(conn),
     "redirect_to.*missing"
   )
 })
@@ -635,6 +674,8 @@ test_that("errors when redirect_to is missing", {
 test_that("errors when redirect_to is empty string", {
   redirect_data <- list(redirect_to = "")
 
+  conn <- mock_tbit_conn("client", bucket = "bucket-a", prefix = "proj")
+
   mock_exists <- mockery::mock(TRUE)
   mock_read <- mockery::mock(redirect_data)
 
@@ -642,7 +683,7 @@ test_that("errors when redirect_to is empty string", {
   mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_read_json", mock_read)
 
   expect_error(
-    .tbit_s3_resolve_redirect("client", "bucket-a", "proj"),
+    .tbit_s3_resolve_redirect(conn),
     "redirect_to.*missing|empty"
   )
 })
@@ -654,6 +695,8 @@ test_that("errors when redirect credentials are incomplete", {
     # missing secret_key_env
   )
 
+  conn <- mock_tbit_conn("client", bucket = "bucket-a", prefix = "proj")
+
   mock_exists <- mockery::mock(TRUE)
   mock_read <- mockery::mock(redirect_data)
 
@@ -661,7 +704,7 @@ test_that("errors when redirect credentials are incomplete", {
   mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_read_json", mock_read)
 
   expect_error(
-    .tbit_s3_resolve_redirect("client", "bucket-a", "proj"),
+    .tbit_s3_resolve_redirect(conn),
     "missing.*access_key_env|secret_key_env"
   )
 })
@@ -669,16 +712,18 @@ test_that("errors when redirect credentials are incomplete", {
 test_that("handles redirect_to with trailing slash correctly", {
   redirect_data <- list(redirect_to = "s3://bucket-b/new-prefix/tbit/")
 
+  conn <- mock_tbit_conn("client", bucket = "bucket-a", prefix = "proj")
+
   exists_call <- 0L
   local_mocked_bindings(
-    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+    .tbit_s3_exists = function(conn, s3_key) {
       exists_call <<- exists_call + 1L
       exists_call == 1L
     },
-    .tbit_s3_read_json = function(s3_client, bucket, s3_key) redirect_data
+    .tbit_s3_read_json = function(conn, s3_key) redirect_data
   )
 
-  result <- .tbit_s3_resolve_redirect("client", "bucket-a", "proj")
+  result <- .tbit_s3_resolve_redirect(conn)
 
   expect_equal(result$bucket, "bucket-b")
   expect_equal(result$prefix, "new-prefix")
@@ -687,27 +732,31 @@ test_that("handles redirect_to with trailing slash correctly", {
 test_that("handles redirect_to without trailing slash", {
   redirect_data <- list(redirect_to = "s3://bucket-b/new-prefix/tbit")
 
+  conn <- mock_tbit_conn("client", bucket = "bucket-a", prefix = "proj")
+
   exists_call <- 0L
   local_mocked_bindings(
-    .tbit_s3_exists = function(s3_client, bucket, s3_key) {
+    .tbit_s3_exists = function(conn, s3_key) {
       exists_call <<- exists_call + 1L
       exists_call == 1L
     },
-    .tbit_s3_read_json = function(s3_client, bucket, s3_key) redirect_data
+    .tbit_s3_read_json = function(conn, s3_key) redirect_data
   )
 
-  result <- .tbit_s3_resolve_redirect("client", "bucket-a", "proj")
+  result <- .tbit_s3_resolve_redirect(conn)
 
   expect_equal(result$bucket, "bucket-b")
   expect_equal(result$prefix, "new-prefix")
 })
 
 test_that("works with NULL prefix", {
-  mock_exists <- mockery::mock(FALSE)
-  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_exists", mock_exists)
+  conn <- mock_tbit_conn("client", bucket = "bucket", prefix = NULL)
 
-  result <- .tbit_s3_resolve_redirect("client", "bucket", NULL)
+  mockery::stub(.tbit_s3_resolve_redirect, ".tbit_s3_exists", FALSE)
 
+  result <- .tbit_s3_resolve_redirect(conn)
+
+  expect_true(is_tbit_conn(result))
   expect_equal(result$bucket, "bucket")
   expect_null(result$prefix)
 })
