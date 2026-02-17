@@ -471,18 +471,27 @@ tbit_sync <- function(conn,
     original_file_sha = file_sha,
     original_format = format,
     last_updated = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-    size_bytes = file.size(
-      fs::path(conn$path, name, ".metadata", "version_history.json")
-    ) %||% 0L,
+    size_bytes = as.integer(
+      file.size(fs::path(conn$path, name, ".metadata", "version_history.json"))
+    ),
     version_count = 1L
   )
+
+  # Replace NA with 0 (file.size returns NA if file is missing)
+  if (is.na(manifest$tables[[name]]$size_bytes)) {
+    manifest$tables[[name]]$size_bytes <- 0L
+  }
 
   # Update summary
   manifest$updated_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   manifest$summary <- list(
     total_tables = length(manifest$tables),
-    total_size_bytes = sum(purrr::map_dbl(manifest$tables, ~ .x$size_bytes %||% 0)),
-    total_versions = sum(purrr::map_int(manifest$tables, ~ .x$version_count %||% 0L))
+    total_size_bytes = sum(purrr::map_dbl(
+      manifest$tables, ~ as.numeric(.x$size_bytes %||% 0L)
+    )),
+    total_versions = sum(purrr::map_int(
+      manifest$tables, ~ as.integer(.x$version_count %||% 0L)
+    ))
   )
 
   jsonlite::write_json(manifest, manifest_path, auto_unbox = TRUE, pretty = TRUE)
