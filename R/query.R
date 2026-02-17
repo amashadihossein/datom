@@ -1,6 +1,6 @@
 #' List Available Tables
 #'
-#' Lists tables from S3 manifest. Reads `.tbit/manifest.json` from S3
+#' Lists tables from S3 manifest. Reads `.metadata/manifest.json` from S3
 #' and returns a data frame with one row per table.
 #'
 #' @param conn A `tbit_conn` object from [tbit_get_conn()].
@@ -18,7 +18,7 @@ tbit_list <- function(conn,
   }
 
   manifest <- tryCatch(
-    .tbit_s3_read_json(conn, ".tbit/manifest.json"),
+    .tbit_s3_read_json(conn, ".metadata/manifest.json"),
     error = function(e) {
       cli::cli_abort(c(
         "Could not read manifest from S3.",

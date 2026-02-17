@@ -125,7 +125,7 @@ test_that("reads correct S3 key for manifest", {
   conn <- mock_tbit_conn(list())
   tbit_list(conn)
 
-  expect_equal(captured_key, ".tbit/manifest.json")
+  expect_equal(captured_key, ".metadata/manifest.json")
 })
 
 test_that("errors when manifest cannot be read from S3", {

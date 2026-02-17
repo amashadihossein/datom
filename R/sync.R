@@ -412,6 +412,21 @@ tbit_sync <- function(conn,
   n_err <- sum(manifest$result == "error", na.rm = TRUE)
   n_skip <- sum(manifest$result == "skipped", na.rm = TRUE)
 
+  # --- push updated manifest to S3 so readers can use tbit_list() ---
+  if (n_ok > 0L) {
+    tryCatch({
+      manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+      if (fs::file_exists(manifest_path)) {
+        manifest_data <- jsonlite::read_json(manifest_path)
+        .tbit_s3_write_json(conn, ".metadata/manifest.json", manifest_data)
+      }
+    }, error = function(e) {
+      cli::cli_alert_warning(
+        "Failed to push manifest to S3: {conditionMessage(e)}"
+      )
+    })
+  }
+
   cli::cli_alert_info(
     "Sync complete: {n_ok} succeeded, {n_err} failed, {n_skip} skipped."
   )
