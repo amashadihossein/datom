@@ -1038,3 +1038,40 @@ test_that("tbit_init_repo success does not trigger cleanup", {
   expect_true(fs::file_exists(fs::path(env$work_dir, ".gitignore")))
   expect_true(fs::dir_exists(fs::path(env$work_dir, ".git")))
 })
+
+test_that("tbit_init_repo cleans up parent directory when it was newly created", {
+  env <- setup_init_env()
+
+  # Use a sub-path that doesn't exist yet (realistic: user says path = "my_proj")
+  new_path <- fs::path(env$work_dir, "study_001_data")
+  expect_false(fs::dir_exists(new_path))
+
+  local_mocked_bindings(.tbit_git_push = function(...) stop("push failed"))
+
+  expect_error(
+    tbit_init_repo(path = new_path, project_name = "testproj",
+                    remote_url = env$bare_dir, bucket = "b"),
+    "push failed"
+  )
+
+  # The parent directory itself should also be removed
+  expect_false(fs::dir_exists(new_path))
+})
+
+test_that("tbit_init_repo does NOT remove pre-existing parent dir on failure", {
+  env <- setup_init_env()
+
+  # work_dir already exists (from setup_init_env)
+  expect_true(fs::dir_exists(env$work_dir))
+
+  local_mocked_bindings(.tbit_git_push = function(...) stop("push failed"))
+
+  expect_error(
+    tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                    remote_url = env$bare_dir, bucket = "b"),
+    "push failed"
+  )
+
+  # Parent dir should remain because it pre-existed
+  expect_true(fs::dir_exists(env$work_dir))
+})

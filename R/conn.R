@@ -189,25 +189,37 @@ tbit_init_repo <- function(path = ".",
 
   # --- Create directory structure ---------------------------------------------
   # Track what we create so we can clean up on failure (but never delete
-
   # pre-existing content).
   tbit_dir   <- fs::path(path, ".tbit")
   input_dir  <- fs::path(path, "input_files")
   gitignore  <- fs::path(path, ".gitignore")
   git_dir    <- fs::path(path, ".git")
 
+  path_existed   <- fs::dir_exists(path)
   tbit_existed   <- fs::dir_exists(tbit_dir)
   input_existed  <- fs::dir_exists(input_dir)
   gi_existed     <- fs::file_exists(gitignore)
   git_existed    <- fs::dir_exists(git_dir)
 
+  .safe_delete <- function(p, is_dir = TRUE) {
+    tryCatch(
+      if (is_dir) fs::dir_delete(p) else fs::file_delete(p),
+      error = function(e) NULL
+    )
+  }
+
   .init_success <- FALSE
   on.exit({
     if (!.init_success) {
-      if (!tbit_existed  && fs::dir_exists(tbit_dir))   fs::dir_delete(tbit_dir)
-      if (!input_existed && fs::dir_exists(input_dir))   fs::dir_delete(input_dir)
-      if (!gi_existed    && fs::file_exists(gitignore))  fs::file_delete(gitignore)
-      if (!git_existed   && fs::dir_exists(git_dir))     fs::dir_delete(git_dir)
+      if (!tbit_existed  && fs::dir_exists(tbit_dir))   .safe_delete(tbit_dir)
+      if (!input_existed && fs::dir_exists(input_dir))   .safe_delete(input_dir)
+      if (!gi_existed    && fs::file_exists(gitignore))  .safe_delete(gitignore, is_dir = FALSE)
+      if (!git_existed   && fs::dir_exists(git_dir))     .safe_delete(git_dir)
+      # Remove the path directory itself if we created it and it's now empty
+      if (!path_existed && fs::dir_exists(path) &&
+          length(fs::dir_ls(path, all = TRUE)) == 0L) {
+        .safe_delete(path)
+      }
     }
   }, add = TRUE)
 
