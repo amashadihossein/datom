@@ -1,0 +1,371 @@
+---
+title: "Clinical Data Versioning with tbit"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Clinical Data Versioning with tbit}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+
+eval = FALSE
+)
+```
+
+## The Problem
+
+Clinical trials generate evolving data. As subjects enroll and visits accumulate, EDC (Electronic Data Capture) systems produce periodic data extracts—snapshots that grow over time. A typical Phase II study might have 50–100 tables updated monthly, and your analysis code must work reproducibly against any of those snapshots.
+
+tbit solves this by version-controlling your data alongside code. Metadata lives in git; actual data lives in S3 as content-addressed parquet files. Every extract gets a SHA-based version, so you (or a colleague, or a regulator) can reproduce any historical result.
+
+This vignette walks through a realistic workflow: receiving monthly EDC extracts for a Phase II study, syncing them to tbit, deriving an analysis dataset, and accessing historical versions.
+
+## Example Study: STUDY-001
+
+tbit ships with simulated data for a small Phase II study:
+
+- **48 subjects** enrolled over 6 months (Jan–Jun 2026)
+- **DM domain**: demographics (age, sex, race, country, enrollment date)
+- **EX domain**: exposure (treatment arm, dose, first dose date)
+- **Monthly snapshots**: filtering by enrollment date simulates receiving updated EDC extracts
+
+```{r}
+library(tbit)
+
+# View the monthly cutoff dates
+tbit_example_cutoffs()
+#> month_1    month_2    month_3    month_4    month_5    month_6
+#> "2026-01-28" "2026-02-28" "2026-03-28" "2026-04-28" "2026-05-28" "2026-06-28"
+
+# Month-1 extract: only early enrollees
+dm_m1 <- tbit_example_data("dm", cutoff_date = "2026-01-28")
+nrow(dm_m1)
+#> [1] 6
+
+# Month-3 extract: enrollment ramps up
+dm_m3 <- tbit_example_data("dm", cutoff_date = "2026-03-28")
+nrow(dm_m3)
+#> [1] 19
+
+# Full study data
+dm_all <- tbit_example_data("dm")
+nrow(dm_all)
+#> [1] 48
+```
+
+## Setup
+
+### One-Time Repository Initialization
+
+A data developer sets up the tbit repository once. This creates the folder structure, initializes git with a remote, and generates configuration files.
+
+```{r}
+# Required environment variables (set these in .Renviron or your CI environment)
+# TBIT_STUDY_001_ACCESS_KEY_ID = "your_aws_key"
+# TBIT_STUDY_001_SECRET_ACCESS_KEY = "your_aws_secret"
+# GITHUB_PAT = "your_github_pat"
+
+tbit_init_repo(
+  path = "study_001_data",
+  project_name = "STUDY_001",
+  remote_url = "https://github.com/org/study-001-data.git",
+  bucket = "clinical-data-bucket",
+  prefix = "study-001/"
+)
+```
+
+This creates:
+
+```
+study_001_data/
+├── .tbit/
+│   ├── project.yaml       # S3 bucket, credentials config
+│   ├── routing.json        # Read method dispatch
+│   └── manifest.json       # Table catalog (initially empty)
+├── input_files/            # Drop EDC extracts here (gitignored)
+└── .gitignore              # Keeps data files out of git
+```
+
+### Connect
+
+```{r}
+conn <- tbit_get_conn(path = "study_001_data")
+print(conn)
+#> ── tbit connection ──
+#> • Project: STUDY_001
+#> • Role: developer
+#> • Bucket: clinical-data-bucket
+#> • Prefix: study-001/
+#> • Region: us-east-1
+#> • Path: /path/to/study_001_data
+```
+
+## Monthly Workflow: Receiving and Syncing EDC Extracts
+
+### Month 1: First Data Transfer
+
+Your data management team delivers the first EDC extract. You place the files in `input_files/`:
+
+```{r}
+# Simulate receiving the month-1 extract
+cutoffs <- tbit_example_cutoffs()
+
+dm_m1 <- tbit_example_data("dm", cutoff_date = cutoffs["month_1"])
+ex_m1 <- tbit_example_data("ex", cutoff_date = cutoffs["month_1"])
+
+write.csv(dm_m1, "study_001_data/input_files/dm.csv", row.names = FALSE)
+write.csv(ex_m1, "study_001_data/input_files/ex.csv", row.names = FALSE)
+```
+
+Scan and sync:
+
+```{r}
+# Scan input_files/ — computes SHA of each file, compares against manifest
+manifest <- tbit_sync_manifest(conn)
+#> ℹ Scanned 2 files: 2 new, 0 changed, 0 unchanged.
+manifest
+#>   name          file format  file_sha                           status
+#> 1   dm .../dm.csv    csv    a1b2c3...                          new
+#> 2   ex .../ex.csv    csv    d4e5f6...                          new
+
+# Sync: imports each file, converts to parquet, uploads to S3, commits to git
+results <- tbit_sync(conn, manifest)
+#> ℹ Syncing 2 tables...
+#> ✔ dm synced (new).
+#> ✔ ex synced (new).
+#> ℹ Sync complete: 2 succeeded, 0 failed, 0 skipped.
+```
+
+What just happened:
+
+1. Each CSV was imported via `rio::import()` and written as parquet to S3
+2. A SHA-256 was computed for both the source file and the parquet data
+3. `metadata.json` and `version_history.json` were created in git and synced to S3
+4. A git commit was made and pushed for each table
+5. The local `manifest.json` was updated with current version info
+
+### Deriving ADSL
+
+Now we create a subject-level analysis dataset by joining DM and EX:
+
+```{r}
+# Read the versioned data back from tbit
+dm <- tbit_read(conn, "dm")
+ex <- tbit_read(conn, "ex")
+
+# Derive ADSL: demographics + treatment info
+adsl <- merge(
+  dm[, c("USUBJID", "SUBJID", "AGE", "SEX", "RACE", "COUNTRY", "RFSTDTC")],
+  ex[, c("USUBJID", "EXTRT", "EXDOSE", "EXSTDTC")],
+  by = "USUBJID"
+)
+
+# Add derived fields
+adsl$AGEGR1 <- cut(
+  adsl$AGE,
+  breaks = c(0, 40, 60, Inf),
+  labels = c("<40", "40-60", ">60"),
+  right = FALSE
+)
+adsl$TRT01A <- adsl$EXTRT
+adsl$TRTSDT <- adsl$EXSTDTC
+
+nrow(adsl)
+#> [1] 6
+table(adsl$TRT01A)
+#> DRUG-X 200mg      PLACEBO
+#>            3            3
+
+# Write derived ADSL to tbit
+tbit_write(conn, data = adsl, name = "ADSL", message = "Derive ADSL from month-1 data")
+#> ✔ Wrote "ADSL" (full): "f7a8b9c2"
+```
+
+### Month 3: Updated Extract
+
+Two months later, enrollment has progressed. The data management team sends updated extracts:
+
+```{r}
+# Simulate month-3 extract
+dm_m3 <- tbit_example_data("dm", cutoff_date = cutoffs["month_3"])
+ex_m3 <- tbit_example_data("ex", cutoff_date = cutoffs["month_3"])
+
+write.csv(dm_m3, "study_001_data/input_files/dm.csv", row.names = FALSE)
+write.csv(ex_m3, "study_001_data/input_files/ex.csv", row.names = FALSE)
+
+# Scan — tbit detects both files have changed (different SHA)
+manifest <- tbit_sync_manifest(conn)
+#> ℹ Scanned 2 files: 0 new, 2 changed, 0 unchanged.
+
+# Sync the updates
+results <- tbit_sync(conn, manifest)
+#> ℹ Syncing 2 tables...
+#> ✔ dm synced (changed).
+#> ✔ ex synced (changed).
+#> ℹ Sync complete: 2 succeeded, 0 failed, 0 skipped.
+```
+
+Because the parquet content changed (new subjects), tbit uploaded new parquet files to S3 with fresh SHAs. The old parquet files remain — they are never overwritten or deleted.
+
+```{r}
+# Re-derive ADSL with updated data
+dm <- tbit_read(conn, "dm")
+ex <- tbit_read(conn, "ex")
+
+adsl <- merge(
+  dm[, c("USUBJID", "SUBJID", "AGE", "SEX", "RACE", "COUNTRY", "RFSTDTC")],
+  ex[, c("USUBJID", "EXTRT", "EXDOSE", "EXSTDTC")],
+  by = "USUBJID"
+)
+adsl$AGEGR1 <- cut(adsl$AGE, breaks = c(0, 40, 60, Inf),
+                    labels = c("<40", "40-60", ">60"), right = FALSE)
+adsl$TRT01A <- adsl$EXTRT
+adsl$TRTSDT <- adsl$EXSTDTC
+
+nrow(adsl)
+#> [1] 19
+table(adsl$TRT01A)
+#> DRUG-X 200mg      PLACEBO
+#>           10            9
+
+tbit_write(conn, data = adsl, name = "ADSL", message = "Update ADSL with month-3 data")
+#> ✔ Wrote "ADSL" (full): "c3d4e5f6"
+```
+
+## Querying Version History
+
+### List Tables
+
+```{r}
+tbit_list(conn, include_versions = TRUE)
+#>   name current_version current_data_sha last_updated          version_count
+#> 1 ADSL c3d4e5f6...     b2c3d4...        2026-03-28T10:30:00Z  2
+#> 2 dm   a8b9c0d1...     e5f6a7...        2026-03-28T10:25:00Z  2
+#> 3 ex   d1e2f3a4...     f6a7b8...        2026-03-28T10:25:00Z  2
+```
+
+### View ADSL Version History
+
+```{r}
+tbit_history(conn, "ADSL")
+#>   version      data_sha     timestamp             author          commit_message
+#> 1 c3d4e5f6...  b2c3d4...    2026-03-28T10:30:00Z  jane@co.com    Update ADSL with month-3 data
+#> 2 f7a8b9c2...  a1b2c3...    2026-01-28T10:30:00Z  jane@co.com    Derive ADSL from month-1 data
+```
+
+### Reproduce a Prior Result
+
+A colleague needs to verify the month-1 ADSL. They use the version hash from the history:
+
+```{r}
+# Read the exact month-1 version
+adsl_v1 <- tbit_read(conn, "ADSL", version = "f7a8b9c2...")
+nrow(adsl_v1)
+#> [1] 6
+
+# Same result as month-1 derivation — reproducible
+```
+
+## Data Reader Workflow
+
+Downstream analysts don't need git access. They connect directly to S3:
+
+```{r}
+# Data reader only needs S3 credentials
+# TBIT_STUDY_001_ACCESS_KEY_ID and TBIT_STUDY_001_SECRET_ACCESS_KEY
+
+reader_conn <- tbit_get_conn(
+  bucket = "clinical-data-bucket",
+  prefix = "study-001/",
+  project_name = "STUDY_001"
+)
+print(reader_conn)
+#> ── tbit connection ──
+#> • Project: STUDY_001
+#> • Role: reader
+#> • Bucket: clinical-data-bucket
+
+# Readers can list, read, and access any version
+tables <- tbit_list(reader_conn)
+adsl <- tbit_read(reader_conn, "ADSL")
+```
+
+## Repository Validation
+
+After syncing, verify git and S3 are consistent:
+
+```{r}
+tbit_validate(conn)
+#> ✔ All checks passed. Git and S3 are consistent.
+
+# Check repository status
+tbit_status(conn)
+#> ── tbit status ──
+#> ℹ Project: "STUDY_001"
+#> ℹ Bucket: "clinical-data-bucket"
+#> ℹ Role: "developer"
+#> ✔ Git: clean (no uncommitted changes)
+#> ℹ Branch: "main"
+#> ℹ Tables on S3: 3
+#> ✔ Input files: all 2 unchanged
+```
+
+## Change Detection
+
+tbit uses SHA-based content addressing for efficient change detection. If the data hasn't changed, no upload occurs:
+
+```{r}
+# Re-sync with the same files — nothing happens
+manifest <- tbit_sync_manifest(conn)
+#> ℹ Scanned 2 files: 0 new, 0 changed, 2 unchanged.
+
+results <- tbit_sync(conn, manifest)
+#> ℹ All files unchanged. Nothing to sync.
+```
+
+Similarly, re-writing the same ADSL data is a no-op:
+
+```{r}
+tbit_write(conn, data = adsl, name = "ADSL", message = "No change")
+#> ℹ No changes detected for "ADSL". Skipping write.
+```
+
+## Key Concepts
+
+### Content Addressing
+
+Every data file is stored as `{sha256}.parquet`. Two identical datasets always produce the same SHA, so there's built-in deduplication. Different data produces a different SHA, so versions never collide.
+
+### Metadata vs Data
+
+- **Metadata** (in git): `metadata.json` tracks dimensions, column names, data SHA, and timestamps. `version_history.json` maps each tbit version to its data SHA.
+- **Data** (in S3): Immutable parquet files, keyed by SHA. Never overwritten or deleted.
+
+### tbit Version = metadata SHA
+
+The tbit version identifier is the SHA of the metadata fields (sorted alphabetically). Since metadata includes the data SHA, the version uniquely identifies a (data, metadata) pair. Changing a custom metadata field (like a description) produces a new version even if the data is identical.
+
+### Two User Roles
+
+| Role | Credentials | Capabilities |
+|------|-------------|--------------|
+| **Developer** | AWS + GITHUB_PAT | Read, write, sync, validate |
+| **Reader** | AWS only | Read any version |
+
+Role is auto-detected: if `GITHUB_PAT` is set and a local repo path is provided, you're a developer.
+
+## Summary
+
+This workflow demonstrates the core tbit loop for clinical data:
+
+1. **Receive** EDC extracts → place in `input_files/`
+2. **Scan** with `tbit_sync_manifest()` → detect new and changed files
+3. **Sync** with `tbit_sync()` → import, convert to parquet, version, upload
+4. **Derive** analysis datasets → `tbit_read()` + transformation + `tbit_write()`
+5. **Reproduce** → `tbit_read(conn, name, version = "...")` retrieves any historical version
+
+Every step is tracked in git with full audit trail. Data readers access any version via S3 without needing git credentials.

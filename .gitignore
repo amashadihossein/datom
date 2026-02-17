@@ -7,5 +7,6 @@
 *.Rproj
 inst/doc
 doc
+docs
 Meta
 vignettes/*.R

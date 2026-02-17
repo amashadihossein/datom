@@ -1,0 +1,56 @@
+url: https://amashadihossein.github.io/tbit/
+
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [intro, reference, articles]
+    right: [search, github]
+  components:
+    github:
+      icon: fa-github
+      href: https://github.com/amashadihossein/tbit
+
+reference:
+  - title: "Connection & Setup"
+    desc: "Create connections, initialize repositories"
+    contents:
+      - tbit_init_repo
+      - tbit_get_conn
+      - new_tbit_conn
+      - is_tbit_conn
+      - print.tbit_conn
+
+  - title: "Read & Write"
+    desc: "Read and write versioned tables"
+    contents:
+      - tbit_read
+      - tbit_write
+
+  - title: "Query & Status"
+    desc: "List tables, view history, check status"
+    contents:
+      - tbit_list
+      - tbit_history
+      - tbit_status
+
+  - title: "Sync Operations"
+    desc: "Batch sync from files, scan manifests, sync metadata to S3"
+    contents:
+      - tbit_sync
+      - tbit_sync_manifest
+      - tbit_sync_routing
+
+  - title: "Validation"
+    desc: "Validate repository structure and git-S3 consistency"
+    contents:
+      - tbit_validate
+      - tbit_repository_check
+      - is_valid_tbit_repo
+
+  - title: "Example Data"
+    desc: "Bundled clinical trial data for examples and vignettes"
+    contents:
+      - tbit_example_data
+      - tbit_example_cutoffs
