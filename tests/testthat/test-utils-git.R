@@ -428,3 +428,43 @@ test_that(".tbit_git_push returns invisible TRUE", {
   result <- .tbit_git_push(info$work_path)
   expect_true(result)
 })
+
+
+# =============================================================================
+# .tbit_git_credentials()
+# =============================================================================
+
+test_that(".tbit_git_credentials returns cred_user_pass for HTTPS with PAT", {
+  withr::local_envvar(GITHUB_PAT = "ghp_testtoken123", GITHUB_TOKEN = NA)
+
+  cred <- .tbit_git_credentials("https://github.com/org/repo.git")
+  expect_s3_class(cred, "cred_user_pass")
+})
+
+test_that(".tbit_git_credentials falls back to GITHUB_TOKEN", {
+  withr::local_envvar(GITHUB_PAT = NA, GITHUB_TOKEN = "ghp_fallback456")
+
+  cred <- .tbit_git_credentials("https://github.com/org/repo.git")
+  expect_s3_class(cred, "cred_user_pass")
+})
+
+test_that(".tbit_git_credentials returns NULL for SSH remotes", {
+  withr::local_envvar(GITHUB_PAT = "ghp_testtoken123")
+
+  cred <- .tbit_git_credentials("git@github.com:org/repo.git")
+  expect_null(cred)
+})
+
+test_that(".tbit_git_credentials returns NULL when no PAT is set", {
+  withr::local_envvar(GITHUB_PAT = NA, GITHUB_TOKEN = NA)
+
+  cred <- .tbit_git_credentials("https://github.com/org/repo.git")
+  expect_null(cred)
+})
+
+test_that(".tbit_git_credentials handles empty PAT strings", {
+  withr::local_envvar(GITHUB_PAT = "", GITHUB_TOKEN = "")
+
+  cred <- .tbit_git_credentials("https://github.com/org/repo.git")
+  expect_null(cred)
+})

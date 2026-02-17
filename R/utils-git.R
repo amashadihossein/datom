@@ -22,6 +22,25 @@
 }
 
 
+#' Build Git Credentials for HTTPS Remotes
+#'
+#' Returns a `git2r::cred_user_pass` object using `GITHUB_PAT` if the remote
+#' URL is HTTPS. Returns NULL for SSH remotes or when no PAT is available.
+#'
+#' @param remote_url Character remote URL.
+#' @return A `git2r::cred_user_pass` object or NULL.
+#' @keywords internal
+.tbit_git_credentials <- function(remote_url) {
+  if (!grepl("^https://", remote_url, ignore.case = TRUE)) return(NULL)
+
+  pat <- Sys.getenv("GITHUB_PAT", unset = "")
+  if (!nzchar(pat)) pat <- Sys.getenv("GITHUB_TOKEN", unset = "")
+  if (!nzchar(pat)) return(NULL)
+
+  git2r::cred_user_pass(username = "git", password = pat)
+}
+
+
 # --- Read-only queries --------------------------------------------------------
 
 #' Get Author Info from Git Config
@@ -200,12 +219,15 @@
   remote_name <- remotes[[1L]]
 
   # Get current branch
-
   branch_name <- .tbit_git_branch(path)
+
+  # Build credentials for HTTPS remotes
+  remote_url <- git2r::remote_url(repo, remote_name)
+  cred <- .tbit_git_credentials(remote_url)
 
   # Fetch from remote
   tryCatch(
-    git2r::fetch(repo, name = remote_name),
+    git2r::fetch(repo, name = remote_name, credentials = cred),
     error = function(e) {
       cli::cli_abort(c(
         "Failed to fetch from remote {.val {remote_name}}.",
@@ -243,7 +265,8 @@
 
   # Push
   tryCatch(
-    git2r::push(repo, name = remote_name, refspec = glue::glue("refs/heads/{branch_name}")),
+    git2r::push(repo, name = remote_name, refspec = glue::glue("refs/heads/{branch_name}"),
+                credentials = cred),
     error = function(e) {
       cli::cli_abort(c(
         "Failed to push to remote {.val {remote_name}}.",
