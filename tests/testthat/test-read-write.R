@@ -326,6 +326,94 @@ test_that("handles multiple versions with same data_sha", {
   )
 })
 
+test_that("resolves unique prefix (short hash)", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_v2"),
+    history = list(
+      list(version = "abc123def456", data_sha = "sha_v1"),
+      list(version = "xyz789ghi012", data_sha = "sha_v2")
+    )
+  )
+
+  # Short prefix that uniquely matches first entry
+
+  expect_equal(
+    .tbit_resolve_version(metadata_list, version = "abc1", name = "tbl"),
+    "sha_v1"
+  )
+  # Short prefix that uniquely matches second entry
+  expect_equal(
+    .tbit_resolve_version(metadata_list, version = "xyz", name = "tbl"),
+    "sha_v2"
+  )
+})
+
+test_that("exact full hash still works with prefix matching", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_v2"),
+    history = list(
+      list(version = "abc123def456", data_sha = "sha_v1"),
+      list(version = "xyz789ghi012", data_sha = "sha_v2")
+    )
+  )
+
+  expect_equal(
+    .tbit_resolve_version(metadata_list, version = "abc123def456", name = "tbl"),
+    "sha_v1"
+  )
+})
+
+test_that("errors on ambiguous prefix", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_v2"),
+    history = list(
+      list(version = "abc123def456", data_sha = "sha_v1"),
+      list(version = "abc123ghi789", data_sha = "sha_v2")
+    )
+  )
+
+  expect_error(
+    .tbit_resolve_version(metadata_list, version = "abc123", name = "tbl"),
+    "ambiguous"
+  )
+})
+
+test_that("ambiguous prefix resolved by using longer prefix", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_v2"),
+    history = list(
+      list(version = "abc123def456", data_sha = "sha_v1"),
+      list(version = "abc123ghi789", data_sha = "sha_v2")
+    )
+  )
+
+  # "abc123d" uniquely matches the first entry
+  expect_equal(
+    .tbit_resolve_version(metadata_list, version = "abc123d", name = "tbl"),
+    "sha_v1"
+  )
+  # "abc123g" uniquely matches the second entry
+  expect_equal(
+    .tbit_resolve_version(metadata_list, version = "abc123g", name = "tbl"),
+    "sha_v2"
+  )
+})
+
+test_that("single-character prefix works if unique", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_v2"),
+    history = list(
+      list(version = "abc123", data_sha = "sha_v1"),
+      list(version = "xyz789", data_sha = "sha_v2")
+    )
+  )
+
+  expect_equal(
+    .tbit_resolve_version(metadata_list, version = "a", name = "tbl"),
+    "sha_v1"
+  )
+})
+
 
 # --- .tbit_read_parquet() -----------------------------------------------------
 

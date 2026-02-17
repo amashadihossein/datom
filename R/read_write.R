@@ -103,9 +103,12 @@ tbit_read <- function(conn,
   }
 
   # history is a list of entries; each has $version and $data_sha
-  match_idx <- purrr::detect_index(history, ~ identical(.x$version, version))
+  # Support prefix matching (like git short SHAs)
+  match_indices <- which(purrr::map_lgl(
+    history, ~ startsWith(.x$version %||% "", version)
+  ))
 
-  if (match_idx == 0L) {
+  if (length(match_indices) == 0L) {
     cli::cli_abort(
       c(
         "Version {.val {version}} not found in history for {.val {name}}.",
@@ -113,6 +116,18 @@ tbit_read <- function(conn,
       )
     )
   }
+
+  if (length(match_indices) > 1L) {
+    cli::cli_abort(
+      c(
+        "Version prefix {.val {version}} is ambiguous for {.val {name}}.",
+        "i" = "It matches {length(match_indices)} versions. Use a longer prefix.",
+        "i" = "Use {.fn tbit_history} to see available versions."
+      )
+    )
+  }
+
+  match_idx <- match_indices[[1L]]
 
   data_sha <- history[[match_idx]]$data_sha
   if (is.null(data_sha) || !nzchar(data_sha)) {

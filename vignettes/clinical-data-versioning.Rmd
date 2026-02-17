@@ -11,8 +11,7 @@ vignette: >
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
-
-eval = FALSE
+  eval = FALSE
 )
 ```
 
@@ -20,9 +19,11 @@ eval = FALSE
 
 Clinical trials generate evolving data. As subjects enroll and visits accumulate, EDC (Electronic Data Capture) systems produce periodic data extracts—snapshots that grow over time. A typical Phase II study might have 50–100 tables updated monthly, and your analysis code must work reproducibly against any of those snapshots.
 
-tbit solves this by version-controlling your data alongside code. Metadata lives in git; actual data lives in S3 as content-addressed parquet files. Every extract gets a SHA-based version, so you (or a colleague, or a regulator) can reproduce any historical result.
+tbit solves this by version-controlling your raw data alongside code. Metadata lives in git; actual data lives in S3 as content-addressed parquet files. Every extract gets a SHA-based version, so you (or a colleague, or a regulator) can reproduce any historical result.
 
-This vignette walks through a realistic workflow: receiving monthly EDC extracts for a Phase II study, syncing them to tbit, deriving an analysis dataset, and accessing historical versions.
+This vignette walks through a realistic workflow: receiving monthly EDC extracts for a Phase II study, syncing them to tbit, listing tables and versions, and retrieving historical snapshots by version.
+
+> **Note**: tbit manages *raw* versioned data. Derived datasets (like ADSL) are built downstream by the daapr ecosystem, which reads versioned inputs from tbit.
 
 ## Example Study: STUDY-001
 
@@ -148,43 +149,6 @@ What just happened:
 4. A git commit was made and pushed for each table
 5. The local `manifest.json` was updated with current version info
 
-### Deriving ADSL
-
-Now we create a subject-level analysis dataset by joining DM and EX:
-
-```{r}
-# Read the versioned data back from tbit
-dm <- tbit_read(conn, "dm")
-ex <- tbit_read(conn, "ex")
-
-# Derive ADSL: demographics + treatment info
-adsl <- merge(
-  dm[, c("USUBJID", "SUBJID", "AGE", "SEX", "RACE", "COUNTRY", "RFSTDTC")],
-  ex[, c("USUBJID", "EXTRT", "EXDOSE", "EXSTDTC")],
-  by = "USUBJID"
-)
-
-# Add derived fields
-adsl$AGEGR1 <- cut(
-  adsl$AGE,
-  breaks = c(0, 40, 60, Inf),
-  labels = c("<40", "40-60", ">60"),
-  right = FALSE
-)
-adsl$TRT01A <- adsl$EXTRT
-adsl$TRTSDT <- adsl$EXSTDTC
-
-nrow(adsl)
-#> [1] 6
-table(adsl$TRT01A)
-#> DRUG-X 200mg      PLACEBO
-#>            3            3
-
-# Write derived ADSL to tbit
-tbit_write(conn, data = adsl, name = "ADSL", message = "Derive ADSL from month-1 data")
-#> ✔ Wrote "ADSL" (full): "f7a8b9c2"
-```
-
 ### Month 3: Updated Extract
 
 Two months later, enrollment has progressed. The data management team sends updated extracts:
@@ -211,63 +175,66 @@ results <- tbit_sync(conn, manifest)
 
 Because the parquet content changed (new subjects), tbit uploaded new parquet files to S3 with fresh SHAs. The old parquet files remain — they are never overwritten or deleted.
 
-```{r}
-# Re-derive ADSL with updated data
-dm <- tbit_read(conn, "dm")
-ex <- tbit_read(conn, "ex")
+## Listing Tables and Versions
 
-adsl <- merge(
-  dm[, c("USUBJID", "SUBJID", "AGE", "SEX", "RACE", "COUNTRY", "RFSTDTC")],
-  ex[, c("USUBJID", "EXTRT", "EXDOSE", "EXSTDTC")],
-  by = "USUBJID"
-)
-adsl$AGEGR1 <- cut(adsl$AGE, breaks = c(0, 40, 60, Inf),
-                    labels = c("<40", "40-60", ">60"), right = FALSE)
-adsl$TRT01A <- adsl$EXTRT
-adsl$TRTSDT <- adsl$EXSTDTC
-
-nrow(adsl)
-#> [1] 19
-table(adsl$TRT01A)
-#> DRUG-X 200mg      PLACEBO
-#>           10            9
-
-tbit_write(conn, data = adsl, name = "ADSL", message = "Update ADSL with month-3 data")
-#> ✔ Wrote "ADSL" (full): "c3d4e5f6"
-```
-
-## Querying Version History
-
-### List Tables
+### List All Tables
 
 ```{r}
 tbit_list(conn, include_versions = TRUE)
 #>   name current_version current_data_sha last_updated          version_count
-#> 1 ADSL c3d4e5f6...     b2c3d4...        2026-03-28T10:30:00Z  2
-#> 2 dm   a8b9c0d1...     e5f6a7...        2026-03-28T10:25:00Z  2
-#> 3 ex   d1e2f3a4...     f6a7b8...        2026-03-28T10:25:00Z  2
+#> 1 dm   a8b9c0d1...     e5f6a7...        2026-03-28T10:25:00Z  2
+#> 2 ex   d1e2f3a4...     f6a7b8...        2026-03-28T10:25:00Z  2
 ```
 
-### View ADSL Version History
+### View Version History for DM
 
 ```{r}
-tbit_history(conn, "ADSL")
+tbit_history(conn, "dm")
 #>   version      data_sha     timestamp             author          commit_message
-#> 1 c3d4e5f6...  b2c3d4...    2026-03-28T10:30:00Z  jane@co.com    Update ADSL with month-3 data
-#> 2 f7a8b9c2...  a1b2c3...    2026-01-28T10:30:00Z  jane@co.com    Derive ADSL from month-1 data
+#> 1 a8b9c0d1...  e5f6a7...    2026-03-28T10:25:00Z  jane@co.com    Sync dm
+#> 2 f7a8b9c2...  a1b2c3...    2026-01-28T10:25:00Z  jane@co.com    Sync dm
 ```
 
-### Reproduce a Prior Result
+## Reading Data by Version
 
-A colleague needs to verify the month-1 ADSL. They use the version hash from the history:
+### Current Version
 
 ```{r}
-# Read the exact month-1 version
-adsl_v1 <- tbit_read(conn, "ADSL", version = "f7a8b9c2...")
-nrow(adsl_v1)
+# Read latest (no version argument)
+dm_current <- tbit_read(conn, "dm")
+nrow(dm_current)
+#> [1] 19
+```
+
+### Historical Version
+
+A colleague needs to verify results from the month-1 snapshot. They use the version hash from the history:
+
+```{r}
+# Read the exact month-1 version — short hash prefix works (like git)
+dm_v1 <- tbit_read(conn, "dm", version = "f7a8b9c2")
+nrow(dm_v1)
 #> [1] 6
 
-# Same result as month-1 derivation — reproducible
+# The full hash also works
+dm_v1 <- tbit_read(conn, "dm", version = "f7a8b9c2...")
+nrow(dm_v1)
+#> [1] 6
+```
+
+This is the core tbit promise: any historical snapshot is retrievable, exactly as it was.
+
+## Change Detection
+
+tbit uses SHA-based content addressing for efficient change detection. If the data hasn't changed, no upload occurs:
+
+```{r}
+# Re-sync with the same files — nothing happens
+manifest <- tbit_sync_manifest(conn)
+#> ℹ Scanned 2 files: 0 new, 0 changed, 2 unchanged.
+
+results <- tbit_sync(conn, manifest)
+#> ℹ All files unchanged. Nothing to sync.
 ```
 
 ## Data Reader Workflow
@@ -291,7 +258,7 @@ print(reader_conn)
 
 # Readers can list, read, and access any version
 tables <- tbit_list(reader_conn)
-adsl <- tbit_read(reader_conn, "ADSL")
+dm <- tbit_read(reader_conn, "dm")
 ```
 
 ## Repository Validation
@@ -310,28 +277,8 @@ tbit_status(conn)
 #> ℹ Role: "developer"
 #> ✔ Git: clean (no uncommitted changes)
 #> ℹ Branch: "main"
-#> ℹ Tables on S3: 3
+#> ℹ Tables on S3: 2
 #> ✔ Input files: all 2 unchanged
-```
-
-## Change Detection
-
-tbit uses SHA-based content addressing for efficient change detection. If the data hasn't changed, no upload occurs:
-
-```{r}
-# Re-sync with the same files — nothing happens
-manifest <- tbit_sync_manifest(conn)
-#> ℹ Scanned 2 files: 0 new, 0 changed, 2 unchanged.
-
-results <- tbit_sync(conn, manifest)
-#> ℹ All files unchanged. Nothing to sync.
-```
-
-Similarly, re-writing the same ADSL data is a no-op:
-
-```{r}
-tbit_write(conn, data = adsl, name = "ADSL", message = "No change")
-#> ℹ No changes detected for "ADSL". Skipping write.
 ```
 
 ## Key Concepts
@@ -347,7 +294,7 @@ Every data file is stored as `{sha256}.parquet`. Two identical datasets always p
 
 ### tbit Version = metadata SHA
 
-The tbit version identifier is the SHA of the metadata fields (sorted alphabetically). Since metadata includes the data SHA, the version uniquely identifies a (data, metadata) pair. Changing a custom metadata field (like a description) produces a new version even if the data is identical.
+The tbit version identifier is the SHA of the metadata fields (sorted alphabetically). Since metadata includes the data SHA, the version uniquely identifies a (data, metadata) pair. You can use a short prefix of the version hash (like `"f7a8b9"`) — tbit resolves it as long as it's unambiguous, just like git short SHAs.
 
 ### Two User Roles
 
@@ -365,7 +312,9 @@ This workflow demonstrates the core tbit loop for clinical data:
 1. **Receive** EDC extracts → place in `input_files/`
 2. **Scan** with `tbit_sync_manifest()` → detect new and changed files
 3. **Sync** with `tbit_sync()` → import, convert to parquet, version, upload
-4. **Derive** analysis datasets → `tbit_read()` + transformation + `tbit_write()`
-5. **Reproduce** → `tbit_read(conn, name, version = "...")` retrieves any historical version
+4. **List** with `tbit_list()` and `tbit_history()` → see tables and versions
+5. **Read** with `tbit_read(conn, name, version = "...")` → retrieve any historical snapshot
 
 Every step is tracked in git with full audit trail. Data readers access any version via S3 without needing git credentials.
+
+Derived datasets (like ADSL) belong in the downstream daapr ecosystem, which reads versioned raw inputs managed by tbit.
