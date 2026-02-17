@@ -188,8 +188,31 @@ tbit_init_repo <- function(path = ".",
   }
 
   # --- Create directory structure ---------------------------------------------
-  fs::dir_create(fs::path(path, ".tbit"))
-  fs::dir_create(fs::path(path, "input_files"))
+  # Track what we create so we can clean up on failure (but never delete
+
+  # pre-existing content).
+  tbit_dir   <- fs::path(path, ".tbit")
+  input_dir  <- fs::path(path, "input_files")
+  gitignore  <- fs::path(path, ".gitignore")
+  git_dir    <- fs::path(path, ".git")
+
+  tbit_existed   <- fs::dir_exists(tbit_dir)
+  input_existed  <- fs::dir_exists(input_dir)
+  gi_existed     <- fs::file_exists(gitignore)
+  git_existed    <- fs::dir_exists(git_dir)
+
+  .init_success <- FALSE
+  on.exit({
+    if (!.init_success) {
+      if (!tbit_existed  && fs::dir_exists(tbit_dir))   fs::dir_delete(tbit_dir)
+      if (!input_existed && fs::dir_exists(input_dir))   fs::dir_delete(input_dir)
+      if (!gi_existed    && fs::file_exists(gitignore))  fs::file_delete(gitignore)
+      if (!git_existed   && fs::dir_exists(git_dir))     fs::dir_delete(git_dir)
+    }
+  }, add = TRUE)
+
+  fs::dir_create(tbit_dir)
+  fs::dir_create(input_dir)
 
   # --- Create project.yaml ---------------------------------------------------
   cred_names <- .tbit_derive_cred_names(project_name)
@@ -278,6 +301,8 @@ tbit_init_repo <- function(path = ".",
 
   # Push initial commit
   .tbit_git_push(path)
+
+  .init_success <- TRUE
 
   cli::cli_alert_success(
     "Initialized tbit repository {.val {project_name}} at {.path {path}}"

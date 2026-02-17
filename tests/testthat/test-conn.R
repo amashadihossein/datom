@@ -905,3 +905,136 @@ test_that("tbit_init_repo stores tbit_version in project.yaml", {
   expect_equal(cfg$tbit_version,
                as.character(utils::packageVersion("tbit")))
 })
+
+
+# --- Rollback on failure ------------------------------------------------------
+
+test_that("tbit_init_repo cleans up .tbit on git push failure", {
+  env <- setup_init_env()
+
+  local_mocked_bindings(.tbit_git_push = function(...) stop("push failed"))
+
+  expect_error(
+    tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                    remote_url = env$bare_dir, bucket = "b"),
+    "push failed"
+  )
+
+  # .tbit/ should be cleaned up since it didn't exist before
+
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".tbit")))
+  expect_false(fs::dir_exists(fs::path(env$work_dir, "input_files")))
+  expect_false(fs::file_exists(fs::path(env$work_dir, ".gitignore")))
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".git")))
+})
+
+test_that("tbit_init_repo cleans up on git commit failure", {
+  env <- setup_init_env()
+
+  local_mocked_bindings(.tbit_git_push = function(...) invisible(TRUE))
+
+  # Mock git2r::commit to fail
+  mockery::stub(tbit_init_repo, "git2r::commit", function(...) stop("commit failed"))
+
+  expect_error(
+    tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                    remote_url = env$bare_dir, bucket = "b"),
+    "commit failed"
+  )
+
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".tbit")))
+  expect_false(fs::dir_exists(fs::path(env$work_dir, "input_files")))
+})
+
+test_that("tbit_init_repo does NOT delete pre-existing .tbit on failure", {
+  env <- setup_init_env()
+
+  # Pre-create .tbit/ with some content (simulates partial prior state)
+  tbit_dir <- fs::path(env$work_dir, ".tbit")
+  fs::dir_create(tbit_dir)
+  writeLines("existing", fs::path(tbit_dir, "existing_file.txt"))
+
+  local_mocked_bindings(.tbit_git_push = function(...) stop("push failed"))
+
+  expect_error(
+    tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                    remote_url = env$bare_dir, bucket = "b"),
+    "push failed"
+  )
+
+  # .tbit/ should NOT be deleted because it pre-existed
+  expect_true(fs::dir_exists(tbit_dir))
+  expect_true(fs::file_exists(fs::path(tbit_dir, "existing_file.txt")))
+})
+
+test_that("tbit_init_repo does NOT delete pre-existing input_files on failure", {
+  env <- setup_init_env()
+
+  # Pre-create input_files/
+  input_dir <- fs::path(env$work_dir, "input_files")
+  fs::dir_create(input_dir)
+  writeLines("data", fs::path(input_dir, "data.csv"))
+
+  local_mocked_bindings(.tbit_git_push = function(...) stop("push failed"))
+
+  expect_error(
+    tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                    remote_url = env$bare_dir, bucket = "b"),
+    "push failed"
+  )
+
+  # input_files/ should NOT be deleted
+  expect_true(fs::dir_exists(input_dir))
+  expect_true(fs::file_exists(fs::path(input_dir, "data.csv")))
+})
+
+test_that("tbit_init_repo does NOT delete pre-existing .gitignore on failure", {
+  env <- setup_init_env()
+
+  # Pre-create .gitignore
+  gitignore <- fs::path(env$work_dir, ".gitignore")
+  writeLines("*.log", gitignore)
+
+  local_mocked_bindings(.tbit_git_push = function(...) stop("push failed"))
+
+  expect_error(
+    tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                    remote_url = env$bare_dir, bucket = "b"),
+    "push failed"
+  )
+
+  # .gitignore should NOT be deleted
+  expect_true(fs::file_exists(gitignore))
+})
+
+test_that("tbit_init_repo does NOT delete pre-existing .git on failure", {
+  env <- setup_init_env()
+
+  # Pre-create a git repo
+  git2r::init(env$work_dir)
+
+  local_mocked_bindings(.tbit_git_push = function(...) stop("push failed"))
+
+  # git2r::remote_add will fail because we call init again, but let's mock
+  # further down — the git_dir existed check is what matters
+  expect_error(
+    tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                    remote_url = env$bare_dir, bucket = "b")
+  )
+
+  # .git/ should NOT be deleted
+  expect_true(fs::dir_exists(fs::path(env$work_dir, ".git")))
+})
+
+test_that("tbit_init_repo success does not trigger cleanup", {
+  env <- setup_init_env()
+
+  tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                  remote_url = env$bare_dir, bucket = "b")
+
+  # Everything should still be there
+  expect_true(fs::dir_exists(fs::path(env$work_dir, ".tbit")))
+  expect_true(fs::dir_exists(fs::path(env$work_dir, "input_files")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".gitignore")))
+  expect_true(fs::dir_exists(fs::path(env$work_dir, ".git")))
+})
