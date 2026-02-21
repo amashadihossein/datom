@@ -149,32 +149,6 @@ What just happened:
 4. A git commit was made and pushed for each table
 5. The local `manifest.json` was updated with current version info
 
-### Month 3: Updated Extract
-
-Two months later, enrollment has progressed. The data management team sends updated extracts:
-
-```{r}
-# Simulate month-3 extract
-dm_m3 <- tbit_example_data("dm", cutoff_date = cutoffs["month_3"])
-ex_m3 <- tbit_example_data("ex", cutoff_date = cutoffs["month_3"])
-
-write.csv(dm_m3, "study_001_data/input_files/dm.csv", row.names = FALSE)
-write.csv(ex_m3, "study_001_data/input_files/ex.csv", row.names = FALSE)
-
-# Scan — tbit detects both files have changed (different SHA)
-manifest <- tbit_sync_manifest(conn)
-#> ℹ Scanned 2 files: 0 new, 2 changed, 0 unchanged.
-
-# Sync the updates
-results <- tbit_sync(conn, manifest)
-#> ℹ Syncing 2 tables...
-#> ✔ dm synced (changed).
-#> ✔ ex synced (changed).
-#> ℹ Sync complete: 2 succeeded, 0 failed, 0 skipped.
-```
-
-Because the parquet content changed (new subjects), tbit uploaded new parquet files to S3 with fresh SHAs. The old parquet files remain — they are never overwritten or deleted.
-
 ## Exploring the Repository After Syncing
 
 Before moving on, it's worth pausing to verify the state of the repository and get familiar with the data you've just versioned.
@@ -186,8 +160,8 @@ Before moving on, it's worth pausing to verify the state of the repository and g
 ```{r}
 tbit_list(conn)
 #>   name current_version last_updated          version_count
-#> 1 dm   a8b9c0d1...     2026-03-28T10:25:00Z  2
-#> 2 ex   d1e2f3a4...     2026-03-28T10:25:00Z  2
+#> 1 dm   f7a8b9c2...     2026-01-28T10:25:00Z  1
+#> 2 ex   c3d4e5f6...     2026-01-28T10:25:00Z  1
 ```
 
 Pass `include_versions = TRUE` to see the current data SHA alongside the version identifier:
@@ -195,8 +169,8 @@ Pass `include_versions = TRUE` to see the current data SHA alongside the version
 ```{r}
 tbit_list(conn, include_versions = TRUE)
 #>   name current_version current_data_sha last_updated          version_count
-#> 1 dm   a8b9c0d1...     e5f6a7...        2026-03-28T10:25:00Z  2
-#> 2 ex   d1e2f3a4...     f6a7b8...        2026-03-28T10:25:00Z  2
+#> 1 dm   f7a8b9c2...     a1b2c3...        2026-01-28T10:25:00Z  1
+#> 2 ex   c3d4e5f6...     d4e5f6...        2026-01-28T10:25:00Z  1
 ```
 
 ### Inspect Version History
@@ -206,33 +180,34 @@ tbit_list(conn, include_versions = TRUE)
 ```{r}
 tbit_history(conn, "dm")
 #>   version      data_sha     timestamp             author          commit_message
-#> 1 a8b9c0d1...  e5f6a7...    2026-03-28T10:25:00Z  jane@co.com    Sync dm
-#> 2 f7a8b9c2...  a1b2c3...    2026-01-28T10:25:00Z  jane@co.com    Sync dm
+#> 1 f7a8b9c2...  a1b2c3...    2026-01-28T10:25:00Z  jane@co.com    Sync dm
 ```
 
-The most recent entry is at the top. Each version hash uniquely identifies the (data, metadata) pair at that point in time.
+Each version hash uniquely identifies the (data, metadata) pair at that point in time. Right now there is one entry — the month-1 snapshot.
 
 ### Pull Down a Version to Evaluate
 
-Before trusting that the sync worked correctly, read the data back and spot-check it. Use the version hash from `tbit_history()` to confirm you can retrieve either snapshot:
+Before trusting that the sync worked correctly, read the data back and spot-check it:
 
 ```{r}
-# Read the month-3 snapshot (current)
-dm_current <- tbit_read(conn, "dm")
-nrow(dm_current)
-#> [1] 19
-
-# Read the original month-1 snapshot using its short version hash
-dm_v1 <- tbit_read(conn, "dm", version = "f7a8b9c2")
-nrow(dm_v1)
+# Read the current (month-1) snapshot
+dm_m1 <- tbit_read(conn, "dm")
+nrow(dm_m1)
 #> [1] 6
 
-# Spot-check: confirm the month-1 snapshot only has early enrollees
-range(as.Date(dm_v1$RFSTDTC))
+# Spot-check: confirm only early enrollees are present
+range(as.Date(dm_m1$RFSTDTC))
 #> [1] "2026-01-03" "2026-01-28"
 ```
 
-Short hash prefix matching works just like `git log --abbrev-commit` — tbit resolves the prefix as long as it is unambiguous across all versions of that table.
+Rows, columns, and date ranges all look right. You can also read by the version hash directly — short prefix matching works just like `git log --abbrev-commit`:
+
+```{r}
+# Equivalent: read by version hash prefix
+dm_m1 <- tbit_read(conn, "dm", version = "f7a8b9c2")
+nrow(dm_m1)
+#> [1] 6
+```
 
 ## Month 3: Updated Extract
 
