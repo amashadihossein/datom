@@ -157,6 +157,53 @@ test_that("handles missing fields gracefully with NA", {
   expect_true(is.na(result$last_updated))
 })
 
+test_that("truncates hashes by default (short_hash = TRUE)", {
+  full_sha <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
+  manifest <- list(
+    tables = list(
+      dm = list(
+        current_version = full_sha,
+        current_data_sha = full_sha,
+        last_updated = "2026-01-01"
+      )
+    )
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) manifest
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_list(conn)
+
+  expect_equal(nchar(result$current_version), 8)
+  expect_equal(result$current_version, substr(full_sha, 1, 8))
+  expect_equal(nchar(result$current_data_sha), 8)
+})
+
+test_that("returns full hashes with short_hash = FALSE", {
+  full_sha <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
+  manifest <- list(
+    tables = list(
+      dm = list(
+        current_version = full_sha,
+        current_data_sha = full_sha,
+        last_updated = "2026-01-01"
+      )
+    )
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) manifest
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_list(conn, short_hash = FALSE)
+
+  expect_equal(result$current_version, full_sha)
+  expect_equal(result$current_data_sha, full_sha)
+})
+
 
 # --- tbit_history() -----------------------------------------------------------
 
@@ -199,7 +246,7 @@ test_that("returns data frame with version history", {
   )
 
   conn <- mock_tbit_conn(list())
-  result <- tbit_history(conn, "customers")
+  result <- tbit_history(conn, "customers", short_hash = FALSE)
 
   expect_s3_class(result, "data.frame")
   expect_equal(nrow(result), 2)
@@ -301,6 +348,54 @@ test_that("handles missing fields with NA", {
   expect_equal(result$version, "v1")
   expect_true(is.na(result$data_sha))
   expect_true(is.na(result$author))
+})
+
+test_that("truncates version and data_sha by default (short_hash = TRUE)", {
+  full_version <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
+  full_data_sha <- "2320b970ae25b8393e2b421ecfe4fa0b9218f3de69cda83db4a22d002657aed7"
+  history <- list(
+    list(
+      version = full_version,
+      data_sha = full_data_sha,
+      timestamp = "2026-01-15T10:00:00Z",
+      author = "jane@co.com",
+      commit_message = "Sync dm"
+    )
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) history
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_history(conn, "dm")
+
+  expect_equal(nchar(result$version), 8)
+  expect_equal(result$version, substr(full_version, 1, 8))
+  expect_equal(nchar(result$data_sha), 8)
+  expect_equal(result$data_sha, substr(full_data_sha, 1, 8))
+})
+
+test_that("returns full hashes with short_hash = FALSE", {
+  full_version <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
+  full_data_sha <- "2320b970ae25b8393e2b421ecfe4fa0b9218f3de69cda83db4a22d002657aed7"
+  history <- list(
+    list(
+      version = full_version,
+      data_sha = full_data_sha,
+      timestamp = "2026-01-15T10:00:00Z"
+    )
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) history
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_history(conn, "dm", short_hash = FALSE)
+
+  expect_equal(result$version, full_version)
+  expect_equal(result$data_sha, full_data_sha)
 })
 
 

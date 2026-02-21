@@ -177,3 +177,18 @@
     commit_sha = commit_sha
   ))
 }
+
+
+#' Abbreviate SHA Hash
+#'
+#' Truncates a SHA-256 hash to a short prefix for display. Accepts
+#' character vectors; `NA` values pass through unchanged.
+#'
+#' @param sha Character vector of SHA hashes.
+#' @param n Number of characters to keep. Default 8.
+#' @return Character vector of abbreviated hashes.
+#' @keywords internal
+.tbit_abbreviate_sha <- function(sha, n = 8L) {
+  if (!is.character(sha)) return(sha)
+  ifelse(is.na(sha), NA_character_, substr(sha, 1L, n))
+}

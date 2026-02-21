@@ -126,3 +126,130 @@ test_that("round-trip with no prefix", {
   uri <- .tbit_build_s3_uri(parsed$bucket, key)
   expect_equal(uri, "s3://my-bucket/tbit/orders/abc.parquet")
 })
+
+
+# --- .tbit_render_readme() ----------------------------------------------------
+
+test_that("render_readme returns a character string", {
+  readme <- .tbit_render_readme(
+    project_name = "STUDY_001",
+    bucket = "my-bucket",
+    prefix = "data/",
+    region = "us-east-1",
+    remote_url = "https://github.com/org/repo.git",
+    cred_names = list(
+      access_key_env = "TBIT_STUDY_001_ACCESS_KEY_ID",
+      secret_key_env = "TBIT_STUDY_001_SECRET_ACCESS_KEY"
+    )
+  )
+
+  expect_type(readme, "character")
+  expect_length(readme, 1L)
+})
+
+test_that("render_readme includes project name as heading", {
+  readme <- .tbit_render_readme(
+    project_name = "STUDY_001",
+    bucket = "b",
+    prefix = NULL,
+    region = "us-east-1",
+    remote_url = "https://github.com/org/repo.git",
+    cred_names = list(
+      access_key_env = "TBIT_STUDY_001_ACCESS_KEY_ID",
+      secret_key_env = "TBIT_STUDY_001_SECRET_ACCESS_KEY"
+    )
+  )
+
+  expect_match(readme, "# STUDY_001", fixed = TRUE)
+})
+
+test_that("render_readme includes bucket and region", {
+  readme <- .tbit_render_readme(
+    project_name = "STUDY_001",
+    bucket = "clinical-data-bucket",
+    prefix = NULL,
+    region = "eu-west-1",
+    remote_url = "https://github.com/org/repo.git",
+    cred_names = list(
+      access_key_env = "A",
+      secret_key_env = "S"
+    )
+  )
+
+  expect_match(readme, "clinical-data-bucket", fixed = TRUE)
+  expect_match(readme, "eu-west-1", fixed = TRUE)
+})
+
+test_that("render_readme shows prefix when provided", {
+  readme <- .tbit_render_readme(
+    project_name = "P",
+    bucket = "b",
+    prefix = "study-001/",
+    region = "us-east-1",
+    remote_url = "url",
+    cred_names = list(access_key_env = "A", secret_key_env = "S")
+  )
+
+  expect_match(readme, "study-001/", fixed = TRUE)
+  expect_match(readme, '"study-001/"', fixed = TRUE)
+})
+
+test_that("render_readme shows *(none)* when prefix is NULL", {
+  readme <- .tbit_render_readme(
+    project_name = "P",
+    bucket = "b",
+    prefix = NULL,
+    region = "us-east-1",
+    remote_url = "url",
+    cred_names = list(access_key_env = "A", secret_key_env = "S")
+  )
+
+  expect_match(readme, "*(none)*", fixed = TRUE)
+  expect_match(readme, "prefix       = NULL", fixed = TRUE)
+})
+
+test_that("render_readme includes credential env var names", {
+  readme <- .tbit_render_readme(
+    project_name = "STUDY_001",
+    bucket = "b",
+    prefix = NULL,
+    region = "us-east-1",
+    remote_url = "url",
+    cred_names = list(
+      access_key_env = "TBIT_STUDY_001_ACCESS_KEY_ID",
+      secret_key_env = "TBIT_STUDY_001_SECRET_ACCESS_KEY"
+    )
+  )
+
+  expect_match(readme, "TBIT_STUDY_001_ACCESS_KEY_ID", fixed = TRUE)
+  expect_match(readme, "TBIT_STUDY_001_SECRET_ACCESS_KEY", fixed = TRUE)
+})
+
+test_that("render_readme includes remote URL in clone command", {
+  readme <- .tbit_render_readme(
+    project_name = "P",
+    bucket = "b",
+    prefix = NULL,
+    region = "us-east-1",
+    remote_url = "https://github.com/org/study-data.git",
+    cred_names = list(access_key_env = "A", secret_key_env = "S")
+  )
+
+  expect_match(readme, "git clone https://github.com/org/study-data.git",
+               fixed = TRUE)
+})
+
+test_that("render_readme includes tbit version and date", {
+  readme <- .tbit_render_readme(
+    project_name = "P",
+    bucket = "b",
+    prefix = NULL,
+    region = "us-east-1",
+    remote_url = "url",
+    cred_names = list(access_key_env = "A", secret_key_env = "S")
+  )
+
+  expect_match(readme, format(Sys.Date(), "%Y-%m-%d"), fixed = TRUE)
+  expect_match(readme, as.character(utils::packageVersion("tbit")),
+               fixed = TRUE)
+})

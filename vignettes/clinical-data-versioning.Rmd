@@ -155,13 +155,13 @@ Before moving on, it's worth pausing to verify the state of the repository and g
 
 ### List All Tables
 
-`tbit_list()` gives you a quick inventory of what is registered and when each table was last updated:
+`tbit_list()` gives you a quick inventory of what is registered and when each table was last updated. Version hashes are shown as 8-character prefixes by default — pass `short_hash = FALSE` for the full 64-character SHA:
 
 ```{r}
 tbit_list(conn)
-#>   name current_version last_updated          version_count
-#> 1 dm   a8ee7a31...     2026-01-28T10:25:00Z  1
-#> 2 ex   1f476930...     2026-01-28T10:25:00Z  1
+#>   name current_version last_updated          
+#> 1 dm   a8ee7a31        2026-01-28T10:25:00Z
+#> 2 ex   1f476930        2026-01-28T10:25:00Z
 ```
 
 Pass `include_versions = TRUE` to see the current data SHA alongside the version identifier:
@@ -169,8 +169,8 @@ Pass `include_versions = TRUE` to see the current data SHA alongside the version
 ```{r}
 tbit_list(conn, include_versions = TRUE)
 #>   name current_version current_data_sha last_updated          version_count
-#> 1 dm   a8ee7a31...     a1b2c3...        2026-01-28T10:25:00Z  1
-#> 2 ex   1f476930...     d4e5f6...        2026-01-28T10:25:00Z  1
+#> 1 dm   a8ee7a31        a1b2c3d4         2026-01-28T10:25:00Z  1
+#> 2 ex   1f476930        d4e5f6a7         2026-01-28T10:25:00Z  1
 ```
 
 ### Inspect Version History
@@ -179,8 +179,8 @@ tbit_list(conn, include_versions = TRUE)
 
 ```{r}
 tbit_history(conn, "dm")
-#>   version      data_sha     timestamp             author          commit_message
-#> 1 a8ee7a31...  a1b2c3...    2026-01-28T10:25:00Z  jane@co.com    Sync dm
+#>   version   data_sha  timestamp             author       commit_message
+#> 1 a8ee7a31  a1b2c3d4  2026-01-28T10:25:00Z  jane@co.com  Sync dm
 ```
 
 Each version hash uniquely identifies the (data, metadata) pair at that point in time. Right now there is one entry — the month-1 snapshot.
@@ -276,9 +276,9 @@ print(reader_conn)
 
 # List available tables — same as developer
 tables <- tbit_list(reader_conn)
-#>   name current_version last_updated          version_count
-#> 1 dm   a8ee7a31...     2026-03-28T10:25:00Z  2
-#> 2 ex   1f476930...     2026-03-28T10:25:00Z  2
+#>   name current_version last_updated          
+#> 1 dm   a8ee7a31        2026-03-28T10:25:00Z
+#> 2 ex   1f476930        2026-03-28T10:25:00Z
 
 # Read the latest version
 dm_latest <- tbit_read(reader_conn, "dm")
@@ -287,9 +287,9 @@ nrow(dm_latest)
 
 # Inspect the full history to find an earlier version
 tbit_history(reader_conn, "dm")
-#>   version      data_sha     timestamp             author          commit_message
-#> 1 a8ee7a31...  e5f6a7...    2026-03-28T10:25:00Z  jane@co.com    Sync dm
-#> 2 f7a8b9c2...  a1b2c3...    2026-01-28T10:25:00Z  jane@co.com    Sync dm
+#>   version   data_sha  timestamp             author       commit_message
+#> 1 a8ee7a31  e5f6a7b8  2026-03-28T10:25:00Z  jane@co.com  Sync dm
+#> 2 f7a8b9c2  a1b2c3d4  2026-01-28T10:25:00Z  jane@co.com  Sync dm
 
 # Read a specific earlier version by hash prefix
 # (use the hash from tbit_history() — yours will differ from what's shown here)

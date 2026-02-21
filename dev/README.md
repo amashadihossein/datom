@@ -45,7 +45,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| _None_ | — | — |
+| Phase 7: Multi-Developer Collaboration | Planning | [phase_7_multi_developer_collaboration.md](phase_7_multi_developer_collaboration.md) |
 
 ### Completed Phases
 
@@ -58,6 +58,16 @@ Phase plans are **temporary working documents**:
 | Phase 3: Git Operations | 2026-02-14 | 47 | git2r wrappers: check, author, branch, commit, push (fetch+merge+push) |
 | Phase 2: S3 Operations | 2026-02-10 | 99 | S3 client, upload/download/exists, JSON read/write, redirect resolution |
 | Phase 1: Core Utilities | 2026-02-09 | 131 | SHA, paths, name validation, repo validation |
+
+### Developer Tooling
+
+**dev/dev-sandbox.R**: Automated setup/teardown for testing workflows
+
+- `sandbox_up()`: Creates GitHub repo + runs `tbit_init_repo()` + populates with example data
+- `sandbox_down()`: Wipes S3 namespace + deletes GitHub repo + removes local directory
+- `sandbox_reset()`: Full teardown + setup in one call
+- Replaces manual 5-step workflow (create repo, walk vignette, delete S3, delete repo, delete local)
+- Requires `gh` CLI, AWS credentials, `GITHUB_PAT`
 
 ### Backlog (Deferred Features)
 
@@ -85,6 +95,7 @@ Items discovered during development but intentionally deferred. Review periodica
 | 4 | Connection & Init | Phases 1-3 | 1 week |
 | 5 | Read/Write Workflows | Phase 4 | 1-2 weeks |
 | 6 | Sync & Validation | Phase 5 | 1 week |
+| 7 | Multi-Developer Collaboration | Phases 1-6 | 1-2 weeks |
 
 ## Quick Context for New Sessions
 

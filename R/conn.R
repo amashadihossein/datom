@@ -193,12 +193,14 @@ tbit_init_repo <- function(path = ".",
   tbit_dir   <- fs::path(path, ".tbit")
   input_dir  <- fs::path(path, "input_files")
   gitignore  <- fs::path(path, ".gitignore")
+  readme_file <- fs::path(path, "README.md")
   git_dir    <- fs::path(path, ".git")
 
   path_existed   <- fs::dir_exists(path)
   tbit_existed   <- fs::dir_exists(tbit_dir)
   input_existed  <- fs::dir_exists(input_dir)
   gi_existed     <- fs::file_exists(gitignore)
+  readme_existed <- fs::file_exists(readme_file)
   git_existed    <- fs::dir_exists(git_dir)
 
   .safe_delete <- function(p, is_dir = TRUE) {
@@ -214,6 +216,7 @@ tbit_init_repo <- function(path = ".",
       if (!tbit_existed  && fs::dir_exists(tbit_dir))   .safe_delete(tbit_dir)
       if (!input_existed && fs::dir_exists(input_dir))   .safe_delete(input_dir)
       if (!gi_existed    && fs::file_exists(gitignore))  .safe_delete(gitignore, is_dir = FALSE)
+      if (!readme_existed && fs::file_exists(readme_file)) .safe_delete(readme_file, is_dir = FALSE)
       if (!git_existed   && fs::dir_exists(git_dir))     .safe_delete(git_dir)
       # Remove the path directory itself if we created it and it's now empty
       if (!path_existed && fs::dir_exists(path) &&
@@ -284,6 +287,18 @@ tbit_init_repo <- function(path = ".",
   ignore_lines <- unique(c(git_ignore, "input_files/"))
   writeLines(ignore_lines, fs::path(path, ".gitignore"))
 
+  # --- Generate README.md -----------------------------------------------------
+  readme_content <- .tbit_render_readme(
+    project_name = project_name,
+    bucket       = bucket,
+    prefix       = prefix,
+    region       = region,
+    remote_url   = remote_url,
+    cred_names   = cred_names
+  )
+
+  writeLines(readme_content, fs::path(path, "README.md"))
+
   # --- Git init, remote, commit, push -----------------------------------------
   repo <- git2r::init(path)
 
@@ -302,7 +317,8 @@ tbit_init_repo <- function(path = ".",
     ".tbit/project.yaml",
     ".tbit/routing.json",
     ".tbit/manifest.json",
-    ".gitignore"
+    ".gitignore",
+    "README.md"
   ))
 
   git2r::commit(

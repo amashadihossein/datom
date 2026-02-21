@@ -4,7 +4,7 @@
 \alias{tbit_list}
 \title{List Available Tables}
 \usage{
-tbit_list(conn, pattern = NULL, include_versions = FALSE)
+tbit_list(conn, pattern = NULL, include_versions = FALSE, short_hash = TRUE)
 }
 \arguments{
 \item{conn}{A \code{tbit_conn} object from \code{\link[=tbit_get_conn]{tbit_get_conn()}}.}
@@ -12,6 +12,9 @@ tbit_list(conn, pattern = NULL, include_versions = FALSE)
 \item{pattern}{Optional glob pattern for filtering table names.}
 
 \item{include_versions}{If TRUE, includes version count info.}
+
+\item{short_hash}{If TRUE (default), truncates version and data SHA
+columns to 8 characters for readability. Set to FALSE for full hashes.}
 }
 \value{
 Data frame with table info (name, current_version, last_updated, etc.).

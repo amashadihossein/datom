@@ -144,3 +144,39 @@ test_that("file SHA is a 64-char hex string", {
 test_that("file SHA errors on missing file", {
   expect_error(.tbit_compute_file_sha("/no/such/file.txt"), "File not found")
 })
+
+
+# --- .tbit_abbreviate_sha() ---------------------------------------------------
+
+test_that("abbreviates SHA to 8 characters by default", {
+  sha <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
+  expect_equal(.tbit_abbreviate_sha(sha), "a793e733")
+})
+
+test_that("abbreviates to custom length", {
+  sha <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
+  expect_equal(.tbit_abbreviate_sha(sha, n = 12), "a793e733037c")
+})
+
+test_that("handles NA values", {
+  result <- .tbit_abbreviate_sha(c("abcdef1234567890", NA_character_))
+  expect_equal(result, c("abcdef12", NA_character_))
+})
+
+test_that("handles vector input", {
+  shas <- c(
+    "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f",
+    "2320b970ae25b8393e2b421ecfe4fa0b9218f3de69cda83db4a22d002657aed7"
+  )
+  result <- .tbit_abbreviate_sha(shas)
+  expect_equal(result, c("a793e733", "2320b970"))
+})
+
+test_that("passes through non-character input unchanged", {
+  expect_equal(.tbit_abbreviate_sha(42), 42)
+  expect_null(.tbit_abbreviate_sha(NULL))
+})
+
+test_that("handles short strings gracefully", {
+  expect_equal(.tbit_abbreviate_sha("abc"), "abc")
+})

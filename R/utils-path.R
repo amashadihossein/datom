@@ -118,3 +118,52 @@
 
   paste0("s3://", bucket, "/", key)
 }
+
+
+#' Render README.md from Template
+#'
+#' Reads the template from `inst/templates/README.md` and fills in
+#' project-specific values using `{{{ }}}` delimiters.
+#'
+#' @param project_name Project name string.
+#' @param bucket S3 bucket name.
+#' @param prefix S3 prefix (can be NULL).
+#' @param region AWS region string.
+#' @param remote_url Git remote URL.
+#' @param cred_names Named list with `access_key_env` and `secret_key_env`.
+#'
+#' @return Character string — the rendered README content.
+#' @keywords internal
+.tbit_render_readme <- function(project_name,
+                                bucket,
+                                prefix,
+                                region,
+                                remote_url,
+                                cred_names) {
+  template_path <- system.file(
+    "templates", "README.md",
+    package = "tbit",
+    mustWork = TRUE
+  )
+
+  template <- paste(readLines(template_path, warn = FALSE), collapse = "\n")
+
+  prefix_display <- if (is.null(prefix)) "*(none)*" else paste0("`", prefix, "`")
+  prefix_code <- if (is.null(prefix)) "NULL" else paste0('"', prefix, '"')
+
+  glue::glue(
+    template,
+    project_name   = project_name,
+    bucket         = bucket,
+    prefix_display = prefix_display,
+    prefix_code    = prefix_code,
+    region         = region,
+    remote_url     = remote_url,
+    access_key_env = cred_names[["access_key_env"]],
+    secret_key_env = cred_names[["secret_key_env"]],
+    created_at     = format(Sys.Date(), "%Y-%m-%d"),
+    tbit_version   = as.character(utils::packageVersion("tbit")),
+    .open  = "{{{",
+    .close = "}}}"
+  )
+}

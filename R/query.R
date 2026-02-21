@@ -6,12 +6,15 @@
 #' @param conn A `tbit_conn` object from [tbit_get_conn()].
 #' @param pattern Optional glob pattern for filtering table names.
 #' @param include_versions If TRUE, includes version count info.
+#' @param short_hash If TRUE (default), truncates version and data SHA
+#'   columns to 8 characters for readability. Set to FALSE for full hashes.
 #'
 #' @return Data frame with table info (name, current_version, last_updated, etc.).
 #' @export
 tbit_list <- function(conn,
                       pattern = NULL,
-                      include_versions = FALSE) {
+                      include_versions = FALSE,
+                      short_hash = TRUE) {
 
   if (!inherits(conn, "tbit_conn")) {
     cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
@@ -69,7 +72,14 @@ tbit_list <- function(conn,
     row
   })
 
-  do.call(rbind, rows)
+  result <- do.call(rbind, rows)
+
+  if (isTRUE(short_hash)) {
+    result$current_version <- .tbit_abbreviate_sha(result$current_version)
+    result$current_data_sha <- .tbit_abbreviate_sha(result$current_data_sha)
+  }
+
+  result
 }
 
 
@@ -81,13 +91,16 @@ tbit_list <- function(conn,
 #' @param conn A `tbit_conn` object from [tbit_get_conn()].
 #' @param name Table name.
 #' @param n Maximum number of versions to return. Default 10.
+#' @param short_hash If TRUE (default), truncates version and data SHA
+#'   columns to 8 characters for readability. Set to FALSE for full hashes.
 #'
 #' @return Data frame with columns: version, data_sha, timestamp, author,
 #'   commit_message.
 #' @export
 tbit_history <- function(conn,
                          name,
-                         n = 10) {
+                         n = 10,
+                         short_hash = TRUE) {
 
   if (!inherits(conn, "tbit_conn")) {
     cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
@@ -146,7 +159,14 @@ tbit_history <- function(conn,
     )
   })
 
-  do.call(rbind, rows)
+  result <- do.call(rbind, rows)
+
+  if (isTRUE(short_hash)) {
+    result$version <- .tbit_abbreviate_sha(result$version)
+    result$data_sha <- .tbit_abbreviate_sha(result$data_sha)
+  }
+
+  result
 }
 
 

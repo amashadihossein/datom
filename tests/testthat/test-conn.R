@@ -906,6 +906,45 @@ test_that("tbit_init_repo stores tbit_version in project.yaml", {
                as.character(utils::packageVersion("tbit")))
 })
 
+test_that("tbit_init_repo creates README.md", {
+  env <- setup_init_env()
+
+  tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                  remote_url = env$bare_dir, bucket = "b")
+
+  readme_path <- fs::path(env$work_dir, "README.md")
+  expect_true(fs::file_exists(readme_path))
+})
+
+test_that("tbit_init_repo README.md contains project name", {
+  env <- setup_init_env()
+
+  tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                  remote_url = env$bare_dir, bucket = "my-bucket",
+                  prefix = "study/")
+
+  readme <- readLines(fs::path(env$work_dir, "README.md"))
+  readme_text <- paste(readme, collapse = "\n")
+
+  expect_match(readme_text, "# testproj", fixed = TRUE)
+  expect_match(readme_text, "my-bucket", fixed = TRUE)
+  expect_match(readme_text, "study/", fixed = TRUE)
+  expect_match(readme_text, "TBIT_TESTPROJ_ACCESS_KEY_ID", fixed = TRUE)
+})
+
+test_that("tbit_init_repo commits README.md to git", {
+  env <- setup_init_env()
+
+  tbit_init_repo(path = env$work_dir, project_name = "testproj",
+                  remote_url = env$bare_dir, bucket = "b")
+
+  repo <- git2r::repository(env$work_dir)
+  status <- git2r::status(repo)
+  # README.md should be committed, not untracked
+  untracked <- unlist(status$untracked)
+  expect_false("README.md" %in% untracked)
+})
+
 
 # --- Rollback on failure ------------------------------------------------------
 

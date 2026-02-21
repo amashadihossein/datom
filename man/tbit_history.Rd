@@ -4,7 +4,7 @@
 \alias{tbit_history}
 \title{Show Version History}
 \usage{
-tbit_history(conn, name, n = 10)
+tbit_history(conn, name, n = 10, short_hash = TRUE)
 }
 \arguments{
 \item{conn}{A \code{tbit_conn} object from \code{\link[=tbit_get_conn]{tbit_get_conn()}}.}
@@ -12,6 +12,9 @@ tbit_history(conn, name, n = 10)
 \item{name}{Table name.}
 
 \item{n}{Maximum number of versions to return. Default 10.}
+
+\item{short_hash}{If TRUE (default), truncates version and data SHA
+columns to 8 characters for readability. Set to FALSE for full hashes.}
 }
 \value{
 Data frame with columns: version, data_sha, timestamp, author,
