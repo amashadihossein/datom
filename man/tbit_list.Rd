@@ -17,6 +17,6 @@ tbit_list(conn, pattern = NULL, include_versions = FALSE)
 Data frame with table info (name, current_version, last_updated, etc.).
 }
 \description{
-Lists tables from S3 manifest. Reads \code{.tbit/manifest.json} from S3
+Lists tables from S3 manifest. Reads \code{.metadata/manifest.json} from S3
 and returns a data frame with one row per table.
 }
