@@ -96,12 +96,12 @@ study_001_data/
 ```{r}
 conn <- tbit_get_conn(path = "study_001_data")
 print(conn)
-#> ── tbit connection ──
-#> • Project: STUDY_001
-#> • Role: developer
-#> • Bucket: clinical-data-bucket
-#> • Prefix: study-001/
-#> • Region: us-east-1
+#> ── tbit connection
+#> • Project: "STUDY_001"
+#> • Role: "developer"
+#> • Bucket: "clinical-data-bucket"
+#> • Prefix: "study-001/"
+#> • Region: "us-east-1"
 #> • Path: /path/to/study_001_data
 ```
 
@@ -160,8 +160,8 @@ Before moving on, it's worth pausing to verify the state of the repository and g
 ```{r}
 tbit_list(conn)
 #>   name current_version last_updated          version_count
-#> 1 dm   f7a8b9c2...     2026-01-28T10:25:00Z  1
-#> 2 ex   c3d4e5f6...     2026-01-28T10:25:00Z  1
+#> 1 dm   a8ee7a31...     2026-01-28T10:25:00Z  1
+#> 2 ex   1f476930...     2026-01-28T10:25:00Z  1
 ```
 
 Pass `include_versions = TRUE` to see the current data SHA alongside the version identifier:
@@ -169,8 +169,8 @@ Pass `include_versions = TRUE` to see the current data SHA alongside the version
 ```{r}
 tbit_list(conn, include_versions = TRUE)
 #>   name current_version current_data_sha last_updated          version_count
-#> 1 dm   f7a8b9c2...     a1b2c3...        2026-01-28T10:25:00Z  1
-#> 2 ex   c3d4e5f6...     d4e5f6...        2026-01-28T10:25:00Z  1
+#> 1 dm   a8ee7a31...     a1b2c3...        2026-01-28T10:25:00Z  1
+#> 2 ex   1f476930...     d4e5f6...        2026-01-28T10:25:00Z  1
 ```
 
 ### Inspect Version History
@@ -180,7 +180,7 @@ tbit_list(conn, include_versions = TRUE)
 ```{r}
 tbit_history(conn, "dm")
 #>   version      data_sha     timestamp             author          commit_message
-#> 1 f7a8b9c2...  a1b2c3...    2026-01-28T10:25:00Z  jane@co.com    Sync dm
+#> 1 a8ee7a31...  a1b2c3...    2026-01-28T10:25:00Z  jane@co.com    Sync dm
 ```
 
 Each version hash uniquely identifies the (data, metadata) pair at that point in time. Right now there is one entry — the month-1 snapshot.
@@ -202,9 +202,12 @@ range(as.Date(dm_m1$RFSTDTC))
 
 Rows, columns, and date ranges all look right. You can also read by the version hash directly — short prefix matching works just like `git log --abbrev-commit`:
 
+> **Note**: The version hashes in this vignette (e.g., `"a8ee7a31"`) are illustrative. Your actual hashes will differ because they are derived from the data content. Always get your version hashes from `tbit_list()` or `tbit_history()` — never copy them from documentation.
+
 ```{r}
-# Equivalent: read by version hash prefix
-dm_m1 <- tbit_read(conn, "dm", version = "f7a8b9c2")
+# Equivalent: read by version hash 8 character prefix
+# Replace "a8ee7a31" with the hash from your tbit_history(conn, "dm")
+dm_m1 <- tbit_read(conn, "dm", version = "a8ee7a31")
 nrow(dm_m1)
 #> [1] 6
 ```
@@ -252,6 +255,8 @@ results <- tbit_sync(conn, manifest)
 
 Downstream analysts don't need git access. They connect directly to S3:
 
+> **Important**: The `bucket` and `prefix` passed here must exactly match the values used in `tbit_init_repo()`. These are stored in `.tbit/project.yaml` in the developer's repo — ask your data developer if you're unsure. A mismatched prefix is a common source of `AccessDenied (HTTP 403)` errors, because S3 returns 403 when an object does not exist at the given key and the caller lacks `s3:ListBucket` permission.
+
 ```{r}
 # Data reader only needs S3 credentials
 # TBIT_STUDY_001_ACCESS_KEY_ID and TBIT_STUDY_001_SECRET_ACCESS_KEY
@@ -262,14 +267,35 @@ reader_conn <- tbit_get_conn(
   project_name = "STUDY_001"
 )
 print(reader_conn)
-#> ── tbit connection ──
-#> • Project: STUDY_001
-#> • Role: reader
-#> • Bucket: clinical-data-bucket
+#> ── tbit connection
+#> • Project: "STUDY_001"
+#> • Role: "reader"
+#> • Bucket: "clinical-data-bucket"
+#> • Prefix: "study-001/"
+#> • Region: "us-east-1"
 
-# Readers can list, read, and access any version
+# List available tables — same as developer
 tables <- tbit_list(reader_conn)
-dm <- tbit_read(reader_conn, "dm")
+#>   name current_version last_updated          version_count
+#> 1 dm   a8ee7a31...     2026-03-28T10:25:00Z  2
+#> 2 ex   1f476930...     2026-03-28T10:25:00Z  2
+
+# Read the latest version
+dm_latest <- tbit_read(reader_conn, "dm")
+nrow(dm_latest)
+#> [1] 19
+
+# Inspect the full history to find an earlier version
+tbit_history(reader_conn, "dm")
+#>   version      data_sha     timestamp             author          commit_message
+#> 1 a8ee7a31...  e5f6a7...    2026-03-28T10:25:00Z  jane@co.com    Sync dm
+#> 2 f7a8b9c2...  a1b2c3...    2026-01-28T10:25:00Z  jane@co.com    Sync dm
+
+# Read a specific earlier version by hash prefix
+# (use the hash from tbit_history() — yours will differ from what's shown here)
+dm_v1 <- tbit_read(reader_conn, "dm", version = "f7a8b9c2")
+nrow(dm_v1)
+#> [1] 6
 ```
 
 ## Repository Validation
