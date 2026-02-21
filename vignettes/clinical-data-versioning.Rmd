@@ -175,9 +175,22 @@ results <- tbit_sync(conn, manifest)
 
 Because the parquet content changed (new subjects), tbit uploaded new parquet files to S3 with fresh SHAs. The old parquet files remain — they are never overwritten or deleted.
 
-## Listing Tables and Versions
+## Exploring the Repository After Syncing
+
+Before moving on, it's worth pausing to verify the state of the repository and get familiar with the data you've just versioned.
 
 ### List All Tables
+
+`tbit_list()` gives you a quick inventory of what is registered and when each table was last updated:
+
+```{r}
+tbit_list(conn)
+#>   name current_version last_updated          version_count
+#> 1 dm   a8b9c0d1...     2026-03-28T10:25:00Z  2
+#> 2 ex   d1e2f3a4...     2026-03-28T10:25:00Z  2
+```
+
+Pass `include_versions = TRUE` to see the current data SHA alongside the version identifier:
 
 ```{r}
 tbit_list(conn, include_versions = TRUE)
@@ -186,7 +199,9 @@ tbit_list(conn, include_versions = TRUE)
 #> 2 ex   d1e2f3a4...     f6a7b8...        2026-03-28T10:25:00Z  2
 ```
 
-### View Version History for DM
+### Inspect Version History
+
+`tbit_history()` shows the full audit trail for a single table — who synced it, when, and which version hash corresponds to each snapshot:
 
 ```{r}
 tbit_history(conn, "dm")
@@ -195,34 +210,55 @@ tbit_history(conn, "dm")
 #> 2 f7a8b9c2...  a1b2c3...    2026-01-28T10:25:00Z  jane@co.com    Sync dm
 ```
 
-## Reading Data by Version
+The most recent entry is at the top. Each version hash uniquely identifies the (data, metadata) pair at that point in time.
 
-### Current Version
+### Pull Down a Version to Evaluate
+
+Before trusting that the sync worked correctly, read the data back and spot-check it. Use the version hash from `tbit_history()` to confirm you can retrieve either snapshot:
 
 ```{r}
-# Read latest (no version argument)
+# Read the month-3 snapshot (current)
 dm_current <- tbit_read(conn, "dm")
 nrow(dm_current)
 #> [1] 19
-```
 
-### Historical Version
-
-A colleague needs to verify results from the month-1 snapshot. They use the version hash from the history:
-
-```{r}
-# Read the exact month-1 version — short hash prefix works (like git)
+# Read the original month-1 snapshot using its short version hash
 dm_v1 <- tbit_read(conn, "dm", version = "f7a8b9c2")
 nrow(dm_v1)
 #> [1] 6
 
-# The full hash also works
-dm_v1 <- tbit_read(conn, "dm", version = "f7a8b9c2...")
-nrow(dm_v1)
-#> [1] 6
+# Spot-check: confirm the month-1 snapshot only has early enrollees
+range(as.Date(dm_v1$RFSTDTC))
+#> [1] "2026-01-03" "2026-01-28"
 ```
 
-This is the core tbit promise: any historical snapshot is retrievable, exactly as it was.
+Short hash prefix matching works just like `git log --abbrev-commit` — tbit resolves the prefix as long as it is unambiguous across all versions of that table.
+
+## Month 3: Updated Extract
+
+Two months later, enrollment has progressed. The data management team sends updated extracts:
+
+```{r}
+# Simulate month-3 extract
+dm_m3 <- tbit_example_data("dm", cutoff_date = cutoffs["month_3"])
+ex_m3 <- tbit_example_data("ex", cutoff_date = cutoffs["month_3"])
+
+write.csv(dm_m3, "study_001_data/input_files/dm.csv", row.names = FALSE)
+write.csv(ex_m3, "study_001_data/input_files/ex.csv", row.names = FALSE)
+
+# Scan — tbit detects both files have changed (different SHA)
+manifest <- tbit_sync_manifest(conn)
+#> ℹ Scanned 2 files: 0 new, 2 changed, 0 unchanged.
+
+# Sync the updates
+results <- tbit_sync(conn, manifest)
+#> ℹ Syncing 2 tables...
+#> ✔ dm synced (changed).
+#> ✔ ex synced (changed).
+#> ℹ Sync complete: 2 succeeded, 0 failed, 0 skipped.
+```
+
+Because the parquet content changed (new subjects), tbit uploaded new parquet files to S3 with fresh SHAs. The old parquet files remain — they are never overwritten or deleted.
 
 ## Change Detection
 
@@ -312,8 +348,9 @@ This workflow demonstrates the core tbit loop for clinical data:
 1. **Receive** EDC extracts → place in `input_files/`
 2. **Scan** with `tbit_sync_manifest()` → detect new and changed files
 3. **Sync** with `tbit_sync()` → import, convert to parquet, version, upload
-4. **List** with `tbit_list()` and `tbit_history()` → see tables and versions
-5. **Read** with `tbit_read(conn, name, version = "...")` → retrieve any historical snapshot
+4. **Explore** with `tbit_list()`, `tbit_history()`, and `tbit_read()` → verify what was synced before moving on
+5. **Update** by dropping new extracts and repeating the sync cycle
+6. **Retrieve** any historical snapshot with `tbit_read(conn, name, version = "...")`
 
 Every step is tracked in git with full audit trail. Data readers access any version via S3 without needing git credentials.
 
