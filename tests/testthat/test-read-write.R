@@ -1128,7 +1128,7 @@ test_that("commits and pushes after sync", {
   })
 })
 
-test_that("gracefully handles git commit/push failures", {
+test_that("aborts S3 sync when git commit/push fails", {
   withr::with_tempdir({
     conn <- mock_tbit_conn(list())
     conn$role <- "developer"
@@ -1138,15 +1138,19 @@ test_that("gracefully handles git commit/push failures", {
     meta <- list(data_sha = "sha1", nrow = 5L, ncol = 2L)
     jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
 
+    s3_called <- FALSE
     local_mocked_bindings(
       .tbit_has_changes = function(conn, name, d, m) "metadata_only",
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, s3_key, data) {
+        s3_called <<- TRUE
+        invisible(TRUE)
+      },
       .tbit_git_commit = function(path, files, message) stop("Not a git repo"),
       .tbit_git_push = function(path) invisible(TRUE)
     )
 
-    # Should not error — commit failure is handled gracefully
-    expect_no_error(result <- .tbit_sync_metadata(conn, "tbl"))
-    expect_true(is.na(result$commit_sha))
+    # Git failure aborts the operation — S3 is never touched
+    expect_error(.tbit_sync_metadata(conn, "tbl"), "Git commit/push failed")
+    expect_false(s3_called)
   })
 })

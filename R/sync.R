@@ -412,19 +412,43 @@ tbit_sync <- function(conn,
   n_err <- sum(manifest$result == "error", na.rm = TRUE)
   n_skip <- sum(manifest$result == "skipped", na.rm = TRUE)
 
-  # --- push updated manifest to S3 so readers can use tbit_list() ---
+  # --- commit manifest to git + push to S3 (local → git → S3) ---
   if (n_ok > 0L) {
-    tryCatch({
-      manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
-      if (fs::file_exists(manifest_path)) {
-        manifest_data <- jsonlite::read_json(manifest_path)
-        .tbit_s3_write_json(conn, ".metadata/manifest.json", manifest_data)
-      }
+    manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+
+    # Git commit + push (must succeed before S3)
+    git_ok <- tryCatch({
+      .tbit_git_commit(
+        conn$path,
+        ".tbit/manifest.json",
+        paste0("Update manifest (", n_ok, " table", if (n_ok != 1L) "s", " synced)")
+      )
+      .tbit_git_push(conn$path)
+      TRUE
     }, error = function(e) {
       cli::cli_alert_warning(
-        "Failed to push manifest to S3: {conditionMessage(e)}"
+        "Failed to commit/push manifest to git: {conditionMessage(e)}"
       )
+      FALSE
     })
+
+    # Push to S3 only if git succeeded
+    if (isTRUE(git_ok)) {
+      tryCatch({
+        if (fs::file_exists(manifest_path)) {
+          manifest_data <- jsonlite::read_json(manifest_path)
+          .tbit_s3_write_json(conn, ".metadata/manifest.json", manifest_data)
+        }
+      }, error = function(e) {
+        cli::cli_alert_warning(
+          "Failed to push manifest to S3: {conditionMessage(e)}"
+        )
+      })
+    } else {
+      cli::cli_alert_warning(
+        "Skipped S3 manifest push because git failed. Run {.fn tbit_sync_routing} to fix."
+      )
+    }
   }
 
   cli::cli_alert_info(

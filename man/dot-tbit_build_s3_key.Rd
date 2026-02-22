@@ -20,6 +20,7 @@ Constructs S3 keys from path components, inserting the \verb{tbit/} segment
 per the storage structure convention.
 }
 \examples{
+\dontrun{
 # Data file
 .tbit_build_s3_key("proj", "customers", "abc123.parquet")
 # → "proj/tbit/customers/abc123.parquet"
@@ -35,5 +36,6 @@ per the storage structure convention.
 # No prefix
 .tbit_build_s3_key(NULL, "customers", "abc123.parquet")
 # → "tbit/customers/abc123.parquet"
+}
 }
 \keyword{internal}

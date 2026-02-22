@@ -240,20 +240,19 @@ tbit_read <- function(conn,
 }
 
 
-#' Write Metadata Files to Git and S3
+#' Write Metadata Files Locally
 #'
-#' Writes `metadata.json` and appends to `version_history.json` in both
-#' the local git repo and S3. Does NOT commit or push — the caller handles that.
+#' Writes `metadata.json` and appends to `version_history.json` in the local
+#' git repo. Does NOT commit, push, or touch S3 — the caller handles those.
 #'
 #' @param conn A `tbit_conn` object (must be developer with path).
 #' @param name Table name.
 #' @param metadata Named list for metadata.json.
 #' @param metadata_sha SHA of the metadata (the tbit "version").
 #' @param message Commit message (stored in version_history entry).
-#' @return Invisible list with metadata_sha and paths written.
+#' @return Invisible list with metadata_sha and local paths written.
 #' @keywords internal
-.tbit_write_metadata <- function(conn, name, metadata, metadata_sha, message = NULL) {
-  # --- Write to git repo (local) ---
+.tbit_write_metadata_local <- function(conn, name, metadata, metadata_sha, message = NULL) {
   repo_path <- conn$path
   table_dir <- fs::path(repo_path, name)
   fs::dir_create(table_dir)
@@ -287,7 +286,34 @@ tbit_read <- function(conn,
   history <- c(list(new_entry), history)
   jsonlite::write_json(history, history_path, auto_unbox = TRUE, pretty = TRUE)
 
-  # --- Write to S3 ---
+  invisible(list(
+    metadata_sha = metadata_sha,
+    git_paths = c(metadata_path, history_path)
+  ))
+}
+
+
+#' Push Metadata Files to S3
+#'
+#' Uploads `metadata.json`, `version_history.json`, and a versioned snapshot
+#' to S3. Called AFTER git commit+push succeeds to maintain local → git → S3
+#' ordering.
+#'
+#' @param conn A `tbit_conn` object.
+#' @param name Table name.
+#' @param metadata Named list for metadata.json.
+#' @param metadata_sha SHA of the metadata (the tbit "version").
+#' @return Invisible character vector of S3 keys written.
+#' @keywords internal
+.tbit_push_metadata_s3 <- function(conn, name, metadata, metadata_sha) {
+  # Read local version_history.json (written by .tbit_write_metadata_local)
+  history_path <- fs::path(conn$path, name, "version_history.json")
+  history <- if (fs::file_exists(history_path)) {
+    jsonlite::read_json(history_path)
+  } else {
+    list()
+  }
+
   s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
   s3_history_key <- paste0(name, "/.metadata/version_history.json")
   s3_versioned_key <- paste0(name, "/.metadata/", metadata_sha, ".json")
@@ -296,10 +322,28 @@ tbit_read <- function(conn,
   .tbit_s3_write_json(conn, s3_history_key, history)
   .tbit_s3_write_json(conn, s3_versioned_key, metadata)
 
+  invisible(c(s3_metadata_key, s3_history_key, s3_versioned_key))
+}
+
+
+#' Write Metadata Files to Git and S3 (Legacy Wrapper)
+#'
+#' Calls [.tbit_write_metadata_local()] then [.tbit_push_metadata_s3()].
+#' Kept for backward compatibility. Does NOT commit or push.
+#'
+#' @inheritParams .tbit_write_metadata_local
+#' @return Invisible list with metadata_sha, git_paths, and s3_keys.
+#' @keywords internal
+.tbit_write_metadata <- function(conn, name, metadata, metadata_sha, message = NULL) {
+  local_result <- .tbit_write_metadata_local(
+    conn, name, metadata, metadata_sha, message = message
+  )
+  s3_keys <- .tbit_push_metadata_s3(conn, name, metadata, metadata_sha)
+
   invisible(list(
     metadata_sha = metadata_sha,
-    git_paths = c(metadata_path, history_path),
-    s3_keys = c(s3_metadata_key, s3_history_key, s3_versioned_key)
+    git_paths = local_result$git_paths,
+    s3_keys = s3_keys
   ))
 }
 
@@ -375,27 +419,34 @@ tbit_write <- function(conn,
     )))
   }
 
-  # 3. Write parquet to S3 (only for full changes)
+  # 3. Write parquet to temp file (staged locally, not yet uploaded)
+  tmp <- NULL
   if (change_type == "full") {
     tmp <- tempfile(fileext = ".parquet")
     on.exit(unlink(tmp), add = TRUE)
     arrow::write_parquet(data, tmp)
-
-    parquet_key <- paste0(name, "/", data_sha, ".parquet")
-    .tbit_s3_upload(conn, tmp, parquet_key)
   }
 
-  # 4. Write metadata to git + S3
-  write_result <- .tbit_write_metadata(
+  # 4. Write metadata locally
+  write_result <- .tbit_write_metadata_local(
     conn, name, meta, metadata_sha,
     message = message
   )
 
-  # 5. Git commit + push
+  # 5. Git commit + push (must succeed before touching S3)
   git_files <- fs::path_rel(write_result$git_paths, conn$path)
   commit_msg <- message %||% paste0("Update ", name)
   commit_sha <- .tbit_git_commit(conn$path, git_files, commit_msg)
   .tbit_git_push(conn$path)
+
+  # 6. Upload parquet to S3 (only after git succeeds)
+  if (change_type == "full" && !is.null(tmp)) {
+    parquet_key <- paste0(name, "/", data_sha, ".parquet")
+    .tbit_s3_upload(conn, tmp, parquet_key)
+  }
+
+  # 7. Push metadata to S3 (final step — completes the round-trip)
+  .tbit_push_metadata_s3(conn, name, meta, metadata_sha)
 
   cli::cli_alert_success(
     "Wrote {.val {name}} ({change_type}): {.val {substr(metadata_sha, 1, 8)}}"

@@ -250,13 +250,12 @@ test_that(".tbit_git_commit errors on non-existent files", {
   )
 })
 
-test_that(".tbit_git_commit errors when files are unchanged", {
+test_that(".tbit_git_commit returns HEAD SHA when files are unchanged", {
   info <- create_test_repo_with_commit()
-  # README.md is already committed and unchanged
-  expect_error(
-    .tbit_git_commit(info$path, "README.md", "No change"),
-    "unchanged"
-  )
+  # README.md is already committed and unchanged — should return HEAD SHA
+  result <- .tbit_git_commit(info$path, "README.md", "No change")
+  head_sha <- as.character(git2r::revparse_single(info$repo, "HEAD")$sha)
+  expect_equal(result, head_sha)
 })
 
 test_that(".tbit_git_commit errors on non-git directory", {

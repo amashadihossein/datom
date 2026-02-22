@@ -105,7 +105,8 @@ Auto-detected via `GITHUB_PAT` presence.
 - **cli pluralization**: `{?s}` requires a quantity reference immediately before it (e.g., `{length(x)} variable{?s}`). Without the quantity, cli throws a confusing error.
 - **git2r::default_signature()**: Fails on freshly `git2r::init()`'d repos that lack local config. Always call `git2r::config(repo, user.name = ..., user.email = ...)` after init.
 - **git2r::merge()**: Expects a string (branch name), not a branch object. Use `upstream_ref$name`.
-- **cli dot-literals**: In cli >= 3.4.0, `{.something}` inside `cli_abort()` is interpreted as a cli style, not an expression. Wrap internal function calls starting with `.` in parentheses: `{(.tbit_build_s3_key(...))}`.
+- **cli dot-literals**: In cli >= 3.4.0, `{.something}` inside `cli_abort()` is interpreted as a cli style, not an expression. Wrap internal function calls starting with `.` in parentheses: `{(.tbit_build_s3_key(...))}`.  
+- **`.tbit_git_commit()` is idempotent**: Returns HEAD SHA (instead of erroring) when staged files are unchanged. This is by design — enables safe re-runs after partial failures in the local → git → S3 pipeline.
 
 ## Don'ts
 

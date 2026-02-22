@@ -20,7 +20,8 @@ Imports:
     fs,
     jsonlite,
     paws.storage,
-    purrr
+    purrr,
+    rlang
 Suggests: 
     git2r,
     glue,
@@ -28,7 +29,6 @@ Suggests:
     mockery,
     rio,
     rmarkdown,
-    rlang,
     testthat (>= 3.0.0),
     withr,
     yaml

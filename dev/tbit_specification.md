@@ -618,12 +618,40 @@ class DataProduct:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Write Ordering & Resilience
+
+**Strict ordering: local → git → S3.** Every write path follows this sequence:
+
+1. Write metadata files to local disk
+2. Git commit + push (must succeed before proceeding)
+3. Upload data and metadata to S3
+
+**Git gates S3.** If git commit or push fails, S3 writes are aborted entirely. This ensures S3 never contains data that git doesn't know about. The user is instructed to fix the git issue and re-run.
+
+**Idempotent re-runs.** If a write fails partway through:
+- `.tbit_has_changes()` checks S3 (the final destination). If S3 is stale, changes are re-detected.
+- `.tbit_git_commit()` returns HEAD SHA when files are already committed (no-op on re-run).
+- S3 uploads are content-addressed (parquet) or unconditional overwrites (metadata JSON), so re-uploading is safe.
+- `tbit_sync_routing()` is the escape hatch: a full local → S3 push that's always safe to run.
+
+**Key functions and their ordering:**
+
+| Function | Order | Git failure behavior |
+|----------|-------|---------------------|
+| `tbit_write()` | local → git → S3 | Hard error, S3 untouched |
+| `.tbit_sync_metadata()` | local → git → S3 | Hard error, S3 untouched |
+| `tbit_sync()` (per-table) | via `tbit_write()` | Per above |
+| `tbit_sync()` (manifest) | local → git → S3 | Warning, S3 skipped |
+| `tbit_sync_routing()` | local → S3 only | N/A (recovery tool) |
+| `tbit_init_repo()` | local → git only | Cleanup on failure |
+
 ### Change Detection
 
 - `metadata_sha` computed from alphabetically sorted fields
 - Includes both `data_sha` and `original_file_sha`
 - Single comparison detects any change
 - Enables efficient updates and deduplication
+- Change detection reads from **S3** (the final destination), so incomplete round-trips are re-detected on re-run
 
 ### Conflict Resolution
 

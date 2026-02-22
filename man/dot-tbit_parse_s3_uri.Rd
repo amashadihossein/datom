@@ -16,10 +16,12 @@ Named list with \code{bucket} (character) and \code{prefix} (character or NULL).
 Extracts bucket and prefix from an \verb{s3://} URI.
 }
 \examples{
+\dontrun{
 .tbit_parse_s3_uri("s3://my-bucket/data/proj")
 # → list(bucket = "my-bucket", prefix = "data/proj")
 
 .tbit_parse_s3_uri("s3://my-bucket")
 # → list(bucket = "my-bucket", prefix = NULL)
+}
 }
 \keyword{internal}

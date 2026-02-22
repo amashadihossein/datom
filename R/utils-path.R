@@ -12,6 +12,7 @@
 #' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' # Data file
 #' .tbit_build_s3_key("proj", "customers", "abc123.parquet")
 #' # → "proj/tbit/customers/abc123.parquet"
@@ -27,6 +28,7 @@
 #' # No prefix
 #' .tbit_build_s3_key(NULL, "customers", "abc123.parquet")
 #' # → "tbit/customers/abc123.parquet"
+#' }
 .tbit_build_s3_key <- function(prefix = NULL, ...) {
   segments <- c(...)
 
@@ -57,11 +59,13 @@
 #' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' .tbit_parse_s3_uri("s3://my-bucket/data/proj")
 #' # → list(bucket = "my-bucket", prefix = "data/proj")
 #'
 #' .tbit_parse_s3_uri("s3://my-bucket")
 #' # → list(bucket = "my-bucket", prefix = NULL)
+#' }
 .tbit_parse_s3_uri <- function(uri) {
   if (!is.character(uri) || length(uri) != 1L) {
     cli::cli_abort("{.arg uri} must be a single character string.")

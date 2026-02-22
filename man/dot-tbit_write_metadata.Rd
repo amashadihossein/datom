@@ -2,7 +2,7 @@
 % Please edit documentation in R/read_write.R
 \name{.tbit_write_metadata}
 \alias{.tbit_write_metadata}
-\title{Write Metadata Files to Git and S3}
+\title{Write Metadata Files to Git and S3 (Legacy Wrapper)}
 \usage{
 .tbit_write_metadata(conn, name, metadata, metadata_sha, message = NULL)
 }
@@ -18,10 +18,10 @@
 \item{message}{Commit message (stored in version_history entry).}
 }
 \value{
-Invisible list with metadata_sha and paths written.
+Invisible list with metadata_sha, git_paths, and s3_keys.
 }
 \description{
-Writes \code{metadata.json} and appends to \code{version_history.json} in both
-the local git repo and S3. Does NOT commit or push — the caller handles that.
+Calls \code{\link[=.tbit_write_metadata_local]{.tbit_write_metadata_local()}} then \code{\link[=.tbit_push_metadata_s3]{.tbit_push_metadata_s3()}}.
+Kept for backward compatibility. Does NOT commit or push.
 }
 \keyword{internal}

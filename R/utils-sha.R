@@ -131,22 +131,9 @@
     )))
   }
 
-  # Sync metadata files to S3
-  s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
-  .tbit_s3_write_json(conn, s3_metadata_key, metadata)
-
-  s3_keys <- s3_metadata_key
-
-  # Sync version_history.json if it exists locally
+  # Git commit + push first (local → git → S3 ordering)
   history_path <- fs::path(table_dir, "version_history.json")
-  if (fs::file_exists(history_path)) {
-    history <- jsonlite::read_json(history_path)
-    s3_history_key <- paste0(name, "/.metadata/version_history.json")
-    .tbit_s3_write_json(conn, s3_history_key, history)
-    s3_keys <- c(s3_keys, s3_history_key)
-  }
 
-  # Git commit + push (stage any local changes)
   git_files <- character()
   if (fs::file_exists(metadata_path)) {
     git_files <- c(git_files, fs::path_rel(metadata_path, repo_path))
@@ -162,10 +149,27 @@
       sha
     },
     error = function(e) {
-      cli::cli_alert_warning("Git commit/push skipped: {conditionMessage(e)}")
-      NA_character_
+      cli::cli_abort(c(
+        "Git commit/push failed for {.val {name}}. S3 sync aborted.",
+        "x" = conditionMessage(e),
+        "i" = "Resolve the git issue and re-run. S3 was not modified."
+      ))
     }
   )
+
+  # Sync metadata files to S3 (only after git succeeds)
+  s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
+  .tbit_s3_write_json(conn, s3_metadata_key, metadata)
+
+  s3_keys <- s3_metadata_key
+
+  # Sync version_history.json if it exists locally
+  if (fs::file_exists(history_path)) {
+    history <- jsonlite::read_json(history_path)
+    s3_history_key <- paste0(name, "/.metadata/version_history.json")
+    .tbit_s3_write_json(conn, s3_history_key, history)
+    s3_keys <- c(s3_keys, s3_history_key)
+  }
 
   cli::cli_alert_success("Synced metadata for {.val {name}} to S3.")
 

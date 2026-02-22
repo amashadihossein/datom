@@ -13,6 +13,13 @@ mechanisms, and tooling to make collaborative team workflows safe and well-docum
 (Phase 6: `tbit_sync`, `tbit_sync_routing`), connection & init (Phase 4:
 `tbit_init_repo`, `tbit_get_conn`)
 
+### Pre-work completed (pre-Phase 7)
+
+- **Bug fix**: `tbit_sync()` was not committing/pushing `manifest.json` to git after writes — S3 got updated but GitHub stayed stale.
+- **Write ordering enforced**: All write paths (`tbit_write`, `.tbit_sync_metadata`, `tbit_sync`) now follow strict **local → git → S3** ordering. Git failure blocks S3 writes.
+- **Resilience**: `.tbit_git_commit()` made idempotent (returns HEAD SHA on no-op). Re-runs after partial failures pick up where they left off.
+- **`.tbit_write_metadata` split** into `.tbit_write_metadata_local()` (disk only) + `.tbit_push_metadata_s3()` (S3 only) to enable gated ordering.
+
 ---
 
 ## Problem Space

@@ -174,7 +174,10 @@
   status <- git2r::status(repo, staged = TRUE, unstaged = FALSE, untracked = FALSE)
   staged_files <- unlist(status$staged, use.names = FALSE)
   if (length(staged_files) == 0L) {
-    cli::cli_abort("Nothing to commit \u2014 staged files are unchanged.")
+    # Nothing to commit — files are already committed (e.g., re-run after
+    # partial failure). Return the current HEAD SHA for idempotency.
+    head_commit <- git2r::revparse_single(repo, "HEAD")
+    return(as.character(head_commit$sha))
   }
 
   # Commit
