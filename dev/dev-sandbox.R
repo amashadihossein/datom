@@ -30,7 +30,7 @@
     project_name = "SANDBOX_TEST",
     github_org    = NULL,            # NULL = personal repo; set to "my-org" for org repos
     repo_name     = "tbit-sandbox",  # GitHub repo name
-    bucket        = NULL,            # REQUIRED — your dev S3 bucket
+    bucket        = "tbit-test",           # REQUIRED — your dev S3 bucket
     prefix        = "sandbox/",      # S3 prefix (keeps sandbox isolated)
     region        = "us-east-1",
     base_dir      = fs::path_abs("../tbit-test"),  # sibling of tbit project
@@ -53,8 +53,9 @@
 }
 
 .sandbox_gh <- function(..., error_on_fail = TRUE) {
+  #browser()
   args <- c(...)
-  result <- system2("gh", args, stdout = TRUE, stderr = TRUE)
+  result <- suppressWarnings(system2("gh", args, stdout = TRUE, stderr = TRUE))
   status <- attr(result, "status") %||% 0L
   if (error_on_fail && status != 0L) {
     cli::cli_abort(c(
