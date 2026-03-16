@@ -46,6 +46,7 @@ Phase plans are **temporary working documents**:
 | Phase | Status | File |
 |-------|--------|------|
 | Phase 7: Multi-Developer Collaboration | Planning | [phase_7_multi_developer_collaboration.md](phase_7_multi_developer_collaboration.md) |
+| Phase 8: Metadata Enrichment & Table Types | Planning | [phase_8_metadata_enrichment.md](phase_8_metadata_enrichment.md) |
 
 ### Completed Phases
 
@@ -96,6 +97,7 @@ Items discovered during development but intentionally deferred. Review periodica
 | 5 | Read/Write Workflows | Phase 4 | 1-2 weeks |
 | 6 | Sync & Validation | Phase 5 | 1 week |
 | 7 | Multi-Developer Collaboration | Phases 1-6 | 1-2 weeks |
+| 8 | Metadata Enrichment & Table Types | Phases 1-6 (parallel w/ 7) | 1 week |
 
 ## Quick Context for New Sessions
 

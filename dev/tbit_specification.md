@@ -172,6 +172,7 @@ Current state only — no history stored here:
 ```json
 {
   "data_sha": "abc123...",
+  "table_type": "imported",
   "original_file_sha": "def456...",
   "size_bytes": 1048576,
   "nrow": 10000,
@@ -189,8 +190,9 @@ Current state only — no history stored here:
 | Field | Description |
 |-------|-------------|
 | `data_sha` | SHA of the parquet file stored in S3 |
-| `original_file_sha` | SHA of the source file (CSV, TSV, etc.) for deduplication |
-| `size_bytes` | Size of the parquet file |
+| `table_type` | `"imported"` (from source file via `tbit_sync`) or `"derived"` (from data frame via `tbit_write`) |
+| `original_file_sha` | SHA of the source file (CSV, TSV, etc.). **Nullable** — only present for imported tables; `null` for derived tables. |
+| `size_bytes` | Size of the parquet file in bytes |
 | `nrow`, `ncol` | Table dimensions |
 | `colnames` | Column names array |
 | `created_at` | ISO timestamp of creation |
@@ -206,11 +208,9 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
   {
     "version": "xyz789...",
     "data_sha": "abc123...",
-    "original_file_sha": "qrs456...",
     "timestamp": "2024-01-15T10:30:00Z",
     "author": "jane.doe@company.com",
-    "commit_message": "Updated Q4 data",
-    "commit": "def456..."
+    "commit_message": "Updated Q4 data"
   }
 ]
 ```
@@ -219,10 +219,13 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 |-------|-------------|
 | `version` | metadata_sha — the tbit version identifier |
 | `data_sha` | SHA of the parquet file |
-| `original_file_sha` | SHA of the source file |
-| `commit` | Git commit SHA (for audit purposes) |
+| `timestamp` | ISO timestamp of creation |
+| `author` | Git author (name or email) |
+| `commit_message` | Descriptive message for this version |
 
 **Note:** A single data_sha may appear with multiple versions if metadata was updated without data changes.
+
+**Why no git commit SHA?** tbit uses git as a versioning and conflict-management mechanism, not as a code repository. The meaningful version identifier is `metadata_sha` (content-addressed, deterministic). Since tbit doesn't pair code with data, the git commit SHA adds no reproducibility value — data is either imported from a file or written from an R session, neither of which is captured by the commit. When git context is needed, `timestamp` + `author` or `git log --all -S "<metadata_sha>"` locates the commit directly. Git commit SHA enrichment was considered and designed but deferred — see "Deferred to v2" for the approach if a compelling use case emerges.
 
 ### .redirect.json
 
@@ -302,15 +305,10 @@ Flexible connection for both developers and readers:
 | dpbuild (derived tbits) | `bucket`, `prefix`, `project_name` — programmatic setup |
 
 - Validates credentials based on `project_name` → `TBIT_{PROJECT_NAME}_*`
-- Follows redirect chain to resolve current data location
+- Follows redirect chain to resolve current data location (**Planned — not yet integrated.** The `.tbit_s3_resolve_redirect()` function exists but is not wired into connection builders. Integration point may be influenced by a planned access management sister package.)
 - Auto-detects developer vs reader based on GITHUB_PAT presence
 
 Returns: Connection object (`tbit_conn` S3 class)
-
-**Implementation note**: Internal S3 utility functions (Phase 2) initially accept a
-lightweight list (`list(bucket, s3_client)`). Phase 4 introduces the full `tbit_conn`
-S3 class and refactors these functions to accept it. This avoids a circular dependency
-between S3 ops and connection management during development.
 
 ### Core Operations
 
@@ -328,7 +326,7 @@ tbit_read(
 
 Unified read function with routing via routing.json:
 - `version`: metadata_sha (tbit version) — if NULL, uses current
-- `context`: runtime behavior selection (default: "default")
+- `context`: runtime behavior selection (default: "default") (**Planned — not yet implemented.** Currently reads parquet directly; routing dispatch via `context` and `routing.json` will be added when downstream consumers exist.)
 - Metadata always from S3 for readers
 - Additional parameters in `...` forwarded to routed function
 
@@ -365,11 +363,11 @@ Returns: List with deployment details
 #### tbit_sync_routing() — Data Developers
 
 ```r
-tbit_sync_routing(conn)
+tbit_sync_routing(conn, .confirm = TRUE)
 ```
 
 Updates all metadata in S3 to match git after migration or routing changes:
-- Interactive confirmation required
+- Interactive confirmation required (set `.confirm = FALSE` for programmatic use)
 - Updates routing.json, migration_history.json for all tables
 - Used after external migration (aws cli, etc.) and project.yaml update
 
@@ -414,30 +412,88 @@ Returns: Updated manifest with results
 #### tbit_list()
 
 ```r
-tbit_list(conn, pattern = NULL, include_versions = FALSE)
+tbit_list(conn, pattern = NULL, include_versions = FALSE, short_hash = TRUE)
 ```
 
 Lists available tables from S3 manifest.
+- `short_hash`: If TRUE (default), truncates SHA columns to 8 characters for readability.
 
 Returns: Data frame with table info
 
 #### tbit_history()
 
 ```r
-tbit_history(conn, name, n = 10)
+tbit_history(conn, name, n = 10, short_hash = TRUE)
 ```
 
 Shows version history for a table including author and commit message.
+- `short_hash`: If TRUE (default), truncates SHA columns to 8 characters for readability.
 
 Returns: Data frame with version details
 
-### Utility Functions
+### Status & Validation
 
-| Function | Users | Description |
-|----------|-------|-------------|
-| `tbit_status()` | Both | Shows uncommitted changes and sync state |
-| `tbit_validate(conn, fix = FALSE)` | Developers | Checks git-storage consistency |
-| `tbit_migrate(conn_from, conn_to, tables, update_redirects)` | Developers | Future: managed migration |
+#### tbit_status() — All Users
+
+```r
+tbit_status(conn)
+```
+
+Displays connection info, table count from S3 manifest, and (for developers) uncommitted git changes and input file sync state.
+
+- **Connection summary**: project name, bucket, prefix, region, role
+- **Table count**: read from S3 manifest
+- **Git status** (developer only): uncommitted changes, current branch
+- **Input files** (developer only): new, changed, and unchanged file counts vs manifest
+
+Returns: Invisibly, a list with `connection`, `tables`, and optionally `git` and `input_files` status details.
+
+#### tbit_validate() — Data Developers
+
+```r
+tbit_validate(conn, fix = FALSE)
+```
+
+Checks that git metadata matches S3 storage for all tables and repo-level files. Reports mismatches as a structured result.
+
+- **Repo-level checks**: routing.json, manifest.json, migration_history.json exist on S3
+- **Per-table checks**: metadata.json, version_history.json, and `{data_sha}.parquet` exist on S3 for each table tracked in git
+- `fix = TRUE`: attempts to repair inconsistencies by calling `tbit_sync_routing(conn, .confirm = FALSE)`
+
+Returns: List with `valid` (logical), `repo_files` (data frame), `tables` (data frame), `fixed` (logical).
+
+#### tbit_migrate() — Data Developers (Future)
+
+```r
+tbit_migrate(conn_from, conn_to, tables, update_redirects)
+```
+
+**Not yet implemented.** Managed migration — see "Deferred to v2."
+
+### Example Data
+
+#### tbit_example_data()
+
+```r
+tbit_example_data(domain = c("dm", "ex"), cutoff_date = NULL)
+```
+
+Loads bundled clinical trial example data (DM and EX domains) for use in examples and vignettes. The data simulates a Phase II study (STUDY-001) with 48 subjects.
+
+- `domain`: `"dm"` (demographics) or `"ex"` (exposure)
+- `cutoff_date`: Optional `"YYYY-MM-DD"` to filter subjects enrolled on or before this date, simulating a point-in-time EDC extract
+
+Returns: Data frame.
+
+#### tbit_example_cutoffs()
+
+```r
+tbit_example_cutoffs()
+```
+
+Returns a named character vector of monthly cutoff dates for STUDY-001, useful for simulating data evolution in examples.
+
+Returns: Named character vector (`month_1` through `month_6`).
 
 ### Repository Validation
 
@@ -527,7 +583,11 @@ Sys.setenv(
 )
 
 # Connect to bucket (follows redirects automatically)
-conn <- tbit_get_conn()
+conn <- tbit_get_conn(
+  bucket = "shared-bucket",
+  prefix = "project-alpha/",
+  project_name = "clinical_data"
+)
 
 # List available tables
 tables <- tbit_list(conn)
@@ -700,7 +760,7 @@ sync:
   parallel_uploads: 4
 
 # Computational environment
-renv: true
+renv: false  # renv integration deferred — see Deferred to v2
 ```
 
 **project.yaml is authoritative for write location.** Credential env var names are auto-generated from `project_name` — user should not edit these manually.
@@ -778,25 +838,6 @@ Documentary only — does not drive runtime behavior.
 - Validate `input_files/` is flat (no subdirectories)
 - Called internally by all operations
 
-### Integrity State Tracking
-
-Location: `.tbit/state/`
-
-```json
-{
-  "operation_id": "op_12345",
-  "table": "customers",
-  "data_sha_at_commit": "abc123",
-  "data_sha_before_s3": "abc123",
-  "data_sha_after_s3": "abc123",
-  "integrity_hash": "sha256(data + metadata)",
-  "stage": "completed",
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
-
-Provides audit log for recovery (manual recovery initially). Ensures consistency between git tracking and actual data.
-
 ### Routing Implementation
 
 ```r
@@ -829,12 +870,15 @@ tbit_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 
 ### Performance Optimizations
 
-- Cache metadata per session
+**Implemented:**
 - Use HEAD requests for existence checks
 - Hash original files to avoid re-reading
 - Skip unchanged files via `original_file_sha` comparison
 - Manifest current SHAs avoid version_history.json fetches for unchanged tables
-- Parallelize multi-file operations
+
+**Planned — not yet implemented:**
+- Enforce `max_file_size_gb` from project.yaml (config exists, enforcement not wired)
+- Parallelize multi-file operations (`parallel_uploads` in project.yaml, not yet used)
 
 ### Security Considerations
 
@@ -842,7 +886,7 @@ tbit_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 - Use standard environment variables exclusively
 - S3 metadata is read-only for data readers
 - Validate all paths for traversal attacks
-- Respect configured file size limits
+- Respect configured file size limits (**Planned** — `max_file_size_gb` stored in project.yaml but not enforced at runtime)
 
 ### Connection Architecture
 
@@ -954,6 +998,47 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
 - Table-level routing overrides (repo-level only for v1)
 - Managed migration via `tbit_migrate()` (manual external copy for v1)
 - Queryable backends (Iceberg, S3 Tables)
+- **Integrity state tracking** (`.tbit/state/` directory with per-operation JSON): The current write-ordering discipline (local → git → S3 with idempotent re-runs) provides structural resilience without explicit state files. State tracking could add value for debugging/audit at scale. Reference schema if revisited:
+
+  ```json
+  {
+    "operation_id": "op_12345",
+    "table": "customers",
+    "data_sha_at_commit": "abc123",
+    "data_sha_before_s3": "abc123",
+    "data_sha_after_s3": "abc123",
+    "integrity_hash": "sha256(data + metadata)",
+    "stage": "completed",
+    "timestamp": "2024-01-15T10:30:00Z"
+  }
+  ```
+- **Git commit SHA in version_history.json**: Denormalizing the git commit SHA into each version_history entry was designed but deferred. tbit uses git for versioning mechanics, not code pairing — the `metadata_sha` is the meaningful version identifier and `git log -S` can locate commits when needed. If a use case emerges (e.g., regulatory requirement for explicit commit linkage), two enrichment approaches were evaluated:
+
+  *Approach A — Local + S3 enrichment (preferred if implemented):*
+  1. Write version_history entry without `commit` → git commit → get SHA
+  2. Enrich local file: inject `commit` SHA into the new entry
+  3. Push enriched version to S3
+  4. Self-healing: previous entry's commit baked into git on next write
+  5. Requires `tbit_pull()` to auto-commit dirty enrichment files before pulling (avoids merge conflicts in multi-developer scenarios)
+
+  *Approach B — S3-only enrichment (simpler but fragile):*
+  1. Git always has `commit: null`; only S3 gets enriched after push
+  2. Simpler (no dirty working tree), but S3 deletion loses all commit SHAs with no git-based recovery
+
+  Approach A is recommended if this feature is revisited — it preserves recoverability from git alone.
+
+- **Session metadata caching**: Could reduce S3 GETs for repeated reads within a session. Requires careful invalidation design — deferred until the trade-offs are well understood.
+- **renv integration** in `tbit_init_repo()`: Currently deferred; `renv` field in project.yaml defaults to `false`.
+
+### Planned: Multi-Developer Collaboration
+
+Phase 7 (in planning — see `dev/phase_7_multi_developer_collaboration.md`) addresses team workflows:
+
+- **S3 namespace safety check** in `tbit_init_repo()`: Verify target S3 namespace is unoccupied before writing
+- **`project_name` in manifest.json**: Enables namespace collision detection
+- **`tbit_pull()`**: New exported function — git pull + manifest refresh from S3
+- **Pull-before-push discipline**: Stale local state detection before sync operations
+- **Team collaboration vignette**: Recommended workflows for shared repositories
 
 ---
 
