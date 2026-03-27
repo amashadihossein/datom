@@ -326,7 +326,7 @@ test_that("tbit_sync processes new files via tbit_write", {
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
       .tbit_import_file = function(file, format) data.frame(id = 1),
-      tbit_write = function(conn, data, name, message) {
+      tbit_write = function(conn, data, name, message, ...) {
         write_called <<- TRUE
         expect_equal(name, "customers")
         expect_equal(nrow(data), 1)
@@ -374,7 +374,7 @@ test_that("tbit_sync skips unchanged rows and processes changed ones", {
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
       .tbit_import_file = function(file, format) data.frame(x = 1),
-      tbit_write = function(conn, data, name, message) {
+      tbit_write = function(conn, data, name, message, ...) {
         written_names <<- c(written_names, name)
         list(
           name = name,
@@ -421,7 +421,7 @@ test_that("tbit_sync continues on error when continue_on_error = TRUE", {
         if (grepl("bad", file)) stop("Import failed for bad file")
         data.frame(x = 1)
       },
-      tbit_write = function(conn, data, name, message) {
+      tbit_write = function(conn, data, name, message, ...) {
         list(
           name = name, data_sha = "d", metadata_sha = "m",
           action = "full", commit_sha = "c"
@@ -462,7 +462,7 @@ test_that("tbit_sync stops on first error when continue_on_error = FALSE", {
         if (grepl("bad", file)) stop("Import failed")
         data.frame(x = 1)
       },
-      tbit_write = function(conn, data, name, message) {
+      tbit_write = function(conn, data, name, message, ...) {
         list(name = name, data_sha = "d", metadata_sha = "m",
              action = "full", commit_sha = "c")
       },
@@ -495,7 +495,7 @@ test_that("tbit_sync commit message includes status", {
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
       .tbit_import_file = function(file, format) data.frame(x = 1),
-      tbit_write = function(conn, data, name, message) {
+      tbit_write = function(conn, data, name, message, ...) {
         captured_msg <<- message
         list(name = name, data_sha = "d", metadata_sha = "m",
              action = "full", commit_sha = "c")
@@ -527,7 +527,7 @@ test_that("tbit_sync augments manifest with result and error columns", {
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
       .tbit_import_file = function(file, format) data.frame(x = 1),
-      tbit_write = function(conn, data, name, message) {
+      tbit_write = function(conn, data, name, message, ...) {
         list(name = name, data_sha = "d", metadata_sha = "m",
              action = "full", commit_sha = "c")
       },

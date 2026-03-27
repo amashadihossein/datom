@@ -518,6 +518,263 @@ test_that("metadata with no custom has no custom field", {
   expect_null(result$custom)
 })
 
+test_that("defaults to derived table_type", {
+  df <- data.frame(x = 1)
+  result <- .tbit_build_metadata(df, "sha")
+
+  expect_equal(result$table_type, "derived")
+})
+
+test_that("accepts imported table_type", {
+  df <- data.frame(x = 1)
+  result <- .tbit_build_metadata(df, "sha", table_type = "imported")
+
+  expect_equal(result$table_type, "imported")
+})
+
+test_that("rejects invalid table_type", {
+  df <- data.frame(x = 1)
+  expect_error(
+    .tbit_build_metadata(df, "sha", table_type = "unknown"),
+    "table_type"
+  )
+})
+
+test_that("includes size_bytes when provided", {
+  df <- data.frame(x = 1)
+  result <- .tbit_build_metadata(df, "sha", size_bytes = 1024)
+
+  expect_equal(result$size_bytes, 1024)
+})
+
+test_that("size_bytes defaults to NULL", {
+  df <- data.frame(x = 1)
+  result <- .tbit_build_metadata(df, "sha")
+
+  expect_null(result$size_bytes)
+})
+
+test_that("includes parents when provided", {
+  df <- data.frame(x = 1)
+  parents <- list(
+    list(source = "proj_a", table = "tbl1", version = "sha_abc"),
+    list(source = "proj_b", table = "tbl2", version = "sha_def")
+  )
+  result <- .tbit_build_metadata(df, "sha", parents = parents)
+
+  expect_length(result$parents, 2)
+  expect_equal(result$parents[[1]]$source, "proj_a")
+  expect_equal(result$parents[[2]]$table, "tbl2")
+})
+
+test_that("parents defaults to NULL", {
+  df <- data.frame(x = 1)
+  result <- .tbit_build_metadata(df, "sha")
+
+  expect_null(result$parents)
+})
+
+test_that("table_type and parents participate in metadata_sha", {
+  df <- data.frame(x = 1)
+
+  meta_derived <- .tbit_build_metadata(df, "sha", table_type = "derived")
+  meta_imported <- .tbit_build_metadata(df, "sha", table_type = "imported")
+
+  # Force identical timestamps so only table_type differs
+  meta_imported$created_at <- meta_derived$created_at
+
+  sha_derived <- .tbit_compute_metadata_sha(meta_derived)
+  sha_imported <- .tbit_compute_metadata_sha(meta_imported)
+
+  expect_false(sha_derived == sha_imported)
+})
+
+test_that("size_bytes participates in metadata_sha", {
+  df <- data.frame(x = 1)
+
+  meta_null <- .tbit_build_metadata(df, "sha")
+  meta_1k <- .tbit_build_metadata(df, "sha", size_bytes = 1024)
+
+  meta_1k$created_at <- meta_null$created_at
+
+  sha_null <- .tbit_compute_metadata_sha(meta_null)
+  sha_1k <- .tbit_compute_metadata_sha(meta_1k)
+
+  expect_false(sha_null == sha_1k)
+})
+
+
+# --- .tbit_write_metadata_local() — original_file_sha -------------------------
+
+test_that("original_file_sha stored in version_history entry", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
+    meta_sha <- .tbit_compute_metadata_sha(metadata)
+
+    result <- .tbit_write_metadata_local(
+      conn, "tbl", metadata, meta_sha,
+      original_file_sha = "file_sha_abc"
+    )
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_equal(history[[1]]$original_file_sha, "file_sha_abc")
+  })
+})
+
+test_that("original_file_sha is null in version_history for derived tables", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
+    meta_sha <- .tbit_compute_metadata_sha(metadata)
+
+    result <- .tbit_write_metadata_local(conn, "tbl", metadata, meta_sha)
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_null(history[[1]]$original_file_sha)
+  })
+})
+
+
+# --- tbit_write() — Phase 8 enriched params -----------------------------------
+
+test_that("tbit_write passes table_type and parents to metadata", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    captured_meta <- NULL
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) {
+        if (grepl("metadata.json$", sk)) captured_meta <<- d
+        invisible(TRUE)
+      },
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_abc"))
+    tbit_write(
+      conn, data = data.frame(x = 1), name = "derived_tbl",
+      parents = parents, .table_type = "derived"
+    )
+
+    expect_equal(captured_meta$table_type, "derived")
+    expect_length(captured_meta$parents, 1)
+    expect_equal(captured_meta$parents[[1]]$source, "proj_a")
+  })
+})
+
+test_that("tbit_write computes size_bytes from parquet", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    captured_meta <- NULL
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) {
+        if (grepl("metadata.json$", sk)) captured_meta <<- d
+        invisible(TRUE)
+      },
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    tbit_write(conn, data = data.frame(x = 1:100), name = "tbl")
+
+    expect_true(is.numeric(captured_meta$size_bytes))
+    expect_true(captured_meta$size_bytes > 0)
+  })
+})
+
+test_that("tbit_write passes original_file_sha to version_history", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    tbit_write(
+      conn, data = data.frame(x = 1), name = "imported_tbl",
+      .table_type = "imported", .original_file_sha = "file_sha_xyz"
+    )
+
+    history <- jsonlite::read_json("imported_tbl/version_history.json")
+    expect_equal(history[[1]]$original_file_sha, "file_sha_xyz")
+  })
+})
+
+test_that("tbit_write defaults: derived type, no parents, no original_file_sha", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    captured_meta <- NULL
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) {
+        if (grepl("metadata.json$", sk)) captured_meta <<- d
+        invisible(TRUE)
+      },
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    tbit_write(conn, data = data.frame(x = 1), name = "plain_tbl")
+
+    expect_equal(captured_meta$table_type, "derived")
+    expect_null(captured_meta$parents)
+
+    history <- jsonlite::read_json("plain_tbl/version_history.json")
+    expect_null(history[[1]]$original_file_sha)
+  })
+})
+
 
 # --- .tbit_has_changes() ------------------------------------------------------
 

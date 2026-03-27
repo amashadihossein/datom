@@ -376,7 +376,9 @@ tbit_sync <- function(conn,
         conn,
         data = data,
         name = tbl_name,
-        message = paste0("Sync ", tbl_name, " (", manifest$status[i], ")")
+        message = paste0("Sync ", tbl_name, " (", manifest$status[i], ")"),
+        .table_type = "imported",
+        .original_file_sha = tbl_file_sha
       )
 
       # Update local manifest.json

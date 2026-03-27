@@ -181,17 +181,31 @@ tbit_read <- function(conn,
 #' @param data Data frame being written.
 #' @param data_sha SHA-256 of the parquet-formatted data.
 #' @param custom Optional named list of user-supplied custom metadata.
+#' @param table_type `"derived"` (default, from `tbit_write`) or `"imported"` (from `tbit_sync`).
+#' @param size_bytes Size of the parquet file in bytes. NULL if not yet computed.
+#' @param parents Lineage list of parent entries (each with source, table, version),
+#'   or NULL if no lineage recorded.
 #' @return Named list suitable for writing as metadata.json.
 #' @keywords internal
-.tbit_build_metadata <- function(data, data_sha, custom = NULL) {
+.tbit_build_metadata <- function(data, data_sha, custom = NULL,
+                                 table_type = "derived", size_bytes = NULL,
+                                 parents = NULL) {
+  if (!table_type %in% c("imported", "derived")) {
+    cli::cli_abort("{.arg table_type} must be {.val imported} or {.val derived}.")
+  }
+
   meta <- list(
     data_sha = data_sha,
+    table_type = table_type,
     nrow = nrow(data),
     ncol = ncol(data),
     colnames = names(data),
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     tbit_version = as.character(utils::packageVersion("tbit"))
   )
+
+  if (!is.null(parents)) meta$parents <- parents
+  if (!is.null(size_bytes)) meta$size_bytes <- size_bytes
 
   if (!is.null(custom)) {
     if (!is.list(custom) || is.null(names(custom))) {
@@ -250,9 +264,12 @@ tbit_read <- function(conn,
 #' @param metadata Named list for metadata.json.
 #' @param metadata_sha SHA of the metadata (the tbit "version").
 #' @param message Commit message (stored in version_history entry).
+#' @param original_file_sha SHA of the source file for imported tables; NULL for derived.
 #' @return Invisible list with metadata_sha and local paths written.
 #' @keywords internal
-.tbit_write_metadata_local <- function(conn, name, metadata, metadata_sha, message = NULL) {
+.tbit_write_metadata_local <- function(conn, name, metadata, metadata_sha,
+                                       message = NULL,
+                                       original_file_sha = NULL) {
   repo_path <- conn$path
   table_dir <- fs::path(repo_path, name)
   fs::dir_create(table_dir)
@@ -282,6 +299,10 @@ tbit_read <- function(conn,
     author = author,
     commit_message = message %||% paste0("Update ", name)
   )
+
+  if (!is.null(original_file_sha)) {
+    new_entry$original_file_sha <- original_file_sha
+  }
 
   history <- c(list(new_entry), history)
   jsonlite::write_json(history, history_path, auto_unbox = TRUE, pretty = TRUE)
@@ -358,6 +379,10 @@ tbit_read <- function(conn,
 #'   [tbit_sync_routing()].
 #' @param metadata Optional list of custom metadata.
 #' @param message Optional commit message.
+#' @param parents Optional lineage: list of `list(source, table, version)` entries.
+#'   Used by dp_dev to track dependency versions. NULL if lineage not recorded.
+#' @param .table_type Internal. `"derived"` (default) or `"imported"` (set by `tbit_sync()`).
+#' @param .original_file_sha Internal. SHA of source file (set by `tbit_sync()`); NULL for derived.
 #'
 #' @return List with deployment details.
 #' @export
@@ -365,7 +390,10 @@ tbit_write <- function(conn,
                        data = NULL,
                        name = NULL,
                        metadata = NULL,
-                       message = NULL) {
+                       message = NULL,
+                       parents = NULL,
+                       .table_type = "derived",
+                       .original_file_sha = NULL) {
 
   if (!inherits(conn, "tbit_conn")) {
     cli::cli_abort("conn must be a tbit_conn object from tbit_get_conn()")
@@ -401,12 +429,26 @@ tbit_write <- function(conn,
     ))
   }
 
-  # 1. Compute SHAs
+  # 1. Compute data SHA
   data_sha <- .tbit_compute_data_sha(data)
-  meta <- .tbit_build_metadata(data, data_sha, custom = metadata)
+
+  # 2. Write parquet to temp (need size_bytes for complete metadata)
+  tmp <- tempfile(fileext = ".parquet")
+  on.exit(unlink(tmp), add = TRUE)
+  arrow::write_parquet(data, tmp)
+  size_bytes <- as.numeric(fs::file_size(tmp))
+
+  # 3. Build metadata (complete — includes size_bytes)
+  meta <- .tbit_build_metadata(
+    data, data_sha,
+    custom = metadata,
+    table_type = .table_type,
+    parents = parents,
+    size_bytes = size_bytes
+  )
   metadata_sha <- .tbit_compute_metadata_sha(meta)
 
-  # 2. Change detection
+  # 4. Change detection
   change_type <- .tbit_has_changes(conn, name, data_sha, metadata_sha)
 
   if (change_type == "none") {
@@ -419,33 +461,26 @@ tbit_write <- function(conn,
     )))
   }
 
-  # 3. Write parquet to temp file (staged locally, not yet uploaded)
-  tmp <- NULL
-  if (change_type == "full") {
-    tmp <- tempfile(fileext = ".parquet")
-    on.exit(unlink(tmp), add = TRUE)
-    arrow::write_parquet(data, tmp)
-  }
-
-  # 4. Write metadata locally
+  # 5. Write metadata locally
   write_result <- .tbit_write_metadata_local(
     conn, name, meta, metadata_sha,
-    message = message
+    message = message,
+    original_file_sha = .original_file_sha
   )
 
-  # 5. Git commit + push (must succeed before touching S3)
+  # 6. Git commit + push (must succeed before touching S3)
   git_files <- fs::path_rel(write_result$git_paths, conn$path)
   commit_msg <- message %||% paste0("Update ", name)
   commit_sha <- .tbit_git_commit(conn$path, git_files, commit_msg)
   .tbit_git_push(conn$path)
 
-  # 6. Upload parquet to S3 (only after git succeeds)
-  if (change_type == "full" && !is.null(tmp)) {
+  # 7. Upload parquet to S3 (only if data changed — after git succeeds)
+  if (change_type == "full") {
     parquet_key <- paste0(name, "/", data_sha, ".parquet")
     .tbit_s3_upload(conn, tmp, parquet_key)
   }
 
-  # 7. Push metadata to S3 (final step — completes the round-trip)
+  # 8. Push metadata to S3 (final step — completes the round-trip)
   .tbit_push_metadata_s3(conn, name, meta, metadata_sha)
 
   cli::cli_alert_success(
