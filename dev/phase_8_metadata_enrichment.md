@@ -2,18 +2,19 @@
 
 ## Overview
 
-This phase addresses metadata schema gaps identified during the spec review.
-The current `.tbit_build_metadata()` writes a minimal set of fields. This phase
-brings the code in line with the updated specification: adding `table_type`,
-`original_file_sha`, `size_bytes` to metadata.json.
+This phase brings tbit's metadata schema in line with the updated specification
+and ensures tbit is compatible with the planned tbitaccess sister package
+(see `dev/tbitaccess_overview.md`).
 
-Additionally, this phase includes a design exploration section for a planned
-access management sister package that will influence routing, redirect integration,
-and the `"imported"` vs `"derived"` lineage concept.
+Key additions:
+- Metadata schema: `table_type`, `original_file_sha`, `size_bytes`, `parents`
+- New exported function: `tbit_get_parents()`
+- Connection: `endpoint` parameter in `tbit_conn` / `tbit_get_conn()`
+- S3 convention: `.access/` reserved namespace documented
 
 Git commit SHA enrichment in version_history.json was designed but deferred —
-tbit doesn't pair code with data, so `metadata_sha` is the meaningful version
-identifier. The enrichment approaches are preserved in the spec for future reference.
+tbit doesn't pair code with data, so `metadata_sha` is the version identifier.
+The enrichment approaches are preserved in the spec for future reference.
 
 **Status**: Planning
 
@@ -23,28 +24,35 @@ identifier. The enrichment approaches are preserved in the spec for future refer
 
 ## Problem Space
 
-### P1: Incomplete Metadata
+### P1: Incomplete Metadata Schema
 
 `.tbit_build_metadata()` currently writes: `data_sha`, `nrow`, `ncol`, `colnames`,
 `created_at`, `tbit_version`, `custom`.
 
 Missing per updated spec:
-- `table_type`: `"imported"` (from source file via `tbit_sync`) or `"derived"` (from data frame via `tbit_write`)
-- `original_file_sha`: SHA of the source file. Only meaningful for imported tables; `null` for derived.
-- `size_bytes`: Size of the parquet file in bytes. Available at write time.
+- `table_type`: `"imported"` or `"derived"`
+- `original_file_sha`: SHA of source file; `null` for derived tables
+- `size_bytes`: Parquet file size in bytes
+- `parents`: Lineage field required by tbitaccess for access gate computation and
+  by dp_dev for dependency tracking. List of `{source, table, version}` entries
+  or `null`. Always `null` for imported tables.
 
-### P2: Git Commit SHA Not in version_history.json
+### P2: `parents` Parameter Missing from `tbit_write()`
 
-Readers without GitHub access cannot pair a tbit version with its git commit.
-The `commit` field is in the spec but was never populated due to a chicken-and-egg
-problem: version_history.json is inside the commit, so the SHA isn't known when
-the file is written.
+`tbit_write()` has no way for callers (dp_dev, users) to record lineage at write time.
+In practice, dp_dev manages dependency versions via targets or similar, and provides
+exact `metadata_sha` values for each parent. tbit just stores what it's given.
 
-### P3: Access Management Sister Package (Design Exploration)
+### P3: No `tbit_get_parents()` Function
 
-A planned sister package will handle access management, potentially owning routing
-and influencing redirect integration. The `"imported"` vs `"derived"` distinction
-has implications for lineage-aware access patterns.
+tbitaccess needs to read lineage from metadata to walk the ancestry tree for access
+resolution. No exported function exists yet.
+
+### P4: No `endpoint` in `tbit_conn`
+
+tbitaccess routes reads through S3 access points for IAM enforcement. It needs
+to pass an endpoint URL when constructing a connection. Currently `tbit_conn` and
+`tbit_get_conn()` have no endpoint parameter.
 
 ---
 
@@ -70,6 +78,22 @@ Implementation: Add `original_file_sha = NULL` parameter to `.tbit_build_metadat
 - In `tbit_write()`, the parquet is written to a temp file before upload. Use `fs::file_size(tmp)`.
 - For metadata-only changes (`change_type == "metadata_only"`), read size from existing S3 metadata.
 
+### D5: `parents` Field
+
+- `tbit_write()` gains a `parents = NULL` parameter
+- Passed through to `.tbit_build_metadata()` and stored as-is in metadata.json
+- `parents` participates in `metadata_sha` computation (alphabetically sorted with other fields) — changing parents creates a new version
+- `tbit_sync()` never passes `parents`; imported tables always store `parents: null`
+- No auto-resolution of version: callers (dp_dev) supply exact `metadata_sha` values. If version is unknown, caller passes `null` for that entry (lineage recorded as unknown, not omitted)
+- Schema per entry: `list(source = "project_name", table = "table_name", version = "metadata_sha")`
+
+### D6: `endpoint` in `tbit_conn`
+
+- `new_tbit_conn()` gains `endpoint = NULL` parameter, stored in the conn object
+- `tbit_get_conn()` and `.tbit_get_conn_reader()` accept and forward `endpoint`
+- `.tbit_s3_client()` passes endpoint to paws when non-NULL
+- Default `NULL` changes no existing behavior
+
 ### D4: Git Commit SHA Enrichment — Deferred
 
 After analysis, git commit SHAs in version_history.json were deferred. tbit uses
@@ -88,21 +112,38 @@ in case a compelling use case emerges later.
 
 ### Chunk 1: Metadata Schema Fields
 
-- [ ] `.tbit_build_metadata()` accepts `table_type`, `original_file_sha`, `size_bytes`
+- [ ] `.tbit_build_metadata()` accepts `table_type`, `original_file_sha`, `size_bytes`, `parents`
 - [ ] `table_type` defaults to `"derived"`, set to `"imported"` in `tbit_sync()` path
 - [ ] `original_file_sha` stored as `null` when not provided
-- [ ] `size_bytes` computed from parquet temp file
+- [ ] `size_bytes` computed from parquet temp file; read from existing S3 metadata for metadata-only updates
+- [ ] `parents` stored as-is; `null` for imported tables (enforced at call site)
+- [ ] `parents` participates in `metadata_sha` computation
+- [ ] `tbit_write()` gains `parents = NULL` parameter, passed through to `.tbit_build_metadata()`
 - [ ] Existing tests updated — metadata comparisons reflect new fields
-- [ ] New tests: verify schema for imported vs derived tables
+- [ ] New tests: imported table (parents null, table_type imported), derived with parents, derived without parents
 
-### Chunk 2: Access Management Design Exploration (No Code)
+### Chunk 2: `tbit_get_parents()`
 
-- [ ] Document the access management sister package concept
-- [ ] Define relationship to routing (who owns routing.json dispatch?)
-- [ ] Define relationship to redirect resolution (who calls `.tbit_s3_resolve_redirect()`?)
-- [ ] Document lineage model: `"imported"` → `"derived"` (parental lineage, not children)
-- [ ] Identify integration points in tbit that the sister package would hook into
-- [ ] Output: design notes in this phase doc, with decisions migrated to spec when stable
+- [ ] New exported function in `R/query.R`
+- [ ] `tbit_get_parents(conn, name, version = NULL)` — reads `parents` from current or versioned metadata
+- [ ] Returns `NULL` for imported tables or derived tables with no recorded lineage
+- [ ] Versioned read fetches `{version}.json` snapshot from S3
+- [ ] Tests: imported table, derived with parents, derived without parents, versioned read
+
+### Chunk 3: `endpoint` in `tbit_conn`
+
+- [ ] `new_tbit_conn()` gains `endpoint = NULL`, stored in conn object
+- [ ] `tbit_get_conn()` and `.tbit_get_conn_reader()` accept and forward `endpoint`
+- [ ] `.tbit_s3_client()` passes endpoint to paws when non-NULL
+- [ ] All existing tests pass unchanged (NULL default = no behavior change)
+- [ ] New test: conn with endpoint set has it accessible as `conn$endpoint`
+
+### Chunk 4: `.access/` Reserved Namespace (Convention Only)
+
+- [ ] S3 storage diagram in spec updated (already done)
+- [ ] `tbit_list()` confirmed safe: reads manifest.json only, never touches `.access/`
+- [ ] No tbit function reads, writes, or deletes keys under `.access/` prefix
+- [ ] Add note to `tbitaccess_overview.md` confirming tbit-side safety
 
 ---
 
@@ -117,8 +158,8 @@ in case a compelling use case emerges later.
 | Item | Reason |
 |------|--------|
 | Git commit SHA in version_history.json | tbit doesn't pair code with data — `metadata_sha` is the version. Two enrichment approaches preserved in spec for future reference. |
-| Routing dispatch implementation | Waiting on access management package design (Chunk 2) |
-| Redirect integration in `tbit_get_conn()` | Same — integration point may be owned by sister package |
+| Routing dispatch implementation | Waiting on tbitaccess design — routing.json method dispatch vs tbitaccess access routing are separate concerns; tbit's routing.json is method routing only |
+| Redirect integration in `tbit_get_conn()` | Integration point may be influenced by tbitaccess |
 | `max_file_size_gb` enforcement | Separate concern, low risk — can be a quick follow-up |
 | `parallel_uploads` implementation | Optimization, not correctness — defer to when repos are large enough to need it |
 
@@ -126,11 +167,11 @@ in case a compelling use case emerges later.
 
 ## Notes / Learnings
 
-- The "imported" vs "derived" distinction emerged from reviewing `original_file_sha` —
-  it's only meaningful when a source file exists. This naturally maps to two table types
-  with different lineage characteristics.
+- `parents` is a first-class field (not in `custom`) because it participates in `metadata_sha`.
+- dp_dev (or similar orchestration tool using targets) manages the dependency graph and
+  supplies exact parent `metadata_sha` values at write time. tbit stores faithfully, no auto-resolution.
+- The `endpoint` parameter is purely additive — `NULL` default means zero behavior change for existing code.
+  tbitaccess sets it externally to enforce S3 access point routing without tbit needing to know about it.
+- tbitaccess reads tbit metadata; tbit never reads tbitaccess data. The dependency is one-way.
 - Git commit SHA enrichment was designed (two approaches) but deferred: tbit uses git
-  as a mechanism, not a code repo. `metadata_sha` is the version. The enrichment patterns
-  are preserved in the spec under "Deferred to v2" for future reference.
-- The access management sister package is still early-stage. Chunk 2 is explicitly
-  a design exploration with no code deliverable — output is documentation and decisions.
+  as a mechanism, not a code repo. The enrichment patterns are preserved in the spec under "Deferred to v2".

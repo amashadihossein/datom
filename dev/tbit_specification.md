@@ -132,6 +132,7 @@ repo/
 bucket/
 └── {optional_prefix}/
     └── tbit/
+        ├── .access/                   # Reserved for tbitaccess package (do not read/write)
         ├── .metadata/
         │   ├── routing.json           # Methods (synced from git)
         │   ├── manifest.json          # Repository catalog
@@ -172,8 +173,12 @@ Current state only — no history stored here:
 ```json
 {
   "data_sha": "abc123...",
-  "table_type": "imported",
-  "original_file_sha": "def456...",
+  "table_type": "derived",
+  "original_file_sha": null,
+  "parents": [
+    {"source": "med-mm-001", "table": "os_data", "version": "a3f8c1..."},
+    {"source": "med-mm-002", "table": "os_data", "version": "b9e2d4..."}
+  ],
   "size_bytes": 1048576,
   "nrow": 10000,
   "ncol": 15,
@@ -192,6 +197,7 @@ Current state only — no history stored here:
 | `data_sha` | SHA of the parquet file stored in S3 |
 | `table_type` | `"imported"` (from source file via `tbit_sync`) or `"derived"` (from data frame via `tbit_write`) |
 | `original_file_sha` | SHA of the source file (CSV, TSV, etc.). **Nullable** — only present for imported tables; `null` for derived tables. |
+| `parents` | Lineage. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version}` entries, or `null` if lineage not recorded. Each entry: `source` = project_name of the parent data space, `table` = table name, `version` = metadata_sha at derivation time. Required by tbitaccess for access gate computation; also used by dp_dev for dependency tracking. |
 | `size_bytes` | Size of the parquet file in bytes |
 | `nrow`, `ncol` | Table dimensions |
 | `colnames` | Column names array |
@@ -292,7 +298,8 @@ tbit_get_conn(
   path = NULL,
   bucket = NULL,
   prefix = NULL,
-  project_name = NULL
+  project_name = NULL,
+  endpoint = NULL
 )
 ```
 
@@ -302,10 +309,13 @@ Flexible connection for both developers and readers:
 |----------|------------|
 | Developer (has repo) | `path = "my_project"` — reads from .tbit/project.yaml |
 | Reader (S3 only) | `bucket`, `prefix`, `project_name` — direct connection |
-| dpbuild (derived tbits) | `bucket`, `prefix`, `project_name` — programmatic setup |
+| dpbuild / dp_dev | `bucket`, `prefix`, `project_name` — programmatic setup |
+| tbitaccess (access points) | `endpoint` — S3 access point URL overriding default endpoint |
+
+`endpoint`: Optional S3 endpoint URL. When `NULL` (default), standard S3 is used. tbitaccess sets this to route reads through S3 access points for IAM enforcement. Stored in the returned `tbit_conn` object and forwarded to all S3 operations.
 
 - Validates credentials based on `project_name` → `TBIT_{PROJECT_NAME}_*`
-- Follows redirect chain to resolve current data location (**Planned — not yet integrated.** The `.tbit_s3_resolve_redirect()` function exists but is not wired into connection builders. Integration point may be influenced by a planned access management sister package.)
+- Follows redirect chain to resolve current data location (**Planned — not yet integrated.** The `.tbit_s3_resolve_redirect()` function exists but is not wired into connection builders. Integration point may be influenced by tbitaccess.)
 - Auto-detects developer vs reader based on GITHUB_PAT presence
 
 Returns: Connection object (`tbit_conn` S3 class)
@@ -342,7 +352,8 @@ tbit_write(
   data = NULL,
   name = NULL,
   metadata = NULL,
-  message = NULL
+  message = NULL,
+  parents = NULL
 )
 ```
 
@@ -357,8 +368,24 @@ Flexible write operations:
 For normal writes:
 - Change detection via metadata_sha comparison (alphabetically sorted fields)
 - Handles: no-op, metadata-only update, or full update with S3 upload
+- `parents`: list of `list(source, table, version)` entries recording lineage. `NULL` if lineage not recorded. In practice, supplied by dp_dev which tracks dependency versions automatically (e.g., via targets). `tbit_sync()` never passes `parents` — imported tables always have `parents: null`.
 
 Returns: List with deployment details
+
+#### tbit_get_parents() — All Users
+
+```r
+tbit_get_parents(conn, name, version = NULL)
+```
+
+Reads the `parents` field from a table's metadata:
+- `version`: metadata_sha of a specific version. If `NULL`, reads current metadata.
+- Returns `NULL` for imported tables or derived tables with no recorded lineage.
+- For versioned reads, fetches the `{version}.json` snapshot from S3.
+
+Required by tbitaccess to walk lineage for access gate computation.
+
+Returns: List of parent entries (each with `source`, `table`, `version`), or `NULL`.
 
 #### tbit_sync_routing() — Data Developers
 
@@ -890,12 +917,13 @@ tbit_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 
 ### Connection Architecture
 
-- `tbit_conn` S3 class wraps project_name, bucket, prefix, region, s3_client, path, role
+- `tbit_conn` S3 class wraps project_name, bucket, prefix, region, s3_client, path, role, endpoint
 - Two modes: **developer** (has local repo path + git) and **reader** (S3 only, no local repo)
 - Role auto-detected: `GITHUB_PAT` present + `path` provided → developer; otherwise → reader
 - `tbit_get_conn(path = ...)` reads `.tbit/project.yaml` (developer path)
 - `tbit_get_conn(bucket = ..., project_name = ...)` builds connection directly (reader path)
 - Credential env var names derived from `project_name`: `TBIT_{NORMALIZED_NAME}_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY`
+- `endpoint`: optional S3 endpoint override stored in conn; when set, all `.tbit_s3_*` calls route through it. Used by tbitaccess to enforce S3 access point routing.
 - `tbit_init_repo()` sets local git config (`user.name`, `user.email`) from global config or fallback — `git2r::default_signature()` requires local config on freshly init'd repos
 
 ### Dependency Strategy

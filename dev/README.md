@@ -11,6 +11,7 @@ dev/README.md                       ← This file: navigation hub
          ↓
 dev/tbit_specification.md           ← Design spec (authoritative, evolves slowly)
 dev/daapr_architecture.md           ← Ecosystem context
+dev/tbitaccess_overview.md          ← tbitaccess sister package context (forward-looking)
          ↓
 dev/phase_{n}_{name}.md             ← Active development plans (temporary)
          ↓
