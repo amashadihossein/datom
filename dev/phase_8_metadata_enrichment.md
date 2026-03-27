@@ -7,7 +7,8 @@ and ensures tbit is compatible with the planned tbitaccess sister package
 (see `dev/tbitaccess_overview.md`).
 
 Key additions:
-- Metadata schema: `table_type`, `original_file_sha`, `size_bytes`, `parents`
+- Metadata schema: `table_type`, `size_bytes`, `parents`
+- version_history.json: add `original_file_sha` field (source file provenance + skip optimization)
 - New exported function: `tbit_get_parents()`
 - Connection: `endpoint` parameter in `tbit_conn` / `tbit_get_conn()`
 - S3 convention: `.access/` reserved namespace documented
@@ -31,8 +32,8 @@ The enrichment approaches are preserved in the spec for future reference.
 
 Missing per updated spec:
 - `table_type`: `"imported"` or `"derived"`
-- `original_file_sha`: SHA of source file; `null` for derived tables
 - `size_bytes`: Parquet file size in bytes
+- `original_file_sha`: Moved to version_history.json (not metadata.json). Tracked per-version for source file provenance and future skip optimization across version rollbacks.
 - `parents`: Lineage field required by tbitaccess for access gate computation and
   by dp_dev for dependency tracking. List of `{source, table, version}` entries
   or `null`. Always `null` for imported tables.
@@ -68,10 +69,16 @@ default `"derived"`. `tbit_sync()` passes `"imported"` explicitly.
 
 ### D2: `original_file_sha` Flow
 
-- `tbit_sync()` has the file SHA from `.tbit_compute_file_sha()` — pass it through to `.tbit_build_metadata()`
-- Direct `tbit_write()` passes `NULL` — stored as JSON `null`
+`original_file_sha` lives in version_history.json, not metadata.json. This means it
+does NOT participate in `metadata_sha` computation — re-importing identical data from
+a corrected source file doesn't create a new tbit version.
 
-Implementation: Add `original_file_sha = NULL` parameter to `.tbit_build_metadata()`.
+- `tbit_sync()` computes file SHA via `.tbit_compute_file_sha()` → passes to `tbit_write()` via `.original_file_sha`
+- Direct `tbit_write()` has `.original_file_sha = NULL` → stored as JSON `null` in version_history entry
+- `.tbit_write_metadata_local()` includes `original_file_sha` in the new version_history entry
+
+Future skip optimization (deferred): scan version_history for matching `original_file_sha`
+to avoid re-importing unchanged source files, even when manifest only tracks current SHA.
 
 ### D3: `size_bytes` Computation
 
@@ -112,9 +119,11 @@ in case a compelling use case emerges later.
 
 ### Chunk 1: Metadata Schema Fields
 
-- [ ] `.tbit_build_metadata()` accepts `table_type`, `original_file_sha`, `size_bytes`, `parents`
+- [ ] `.tbit_build_metadata()` accepts `table_type`, `size_bytes`, `parents` (NOT `original_file_sha`)
 - [ ] `table_type` defaults to `"derived"`, set to `"imported"` in `tbit_sync()` path
-- [ ] `original_file_sha` stored as `null` when not provided
+- [ ] `original_file_sha` added to version_history.json entries via `.tbit_write_metadata_local()`
+- [ ] `tbit_write()` gains `.original_file_sha = NULL` internal param; `tbit_sync()` passes the file SHA
+- [ ] `original_file_sha` does NOT participate in `metadata_sha` computation
 - [ ] `size_bytes` computed from parquet temp file; read from existing S3 metadata for metadata-only updates
 - [ ] `parents` stored as-is; `null` for imported tables (enforced at call site)
 - [ ] `parents` participates in `metadata_sha` computation

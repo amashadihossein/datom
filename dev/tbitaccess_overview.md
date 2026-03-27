@@ -35,7 +35,6 @@ Every table written via `tbit_write()` should include a `parents` field in `meta
 {
   "data_sha": "abc123...",
   "table_type": "derived",
-  "original_file_sha": null,
   "parents": [
     {
       "source": "med-mm-001",
@@ -63,7 +62,7 @@ Every table written via `tbit_write()` should include a `parents` field in `meta
 
 - `R/read_write.R`: `.tbit_build_metadata()` — add `parents` field
 - `R/read_write.R`: `tbit_write()` — add `parents` parameter, pass to `.tbit_build_metadata()`
-- When `parents` is provided, `table_type` should be `"derived"` and `original_file_sha` should be `null`
+- When `parents` is provided, `table_type` should be `"derived"`
 
 ### 2. parents Parameter in tbit_write — REQUIRED
 
@@ -172,11 +171,11 @@ The `table_type` field maps directly to the entry path:
 
 ```
 tbit_sync()   → "imported"   (file on disk → parquet)
-                 original_file_sha: populated
+                 original_file_sha: populated (in version_history.json)
                  parents: null (always)
 
 tbit_write()  → "derived"    (data frame in memory → parquet)
-                 original_file_sha: null
+                 original_file_sha: null (in version_history.json)
                  parents: list or null
 ```
 

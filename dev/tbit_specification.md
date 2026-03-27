@@ -174,7 +174,6 @@ Current state only — no history stored here:
 {
   "data_sha": "abc123...",
   "table_type": "derived",
-  "original_file_sha": null,
   "parents": [
     {"source": "med-mm-001", "table": "os_data", "version": "a3f8c1..."},
     {"source": "med-mm-002", "table": "os_data", "version": "b9e2d4..."}
@@ -196,7 +195,6 @@ Current state only — no history stored here:
 |-------|-------------|
 | `data_sha` | SHA of the parquet file stored in S3 |
 | `table_type` | `"imported"` (from source file via `tbit_sync`) or `"derived"` (from data frame via `tbit_write`) |
-| `original_file_sha` | SHA of the source file (CSV, TSV, etc.). **Nullable** — only present for imported tables; `null` for derived tables. |
 | `parents` | Lineage. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version}` entries, or `null` if lineage not recorded. Each entry: `source` = project_name of the parent data space, `table` = table name, `version` = metadata_sha at derivation time. Required by tbitaccess for access gate computation; also used by dp_dev for dependency tracking. |
 | `size_bytes` | Size of the parquet file in bytes |
 | `nrow`, `ncol` | Table dimensions |
@@ -214,6 +212,7 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
   {
     "version": "xyz789...",
     "data_sha": "abc123...",
+    "original_file_sha": "def456...",
     "timestamp": "2024-01-15T10:30:00Z",
     "author": "jane.doe@company.com",
     "commit_message": "Updated Q4 data"
@@ -225,6 +224,7 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 |-------|-------------|
 | `version` | metadata_sha — the tbit version identifier |
 | `data_sha` | SHA of the parquet file |
+| `original_file_sha` | SHA of the source file (CSV, TSV, etc.). **Nullable** — present for imported tables (`tbit_sync`); `null` for derived tables (`tbit_write`). Enables skip optimization: scan history for matching file SHA to avoid re-importing unchanged source files, even across version rollbacks. |
 | `timestamp` | ISO timestamp of creation |
 | `author` | Git author (name or email) |
 | `commit_message` | Descriptive message for this version |
@@ -735,9 +735,9 @@ class DataProduct:
 ### Change Detection
 
 - `metadata_sha` computed from alphabetically sorted fields
-- Includes both `data_sha` and `original_file_sha`
 - Single comparison detects any change
 - Enables efficient updates and deduplication
+- `original_file_sha` tracked in version_history.json (not metadata.json) — does not inflate version count when identical data is re-imported from a different source file path
 - Change detection reads from **S3** (the final destination), so incomplete round-trips are re-detected on re-run
 
 ### Conflict Resolution
