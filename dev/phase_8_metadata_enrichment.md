@@ -17,7 +17,7 @@ Git commit SHA enrichment in version_history.json was designed but deferred —
 tbit doesn't pair code with data, so `metadata_sha` is the version identifier.
 The enrichment approaches are preserved in the spec for future reference.
 
-**Status**: Planning
+**Status**: Chunk 1 complete, Chunk 2 next
 
 **Depends on**: All prior phases (1–6 complete), Phase 7 (in parallel — no blocking dependencies)
 
@@ -82,8 +82,9 @@ to avoid re-importing unchanged source files, even when manifest only tracks cur
 
 ### D3: `size_bytes` Computation
 
-- In `tbit_write()`, the parquet is written to a temp file before upload. Use `fs::file_size(tmp)`.
-- For metadata-only changes (`change_type == "metadata_only"`), read size from existing S3 metadata.
+- In `tbit_write()`, parquet is always written to temp before change detection (needed for `size_bytes` in `metadata_sha`).
+- `size_bytes = as.numeric(fs::file_size(tmp))` — always available, no S3 read needed.
+- The temp file is reused for S3 upload if `change_type == "full"`; cleaned up via `on.exit()`.
 
 ### D5: `parents` Field
 
@@ -117,19 +118,24 @@ in case a compelling use case emerges later.
 
 ## Acceptance Criteria
 
-### Chunk 1: Metadata Schema Fields
+### Chunk 1: Metadata Schema Fields — ✅ Complete (`2d3af79`)
 
-- [ ] `.tbit_build_metadata()` accepts `table_type`, `size_bytes`, `parents` (NOT `original_file_sha`)
-- [ ] `table_type` defaults to `"derived"`, set to `"imported"` in `tbit_sync()` path
-- [ ] `original_file_sha` added to version_history.json entries via `.tbit_write_metadata_local()`
-- [ ] `tbit_write()` gains `.original_file_sha = NULL` internal param; `tbit_sync()` passes the file SHA
-- [ ] `original_file_sha` does NOT participate in `metadata_sha` computation
-- [ ] `size_bytes` computed from parquet temp file; read from existing S3 metadata for metadata-only updates
-- [ ] `parents` stored as-is; `null` for imported tables (enforced at call site)
-- [ ] `parents` participates in `metadata_sha` computation
-- [ ] `tbit_write()` gains `parents = NULL` parameter, passed through to `.tbit_build_metadata()`
-- [ ] Existing tests updated — metadata comparisons reflect new fields
-- [ ] New tests: imported table (parents null, table_type imported), derived with parents, derived without parents
+- [x] `.tbit_build_metadata()` accepts `table_type`, `size_bytes`, `parents` (NOT `original_file_sha`)
+- [x] `table_type` defaults to `"derived"`, set to `"imported"` in `tbit_sync()` path
+- [x] `original_file_sha` added to version_history.json entries via `.tbit_write_metadata_local()`
+- [x] `tbit_write()` gains `.original_file_sha = NULL` internal param; `tbit_sync()` passes the file SHA
+- [x] `original_file_sha` does NOT participate in `metadata_sha` computation
+- [x] `size_bytes` computed from parquet temp file (restructured: parquet written before change detection)
+- [x] `parents` stored as-is; `null` for imported tables (enforced at call site)
+- [x] `parents` participates in `metadata_sha` computation
+- [x] `tbit_write()` gains `parents = NULL` parameter, passed through to `.tbit_build_metadata()`
+- [x] Existing tests updated — 6 mock signatures in test-sync.R updated for `...`
+- [x] New tests: 22 added (table_type, parents, size_bytes, original_file_sha, defaults)
+
+Implementation notes:
+- jsonlite NULL safety: `parents`, `size_bytes`, `original_file_sha` conditionally added to lists (not included when NULL) to avoid jsonlite serializing NULL as `{}` instead of omitting
+- `tbit_write()` restructured: parquet written to temp BEFORE change detection (needed for `size_bytes` in `metadata_sha`); temp file reused for S3 upload if data changed
+- D3 updated: metadata-only case no longer needs S3 read for size_bytes — parquet is always written to temp
 
 ### Chunk 2: `tbit_get_parents()`
 
@@ -158,7 +164,7 @@ in case a compelling use case emerges later.
 
 ## Current State
 
-**Planning** — no implementation started.
+**Chunk 1 complete** (`2d3af79`). Ready for Chunk 2 (`tbit_get_parents()`).
 
 ---
 
