@@ -399,6 +399,140 @@ test_that("returns full hashes with short_hash = FALSE", {
 })
 
 
+# --- tbit_get_parents() -------------------------------------------------------
+
+test_that("tbit_get_parents rejects non-tbit_conn", {
+  expect_error(tbit_get_parents("not_conn", "tbl"), "tbit_conn")
+})
+
+test_that("tbit_get_parents validates table name", {
+  conn <- mock_tbit_conn(list())
+  expect_error(tbit_get_parents(conn, ""), "must not be empty")
+  expect_error(tbit_get_parents(conn, "bad name!"), class = "rlang_error")
+})
+
+test_that("returns parents from current metadata", {
+  parents <- list(
+    list(source = "proj_a", table = "tbl1", version = "sha_abc"),
+    list(source = "proj_b", table = "tbl2", version = "sha_def")
+  )
+  metadata <- list(
+    data_sha = "sha1",
+    table_type = "derived",
+    parents = parents,
+    nrow = 10L
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      expect_equal(s3_key, "customers/.metadata/metadata.json")
+      metadata
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_get_parents(conn, "customers")
+
+  expect_length(result, 2)
+  expect_equal(result[[1]]$source, "proj_a")
+  expect_equal(result[[1]]$table, "tbl1")
+  expect_equal(result[[1]]$version, "sha_abc")
+  expect_equal(result[[2]]$source, "proj_b")
+})
+
+test_that("returns NULL for imported table (no parents)", {
+  metadata <- list(
+    data_sha = "sha1",
+    table_type = "imported",
+    nrow = 10L
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) metadata
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_get_parents(conn, "imported_tbl")
+
+  expect_null(result)
+})
+
+test_that("returns NULL for derived table with no recorded lineage", {
+  metadata <- list(
+    data_sha = "sha1",
+    table_type = "derived",
+    nrow = 10L
+  )
+
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) metadata
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_get_parents(conn, "no_lineage_tbl")
+
+  expect_null(result)
+})
+
+test_that("reads versioned metadata snapshot when version provided", {
+  parents <- list(
+    list(source = "proj_a", table = "tbl1", version = "sha_v1")
+  )
+  versioned_meta <- list(
+    data_sha = "sha_old",
+    table_type = "derived",
+    parents = parents,
+    nrow = 5L
+  )
+
+  captured_key <- NULL
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      captured_key <<- s3_key
+      versioned_meta
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  result <- tbit_get_parents(conn, "tbl", version = "meta_sha_123")
+
+  expect_equal(captured_key, "tbl/.metadata/meta_sha_123.json")
+  expect_length(result, 1)
+  expect_equal(result[[1]]$source, "proj_a")
+})
+
+test_that("errors when table not found (current)", {
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      stop("Failed to read JSON from S3")
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  expect_error(tbit_get_parents(conn, "ghost"), "No metadata found")
+})
+
+test_that("errors when versioned snapshot not found", {
+  local_mocked_bindings(
+    .tbit_s3_read_json = function(conn, s3_key) {
+      stop("Failed to read JSON from S3")
+    }
+  )
+
+  conn <- mock_tbit_conn(list())
+  expect_error(
+    tbit_get_parents(conn, "tbl", version = "nonexistent_sha"),
+    "not found"
+  )
+})
+
+test_that("rejects invalid version argument", {
+  conn <- mock_tbit_conn(list())
+  expect_error(tbit_get_parents(conn, "tbl", version = ""), "non-empty")
+  expect_error(tbit_get_parents(conn, "tbl", version = 123), "non-empty")
+})
+
+
 # --- tbit_status() ------------------------------------------------------------
 
 test_that("tbit_status rejects non-tbit_conn", {

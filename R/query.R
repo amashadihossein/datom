@@ -170,6 +170,65 @@ tbit_history <- function(conn,
 }
 
 
+#' Get Parent Lineage for a Table
+#'
+#' Reads the `parents` field from a table's metadata. Returns the lineage
+#' entries recorded at write time by dp_dev or other callers. For imported
+#' tables or derived tables with no recorded lineage, returns `NULL`.
+#'
+#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param name Table name.
+#' @param version Optional metadata_sha (tbit version). If NULL, reads
+#'   current metadata. If provided, fetches the versioned metadata snapshot
+#'   from S3.
+#'
+#' @return List of parent entries (each with `source`, `table`, `version`),
+#'   or `NULL` if no lineage is recorded.
+#' @export
+tbit_get_parents <- function(conn, name, version = NULL) {
+
+  if (!inherits(conn, "tbit_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  }
+
+  .tbit_validate_name(name)
+
+  if (is.null(version)) {
+    # Read current metadata.json
+    metadata_key <- paste0(name, "/.metadata/metadata.json")
+  } else {
+    if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
+      cli::cli_abort("{.arg version} must be a single non-empty string or NULL.")
+    }
+    # Read versioned snapshot
+    metadata_key <- paste0(name, "/.metadata/", version, ".json")
+  }
+
+  metadata <- tryCatch(
+    .tbit_s3_read_json(conn, metadata_key),
+    error = function(e) {
+      if (is.null(version)) {
+        cli::cli_abort(c(
+          "No metadata found for table {.val {name}}.",
+          "i" = "The table may not exist.",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ))
+      } else {
+        cli::cli_abort(c(
+          "Version {.val {version}} not found for table {.val {name}}.",
+          "i" = "Use {.fn tbit_history} to see available versions.",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ))
+      }
+    }
+  )
+
+  # parents is NULL for imported tables or when not recorded
+
+  metadata$parents
+}
+
+
 #' Show Repository Status
 #'
 #' Displays connection info, table count, and (for developers) uncommitted

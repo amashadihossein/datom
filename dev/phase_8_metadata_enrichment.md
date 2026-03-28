@@ -17,7 +17,7 @@ Git commit SHA enrichment in version_history.json was designed but deferred —
 tbit doesn't pair code with data, so `metadata_sha` is the version identifier.
 The enrichment approaches are preserved in the spec for future reference.
 
-**Status**: Chunk 1 complete, Chunk 2 next
+**Status**: Chunks 1–2 complete, Chunk 3 next
 
 **Depends on**: All prior phases (1–6 complete), Phase 7 (in parallel — no blocking dependencies)
 
@@ -137,12 +137,13 @@ Implementation notes:
 - `tbit_write()` restructured: parquet written to temp BEFORE change detection (needed for `size_bytes` in `metadata_sha`); temp file reused for S3 upload if data changed
 - D3 updated: metadata-only case no longer needs S3 read for size_bytes — parquet is always written to temp
 
-### Chunk 2: `tbit_get_parents()`
+### Chunk 2: `tbit_get_parents()` — ✅ Complete
 
-- [ ] New exported function in `R/query.R`
-- [ ] `tbit_get_parents(conn, name, version = NULL)` — reads `parents` from current or versioned metadata
-- [ ] Returns `NULL` for imported tables or derived tables with no recorded lineage
-- [ ] Versioned read fetches `{version}.json` snapshot from S3
+- [x] New exported function in `R/query.R`
+- [x] `tbit_get_parents(conn, name, version = NULL)` — reads `parents` from current or versioned metadata
+- [x] Returns `NULL` for imported tables or derived tables with no recorded lineage
+- [x] Versioned read fetches `{version}.json` snapshot from S3
+- [x] Tests: 18 new (imported table, derived with/without parents, versioned read, error cases, validation)
 - [ ] Tests: imported table, derived with parents, derived without parents, versioned read
 
 ### Chunk 3: `endpoint` in `tbit_conn`
@@ -164,7 +165,7 @@ Implementation notes:
 
 ## Current State
 
-**Chunk 1 complete** (`2d3af79`). Ready for Chunk 2 (`tbit_get_parents()`).
+**Chunks 1–2 complete**. Ready for Chunk 3 (`endpoint` in `tbit_conn`).
 
 ---
 
