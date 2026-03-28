@@ -4,7 +4,13 @@
 \alias{tbit_get_conn}
 \title{Get a tbit Connection}
 \usage{
-tbit_get_conn(path = NULL, bucket = NULL, prefix = NULL, project_name = NULL)
+tbit_get_conn(
+  path = NULL,
+  bucket = NULL,
+  prefix = NULL,
+  project_name = NULL,
+  endpoint = NULL
+)
 }
 \arguments{
 \item{path}{Path to tbit repository. If provided, reads config from
@@ -15,6 +21,8 @@ tbit_get_conn(path = NULL, bucket = NULL, prefix = NULL, project_name = NULL)
 \item{prefix}{Optional S3 prefix.}
 
 \item{project_name}{Project name for credential lookup. Required for readers.}
+
+\item{endpoint}{Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.}
 }
 \value{
 A \code{tbit_conn} object.

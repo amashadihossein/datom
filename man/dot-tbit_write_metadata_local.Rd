@@ -4,7 +4,14 @@
 \alias{.tbit_write_metadata_local}
 \title{Write Metadata Files Locally}
 \usage{
-.tbit_write_metadata_local(conn, name, metadata, metadata_sha, message = NULL)
+.tbit_write_metadata_local(
+  conn,
+  name,
+  metadata,
+  metadata_sha,
+  message = NULL,
+  original_file_sha = NULL
+)
 }
 \arguments{
 \item{conn}{A \code{tbit_conn} object (must be developer with path).}
@@ -16,6 +23,8 @@
 \item{metadata_sha}{SHA of the metadata (the tbit "version").}
 
 \item{message}{Commit message (stored in version_history entry).}
+
+\item{original_file_sha}{SHA of the source file for imported tables; NULL for derived.}
 }
 \value{
 Invisible list with metadata_sha and local paths written.

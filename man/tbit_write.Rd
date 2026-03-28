@@ -4,7 +4,17 @@
 \alias{tbit_write}
 \title{Write a tbit Table}
 \usage{
-tbit_write(conn, data = NULL, name = NULL, metadata = NULL, message = NULL)
+tbit_write(
+  conn,
+  data = NULL,
+  name = NULL,
+  metadata = NULL,
+  message = NULL,
+  parents = NULL,
+  .table_type = "derived",
+  .original_file_sha = NULL,
+  .original_format = NULL
+)
 }
 \arguments{
 \item{conn}{A \code{tbit_conn} object from \code{\link[=tbit_get_conn]{tbit_get_conn()}}.}
@@ -17,6 +27,15 @@ tbit_write(conn, data = NULL, name = NULL, metadata = NULL, message = NULL)
 \item{metadata}{Optional list of custom metadata.}
 
 \item{message}{Optional commit message.}
+
+\item{parents}{Optional lineage: list of \code{list(source, table, version)} entries.
+Used by dp_dev to track dependency versions. NULL if lineage not recorded.}
+
+\item{.table_type}{Internal. \code{"derived"} (default) or \code{"imported"} (set by \code{tbit_sync()}).}
+
+\item{.original_file_sha}{Internal. SHA of source file (set by \code{tbit_sync()}); NULL for derived.}
+
+\item{.original_format}{Internal. Original file format (set by \code{tbit_sync()}); NULL for derived.}
 }
 \value{
 List with deployment details.

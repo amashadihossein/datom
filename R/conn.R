@@ -337,6 +337,22 @@ tbit_init_repo <- function(path = ".",
   # Push initial commit
   .tbit_git_push(path)
 
+  # Push repo-level files to S3
+  tryCatch({
+    s3_client <- .tbit_s3_client(cred_names, region = region)
+    init_conn <- new_tbit_conn(
+      project_name, bucket, prefix, region,
+      s3_client, path, "developer"
+    )
+    .tbit_s3_write_json(init_conn, ".metadata/routing.json", routing)
+    .tbit_s3_write_json(init_conn, ".metadata/manifest.json", manifest)
+  }, error = function(e) {
+    cli::cli_alert_warning(
+      "Git push succeeded but S3 upload failed: {conditionMessage(e)}"
+    )
+    cli::cli_alert_info("Run {.fn tbit_sync_routing} to fix.")
+  })
+
   .init_success <- TRUE
 
   cli::cli_alert_success(

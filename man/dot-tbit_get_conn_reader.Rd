@@ -4,7 +4,7 @@
 \alias{.tbit_get_conn_reader}
 \title{Build Connection from Direct Parameters (Reader Path)}
 \usage{
-.tbit_get_conn_reader(bucket, prefix, project_name)
+.tbit_get_conn_reader(bucket, prefix, project_name, endpoint = NULL)
 }
 \arguments{
 \item{bucket}{S3 bucket name.}
@@ -12,6 +12,8 @@
 \item{prefix}{Optional S3 prefix.}
 
 \item{project_name}{Project name string.}
+
+\item{endpoint}{Optional S3 endpoint URL.}
 }
 \value{
 A \code{tbit_conn} object.

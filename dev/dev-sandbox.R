@@ -87,6 +87,78 @@
   paste0("https://github.com/", owner, "/", cfg$repo_name, ".git")
 }
 
+# --- Credential setup --------------------------------------------------------
+
+#' Set Up Sandbox Credentials
+#'
+#' Sets the environment variables that tbit expects for a given project.
+#' tbit derives credential env var names from `project_name`:
+#'   - `TBIT_{PROJECT_NAME}_ACCESS_KEY_ID`
+#'   - `TBIT_{PROJECT_NAME}_SECRET_ACCESS_KEY`
+#'   - `GITHUB_PAT`
+#'
+#' Call this before `sandbox_up()`. Credential values can come from any
+#' source (keyring, env vars, config file, interactive prompt, etc.).
+#'
+#' @param project_name Project name (must match what you pass to sandbox_up).
+#' @param access_key AWS access key ID value.
+#' @param secret_key AWS secret access key value.
+#' @param github_pat GitHub personal access token value.
+#'
+#' @examples
+#' \dontrun{
+#' # From keyring:
+#' sandbox_credentials(
+#'   "STUDY_001",
+#'   access_key = keyring::key_get("AWS_ACCESS_KEY", "tbit-developer", "remotes"),
+#'   secret_key = keyring::key_get("AWS_SECRET_KEY", "tbit-developer", "remotes"),
+#'   github_pat = keyring::key_get("GITHUB_PAT", "kol", "remotes")
+#' )
+#'
+#' # From plain values:
+#' sandbox_credentials("STUDY_001", "AKIA...", "wJalr...", "ghp_...")
+#'
+#' # Then:
+#' env <- sandbox_up(project_name = "STUDY_001", ...)
+#' }
+sandbox_credentials <- function(project_name, access_key, secret_key, github_pat) {
+  # Validate inputs
+  if (missing(project_name) || !nzchar(project_name)) {
+    cli::cli_abort("{.arg project_name} is required and must be non-empty.")
+  }
+  if (missing(access_key) || !nzchar(access_key)) {
+    cli::cli_abort("{.arg access_key} is required and must be non-empty.")
+  }
+  if (missing(secret_key) || !nzchar(secret_key)) {
+    cli::cli_abort("{.arg secret_key} is required and must be non-empty.")
+  }
+  if (missing(github_pat) || !nzchar(github_pat)) {
+    cli::cli_abort("{.arg github_pat} is required and must be non-empty.")
+  }
+
+  # Derive env var names from project_name (matches .tbit_derive_cred_names)
+  key_id_var <- paste0("TBIT_", project_name, "_ACCESS_KEY_ID")
+  secret_var <- paste0("TBIT_", project_name, "_SECRET_ACCESS_KEY")
+
+  # Set env vars
+  args <- stats::setNames(
+    list(access_key, secret_key, github_pat),
+    c(key_id_var, secret_var, "GITHUB_PAT")
+  )
+  do.call(Sys.setenv, args)
+
+  # Confirm
+  cli::cli_alert_success("Credentials set for project {.val {project_name}}:")
+  cli::cli_ul()
+  cli::cli_li("{.envvar {key_id_var}}")
+  cli::cli_li("{.envvar {secret_var}}")
+  cli::cli_li("{.envvar GITHUB_PAT}")
+  cli::cli_end()
+
+  invisible(TRUE)
+}
+
+
 # --- S3 cleanup --------------------------------------------------------------
 
 #' Delete all objects under the sandbox S3 prefix

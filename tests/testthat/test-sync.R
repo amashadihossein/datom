@@ -337,10 +337,6 @@ test_that("tbit_sync processes new files via tbit_write", {
           action = "full",
           commit_sha = "commit_789"
         )
-      },
-      .tbit_update_manifest_entry = function(conn, name, file_sha,
-                                              format, write_result) {
-        invisible(list())
       }
     )
 
@@ -383,8 +379,7 @@ test_that("tbit_sync skips unchanged rows and processes changed ones", {
           action = "full",
           commit_sha = "c1"
         )
-      },
-      .tbit_update_manifest_entry = function(...) invisible(list())
+      }
     )
 
     result <- tbit_sync(conn, manifest)
@@ -426,8 +421,7 @@ test_that("tbit_sync continues on error when continue_on_error = TRUE", {
           name = name, data_sha = "d", metadata_sha = "m",
           action = "full", commit_sha = "c"
         )
-      },
-      .tbit_update_manifest_entry = function(...) invisible(list())
+      }
     )
 
     result <- tbit_sync(conn, manifest, continue_on_error = TRUE)
@@ -465,8 +459,7 @@ test_that("tbit_sync stops on first error when continue_on_error = FALSE", {
       tbit_write = function(conn, data, name, message, ...) {
         list(name = name, data_sha = "d", metadata_sha = "m",
              action = "full", commit_sha = "c")
-      },
-      .tbit_update_manifest_entry = function(...) invisible(list())
+      }
     )
 
     expect_error(
@@ -499,8 +492,7 @@ test_that("tbit_sync commit message includes status", {
         captured_msg <<- message
         list(name = name, data_sha = "d", metadata_sha = "m",
              action = "full", commit_sha = "c")
-      },
-      .tbit_update_manifest_entry = function(...) invisible(list())
+      }
     )
 
     tbit_sync(conn, manifest)
@@ -530,8 +522,7 @@ test_that("tbit_sync augments manifest with result and error columns", {
       tbit_write = function(conn, data, name, message, ...) {
         list(name = name, data_sha = "d", metadata_sha = "m",
              action = "full", commit_sha = "c")
-      },
-      .tbit_update_manifest_entry = function(...) invisible(list())
+      }
     )
 
     result <- tbit_sync(conn, manifest)
@@ -587,16 +578,12 @@ test_that(".tbit_update_manifest_entry creates manifest from scratch", {
 
     fs::dir_create(".tbit")
 
-    write_result <- list(
-      data_sha = "data123",
-      metadata_sha = "meta456"
-    )
-
     .tbit_update_manifest_entry(
       conn, "customers",
+      metadata_sha = "meta456",
+      data_sha = "data123",
       file_sha = "file789",
-      format = "csv",
-      write_result = write_result
+      format = "csv"
     )
 
     expect_true(fs::file_exists(".tbit/manifest.json"))
@@ -635,9 +622,10 @@ test_that(".tbit_update_manifest_entry updates existing manifest", {
 
     .tbit_update_manifest_entry(
       conn, "customers",
+      metadata_sha = "new_m",
+      data_sha = "new_d",
       file_sha = "new_f",
-      format = "csv",
-      write_result = write_result
+      format = "csv"
     )
 
     m <- jsonlite::read_json(".tbit/manifest.json")

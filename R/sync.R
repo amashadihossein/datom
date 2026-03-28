@@ -371,22 +371,15 @@ tbit_sync <- function(conn,
       # Import file → data frame
       data <- .tbit_import_file(tbl_file, tbl_format)
 
-      # Write via tbit_write
+      # Write via tbit_write (handles manifest update internally)
       write_result <- tbit_write(
         conn,
         data = data,
         name = tbl_name,
         message = paste0("Sync ", tbl_name, " (", manifest$status[i], ")"),
         .table_type = "imported",
-        .original_file_sha = tbl_file_sha
-      )
-
-      # Update local manifest.json
-      .tbit_update_manifest_entry(
-        conn, tbl_name,
-        file_sha = tbl_file_sha,
-        format = tbl_format,
-        write_result = write_result
+        .original_file_sha = tbl_file_sha,
+        .original_format = tbl_format
       )
 
       manifest$result[i] <- "success"
@@ -413,45 +406,6 @@ tbit_sync <- function(conn,
   n_ok <- sum(manifest$result == "success", na.rm = TRUE)
   n_err <- sum(manifest$result == "error", na.rm = TRUE)
   n_skip <- sum(manifest$result == "skipped", na.rm = TRUE)
-
-  # --- commit manifest to git + push to S3 (local → git → S3) ---
-  if (n_ok > 0L) {
-    manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
-
-    # Git commit + push (must succeed before S3)
-    git_ok <- tryCatch({
-      .tbit_git_commit(
-        conn$path,
-        ".tbit/manifest.json",
-        paste0("Update manifest (", n_ok, " table", if (n_ok != 1L) "s", " synced)")
-      )
-      .tbit_git_push(conn$path)
-      TRUE
-    }, error = function(e) {
-      cli::cli_alert_warning(
-        "Failed to commit/push manifest to git: {conditionMessage(e)}"
-      )
-      FALSE
-    })
-
-    # Push to S3 only if git succeeded
-    if (isTRUE(git_ok)) {
-      tryCatch({
-        if (fs::file_exists(manifest_path)) {
-          manifest_data <- jsonlite::read_json(manifest_path)
-          .tbit_s3_write_json(conn, ".metadata/manifest.json", manifest_data)
-        }
-      }, error = function(e) {
-        cli::cli_alert_warning(
-          "Failed to push manifest to S3: {conditionMessage(e)}"
-        )
-      })
-    } else {
-      cli::cli_alert_warning(
-        "Skipped S3 manifest push because git failed. Run {.fn tbit_sync_routing} to fix."
-      )
-    }
-  }
 
   cli::cli_alert_info(
     "Sync complete: {n_ok} succeeded, {n_err} failed, {n_skip} skipped."
@@ -496,9 +450,10 @@ tbit_sync <- function(conn,
 
 #' Update a single table entry in local .tbit/manifest.json
 #' @noRd
-.tbit_update_manifest_entry <- function(conn, name, file_sha, format,
-                                        write_result) {
+.tbit_update_manifest_entry <- function(conn, name, metadata_sha, data_sha,
+                                        file_sha = NULL, format = NULL) {
   manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+  fs::dir_create(fs::path_dir(manifest_path))
 
   manifest <- if (fs::file_exists(manifest_path)) {
     jsonlite::read_json(manifest_path)
@@ -506,22 +461,36 @@ tbit_sync <- function(conn,
     list(tables = list(), summary = list())
   }
 
-  manifest$tables[[name]] <- list(
-    current_version = write_result$metadata_sha,
-    current_data_sha = write_result$data_sha,
-    original_file_sha = file_sha,
-    original_format = format,
+  # Read size_bytes from local metadata.json (already written at this point)
+  meta_path <- fs::path(conn$path, name, "metadata.json")
+  size_bytes <- if (fs::file_exists(meta_path)) {
+    m <- jsonlite::read_json(meta_path)
+    as.integer(m$size_bytes %||% 0L)
+  } else {
+    0L
+  }
+
+  # Count versions from version_history.json
+  vh_path <- fs::path(conn$path, name, "version_history.json")
+  version_count <- if (fs::file_exists(vh_path)) {
+    vh <- jsonlite::read_json(vh_path)
+    length(vh)
+  } else {
+    1L
+  }
+
+  entry <- list(
+    current_version = metadata_sha,
+    current_data_sha = data_sha,
     last_updated = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-    size_bytes = as.integer(
-      file.size(fs::path(conn$path, name, ".metadata", "version_history.json"))
-    ),
-    version_count = 1L
+    size_bytes = size_bytes,
+    version_count = as.integer(version_count)
   )
 
-  # Replace NA with 0 (file.size returns NA if file is missing)
-  if (is.na(manifest$tables[[name]]$size_bytes)) {
-    manifest$tables[[name]]$size_bytes <- 0L
-  }
+  if (!is.null(file_sha)) entry$original_file_sha <- file_sha
+  if (!is.null(format)) entry$original_format <- format
+
+  manifest$tables[[name]] <- entry
 
   # Update summary
   manifest$updated_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")

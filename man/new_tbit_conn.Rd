@@ -11,7 +11,8 @@ new_tbit_conn(
   region = "us-east-1",
   s3_client,
   path = NULL,
-  role = c("reader", "developer")
+  role = c("reader", "developer"),
+  endpoint = NULL
 )
 }
 \arguments{
@@ -28,6 +29,8 @@ new_tbit_conn(
 \item{path}{Local repo path (NULL for readers).}
 
 \item{role}{One of \code{"developer"} or \code{"reader"}.}
+
+\item{endpoint}{Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.}
 }
 \value{
 A \code{tbit_conn} object.

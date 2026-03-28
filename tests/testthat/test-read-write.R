@@ -776,6 +776,213 @@ test_that("tbit_write defaults: derived type, no parents, no original_file_sha",
 })
 
 
+# --- tbit_write() manifest integration ----------------------------------------
+
+test_that("tbit_write updates manifest.json locally", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(
+      list(tables = list(), summary = list(total_tables = 0L)),
+      ".tbit/manifest.json", auto_unbox = TRUE
+    )
+
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    tbit_write(conn, data = data.frame(x = 1:5), name = "my_tbl")
+
+    m <- jsonlite::read_json(".tbit/manifest.json")
+    expect_true("my_tbl" %in% names(m$tables))
+    expect_equal(m$summary$total_tables, 1)
+    expect_false(is.null(m$tables$my_tbl$current_version))
+    expect_false(is.null(m$tables$my_tbl$current_data_sha))
+  })
+})
+
+test_that("tbit_write includes manifest.json in git commit", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(
+      list(tables = list(), summary = list(total_tables = 0L)),
+      ".tbit/manifest.json", auto_unbox = TRUE
+    )
+
+    committed_files <- NULL
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .tbit_git_commit = function(path, files, message) {
+        committed_files <<- files
+        "fake_sha"
+      },
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    tbit_write(conn, data = data.frame(x = 1), name = "tbl")
+
+    expect_true(".tbit/manifest.json" %in% committed_files)
+  })
+})
+
+test_that("tbit_write pushes manifest.json to S3", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(
+      list(tables = list(), summary = list(total_tables = 0L)),
+      ".tbit/manifest.json", auto_unbox = TRUE
+    )
+
+    s3_keys <- character()
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) {
+        s3_keys <<- c(s3_keys, sk)
+        invisible(TRUE)
+      },
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    tbit_write(conn, data = data.frame(x = 1), name = "tbl")
+
+    expect_true(".metadata/manifest.json" %in% s3_keys)
+  })
+})
+
+test_that("tbit_write stores sync fields in manifest when provided", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(
+      list(tables = list(), summary = list(total_tables = 0L)),
+      ".tbit/manifest.json", auto_unbox = TRUE
+    )
+
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    tbit_write(
+      conn, data = data.frame(x = 1), name = "synced_tbl",
+      .table_type = "imported",
+      .original_file_sha = "file_sha_123",
+      .original_format = "csv"
+    )
+
+    m <- jsonlite::read_json(".tbit/manifest.json")
+    expect_equal(m$tables$synced_tbl$original_file_sha, "file_sha_123")
+    expect_equal(m$tables$synced_tbl$original_format, "csv")
+  })
+})
+
+test_that("tbit_write omits sync fields in manifest for derived tables", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(
+      list(tables = list(), summary = list(total_tables = 0L)),
+      ".tbit/manifest.json", auto_unbox = TRUE
+    )
+
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    tbit_write(conn, data = data.frame(x = 1), name = "derived_tbl")
+
+    m <- jsonlite::read_json(".tbit/manifest.json")
+    expect_null(m$tables$derived_tbl$original_file_sha)
+    expect_null(m$tables$derived_tbl$original_format)
+  })
+})
+
+test_that("tbit_write skips manifest update when no changes detected", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    empty_manifest <- list(tables = list(), summary = list(total_tables = 0L))
+    jsonlite::write_json(empty_manifest, ".tbit/manifest.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "none"
+    )
+
+    tbit_write(conn, data = data.frame(x = 1), name = "unchanged_tbl")
+
+    m <- jsonlite::read_json(".tbit/manifest.json")
+    expect_equal(length(m$tables), 0)
+  })
+})
+
+
 # --- .tbit_has_changes() ------------------------------------------------------
 
 test_that("returns 'full' when table is new (no metadata in S3)", {

@@ -383,6 +383,7 @@ tbit_read <- function(conn,
 #'   Used by dp_dev to track dependency versions. NULL if lineage not recorded.
 #' @param .table_type Internal. `"derived"` (default) or `"imported"` (set by `tbit_sync()`).
 #' @param .original_file_sha Internal. SHA of source file (set by `tbit_sync()`); NULL for derived.
+#' @param .original_format Internal. Original file format (set by `tbit_sync()`); NULL for derived.
 #'
 #' @return List with deployment details.
 #' @export
@@ -393,7 +394,8 @@ tbit_write <- function(conn,
                        message = NULL,
                        parents = NULL,
                        .table_type = "derived",
-                       .original_file_sha = NULL) {
+                       .original_file_sha = NULL,
+                       .original_format = NULL) {
 
   if (!inherits(conn, "tbit_conn")) {
     cli::cli_abort("conn must be a tbit_conn object from tbit_get_conn()")
@@ -468,8 +470,20 @@ tbit_write <- function(conn,
     original_file_sha = .original_file_sha
   )
 
+  # 5b. Update manifest.json locally
+  .tbit_update_manifest_entry(
+    conn, name,
+    metadata_sha = metadata_sha,
+    data_sha = data_sha,
+    file_sha = .original_file_sha,
+    format = .original_format
+  )
+
   # 6. Git commit + push (must succeed before touching S3)
-  git_files <- fs::path_rel(write_result$git_paths, conn$path)
+  git_files <- c(
+    fs::path_rel(write_result$git_paths, conn$path),
+    ".tbit/manifest.json"
+  )
   commit_msg <- message %||% paste0("Update ", name)
   commit_sha <- .tbit_git_commit(conn$path, git_files, commit_msg)
   .tbit_git_push(conn$path)
@@ -480,8 +494,15 @@ tbit_write <- function(conn,
     .tbit_s3_upload(conn, tmp, parquet_key)
   }
 
-  # 8. Push metadata to S3 (final step — completes the round-trip)
+  # 8. Push metadata to S3
   .tbit_push_metadata_s3(conn, name, meta, metadata_sha)
+
+  # 9. Push manifest to S3 (completes the round-trip)
+  manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+  if (fs::file_exists(manifest_path)) {
+    manifest_data <- jsonlite::read_json(manifest_path)
+    .tbit_s3_write_json(conn, ".metadata/manifest.json", manifest_data)
+  }
 
   cli::cli_alert_success(
     "Wrote {.val {name}} ({change_type}): {.val {substr(metadata_sha, 1, 8)}}"

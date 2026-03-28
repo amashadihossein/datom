@@ -4,7 +4,14 @@
 \alias{.tbit_build_metadata}
 \title{Build Metadata Object}
 \usage{
-.tbit_build_metadata(data, data_sha, custom = NULL)
+.tbit_build_metadata(
+  data,
+  data_sha,
+  custom = NULL,
+  table_type = "derived",
+  size_bytes = NULL,
+  parents = NULL
+)
 }
 \arguments{
 \item{data}{Data frame being written.}
@@ -12,6 +19,13 @@
 \item{data_sha}{SHA-256 of the parquet-formatted data.}
 
 \item{custom}{Optional named list of user-supplied custom metadata.}
+
+\item{table_type}{\code{"derived"} (default, from \code{tbit_write}) or \code{"imported"} (from \code{tbit_sync}).}
+
+\item{size_bytes}{Size of the parquet file in bytes. NULL if not yet computed.}
+
+\item{parents}{Lineage list of parent entries (each with source, table, version),
+or NULL if no lineage recorded.}
 }
 \value{
 Named list suitable for writing as metadata.json.

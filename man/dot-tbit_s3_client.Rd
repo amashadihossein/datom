@@ -4,13 +4,15 @@
 \alias{.tbit_s3_client}
 \title{Create an S3 Client from Credential Environment Variables}
 \usage{
-.tbit_s3_client(credentials, region = "us-east-1")
+.tbit_s3_client(credentials, region = "us-east-1", endpoint = NULL)
 }
 \arguments{
 \item{credentials}{Named list with \code{access_key_env} and \code{secret_key_env}
 pointing to environment variable names.}
 
 \item{region}{AWS region string (e.g. \code{"us-east-1"}).}
+
+\item{endpoint}{Optional S3 endpoint URL. NULL for default AWS endpoint.}
 }
 \value{
 A \code{paws.storage} S3 client.

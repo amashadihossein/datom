@@ -562,6 +562,13 @@ setup_init_env <- function(env = parent.frame()) {
     GITHUB_PAT = "ghp_fake"
   )
 
+  # Stub S3 operations (tbit_init_repo now pushes to S3 after git)
+  local_mocked_bindings(
+    .tbit_s3_client = function(...) list(put_object = function(...) list()),
+    .tbit_s3_write_json = function(...) invisible(TRUE),
+    .env = env
+  )
+
   list(bare_dir = bare_dir, work_dir = work_dir)
 }
 
@@ -1113,6 +1120,53 @@ test_that("tbit_init_repo does NOT remove pre-existing parent dir on failure", {
 
   # Parent dir should remain because it pre-existed
   expect_true(fs::dir_exists(env$work_dir))
+})
+
+test_that("tbit_init_repo pushes routing.json and manifest.json to S3", {
+  env <- setup_init_env()
+
+  s3_keys_written <- character()
+
+  # Override the S3 stubs from setup_init_env to capture writes
+  local_mocked_bindings(
+    .tbit_s3_write_json = function(conn, s3_key, data) {
+      s3_keys_written <<- c(s3_keys_written, s3_key)
+      invisible(TRUE)
+    }
+  )
+
+  tbit_init_repo(
+    path = env$work_dir,
+    project_name = "testproj",
+    remote_url = env$bare_dir,
+    bucket = "my-bucket"
+  )
+
+  expect_true(".metadata/routing.json" %in% s3_keys_written)
+  expect_true(".metadata/manifest.json" %in% s3_keys_written)
+})
+
+test_that("tbit_init_repo succeeds even if S3 upload fails", {
+  env <- setup_init_env()
+
+  # Override to make S3 fail
+  local_mocked_bindings(
+    .tbit_s3_client = function(...) stop("S3 unavailable")
+  )
+
+  # Should succeed (git push worked, S3 failure is just a warning)
+  expect_no_error(
+    tbit_init_repo(
+      path = env$work_dir,
+      project_name = "testproj",
+      remote_url = env$bare_dir,
+      bucket = "my-bucket"
+    )
+  )
+
+  # Files should still be created locally
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".tbit", "routing.json")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".tbit", "manifest.json")))
 })
 
 

@@ -4,10 +4,12 @@
 \alias{.tbit_get_conn_developer}
 \title{Build Connection from Local Repo (Developer Path)}
 \usage{
-.tbit_get_conn_developer(path)
+.tbit_get_conn_developer(path, endpoint = NULL)
 }
 \arguments{
 \item{path}{Path to tbit repository.}
+
+\item{endpoint}{Optional S3 endpoint URL.}
 }
 \value{
 A \code{tbit_conn} object.
