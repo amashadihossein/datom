@@ -19,6 +19,14 @@ mechanisms, and tooling to make collaborative team workflows safe and well-docum
 - **Write ordering enforced**: All write paths (`tbit_write`, `.tbit_sync_metadata`, `tbit_sync`) now follow strict **local → git → S3** ordering. Git failure blocks S3 writes.
 - **Resilience**: `.tbit_git_commit()` made idempotent (returns HEAD SHA on no-op). Re-runs after partial failures pick up where they left off.
 - **`.tbit_write_metadata` split** into `.tbit_write_metadata_local()` (disk only) + `.tbit_push_metadata_s3()` (S3 only) to enable gated ordering.
+- **Phase 8 complete**: Metadata enrichment (`table_type`, `size_bytes`, `parents`, `original_file_sha`, `endpoint`, `tbit_get_parents()`). All chunks landed.
+- **Post-Phase-8 bug fixes** (E2E-driven):
+  - `tbit_write()` now updates `manifest.json` per call (was only done in batch by `tbit_sync`).
+  - `tbit_init_repo()` pushes `routing.json` + `manifest.json` to S3 after git push.
+  - **Idempotent SHA**: metadata SHA uses JSON canonical form (`jsonlite::toJSON` + `serialize=FALSE`) to avoid R type-sensitivity after JSON round-trip. Volatile fields (`created_at`, `tbit_version`) excluded from hash.
+  - **Version history dedup guard**: `.tbit_write_metadata_local()` skips append when latest entry has same version SHA.
+  - **UX**: `tbit_write()` informs user when skip discards a different commit message.
+- **Test suite**: 905 tests, 0 failures.
 
 ---
 
@@ -228,7 +236,7 @@ Covers:
 
 ## Current State
 
-**Planning** — no implementation started.
+**Ready to start** — no implementation started. All pre-requisites met (Phases 1-8 complete, 905 tests passing).
 
 Open questions to resolve before Chunk 1:
 1. Should `.tbit_check_git_current()` auto-pull or just abort? (Lean: abort,
@@ -238,6 +246,12 @@ Open questions to resolve before Chunk 1:
    only if occupied to show the conflict detail.
 3. What happens if two developers initialize simultaneously (TOCTOU on namespace
    check)? Accept as a known edge case — document it, do not solve with locking.
+
+Key context for starting:
+- `manifest.json` does NOT yet include `project_name` — Chunk 1 adds it.
+- `.tbit_git_push()` currently does fetch+merge+push as one operation — Chunk 2 may need to split pull out.
+- `tbit_write()` already follows local → git → S3 ordering — the pull-before-push pattern needs to wrap around the existing write path.
+- Developer sandbox (`dev/dev-sandbox.R`) is available for E2E testing of multi-developer scenarios.
 
 ---
 

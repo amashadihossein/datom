@@ -107,6 +107,9 @@ Auto-detected via `GITHUB_PAT` presence.
 - **git2r::merge()**: Expects a string (branch name), not a branch object. Use `upstream_ref$name`.
 - **cli dot-literals**: In cli >= 3.4.0, `{.something}` inside `cli_abort()` is interpreted as a cli style, not an expression. Wrap internal function calls starting with `.` in parentheses: `{(.tbit_build_s3_key(...))}`.  
 - **`.tbit_git_commit()` is idempotent**: Returns HEAD SHA (instead of erroring) when staged files are unchanged. This is by design — enables safe re-runs after partial failures in the local → git → S3 pipeline.
+- **metadata SHA uses JSON canonical form**: `.tbit_compute_metadata_sha()` hashes `jsonlite::toJSON()` output with `serialize = FALSE`, not the R object. This is critical — R's `serialize()` is type-sensitive (`10L` ≠ `10`), so metadata round-tripped through JSON would produce a different SHA. Always test SHA stability with a JSON round-trip.
+- **metadata SHA excludes volatile fields**: `created_at` and `tbit_version` are stripped before hashing. Adding new metadata fields that should NOT affect versioning must be added to the `volatile` vector in `.tbit_compute_metadata_sha()`.
+- **version_history dedup guard**: `.tbit_write_metadata_local()` skips appending when the latest entry has the same version SHA. This prevents duplicates but means the guard relies on metadata_sha correctness.
 
 ## Don'ts
 

@@ -47,10 +47,14 @@ tbit distinguishes between **versioned content** and **tracked configuration**:
 The tbit version is the **metadata_sha**, computed from alphabetically sorted metadata fields (which include `data_sha`). This uniquely identifies a (data, metadata) pair.
 
 ```
-metadata fields (sorted) → SHA-256 → metadata_sha = tbit version
-       ↑
-   includes data_sha
+metadata fields (sorted, semantic only) → JSON canonical form → SHA-256 → metadata_sha
+       ↑                                         ↑
+   includes data_sha               jsonlite::toJSON(auto_unbox=TRUE)
 ```
+
+**Volatile fields excluded**: `created_at` and `tbit_version` are stripped before hashing. These change on every call (timestamp) or with package upgrades but don't represent semantic changes to the data or metadata.
+
+**JSON canonical form**: The SHA is computed over `jsonlite::toJSON()` output (with `serialize = FALSE`), not over the R object directly. This ensures that metadata built in-memory and metadata read back from JSON (e.g., from S3) always produce the same SHA, despite R type differences introduced by JSON round-tripping (integer vs double, character vector vs list).
 
 **Routing is explicitly excluded** from version computation. Changing routing does not change any tbit version.
 
