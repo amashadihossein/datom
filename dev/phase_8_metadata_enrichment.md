@@ -17,7 +17,7 @@ Git commit SHA enrichment in version_history.json was designed but deferred —
 tbit doesn't pair code with data, so `metadata_sha` is the version identifier.
 The enrichment approaches are preserved in the spec for future reference.
 
-**Status**: Chunks 1–2 complete, Chunk 3 next
+**Status**: All chunks complete — Phase 8 done
 
 **Depends on**: All prior phases (1–6 complete), Phase 7 (in parallel — no blocking dependencies)
 
@@ -146,26 +146,34 @@ Implementation notes:
 - [x] Tests: 18 new (imported table, derived with/without parents, versioned read, error cases, validation)
 - [ ] Tests: imported table, derived with parents, derived without parents, versioned read
 
-### Chunk 3: `endpoint` in `tbit_conn`
+### Chunk 3: `endpoint` in `tbit_conn` — ✅ Complete (`1581dc9`)
 
-- [ ] `new_tbit_conn()` gains `endpoint = NULL`, stored in conn object
-- [ ] `tbit_get_conn()` and `.tbit_get_conn_reader()` accept and forward `endpoint`
-- [ ] `.tbit_s3_client()` passes endpoint to paws when non-NULL
-- [ ] All existing tests pass unchanged (NULL default = no behavior change)
-- [ ] New test: conn with endpoint set has it accessible as `conn$endpoint`
+- [x] `new_tbit_conn()` gains `endpoint = NULL`, stored in conn object
+- [x] `tbit_get_conn()` accepts and forwards `endpoint` to developer/reader helpers
+- [x] `.tbit_get_conn_developer()` and `.tbit_get_conn_reader()` pass `endpoint` to `.tbit_s3_client()` and `new_tbit_conn()`
+- [x] `.tbit_s3_client()` passes endpoint to paws config when non-NULL
+- [x] `print.tbit_conn()` shows endpoint when non-NULL, omits when NULL
+- [x] `mock_tbit_conn()` includes `endpoint = NULL` in structure
+- [x] All existing tests pass unchanged (NULL default = no behavior change)
+- [x] 16 new tests (constructor, print, .tbit_s3_client, forwarding via dev/reader, defaults, mock)
+- [x] 881 total tests, 0 failures
 
-### Chunk 4: `.access/` Reserved Namespace (Convention Only)
+### Chunk 4: `.access/` Reserved Namespace (Convention Only) — ✅ Complete
 
-- [ ] S3 storage diagram in spec updated (already done)
-- [ ] `tbit_list()` confirmed safe: reads manifest.json only, never touches `.access/`
-- [ ] No tbit function reads, writes, or deletes keys under `.access/` prefix
+- [x] S3 storage diagram in spec updated (already done)
+- [x] `tbit_list()` confirmed safe: reads manifest.json only, never touches `.access/`
+- [x] No tbit function reads, writes, or deletes keys under `.access/` prefix
+- [x] No `list_objects` or `delete_object` calls exist in package code
+- [x] All S3 operations are point-access on explicit keys
+- [x] `.tbit_build_s3_key()` always inserts `tbit/` segment, structurally separating from `.access/`
+- [x] Verification note added to `dev/tbitaccess_overview.md`
 - [ ] Add note to `tbitaccess_overview.md` confirming tbit-side safety
 
 ---
 
 ## Current State
 
-**Chunks 1–2 complete**. Ready for Chunk 3 (`endpoint` in `tbit_conn`).
+**Phase 8 complete.** All 4 chunks implemented and verified. 881 tests, 0 failures.
 
 ---
 

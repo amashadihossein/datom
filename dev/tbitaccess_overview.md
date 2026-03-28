@@ -132,6 +132,12 @@ The S3 key prefix `{prefix}/tbit/.access/` is reserved for tbitaccess. tbit shou
 
 `tbit_list()` already reads from `manifest.json` only, so this is safe by construction. Just document the convention in the spec's storage structure section.
 
+**Verified (Phase 8, Chunk 4)**: Full audit confirms tbit is safe:
+- No R/ source file references `.access` in any S3 key construction
+- All S3 operations are point-access (`put_object`, `get_object`, `head_object`) on explicit keys
+- No `list_objects` or `delete_object` calls exist in package code
+- `.tbit_build_s3_key()` always inserts a `tbit/` segment, structurally separating tbit keys from `.access/`
+
 Add to the S3 storage structure diagram:
 
 ```
