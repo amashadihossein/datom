@@ -13,9 +13,10 @@
 #' @param credentials Named list with `access_key_env` and `secret_key_env`
 #'   pointing to environment variable names.
 #' @param region AWS region string (e.g. `"us-east-1"`).
+#' @param endpoint Optional S3 endpoint URL. NULL for default AWS endpoint.
 #' @return A `paws.storage` S3 client.
 #' @keywords internal
-.tbit_s3_client <- function(credentials, region = "us-east-1") {
+.tbit_s3_client <- function(credentials, region = "us-east-1", endpoint = NULL) {
   if (!is.list(credentials) ||
       !all(c("access_key_env", "secret_key_env") %in% names(credentials))) {
     cli::cli_abort(
@@ -37,17 +38,21 @@
     )
   }
 
-  paws.storage::s3(
-    config = list(
-      credentials = list(
-        creds = list(
-          access_key_id = access_key,
-          secret_access_key = secret_key
-        )
-      ),
-      region = region
-    )
+  config <- list(
+    credentials = list(
+      creds = list(
+        access_key_id = access_key,
+        secret_access_key = secret_key
+      )
+    ),
+    region = region
   )
+
+  if (!is.null(endpoint)) {
+    config$endpoint <- endpoint
+  }
+
+  paws.storage::s3(config = config)
 }
 
 

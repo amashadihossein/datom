@@ -21,7 +21,8 @@ mock_tbit_conn <- function(mock_client,
       region = "us-east-1",
       s3_client = mock_client,
       path = NULL,
-      role = "reader"
+      role = "reader",
+      endpoint = NULL
     ),
     class = "tbit_conn"
   )

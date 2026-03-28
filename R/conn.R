@@ -13,6 +13,7 @@
 #' @param s3_client A `paws.storage` S3 client.
 #' @param path Local repo path (NULL for readers).
 #' @param role One of `"developer"` or `"reader"`.
+#' @param endpoint Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.
 #'
 #' @return A `tbit_conn` object.
 #' @keywords internal
@@ -22,7 +23,8 @@ new_tbit_conn <- function(project_name,
                           region = "us-east-1",
                           s3_client,
                           path = NULL,
-                          role = c("reader", "developer")) {
+                          role = c("reader", "developer"),
+                          endpoint = NULL) {
   role <- match.arg(role)
 
   if (!is.character(project_name) || length(project_name) != 1L ||
@@ -64,7 +66,8 @@ new_tbit_conn <- function(project_name,
       region = region,
       s3_client = s3_client,
       path = path,
-      role = role
+      role = role,
+      endpoint = endpoint
     ),
     class = "tbit_conn"
   )
@@ -101,6 +104,10 @@ print.tbit_conn <- function(x, ...) {
   }
 
   cli::cli_li("Region: {.val {x$region}}")
+
+  if (!is.null(x$endpoint)) {
+    cli::cli_li("Endpoint: {.val {x$endpoint}}")
+  }
 
   if (!is.null(x$path)) {
     cli::cli_li("Path: {.path {x$path}}")
@@ -351,13 +358,15 @@ tbit_init_repo <- function(path = ".",
 #' @param bucket S3 bucket name. Required for readers without local repo.
 #' @param prefix Optional S3 prefix.
 #' @param project_name Project name for credential lookup. Required for readers.
+#' @param endpoint Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.
 #'
 #' @return A `tbit_conn` object.
 #' @export
 tbit_get_conn <- function(path = NULL,
                           bucket = NULL,
                           prefix = NULL,
-                          project_name = NULL) {
+                          project_name = NULL,
+                          endpoint = NULL) {
 
   has_path <- !is.null(path)
   has_direct <- !is.null(bucket) || !is.null(project_name)
@@ -377,9 +386,9 @@ tbit_get_conn <- function(path = NULL,
   }
 
   if (has_path) {
-    .tbit_get_conn_developer(path)
+    .tbit_get_conn_developer(path, endpoint = endpoint)
   } else {
-    .tbit_get_conn_reader(bucket, prefix, project_name)
+    .tbit_get_conn_reader(bucket, prefix, project_name, endpoint = endpoint)
   }
 }
 
@@ -392,9 +401,10 @@ tbit_get_conn <- function(path = NULL,
 #' Role is auto-detected: developer if GITHUB_PAT is set, reader otherwise.
 #'
 #' @param path Path to tbit repository.
+#' @param endpoint Optional S3 endpoint URL.
 #' @return A `tbit_conn` object.
 #' @keywords internal
-.tbit_get_conn_developer <- function(path) {
+.tbit_get_conn_developer <- function(path, endpoint = NULL) {
   path <- fs::path_abs(path)
 
   yaml_path <- fs::path(path, ".tbit", "project.yaml")
@@ -432,7 +442,7 @@ tbit_get_conn <- function(path = NULL,
   cred_names <- .tbit_check_credentials(project_name, role = role)
 
   # Create S3 client
-  s3_client <- .tbit_s3_client(cred_names, region = region)
+  s3_client <- .tbit_s3_client(cred_names, region = region, endpoint = endpoint)
 
   new_tbit_conn(
     project_name = project_name,
@@ -441,7 +451,8 @@ tbit_get_conn <- function(path = NULL,
     region = region,
     s3_client = s3_client,
     path = if (role == "developer") as.character(path) else NULL,
-    role = role
+    role = role,
+    endpoint = endpoint
   )
 }
 
@@ -456,9 +467,10 @@ tbit_get_conn <- function(path = NULL,
 #' @param bucket S3 bucket name.
 #' @param prefix Optional S3 prefix.
 #' @param project_name Project name string.
+#' @param endpoint Optional S3 endpoint URL.
 #' @return A `tbit_conn` object.
 #' @keywords internal
-.tbit_get_conn_reader <- function(bucket, prefix, project_name) {
+.tbit_get_conn_reader <- function(bucket, prefix, project_name, endpoint = NULL) {
   if (is.null(bucket) || !nzchar(bucket)) {
     cli::cli_abort("{.arg bucket} is required for reader connections.")
   }
@@ -472,7 +484,7 @@ tbit_get_conn <- function(path = NULL,
   # Reader path is always reader role (no local repo = can't be developer)
   cred_names <- .tbit_check_credentials(project_name, role = "reader")
 
-  s3_client <- .tbit_s3_client(cred_names, region = region)
+  s3_client <- .tbit_s3_client(cred_names, region = region, endpoint = endpoint)
 
   new_tbit_conn(
     project_name = project_name,
@@ -481,6 +493,7 @@ tbit_get_conn <- function(path = NULL,
     region = region,
     s3_client = s3_client,
     path = NULL,
-    role = "reader"
+    role = "reader",
+    endpoint = endpoint
   )
 }

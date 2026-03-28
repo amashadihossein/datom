@@ -1114,3 +1114,170 @@ test_that("tbit_init_repo does NOT remove pre-existing parent dir on failure", {
   # Parent dir should remain because it pre-existed
   expect_true(fs::dir_exists(env$work_dir))
 })
+
+
+# =============================================================================
+# endpoint parameter (Phase 8, Chunk 3)
+# =============================================================================
+
+test_that("new_tbit_conn stores endpoint when provided", {
+  conn <- new_tbit_conn(
+    project_name = "p",
+    bucket = "b",
+    region = "us-east-1",
+    s3_client = mock_s3_client(),
+    endpoint = "https://my-access-point.s3-accesspoint.us-east-1.amazonaws.com"
+  )
+
+  expect_equal(
+    conn$endpoint,
+    "https://my-access-point.s3-accesspoint.us-east-1.amazonaws.com"
+  )
+})
+
+test_that("new_tbit_conn endpoint defaults to NULL", {
+  conn <- new_tbit_conn(
+    project_name = "p",
+    bucket = "b",
+    region = "us-east-1",
+    s3_client = mock_s3_client()
+  )
+
+  expect_null(conn$endpoint)
+})
+
+test_that("print.tbit_conn shows endpoint when non-NULL", {
+  conn <- new_tbit_conn(
+    project_name = "proj",
+    bucket = "b",
+    region = "us-east-1",
+    s3_client = mock_s3_client(),
+    endpoint = "https://custom-endpoint.example.com"
+  )
+
+  output <- cli::cli_fmt(print(conn))
+  combined <- paste(output, collapse = " ")
+
+  expect_match(combined, "Endpoint")
+  expect_match(combined, "custom-endpoint.example.com", fixed = TRUE)
+})
+
+test_that("print.tbit_conn omits endpoint when NULL", {
+  conn <- new_tbit_conn(
+    project_name = "proj",
+    bucket = "b",
+    region = "us-east-1",
+    s3_client = mock_s3_client()
+  )
+
+  output <- cli::cli_fmt(print(conn))
+  combined <- paste(output, collapse = " ")
+
+  expect_no_match(combined, "Endpoint")
+})
+
+test_that(".tbit_s3_client passes endpoint to paws config", {
+  skip_if_not_installed("paws.storage")
+
+  withr::local_envvar(
+    TBIT_PROJ_ACCESS_KEY_ID = "test-key",
+    TBIT_PROJ_SECRET_ACCESS_KEY = "test-secret"
+  )
+
+  creds <- list(
+    access_key_env = "TBIT_PROJ_ACCESS_KEY_ID",
+    secret_key_env = "TBIT_PROJ_SECRET_ACCESS_KEY"
+  )
+
+  # With endpoint
+  client <- .tbit_s3_client(
+    creds,
+    region = "us-east-1",
+    endpoint = "https://custom.s3.endpoint.com"
+  )
+  expect_true(is.list(client))
+
+  # Without endpoint (default NULL) — should still create valid client
+
+  client_default <- .tbit_s3_client(creds, region = "us-east-1")
+  expect_true(is.list(client_default))
+})
+
+test_that("tbit_get_conn forwards endpoint to developer path", {
+  dir <- create_test_tbit_repo(project_name = "myproj")
+
+  withr::local_envvar(
+    TBIT_MYPROJ_ACCESS_KEY_ID = "fake_key",
+    TBIT_MYPROJ_SECRET_ACCESS_KEY = "fake_secret",
+    GITHUB_PAT = "ghp_fake"
+  )
+
+  captured_endpoint <- NULL
+  local_mocked_bindings(
+    .tbit_s3_client = function(credentials, region = "us-east-1",
+                                endpoint = NULL) {
+      captured_endpoint <<- endpoint
+      mock_s3_client()
+    }
+  )
+
+  conn <- tbit_get_conn(
+    path = dir,
+    endpoint = "https://my-endpoint.com"
+  )
+
+  expect_equal(conn$endpoint, "https://my-endpoint.com")
+  expect_equal(captured_endpoint, "https://my-endpoint.com")
+})
+
+test_that("tbit_get_conn forwards endpoint to reader path", {
+  withr::local_envvar(
+    TBIT_PROJ_ACCESS_KEY_ID = "fake_key",
+    TBIT_PROJ_SECRET_ACCESS_KEY = "fake_secret"
+  )
+
+  captured_endpoint <- NULL
+  local_mocked_bindings(
+    .tbit_s3_client = function(credentials, region = "us-east-1",
+                                endpoint = NULL) {
+      captured_endpoint <<- endpoint
+      mock_s3_client()
+    }
+  )
+
+  conn <- tbit_get_conn(
+    bucket = "b",
+    project_name = "proj",
+    endpoint = "https://reader-endpoint.com"
+  )
+
+  expect_equal(conn$endpoint, "https://reader-endpoint.com")
+  expect_equal(captured_endpoint, "https://reader-endpoint.com")
+})
+
+test_that("tbit_get_conn endpoint defaults to NULL when not specified", {
+  withr::local_envvar(
+    TBIT_PROJ_ACCESS_KEY_ID = "fake_key",
+    TBIT_PROJ_SECRET_ACCESS_KEY = "fake_secret"
+  )
+
+  captured_endpoint <- "sentinel"
+  local_mocked_bindings(
+    .tbit_s3_client = function(credentials, region = "us-east-1",
+                                endpoint = NULL) {
+      captured_endpoint <<- endpoint
+      mock_s3_client()
+    }
+  )
+
+  conn <- tbit_get_conn(bucket = "b", project_name = "proj")
+
+  expect_null(conn$endpoint)
+  expect_null(captured_endpoint)
+})
+
+test_that("mock_tbit_conn includes endpoint field as NULL", {
+  conn <- mock_tbit_conn(mock_s3_client())
+  expect_true("endpoint" %in% names(conn))
+  expect_null(conn$endpoint)
+})
