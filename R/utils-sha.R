@@ -46,7 +46,15 @@
 #' Compute SHA-256 of Metadata
 #'
 #' Sorts fields alphabetically before hashing for deterministic results,
-#' regardless of field insertion order.
+#' regardless of field insertion order. Volatile fields (`created_at`,
+#' `tbit_version`) are excluded so that identical semantic content always
+#' produces the same SHA, regardless of when it was written.
+#'
+#' Hashes a JSON canonical form rather than the R object directly. This
+#' ensures that metadata read back from JSON (e.g., from S3) produces the
+#' same SHA as metadata built in-memory, despite R type differences
+#' (integer vs double, character vector vs list) introduced by JSON
+#' round-tripping.
 #'
 #' @param metadata Named list of metadata fields.
 #' @return Character SHA-256 hash.
@@ -56,11 +64,18 @@
     cli::cli_abort("{.arg metadata} must be a named list.")
   }
 
-  field_names <- names(metadata)
-  sorted_names <- sort(field_names)
-  sorted_metadata <- metadata[sorted_names]
-  sha <- digest::digest(sorted_metadata, algo = "sha256")
-  sha
+  # Exclude volatile fields that don't define content identity
+  volatile <- c("created_at", "tbit_version")
+  semantic <- metadata[setdiff(names(metadata), volatile)]
+
+  sorted_names <- sort(names(semantic))
+  sorted_metadata <- semantic[sorted_names]
+
+  # JSON canonical form: type-agnostic (integer/double, vector/list all
+  # serialise identically), so in-memory and S3-round-tripped metadata
+  # always produce the same hash.
+  canonical <- jsonlite::toJSON(sorted_metadata, auto_unbox = TRUE)
+  digest::digest(canonical, algo = "sha256", serialize = FALSE)
 }
 
 

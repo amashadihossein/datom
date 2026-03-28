@@ -105,6 +105,56 @@ test_that("metadata SHA is a 64-char hex string", {
   expect_match(sha, "^[0-9a-f]{64}$")
 })
 
+test_that("metadata SHA ignores created_at (volatile field)", {
+  meta1 <- list(data_sha = "abc", created_at = "2025-01-01T00:00:00Z")
+  meta2 <- list(data_sha = "abc", created_at = "2026-12-31T23:59:59Z")
+  expect_identical(
+    .tbit_compute_metadata_sha(meta1),
+    .tbit_compute_metadata_sha(meta2)
+  )
+})
+
+test_that("metadata SHA ignores tbit_version (volatile field)", {
+  meta1 <- list(data_sha = "abc", tbit_version = "0.0.0.9000")
+  meta2 <- list(data_sha = "abc", tbit_version = "1.0.0")
+  expect_identical(
+    .tbit_compute_metadata_sha(meta1),
+    .tbit_compute_metadata_sha(meta2)
+  )
+})
+
+test_that("metadata SHA still differs for different semantic content", {
+  meta1 <- list(data_sha = "abc", nrow = 10L, created_at = "2025-01-01T00:00:00Z")
+  meta2 <- list(data_sha = "abc", nrow = 20L, created_at = "2025-01-01T00:00:00Z")
+  expect_false(
+    .tbit_compute_metadata_sha(meta1) == .tbit_compute_metadata_sha(meta2)
+  )
+})
+
+test_that("metadata SHA is stable across JSON round-trip", {
+  meta_in_memory <- list(
+    data_sha = "abc123",
+    nrow = 10L,
+    ncol = 3L,
+    colnames = c("a", "b", "c"),
+    table_type = "derived",
+    parents = list(list(source = "S1", table = "dm", version = "v1")),
+    size_bytes = 1024,
+    created_at = "2025-01-01T00:00:00Z",
+    tbit_version = "0.0.0.9000"
+  )
+
+  # Simulate JSON round-trip (as happens when reading from S3)
+  json <- jsonlite::toJSON(meta_in_memory, auto_unbox = TRUE)
+  meta_roundtripped <- jsonlite::fromJSON(as.character(json),
+                                          simplifyVector = FALSE)
+
+  expect_identical(
+    .tbit_compute_metadata_sha(meta_in_memory),
+    .tbit_compute_metadata_sha(meta_roundtripped)
+  )
+})
+
 test_that("metadata SHA rejects unnamed list", {
   expect_error(.tbit_compute_metadata_sha(list(1, 2)), "named list")
 })

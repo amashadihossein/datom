@@ -645,6 +645,29 @@ test_that("original_file_sha is null in version_history for derived tables", {
   })
 })
 
+test_that("version_history skips duplicate entry when latest version matches", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_tbit_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
+    meta_sha <- .tbit_compute_metadata_sha(metadata)
+
+    # First write — creates version_history with 1 entry
+    .tbit_write_metadata_local(conn, "tbl", metadata, meta_sha, message = "v1")
+
+    # Second write with same metadata_sha — should NOT append duplicate
+    .tbit_write_metadata_local(conn, "tbl", metadata, meta_sha, message = "v1 again")
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_length(history, 1L)
+    expect_equal(history[[1]]$version, meta_sha)
+  })
+})
+
 
 # --- tbit_write() — Phase 8 enriched params -----------------------------------
 
@@ -1294,6 +1317,47 @@ test_that("skips write when no changes detected", {
 
   expect_equal(result$action, "none")
   expect_equal(result$name, "unchanged_tbl")
+})
+
+test_that("warns when skip has different message from latest version", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .tbit_git_push = function(path) invisible(TRUE)
+    )
+
+    df <- data.frame(x = 1:3)
+    tbit_write(conn, data = df, name = "tbl", message = "first message")
+
+    # Now mock change detection to return "none"
+    local_mocked_bindings(
+      .tbit_has_changes = function(conn, name, d, m) "none"
+    )
+
+    # Same data, different message → should inform about message not updated
+    expect_message(
+      tbit_write(conn, data = df, name = "tbl", message = "updated message"),
+      "Commit message not updated"
+    )
+
+    # Same data, same message → generic skip message
+    expect_message(
+      tbit_write(conn, data = df, name = "tbl", message = "first message"),
+      "No changes detected"
+    )
+  })
 })
 
 test_that("performs full write: parquet + metadata + git", {
