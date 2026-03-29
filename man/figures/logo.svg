@@ -25,6 +25,19 @@
       .label { fill: #FFFFFF; }
       .label-dim { fill: #FFFFFF; opacity: 0.6; }
     }
+
+    /* pkgdown / Bootstrap 5 dark mode toggle */
+    :root[data-bs-theme="dark"] .hex-fill { fill: #0D1B2A; }
+    :root[data-bs-theme="dark"] .hex-border { stroke: #AAAAAA; }
+    :root[data-bs-theme="dark"] .orbital { stroke: #777777; }
+    :root[data-bs-theme="dark"] .electron { fill: #FFFFFF; }
+    :root[data-bs-theme="dark"] .electron-text { fill: #0D1B2A; }
+    :root[data-bs-theme="dark"] .table-bg { fill: #0D1B2A; }
+    :root[data-bs-theme="dark"] .table-border { stroke: #AAAAAA; }
+    :root[data-bs-theme="dark"] .table-header { fill: #FFFFFF; }
+    :root[data-bs-theme="dark"] .table-line { stroke: #AAAAAA; }
+    :root[data-bs-theme="dark"] .label { fill: #FFFFFF; }
+    :root[data-bs-theme="dark"] .label-dim { fill: #FFFFFF; opacity: 0.6; }
   </style>
 
   <!-- Hex background -->
