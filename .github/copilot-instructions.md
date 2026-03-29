@@ -110,6 +110,9 @@ Auto-detected via `GITHUB_PAT` presence.
 - **metadata SHA uses JSON canonical form**: `.tbit_compute_metadata_sha()` hashes `jsonlite::toJSON()` output with `serialize = FALSE`, not the R object. This is critical — R's `serialize()` is type-sensitive (`10L` ≠ `10`), so metadata round-tripped through JSON would produce a different SHA. Always test SHA stability with a JSON round-trip.
 - **metadata SHA excludes volatile fields**: `created_at` and `tbit_version` are stripped before hashing. Adding new metadata fields that should NOT affect versioning must be added to the `volatile` vector in `.tbit_compute_metadata_sha()`.
 - **version_history dedup guard**: `.tbit_write_metadata_local()` skips appending when the latest entry has the same version SHA. This prevents duplicates but means the guard relies on metadata_sha correctness.
+- **`tbit_pull()` is git-only**: No S3 manifest refresh — git is the source of truth for all metadata. The manifest is committed to git and pulled with everything else.
+- **S3 namespace check swallows connectivity errors**: `.tbit_check_s3_namespace_free()` in `tbit_init_repo()` warns but doesn't fail on network errors — offline init still works, S3 push will fail later anyway.
+- **`git2r::clone()` target path**: Must not exist or must be an empty directory. `tbit_clone()` validates this upfront.
 
 ## Don'ts
 

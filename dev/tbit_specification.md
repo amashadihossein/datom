@@ -271,29 +271,25 @@ tbit_init_repo(
   prefix = NULL,
   region = NULL,
   max_file_size_gb = 1000,
-  git_ignore = c(
-    ".Rprofile", ".Renviron", ".Rhistory",
-    ".Rapp.history", ".Rproj.user/",
-    ".DS_Store", "*.csv", "*.tsv",
-    "*.rds", "*.txt", "*.parquet",
-    "*.sas7bdat", ".RData", ".RDataTmp",
-    "*.html", "*.png", "*.pdf",
-    ".vscode/", "rsconnect/"
-  )
+  git_ignore = c(...),
+  .force = FALSE
 )
 ```
 
 One-time setup for data developers:
 - `project_name`: used to auto-generate credential env var names (`TBIT_{PROJECT_NAME}_*`)
 - Validates environment variables (auto-generated credential names, GITHUB_PAT)
-- Creates folder structure, initializes git with remote, sets up renv
+- **S3 namespace safety check**: Before writing any files, checks whether `{prefix}/tbit/.metadata/manifest.json` already exists on S3. If occupied, aborts with an actionable error showing the existing project name. Pass `.force = TRUE` to override (intentional takeover only). Connectivity errors are swallowed so offline init still works.
+- Creates folder structure, initializes git with remote
 - Creates `.tbit/project.yaml` with auto-generated credential config
 - Creates `.tbit/routing.json` with default methods
+- Creates `.tbit/manifest.json` with `project_name` at the top level
 - Creates `.gitignore` with specified patterns (covers `input_files/` contents)
+- Pushes initial commit to git, then uploads routing + manifest to S3
 - Optional prefix for bucket organization
 - Configurable max file size limit (default 1TB)
 
-Returns: Success status
+Returns: Invisible TRUE on success. Cleans up on failure.
 
 #### tbit_get_conn()
 
@@ -323,6 +319,34 @@ Flexible connection for both developers and readers:
 - Auto-detects developer vs reader based on GITHUB_PAT presence
 
 Returns: Connection object (`tbit_conn` S3 class)
+
+#### tbit_clone()
+
+```r
+tbit_clone(remote_url, path, ...)
+```
+
+Clones an existing tbit repository and returns a ready-to-use connection:
+- Wraps `git2r::clone()` + `tbit_get_conn(path)`
+- Validates the clone contains `.tbit/project.yaml` (is a tbit repo)
+- Rejects non-empty target directories
+- `...` forwarded to `tbit_get_conn()`
+
+Returns: `tbit_conn` object (developer role)
+
+#### tbit_pull()
+
+```r
+tbit_pull(conn)
+```
+
+Pulls latest git changes from remote. Recommended at the start of each work session:
+- Fetches and merges upstream commits (metadata, manifest, routing — all tracked in git)
+- Git is the source of truth — no S3 refresh needed
+- Developer role only (readers have no git access)
+- Reports commits pulled and current branch
+
+Returns: Invisible list with `commits_pulled` (integer) and `branch` (string)
 
 ### Core Operations
 
@@ -582,10 +606,10 @@ Sys.setenv(
   GITHUB_PAT = "your_pat"
 )
 
-# One-time project setup
+# --- Lead developer: one-time project setup ---
 tbit_init_repo(
   path = "my_project",
-  project_name = "clinical_data",
+  project_name = "CLINICAL_DATA",
   remote_url = "https://github.com/org/data-repo.git",
   bucket = "shared-bucket",
   prefix = "project-alpha/",
@@ -593,13 +617,14 @@ tbit_init_repo(
   max_file_size_gb = 500
 )
 
-# Connect and sync files
+# --- All other developers: clone existing repo ---
+conn <- tbit_clone("https://github.com/org/data-repo.git", "my_project")
+
+# --- Daily workflow ---
 conn <- tbit_get_conn("my_project")
+tbit_pull(conn)  # Always pull at session start
 
 # Place source files in input_files/ (must be flat, no subdirectories)
-# input_files/customers.csv
-# input_files/orders.tsv
-
 manifest <- tbit_sync_manifest(conn)
 results <- tbit_sync(conn, manifest)
 ```
@@ -746,9 +771,13 @@ class DataProduct:
 
 ### Conflict Resolution
 
-- Pull before push to detect conflicts
-- On non-fast-forward error: Manual resolution required
-- User must pull latest and re-run sync
+**Pull-before-push discipline**: Every write path pulls from remote before pushing. `.tbit_git_push()` calls `.tbit_git_pull()` as its first step (fetch + merge). This is the primary defense against diverged histories in multi-developer scenarios.
+
+**Stale state detection**: `tbit_sync()` calls `.tbit_check_git_current()` at entry, which compares local HEAD vs remote HEAD via `git2r::ahead_behind()`. If behind, sync aborts with an actionable error directing the user to run `tbit_pull()`. This catches stale state before any local writes occur.
+
+**Conflict handling**:
+- Auto-pull before push resolves most non-fast-forward situations silently
+- Merge conflicts (rare — requires two developers syncing the same table simultaneously) require manual resolution: `git status` → edit → `git add` → `git commit` → re-run sync
 - No automatic merge of concurrent updates
 
 ---
@@ -815,6 +844,7 @@ renv: false  # renv integration deferred — see Deferred to v2
 
 ```json
 {
+  "project_name": "STUDY_001",
   "updated_at": "2024-01-15T10:30:00Z",
   "tables": {
     "customers": {
@@ -1062,15 +1092,16 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
 - **Session metadata caching**: Could reduce S3 GETs for repeated reads within a session. Requires careful invalidation design — deferred until the trade-offs are well understood.
 - **renv integration** in `tbit_init_repo()`: Currently deferred; `renv` field in project.yaml defaults to `false`.
 
-### Planned: Multi-Developer Collaboration
+### Multi-Developer Collaboration (Implemented)
 
-Phase 7 (in planning — see `dev/phase_7_multi_developer_collaboration.md`) addresses team workflows:
+Team workflows are fully supported:
 
-- **S3 namespace safety check** in `tbit_init_repo()`: Verify target S3 namespace is unoccupied before writing
-- **`project_name` in manifest.json**: Enables namespace collision detection
-- **`tbit_pull()`**: New exported function — git pull + manifest refresh from S3
-- **Pull-before-push discipline**: Stale local state detection before sync operations
-- **Team collaboration vignette**: Recommended workflows for shared repositories
+- **S3 namespace safety check** in `tbit_init_repo()`: Verifies target S3 namespace is unoccupied before writing. `.force = TRUE` overrides for intentional takeover.
+- **`project_name` in manifest.json**: Enables namespace collision detection. `tbit_validate()` cross-checks manifest's `project_name` against `conn$project_name`.
+- **`tbit_pull()`**: Git pull (fetch + merge). Git is the source of truth for all metadata.
+- **`tbit_clone()`**: Wraps `git2r::clone()` + `tbit_get_conn()` — the recommended way for teammates to join a repo.
+- **Pull-before-push discipline**: `.tbit_git_push()` auto-pulls before pushing. `.tbit_check_git_current()` detects stale state at `tbit_sync()` entry.
+- **Vignettes**: `vignette("team-collaboration")` for workflows, `vignette("credentials")` for credential setup.
 
 ---
 
