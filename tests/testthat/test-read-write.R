@@ -1319,47 +1319,6 @@ test_that("skips write when no changes detected", {
   expect_equal(result$name, "unchanged_tbl")
 })
 
-test_that("warns when skip has different message from latest version", {
-  withr::with_tempdir({
-    repo <- git2r::init(".")
-    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
-    writeLines("init", "README.md")
-    git2r::add(repo, "README.md")
-    git2r::commit(repo, "init")
-
-    conn <- mock_tbit_conn(list())
-    conn$role <- "developer"
-    conn$path <- getwd()
-
-    local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
-      .tbit_git_push = function(path) invisible(TRUE)
-    )
-
-    df <- data.frame(x = 1:3)
-    tbit_write(conn, data = df, name = "tbl", message = "first message")
-
-    # Now mock change detection to return "none"
-    local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "none"
-    )
-
-    # Same data, different message → should inform about message not updated
-    expect_message(
-      tbit_write(conn, data = df, name = "tbl", message = "updated message"),
-      "Commit message not updated"
-    )
-
-    # Same data, same message → generic skip message
-    expect_message(
-      tbit_write(conn, data = df, name = "tbl", message = "first message"),
-      "No changes detected"
-    )
-  })
-})
-
 test_that("performs full write: parquet + metadata + git", {
   withr::with_tempdir({
     repo <- git2r::init(".")

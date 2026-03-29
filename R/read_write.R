@@ -458,24 +458,9 @@ tbit_write <- function(conn,
   change_type <- .tbit_has_changes(conn, name, data_sha, metadata_sha)
 
   if (change_type == "none") {
-    # Check whether the user provided a different commit message
-    history_path <- fs::path(conn$path, name, "version_history.json")
-    if (!is.null(message) && fs::file_exists(history_path)) {
-      history <- jsonlite::read_json(history_path)
-      prev_msg <- if (length(history) > 0) history[[1]]$commit_message else NULL
-      if (!identical(prev_msg, message)) {
-        cli::cli_alert_info(
-          "No data or metadata changes for {.val {name}}. Commit message not updated."
-        )
-        return(invisible(list(
-          name = name,
-          data_sha = data_sha,
-          metadata_sha = metadata_sha,
-          action = "none"
-        )))
-      }
-    }
-    cli::cli_alert_info("No changes detected for {.val {name}}. Skipping write.")
+    cli::cli_alert_info(
+      "No changes detected for {.val {name}}. Skipping write."
+    )
     return(invisible(list(
       name = name,
       data_sha = data_sha,
