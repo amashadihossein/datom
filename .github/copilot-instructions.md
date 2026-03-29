@@ -125,6 +125,13 @@ Auto-detected via `GITHUB_PAT` presence.
 
 These patterns are non-negotiable for every session:
 
+0. **Follow the dev process for multi-step work**: Any task spanning more than a single commit **must** follow the phase workflow:
+   a. Read `dev/README.md` and relevant dev docs (spec, architecture) to understand current state.
+   b. Create a phase doc (`dev/phase_{n}_{name}.md`) with goal, context, chunks, acceptance criteria, and status tracking.
+   c. Register it as active in the `dev/README.md` Active Phases table.
+   d. Work through chunks in order — update the phase doc as you go (progress, decisions, blockers).
+   e. Complete the Phase Completion Procedure when done.
+   Never jump straight to coding on multi-step work. The phase doc is the plan AND the audit trail.
 1. **Read before writing**: Always read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the phase doc description alone.
 2. **Full test suite before every commit**: Run `devtools::test()` (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost.
 3. **One logical change per commit**: Don't bundle unrelated fixes. Squash related incremental commits before pushing if they tell a cleaner story as one.

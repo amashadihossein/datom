@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| (none active) | — | — |
+| Phase 9: Rename tbit → datom | In progress | `dev/phase_9_rename_tbit_to_datom.md` |
 
 ### Completed Phases
 
