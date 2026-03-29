@@ -1,31 +1,31 @@
-#' Check if Path is a Valid tbit Repository
+#' Check if Path is a Valid datom Repository
 #'
-#' Validates tbit repository structure. Used internally and by dpbuild.
+#' Validates datom repository structure. Used internally and by dpbuild.
 #'
 #' @param path Path to evaluate.
 #' @param checks Which checks to perform. Any combination of "all", "git",
-#'   "tbit", "renv".
+#'   "datom", "renv".
 #' @param verbose If TRUE, prints which tests passed/failed.
 #'
 #' @return TRUE or FALSE.
 #' @export
-is_valid_tbit_repo <- function(path,
-                               checks = c("all", "git", "tbit", "renv"),
+is_valid_datom_repo <- function(path,
+                               checks = c("all", "git", "datom", "renv"),
                                verbose = FALSE) {
   checks <- match.arg(
     arg = checks,
-    choices = c("all", "git", "tbit", "renv"),
+    choices = c("all", "git", "datom", "renv"),
     several.ok = TRUE
   )
 
-  dx <- tbit_repository_check(path = path)
+  dx <- datom_repository_check(path = path)
 
   if (!"all" %in% checks) {
     if (!"git" %in% checks) {
       dx <- dx[setdiff(names(dx), "git_initialized")]
     }
-    if (!"tbit" %in% checks) {
-      dx <- dx[setdiff(names(dx), c("tbit_initialized", "tbit_routing", "tbit_manifest"))]
+    if (!"datom" %in% checks) {
+      dx <- dx[setdiff(names(dx), c("datom_initialized", "datom_routing", "datom_manifest"))]
     }
     if (!"renv" %in% checks) {
       dx <- dx[setdiff(names(dx), "renv_initialized")]
@@ -46,7 +46,7 @@ is_valid_tbit_repo <- function(path,
 }
 
 
-#' Check tbit Repository Structure
+#' Check datom Repository Structure
 #'
 #' Returns detailed check results for each component.
 #'
@@ -54,14 +54,14 @@ is_valid_tbit_repo <- function(path,
 #'
 #' @return List of TRUE/FALSE per check.
 #' @keywords internal
-tbit_repository_check <- function(path) {
+datom_repository_check <- function(path) {
   path <- fs::path_abs(path)
 
   list(
     git_initialized = fs::dir_exists(fs::path(path, ".git")),
-    tbit_initialized = fs::file_exists(fs::path(path, ".tbit", "project.yaml")),
-    tbit_routing = fs::file_exists(fs::path(path, ".tbit", "routing.json")),
-    tbit_manifest = fs::file_exists(fs::path(path, ".tbit", "manifest.json")),
+    datom_initialized = fs::file_exists(fs::path(path, ".datom", "project.yaml")),
+    datom_routing = fs::file_exists(fs::path(path, ".datom", "routing.json")),
+    datom_manifest = fs::file_exists(fs::path(path, ".datom", "manifest.json")),
     renv_initialized = fs::dir_exists(fs::path(path, "renv"))
   )
 }
@@ -72,9 +72,9 @@ tbit_repository_check <- function(path) {
 #' Checks that git metadata matches S3 storage for all tables and repo-level
 #' files. Reports mismatches as a structured result.
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param fix If `TRUE`, attempts to fix inconsistencies by syncing metadata
-#'   to S3 via [tbit_sync_routing()].
+#'   to S3 via [datom_sync_routing()].
 #'
 #' @return A list with:
 #'   \describe{
@@ -84,10 +84,10 @@ tbit_repository_check <- function(path) {
 #'     \item{fixed}{Logical — `TRUE` if `fix = TRUE` was applied.}
 #'   }
 #' @export
-tbit_validate <- function(conn, fix = FALSE) {
+datom_validate <- function(conn, fix = FALSE) {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
   if (conn$role != "developer") {
@@ -100,18 +100,18 @@ tbit_validate <- function(conn, fix = FALSE) {
   if (is.null(conn$path)) {
     cli::cli_abort(c(
       "Validation requires a local git repo path.",
-      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+      "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
 
   # --- Repo-level file checks ---
-  repo_file_checks <- .tbit_validate_repo_files(conn)
+  repo_file_checks <- .datom_validate_repo_files(conn)
 
   # --- Project identity check ---
-  project_name_ok <- .tbit_validate_project_name(conn)
+  project_name_ok <- .datom_validate_project_name(conn)
 
   # --- Per-table checks ---
-  table_checks <- .tbit_validate_tables(conn)
+  table_checks <- .datom_validate_tables(conn)
 
   all_repo_ok <- nrow(repo_file_checks) == 0L ||
     all(repo_file_checks$status == "ok")
@@ -134,9 +134,9 @@ tbit_validate <- function(conn, fix = FALSE) {
   if (!is_valid && isTRUE(fix)) {
     cli::cli_alert_info("Attempting to fix by syncing metadata to S3...")
     tryCatch({
-      tbit_sync_routing(conn, .confirm = FALSE)
+      datom_sync_routing(conn, .confirm = FALSE)
       fixed <- TRUE
-      cli::cli_alert_success("Fix applied. Re-run {.fn tbit_validate} to verify.")
+      cli::cli_alert_success("Fix applied. Re-run {.fn datom_validate} to verify.")
     }, error = function(e) {
       cli::cli_alert_danger("Fix failed: {conditionMessage(e)}")
     })
@@ -153,16 +153,16 @@ tbit_validate <- function(conn, fix = FALSE) {
 
 #' Validate project_name consistency between local manifest and connection
 #'
-#' Reads the local `.tbit/manifest.json` and checks that its `project_name`
+#' Reads the local `.datom/manifest.json` and checks that its `project_name`
 #' field matches `conn$project_name`. A mismatch indicates a namespace collision
 #' (two projects sharing the same S3 bucket + prefix).
 #'
-#' @param conn A `tbit_conn` object.
+#' @param conn A `datom_conn` object.
 #' @return `TRUE` if consistent or no project_name in manifest (pre-Phase 7
 #'   repos). `FALSE` on mismatch (with a warning).
 #' @noRd
-.tbit_validate_project_name <- function(conn) {
-  manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+.datom_validate_project_name <- function(conn) {
+  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
 
   if (!fs::file_exists(manifest_path)) return(TRUE)
 
@@ -190,22 +190,22 @@ tbit_validate <- function(conn, fix = FALSE) {
 
 #' Validate repo-level files exist on S3
 #' @noRd
-.tbit_validate_repo_files <- function(conn) {
+.datom_validate_repo_files <- function(conn) {
   repo_path <- conn$path
 
   files_to_check <- list(
     list(
-      local = fs::path(repo_path, ".tbit", "routing.json"),
+      local = fs::path(repo_path, ".datom", "routing.json"),
       s3_key = ".metadata/routing.json",
       name = "routing.json"
     ),
     list(
-      local = fs::path(repo_path, ".tbit", "manifest.json"),
+      local = fs::path(repo_path, ".datom", "manifest.json"),
       s3_key = ".metadata/manifest.json",
       name = "manifest.json"
     ),
     list(
-      local = fs::path(repo_path, ".tbit", "migration_history.json"),
+      local = fs::path(repo_path, ".datom", "migration_history.json"),
       s3_key = ".metadata/migration_history.json",
       name = "migration_history.json"
     )
@@ -219,7 +219,7 @@ tbit_validate <- function(conn, fix = FALSE) {
       return(NULL)
     }
 
-    s3_exists <- .tbit_s3_exists(conn, fc$s3_key)
+    s3_exists <- .datom_s3_exists(conn, fc$s3_key)
 
     status <- if (s3_exists) "ok" else "missing_s3"
 
@@ -250,7 +250,7 @@ tbit_validate <- function(conn, fix = FALSE) {
 
 #' Validate per-table metadata consistency
 #' @noRd
-.tbit_validate_tables <- function(conn) {
+.datom_validate_tables <- function(conn) {
   repo_path <- conn$path
 
   # Discover tables (directories with metadata.json)
@@ -279,7 +279,7 @@ tbit_validate <- function(conn, fix = FALSE) {
   }
 
   rows <- purrr::map(table_names, function(tbl) {
-    .tbit_validate_one_table(conn, tbl)
+    .datom_validate_one_table(conn, tbl)
   })
 
   result <- do.call(rbind, rows)
@@ -290,7 +290,7 @@ tbit_validate <- function(conn, fix = FALSE) {
 
 #' Validate a single table's git-S3 consistency
 #' @noRd
-.tbit_validate_one_table <- function(conn, name) {
+.datom_validate_one_table <- function(conn, name) {
   repo_path <- conn$path
 
   # Local checks
@@ -298,8 +298,8 @@ tbit_validate <- function(conn, fix = FALSE) {
   history_local <- fs::file_exists(fs::path(repo_path, name, "version_history.json"))
 
   # S3 checks
-  metadata_s3 <- .tbit_s3_exists(conn, paste0(name, "/.metadata/metadata.json"))
-  history_s3 <- .tbit_s3_exists(conn, paste0(name, "/.metadata/version_history.json"))
+  metadata_s3 <- .datom_s3_exists(conn, paste0(name, "/.metadata/metadata.json"))
+  history_s3 <- .datom_s3_exists(conn, paste0(name, "/.metadata/version_history.json"))
 
   # Check that data parquet exists (read data_sha from local metadata)
   data_s3 <- FALSE
@@ -311,7 +311,7 @@ tbit_validate <- function(conn, fix = FALSE) {
       )
       if (!is.null(meta$data_sha) && nzchar(meta$data_sha)) {
         data_key <- paste0(name, "/", meta$data_sha, ".parquet")
-        data_s3 <- .tbit_s3_exists(conn, data_key)
+        data_s3 <- .datom_s3_exists(conn, data_key)
       }
     }, error = function(e) {
       # Leave data_s3 as FALSE

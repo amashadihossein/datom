@@ -1,8 +1,8 @@
 # Internal S3 operations
 #
 # Low-level S3 wrappers around paws.storage.
-# Functions accept a `tbit_conn` object and an `s3_key` relative to
-# `prefix/tbit/`. The full key is built internally via `.tbit_build_s3_key()`.
+# Functions accept a `datom_conn` object and an `s3_key` relative to
+# `prefix/datom/`. The full key is built internally via `.datom_build_s3_key()`.
 
 
 #' Create an S3 Client from Credential Environment Variables
@@ -16,7 +16,7 @@
 #' @param endpoint Optional S3 endpoint URL. NULL for default AWS endpoint.
 #' @return A `paws.storage` S3 client.
 #' @keywords internal
-.tbit_s3_client <- function(credentials, region = "us-east-1", endpoint = NULL) {
+.datom_s3_client <- function(credentials, region = "us-east-1", endpoint = NULL) {
   if (!is.list(credentials) ||
       !all(c("access_key_env", "secret_key_env") %in% names(credentials))) {
     cli::cli_abort(
@@ -60,19 +60,19 @@
 #'
 #' Reads a local file as raw bytes and uploads via `put_object()`.
 #'
-#' @param conn A `tbit_conn` object.
+#' @param conn A `datom_conn` object.
 #' @param local_path Local file path to upload.
-#' @param s3_key Relative S3 key (after `prefix/tbit/`).
+#' @param s3_key Relative S3 key (after `prefix/datom/`).
 #' @return Invisible `TRUE` on success.
 #' @keywords internal
-.tbit_s3_upload <- function(conn, local_path, s3_key) {
+.datom_s3_upload <- function(conn, local_path, s3_key) {
   if (!fs::file_exists(local_path)) {
     cli::cli_abort(
       "File not found: {.path {local_path}}"
     )
   }
 
-  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
+  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
   body <- readBin(local_path, what = "raw", n = fs::file_size(local_path))
 
   tryCatch(
@@ -105,13 +105,13 @@
 #' Downloads an S3 object and writes it to a local path. Creates parent
 #' directories if needed.
 #'
-#' @param conn A `tbit_conn` object.
-#' @param s3_key Relative S3 key (after `prefix/tbit/`).
+#' @param conn A `datom_conn` object.
+#' @param s3_key Relative S3 key (after `prefix/datom/`).
 #' @param local_path Local file path (destination).
 #' @return Invisible `TRUE` on success.
 #' @keywords internal
-.tbit_s3_download <- function(conn, s3_key, local_path) {
-  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
+.datom_s3_download <- function(conn, s3_key, local_path) {
+  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
   fs::dir_create(fs::path_dir(local_path))
 
   tryCatch(
@@ -144,12 +144,12 @@
 #' Uses a HEAD request for efficiency. Returns `TRUE` if the object exists,
 #' `FALSE` on 404/NoSuchKey. Any other error (403, network) is re-thrown.
 #'
-#' @param conn A `tbit_conn` object.
-#' @param s3_key Relative S3 key (after `prefix/tbit/`).
+#' @param conn A `datom_conn` object.
+#' @param s3_key Relative S3 key (after `prefix/datom/`).
 #' @return `TRUE` or `FALSE`.
 #' @keywords internal
-.tbit_s3_exists <- function(conn, s3_key) {
-  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
+.datom_s3_exists <- function(conn, s3_key) {
+  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
 
   tryCatch(
     {
@@ -182,14 +182,14 @@
 #'
 #' Downloads an S3 object, reads it as text, and parses as JSON.
 #' Uses `simplifyVector = FALSE` to keep lists as lists (matching
-#' how `.tbit_s3_write_json()` writes them).
+#' how `.datom_s3_write_json()` writes them).
 #'
-#' @param conn A `tbit_conn` object.
-#' @param s3_key Relative S3 key (after `prefix/tbit/`).
+#' @param conn A `datom_conn` object.
+#' @param s3_key Relative S3 key (after `prefix/datom/`).
 #' @return Parsed R list.
 #' @keywords internal
-.tbit_s3_read_json <- function(conn, s3_key) {
-  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
+.datom_s3_read_json <- function(conn, s3_key) {
+  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
 
   resp <- tryCatch(
     conn$s3_client$get_object(
@@ -232,13 +232,13 @@
 #'
 #' Serializes `data` to JSON via `jsonlite::toJSON()` and uploads to S3.
 #'
-#' @param conn A `tbit_conn` object.
-#' @param s3_key Relative S3 key (after `prefix/tbit/`).
+#' @param conn A `datom_conn` object.
+#' @param s3_key Relative S3 key (after `prefix/datom/`).
 #' @param data An R list to serialize to JSON.
 #' @return Invisible `TRUE` on success.
 #' @keywords internal
-.tbit_s3_write_json <- function(conn, s3_key, data) {
-  full_key <- .tbit_build_s3_key(conn$prefix, s3_key)
+.datom_s3_write_json <- function(conn, s3_key, data) {
+  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
   json_raw <- charToRaw(
     jsonlite::toJSON(data, auto_unbox = TRUE, pretty = TRUE)
   )
@@ -271,15 +271,15 @@
 #' Resolve S3 Redirect Chain
 #'
 #' Follows `.redirect.json` files placed in old buckets after migration.
-#' Each redirect points to a new `s3://bucket/prefix/tbit/` location and
+#' Each redirect points to a new `s3://bucket/prefix/datom/` location and
 #' may include new credentials. Recurses until no redirect is found.
 #'
-#' @param conn A `tbit_conn` object for the current location.
+#' @param conn A `datom_conn` object for the current location.
 #' @param max_depth Maximum number of redirects to follow (default 5).
 #' @param .depth Internal counter — do not set manually.
-#' @return A `tbit_conn` object for the resolved final location.
+#' @return A `datom_conn` object for the resolved final location.
 #' @keywords internal
-.tbit_s3_resolve_redirect <- function(conn, max_depth = 5L, .depth = 0L) {
+.datom_s3_resolve_redirect <- function(conn, max_depth = 5L, .depth = 0L) {
   if (.depth >= max_depth) {
     cli::cli_abort(
       c(
@@ -290,15 +290,15 @@
     )
   }
 
-  redirect_exists <- .tbit_s3_exists(conn, ".redirect.json")
+  redirect_exists <- .datom_s3_exists(conn, ".redirect.json")
   if (!redirect_exists) {
     return(conn)
   }
 
-  redirect <- .tbit_s3_read_json(conn, ".redirect.json")
+  redirect <- .datom_s3_read_json(conn, ".redirect.json")
 
   if (is.null(redirect$redirect_to) || !nzchar(redirect$redirect_to)) {
-    redirect_key <- .tbit_build_s3_key(conn$prefix, ".redirect.json")
+    redirect_key <- .datom_build_s3_key(conn$prefix, ".redirect.json")
     cli::cli_abort(
       c(
         "Invalid redirect: {.field redirect_to} is missing or empty.",
@@ -308,10 +308,10 @@
     )
   }
 
-  # Parse redirect_to URI — expected format: s3://bucket/prefix/tbit/
-  # Strip trailing "tbit/" or "tbit" to get the prefix
-  redirect_uri <- sub("/tbit/?$", "", redirect$redirect_to)
-  parsed <- .tbit_parse_s3_uri(redirect_uri)
+  # Parse redirect_to URI — expected format: s3://bucket/prefix/datom/
+  # Strip trailing "datom/" or "datom" to get the prefix
+  redirect_uri <- sub("/datom/?$", "", redirect$redirect_to)
+  parsed <- .datom_parse_s3_uri(redirect_uri)
 
   # Build new client if redirect provides credentials
   new_client <- conn$s3_client
@@ -321,15 +321,15 @@
       cli::cli_abort(
         c(
           "Invalid redirect credentials: missing {.field access_key_env} or {.field secret_key_env}.",
-          "x" = "Redirect from: {.val {conn$bucket}}/{.val {(.tbit_build_s3_key(conn$prefix, '.redirect.json'))}}"
+          "x" = "Redirect from: {.val {conn$bucket}}/{.val {(.datom_build_s3_key(conn$prefix, '.redirect.json'))}}"
         )
       )
     }
-    new_client <- .tbit_s3_client(creds)
+    new_client <- .datom_s3_client(creds)
   }
 
   # Build a new conn for the redirect target
-  new_conn <- new_tbit_conn(
+  new_conn <- new_datom_conn(
     project_name = conn$project_name,
     bucket = parsed$bucket,
     prefix = parsed$prefix,
@@ -340,7 +340,7 @@
   )
 
   # Recurse into the new location
-  .tbit_s3_resolve_redirect(
+  .datom_s3_resolve_redirect(
     conn = new_conn,
     max_depth = max_depth,
     .depth = .depth + 1L

@@ -3,7 +3,7 @@
 #' Lists tables from S3 manifest. Reads `.metadata/manifest.json` from S3
 #' and returns a data frame with one row per table.
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param pattern Optional glob pattern for filtering table names.
 #' @param include_versions If TRUE, includes version count info.
 #' @param short_hash If TRUE (default), truncates version and data SHA
@@ -11,17 +11,17 @@
 #'
 #' @return Data frame with table info (name, current_version, last_updated, etc.).
 #' @export
-tbit_list <- function(conn,
+datom_list <- function(conn,
                       pattern = NULL,
                       include_versions = FALSE,
                       short_hash = TRUE) {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
   manifest <- tryCatch(
-    .tbit_s3_read_json(conn, ".metadata/manifest.json"),
+    .datom_s3_read_json(conn, ".metadata/manifest.json"),
     error = function(e) {
       cli::cli_abort(c(
         "Could not read manifest from S3.",
@@ -75,8 +75,8 @@ tbit_list <- function(conn,
   result <- do.call(rbind, rows)
 
   if (isTRUE(short_hash)) {
-    result$current_version <- .tbit_abbreviate_sha(result$current_version)
-    result$current_data_sha <- .tbit_abbreviate_sha(result$current_data_sha)
+    result$current_version <- .datom_abbreviate_sha(result$current_version)
+    result$current_data_sha <- .datom_abbreviate_sha(result$current_data_sha)
   }
 
   result
@@ -88,7 +88,7 @@ tbit_list <- function(conn,
 #' Shows version history for a table by reading `version_history.json`
 #' from S3. Returns the most recent `n` versions.
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
 #' @param n Maximum number of versions to return. Default 10.
 #' @param short_hash If TRUE (default), truncates version and data SHA
@@ -97,16 +97,16 @@ tbit_list <- function(conn,
 #' @return Data frame with columns: version, data_sha, timestamp, author,
 #'   commit_message.
 #' @export
-tbit_history <- function(conn,
+datom_history <- function(conn,
                          name,
                          n = 10,
                          short_hash = TRUE) {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
-  .tbit_validate_name(name)
+  .datom_validate_name(name)
 
   if (!is.numeric(n) || length(n) != 1L || n < 1L) {
     cli::cli_abort("{.arg n} must be a positive integer.")
@@ -117,7 +117,7 @@ tbit_history <- function(conn,
   history_key <- paste0(name, "/.metadata/version_history.json")
 
   history <- tryCatch(
-    .tbit_s3_read_json(conn, history_key),
+    .datom_s3_read_json(conn, history_key),
     error = function(e) {
       cli::cli_abort(c(
         "No version history found for table {.val {name}}.",
@@ -162,8 +162,8 @@ tbit_history <- function(conn,
   result <- do.call(rbind, rows)
 
   if (isTRUE(short_hash)) {
-    result$version <- .tbit_abbreviate_sha(result$version)
-    result$data_sha <- .tbit_abbreviate_sha(result$data_sha)
+    result$version <- .datom_abbreviate_sha(result$version)
+    result$data_sha <- .datom_abbreviate_sha(result$data_sha)
   }
 
   result
@@ -176,22 +176,22 @@ tbit_history <- function(conn,
 #' entries recorded at write time by dp_dev or other callers. For imported
 #' tables or derived tables with no recorded lineage, returns `NULL`.
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
-#' @param version Optional metadata_sha (tbit version). If NULL, reads
+#' @param version Optional metadata_sha (datom version). If NULL, reads
 #'   current metadata. If provided, fetches the versioned metadata snapshot
 #'   from S3.
 #'
 #' @return List of parent entries (each with `source`, `table`, `version`),
 #'   or `NULL` if no lineage is recorded.
 #' @export
-tbit_get_parents <- function(conn, name, version = NULL) {
+datom_get_parents <- function(conn, name, version = NULL) {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
-  .tbit_validate_name(name)
+  .datom_validate_name(name)
 
   if (is.null(version)) {
     # Read current metadata.json
@@ -205,7 +205,7 @@ tbit_get_parents <- function(conn, name, version = NULL) {
   }
 
   metadata <- tryCatch(
-    .tbit_s3_read_json(conn, metadata_key),
+    .datom_s3_read_json(conn, metadata_key),
     error = function(e) {
       if (is.null(version)) {
         cli::cli_abort(c(
@@ -216,7 +216,7 @@ tbit_get_parents <- function(conn, name, version = NULL) {
       } else {
         cli::cli_abort(c(
           "Version {.val {version}} not found for table {.val {name}}.",
-          "i" = "Use {.fn tbit_history} to see available versions.",
+          "i" = "Use {.fn datom_history} to see available versions.",
           "i" = "Underlying error: {conditionMessage(e)}"
         ))
       }
@@ -234,15 +234,15 @@ tbit_get_parents <- function(conn, name, version = NULL) {
 #' Displays connection info, table count, and (for developers) uncommitted
 #' git changes and input file sync state.
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #'
 #' @return Invisibly, a list with `connection`, `tables`, and optionally
 #'   `git` and `input_files` status details.
 #' @export
-tbit_status <- function(conn) {
+datom_status <- function(conn) {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
   status <- list(
@@ -257,7 +257,7 @@ tbit_status <- function(conn) {
   )
 
   # --- Connection summary ---
-  cli::cli_h2("tbit status")
+  cli::cli_h2("datom status")
   cli::cli_alert_info("Project: {.val {conn$project_name}}")
   cli::cli_alert_info("Bucket: {.val {conn$bucket}}")
   if (!is.null(conn$prefix)) {
@@ -267,7 +267,7 @@ tbit_status <- function(conn) {
 
   # --- Table count from S3 manifest ---
   table_info <- tryCatch({
-    manifest <- .tbit_s3_read_json(conn, ".metadata/manifest.json")
+    manifest <- .datom_s3_read_json(conn, ".metadata/manifest.json")
     n <- length(manifest$tables %||% list())
     list(count = n, available = TRUE)
   }, error = function(e) {
@@ -285,7 +285,7 @@ tbit_status <- function(conn) {
   # --- Developer-only: git + input_files status ---
   if (!is.null(conn$path)) {
     # Git status
-    git_info <- .tbit_status_git(conn$path)
+    git_info <- .datom_status_git(conn$path)
     status$git <- git_info
 
     if (length(git_info$uncommitted) == 0L) {
@@ -306,7 +306,7 @@ tbit_status <- function(conn) {
     # Input files scan
     input_dir <- fs::path(conn$path, "input_files")
     if (fs::dir_exists(input_dir)) {
-      input_info <- .tbit_status_input_files(conn)
+      input_info <- .datom_status_input_files(conn)
       status$input_files <- input_info
 
       if (input_info$n_new > 0L || input_info$n_changed > 0L) {
@@ -329,7 +329,7 @@ tbit_status <- function(conn) {
 
 #' Get git status (uncommitted changes + branch)
 #' @noRd
-.tbit_status_git <- function(path) {
+.datom_status_git <- function(path) {
   has_git2r <- requireNamespace("git2r", quietly = TRUE)
 
   if (!has_git2r || !fs::dir_exists(fs::path(path, ".git"))) {
@@ -349,7 +349,7 @@ tbit_status <- function(conn) {
   }
 
   # Get branch
-  branch <- tryCatch(.tbit_git_branch(path), error = function(e) NULL)
+  branch <- tryCatch(.datom_git_branch(path), error = function(e) NULL)
 
   list(uncommitted = uncommitted, branch = branch)
 }
@@ -357,7 +357,7 @@ tbit_status <- function(conn) {
 
 #' Get input files sync state vs manifest
 #' @noRd
-.tbit_status_input_files <- function(conn) {
+.datom_status_input_files <- function(conn) {
   input_dir <- fs::path(conn$path, "input_files")
 
   files <- fs::dir_ls(input_dir, type = "file")
@@ -367,7 +367,7 @@ tbit_status <- function(conn) {
   }
 
   # Read local manifest
-  manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   manifest <- if (fs::file_exists(manifest_path)) {
     jsonlite::read_json(manifest_path)
   } else {
@@ -376,7 +376,7 @@ tbit_status <- function(conn) {
 
   statuses <- purrr::map_chr(files, function(fp) {
     table_name <- fs::path_ext_remove(fs::path_file(fp))
-    file_sha <- .tbit_compute_file_sha(fp)
+    file_sha <- .datom_compute_file_sha(fp)
     existing <- manifest$tables[[table_name]]
 
     if (is.null(existing)) {

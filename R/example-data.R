@@ -13,16 +13,16 @@
 #'
 #' @examples
 #' # Full demographics
-#' dm <- tbit_example_data("dm")
+#' dm <- datom_example_data("dm")
 #'
 #' # Month-3 snapshot (subjects enrolled by 2026-03-28)
-#' dm_m3 <- tbit_example_data("dm", cutoff_date = "2026-03-28")
+#' dm_m3 <- datom_example_data("dm", cutoff_date = "2026-03-28")
 #'
 #' @export
-tbit_example_data <- function(domain = c("dm", "ex"), cutoff_date = NULL) {
+datom_example_data <- function(domain = c("dm", "ex"), cutoff_date = NULL) {
   domain <- match.arg(domain)
 
-  file <- system.file("extdata", paste0(domain, ".csv"), package = "tbit")
+  file <- system.file("extdata", paste0(domain, ".csv"), package = "datom")
   if (!nzchar(file)) {
     cli::cli_abort("Example data file {.file {domain}.csv} not found in package.")
   }
@@ -48,12 +48,12 @@ tbit_example_data <- function(domain = c("dm", "ex"), cutoff_date = NULL) {
 #' @return Named character vector with entries `month_1` through `month_6`.
 #'
 #' @examples
-#' tbit_example_cutoffs()
+#' datom_example_cutoffs()
 #' # month_1    month_2    month_3    month_4    month_5    month_6
 #' # "2026-01-28" "2026-02-28" ...
 #'
 #' @export
-tbit_example_cutoffs <- function() {
+datom_example_cutoffs <- function() {
   c(
     month_1 = "2026-01-28",
     month_2 = "2026-02-28",

@@ -2,11 +2,11 @@
 
 #' Build S3 Object Key
 #'
-#' Constructs S3 keys from path components, inserting the `tbit/` segment
+#' Constructs S3 keys from path components, inserting the `datom/` segment
 #' per the storage structure convention.
 #'
 #' @param prefix Optional S3 prefix (e.g., "project-alpha"). NULL if none.
-#' @param ... Path segments after the `tbit/` segment (e.g., table name,
+#' @param ... Path segments after the `datom/` segment (e.g., table name,
 #'   file name, ".metadata").
 #' @return Character string S3 key.
 #' @keywords internal
@@ -14,22 +14,22 @@
 #' @examples
 #' \dontrun{
 #' # Data file
-#' .tbit_build_s3_key("proj", "customers", "abc123.parquet")
-#' # → "proj/tbit/customers/abc123.parquet"
+#' .datom_build_s3_key("proj", "customers", "abc123.parquet")
+#' # → "proj/datom/customers/abc123.parquet"
 #'
 #' # Table metadata
-#' .tbit_build_s3_key("proj", "customers", ".metadata", "metadata.json")
-#' # → "proj/tbit/customers/.metadata/metadata.json"
+#' .datom_build_s3_key("proj", "customers", ".metadata", "metadata.json")
+#' # → "proj/datom/customers/.metadata/metadata.json"
 #'
 #' # Repo-level metadata
-#' .tbit_build_s3_key("proj", ".metadata", "routing.json")
-#' # → "proj/tbit/.metadata/routing.json"
+#' .datom_build_s3_key("proj", ".metadata", "routing.json")
+#' # → "proj/datom/.metadata/routing.json"
 #'
 #' # No prefix
-#' .tbit_build_s3_key(NULL, "customers", "abc123.parquet")
-#' # → "tbit/customers/abc123.parquet"
+#' .datom_build_s3_key(NULL, "customers", "abc123.parquet")
+#' # → "datom/customers/abc123.parquet"
 #' }
-.tbit_build_s3_key <- function(prefix = NULL, ...) {
+.datom_build_s3_key <- function(prefix = NULL, ...) {
   segments <- c(...)
 
   if (length(segments) == 0L) {
@@ -40,8 +40,8 @@
   prefix_clean <- if (!is.null(prefix)) gsub("^/+|/+$", "", prefix) else NULL
   segments_clean <- gsub("^/+|/+$", "", segments)
 
-  # Build: prefix / tbit / segments...
-  parts <- c(prefix_clean, "tbit", segments_clean)
+  # Build: prefix / datom / segments...
+  parts <- c(prefix_clean, "datom", segments_clean)
 
   # Drop any empty strings
   parts <- parts[nzchar(parts)]
@@ -60,13 +60,13 @@
 #'
 #' @examples
 #' \dontrun{
-#' .tbit_parse_s3_uri("s3://my-bucket/data/proj")
+#' .datom_parse_s3_uri("s3://my-bucket/data/proj")
 #' # → list(bucket = "my-bucket", prefix = "data/proj")
 #'
-#' .tbit_parse_s3_uri("s3://my-bucket")
+#' .datom_parse_s3_uri("s3://my-bucket")
 #' # → list(bucket = "my-bucket", prefix = NULL)
 #' }
-.tbit_parse_s3_uri <- function(uri) {
+.datom_parse_s3_uri <- function(uri) {
   if (!is.character(uri) || length(uri) != 1L) {
     cli::cli_abort("{.arg uri} must be a single character string.")
   }
@@ -109,10 +109,10 @@
 #' Convenience function that combines bucket and key into an S3 URI.
 #'
 #' @param bucket S3 bucket name.
-#' @param key S3 object key (from `.tbit_build_s3_key()`).
+#' @param key S3 object key (from `.datom_build_s3_key()`).
 #' @return Character string S3 URI.
 #' @keywords internal
-.tbit_build_s3_uri <- function(bucket, key) {
+.datom_build_s3_uri <- function(bucket, key) {
   if (!is.character(bucket) || !nzchar(bucket)) {
     cli::cli_abort("{.arg bucket} must be a non-empty string.")
   }
@@ -138,7 +138,7 @@
 #'
 #' @return Character string — the rendered README content.
 #' @keywords internal
-.tbit_render_readme <- function(project_name,
+.datom_render_readme <- function(project_name,
                                 bucket,
                                 prefix,
                                 region,
@@ -146,7 +146,7 @@
                                 cred_names) {
   template_path <- system.file(
     "templates", "README.md",
-    package = "tbit",
+    package = "datom",
     mustWork = TRUE
   )
 
@@ -166,7 +166,7 @@
     access_key_env = cred_names[["access_key_env"]],
     secret_key_env = cred_names[["secret_key_env"]],
     created_at     = format(Sys.Date(), "%Y-%m-%d"),
-    tbit_version   = as.character(utils::packageVersion("tbit")),
+    datom_version   = as.character(utils::packageVersion("datom")),
     .open  = "{{{",
     .close = "}}}"
   )

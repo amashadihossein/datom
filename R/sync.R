@@ -10,7 +10,7 @@
 #'
 #' Requires developer role (readers have no git access).
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #'
 #' @return Invisibly, a list with:
 #'   \describe{
@@ -20,15 +20,15 @@
 #'
 #' @examples
 #' \dontrun{
-#' conn <- tbit_get_conn("path/to/repo")
-#' tbit_pull(conn)
+#' conn <- datom_get_conn("path/to/repo")
+#' datom_pull(conn)
 #' #> ✔ Pulled 2 commits on main.
 #' }
 #' @export
-tbit_pull <- function(conn) {
+datom_pull <- function(conn) {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
   if (conn$role != "developer") {
@@ -41,7 +41,7 @@ tbit_pull <- function(conn) {
   if (is.null(conn$path)) {
     cli::cli_abort(c(
       "Pull requires a local git repo path.",
-      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+      "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
 
@@ -50,10 +50,10 @@ tbit_pull <- function(conn) {
   # Record HEAD SHA before pulling
   repo <- git2r::repository(repo_path)
   head_before <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
-  branch_name <- .tbit_git_branch(repo_path)
+  branch_name <- .datom_git_branch(repo_path)
 
   # Git pull (fetch + merge)
-  .tbit_git_pull(repo_path)
+  .datom_git_pull(repo_path)
 
   # Count commits pulled by comparing HEAD before/after
   head_after <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
@@ -92,17 +92,17 @@ tbit_pull <- function(conn) {
 #' Used after migration, routing changes, or any situation where S3 metadata
 #' may be out of sync with git.
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param .confirm If `TRUE` (default), requires interactive confirmation
 #'   before proceeding. Set to `FALSE` for non-interactive use.
 #'
 #' @return Invisibly, a list with `repo_files` (character vector of uploaded
 #'   repo-level keys) and `tables` (list of per-table sync results).
 #' @export
-tbit_sync_routing <- function(conn, .confirm = TRUE) {
+datom_sync_routing <- function(conn, .confirm = TRUE) {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
   if (conn$role != "developer") {
@@ -115,7 +115,7 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
   if (is.null(conn$path)) {
     cli::cli_abort(c(
       "Sync routing requires a local git repo path.",
-      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+      "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
 
@@ -131,7 +131,7 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
     fs::file_exists(fs::path(d, "metadata.json"))
   })]
 
-  s3_location <- paste0("s3://", conn$bucket, "/", conn$prefix %||% "", "tbit/")
+  s3_location <- paste0("s3://", conn$bucket, "/", conn$prefix %||% "", "datom/")
 
   # Interactive confirmation
 
@@ -159,9 +159,9 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
   repo_files_synced <- character()
 
   repo_level_files <- list(
-    routing.json = fs::path(repo_path, ".tbit", "routing.json"),
-    manifest.json = fs::path(repo_path, ".tbit", "manifest.json"),
-    migration_history.json = fs::path(repo_path, ".tbit", "migration_history.json")
+    routing.json = fs::path(repo_path, ".datom", "routing.json"),
+    manifest.json = fs::path(repo_path, ".datom", "manifest.json"),
+    migration_history.json = fs::path(repo_path, ".datom", "migration_history.json")
   )
 
   for (fname in names(repo_level_files)) {
@@ -169,7 +169,7 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
     if (fs::file_exists(local_path)) {
       data <- jsonlite::read_json(local_path)
       s3_key <- paste0(".metadata/", fname)
-      .tbit_s3_write_json(conn, s3_key, data)
+      .datom_s3_write_json(conn, s3_key, data)
       repo_files_synced <- c(repo_files_synced, s3_key)
     }
   }
@@ -181,7 +181,7 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
   # --- Sync per-table metadata ---
   table_results <- purrr::map(table_names, function(tbl) {
     tryCatch({
-      .tbit_sync_table_metadata(conn, tbl)
+      .datom_sync_table_metadata(conn, tbl)
     }, error = function(e) {
       cli::cli_alert_danger("Failed to sync {.val {tbl}}: {conditionMessage(e)}")
       list(name = tbl, action = "error", error = conditionMessage(e))
@@ -205,7 +205,7 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
 
 #' Sync a single table's metadata files to S3
 #' @noRd
-.tbit_sync_table_metadata <- function(conn, name) {
+.datom_sync_table_metadata <- function(conn, name) {
   repo_path <- conn$path
   table_dir <- fs::path(repo_path, name)
 
@@ -216,7 +216,7 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
   if (fs::file_exists(metadata_path)) {
     data <- jsonlite::read_json(metadata_path)
     s3_key <- paste0(name, "/.metadata/metadata.json")
-    .tbit_s3_write_json(conn, s3_key, data)
+    .datom_s3_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
 
@@ -225,7 +225,7 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
   if (fs::file_exists(history_path)) {
     data <- jsonlite::read_json(history_path)
     s3_key <- paste0(name, "/.metadata/version_history.json")
-    .tbit_s3_write_json(conn, s3_key, data)
+    .datom_s3_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
 
@@ -237,7 +237,7 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
       snap_name <- fs::path_file(snap)
       data <- jsonlite::read_json(snap)
       s3_key <- paste0(name, "/.metadata/", snap_name)
-      .tbit_s3_write_json(conn, s3_key, data)
+      .datom_s3_write_json(conn, s3_key, data)
       s3_keys <- c(s3_keys, s3_key)
     }
   }
@@ -249,10 +249,10 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
 #' Scan and Prepare Manifest for Sync
 #'
 #' Scans a flat `input_files/` directory and computes file SHAs. Compares
-#' against the current `.tbit/manifest.json` to detect new or changed files.
-#' Returns a manifest data frame for review before calling [tbit_sync()].
+#' against the current `.datom/manifest.json` to detect new or changed files.
+#' Returns a manifest data frame for review before calling [datom_sync()].
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param path Optional path to input files directory. Defaults to
 #'   `input_files/` inside the repo.
 #' @param pattern Glob pattern for file matching. Default `"*"`.
@@ -260,12 +260,12 @@ tbit_sync_routing <- function(conn, .confirm = TRUE) {
 #' @return Data frame with columns: name, file, format, file_sha, status
 #'   (one of `"new"`, `"changed"`, `"unchanged"`).
 #' @export
-tbit_sync_manifest <- function(conn,
+datom_sync_manifest <- function(conn,
                                path = NULL,
                                pattern = "*") {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
   if (conn$role != "developer") {
@@ -278,7 +278,7 @@ tbit_sync_manifest <- function(conn,
   if (is.null(conn$path)) {
     cli::cli_abort(c(
       "Sync operations require a local git repo path.",
-      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+      "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
 
@@ -325,7 +325,7 @@ tbit_sync_manifest <- function(conn,
   }
 
   # Read current manifest (local git copy)
-  manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   current_manifest <- if (fs::file_exists(manifest_path)) {
     jsonlite::read_json(manifest_path)
   } else {
@@ -337,7 +337,7 @@ tbit_sync_manifest <- function(conn,
     file_name <- fs::path_file(fp)
     table_name <- fs::path_ext_remove(file_name)
     file_format <- fs::path_ext(fp)
-    file_sha <- .tbit_compute_file_sha(fp)
+    file_sha <- .datom_compute_file_sha(fp)
 
     # Compare against current manifest
     existing <- current_manifest$tables[[table_name]]
@@ -374,16 +374,16 @@ tbit_sync_manifest <- function(conn,
 }
 
 
-#' Sync Files to tbit Repository
+#' Sync Files to datom Repository
 #'
 #' Processes new/changed files from a manifest produced by
-#' [tbit_sync_manifest()]. Imports each file via `rio::import()`, converts to
-#' a data frame, and calls [tbit_write()] to store as parquet in S3 with git
-#' metadata. Updates the local `.tbit/manifest.json` after each successful
+#' [datom_sync_manifest()]. Imports each file via `rio::import()`, converts to
+#' a data frame, and calls [datom_write()] to store as parquet in S3 with git
+#' metadata. Updates the local `.datom/manifest.json` after each successful
 #' write.
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
-#' @param manifest Data frame from [tbit_sync_manifest()], with columns
+#' @param conn A `datom_conn` object from [datom_get_conn()].
+#' @param manifest Data frame from [datom_sync_manifest()], with columns
 #'   `name`, `file`, `format`, `file_sha`, `status`.
 #' @param continue_on_error If `TRUE` (default), continues processing
 #'   remaining tables when one fails. If `FALSE`, stops on first error.
@@ -391,13 +391,13 @@ tbit_sync_manifest <- function(conn,
 #' @return The manifest data frame augmented with `result` and `error` columns.
 #'   `result` is `"success"`, `"skipped"`, or `"error"`.
 #' @export
-tbit_sync <- function(conn,
+datom_sync <- function(conn,
                       manifest,
                       continue_on_error = TRUE) {
 
   # --- validation ---
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
   if (conn$role != "developer") {
@@ -410,12 +410,12 @@ tbit_sync <- function(conn,
   if (is.null(conn$path)) {
     cli::cli_abort(c(
       "Sync operations require a local git repo path.",
-      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+      "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
 
   if (!is.data.frame(manifest)) {
-    cli::cli_abort("{.arg manifest} must be a data frame from {.fn tbit_sync_manifest}.")
+    cli::cli_abort("{.arg manifest} must be a data frame from {.fn datom_sync_manifest}.")
   }
 
   required_cols <- c("name", "file", "format", "file_sha", "status")
@@ -423,14 +423,14 @@ tbit_sync <- function(conn,
   if (length(missing_cols) > 0L) {
     cli::cli_abort(c(
       "Manifest missing required columns: {.val {missing_cols}}.",
-      "i" = "Use {.fn tbit_sync_manifest} to generate a valid manifest."
+      "i" = "Use {.fn datom_sync_manifest} to generate a valid manifest."
     ))
   }
 
-  .tbit_check_rio()
+  .datom_check_rio()
 
   # --- stale-state check (Phase 7) ---
-  .tbit_check_git_current(conn$path)
+  .datom_check_git_current(conn$path)
 
   # --- filter to actionable rows ---
   actionable <- manifest$status %in% c("new", "changed")
@@ -456,10 +456,10 @@ tbit_sync <- function(conn,
 
     tryCatch({
       # Import file → data frame
-      data <- .tbit_import_file(tbl_file, tbl_format)
+      data <- .datom_import_file(tbl_file, tbl_format)
 
-      # Write via tbit_write (handles manifest update internally)
-      write_result <- tbit_write(
+      # Write via datom_write (handles manifest update internally)
+      write_result <- datom_write(
         conn,
         data = data,
         name = tbl_name,
@@ -502,11 +502,11 @@ tbit_sync <- function(conn,
 }
 
 
-# --- Internal helpers for tbit_sync -------------------------------------------
+# --- Internal helpers for datom_sync -------------------------------------------
 
 #' Check rio availability
 #' @noRd
-.tbit_check_rio <- function() {
+.datom_check_rio <- function() {
   if (!requireNamespace("rio", quietly = TRUE)) {
     cli::cli_abort(c(
       "Package {.pkg rio} is required for file import during sync.",
@@ -519,7 +519,7 @@ tbit_sync <- function(conn,
 
 #' Import a file to data frame via rio
 #' @noRd
-.tbit_import_file <- function(file, format) {
+.datom_import_file <- function(file, format) {
   # Parquet goes through arrow directly (more reliable than rio for parquet)
   if (tolower(format) == "parquet") {
     return(arrow::read_parquet(file))
@@ -535,11 +535,11 @@ tbit_sync <- function(conn,
 }
 
 
-#' Update a single table entry in local .tbit/manifest.json
+#' Update a single table entry in local .datom/manifest.json
 #' @noRd
-.tbit_update_manifest_entry <- function(conn, name, metadata_sha, data_sha,
+.datom_update_manifest_entry <- function(conn, name, metadata_sha, data_sha,
                                         file_sha = NULL, format = NULL) {
-  manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   fs::dir_create(fs::path_dir(manifest_path))
 
   manifest <- if (fs::file_exists(manifest_path)) {

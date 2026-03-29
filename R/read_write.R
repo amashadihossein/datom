@@ -1,38 +1,38 @@
-#' Read a tbit Table
+#' Read a datom Table
 #'
 #' Unified read function with routing via `routing.json`. Reads from S3
 #' metadata cache for data readers.
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
-#' @param version Optional metadata_sha (tbit version). If NULL, uses current.
+#' @param version Optional metadata_sha (datom version). If NULL, uses current.
 #' @param context Optional context for routing (e.g., "default", "cached").
 #' @param ... Additional parameters forwarded to routed function.
 #'
 #' @return Data frame or routed function result.
 #' @export
-tbit_read <- function(conn,
+datom_read <- function(conn,
                       name,
                       version = NULL,
                       context = NULL,
                       ...) {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
-  .tbit_validate_name(name)
+  .datom_validate_name(name)
 
   # 1. Read metadata + version history from S3
-  metadata_list <- .tbit_read_metadata(conn, name)
+  metadata_list <- .datom_read_metadata(conn, name)
 
   # 2. Resolve version to data_sha
 
-  data_sha <- .tbit_resolve_version(metadata_list, version = version, name = name)
+  data_sha <- .datom_resolve_version(metadata_list, version = version, name = name)
 
   # 3. Download and read parquet
   # TODO: Phase 6 will add routing via context + routing.json
-  .tbit_read_parquet(conn, name, data_sha)
+  .datom_read_parquet(conn, name, data_sha)
 }
 
 
@@ -43,19 +43,19 @@ tbit_read <- function(conn,
 #' Fetches both `metadata.json` (current state) and `version_history.json`
 #' (version index) for a given table from S3.
 #'
-#' @param conn A `tbit_conn` object.
+#' @param conn A `datom_conn` object.
 #' @param name Table name (validated).
 #' @return Named list with `current` (metadata.json contents) and
 #'   `history` (version_history.json contents as a list of entries).
 #' @keywords internal
-.tbit_read_metadata <- function(conn, name) {
-  .tbit_validate_name(name)
+.datom_read_metadata <- function(conn, name) {
+  .datom_validate_name(name)
 
   metadata_key <- paste0(name, "/.metadata/metadata.json")
   history_key <- paste0(name, "/.metadata/version_history.json")
 
-  current <- .tbit_s3_read_json(conn, metadata_key)
-  history <- .tbit_s3_read_json(conn, history_key)
+  current <- .datom_s3_read_json(conn, metadata_key)
+  history <- .datom_s3_read_json(conn, history_key)
 
   list(current = current, history = history)
 }
@@ -63,17 +63,17 @@ tbit_read <- function(conn,
 
 #' Resolve Version to data_sha
 #'
-#' Given metadata from [.tbit_read_metadata()], resolves a version spec
+#' Given metadata from [.datom_read_metadata()], resolves a version spec
 #' to the corresponding `data_sha`. If `version` is NULL, returns the
 #' current `data_sha` from `metadata.json`. If a metadata_sha string,
 #' looks it up in `version_history.json`.
 #'
-#' @param metadata_list Return value of [.tbit_read_metadata()].
+#' @param metadata_list Return value of [.datom_read_metadata()].
 #' @param version NULL (current) or a metadata_sha string.
 #' @param name Table name (for error messages).
 #' @return Character string `data_sha`.
 #' @keywords internal
-.tbit_resolve_version <- function(metadata_list, version = NULL, name = "table") {
+.datom_resolve_version <- function(metadata_list, version = NULL, name = "table") {
   if (is.null(version)) {
     data_sha <- metadata_list$current$data_sha
     if (is.null(data_sha) || !nzchar(data_sha)) {
@@ -112,7 +112,7 @@ tbit_read <- function(conn,
     cli::cli_abort(
       c(
         "Version {.val {version}} not found in history for {.val {name}}.",
-        "i" = "Use {.fn tbit_history} to see available versions."
+        "i" = "Use {.fn datom_history} to see available versions."
       )
     )
   }
@@ -122,7 +122,7 @@ tbit_read <- function(conn,
       c(
         "Version prefix {.val {version}} is ambiguous for {.val {name}}.",
         "i" = "It matches {length(match_indices)} versions. Use a longer prefix.",
-        "i" = "Use {.fn tbit_history} to see available versions."
+        "i" = "Use {.fn datom_history} to see available versions."
       )
     )
   }
@@ -148,13 +148,13 @@ tbit_read <- function(conn,
 #' Downloads `{table}/{data_sha}.parquet` from S3 to a temporary file
 #' and reads it via `arrow::read_parquet()`.
 #'
-#' @param conn A `tbit_conn` object.
+#' @param conn A `datom_conn` object.
 #' @param name Table name.
 #' @param data_sha SHA identifying the parquet file.
 #' @return Data frame.
 #' @keywords internal
-.tbit_read_parquet <- function(conn, name, data_sha) {
-  .tbit_validate_name(name)
+.datom_read_parquet <- function(conn, name, data_sha) {
+  .datom_validate_name(name)
 
   if (!is.character(data_sha) || length(data_sha) != 1L || !nzchar(data_sha)) {
     cli::cli_abort("{.arg data_sha} must be a single non-empty string.")
@@ -164,7 +164,7 @@ tbit_read <- function(conn,
   tmp <- tempfile(fileext = ".parquet")
   on.exit(unlink(tmp), add = TRUE)
 
-  .tbit_s3_download(conn, s3_key, tmp)
+  .datom_s3_download(conn, s3_key, tmp)
 
   arrow::read_parquet(tmp)
 }
@@ -175,19 +175,19 @@ tbit_read <- function(conn,
 #' Build Metadata Object
 #'
 #' Constructs the metadata list for a table write, including auto-computed
-#' fields (data_sha, dimensions, colnames, timestamp, tbit_version) and
+#' fields (data_sha, dimensions, colnames, timestamp, datom_version) and
 #' any user-supplied custom metadata.
 #'
 #' @param data Data frame being written.
 #' @param data_sha SHA-256 of the parquet-formatted data.
 #' @param custom Optional named list of user-supplied custom metadata.
-#' @param table_type `"derived"` (default, from `tbit_write`) or `"imported"` (from `tbit_sync`).
+#' @param table_type `"derived"` (default, from `datom_write`) or `"imported"` (from `datom_sync`).
 #' @param size_bytes Size of the parquet file in bytes. NULL if not yet computed.
 #' @param parents Lineage list of parent entries (each with source, table, version),
 #'   or NULL if no lineage recorded.
 #' @return Named list suitable for writing as metadata.json.
 #' @keywords internal
-.tbit_build_metadata <- function(data, data_sha, custom = NULL,
+.datom_build_metadata <- function(data, data_sha, custom = NULL,
                                  table_type = "derived", size_bytes = NULL,
                                  parents = NULL) {
   if (!table_type %in% c("imported", "derived")) {
@@ -201,7 +201,7 @@ tbit_read <- function(conn,
     ncol = ncol(data),
     colnames = names(data),
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-    tbit_version = as.character(utils::packageVersion("tbit"))
+    datom_version = as.character(utils::packageVersion("datom"))
   )
 
   if (!is.null(parents)) meta$parents <- parents
@@ -223,24 +223,24 @@ tbit_read <- function(conn,
 #' Compares the proposed metadata_sha against the current version in S3.
 #' Returns the type of change detected.
 #'
-#' @param conn A `tbit_conn` object.
+#' @param conn A `datom_conn` object.
 #' @param name Table name.
 #' @param new_data_sha SHA of the new data.
-#' @param new_metadata_sha SHA of the new metadata (from `.tbit_compute_metadata_sha()`).
+#' @param new_metadata_sha SHA of the new metadata (from `.datom_compute_metadata_sha()`).
 #' @return Character string: `"none"` (no change), `"metadata_only"` (data same,
 #'   metadata changed), or `"full"` (data changed).
 #' @keywords internal
-.tbit_has_changes <- function(conn, name, new_data_sha, new_metadata_sha) {
+.datom_has_changes <- function(conn, name, new_data_sha, new_metadata_sha) {
   metadata_key <- paste0(name, "/.metadata/metadata.json")
 
   # If metadata doesn't exist yet, it's a new table → full write
 
-  if (!.tbit_s3_exists(conn, metadata_key)) {
+  if (!.datom_s3_exists(conn, metadata_key)) {
     return("full")
   }
 
-  current <- .tbit_s3_read_json(conn, metadata_key)
-  current_metadata_sha <- .tbit_compute_metadata_sha(current)
+  current <- .datom_s3_read_json(conn, metadata_key)
+  current_metadata_sha <- .datom_compute_metadata_sha(current)
 
   if (identical(current_metadata_sha, new_metadata_sha)) {
     return("none")
@@ -259,15 +259,15 @@ tbit_read <- function(conn,
 #' Writes `metadata.json` and appends to `version_history.json` in the local
 #' git repo. Does NOT commit, push, or touch S3 — the caller handles those.
 #'
-#' @param conn A `tbit_conn` object (must be developer with path).
+#' @param conn A `datom_conn` object (must be developer with path).
 #' @param name Table name.
 #' @param metadata Named list for metadata.json.
-#' @param metadata_sha SHA of the metadata (the tbit "version").
+#' @param metadata_sha SHA of the metadata (the datom "version").
 #' @param message Commit message (stored in version_history entry).
 #' @param original_file_sha SHA of the source file for imported tables; NULL for derived.
 #' @return Invisible list with metadata_sha and local paths written.
 #' @keywords internal
-.tbit_write_metadata_local <- function(conn, name, metadata, metadata_sha,
+.datom_write_metadata_local <- function(conn, name, metadata, metadata_sha,
                                        message = NULL,
                                        original_file_sha = NULL) {
   repo_path <- conn$path
@@ -288,7 +288,7 @@ tbit_read <- function(conn,
   }
 
   author <- tryCatch(
-    .tbit_git_author(repo_path),
+    .datom_git_author(repo_path),
     error = function(e) "unknown"
   )
 
@@ -324,14 +324,14 @@ tbit_read <- function(conn,
 #' to S3. Called AFTER git commit+push succeeds to maintain local → git → S3
 #' ordering.
 #'
-#' @param conn A `tbit_conn` object.
+#' @param conn A `datom_conn` object.
 #' @param name Table name.
 #' @param metadata Named list for metadata.json.
-#' @param metadata_sha SHA of the metadata (the tbit "version").
+#' @param metadata_sha SHA of the metadata (the datom "version").
 #' @return Invisible character vector of S3 keys written.
 #' @keywords internal
-.tbit_push_metadata_s3 <- function(conn, name, metadata, metadata_sha) {
-  # Read local version_history.json (written by .tbit_write_metadata_local)
+.datom_push_metadata_s3 <- function(conn, name, metadata, metadata_sha) {
+  # Read local version_history.json (written by .datom_write_metadata_local)
   history_path <- fs::path(conn$path, name, "version_history.json")
   history <- if (fs::file_exists(history_path)) {
     jsonlite::read_json(history_path)
@@ -343,9 +343,9 @@ tbit_read <- function(conn,
   s3_history_key <- paste0(name, "/.metadata/version_history.json")
   s3_versioned_key <- paste0(name, "/.metadata/", metadata_sha, ".json")
 
-  .tbit_s3_write_json(conn, s3_metadata_key, metadata)
-  .tbit_s3_write_json(conn, s3_history_key, history)
-  .tbit_s3_write_json(conn, s3_versioned_key, metadata)
+  .datom_s3_write_json(conn, s3_metadata_key, metadata)
+  .datom_s3_write_json(conn, s3_history_key, history)
+  .datom_s3_write_json(conn, s3_versioned_key, metadata)
 
   invisible(c(s3_metadata_key, s3_history_key, s3_versioned_key))
 }
@@ -353,17 +353,17 @@ tbit_read <- function(conn,
 
 #' Write Metadata Files to Git and S3 (Legacy Wrapper)
 #'
-#' Calls [.tbit_write_metadata_local()] then [.tbit_push_metadata_s3()].
+#' Calls [.datom_write_metadata_local()] then [.datom_push_metadata_s3()].
 #' Kept for backward compatibility. Does NOT commit or push.
 #'
-#' @inheritParams .tbit_write_metadata_local
+#' @inheritParams .datom_write_metadata_local
 #' @return Invisible list with metadata_sha, git_paths, and s3_keys.
 #' @keywords internal
-.tbit_write_metadata <- function(conn, name, metadata, metadata_sha, message = NULL) {
-  local_result <- .tbit_write_metadata_local(
+.datom_write_metadata <- function(conn, name, metadata, metadata_sha, message = NULL) {
+  local_result <- .datom_write_metadata_local(
     conn, name, metadata, metadata_sha, message = message
   )
-  s3_keys <- .tbit_push_metadata_s3(conn, name, metadata, metadata_sha)
+  s3_keys <- .datom_push_metadata_s3(conn, name, metadata, metadata_sha)
 
   invisible(list(
     metadata_sha = metadata_sha,
@@ -373,25 +373,25 @@ tbit_read <- function(conn,
 }
 
 
-#' Write a tbit Table
+#' Write a datom Table
 #'
-#' Writes data to a tbit repository. Commits to git, pushes, and syncs to S3.
+#' Writes data to a datom repository. Commits to git, pushes, and syncs to S3.
 #'
-#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param data Data frame to write. If NULL with name, does metadata-only sync.
 #' @param name Table name. If NULL with NULL data, aliases to
-#'   [tbit_sync_routing()].
+#'   [datom_sync_routing()].
 #' @param metadata Optional list of custom metadata.
 #' @param message Optional commit message.
 #' @param parents Optional lineage: list of `list(source, table, version)` entries.
 #'   Used by dp_dev to track dependency versions. NULL if lineage not recorded.
-#' @param .table_type Internal. `"derived"` (default) or `"imported"` (set by `tbit_sync()`).
-#' @param .original_file_sha Internal. SHA of source file (set by `tbit_sync()`); NULL for derived.
-#' @param .original_format Internal. Original file format (set by `tbit_sync()`); NULL for derived.
+#' @param .table_type Internal. `"derived"` (default) or `"imported"` (set by `datom_sync()`).
+#' @param .original_file_sha Internal. SHA of source file (set by `datom_sync()`); NULL for derived.
+#' @param .original_format Internal. Original file format (set by `datom_sync()`); NULL for derived.
 #'
 #' @return List with deployment details.
 #' @export
-tbit_write <- function(conn,
+datom_write <- function(conn,
                        data = NULL,
                        name = NULL,
                        metadata = NULL,
@@ -401,25 +401,25 @@ tbit_write <- function(conn,
                        .original_file_sha = NULL,
                        .original_format = NULL) {
 
-  if (!inherits(conn, "tbit_conn")) {
-    cli::cli_abort("conn must be a tbit_conn object from tbit_get_conn()")
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("conn must be a datom_conn object from datom_get_conn()")
   }
 
   # Route based on arguments
 
   if (is.null(data) && is.null(name)) {
-    return(tbit_sync_routing(conn))
+    return(datom_sync_routing(conn))
   }
 
   if (is.null(data) && !is.null(name)) {
-    return(.tbit_sync_metadata(conn, name))
+    return(.datom_sync_metadata(conn, name))
   }
 
   if (!is.data.frame(data)) {
     cli::cli_abort("{.arg data} must be a data frame.")
   }
 
-  .tbit_validate_name(name)
+  .datom_validate_name(name)
 
   if (conn$role != "developer") {
     cli::cli_abort(c(
@@ -431,12 +431,12 @@ tbit_write <- function(conn,
   if (is.null(conn$path)) {
     cli::cli_abort(c(
       "Write operations require a local git repo path.",
-      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+      "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
 
   # 1. Compute data SHA
-  data_sha <- .tbit_compute_data_sha(data)
+  data_sha <- .datom_compute_data_sha(data)
 
   # 2. Write parquet to temp (need size_bytes for complete metadata)
   tmp <- tempfile(fileext = ".parquet")
@@ -445,17 +445,17 @@ tbit_write <- function(conn,
   size_bytes <- as.numeric(fs::file_size(tmp))
 
   # 3. Build metadata (complete — includes size_bytes)
-  meta <- .tbit_build_metadata(
+  meta <- .datom_build_metadata(
     data, data_sha,
     custom = metadata,
     table_type = .table_type,
     parents = parents,
     size_bytes = size_bytes
   )
-  metadata_sha <- .tbit_compute_metadata_sha(meta)
+  metadata_sha <- .datom_compute_metadata_sha(meta)
 
   # 4. Change detection
-  change_type <- .tbit_has_changes(conn, name, data_sha, metadata_sha)
+  change_type <- .datom_has_changes(conn, name, data_sha, metadata_sha)
 
   if (change_type == "none") {
     cli::cli_alert_info(
@@ -470,14 +470,14 @@ tbit_write <- function(conn,
   }
 
   # 5. Write metadata locally
-  write_result <- .tbit_write_metadata_local(
+  write_result <- .datom_write_metadata_local(
     conn, name, meta, metadata_sha,
     message = message,
     original_file_sha = .original_file_sha
   )
 
   # 5b. Update manifest.json locally
-  .tbit_update_manifest_entry(
+  .datom_update_manifest_entry(
     conn, name,
     metadata_sha = metadata_sha,
     data_sha = data_sha,
@@ -488,26 +488,26 @@ tbit_write <- function(conn,
   # 6. Git commit + push (must succeed before touching S3)
   git_files <- c(
     fs::path_rel(write_result$git_paths, conn$path),
-    ".tbit/manifest.json"
+    ".datom/manifest.json"
   )
   commit_msg <- message %||% paste0("Update ", name)
-  commit_sha <- .tbit_git_commit(conn$path, git_files, commit_msg)
-  .tbit_git_push(conn$path)
+  commit_sha <- .datom_git_commit(conn$path, git_files, commit_msg)
+  .datom_git_push(conn$path)
 
   # 7. Upload parquet to S3 (only if data changed — after git succeeds)
   if (change_type == "full") {
     parquet_key <- paste0(name, "/", data_sha, ".parquet")
-    .tbit_s3_upload(conn, tmp, parquet_key)
+    .datom_s3_upload(conn, tmp, parquet_key)
   }
 
   # 8. Push metadata to S3
-  .tbit_push_metadata_s3(conn, name, meta, metadata_sha)
+  .datom_push_metadata_s3(conn, name, meta, metadata_sha)
 
   # 9. Push manifest to S3 (completes the round-trip)
-  manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   if (fs::file_exists(manifest_path)) {
     manifest_data <- jsonlite::read_json(manifest_path)
-    .tbit_s3_write_json(conn, ".metadata/manifest.json", manifest_data)
+    .datom_s3_write_json(conn, ".metadata/manifest.json", manifest_data)
   }
 
   cli::cli_alert_success(

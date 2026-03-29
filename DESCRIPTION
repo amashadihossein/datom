@@ -1,4 +1,4 @@
-Package: tbit
+Package: datom
 Title: Version-Controlled Data Management for Reproducible Workflows
 Version: 0.0.0.9000
 Authors@R: 

@@ -11,7 +11,7 @@
 #'
 #' @return Invisible TRUE if available.
 #' @keywords internal
-.tbit_check_git2r <- function() {
+.datom_check_git2r <- function() {
   if (!requireNamespace("git2r", quietly = TRUE)) {
     cli::cli_abort(c(
       "Package {.pkg git2r} is required for git operations.",
@@ -30,7 +30,7 @@
 #' @param remote_url Character remote URL.
 #' @return A `git2r::cred_user_pass` object or NULL.
 #' @keywords internal
-.tbit_git_credentials <- function(remote_url) {
+.datom_git_credentials <- function(remote_url) {
   if (!grepl("^https://", remote_url, ignore.case = TRUE)) return(NULL)
 
   pat <- Sys.getenv("GITHUB_PAT", unset = "")
@@ -50,8 +50,8 @@
 #' @param path Repository path.
 #' @return Named list with `name` and `email`.
 #' @keywords internal
-.tbit_git_author <- function(path) {
-  .tbit_check_git2r()
+.datom_git_author <- function(path) {
+  .datom_check_git2r()
 
   repo <- tryCatch(
     git2r::repository(path),
@@ -84,13 +84,13 @@
 #' Get Current Branch
 #'
 #' Returns the name of the currently checked-out branch.
-#' Aborts on detached HEAD (tbit requires a branch).
+#' Aborts on detached HEAD (datom requires a branch).
 #'
 #' @param path Repository path.
 #' @return Branch name as a string.
 #' @keywords internal
-.tbit_git_branch <- function(path) {
-  .tbit_check_git2r()
+.datom_git_branch <- function(path) {
+  .datom_check_git2r()
 
   repo <- tryCatch(
     git2r::repository(path),
@@ -118,7 +118,7 @@
 
   if (!git2r::is_branch(head_ref)) {
     cli::cli_abort(c(
-      "HEAD is detached \u2014 tbit requires a branch.",
+      "HEAD is detached \u2014 datom requires a branch.",
       "i" = "Check out a branch with {.code git checkout <branch>}"
     ))
   }
@@ -138,8 +138,8 @@
 #' @param message Commit message.
 #' @return Commit SHA as a string.
 #' @keywords internal
-.tbit_git_commit <- function(path, files, message) {
-  .tbit_check_git2r()
+.datom_git_commit <- function(path, files, message) {
+  .datom_check_git2r()
 
   if (length(files) == 0L) {
     cli::cli_abort("No files specified to commit.")
@@ -200,16 +200,16 @@
 #' @param path Repository path.
 #' @return Invisible TRUE on success.
 #' @keywords internal
-.tbit_git_push <- function(path) {
-  .tbit_git_pull(path)
+.datom_git_push <- function(path) {
+  .datom_git_pull(path)
 
-  .tbit_check_git2r()
+  .datom_check_git2r()
 
   repo <- git2r::repository(path)
   remote_name <- git2r::remotes(repo)[[1L]]
-  branch_name <- .tbit_git_branch(path)
+  branch_name <- .datom_git_branch(path)
   remote_url <- git2r::remote_url(repo, remote_name)
-  cred <- .tbit_git_credentials(remote_url)
+  cred <- .datom_git_credentials(remote_url)
 
   # Push
   tryCatch(
@@ -237,8 +237,8 @@
 #' @param path Repository path.
 #' @return Invisible TRUE on success.
 #' @keywords internal
-.tbit_git_pull <- function(path) {
-  .tbit_check_git2r()
+.datom_git_pull <- function(path) {
+  .datom_check_git2r()
 
   repo <- tryCatch(
     git2r::repository(path),
@@ -260,7 +260,7 @@
 
   # Build credentials for HTTPS remotes
   remote_url <- git2r::remote_url(repo, remote_name)
-  cred <- .tbit_git_credentials(remote_url)
+  cred <- .datom_git_credentials(remote_url)
 
   # Fetch from remote
   tryCatch(
@@ -315,8 +315,8 @@
 #' @param path Repository path.
 #' @return Invisible `TRUE` if the local branch is up to date.
 #' @keywords internal
-.tbit_check_git_current <- function(path) {
-  .tbit_check_git2r()
+.datom_check_git_current <- function(path) {
+  .datom_check_git2r()
 
   repo <- tryCatch(
     git2r::repository(path),
@@ -330,7 +330,7 @@
 
   remote_name <- remotes[[1L]]
   remote_url <- git2r::remote_url(repo, remote_name)
-  cred <- .tbit_git_credentials(remote_url)
+  cred <- .datom_git_credentials(remote_url)
 
   # Fetch to update remote refs (cheap — no merge)
   tryCatch(
@@ -358,7 +358,7 @@
 
   # Are we behind? Check if upstream commit is an ancestor of local HEAD
   # If local is strictly behind (upstream has commits we don't have)
-  branch_name <- .tbit_git_branch(path)
+  branch_name <- .datom_git_branch(path)
 
   # Count how far behind we are via log
   behind <- tryCatch({
@@ -373,7 +373,7 @@
     behind_msg <- if (is.na(behind)) "an unknown number of" else behind
     cli::cli_abort(c(
       "Local git branch {.val {branch_name}} is behind remote by {behind_msg} commit{?s}.",
-      "i" = "Run {.fn tbit_pull} or {.code git pull} to update before syncing."
+      "i" = "Run {.fn datom_pull} or {.code git pull} to update before syncing."
     ))
   }
 

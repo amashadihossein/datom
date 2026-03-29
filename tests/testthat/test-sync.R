@@ -1,58 +1,58 @@
 # Tests for sync operations
 # Phase 6
 
-# --- tbit_sync_manifest() ----------------------------------------------------
+# --- datom_sync_manifest() ----------------------------------------------------
 
-test_that("rejects non-tbit_conn", {
-  expect_error(tbit_sync_manifest("not_conn"), "tbit_conn")
+test_that("rejects non-datom_conn", {
+  expect_error(datom_sync_manifest("not_conn"), "datom_conn")
 })
 
 test_that("rejects reader role", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "reader"
   conn$path <- "/tmp"
-  expect_error(tbit_sync_manifest(conn), "developer")
+  expect_error(datom_sync_manifest(conn), "developer")
 })
 
 test_that("rejects conn without path", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- NULL
-  expect_error(tbit_sync_manifest(conn), "local git repo")
+  expect_error(datom_sync_manifest(conn), "local git repo")
 })
 
 test_that("errors when input directory missing", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    expect_error(tbit_sync_manifest(conn), "Input directory not found")
+    expect_error(datom_sync_manifest(conn), "Input directory not found")
   })
 })
 
 test_that("errors when input directory has subdirectories", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create("input_files/subdir")
     writeLines("data", "input_files/a.csv")
 
-    expect_error(tbit_sync_manifest(conn), "flat")
+    expect_error(datom_sync_manifest(conn), "flat")
   })
 })
 
 test_that("returns empty data frame when no files match", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create("input_files")
 
-    result <- tbit_sync_manifest(conn)
+    result <- datom_sync_manifest(conn)
 
     expect_s3_class(result, "data.frame")
     expect_equal(nrow(result), 0)
@@ -62,7 +62,7 @@ test_that("returns empty data frame when no files match", {
 
 test_that("scans files and marks all as new when no manifest exists", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -70,7 +70,7 @@ test_that("scans files and marks all as new when no manifest exists", {
     writeLines("id,val\n1,a\n2,b", "input_files/customers.csv")
     writeLines("id\tval\n1\ta", "input_files/orders.tsv")
 
-    result <- tbit_sync_manifest(conn)
+    result <- datom_sync_manifest(conn)
 
     expect_equal(nrow(result), 2)
     expect_equal(sort(result$name), c("customers", "orders"))
@@ -82,7 +82,7 @@ test_that("scans files and marks all as new when no manifest exists", {
 
 test_that("detects unchanged files via original_file_sha", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -90,16 +90,16 @@ test_that("detects unchanged files via original_file_sha", {
     writeLines("id,val\n1,a", "input_files/customers.csv")
 
     # Create manifest with matching SHA
-    file_sha <- .tbit_compute_file_sha("input_files/customers.csv")
+    file_sha <- .datom_compute_file_sha("input_files/customers.csv")
     manifest <- list(
       tables = list(
         customers = list(original_file_sha = file_sha)
       )
     )
-    fs::dir_create(".tbit")
-    jsonlite::write_json(manifest, ".tbit/manifest.json", auto_unbox = TRUE)
+    fs::dir_create(".datom")
+    jsonlite::write_json(manifest, ".datom/manifest.json", auto_unbox = TRUE)
 
-    result <- tbit_sync_manifest(conn)
+    result <- datom_sync_manifest(conn)
 
     expect_equal(nrow(result), 1)
     expect_equal(result$status, "unchanged")
@@ -108,7 +108,7 @@ test_that("detects unchanged files via original_file_sha", {
 
 test_that("detects changed files when SHA differs", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -121,10 +121,10 @@ test_that("detects changed files when SHA differs", {
         customers = list(original_file_sha = "old_sha_that_differs")
       )
     )
-    fs::dir_create(".tbit")
-    jsonlite::write_json(manifest, ".tbit/manifest.json", auto_unbox = TRUE)
+    fs::dir_create(".datom")
+    jsonlite::write_json(manifest, ".datom/manifest.json", auto_unbox = TRUE)
 
-    result <- tbit_sync_manifest(conn)
+    result <- datom_sync_manifest(conn)
 
     expect_equal(nrow(result), 1)
     expect_equal(result$status, "changed")
@@ -133,7 +133,7 @@ test_that("detects changed files when SHA differs", {
 
 test_that("mixes new, changed, and unchanged statuses", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -142,17 +142,17 @@ test_that("mixes new, changed, and unchanged statuses", {
     writeLines("id\n2", "input_files/existing_diff.csv")
     writeLines("id\n3", "input_files/brand_new.csv")
 
-    same_sha <- .tbit_compute_file_sha("input_files/existing_same.csv")
+    same_sha <- .datom_compute_file_sha("input_files/existing_same.csv")
     manifest <- list(
       tables = list(
         existing_same = list(original_file_sha = same_sha),
         existing_diff = list(original_file_sha = "old_sha")
       )
     )
-    fs::dir_create(".tbit")
-    jsonlite::write_json(manifest, ".tbit/manifest.json", auto_unbox = TRUE)
+    fs::dir_create(".datom")
+    jsonlite::write_json(manifest, ".datom/manifest.json", auto_unbox = TRUE)
 
-    result <- tbit_sync_manifest(conn)
+    result <- datom_sync_manifest(conn)
 
     expect_equal(nrow(result), 3)
     expect_equal(result$status[result$name == "existing_same"], "unchanged")
@@ -163,7 +163,7 @@ test_that("mixes new, changed, and unchanged statuses", {
 
 test_that("filters files by glob pattern", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -172,7 +172,7 @@ test_that("filters files by glob pattern", {
     writeLines("b", "input_files/orders.csv")
     writeLines("c", "input_files/readme.txt")
 
-    result <- tbit_sync_manifest(conn, pattern = "*.csv")
+    result <- datom_sync_manifest(conn, pattern = "*.csv")
 
     expect_equal(nrow(result), 2)
     expect_true(all(result$format == "csv"))
@@ -181,7 +181,7 @@ test_that("filters files by glob pattern", {
 
 test_that("accepts custom input path", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -189,7 +189,7 @@ test_that("accepts custom input path", {
     fs::dir_create(custom_dir)
     writeLines("id\n1", fs::path(custom_dir, "tbl.csv"))
 
-    result <- tbit_sync_manifest(conn, path = custom_dir)
+    result <- datom_sync_manifest(conn, path = custom_dir)
 
     expect_equal(nrow(result), 1)
     expect_equal(result$name, "tbl")
@@ -198,14 +198,14 @@ test_that("accepts custom input path", {
 
 test_that("file_sha is a valid SHA-256 hex string", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create("input_files")
     writeLines("id\n1", "input_files/tbl.csv")
 
-    result <- tbit_sync_manifest(conn)
+    result <- datom_sync_manifest(conn)
 
     expect_match(result$file_sha, "^[0-9a-f]{64}$")
   })
@@ -213,14 +213,14 @@ test_that("file_sha is a valid SHA-256 hex string", {
 
 test_that("table name is filename without extension", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create("input_files")
     writeLines("a", "input_files/my_table.sas7bdat")
 
-    result <- tbit_sync_manifest(conn)
+    result <- datom_sync_manifest(conn)
 
     expect_equal(result$name, "my_table")
     expect_equal(result$format, "sas7bdat")
@@ -229,58 +229,58 @@ test_that("table name is filename without extension", {
 
 test_that("returns empty when pattern matches nothing", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create("input_files")
     writeLines("a", "input_files/data.csv")
 
-    result <- tbit_sync_manifest(conn, pattern = "*.xlsx")
+    result <- datom_sync_manifest(conn, pattern = "*.xlsx")
 
     expect_equal(nrow(result), 0)
   })
 })
 
 
-# --- tbit_sync() --------------------------------------------------------------
+# --- datom_sync() --------------------------------------------------------------
 
-test_that("tbit_sync rejects non-tbit_conn", {
-  expect_error(tbit_sync("not_conn", data.frame()), "tbit_conn")
+test_that("datom_sync rejects non-datom_conn", {
+  expect_error(datom_sync("not_conn", data.frame()), "datom_conn")
 })
 
-test_that("tbit_sync rejects reader role", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_sync rejects reader role", {
+  conn <- mock_datom_conn(list())
   conn$role <- "reader"
   conn$path <- "/tmp"
-  expect_error(tbit_sync(conn, data.frame()), "developer")
+  expect_error(datom_sync(conn, data.frame()), "developer")
 })
 
-test_that("tbit_sync rejects conn without path", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_sync rejects conn without path", {
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- NULL
-  expect_error(tbit_sync(conn, data.frame()), "local git repo")
+  expect_error(datom_sync(conn, data.frame()), "local git repo")
 })
 
-test_that("tbit_sync rejects non-data-frame manifest", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_sync rejects non-data-frame manifest", {
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- "/tmp"
-  expect_error(tbit_sync(conn, "not_a_df"), "data frame")
+  expect_error(datom_sync(conn, "not_a_df"), "data frame")
 })
 
-test_that("tbit_sync rejects manifest missing required columns", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_sync rejects manifest missing required columns", {
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- "/tmp"
   bad_manifest <- data.frame(name = "x", file = "y")
-  expect_error(tbit_sync(conn, bad_manifest), "missing required columns")
+  expect_error(datom_sync(conn, bad_manifest), "missing required columns")
 })
 
-test_that("tbit_sync skips unchanged and returns early when nothing actionable", {
+test_that("datom_sync skips unchanged and returns early when nothing actionable", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -294,11 +294,11 @@ test_that("tbit_sync skips unchanged and returns early when nothing actionable",
     )
 
     local_mocked_bindings(
-      .tbit_check_rio = function() invisible(TRUE),
-      .tbit_check_git_current = function(...) invisible(TRUE)
+      .datom_check_rio = function() invisible(TRUE),
+      .datom_check_git_current = function(...) invisible(TRUE)
     )
 
-    result <- tbit_sync(conn, manifest)
+    result <- datom_sync(conn, manifest)
 
     expect_equal(nrow(result), 2)
     expect_true(all(result$result == "skipped"))
@@ -306,13 +306,13 @@ test_that("tbit_sync skips unchanged and returns early when nothing actionable",
   })
 })
 
-test_that("tbit_sync processes new files via tbit_write", {
+test_that("datom_sync processes new files via datom_write", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
     writeLines("id\n1", "data.csv")
 
     manifest <- data.frame(
@@ -327,10 +327,10 @@ test_that("tbit_sync processes new files via tbit_write", {
     write_called <- FALSE
 
     local_mocked_bindings(
-      .tbit_check_rio = function() invisible(TRUE),
-      .tbit_check_git_current = function(...) invisible(TRUE),
-      .tbit_import_file = function(file, format) data.frame(id = 1),
-      tbit_write = function(conn, data, name, message, ...) {
+      .datom_check_rio = function() invisible(TRUE),
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) data.frame(id = 1),
+      datom_write = function(conn, data, name, message, ...) {
         write_called <<- TRUE
         expect_equal(name, "customers")
         expect_equal(nrow(data), 1)
@@ -344,7 +344,7 @@ test_that("tbit_sync processes new files via tbit_write", {
       }
     )
 
-    result <- tbit_sync(conn, manifest)
+    result <- datom_sync(conn, manifest)
 
     expect_true(write_called)
     expect_equal(result$result, "success")
@@ -352,13 +352,13 @@ test_that("tbit_sync processes new files via tbit_write", {
   })
 })
 
-test_that("tbit_sync skips unchanged rows and processes changed ones", {
+test_that("datom_sync skips unchanged rows and processes changed ones", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
 
     manifest <- data.frame(
       name = c("unchanged_tbl", "changed_tbl"),
@@ -372,10 +372,10 @@ test_that("tbit_sync skips unchanged rows and processes changed ones", {
     written_names <- character()
 
     local_mocked_bindings(
-      .tbit_check_rio = function() invisible(TRUE),
-      .tbit_check_git_current = function(...) invisible(TRUE),
-      .tbit_import_file = function(file, format) data.frame(x = 1),
-      tbit_write = function(conn, data, name, message, ...) {
+      .datom_check_rio = function() invisible(TRUE),
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) data.frame(x = 1),
+      datom_write = function(conn, data, name, message, ...) {
         written_names <<- c(written_names, name)
         list(
           name = name,
@@ -387,7 +387,7 @@ test_that("tbit_sync skips unchanged rows and processes changed ones", {
       }
     )
 
-    result <- tbit_sync(conn, manifest)
+    result <- datom_sync(conn, manifest)
 
     expect_equal(written_names, "changed_tbl")
     expect_equal(result$result[result$name == "unchanged_tbl"], "skipped")
@@ -395,13 +395,13 @@ test_that("tbit_sync skips unchanged rows and processes changed ones", {
   })
 })
 
-test_that("tbit_sync continues on error when continue_on_error = TRUE", {
+test_that("datom_sync continues on error when continue_on_error = TRUE", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
 
     manifest <- data.frame(
       name = c("bad_tbl", "good_tbl"),
@@ -415,14 +415,14 @@ test_that("tbit_sync continues on error when continue_on_error = TRUE", {
     call_count <- 0L
 
     local_mocked_bindings(
-      .tbit_check_rio = function() invisible(TRUE),
-      .tbit_check_git_current = function(...) invisible(TRUE),
-      .tbit_import_file = function(file, format) {
+      .datom_check_rio = function() invisible(TRUE),
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) {
         call_count <<- call_count + 1L
         if (grepl("bad", file)) stop("Import failed for bad file")
         data.frame(x = 1)
       },
-      tbit_write = function(conn, data, name, message, ...) {
+      datom_write = function(conn, data, name, message, ...) {
         list(
           name = name, data_sha = "d", metadata_sha = "m",
           action = "full", commit_sha = "c"
@@ -430,7 +430,7 @@ test_that("tbit_sync continues on error when continue_on_error = TRUE", {
       }
     )
 
-    result <- tbit_sync(conn, manifest, continue_on_error = TRUE)
+    result <- datom_sync(conn, manifest, continue_on_error = TRUE)
 
     expect_equal(call_count, 2L)
     expect_equal(result$result[result$name == "bad_tbl"], "error")
@@ -439,13 +439,13 @@ test_that("tbit_sync continues on error when continue_on_error = TRUE", {
   })
 })
 
-test_that("tbit_sync stops on first error when continue_on_error = FALSE", {
+test_that("datom_sync stops on first error when continue_on_error = FALSE", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
 
     manifest <- data.frame(
       name = c("bad_tbl", "good_tbl"),
@@ -457,32 +457,32 @@ test_that("tbit_sync stops on first error when continue_on_error = FALSE", {
     )
 
     local_mocked_bindings(
-      .tbit_check_rio = function() invisible(TRUE),
-      .tbit_check_git_current = function(...) invisible(TRUE),
-      .tbit_import_file = function(file, format) {
+      .datom_check_rio = function() invisible(TRUE),
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) {
         if (grepl("bad", file)) stop("Import failed")
         data.frame(x = 1)
       },
-      tbit_write = function(conn, data, name, message, ...) {
+      datom_write = function(conn, data, name, message, ...) {
         list(name = name, data_sha = "d", metadata_sha = "m",
              action = "full", commit_sha = "c")
       }
     )
 
     expect_error(
-      tbit_sync(conn, manifest, continue_on_error = FALSE),
+      datom_sync(conn, manifest, continue_on_error = FALSE),
       "bad_tbl"
     )
   })
 })
 
-test_that("tbit_sync commit message includes status", {
+test_that("datom_sync commit message includes status", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
 
     manifest <- data.frame(
       name = "tbl", file = "x.csv", format = "csv",
@@ -493,30 +493,30 @@ test_that("tbit_sync commit message includes status", {
     captured_msg <- NULL
 
     local_mocked_bindings(
-      .tbit_check_rio = function() invisible(TRUE),
-      .tbit_check_git_current = function(...) invisible(TRUE),
-      .tbit_import_file = function(file, format) data.frame(x = 1),
-      tbit_write = function(conn, data, name, message, ...) {
+      .datom_check_rio = function() invisible(TRUE),
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) data.frame(x = 1),
+      datom_write = function(conn, data, name, message, ...) {
         captured_msg <<- message
         list(name = name, data_sha = "d", metadata_sha = "m",
              action = "full", commit_sha = "c")
       }
     )
 
-    tbit_sync(conn, manifest)
+    datom_sync(conn, manifest)
 
     expect_match(captured_msg, "Sync tbl")
     expect_match(captured_msg, "new")
   })
 })
 
-test_that("tbit_sync augments manifest with result and error columns", {
+test_that("datom_sync augments manifest with result and error columns", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
 
     manifest <- data.frame(
       name = "tbl", file = "x.csv", format = "csv",
@@ -525,16 +525,16 @@ test_that("tbit_sync augments manifest with result and error columns", {
     )
 
     local_mocked_bindings(
-      .tbit_check_rio = function() invisible(TRUE),
-      .tbit_check_git_current = function(...) invisible(TRUE),
-      .tbit_import_file = function(file, format) data.frame(x = 1),
-      tbit_write = function(conn, data, name, message, ...) {
+      .datom_check_rio = function() invisible(TRUE),
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) data.frame(x = 1),
+      datom_write = function(conn, data, name, message, ...) {
         list(name = name, data_sha = "d", metadata_sha = "m",
              action = "full", commit_sha = "c")
       }
     )
 
-    result <- tbit_sync(conn, manifest)
+    result <- datom_sync(conn, manifest)
 
     expect_true("result" %in% names(result))
     expect_true("error" %in% names(result))
@@ -543,14 +543,14 @@ test_that("tbit_sync augments manifest with result and error columns", {
 })
 
 
-# --- .tbit_import_file() ------------------------------------------------------
+# --- .datom_import_file() ------------------------------------------------------
 
-test_that(".tbit_import_file reads parquet via arrow", {
+test_that(".datom_import_file reads parquet via arrow", {
   withr::with_tempdir({
     df <- data.frame(a = 1:3, b = letters[1:3])
     arrow::write_parquet(df, "test.parquet")
 
-    result <- .tbit_import_file("test.parquet", "parquet")
+    result <- .datom_import_file("test.parquet", "parquet")
 
     expect_s3_class(result, "data.frame")
     expect_equal(nrow(result), 3)
@@ -558,19 +558,19 @@ test_that(".tbit_import_file reads parquet via arrow", {
   })
 })
 
-test_that(".tbit_import_file delegates non-parquet to rio", {
+test_that(".datom_import_file delegates non-parquet to rio", {
   withr::with_tempdir({
     writeLines("id,val\n1,a\n2,b", "test.csv")
 
     # Mock rio::import at our package level
     local_mocked_bindings(
-      .tbit_import_file = function(file, format) {
+      .datom_import_file = function(file, format) {
         # Simulate what the real function does: call rio::import
         utils::read.csv(file)
       }
     )
 
-    result <- .tbit_import_file("test.csv", "csv")
+    result <- .datom_import_file("test.csv", "csv")
 
     expect_s3_class(result, "data.frame")
     expect_equal(nrow(result), 2)
@@ -578,16 +578,16 @@ test_that(".tbit_import_file delegates non-parquet to rio", {
 })
 
 
-# --- .tbit_update_manifest_entry() --------------------------------------------
+# --- .datom_update_manifest_entry() --------------------------------------------
 
-test_that(".tbit_update_manifest_entry creates manifest from scratch", {
+test_that(".datom_update_manifest_entry creates manifest from scratch", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
 
-    .tbit_update_manifest_entry(
+    .datom_update_manifest_entry(
       conn, "customers",
       metadata_sha = "meta456",
       data_sha = "data123",
@@ -595,9 +595,9 @@ test_that(".tbit_update_manifest_entry creates manifest from scratch", {
       format = "csv"
     )
 
-    expect_true(fs::file_exists(".tbit/manifest.json"))
+    expect_true(fs::file_exists(".datom/manifest.json"))
 
-    m <- jsonlite::read_json(".tbit/manifest.json")
+    m <- jsonlite::read_json(".datom/manifest.json")
     expect_equal(m$tables$customers$current_version, "meta456")
     expect_equal(m$tables$customers$current_data_sha, "data123")
     expect_equal(m$tables$customers$original_file_sha, "file789")
@@ -606,12 +606,12 @@ test_that(".tbit_update_manifest_entry creates manifest from scratch", {
   })
 })
 
-test_that(".tbit_update_manifest_entry updates existing manifest", {
+test_that(".datom_update_manifest_entry updates existing manifest", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
 
     # Pre-existing manifest with one table
     existing <- list(
@@ -625,11 +625,11 @@ test_that(".tbit_update_manifest_entry updates existing manifest", {
       ),
       summary = list(total_tables = 1, total_size_bytes = 0, total_versions = 1)
     )
-    jsonlite::write_json(existing, ".tbit/manifest.json", auto_unbox = TRUE)
+    jsonlite::write_json(existing, ".datom/manifest.json", auto_unbox = TRUE)
 
     write_result <- list(data_sha = "new_d", metadata_sha = "new_m")
 
-    .tbit_update_manifest_entry(
+    .datom_update_manifest_entry(
       conn, "customers",
       metadata_sha = "new_m",
       data_sha = "new_d",
@@ -637,7 +637,7 @@ test_that(".tbit_update_manifest_entry updates existing manifest", {
       format = "csv"
     )
 
-    m <- jsonlite::read_json(".tbit/manifest.json")
+    m <- jsonlite::read_json(".datom/manifest.json")
     expect_equal(length(m$tables), 2)
     expect_equal(m$tables$customers$current_version, "new_m")
     expect_equal(m$tables$orders$current_version, "old_ver")
@@ -645,73 +645,73 @@ test_that(".tbit_update_manifest_entry updates existing manifest", {
   })
 })
 
-test_that(".tbit_check_rio errors when rio not available", {
+test_that(".datom_check_rio errors when rio not available", {
   local_mocked_bindings(
-    .tbit_check_rio = function() {
+    .datom_check_rio = function() {
       cli::cli_abort(c(
         "Package {.pkg rio} is required for file import during sync.",
         "i" = "Install with {.code install.packages(\"rio\")}"
       ))
     }
   )
-  expect_error(.tbit_check_rio(), "rio")
+  expect_error(.datom_check_rio(), "rio")
 })
 
 
-# --- tbit_sync_routing() -----------------------------------------------------
+# --- datom_sync_routing() -----------------------------------------------------
 
-test_that("tbit_sync_routing rejects non-tbit_conn", {
-  expect_error(tbit_sync_routing("not_conn"), "tbit_conn")
+test_that("datom_sync_routing rejects non-datom_conn", {
+  expect_error(datom_sync_routing("not_conn"), "datom_conn")
 })
 
-test_that("tbit_sync_routing rejects reader role", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_sync_routing rejects reader role", {
+  conn <- mock_datom_conn(list())
   conn$role <- "reader"
   conn$path <- "/tmp"
-  expect_error(tbit_sync_routing(conn), "developer")
+  expect_error(datom_sync_routing(conn), "developer")
 })
 
-test_that("tbit_sync_routing rejects conn without path", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_sync_routing rejects conn without path", {
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- NULL
-  expect_error(tbit_sync_routing(conn), "local git repo")
+  expect_error(datom_sync_routing(conn), "local git repo")
 })
 
-test_that("tbit_sync_routing requires interactive confirmation by default", {
+test_that("datom_sync_routing requires interactive confirmation by default", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     # Non-interactive session should fail with .confirm = TRUE
-    expect_error(tbit_sync_routing(conn, .confirm = TRUE), "Interactive")
+    expect_error(datom_sync_routing(conn, .confirm = TRUE), "Interactive")
   })
 })
 
-test_that("tbit_sync_routing syncs repo-level files to S3", {
+test_that("datom_sync_routing syncs repo-level files to S3", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    # Create repo-level .tbit files
-    fs::dir_create(".tbit")
-    jsonlite::write_json(list(methods = list()), ".tbit/routing.json",
+    # Create repo-level .datom files
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(methods = list()), ".datom/routing.json",
                          auto_unbox = TRUE)
-    jsonlite::write_json(list(tables = list()), ".tbit/manifest.json",
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
                          auto_unbox = TRUE)
 
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- tbit_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_routing(conn, .confirm = FALSE)
 
     expect_true(".metadata/routing.json" %in% s3_keys_written)
     expect_true(".metadata/manifest.json" %in% s3_keys_written)
@@ -720,41 +720,41 @@ test_that("tbit_sync_routing syncs repo-level files to S3", {
   })
 })
 
-test_that("tbit_sync_routing skips missing repo-level files", {
+test_that("datom_sync_routing skips missing repo-level files", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     # Only create routing.json, not manifest or migration_history
-    fs::dir_create(".tbit")
-    jsonlite::write_json(list(methods = list()), ".tbit/routing.json",
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(methods = list()), ".datom/routing.json",
                          auto_unbox = TRUE)
 
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- tbit_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_routing(conn, .confirm = FALSE)
 
     expect_equal(length(result$repo_files), 1)
     expect_equal(result$repo_files, ".metadata/routing.json")
   })
 })
 
-test_that("tbit_sync_routing syncs per-table metadata to S3", {
+test_that("datom_sync_routing syncs per-table metadata to S3", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
-    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
 
     # Create a table directory with metadata
     fs::dir_create("customers")
@@ -766,13 +766,13 @@ test_that("tbit_sync_routing syncs per-table metadata to S3", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- tbit_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_routing(conn, .confirm = FALSE)
 
     expect_true("customers/.metadata/metadata.json" %in% s3_keys_written)
     expect_true("customers/.metadata/version_history.json" %in% s3_keys_written)
@@ -780,14 +780,14 @@ test_that("tbit_sync_routing syncs per-table metadata to S3", {
   })
 })
 
-test_that("tbit_sync_routing ignores non-table directories", {
+test_that("datom_sync_routing ignores non-table directories", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
-    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
 
     # Directories that should be ignored
     fs::dir_create("input_files")
@@ -801,13 +801,13 @@ test_that("tbit_sync_routing ignores non-table directories", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- tbit_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_routing(conn, .confirm = FALSE)
 
     # Only repo-level files synced, no table-level
     expect_equal(length(result$tables), 0)
@@ -815,14 +815,14 @@ test_that("tbit_sync_routing ignores non-table directories", {
   })
 })
 
-test_that("tbit_sync_routing handles per-table errors gracefully", {
+test_that("datom_sync_routing handles per-table errors gracefully", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
-    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
 
     # Two tables: one good, one will fail
     fs::dir_create("good_tbl")
@@ -836,14 +836,14 @@ test_that("tbit_sync_routing handles per-table errors gracefully", {
     call_count <- 0L
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_s3_write_json = function(conn, s3_key, data) {
         call_count <<- call_count + 1L
         if (grepl("bad_tbl", s3_key)) stop("S3 upload failed")
         invisible(NULL)
       }
     )
 
-    result <- tbit_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_routing(conn, .confirm = FALSE)
 
     expect_equal(result$tables$good_tbl$action, "synced")
     expect_equal(result$tables$bad_tbl$action, "error")
@@ -851,14 +851,14 @@ test_that("tbit_sync_routing handles per-table errors gracefully", {
   })
 })
 
-test_that("tbit_sync_routing syncs metadata snapshots from .metadata dir", {
+test_that("datom_sync_routing syncs metadata snapshots from .metadata dir", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
-    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
 
     # Table with metadata + snapshot
     fs::dir_create("orders")
@@ -871,33 +871,33 @@ test_that("tbit_sync_routing syncs metadata snapshots from .metadata dir", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- tbit_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_routing(conn, .confirm = FALSE)
 
     expect_true("orders/.metadata/metadata.json" %in% s3_keys_written)
     expect_true("orders/.metadata/abc123.json" %in% s3_keys_written)
   })
 })
 
-test_that("tbit_sync_routing returns correct summary structure", {
+test_that("datom_sync_routing returns correct summary structure", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
-    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_s3_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
-    result <- tbit_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_routing(conn, .confirm = FALSE)
 
     expect_type(result, "list")
     expect_true("repo_files" %in% names(result))
@@ -907,14 +907,14 @@ test_that("tbit_sync_routing returns correct summary structure", {
   })
 })
 
-test_that("tbit_sync_routing handles multiple tables", {
+test_that("datom_sync_routing handles multiple tables", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
-    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
 
     for (nm in c("alpha", "beta", "gamma")) {
       fs::dir_create(nm)
@@ -923,10 +923,10 @@ test_that("tbit_sync_routing handles multiple tables", {
     }
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_s3_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
-    result <- tbit_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_routing(conn, .confirm = FALSE)
 
     expect_equal(length(result$tables), 3)
     expect_true(all(purrr::map_chr(result$tables, "action") == "synced"))
@@ -934,11 +934,11 @@ test_that("tbit_sync_routing handles multiple tables", {
 })
 
 
-# --- .tbit_sync_table_metadata() ----------------------------------------------
+# --- .datom_sync_table_metadata() ----------------------------------------------
 
-test_that(".tbit_sync_table_metadata uploads metadata and version_history", {
+test_that(".datom_sync_table_metadata uploads metadata and version_history", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     fs::dir_create("tbl")
@@ -949,13 +949,13 @@ test_that(".tbit_sync_table_metadata uploads metadata and version_history", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- .tbit_sync_table_metadata(conn, "tbl")
+    result <- .datom_sync_table_metadata(conn, "tbl")
 
     expect_equal(result$action, "synced")
     expect_true("tbl/.metadata/metadata.json" %in% result$s3_keys)
@@ -963,19 +963,19 @@ test_that(".tbit_sync_table_metadata uploads metadata and version_history", {
   })
 })
 
-test_that(".tbit_sync_table_metadata handles table with no version_history", {
+test_that(".datom_sync_table_metadata handles table with no version_history", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     fs::dir_create("tbl")
     jsonlite::write_json(list(x = 1), "tbl/metadata.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_s3_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
-    result <- .tbit_sync_table_metadata(conn, "tbl")
+    result <- .datom_sync_table_metadata(conn, "tbl")
 
     expect_equal(length(result$s3_keys), 1)
     expect_equal(result$s3_keys, "tbl/.metadata/metadata.json")
@@ -983,27 +983,27 @@ test_that(".tbit_sync_table_metadata handles table with no version_history", {
 })
 
 
-# --- tbit_pull() --------------------------------------------------------------
+# --- datom_pull() --------------------------------------------------------------
 
-test_that("tbit_pull rejects non-tbit_conn", {
-  expect_error(tbit_pull("not_conn"), "tbit_conn")
+test_that("datom_pull rejects non-datom_conn", {
+  expect_error(datom_pull("not_conn"), "datom_conn")
 })
 
-test_that("tbit_pull rejects reader role", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_pull rejects reader role", {
+  conn <- mock_datom_conn(list())
   conn$role <- "reader"
   conn$path <- "/tmp"
-  expect_error(tbit_pull(conn), "developer")
+  expect_error(datom_pull(conn), "developer")
 })
 
-test_that("tbit_pull rejects conn without path", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_pull rejects conn without path", {
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- NULL
-  expect_error(tbit_pull(conn), "local git repo")
+  expect_error(datom_pull(conn), "local git repo")
 })
 
-test_that("tbit_pull reports already up to date when nothing to pull", {
+test_that("datom_pull reports already up to date when nothing to pull", {
   withr::with_tempdir({
     # Create a real git repo with remote
     bare_dir <- withr::local_tempdir()
@@ -1018,18 +1018,18 @@ test_that("tbit_pull reports already up to date when nothing to pull", {
     git2r::push(repo, name = "origin",
                 refspec = "refs/heads/master", set_upstream = TRUE)
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    result <- tbit_pull(conn)
+    result <- datom_pull(conn)
 
     expect_equal(result$commits_pulled, 0L)
     expect_equal(result$branch, "master")
   })
 })
 
-test_that("tbit_pull counts commits pulled from upstream", {
+test_that("datom_pull counts commits pulled from upstream", {
   withr::with_tempdir({
     # Create bare + working repo pair
     bare_dir <- withr::local_tempdir()
@@ -1060,11 +1060,11 @@ test_that("tbit_pull counts commits pulled from upstream", {
     git2r::push(other_repo, name = "origin",
                 refspec = "refs/heads/master")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    result <- tbit_pull(conn)
+    result <- datom_pull(conn)
 
     expect_equal(result$commits_pulled, 2L)
     expect_equal(result$branch, "master")
@@ -1075,7 +1075,7 @@ test_that("tbit_pull counts commits pulled from upstream", {
   })
 })
 
-test_that("tbit_pull aborts on merge conflict", {
+test_that("datom_pull aborts on merge conflict", {
   withr::with_tempdir({
     bare_dir <- withr::local_tempdir()
     git2r::init(bare_dir, bare = TRUE)
@@ -1104,15 +1104,15 @@ test_that("tbit_pull aborts on merge conflict", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "My conflicting edit")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    expect_error(tbit_pull(conn), "conflict|merge", ignore.case = TRUE)
+    expect_error(datom_pull(conn), "conflict|merge", ignore.case = TRUE)
   })
 })
 
-test_that("tbit_pull returns invisible result", {
+test_that("datom_pull returns invisible result", {
   withr::with_tempdir({
     bare_dir <- withr::local_tempdir()
     git2r::init(bare_dir, bare = TRUE)
@@ -1126,10 +1126,10 @@ test_that("tbit_pull returns invisible result", {
     git2r::push(repo, name = "origin",
                 refspec = "refs/heads/master", set_upstream = TRUE)
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    expect_invisible(tbit_pull(conn))
+    expect_invisible(datom_pull(conn))
   })
 })

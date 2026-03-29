@@ -1,21 +1,21 @@
 # Tests for query operations
 # Phase 5, Chunk 6
 
-# --- tbit_list() --------------------------------------------------------------
+# --- datom_list() --------------------------------------------------------------
 
-test_that("rejects non-tbit_conn", {
-  expect_error(tbit_list("not_conn"), "tbit_conn")
+test_that("rejects non-datom_conn", {
+  expect_error(datom_list("not_conn"), "datom_conn")
 })
 
 test_that("returns empty data frame when manifest has no tables", {
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       list(updated_at = "2026-01-01", tables = list(), summary = list())
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_list(conn)
+  conn <- mock_datom_conn(list())
+  result <- datom_list(conn)
 
   expect_s3_class(result, "data.frame")
   expect_equal(nrow(result), 0)
@@ -39,11 +39,11 @@ test_that("returns data frame with one row per table", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) manifest
+    .datom_s3_read_json = function(conn, s3_key) manifest
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_list(conn)
+  conn <- mock_datom_conn(list())
+  result <- datom_list(conn)
 
   expect_equal(nrow(result), 2)
   expect_equal(sort(result$name), c("customers", "orders"))
@@ -61,11 +61,11 @@ test_that("filters tables by glob pattern", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) manifest
+    .datom_s3_read_json = function(conn, s3_key) manifest
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_list(conn, pattern = "customer_*")
+  conn <- mock_datom_conn(list())
+  result <- datom_list(conn, pattern = "customer_*")
 
   expect_equal(nrow(result), 2)
   expect_true(all(grepl("^customer_", result$name)))
@@ -79,11 +79,11 @@ test_that("returns empty data frame when pattern matches nothing", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) manifest
+    .datom_s3_read_json = function(conn, s3_key) manifest
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_list(conn, pattern = "zzz_*")
+  conn <- mock_datom_conn(list())
+  result <- datom_list(conn, pattern = "zzz_*")
 
   expect_equal(nrow(result), 0)
 })
@@ -100,15 +100,15 @@ test_that("includes version_count when include_versions = TRUE", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) manifest
+    .datom_s3_read_json = function(conn, s3_key) manifest
   )
 
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
 
-  result_no <- tbit_list(conn, include_versions = FALSE)
+  result_no <- datom_list(conn, include_versions = FALSE)
   expect_false("version_count" %in% names(result_no))
 
-  result_yes <- tbit_list(conn, include_versions = TRUE)
+  result_yes <- datom_list(conn, include_versions = TRUE)
   expect_true("version_count" %in% names(result_yes))
   expect_equal(result_yes$version_count, 15L)
 })
@@ -116,25 +116,25 @@ test_that("includes version_count when include_versions = TRUE", {
 test_that("reads correct S3 key for manifest", {
   captured_key <- NULL
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       captured_key <<- s3_key
       list(tables = list())
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  tbit_list(conn)
+  conn <- mock_datom_conn(list())
+  datom_list(conn)
 
   expect_equal(captured_key, ".metadata/manifest.json")
 })
 
 test_that("errors when manifest cannot be read from S3", {
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) stop("NoSuchKey")
+    .datom_s3_read_json = function(conn, s3_key) stop("NoSuchKey")
   )
 
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_list(conn), "manifest")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_list(conn), "manifest")
 })
 
 test_that("handles missing fields gracefully with NA", {
@@ -145,11 +145,11 @@ test_that("handles missing fields gracefully with NA", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) manifest
+    .datom_s3_read_json = function(conn, s3_key) manifest
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_list(conn)
+  conn <- mock_datom_conn(list())
+  result <- datom_list(conn)
 
   expect_equal(nrow(result), 1)
   expect_equal(result$name, "sparse")
@@ -170,11 +170,11 @@ test_that("truncates hashes by default (short_hash = TRUE)", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) manifest
+    .datom_s3_read_json = function(conn, s3_key) manifest
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_list(conn)
+  conn <- mock_datom_conn(list())
+  result <- datom_list(conn)
 
   expect_equal(nchar(result$current_version), 8)
   expect_equal(result$current_version, substr(full_sha, 1, 8))
@@ -194,33 +194,33 @@ test_that("returns full hashes with short_hash = FALSE", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) manifest
+    .datom_s3_read_json = function(conn, s3_key) manifest
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_list(conn, short_hash = FALSE)
+  conn <- mock_datom_conn(list())
+  result <- datom_list(conn, short_hash = FALSE)
 
   expect_equal(result$current_version, full_sha)
   expect_equal(result$current_data_sha, full_sha)
 })
 
 
-# --- tbit_history() -----------------------------------------------------------
+# --- datom_history() -----------------------------------------------------------
 
-test_that("rejects non-tbit_conn", {
-  expect_error(tbit_history("not_conn", "t"), "tbit_conn")
+test_that("rejects non-datom_conn", {
+  expect_error(datom_history("not_conn", "t"), "datom_conn")
 })
 
 test_that("validates table name", {
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_history(conn, ""), "must not be empty")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_history(conn, ""), "must not be empty")
 })
 
 test_that("rejects invalid n", {
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_history(conn, "tbl", n = 0), "positive")
-  expect_error(tbit_history(conn, "tbl", n = -1), "positive")
-  expect_error(tbit_history(conn, "tbl", n = "x"), "positive")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_history(conn, "tbl", n = 0), "positive")
+  expect_error(datom_history(conn, "tbl", n = -1), "positive")
+  expect_error(datom_history(conn, "tbl", n = "x"), "positive")
 })
 
 test_that("returns data frame with version history", {
@@ -242,11 +242,11 @@ test_that("returns data frame with version history", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) history
+    .datom_s3_read_json = function(conn, s3_key) history
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_history(conn, "customers", short_hash = FALSE)
+  conn <- mock_datom_conn(list())
+  result <- datom_history(conn, "customers", short_hash = FALSE)
 
   expect_s3_class(result, "data.frame")
   expect_equal(nrow(result), 2)
@@ -264,11 +264,11 @@ test_that("limits results to n entries", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) history
+    .datom_s3_read_json = function(conn, s3_key) history
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_history(conn, "tbl", n = 2)
+  conn <- mock_datom_conn(list())
+  result <- datom_history(conn, "tbl", n = 2)
 
   expect_equal(nrow(result), 2)
   expect_equal(result$version, c("v1", "v2"))
@@ -276,11 +276,11 @@ test_that("limits results to n entries", {
 
 test_that("returns empty data frame for empty history", {
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) list()
+    .datom_s3_read_json = function(conn, s3_key) list()
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_history(conn, "tbl")
+  conn <- mock_datom_conn(list())
+  result <- datom_history(conn, "tbl")
 
   expect_s3_class(result, "data.frame")
   expect_equal(nrow(result), 0)
@@ -290,25 +290,25 @@ test_that("returns empty data frame for empty history", {
 test_that("reads correct S3 key for version history", {
   captured_key <- NULL
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       captured_key <<- s3_key
       list()
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  tbit_history(conn, "ADSL")
+  conn <- mock_datom_conn(list())
+  datom_history(conn, "ADSL")
 
   expect_equal(captured_key, "ADSL/.metadata/version_history.json")
 })
 
 test_that("errors when version history cannot be read from S3", {
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) stop("NoSuchKey")
+    .datom_s3_read_json = function(conn, s3_key) stop("NoSuchKey")
   )
 
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_history(conn, "ghost"), "No version history")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_history(conn, "ghost"), "No version history")
 })
 
 test_that("handles author as list (name + email)", {
@@ -323,11 +323,11 @@ test_that("handles author as list (name + email)", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) history
+    .datom_s3_read_json = function(conn, s3_key) history
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_history(conn, "tbl")
+  conn <- mock_datom_conn(list())
+  result <- datom_history(conn, "tbl")
 
   expect_equal(result$author, "Jane Doe <jane@co.com>")
 })
@@ -338,11 +338,11 @@ test_that("handles missing fields with NA", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) history
+    .datom_s3_read_json = function(conn, s3_key) history
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_history(conn, "tbl")
+  conn <- mock_datom_conn(list())
+  result <- datom_history(conn, "tbl")
 
   expect_equal(nrow(result), 1)
   expect_equal(result$version, "v1")
@@ -364,11 +364,11 @@ test_that("truncates version and data_sha by default (short_hash = TRUE)", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) history
+    .datom_s3_read_json = function(conn, s3_key) history
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_history(conn, "dm")
+  conn <- mock_datom_conn(list())
+  result <- datom_history(conn, "dm")
 
   expect_equal(nchar(result$version), 8)
   expect_equal(result$version, substr(full_version, 1, 8))
@@ -388,27 +388,27 @@ test_that("returns full hashes with short_hash = FALSE", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) history
+    .datom_s3_read_json = function(conn, s3_key) history
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_history(conn, "dm", short_hash = FALSE)
+  conn <- mock_datom_conn(list())
+  result <- datom_history(conn, "dm", short_hash = FALSE)
 
   expect_equal(result$version, full_version)
   expect_equal(result$data_sha, full_data_sha)
 })
 
 
-# --- tbit_get_parents() -------------------------------------------------------
+# --- datom_get_parents() -------------------------------------------------------
 
-test_that("tbit_get_parents rejects non-tbit_conn", {
-  expect_error(tbit_get_parents("not_conn", "tbl"), "tbit_conn")
+test_that("datom_get_parents rejects non-datom_conn", {
+  expect_error(datom_get_parents("not_conn", "tbl"), "datom_conn")
 })
 
-test_that("tbit_get_parents validates table name", {
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_get_parents(conn, ""), "must not be empty")
-  expect_error(tbit_get_parents(conn, "bad name!"), class = "rlang_error")
+test_that("datom_get_parents validates table name", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_get_parents(conn, ""), "must not be empty")
+  expect_error(datom_get_parents(conn, "bad name!"), class = "rlang_error")
 })
 
 test_that("returns parents from current metadata", {
@@ -424,14 +424,14 @@ test_that("returns parents from current metadata", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       expect_equal(s3_key, "customers/.metadata/metadata.json")
       metadata
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_get_parents(conn, "customers")
+  conn <- mock_datom_conn(list())
+  result <- datom_get_parents(conn, "customers")
 
   expect_length(result, 2)
   expect_equal(result[[1]]$source, "proj_a")
@@ -448,11 +448,11 @@ test_that("returns NULL for imported table (no parents)", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) metadata
+    .datom_s3_read_json = function(conn, s3_key) metadata
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_get_parents(conn, "imported_tbl")
+  conn <- mock_datom_conn(list())
+  result <- datom_get_parents(conn, "imported_tbl")
 
   expect_null(result)
 })
@@ -465,11 +465,11 @@ test_that("returns NULL for derived table with no recorded lineage", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) metadata
+    .datom_s3_read_json = function(conn, s3_key) metadata
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_get_parents(conn, "no_lineage_tbl")
+  conn <- mock_datom_conn(list())
+  result <- datom_get_parents(conn, "no_lineage_tbl")
 
   expect_null(result)
 })
@@ -487,14 +487,14 @@ test_that("reads versioned metadata snapshot when version provided", {
 
   captured_key <- NULL
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       captured_key <<- s3_key
       versioned_meta
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_get_parents(conn, "tbl", version = "meta_sha_123")
+  conn <- mock_datom_conn(list())
+  result <- datom_get_parents(conn, "tbl", version = "meta_sha_123")
 
   expect_equal(captured_key, "tbl/.metadata/meta_sha_123.json")
   expect_length(result, 1)
@@ -503,53 +503,53 @@ test_that("reads versioned metadata snapshot when version provided", {
 
 test_that("errors when table not found (current)", {
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       stop("Failed to read JSON from S3")
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_get_parents(conn, "ghost"), "No metadata found")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_get_parents(conn, "ghost"), "No metadata found")
 })
 
 test_that("errors when versioned snapshot not found", {
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       stop("Failed to read JSON from S3")
     }
   )
 
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   expect_error(
-    tbit_get_parents(conn, "tbl", version = "nonexistent_sha"),
+    datom_get_parents(conn, "tbl", version = "nonexistent_sha"),
     "not found"
   )
 })
 
 test_that("rejects invalid version argument", {
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_get_parents(conn, "tbl", version = ""), "non-empty")
-  expect_error(tbit_get_parents(conn, "tbl", version = 123), "non-empty")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_get_parents(conn, "tbl", version = ""), "non-empty")
+  expect_error(datom_get_parents(conn, "tbl", version = 123), "non-empty")
 })
 
 
-# --- tbit_status() ------------------------------------------------------------
+# --- datom_status() ------------------------------------------------------------
 
-test_that("tbit_status rejects non-tbit_conn", {
-  expect_error(tbit_status("not_conn"), "tbit_conn")
+test_that("datom_status rejects non-datom_conn", {
+  expect_error(datom_status("not_conn"), "datom_conn")
 })
 
-test_that("tbit_status returns connection info for reader", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_status returns connection info for reader", {
+  conn <- mock_datom_conn(list())
   conn$role <- "reader"
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       list(tables = list(a = list(), b = list()))
     }
   )
 
-  result <- tbit_status(conn)
+  result <- datom_status(conn)
 
   expect_equal(result$connection$project_name, "test-project")
   expect_equal(result$connection$role, "reader")
@@ -558,61 +558,61 @@ test_that("tbit_status returns connection info for reader", {
   expect_false(result$connection$has_path)
 })
 
-test_that("tbit_status handles S3 manifest read failure", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_status handles S3 manifest read failure", {
+  conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) stop("S3 error")
+    .datom_s3_read_json = function(conn, s3_key) stop("S3 error")
   )
 
-  result <- tbit_status(conn)
+  result <- datom_status(conn)
 
   expect_false(result$tables$available)
   expect_equal(result$tables$count, 0)
 })
 
-test_that("tbit_status shows git info for developer", {
+test_that("datom_status shows git info for developer", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
-      .tbit_status_git = function(path) {
+      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_status_git = function(path) {
         list(uncommitted = c("R/foo.R"), branch = "main")
       }
     )
 
-    result <- tbit_status(conn)
+    result <- datom_status(conn)
 
     expect_equal(result$git$branch, "main")
     expect_equal(result$git$uncommitted, "R/foo.R")
   })
 })
 
-test_that("tbit_status shows clean git when no changes", {
+test_that("datom_status shows clean git when no changes", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
-      .tbit_status_git = function(path) {
+      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
     )
 
-    result <- tbit_status(conn)
+    result <- datom_status(conn)
 
     expect_equal(length(result$git$uncommitted), 0)
   })
 })
 
-test_that("tbit_status shows input_files sync state", {
+test_that("datom_status shows input_files sync state", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -621,22 +621,22 @@ test_that("tbit_status shows input_files sync state", {
     writeLines("id\n2", "input_files/existing.csv")
 
     # Manifest has existing with matching SHA
-    existing_sha <- .tbit_compute_file_sha("input_files/existing.csv")
-    fs::dir_create(".tbit")
+    existing_sha <- .datom_compute_file_sha("input_files/existing.csv")
+    fs::dir_create(".datom")
     jsonlite::write_json(list(
       tables = list(
         existing = list(original_file_sha = existing_sha)
       )
-    ), ".tbit/manifest.json", auto_unbox = TRUE)
+    ), ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
-      .tbit_status_git = function(path) {
+      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
     )
 
-    result <- tbit_status(conn)
+    result <- datom_status(conn)
 
     expect_equal(result$input_files$n_total, 2)
     expect_equal(result$input_files$n_new, 1)
@@ -645,61 +645,61 @@ test_that("tbit_status shows input_files sync state", {
   })
 })
 
-test_that("tbit_status omits input_files when dir missing", {
+test_that("datom_status omits input_files when dir missing", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
-      .tbit_status_git = function(path) {
+      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
     )
 
-    result <- tbit_status(conn)
+    result <- datom_status(conn)
 
     expect_null(result$input_files)
   })
 })
 
-test_that("tbit_status detects changed input files", {
+test_that("datom_status detects changed input files", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create("input_files")
     writeLines("id\n99", "input_files/orders.csv")
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
     jsonlite::write_json(list(
       tables = list(orders = list(original_file_sha = "old_sha"))
-    ), ".tbit/manifest.json", auto_unbox = TRUE)
+    ), ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
-      .tbit_status_git = function(path) {
+      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
     )
 
-    result <- tbit_status(conn)
+    result <- datom_status(conn)
 
     expect_equal(result$input_files$n_changed, 1)
     expect_equal(result$input_files$n_new, 0)
   })
 })
 
-test_that("tbit_status returns correct structure", {
-  conn <- mock_tbit_conn(list())
+test_that("datom_status returns correct structure", {
+  conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) list(tables = list())
+    .datom_s3_read_json = function(conn, s3_key) list(tables = list())
   )
 
-  result <- tbit_status(conn)
+  result <- datom_status(conn)
 
   expect_type(result, "list")
   expect_true("connection" %in% names(result))
@@ -707,22 +707,22 @@ test_that("tbit_status returns correct structure", {
   expect_equal(result$connection$bucket, "test-bucket")
 })
 
-test_that("tbit_status handles empty input_files dir", {
+test_that("datom_status handles empty input_files dir", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create("input_files")
 
     local_mocked_bindings(
-      .tbit_s3_read_json = function(conn, s3_key) list(tables = list()),
-      .tbit_status_git = function(path) {
+      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
     )
 
-    result <- tbit_status(conn)
+    result <- datom_status(conn)
 
     expect_equal(result$input_files$n_total, 0)
   })

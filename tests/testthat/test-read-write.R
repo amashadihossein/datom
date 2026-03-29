@@ -1,8 +1,8 @@
 # Tests for read/write infrastructure
-# Phase 5: tbit_read(), tbit_write(), and supporting internals
+# Phase 5: datom_read(), datom_write(), and supporting internals
 
 
-# --- tbit_read() --------------------------------------------------------------
+# --- datom_read() --------------------------------------------------------------
 
 test_that("reads current version end-to-end", {
   test_df <- data.frame(id = 1:5, val = letters[1:5])
@@ -13,17 +13,17 @@ test_that("reads current version end-to-end", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       if (grepl("metadata.json$", s3_key)) metadata else history
     },
-    .tbit_s3_download = function(conn, s3_key, local_path) {
+    .datom_s3_download = function(conn, s3_key, local_path) {
       arrow::write_parquet(test_df, local_path)
       invisible(TRUE)
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_read(conn, "customers")
+  conn <- mock_datom_conn(list())
+  result <- datom_read(conn, "customers")
 
   expect_s3_class(result, "data.frame")
   expect_equal(nrow(result), 5)
@@ -41,10 +41,10 @@ test_that("reads specific version end-to-end", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       if (grepl("metadata.json$", s3_key)) metadata else history
     },
-    .tbit_s3_download = function(conn, s3_key, local_path) {
+    .datom_s3_download = function(conn, s3_key, local_path) {
       # Should request sha_v1 since we asked for meta_v1
       if (grepl("sha_v1", s3_key)) {
         arrow::write_parquet(df_v1, local_path)
@@ -55,21 +55,21 @@ test_that("reads specific version end-to-end", {
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- tbit_read(conn, "customers", version = "meta_v1")
+  conn <- mock_datom_conn(list())
+  result <- datom_read(conn, "customers", version = "meta_v1")
 
   expect_equal(result$x, 1:3)
 })
 
-test_that("errors when conn is not tbit_conn", {
-  expect_error(tbit_read(list(), "tbl"), "tbit_conn")
-  expect_error(tbit_read("not_conn", "tbl"), "tbit_conn")
+test_that("errors when conn is not datom_conn", {
+  expect_error(datom_read(list(), "tbl"), "datom_conn")
+  expect_error(datom_read("not_conn", "tbl"), "datom_conn")
 })
 
 test_that("validates table name", {
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_read(conn, ""), "must not be empty")
-  expect_error(tbit_read(conn, "bad name!"), class = "rlang_error")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_read(conn, ""), "must not be empty")
+  expect_error(datom_read(conn, "bad name!"), class = "rlang_error")
 })
 
 test_that("errors when version not found", {
@@ -79,24 +79,24 @@ test_that("errors when version not found", {
   )
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       if (grepl("metadata.json$", s3_key)) metadata else history
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_read(conn, "tbl", version = "nonexistent"), "not found")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_read(conn, "tbl", version = "nonexistent"), "not found")
 })
 
 test_that("propagates S3 errors from metadata read", {
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       cli::cli_abort("Failed to read JSON from S3.")
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_read(conn, "customers"), "Failed to read JSON")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_read(conn, "customers"), "Failed to read JSON")
 })
 
 test_that("propagates S3 errors from parquet download", {
@@ -104,20 +104,20 @@ test_that("propagates S3 errors from parquet download", {
   history <- list(list(version = "v1", data_sha = "sha1"))
 
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       if (grepl("metadata.json$", s3_key)) metadata else history
     },
-    .tbit_s3_download = function(conn, s3_key, local_path) {
+    .datom_s3_download = function(conn, s3_key, local_path) {
       cli::cli_abort("Failed to download file from S3.")
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  expect_error(tbit_read(conn, "tbl"), "Failed to download")
+  conn <- mock_datom_conn(list())
+  expect_error(datom_read(conn, "tbl"), "Failed to download")
 })
 
 
-# --- .tbit_read_metadata() ----------------------------------------------------
+# --- .datom_read_metadata() ----------------------------------------------------
 
 test_that("reads both metadata.json and version_history.json from S3", {
   metadata <- list(data_sha = "abc123", nrow = 10L, ncol = 3L)
@@ -127,14 +127,14 @@ test_that("reads both metadata.json and version_history.json from S3", {
 
   call_keys <- character()
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       call_keys <<- c(call_keys, s3_key)
       if (grepl("metadata.json$", s3_key)) metadata else history
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- .tbit_read_metadata(conn, "customers")
+  conn <- mock_datom_conn(list())
+  result <- .datom_read_metadata(conn, "customers")
 
   expect_type(result, "list")
   expect_named(result, c("current", "history"))
@@ -147,25 +147,25 @@ test_that("reads both metadata.json and version_history.json from S3", {
 })
 
 test_that("validates table name", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
 
-  expect_error(.tbit_read_metadata(conn, ""), "must not be empty")
-  expect_error(.tbit_read_metadata(conn, "bad name!"), class = "rlang_error")
+  expect_error(.datom_read_metadata(conn, ""), "must not be empty")
+  expect_error(.datom_read_metadata(conn, "bad name!"), class = "rlang_error")
 })
 
 test_that("propagates S3 errors", {
   local_mocked_bindings(
-    .tbit_s3_read_json = function(conn, s3_key) {
+    .datom_s3_read_json = function(conn, s3_key) {
       cli::cli_abort("Failed to read JSON from S3.")
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  expect_error(.tbit_read_metadata(conn, "customers"), "Failed to read JSON")
+  conn <- mock_datom_conn(list())
+  expect_error(.datom_read_metadata(conn, "customers"), "Failed to read JSON")
 })
 
 
-# --- .tbit_resolve_version() --------------------------------------------------
+# --- .datom_resolve_version() --------------------------------------------------
 
 test_that("NULL version returns current data_sha", {
   metadata_list <- list(
@@ -173,7 +173,7 @@ test_that("NULL version returns current data_sha", {
     history = list()
   )
 
-  result <- .tbit_resolve_version(metadata_list, version = NULL, name = "tbl")
+  result <- .datom_resolve_version(metadata_list, version = NULL, name = "tbl")
   expect_equal(result, "sha_current")
 })
 
@@ -184,7 +184,7 @@ test_that("errors when current metadata has no data_sha", {
   )
 
   expect_error(
-    .tbit_resolve_version(metadata_list, version = NULL, name = "tbl"),
+    .datom_resolve_version(metadata_list, version = NULL, name = "tbl"),
     "data_sha"
   )
 })
@@ -196,7 +196,7 @@ test_that("errors when current data_sha is empty string", {
   )
 
   expect_error(
-    .tbit_resolve_version(metadata_list, version = NULL, name = "tbl"),
+    .datom_resolve_version(metadata_list, version = NULL, name = "tbl"),
     "data_sha"
   )
 })
@@ -210,7 +210,7 @@ test_that("resolves specific version from history", {
     )
   )
 
-  result <- .tbit_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
+  result <- .datom_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
   expect_equal(result, "sha_v1")
 })
 
@@ -223,7 +223,7 @@ test_that("resolves latest version from history", {
     )
   )
 
-  result <- .tbit_resolve_version(metadata_list, version = "meta_sha_v2", name = "tbl")
+  result <- .datom_resolve_version(metadata_list, version = "meta_sha_v2", name = "tbl")
   expect_equal(result, "sha_v2")
 })
 
@@ -236,7 +236,7 @@ test_that("errors when version not found in history", {
   )
 
   expect_error(
-    .tbit_resolve_version(metadata_list, version = "nonexistent", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "nonexistent", name = "tbl"),
     "not found"
   )
 })
@@ -248,7 +248,7 @@ test_that("errors when history is empty and version requested", {
   )
 
   expect_error(
-    .tbit_resolve_version(metadata_list, version = "some_sha", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "some_sha", name = "tbl"),
     "No version history"
   )
 })
@@ -260,7 +260,7 @@ test_that("errors when version is empty string", {
   )
 
   expect_error(
-    .tbit_resolve_version(metadata_list, version = "", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "", name = "tbl"),
     "non-empty"
   )
 })
@@ -272,7 +272,7 @@ test_that("errors when version is non-character", {
   )
 
   expect_error(
-    .tbit_resolve_version(metadata_list, version = 123, name = "tbl"),
+    .datom_resolve_version(metadata_list, version = 123, name = "tbl"),
     "non-empty string"
   )
 })
@@ -287,7 +287,7 @@ test_that("errors when resolved data_sha is NULL in history entry", {
   )
 
   expect_error(
-    .tbit_resolve_version(metadata_list, version = "v1", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "v1", name = "tbl"),
     "data_sha"
   )
 })
@@ -301,7 +301,7 @@ test_that("errors when resolved data_sha is empty in history entry", {
   )
 
   expect_error(
-    .tbit_resolve_version(metadata_list, version = "v1", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "v1", name = "tbl"),
     "data_sha"
   )
 })
@@ -317,11 +317,11 @@ test_that("handles multiple versions with same data_sha", {
 
   # Both should resolve to same data_sha
   expect_equal(
-    .tbit_resolve_version(metadata_list, version = "meta_v1", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "meta_v1", name = "tbl"),
     "sha_shared"
   )
   expect_equal(
-    .tbit_resolve_version(metadata_list, version = "meta_v2", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "meta_v2", name = "tbl"),
     "sha_shared"
   )
 })
@@ -338,12 +338,12 @@ test_that("resolves unique prefix (short hash)", {
   # Short prefix that uniquely matches first entry
 
   expect_equal(
-    .tbit_resolve_version(metadata_list, version = "abc1", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc1", name = "tbl"),
     "sha_v1"
   )
   # Short prefix that uniquely matches second entry
   expect_equal(
-    .tbit_resolve_version(metadata_list, version = "xyz", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "xyz", name = "tbl"),
     "sha_v2"
   )
 })
@@ -358,7 +358,7 @@ test_that("exact full hash still works with prefix matching", {
   )
 
   expect_equal(
-    .tbit_resolve_version(metadata_list, version = "abc123def456", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123def456", name = "tbl"),
     "sha_v1"
   )
 })
@@ -373,7 +373,7 @@ test_that("errors on ambiguous prefix", {
   )
 
   expect_error(
-    .tbit_resolve_version(metadata_list, version = "abc123", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123", name = "tbl"),
     "ambiguous"
   )
 })
@@ -389,12 +389,12 @@ test_that("ambiguous prefix resolved by using longer prefix", {
 
   # "abc123d" uniquely matches the first entry
   expect_equal(
-    .tbit_resolve_version(metadata_list, version = "abc123d", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123d", name = "tbl"),
     "sha_v1"
   )
   # "abc123g" uniquely matches the second entry
   expect_equal(
-    .tbit_resolve_version(metadata_list, version = "abc123g", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123g", name = "tbl"),
     "sha_v2"
   )
 })
@@ -409,20 +409,20 @@ test_that("single-character prefix works if unique", {
   )
 
   expect_equal(
-    .tbit_resolve_version(metadata_list, version = "a", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "a", name = "tbl"),
     "sha_v1"
   )
 })
 
 
-# --- .tbit_read_parquet() -----------------------------------------------------
+# --- .datom_read_parquet() -----------------------------------------------------
 
 test_that("downloads parquet from S3 and reads as data frame", {
   # Create a real parquet file to serve as mock download
   test_df <- data.frame(id = 1:3, name = c("a", "b", "c"))
 
   local_mocked_bindings(
-    .tbit_s3_download = function(conn, s3_key, local_path) {
+    .datom_s3_download = function(conn, s3_key, local_path) {
       # Verify correct key construction
       expect_equal(s3_key, "customers/abc123.parquet")
       arrow::write_parquet(test_df, local_path)
@@ -430,8 +430,8 @@ test_that("downloads parquet from S3 and reads as data frame", {
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- .tbit_read_parquet(conn, "customers", "abc123")
+  conn <- mock_datom_conn(list())
+  result <- .datom_read_parquet(conn, "customers", "abc123")
 
   expect_s3_class(result, "data.frame")
   expect_equal(nrow(result), 3)
@@ -441,27 +441,27 @@ test_that("downloads parquet from S3 and reads as data frame", {
 })
 
 test_that("validates table name", {
-  conn <- mock_tbit_conn(list())
-  expect_error(.tbit_read_parquet(conn, "", "sha"), "must not be empty")
+  conn <- mock_datom_conn(list())
+  expect_error(.datom_read_parquet(conn, "", "sha"), "must not be empty")
 })
 
 test_that("validates data_sha is non-empty string", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
 
-  expect_error(.tbit_read_parquet(conn, "tbl", ""), "non-empty")
-  expect_error(.tbit_read_parquet(conn, "tbl", NULL), "non-empty")
-  expect_error(.tbit_read_parquet(conn, "tbl", 123), "non-empty")
+  expect_error(.datom_read_parquet(conn, "tbl", ""), "non-empty")
+  expect_error(.datom_read_parquet(conn, "tbl", NULL), "non-empty")
+  expect_error(.datom_read_parquet(conn, "tbl", 123), "non-empty")
 })
 
 test_that("propagates S3 download errors", {
   local_mocked_bindings(
-    .tbit_s3_download = function(conn, s3_key, local_path) {
+    .datom_s3_download = function(conn, s3_key, local_path) {
       cli::cli_abort("Failed to download file from S3.")
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  expect_error(.tbit_read_parquet(conn, "customers", "abc"), "Failed to download")
+  conn <- mock_datom_conn(list())
+  expect_error(.datom_read_parquet(conn, "customers", "abc"), "Failed to download")
 })
 
 test_that("constructs correct S3 key for nested table names", {
@@ -469,37 +469,37 @@ test_that("constructs correct S3 key for nested table names", {
 
   captured_key <- NULL
   local_mocked_bindings(
-    .tbit_s3_download = function(conn, s3_key, local_path) {
+    .datom_s3_download = function(conn, s3_key, local_path) {
       captured_key <<- s3_key
       arrow::write_parquet(test_df, local_path)
       invisible(TRUE)
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  .tbit_read_parquet(conn, "ADSL", "sha256hash")
+  conn <- mock_datom_conn(list())
+  .datom_read_parquet(conn, "ADSL", "sha256hash")
 
   expect_equal(captured_key, "ADSL/sha256hash.parquet")
 })
 
 
-# --- .tbit_build_metadata() ---------------------------------------------------
+# --- .datom_build_metadata() ---------------------------------------------------
 
 test_that("builds metadata with auto-computed fields", {
   df <- data.frame(id = 1:3, name = c("a", "b", "c"))
-  result <- .tbit_build_metadata(df, data_sha = "abc123")
+  result <- .datom_build_metadata(df, data_sha = "abc123")
 
   expect_equal(result$data_sha, "abc123")
   expect_equal(result$nrow, 3)
   expect_equal(result$ncol, 2)
   expect_equal(result$colnames, c("id", "name"))
   expect_true(nzchar(result$created_at))
-  expect_true(nzchar(result$tbit_version))
+  expect_true(nzchar(result$datom_version))
 })
 
 test_that("includes custom metadata", {
   df <- data.frame(x = 1)
-  result <- .tbit_build_metadata(df, "sha", custom = list(desc = "test", tags = list("a")))
+  result <- .datom_build_metadata(df, "sha", custom = list(desc = "test", tags = list("a")))
 
   expect_equal(result$custom$desc, "test")
   expect_equal(result$custom$tags, list("a"))
@@ -507,27 +507,27 @@ test_that("includes custom metadata", {
 
 test_that("errors when custom is not a named list", {
   df <- data.frame(x = 1)
-  expect_error(.tbit_build_metadata(df, "sha", custom = "not_list"), "metadata")
-  expect_error(.tbit_build_metadata(df, "sha", custom = list(1, 2)), "metadata")
+  expect_error(.datom_build_metadata(df, "sha", custom = "not_list"), "metadata")
+  expect_error(.datom_build_metadata(df, "sha", custom = list(1, 2)), "metadata")
 })
 
 test_that("metadata with no custom has no custom field", {
   df <- data.frame(x = 1)
-  result <- .tbit_build_metadata(df, "sha")
+  result <- .datom_build_metadata(df, "sha")
 
   expect_null(result$custom)
 })
 
 test_that("defaults to derived table_type", {
   df <- data.frame(x = 1)
-  result <- .tbit_build_metadata(df, "sha")
+  result <- .datom_build_metadata(df, "sha")
 
   expect_equal(result$table_type, "derived")
 })
 
 test_that("accepts imported table_type", {
   df <- data.frame(x = 1)
-  result <- .tbit_build_metadata(df, "sha", table_type = "imported")
+  result <- .datom_build_metadata(df, "sha", table_type = "imported")
 
   expect_equal(result$table_type, "imported")
 })
@@ -535,21 +535,21 @@ test_that("accepts imported table_type", {
 test_that("rejects invalid table_type", {
   df <- data.frame(x = 1)
   expect_error(
-    .tbit_build_metadata(df, "sha", table_type = "unknown"),
+    .datom_build_metadata(df, "sha", table_type = "unknown"),
     "table_type"
   )
 })
 
 test_that("includes size_bytes when provided", {
   df <- data.frame(x = 1)
-  result <- .tbit_build_metadata(df, "sha", size_bytes = 1024)
+  result <- .datom_build_metadata(df, "sha", size_bytes = 1024)
 
   expect_equal(result$size_bytes, 1024)
 })
 
 test_that("size_bytes defaults to NULL", {
   df <- data.frame(x = 1)
-  result <- .tbit_build_metadata(df, "sha")
+  result <- .datom_build_metadata(df, "sha")
 
   expect_null(result$size_bytes)
 })
@@ -560,7 +560,7 @@ test_that("includes parents when provided", {
     list(source = "proj_a", table = "tbl1", version = "sha_abc"),
     list(source = "proj_b", table = "tbl2", version = "sha_def")
   )
-  result <- .tbit_build_metadata(df, "sha", parents = parents)
+  result <- .datom_build_metadata(df, "sha", parents = parents)
 
   expect_length(result$parents, 2)
   expect_equal(result$parents[[1]]$source, "proj_a")
@@ -569,7 +569,7 @@ test_that("includes parents when provided", {
 
 test_that("parents defaults to NULL", {
   df <- data.frame(x = 1)
-  result <- .tbit_build_metadata(df, "sha")
+  result <- .datom_build_metadata(df, "sha")
 
   expect_null(result$parents)
 })
@@ -577,14 +577,14 @@ test_that("parents defaults to NULL", {
 test_that("table_type and parents participate in metadata_sha", {
   df <- data.frame(x = 1)
 
-  meta_derived <- .tbit_build_metadata(df, "sha", table_type = "derived")
-  meta_imported <- .tbit_build_metadata(df, "sha", table_type = "imported")
+  meta_derived <- .datom_build_metadata(df, "sha", table_type = "derived")
+  meta_imported <- .datom_build_metadata(df, "sha", table_type = "imported")
 
   # Force identical timestamps so only table_type differs
   meta_imported$created_at <- meta_derived$created_at
 
-  sha_derived <- .tbit_compute_metadata_sha(meta_derived)
-  sha_imported <- .tbit_compute_metadata_sha(meta_imported)
+  sha_derived <- .datom_compute_metadata_sha(meta_derived)
+  sha_imported <- .datom_compute_metadata_sha(meta_imported)
 
   expect_false(sha_derived == sha_imported)
 })
@@ -592,32 +592,32 @@ test_that("table_type and parents participate in metadata_sha", {
 test_that("size_bytes participates in metadata_sha", {
   df <- data.frame(x = 1)
 
-  meta_null <- .tbit_build_metadata(df, "sha")
-  meta_1k <- .tbit_build_metadata(df, "sha", size_bytes = 1024)
+  meta_null <- .datom_build_metadata(df, "sha")
+  meta_1k <- .datom_build_metadata(df, "sha", size_bytes = 1024)
 
   meta_1k$created_at <- meta_null$created_at
 
-  sha_null <- .tbit_compute_metadata_sha(meta_null)
-  sha_1k <- .tbit_compute_metadata_sha(meta_1k)
+  sha_null <- .datom_compute_metadata_sha(meta_null)
+  sha_1k <- .datom_compute_metadata_sha(meta_1k)
 
   expect_false(sha_null == sha_1k)
 })
 
 
-# --- .tbit_write_metadata_local() — original_file_sha -------------------------
+# --- .datom_write_metadata_local() — original_file_sha -------------------------
 
 test_that("original_file_sha stored in version_history entry", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Test", user.email = "test@test.com")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
-    meta_sha <- .tbit_compute_metadata_sha(metadata)
+    meta_sha <- .datom_compute_metadata_sha(metadata)
 
-    result <- .tbit_write_metadata_local(
+    result <- .datom_write_metadata_local(
       conn, "tbl", metadata, meta_sha,
       original_file_sha = "file_sha_abc"
     )
@@ -632,13 +632,13 @@ test_that("original_file_sha is null in version_history for derived tables", {
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Test", user.email = "test@test.com")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
-    meta_sha <- .tbit_compute_metadata_sha(metadata)
+    meta_sha <- .datom_compute_metadata_sha(metadata)
 
-    result <- .tbit_write_metadata_local(conn, "tbl", metadata, meta_sha)
+    result <- .datom_write_metadata_local(conn, "tbl", metadata, meta_sha)
 
     history <- jsonlite::read_json("tbl/version_history.json")
     expect_null(history[[1]]$original_file_sha)
@@ -650,17 +650,17 @@ test_that("version_history skips duplicate entry when latest version matches", {
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Test", user.email = "test@test.com")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
-    meta_sha <- .tbit_compute_metadata_sha(metadata)
+    meta_sha <- .datom_compute_metadata_sha(metadata)
 
     # First write — creates version_history with 1 entry
-    .tbit_write_metadata_local(conn, "tbl", metadata, meta_sha, message = "v1")
+    .datom_write_metadata_local(conn, "tbl", metadata, meta_sha, message = "v1")
 
     # Second write with same metadata_sha — should NOT append duplicate
-    .tbit_write_metadata_local(conn, "tbl", metadata, meta_sha, message = "v1 again")
+    .datom_write_metadata_local(conn, "tbl", metadata, meta_sha, message = "v1 again")
 
     history <- jsonlite::read_json("tbl/version_history.json")
     expect_length(history, 1L)
@@ -669,9 +669,9 @@ test_that("version_history skips duplicate entry when latest version matches", {
 })
 
 
-# --- tbit_write() — Phase 8 enriched params -----------------------------------
+# --- datom_write() — Phase 8 enriched params -----------------------------------
 
-test_that("tbit_write passes table_type and parents to metadata", {
+test_that("datom_write passes table_type and parents to metadata", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -679,23 +679,23 @@ test_that("tbit_write passes table_type and parents to metadata", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     captured_meta <- NULL
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) {
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
     parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_abc"))
-    tbit_write(
+    datom_write(
       conn, data = data.frame(x = 1), name = "derived_tbl",
       parents = parents, .table_type = "derived"
     )
@@ -706,7 +706,7 @@ test_that("tbit_write passes table_type and parents to metadata", {
   })
 })
 
-test_that("tbit_write computes size_bytes from parquet", {
+test_that("datom_write computes size_bytes from parquet", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -714,29 +714,29 @@ test_that("tbit_write computes size_bytes from parquet", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     captured_meta <- NULL
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) {
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    tbit_write(conn, data = data.frame(x = 1:100), name = "tbl")
+    datom_write(conn, data = data.frame(x = 1:100), name = "tbl")
 
     expect_true(is.numeric(captured_meta$size_bytes))
     expect_true(captured_meta$size_bytes > 0)
   })
 })
 
-test_that("tbit_write passes original_file_sha to version_history", {
+test_that("datom_write passes original_file_sha to version_history", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -744,18 +744,18 @@ test_that("tbit_write passes original_file_sha to version_history", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    tbit_write(
+    datom_write(
       conn, data = data.frame(x = 1), name = "imported_tbl",
       .table_type = "imported", .original_file_sha = "file_sha_xyz"
     )
@@ -765,7 +765,7 @@ test_that("tbit_write passes original_file_sha to version_history", {
   })
 })
 
-test_that("tbit_write defaults: derived type, no parents, no original_file_sha", {
+test_that("datom_write defaults: derived type, no parents, no original_file_sha", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -773,22 +773,22 @@ test_that("tbit_write defaults: derived type, no parents, no original_file_sha",
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     captured_meta <- NULL
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) {
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    tbit_write(conn, data = data.frame(x = 1), name = "plain_tbl")
+    datom_write(conn, data = data.frame(x = 1), name = "plain_tbl")
 
     expect_equal(captured_meta$table_type, "derived")
     expect_null(captured_meta$parents)
@@ -799,9 +799,9 @@ test_that("tbit_write defaults: derived type, no parents, no original_file_sha",
 })
 
 
-# --- tbit_write() manifest integration ----------------------------------------
+# --- datom_write() manifest integration ----------------------------------------
 
-test_that("tbit_write updates manifest.json locally", {
+test_that("datom_write updates manifest.json locally", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -809,26 +809,26 @@ test_that("tbit_write updates manifest.json locally", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
     jsonlite::write_json(
       list(tables = list(), summary = list(total_tables = 0L)),
-      ".tbit/manifest.json", auto_unbox = TRUE
+      ".datom/manifest.json", auto_unbox = TRUE
     )
 
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    tbit_write(conn, data = data.frame(x = 1:5), name = "my_tbl")
+    datom_write(conn, data = data.frame(x = 1:5), name = "my_tbl")
 
-    m <- jsonlite::read_json(".tbit/manifest.json")
+    m <- jsonlite::read_json(".datom/manifest.json")
     expect_true("my_tbl" %in% names(m$tables))
     expect_equal(m$summary$total_tables, 1)
     expect_false(is.null(m$tables$my_tbl$current_version))
@@ -836,7 +836,7 @@ test_that("tbit_write updates manifest.json locally", {
   })
 })
 
-test_that("tbit_write includes manifest.json in git commit", {
+test_that("datom_write includes manifest.json in git commit", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -844,35 +844,35 @@ test_that("tbit_write includes manifest.json in git commit", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
     jsonlite::write_json(
       list(tables = list(), summary = list(total_tables = 0L)),
-      ".tbit/manifest.json", auto_unbox = TRUE
+      ".datom/manifest.json", auto_unbox = TRUE
     )
 
     committed_files <- NULL
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
-      .tbit_git_commit = function(path, files, message) {
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_commit = function(path, files, message) {
         committed_files <<- files
         "fake_sha"
       },
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    tbit_write(conn, data = data.frame(x = 1), name = "tbl")
+    datom_write(conn, data = data.frame(x = 1), name = "tbl")
 
-    expect_true(".tbit/manifest.json" %in% committed_files)
+    expect_true(".datom/manifest.json" %in% committed_files)
   })
 })
 
-test_that("tbit_write pushes manifest.json to S3", {
+test_that("datom_write pushes manifest.json to S3", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -880,34 +880,34 @@ test_that("tbit_write pushes manifest.json to S3", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
     jsonlite::write_json(
       list(tables = list(), summary = list(total_tables = 0L)),
-      ".tbit/manifest.json", auto_unbox = TRUE
+      ".datom/manifest.json", auto_unbox = TRUE
     )
 
     s3_keys <- character()
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) {
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) {
         s3_keys <<- c(s3_keys, sk)
         invisible(TRUE)
       },
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    tbit_write(conn, data = data.frame(x = 1), name = "tbl")
+    datom_write(conn, data = data.frame(x = 1), name = "tbl")
 
     expect_true(".metadata/manifest.json" %in% s3_keys)
   })
 })
 
-test_that("tbit_write stores sync fields in manifest when provided", {
+test_that("datom_write stores sync fields in manifest when provided", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -915,37 +915,37 @@ test_that("tbit_write stores sync fields in manifest when provided", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
     jsonlite::write_json(
       list(tables = list(), summary = list(total_tables = 0L)),
-      ".tbit/manifest.json", auto_unbox = TRUE
+      ".datom/manifest.json", auto_unbox = TRUE
     )
 
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    tbit_write(
+    datom_write(
       conn, data = data.frame(x = 1), name = "synced_tbl",
       .table_type = "imported",
       .original_file_sha = "file_sha_123",
       .original_format = "csv"
     )
 
-    m <- jsonlite::read_json(".tbit/manifest.json")
+    m <- jsonlite::read_json(".datom/manifest.json")
     expect_equal(m$tables$synced_tbl$original_file_sha, "file_sha_123")
     expect_equal(m$tables$synced_tbl$original_format, "csv")
   })
 })
 
-test_that("tbit_write omits sync fields in manifest for derived tables", {
+test_that("datom_write omits sync fields in manifest for derived tables", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -953,32 +953,32 @@ test_that("tbit_write omits sync fields in manifest for derived tables", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
     jsonlite::write_json(
       list(tables = list(), summary = list(total_tables = 0L)),
-      ".tbit/manifest.json", auto_unbox = TRUE
+      ".datom/manifest.json", auto_unbox = TRUE
     )
 
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    tbit_write(conn, data = data.frame(x = 1), name = "derived_tbl")
+    datom_write(conn, data = data.frame(x = 1), name = "derived_tbl")
 
-    m <- jsonlite::read_json(".tbit/manifest.json")
+    m <- jsonlite::read_json(".datom/manifest.json")
     expect_null(m$tables$derived_tbl$original_file_sha)
     expect_null(m$tables$derived_tbl$original_format)
   })
 })
 
-test_that("tbit_write skips manifest update when no changes detected", {
+test_that("datom_write skips manifest update when no changes detected", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -986,50 +986,50 @@ test_that("tbit_write skips manifest update when no changes detected", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    fs::dir_create(".tbit")
+    fs::dir_create(".datom")
     empty_manifest <- list(tables = list(), summary = list(total_tables = 0L))
-    jsonlite::write_json(empty_manifest, ".tbit/manifest.json", auto_unbox = TRUE)
+    jsonlite::write_json(empty_manifest, ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "none"
+      .datom_has_changes = function(conn, name, d, m) "none"
     )
 
-    tbit_write(conn, data = data.frame(x = 1), name = "unchanged_tbl")
+    datom_write(conn, data = data.frame(x = 1), name = "unchanged_tbl")
 
-    m <- jsonlite::read_json(".tbit/manifest.json")
+    m <- jsonlite::read_json(".datom/manifest.json")
     expect_equal(length(m$tables), 0)
   })
 })
 
 
-# --- .tbit_has_changes() ------------------------------------------------------
+# --- .datom_has_changes() ------------------------------------------------------
 
 test_that("returns 'full' when table is new (no metadata in S3)", {
   local_mocked_bindings(
-    .tbit_s3_exists = function(conn, s3_key) FALSE
+    .datom_s3_exists = function(conn, s3_key) FALSE
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- .tbit_has_changes(conn, "new_table", "sha1", "meta_sha1")
+  conn <- mock_datom_conn(list())
+  result <- .datom_has_changes(conn, "new_table", "sha1", "meta_sha1")
 
   expect_equal(result, "full")
 })
 
 test_that("returns 'none' when metadata_sha matches", {
   current_meta <- list(data_sha = "sha1", nrow = 10L, ncol = 3L)
-  current_meta_sha <- .tbit_compute_metadata_sha(current_meta)
+  current_meta_sha <- .datom_compute_metadata_sha(current_meta)
 
   local_mocked_bindings(
-    .tbit_s3_exists = function(conn, s3_key) TRUE,
-    .tbit_s3_read_json = function(conn, s3_key) current_meta
+    .datom_s3_exists = function(conn, s3_key) TRUE,
+    .datom_s3_read_json = function(conn, s3_key) current_meta
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- .tbit_has_changes(conn, "tbl", "sha1", current_meta_sha)
+  conn <- mock_datom_conn(list())
+  result <- .datom_has_changes(conn, "tbl", "sha1", current_meta_sha)
 
   expect_equal(result, "none")
 })
@@ -1039,15 +1039,15 @@ test_that("returns 'metadata_only' when data same but metadata different", {
 
   # New metadata has different nrow but same data_sha
   new_meta <- list(data_sha = "sha1", nrow = 20L, ncol = 3L)
-  new_meta_sha <- .tbit_compute_metadata_sha(new_meta)
+  new_meta_sha <- .datom_compute_metadata_sha(new_meta)
 
   local_mocked_bindings(
-    .tbit_s3_exists = function(conn, s3_key) TRUE,
-    .tbit_s3_read_json = function(conn, s3_key) current_meta
+    .datom_s3_exists = function(conn, s3_key) TRUE,
+    .datom_s3_read_json = function(conn, s3_key) current_meta
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- .tbit_has_changes(conn, "tbl", "sha1", new_meta_sha)
+  conn <- mock_datom_conn(list())
+  result <- .datom_has_changes(conn, "tbl", "sha1", new_meta_sha)
 
   expect_equal(result, "metadata_only")
 })
@@ -1056,15 +1056,15 @@ test_that("returns 'full' when data changed", {
   current_meta <- list(data_sha = "sha_old", nrow = 10L, ncol = 3L)
 
   new_meta <- list(data_sha = "sha_new", nrow = 10L, ncol = 3L)
-  new_meta_sha <- .tbit_compute_metadata_sha(new_meta)
+  new_meta_sha <- .datom_compute_metadata_sha(new_meta)
 
   local_mocked_bindings(
-    .tbit_s3_exists = function(conn, s3_key) TRUE,
-    .tbit_s3_read_json = function(conn, s3_key) current_meta
+    .datom_s3_exists = function(conn, s3_key) TRUE,
+    .datom_s3_read_json = function(conn, s3_key) current_meta
   )
 
-  conn <- mock_tbit_conn(list())
-  result <- .tbit_has_changes(conn, "tbl", "sha_new", new_meta_sha)
+  conn <- mock_datom_conn(list())
+  result <- .datom_has_changes(conn, "tbl", "sha_new", new_meta_sha)
 
   expect_equal(result, "full")
 })
@@ -1072,20 +1072,20 @@ test_that("returns 'full' when data changed", {
 test_that("checks correct S3 key for metadata", {
   captured_key <- NULL
   local_mocked_bindings(
-    .tbit_s3_exists = function(conn, s3_key) {
+    .datom_s3_exists = function(conn, s3_key) {
       captured_key <<- s3_key
       FALSE
     }
   )
 
-  conn <- mock_tbit_conn(list())
-  .tbit_has_changes(conn, "customers", "sha1", "meta_sha1")
+  conn <- mock_datom_conn(list())
+  .datom_has_changes(conn, "customers", "sha1", "meta_sha1")
 
   expect_equal(captured_key, "customers/.metadata/metadata.json")
 })
 
 
-# --- .tbit_write_metadata() ---------------------------------------------------
+# --- .datom_write_metadata() ---------------------------------------------------
 
 test_that("writes metadata.json and version_history.json to git repo", {
   withr::with_tempdir({
@@ -1093,7 +1093,7 @@ test_that("writes metadata.json and version_history.json to git repo", {
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Test User", user.email = "test@test.com")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     metadata <- list(
@@ -1102,20 +1102,20 @@ test_that("writes metadata.json and version_history.json to git repo", {
       ncol = 2L,
       colnames = c("id", "val"),
       created_at = "2026-01-01T00:00:00Z",
-      tbit_version = "0.0.1"
+      datom_version = "0.0.1"
     )
-    meta_sha <- .tbit_compute_metadata_sha(metadata)
+    meta_sha <- .datom_compute_metadata_sha(metadata)
 
     # Mock S3 writes — just capture calls
     s3_keys <- character()
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       }
     )
 
-    result <- .tbit_write_metadata(conn, "customers", metadata, meta_sha, message = "Add data")
+    result <- .datom_write_metadata(conn, "customers", metadata, meta_sha, message = "Add data")
 
     # Git files written
     expect_true(fs::file_exists("customers/metadata.json"))
@@ -1142,7 +1142,7 @@ test_that("appends to existing version_history.json", {
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Test", user.email = "test@test.com")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     # Pre-populate history
@@ -1154,13 +1154,13 @@ test_that("appends to existing version_history.json", {
                          auto_unbox = TRUE, pretty = TRUE)
 
     metadata <- list(data_sha = "new_data", nrow = 10L, created_at = "2026-01-01T00:00:00Z")
-    meta_sha <- .tbit_compute_metadata_sha(metadata)
+    meta_sha <- .datom_compute_metadata_sha(metadata)
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
+      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
 
-    .tbit_write_metadata(conn, "tbl", metadata, meta_sha)
+    .datom_write_metadata(conn, "tbl", metadata, meta_sha)
 
     history <- jsonlite::read_json("tbl/version_history.json")
     expect_length(history, 2)
@@ -1175,21 +1175,21 @@ test_that("writes versioned metadata snapshot to S3", {
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Test", user.email = "test@test.com")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
-    meta_sha <- .tbit_compute_metadata_sha(metadata)
+    meta_sha <- .datom_compute_metadata_sha(metadata)
 
     s3_keys <- character()
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       }
     )
 
-    result <- .tbit_write_metadata(conn, "tbl", metadata, meta_sha)
+    result <- .datom_write_metadata(conn, "tbl", metadata, meta_sha)
 
     # Should write 3 S3 keys: metadata.json, version_history.json, {meta_sha}.json
     expect_length(s3_keys, 3)
@@ -1204,17 +1204,17 @@ test_that("uses default commit message when none provided", {
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Test", user.email = "test@test.com")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
-    meta_sha <- .tbit_compute_metadata_sha(metadata)
+    meta_sha <- .datom_compute_metadata_sha(metadata)
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
+      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
 
-    .tbit_write_metadata(conn, "my_table", metadata, meta_sha)
+    .datom_write_metadata(conn, "my_table", metadata, meta_sha)
 
     history <- jsonlite::read_json("my_table/version_history.json")
     expect_equal(history[[1]]$commit_message, "Update my_table")
@@ -1226,17 +1226,17 @@ test_that("returns metadata_sha and paths", {
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Test", user.email = "test@test.com")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$path <- getwd()
 
     metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
-    meta_sha <- .tbit_compute_metadata_sha(metadata)
+    meta_sha <- .datom_compute_metadata_sha(metadata)
 
     local_mocked_bindings(
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
+      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
 
-    result <- .tbit_write_metadata(conn, "tbl", metadata, meta_sha)
+    result <- .datom_write_metadata(conn, "tbl", metadata, meta_sha)
 
     expect_equal(result$metadata_sha, meta_sha)
     expect_length(result$git_paths, 2)
@@ -1245,75 +1245,75 @@ test_that("returns metadata_sha and paths", {
 })
 
 
-# --- tbit_write() -------------------------------------------------------------
+# --- datom_write() -------------------------------------------------------------
 
-test_that("rejects non-tbit_conn", {
-  expect_error(tbit_write(list(), data = data.frame(x = 1), name = "t"), "tbit_conn")
+test_that("rejects non-datom_conn", {
+  expect_error(datom_write(list(), data = data.frame(x = 1), name = "t"), "datom_conn")
 })
 
 test_that("rejects non-data-frame data", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- "/tmp"
-  expect_error(tbit_write(conn, data = "nope", name = "t"), "data frame")
+  expect_error(datom_write(conn, data = "nope", name = "t"), "data frame")
 })
 
 test_that("validates table name", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- "/tmp"
-  expect_error(tbit_write(conn, data = data.frame(x = 1), name = ""), "must not be empty")
+  expect_error(datom_write(conn, data = data.frame(x = 1), name = ""), "must not be empty")
 })
 
 test_that("rejects reader role", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "reader"
   conn$path <- "/tmp"
   expect_error(
-    tbit_write(conn, data = data.frame(x = 1), name = "t"),
+    datom_write(conn, data = data.frame(x = 1), name = "t"),
     "developer"
   )
 })
 
 test_that("rejects conn without path", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- NULL
   expect_error(
-    tbit_write(conn, data = data.frame(x = 1), name = "t"),
+    datom_write(conn, data = data.frame(x = 1), name = "t"),
     "local git repo"
   )
 })
 
-test_that("NULL data + NULL name delegates to tbit_sync_routing", {
-  conn <- mock_tbit_conn(list())
+test_that("NULL data + NULL name delegates to datom_sync_routing", {
+  conn <- mock_datom_conn(list())
   local_mocked_bindings(
-    tbit_sync_routing = function(conn) "sync_routing_called"
+    datom_sync_routing = function(conn) "sync_routing_called"
   )
-  result <- tbit_write(conn, data = NULL, name = NULL)
+  result <- datom_write(conn, data = NULL, name = NULL)
   expect_equal(result, "sync_routing_called")
 })
 
-test_that("NULL data + name delegates to .tbit_sync_metadata", {
-  conn <- mock_tbit_conn(list())
+test_that("NULL data + name delegates to .datom_sync_metadata", {
+  conn <- mock_datom_conn(list())
   local_mocked_bindings(
-    .tbit_sync_metadata = function(conn, name) paste0("sync_meta_", name)
+    .datom_sync_metadata = function(conn, name) paste0("sync_meta_", name)
   )
-  result <- tbit_write(conn, data = NULL, name = "tbl")
+  result <- datom_write(conn, data = NULL, name = "tbl")
   expect_equal(result, "sync_meta_tbl")
 })
 
 test_that("skips write when no changes detected", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- "/tmp/fakerepo"
 
   local_mocked_bindings(
-    .tbit_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "none"
+    .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "none"
   )
 
   df <- data.frame(x = 1:3)
-  result <- tbit_write(conn, data = df, name = "unchanged_tbl")
+  result <- datom_write(conn, data = df, name = "unchanged_tbl")
 
   expect_equal(result$action, "none")
   expect_equal(result$name, "unchanged_tbl")
@@ -1328,23 +1328,23 @@ test_that("performs full write: parquet + metadata + git", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     uploaded_keys <- character()
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "full",
-      .tbit_s3_upload = function(conn, local_path, s3_key) {
+      .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "full",
+      .datom_s3_upload = function(conn, local_path, s3_key) {
         uploaded_keys <<- c(uploaded_keys, s3_key)
         invisible(TRUE)
       },
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
     df <- data.frame(id = 1:5, val = letters[1:5])
-    result <- tbit_write(conn, data = df, name = "sales", message = "Add sales")
+    result <- datom_write(conn, data = df, name = "sales", message = "Add sales")
 
     # Returns correct structure
     expect_equal(result$name, "sales")
@@ -1376,23 +1376,23 @@ test_that("metadata-only write skips parquet upload", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     uploaded_keys <- character()
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "metadata_only",
-      .tbit_s3_upload = function(conn, local_path, s3_key) {
+      .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "metadata_only",
+      .datom_s3_upload = function(conn, local_path, s3_key) {
         uploaded_keys <<- c(uploaded_keys, s3_key)
         invisible(TRUE)
       },
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
     df <- data.frame(x = 1)
-    result <- tbit_write(conn, data = df, name = "tbl")
+    result <- datom_write(conn, data = df, name = "tbl")
 
     expect_equal(result$action, "metadata_only")
     # No parquet upload
@@ -1413,18 +1413,18 @@ test_that("uses default commit message when none provided", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, sk, d) invisible(TRUE),
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    tbit_write(conn, data = data.frame(x = 1), name = "my_table")
+    datom_write(conn, data = data.frame(x = 1), name = "my_table")
 
     log <- git2r::commits(repo)
     expect_equal(log[[1]]$message, "Update my_table")
@@ -1432,66 +1432,66 @@ test_that("uses default commit message when none provided", {
 })
 
 test_that("data_sha is deterministic for same data", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- "/tmp/fakerepo"
 
   shas <- character()
   local_mocked_bindings(
-    .tbit_has_changes = function(conn, name, new_data_sha, new_metadata_sha) {
+    .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) {
       shas <<- c(shas, new_data_sha)
       "none"
     }
   )
 
   df <- data.frame(x = 1:10, y = letters[1:10])
-  tbit_write(conn, data = df, name = "t1")
-  tbit_write(conn, data = df, name = "t2")
+  datom_write(conn, data = df, name = "t1")
+  datom_write(conn, data = df, name = "t2")
 
   expect_equal(shas[1], shas[2])
 })
 
 
-# --- .tbit_sync_metadata() ---------------------------------------------------
+# --- .datom_sync_metadata() ---------------------------------------------------
 
 test_that("validates table name", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- "/tmp"
-  expect_error(.tbit_sync_metadata(conn, ""), "must not be empty")
+  expect_error(.datom_sync_metadata(conn, ""), "must not be empty")
 })
 
 test_that("rejects reader role", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "reader"
   conn$path <- "/tmp"
-  expect_error(.tbit_sync_metadata(conn, "tbl"), "developer")
+  expect_error(.datom_sync_metadata(conn, "tbl"), "developer")
 })
 
 test_that("rejects conn without path", {
-  conn <- mock_tbit_conn(list())
+  conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- NULL
-  expect_error(.tbit_sync_metadata(conn, "tbl"), "local git repo")
+  expect_error(.datom_sync_metadata(conn, "tbl"), "local git repo")
 })
 
 test_that("errors when metadata.json missing from local repo", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .tbit_git_pull = function(...) invisible(TRUE)
+      .datom_git_pull = function(...) invisible(TRUE)
     )
 
-    expect_error(.tbit_sync_metadata(conn, "ghost"), "No metadata found")
+    expect_error(.datom_sync_metadata(conn, "ghost"), "No metadata found")
   })
 })
 
 test_that("skips sync when no changes detected", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -1501,11 +1501,11 @@ test_that("skips sync when no changes detected", {
     jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "none",
-      .tbit_git_pull = function(...) invisible(TRUE)
+      .datom_has_changes = function(conn, name, d, m) "none",
+      .datom_git_pull = function(...) invisible(TRUE)
     )
 
-    result <- .tbit_sync_metadata(conn, "tbl")
+    result <- .datom_sync_metadata(conn, "tbl")
 
     expect_equal(result$action, "none")
     expect_equal(result$name, "tbl")
@@ -1520,7 +1520,7 @@ test_that("syncs metadata.json to S3 on change", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -1530,16 +1530,16 @@ test_that("syncs metadata.json to S3 on change", {
 
     s3_keys <- character()
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "metadata_only",
-      .tbit_git_pull = function(...) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_has_changes = function(conn, name, d, m) "metadata_only",
+      .datom_git_pull = function(...) invisible(TRUE),
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       },
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    result <- .tbit_sync_metadata(conn, "tbl")
+    result <- .datom_sync_metadata(conn, "tbl")
 
     expect_equal(result$action, "metadata_only")
     expect_true(any(grepl("metadata.json$", s3_keys)))
@@ -1554,7 +1554,7 @@ test_that("syncs version_history.json to S3 when present", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -1566,16 +1566,16 @@ test_that("syncs version_history.json to S3 when present", {
 
     s3_keys <- character()
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "full",
-      .tbit_git_pull = function(...) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_git_pull = function(...) invisible(TRUE),
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       },
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
-    result <- .tbit_sync_metadata(conn, "tbl")
+    result <- .datom_sync_metadata(conn, "tbl")
 
     expect_equal(result$action, "full")
     expect_length(s3_keys, 2)
@@ -1592,7 +1592,7 @@ test_that("commits and pushes after sync", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "init")
 
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -1602,16 +1602,16 @@ test_that("commits and pushes after sync", {
 
     pushed <- FALSE
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "metadata_only",
-      .tbit_git_pull = function(...) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .tbit_git_push = function(path) {
+      .datom_has_changes = function(conn, name, d, m) "metadata_only",
+      .datom_git_pull = function(...) invisible(TRUE),
+      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .datom_git_push = function(path) {
         pushed <<- TRUE
         invisible(TRUE)
       }
     )
 
-    result <- .tbit_sync_metadata(conn, "tbl")
+    result <- .datom_sync_metadata(conn, "tbl")
 
     # Git commit was made
     log <- git2r::commits(repo)
@@ -1625,7 +1625,7 @@ test_that("commits and pushes after sync", {
 
 test_that("aborts S3 sync when git commit/push fails", {
   withr::with_tempdir({
-    conn <- mock_tbit_conn(list())
+    conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
@@ -1635,18 +1635,18 @@ test_that("aborts S3 sync when git commit/push fails", {
 
     s3_called <- FALSE
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "metadata_only",
-      .tbit_git_pull = function(...) invisible(TRUE),
-      .tbit_s3_write_json = function(conn, s3_key, data) {
+      .datom_has_changes = function(conn, name, d, m) "metadata_only",
+      .datom_git_pull = function(...) invisible(TRUE),
+      .datom_s3_write_json = function(conn, s3_key, data) {
         s3_called <<- TRUE
         invisible(TRUE)
       },
-      .tbit_git_commit = function(path, files, message) stop("Not a git repo"),
-      .tbit_git_push = function(path) invisible(TRUE)
+      .datom_git_commit = function(path, files, message) stop("Not a git repo"),
+      .datom_git_push = function(path) invisible(TRUE)
     )
 
     # Git failure aborts the operation — S3 is never touched
-    expect_error(.tbit_sync_metadata(conn, "tbl"), "Git commit/push failed")
+    expect_error(.datom_sync_metadata(conn, "tbl"), "Git commit/push failed")
     expect_false(s3_called)
   })
 })

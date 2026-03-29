@@ -13,7 +13,7 @@
 #'   Useful when row order shouldn't affect identity.
 #' @return Character SHA-256 hash.
 #' @keywords internal
-.tbit_compute_data_sha <- function(data, sort_columns = FALSE, sort_rows = FALSE) {
+.datom_compute_data_sha <- function(data, sort_columns = FALSE, sort_rows = FALSE) {
   if (!is.data.frame(data)) {
     cli::cli_abort("{.arg data} must be a data frame.")
   }
@@ -47,7 +47,7 @@
 #'
 #' Sorts fields alphabetically before hashing for deterministic results,
 #' regardless of field insertion order. Volatile fields (`created_at`,
-#' `tbit_version`) are excluded so that identical semantic content always
+#' `datom_version`) are excluded so that identical semantic content always
 #' produces the same SHA, regardless of when it was written.
 #'
 #' Hashes a JSON canonical form rather than the R object directly. This
@@ -59,13 +59,13 @@
 #' @param metadata Named list of metadata fields.
 #' @return Character SHA-256 hash.
 #' @keywords internal
-.tbit_compute_metadata_sha <- function(metadata) {
+.datom_compute_metadata_sha <- function(metadata) {
   if (!is.list(metadata) || is.null(names(metadata))) {
     cli::cli_abort("{.arg metadata} must be a named list.")
   }
 
   # Exclude volatile fields that don't define content identity
-  volatile <- c("created_at", "tbit_version")
+  volatile <- c("created_at", "datom_version")
   semantic <- metadata[setdiff(names(metadata), volatile)]
 
   sorted_names <- sort(names(semantic))
@@ -84,7 +84,7 @@
 #' @param path Path to file.
 #' @return Character SHA-256 hash.
 #' @keywords internal
-.tbit_compute_file_sha <- function(path) {
+.datom_compute_file_sha <- function(path) {
   path <- fs::path_abs(path)
 
   if (!fs::file_exists(path)) {
@@ -101,8 +101,8 @@
 #' @param name Table name.
 #' @return Summary of sync operation.
 #' @keywords internal
-.tbit_sync_metadata <- function(conn, name) {
-  .tbit_validate_name(name)
+.datom_sync_metadata <- function(conn, name) {
+  .datom_validate_name(name)
 
   if (conn$role != "developer") {
     cli::cli_abort(c(
@@ -114,7 +114,7 @@
   if (is.null(conn$path)) {
     cli::cli_abort(c(
       "Metadata sync requires a local git repo path.",
-      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+      "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
 
@@ -122,7 +122,7 @@
   table_dir <- fs::path(repo_path, name)
 
   # Pull before write to ensure fresh state (Phase 7)
-  .tbit_git_pull(repo_path)
+  .datom_git_pull(repo_path)
 
   metadata_path <- fs::path(table_dir, "metadata.json")
   if (!fs::file_exists(metadata_path)) {
@@ -135,10 +135,10 @@
   # Read metadata from git repo
 
   metadata <- jsonlite::read_json(metadata_path, simplifyVector = TRUE)
-  metadata_sha <- .tbit_compute_metadata_sha(metadata)
+  metadata_sha <- .datom_compute_metadata_sha(metadata)
 
   # Check for changes against S3
-  change_type <- .tbit_has_changes(conn, name, metadata$data_sha, metadata_sha)
+  change_type <- .datom_has_changes(conn, name, metadata$data_sha, metadata_sha)
 
   if (change_type == "none") {
     cli::cli_alert_info("No metadata changes for {.val {name}}. Skipping sync.")
@@ -162,8 +162,8 @@
 
   commit_sha <- tryCatch(
     {
-      sha <- .tbit_git_commit(repo_path, git_files, paste0("Sync metadata for ", name))
-      .tbit_git_push(repo_path)
+      sha <- .datom_git_commit(repo_path, git_files, paste0("Sync metadata for ", name))
+      .datom_git_push(repo_path)
       sha
     },
     error = function(e) {
@@ -177,7 +177,7 @@
 
   # Sync metadata files to S3 (only after git succeeds)
   s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
-  .tbit_s3_write_json(conn, s3_metadata_key, metadata)
+  .datom_s3_write_json(conn, s3_metadata_key, metadata)
 
   s3_keys <- s3_metadata_key
 
@@ -185,7 +185,7 @@
   if (fs::file_exists(history_path)) {
     history <- jsonlite::read_json(history_path)
     s3_history_key <- paste0(name, "/.metadata/version_history.json")
-    .tbit_s3_write_json(conn, s3_history_key, history)
+    .datom_s3_write_json(conn, s3_history_key, history)
     s3_keys <- c(s3_keys, s3_history_key)
   }
 
@@ -210,7 +210,7 @@
 #' @param n Number of characters to keep. Default 8.
 #' @return Character vector of abbreviated hashes.
 #' @keywords internal
-.tbit_abbreviate_sha <- function(sha, n = 8L) {
+.datom_abbreviate_sha <- function(sha, n = 8L) {
   if (!is.character(sha)) return(sha)
   ifelse(is.na(sha), NA_character_, substr(sha, 1L, n))
 }

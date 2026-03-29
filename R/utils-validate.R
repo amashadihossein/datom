@@ -1,13 +1,13 @@
 # Internal validation helpers
 
 # Reserved names that cannot be used as table names
-.tbit_reserved_names <- c(
-  ".metadata", ".tbit", "input_files", "tbit", ".redirect.json",
+.datom_reserved_names <- c(
+  ".metadata", ".datom", "input_files", "datom", ".redirect.json",
   ".git", ".gitignore", "renv"
 )
 
 
-#' Validate a tbit Table Name
+#' Validate a datom Table Name
 #'
 #' Checks that a table name is filesystem-safe and S3-safe. Returns the
 #' name invisibly on success, errors with a clear message on failure.
@@ -15,7 +15,7 @@
 #' @param name Character string to validate as a table name.
 #' @return Invisible `name` on success.
 #' @keywords internal
-.tbit_validate_name <- function(name) {
+.datom_validate_name <- function(name) {
   if (!is.character(name) || length(name) != 1L || is.na(name)) {
     cli::cli_abort("{.arg name} must be a single non-NA character string.")
   }
@@ -43,7 +43,7 @@
   }
 
   name_lower <- tolower(name)
-  if (name_lower %in% .tbit_reserved_names) {
+  if (name_lower %in% .datom_reserved_names) {
     cli::cli_abort(
       "{.val {name}} is a reserved name and cannot be used as a table name."
     )
@@ -57,16 +57,16 @@
 
 #' Derive Credential Environment Variable Names
 #'
-#' Converts a project name into the standard tbit credential env var names.
-#' Convention: `TBIT_{PROJECT_NAME}_ACCESS_KEY_ID` /
-#' `TBIT_{PROJECT_NAME}_SECRET_ACCESS_KEY`
+#' Converts a project name into the standard datom credential env var names.
+#' Convention: `DATOM_{PROJECT_NAME}_ACCESS_KEY_ID` /
+#' `DATOM_{PROJECT_NAME}_SECRET_ACCESS_KEY`
 #'
 #' Normalisation: uppercase, spaces/hyphens → underscores.
 #'
 #' @param project_name Project name string.
 #' @return Named list with `access_key_env` and `secret_key_env`.
 #' @keywords internal
-.tbit_derive_cred_names <- function(project_name) {
+.datom_derive_cred_names <- function(project_name) {
   if (!is.character(project_name) || length(project_name) != 1L ||
       is.na(project_name) || !nzchar(project_name)) {
     cli::cli_abort("{.arg project_name} must be a single non-empty string.")
@@ -76,8 +76,8 @@
   normalized <- gsub("[- ]+", "_", normalized)
 
   list(
-    access_key_env = paste0("TBIT_", normalized, "_ACCESS_KEY_ID"),
-    secret_key_env = paste0("TBIT_", normalized, "_SECRET_ACCESS_KEY")
+    access_key_env = paste0("DATOM_", normalized, "_ACCESS_KEY_ID"),
+    secret_key_env = paste0("DATOM_", normalized, "_SECRET_ACCESS_KEY")
   )
 }
 
@@ -93,11 +93,11 @@
 #' @return Invisible named list with `access_key_env` and `secret_key_env`
 #'   (the derived names, for downstream use).
 #' @keywords internal
-.tbit_check_credentials <- function(project_name,
+.datom_check_credentials <- function(project_name,
                                     role = c("reader", "developer")) {
   role <- match.arg(role)
 
-  cred_names <- .tbit_derive_cred_names(project_name)
+  cred_names <- .datom_derive_cred_names(project_name)
 
   missing <- character(0)
 
@@ -131,7 +131,7 @@
 #' Check Whether an S3 Namespace is Free
 #'
 #' Checks for the existence of `.metadata/manifest.json` in the target S3
-#' namespace. If found, the namespace is occupied by an existing tbit project.
+#' namespace. If found, the namespace is occupied by an existing datom project.
 #' Returns `TRUE` if the namespace is free. Aborts with an actionable error
 #' if occupied, showing the existing project name when possible.
 #'
@@ -139,19 +139,19 @@
 #' `get_object`) when the namespace is occupied, to extract the project name
 #' for the error message.
 #'
-#' @param conn A `tbit_conn` object (typically a temporary conn built by
-#'   `tbit_init_repo()` before the repo is fully initialised).
+#' @param conn A `datom_conn` object (typically a temporary conn built by
+#'   `datom_init_repo()` before the repo is fully initialised).
 #' @return Invisible `TRUE` if the namespace is free.
 #' @keywords internal
-.tbit_check_s3_namespace_free <- function(conn) {
-  occupied <- .tbit_s3_exists(conn, ".metadata/manifest.json")
+.datom_check_s3_namespace_free <- function(conn) {
+  occupied <- .datom_s3_exists(conn, ".metadata/manifest.json")
 
   if (!occupied) return(invisible(TRUE))
 
   # Namespace is occupied — try to read the project name for a helpful message
 
   existing_project <- tryCatch({
-    manifest <- .tbit_s3_read_json(conn, ".metadata/manifest.json")
+    manifest <- .datom_s3_read_json(conn, ".metadata/manifest.json")
     manifest$project_name %||% "<unknown>"
   }, error = function(e) {
     "<unreadable>"
@@ -160,13 +160,13 @@
   s3_location <- paste0(
     "s3://", conn$bucket, "/",
     if (!is.null(conn$prefix)) paste0(gsub("/+$", "", conn$prefix), "/") else "",
-    "tbit/"
+    "datom/"
   )
 
   cli::cli_abort(c(
     "S3 namespace is already occupied by project {.val {existing_project}}.",
     "x" = "Location: {.val {s3_location}}",
-    "i" = "Each tbit project must use a unique S3 namespace (bucket + prefix).",
+    "i" = "Each datom project must use a unique S3 namespace (bucket + prefix).",
     "i" = "Use a different {.arg prefix} or {.arg bucket}, or pass {.code .force = TRUE} to override."
   ))
 }
