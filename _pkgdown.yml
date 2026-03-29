@@ -3,6 +3,14 @@ url: https://amashadihossein.github.io/datom/
 template:
   bootstrap: 5
 
+home:
+  links:
+  - text: GitHub
+    href: https://github.com/amashadihossein/datom
+
+logo:
+  image: man/figures/logo.svg
+
 navbar:
   structure:
     left: [intro, reference, articles]
