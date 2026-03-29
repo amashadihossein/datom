@@ -161,20 +161,19 @@ current, aborts with:
 
 ### D5: tbit_pull() — Developer Convenience Function
 
-A thin wrapper around git pull that also refreshes the local manifest from S3.
-This ensures the developer's view of the repository is always consistent before
-they start work.
+A thin wrapper around git pull. Git is the source of truth for all metadata
+(manifest, routing, table metadata), so pulling git is sufficient.
 
 ```r
 tbit_pull(conn)
 #> ✔ Pulled 2 commits from origin/main.
-#> ✔ Manifest refreshed from S3.
 ```
 
-Internally:
-1. `git2r::fetch()` + `git2r::merge()` (existing `.tbit_git_push()` logic,
-   extracted as `.tbit_git_pull()`)
-2. Read manifest from S3 and confirm it matches the local `.tbit/manifest.json`
+Internally: `git2r::fetch()` + `git2r::merge()` (existing `.tbit_git_push()`
+logic, extracted as `.tbit_git_pull()`).
+
+**Post-review simplification**: S3 manifest refresh was originally included but
+removed — git is the source of truth, and the manifest is committed to git.
 
 ---
 
@@ -220,9 +219,9 @@ Covers:
 ### Chunk 3: tbit_pull()
 
 - [x] `tbit_pull(conn)` exported and documented
-- [x] Pulls git + refreshes manifest from S3
+- [x] Pulls git (source of truth for all metadata)
 - [x] Works for developer role only (readers have no git)
-- [x] Returns invisible summary (commits pulled, manifest status)
+- [x] Returns invisible summary (commits pulled, branch)
 - [x] Tests: clean pull, nothing to pull, conflict (merge failure) handled
   with clear message
 
@@ -260,26 +259,34 @@ Implementation summary:
 
 **Ready for Chunk 3**: tbit_pull() export
 
-**Chunk 3: tbit_pull() — COMPLETE** (962 tests, 0 failures)
+**Chunk 3: tbit_pull() — COMPLETE** (964 tests, 0 failures)
 
 Implementation summary:
-- `tbit_pull(conn)` exported in `R/sync.R`: validates conn (developer role, has path), records HEAD SHA before pull, calls `.tbit_git_pull()`, counts commits merged via `git2r::ahead_behind()`, then refreshes local `.tbit/manifest.json` from S3.
-- Manifest refresh: checks `.tbit_s3_exists()` first, reads S3 manifest, compares JSON representation with local, overwrites local only when different. Creates `.tbit/` dir if needed.
-- Returns invisible list: `commits_pulled` (integer), `branch` (string), `manifest` (`"refreshed"`, `"unchanged"`, or `"s3_unavailable"`).
-- S3 connectivity errors are caught and surfaced as warnings — git pull still succeeds.
-- 10 new tests in `test-sync.R`: rejects non-conn/reader/no-path, nothing to pull (0 commits), counts 2 upstream commits, manifest refreshed when different, manifest unchanged when identical, S3 error → `"s3_unavailable"`, merge conflict abort, invisible return, creates .tbit dir from scratch.
+- `tbit_pull(conn)` exported in `R/sync.R`: validates conn (developer role, has path), records HEAD SHA before pull, calls `.tbit_git_pull()`, counts commits merged via `git2r::ahead_behind()`.
+- Git is the source of truth — no S3 manifest refresh (removed in post-review).
+- Returns invisible list: `commits_pulled` (integer), `branch` (string).
+- 7 tests in `test-sync.R`: rejects non-conn/reader/no-path, nothing to pull (0 commits), counts 2 upstream commits, merge conflict abort, invisible return.
 
-**Ready for Chunk 4**: Team Collaboration Vignette
-
-**Chunk 4: Team Collaboration Vignette — COMPLETE** (962 tests, 0 failures)
+**Chunk 4: Team Collaboration Vignette — COMPLETE** (964 tests, 0 failures)
 
 Implementation summary:
 - `vignettes/team-collaboration.Rmd` created with `eval = FALSE` (no live S3/git in vignette builds).
-- Sections: Overview, Roles, One-Time Setup (init + S3 namespace safety), Joining (clone + connect), Daily Workflow (pull → receive → sync → validate), Handling Conflicts (push rejected + merge conflict resolution), Setting Up Readers (S3-only access), Credential Management (env var naming convention, multiple projects), Recommended Team Practices (5 tips), Summary table.
+- Sections: Overview, Roles, One-Time Setup (init + S3 namespace safety), Joining (`tbit_clone()`), Daily Workflow (pull → receive → scan → sync → validate), Handling Conflicts (push rejected + merge conflict resolution), Setting Up Readers (S3-only access), Recommended Team Practices (5 tips), Summary table.
+- `vignettes/credentials.Rmd` extracted as standalone vignette: naming convention, `.Renviron`, `keyring`, CI/CD, multi-project, reader vs developer.
 - `tbit_pull` added to pkgdown reference under Sync Operations.
+- `tbit_clone` added to pkgdown reference under Connection & Setup.
 - Renders without errors via `rmarkdown::render()`.
 
-**Phase 7 is complete.** All 4 chunks landed. 962 tests, 0 failures.
+**Post-review refinements** (all applied):
+1. S3 namespace safety example uses correct `project_name`
+2. `tbit_pull()` simplified to git-only (S3 refresh removed)
+3. Note about auto pull-before-push in `tbit_sync()`
+4. `tbit_clone()` added as new export; replaces bare `git clone` in vignette
+5. `tbit_example_data()` used instead of undefined `new_dm_data`
+6. Two-step scan+sync rationale explained; manifest API added to backlog
+7. Credentials extracted to separate `vignette("credentials")`
+
+**Phase 7 is complete.** All 4 chunks + post-review refinements landed. 964 tests, 0 failures.
 
 ---
 
