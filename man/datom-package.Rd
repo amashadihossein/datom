@@ -11,9 +11,9 @@ Provides version-controlled data management by abstracting tables as code in git
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/amashadihossein/tbit}
-  \item \url{https://amashadihossein.github.io/tbit/}
-  \item Report bugs at \url{https://github.com/amashadihossein/tbit/issues}
+  \item \url{https://github.com/amashadihossein/datom}
+  \item \url{https://amashadihossein.github.io/datom/}
+  \item Report bugs at \url{https://github.com/amashadihossein/datom/issues}
 }
 
 }

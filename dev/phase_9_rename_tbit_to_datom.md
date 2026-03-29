@@ -89,7 +89,7 @@ Key renames inside tests:
 - `devtools::test()` — 964 tests pass
 - `grep -r "tbit" DESCRIPTION NAMESPACE inst/ _pkgdown.yml` returns 0 hits
 
-**Status**: [ ] Not started
+**Status**: [x] Complete — DESCRIPTION URLs updated, _pkgdown.yml updated, tbit.Rproj → datom.Rproj. `Package: datom` was already done in Chunk 2.
 
 ---
 

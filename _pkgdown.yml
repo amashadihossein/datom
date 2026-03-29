@@ -1,4 +1,4 @@
-url: https://amashadihossein.github.io/tbit/
+url: https://amashadihossein.github.io/datom/
 
 template:
   bootstrap: 5
@@ -10,50 +10,50 @@ navbar:
   components:
     github:
       icon: fa-github
-      href: https://github.com/amashadihossein/tbit
+      href: https://github.com/amashadihossein/datom
 
 reference:
   - title: "Connection & Setup"
     desc: "Create connections, initialize repositories"
     contents:
-      - tbit_init_repo
-      - tbit_clone
-      - tbit_get_conn
-      - new_tbit_conn
-      - is_tbit_conn
-      - print.tbit_conn
+      - datom_init_repo
+      - datom_clone
+      - datom_get_conn
+      - new_datom_conn
+      - is_datom_conn
+      - print.datom_conn
 
   - title: "Read & Write"
     desc: "Read and write versioned tables"
     contents:
-      - tbit_read
-      - tbit_write
+      - datom_read
+      - datom_write
 
   - title: "Query & Status"
     desc: "List tables, view history, check status"
     contents:
-      - tbit_list
-      - tbit_history
-      - tbit_status
-      - tbit_get_parents
+      - datom_list
+      - datom_history
+      - datom_status
+      - datom_get_parents
 
   - title: "Sync Operations"
     desc: "Batch sync from files, scan manifests, sync metadata to S3"
     contents:
-      - tbit_pull
-      - tbit_sync
-      - tbit_sync_manifest
-      - tbit_sync_routing
+      - datom_pull
+      - datom_sync
+      - datom_sync_manifest
+      - datom_sync_routing
 
   - title: "Validation"
     desc: "Validate repository structure and git-S3 consistency"
     contents:
-      - tbit_validate
-      - tbit_repository_check
-      - is_valid_tbit_repo
+      - datom_validate
+      - datom_repository_check
+      - is_valid_datom_repo
 
   - title: "Example Data"
     desc: "Bundled clinical trial data for examples and vignettes"
     contents:
-      - tbit_example_data
-      - tbit_example_cutoffs
+      - datom_example_data
+      - datom_example_cutoffs
