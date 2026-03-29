@@ -128,3 +128,4 @@ These patterns are non-negotiable for every session:
 4. **Simplicity over cleverness**: If a change doesn't alter behavior, don't add it. When in doubt, do less. Actively resist complexity that exists only for marginally better UX or edge-case coverage.
 5. **E2E after phase completion**: Unit tests are necessary but not sufficient. Before marking a phase complete, run real end-to-end workflows via `dev/dev-sandbox.R` to catch integration bugs.
 6. **Fix bugs immediately**: When E2E reveals a bug, fix it before moving to the next phase. Don't defer bugs that affect correctness.
+7. **Phase completion is mandatory**: When a phase is done, immediately follow the Phase Completion Procedure in `dev/README.md` — migrate learnings to spec/instructions, update README tables, delete the phase doc, and commit. Do NOT start the next phase until this is done. A phase is not "complete" until its doc is deleted.
