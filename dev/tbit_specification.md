@@ -271,7 +271,15 @@ tbit_init_repo(
   prefix = NULL,
   region = NULL,
   max_file_size_gb = 1000,
-  git_ignore = c(...),
+  git_ignore = c(
+    ".Rprofile", ".Renviron", ".Rhistory",
+    ".Rapp.history", ".Rproj.user/",
+    ".DS_Store", "*.csv", "*.tsv",
+    "*.rds", "*.txt", "*.parquet",
+    "*.sas7bdat", ".RData", ".RDataTmp",
+    "*.html", "*.png", "*.pdf",
+    ".vscode/", "rsconnect/"
+  ),
   .force = FALSE
 )
 ```
