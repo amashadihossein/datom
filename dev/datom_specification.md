@@ -1,19 +1,19 @@
-# tbit Package Specification
+# datom Package Specification
 
 ## Overview
 
 Picture an analytical workflow built to derive specific insights from evolving data served as snapshots. Your dataset might consist of 50 or 100 different tables from which you create additional derived tables as your analysis requires. As these tables evolve and your transformation logic changes, ensuring that outputs remain trackable and reproducible for all collaborators becomes increasingly difficult. This scenario is familiar in clinical data science, where agility is key and reproducibility is paramount.
 
-tbit serves as a foundational building block for addressing this use case, leveraging only tools readily available to data scientists: git, GitHub, and cloud object storage. While initially supporting AWS S3, tbit is designed to be cloud storage agnostic. Similarly, though we begin with an R implementation, the architecture supports future Python and other language implementations.
+datom serves as a foundational building block for addressing this use case, leveraging only tools readily available to data scientists: git, GitHub, and cloud object storage. While initially supporting AWS S3, datom is designed to be cloud storage agnostic. Similarly, though we begin with an R implementation, the architecture supports future Python and other language implementations.
 
-The package enables version-controlled data management by abstracting tables as code in git while storing actual data in cloud storage. For collections of tabular datasets that evolve over time, tbit enables:
+The package enables version-controlled data management by abstracting tables as code in git while storing actual data in cloud storage. For collections of tabular datasets that evolve over time, datom enables:
 
 - Setting up cloud-based repositories
 - Frequently syncing data with automatic versioning
 - Tracking complete data lineage
 - Accessing any historical version for reproducibility
 
-The primary utility motivating tbit is building version-tracked data products. Companion packages (dpbuild, dpdeploy, and dpi) build upon tbit to collectively enable creating, managing, and accessing reproducible data products in clinical and scientific workflows.
+The primary utility motivating datom is building version-tracked data products. Companion packages (dpbuild, dpdeploy, and dpi) build upon datom to collectively enable creating, managing, and accessing reproducible data products in clinical and scientific workflows.
 
 ---
 
@@ -34,7 +34,7 @@ The primary utility motivating tbit is building version-tracked data products. C
 
 ### What Gets Versioned
 
-tbit distinguishes between **versioned content** and **tracked configuration**:
+datom distinguishes between **versioned content** and **tracked configuration**:
 
 | Category | Files | Versioned? | Creates version_history entry? |
 |----------|-------|------------|-------------------------------|
@@ -42,9 +42,9 @@ tbit distinguishes between **versioned content** and **tracked configuration**:
 | **Metadata** | `metadata.json`, `{metadata_sha}.json` | Yes | Yes |
 | **Configuration** | `routing.json`, `project.yaml`, `manifest.json` | No | No |
 
-### tbit Version = metadata_sha
+### datom Version = metadata_sha
 
-The tbit version is the **metadata_sha**, computed from alphabetically sorted metadata fields (which include `data_sha`). This uniquely identifies a (data, metadata) pair.
+The datom version is the **metadata_sha**, computed from alphabetically sorted metadata fields (which include `data_sha`). This uniquely identifies a (data, metadata) pair.
 
 ```
 metadata fields (sorted, semantic only) → JSON canonical form → SHA-256 → metadata_sha
@@ -52,17 +52,17 @@ metadata fields (sorted, semantic only) → JSON canonical form → SHA-256 → 
    includes data_sha               jsonlite::toJSON(auto_unbox=TRUE)
 ```
 
-**Volatile fields excluded**: `created_at` and `tbit_version` are stripped before hashing. These change on every call (timestamp) or with package upgrades but don't represent semantic changes to the data or metadata.
+**Volatile fields excluded**: `created_at` and `datom_version` are stripped before hashing. These change on every call (timestamp) or with package upgrades but don't represent semantic changes to the data or metadata.
 
 **JSON canonical form**: The SHA is computed over `jsonlite::toJSON()` output (with `serialize = FALSE`), not over the R object directly. This ensures that metadata built in-memory and metadata read back from JSON (e.g., from S3) always produce the same SHA, despite R type differences introduced by JSON round-tripping (integer vs double, character vector vs list).
 
-**Routing is explicitly excluded** from version computation. Changing routing does not change any tbit version.
+**Routing is explicitly excluded** from version computation. Changing routing does not change any datom version.
 
 ### Git's Role
 
 Git serves two distinct purposes:
 
-| Purpose | Applies to | Git commits? | Affects tbit version? |
+| Purpose | Applies to | Git commits? | Affects datom version? |
 |---------|------------|--------------|----------------------|
 | **Version control** | Data + metadata | Yes | Yes |
 | **Conflict resolution** | Routing + config | Yes | No |
@@ -74,13 +74,13 @@ All files live in one repo for simplicity, but:
 ### Example: Routing Change
 
 ```
-Day 1:  tbit_write() → version "xyz789" created
+Day 1:  datom_write() → version "xyz789" created
         git commit includes: metadata.json, version_history.json
         
 Day 2:  Edit routing.json (add "cached" context)
         git commit includes: routing.json only
         
-Result: tbit version unchanged ("xyz789")
+Result: datom version unchanged ("xyz789")
         git log shows both commits
         version_history.json unchanged
 ```
@@ -100,7 +100,7 @@ Result: tbit version unchanged ("xyz789")
 |-----------|-------------|---------------------|
 | **Data developers** | Create and update datasets, manage evolving clinical/scientific data | AWS credentials + GITHUB_PAT |
 | **Data readers** | Consume versioned data for analysis, need reproducible access | AWS credentials only |
-| **Data products** | Analytical applications built on versioned tbits (via dpbuild, dpdeploy, dpi) | AWS credentials only |
+| **Data products** | Analytical applications built on versioned datoms (via dpbuild, dpdeploy, dpi) | AWS credentials only |
 
 User type is auto-detected based on the presence of `GITHUB_PAT`.
 
@@ -119,7 +119,7 @@ repo/
 ├── input_files/                   # Flat directory for source files (gitignored)
 │   ├── customers.csv
 │   └── orders.tsv
-├── .tbit/
+├── .datom/
 │   ├── project.yaml              # Project configuration
 │   ├── routing.json              # Methods configuration (repo-wide)
 │   ├── manifest.json             # Repository catalog
@@ -135,8 +135,8 @@ repo/
 ```
 bucket/
 └── {optional_prefix}/
-    └── tbit/
-        ├── .access/                   # Reserved for tbitaccess package (do not read/write)
+    └── datom/
+        ├── .access/                   # Reserved for datomaccess package (do not read/write)
         ├── .metadata/
         │   ├── routing.json           # Methods (synced from git)
         │   ├── manifest.json          # Repository catalog
@@ -155,10 +155,10 @@ bucket/
 Data location is implicit, not stored in metadata. Resolution follows redirect chain:
 
 ```
-tbit_read(conn, "customers", ...)
+datom_read(conn, "customers", ...)
         │
         ▼
-1. Check conn.bucket/prefix/tbit/.redirect.json
+1. Check conn.bucket/prefix/datom/.redirect.json
 2. If found → follow to new location, repeat step 1
 3. If not found → this is current location
 4. Read from resolved location
@@ -187,7 +187,7 @@ Current state only — no history stored here:
   "ncol": 15,
   "colnames": ["id", "name", "value"],
   "created_at": "2024-01-15T10:30:00Z",
-  "tbit_version": "0.1.0",
+  "datom_version": "0.1.0",
   "custom": {
     "description": "Response table",
     "tags": ["Efficacy", "SDTM"]
@@ -198,18 +198,18 @@ Current state only — no history stored here:
 | Field | Description |
 |-------|-------------|
 | `data_sha` | SHA of the parquet file stored in S3 |
-| `table_type` | `"imported"` (from source file via `tbit_sync`) or `"derived"` (from data frame via `tbit_write`) |
-| `parents` | Lineage. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version}` entries, or `null` if lineage not recorded. Each entry: `source` = project_name of the parent data space, `table` = table name, `version` = metadata_sha at derivation time. Required by tbitaccess for access gate computation; also used by dp_dev for dependency tracking. |
+| `table_type` | `"imported"` (from source file via `datom_sync`) or `"derived"` (from data frame via `datom_write`) |
+| `parents` | Lineage. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version}` entries, or `null` if lineage not recorded. Each entry: `source` = project_name of the parent data space, `table` = table name, `version` = metadata_sha at derivation time. Required by datomaccess for access gate computation; also used by dp_dev for dependency tracking. |
 | `size_bytes` | Size of the parquet file in bytes |
 | `nrow`, `ncol` | Table dimensions |
 | `colnames` | Column names array |
 | `created_at` | ISO timestamp of creation |
-| `tbit_version` | Version of tbit that created this |
+| `datom_version` | Version of datom that created this |
 | `custom` | User-defined metadata (description, tags, etc.) |
 
 ### version_history.json
 
-Index mapping versions to data with full audit info. **metadata_sha serves as the tbit version** — it uniquely identifies the (data, metadata) pair:
+Index mapping versions to data with full audit info. **metadata_sha serves as the datom version** — it uniquely identifies the (data, metadata) pair:
 
 ```json
 [
@@ -226,16 +226,16 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 
 | Field | Description |
 |-------|-------------|
-| `version` | metadata_sha — the tbit version identifier |
+| `version` | metadata_sha — the datom version identifier |
 | `data_sha` | SHA of the parquet file |
-| `original_file_sha` | SHA of the source file (CSV, TSV, etc.). **Nullable** — present for imported tables (`tbit_sync`); `null` for derived tables (`tbit_write`). Enables skip optimization: scan history for matching file SHA to avoid re-importing unchanged source files, even across version rollbacks. |
+| `original_file_sha` | SHA of the source file (CSV, TSV, etc.). **Nullable** — present for imported tables (`datom_sync`); `null` for derived tables (`datom_write`). Enables skip optimization: scan history for matching file SHA to avoid re-importing unchanged source files, even across version rollbacks. |
 | `timestamp` | ISO timestamp of creation |
 | `author` | Git author (name or email) |
 | `commit_message` | Descriptive message for this version |
 
 **Note:** A single data_sha may appear with multiple versions if metadata was updated without data changes.
 
-**Why no git commit SHA?** tbit uses git as a versioning and conflict-management mechanism, not as a code repository. The meaningful version identifier is `metadata_sha` (content-addressed, deterministic). Since tbit doesn't pair code with data, the git commit SHA adds no reproducibility value — data is either imported from a file or written from an R session, neither of which is captured by the commit. When git context is needed, `timestamp` + `author` or `git log --all -S "<metadata_sha>"` locates the commit directly. Git commit SHA enrichment was considered and designed but deferred — see "Deferred to v2" for the approach if a compelling use case emerges.
+**Why no git commit SHA?** datom uses git as a versioning and conflict-management mechanism, not as a code repository. The meaningful version identifier is `metadata_sha` (content-addressed, deterministic). Since datom doesn't pair code with data, the git commit SHA adds no reproducibility value — data is either imported from a file or written from an R session, neither of which is captured by the commit. When git context is needed, `timestamp` + `author` or `git log --all -S "<metadata_sha>"` locates the commit directly. Git commit SHA enrichment was considered and designed but deferred — see "Deferred to v2" for the approach if a compelling use case emerges.
 
 ### .redirect.json
 
@@ -243,11 +243,11 @@ Left in OLD bucket post-migration:
 
 ```json
 {
-  "redirect_to": "s3://bucket-B/proj/tbit/",
+  "redirect_to": "s3://bucket-B/proj/datom/",
   "migrated_at": "2024-06-01T00:00:00Z",
   "credentials": {
-    "access_key_env": "TBIT_CLINICAL_DATA_ACCESS_KEY_ID_2",
-    "secret_key_env": "TBIT_CLINICAL_DATA_SECRET_ACCESS_KEY_2"
+    "access_key_env": "DATOM_CLINICAL_DATA_ACCESS_KEY_ID_2",
+    "secret_key_env": "DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY_2"
   }
 }
 ```
@@ -260,10 +260,10 @@ Enables old code to find data at new location. Credential env var names follow c
 
 ### Repository Management (Data Developers)
 
-#### tbit_init_repo()
+#### datom_init_repo()
 
 ```r
-tbit_init_repo(
+datom_init_repo(
   path = ".",
   project_name,
   remote_url,
@@ -285,13 +285,13 @@ tbit_init_repo(
 ```
 
 One-time setup for data developers:
-- `project_name`: used to auto-generate credential env var names (`TBIT_{PROJECT_NAME}_*`)
+- `project_name`: used to auto-generate credential env var names (`DATOM_{PROJECT_NAME}_*`)
 - Validates environment variables (auto-generated credential names, GITHUB_PAT)
-- **S3 namespace safety check**: Before writing any files, checks whether `{prefix}/tbit/.metadata/manifest.json` already exists on S3. If occupied, aborts with an actionable error showing the existing project name. Pass `.force = TRUE` to override (intentional takeover only). Connectivity errors are swallowed so offline init still works.
+- **S3 namespace safety check**: Before writing any files, checks whether `{prefix}/datom/.metadata/manifest.json` already exists on S3. If occupied, aborts with an actionable error showing the existing project name. Pass `.force = TRUE` to override (intentional takeover only). Connectivity errors are swallowed so offline init still works.
 - Creates folder structure, initializes git with remote
-- Creates `.tbit/project.yaml` with auto-generated credential config
-- Creates `.tbit/routing.json` with default methods
-- Creates `.tbit/manifest.json` with `project_name` at the top level
+- Creates `.datom/project.yaml` with auto-generated credential config
+- Creates `.datom/routing.json` with default methods
+- Creates `.datom/manifest.json` with `project_name` at the top level
 - Creates `.gitignore` with specified patterns (covers `input_files/` contents)
 - Pushes initial commit to git, then uploads routing + manifest to S3
 - Optional prefix for bucket organization
@@ -299,10 +299,10 @@ One-time setup for data developers:
 
 Returns: Invisible TRUE on success. Cleans up on failure.
 
-#### tbit_get_conn()
+#### datom_get_conn()
 
 ```r
-tbit_get_conn(
+datom_get_conn(
   path = NULL,
   bucket = NULL,
   prefix = NULL,
@@ -315,37 +315,37 @@ Flexible connection for both developers and readers:
 
 | Use case | Parameters |
 |----------|------------|
-| Developer (has repo) | `path = "my_project"` — reads from .tbit/project.yaml |
+| Developer (has repo) | `path = "my_project"` — reads from .datom/project.yaml |
 | Reader (S3 only) | `bucket`, `prefix`, `project_name` — direct connection |
 | dpbuild / dp_dev | `bucket`, `prefix`, `project_name` — programmatic setup |
-| tbitaccess (access points) | `endpoint` — S3 access point URL overriding default endpoint |
+| datomaccess (access points) | `endpoint` — S3 access point URL overriding default endpoint |
 
-`endpoint`: Optional S3 endpoint URL. When `NULL` (default), standard S3 is used. tbitaccess sets this to route reads through S3 access points for IAM enforcement. Stored in the returned `tbit_conn` object and forwarded to all S3 operations.
+`endpoint`: Optional S3 endpoint URL. When `NULL` (default), standard S3 is used. datomaccess sets this to route reads through S3 access points for IAM enforcement. Stored in the returned `datom_conn` object and forwarded to all S3 operations.
 
-- Validates credentials based on `project_name` → `TBIT_{PROJECT_NAME}_*`
-- Follows redirect chain to resolve current data location (**Planned — not yet integrated.** The `.tbit_s3_resolve_redirect()` function exists but is not wired into connection builders. Integration point may be influenced by tbitaccess.)
+- Validates credentials based on `project_name` → `DATOM_{PROJECT_NAME}_*`
+- Follows redirect chain to resolve current data location (**Planned — not yet integrated.** The `.datom_s3_resolve_redirect()` function exists but is not wired into connection builders. Integration point may be influenced by datomaccess.)
 - Auto-detects developer vs reader based on GITHUB_PAT presence
 
-Returns: Connection object (`tbit_conn` S3 class)
+Returns: Connection object (`datom_conn` S3 class)
 
-#### tbit_clone()
+#### datom_clone()
 
 ```r
-tbit_clone(remote_url, path, ...)
+datom_clone(remote_url, path, ...)
 ```
 
-Clones an existing tbit repository and returns a ready-to-use connection:
-- Wraps `git2r::clone()` + `tbit_get_conn(path)`
-- Validates the clone contains `.tbit/project.yaml` (is a tbit repo)
+Clones an existing datom repository and returns a ready-to-use connection:
+- Wraps `git2r::clone()` + `datom_get_conn(path)`
+- Validates the clone contains `.datom/project.yaml` (is a datom repo)
 - Rejects non-empty target directories
-- `...` forwarded to `tbit_get_conn()`
+- `...` forwarded to `datom_get_conn()`
 
-Returns: `tbit_conn` object (developer role)
+Returns: `datom_conn` object (developer role)
 
-#### tbit_pull()
+#### datom_pull()
 
 ```r
-tbit_pull(conn)
+datom_pull(conn)
 ```
 
 Pulls latest git changes from remote. Recommended at the start of each work session:
@@ -358,10 +358,10 @@ Returns: Invisible list with `commits_pulled` (integer) and `branch` (string)
 
 ### Core Operations
 
-#### tbit_read() — All Users
+#### datom_read() — All Users
 
 ```r
-tbit_read(
+datom_read(
   conn,
   name,
   version = NULL,
@@ -371,7 +371,7 @@ tbit_read(
 ```
 
 Unified read function with routing via routing.json:
-- `version`: metadata_sha (tbit version) — if NULL, uses current
+- `version`: metadata_sha (datom version) — if NULL, uses current
 - `context`: runtime behavior selection (default: "default") (**Planned — not yet implemented.** Currently reads parquet directly; routing dispatch via `context` and `routing.json` will be added when downstream consumers exist.)
 - Metadata always from S3 for readers
 - Additional parameters in `...` forwarded to routed function
@@ -380,10 +380,10 @@ Unified read function with routing via routing.json:
 
 Returns: Data frame or routed function result
 
-#### tbit_write() — Data Developers
+#### datom_write() — Data Developers
 
 ```r
-tbit_write(
+datom_write(
   conn,
   data = NULL,
   name = NULL,
@@ -399,19 +399,19 @@ Flexible write operations:
 |------|------|----------|
 | provided | provided | Normal write: commit → push → S3 sync |
 | NULL | provided | Metadata-only sync for single table (e.g., after editing routing.json) |
-| NULL | NULL | Aliases to `tbit_sync_routing()` |
+| NULL | NULL | Aliases to `datom_sync_routing()` |
 
 For normal writes:
 - Change detection via metadata_sha comparison (alphabetically sorted fields)
 - Handles: no-op, metadata-only update, or full update with S3 upload
-- `parents`: list of `list(source, table, version)` entries recording lineage. `NULL` if lineage not recorded. In practice, supplied by dp_dev which tracks dependency versions automatically (e.g., via targets). `tbit_sync()` never passes `parents` — imported tables always have `parents: null`.
+- `parents`: list of `list(source, table, version)` entries recording lineage. `NULL` if lineage not recorded. In practice, supplied by dp_dev which tracks dependency versions automatically (e.g., via targets). `datom_sync()` never passes `parents` — imported tables always have `parents: null`.
 
 Returns: List with deployment details
 
-#### tbit_get_parents() — All Users
+#### datom_get_parents() — All Users
 
 ```r
-tbit_get_parents(conn, name, version = NULL)
+datom_get_parents(conn, name, version = NULL)
 ```
 
 Reads the `parents` field from a table's metadata:
@@ -419,14 +419,14 @@ Reads the `parents` field from a table's metadata:
 - Returns `NULL` for imported tables or derived tables with no recorded lineage.
 - For versioned reads, fetches the `{version}.json` snapshot from S3.
 
-Required by tbitaccess to walk lineage for access gate computation.
+Required by datomaccess to walk lineage for access gate computation.
 
 Returns: List of parent entries (each with `source`, `table`, `version`), or `NULL`.
 
-#### tbit_sync_routing() — Data Developers
+#### datom_sync_routing() — Data Developers
 
 ```r
-tbit_sync_routing(conn, .confirm = TRUE)
+datom_sync_routing(conn, .confirm = TRUE)
 ```
 
 Updates all metadata in S3 to match git after migration or routing changes:
@@ -436,7 +436,7 @@ Updates all metadata in S3 to match git after migration or routing changes:
 
 ```
 # Warning: This will update routing metadata for all 147 tables.
-# Current location: s3://bucket-B/proj/tbit/
+# Current location: s3://bucket-B/proj/datom/
 # Proceed? [y/N]
 ```
 
@@ -444,10 +444,10 @@ Returns: Summary of updated files
 
 ### Batch Operations (Data Developers)
 
-#### tbit_sync_manifest()
+#### datom_sync_manifest()
 
 ```r
-tbit_sync_manifest(conn, path = NULL, pattern = "*")
+datom_sync_manifest(conn, path = NULL, pattern = "*")
 ```
 
 Scans flat `input_files/` directory:
@@ -458,10 +458,10 @@ Scans flat `input_files/` directory:
 
 Returns: Manifest for review
 
-#### tbit_sync()
+#### datom_sync()
 
 ```r
-tbit_sync(conn, manifest, continue_on_error = TRUE)
+datom_sync(conn, manifest, continue_on_error = TRUE)
 ```
 
 Processes new/changed files:
@@ -472,10 +472,10 @@ Returns: Updated manifest with results
 
 ### Query Operations (Data Readers)
 
-#### tbit_list()
+#### datom_list()
 
 ```r
-tbit_list(conn, pattern = NULL, include_versions = FALSE, short_hash = TRUE)
+datom_list(conn, pattern = NULL, include_versions = FALSE, short_hash = TRUE)
 ```
 
 Lists available tables from S3 manifest.
@@ -483,10 +483,10 @@ Lists available tables from S3 manifest.
 
 Returns: Data frame with table info
 
-#### tbit_history()
+#### datom_history()
 
 ```r
-tbit_history(conn, name, n = 10, short_hash = TRUE)
+datom_history(conn, name, n = 10, short_hash = TRUE)
 ```
 
 Shows version history for a table including author and commit message.
@@ -496,10 +496,10 @@ Returns: Data frame with version details
 
 ### Status & Validation
 
-#### tbit_status() — All Users
+#### datom_status() — All Users
 
 ```r
-tbit_status(conn)
+datom_status(conn)
 ```
 
 Displays connection info, table count from S3 manifest, and (for developers) uncommitted git changes and input file sync state.
@@ -511,34 +511,34 @@ Displays connection info, table count from S3 manifest, and (for developers) unc
 
 Returns: Invisibly, a list with `connection`, `tables`, and optionally `git` and `input_files` status details.
 
-#### tbit_validate() — Data Developers
+#### datom_validate() — Data Developers
 
 ```r
-tbit_validate(conn, fix = FALSE)
+datom_validate(conn, fix = FALSE)
 ```
 
 Checks that git metadata matches S3 storage for all tables and repo-level files. Reports mismatches as a structured result.
 
 - **Repo-level checks**: routing.json, manifest.json, migration_history.json exist on S3
 - **Per-table checks**: metadata.json, version_history.json, and `{data_sha}.parquet` exist on S3 for each table tracked in git
-- `fix = TRUE`: attempts to repair inconsistencies by calling `tbit_sync_routing(conn, .confirm = FALSE)`
+- `fix = TRUE`: attempts to repair inconsistencies by calling `datom_sync_routing(conn, .confirm = FALSE)`
 
 Returns: List with `valid` (logical), `repo_files` (data frame), `tables` (data frame), `fixed` (logical).
 
-#### tbit_migrate() — Data Developers (Future)
+#### datom_migrate() — Data Developers (Future)
 
 ```r
-tbit_migrate(conn_from, conn_to, tables, update_redirects)
+datom_migrate(conn_from, conn_to, tables, update_redirects)
 ```
 
 **Not yet implemented.** Managed migration — see "Deferred to v2."
 
 ### Example Data
 
-#### tbit_example_data()
+#### datom_example_data()
 
 ```r
-tbit_example_data(domain = c("dm", "ex"), cutoff_date = NULL)
+datom_example_data(domain = c("dm", "ex"), cutoff_date = NULL)
 ```
 
 Loads bundled clinical trial example data (DM and EX domains) for use in examples and vignettes. The data simulates a Phase II study (STUDY-001) with 48 subjects.
@@ -548,10 +548,10 @@ Loads bundled clinical trial example data (DM and EX domains) for use in example
 
 Returns: Data frame.
 
-#### tbit_example_cutoffs()
+#### datom_example_cutoffs()
 
 ```r
-tbit_example_cutoffs()
+datom_example_cutoffs()
 ```
 
 Returns a named character vector of monthly cutoff dates for STUDY-001, useful for simulating data evolution in examples.
@@ -560,30 +560,30 @@ Returns: Named character vector (`month_1` through `month_6`).
 
 ### Repository Validation
 
-#### is_valid_tbit_repo()
+#### is_valid_datom_repo()
 
 ```r
-is_valid_tbit_repo(
+is_valid_datom_repo(
   path,
-  checks = c("all", "git", "tbit", "renv"),
+  checks = c("all", "git", "datom", "renv"),
   verbose = FALSE
 )
 ```
 
-Validates tbit repository structure. Used internally by tbit functions and externally by dpbuild.
+Validates datom repository structure. Used internally by datom functions and externally by dpbuild.
 
 | Check | Validates |
 |-------|-----------|
 | `git` | Git repository initialized |
-| `tbit` | `.tbit/project.yaml`, `.tbit/routing.json`, `.tbit/manifest.json` exist |
+| `datom` | `.datom/project.yaml`, `.datom/routing.json`, `.datom/manifest.json` exist |
 | `renv` | `renv/` directory exists |
 
 Returns: TRUE or FALSE
 
-#### tbit_repository_check()
+#### datom_repository_check()
 
 ```r
-tbit_repository_check(path)
+datom_repository_check(path)
 ```
 
 Internal function returning detailed check results:
@@ -591,14 +591,14 @@ Internal function returning detailed check results:
 ```r
 list(
   git_initialized = TRUE/FALSE,
-  tbit_initialized = TRUE/FALSE,
-  tbit_routing = TRUE/FALSE,
-  tbit_manifest = TRUE/FALSE,
+  datom_initialized = TRUE/FALSE,
+  datom_routing = TRUE/FALSE,
+  datom_manifest = TRUE/FALSE,
   renv_initialized = TRUE/FALSE
 )
 ```
 
-**dpbuild integration:** `dp_repository_check()` calls `tbit_repository_check()` internally — a valid dp repository is a superset of a valid tbit repository.
+**dpbuild integration:** `dp_repository_check()` calls `datom_repository_check()` internally — a valid dp repository is a superset of a valid datom repository.
 
 ---
 
@@ -609,13 +609,13 @@ list(
 ```r
 # Set environment variables (names auto-generated from project_name)
 Sys.setenv(
-  TBIT_CLINICAL_DATA_ACCESS_KEY_ID = "your_key",
-  TBIT_CLINICAL_DATA_SECRET_ACCESS_KEY = "your_secret",
+  DATOM_CLINICAL_DATA_ACCESS_KEY_ID = "your_key",
+  DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY = "your_secret",
   GITHUB_PAT = "your_pat"
 )
 
 # --- Lead developer: one-time project setup ---
-tbit_init_repo(
+datom_init_repo(
   path = "my_project",
   project_name = "CLINICAL_DATA",
   remote_url = "https://github.com/org/data-repo.git",
@@ -626,15 +626,15 @@ tbit_init_repo(
 )
 
 # --- All other developers: clone existing repo ---
-conn <- tbit_clone("https://github.com/org/data-repo.git", "my_project")
+conn <- datom_clone("https://github.com/org/data-repo.git", "my_project")
 
 # --- Daily workflow ---
-conn <- tbit_get_conn("my_project")
-tbit_pull(conn)  # Always pull at session start
+conn <- datom_get_conn("my_project")
+datom_pull(conn)  # Always pull at session start
 
 # Place source files in input_files/ (must be flat, no subdirectories)
-manifest <- tbit_sync_manifest(conn)
-results <- tbit_sync(conn, manifest)
+manifest <- datom_sync_manifest(conn)
+results <- datom_sync(conn, manifest)
 ```
 
 ### Data Reader Workflow
@@ -642,22 +642,22 @@ results <- tbit_sync(conn, manifest)
 ```r
 # Only need S3 credentials (names match project_name from project.yaml)
 Sys.setenv(
-  TBIT_CLINICAL_DATA_ACCESS_KEY_ID = "your_key",
-  TBIT_CLINICAL_DATA_SECRET_ACCESS_KEY = "your_secret"
+  DATOM_CLINICAL_DATA_ACCESS_KEY_ID = "your_key",
+  DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY = "your_secret"
 )
 
 # Connect to bucket (follows redirects automatically)
-conn <- tbit_get_conn(
+conn <- datom_get_conn(
   bucket = "shared-bucket",
   prefix = "project-alpha/",
   project_name = "clinical_data"
 )
 
 # List available tables
-tables <- tbit_list(conn)
+tables <- datom_list(conn)
 
 # Read data (version = metadata_sha)
-data <- tbit_read(conn, "customers", version = "xyz789")
+data <- datom_read(conn, "customers", version = "xyz789")
 ```
 
 ### Migration Workflow
@@ -668,19 +668,19 @@ data <- tbit_read(conn, "customers", version = "xyz789")
 
 # 2. Place .redirect.json in old bucket with credentials for new bucket
 #    {
-#      "redirect_to": "s3://bucket-B/proj/tbit/",
+#      "redirect_to": "s3://bucket-B/proj/datom/",
 #      "migrated_at": "...",
 #      "credentials": {
-#        "access_key_env": "TBIT_CLINICAL_DATA_ACCESS_KEY_ID_2",
-#        "secret_key_env": "TBIT_CLINICAL_DATA_SECRET_ACCESS_KEY_2"
+#        "access_key_env": "DATOM_CLINICAL_DATA_ACCESS_KEY_ID_2",
+#        "secret_key_env": "DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY_2"
 #      }
 #    }
 
 # 3. Update project.yaml with new bucket
-conn <- tbit_get_conn("my_project")
+conn <- datom_get_conn("my_project")
 
 # 4. Sync routing to new location (interactive confirmation)
-tbit_sync_routing(conn)
+datom_sync_routing(conn)
 ```
 
 ### Data Product Integration
@@ -688,7 +688,7 @@ tbit_sync_routing(conn)
 ```r
 # R data product closure
 dp$input$customers <- function(context = NULL, ...) {
-  tbit_read(
+  datom_read(
     "customers",
     version = "xyz789",
     context = context,
@@ -701,7 +701,7 @@ dp$input$customers <- function(context = NULL, ...) {
 # Python equivalent
 class DataProduct:
     def customers(self, context=None, **kwargs):
-        return tbit_read(
+        return datom_read(
             "customers",
             version="xyz789",
             context=context,
@@ -753,21 +753,21 @@ class DataProduct:
 **Git gates S3.** If git commit or push fails, S3 writes are aborted entirely. This ensures S3 never contains data that git doesn't know about. The user is instructed to fix the git issue and re-run.
 
 **Idempotent re-runs.** If a write fails partway through:
-- `.tbit_has_changes()` checks S3 (the final destination). If S3 is stale, changes are re-detected.
-- `.tbit_git_commit()` returns HEAD SHA when files are already committed (no-op on re-run).
+- `.datom_has_changes()` checks S3 (the final destination). If S3 is stale, changes are re-detected.
+- `.datom_git_commit()` returns HEAD SHA when files are already committed (no-op on re-run).
 - S3 uploads are content-addressed (parquet) or unconditional overwrites (metadata JSON), so re-uploading is safe.
-- `tbit_sync_routing()` is the escape hatch: a full local → S3 push that's always safe to run.
+- `datom_sync_routing()` is the escape hatch: a full local → S3 push that's always safe to run.
 
 **Key functions and their ordering:**
 
 | Function | Order | Git failure behavior |
 |----------|-------|---------------------|
-| `tbit_write()` | local → git → S3 | Hard error, S3 untouched |
-| `.tbit_sync_metadata()` | local → git → S3 | Hard error, S3 untouched |
-| `tbit_sync()` (per-table) | via `tbit_write()` | Per above |
-| `tbit_sync()` (manifest) | local → git → S3 | Warning, S3 skipped |
-| `tbit_sync_routing()` | local → S3 only | N/A (recovery tool) |
-| `tbit_init_repo()` | local → git only | Cleanup on failure |
+| `datom_write()` | local → git → S3 | Hard error, S3 untouched |
+| `.datom_sync_metadata()` | local → git → S3 | Hard error, S3 untouched |
+| `datom_sync()` (per-table) | via `datom_write()` | Per above |
+| `datom_sync()` (manifest) | local → git → S3 | Warning, S3 skipped |
+| `datom_sync_routing()` | local → S3 only | N/A (recovery tool) |
+| `datom_init_repo()` | local → git only | Cleanup on failure |
 
 ### Change Detection
 
@@ -779,9 +779,9 @@ class DataProduct:
 
 ### Conflict Resolution
 
-**Pull-before-push discipline**: Every write path pulls from remote before pushing. `.tbit_git_push()` calls `.tbit_git_pull()` as its first step (fetch + merge). This is the primary defense against diverged histories in multi-developer scenarios.
+**Pull-before-push discipline**: Every write path pulls from remote before pushing. `.datom_git_push()` calls `.datom_git_pull()` as its first step (fetch + merge). This is the primary defense against diverged histories in multi-developer scenarios.
 
-**Stale state detection**: `tbit_sync()` calls `.tbit_check_git_current()` at entry, which compares local HEAD vs remote HEAD via `git2r::ahead_behind()`. If behind, sync aborts with an actionable error directing the user to run `tbit_pull()`. This catches stale state before any local writes occur.
+**Stale state detection**: `datom_sync()` calls `.datom_check_git_current()` at entry, which compares local HEAD vs remote HEAD via `git2r::ahead_behind()`. If behind, sync aborts with an actionable error directing the user to run `datom_pull()`. This catches stale state before any local writes occur.
 
 **Conflict handling**:
 - Auto-pull before push resolves most non-fast-forward situations silently
@@ -796,20 +796,20 @@ class DataProduct:
 
 Credentials are programmatically managed based on `project_name`:
 
-**Convention:** `TBIT_{PROJECT_NAME}_ACCESS_KEY_ID` / `TBIT_{PROJECT_NAME}_SECRET_ACCESS_KEY`
+**Convention:** `DATOM_{PROJECT_NAME}_ACCESS_KEY_ID` / `DATOM_{PROJECT_NAME}_SECRET_ACCESS_KEY`
 
-- `tbit_init_repo(project_name = "clinical_data", ...)` auto-generates env var names
-- User only provides `project_name`; tbit derives credential names (uppercased, spaces → underscores)
-- Ensures unique credentials when dpbuild combines multiple tbit repos
+- `datom_init_repo(project_name = "clinical_data", ...)` auto-generates env var names
+- User only provides `project_name`; datom derives credential names (uppercased, spaces → underscores)
+- Ensures unique credentials when dpbuild combines multiple datom repos
 - Redirects append `_2`, `_3`, etc. for chained migrations
 
-### .tbit/project.yaml
+### .datom/project.yaml
 
 ```yaml
 project_name: clinical_data
 project_description: Shared data repository for analytics
 created_at: 2024-01-15
-tbit_version: 0.1.0
+datom_version: 0.1.0
 
 # Storage configuration
 storage:
@@ -819,8 +819,8 @@ storage:
   region: us-east-1
   max_file_size_gb: 1000
   credentials:
-    access_key_env: "TBIT_CLINICAL_DATA_ACCESS_KEY_ID"      # auto-generated
-    secret_key_env: "TBIT_CLINICAL_DATA_SECRET_ACCESS_KEY"  # auto-generated
+    access_key_env: "DATOM_CLINICAL_DATA_ACCESS_KEY_ID"      # auto-generated
+    secret_key_env: "DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY"  # auto-generated
 
 # Sync configuration
 sync:
@@ -833,22 +833,22 @@ renv: false  # renv integration deferred — see Deferred to v2
 
 **project.yaml is authoritative for write location.** Credential env var names are auto-generated from `project_name` — user should not edit these manually.
 
-### .tbit/routing.json
+### .datom/routing.json
 
 ```json
 {
   "methods": {
     "r": {
-      "default": "tbit::tbit_read"
+      "default": "datom::datom_read"
     },
     "python": {
-      "default": "tbit.read"
+      "default": "datom.read"
     }
   }
 }
 ```
 
-### .tbit/manifest.json
+### .datom/manifest.json
 
 ```json
 {
@@ -873,15 +873,15 @@ renv: false  # renv integration deferred — see Deferred to v2
 }
 ```
 
-**Design rationale**: The "current" fields per table enable sync optimization. When `tbit_sync_manifest()` runs, it compares local file SHAs against manifest. Only on mismatch does it fetch the full `version_history.json`. For repos with 100-300 tables, this avoids hundreds of S3 GETs on unchanged re-runs.
+**Design rationale**: The "current" fields per table enable sync optimization. When `datom_sync_manifest()` runs, it compares local file SHAs against manifest. Only on mismatch does it fetch the full `version_history.json`. For repos with 100-300 tables, this avoids hundreds of S3 GETs on unchanged re-runs.
 
-### .tbit/migration_history.json
+### .datom/migration_history.json
 
 ```json
 [
   {
-    "from": "s3://bucket-A/proj/tbit/",
-    "to": "s3://bucket-B/proj/tbit/",
+    "from": "s3://bucket-A/proj/datom/",
+    "to": "s3://bucket-B/proj/datom/",
     "migrated_at": "2024-06-01T00:00:00Z",
     "reason": "Bucket consolidation"
   }
@@ -903,14 +903,14 @@ Documentary only — does not drive runtime behavior.
 
 ### Project Structure Validation
 
-- Verify `.tbit/`, `.git/`, and `manifest.json` exist
+- Verify `.datom/`, `.git/`, and `manifest.json` exist
 - Validate `input_files/` is flat (no subdirectories)
 - Called internally by all operations
 
 ### Routing Implementation
 
 ```r
-tbit_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
+datom_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 
   if (is.null(context)) context <- "default"
 
@@ -959,19 +959,19 @@ tbit_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 
 ### Connection Architecture
 
-- `tbit_conn` S3 class wraps project_name, bucket, prefix, region, s3_client, path, role, endpoint
+- `datom_conn` S3 class wraps project_name, bucket, prefix, region, s3_client, path, role, endpoint
 - Two modes: **developer** (has local repo path + git) and **reader** (S3 only, no local repo)
 - Role auto-detected: `GITHUB_PAT` present + `path` provided → developer; otherwise → reader
-- `tbit_get_conn(path = ...)` reads `.tbit/project.yaml` (developer path)
-- `tbit_get_conn(bucket = ..., project_name = ...)` builds connection directly (reader path)
-- Credential env var names derived from `project_name`: `TBIT_{NORMALIZED_NAME}_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY`
-- `endpoint`: optional S3 endpoint override stored in conn; when set, all `.tbit_s3_*` calls route through it. Used by tbitaccess to enforce S3 access point routing.
-- `tbit_init_repo()` sets local git config (`user.name`, `user.email`) from global config or fallback — `git2r::default_signature()` requires local config on freshly init'd repos
+- `datom_get_conn(path = ...)` reads `.datom/project.yaml` (developer path)
+- `datom_get_conn(bucket = ..., project_name = ...)` builds connection directly (reader path)
+- Credential env var names derived from `project_name`: `DATOM_{NORMALIZED_NAME}_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY`
+- `endpoint`: optional S3 endpoint override stored in conn; when set, all `.datom_s3_*` calls route through it. Used by datomaccess to enforce S3 access point routing.
+- `datom_init_repo()` sets local git config (`user.name`, `user.email`) from global config or fallback — `git2r::default_signature()` requires local config on freshly init'd repos
 
 ### Dependency Strategy
 
 - `paws.storage` (Imports): S3 operations — lightweight, avoids pulling full `paws`
-- `git2r` (Suggests): Git operations — only needed by data developers, checked at runtime via `.tbit_check_git2r()`
+- `git2r` (Suggests): Git operations — only needed by data developers, checked at runtime via `.datom_check_git2r()`
 - Data readers never need git2r installed
 
 ---
@@ -1007,7 +1007,7 @@ All stored as parquet regardless of input format.
 - Project structure check before all operations
 - Input files directory must be flat (no subdirectories)
 - File format support via rio::import
-- Valid tbit names (filesystem safe)
+- Valid datom names (filesystem safe)
 - File size check against configured limit
 - Metadata sync verification after deployment
 
@@ -1025,10 +1025,10 @@ All stored as parquet regardless of input format.
 
 | Extension | Package | Description |
 |-----------|---------|-------------|
-| Access Control | tbit_auth | Role-based table access, row/column filtering |
-| Performance | tbit_cache | Local caching layer |
-| Sampling | tbit_utils | Read subsets of large tables |
-| Multi-language | tbit (Python) | Python implementation |
+| Access Control | datom_auth | Role-based table access, row/column filtering |
+| Performance | datom_cache | Local caching layer |
+| Sampling | datom_utils | Read subsets of large tables |
+| Multi-language | datom (Python) | Python implementation |
 
 ### Storage Backend Extensibility
 
@@ -1044,8 +1044,8 @@ The routing layer supports future queryable backends (Iceberg, S3 Tables, DuckDB
 {
   "methods": {
     "r": {
-      "default": "tbit::tbit_read",
-      "query": "tbit_query::read_filtered"
+      "default": "datom::datom_read",
+      "query": "datom_query::read_filtered"
     }
   }
 }
@@ -1053,7 +1053,7 @@ The routing layer supports future queryable backends (Iceberg, S3 Tables, DuckDB
 
 ```r
 # Future: query with filters instead of fetching full table
-tbit_read(conn, "customers", 
+datom_read(conn, "customers", 
           version = "xyz789", 
           context = "query", 
           filter = "age > 30",
@@ -1066,9 +1066,9 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
 ### Deferred to v2
 
 - Table-level routing overrides (repo-level only for v1)
-- Managed migration via `tbit_migrate()` (manual external copy for v1)
+- Managed migration via `datom_migrate()` (manual external copy for v1)
 - Queryable backends (Iceberg, S3 Tables)
-- **Integrity state tracking** (`.tbit/state/` directory with per-operation JSON): The current write-ordering discipline (local → git → S3 with idempotent re-runs) provides structural resilience without explicit state files. State tracking could add value for debugging/audit at scale. Reference schema if revisited:
+- **Integrity state tracking** (`.datom/state/` directory with per-operation JSON): The current write-ordering discipline (local → git → S3 with idempotent re-runs) provides structural resilience without explicit state files. State tracking could add value for debugging/audit at scale. Reference schema if revisited:
 
   ```json
   {
@@ -1082,14 +1082,14 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
     "timestamp": "2024-01-15T10:30:00Z"
   }
   ```
-- **Git commit SHA in version_history.json**: Denormalizing the git commit SHA into each version_history entry was designed but deferred. tbit uses git for versioning mechanics, not code pairing — the `metadata_sha` is the meaningful version identifier and `git log -S` can locate commits when needed. If a use case emerges (e.g., regulatory requirement for explicit commit linkage), two enrichment approaches were evaluated:
+- **Git commit SHA in version_history.json**: Denormalizing the git commit SHA into each version_history entry was designed but deferred. datom uses git for versioning mechanics, not code pairing — the `metadata_sha` is the meaningful version identifier and `git log -S` can locate commits when needed. If a use case emerges (e.g., regulatory requirement for explicit commit linkage), two enrichment approaches were evaluated:
 
   *Approach A — Local + S3 enrichment (preferred if implemented):*
   1. Write version_history entry without `commit` → git commit → get SHA
   2. Enrich local file: inject `commit` SHA into the new entry
   3. Push enriched version to S3
   4. Self-healing: previous entry's commit baked into git on next write
-  5. Requires `tbit_pull()` to auto-commit dirty enrichment files before pulling (avoids merge conflicts in multi-developer scenarios)
+  5. Requires `datom_pull()` to auto-commit dirty enrichment files before pulling (avoids merge conflicts in multi-developer scenarios)
 
   *Approach B — S3-only enrichment (simpler but fragile):*
   1. Git always has `commit: null`; only S3 gets enriched after push
@@ -1098,24 +1098,24 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
   Approach A is recommended if this feature is revisited — it preserves recoverability from git alone.
 
 - **Session metadata caching**: Could reduce S3 GETs for repeated reads within a session. Requires careful invalidation design — deferred until the trade-offs are well understood.
-- **renv integration** in `tbit_init_repo()`: Currently deferred; `renv` field in project.yaml defaults to `false`.
+- **renv integration** in `datom_init_repo()`: Currently deferred; `renv` field in project.yaml defaults to `false`.
 
 ### Multi-Developer Collaboration (Implemented)
 
 Team workflows are fully supported:
 
-- **S3 namespace safety check** in `tbit_init_repo()`: Verifies target S3 namespace is unoccupied before writing. `.force = TRUE` overrides for intentional takeover.
-- **`project_name` in manifest.json**: Enables namespace collision detection. `tbit_validate()` cross-checks manifest's `project_name` against `conn$project_name`.
-- **`tbit_pull()`**: Git pull (fetch + merge). Git is the source of truth for all metadata.
-- **`tbit_clone()`**: Wraps `git2r::clone()` + `tbit_get_conn()` — the recommended way for teammates to join a repo.
-- **Pull-before-push discipline**: `.tbit_git_push()` auto-pulls before pushing. `.tbit_check_git_current()` detects stale state at `tbit_sync()` entry.
+- **S3 namespace safety check** in `datom_init_repo()`: Verifies target S3 namespace is unoccupied before writing. `.force = TRUE` overrides for intentional takeover.
+- **`project_name` in manifest.json**: Enables namespace collision detection. `datom_validate()` cross-checks manifest's `project_name` against `conn$project_name`.
+- **`datom_pull()`**: Git pull (fetch + merge). Git is the source of truth for all metadata.
+- **`datom_clone()`**: Wraps `git2r::clone()` + `datom_get_conn()` — the recommended way for teammates to join a repo.
+- **Pull-before-push discipline**: `.datom_git_push()` auto-pulls before pushing. `.datom_check_git_current()` detects stale state at `datom_sync()` entry.
 - **Vignettes**: `vignette("team-collaboration")` for workflows, `vignette("credentials")` for credential setup.
 
 ---
 
 ## Key Differences from Current dpbuild/pins Approach
 
-| Aspect | Current (pins) | tbit |
+| Aspect | Current (pins) | datom |
 |--------|---------------|------|
 | Metadata source | Storage-native | Git-first |
 | Storage format | RDS (R lists) | Parquet (language-agnostic) |
@@ -1131,13 +1131,13 @@ Team workflows are fully supported:
 
 ## Summary
 
-tbit provides robust data versioning optimized for clinical data science workflows where reproducibility is paramount. Designed for analytical environments with many evolving tables (50-100+), tbit makes version tracking seamless for datasets that are large in breadth but manageable in size.
+datom provides robust data versioning optimized for clinical data science workflows where reproducibility is paramount. Designed for analytical environments with many evolving tables (50-100+), datom makes version tracking seamless for datasets that are large in breadth but manageable in size.
 
 **Key architectural decisions**:
 
-1. Single read function (`tbit_read()`) with routing for all access patterns
-2. **tbit version = metadata_sha**: uniquely identifies (data, metadata) pair
-3. **Credential naming convention**: `TBIT_{PROJECT_NAME}_*` auto-generated, enabling multi-repo composition
+1. Single read function (`datom_read()`) with routing for all access patterns
+2. **datom version = metadata_sha**: uniquely identifies (data, metadata) pair
+3. **Credential naming convention**: `DATOM_{PROJECT_NAME}_*` auto-generated, enabling multi-repo composition
 4. Multi-language support via routing layer (R first, Python planned)
 5. Cloud storage agnostic design (S3 first, extensible)
 6. Optimized for clinical/scientific workflows with many tables
@@ -1147,4 +1147,4 @@ tbit provides robust data versioning optimized for clinical data science workflo
 10. Implicit location with redirect chain for seamless migration
 11. project.yaml authoritative; routing.json and S3 metadata derived
 
-This architecture keeps tbit focused on core versioning while providing clear extension points for enterprise features. As part of the larger data product ecosystem (with dpbuild, dpdeploy, and dpi), tbit serves as the foundational layer for reproducible analytical workflows.
+This architecture keeps datom focused on core versioning while providing clear extension points for enterprise features. As part of the larger data product ecosystem (with dpbuild, dpdeploy, and dpi), datom serves as the foundational layer for reproducible analytical workflows.

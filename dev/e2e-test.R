@@ -1,6 +1,6 @@
 # dev/e2e-test.R
 # ──────────────────────────────────────────────────────────────────────────────
-# End-to-end test script for tbit
+# End-to-end test script for datom
 #
 # Usage:
 #   devtools::load_all()
@@ -20,8 +20,8 @@
 
 sandbox_credentials(
   project_name = "STUDY_001",
-  access_key   = keyring::key_get("AWS_ACCESS_KEY", "tbit-developer", "remotes"),
-  secret_key   = keyring::key_get("AWS_SECRET_KEY", "tbit-developer", "remotes"),
+  access_key   = keyring::key_get("AWS_ACCESS_KEY", "datom-developer", "remotes"),
+  secret_key   = keyring::key_get("AWS_SECRET_KEY", "datom-developer", "remotes"),
   github_pat   = keyring::key_get("GITHUB_PAT", "kol", "remotes")
 )
 
@@ -30,7 +30,7 @@ sandbox_credentials(
 env <- sandbox_up(
   project_name = "STUDY_001",
   repo_name    = "study-001-data",
-  bucket       = "tbit-test",
+  bucket       = "datom-test",
   prefix       = NULL,
   region       = "us-east-1",
   populate     = TRUE,
@@ -41,21 +41,21 @@ conn <- env$conn
 
 # --- Explore imported tables -------------------------------------------------
 
-tbit_list(conn)
+datom_list(conn)
 
-dm <- tbit_read(conn, "dm")
+dm <- datom_read(conn, "dm")
 head(dm)
 
-tbit_history(conn, "dm")
+datom_history(conn, "dm")
 
 # Parents should be NULL for imported tables
-tbit_get_parents(conn, "dm")
+datom_get_parents(conn, "dm")
 
 # --- Write a derived table with parents --------------------------------------
 
-ex <- tbit_read(conn, "ex")
-dm_meta <- tbit_history(conn, "dm")
-ex_meta <- tbit_history(conn, "ex")
+ex <- datom_read(conn, "ex")
+dm_meta <- datom_history(conn, "dm")
+ex_meta <- datom_history(conn, "ex")
 
 summary_trt_by_sex <- ex |>
   dplyr::select(STUDYID, USUBJID, EXTRT) |>
@@ -63,7 +63,7 @@ summary_trt_by_sex <- ex |>
   dplyr::group_by(SEX, EXTRT) |>
   dplyr::summarise(n = dplyr::n(), .groups = "drop")
 
-tbit_write(
+datom_write(
   conn,
   data    = summary_trt_by_sex,
   name    = "summary_trt_by_sex",
@@ -76,14 +76,14 @@ tbit_write(
 
 # --- Verify Phase 8 fields --------------------------------------------------
 
-tbit_list(conn)
-tbit_get_parents(conn, "summary_trt_by_sex")
-tbit_history(conn, "summary_trt_by_sex")
+datom_list(conn)
+datom_get_parents(conn, "summary_trt_by_sex")
+datom_history(conn, "summary_trt_by_sex")
 
 # --- Validate and status -----------------------------------------------------
 
-tbit_validate(conn)
-tbit_status(conn)
+datom_validate(conn)
+datom_status(conn)
 
 # --- Tear down ---------------------------------------------------------------
 # sandbox_down(env)

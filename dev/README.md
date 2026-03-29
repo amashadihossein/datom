@@ -1,4 +1,4 @@
-# tbit Development Hub
+# datom Development Hub
 
 ## Documentation Hierarchy
 
@@ -9,9 +9,9 @@ This folder contains all development documentation following a hierarchical chai
          ↓
 dev/README.md                       ← This file: navigation hub
          ↓
-dev/tbit_specification.md           ← Design spec (authoritative, evolves slowly)
+dev/datom_specification.md           ← Design spec (authoritative, evolves slowly)
 dev/daapr_architecture.md           ← Ecosystem context
-dev/tbitaccess_overview.md          ← tbitaccess sister package context (forward-looking)
+dev/datomaccess_overview.md          ← datomaccess sister package context (forward-looking)
          ↓
 dev/phase_{n}_{name}.md             ← Active development plans (temporary)
          ↓
@@ -35,7 +35,7 @@ Phase plans are **temporary working documents**:
 | Content Type | Location | Lifecycle |
 |--------------|----------|-----------|
 | Coding style, conventions | `.github/copilot-instructions.md` | Permanent |
-| Architecture, API design | `dev/tbit_specification.md` | Permanent, evolves |
+| Architecture, API design | `dev/datom_specification.md` | Permanent, evolves |
 | Ecosystem context | `dev/daapr_architecture.md` | Permanent |
 | Current work, decisions | `dev/phase_*.md` | Temporary |
 | Implementation details discovered | Migrate to spec, then delete | — |
@@ -46,18 +46,18 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| Phase 9: Rename tbit → datom | In progress | `dev/phase_9_rename_tbit_to_datom.md` |
+| Phase 9: Rename datom → datom | In progress | `dev/phase_9_rename_datom_to_datom.md` |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
-| Phase 7: Multi-Developer Collaboration | 2026-03-28 | 964 | S3 namespace safety check in `tbit_init_repo()`, pull-before-push discipline (`.tbit_git_pull`, `.tbit_check_git_current`), `tbit_pull()` export (git-only, no S3 refresh — git is source of truth), `tbit_clone()` export, team collaboration vignette, credentials vignette, `project_name` in manifest, `.force` bypass, `tbit_validate()` project_name cross-check |
-| Phase 8: Metadata Enrichment & Table Types | 2026-03-28 | 905 | `table_type`, `size_bytes`, `parents`, `original_file_sha` in version_history, `tbit_get_parents()`, `endpoint` param, `.access/` namespace safety. Post-phase bug fixes: manifest update in `tbit_write`, `tbit_init_repo` S3 push, idempotent SHA computation (JSON canonical form, volatile field exclusion, version_history dedup guard) |
-| Phase 6: Sync & Validation | 2026-02-15 | 130 | tbit_sync_manifest, tbit_sync (rio import), tbit_sync_routing, tbit_validate (git-S3 consistency), tbit_status |
-| Phase 5: Read/Write Workflows | 2026-02-15 | 143 | tbit_read (version resolution), tbit_write (change detection, parquet+metadata), .tbit_sync_metadata, tbit_list, tbit_history |
-| Phase 4.5: S3 Refactor | 2026-02-15 | 99 | Refactored S3 utils from (s3_client, bucket, s3_key) to (conn, s3_key), added mock_tbit_conn helper |
-| Phase 4: Connection & Init | 2026-02-15 | 115 | tbit_conn S3 class, tbit_get_conn (developer/reader), tbit_init_repo, credential derivation |
+| Phase 7: Multi-Developer Collaboration | 2026-03-28 | 964 | S3 namespace safety check in `datom_init_repo()`, pull-before-push discipline (`.datom_git_pull`, `.datom_check_git_current`), `datom_pull()` export (git-only, no S3 refresh — git is source of truth), `datom_clone()` export, team collaboration vignette, credentials vignette, `project_name` in manifest, `.force` bypass, `datom_validate()` project_name cross-check |
+| Phase 8: Metadata Enrichment & Table Types | 2026-03-28 | 905 | `table_type`, `size_bytes`, `parents`, `original_file_sha` in version_history, `datom_get_parents()`, `endpoint` param, `.access/` namespace safety. Post-phase bug fixes: manifest update in `datom_write`, `datom_init_repo` S3 push, idempotent SHA computation (JSON canonical form, volatile field exclusion, version_history dedup guard) |
+| Phase 6: Sync & Validation | 2026-02-15 | 130 | datom_sync_manifest, datom_sync (rio import), datom_sync_routing, datom_validate (git-S3 consistency), datom_status |
+| Phase 5: Read/Write Workflows | 2026-02-15 | 143 | datom_read (version resolution), datom_write (change detection, parquet+metadata), .datom_sync_metadata, datom_list, datom_history |
+| Phase 4.5: S3 Refactor | 2026-02-15 | 99 | Refactored S3 utils from (s3_client, bucket, s3_key) to (conn, s3_key), added mock_datom_conn helper |
+| Phase 4: Connection & Init | 2026-02-15 | 115 | datom_conn S3 class, datom_get_conn (developer/reader), datom_init_repo, credential derivation |
 | Phase 3: Git Operations | 2026-02-14 | 47 | git2r wrappers: check, author, branch, commit, push (fetch+merge+push) |
 | Phase 2: S3 Operations | 2026-02-10 | 99 | S3 client, upload/download/exists, JSON read/write, redirect resolution |
 | Phase 1: Core Utilities | 2026-02-09 | 131 | SHA, paths, name validation, repo validation |
@@ -66,7 +66,7 @@ Phase plans are **temporary working documents**:
 
 **dev/dev-sandbox.R**: Automated setup/teardown for testing workflows
 
-- `sandbox_up()`: Creates GitHub repo + runs `tbit_init_repo()` + populates with example data
+- `sandbox_up()`: Creates GitHub repo + runs `datom_init_repo()` + populates with example data
 - `sandbox_down()`: Wipes S3 namespace + deletes GitHub repo + removes local directory
 - `sandbox_reset()`: Full teardown + setup in one call
 - Replaces manual 5-step workflow (create repo, walk vignette, delete S3, delete repo, delete local)
@@ -78,15 +78,15 @@ Items discovered during development but intentionally deferred. Review periodica
 
 | Item | Discovered In | Reason Deferred | Priority |
 |------|---------------|-----------------|----------|
-| Derived tbit path convention (raw at top, derived in dp subfolder) | Phase 1 | dpbuild concern — tbit handles via prefix param | Low (dpbuild) |
-| renv::init() in tbit_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
-| Redirect resolution in tbit_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
-| Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future tbit release | Medium |
+| Derived datom path convention (raw at top, derived in dp subfolder) | Phase 1 | dpbuild concern — datom handles via prefix param | Low (dpbuild) |
+| renv::init() in datom_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
+| Redirect resolution in datom_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
+| Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |
 
 **Backlog lifecycle**:
 1. Discovered during phase work → add here with context
 2. When planning next phase → review for inclusion
-3. If promoting to spec → move to `tbit_specification.md` "Deferred to v2" section
+3. If promoting to spec → move to `datom_specification.md` "Deferred to v2" section
 4. If abandoned → delete with brief note why
 
 ### Phase Roadmap
@@ -158,7 +158,7 @@ After each chunk is implemented, I deliver **four things in order**:
 1. **Write tests** — full test coverage for the chunk's functions
 2. **Run tests** — execute and fix until all pass (green suite)
 3. **Minimalist walkthrough snippet** — a clean, self-contained R snippet for you to paste into the console and step through interactively (use `debugonce()` to drop into any function)
-4. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit with a concise message (e.g., `"Phase 4 Chunk 2: tbit_conn class"`), then you push
+4. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit with a concise message (e.g., `"Phase 4 Chunk 2: datom_conn class"`), then you push
 
 ### QA Methods
 
@@ -186,7 +186,7 @@ Example:
 ```bash
 # Within Chunk 1
 git add R/utils-sha.R tests/testthat/test-utils-sha.R
-git commit -m "[Phase 1 Chunk 1] Implement .tbit_compute_data_sha with tests"
+git commit -m "[Phase 1 Chunk 1] Implement .datom_compute_data_sha with tests"
 
 # More work...
 git add R/utils-sha.R tests/testthat/test-utils-sha.R
@@ -211,7 +211,7 @@ git push  # ← Good milestone
 When a phase is done, perform these steps **in order before starting the next phase**:
 
 1. **Harvest persistent content** from the phase doc:
-   - Design decisions that affect the overall API → migrate to `dev/tbit_specification.md`
+   - Design decisions that affect the overall API → migrate to `dev/datom_specification.md`
    - Coding patterns/conventions discovered → migrate to `.github/copilot-instructions.md`
    - Ecosystem learnings → migrate to `dev/daapr_architecture.md`
    - Deferred items → move to the **Backlog** table in this README

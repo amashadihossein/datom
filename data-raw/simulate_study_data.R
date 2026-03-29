@@ -1,4 +1,4 @@
-# Simulate EDC data for tbit vignette
+# Simulate EDC data for datom vignette
 # Study: STUDY-001, Phase II, 48 subjects enrolled over 6 months
 #
 # Produces:

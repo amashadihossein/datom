@@ -1,8 +1,8 @@
 ---
-title: "Clinical Data Versioning with tbit"
+title: "Clinical Data Versioning with datom"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Clinical Data Versioning with tbit}
+  %\VignetteIndexEntry{Clinical Data Versioning with datom}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -19,15 +19,15 @@ knitr::opts_chunk$set(
 
 Clinical trials generate evolving data. As subjects enroll and visits accumulate, EDC (Electronic Data Capture) systems produce periodic data extracts—snapshots that grow over time. A typical Phase II study might have 50–100 tables updated monthly, and your analysis code must work reproducibly against any of those snapshots.
 
-tbit solves this by version-controlling your raw data alongside code. Metadata lives in git; actual data lives in S3 as content-addressed parquet files. Every extract gets a SHA-based version, so you (or a colleague, or a regulator) can reproduce any historical result.
+datom solves this by version-controlling your raw data alongside code. Metadata lives in git; actual data lives in S3 as content-addressed parquet files. Every extract gets a SHA-based version, so you (or a colleague, or a regulator) can reproduce any historical result.
 
-This vignette walks through a realistic workflow: receiving monthly EDC extracts for a Phase II study, syncing them to tbit, listing tables and versions, and retrieving historical snapshots by version.
+This vignette walks through a realistic workflow: receiving monthly EDC extracts for a Phase II study, syncing them to datom, listing tables and versions, and retrieving historical snapshots by version.
 
-> **Note**: tbit manages *raw* versioned data. Derived datasets (like ADSL) are built downstream by the daapr ecosystem, which reads versioned inputs from tbit.
+> **Note**: datom manages *raw* versioned data. Derived datasets (like ADSL) are built downstream by the daapr ecosystem, which reads versioned inputs from datom.
 
 ## Example Study: STUDY-001
 
-tbit ships with simulated data for a small Phase II study:
+datom ships with simulated data for a small Phase II study:
 
 - **48 subjects** enrolled over 6 months (Jan–Jun 2026)
 - **DM domain**: demographics (age, sex, race, country, enrollment date)
@@ -35,25 +35,25 @@ tbit ships with simulated data for a small Phase II study:
 - **Monthly snapshots**: filtering by enrollment date simulates receiving updated EDC extracts
 
 ```{r}
-library(tbit)
+library(datom)
 
 # View the monthly cutoff dates
-tbit_example_cutoffs()
+datom_example_cutoffs()
 #> month_1    month_2    month_3    month_4    month_5    month_6
 #> "2026-01-28" "2026-02-28" "2026-03-28" "2026-04-28" "2026-05-28" "2026-06-28"
 
 # Month-1 extract: only early enrollees
-dm_m1 <- tbit_example_data("dm", cutoff_date = "2026-01-28")
+dm_m1 <- datom_example_data("dm", cutoff_date = "2026-01-28")
 nrow(dm_m1)
 #> [1] 6
 
 # Month-3 extract: enrollment ramps up
-dm_m3 <- tbit_example_data("dm", cutoff_date = "2026-03-28")
+dm_m3 <- datom_example_data("dm", cutoff_date = "2026-03-28")
 nrow(dm_m3)
 #> [1] 19
 
 # Full study data
-dm_all <- tbit_example_data("dm")
+dm_all <- datom_example_data("dm")
 nrow(dm_all)
 #> [1] 48
 ```
@@ -62,15 +62,15 @@ nrow(dm_all)
 
 ### One-Time Repository Initialization
 
-A data developer sets up the tbit repository once. This creates the folder structure, initializes git with a remote, and generates configuration files.
+A data developer sets up the datom repository once. This creates the folder structure, initializes git with a remote, and generates configuration files.
 
 ```{r}
 # Required environment variables (set these in .Renviron or your CI environment)
-# TBIT_STUDY_001_ACCESS_KEY_ID = "your_aws_key"
-# TBIT_STUDY_001_SECRET_ACCESS_KEY = "your_aws_secret"
+# DATOM_STUDY_001_ACCESS_KEY_ID = "your_aws_key"
+# DATOM_STUDY_001_SECRET_ACCESS_KEY = "your_aws_secret"
 # GITHUB_PAT = "your_github_pat"
 
-tbit_init_repo(
+datom_init_repo(
   path = "study_001_data",
   project_name = "STUDY_001",
   remote_url = "https://github.com/org/study-001-data.git",
@@ -83,7 +83,7 @@ This creates:
 
 ```
 study_001_data/
-├── .tbit/
+├── .datom/
 │   ├── project.yaml       # S3 bucket, credentials config
 │   ├── routing.json        # Read method dispatch
 │   └── manifest.json       # Table catalog (initially empty)
@@ -94,9 +94,9 @@ study_001_data/
 ### Connect
 
 ```{r}
-conn <- tbit_get_conn(path = "study_001_data")
+conn <- datom_get_conn(path = "study_001_data")
 print(conn)
-#> ── tbit connection
+#> ── datom connection
 #> • Project: "STUDY_001"
 #> • Role: "developer"
 #> • Bucket: "clinical-data-bucket"
@@ -113,10 +113,10 @@ Your data management team delivers the first EDC extract. You place the files in
 
 ```{r}
 # Simulate receiving the month-1 extract
-cutoffs <- tbit_example_cutoffs()
+cutoffs <- datom_example_cutoffs()
 
-dm_m1 <- tbit_example_data("dm", cutoff_date = cutoffs["month_1"])
-ex_m1 <- tbit_example_data("ex", cutoff_date = cutoffs["month_1"])
+dm_m1 <- datom_example_data("dm", cutoff_date = cutoffs["month_1"])
+ex_m1 <- datom_example_data("ex", cutoff_date = cutoffs["month_1"])
 
 write.csv(dm_m1, "study_001_data/input_files/dm.csv", row.names = FALSE)
 write.csv(ex_m1, "study_001_data/input_files/ex.csv", row.names = FALSE)
@@ -126,7 +126,7 @@ Scan and sync:
 
 ```{r}
 # Scan input_files/ — computes SHA of each file, compares against manifest
-manifest <- tbit_sync_manifest(conn)
+manifest <- datom_sync_manifest(conn)
 #> ℹ Scanned 2 files: 2 new, 0 changed, 0 unchanged.
 manifest
 #>   name          file format  file_sha                           status
@@ -134,7 +134,7 @@ manifest
 #> 2   ex .../ex.csv    csv    d4e5f6...                          new
 
 # Sync: imports each file, converts to parquet, uploads to S3, commits to git
-results <- tbit_sync(conn, manifest)
+results <- datom_sync(conn, manifest)
 #> ℹ Syncing 2 tables...
 #> ✔ dm synced (new).
 #> ✔ ex synced (new).
@@ -155,10 +155,10 @@ Before moving on, it's worth pausing to verify the state of the repository and g
 
 ### List All Tables
 
-`tbit_list()` gives you a quick inventory of what is registered and when each table was last updated. Version hashes are shown as 8-character prefixes by default — pass `short_hash = FALSE` for the full 64-character SHA:
+`datom_list()` gives you a quick inventory of what is registered and when each table was last updated. Version hashes are shown as 8-character prefixes by default — pass `short_hash = FALSE` for the full 64-character SHA:
 
 ```{r}
-tbit_list(conn)
+datom_list(conn)
 #>   name current_version last_updated          
 #> 1 dm   a8ee7a31        2026-01-28T10:25:00Z
 #> 2 ex   1f476930        2026-01-28T10:25:00Z
@@ -167,7 +167,7 @@ tbit_list(conn)
 Pass `include_versions = TRUE` to see the current data SHA alongside the version identifier:
 
 ```{r}
-tbit_list(conn, include_versions = TRUE)
+datom_list(conn, include_versions = TRUE)
 #>   name current_version current_data_sha last_updated          version_count
 #> 1 dm   a8ee7a31        a1b2c3d4         2026-01-28T10:25:00Z  1
 #> 2 ex   1f476930        d4e5f6a7         2026-01-28T10:25:00Z  1
@@ -175,10 +175,10 @@ tbit_list(conn, include_versions = TRUE)
 
 ### Inspect Version History
 
-`tbit_history()` shows the full audit trail for a single table — who synced it, when, and which version hash corresponds to each snapshot:
+`datom_history()` shows the full audit trail for a single table — who synced it, when, and which version hash corresponds to each snapshot:
 
 ```{r}
-tbit_history(conn, "dm")
+datom_history(conn, "dm")
 #>   version   data_sha  timestamp             author       commit_message
 #> 1 a8ee7a31  a1b2c3d4  2026-01-28T10:25:00Z  jane@co.com  Sync dm
 ```
@@ -191,7 +191,7 @@ Before trusting that the sync worked correctly, read the data back and spot-chec
 
 ```{r}
 # Read the current (month-1) snapshot
-dm_m1 <- tbit_read(conn, "dm")
+dm_m1 <- datom_read(conn, "dm")
 nrow(dm_m1)
 #> [1] 6
 
@@ -202,12 +202,12 @@ range(as.Date(dm_m1$RFSTDTC))
 
 Rows, columns, and date ranges all look right. You can also read by the version hash directly — short prefix matching works just like `git log --abbrev-commit`:
 
-> **Note**: The version hashes in this vignette (e.g., `"a8ee7a31"`) are illustrative. Your actual hashes will differ because they are derived from the data content. Always get your version hashes from `tbit_list()` or `tbit_history()` — never copy them from documentation.
+> **Note**: The version hashes in this vignette (e.g., `"a8ee7a31"`) are illustrative. Your actual hashes will differ because they are derived from the data content. Always get your version hashes from `datom_list()` or `datom_history()` — never copy them from documentation.
 
 ```{r}
 # Equivalent: read by version hash 8 character prefix
-# Replace "a8ee7a31" with the hash from your tbit_history(conn, "dm")
-dm_m1 <- tbit_read(conn, "dm", version = "a8ee7a31")
+# Replace "a8ee7a31" with the hash from your datom_history(conn, "dm")
+dm_m1 <- datom_read(conn, "dm", version = "a8ee7a31")
 nrow(dm_m1)
 #> [1] 6
 ```
@@ -218,36 +218,36 @@ Two months later, enrollment has progressed. The data management team sends upda
 
 ```{r}
 # Simulate month-3 extract
-dm_m3 <- tbit_example_data("dm", cutoff_date = cutoffs["month_3"])
-ex_m3 <- tbit_example_data("ex", cutoff_date = cutoffs["month_3"])
+dm_m3 <- datom_example_data("dm", cutoff_date = cutoffs["month_3"])
+ex_m3 <- datom_example_data("ex", cutoff_date = cutoffs["month_3"])
 
 write.csv(dm_m3, "study_001_data/input_files/dm.csv", row.names = FALSE)
 write.csv(ex_m3, "study_001_data/input_files/ex.csv", row.names = FALSE)
 
-# Scan — tbit detects both files have changed (different SHA)
-manifest <- tbit_sync_manifest(conn)
+# Scan — datom detects both files have changed (different SHA)
+manifest <- datom_sync_manifest(conn)
 #> ℹ Scanned 2 files: 0 new, 2 changed, 0 unchanged.
 
 # Sync the updates
-results <- tbit_sync(conn, manifest)
+results <- datom_sync(conn, manifest)
 #> ℹ Syncing 2 tables...
 #> ✔ dm synced (changed).
 #> ✔ ex synced (changed).
 #> ℹ Sync complete: 2 succeeded, 0 failed, 0 skipped.
 ```
 
-Because the parquet content changed (new subjects), tbit uploaded new parquet files to S3 with fresh SHAs. The old parquet files remain — they are never overwritten or deleted.
+Because the parquet content changed (new subjects), datom uploaded new parquet files to S3 with fresh SHAs. The old parquet files remain — they are never overwritten or deleted.
 
 ## Change Detection
 
-tbit uses SHA-based content addressing for efficient change detection. If the data hasn't changed, no upload occurs:
+datom uses SHA-based content addressing for efficient change detection. If the data hasn't changed, no upload occurs:
 
 ```{r}
 # Re-sync with the same files — nothing happens
-manifest <- tbit_sync_manifest(conn)
+manifest <- datom_sync_manifest(conn)
 #> ℹ Scanned 2 files: 0 new, 0 changed, 2 unchanged.
 
-results <- tbit_sync(conn, manifest)
+results <- datom_sync(conn, manifest)
 #> ℹ All files unchanged. Nothing to sync.
 ```
 
@@ -255,19 +255,19 @@ results <- tbit_sync(conn, manifest)
 
 Downstream analysts don't need git access. They connect directly to S3:
 
-> **Important**: The `bucket` and `prefix` passed here must exactly match the values used in `tbit_init_repo()`. These are stored in `.tbit/project.yaml` in the developer's repo — ask your data developer if you're unsure. A mismatched prefix is a common source of `AccessDenied (HTTP 403)` errors, because S3 returns 403 when an object does not exist at the given key and the caller lacks `s3:ListBucket` permission.
+> **Important**: The `bucket` and `prefix` passed here must exactly match the values used in `datom_init_repo()`. These are stored in `.datom/project.yaml` in the developer's repo — ask your data developer if you're unsure. A mismatched prefix is a common source of `AccessDenied (HTTP 403)` errors, because S3 returns 403 when an object does not exist at the given key and the caller lacks `s3:ListBucket` permission.
 
 ```{r}
 # Data reader only needs S3 credentials
-# TBIT_STUDY_001_ACCESS_KEY_ID and TBIT_STUDY_001_SECRET_ACCESS_KEY
+# DATOM_STUDY_001_ACCESS_KEY_ID and DATOM_STUDY_001_SECRET_ACCESS_KEY
 
-reader_conn <- tbit_get_conn(
+reader_conn <- datom_get_conn(
   bucket = "clinical-data-bucket",
   prefix = "study-001/",
   project_name = "STUDY_001"
 )
 print(reader_conn)
-#> ── tbit connection
+#> ── datom connection
 #> • Project: "STUDY_001"
 #> • Role: "reader"
 #> • Bucket: "clinical-data-bucket"
@@ -275,25 +275,25 @@ print(reader_conn)
 #> • Region: "us-east-1"
 
 # List available tables — same as developer
-tables <- tbit_list(reader_conn)
+tables <- datom_list(reader_conn)
 #>   name current_version last_updated          
 #> 1 dm   a8ee7a31        2026-03-28T10:25:00Z
 #> 2 ex   1f476930        2026-03-28T10:25:00Z
 
 # Read the latest version
-dm_latest <- tbit_read(reader_conn, "dm")
+dm_latest <- datom_read(reader_conn, "dm")
 nrow(dm_latest)
 #> [1] 19
 
 # Inspect the full history to find an earlier version
-tbit_history(reader_conn, "dm")
+datom_history(reader_conn, "dm")
 #>   version   data_sha  timestamp             author       commit_message
 #> 1 a8ee7a31  e5f6a7b8  2026-03-28T10:25:00Z  jane@co.com  Sync dm
 #> 2 f7a8b9c2  a1b2c3d4  2026-01-28T10:25:00Z  jane@co.com  Sync dm
 
 # Read a specific earlier version by hash prefix
-# (use the hash from tbit_history() — yours will differ from what's shown here)
-dm_v1 <- tbit_read(reader_conn, "dm", version = "f7a8b9c2")
+# (use the hash from datom_history() — yours will differ from what's shown here)
+dm_v1 <- datom_read(reader_conn, "dm", version = "f7a8b9c2")
 nrow(dm_v1)
 #> [1] 6
 ```
@@ -303,12 +303,12 @@ nrow(dm_v1)
 After syncing, verify git and S3 are consistent:
 
 ```{r}
-tbit_validate(conn)
+datom_validate(conn)
 #> ✔ All checks passed. Git and S3 are consistent.
 
 # Check repository status
-tbit_status(conn)
-#> ── tbit status ──
+datom_status(conn)
+#> ── datom status ──
 #> ℹ Project: "STUDY_001"
 #> ℹ Bucket: "clinical-data-bucket"
 #> ℹ Role: "developer"
@@ -326,12 +326,12 @@ Every data file is stored as `{sha256}.parquet`. Two identical datasets always p
 
 ### Metadata vs Data
 
-- **Metadata** (in git): `metadata.json` tracks dimensions, column names, data SHA, and timestamps. `version_history.json` maps each tbit version to its data SHA.
+- **Metadata** (in git): `metadata.json` tracks dimensions, column names, data SHA, and timestamps. `version_history.json` maps each datom version to its data SHA.
 - **Data** (in S3): Immutable parquet files, keyed by SHA. Never overwritten or deleted.
 
-### tbit Version = metadata SHA
+### datom Version = metadata SHA
 
-The tbit version identifier is the SHA of the metadata fields (sorted alphabetically). Since metadata includes the data SHA, the version uniquely identifies a (data, metadata) pair. You can use a short prefix of the version hash (like `"f7a8b9"`) — tbit resolves it as long as it's unambiguous, just like git short SHAs.
+The datom version identifier is the SHA of the metadata fields (sorted alphabetically). Since metadata includes the data SHA, the version uniquely identifies a (data, metadata) pair. You can use a short prefix of the version hash (like `"f7a8b9"`) — datom resolves it as long as it's unambiguous, just like git short SHAs.
 
 ### Two User Roles
 
@@ -344,15 +344,15 @@ Role is auto-detected: if `GITHUB_PAT` is set and a local repo path is provided,
 
 ## Summary
 
-This workflow demonstrates the core tbit loop for clinical data:
+This workflow demonstrates the core datom loop for clinical data:
 
 1. **Receive** EDC extracts → place in `input_files/`
-2. **Scan** with `tbit_sync_manifest()` → detect new and changed files
-3. **Sync** with `tbit_sync()` → import, convert to parquet, version, upload
-4. **Explore** with `tbit_list()`, `tbit_history()`, and `tbit_read()` → verify what was synced before moving on
+2. **Scan** with `datom_sync_manifest()` → detect new and changed files
+3. **Sync** with `datom_sync()` → import, convert to parquet, version, upload
+4. **Explore** with `datom_list()`, `datom_history()`, and `datom_read()` → verify what was synced before moving on
 5. **Update** by dropping new extracts and repeating the sync cycle
-6. **Retrieve** any historical snapshot with `tbit_read(conn, name, version = "...")`
+6. **Retrieve** any historical snapshot with `datom_read(conn, name, version = "...")`
 
 Every step is tracked in git with full audit trail. Data readers access any version via S3 without needing git credentials.
 
-Derived datasets (like ADSL) belong in the downstream daapr ecosystem, which reads versioned raw inputs managed by tbit.
+Derived datasets (like ADSL) belong in the downstream daapr ecosystem, which reads versioned raw inputs managed by datom.

@@ -1,6 +1,6 @@
 # dev/dev-sandbox.R
 # ──────────────────────────────────────────────────────────────────────────────
-# Developer sandbox: stand up and tear down a complete tbit data product
+# Developer sandbox: stand up and tear down a complete datom data product
 # infrastructure (GitHub repo + S3 namespace + local repo) in one call.
 #
 # Usage:
@@ -12,9 +12,9 @@
 #
 # Prerequisites:
 #   - `gh` CLI installed and authenticated (https://cli.github.com)
-#   - AWS credentials set: TBIT_{PROJECT}_ACCESS_KEY_ID / SECRET_ACCESS_KEY
+#   - AWS credentials set: DATOM_{PROJECT}_ACCESS_KEY_ID / SECRET_ACCESS_KEY
 #   - GITHUB_PAT set
-#   - tbit loaded (devtools::load_all())
+#   - datom loaded (devtools::load_all())
 #
 # All defaults are overridable. Adjust .sandbox_defaults() for your setup.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -29,11 +29,11 @@
   list(
     project_name = "SANDBOX_TEST",
     github_org    = NULL,            # NULL = personal repo; set to "my-org" for org repos
-    repo_name     = "tbit-sandbox",  # GitHub repo name
-    bucket        = "tbit-test",           # REQUIRED — your dev S3 bucket
+    repo_name     = "datom-sandbox",  # GitHub repo name
+    bucket        = "datom-test",           # REQUIRED — your dev S3 bucket
     prefix        = "sandbox/",      # S3 prefix (keeps sandbox isolated)
     region        = "us-east-1",
-    base_dir      = fs::path_abs("../tbit-test"),  # sibling of tbit project
+    base_dir      = fs::path_abs("../datom-test"),  # sibling of datom project
     populate      = TRUE,            # seed with example data?
     n_months      = 2L               # how many monthly snapshots to sync
   )
@@ -91,10 +91,10 @@
 
 #' Set Up Sandbox Credentials
 #'
-#' Sets the environment variables that tbit expects for a given project.
-#' tbit derives credential env var names from `project_name`:
-#'   - `TBIT_{PROJECT_NAME}_ACCESS_KEY_ID`
-#'   - `TBIT_{PROJECT_NAME}_SECRET_ACCESS_KEY`
+#' Sets the environment variables that datom expects for a given project.
+#' datom derives credential env var names from `project_name`:
+#'   - `DATOM_{PROJECT_NAME}_ACCESS_KEY_ID`
+#'   - `DATOM_{PROJECT_NAME}_SECRET_ACCESS_KEY`
 #'   - `GITHUB_PAT`
 #'
 #' Call this before `sandbox_up()`. Credential values can come from any
@@ -110,8 +110,8 @@
 #' # From keyring:
 #' sandbox_credentials(
 #'   "STUDY_001",
-#'   access_key = keyring::key_get("AWS_ACCESS_KEY", "tbit-developer", "remotes"),
-#'   secret_key = keyring::key_get("AWS_SECRET_KEY", "tbit-developer", "remotes"),
+#'   access_key = keyring::key_get("AWS_ACCESS_KEY", "datom-developer", "remotes"),
+#'   secret_key = keyring::key_get("AWS_SECRET_KEY", "datom-developer", "remotes"),
 #'   github_pat = keyring::key_get("GITHUB_PAT", "kol", "remotes")
 #' )
 #'
@@ -136,9 +136,9 @@ sandbox_credentials <- function(project_name, access_key, secret_key, github_pat
     cli::cli_abort("{.arg github_pat} is required and must be non-empty.")
   }
 
-  # Derive env var names from project_name (matches .tbit_derive_cred_names)
-  key_id_var <- paste0("TBIT_", project_name, "_ACCESS_KEY_ID")
-  secret_var <- paste0("TBIT_", project_name, "_SECRET_ACCESS_KEY")
+  # Derive env var names from project_name (matches .datom_derive_cred_names)
+  key_id_var <- paste0("DATOM_", project_name, "_ACCESS_KEY_ID")
+  secret_var <- paste0("DATOM_", project_name, "_SECRET_ACCESS_KEY")
 
   # Set env vars
   args <- stats::setNames(
@@ -164,14 +164,14 @@ sandbox_credentials <- function(project_name, access_key, secret_key, github_pat
 #' Delete all objects under the sandbox S3 prefix
 #'
 #' Uses paws.storage directly (no aws CLI dependency). Lists all objects
-#' under prefix/tbit/ and deletes them in batches of 1000.
+#' under prefix/datom/ and deletes them in batches of 1000.
 .sandbox_wipe_s3 <- function(cfg) {
-  cred_names <- tbit:::.tbit_derive_cred_names(cfg$project_name)
-  s3 <- tbit:::.tbit_s3_client(cred_names, region = cfg$region)
+  cred_names <- datom:::.datom_derive_cred_names(cfg$project_name)
+  s3 <- datom:::.datom_s3_client(cred_names, region = cfg$region)
 
   full_prefix <- paste0(
     if (!is.null(cfg$prefix)) paste0(gsub("/+$", "", cfg$prefix), "/") else "",
-    "tbit/"
+    "datom/"
   )
 
   cli::cli_alert_info("Listing S3 objects under {.val {cfg$bucket}/{full_prefix}}...")
@@ -216,9 +216,9 @@ sandbox_credentials <- function(project_name, access_key, secret_key, github_pat
 
 # --- Core functions ----------------------------------------------------------
 
-#' Stand up a sandbox tbit data product
+#' Stand up a sandbox datom data product
 #'
-#' Creates a GitHub repo, runs tbit_init_repo(), and optionally populates
+#' Creates a GitHub repo, runs datom_init_repo(), and optionally populates
 #' with example study data.
 #'
 #' @param ... Override any defaults from .sandbox_defaults().
@@ -262,10 +262,10 @@ sandbox_up <- function(...) {
     fs::dir_delete(local_path)
   }
 
-  # 3. Initialize tbit repo
-  cli::cli_alert_info("Initializing tbit repo at {.path {local_path}}...")
+  # 3. Initialize datom repo
+  cli::cli_alert_info("Initializing datom repo at {.path {local_path}}...")
 
-  tbit::tbit_init_repo(
+  datom::datom_init_repo(
     path         = local_path,
     project_name = cfg$project_name,
     remote_url   = remote_url,
@@ -274,15 +274,15 @@ sandbox_up <- function(...) {
     region       = cfg$region
   )
 
-  cli::cli_alert_success("tbit repo initialized and pushed.")
+  cli::cli_alert_success("datom repo initialized and pushed.")
 
   # 4. Optionally populate with example data
   conn <- NULL
   if (isTRUE(cfg$populate)) {
     cli::cli_alert_info("Populating with example data ({cfg$n_months} month{?s})...")
 
-    conn <- tbit::tbit_get_conn(path = local_path)
-    cutoffs <- tbit::tbit_example_cutoffs()
+    conn <- datom::datom_get_conn(path = local_path)
+    cutoffs <- datom::datom_example_cutoffs()
     n <- min(cfg$n_months, length(cutoffs))
 
     for (i in seq_len(n)) {
@@ -291,16 +291,16 @@ sandbox_up <- function(...) {
 
       cli::cli_alert_info("Syncing {.val {month_label}} (cutoff: {cutoff})...")
 
-      dm <- tbit::tbit_example_data("dm", cutoff_date = cutoff)
-      ex <- tbit::tbit_example_data("ex", cutoff_date = cutoff)
+      dm <- datom::datom_example_data("dm", cutoff_date = cutoff)
+      ex <- datom::datom_example_data("ex", cutoff_date = cutoff)
 
       input_dir <- fs::path(local_path, "input_files")
       write.csv(dm, fs::path(input_dir, "dm.csv"), row.names = FALSE)
       write.csv(ex, fs::path(input_dir, "ex.csv"), row.names = FALSE)
 
-      manifest <- tbit::tbit_sync_manifest(conn)
+      manifest <- datom::datom_sync_manifest(conn)
       if (any(manifest$status %in% c("new", "changed"))) {
-        tbit::tbit_sync(conn, manifest, continue_on_error = FALSE)
+        datom::datom_sync(conn, manifest, continue_on_error = FALSE)
       } else {
         cli::cli_alert_info("No changes for {.val {month_label}}. Skipping.")
       }
@@ -318,28 +318,28 @@ sandbox_up <- function(...) {
     created_at = Sys.time()
   )
 
-  class(env) <- "tbit_sandbox"
+  class(env) <- "datom_sandbox"
 
   cli::cli_h3("Sandbox ready")
   cli::cli_ul()
   cli::cli_li("Local: {.path {local_path}}")
   cli::cli_li("Remote: {.url {remote_url}}")
-  cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}tbit/")
+  cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}datom/")
   cli::cli_end()
 
   invisible(env)
 }
 
 
-#' Tear down a sandbox tbit data product
+#' Tear down a sandbox datom data product
 #'
 #' Deletes S3 objects, GitHub repo, and local directory.
 #'
 #' @param env Sandbox environment from sandbox_up().
 #' @param confirm If TRUE (default in interactive), asks before destroying.
 sandbox_down <- function(env, confirm = interactive()) {
-  if (!inherits(env, "tbit_sandbox")) {
-    cli::cli_abort("{.arg env} must be a {.cls tbit_sandbox} from {.fn sandbox_up}.")
+  if (!inherits(env, "datom_sandbox")) {
+    cli::cli_abort("{.arg env} must be a {.cls datom_sandbox} from {.fn sandbox_up}.")
   }
 
   cfg <- env$config
@@ -349,7 +349,7 @@ sandbox_down <- function(env, confirm = interactive()) {
   if (isTRUE(confirm)) {
     cli::cli_alert_danger("This will permanently delete:")
     cli::cli_ul()
-    cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}tbit/ (all objects)")
+    cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}datom/ (all objects)")
     cli::cli_li("GitHub: {.val {cfg$repo_name}}")
     cli::cli_li("Local: {.path {env$local_path}}")
     cli::cli_end()
@@ -397,8 +397,8 @@ sandbox_down <- function(env, confirm = interactive()) {
 #' @param confirm If TRUE (default in interactive), asks before destroying.
 #' @return New sandbox environment.
 sandbox_reset <- function(env, confirm = interactive()) {
-  if (!inherits(env, "tbit_sandbox")) {
-    cli::cli_abort("{.arg env} must be a {.cls tbit_sandbox} from {.fn sandbox_up}.")
+  if (!inherits(env, "datom_sandbox")) {
+    cli::cli_abort("{.arg env} must be a {.cls datom_sandbox} from {.fn sandbox_up}.")
   }
 
   cli::cli_h2("Sandbox Reset: {.val {env$config$project_name}}")
@@ -410,16 +410,16 @@ sandbox_reset <- function(env, confirm = interactive()) {
 
 #' Print method for sandbox environment
 #' @export
-print.tbit_sandbox <- function(x, ...) {
+print.datom_sandbox <- function(x, ...) {
   cfg <- x$config
   age <- round(difftime(Sys.time(), x$created_at, units = "mins"), 1)
 
-  cli::cli_h3("tbit sandbox")
+  cli::cli_h3("datom sandbox")
   cli::cli_ul()
   cli::cli_li("Project: {.val {cfg$project_name}}")
   cli::cli_li("Local: {.path {x$local_path}}")
   cli::cli_li("Remote: {.url {x$remote_url}}")
-  cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}tbit/")
+  cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}datom/")
   cli::cli_li("Age: {age} minutes")
   if (!is.null(x$conn)) {
     cli::cli_li("Connection: available (env$conn)")

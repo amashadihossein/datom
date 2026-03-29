@@ -1,33 +1,33 @@
-# tbitaccess Integration — Context for tbit Development
+# datomaccess Integration — Context for datom Development
 
 > **Purpose**: This file provides context for development tools (Copilot, Claude, etc.)
-> about a planned sister package, **tbitaccess**, so that tbit development decisions
+> about a planned sister package, **datomaccess**, so that datom development decisions
 > remain compatible with future access management integration.
 >
-> **tbitaccess does not exist yet.** Nothing here needs to be built now unless
-> marked as a tbit requirement. This is forward-looking context only.
+> **datomaccess does not exist yet.** Nothing here needs to be built now unless
+> marked as a datom requirement. This is forward-looking context only.
 
 ---
 
-## What is tbitaccess?
+## What is datomaccess?
 
-A future R package (with Python counterpart) that layers access management on top of tbit. It will:
+A future R package (with Python counterpart) that layers access management on top of datom. It will:
 
 - Let domain owners define **roles** (named sets of table-level read permissions)
 - Map **users** (enterprise identities) to roles via **grants**
-- Store roles and grants in a **registry** (itself a tbit in a governance bucket)
+- Store roles and grants in a **registry** (itself a datom in a governance bucket)
 - **Auto-inherit** access requirements for derived tables by walking lineage
 - **Enforce** access at the cloud storage API level (S3 access points, IAM)
 
-tbitaccess depends on tbit. tbit does **not** depend on tbitaccess. tbit must work fully without tbitaccess installed.
+datomaccess depends on datom. datom does **not** depend on datomaccess. datom must work fully without datomaccess installed.
 
 ---
 
-## What tbit Needs to Accommodate tbitaccess
+## What datom Needs to Accommodate datomaccess
 
 ### 1. Lineage (parents) in Metadata — REQUIRED
 
-Every table written via `tbit_write()` should include a `parents` field in `metadata.json`.
+Every table written via `datom_write()` should include a `parents` field in `metadata.json`.
 
 **Schema:**
 
@@ -50,36 +50,36 @@ Every table written via `tbit_write()` should include a `parents` field in `meta
 
 - `parents` is a **first-class metadata field** (not inside `custom`)
 - It participates in `metadata_sha` computation (changing parents = new version)
-- For `table_type: "imported"` (via `tbit_sync`): `parents` is always `null`
-- For `table_type: "derived"` (via `tbit_write`): `parents` is a list or `null`
+- For `table_type: "imported"` (via `datom_sync`): `parents` is always `null`
+- For `table_type: "derived"` (via `datom_write`): `parents` is a list or `null`
 - `parents: null` on a derived table means "lineage not recorded" — valid, not an error
 - Each parent entry has: `source` (project_name of source data space), `table` (table name), `version` (metadata_sha at derivation time)
 - For tables derived within the same project, `source` equals `conn$project_name`
 
-**Why:** tbitaccess walks lineage upward to compute access gates. dpbuild also uses lineage for data product construction. Even without tbitaccess, lineage serves tbit's own reproducibility story.
+**Why:** datomaccess walks lineage upward to compute access gates. dpbuild also uses lineage for data product construction. Even without datomaccess, lineage serves datom's own reproducibility story.
 
 **Files to modify:**
 
-- `R/read_write.R`: `.tbit_build_metadata()` — add `parents` field
-- `R/read_write.R`: `tbit_write()` — add `parents` parameter, pass to `.tbit_build_metadata()`
+- `R/read_write.R`: `.datom_build_metadata()` — add `parents` field
+- `R/read_write.R`: `datom_write()` — add `parents` parameter, pass to `.datom_build_metadata()`
 - When `parents` is provided, `table_type` should be `"derived"`
 
-### 2. parents Parameter in tbit_write — REQUIRED
+### 2. parents Parameter in datom_write — REQUIRED
 
 ```r
 # Current signature:
-tbit_write(conn, data = NULL, name = NULL, metadata = NULL, message = NULL)
+datom_write(conn, data = NULL, name = NULL, metadata = NULL, message = NULL)
 
 # Proposed signature:
-tbit_write(conn, data = NULL, name = NULL, metadata = NULL,
+datom_write(conn, data = NULL, name = NULL, metadata = NULL,
            message = NULL, parents = NULL)
 ```
 
 `parents` is a list of named lists: `list(list(source = "...", table = "...", version = "..."), ...)`.
 
-When `tbit_write` is called from `tbit_sync` (imported tables), `parents` is never passed — those tables always have `parents: null`.
+When `datom_write` is called from `datom_sync` (imported tables), `parents` is never passed — those tables always have `parents: null`.
 
-### 3. tbit_get_parents() — REQUIRED
+### 3. datom_get_parents() — REQUIRED
 
 New exported function:
 
@@ -89,21 +89,21 @@ New exported function:
 #' Reads the `parents` field from a table's metadata. Returns NULL for
 #' imported tables or derived tables with no recorded lineage.
 #'
-#' @param conn A `tbit_conn` object.
+#' @param conn A `datom_conn` object.
 #' @param name Table name.
 #' @param version Optional metadata_sha. If NULL, uses current version.
 #' @return List of parent entries (each with source, table, version), or NULL.
 #' @export
-tbit_get_parents <- function(conn, name, version = NULL) {
-  .tbit_validate_name(name)
-  meta <- .tbit_read_metadata(conn, name)
+datom_get_parents <- function(conn, name, version = NULL) {
+  .datom_validate_name(name)
+  meta <- .datom_read_metadata(conn, name)
 
   if (!is.null(version)) {
     # Read versioned snapshot
-    versioned_key <- .tbit_build_s3_key(
+    versioned_key <- .datom_build_s3_key(
       conn$prefix, name, ".metadata", paste0(version, ".json")
     )
-    versioned_meta <- .tbit_s3_read_json(conn, versioned_key)
+    versioned_meta <- .datom_s3_read_json(conn, versioned_key)
     return(versioned_meta$parents)
   }
 
@@ -115,37 +115,37 @@ tbit_get_parents <- function(conn, name, version = NULL) {
 
 ### 4. Endpoint Override in Connection — REQUIRED
 
-tbitaccess will route reads through S3 access points. tbit_conn needs to accept an optional endpoint.
+datomaccess will route reads through S3 access points. datom_conn needs to accept an optional endpoint.
 
 **Files to modify:**
 
-- `R/conn.R`: `new_tbit_conn()` — add `endpoint = NULL` parameter, store in conn object
-- `R/conn.R`: `tbit_get_conn()` — add `endpoint = NULL` parameter, pass through
-- `R/conn.R`: `.tbit_get_conn_reader()` — accept and forward `endpoint`
-- `R/utils-s3.R`: `.tbit_s3_client()` — when `endpoint` is provided, pass as `endpoint` config to `paws.storage::s3()`
+- `R/conn.R`: `new_datom_conn()` — add `endpoint = NULL` parameter, store in conn object
+- `R/conn.R`: `datom_get_conn()` — add `endpoint = NULL` parameter, pass through
+- `R/conn.R`: `.datom_get_conn_reader()` — accept and forward `endpoint`
+- `R/utils-s3.R`: `.datom_s3_client()` — when `endpoint` is provided, pass as `endpoint` config to `paws.storage::s3()`
 
-When `endpoint` is NULL (default), everything works exactly as today. tbitaccess sets this when loaded.
+When `endpoint` is NULL (default), everything works exactly as today. datomaccess sets this when loaded.
 
 ### 5. Reserved Namespace — CONVENTION ONLY
 
-The S3 key prefix `{prefix}/tbit/.access/` is reserved for tbitaccess. tbit should not read, write, or delete keys under this prefix.
+The S3 key prefix `{prefix}/datom/.access/` is reserved for datomaccess. datom should not read, write, or delete keys under this prefix.
 
-`tbit_list()` already reads from `manifest.json` only, so this is safe by construction. Just document the convention in the spec's storage structure section.
+`datom_list()` already reads from `manifest.json` only, so this is safe by construction. Just document the convention in the spec's storage structure section.
 
-**Verified (Phase 8, Chunk 4)**: Full audit confirms tbit is safe:
+**Verified (Phase 8, Chunk 4)**: Full audit confirms datom is safe:
 - No R/ source file references `.access` in any S3 key construction
 - All S3 operations are point-access (`put_object`, `get_object`, `head_object`) on explicit keys
 - No `list_objects` or `delete_object` calls exist in package code
-- `.tbit_build_s3_key()` always inserts a `tbit/` segment, structurally separating tbit keys from `.access/`
+- `.datom_build_s3_key()` always inserts a `datom/` segment, structurally separating datom keys from `.access/`
 
 Add to the S3 storage structure diagram:
 
 ```
 bucket/
 └── {optional_prefix}/
-    └── tbit/
-        ├── .access/                    # Reserved for tbitaccess package
-        │   └── (managed by tbitaccess)
+    └── datom/
+        ├── .access/                    # Reserved for datomaccess package
+        │   └── (managed by datomaccess)
         ├── .metadata/
         │   ├── routing.json
         │   ├── manifest.json
@@ -157,17 +157,17 @@ bucket/
 
 ### 6. Storage Utility Sharing — RECOMMENDED, NOT BLOCKING
 
-tbitaccess will need S3 read/write capabilities. tbit already has:
+datomaccess will need S3 read/write capabilities. datom already has:
 
 ```
-.tbit_s3_exists()
-.tbit_s3_read_json()
-.tbit_s3_write_json()
-.tbit_s3_upload()
-.tbit_s3_download()
+.datom_s3_exists()
+.datom_s3_read_json()
+.datom_s3_write_json()
+.datom_s3_upload()
+.datom_s3_download()
 ```
 
-No action needed now. When tbitaccess is built, these can be accessed via `tbit:::` or re-exported. Just keep these functions with clean interfaces (conn + key based) so they remain reusable.
+No action needed now. When datomaccess is built, these can be accessed via `datom:::` or re-exported. Just keep these functions with clean interfaces (conn + key based) so they remain reusable.
 
 ---
 
@@ -176,43 +176,43 @@ No action needed now. When tbitaccess is built, these can be accessed via `tbit:
 The `table_type` field maps directly to the entry path:
 
 ```
-tbit_sync()   → "imported"   (file on disk → parquet)
+datom_sync()   → "imported"   (file on disk → parquet)
                  original_file_sha: populated (in version_history.json)
                  parents: null (always)
 
-tbit_write()  → "derived"    (data frame in memory → parquet)
+datom_write()  → "derived"    (data frame in memory → parquet)
                  original_file_sha: null (in version_history.json)
                  parents: list or null
 ```
 
 "Derived" aligns with clinical data science convention (CDISC/ADaM) — anything that isn't a raw source extract. This includes joins, transformations, synthetic data, API pulls, and manually constructed tables.
 
-`tbit_write` should NOT accept `table_type = "imported"`. If data came from a file, it goes through `tbit_sync`.
+`datom_write` should NOT accept `table_type = "imported"`. If data came from a file, it goes through `datom_sync`.
 
 ---
 
 ## Design Invariants (Do Not Break)
 
-These properties are critical for tbitaccess integration:
+These properties are critical for datomaccess integration:
 
 1. **Three independent layers**: DATA (parquet + SHA) and METADATA (git-tracked JSON) are versioned and immutable once written. Access/routing is a separate mutable layer that does not affect versions.
 
-2. **routing.json is method routing, not access routing**: tbit's `routing.json` controls which R/Python function handles reads (e.g., "default" → `tbit::tbit_read`). Access routing (who can read what) is a completely separate concern owned by tbitaccess, stored in `.access/`.
+2. **routing.json is method routing, not access routing**: datom's `routing.json` controls which R/Python function handles reads (e.g., "default" → `datom::datom_read`). Access routing (who can read what) is a completely separate concern owned by datomaccess, stored in `.access/`.
 
-3. **tbit_conn exposes key fields**: `conn$project_name`, `conn$bucket`, `conn$prefix`, `conn$region`, `conn$role` must remain accessible as simple list fields. tbitaccess reads these to resolve access points and registry lookups.
+3. **datom_conn exposes key fields**: `conn$project_name`, `conn$bucket`, `conn$prefix`, `conn$region`, `conn$role` must remain accessible as simple list fields. datomaccess reads these to resolve access points and registry lookups.
 
-4. **S3 utilities use conn-based interface**: All `.tbit_s3_*` functions take `conn` as first argument and derive bucket/client from it. This means swapping the endpoint (via access points) works transparently.
+4. **S3 utilities use conn-based interface**: All `.datom_s3_*` functions take `conn` as first argument and derive bucket/client from it. This means swapping the endpoint (via access points) works transparently.
 
-5. **tbit works fully without tbitaccess**: No conditional logic checking for tbitaccess. No optional imports. tbit is complete on its own. tbitaccess wraps/intercepts from outside.
+5. **datom works fully without datomaccess**: No conditional logic checking for datomaccess. No optional imports. datom is complete on its own. datomaccess wraps/intercepts from outside.
 
 ---
 
 ## Retroactive Access Management Adoption
 
-Users can start with tbit alone and add tbitaccess later. This works because:
+Users can start with datom alone and add datomaccess later. This works because:
 
 - The registry maps roles to current tables — no historical context needed
-- `tbit_list()` shows all tables; domain owners group them into roles after the fact
+- `datom_list()` shows all tables; domain owners group them into roles after the fact
 - Tables with `parents: null` require manual role assignment (no auto-inheritance)
 - Tables with `parents: [...]` get auto-inheritance via `access_compute_gates()`
 - No metadata migration, no data movement, no version changes needed
@@ -221,11 +221,11 @@ The only cost of late adoption: older derived tables written without `parents` w
 
 ---
 
-## tbitaccess High-Level Architecture (For Context Only)
+## datomaccess High-Level Architecture (For Context Only)
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   REGISTRY (a tbit)                  │
+│                   REGISTRY (a datom)                  │
 │                                                      │
 │   roles:   role → [source, table] mappings           │
 │   grants:  user_identity → [role] mappings           │
@@ -239,27 +239,27 @@ The only cost of late adoption: older derived tables written without `parents` w
    │ med-mm-001 │ │ med-mm-002 │ │ med-mm-xxx │
    │  (study)   │ │  (study)   │ │  (meta)    │
    │            │ │            │ │            │
-   │ tbit data  │ │ tbit data  │ │ derived    │
+   │ datom data  │ │ datom data  │ │ derived    │
    │ + .access/ │ │ + .access/ │ │ + .access/ │
    └────────────┘ └────────────┘ └────────────┘
 ```
 
 **Enforcement model:**
 
-- **Layer 1 (R-level, advisory):** tbitaccess checks registry before `tbit_read()`. Bypassable if user calls S3 directly. Useful for development/exploration.
-- **Layer 2 (Cloud IAM, enforced):** tbitaccess materializes registry into S3 access points and IAM policies. Unbypassable. Required for compliance/production.
+- **Layer 1 (R-level, advisory):** datomaccess checks registry before `datom_read()`. Bypassable if user calls S3 directly. Useful for development/exploration.
+- **Layer 2 (Cloud IAM, enforced):** datomaccess materializes registry into S3 access points and IAM policies. Unbypassable. Required for compliance/production.
 
-Layer 1 ships first as tbitaccess MVP. Layer 2 adds cloud enforcement later.
+Layer 1 ships first as datomaccess MVP. Layer 2 adds cloud enforcement later.
 
 ---
 
 ## Access Resolution — Full Specification
 
-This section describes how tbitaccess determines whether a user can read a given table. This is the core algorithm that makes access management work. It relies on three things that tbit provides: **lineage** (parents in metadata), **connection context** (project_name, bucket), and **the registry** (roles and grants stored as tbit tables in a governance bucket).
+This section describes how datomaccess determines whether a user can read a given table. This is the core algorithm that makes access management work. It relies on three things that datom provides: **lineage** (parents in metadata), **connection context** (project_name, bucket), and **the registry** (roles and grants stored as datom tables in a governance bucket).
 
 ### Core Concepts
 
-**Registry** — A governance data space (its own tbit bucket) containing three tables:
+**Registry** — A governance data space (its own datom bucket) containing three tables:
 
 ```
 ROLES TABLE: Maps roles to the specific tables they grant access to.
@@ -300,13 +300,13 @@ A domain owner manages the roles for their own study. A governance admin manages
 
 **Lineage** — Each derived table's metadata records its immediate parents. Only immediate parents — not grandparents or deeper ancestors. The access algorithm walks upward through the lineage to discover the full ancestor tree.
 
-**Leaf tables** — Imported tables (from `tbit_sync`) or derived tables with `parents: null`. These are the endpoints of the lineage walk — the original data sources whose access restrictions gate everything derived from them.
+**Leaf tables** — Imported tables (from `datom_sync`) or derived tables with `parents: null`. These are the endpoints of the lineage walk — the original data sources whose access restrictions gate everything derived from them.
 
 ### The Naive Walk Algorithm
 
 This is the baseline approach. It is correct, simple, and sufficient for most workloads. Optimizations (described later) can be layered on top without changing the interface.
 
-**When a user calls `tbit_read(conn, "some_table")`**, tbitaccess runs `access_check()`:
+**When a user calls `datom_read(conn, "some_table")`**, datomaccess runs `access_check()`:
 
 ```
 access_check(acc, user, conn, table_name):
@@ -470,16 +470,16 @@ Required: {mm001_efficacy, mm002_efficacy}
 Sara has both → ALLOW
 ```
 
-**Cross-bucket metadata reads:** The lineage walk needs to read metadata from med-mm-001 and med-mm-002, which are in different buckets than med-mm-xxx. The `source` field in each parent entry is a `project_name`. tbitaccess uses the registry's SOURCES table to look up the bucket/prefix for each source, then constructs a temporary reader connection to fetch metadata:
+**Cross-bucket metadata reads:** The lineage walk needs to read metadata from med-mm-001 and med-mm-002, which are in different buckets than med-mm-xxx. The `source` field in each parent entry is a `project_name`. datomaccess uses the registry's SOURCES table to look up the bucket/prefix for each source, then constructs a temporary reader connection to fetch metadata:
 
 ```r
 # Inside the lineage walker (pseudocode)
-parent_conn <- tbit_get_conn(
+parent_conn <- datom_get_conn(
   bucket = sources_table[parent$source, "bucket"],
   prefix = sources_table[parent$source, "prefix"],
   project_name = parent$source
 )
-parent_parents <- tbit_get_parents(parent_conn, parent$table, parent$version)
+parent_parents <- datom_get_parents(parent_conn, parent$table, parent$version)
 ```
 
 ### Worked Example: Deep Mixed Derivation
@@ -552,7 +552,7 @@ The naive walk adds ~150-300ms to a read that already takes 200-2000ms. Noticeab
 
 The naive walk is correct but redundant — the same user reading multiple tables from the same study will re-walk overlapping lineage paths and re-query the same registry data. Since roles and grants change infrequently, we can cache the resolved permission set and invalidate only when something changes.
 
-**The key insight:** The registry is a tbit, so it has a `metadata_sha` (version). If the registry version hasn't changed since the last resolution, the cached result is still valid. Checking the registry version is a single S3 HEAD request (~20ms).
+**The key insight:** The registry is a datom, so it has a `metadata_sha` (version). If the registry version hasn't changed since the last resolution, the cached result is still valid. Checking the registry version is a single S3 HEAD request (~20ms).
 
 **Cache structure:**
 
@@ -574,7 +574,7 @@ Session cache (in-memory R environment):
 **Cached read flow:**
 
 ```
-tbit_read(conn, "Y")
+datom_read(conn, "Y")
   │
   ├─ Cache lookup: key = {sara, study-x, *}
   │   │
@@ -596,7 +596,7 @@ tbit_read(conn, "Y")
   │       3. Re-resolve (full walk)
   │       4. Update cache
   │
-  └─ tbit_read proceeds with the data fetch
+  └─ datom_read proceeds with the data fetch
 ```
 
 **Cost after cache warmup:** One HEAD request (~20ms) to verify registry version. No lineage walk. No registry query. This is negligible.
@@ -624,7 +624,7 @@ During resolution, after collecting the user's roles for a study:
 
 ### Optimized Resolution: Precomputed Leaf Map
 
-This optimization moves the lineage walk from read time to role-definition time. When a domain owner creates or updates a role via `access_create_role()` or `access_update_role()`, tbitaccess precomputes the leaf ancestors for every table in the role and stores the result:
+This optimization moves the lineage walk from read time to role-definition time. When a domain owner creates or updates a role via `access_create_role()` or `access_update_role()`, datomaccess precomputes the leaf ancestors for every table in the role and stores the result:
 
 ```
 ROLE_LEAVES TABLE (precomputed, stored in registry):
@@ -658,12 +658,12 @@ The Phase B MVP ships with naive walk + session cache. This is correct, simple, 
 
 ---
 
-**Read-time flow with tbitaccess (complete):**
+**Read-time flow with datomaccess (complete):**
 
 ```
-tbit_read(conn, "some_table")
+datom_read(conn, "some_table")
   │
-  ├─ tbitaccess intercepts (if loaded)
+  ├─ datomaccess intercepts (if loaded)
   │   │
   │   ├─ Check session cache
   │   │   ├─ Cache hit + version valid → ALLOW (no walk)
@@ -675,8 +675,8 @@ tbit_read(conn, "some_table")
   │   ├─ Update session cache with result
   │   ├─ If Layer 2 active: route to access-point endpoint
   │   │
-  │   └─ ALLOW → tbit_read proceeds
+  │   └─ ALLOW → datom_read proceeds
   │      DENY  → error with missing roles listed
   │
-  └─ tbit_read fetches data normally
+  └─ datom_read fetches data normally
 ```

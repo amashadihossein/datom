@@ -69,16 +69,16 @@ Data products stored as R lists in RDS format creates multiple barriers:
 - Entire RDS object must be cached in memory for access
 - Limits potential user base to R-only environments
 
-### The Solution: tbit + Language-Agnostic Storage
+### The Solution: datom + Language-Agnostic Storage
 
-The architectural shift centers on replacing the pins-based storage with **tbit**, a new foundational package that provides:
+The architectural shift centers on replacing the pins-based storage with **datom**, a new foundational package that provides:
 
 1. **Git-First Metadata**: All metadata in git, synced to S3 for readers
 2. **Parquet Storage**: Cross-language data format with excellent compression
 3. **Implicit Location**: Redirect chain enables seamless migration
 4. **Routing Layer**: Flexible dispatch enabling future extensions
 
-See **[tbit Package Specification](./tbit_specification.md)** for complete details.
+See **[datom Package Specification](./datom_specification.md)** for complete details.
 
 ### Before and After
 
@@ -91,7 +91,7 @@ CURRENT ARCHITECTURE                    NEW ARCHITECTURE
            │                                       │
            ▼                                       ▼
 ┌─────────────────────┐                 ┌─────────────────────┐
-│       pins          │                 │       tbit          │
+│       pins          │                 │       datom          │
 │  (RDS, R-only)      │                 │  (Parquet, JSON)    │
 └──────────┬──────────┘                 └──────────┬──────────┘
            │                                       │
@@ -124,7 +124,7 @@ CURRENT ARCHITECTURE                    NEW ARCHITECTURE
          └───────────────────┼───────────────────┘
                              ▼
                    ┌─────────────────┐
-                   │      tbit       │
+                   │      datom       │
                    │  (versioning)   │
                    └─────────────────┘
 ```
@@ -133,10 +133,10 @@ CURRENT ARCHITECTURE                    NEW ARCHITECTURE
 
 | Package | Responsibility | Key Changes |
 |---------|---------------|-------------|
-| **tbit** | Version-controlled table storage | NEW: Replaces pins dependency |
-| **dpbuild** | Data product construction | MODIFIED: Uses tbit instead of pins |
-| **dpdeploy** | Deployment orchestration | MODIFIED: Deploys tbit-based products |
-| **dpi** | Data product access | MODIFIED: Reads from tbit |
+| **datom** | Version-controlled table storage | NEW: Replaces pins dependency |
+| **dpbuild** | Data product construction | MODIFIED: Uses datom instead of pins |
+| **dpdeploy** | Deployment orchestration | MODIFIED: Deploys datom-based products |
+| **dpi** | Data product access | MODIFIED: Reads from datom |
 | **daapr** | Meta-package | UNCHANGED: Installs ecosystem |
 
 ---
@@ -181,7 +181,7 @@ dp.input.myinput1()
 
 ### Separation of Concerns
 
-tbit introduces a clean separation between data developers and data readers:
+datom introduces a clean separation between data developers and data readers:
 
 | Role | Credentials | Capabilities |
 |------|-------------|--------------|
@@ -212,7 +212,7 @@ Reader with old code:
 
 **Credential requirement**: Old code needs credentials for both buckets. Updating code to point directly to new bucket avoids this.
 
-See tbit specification for detailed migration workflow.
+See datom specification for detailed migration workflow.
 
 ---
 
@@ -222,15 +222,15 @@ See tbit specification for detailed migration workflow.
 
 Given the complexity of the current system, a clean break is preferred over maintaining backward compatibility:
 
-1. **New major version**: daapr 1.0 with tbit-based architecture
+1. **New major version**: daapr 1.0 with datom-based architecture
 2. **Clear migration path**: Documentation for converting existing data products
 3. **No hybrid mode**: Avoids compounding complexity
 
 ### Migration Steps for Existing Data Products
 
 1. Export current data to source files (CSV/Parquet)
-2. Initialize new tbit repository
-3. Sync source files to create tbit-versioned tables
+2. Initialize new datom repository
+3. Sync source files to create datom-versioned tables
 4. Update dpbuild configuration
 5. Redeploy data product
 
@@ -242,7 +242,7 @@ Given the complexity of the current system, a clean break is preferred over main
 
 | Priority | Item | Effort | Impact |
 |----------|------|--------|--------|
-| 1 | tbit R package | 4-6 weeks | Critical |
+| 1 | datom R package | 4-6 weeks | Critical |
 | 2 | dpbuild integration | 2-3 weeks | Critical |
 | 3 | dpdeploy updates | 1-2 weeks | High |
 | 4 | dpi updates | 1-2 weeks | High |
@@ -253,14 +253,14 @@ Given the complexity of the current system, a clean break is preferred over main
 |----------|------|--------|--------|
 | 5 | CRAN publication | 1-2 weeks | Medium-High |
 | 6 | Documentation & migration guides | 2 weeks | High |
-| 7 | Python tbit implementation | 2-3 weeks | High |
+| 7 | Python datom implementation | 2-3 weeks | High |
 
 ### Phase 3: Enhancement
 
 | Priority | Item | Effort | Impact |
 |----------|------|--------|--------|
-| 8 | tbit_auth (access control) | 2-3 weeks | Medium |
-| 9 | tbit_cache (performance) | 1-2 weeks | Medium |
+| 8 | datom_auth (access control) | 2-3 weeks | Medium |
+| 9 | datom_cache (performance) | 1-2 weeks | Medium |
 | 10 | AI assistant package | 2-3 weeks | Medium |
 | 11 | Additional cloud backends | 2-3 weeks | Medium |
 
@@ -292,9 +292,9 @@ daapr is optimized for:
 
 ## Technical Specifications
 
-### tbit Package
+### datom Package
 
-The foundational layer for version-controlled table storage. See **[tbit Package Specification](./tbit_specification.md)** for:
+The foundational layer for version-controlled table storage. See **[datom Package Specification](./datom_specification.md)** for:
 
 - Complete API reference
 - Metadata schema definitions (metadata.json, version_history.json, manifest.json, routing.json)
@@ -304,12 +304,12 @@ The foundational layer for version-controlled table storage. See **[tbit Package
 
 ### Integration Points
 
-**dpbuild → tbit**:
+**dpbuild → datom**:
 ```r
-# dpbuild creates data products using tbit for storage
+# dpbuild creates data products using datom for storage
 dp_build(
   inputs = list(
-    customers = tbit_ref("customers", version = "abc123")
+    customers = datom_ref("customers", version = "abc123")
   ),
   outputs = list(
     summary = my_summary_table
@@ -317,11 +317,11 @@ dp_build(
 )
 ```
 
-**dpi → tbit**:
+**dpi → datom**:
 ```r
-# dpi reads data products via tbit routing
+# dpi reads data products via datom routing
 dp <- dp_get("my_product", version = "1.0.0")
-data <- dp$output$summary()  # Routed through tbit_read
+data <- dp$output$summary()  # Routed through datom_read
 ```
 
 ---
@@ -347,7 +347,7 @@ data <- dp$output$summary()  # Routed through tbit_read
 
 ## Summary
 
-The daapr framework evolution centers on replacing the pins-based storage layer with tbit, enabling:
+The daapr framework evolution centers on replacing the pins-based storage layer with datom, enabling:
 
 1. **Cross-language access**: Python and R can share data products
 2. **Better performance**: Lazy-loading eliminates memory bottleneck
@@ -362,7 +362,7 @@ This is a breaking change that simplifies the overall system while expanding its
 
 ## References
 
-- **[tbit Package Specification](./tbit_specification.md)**: Detailed technical specification
+- **[datom Package Specification](./datom_specification.md)**: Detailed technical specification
 - **[Current daapr Documentation](https://amashadihossein.github.io/daapr/)**: Existing vignettes and guides
 - **[dpbuild Repository](https://github.com/amashadihossein/dpbuild)**: Build package source
 - **[dpdeploy Repository](https://github.com/amashadihossein/dpdeploy)**: Deploy package source

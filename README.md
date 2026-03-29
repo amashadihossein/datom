@@ -2,27 +2,27 @@
 
 
 
-# tbit
+# datom
 
 <!-- badges: start -->
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
-[![CRAN status](https://www.r-pkg.org/badges/version/tbit)](https://CRAN.R-project.org/package=tbit)
+[![CRAN status](https://www.r-pkg.org/badges/version/datom)](https://CRAN.R-project.org/package=datom)
 <!-- badges: end -->
 
-tbit provides version-controlled data management for reproducible workflows. It abstracts tables as code in git while storing actual data in cloud storage (S3), enabling:
+datom provides version-controlled data management for reproducible workflows. It abstracts tables as code in git while storing actual data in cloud storage (S3), enabling:
  
 - Cloud-based data repositories with automatic versioning
 - Complete data lineage tracking
 - Access to any historical version for reproducibility
 - Separation of data developer and data reader workflows
 
-tbit is the foundational layer for the [daapr](https://github.com/amashadihossein/daapr) ecosystem.
+datom is the foundational layer for the [daapr](https://github.com/amashadihossein/daapr) ecosystem.
 
 ## Installation
 
 ```r
 # install.packages("pak")
-pak::pak("amashadihossein/tbit")
+pak::pak("amashadihossein/datom")
 ```
 
 ## Overview
@@ -30,10 +30,10 @@ pak::pak("amashadihossein/tbit")
 ### For Data Developers (git + S3 access)
 
 ```r
-library(tbit)
+library(datom)
 
-# Initialize a tbit repository
-tbit_init_repo(
+# Initialize a datom repository
+datom_init_repo(
   path = "my_project",
   project_name = "MYPROJ",
   remote_url = "https://github.com/org/my_project.git",
@@ -42,36 +42,36 @@ tbit_init_repo(
 )
 
 # Get connection
-conn <- tbit_get_conn(path = "my_project")
+conn <- datom_get_conn(path = "my_project")
 
 # Sync input files to versioned storage
-manifest <- tbit_sync_manifest(conn)
-tbit_sync(conn, manifest)
+manifest <- datom_sync_manifest(conn)
+datom_sync(conn, manifest)
 
 # Write individual tables
-tbit_write(conn, data = my_data, name = "customers", message = "Initial load")
+datom_write(conn, data = my_data, name = "customers", message = "Initial load")
 ```
 
 ### For Data Readers (S3 only)
 
 ```r
-library(tbit)
+library(datom)
 
 # Connect directly to S3
-conn <- tbit_get_conn(
+conn <- datom_get_conn(
   bucket = "my-bucket",
   prefix = "data/",
   project_name = "MYPROJ"
 )
 
 # List available tables
-tbit_list(conn)
+datom_list(conn)
 
 # Read current version
-customers <- tbit_read(conn, "customers")
+customers <- datom_read(conn, "customers")
 
 # Read specific version for reproducibility
-customers_v1 <- tbit_read(conn, "customers", version = "abc123...")
+customers_v1 <- datom_read(conn, "customers", version = "abc123...")
 ```
 
 ## Design Principles
@@ -85,9 +85,9 @@ customers_v1 <- tbit_read(conn, "customers", version = "abc123...")
 
 | Package | Purpose |
 |---------|---------|
-| **tbit** | Version-controlled table storage (this package) |
+| **datom** | Version-controlled table storage (this package) |
 | **dpbuild** | Data product construction |
 | **dpdeploy** | Deployment orchestration |
 | **dpi** | Data product access |
 
-See `dev/tbit_specification.md` for full technical specification.
+See `dev/datom_specification.md` for full technical specification.

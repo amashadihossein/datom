@@ -1,8 +1,8 @@
 ---
-title: "Team Collaboration with tbit"
+title: "Team Collaboration with datom"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Team Collaboration with tbit}
+  %\VignetteIndexEntry{Team Collaboration with datom}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -17,7 +17,7 @@ knitr::opts_chunk$set(
 
 ## Overview
 
-tbit supports multiple developers working on the same data repository concurrently.
+datom supports multiple developers working on the same data repository concurrently.
 Git tracks metadata; S3 stores data. This separation means developers can work in
 parallel as long as they follow a simple discipline: **pull before you work, push
 when you're done.**
@@ -28,7 +28,7 @@ when you're done.**
 
 This vignette covers:
 
-- One-time repository setup (who runs `tbit_init_repo()`)
+- One-time repository setup (who runs `datom_init_repo()`)
 - How teammates join an existing repository
 - The daily pull → receive → sync workflow
 - What to do when sync is rejected (push conflicts)
@@ -36,25 +36,25 @@ This vignette covers:
 
 ## Roles
 
-tbit recognizes two user types:
+datom recognizes two user types:
 
 | Role | Git access | S3 access | Typical user |
 |------|-----------|-----------|--------------|
-| **Developer** | Read + write | Read + write | Data engineer, receives extracts, runs `tbit_sync()` |
+| **Developer** | Read + write | Read + write | Data engineer, receives extracts, runs `datom_sync()` |
 | **Reader** | None | Read only | Statistician, analyst, reads versioned tables |
 
 Developers have a local clone of the git repo. Readers connect directly to S3
-using `tbit_get_conn()` without a local path.
+using `datom_get_conn()` without a local path.
 
 ## One-Time Setup: Initializing the Repository
 
 **One person** initializes the repository. Everyone else clones it.
 
 ```{r}
-library(tbit)
+library(datom)
 
 # The lead data engineer runs this once
-tbit_init_repo(
+datom_init_repo(
   path = "study_001_data",
   project_name = "STUDY_001",
   remote_url = "https://github.com/org/study-001-data.git",
@@ -63,7 +63,7 @@ tbit_init_repo(
 )
 ```
 ```
-#> ✔ Initialized tbit repository at study_001_data
+#> ✔ Initialized datom repository at study_001_data
 #> ✔ Pushed to origin/main
 #> ✔ Synced routing.json and manifest.json to S3
 ```
@@ -73,13 +73,13 @@ uploads `routing.json` and `manifest.json` to S3.
 
 ### S3 Namespace Safety
 
-`tbit_init_repo()` checks whether the S3 namespace is already occupied before
+`datom_init_repo()` checks whether the S3 namespace is already occupied before
 writing any files. If another project has already claimed
-`s3://clinical-data-bucket/study-001/tbit/.metadata/manifest.json`, you'll get
+`s3://clinical-data-bucket/study-001/datom/.metadata/manifest.json`, you'll get
 a clear error:
 
 ```{r}
-tbit_init_repo(
+datom_init_repo(
   path = "my_project",
   project_name = "MY_PROJECT",
   remote_url = "https://github.com/org/my-project.git",
@@ -89,7 +89,7 @@ tbit_init_repo(
 ```
 ```
 #> ✖ S3 namespace already occupied by project "STUDY_001".
-#>   Location: s3://clinical-data-bucket/study-001/tbit/
+#>   Location: s3://clinical-data-bucket/study-001/datom/
 #> ℹ Use a different bucket or prefix, or pass `.force = TRUE` to override.
 ```
 
@@ -97,10 +97,10 @@ This prevents accidental overwrites when multiple teams share an S3 bucket.
 
 ## Joining an Existing Repository
 
-Every other team member clones with `tbit_clone()`:
+Every other team member clones with `datom_clone()`:
 
 ```{r}
-conn <- tbit_clone(
+conn <- datom_clone(
   remote_url = "https://github.com/org/study-001-data.git",
   path = "study_001_data"
 )
@@ -113,7 +113,7 @@ conn <- tbit_clone(
 print(conn)
 ```
 ```
-#> ── tbit connection
+#> ── datom connection
 #> • Project: "STUDY_001"
 #> • Role: "developer"
 #> • Bucket: "clinical-data-bucket"
@@ -122,25 +122,25 @@ print(conn)
 #> • Path: /home/bob/study_001_data
 ```
 
-`tbit_clone()` wraps `git2r::clone()` and returns a ready-to-use connection —
+`datom_clone()` wraps `git2r::clone()` and returns a ready-to-use connection —
 no re-initialization needed.
 
 ## Daily Workflow
 
 ### Step 1: Pull Latest Changes
 
-Every work session starts with `tbit_pull()`:
+Every work session starts with `datom_pull()`:
 
 ```{r}
-conn <- tbit_get_conn(path = "study_001_data")
+conn <- datom_get_conn(path = "study_001_data")
 
-tbit_pull(conn)
+datom_pull(conn)
 ```
 ```
 #> ✔ Pulled 3 commits on "main".
 ```
 
-`tbit_pull()` fetches and merges upstream git commits — including any metadata
+`datom_pull()` fetches and merges upstream git commits — including any metadata
 changes from teammates (manifest updates, new table versions, routing changes).
 Git is the source of truth for all metadata.
 
@@ -149,9 +149,9 @@ If you're already up to date:
 #> ℹ Already up to date on "main".
 ```
 
-> **Note**: You don't strictly need to call `tbit_pull()` manually before every
-> `tbit_sync()`. tbit's push mechanism automatically pulls before pushing to
-> ensure you're up to date. However, calling `tbit_pull()` at the start of a
+> **Note**: You don't strictly need to call `datom_pull()` manually before every
+> `datom_sync()`. datom's push mechanism automatically pulls before pushing to
+> ensure you're up to date. However, calling `datom_pull()` at the start of a
 > session is still recommended — it lets you see what teammates have changed
 > before you begin your own work.
 
@@ -162,13 +162,13 @@ intentionally separate steps:
 
 ```{r}
 # Example: write a data extract to the input directory
-dm <- tbit_example_data("dm", cutoff_date = "2026-03-28")
+dm <- datom_example_data("dm", cutoff_date = "2026-03-28")
 write.csv(dm, "study_001_data/input_files/dm.csv", row.names = FALSE)
 
 # Scan — detects new and changed files in input_files/
-manifest <- tbit_sync_manifest(conn)
+manifest <- datom_sync_manifest(conn)
 
-# Inspect before syncing — what did tbit find?
+# Inspect before syncing — what did datom find?
 manifest
 ```
 ```
@@ -183,7 +183,7 @@ git or S3.
 
 ```{r}
 # Sync — imports, converts to parquet, writes to git + S3
-results <- tbit_sync(conn, manifest)
+results <- datom_sync(conn, manifest)
 ```
 ```
 #> ℹ Syncing 1 table...
@@ -194,7 +194,7 @@ results <- tbit_sync(conn, manifest)
 > **Why two steps?** Separating scan from sync gives you a chance to review
 > what will be synced before anything is written. In a team setting this is
 > especially valuable — you can catch stale files, accidental duplicates, or
-> unexpected changes before they hit git and S3. Future versions of tbit will
+> unexpected changes before they hit git and S3. Future versions of datom will
 > expand manifest-level APIs for richer pre-sync inspection (e.g., adding
 > table descriptions, tagging QA status).
 
@@ -202,49 +202,49 @@ results <- tbit_sync(conn, manifest)
 
 ```{r}
 # Check repository consistency
-tbit_validate(conn)
+datom_validate(conn)
 ```
 ```
 #> ✔ All checks passed. Git and S3 are consistent.
 ```
 
-`tbit_validate()` confirms that your local git state and S3 agree — metadata
+`datom_validate()` confirms that your local git state and S3 agree — metadata
 matches data, all referenced parquet files exist in S3, and nothing is missing
 or orphaned. Run it after every sync session.
 
 That's it. The sync committed to git, pushed, and uploaded data + metadata to S3.
-Your teammates can now `tbit_pull()` to see the new version.
+Your teammates can now `datom_pull()` to see the new version.
 
 ## Handling Conflicts
 
 ### Scenario: Push Rejected
 
-If a teammate pushed while you were syncing, `tbit_sync()` will abort with a
+If a teammate pushed while you were syncing, `datom_sync()` will abort with a
 clear message:
 
 ```
 #> ✖ Local git branch "main" is behind remote by 2 commits.
-#> ℹ Run `tbit_pull()` or `git pull` to update before syncing.
+#> ℹ Run `datom_pull()` or `git pull` to update before syncing.
 ```
 
 **Resolution:**
 
 ```{r}
 # 1. Pull the latest changes
-tbit_pull(conn)
+datom_pull(conn)
 
 # 2. Re-scan (manifest may have changed)
-manifest <- tbit_sync_manifest(conn)
+manifest <- datom_sync_manifest(conn)
 
 # 3. Re-sync
-results <- tbit_sync(conn, manifest)
+results <- datom_sync(conn, manifest)
 ```
 
 ### Scenario: Merge Conflict
 
 Merge conflicts occur when two developers modify the same file (e.g., both
 update `metadata.json` for the same table). This is rare in practice because
-tbit auto-generates metadata files — but it can happen if developers sync the
+datom auto-generates metadata files — but it can happen if developers sync the
 same table simultaneously.
 
 ```
@@ -259,7 +259,7 @@ same table simultaneously.
 2. Run `git status` to see conflicting files
 3. Edit the files to resolve conflicts (or accept one side with `git checkout --theirs`)
 4. `git add` the resolved files and `git commit`
-5. Re-run `tbit_sync()`
+5. Re-run `datom_sync()`
 
 > **Tip**: Merge conflicts are minimized when each developer is responsible for
 > different tables. Coordinate who syncs which tables within the team.
@@ -271,7 +271,7 @@ to S3:
 
 ```{r}
 # Reader only needs: project_name, bucket, prefix
-reader_conn <- tbit_get_conn(
+reader_conn <- datom_get_conn(
   project_name = "STUDY_001",
   bucket = "clinical-data-bucket",
   prefix = "study-001/"
@@ -279,7 +279,7 @@ reader_conn <- tbit_get_conn(
 print(reader_conn)
 ```
 ```
-#> ── tbit connection
+#> ── datom connection
 #> • Project: "STUDY_001"
 #> • Role: "reader"
 #> • Bucket: "clinical-data-bucket"
@@ -290,9 +290,9 @@ print(reader_conn)
 Readers can list tables, read data, and view history — all via S3:
 
 ```{r}
-tbit_list(reader_conn)
-tbit_read(reader_conn, "dm")
-tbit_history(reader_conn, "dm")
+datom_list(reader_conn)
+datom_read(reader_conn, "dm")
+datom_history(reader_conn, "dm")
 ```
 
 ### What to Share with Readers
@@ -314,18 +314,18 @@ For credential setup details, see `vignette("credentials")`.
 
 ```{r}
 # Alice (lead):
-tbit_init_repo(path = "study_data", project_name = "STUDY_001", ...)
+datom_init_repo(path = "study_data", project_name = "STUDY_001", ...)
 
 # Bob and Carol:
-conn <- tbit_clone("https://github.com/org/study-001-data.git", "study_data")
+conn <- datom_clone("https://github.com/org/study-001-data.git", "study_data")
 ```
 
 ### 2. Pull at the start of every session
 
 ```{r}
 # First line of every script
-conn <- tbit_get_conn(path = "study_data")
-tbit_pull(conn)
+conn <- datom_get_conn(path = "study_data")
+datom_pull(conn)
 ```
 
 ### 3. Divide tables across developers
@@ -336,16 +336,16 @@ virtually impossible.
 ### 4. Validate after sync
 
 ```{r}
-tbit_validate(conn)
+datom_validate(conn)
 ```
 
 This confirms git and S3 are consistent. Run it after every sync session, and
 especially after resolving conflicts.
 
-### 5. Use `tbit_status()` to see what's changed
+### 5. Use `datom_status()` to see what's changed
 
 ```{r}
-tbit_status(conn)
+datom_status(conn)
 ```
 
 Before syncing, check which tables have pending changes. This helps avoid
@@ -355,12 +355,12 @@ syncing stale data or re-syncing unchanged tables.
 
 | Step | Command | Who |
 |------|---------|-----|
-| Initialize (once) | `tbit_init_repo()` | Lead developer |
-| Clone | `tbit_clone()` | All other developers |
-| Start session | `tbit_pull(conn)` | All developers |
+| Initialize (once) | `datom_init_repo()` | Lead developer |
+| Clone | `datom_clone()` | All other developers |
+| Start session | `datom_pull(conn)` | All developers |
 | Receive data | Place files in `input_files/` | Developer |
-| Scan | `tbit_sync_manifest(conn)` | Developer |
-| Sync | `tbit_sync(conn, manifest)` | Developer |
-| Validate | `tbit_validate(conn)` | Developer |
-| Read data | `tbit_read(conn, "table")` | Developer or reader |
-| Conflict? | `tbit_pull()` → re-scan → re-sync | Developer |
+| Scan | `datom_sync_manifest(conn)` | Developer |
+| Sync | `datom_sync(conn, manifest)` | Developer |
+| Validate | `datom_validate(conn)` | Developer |
+| Read data | `datom_read(conn, "table")` | Developer or reader |
+| Conflict? | `datom_pull()` → re-scan → re-sync | Developer |
