@@ -201,6 +201,43 @@
 #' @return Invisible TRUE on success.
 #' @keywords internal
 .tbit_git_push <- function(path) {
+  .tbit_git_pull(path)
+
+  .tbit_check_git2r()
+
+  repo <- git2r::repository(path)
+  remote_name <- git2r::remotes(repo)[[1L]]
+  branch_name <- .tbit_git_branch(path)
+  remote_url <- git2r::remote_url(repo, remote_name)
+  cred <- .tbit_git_credentials(remote_url)
+
+  # Push
+  tryCatch(
+    git2r::push(repo, name = remote_name, refspec = glue::glue("refs/heads/{branch_name}"),
+                credentials = cred),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Failed to push to remote {.val {remote_name}}.",
+        "x" = e$message,
+        "i" = "Check your credentials and remote access."
+      ))
+    }
+  )
+
+  invisible(TRUE)
+}
+
+
+#' Pull from Remote (Fetch + Merge)
+#'
+#' Fetches from the remote and merges upstream changes into the current
+#' branch. Aborts on merge conflicts — user must resolve manually.
+#' This is the primary defense against diverged histories.
+#'
+#' @param path Repository path.
+#' @return Invisible TRUE on success.
+#' @keywords internal
+.tbit_git_pull <- function(path) {
   .tbit_check_git2r()
 
   repo <- tryCatch(
@@ -220,9 +257,6 @@
   }
 
   remote_name <- remotes[[1L]]
-
-  # Get current branch
-  branch_name <- .tbit_git_branch(path)
 
   # Build credentials for HTTPS remotes
   remote_url <- git2r::remote_url(repo, remote_name)
@@ -266,18 +300,82 @@
     }
   }
 
-  # Push
-  tryCatch(
-    git2r::push(repo, name = remote_name, refspec = glue::glue("refs/heads/{branch_name}"),
-                credentials = cred),
+  invisible(TRUE)
+}
+
+
+#' Check Local Branch is Current with Remote
+#'
+#' Fetches from the remote and compares local HEAD SHA against the upstream
+#' HEAD SHA. If the local branch is behind, aborts with a clear message
+#' telling the developer to pull first.
+#'
+#' Does NOT auto-pull — lets the developer decide how to resolve.
+#'
+#' @param path Repository path.
+#' @return Invisible `TRUE` if the local branch is up to date.
+#' @keywords internal
+.tbit_check_git_current <- function(path) {
+  .tbit_check_git2r()
+
+  repo <- tryCatch(
+    git2r::repository(path),
     error = function(e) {
-      cli::cli_abort(c(
-        "Failed to push to remote {.val {remote_name}}.",
-        "x" = e$message,
-        "i" = "Check your credentials and remote access."
-      ))
+      cli::cli_abort("Not a git repository: {.path {path}}")
     }
   )
+
+  remotes <- git2r::remotes(repo)
+  if (length(remotes) == 0L) return(invisible(TRUE))
+
+  remote_name <- remotes[[1L]]
+  remote_url <- git2r::remote_url(repo, remote_name)
+  cred <- .tbit_git_credentials(remote_url)
+
+  # Fetch to update remote refs (cheap — no merge)
+  tryCatch(
+    git2r::fetch(repo, name = remote_name, credentials = cred),
+    error = function(e) {
+      # Network errors should not block offline work
+      cli::cli_alert_warning("Could not fetch from remote: {conditionMessage(e)}")
+      return(invisible(TRUE))
+    }
+  )
+
+  # Check if upstream branch exists
+  upstream_ref <- tryCatch(
+    git2r::branch_get_upstream(git2r::repository_head(repo)),
+    error = function(e) NULL
+  )
+
+  if (is.null(upstream_ref)) return(invisible(TRUE))
+
+  # Compare SHAs
+  local_sha <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
+  upstream_sha <- as.character(git2r::branch_target(upstream_ref))
+
+  if (identical(local_sha, upstream_sha)) return(invisible(TRUE))
+
+  # Are we behind? Check if upstream commit is an ancestor of local HEAD
+  # If local is strictly behind (upstream has commits we don't have)
+  branch_name <- .tbit_git_branch(path)
+
+  # Count how far behind we are via log
+  behind <- tryCatch({
+    ahead_behind <- git2r::ahead_behind(
+      git2r::revparse_single(repo, "HEAD"),
+      git2r::revparse_single(repo, upstream_ref$name)
+    )
+    ahead_behind[[2]]  # behind count
+  }, error = function(e) NA_integer_)
+
+  if (is.na(behind) || behind > 0L) {
+    behind_msg <- if (is.na(behind)) "an unknown number of" else behind
+    cli::cli_abort(c(
+      "Local git branch {.val {branch_name}} is behind remote by {behind_msg} commit{?s}.",
+      "i" = "Run {.fn tbit_pull} or {.code git pull} to update before syncing."
+    ))
+  }
 
   invisible(TRUE)
 }

@@ -46,12 +46,13 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| Phase 7: Multi-Developer Collaboration | Planning | [phase_7_multi_developer_collaboration.md](phase_7_multi_developer_collaboration.md) |
+| (none active) | — | — |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
+| Phase 7: Multi-Developer Collaboration | 2026-03-28 | 962 | S3 namespace safety check in `tbit_init_repo()`, pull-before-push discipline (`.tbit_git_pull`, `.tbit_check_git_current`), `tbit_pull()` export (git pull + manifest refresh), team collaboration vignette, `project_name` in manifest, `.force` bypass, `tbit_validate()` project_name cross-check |
 | Phase 8: Metadata Enrichment & Table Types | 2026-03-28 | 905 | `table_type`, `size_bytes`, `parents`, `original_file_sha` in version_history, `tbit_get_parents()`, `endpoint` param, `.access/` namespace safety. Post-phase bug fixes: manifest update in `tbit_write`, `tbit_init_repo` S3 push, idempotent SHA computation (JSON canonical form, volatile field exclusion, version_history dedup guard) |
 | Phase 6: Sync & Validation | 2026-02-15 | 130 | tbit_sync_manifest, tbit_sync (rio import), tbit_sync_routing, tbit_validate (git-S3 consistency), tbit_status |
 | Phase 5: Read/Write Workflows | 2026-02-15 | 143 | tbit_read (version resolution), tbit_write (change detection, parquet+metadata), .tbit_sync_metadata, tbit_list, tbit_history |
@@ -80,6 +81,7 @@ Items discovered during development but intentionally deferred. Review periodica
 | Derived tbit path convention (raw at top, derived in dp subfolder) | Phase 1 | dpbuild concern — tbit handles via prefix param | Low (dpbuild) |
 | renv::init() in tbit_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
 | Redirect resolution in tbit_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
+| Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future tbit release | Medium |
 
 **Backlog lifecycle**:
 1. Discovered during phase work → add here with context

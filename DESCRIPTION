@@ -11,7 +11,8 @@ Description: Provides version-controlled data management by abstracting tables
     reproducibility. Designed for clinical and scientific workflows where 
     reproducibility is paramount.
 License: MIT + file LICENSE
-URL: https://github.com/amashadihossein/tbit
+URL: https://github.com/amashadihossein/tbit,
+    https://amashadihossein.github.io/tbit/
 BugReports: https://github.com/amashadihossein/tbit/issues
 Imports:
     arrow,

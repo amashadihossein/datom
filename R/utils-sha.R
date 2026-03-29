@@ -121,6 +121,9 @@
   repo_path <- conn$path
   table_dir <- fs::path(repo_path, name)
 
+  # Pull before write to ensure fresh state (Phase 7)
+  .tbit_git_pull(repo_path)
+
   metadata_path <- fs::path(table_dir, "metadata.json")
   if (!fs::file_exists(metadata_path)) {
     cli::cli_abort(c(

@@ -1,3 +1,87 @@
+#' Pull Latest Changes from Remote
+#'
+#' Fetches and merges the latest git changes from the remote repository.
+#' This is the recommended entry point at the start of each work session
+#' to ensure the local state is current before syncing or writing tables.
+#'
+#' Git is the source of truth for all metadata (manifest, routing, table
+#' metadata). The manifest and other metadata files live in git and are
+#' pulled along with any other committed changes.
+#'
+#' Requires developer role (readers have no git access).
+#'
+#' @param conn A `tbit_conn` object from [tbit_get_conn()].
+#'
+#' @return Invisibly, a list with:
+#'   \describe{
+#'     \item{`commits_pulled`}{Integer count of new commits merged.}
+#'     \item{`branch`}{Current branch name.}
+#'   }
+#'
+#' @examples
+#' \dontrun{
+#' conn <- tbit_get_conn("path/to/repo")
+#' tbit_pull(conn)
+#' #> ✔ Pulled 2 commits on main.
+#' }
+#' @export
+tbit_pull <- function(conn) {
+
+  if (!inherits(conn, "tbit_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls tbit_conn} object from {.fn tbit_get_conn}.")
+  }
+
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "Pull requires {.val developer} role.",
+      "i" = "Current role: {.val {conn$role}}."
+    ))
+  }
+
+  if (is.null(conn$path)) {
+    cli::cli_abort(c(
+      "Pull requires a local git repo path.",
+      "i" = "Use {.fn tbit_get_conn} with a tbit-initialized repo."
+    ))
+  }
+
+  repo_path <- conn$path
+
+  # Record HEAD SHA before pulling
+  repo <- git2r::repository(repo_path)
+  head_before <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
+  branch_name <- .tbit_git_branch(repo_path)
+
+  # Git pull (fetch + merge)
+  .tbit_git_pull(repo_path)
+
+  # Count commits pulled by comparing HEAD before/after
+  head_after <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
+  commits_pulled <- 0L
+  if (!identical(head_before, head_after)) {
+    commits_pulled <- tryCatch({
+      ab <- git2r::ahead_behind(
+        git2r::revparse_single(repo, head_before),
+        git2r::revparse_single(repo, "HEAD")
+      )
+      as.integer(ab[[2]])  # how far old HEAD is behind new HEAD
+    }, error = function(e) NA_integer_)
+  }
+
+  if (is.na(commits_pulled) || commits_pulled > 0L) {
+    n_msg <- if (is.na(commits_pulled)) "new" else commits_pulled
+    cli::cli_alert_success("Pulled {n_msg} commit{?s} on {.val {branch_name}}.")
+  } else {
+    cli::cli_alert_info("Already up to date on {.val {branch_name}}.")
+  }
+
+  invisible(list(
+    commits_pulled = commits_pulled,
+    branch = branch_name
+  ))
+}
+
+
 #' Sync Routing Metadata to S3
 #'
 #' Updates all metadata in S3 to match the local git repository. This includes
@@ -345,6 +429,9 @@ tbit_sync <- function(conn,
 
   .tbit_check_rio()
 
+  # --- stale-state check (Phase 7) ---
+  .tbit_check_git_current(conn$path)
+
   # --- filter to actionable rows ---
   actionable <- manifest$status %in% c("new", "changed")
   manifest$result <- ifelse(actionable, NA_character_, "skipped")
@@ -458,7 +545,7 @@ tbit_sync <- function(conn,
   manifest <- if (fs::file_exists(manifest_path)) {
     jsonlite::read_json(manifest_path)
   } else {
-    list(tables = list(), summary = list())
+    list(project_name = conn$project_name, tables = list(), summary = list())
   }
 
   # Read size_bytes from local metadata.json (already written at this point)

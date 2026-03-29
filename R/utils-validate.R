@@ -124,3 +124,49 @@
 
   invisible(cred_names)
 }
+
+
+# --- S3 namespace safety (Phase 7) -------------------------------------------
+
+#' Check Whether an S3 Namespace is Free
+#'
+#' Checks for the existence of `.metadata/manifest.json` in the target S3
+#' namespace. If found, the namespace is occupied by an existing tbit project.
+#' Returns `TRUE` if the namespace is free. Aborts with an actionable error
+#' if occupied, showing the existing project name when possible.
+#'
+#' Uses `head_object` first (cheap) and only reads the manifest (via
+#' `get_object`) when the namespace is occupied, to extract the project name
+#' for the error message.
+#'
+#' @param conn A `tbit_conn` object (typically a temporary conn built by
+#'   `tbit_init_repo()` before the repo is fully initialised).
+#' @return Invisible `TRUE` if the namespace is free.
+#' @keywords internal
+.tbit_check_s3_namespace_free <- function(conn) {
+  occupied <- .tbit_s3_exists(conn, ".metadata/manifest.json")
+
+  if (!occupied) return(invisible(TRUE))
+
+  # Namespace is occupied — try to read the project name for a helpful message
+
+  existing_project <- tryCatch({
+    manifest <- .tbit_s3_read_json(conn, ".metadata/manifest.json")
+    manifest$project_name %||% "<unknown>"
+  }, error = function(e) {
+    "<unreadable>"
+  })
+
+  s3_location <- paste0(
+    "s3://", conn$bucket, "/",
+    if (!is.null(conn$prefix)) paste0(gsub("/+$", "", conn$prefix), "/") else "",
+    "tbit/"
+  )
+
+  cli::cli_abort(c(
+    "S3 namespace is already occupied by project {.val {existing_project}}.",
+    "x" = "Location: {.val {s3_location}}",
+    "i" = "Each tbit project must use a unique S3 namespace (bucket + prefix).",
+    "i" = "Use a different {.arg prefix} or {.arg bucket}, or pass {.code .force = TRUE} to override."
+  ))
+}

@@ -566,6 +566,7 @@ setup_init_env <- function(env = parent.frame()) {
   local_mocked_bindings(
     .tbit_s3_client = function(...) list(put_object = function(...) list()),
     .tbit_s3_write_json = function(...) invisible(TRUE),
+    .tbit_s3_exists = function(...) FALSE,
     .env = env
   )
 
@@ -1170,6 +1171,100 @@ test_that("tbit_init_repo succeeds even if S3 upload fails", {
 })
 
 
+# --- S3 namespace safety check (Phase 7) -------------------------------------
+
+test_that("tbit_init_repo aborts when S3 namespace is occupied", {
+  env <- setup_init_env()
+
+  # Override .tbit_s3_exists to report namespace is occupied
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) {
+      grepl("manifest\\.json", s3_key)
+    },
+    .tbit_s3_read_json = function(conn, s3_key) {
+      list(project_name = "EXISTING_PROJECT", tables = list())
+    }
+  )
+
+  expect_error(
+    tbit_init_repo(
+      path = env$work_dir,
+      project_name = "testproj",
+      remote_url = env$bare_dir,
+      bucket = "b"
+    ),
+    "already occupied"
+  )
+
+  # Nothing should have been created
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".tbit")))
+})
+
+test_that("tbit_init_repo proceeds when .force = TRUE despite occupied namespace", {
+  env <- setup_init_env()
+
+  # Override .tbit_s3_exists to report namespace is occupied
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) {
+      grepl("manifest\\.json", s3_key)
+    },
+    .tbit_s3_read_json = function(conn, s3_key) {
+      list(project_name = "EXISTING_PROJECT", tables = list())
+    },
+    .tbit_s3_write_json = function(...) invisible(TRUE)
+  )
+
+  result <- tbit_init_repo(
+    path = env$work_dir,
+    project_name = "testproj",
+    remote_url = env$bare_dir,
+    bucket = "b",
+    .force = TRUE
+  )
+
+  expect_true(result)
+  expect_true(fs::dir_exists(fs::path(env$work_dir, ".tbit")))
+})
+
+test_that("tbit_init_repo manifest.json includes project_name", {
+  env <- setup_init_env()
+
+  tbit_init_repo(
+    path = env$work_dir,
+    project_name = "testproj",
+    remote_url = env$bare_dir,
+    bucket = "b"
+  )
+
+  manifest <- jsonlite::read_json(
+    fs::path(env$work_dir, ".tbit", "manifest.json")
+  )
+  expect_equal(manifest$project_name, "testproj")
+})
+
+test_that("tbit_init_repo warns but continues when S3 connectivity fails during namespace check", {
+  env <- setup_init_env()
+
+  # .tbit_s3_client will work but .tbit_s3_exists will fail with network error
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) stop("Network error"),
+    .tbit_s3_write_json = function(...) invisible(TRUE)
+  )
+
+  # Should succeed — connectivity failure during namespace check is a warning, not fatal
+  expect_no_error(
+    tbit_init_repo(
+      path = env$work_dir,
+      project_name = "testproj",
+      remote_url = env$bare_dir,
+      bucket = "b"
+    )
+  )
+
+  expect_true(fs::dir_exists(fs::path(env$work_dir, ".tbit")))
+})
+
+
 # =============================================================================
 # endpoint parameter (Phase 8, Chunk 3)
 # =============================================================================
@@ -1334,4 +1429,120 @@ test_that("mock_tbit_conn includes endpoint field as NULL", {
   conn <- mock_tbit_conn(mock_s3_client())
   expect_true("endpoint" %in% names(conn))
   expect_null(conn$endpoint)
+})
+
+
+# --- tbit_clone() -------------------------------------------------------------
+
+test_that("tbit_clone rejects empty remote_url", {
+  expect_error(tbit_clone(remote_url = "", path = "x"), "remote_url")
+})
+
+test_that("tbit_clone rejects NA remote_url", {
+  expect_error(tbit_clone(remote_url = NA_character_, path = "x"), "remote_url")
+})
+
+test_that("tbit_clone rejects empty path", {
+  expect_error(tbit_clone(remote_url = "https://x.git", path = ""), "path")
+})
+
+test_that("tbit_clone rejects non-empty target directory", {
+  withr::with_tempdir({
+    fs::dir_create("existing")
+    writeLines("file", fs::path("existing", "README.md"))
+    expect_error(
+      tbit_clone(remote_url = "https://x.git", path = "existing"),
+      "not empty"
+    )
+  })
+})
+
+test_that("tbit_clone aborts if cloned repo is not a tbit repo", {
+  withr::with_tempdir({
+    # Create a bare git repo without .tbit/project.yaml
+    bare_dir <- withr::local_tempdir()
+    bare_repo <- git2r::init(bare_dir, bare = TRUE)
+
+    # Create a working repo and push to bare
+    work_dir <- withr::local_tempdir()
+    work_repo <- git2r::init(work_dir)
+    git2r::config(work_repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", fs::path(work_dir, "README.md"))
+    git2r::add(work_repo, "README.md")
+    git2r::commit(work_repo, "Initial commit")
+    git2r::remote_add(work_repo, name = "origin", url = bare_dir)
+    git2r::push(work_repo, name = "origin",
+                refspec = "refs/heads/master", set_upstream = TRUE)
+
+    expect_error(
+      tbit_clone(remote_url = bare_dir, path = "clone_target"),
+      "not a tbit repository"
+    )
+  })
+})
+
+test_that("tbit_clone clones and returns a tbit_conn", {
+  withr::with_tempdir({
+    # Set up env vars needed by tbit_get_conn
+    withr::local_envvar(
+      GITHUB_PAT = "fake-pat",
+      TBIT_MYPROJ_ACCESS_KEY_ID = "fakekey",
+      TBIT_MYPROJ_SECRET_ACCESS_KEY = "fakesecret"
+    )
+
+    # Create a bare repo with tbit structure
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+
+    work_dir <- withr::local_tempdir()
+    work_repo <- git2r::init(work_dir)
+    git2r::config(work_repo, user.name = "Test", user.email = "test@test.com")
+
+    # Create .tbit/project.yaml
+    fs::dir_create(fs::path(work_dir, ".tbit"))
+    yaml::write_yaml(
+      list(
+        project_name = "MYPROJ",
+        storage = list(
+          bucket = "test-bucket",
+          prefix = NULL,
+          region = "us-east-1",
+          credentials = list(
+            access_key_env = "TBIT_MYPROJ_ACCESS_KEY_ID",
+            secret_key_env = "TBIT_MYPROJ_SECRET_ACCESS_KEY"
+          )
+        )
+      ),
+      fs::path(work_dir, ".tbit", "project.yaml")
+    )
+
+    git2r::add(work_repo, ".tbit/project.yaml")
+    git2r::commit(work_repo, "Init tbit")
+    git2r::remote_add(work_repo, name = "origin", url = bare_dir)
+    git2r::push(work_repo, name = "origin",
+                refspec = "refs/heads/master", set_upstream = TRUE)
+
+    # Mock the S3 client creation
+    local_mocked_bindings(
+      .tbit_s3_client = function(...) list(fake = TRUE)
+    )
+
+    conn <- tbit_clone(remote_url = bare_dir, path = "clone_target")
+
+    expect_s3_class(conn, "tbit_conn")
+    expect_equal(conn$project_name, "MYPROJ")
+    expect_equal(conn$bucket, "test-bucket")
+    expect_true(fs::dir_exists("clone_target/.tbit"))
+    expect_true(fs::file_exists("clone_target/.tbit/project.yaml"))
+  })
+})
+
+test_that("tbit_clone aborts on clone failure", {
+  withr::with_tempdir({
+    expect_error(
+      tbit_clone(remote_url = "https://example.com/no-such-repo.git",
+                 path = "target"),
+      "Failed to clone"
+    )
+  })
 })

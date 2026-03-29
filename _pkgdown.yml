@@ -17,6 +17,7 @@ reference:
     desc: "Create connections, initialize repositories"
     contents:
       - tbit_init_repo
+      - tbit_clone
       - tbit_get_conn
       - new_tbit_conn
       - is_tbit_conn
@@ -34,10 +35,12 @@ reference:
       - tbit_list
       - tbit_history
       - tbit_status
+      - tbit_get_parents
 
   - title: "Sync Operations"
     desc: "Batch sync from files, scan manifests, sync metadata to S3"
     contents:
+      - tbit_pull
       - tbit_sync
       - tbit_sync_manifest
       - tbit_sync_routing

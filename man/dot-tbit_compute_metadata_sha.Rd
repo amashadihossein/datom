@@ -14,6 +14,15 @@ Character SHA-256 hash.
 }
 \description{
 Sorts fields alphabetically before hashing for deterministic results,
-regardless of field insertion order.
+regardless of field insertion order. Volatile fields (\code{created_at},
+\code{tbit_version}) are excluded so that identical semantic content always
+produces the same SHA, regardless of when it was written.
+}
+\details{
+Hashes a JSON canonical form rather than the R object directly. This
+ensures that metadata read back from JSON (e.g., from S3) produces the
+same SHA as metadata built in-memory, despite R type differences
+(integer vs double, character vector vs list) introduced by JSON
+round-tripping.
 }
 \keyword{internal}

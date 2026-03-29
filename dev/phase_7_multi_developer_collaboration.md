@@ -7,7 +7,7 @@ developers work on the same data repository simultaneously? The current implemen
 assumes a single developer. This phase adds safety checks, conflict-avoidance
 mechanisms, and tooling to make collaborative team workflows safe and well-documented.
 
-**Status**: Planning
+**Status**: Complete (all 4 chunks)
 
 **Depends on**: Git operations (Phase 3: `.tbit_git_push`), sync workflow
 (Phase 6: `tbit_sync`, `tbit_sync_routing`), connection & init (Phase 4:
@@ -197,61 +197,89 @@ Covers:
 
 ### Chunk 1: S3 Namespace Safety Check
 
-- [ ] `.tbit_check_s3_namespace_free()` implemented and tested
-- [ ] `tbit_init_repo()` calls it before writing any files
-- [ ] `tbit_init_repo()` gains `.force = FALSE` parameter
-- [ ] `manifest.json` written by `tbit_init_repo()` includes `project_name`
-- [ ] `tbit_validate()` checks `project_name` matches conn
-- [ ] Tests: namespace free (new project), namespace occupied (same project name),
-  namespace occupied (different project name), `.force = TRUE` bypass
+- [x] `.tbit_check_s3_namespace_free()` implemented and tested
+- [x] `tbit_init_repo()` calls it before writing any files
+- [x] `tbit_init_repo()` gains `.force = FALSE` parameter
+- [x] `manifest.json` written by `tbit_init_repo()` includes `project_name`
+- [x] `tbit_validate()` checks `project_name` matches conn
+- [x] Tests: namespace free (new project), namespace occupied (same project name),
+  namespace occupied (different project name), `.force = TRUE` bypass,
+  project_name in manifest, tbit_validate project_name mismatch,
+  pre-Phase-7 manifest tolerance, connectivity failure graceful handling
 
 ### Chunk 2: Pull-Before-Push Discipline
 
-- [ ] `.tbit_git_pull()` extracted as standalone internal function
-- [ ] `.tbit_sync_metadata()` calls pull at the start, before writing metadata
-- [ ] `.tbit_check_git_current()` implemented — detects stale local state
-- [ ] `tbit_sync()` calls `.tbit_check_git_current()` at entry
-- [ ] Clear, actionable error message when behind remote
-- [ ] Tests: up to date (no-op), behind remote (error), pull resolves and
+- [x] `.tbit_git_pull()` extracted as standalone internal function
+- [x] `.tbit_sync_metadata()` calls pull at the start, before writing metadata
+- [x] `.tbit_check_git_current()` implemented — detects stale local state
+- [x] `tbit_sync()` calls `.tbit_check_git_current()` at entry
+- [x] Clear, actionable error message when behind remote
+- [x] Tests: up to date (no-op), behind remote (error), pull resolves and
   sync proceeds
 
 ### Chunk 3: tbit_pull()
 
-- [ ] `tbit_pull(conn)` exported and documented
-- [ ] Pulls git + refreshes manifest from S3
-- [ ] Works for developer role only (readers have no git)
-- [ ] Returns invisible summary (commits pulled, manifest status)
-- [ ] Tests: clean pull, nothing to pull, conflict (merge failure) handled
+- [x] `tbit_pull(conn)` exported and documented
+- [x] Pulls git + refreshes manifest from S3
+- [x] Works for developer role only (readers have no git)
+- [x] Returns invisible summary (commits pulled, manifest status)
+- [x] Tests: clean pull, nothing to pull, conflict (merge failure) handled
   with clear message
 
 ### Chunk 4: Team Collaboration Vignette
 
-- [ ] `vignettes/team-collaboration.Rmd` created
-- [ ] Covers: init (once), clone, daily workflow, conflict recovery, reader setup
-- [ ] Explains env var naming convention for teams sharing a bucket
-- [ ] Shows `tbit_pull()` as the entry point to each work session
-- [ ] Renders without errors
+- [x] `vignettes/team-collaboration.Rmd` created
+- [x] Covers: init (once), clone, daily workflow, conflict recovery, reader setup
+- [x] Explains env var naming convention for teams sharing a bucket
+- [x] Shows `tbit_pull()` as the entry point to each work session
+- [x] Renders without errors
 
 ---
 
 ## Current State
 
-**Ready to start** — no implementation started. All pre-requisites met (Phases 1-8 complete, 905 tests passing).
+**Chunk 1: S3 Namespace Safety Check — COMPLETE** (923 tests, 0 failures)
 
-Open questions to resolve before Chunk 1:
-1. Should `.tbit_check_git_current()` auto-pull or just abort? (Lean: abort,
-   let developer decide.) 
-2. Should S3 namespace check use `head_object` (cheaper) or `get_object`
-   (needed to read project_name)? Use `head_object` first, then `get_object`
-   only if occupied to show the conflict detail.
-3. What happens if two developers initialize simultaneously (TOCTOU on namespace
-   check)? Accept as a known edge case — document it, do not solve with locking.
+Implementation summary:
+- `.tbit_check_s3_namespace_free(conn)` in `R/utils-validate.R`: uses `head_object` via `.tbit_s3_exists()` to check for `.metadata/manifest.json`, reads `project_name` from manifest if occupied, aborts with actionable error.
+- `tbit_init_repo()` gains `.force = FALSE` param; namespace check runs after credential validation but before any file creation. Connectivity failures are swallowed (warned) so offline init still works.
+- `manifest.json` now includes `project_name` at the top level (set by `tbit_init_repo()`, preserved by `.tbit_update_manifest_entry()`).
+- `.tbit_validate_project_name(conn)` in `R/validate.R`: cross-checks manifest's `project_name` against `conn$project_name`. Tolerates pre-Phase-7 manifests (no `project_name` field).
+- 18 new tests across `test-utils-validate.R`, `test-validate.R`, and `test-conn.R`.
 
-Key context for starting:
-- `manifest.json` does NOT yet include `project_name` — Chunk 1 adds it.
-- `.tbit_git_push()` currently does fetch+merge+push as one operation — Chunk 2 may need to split pull out.
-- `tbit_write()` already follows local → git → S3 ordering — the pull-before-push pattern needs to wrap around the existing write path.
-- Developer sandbox (`dev/dev-sandbox.R`) is available for E2E testing of multi-developer scenarios.
+**Chunk 2: Pull-Before-Push Discipline — COMPLETE** (942 tests, 0 failures)
+
+Implementation summary:
+- `.tbit_git_pull(path)` extracted as standalone internal in `R/utils-git.R`: opens repo, verifies remote, fetches, merges upstream (if upstream branch exists), aborts on merge conflict.
+- `.tbit_check_git_current(path)` in `R/utils-git.R`: fetches from remote, compares local HEAD vs upstream HEAD via `git2r::ahead_behind()`. Aborts with actionable error ("behind remote by N commits, run tbit_pull()") when stale. Gracefully handles: no remote (passes), no upstream branch (passes), network errors (warns, passes).
+- `.tbit_git_push(path)` refactored to call `.tbit_git_pull(path)` first, then push.
+- `.tbit_sync_metadata()` calls `.tbit_git_pull()` before reading metadata.
+- `tbit_sync()` calls `.tbit_check_git_current()` after validation, before processing.
+- 19 new tests in `test-utils-git.R` covering: pull fetch+merge, pull no-op, pull conflict abort, pull no remote, pull non-git dir, check up-to-date, check behind remote, check error message suggests tbit_pull, check no remote (passes), check no upstream (passes), check ahead (passes), check network error tolerance, check non-git dir.
+- Existing mock-based tests in `test-sync.R` (7 blocks) and `test-read-write.R` (7 blocks) updated to stub the new functions.
+
+**Ready for Chunk 3**: tbit_pull() export
+
+**Chunk 3: tbit_pull() — COMPLETE** (962 tests, 0 failures)
+
+Implementation summary:
+- `tbit_pull(conn)` exported in `R/sync.R`: validates conn (developer role, has path), records HEAD SHA before pull, calls `.tbit_git_pull()`, counts commits merged via `git2r::ahead_behind()`, then refreshes local `.tbit/manifest.json` from S3.
+- Manifest refresh: checks `.tbit_s3_exists()` first, reads S3 manifest, compares JSON representation with local, overwrites local only when different. Creates `.tbit/` dir if needed.
+- Returns invisible list: `commits_pulled` (integer), `branch` (string), `manifest` (`"refreshed"`, `"unchanged"`, or `"s3_unavailable"`).
+- S3 connectivity errors are caught and surfaced as warnings — git pull still succeeds.
+- 10 new tests in `test-sync.R`: rejects non-conn/reader/no-path, nothing to pull (0 commits), counts 2 upstream commits, manifest refreshed when different, manifest unchanged when identical, S3 error → `"s3_unavailable"`, merge conflict abort, invisible return, creates .tbit dir from scratch.
+
+**Ready for Chunk 4**: Team Collaboration Vignette
+
+**Chunk 4: Team Collaboration Vignette — COMPLETE** (962 tests, 0 failures)
+
+Implementation summary:
+- `vignettes/team-collaboration.Rmd` created with `eval = FALSE` (no live S3/git in vignette builds).
+- Sections: Overview, Roles, One-Time Setup (init + S3 namespace safety), Joining (clone + connect), Daily Workflow (pull → receive → sync → validate), Handling Conflicts (push rejected + merge conflict resolution), Setting Up Readers (S3-only access), Credential Management (env var naming convention, multiple projects), Recommended Team Practices (5 tips), Summary table.
+- `tbit_pull` added to pkgdown reference under Sync Operations.
+- Renders without errors via `rmarkdown::render()`.
+
+**Phase 7 is complete.** All 4 chunks landed. 962 tests, 0 failures.
 
 ---
 

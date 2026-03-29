@@ -1522,6 +1522,10 @@ test_that("errors when metadata.json missing from local repo", {
     conn$role <- "developer"
     conn$path <- getwd()
 
+    local_mocked_bindings(
+      .tbit_git_pull = function(...) invisible(TRUE)
+    )
+
     expect_error(.tbit_sync_metadata(conn, "ghost"), "No metadata found")
   })
 })
@@ -1538,7 +1542,8 @@ test_that("skips sync when no changes detected", {
     jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .tbit_has_changes = function(conn, name, d, m) "none"
+      .tbit_has_changes = function(conn, name, d, m) "none",
+      .tbit_git_pull = function(...) invisible(TRUE)
     )
 
     result <- .tbit_sync_metadata(conn, "tbl")
@@ -1567,6 +1572,7 @@ test_that("syncs metadata.json to S3 on change", {
     s3_keys <- character()
     local_mocked_bindings(
       .tbit_has_changes = function(conn, name, d, m) "metadata_only",
+      .tbit_git_pull = function(...) invisible(TRUE),
       .tbit_s3_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
@@ -1602,6 +1608,7 @@ test_that("syncs version_history.json to S3 when present", {
     s3_keys <- character()
     local_mocked_bindings(
       .tbit_has_changes = function(conn, name, d, m) "full",
+      .tbit_git_pull = function(...) invisible(TRUE),
       .tbit_s3_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
@@ -1637,6 +1644,7 @@ test_that("commits and pushes after sync", {
     pushed <- FALSE
     local_mocked_bindings(
       .tbit_has_changes = function(conn, name, d, m) "metadata_only",
+      .tbit_git_pull = function(...) invisible(TRUE),
       .tbit_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
       .tbit_git_push = function(path) {
         pushed <<- TRUE
@@ -1669,6 +1677,7 @@ test_that("aborts S3 sync when git commit/push fails", {
     s3_called <- FALSE
     local_mocked_bindings(
       .tbit_has_changes = function(conn, name, d, m) "metadata_only",
+      .tbit_git_pull = function(...) invisible(TRUE),
       .tbit_s3_write_json = function(conn, s3_key, data) {
         s3_called <<- TRUE
         invisible(TRUE)

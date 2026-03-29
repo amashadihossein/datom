@@ -12,6 +12,7 @@ Provides version-controlled data management by abstracting tables as code in git
 Useful links:
 \itemize{
   \item \url{https://github.com/amashadihossein/tbit}
+  \item \url{https://amashadihossein.github.io/tbit/}
   \item Report bugs at \url{https://github.com/amashadihossein/tbit/issues}
 }
 

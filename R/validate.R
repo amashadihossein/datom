@@ -107,6 +107,9 @@ tbit_validate <- function(conn, fix = FALSE) {
   # --- Repo-level file checks ---
   repo_file_checks <- .tbit_validate_repo_files(conn)
 
+  # --- Project identity check ---
+  project_name_ok <- .tbit_validate_project_name(conn)
+
   # --- Per-table checks ---
   table_checks <- .tbit_validate_tables(conn)
 
@@ -114,7 +117,7 @@ tbit_validate <- function(conn, fix = FALSE) {
     all(repo_file_checks$status == "ok")
   all_tables_ok <- nrow(table_checks) == 0L ||
     all(table_checks$status == "ok")
-  is_valid <- all_repo_ok && all_tables_ok
+  is_valid <- all_repo_ok && all_tables_ok && project_name_ok
 
   if (is_valid) {
     cli::cli_alert_success("All checks passed. Git and S3 are consistent.")
@@ -145,6 +148,43 @@ tbit_validate <- function(conn, fix = FALSE) {
     tables = table_checks,
     fixed = fixed
   ))
+}
+
+
+#' Validate project_name consistency between local manifest and connection
+#'
+#' Reads the local `.tbit/manifest.json` and checks that its `project_name`
+#' field matches `conn$project_name`. A mismatch indicates a namespace collision
+#' (two projects sharing the same S3 bucket + prefix).
+#'
+#' @param conn A `tbit_conn` object.
+#' @return `TRUE` if consistent or no project_name in manifest (pre-Phase 7
+#'   repos). `FALSE` on mismatch (with a warning).
+#' @noRd
+.tbit_validate_project_name <- function(conn) {
+  manifest_path <- fs::path(conn$path, ".tbit", "manifest.json")
+
+  if (!fs::file_exists(manifest_path)) return(TRUE)
+
+  manifest <- tryCatch(
+    jsonlite::read_json(manifest_path),
+    error = function(e) return(TRUE)
+  )
+
+  manifest_project <- manifest$project_name
+  if (is.null(manifest_project)) return(TRUE)  # pre-Phase 7 manifest
+
+  if (!identical(manifest_project, conn$project_name)) {
+    cli::cli_alert_danger(
+      "Project name mismatch: manifest says {.val {manifest_project}} but connection says {.val {conn$project_name}}."
+    )
+    cli::cli_alert_info(
+      "This may indicate a namespace collision. Check bucket/prefix configuration."
+    )
+    return(FALSE)
+  }
+
+  TRUE
 }
 
 

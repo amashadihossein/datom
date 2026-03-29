@@ -290,3 +290,114 @@ test_that("defaults to reader role", {
   # Should succeed because default is reader (no GITHUB_PAT needed)
   expect_no_error(.tbit_check_credentials("x"))
 })
+
+
+# --- .tbit_check_s3_namespace_free() ------------------------------------------
+
+test_that("returns TRUE when namespace is free (no manifest on S3)", {
+  conn <- mock_tbit_conn(list())
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) FALSE
+  )
+
+  expect_true(.tbit_check_s3_namespace_free(conn))
+})
+
+test_that("aborts when namespace is occupied by another project", {
+  conn <- mock_tbit_conn(list())
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) {
+      list(project_name = "OTHER_PROJECT", tables = list())
+    }
+  )
+
+  expect_error(
+    .tbit_check_s3_namespace_free(conn),
+    "already occupied.*OTHER_PROJECT"
+  )
+})
+
+test_that("aborts when namespace is occupied by same project name", {
+  conn <- mock_tbit_conn(list())
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) {
+      list(project_name = "test-project", tables = list())
+    }
+  )
+
+  # Even same project name is blocked — use .force to override
+
+  expect_error(
+    .tbit_check_s3_namespace_free(conn),
+    "already occupied"
+  )
+})
+
+test_that("shows <unknown> when manifest has no project_name field", {
+  conn <- mock_tbit_conn(list())
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) {
+      list(tables = list())  # pre-Phase 7 manifest without project_name
+    }
+  )
+
+  expect_error(
+    .tbit_check_s3_namespace_free(conn),
+    "already occupied.*unknown"
+  )
+})
+
+test_that("shows <unreadable> when manifest read fails", {
+  conn <- mock_tbit_conn(list())
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) {
+      stop("access denied")
+    }
+  )
+
+  expect_error(
+    .tbit_check_s3_namespace_free(conn),
+    "already occupied.*unreadable"
+  )
+})
+
+test_that("error message includes S3 location", {
+  conn <- mock_tbit_conn(list(), bucket = "my-bucket", prefix = "data/prod")
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) {
+      list(project_name = "PROD_DATA")
+    }
+  )
+
+  expect_error(
+    .tbit_check_s3_namespace_free(conn),
+    "my-bucket"
+  )
+})
+
+test_that("error message suggests .force = TRUE", {
+  conn <- mock_tbit_conn(list())
+
+  local_mocked_bindings(
+    .tbit_s3_exists = function(conn, s3_key) TRUE,
+    .tbit_s3_read_json = function(conn, s3_key) {
+      list(project_name = "EXISTING")
+    }
+  )
+
+  expect_error(
+    .tbit_check_s3_namespace_free(conn),
+    "\\.force = TRUE"
+  )
+})

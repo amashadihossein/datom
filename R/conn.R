@@ -134,6 +134,8 @@ print.tbit_conn <- function(x, ...) {
 #' @param region AWS region. If NULL, uses AWS_DEFAULT_REGION.
 #' @param max_file_size_gb Maximum file size limit in GB. Default 1000 (1TB).
 #' @param git_ignore Character vector of patterns to add to .gitignore.
+#' @param .force If `TRUE`, skip the S3 namespace safety check. Use only for
+#'   intentional takeover of an existing S3 namespace. Default `FALSE`.
 #'
 #' @return Invisible TRUE on success.
 #' @export
@@ -152,7 +154,8 @@ tbit_init_repo <- function(path = ".",
                              "*.sas7bdat", ".RData", ".RDataTmp",
                              "*.html", "*.png", "*.pdf",
                              ".vscode/", "rsconnect/"
-                           )) {
+                           ),
+                           .force = FALSE) {
   .tbit_check_git2r()
 
   # --- Input validation -------------------------------------------------------
@@ -182,7 +185,28 @@ tbit_init_repo <- function(path = ".",
   region <- region %||% Sys.getenv("AWS_DEFAULT_REGION", unset = "us-east-1")
 
   # --- Credential validation (developer role required) ------------------------
-  .tbit_check_credentials(project_name, role = "developer")
+  cred_names <- .tbit_check_credentials(project_name, role = "developer")
+
+  # --- S3 namespace safety check ----------------------------------------------
+  if (!isTRUE(.force)) {
+    tryCatch({
+      s3_check_client <- .tbit_s3_client(cred_names, region = region)
+      check_conn <- new_tbit_conn(
+        project_name, bucket, prefix, region,
+        s3_check_client, NULL, "reader"
+      )
+      .tbit_check_s3_namespace_free(check_conn)
+    }, error = function(e) {
+      # Re-throw namespace-occupied errors; swallow connectivity errors
+      # so offline init still works (S3 push will fail later anyway).
+      if (grepl("already occupied", conditionMessage(e))) {
+        stop(e)
+      }
+      cli::cli_alert_warning(
+        "Could not verify S3 namespace is free: {conditionMessage(e)}"
+      )
+    })
+  }
 
   # --- Path setup -------------------------------------------------------------
   path <- fs::path_abs(path)
@@ -237,7 +261,6 @@ tbit_init_repo <- function(path = ".",
   fs::dir_create(input_dir)
 
   # --- Create project.yaml ---------------------------------------------------
-  cred_names <- .tbit_derive_cred_names(project_name)
 
   project_config <- list(
     project_name = project_name,
@@ -277,6 +300,7 @@ tbit_init_repo <- function(path = ".",
 
   # --- Create manifest.json ---------------------------------------------------
   manifest <- list(
+    project_name = project_name,
     updated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
     tables = structure(list(), names = character(0)),
     summary = list(
@@ -360,6 +384,85 @@ tbit_init_repo <- function(path = ".",
   )
 
   invisible(TRUE)
+}
+
+
+#' Clone a tbit Repository
+#'
+#' Clones a remote tbit repository and returns a connection. This is the
+#' recommended way for teammates to join an existing tbit project — it wraps
+#' `git2r::clone()` and immediately returns a ready-to-use `tbit_conn`.
+#'
+#' Requires `GITHUB_PAT` for HTTPS remotes and the project's AWS credentials
+#' (see `vignette("credentials")`).
+#'
+#' @param remote_url Remote repository URL (HTTPS or SSH).
+#' @param path Local path to clone into.
+#' @param ... Additional arguments passed to [git2r::clone()].
+#'
+#' @return A `tbit_conn` object (developer role).
+#'
+#' @examples
+#' \dontrun{
+#' conn <- tbit_clone(
+#'   remote_url = "https://github.com/org/study-001-data.git",
+#'   path = "study_001_data"
+#' )
+#' tbit_pull(conn)
+#' }
+#' @export
+tbit_clone <- function(remote_url, path, ...) {
+  .tbit_check_git2r()
+
+  if (!is.character(remote_url) || length(remote_url) != 1L ||
+      is.na(remote_url) || !nzchar(remote_url)) {
+    cli::cli_abort("{.arg remote_url} must be a single non-empty string.")
+  }
+
+  if (!is.character(path) || length(path) != 1L ||
+      is.na(path) || !nzchar(path)) {
+    cli::cli_abort("{.arg path} must be a single non-empty string.")
+  }
+
+  path <- fs::path_abs(path)
+
+  if (fs::dir_exists(path) && length(fs::dir_ls(path, all = TRUE)) > 0L) {
+    cli::cli_abort(c(
+      "Target directory {.path {path}} already exists and is not empty.",
+      "i" = "Use an empty or non-existent directory."
+    ))
+  }
+
+  # Clone with git credentials
+  cred <- .tbit_git_credentials(remote_url)
+
+  tryCatch(
+    git2r::clone(url = remote_url, local_path = path, credentials = cred, ...),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Failed to clone {.url {remote_url}}.",
+        "x" = conditionMessage(e)
+      ))
+    }
+  )
+
+  # Verify this is actually a tbit repo
+  yaml_path <- fs::path(path, ".tbit", "project.yaml")
+  if (!fs::file_exists(yaml_path)) {
+    cli::cli_abort(c(
+      "Cloned repository is not a tbit repository.",
+      "i" = "No {.file .tbit/project.yaml} found at {.path {path}}.",
+      "i" = "Use {.fn tbit_init_repo} to initialize a new tbit project."
+    ))
+  }
+
+  conn <- tbit_get_conn(path = path)
+
+  cli::cli_alert_success(
+    "Cloned {.val {conn$project_name}} to {.path {path}}"
+  )
+
+  conn
 }
 
 

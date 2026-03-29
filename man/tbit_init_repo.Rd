@@ -14,7 +14,8 @@ tbit_init_repo(
   max_file_size_gb = 1000,
   git_ignore = c(".Rprofile", ".Renviron", ".Rhistory", ".Rapp.history", ".Rproj.user/",
     ".DS_Store", "*.csv", "*.tsv", "*.rds", "*.txt", "*.parquet", "*.sas7bdat", ".RData",
-    ".RDataTmp", "*.html", "*.png", "*.pdf", ".vscode/", "rsconnect/")
+    ".RDataTmp", "*.html", "*.png", "*.pdf", ".vscode/", "rsconnect/"),
+  .force = FALSE
 )
 }
 \arguments{
@@ -34,6 +35,9 @@ names (\verb{TBIT_\{PROJECT_NAME\}_*}).}
 \item{max_file_size_gb}{Maximum file size limit in GB. Default 1000 (1TB).}
 
 \item{git_ignore}{Character vector of patterns to add to .gitignore.}
+
+\item{.force}{If \code{TRUE}, skip the S3 namespace safety check. Use only for
+intentional takeover of an existing S3 namespace. Default \code{FALSE}.}
 }
 \value{
 Invisible TRUE on success.

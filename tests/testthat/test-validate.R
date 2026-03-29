@@ -543,3 +543,90 @@ test_that("tbit_validate skips repo files not present locally", {
     expect_true(result$valid)
   })
 })
+
+
+# --- .tbit_validate_project_name() (Phase 7) ---------------------------------
+
+test_that("tbit_validate detects project_name mismatch in manifest", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$project_name <- "MY_PROJECT"
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(
+      list(project_name = "DIFFERENT_PROJECT"),
+      ".tbit/manifest.json", auto_unbox = TRUE
+    )
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) TRUE
+    )
+
+    result <- tbit_validate(conn)
+
+    expect_false(result$valid)
+  })
+})
+
+test_that("tbit_validate passes when project_name matches", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$project_name <- "MY_PROJECT"
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(
+      list(project_name = "MY_PROJECT"),
+      ".tbit/manifest.json", auto_unbox = TRUE
+    )
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) TRUE
+    )
+
+    result <- tbit_validate(conn)
+
+    expect_true(result$valid)
+  })
+})
+
+test_that("tbit_validate tolerates pre-Phase-7 manifest without project_name", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    jsonlite::write_json(
+      list(tables = list()),
+      ".tbit/manifest.json", auto_unbox = TRUE
+    )
+    jsonlite::write_json(list(), ".tbit/routing.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .tbit_s3_exists = function(conn, s3_key) TRUE
+    )
+
+    result <- tbit_validate(conn)
+
+    # No project_name in manifest should be tolerated (not treated as mismatch)
+    expect_true(result$valid)
+  })
+})
+
+test_that(".tbit_validate_project_name returns TRUE when no manifest exists", {
+  withr::with_tempdir({
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".tbit")
+    # No manifest.json file
+
+    expect_true(.tbit_validate_project_name(conn))
+  })
+})

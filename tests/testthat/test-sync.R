@@ -293,7 +293,10 @@ test_that("tbit_sync skips unchanged and returns early when nothing actionable",
       stringsAsFactors = FALSE
     )
 
-    local_mocked_bindings(.tbit_check_rio = function() invisible(TRUE))
+    local_mocked_bindings(
+      .tbit_check_rio = function() invisible(TRUE),
+      .tbit_check_git_current = function(...) invisible(TRUE)
+    )
 
     result <- tbit_sync(conn, manifest)
 
@@ -325,6 +328,7 @@ test_that("tbit_sync processes new files via tbit_write", {
 
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
+      .tbit_check_git_current = function(...) invisible(TRUE),
       .tbit_import_file = function(file, format) data.frame(id = 1),
       tbit_write = function(conn, data, name, message, ...) {
         write_called <<- TRUE
@@ -369,6 +373,7 @@ test_that("tbit_sync skips unchanged rows and processes changed ones", {
 
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
+      .tbit_check_git_current = function(...) invisible(TRUE),
       .tbit_import_file = function(file, format) data.frame(x = 1),
       tbit_write = function(conn, data, name, message, ...) {
         written_names <<- c(written_names, name)
@@ -411,6 +416,7 @@ test_that("tbit_sync continues on error when continue_on_error = TRUE", {
 
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
+      .tbit_check_git_current = function(...) invisible(TRUE),
       .tbit_import_file = function(file, format) {
         call_count <<- call_count + 1L
         if (grepl("bad", file)) stop("Import failed for bad file")
@@ -452,6 +458,7 @@ test_that("tbit_sync stops on first error when continue_on_error = FALSE", {
 
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
+      .tbit_check_git_current = function(...) invisible(TRUE),
       .tbit_import_file = function(file, format) {
         if (grepl("bad", file)) stop("Import failed")
         data.frame(x = 1)
@@ -487,6 +494,7 @@ test_that("tbit_sync commit message includes status", {
 
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
+      .tbit_check_git_current = function(...) invisible(TRUE),
       .tbit_import_file = function(file, format) data.frame(x = 1),
       tbit_write = function(conn, data, name, message, ...) {
         captured_msg <<- message
@@ -518,6 +526,7 @@ test_that("tbit_sync augments manifest with result and error columns", {
 
     local_mocked_bindings(
       .tbit_check_rio = function() invisible(TRUE),
+      .tbit_check_git_current = function(...) invisible(TRUE),
       .tbit_import_file = function(file, format) data.frame(x = 1),
       tbit_write = function(conn, data, name, message, ...) {
         list(name = name, data_sha = "d", metadata_sha = "m",
@@ -970,5 +979,157 @@ test_that(".tbit_sync_table_metadata handles table with no version_history", {
 
     expect_equal(length(result$s3_keys), 1)
     expect_equal(result$s3_keys, "tbl/.metadata/metadata.json")
+  })
+})
+
+
+# --- tbit_pull() --------------------------------------------------------------
+
+test_that("tbit_pull rejects non-tbit_conn", {
+  expect_error(tbit_pull("not_conn"), "tbit_conn")
+})
+
+test_that("tbit_pull rejects reader role", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "reader"
+  conn$path <- "/tmp"
+  expect_error(tbit_pull(conn), "developer")
+})
+
+test_that("tbit_pull rejects conn without path", {
+  conn <- mock_tbit_conn(list())
+  conn$role <- "developer"
+  conn$path <- NULL
+  expect_error(tbit_pull(conn), "local git repo")
+})
+
+test_that("tbit_pull reports already up to date when nothing to pull", {
+  withr::with_tempdir({
+    # Create a real git repo with remote
+    bare_dir <- withr::local_tempdir()
+    bare_repo <- git2r::init(bare_dir, bare = TRUE)
+
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Initial commit")
+    git2r::remote_add(repo, name = "origin", url = bare_dir)
+    git2r::push(repo, name = "origin",
+                refspec = "refs/heads/master", set_upstream = TRUE)
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    result <- tbit_pull(conn)
+
+    expect_equal(result$commits_pulled, 0L)
+    expect_equal(result$branch, "master")
+  })
+})
+
+test_that("tbit_pull counts commits pulled from upstream", {
+  withr::with_tempdir({
+    # Create bare + working repo pair
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Initial commit")
+    git2r::remote_add(repo, name = "origin", url = bare_dir)
+    git2r::push(repo, name = "origin",
+                refspec = "refs/heads/master", set_upstream = TRUE)
+
+    # Simulate another user pushing 2 commits via a clone
+    other_dir <- withr::local_tempdir()
+    other_repo <- git2r::clone(bare_dir, other_dir)
+    git2r::config(other_repo, user.name = "Other", user.email = "other@test.com")
+
+    writeLines("a", fs::path(other_dir, "a.txt"))
+    git2r::add(other_repo, "a.txt")
+    git2r::commit(other_repo, "Commit A")
+
+    writeLines("b", fs::path(other_dir, "b.txt"))
+    git2r::add(other_repo, "b.txt")
+    git2r::commit(other_repo, "Commit B")
+
+    git2r::push(other_repo, name = "origin",
+                refspec = "refs/heads/master")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    result <- tbit_pull(conn)
+
+    expect_equal(result$commits_pulled, 2L)
+    expect_equal(result$branch, "master")
+
+    # Files should now exist locally
+    expect_true(fs::file_exists("a.txt"))
+    expect_true(fs::file_exists("b.txt"))
+  })
+})
+
+test_that("tbit_pull aborts on merge conflict", {
+  withr::with_tempdir({
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Initial commit")
+    git2r::remote_add(repo, name = "origin", url = bare_dir)
+    git2r::push(repo, name = "origin",
+                refspec = "refs/heads/master", set_upstream = TRUE)
+
+    # Another user pushes a conflicting change
+    other_dir <- withr::local_tempdir()
+    other_repo <- git2r::clone(bare_dir, other_dir)
+    git2r::config(other_repo, user.name = "Other", user.email = "other@test.com")
+    writeLines("other version", fs::path(other_dir, "README.md"))
+    git2r::add(other_repo, "README.md")
+    git2r::commit(other_repo, "Other edit")
+    git2r::push(other_repo, name = "origin",
+                refspec = "refs/heads/master")
+
+    # Local conflicting edit
+    writeLines("my version", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "My conflicting edit")
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    expect_error(tbit_pull(conn), "conflict|merge", ignore.case = TRUE)
+  })
+})
+
+test_that("tbit_pull returns invisible result", {
+  withr::with_tempdir({
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Initial commit")
+    git2r::remote_add(repo, name = "origin", url = bare_dir)
+    git2r::push(repo, name = "origin",
+                refspec = "refs/heads/master", set_upstream = TRUE)
+
+    conn <- mock_tbit_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    expect_invisible(tbit_pull(conn))
   })
 })

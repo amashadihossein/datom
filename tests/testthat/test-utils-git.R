@@ -467,3 +467,177 @@ test_that(".tbit_git_credentials handles empty PAT strings", {
   cred <- .tbit_git_credentials("https://github.com/org/repo.git")
   expect_null(cred)
 })
+
+
+# =============================================================================
+# .tbit_git_pull()
+# =============================================================================
+
+test_that(".tbit_git_pull fetches and merges upstream changes", {
+  info <- create_repo_with_remote()
+
+  # Simulate another user by cloning the bare repo
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(info$bare_path, other_dir)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+
+  # Other user commits + pushes
+  writeLines("upstream work", fs::path(other_dir, "upstream.txt"))
+  git2r::add(other_repo, "upstream.txt")
+  git2r::commit(other_repo, "Upstream commit")
+  git2r::push(other_repo, name = "origin",
+              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
+
+  # Pull should bring in the upstream commit
+  result <- .tbit_git_pull(info$work_path)
+
+  expect_true(result)
+  expect_true(fs::file_exists(fs::path(info$work_path, "upstream.txt")))
+
+  log <- git2r::commits(info$work_repo)
+  messages <- purrr::map_chr(log, ~ .x$message)
+  expect_true("Upstream commit" %in% messages)
+})
+
+test_that(".tbit_git_pull is no-op when already up to date", {
+  info <- create_repo_with_remote()
+
+  # Nothing upstream — should succeed silently
+  expect_no_error(.tbit_git_pull(info$work_path))
+  expect_true(.tbit_git_pull(info$work_path))
+})
+
+test_that(".tbit_git_pull aborts on merge conflict", {
+  info <- create_repo_with_remote()
+
+  # Simulate another user modifying README.md
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(info$bare_path, other_dir)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+
+  writeLines("other version of readme", fs::path(other_dir, "README.md"))
+  git2r::add(other_repo, "README.md")
+  git2r::commit(other_repo, "Other edit")
+  git2r::push(other_repo, name = "origin",
+              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
+
+  # Local user modifies the same file differently
+  writeLines("my conflicting version", fs::path(info$work_path, "README.md"))
+  git2r::add(info$work_repo, "README.md")
+  git2r::commit(info$work_repo, "My conflicting edit")
+
+  expect_error(.tbit_git_pull(info$work_path), "conflict|merge", ignore.case = TRUE)
+})
+
+test_that(".tbit_git_pull aborts when no remote configured", {
+  info <- create_test_repo()
+
+  expect_error(.tbit_git_pull(info$path), "No remote")
+})
+
+test_that(".tbit_git_pull aborts on non-git directory", {
+  dir <- withr::local_tempdir()
+  expect_error(.tbit_git_pull(dir), "Not a git repository")
+})
+
+test_that(".tbit_git_pull returns invisible TRUE", {
+  info <- create_repo_with_remote()
+  result <- .tbit_git_pull(info$work_path)
+  expect_true(result)
+  expect_invisible(.tbit_git_pull(info$work_path))
+})
+
+
+# =============================================================================
+# .tbit_check_git_current()
+# =============================================================================
+
+test_that(".tbit_check_git_current passes when up to date", {
+  info <- create_repo_with_remote()
+
+  # No upstream changes — should pass silently
+  result <- .tbit_check_git_current(info$work_path)
+  expect_true(result)
+  expect_invisible(.tbit_check_git_current(info$work_path))
+})
+
+test_that(".tbit_check_git_current aborts when behind remote", {
+  info <- create_repo_with_remote()
+
+  # Simulate another user pushing a commit
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(info$bare_path, other_dir)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+
+  writeLines("new upstream data", fs::path(other_dir, "new_file.txt"))
+  git2r::add(other_repo, "new_file.txt")
+  git2r::commit(other_repo, "New upstream commit")
+  git2r::push(other_repo, name = "origin",
+              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
+
+  # Local repo is now behind — should abort
+  expect_error(.tbit_check_git_current(info$work_path), "behind remote")
+})
+
+test_that(".tbit_check_git_current error message suggests tbit_pull", {
+  info <- create_repo_with_remote()
+
+  # Push upstream commit
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(info$bare_path, other_dir)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+  writeLines("data", fs::path(other_dir, "upstream.txt"))
+  git2r::add(other_repo, "upstream.txt")
+  git2r::commit(other_repo, "Upstream")
+  git2r::push(other_repo, name = "origin",
+              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
+
+  expect_error(.tbit_check_git_current(info$work_path), "tbit_pull")
+})
+
+test_that(".tbit_check_git_current passes when no remote configured", {
+  info <- create_test_repo()
+
+  # No remote = can't be behind → passes
+  result <- .tbit_check_git_current(info$path)
+  expect_true(result)
+})
+
+test_that(".tbit_check_git_current passes when no upstream branch", {
+  info <- create_repo_with_remote()
+
+  # Create a new local-only branch with no upstream
+  git2r::branch_create(git2r::last_commit(info$work_repo), "feature-branch")
+  git2r::checkout(info$work_repo, "feature-branch")
+
+  result <- .tbit_check_git_current(info$work_path)
+  expect_true(result)
+})
+
+test_that(".tbit_check_git_current passes when ahead of remote", {
+  info <- create_repo_with_remote()
+
+  # Make a local commit that hasn't been pushed
+  writeLines("local only", fs::path(info$work_path, "local.txt"))
+  git2r::add(info$work_repo, "local.txt")
+  git2r::commit(info$work_repo, "Local commit")
+
+  # Ahead, not behind — should pass
+  result <- .tbit_check_git_current(info$work_path)
+  expect_true(result)
+})
+
+test_that(".tbit_check_git_current tolerates network errors gracefully", {
+  info <- create_test_repo()
+
+  # Add a fake remote that will fail on fetch
+  git2r::remote_add(info$repo, name = "origin", url = "https://invalid.example.com/repo.git")
+
+  # Network error should warn but not abort
+  expect_no_error(.tbit_check_git_current(info$path))
+})
+
+test_that(".tbit_check_git_current aborts on non-git directory", {
+  dir <- withr::local_tempdir()
+  expect_error(.tbit_check_git_current(dir), "Not a git repository")
+})
