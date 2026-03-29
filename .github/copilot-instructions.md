@@ -117,3 +117,14 @@ Auto-detected via `GITHUB_PAT` presence.
 - No for loops (use purrr)
 - No credentials in code
 - No `access.json` (renamed to `routing.json`)
+
+## Operational Discipline
+
+These patterns are non-negotiable for every session:
+
+1. **Read before writing**: Always read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the phase doc description alone.
+2. **Full test suite before every commit**: Run `devtools::test()` (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost.
+3. **One logical change per commit**: Don't bundle unrelated fixes. Squash related incremental commits before pushing if they tell a cleaner story as one.
+4. **Simplicity over cleverness**: If a change doesn't alter behavior, don't add it. When in doubt, do less. Actively resist complexity that exists only for marginally better UX or edge-case coverage.
+5. **E2E after phase completion**: Unit tests are necessary but not sufficient. Before marking a phase complete, run real end-to-end workflows via `dev/dev-sandbox.R` to catch integration bugs.
+6. **Fix bugs immediately**: When E2E reveals a bug, fix it before moving to the next phase. Don't defer bugs that affect correctness.
