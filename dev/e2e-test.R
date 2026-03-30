@@ -85,5 +85,27 @@ datom_history(conn, "summary_trt_by_sex")
 datom_validate(conn)
 datom_status(conn)
 
+# --- Recover env (if you lost the session) -----------------------------------
+# If you closed R without tearing down, re-source the sandbox helpers,
+# set credentials, and recover the env object:
+#
+#   devtools::load_all()
+#   source("dev/dev-sandbox.R")
+#
+#   sandbox_credentials(
+#     project_name = "STUDY_001",
+#     access_key   = keyring::key_get("AWS_ACCESS_KEY", "datom-developer", "remotes"),
+#     secret_key   = keyring::key_get("AWS_SECRET_KEY", "datom-developer", "remotes"),
+#     github_pat   = keyring::key_get("GITHUB_PAT", "kol", "remotes")
+#   )
+#
+#   env <- sandbox_recover(
+#     project_name = "STUDY_001",
+#     repo_name    = "study-001-data",
+#     bucket       = "datom-test",
+#     prefix       = NULL,
+#     region       = "us-east-1"
+#   )
+
 # --- Tear down ---------------------------------------------------------------
 # sandbox_down(env)

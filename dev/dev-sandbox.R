@@ -408,6 +408,57 @@ sandbox_reset <- function(env, confirm = interactive()) {
 }
 
 
+#' Recover a sandbox environment for teardown
+#'
+#' Reconstructs the `env` object needed by `sandbox_down()` without
+#' re-creating any infrastructure. Use this when you lost the R session
+#' before tearing down.
+#'
+#' @param ... Override any defaults from .sandbox_defaults() — same args
+#'   you originally passed to `sandbox_up()`.
+#' @return A `datom_sandbox` object suitable for `sandbox_down()`.
+#'
+#' @examples
+#' \dontrun{
+#' # New session — credentials first, then recover:
+#' source("dev/dev-sandbox.R")
+#' sandbox_credentials("STUDY_001", ...)
+#' env <- sandbox_recover(
+#'   project_name = "STUDY_001",
+#'   repo_name    = "study-001-data",
+#'   bucket       = "datom-test",
+#'   prefix       = NULL,
+#'   region       = "us-east-1"
+#' )
+#' sandbox_down(env)
+#' }
+sandbox_recover <- function(...) {
+  cfg <- utils::modifyList(.sandbox_defaults(), list(...))
+
+  local_path <- fs::path(cfg$base_dir, cfg$repo_name)
+  remote_url <- .sandbox_remote_url(cfg)
+
+  env <- list(
+    config     = cfg,
+    local_path = as.character(local_path),
+    remote_url = remote_url,
+    conn       = NULL,
+    created_at = NA_real_
+  )
+  class(env) <- "datom_sandbox"
+
+  cli::cli_alert_success("Recovered sandbox env for {.val {cfg$project_name}}.")
+  cli::cli_ul()
+  cli::cli_li("Local: {.path {local_path}}")
+  cli::cli_li("Remote: {.url {remote_url}}")
+  cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}datom/")
+  cli::cli_end()
+  cli::cli_alert_info("Pass this to {.fn sandbox_down} to tear down.")
+
+  invisible(env)
+}
+
+
 #' Print method for sandbox environment
 #' @export
 print.datom_sandbox <- function(x, ...) {

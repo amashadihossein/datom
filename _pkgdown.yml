@@ -2,6 +2,7 @@ url: https://amashadihossein.github.io/datom/
 
 template:
   bootstrap: 5
+  light-switch: true
 
 home:
   links:
