@@ -18,7 +18,7 @@ Replace scattered storage params (`bucket`, `prefix`, `region`) and env-var cred
 A typed S3-classed object that encapsulates **everything** about "where data lives and how to authenticate":
 
 ```r
-# AWS S3 backend
+# AWS S3 — developer (github_pat provided)
 store <- datom_store_s3(
   bucket     = "my-bucket",
   prefix     = "project/",
@@ -27,13 +27,34 @@ store <- datom_store_s3(
   secret_key = keyring::key_get(...),
   github_pat = keyring::key_get(...)
 )
+store$role  # "developer"
 
-# Future: shared folder backend (no storage credentials)
+# AWS S3 — reader (no github_pat)
+store <- datom_store_s3(
+  bucket     = "my-bucket",
+  access_key = keyring::key_get(...),
+  secret_key = keyring::key_get(...)
+)
+store$role  # "reader"
+
+# Future: shared folder backend
 store <- datom_store_folder(
   path       = "/mnt/shared/datom-store",
-  github_pat = keyring::key_get(...)
+  github_pat = keyring::key_get(...)  # omit for reader
 )
 ```
+
+### Role Derivation
+
+`github_pat` presence on the store determines role — replaces current fragile auto-detection (checking if `GITHUB_PAT` env var happens to be set):
+
+- `github_pat` provided → `store$role = "developer"`
+- `github_pat` omitted/NULL → `store$role = "reader"`
+
+Downstream enforcement:
+- `datom_init_repo()` requires developer store (errors if reader)
+- `datom_clone()` requires `github_pat` (from store or `...`) — errors if neither
+- `datom_get_conn()` accepts both; reader store → reader conn, developer store → developer conn
 
 ### Validation at Construction Time (Layered)
 
@@ -41,7 +62,7 @@ store <- datom_store_folder(
 - AWS keys non-empty, correct format
 - STS `GetCallerIdentity` — proves keys are real (~100ms)
 - `HeadBucket` on target bucket — proves access
-- GitHub `GET /user` — proves PAT is valid
+- GitHub `GET /user` — proves PAT is valid (**skipped when `github_pat` is NULL**, i.e., reader role)
 - All checked before returning. `validate = TRUE` default; skip with `FALSE` for tests/offline.
 
 **Access validation** in `datom_init_repo()` / `datom_get_conn()`:
@@ -118,7 +139,8 @@ datom_store (base class)
 └── datom_store_azure   — container, prefix, credentials (future)
 
 All carry:
-├── github_pat  (for git operations; NULL for reader-only)
+├── role        ("developer" if github_pat provided, "reader" if NULL)
+├── github_pat  (for git operations; NULL for reader)
 ├── remote_url  (resolved GitHub URL; NULL if create_repo)
 ├── github_org  (for repo creation; NULL for personal)
 ├── validated   (logical — did connectivity checks pass?)
@@ -131,14 +153,15 @@ All carry:
 
 **Files**: `R/store.R` (new), `tests/testthat/test-store.R` (new)
 
-- `datom_store_s3()` constructor with all params
+- `datom_store_s3()` constructor with all params (`github_pat` optional)
+- Role derivation: `github_pat` provided → developer, NULL → reader
 - Structural validation (non-empty strings, correct types)
 - Identity validation when `validate = TRUE`:
   - STS `GetCallerIdentity` (AWS)
   - `HeadBucket` (bucket access)
-  - GitHub `GET /user` (PAT validity)
-- `print.datom_store_s3()` — shows config, masks secrets
-- Tests with mocked S3/GitHub responses
+  - GitHub `GET /user` (PAT validity) — **skipped for reader role**
+- `print.datom_store_s3()` — shows config, masks secrets, shows role
+- Tests with mocked S3/GitHub responses for both developer and reader stores
 
 ### Chunk 2: `.datom_install_store()` + GitHub Repo Creation
 
