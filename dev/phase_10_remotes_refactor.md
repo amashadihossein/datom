@@ -49,11 +49,15 @@ store <- datom_store_folder(
 
 ### GitHub Repo Auto-Creation
 
-When `create_repo = TRUE` (default `FALSE`):
-- `datom_init_repo()` creates the GitHub repo via GitHub REST API (`httr2`, not `gh` CLI)
+When `create_repo = TRUE` (default `FALSE`) in `datom_init_repo()`:
+- Creates the GitHub repo via GitHub REST API (`httr2`, not `gh` CLI)
 - Repo name derived from `project_name` (normalized: lowercase, underscores → hyphens)
 - Optional `github_org` on the store object for org repos; defaults to personal repo
-- If repo already exists and `create_repo = TRUE`, reuse it (idempotent)
+
+**Safety guard** (checked in `datom_init_repo()`, not at store construction — because `project_name` determines the repo name):
+- If repo doesn't exist → create it, proceed
+- If repo exists + empty → reuse (idempotent, handles prior failed init)
+- If repo exists + has content → **abort before any local side effects**, with actionable error message
 
 When `create_repo = FALSE`:
 - `remote_url` must be provided on the store object
@@ -80,6 +84,29 @@ Mutually exclusive paths:
 - Provide `remote_url` on the store object → use existing repo
 - Set `create_repo = TRUE` on `datom_init_repo()` → create repo from `project_name`
 - Error if both `remote_url` and `github_org` are supplied (ambiguous intent)
+
+## Function Signatures
+
+### `datom_init_repo(path, project_name, store, create_repo = FALSE)`
+
+- `store` replaces `bucket`, `prefix`, `region`, `remote_url`
+- `create_repo = TRUE` → auto-create GitHub repo (name derived from `project_name`)
+- `create_repo = FALSE` → `store$remote_url` must be set
+- Validation order: install store → check credentials → check repo safety → **then** local side effects
+
+### `datom_get_conn(path = NULL, store = NULL, project_name = NULL)`
+
+Two paths:
+- **Developer** (`path` provided): reads storage config from `.datom/project.yaml`. If `store` also provided, uses it for credentials only (secrets not in yaml). If `store` not provided, falls back to env vars.
+- **Reader** (`store` + `project_name`, no `path`): no local repo, store provides everything (storage config + credentials).
+
+### `datom_clone(path, store = NULL, ...)`
+
+- `path` is always required (local clone destination)
+- `store` is the preferred way to supply remote info — extracts `remote_url` and `github_pat`
+- Without `store`, pass `remote_url` and optionally `github_pat` as named args (captured from `...`)
+- Remaining `...` forwarded to `git2r::clone()`
+- After clone, returns `datom_get_conn(path)` as today (still needs store/env vars for S3 access)
 
 ## Class Hierarchy
 
@@ -135,9 +162,16 @@ All carry:
 
 **Files**: `R/conn.R`, `tests/testthat/test-conn.R`
 
-- Add optional `store` param to `datom_get_conn()` and `datom_clone()`
-- If provided, install store using project_name from `project.yaml`
-- If not provided, existing env var fallback still works
+**`datom_get_conn(path = NULL, store = NULL, project_name = NULL)`**:
+- Developer path (`path`): reads config from `project.yaml`; `store` optional for credentials
+- Reader path (`store` + `project_name`): replaces old `bucket`/`prefix`/`project_name` params
+- Error if neither `path` nor `store` + `project_name` supplied
+
+**`datom_clone(path, store = NULL, ...)`**:
+- `path` always required (local destination)
+- `store` preferred: extracts `remote_url` + `github_pat`
+- Without `store`: `remote_url` and `github_pat` accepted as named args in `...`
+- After clone, calls `datom_get_conn(path)` — needs store/env vars for S3 at that point
 - Update all existing tests
 
 ### Chunk 5: Update Sandbox + E2E Tooling
