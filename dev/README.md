@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| Phase 10: Remotes Refactor | In Progress | `dev/phase_10_remotes_refactor.md` |
+| Phase 10: Store Abstraction | In Progress | `dev/phase_10_remotes_refactor.md` |
 
 ### Completed Phases
 
@@ -102,7 +102,7 @@ Items discovered during development but intentionally deferred. Review periodica
 | 6 | Sync & Validation | Phase 5 | 1 week |
 | 7 | Multi-Developer Collaboration | Phases 1-6 | 1-2 weeks |
 | 8 | Metadata Enrichment & Table Types | Phases 1-6 (parallel w/ 7) | 1 week |
-| 10 | Remotes Refactor | Phases 1-8 | 1-2 weeks |
+| 10 | Store Abstraction | Phases 1-8 | 1-2 weeks |
 
 ## Quick Context for New Sessions
 
