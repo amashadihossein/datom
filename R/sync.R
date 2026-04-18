@@ -4,7 +4,7 @@
 #' This is the recommended entry point at the start of each work session
 #' to ensure the local state is current before syncing or writing tables.
 #'
-#' Git is the source of truth for all metadata (manifest, routing, table
+#' Git is the source of truth for all metadata (manifest, dispatch, table
 #' metadata). The manifest and other metadata files live in git and are
 #' pulled along with any other committed changes.
 #'
@@ -82,14 +82,14 @@ datom_pull <- function(conn) {
 }
 
 
-#' Sync Routing Metadata to S3
+#' Sync Dispatch Metadata to S3
 #'
 #' Updates all metadata in S3 to match the local git repository. This includes
-#' repo-level files (routing.json, manifest.json, migration_history.json) and
+#' repo-level files (dispatch.json, manifest.json, migration_history.json) and
 #' per-table metadata (metadata.json, version_history.json). Requires
 #' interactive confirmation unless `.confirm = FALSE`.
 #'
-#' Used after migration, routing changes, or any situation where S3 metadata
+#' Used after migration, dispatch changes, or any situation where S3 metadata
 #' may be out of sync with git.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
@@ -99,7 +99,7 @@ datom_pull <- function(conn) {
 #' @return Invisibly, a list with `repo_files` (character vector of uploaded
 #'   repo-level keys) and `tables` (list of per-table sync results).
 #' @export
-datom_sync_routing <- function(conn, .confirm = TRUE) {
+datom_sync_dispatch <- function(conn, .confirm = TRUE) {
 
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
@@ -107,14 +107,14 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
 
   if (conn$role != "developer") {
     cli::cli_abort(c(
-      "Sync routing requires {.val developer} role.",
+      "Sync dispatch requires {.val developer} role.",
       "i" = "Current role: {.val {conn$role}}."
     ))
   }
 
   if (is.null(conn$path)) {
     cli::cli_abort(c(
-      "Sync routing requires a local git repo path.",
+      "Sync dispatch requires a local git repo path.",
       "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
@@ -144,7 +144,7 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
     }
 
     cli::cli_alert_warning(
-      "This will update routing metadata for {length(table_names)} table{?s}."
+      "This will update dispatch metadata for {length(table_names)} table{?s}."
     )
     cli::cli_alert_info("Current location: {.url {s3_location}}")
 
@@ -159,7 +159,7 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
   repo_files_synced <- character()
 
   repo_level_files <- list(
-    routing.json = fs::path(repo_path, ".datom", "routing.json"),
+    dispatch.json = fs::path(repo_path, ".datom", "dispatch.json"),
     manifest.json = fs::path(repo_path, ".datom", "manifest.json"),
     migration_history.json = fs::path(repo_path, ".datom", "migration_history.json")
   )
@@ -193,7 +193,7 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
   n_err <- length(table_results) - n_ok
 
   cli::cli_alert_info(
-    "Sync routing complete: {n_ok} table{?s} synced, {n_err} error{?s}."
+    "Sync dispatch complete: {n_ok} table{?s} synced, {n_err} error{?s}."
   )
 
   invisible(list(

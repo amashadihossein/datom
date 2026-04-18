@@ -80,11 +80,11 @@ datom_init_repo(
 #> ✔ Created GitHub repo "study-001-data"
 #> ✔ Initialized datom repository at study_001_data
 #> ✔ Pushed to origin/main
-#> ✔ Synced routing.json and manifest.json to S3
+#> ✔ Synced dispatch.json and manifest.json to S3
 ```
 
 This creates the folder structure, creates a GitHub repo, pushes the initial
-commit, and uploads `routing.json` and `manifest.json` to S3.
+commit, and uploads `dispatch.json` and `manifest.json` to S3.
 
 ### S3 Namespace Safety
 
@@ -170,7 +170,7 @@ datom_pull(conn)
 ```
 
 `datom_pull()` fetches and merges upstream git commits — including any metadata
-changes from teammates (manifest updates, new table versions, routing changes).
+changes from teammates (manifest updates, new table versions, dispatch changes).
 Git is the source of truth for all metadata.
 
 If you're already up to date:

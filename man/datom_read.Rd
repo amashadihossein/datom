@@ -13,7 +13,7 @@ datom_read(conn, name, version = NULL, context = NULL, ...)
 
 \item{version}{Optional metadata_sha (datom version). If NULL, uses current.}
 
-\item{context}{Optional context for routing (e.g., "default", "cached").}
+\item{context}{Optional context for dispatch (e.g., "default", "cached").}
 
 \item{...}{Additional parameters forwarded to routed function.}
 }
@@ -21,6 +21,6 @@ datom_read(conn, name, version = NULL, context = NULL, ...)
 Data frame or routed function result.
 }
 \description{
-Unified read function with routing via \code{routing.json}. Reads from S3
+Unified read function with dispatch via \code{dispatch.json}. Reads from S3
 metadata cache for data readers.
 }

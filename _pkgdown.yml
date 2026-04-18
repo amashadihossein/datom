@@ -52,7 +52,7 @@ reference:
       - datom_pull
       - datom_sync
       - datom_sync_manifest
-      - datom_sync_routing
+      - datom_sync_dispatch
 
   - title: "Validation"
     desc: "Validate repository structure and git-S3 consistency"

@@ -1,12 +1,12 @@
 #' Read a datom Table
 #'
-#' Unified read function with routing via `routing.json`. Reads from S3
+#' Unified read function with dispatch via `dispatch.json`. Reads from S3
 #' metadata cache for data readers.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
 #' @param version Optional metadata_sha (datom version). If NULL, uses current.
-#' @param context Optional context for routing (e.g., "default", "cached").
+#' @param context Optional context for dispatch (e.g., "default", "cached").
 #' @param ... Additional parameters forwarded to routed function.
 #'
 #' @return Data frame or routed function result.
@@ -31,7 +31,7 @@ datom_read <- function(conn,
   data_sha <- .datom_resolve_version(metadata_list, version = version, name = name)
 
   # 3. Download and read parquet
-  # TODO: Phase 6 will add routing via context + routing.json
+  # TODO: Phase 6 will add dispatch via context + dispatch.json
   .datom_read_parquet(conn, name, data_sha)
 }
 
@@ -380,7 +380,7 @@ datom_read <- function(conn,
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param data Data frame to write. If NULL with name, does metadata-only sync.
 #' @param name Table name. If NULL with NULL data, aliases to
-#'   [datom_sync_routing()].
+#'   [datom_sync_dispatch()].
 #' @param metadata Optional list of custom metadata.
 #' @param message Optional commit message.
 #' @param parents Optional lineage: list of `list(source, table, version)` entries.
@@ -408,7 +408,7 @@ datom_write <- function(conn,
   # Route based on arguments
 
   if (is.null(data) && is.null(name)) {
-    return(datom_sync_routing(conn))
+    return(datom_sync_dispatch(conn))
   }
 
   if (is.null(data) && !is.null(name)) {

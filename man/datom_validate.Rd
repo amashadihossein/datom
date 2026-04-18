@@ -10,7 +10,7 @@ datom_validate(conn, fix = FALSE)
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
 \item{fix}{If \code{TRUE}, attempts to fix inconsistencies by syncing metadata
-to S3 via \code{\link[=datom_sync_routing]{datom_sync_routing()}}.}
+to S3 via \code{\link[=datom_sync_dispatch]{datom_sync_dispatch()}}.}
 }
 \value{
 A list with:

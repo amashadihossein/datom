@@ -104,7 +104,7 @@ This creates:
 study_001_data/
 ├── .datom/
 │   ├── project.yaml       # Storage config (bucket, prefix, region)
-│   ├── routing.json        # Read method dispatch
+│   ├── dispatch.json        # Read method dispatch
 │   └── manifest.json       # Table catalog (initially empty)
 ├── input_files/            # Drop EDC extracts here (gitignored)
 └── .gitignore              # Keeps data files out of git

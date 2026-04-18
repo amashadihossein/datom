@@ -316,15 +316,15 @@ datom_init_repo <- function(path = ".",
 
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
 
-  # --- Create routing.json ----------------------------------------------------
-  routing <- list(
+  # --- Create dispatch.json ----------------------------------------------------
+  dispatch <- list(
     methods = list(
       r = list(default = "datom::datom_read"),
       python = list(default = "datom.read")
     )
   )
 
-  jsonlite::write_json(routing, fs::path(path, ".datom", "routing.json"),
+  jsonlite::write_json(dispatch, fs::path(path, ".datom", "dispatch.json"),
                        auto_unbox = TRUE, pretty = TRUE)
 
   # --- Create manifest.json ---------------------------------------------------
@@ -375,7 +375,7 @@ datom_init_repo <- function(path = ".",
   # Stage all created files
   git2r::add(repo, c(
     ".datom/project.yaml",
-    ".datom/routing.json",
+    ".datom/dispatch.json",
     ".datom/manifest.json",
     ".gitignore",
     "README.md"
@@ -397,13 +397,13 @@ datom_init_repo <- function(path = ".",
       project_name, bucket, prefix, region,
       s3_client, path, "developer"
     )
-    .datom_s3_write_json(init_conn, ".metadata/routing.json", routing)
+    .datom_s3_write_json(init_conn, ".metadata/dispatch.json", dispatch)
     .datom_s3_write_json(init_conn, ".metadata/manifest.json", manifest)
   }, error = function(e) {
     cli::cli_alert_warning(
       "Git push succeeded but S3 upload failed: {conditionMessage(e)}"
     )
-    cli::cli_alert_info("Run {.fn datom_sync_routing} to fix.")
+    cli::cli_alert_info("Run {.fn datom_sync_dispatch} to fix.")
   })
 
   .init_success <- TRUE

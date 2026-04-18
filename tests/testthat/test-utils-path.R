@@ -19,8 +19,8 @@ test_that("build key with prefix and versioned metadata", {
 })
 
 test_that("build key with prefix and repo-level metadata", {
-  key <- .datom_build_s3_key("proj", ".metadata", "routing.json")
-  expect_equal(key, "proj/datom/.metadata/routing.json")
+  key <- .datom_build_s3_key("proj", ".metadata", "dispatch.json")
+  expect_equal(key, "proj/datom/.metadata/dispatch.json")
 })
 
 test_that("build key with prefix and redirect file", {

@@ -22,7 +22,7 @@ This is the recommended entry point at the start of each work session
 to ensure the local state is current before syncing or writing tables.
 }
 \details{
-Git is the source of truth for all metadata (manifest, routing, table
+Git is the source of truth for all metadata (manifest, dispatch, table
 metadata). The manifest and other metadata files live in git and are
 pulled along with any other committed changes.
 

@@ -5,7 +5,7 @@
 scaffold_datom_repo <- function(path,
                                git = TRUE,
                                project_yaml = TRUE,
-                               routing_json = TRUE,
+                               dispatch_json = TRUE,
                                manifest_json = TRUE,
                                renv = TRUE) {
   if (git) fs::dir_create(fs::path(path, ".git"))
@@ -13,9 +13,9 @@ scaffold_datom_repo <- function(path,
     fs::dir_create(fs::path(path, ".datom"))
     fs::file_create(fs::path(path, ".datom", "project.yaml"))
   }
-  if (routing_json) {
+  if (dispatch_json) {
     fs::dir_create(fs::path(path, ".datom"))
-    fs::file_create(fs::path(path, ".datom", "routing.json"))
+    fs::file_create(fs::path(path, ".datom", "dispatch.json"))
   }
   if (manifest_json) {
     fs::dir_create(fs::path(path, ".datom"))
@@ -35,7 +35,7 @@ test_that("returns all TRUE for fully scaffolded repo", {
     dx <- datom_repository_check(getwd())
 
     expect_type(dx, "list")
-    expect_named(dx, c("git_initialized", "datom_initialized", "datom_routing",
+    expect_named(dx, c("git_initialized", "datom_initialized", "datom_dispatch",
                         "datom_manifest", "renv_initialized"))
     purrr::walk(dx, ~ expect_true(.x))
   })
@@ -48,7 +48,7 @@ test_that("detects missing .git", {
 
     expect_false(dx$git_initialized)
     expect_true(dx$datom_initialized)
-    expect_true(dx$datom_routing)
+    expect_true(dx$datom_dispatch)
     expect_true(dx$datom_manifest)
     expect_true(dx$renv_initialized)
   })
@@ -61,17 +61,17 @@ test_that("detects missing project.yaml", {
 
     expect_true(dx$git_initialized)
     expect_false(dx$datom_initialized)
-    expect_true(dx$datom_routing)
+    expect_true(dx$datom_dispatch)
   })
 })
 
-test_that("detects missing routing.json", {
+test_that("detects missing dispatch.json", {
   withr::with_tempdir({
-    scaffold_datom_repo(getwd(), routing_json = FALSE)
+    scaffold_datom_repo(getwd(), dispatch_json = FALSE)
     dx <- datom_repository_check(getwd())
 
     expect_true(dx$datom_initialized)
-    expect_false(dx$datom_routing)
+    expect_false(dx$datom_dispatch)
     expect_true(dx$datom_manifest)
   })
 })
@@ -81,7 +81,7 @@ test_that("detects missing manifest.json", {
     scaffold_datom_repo(getwd(), manifest_json = FALSE)
     dx <- datom_repository_check(getwd())
 
-    expect_true(dx$datom_routing)
+    expect_true(dx$datom_dispatch)
     expect_false(dx$datom_manifest)
     expect_true(dx$renv_initialized)
   })
@@ -159,13 +159,13 @@ test_that("checks = 'datom' only evaluates datom components", {
     # Only datom files, no git or renv
     fs::dir_create(".datom")
     fs::file_create(fs::path(".datom", "project.yaml"))
-    fs::file_create(fs::path(".datom", "routing.json"))
+    fs::file_create(fs::path(".datom", "dispatch.json"))
     fs::file_create(fs::path(".datom", "manifest.json"))
     expect_true(is_valid_datom_repo(getwd(), checks = "datom"))
   })
 })
 
-test_that("checks = 'datom' returns FALSE when routing.json missing", {
+test_that("checks = 'datom' returns FALSE when dispatch.json missing", {
   withr::with_tempdir({
     fs::dir_create(".datom")
     fs::file_create(fs::path(".datom", "project.yaml"))
@@ -260,7 +260,7 @@ test_that("datom_validate returns valid when everything consistent", {
 
     # Repo-level files
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
     jsonlite::write_json(list(), ".datom/manifest.json", auto_unbox = TRUE)
 
     # Table with metadata
@@ -292,7 +292,7 @@ test_that("datom_validate detects repo-level files missing from S3", {
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
     jsonlite::write_json(list(), ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
@@ -313,7 +313,7 @@ test_that("datom_validate detects table metadata missing from S3", {
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     fs::dir_create("orders")
     jsonlite::write_json(
@@ -411,20 +411,20 @@ test_that("datom_validate returns correct structure", {
   })
 })
 
-test_that("datom_validate with fix = TRUE calls datom_sync_routing on failure", {
+test_that("datom_validate with fix = TRUE calls datom_sync_dispatch on failure", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     sync_called <- FALSE
 
     local_mocked_bindings(
       .datom_s3_exists = function(conn, s3_key) FALSE,
-      datom_sync_routing = function(conn, .confirm = TRUE) {
+      datom_sync_dispatch = function(conn, .confirm = TRUE) {
         sync_called <<- TRUE
         invisible(list(repo_files = character(), tables = list()))
       }
@@ -449,7 +449,7 @@ test_that("datom_validate with fix = TRUE does not call sync when valid", {
 
     local_mocked_bindings(
       .datom_s3_exists = function(conn, s3_key) TRUE,
-      datom_sync_routing = function(conn, .confirm = TRUE) {
+      datom_sync_dispatch = function(conn, .confirm = TRUE) {
         sync_called <<- TRUE
         invisible(list(repo_files = character(), tables = list()))
       }
@@ -507,11 +507,11 @@ test_that("datom_validate handles fix failure gracefully", {
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
       .datom_s3_exists = function(conn, s3_key) FALSE,
-      datom_sync_routing = function(conn, .confirm = TRUE) {
+      datom_sync_dispatch = function(conn, .confirm = TRUE) {
         stop("Sync failed")
       }
     )
@@ -582,7 +582,7 @@ test_that("datom_validate passes when project_name matches", {
       list(project_name = "MY_PROJECT"),
       ".datom/manifest.json", auto_unbox = TRUE
     )
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
       .datom_s3_exists = function(conn, s3_key) TRUE
@@ -605,7 +605,7 @@ test_that("datom_validate tolerates pre-Phase-7 manifest without project_name", 
       list(tables = list()),
       ".datom/manifest.json", auto_unbox = TRUE
     )
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
       .datom_s3_exists = function(conn, s3_key) TRUE

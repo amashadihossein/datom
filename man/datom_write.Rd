@@ -22,7 +22,7 @@ datom_write(
 \item{data}{Data frame to write. If NULL with name, does metadata-only sync.}
 
 \item{name}{Table name. If NULL with NULL data, aliases to
-\code{\link[=datom_sync_routing]{datom_sync_routing()}}.}
+\code{\link[=datom_sync_dispatch]{datom_sync_dispatch()}}.}
 
 \item{metadata}{Optional list of custom metadata.}
 

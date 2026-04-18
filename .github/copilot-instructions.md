@@ -11,6 +11,8 @@
 
 datom is an R package for version-controlled data management. It stores tabular data in S3 with git-tracked metadata, enabling reproducibility for clinical/scientific workflows.
 
+**Pre-release status**: This package has not been released and no production data products depend on it. Proceed without backward compatibility or lifecycle management concerns — rename freely, delete freely, break APIs as needed.
+
 **Core concept**: Tables abstracted as code in git; actual data in cloud storage (parquet format).
 
 ## Documentation Hierarchy

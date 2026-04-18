@@ -702,18 +702,18 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   expect_null(cfg$storage$credentials)
 })
 
-test_that("datom_init_repo creates routing.json", {
+test_that("datom_init_repo creates dispatch.json", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = env$store)
 
-  routing_path <- fs::path(env$work_dir, ".datom", "routing.json")
-  expect_true(fs::file_exists(routing_path))
+  dispatch_path <- fs::path(env$work_dir, ".datom", "dispatch.json")
+  expect_true(fs::file_exists(dispatch_path))
 
-  routing <- jsonlite::read_json(routing_path)
-  expect_equal(routing$methods$r$default, "datom::datom_read")
-  expect_equal(routing$methods$python$default, "datom.read")
+  dispatch <- jsonlite::read_json(dispatch_path)
+  expect_equal(dispatch$methods$r$default, "datom::datom_read")
+  expect_equal(dispatch$methods$python$default, "datom.read")
 })
 
 test_that("datom_init_repo creates manifest.json", {
@@ -1100,7 +1100,7 @@ test_that("datom_init_repo does NOT remove pre-existing parent dir on failure", 
   expect_true(fs::dir_exists(env$work_dir))
 })
 
-test_that("datom_init_repo pushes routing.json and manifest.json to S3", {
+test_that("datom_init_repo pushes dispatch.json and manifest.json to S3", {
   env <- setup_init_env()
 
   s3_keys_written <- character()
@@ -1119,7 +1119,7 @@ test_that("datom_init_repo pushes routing.json and manifest.json to S3", {
     store = env$store
   )
 
-  expect_true(".metadata/routing.json" %in% s3_keys_written)
+  expect_true(".metadata/dispatch.json" %in% s3_keys_written)
   expect_true(".metadata/manifest.json" %in% s3_keys_written)
 })
 
@@ -1141,7 +1141,7 @@ test_that("datom_init_repo succeeds even if S3 upload fails", {
   )
 
   # Files should still be created locally
-  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "routing.json")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "dispatch.json")))
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
 })
 

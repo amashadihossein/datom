@@ -22,8 +22,8 @@
 #' # → "proj/datom/customers/.metadata/metadata.json"
 #'
 #' # Repo-level metadata
-#' .datom_build_s3_key("proj", ".metadata", "routing.json")
-#' # → "proj/datom/.metadata/routing.json"
+#' .datom_build_s3_key("proj", ".metadata", "dispatch.json")
+#' # → "proj/datom/.metadata/dispatch.json"
 #'
 #' # No prefix
 #' .datom_build_s3_key(NULL, "customers", "abc123.parquet")

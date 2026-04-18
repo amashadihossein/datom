@@ -25,7 +25,7 @@ is_valid_datom_repo <- function(path,
       dx <- dx[setdiff(names(dx), "git_initialized")]
     }
     if (!"datom" %in% checks) {
-      dx <- dx[setdiff(names(dx), c("datom_initialized", "datom_routing", "datom_manifest"))]
+      dx <- dx[setdiff(names(dx), c("datom_initialized", "datom_dispatch", "datom_manifest"))]
     }
     if (!"renv" %in% checks) {
       dx <- dx[setdiff(names(dx), "renv_initialized")]
@@ -60,7 +60,7 @@ datom_repository_check <- function(path) {
   list(
     git_initialized = fs::dir_exists(fs::path(path, ".git")),
     datom_initialized = fs::file_exists(fs::path(path, ".datom", "project.yaml")),
-    datom_routing = fs::file_exists(fs::path(path, ".datom", "routing.json")),
+    datom_dispatch = fs::file_exists(fs::path(path, ".datom", "dispatch.json")),
     datom_manifest = fs::file_exists(fs::path(path, ".datom", "manifest.json")),
     renv_initialized = fs::dir_exists(fs::path(path, "renv"))
   )
@@ -74,7 +74,7 @@ datom_repository_check <- function(path) {
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param fix If `TRUE`, attempts to fix inconsistencies by syncing metadata
-#'   to S3 via [datom_sync_routing()].
+#'   to S3 via [datom_sync_dispatch()].
 #'
 #' @return A list with:
 #'   \describe{
@@ -134,7 +134,7 @@ datom_validate <- function(conn, fix = FALSE) {
   if (!is_valid && isTRUE(fix)) {
     cli::cli_alert_info("Attempting to fix by syncing metadata to S3...")
     tryCatch({
-      datom_sync_routing(conn, .confirm = FALSE)
+      datom_sync_dispatch(conn, .confirm = FALSE)
       fixed <- TRUE
       cli::cli_alert_success("Fix applied. Re-run {.fn datom_validate} to verify.")
     }, error = function(e) {
@@ -195,9 +195,9 @@ datom_validate <- function(conn, fix = FALSE) {
 
   files_to_check <- list(
     list(
-      local = fs::path(repo_path, ".datom", "routing.json"),
-      s3_key = ".metadata/routing.json",
-      name = "routing.json"
+      local = fs::path(repo_path, ".datom", "dispatch.json"),
+      s3_key = ".metadata/dispatch.json",
+      name = "dispatch.json"
     ),
     list(
       local = fs::path(repo_path, ".datom", "manifest.json"),
