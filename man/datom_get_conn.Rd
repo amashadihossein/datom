@@ -4,21 +4,14 @@
 \alias{datom_get_conn}
 \title{Get a datom Connection}
 \usage{
-datom_get_conn(
-  path = NULL,
-  bucket = NULL,
-  prefix = NULL,
-  project_name = NULL,
-  endpoint = NULL
-)
+datom_get_conn(path = NULL, store = NULL, project_name = NULL, endpoint = NULL)
 }
 \arguments{
 \item{path}{Path to datom repository. If provided, reads config from
 \code{.datom/project.yaml}.}
 
-\item{bucket}{S3 bucket name. Required for readers without local repo.}
-
-\item{prefix}{Optional S3 prefix.}
+\item{store}{A \code{datom_store} object. Required for readers without local repo.
+The data component provides bucket, prefix, region, and credentials.}
 
 \item{project_name}{Project name for credential lookup. Required for readers.}
 
@@ -29,6 +22,6 @@ A \code{datom_conn} object.
 }
 \description{
 Flexible connection for both developers and readers. Developers provide a
-path to read from \code{.datom/project.yaml}. Readers provide bucket, prefix, and
+path to read from \code{.datom/project.yaml}. Readers provide a store and
 project_name directly.
 }

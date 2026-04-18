@@ -4,12 +4,13 @@
 \alias{datom_clone}
 \title{Clone a datom Repository}
 \usage{
-datom_clone(remote_url, path, ...)
+datom_clone(path, store, ...)
 }
 \arguments{
-\item{remote_url}{Remote repository URL (HTTPS or SSH).}
-
 \item{path}{Local path to clone into.}
+
+\item{store}{A \code{datom_store} object (from \code{datom_store()}). Must have
+\code{remote_url} set and role \code{"developer"} (i.e., \code{github_pat} provided).}
 
 \item{...}{Additional arguments passed to \code{\link[git2r:clone]{git2r::clone()}}.}
 }
@@ -21,15 +22,11 @@ Clones a remote datom repository and returns a connection. This is the
 recommended way for teammates to join an existing datom project — it wraps
 \code{git2r::clone()} and immediately returns a ready-to-use \code{datom_conn}.
 }
-\details{
-Requires \code{GITHUB_PAT} for HTTPS remotes and the project's AWS credentials
-(see \code{vignette("credentials")}).
-}
 \examples{
 \dontrun{
 conn <- datom_clone(
-  remote_url = "https://github.com/org/study-001-data.git",
-  path = "study_001_data"
+  path = "study_001_data",
+  store = my_store
 )
 datom_pull(conn)
 }
