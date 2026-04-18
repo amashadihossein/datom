@@ -281,8 +281,8 @@ datom_store_s3 (component)
 
 | Chunk | Status | Notes |
 |-------|--------|-------|
-| 1 | not started | |
-| 2 | not started | |
+| 1 | ✅ done | `datom_store_s3()` + 43 tests (1005 total) |
+| 2 | ✅ done | `datom_store()` composite + 61 tests (1066 total). httr2 added. |
 | 3 | not started | |
 | 4 | not started | |
 | 5 | not started | |
