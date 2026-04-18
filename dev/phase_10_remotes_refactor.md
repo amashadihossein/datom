@@ -283,7 +283,7 @@ datom_store_s3 (component)
 |-------|--------|-------|
 | 1 | ✅ done | `datom_store_s3()` + 43 tests (1005 total) |
 | 2 | ✅ done | `datom_store()` composite + 61 tests (1066 total). httr2 added. |
-| 3 | not started | |
+| 3 | ✅ done | `.datom_install_store()` bridge + `.datom_create_github_repo()` + 21 tests (1087 total) |
 | 4 | not started | |
 | 5 | not started | |
 | 6 | not started | |
