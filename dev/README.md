@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| (none) | | |
+| Phase 11: Routing Separation | Not Started | `dev/phase_11_routing_separation.md` |
 
 ### Completed Phases
 
