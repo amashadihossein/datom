@@ -115,7 +115,9 @@ sandbox_store <- function(bucket = "datom-test",
   if (!is.null(cfg$github_org) && nzchar(cfg$github_org)) {
     paste0(cfg$github_org, "/", cfg$repo_name)
   } else {
-    cfg$repo_name
+    # Personal repo — need to resolve the authenticated user's login
+    owner <- trimws(.sandbox_gh("api", "user", "-q", ".login")$output)
+    paste0(owner, "/", cfg$repo_name)
   }
 }
 
