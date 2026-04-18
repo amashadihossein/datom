@@ -286,7 +286,7 @@ datom_store_s3 (component)
 | 3 | ✅ done | `.datom_install_store()` bridge + `.datom_create_github_repo()` + 21 tests (1087 total) |
 | 4 | ✅ done | Refactored `datom_init_repo()` → store object, two-component project.yaml, +4/-7 tests (1090 total) |
 | 5 | ✅ done | Refactored `datom_get_conn()` + `datom_clone()` → store objects, two-component yaml compat (1088 total) |
-| 6 | not started | |
+| 6 | ✅ done | sandbox_store() replaces sandbox_credentials(), sandbox_up(store) uses create_repo=TRUE, e2e updated (1088 total) |
 | 7 | not started | |
 
 ## Dependencies
