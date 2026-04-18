@@ -84,12 +84,15 @@ cli::cli_alert_success("Wrote {name} ({sha})")
 | Exported functions | `datom_verb` | `datom_read`, `datom_write`, `datom_init` |
 | Internal functions | `.datom_verb` | `.datom_compute_sha`, `.datom_sync_s3` |
 | S3 methods | `verb.class` | `print.datom_conn` |
+| Store constructors | `datom_store_{backend}` | `datom_store_s3`, `datom_store` (composite) |
+| Store predicates | `is_datom_store_{type}` | `is_datom_store`, `is_datom_store_s3` |
 | Config files | snake_case.yaml/json | `project.yaml`, `routing.json` |
 
 ## Key Files
 
 - `dev/datom_specification.md` — Full technical specification
 - `dev/daapr_architecture.md` — Ecosystem context
+- `R/store.R` — Store constructors (`datom_store_s3`, `datom_store`), validation, GitHub repo creation
 - `R/` — Source code (organized by domain)
 - `tests/testthat/` — Tests mirror R/ structure
 
@@ -113,6 +116,10 @@ Auto-detected via `GITHUB_PAT` presence.
 - **`datom_pull()` is git-only**: No S3 manifest refresh — git is the source of truth for all metadata. The manifest is committed to git and pulled with everything else.
 - **S3 namespace check swallows connectivity errors**: `.datom_check_s3_namespace_free()` in `datom_init_repo()` warns but doesn't fail on network errors — offline init still works, S3 push will fail later anyway.
 - **`git2r::clone()` target path**: Must not exist or must be an empty directory. `datom_clone()` validates this upfront.
+- **`paws.storage` has no STS**: `sts` is in `paws.security.identity`, not `paws.storage`. Validation uses `HeadBucket` only (validates both credentials and bucket access).
+- **`.datom_install_store()` is a temporary bridge**: Injects store credentials into env vars so existing S3 code works. Phase 11 removes it by wiring `.datom_s3_client()` directly to store credentials.
+- **`datom_init_repo()` validates before side effects**: All store/repo validation happens before any filesystem or git operations. On failure, nothing is left behind.
+- **`project.yaml` two-component structure**: `storage.governance` + `storage.data` — each has its own `type`, `bucket`, `prefix`, `region`. Secrets are never persisted.
 
 ## Don'ts
 
