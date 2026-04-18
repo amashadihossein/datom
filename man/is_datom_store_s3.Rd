@@ -15,4 +15,3 @@ TRUE or FALSE.
 \description{
 Check if Object is an S3 Store Component
 }
-\keyword{internal}

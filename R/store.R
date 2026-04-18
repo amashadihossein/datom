@@ -104,7 +104,7 @@ datom_store <- function(governance,
 #'
 #' @param x Object to test.
 #' @return TRUE or FALSE.
-#' @keywords internal
+#' @export
 is_datom_store <- function(x) {
   inherits(x, "datom_store")
 }
@@ -458,7 +458,7 @@ datom_store_s3 <- function(bucket,
 #'
 #' @param x Object to test.
 #' @return TRUE or FALSE.
-#' @keywords internal
+#' @export
 is_datom_store_s3 <- function(x) {
   inherits(x, "datom_store_s3")
 }

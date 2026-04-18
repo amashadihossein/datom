@@ -15,4 +15,3 @@ TRUE or FALSE.
 \description{
 Check if Object is a datom Store
 }
-\keyword{internal}
