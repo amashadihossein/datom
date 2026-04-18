@@ -123,15 +123,14 @@ print.datom_conn <- function(x, ...) {
 #' Initialize a datom Repository
 #'
 #' One-time setup for data developers. Creates folder structure, initializes
-#' git with remote, sets up renv, and creates configuration files.
+#' git with remote, sets up configuration files, and pushes to S3.
 #'
 #' @param path Path to the project folder. Defaults to current directory.
-#' @param project_name Project name, used to auto-generate credential env var
-#'   names (`DATOM_{PROJECT_NAME}_*`).
-#' @param remote_url GitHub remote URL.
-#' @param bucket S3 bucket name.
-#' @param prefix Optional prefix for bucket organization.
-#' @param region AWS region. If NULL, uses AWS_DEFAULT_REGION.
+#' @param project_name Project name, used for S3 namespace and git repo.
+#' @param store A `datom_store` object (from `datom_store()`). Must have role
+#'   `"developer"` (i.e., `github_pat` provided).
+#' @param create_repo If `TRUE`, create a GitHub repo via API. Mutually
+#'   exclusive with providing `remote_url` on the store.
 #' @param max_file_size_gb Maximum file size limit in GB. Default 1000 (1TB).
 #' @param git_ignore Character vector of patterns to add to .gitignore.
 #' @param .force If `TRUE`, skip the S3 namespace safety check. Use only for
@@ -141,10 +140,8 @@ print.datom_conn <- function(x, ...) {
 #' @export
 datom_init_repo <- function(path = ".",
                            project_name,
-                           remote_url,
-                           bucket,
-                           prefix = NULL,
-                           region = NULL,
+                           store,
+                           create_repo = FALSE,
                            max_file_size_gb = 1000,
                            git_ignore = c(
                              ".Rprofile", ".Renviron", ".Rhistory",
@@ -161,20 +158,15 @@ datom_init_repo <- function(path = ".",
   # --- Input validation -------------------------------------------------------
   .datom_validate_name(project_name)
 
-  if (!is.character(remote_url) || length(remote_url) != 1L ||
-      is.na(remote_url) || !nzchar(remote_url)) {
-    cli::cli_abort("{.arg remote_url} must be a single non-empty string.")
+  if (!is_datom_store(store)) {
+    cli::cli_abort("{.arg store} must be a {.cls datom_store} object.")
   }
 
-  if (!is.character(bucket) || length(bucket) != 1L ||
-      is.na(bucket) || !nzchar(bucket)) {
-    cli::cli_abort("{.arg bucket} must be a single non-empty string.")
-  }
-
-  if (!is.null(prefix)) {
-    if (!is.character(prefix) || length(prefix) != 1L || is.na(prefix)) {
-      cli::cli_abort("{.arg prefix} must be a single string or NULL.")
-    }
+  if (store$role != "developer") {
+    cli::cli_abort(c(
+      "{.fn datom_init_repo} requires a developer store.",
+      "i" = "Provide {.arg github_pat} when creating the store."
+    ))
   }
 
   if (!is.numeric(max_file_size_gb) || length(max_file_size_gb) != 1L ||
@@ -182,12 +174,43 @@ datom_init_repo <- function(path = ".",
     cli::cli_abort("{.arg max_file_size_gb} must be a positive number.")
   }
 
-  region <- region %||% Sys.getenv("AWS_DEFAULT_REGION", unset = "us-east-1")
+  # --- Resolve remote_url -----------------------------------------------------
+  remote_url <- store$remote_url
+
+  if (isTRUE(create_repo) && !is.null(remote_url)) {
+    cli::cli_abort(c(
+      "{.arg create_repo} and {.arg remote_url} are mutually exclusive.",
+      "i" = "Either set {.code create_repo = TRUE} or provide {.arg remote_url} on the store, not both."
+    ))
+  }
+
+  if (isTRUE(create_repo)) {
+    remote_url <- .datom_create_github_repo(
+      repo_name = project_name,
+      pat = store$github_pat,
+      org = store$github_org
+    )
+  }
+
+  if (is.null(remote_url)) {
+    cli::cli_abort(c(
+      "No remote URL available.",
+      "i" = "Either provide {.arg remote_url} on the store or set {.code create_repo = TRUE}."
+    ))
+  }
+
+  # --- Install env var bridge (temporary) -------------------------------------
+  .datom_install_store(store, project_name)
 
   # --- Credential validation (developer role required) ------------------------
   cred_names <- .datom_check_credentials(project_name, role = "developer")
 
   # --- S3 namespace safety check ----------------------------------------------
+  # Use data component for S3 operations (where manifest lives)
+  bucket <- store$data$bucket
+  prefix <- store$data$prefix
+  region <- store$data$region
+
   if (!isTRUE(.force)) {
     tryCatch({
       s3_check_client <- .datom_s3_client(cred_names, region = region)
@@ -197,8 +220,6 @@ datom_init_repo <- function(path = ".",
       )
       .datom_check_s3_namespace_free(check_conn)
     }, error = function(e) {
-      # Re-throw namespace-occupied errors; swallow connectivity errors
-      # so offline init still works (S3 push will fail later anyway).
       if (grepl("already occupied", conditionMessage(e))) {
         stop(e)
       }
@@ -219,8 +240,6 @@ datom_init_repo <- function(path = ".",
   }
 
   # --- Create directory structure ---------------------------------------------
-  # Track what we create so we can clean up on failure (but never delete
-  # pre-existing content).
   datom_dir   <- fs::path(path, ".datom")
   input_dir  <- fs::path(path, "input_files")
   gitignore  <- fs::path(path, ".gitignore")
@@ -249,7 +268,6 @@ datom_init_repo <- function(path = ".",
       if (!gi_existed    && fs::file_exists(gitignore))  .safe_delete(gitignore, is_dir = FALSE)
       if (!readme_existed && fs::file_exists(readme_file)) .safe_delete(readme_file, is_dir = FALSE)
       if (!git_existed   && fs::dir_exists(git_dir))     .safe_delete(git_dir)
-      # Remove the path directory itself if we created it and it's now empty
       if (!path_existed && fs::dir_exists(path) &&
           length(fs::dir_ls(path, all = TRUE)) == 0L) {
         .safe_delete(path)
@@ -260,7 +278,7 @@ datom_init_repo <- function(path = ".",
   fs::dir_create(datom_dir)
   fs::dir_create(input_dir)
 
-  # --- Create project.yaml ---------------------------------------------------
+  # --- Create project.yaml (two-component structure) --------------------------
 
   project_config <- list(
     project_name = project_name,
@@ -268,15 +286,22 @@ datom_init_repo <- function(path = ".",
     created_at = format(Sys.Date(), "%Y-%m-%d"),
     datom_version = as.character(utils::packageVersion("datom")),
     storage = list(
-      type = "s3",
-      bucket = bucket,
-      prefix = prefix,
-      region = region,
-      max_file_size_gb = max_file_size_gb,
-      credentials = list(
-        access_key_env = cred_names[["access_key_env"]],
-        secret_key_env = cred_names[["secret_key_env"]]
-      )
+      governance = list(
+        type = "s3",
+        bucket = store$governance$bucket,
+        prefix = store$governance$prefix,
+        region = store$governance$region
+      ),
+      data = list(
+        type = "s3",
+        bucket = store$data$bucket,
+        prefix = store$data$prefix,
+        region = store$data$region
+      ),
+      max_file_size_gb = max_file_size_gb
+    ),
+    git = list(
+      remote_url = remote_url
     ),
     sync = list(
       continue_on_error = TRUE,
@@ -321,9 +346,9 @@ datom_init_repo <- function(path = ".",
   # --- Generate README.md -----------------------------------------------------
   readme_content <- .datom_render_readme(
     project_name = project_name,
-    bucket       = bucket,
-    prefix       = prefix,
-    region       = region,
+    bucket       = store$data$bucket,
+    prefix       = store$data$prefix,
+    region       = store$data$region,
     remote_url   = remote_url,
     cred_names   = cred_names
   )

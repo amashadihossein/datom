@@ -546,23 +546,30 @@ test_that("reader path uses AWS_DEFAULT_REGION env var", {
 
 # --- Helper: create a bare repo as remote + a working dir --------------------
 setup_init_env <- function(env = parent.frame()) {
-  # Bare repo to act as "remote" for push
-
   bare_dir <- withr::local_tempdir(.local_envir = env)
   git2r::init(bare_dir, bare = TRUE)
-
-  # Working directory (not yet a git repo)
   work_dir <- withr::local_tempdir(.local_envir = env)
 
-  # Set git config globally for this test (commit needs author info)
+  comp <- datom_store_s3(
+    bucket = "test-bucket", prefix = "proj/",
+    access_key = "AKIAEXAMPLE", secret_key = "secretkey",
+    validate = FALSE
+  )
+  store <- datom_store(
+    governance = comp, data = comp,
+    github_pat = "ghp_fake",
+    remote_url = bare_dir,
+    validate = FALSE
+  )
+
+  # Bridge still needs env vars for existing S3 code
   withr::local_envvar(
     .local_envir = env,
-    DATOM_TESTPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_TESTPROJ_SECRET_ACCESS_KEY = "fake_secret",
+    DATOM_TESTPROJ_ACCESS_KEY_ID = "AKIAEXAMPLE",
+    DATOM_TESTPROJ_SECRET_ACCESS_KEY = "secretkey",
     GITHUB_PAT = "ghp_fake"
   )
 
-  # Stub S3 operations (datom_init_repo now pushes to S3 after git)
   local_mocked_bindings(
     .datom_s3_client = function(...) list(put_object = function(...) list()),
     .datom_s3_write_json = function(...) invisible(TRUE),
@@ -570,94 +577,68 @@ setup_init_env <- function(env = parent.frame()) {
     .env = env
   )
 
-  list(bare_dir = bare_dir, work_dir = work_dir)
+  list(bare_dir = bare_dir, work_dir = work_dir, store = store)
 }
 
 
 # --- Input validation ---------------------------------------------------------
 
 test_that("datom_init_repo aborts on invalid project_name", {
-  expect_error(datom_init_repo(project_name = "", remote_url = "x", bucket = "b"),
-               "name")
+  comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                       remote_url = "https://github.com/x/y.git", validate = FALSE)
+  expect_error(datom_init_repo(project_name = "", store = store), "name")
 })
 
-test_that("datom_init_repo aborts on invalid remote_url", {
-  dir <- withr::local_tempdir()
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "k",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "s",
-    GITHUB_PAT = "ghp_x"
+test_that("datom_init_repo rejects non-store object", {
+  expect_error(
+    datom_init_repo(path = withr::local_tempdir(), project_name = "p",
+                    store = list(bucket = "b")),
+    "datom_store"
   )
-  expect_error(datom_init_repo(path = dir, project_name = "myproj",
-                               remote_url = "", bucket = "b"),
-               "remote_url")
 })
 
-test_that("datom_init_repo aborts on invalid bucket", {
-  dir <- withr::local_tempdir()
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "k",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "s",
-    GITHUB_PAT = "ghp_x"
+test_that("datom_init_repo rejects reader store", {
+  comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
+  reader_store <- datom_store(governance = comp, data = comp, validate = FALSE)
+  expect_error(
+    datom_init_repo(path = withr::local_tempdir(), project_name = "p",
+                    store = reader_store),
+    "developer"
   )
-  expect_error(datom_init_repo(path = dir, project_name = "myproj",
-                               remote_url = "https://github.com/x/y.git",
-                               bucket = ""),
-               "bucket")
 })
 
-test_that("datom_init_repo aborts on invalid prefix", {
-  dir <- withr::local_tempdir()
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "k",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "s",
-    GITHUB_PAT = "ghp_x"
+test_that("datom_init_repo rejects create_repo with remote_url", {
+  comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                       remote_url = "https://github.com/x/y.git", validate = FALSE)
+  expect_error(
+    datom_init_repo(path = withr::local_tempdir(), project_name = "p",
+                    store = store, create_repo = TRUE),
+    "mutually exclusive"
   )
-  expect_error(datom_init_repo(path = dir, project_name = "myproj",
-                               remote_url = "url", bucket = "b",
-                               prefix = 123),
-               "prefix")
+})
+
+test_that("datom_init_repo errors when no remote_url and create_repo is FALSE", {
+  comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                       validate = FALSE)
+  expect_error(
+    datom_init_repo(path = withr::local_tempdir(), project_name = "p",
+                    store = store),
+    "No remote URL"
+  )
 })
 
 test_that("datom_init_repo aborts on invalid max_file_size_gb", {
-  dir <- withr::local_tempdir()
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "k",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "s",
-    GITHUB_PAT = "ghp_x"
-  )
-  expect_error(datom_init_repo(path = dir, project_name = "myproj",
-                               remote_url = "url", bucket = "b",
-                               max_file_size_gb = -1),
+  env <- setup_init_env()
+  expect_error(datom_init_repo(path = env$work_dir, project_name = "testproj",
+                               store = env$store, max_file_size_gb = -1),
                "max_file_size_gb")
-  expect_error(datom_init_repo(path = dir, project_name = "myproj",
-                               remote_url = "url", bucket = "b",
-                               max_file_size_gb = "big"),
+  env2 <- setup_init_env()
+  expect_error(datom_init_repo(path = env2$work_dir, project_name = "testproj",
+                               store = env2$store, max_file_size_gb = "big"),
                "max_file_size_gb")
-})
-
-test_that("datom_init_repo aborts when credentials are missing", {
-  dir <- withr::local_tempdir()
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = NA,
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = NA,
-    GITHUB_PAT = NA
-  )
-  expect_error(datom_init_repo(path = dir, project_name = "myproj",
-                               remote_url = "url", bucket = "b"),
-               "ACCESS_KEY_ID")
-})
-
-test_that("datom_init_repo aborts when GITHUB_PAT is missing", {
-  dir <- withr::local_tempdir()
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "k",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "s",
-    GITHUB_PAT = NA
-  )
-  expect_error(datom_init_repo(path = dir, project_name = "myproj",
-                               remote_url = "url", bucket = "b"),
-               "GITHUB_PAT")
 })
 
 test_that("datom_init_repo aborts if .datom already exists", {
@@ -667,7 +648,7 @@ test_that("datom_init_repo aborts if .datom already exists", {
                     fs::path(env$work_dir, ".datom", "project.yaml"))
 
   expect_error(datom_init_repo(path = env$work_dir, project_name = "testproj",
-                               remote_url = env$bare_dir, bucket = "b"),
+                               store = env$store),
                "already exists")
 })
 
@@ -680,8 +661,7 @@ test_that("datom_init_repo creates .datom directory", {
   result <- datom_init_repo(
     path = env$work_dir,
     project_name = "testproj",
-    remote_url = env$bare_dir,
-    bucket = "my-bucket"
+    store = env$store
   )
 
   expect_true(fs::dir_exists(fs::path(env$work_dir, ".datom")))
@@ -691,7 +671,7 @@ test_that("datom_init_repo creates input_files directory", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   expect_true(fs::dir_exists(fs::path(env$work_dir, "input_files")))
 })
@@ -699,32 +679,42 @@ test_that("datom_init_repo creates input_files directory", {
 test_that("datom_init_repo creates project.yaml with correct fields", {
   env <- setup_init_env()
 
+  gov <- datom_store_s3(bucket = "gov-bucket", prefix = "gov/", region = "eu-west-1",
+                        access_key = "AKIAEXAMPLE", secret_key = "secretkey", validate = FALSE)
+  dat <- datom_store_s3(bucket = "my-bucket", prefix = "data/", region = "eu-west-1",
+                        access_key = "AKIAEXAMPLE", secret_key = "secretkey", validate = FALSE)
+  store <- datom_store(governance = gov, data = dat, github_pat = "ghp_fake",
+                       remote_url = env$bare_dir, validate = FALSE)
+
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "my-bucket",
-                  prefix = "data/", region = "eu-west-1",
-                  max_file_size_gb = 500)
+                  store = store, max_file_size_gb = 500)
 
   yaml_path <- fs::path(env$work_dir, ".datom", "project.yaml")
   expect_true(fs::file_exists(yaml_path))
 
   cfg <- yaml::read_yaml(yaml_path)
   expect_equal(cfg$project_name, "testproj")
-  expect_equal(cfg$storage$type, "s3")
-  expect_equal(cfg$storage$bucket, "my-bucket")
-  expect_equal(cfg$storage$prefix, "data/")
-  expect_equal(cfg$storage$region, "eu-west-1")
+  expect_equal(cfg$storage$governance$type, "s3")
+  expect_equal(cfg$storage$governance$bucket, "gov-bucket")
+  expect_equal(cfg$storage$governance$prefix, "gov/")
+  expect_equal(cfg$storage$governance$region, "eu-west-1")
+  expect_equal(cfg$storage$data$type, "s3")
+  expect_equal(cfg$storage$data$bucket, "my-bucket")
+  expect_equal(cfg$storage$data$prefix, "data/")
+  expect_equal(cfg$storage$data$region, "eu-west-1")
   expect_equal(cfg$storage$max_file_size_gb, 500)
-  expect_equal(cfg$storage$credentials$access_key_env,
-               "DATOM_TESTPROJ_ACCESS_KEY_ID")
-  expect_equal(cfg$storage$credentials$secret_key_env,
-               "DATOM_TESTPROJ_SECRET_ACCESS_KEY")
+  expect_equal(cfg$git$remote_url, env$bare_dir)
+  # No top-level storage$type, storage$bucket, or storage$credentials
+  expect_null(cfg$storage$type)
+  expect_null(cfg$storage$bucket)
+  expect_null(cfg$storage$credentials)
 })
 
 test_that("datom_init_repo creates routing.json", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   routing_path <- fs::path(env$work_dir, ".datom", "routing.json")
   expect_true(fs::file_exists(routing_path))
@@ -738,7 +728,7 @@ test_that("datom_init_repo creates manifest.json", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   manifest_path <- fs::path(env$work_dir, ".datom", "manifest.json")
   expect_true(fs::file_exists(manifest_path))
@@ -753,7 +743,7 @@ test_that("datom_init_repo creates .gitignore with input_files/", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   gitignore <- readLines(fs::path(env$work_dir, ".gitignore"))
   expect_true("input_files/" %in% gitignore)
@@ -765,7 +755,7 @@ test_that("datom_init_repo initializes git with remote", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   expect_true(fs::dir_exists(fs::path(env$work_dir, ".git")))
 
@@ -779,7 +769,7 @@ test_that("datom_init_repo makes initial commit", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   repo <- git2r::repository(env$work_dir)
   log <- git2r::commits(repo)
@@ -791,7 +781,7 @@ test_that("datom_init_repo pushes to remote", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   # Verify bare repo has the commit
   bare_repo <- git2r::repository(env$bare_dir)
@@ -804,48 +794,31 @@ test_that("datom_init_repo returns invisible TRUE", {
   env <- setup_init_env()
 
   result <- datom_init_repo(path = env$work_dir, project_name = "testproj",
-                            remote_url = env$bare_dir, bucket = "b")
+                            store = env$store)
 
   expect_true(result)
   expect_invisible(datom_init_repo(
     path = withr::local_tempdir(),
     project_name = "testproj",
-    remote_url = env$bare_dir,
-    bucket = "b"
+    store = env$store
   ))
 })
 
-test_that("datom_init_repo uses AWS_DEFAULT_REGION fallback", {
-  env <- setup_init_env()
-  withr::local_envvar(AWS_DEFAULT_REGION = "ap-northeast-1")
-
-  datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
-
-  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
-  expect_equal(cfg$storage$region, "ap-northeast-1")
-})
-
-test_that("datom_init_repo defaults region to us-east-1", {
-  env <- setup_init_env()
-  withr::local_envvar(AWS_DEFAULT_REGION = NA)
-
-  datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
-
-  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
-  expect_equal(cfg$storage$region, "us-east-1")
-})
-
-test_that("datom_init_repo handles prefix = NULL", {
+test_that("datom_init_repo handles prefix = NULL in store", {
   env <- setup_init_env()
 
+  comp <- datom_store_s3(bucket = "test-bucket", prefix = NULL,
+                         access_key = "AKIAEXAMPLE", secret_key = "secretkey",
+                         validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
+                       remote_url = env$bare_dir, validate = FALSE)
+
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = store)
 
   cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
   # YAML writes NULL as missing key
-  expect_true(is.null(cfg$storage$prefix))
+  expect_true(is.null(cfg$storage$data$prefix))
 })
 
 test_that("datom_init_repo normalizes project_name for cred env vars", {
@@ -853,27 +826,34 @@ test_that("datom_init_repo normalizes project_name for cred env vars", {
   git2r::init(bare_dir, bare = TRUE)
   work_dir <- withr::local_tempdir()
 
+  comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                       remote_url = bare_dir, validate = FALSE)
+
   withr::local_envvar(
     DATOM_MY_DATA_ACCESS_KEY_ID = "k",
     DATOM_MY_DATA_SECRET_ACCESS_KEY = "s",
     GITHUB_PAT = "ghp_x"
   )
 
-  datom_init_repo(path = work_dir, project_name = "my-data",
-                  remote_url = bare_dir, bucket = "b")
+  local_mocked_bindings(
+    .datom_s3_client = function(...) list(put_object = function(...) list()),
+    .datom_s3_write_json = function(...) invisible(TRUE),
+    .datom_s3_exists = function(...) FALSE
+  )
+
+  datom_init_repo(path = work_dir, project_name = "my-data", store = store)
 
   cfg <- yaml::read_yaml(fs::path(work_dir, ".datom", "project.yaml"))
-  expect_equal(cfg$storage$credentials$access_key_env,
-               "DATOM_MY_DATA_ACCESS_KEY_ID")
-  expect_equal(cfg$storage$credentials$secret_key_env,
-               "DATOM_MY_DATA_SECRET_ACCESS_KEY")
+  expect_equal(cfg$project_name, "my-data")
+  expect_equal(cfg$git$remote_url, bare_dir)
 })
 
 test_that("datom_init_repo passes is_valid_datom_repo checks", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   # Should pass git + datom checks (not renv — we don't init renv)
   expect_true(is_valid_datom_repo(env$work_dir, checks = c("git", "datom")))
@@ -883,7 +863,7 @@ test_that("datom_init_repo committed files are tracked in git", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   repo <- git2r::repository(env$work_dir)
   status <- git2r::status(repo)
@@ -897,7 +877,7 @@ test_that("datom_init_repo sets renv to FALSE in project.yaml", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
   expect_false(cfg$renv)
@@ -907,7 +887,7 @@ test_that("datom_init_repo stores datom_version in project.yaml", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
   expect_equal(cfg$datom_version,
@@ -918,7 +898,7 @@ test_that("datom_init_repo creates README.md", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   readme_path <- fs::path(env$work_dir, "README.md")
   expect_true(fs::file_exists(readme_path))
@@ -927,9 +907,14 @@ test_that("datom_init_repo creates README.md", {
 test_that("datom_init_repo README.md contains project name", {
   env <- setup_init_env()
 
+  comp <- datom_store_s3(bucket = "my-bucket", prefix = "study/",
+                         access_key = "AKIAEXAMPLE", secret_key = "secretkey",
+                         validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
+                       remote_url = env$bare_dir, validate = FALSE)
+
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "my-bucket",
-                  prefix = "study/")
+                  store = store)
 
   readme <- readLines(fs::path(env$work_dir, "README.md"))
   readme_text <- paste(readme, collapse = "\n")
@@ -944,7 +929,7 @@ test_that("datom_init_repo commits README.md to git", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   repo <- git2r::repository(env$work_dir)
   status <- git2r::status(repo)
@@ -963,7 +948,7 @@ test_that("datom_init_repo cleans up .datom on git push failure", {
 
   expect_error(
     datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    remote_url = env$bare_dir, bucket = "b"),
+                    store = env$store),
     "push failed"
   )
 
@@ -985,7 +970,7 @@ test_that("datom_init_repo cleans up on git commit failure", {
 
   expect_error(
     datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    remote_url = env$bare_dir, bucket = "b"),
+                    store = env$store),
     "commit failed"
   )
 
@@ -1005,7 +990,7 @@ test_that("datom_init_repo does NOT delete pre-existing .datom on failure", {
 
   expect_error(
     datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    remote_url = env$bare_dir, bucket = "b"),
+                    store = env$store),
     "push failed"
   )
 
@@ -1026,7 +1011,7 @@ test_that("datom_init_repo does NOT delete pre-existing input_files on failure",
 
   expect_error(
     datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    remote_url = env$bare_dir, bucket = "b"),
+                    store = env$store),
     "push failed"
   )
 
@@ -1046,7 +1031,7 @@ test_that("datom_init_repo does NOT delete pre-existing .gitignore on failure", 
 
   expect_error(
     datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    remote_url = env$bare_dir, bucket = "b"),
+                    store = env$store),
     "push failed"
   )
 
@@ -1066,7 +1051,7 @@ test_that("datom_init_repo does NOT delete pre-existing .git on failure", {
   # further down — the git_dir existed check is what matters
   expect_error(
     datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    remote_url = env$bare_dir, bucket = "b")
+                    store = env$store)
   )
 
   # .git/ should NOT be deleted
@@ -1077,7 +1062,7 @@ test_that("datom_init_repo success does not trigger cleanup", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  remote_url = env$bare_dir, bucket = "b")
+                  store = env$store)
 
   # Everything should still be there
   expect_true(fs::dir_exists(fs::path(env$work_dir, ".datom")))
@@ -1097,7 +1082,7 @@ test_that("datom_init_repo cleans up parent directory when it was newly created"
 
   expect_error(
     datom_init_repo(path = new_path, project_name = "testproj",
-                    remote_url = env$bare_dir, bucket = "b"),
+                    store = env$store),
     "push failed"
   )
 
@@ -1115,7 +1100,7 @@ test_that("datom_init_repo does NOT remove pre-existing parent dir on failure", 
 
   expect_error(
     datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    remote_url = env$bare_dir, bucket = "b"),
+                    store = env$store),
     "push failed"
   )
 
@@ -1139,8 +1124,7 @@ test_that("datom_init_repo pushes routing.json and manifest.json to S3", {
   datom_init_repo(
     path = env$work_dir,
     project_name = "testproj",
-    remote_url = env$bare_dir,
-    bucket = "my-bucket"
+    store = env$store
   )
 
   expect_true(".metadata/routing.json" %in% s3_keys_written)
@@ -1160,8 +1144,7 @@ test_that("datom_init_repo succeeds even if S3 upload fails", {
     datom_init_repo(
       path = env$work_dir,
       project_name = "testproj",
-      remote_url = env$bare_dir,
-      bucket = "my-bucket"
+      store = env$store
     )
   )
 
@@ -1190,8 +1173,7 @@ test_that("datom_init_repo aborts when S3 namespace is occupied", {
     datom_init_repo(
       path = env$work_dir,
       project_name = "testproj",
-      remote_url = env$bare_dir,
-      bucket = "b"
+      store = env$store
     ),
     "already occupied"
   )
@@ -1217,8 +1199,7 @@ test_that("datom_init_repo proceeds when .force = TRUE despite occupied namespac
   result <- datom_init_repo(
     path = env$work_dir,
     project_name = "testproj",
-    remote_url = env$bare_dir,
-    bucket = "b",
+    store = env$store,
     .force = TRUE
   )
 
@@ -1232,8 +1213,7 @@ test_that("datom_init_repo manifest.json includes project_name", {
   datom_init_repo(
     path = env$work_dir,
     project_name = "testproj",
-    remote_url = env$bare_dir,
-    bucket = "b"
+    store = env$store
   )
 
   manifest <- jsonlite::read_json(
@@ -1256,8 +1236,7 @@ test_that("datom_init_repo warns but continues when S3 connectivity fails during
     datom_init_repo(
       path = env$work_dir,
       project_name = "testproj",
-      remote_url = env$bare_dir,
-      bucket = "b"
+      store = env$store
     )
   )
 
