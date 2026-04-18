@@ -589,3 +589,256 @@ test_that("print.datom_store() prints reader store without error", {
   # No PAT or org lines
   expect_no_match(full, "GitHub PAT")
 })
+
+
+# ==============================================================================
+# .datom_install_store: env var bridge (Chunk 3)
+# ==============================================================================
+
+test_that(".datom_install_store() rejects non-store objects", {
+  expect_error(
+    .datom_install_store(list(a = 1), "proj"),
+    "must be a.*datom_store"
+  )
+})
+
+test_that(".datom_install_store() sets S3 credential env vars from data component", {
+  gov <- datom_store_s3(
+    bucket = "gov-bucket", access_key = "AKIAGOV", secret_key = "govSecret",
+    validate = FALSE
+  )
+  dat <- datom_store_s3(
+    bucket = "data-bucket", access_key = "AKIADATA", secret_key = "dataSecret",
+    validate = FALSE
+  )
+  store <- datom_store(governance = gov, data = dat, validate = FALSE)
+
+  withr::local_envvar(
+    DATOM_MYPROJ_ACCESS_KEY_ID = NA,
+    DATOM_MYPROJ_SECRET_ACCESS_KEY = NA,
+    GITHUB_PAT = NA
+  )
+
+  result <- .datom_install_store(store, "myproj")
+
+  # Should use DATA component credentials, not governance
+  expect_equal(Sys.getenv("DATOM_MYPROJ_ACCESS_KEY_ID"), "AKIADATA")
+  expect_equal(Sys.getenv("DATOM_MYPROJ_SECRET_ACCESS_KEY"), "dataSecret")
+  expect_equal(Sys.getenv("GITHUB_PAT"), "")
+  expect_false(result$github_pat_set)
+})
+
+test_that(".datom_install_store() sets GITHUB_PAT for developer store", {
+  comp <- make_component()
+  store <- datom_store(
+    governance = comp, data = comp,
+    github_pat = "ghp_mytoken123",
+    validate = FALSE
+  )
+
+  withr::local_envvar(GITHUB_PAT = NA)
+
+  .datom_install_store(store, "proj")
+
+  expect_equal(Sys.getenv("GITHUB_PAT"), "ghp_mytoken123")
+})
+
+test_that(".datom_install_store() normalizes project name to env var convention", {
+  comp <- make_component()
+  store <- datom_store(governance = comp, data = comp, validate = FALSE)
+
+  withr::local_envvar(
+    DATOM_MY_COOL_PROJECT_ACCESS_KEY_ID = NA,
+    DATOM_MY_COOL_PROJECT_SECRET_ACCESS_KEY = NA
+  )
+
+  result <- .datom_install_store(store, "my-cool-project")
+
+  expect_equal(result$access_key_env, "DATOM_MY_COOL_PROJECT_ACCESS_KEY_ID")
+  expect_equal(result$secret_key_env, "DATOM_MY_COOL_PROJECT_SECRET_ACCESS_KEY")
+  expect_equal(Sys.getenv("DATOM_MY_COOL_PROJECT_ACCESS_KEY_ID"), "AKIAEXAMPLE1")
+})
+
+test_that(".datom_install_store() returns env var names invisibly", {
+  comp <- make_component()
+  store <- datom_store(governance = comp, data = comp, validate = FALSE)
+
+  withr::local_envvar(
+    DATOM_X_ACCESS_KEY_ID = NA,
+    DATOM_X_SECRET_ACCESS_KEY = NA
+  )
+
+  result <- .datom_install_store(store, "x")
+  expect_type(result, "list")
+  expect_named(result, c("access_key_env", "secret_key_env", "github_pat_set"))
+})
+
+
+# ==============================================================================
+# .datom_create_github_repo: GitHub repo creation (Chunk 3)
+# ==============================================================================
+
+test_that(".datom_create_github_repo() rejects invalid repo_name", {
+  expect_error(.datom_create_github_repo("", "pat"), "repo_name.*single non-empty")
+  expect_error(.datom_create_github_repo(123, "pat"), "repo_name.*single non-empty")
+  expect_error(.datom_create_github_repo(NA_character_, "pat"), "repo_name.*single non-empty")
+})
+
+test_that(".datom_create_github_repo() creates org repo on 404 check", {
+  # Mock: repo doesn't exist (404), then creation succeeds
+  mockery::stub(
+    .datom_create_github_repo, "httr2::req_perform",
+    function(req, ...) {
+      url <- req$url
+      if (grepl("/repos/myorg/newrepo$", url)) {
+        # Check call returns 404-like (non-200)
+        structure(list(url = url, status_code = 404L), class = "httr2_response")
+      } else if (grepl("/orgs/myorg/repos$", url)) {
+        # Create call succeeds
+        structure(list(url = url, status_code = 201L), class = "httr2_response")
+      }
+    }
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_status",
+    function(resp) resp$status_code
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_body_json",
+    function(resp) {
+      if (resp$status_code == 201L) {
+        list(clone_url = "https://github.com/myorg/newrepo.git")
+      }
+    }
+  )
+
+  url <- .datom_create_github_repo("newrepo", pat = "ghp_test", org = "myorg")
+  expect_equal(url, "https://github.com/myorg/newrepo.git")
+})
+
+test_that(".datom_create_github_repo() reuses empty existing repo", {
+  mockery::stub(
+    .datom_create_github_repo, "httr2::req_perform",
+    structure(list(status_code = 200L), class = "httr2_response")
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_status",
+    200L
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_body_json",
+    list(size = 0L, clone_url = "https://github.com/myorg/emptyrepo.git")
+  )
+
+  url <- .datom_create_github_repo("emptyrepo", pat = "ghp_test", org = "myorg")
+  expect_equal(url, "https://github.com/myorg/emptyrepo.git")
+})
+
+test_that(".datom_create_github_repo() aborts on non-empty existing repo", {
+  mockery::stub(
+    .datom_create_github_repo, "httr2::req_perform",
+    structure(list(status_code = 200L), class = "httr2_response")
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_status",
+    200L
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_body_json",
+    list(size = 42L, clone_url = "https://github.com/myorg/full.git")
+  )
+
+  expect_error(
+    .datom_create_github_repo("full", pat = "ghp_test", org = "myorg"),
+    "already exists and has content"
+  )
+})
+
+test_that(".datom_create_github_repo() creates personal repo when org is NULL", {
+  mockery::stub(
+    .datom_create_github_repo, ".datom_github_username", "myuser"
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::req_perform",
+    function(req, ...) {
+      url <- req$url
+      if (grepl("/repos/myuser/myrepo$", url)) {
+        structure(list(url = url, status_code = 404L), class = "httr2_response")
+      } else if (grepl("/user/repos$", url)) {
+        structure(list(url = url, status_code = 201L), class = "httr2_response")
+      }
+    }
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_status",
+    function(resp) resp$status_code
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_body_json",
+    function(resp) {
+      if (resp$status_code == 201L) {
+        list(clone_url = "https://github.com/myuser/myrepo.git")
+      }
+    }
+  )
+
+  url <- .datom_create_github_repo("myrepo", pat = "ghp_test", org = NULL)
+  expect_equal(url, "https://github.com/myuser/myrepo.git")
+})
+
+test_that(".datom_create_github_repo() propagates API errors on check", {
+  mockery::stub(
+    .datom_create_github_repo, "httr2::req_perform",
+    function(...) stop("Network timeout")
+  )
+
+  expect_error(
+    .datom_create_github_repo("repo", pat = "ghp_test", org = "org"),
+    "Failed to check if GitHub repo"
+  )
+})
+
+test_that(".datom_create_github_repo() propagates API errors on create", {
+  # Check returns 404 (doesn't exist), then create fails
+  call_count <- 0L
+  mockery::stub(
+    .datom_create_github_repo, "httr2::req_perform",
+    function(req, ...) {
+      call_count <<- call_count + 1L
+      if (call_count == 1L) {
+        # Check call: 404
+        structure(list(url = req$url, status_code = 404L), class = "httr2_response")
+      } else {
+        # Create call: network error
+        stop("Permission denied")
+      }
+    }
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_status",
+    function(resp) resp$status_code
+  )
+
+  expect_error(
+    .datom_create_github_repo("repo", pat = "ghp_test", org = "org"),
+    "Failed to create GitHub repo"
+  )
+})
+
+
+# ==============================================================================
+# .datom_github_username (Chunk 3)
+# ==============================================================================
+
+test_that(".datom_github_username() returns login from API", {
+  mockery::stub(
+    .datom_github_username, "httr2::req_perform",
+    structure(list(), class = "httr2_response")
+  )
+  mockery::stub(
+    .datom_github_username, "httr2::resp_body_json",
+    list(login = "octocat", id = 1)
+  )
+
+  expect_equal(.datom_github_username("ghp_test"), "octocat")
+})

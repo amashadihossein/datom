@@ -197,6 +197,174 @@ print.datom_store <- function(x, ...) {
 
 # --- datom_store_s3: S3 component constructor ---------------------------------
 
+# --- Env var bridge (temporary) -----------------------------------------------
+
+#' Install Store Credentials into Environment Variables
+#'
+#' Temporary bridge: sets `DATOM_{PROJECT}_ACCESS_KEY_ID`,
+#' `DATOM_{PROJECT}_SECRET_ACCESS_KEY`, and `GITHUB_PAT` from a composite store
+#' so existing S3/git code works unchanged. Removed in Phase 11 when
+#' `.datom_s3_client()` accepts credentials directly.
+#'
+#' Uses the **data** component's credentials for S3 env vars (the governance
+#' component may differ, but existing code expects a single set).
+#'
+#' @param store A `datom_store` object.
+#' @param project_name Project name (used to derive env var names).
+#' @return Invisibly, a named list of the env var names that were set.
+#' @keywords internal
+.datom_install_store <- function(store, project_name) {
+  if (!is_datom_store(store)) {
+    cli::cli_abort("{.arg store} must be a {.cls datom_store} object.")
+  }
+
+  cred_names <- .datom_derive_cred_names(project_name)
+
+  # Set S3 credentials from data component
+  do.call(Sys.setenv, stats::setNames(
+    list(store$data$access_key, store$data$secret_key),
+    c(cred_names$access_key_env, cred_names$secret_key_env)
+  ))
+
+  # Set GITHUB_PAT if present
+  if (!is.null(store$github_pat)) {
+    Sys.setenv(GITHUB_PAT = store$github_pat)
+  }
+
+  invisible(list(
+    access_key_env = cred_names$access_key_env,
+    secret_key_env = cred_names$secret_key_env,
+    github_pat_set = !is.null(store$github_pat)
+  ))
+}
+
+
+# --- GitHub repo creation -----------------------------------------------------
+
+#' Create a GitHub Repository
+#'
+#' Creates a new GitHub repository via the REST API. Handles both org and
+#' personal repos.
+#'
+#' Safety guard:
+#' - Repo doesn't exist → create, return URL
+#' - Repo exists + empty → reuse, return URL
+#' - Repo exists + has content → abort
+#'
+#' @param repo_name Repository name.
+#' @param pat GitHub personal access token.
+#' @param org GitHub organization. NULL for personal repos.
+#' @param private Whether the repo should be private (default TRUE).
+#' @return The clone URL of the created/reused repository.
+#' @keywords internal
+.datom_create_github_repo <- function(repo_name, pat, org = NULL, private = TRUE) {
+  if (!is.character(repo_name) || length(repo_name) != 1L ||
+      is.na(repo_name) || !nzchar(repo_name)) {
+    cli::cli_abort("{.arg repo_name} must be a single non-empty string.")
+  }
+
+  headers <- list(
+    Authorization = paste("Bearer", pat),
+    Accept = "application/vnd.github+json"
+  )
+
+  # --- Check if repo exists ---------------------------------------------------
+  owner <- org %||% .datom_github_username(pat)
+  check_url <- paste0("https://api.github.com/repos/", owner, "/", repo_name)
+
+  existing <- tryCatch({
+    resp <- httr2::request(check_url) |>
+      httr2::req_headers(!!!headers) |>
+      httr2::req_error(is_error = function(resp) FALSE) |>
+      httr2::req_perform()
+
+    status <- httr2::resp_status(resp)
+
+    if (status == 200L) {
+      httr2::resp_body_json(resp)
+    } else {
+      NULL
+    }
+  }, error = function(e) {
+    cli::cli_abort(c(
+      "Failed to check if GitHub repo {.val {repo_name}} exists.",
+      "i" = "Underlying error: {conditionMessage(e)}"
+    ), parent = e)
+  })
+
+  if (!is.null(existing)) {
+    # Repo exists — check if it's empty (size == 0 and no default branch pushed)
+    is_empty <- identical(existing$size, 0L) || identical(existing$size, 0)
+
+    if (!is_empty) {
+      cli::cli_abort(c(
+        "GitHub repo {.val {owner}/{repo_name}} already exists and has content.",
+        "x" = "Cannot reuse a non-empty repo for a new datom project.",
+        "i" = "Use {.arg remote_url} to connect to an existing repo, or choose a different project name."
+      ))
+    }
+
+    cli::cli_alert_info("Reusing empty GitHub repo {.val {owner}/{repo_name}}.")
+    return(existing$clone_url)
+  }
+
+  # --- Create the repo --------------------------------------------------------
+  create_url <- if (!is.null(org)) {
+    paste0("https://api.github.com/orgs/", org, "/repos")
+  } else {
+    "https://api.github.com/user/repos"
+  }
+
+  body <- list(
+    name = repo_name,
+    private = private,
+    auto_init = FALSE,
+    description = paste("datom project:", repo_name)
+  )
+
+  tryCatch({
+    resp <- httr2::request(create_url) |>
+      httr2::req_headers(!!!headers) |>
+      httr2::req_body_json(body) |>
+      httr2::req_method("POST") |>
+      httr2::req_perform()
+
+    result <- httr2::resp_body_json(resp)
+    cli::cli_alert_success("Created GitHub repo {.val {owner}/{repo_name}}.")
+    result$clone_url
+  }, error = function(e) {
+    cli::cli_abort(c(
+      "Failed to create GitHub repo {.val {repo_name}}.",
+      "i" = "Underlying error: {conditionMessage(e)}"
+    ), parent = e)
+  })
+}
+
+
+#' Get GitHub Username from PAT
+#'
+#' Calls `GET /user` to get the authenticated user's login.
+#'
+#' @param pat GitHub personal access token.
+#' @return Username string.
+#' @keywords internal
+.datom_github_username <- function(pat) {
+  # Reuse existing validation if identity is cached, but this is a lightweight
+
+  # helper for repo creation flow
+  resp <- httr2::request("https://api.github.com/user") |>
+    httr2::req_headers(
+      Authorization = paste("Bearer", pat),
+      Accept = "application/vnd.github+json"
+    ) |>
+    httr2::req_perform()
+
+  httr2::resp_body_json(resp)$login
+}
+
+
+# --- datom_store_s3: S3 component constructor ---------------------------------
+
 #' Create an S3 Store Component
 #'
 #' Constructs a validated S3 storage component for use as either the governance
