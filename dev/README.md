@@ -46,13 +46,13 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| (none active) | — | — |
+| (none) | | |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
-| Phase 9: Rename tbit → datom | 2026-03-28 | 962 | Full package rename: all function prefixes (`datom_`/`.datom_`), S3 class (`datom_conn`), env vars (`DATOM_`), S3 path segment, `.datom/` config dir, metadata field (`datom_version`), package identity, docs. `devtools::check()` clean. |
+| Phase 10: Store Abstraction | 2026-04-18 | 1083 | `datom_store_s3()` + `datom_store()` constructors, `.datom_create_github_repo()` via httr2, `datom_init_repo(store=, create_repo=TRUE, repo_name=)`, `datom_get_conn(store=)`, `datom_clone(path, store)`, two-component `project.yaml` (governance+data), `.datom_install_store()` env-var bridge, HeadBucket validation (STS removed — not in paws.storage), print methods with masked secrets, vignettes rewritten. `devtools::check()` clean. | Full package rename: all function prefixes (`datom_`/`.datom_`), S3 class (`datom_conn`), env vars (`DATOM_`), S3 path segment, `.datom/` config dir, metadata field (`datom_version`), package identity, docs. `devtools::check()` clean. |
 | Phase 7: Multi-Developer Collaboration | 2026-03-28 | 964 | S3 namespace safety check in `datom_init_repo()`, pull-before-push discipline (`.datom_git_pull`, `.datom_check_git_current`), `datom_pull()` export (git-only, no S3 refresh — git is source of truth), `datom_clone()` export, team collaboration vignette, credentials vignette, `project_name` in manifest, `.force` bypass, `datom_validate()` project_name cross-check |
 | Phase 8: Metadata Enrichment & Table Types | 2026-03-28 | 905 | `table_type`, `size_bytes`, `parents`, `original_file_sha` in version_history, `datom_get_parents()`, `endpoint` param, `.access/` namespace safety. Post-phase bug fixes: manifest update in `datom_write`, `datom_init_repo` S3 push, idempotent SHA computation (JSON canonical form, volatile field exclusion, version_history dedup guard) |
 | Phase 6: Sync & Validation | 2026-02-15 | 130 | datom_sync_manifest, datom_sync (rio import), datom_sync_routing, datom_validate (git-S3 consistency), datom_status |
@@ -102,6 +102,7 @@ Items discovered during development but intentionally deferred. Review periodica
 | 6 | Sync & Validation | Phase 5 | 1 week |
 | 7 | Multi-Developer Collaboration | Phases 1-6 | 1-2 weeks |
 | 8 | Metadata Enrichment & Table Types | Phases 1-6 (parallel w/ 7) | 1 week |
+| 10 | Store Abstraction | Phases 1-8 | 1-2 weeks |
 
 ## Quick Context for New Sessions
 
@@ -175,9 +176,20 @@ To support step-through debugging:
 - **Small functions**: Each does one thing, easy to step into
 - **Playground snippets**: Each chunk includes copy-paste code to try interactively
 
+### Branch Workflow
+
+Every phase gets its own feature branch:
+
+1. **Create branch**: `git checkout -b phase/{n}-{name}` (from `main`)
+2. **Develop on branch**: All commits for the phase go here
+3. **PR when complete**: Open a pull request to `main`
+4. **Merge + delete**: Squash-merge or merge, then delete the branch
+
+The phase doc is created *on the branch* (not on `main`). After merge, the Phase Completion Procedure deletes the phase doc as usual.
+
 ### Git Commit Cadence
 
-Within chunks:
+Within chunks (on the phase branch):
 
 - **Commit frequently**: After each logical unit (function + test, fix, etc.)
 - **Push at milestones**: Chunk complete, phase complete, or good stopping point
@@ -185,16 +197,19 @@ Within chunks:
 
 Example:
 ```bash
+# Start phase
+git checkout -b phase/10-remotes-refactor
+
 # Within Chunk 1
-git add R/utils-sha.R tests/testthat/test-utils-sha.R
-git commit -m "[Phase 1 Chunk 1] Implement .datom_compute_data_sha with tests"
+git add R/remotes.R tests/testthat/test-remotes.R
+git commit -m "[Phase 10 Chunk 1] datom_remotes_s3 constructor + validation"
 
 # More work...
-git add R/utils-sha.R tests/testthat/test-utils-sha.R
-git commit -m "[Phase 1 Chunk 1] Add metadata SHA with alphabetic sorting"
+git commit -m "[Phase 10 Chunk 2] .datom_install_remotes + env var bridge"
 
-# Chunk complete
-git push  # ← Good milestone
+# Phase complete — PR to main
+git push -u origin phase/10-remotes-refactor
+# Open PR, merge, delete branch
 ```
 
 ## Maintenance Rules
@@ -223,7 +238,10 @@ When a phase is done, perform these steps **in order before starting the next ph
 
 3. **Delete the phase doc** — it should contain nothing worth keeping at this point
 
-4. **Commit the cleanup** — one commit for the doc housekeeping
+4. **PR + merge + delete branch**:
+   - Open a PR from `phase/{n}-{name}` to `main`
+   - Merge (squash or regular)
+   - Delete the feature branch (remote and local)
 
 **Rule**: No phase doc should survive past its completion. If it feels hard to delete,
 that means persistent content hasn't been migrated yet — do that first.

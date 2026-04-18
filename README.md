@@ -1,26 +1,31 @@
+
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-
-
-# datom
+# datom <img src="man/figures/logo.svg" align="right" height="139" alt="" />
 
 <!-- badges: start -->
-[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
-[![CRAN status](https://www.r-pkg.org/badges/version/datom)](https://CRAN.R-project.org/package=datom)
+
+[![Lifecycle:
+experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![CRAN
+status](https://www.r-pkg.org/badges/version/datom)](https://CRAN.R-project.org/package=datom)
 <!-- badges: end -->
 
-datom provides version-controlled data management for reproducible workflows. It abstracts tables as code in git while storing actual data in cloud storage (S3), enabling:
- 
+datom provides version-controlled data management for reproducible
+workflows. It abstracts tables as code in git while storing actual data
+in cloud storage (S3), enabling:
+
 - Cloud-based data repositories with automatic versioning
 - Complete data lineage tracking
 - Access to any historical version for reproducibility
 - Separation of data developer and data reader workflows
 
-datom is the foundational layer for the [daapr](https://github.com/amashadihossein/daapr) ecosystem.
+datom is the foundational layer for the
+[daapr](https://github.com/amashadihossein/daapr) ecosystem.
 
 ## Installation
 
-```r
+``` r
 # install.packages("pak")
 pak::pak("amashadihossein/datom")
 ```
@@ -29,7 +34,7 @@ pak::pak("amashadihossein/datom")
 
 ### For Data Developers (git + S3 access)
 
-```r
+``` r
 library(datom)
 
 # Initialize a datom repository
@@ -54,7 +59,7 @@ datom_write(conn, data = my_data, name = "customers", message = "Initial load")
 
 ### For Data Readers (S3 only)
 
-```r
+``` r
 library(datom)
 
 # Connect directly to S3
@@ -78,16 +83,17 @@ customers_v1 <- datom_read(conn, "customers", version = "abc123...")
 
 - **Git as source of truth**: All metadata versioned in git
 - **Content addressing**: SHA-based storage for efficient deduplication
-- **Separated workflows**: Developers need git + S3; readers need only S3
+- **Separated workflows**: Developers need git + S3; readers need only
+  S3
 - **Language agnostic**: Parquet storage enables cross-language access
 
 ## Related Packages
 
-| Package | Purpose |
-|---------|---------|
-| **datom** | Version-controlled table storage (this package) |
-| **dpbuild** | Data product construction |
-| **dpdeploy** | Deployment orchestration |
-| **dpi** | Data product access |
+| Package      | Purpose                                         |
+|--------------|-------------------------------------------------|
+| **datom**    | Version-controlled table storage (this package) |
+| **dpbuild**  | Data product construction                       |
+| **dpdeploy** | Deployment orchestration                        |
+| **dpi**      | Data product access                             |
 
 See `dev/datom_specification.md` for full technical specification.

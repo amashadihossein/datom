@@ -24,7 +24,7 @@ when you're done.**
 
 > **Prerequisites**: This vignette assumes credentials are already configured.
 > See `vignette("credentials")` for setup instructions including AWS keys,
-> `GITHUB_PAT`, and multi-project isolation.
+> `github_pat`, and store construction.
 
 This vignette covers:
 
@@ -44,7 +44,7 @@ datom recognizes two user types:
 | **Reader** | None | Read only | Statistician, analyst, reads versioned tables |
 
 Developers have a local clone of the git repo. Readers connect directly to S3
-using `datom_get_conn()` without a local path.
+using `datom_get_conn()` with a store and project name.
 
 ## One-Time Setup: Initializing the Repository
 
@@ -53,23 +53,38 @@ using `datom_get_conn()` without a local path.
 ```{r}
 library(datom)
 
+# Build a store (see vignette("credentials") for details)
+s3 <- datom_store_s3(
+  bucket     = "clinical-data-bucket",
+  prefix     = "study-001/",
+  access_key = keyring::key_get("AWS_ACCESS_KEY"),
+  secret_key = keyring::key_get("AWS_SECRET_KEY")
+)
+
+store <- datom_store(
+  governance = s3,
+  data       = s3,
+  github_pat = keyring::key_get("GITHUB_PAT")
+)
+
 # The lead data engineer runs this once
 datom_init_repo(
-  path = "study_001_data",
+  path         = "study_001_data",
   project_name = "STUDY_001",
-  remote_url = "https://github.com/org/study-001-data.git",
-  bucket = "clinical-data-bucket",
-  prefix = "study-001/"
+  store        = store,
+  create_repo  = TRUE,
+  repo_name    = "study-001-data"
 )
 ```
 ```
+#> ✔ Created GitHub repo "study-001-data"
 #> ✔ Initialized datom repository at study_001_data
 #> ✔ Pushed to origin/main
 #> ✔ Synced routing.json and manifest.json to S3
 ```
 
-This creates the folder structure, pushes the initial commit to GitHub, and
-uploads `routing.json` and `manifest.json` to S3.
+This creates the folder structure, creates a GitHub repo, pushes the initial
+commit, and uploads `routing.json` and `manifest.json` to S3.
 
 ### S3 Namespace Safety
 
@@ -80,11 +95,9 @@ a clear error:
 
 ```{r}
 datom_init_repo(
-  path = "my_project",
+  path         = "my_project",
   project_name = "MY_PROJECT",
-  remote_url = "https://github.com/org/my-project.git",
-  bucket = "clinical-data-bucket",
-  prefix = "study-001/"
+  store        = store
 )
 ```
 ```
@@ -97,13 +110,29 @@ This prevents accidental overwrites when multiple teams share an S3 bucket.
 
 ## Joining an Existing Repository
 
-Every other team member clones with `datom_clone()`:
+Every other team member clones with `datom_clone()`. They need a store with
+the `remote_url` of the existing repo:
 
 ```{r}
-conn <- datom_clone(
-  remote_url = "https://github.com/org/study-001-data.git",
-  path = "study_001_data"
+# Teammate builds their own store with the remote URL
+store <- datom_store(
+  governance = datom_store_s3(
+    bucket     = "clinical-data-bucket",
+    prefix     = "study-001/",
+    access_key = keyring::key_get("AWS_ACCESS_KEY"),
+    secret_key = keyring::key_get("AWS_SECRET_KEY")
+  ),
+  data = datom_store_s3(
+    bucket     = "clinical-data-bucket",
+    prefix     = "study-001/",
+    access_key = keyring::key_get("AWS_ACCESS_KEY"),
+    secret_key = keyring::key_get("AWS_SECRET_KEY")
+  ),
+  github_pat = keyring::key_get("GITHUB_PAT"),
+  remote_url = "https://github.com/org/study-001-data.git"
 )
+
+conn <- datom_clone(path = "study_001_data", store = store)
 ```
 ```
 #> ✔ Cloned "STUDY_001" to study_001_data
@@ -267,15 +296,20 @@ same table simultaneously.
 ## Setting Up Readers
 
 Readers (analysts, statisticians) don't need git access. They connect directly
-to S3:
+to S3 using a reader store:
 
 ```{r}
-# Reader only needs: project_name, bucket, prefix
-reader_conn <- datom_get_conn(
-  project_name = "STUDY_001",
-  bucket = "clinical-data-bucket",
-  prefix = "study-001/"
+# Reader store — no github_pat
+reader_s3 <- datom_store_s3(
+  bucket     = "clinical-data-bucket",
+  prefix     = "study-001/",
+  access_key = keyring::key_get("AWS_ACCESS_KEY_READER"),
+  secret_key = keyring::key_get("AWS_SECRET_KEY_READER")
 )
+
+reader_store <- datom_store(governance = reader_s3, data = reader_s3)
+
+reader_conn <- datom_get_conn(store = reader_store, project_name = "STUDY_001")
 print(reader_conn)
 ```
 ```
@@ -314,10 +348,13 @@ For credential setup details, see `vignette("credentials")`.
 
 ```{r}
 # Alice (lead):
-datom_init_repo(path = "study_data", project_name = "STUDY_001", ...)
+datom_init_repo(
+  path = "study_data", project_name = "STUDY_001",
+  store = store, create_repo = TRUE, repo_name = "study-001-data"
+)
 
-# Bob and Carol:
-conn <- datom_clone("https://github.com/org/study-001-data.git", "study_data")
+# Bob and Carol (build store with remote_url, then clone):
+conn <- datom_clone(path = "study_data", store = store)
 ```
 
 ### 2. Pull at the start of every session
@@ -355,8 +392,9 @@ syncing stale data or re-syncing unchanged tables.
 
 | Step | Command | Who |
 |------|---------|-----|
-| Initialize (once) | `datom_init_repo()` | Lead developer |
-| Clone | `datom_clone()` | All other developers |
+| Build store | `datom_store(...)` | Everyone (once per session) |
+| Initialize (once) | `datom_init_repo(store = ...)` | Lead developer |
+| Clone | `datom_clone(store = ...)` | All other developers |
 | Start session | `datom_pull(conn)` | All developers |
 | Receive data | Place files in `input_files/` | Developer |
 | Scan | `datom_sync_manifest(conn)` | Developer |

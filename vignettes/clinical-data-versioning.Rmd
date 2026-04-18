@@ -60,22 +60,41 @@ nrow(dm_all)
 
 ## Setup
 
+### Build a Store
+
+A store bundles your S3 credentials and GitHub PAT into a single object.
+Credentials are validated at construction time — bad credentials fail immediately,
+not mid-workflow.
+
+```{r}
+# Build S3 component (same bucket for governance and data in this example)
+s3 <- datom_store_s3(
+  bucket     = "clinical-data-bucket",
+  prefix     = "study-001/",
+  region     = "us-east-1",
+  access_key = keyring::key_get("AWS_ACCESS_KEY"),
+  secret_key = keyring::key_get("AWS_SECRET_KEY")
+)
+
+# Combine into a store with GitHub PAT for developer role
+store <- datom_store(
+  governance = s3,
+  data       = s3,
+  github_pat = keyring::key_get("GITHUB_PAT")
+)
+```
+
 ### One-Time Repository Initialization
 
 A data developer sets up the datom repository once. This creates the folder structure, initializes git with a remote, and generates configuration files.
 
 ```{r}
-# Required environment variables (set these in .Renviron or your CI environment)
-# DATOM_STUDY_001_ACCESS_KEY_ID = "your_aws_key"
-# DATOM_STUDY_001_SECRET_ACCESS_KEY = "your_aws_secret"
-# GITHUB_PAT = "your_github_pat"
-
 datom_init_repo(
-  path = "study_001_data",
+  path         = "study_001_data",
   project_name = "STUDY_001",
-  remote_url = "https://github.com/org/study-001-data.git",
-  bucket = "clinical-data-bucket",
-  prefix = "study-001/"
+  store        = store,
+  create_repo  = TRUE,           # creates a GitHub repo via API
+  repo_name    = "study-001-data" # GitHub repo name (defaults to project_name)
 )
 ```
 
@@ -84,7 +103,7 @@ This creates:
 ```
 study_001_data/
 ├── .datom/
-│   ├── project.yaml       # S3 bucket, credentials config
+│   ├── project.yaml       # Storage config (bucket, prefix, region)
 │   ├── routing.json        # Read method dispatch
 │   └── manifest.json       # Table catalog (initially empty)
 ├── input_files/            # Drop EDC extracts here (gitignored)
@@ -253,19 +272,25 @@ results <- datom_sync(conn, manifest)
 
 ## Data Reader Workflow
 
-Downstream analysts don't need git access. They connect directly to S3:
+Downstream analysts don't need git access. They connect directly to S3 using a
+reader store (no `github_pat`):
 
-> **Important**: The `bucket` and `prefix` passed here must exactly match the values used in `datom_init_repo()`. These are stored in `.datom/project.yaml` in the developer's repo — ask your data developer if you're unsure. A mismatched prefix is a common source of `AccessDenied (HTTP 403)` errors, because S3 returns 403 when an object does not exist at the given key and the caller lacks `s3:ListBucket` permission.
+> **Important**: The `bucket` and `prefix` must exactly match the values used in
+> `datom_init_repo()`. Ask your data developer if you're unsure. A mismatched
+> prefix is a common source of `AccessDenied (HTTP 403)` errors.
 
 ```{r}
-# Data reader only needs S3 credentials
-# DATOM_STUDY_001_ACCESS_KEY_ID and DATOM_STUDY_001_SECRET_ACCESS_KEY
-
-reader_conn <- datom_get_conn(
-  bucket = "clinical-data-bucket",
-  prefix = "study-001/",
-  project_name = "STUDY_001"
+# Reader store — no github_pat
+reader_s3 <- datom_store_s3(
+  bucket     = "clinical-data-bucket",
+  prefix     = "study-001/",
+  access_key = keyring::key_get("AWS_ACCESS_KEY_READER"),
+  secret_key = keyring::key_get("AWS_SECRET_KEY_READER")
 )
+
+reader_store <- datom_store(governance = reader_s3, data = reader_s3)
+
+reader_conn <- datom_get_conn(store = reader_store, project_name = "STUDY_001")
 print(reader_conn)
 #> ── datom connection
 #> • Project: "STUDY_001"
@@ -292,7 +317,6 @@ datom_history(reader_conn, "dm")
 #> 2 f7a8b9c2  a1b2c3d4  2026-01-28T10:25:00Z  jane@co.com  Sync dm
 
 # Read a specific earlier version by hash prefix
-# (use the hash from datom_history() — yours will differ from what's shown here)
 dm_v1 <- datom_read(reader_conn, "dm", version = "f7a8b9c2")
 nrow(dm_v1)
 #> [1] 6
@@ -337,21 +361,23 @@ The datom version identifier is the SHA of the metadata fields (sorted alphabeti
 
 | Role | Credentials | Capabilities |
 |------|-------------|--------------|
-| **Developer** | AWS + GITHUB_PAT | Read, write, sync, validate |
-| **Reader** | AWS only | Read any version |
+| **Developer** | AWS + `github_pat` in store | Read, write, sync, validate |
+| **Reader** | AWS only (no `github_pat`) | Read any version |
 
-Role is auto-detected: if `GITHUB_PAT` is set and a local repo path is provided, you're a developer.
+Role is derived from the store: if `github_pat` is provided, you're a developer.
 
 ## Summary
 
 This workflow demonstrates the core datom loop for clinical data:
 
-1. **Receive** EDC extracts → place in `input_files/`
-2. **Scan** with `datom_sync_manifest()` → detect new and changed files
-3. **Sync** with `datom_sync()` → import, convert to parquet, version, upload
-4. **Explore** with `datom_list()`, `datom_history()`, and `datom_read()` → verify what was synced before moving on
-5. **Update** by dropping new extracts and repeating the sync cycle
-6. **Retrieve** any historical snapshot with `datom_read(conn, name, version = "...")`
+1. **Build a store** with `datom_store()` → bundle credentials once
+2. **Initialize** with `datom_init_repo(store = ...)` → one-time setup
+3. **Receive** EDC extracts → place in `input_files/`
+4. **Scan** with `datom_sync_manifest()` → detect new and changed files
+5. **Sync** with `datom_sync()` → import, convert to parquet, version, upload
+6. **Explore** with `datom_list()`, `datom_history()`, and `datom_read()` → verify what was synced before moving on
+7. **Update** by dropping new extracts and repeating the sync cycle
+8. **Retrieve** any historical snapshot with `datom_read(conn, name, version = "...")`
 
 Every step is tracked in git with full audit trail. Data readers access any version via S3 without needing git credentials.
 

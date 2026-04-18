@@ -7,10 +7,9 @@
 datom_init_repo(
   path = ".",
   project_name,
-  remote_url,
-  bucket,
-  prefix = NULL,
-  region = NULL,
+  store,
+  create_repo = FALSE,
+  repo_name = project_name,
   max_file_size_gb = 1000,
   git_ignore = c(".Rprofile", ".Renviron", ".Rhistory", ".Rapp.history", ".Rproj.user/",
     ".DS_Store", "*.csv", "*.tsv", "*.rds", "*.txt", "*.parquet", "*.sas7bdat", ".RData",
@@ -21,16 +20,17 @@ datom_init_repo(
 \arguments{
 \item{path}{Path to the project folder. Defaults to current directory.}
 
-\item{project_name}{Project name, used to auto-generate credential env var
-names (\verb{DATOM_\{PROJECT_NAME\}_*}).}
+\item{project_name}{Project name, used for S3 namespace and git repo.}
 
-\item{remote_url}{GitHub remote URL.}
+\item{store}{A \code{datom_store} object (from \code{datom_store()}). Must have role
+\code{"developer"} (i.e., \code{github_pat} provided).}
 
-\item{bucket}{S3 bucket name.}
+\item{create_repo}{If \code{TRUE}, create a GitHub repo via API. Mutually
+exclusive with providing \code{remote_url} on the store.}
 
-\item{prefix}{Optional prefix for bucket organization.}
-
-\item{region}{AWS region. If NULL, uses AWS_DEFAULT_REGION.}
+\item{repo_name}{GitHub repo name when \code{create_repo = TRUE}. Defaults to
+\code{project_name}. Useful when the project name (e.g., \code{"STUDY_001"}) isn't
+a good GitHub repo name.}
 
 \item{max_file_size_gb}{Maximum file size limit in GB. Default 1000 (1TB).}
 
@@ -44,5 +44,5 @@ Invisible TRUE on success.
 }
 \description{
 One-time setup for data developers. Creates folder structure, initializes
-git with remote, sets up renv, and creates configuration files.
+git with remote, sets up configuration files, and pushes to S3.
 }

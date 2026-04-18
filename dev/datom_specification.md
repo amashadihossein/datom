@@ -256,6 +256,57 @@ Enables old code to find data at new location. Credential env var names follow c
 
 ---
 
+## Store Objects
+
+Store objects bundle storage configuration + credentials, replacing scattered `bucket`/`prefix`/`region` params and env-var conventions.
+
+### `datom_store_s3()` — Component Constructor
+
+```r
+datom_store_s3(
+  bucket,
+  prefix = NULL,
+  region = "us-east-1",
+  access_key,
+  secret_key,
+  session_token = NULL,
+  validate = TRUE
+)
+```
+
+Creates a single S3 storage component (used for governance or data). When `validate = TRUE`, runs `HeadBucket` to verify credentials and bucket access. Returns `datom_store_s3` S3 class.
+
+Future backends (`datom_store_local()`, `datom_store_gcs()`) will have their own constructors.
+
+### `datom_store()` — Composite Constructor
+
+```r
+datom_store(
+  governance,
+  data,
+  github_pat = NULL,
+  remote_url = NULL,
+  github_org = NULL,
+  validate = TRUE
+)
+```
+
+Bundles governance + data store components with git config:
+- `github_pat` present → `role = "developer"`; absent → `role = "reader"`
+- `remote_url`: existing GitHub repo URL (mutually exclusive with `create_repo` in `datom_init_repo()`)
+- `github_org`: for org repo creation; NULL → personal repo
+- When `validate = TRUE` and `github_pat` provided, validates PAT via `GET /user`
+
+### `.datom_install_store()` — Env Var Bridge (Temporary)
+
+`.datom_install_store(store, project_name)` injects store credentials into env vars (`DATOM_{PROJECT}_ACCESS_KEY_ID`, etc.) so existing S3 code works unchanged. Called inside `datom_init_repo()` / `datom_get_conn()`. **Phase 11 removes this** by wiring `.datom_s3_client()` directly to store credentials.
+
+### `.datom_create_github_repo()` — GitHub Repo Creation
+
+Creates GitHub repos via REST API (`httr2`). Safety: existing+empty → reuse, existing+content → abort before local side effects.
+
+---
+
 ## API Reference
 
 ### Repository Management (Data Developers)
@@ -266,36 +317,26 @@ Enables old code to find data at new location. Credential env var names follow c
 datom_init_repo(
   path = ".",
   project_name,
-  remote_url,
-  bucket,
-  prefix = NULL,
-  region = NULL,
+  store,
+  create_repo = FALSE,
+  repo_name = project_name,
   max_file_size_gb = 1000,
-  git_ignore = c(
-    ".Rprofile", ".Renviron", ".Rhistory",
-    ".Rapp.history", ".Rproj.user/",
-    ".DS_Store", "*.csv", "*.tsv",
-    "*.rds", "*.txt", "*.parquet",
-    "*.sas7bdat", ".RData", ".RDataTmp",
-    "*.html", "*.png", "*.pdf",
-    ".vscode/", "rsconnect/"
-  ),
+  git_ignore = c(...),
   .force = FALSE
 )
 ```
 
 One-time setup for data developers:
-- `project_name`: used to auto-generate credential env var names (`DATOM_{PROJECT_NAME}_*`)
-- Validates environment variables (auto-generated credential names, GITHUB_PAT)
-- **S3 namespace safety check**: Before writing any files, checks whether `{prefix}/datom/.metadata/manifest.json` already exists on S3. If occupied, aborts with an actionable error showing the existing project name. Pass `.force = TRUE` to override (intentional takeover only). Connectivity errors are swallowed so offline init still works.
+- `store`: composite `datom_store()` object (replaces `bucket`/`prefix`/`region`/`remote_url`)
+- `create_repo = TRUE`: auto-creates GitHub repo via API from `repo_name` (normalized: lowercase, underscores → hyphens). Requires developer store.
+- `repo_name`: defaults to `project_name`; allows custom GitHub repo name
+- **Validation-first**: all store/repo validation happens before any filesystem or git side effects
+- **S3 namespace safety check**: checks `{prefix}/datom/.metadata/manifest.json` on S3 before writing. Pass `.force = TRUE` to override.
 - Creates folder structure, initializes git with remote
-- Creates `.datom/project.yaml` with auto-generated credential config
+- Creates `.datom/project.yaml` with two-component storage config (`storage.governance` + `storage.data`)
 - Creates `.datom/routing.json` with default methods
 - Creates `.datom/manifest.json` with `project_name` at the top level
-- Creates `.gitignore` with specified patterns (covers `input_files/` contents)
 - Pushes initial commit to git, then uploads routing + manifest to S3
-- Optional prefix for bucket organization
-- Configurable max file size limit (default 1TB)
 
 Returns: Invisible TRUE on success. Cleans up on failure.
 
@@ -304,8 +345,7 @@ Returns: Invisible TRUE on success. Cleans up on failure.
 ```r
 datom_get_conn(
   path = NULL,
-  bucket = NULL,
-  prefix = NULL,
+  store = NULL,
   project_name = NULL,
   endpoint = NULL
 )
@@ -315,9 +355,9 @@ Flexible connection for both developers and readers:
 
 | Use case | Parameters |
 |----------|------------|
-| Developer (has repo) | `path = "my_project"` — reads from .datom/project.yaml |
-| Reader (S3 only) | `bucket`, `prefix`, `project_name` — direct connection |
-| dpbuild / dp_dev | `bucket`, `prefix`, `project_name` — programmatic setup |
+| Developer (has repo) | `path = "my_project"` — reads from .datom/project.yaml; optional `store` for credentials |
+| Reader (S3 only) | `store` + `project_name` — store provides everything |
+| dpbuild / dp_dev | `store` + `project_name` — programmatic setup |
 | datomaccess (access points) | `endpoint` — S3 access point URL overriding default endpoint |
 
 `endpoint`: Optional S3 endpoint URL. When `NULL` (default), standard S3 is used. datomaccess sets this to route reads through S3 access points for IAM enforcement. Stored in the returned `datom_conn` object and forwarded to all S3 operations.
@@ -331,14 +371,14 @@ Returns: Connection object (`datom_conn` S3 class)
 #### datom_clone()
 
 ```r
-datom_clone(remote_url, path, ...)
+datom_clone(path, store)
 ```
 
 Clones an existing datom repository and returns a ready-to-use connection:
+- `store`: composite `datom_store()` with `remote_url` and `github_pat`
 - Wraps `git2r::clone()` + `datom_get_conn(path)`
 - Validates the clone contains `.datom/project.yaml` (is a datom repo)
 - Rejects non-empty target directories
-- `...` forwarded to `datom_get_conn()`
 
 Returns: `datom_conn` object (developer role)
 
@@ -607,26 +647,33 @@ list(
 ### Data Developer Workflow
 
 ```r
-# Set environment variables (names auto-generated from project_name)
-Sys.setenv(
-  DATOM_CLINICAL_DATA_ACCESS_KEY_ID = "your_key",
-  DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY = "your_secret",
-  GITHUB_PAT = "your_pat"
+# Create store with credentials (e.g., from keyring or .Renviron)
+store <- datom_store(
+  governance = datom_store_s3(
+    bucket = "org-governance",
+    prefix = "project-alpha/",
+    access_key = keyring::key_get("datom_gov_access_key"),
+    secret_key = keyring::key_get("datom_gov_secret_key")
+  ),
+  data = datom_store_s3(
+    bucket = "shared-bucket",
+    prefix = "project-alpha/",
+    access_key = keyring::key_get("datom_data_access_key"),
+    secret_key = keyring::key_get("datom_data_secret_key")
+  ),
+  github_pat = keyring::key_get("github_pat")
 )
 
 # --- Lead developer: one-time project setup ---
 datom_init_repo(
   path = "my_project",
   project_name = "CLINICAL_DATA",
-  remote_url = "https://github.com/org/data-repo.git",
-  bucket = "shared-bucket",
-  prefix = "project-alpha/",
-  region = "us-east-1",
-  max_file_size_gb = 500
+  store = store,
+  create_repo = TRUE  # auto-creates GitHub repo
 )
 
 # --- All other developers: clone existing repo ---
-conn <- datom_clone("https://github.com/org/data-repo.git", "my_project")
+conn <- datom_clone("my_project", store)
 
 # --- Daily workflow ---
 conn <- datom_get_conn("my_project")
@@ -640,17 +687,26 @@ results <- datom_sync(conn, manifest)
 ### Data Reader Workflow
 
 ```r
-# Only need S3 credentials (names match project_name from project.yaml)
-Sys.setenv(
-  DATOM_CLINICAL_DATA_ACCESS_KEY_ID = "your_key",
-  DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY = "your_secret"
+# Reader store — no github_pat
+store <- datom_store(
+  governance = datom_store_s3(
+    bucket = "org-governance",
+    prefix = "project-alpha/",
+    access_key = Sys.getenv("GOV_ACCESS_KEY"),
+    secret_key = Sys.getenv("GOV_SECRET_KEY")
+  ),
+  data = datom_store_s3(
+    bucket = "shared-bucket",
+    prefix = "project-alpha/",
+    access_key = Sys.getenv("DATA_ACCESS_KEY"),
+    secret_key = Sys.getenv("DATA_SECRET_KEY")
+  )
 )
 
-# Connect to bucket (follows redirects automatically)
+# Connect (reader role — no git)
 conn <- datom_get_conn(
-  bucket = "shared-bucket",
-  prefix = "project-alpha/",
-  project_name = "clinical_data"
+  store = store,
+  project_name = "CLINICAL_DATA"
 )
 
 # List available tables
@@ -792,15 +848,14 @@ class DataProduct:
 
 ## Project Configuration
 
-### Credential Naming Convention
+### Credential Naming Convention (Internal)
 
-Credentials are programmatically managed based on `project_name`:
+Credentials are now provided via `datom_store_s3()` objects. Internally, `.datom_install_store()` maps them to env vars for backward compatibility:
 
 **Convention:** `DATOM_{PROJECT_NAME}_ACCESS_KEY_ID` / `DATOM_{PROJECT_NAME}_SECRET_ACCESS_KEY`
 
-- `datom_init_repo(project_name = "clinical_data", ...)` auto-generates env var names
-- User only provides `project_name`; datom derives credential names (uppercased, spaces → underscores)
-- Ensures unique credentials when dpbuild combines multiple datom repos
+This bridge is temporary — Phase 11 removes it by wiring `.datom_s3_client()` directly to store credentials.
+
 - Redirects append `_2`, `_3`, etc. for chained migrations
 
 ### .datom/project.yaml
@@ -811,16 +866,22 @@ project_description: Shared data repository for analytics
 created_at: 2024-01-15
 datom_version: 0.1.0
 
-# Storage configuration
+# Two-component storage configuration
 storage:
-  type: s3
-  bucket: shared-bucket
-  prefix: project-alpha/
-  region: us-east-1
-  max_file_size_gb: 1000
-  credentials:
-    access_key_env: "DATOM_CLINICAL_DATA_ACCESS_KEY_ID"      # auto-generated
-    secret_key_env: "DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY"  # auto-generated
+  governance:
+    type: s3
+    bucket: org-governance
+    prefix: clinical-data/
+    region: us-east-1
+  data:
+    type: s3
+    bucket: study-bucket
+    prefix: project-alpha/
+    region: us-east-1
+
+# Git remote
+git:
+  remote_url: https://github.com/org/clinical-data.git
 
 # Sync configuration
 sync:
@@ -831,7 +892,7 @@ sync:
 renv: false  # renv integration deferred — see Deferred to v2
 ```
 
-**project.yaml is authoritative for write location.** Credential env var names are auto-generated from `project_name` — user should not edit these manually.
+**Secrets are never persisted.** The `type` field enables future backend dispatch. The two-component structure (governance + data) allows routing files and data files to target different buckets/prefixes.
 
 ### .datom/routing.json
 
@@ -961,16 +1022,17 @@ datom_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 
 - `datom_conn` S3 class wraps project_name, bucket, prefix, region, s3_client, path, role, endpoint
 - Two modes: **developer** (has local repo path + git) and **reader** (S3 only, no local repo)
-- Role auto-detected: `GITHUB_PAT` present + `path` provided → developer; otherwise → reader
-- `datom_get_conn(path = ...)` reads `.datom/project.yaml` (developer path)
-- `datom_get_conn(bucket = ..., project_name = ...)` builds connection directly (reader path)
-- Credential env var names derived from `project_name`: `DATOM_{NORMALIZED_NAME}_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY`
+- Role derived from composite store: `github_pat` present → developer; absent → reader
+- `datom_get_conn(path = ...)` reads two-component `.datom/project.yaml` (developer path)
+- `datom_get_conn(store = ..., project_name = ...)` builds connection from store (reader path)
+- Credential env var names derived from `project_name` via `.datom_install_store()` bridge (temporary — Phase 11 removes)
 - `endpoint`: optional S3 endpoint override stored in conn; when set, all `.datom_s3_*` calls route through it. Used by datomaccess to enforce S3 access point routing.
 - `datom_init_repo()` sets local git config (`user.name`, `user.email`) from global config or fallback — `git2r::default_signature()` requires local config on freshly init'd repos
 
 ### Dependency Strategy
 
-- `paws.storage` (Imports): S3 operations — lightweight, avoids pulling full `paws`
+- `paws.storage` (Imports): S3 operations (HeadBucket validation, S3 reads/writes) — lightweight, avoids pulling full `paws`. Note: `sts` is NOT in `paws.storage` (it's in `paws.security.identity`); validation uses HeadBucket only.
+- `httr2` (Imports): GitHub REST API (repo creation, PAT validation)
 - `git2r` (Suggests): Git operations — only needed by data developers, checked at runtime via `.datom_check_git2r()`
 - Data readers never need git2r installed
 

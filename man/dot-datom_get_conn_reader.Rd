@@ -2,14 +2,12 @@
 % Please edit documentation in R/conn.R
 \name{.datom_get_conn_reader}
 \alias{.datom_get_conn_reader}
-\title{Build Connection from Direct Parameters (Reader Path)}
+\title{Build Connection from Store (Reader Path)}
 \usage{
-.datom_get_conn_reader(bucket, prefix, project_name, endpoint = NULL)
+.datom_get_conn_reader(store, project_name, endpoint = NULL)
 }
 \arguments{
-\item{bucket}{S3 bucket name.}
-
-\item{prefix}{Optional S3 prefix.}
+\item{store}{A \code{datom_store} object.}
 
 \item{project_name}{Project name string.}
 
@@ -19,9 +17,8 @@
 A \code{datom_conn} object.
 }
 \description{
-Constructs a connection from bucket, prefix, and project_name.
-Role is auto-detected: developer if GITHUB_PAT is set, reader otherwise.
-Developer role requires a local repo path, so this path only produces
-reader connections.
+Constructs a connection from a store object and project_name.
+Uses the data component of the store for S3 configuration.
+Always reader role (no local repo = can't be developer).
 }
 \keyword{internal}

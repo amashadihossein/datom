@@ -19,6 +19,7 @@ Imports:
     cli,
     digest,
     fs,
+    httr2,
     jsonlite,
     paws.storage,
     purrr,

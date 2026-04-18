@@ -5,15 +5,16 @@
 #
 # Usage:
 #   source("dev/dev-sandbox.R")
-#   env <- sandbox_up()      # creates everything, returns connection info
+#   store <- sandbox_store()   # builds store from keyring/env vars
+#   env <- sandbox_up(store)   # creates everything, returns connection info
 #   # ... work / test ...
-#   sandbox_down(env)         # tears down everything
-#   sandbox_reset(env)        # down + up (same config)
+#   sandbox_down(env)          # tears down everything
+#   sandbox_reset(env, store)  # down + up (same config)
 #
 # Prerequisites:
-#   - `gh` CLI installed and authenticated (https://cli.github.com)
-#   - AWS credentials set: DATOM_{PROJECT}_ACCESS_KEY_ID / SECRET_ACCESS_KEY
-#   - GITHUB_PAT set
+#   - AWS credentials accessible (keyring, env vars, etc.)
+#   - GITHUB_PAT accessible
+#   - `gh` CLI for teardown (repo deletion only)
 #   - datom loaded (devtools::load_all())
 #
 # All defaults are overridable. Adjust .sandbox_defaults() for your setup.
@@ -29,8 +30,8 @@
   list(
     project_name = "SANDBOX_TEST",
     github_org    = NULL,            # NULL = personal repo; set to "my-org" for org repos
-    repo_name     = "datom-sandbox",  # GitHub repo name
-    bucket        = "datom-test",           # REQUIRED — your dev S3 bucket
+    repo_name     = "datom-sandbox", # GitHub repo name
+    bucket        = "datom-test",    # REQUIRED — your dev S3 bucket
     prefix        = "sandbox/",      # S3 prefix (keeps sandbox isolated)
     region        = "us-east-1",
     base_dir      = fs::path_abs("../datom-test"),  # sibling of datom project
@@ -39,7 +40,52 @@
   )
 }
 
-# --- Helpers -----------------------------------------------------------------
+# --- Store construction ------------------------------------------------------
+
+#' Build a datom_store for sandbox use
+#'
+#' Constructs a `datom_store` with S3 components from credentials. Defaults
+#' to keyring; override with explicit values or env vars.
+#'
+#' @param bucket S3 bucket name.
+#' @param prefix S3 prefix.
+#' @param region AWS region.
+#' @param access_key AWS access key ID.
+#' @param secret_key AWS secret access key.
+#' @param github_pat GitHub PAT.
+#' @param github_org GitHub org for repo creation (NULL = personal).
+#' @param remote_url Pre-existing remote URL (NULL = create_repo in sandbox_up).
+#'
+#' @return A `datom_store` object (developer role).
+sandbox_store <- function(bucket = "datom-test",
+                          prefix = "sandbox/",
+                          region = "us-east-1",
+                          access_key = keyring::key_get("AWS_ACCESS_KEY", "datom-developer", "remotes"),
+                          secret_key = keyring::key_get("AWS_SECRET_KEY", "datom-developer", "remotes"),
+                          github_pat = keyring::key_get("GITHUB_PAT", "kol", "remotes"),
+                          github_org = NULL,
+                          remote_url = NULL) {
+  comp <- datom::datom_store_s3(
+    bucket     = bucket,
+    prefix     = prefix,
+    region     = region,
+    access_key = access_key,
+    secret_key = secret_key,
+    validate   = FALSE
+  )
+
+  datom::datom_store(
+    governance = comp,
+    data       = comp,
+    github_pat = github_pat,
+    github_org = github_org,
+    remote_url = remote_url,
+    validate   = FALSE
+  )
+}
+
+
+# --- Helpers (gh CLI — used only for teardown) --------------------------------
 
 .sandbox_check_gh <- function() {
   rc <- system2("gh", "--version", stdout = FALSE, stderr = FALSE)
@@ -53,7 +99,6 @@
 }
 
 .sandbox_gh <- function(..., error_on_fail = TRUE) {
-  #browser()
   args <- c(...)
   result <- suppressWarnings(system2("gh", args, stdout = TRUE, stderr = TRUE))
   status <- attr(result, "status") %||% 0L
@@ -70,92 +115,10 @@
   if (!is.null(cfg$github_org) && nzchar(cfg$github_org)) {
     paste0(cfg$github_org, "/", cfg$repo_name)
   } else {
-    # Personal repo — gh uses the authenticated user
-    cfg$repo_name
+    # Personal repo — need to resolve the authenticated user's login
+    owner <- trimws(.sandbox_gh("api", "user", "-q", ".login")$output)
+    paste0(owner, "/", cfg$repo_name)
   }
-}
-
-.sandbox_remote_url <- function(cfg) {
-  # Determine the owner (org or authenticated user)
-  if (!is.null(cfg$github_org) && nzchar(cfg$github_org)) {
-    owner <- cfg$github_org
-  } else {
-    # Query gh for authenticated user
-    res <- .sandbox_gh("api", "user", "--jq", ".login")
-    owner <- trimws(res$output[[1]])
-  }
-  paste0("https://github.com/", owner, "/", cfg$repo_name, ".git")
-}
-
-# --- Credential setup --------------------------------------------------------
-
-#' Set Up Sandbox Credentials
-#'
-#' Sets the environment variables that datom expects for a given project.
-#' datom derives credential env var names from `project_name`:
-#'   - `DATOM_{PROJECT_NAME}_ACCESS_KEY_ID`
-#'   - `DATOM_{PROJECT_NAME}_SECRET_ACCESS_KEY`
-#'   - `GITHUB_PAT`
-#'
-#' Call this before `sandbox_up()`. Credential values can come from any
-#' source (keyring, env vars, config file, interactive prompt, etc.).
-#'
-#' @param project_name Project name (must match what you pass to sandbox_up).
-#' @param access_key AWS access key ID value.
-#' @param secret_key AWS secret access key value.
-#' @param github_pat GitHub personal access token value.
-#'
-#' @examples
-#' \dontrun{
-#' # From keyring:
-#' sandbox_credentials(
-#'   "STUDY_001",
-#'   access_key = keyring::key_get("AWS_ACCESS_KEY", "datom-developer", "remotes"),
-#'   secret_key = keyring::key_get("AWS_SECRET_KEY", "datom-developer", "remotes"),
-#'   github_pat = keyring::key_get("GITHUB_PAT", "kol", "remotes")
-#' )
-#'
-#' # From plain values:
-#' sandbox_credentials("STUDY_001", "AKIA...", "wJalr...", "ghp_...")
-#'
-#' # Then:
-#' env <- sandbox_up(project_name = "STUDY_001", ...)
-#' }
-sandbox_credentials <- function(project_name, access_key, secret_key, github_pat) {
-  # Validate inputs
-  if (missing(project_name) || !nzchar(project_name)) {
-    cli::cli_abort("{.arg project_name} is required and must be non-empty.")
-  }
-  if (missing(access_key) || !nzchar(access_key)) {
-    cli::cli_abort("{.arg access_key} is required and must be non-empty.")
-  }
-  if (missing(secret_key) || !nzchar(secret_key)) {
-    cli::cli_abort("{.arg secret_key} is required and must be non-empty.")
-  }
-  if (missing(github_pat) || !nzchar(github_pat)) {
-    cli::cli_abort("{.arg github_pat} is required and must be non-empty.")
-  }
-
-  # Derive env var names from project_name (matches .datom_derive_cred_names)
-  key_id_var <- paste0("DATOM_", project_name, "_ACCESS_KEY_ID")
-  secret_var <- paste0("DATOM_", project_name, "_SECRET_ACCESS_KEY")
-
-  # Set env vars
-  args <- stats::setNames(
-    list(access_key, secret_key, github_pat),
-    c(key_id_var, secret_var, "GITHUB_PAT")
-  )
-  do.call(Sys.setenv, args)
-
-  # Confirm
-  cli::cli_alert_success("Credentials set for project {.val {project_name}}:")
-  cli::cli_ul()
-  cli::cli_li("{.envvar {key_id_var}}")
-  cli::cli_li("{.envvar {secret_var}}")
-  cli::cli_li("{.envvar GITHUB_PAT}")
-  cli::cli_end()
-
-  invisible(TRUE)
 }
 
 
@@ -165,21 +128,22 @@ sandbox_credentials <- function(project_name, access_key, secret_key, github_pat
 #'
 #' Uses paws.storage directly (no aws CLI dependency). Lists all objects
 #' under prefix/datom/ and deletes them in batches of 1000.
-.sandbox_wipe_s3 <- function(cfg) {
+.sandbox_wipe_s3 <- function(cfg, store) {
+  datom:::.datom_install_store(store, cfg$project_name)
   cred_names <- datom:::.datom_derive_cred_names(cfg$project_name)
-  s3 <- datom:::.datom_s3_client(cred_names, region = cfg$region)
+  s3 <- datom:::.datom_s3_client(cred_names, region = store$data$region)
 
   full_prefix <- paste0(
-    if (!is.null(cfg$prefix)) paste0(gsub("/+$", "", cfg$prefix), "/") else "",
+    if (!is.null(store$data$prefix)) paste0(gsub("/+$", "", store$data$prefix), "/") else "",
     "datom/"
   )
 
-  cli::cli_alert_info("Listing S3 objects under {.val {cfg$bucket}/{full_prefix}}...")
+  cli::cli_alert_info("Listing S3 objects under {.val {store$data$bucket}/{full_prefix}}...")
 
   all_keys <- character()
   continuation <- NULL
   repeat {
-    args <- list(Bucket = cfg$bucket, Prefix = full_prefix, MaxKeys = 1000L)
+    args <- list(Bucket = store$data$bucket, Prefix = full_prefix, MaxKeys = 1000L)
     if (!is.null(continuation)) args$ContinuationToken <- continuation
 
     resp <- do.call(s3$list_objects_v2, args)
@@ -200,12 +164,11 @@ sandbox_credentials <- function(project_name, access_key, secret_key, github_pat
 
   cli::cli_alert_warning("Deleting {length(all_keys)} S3 object{?s}...")
 
-  # Delete in batches of 1000 (S3 limit)
   batches <- split(all_keys, ceiling(seq_along(all_keys) / 1000))
   for (batch in batches) {
     objects <- purrr::map(batch, ~ list(Key = .x))
     s3$delete_objects(
-      Bucket = cfg$bucket,
+      Bucket = store$data$bucket,
       Delete = list(Objects = objects, Quiet = TRUE)
     )
   }
@@ -218,65 +181,55 @@ sandbox_credentials <- function(project_name, access_key, secret_key, github_pat
 
 #' Stand up a sandbox datom data product
 #'
-#' Creates a GitHub repo, runs datom_init_repo(), and optionally populates
-#' with example study data.
+#' Creates a GitHub repo (via datom_init_repo with create_repo = TRUE),
+#' and optionally populates with example study data.
 #'
+#' @param store A `datom_store` object (from `sandbox_store()`).
 #' @param ... Override any defaults from .sandbox_defaults().
 #' @return A sandbox environment list (pass to sandbox_down/sandbox_reset).
-sandbox_up <- function(...) {
+sandbox_up <- function(store, ...) {
   cfg <- utils::modifyList(.sandbox_defaults(), list(...))
 
-  if (is.null(cfg$bucket) || !nzchar(cfg$bucket)) {
+  if (missing(store) || !datom::is_datom_store(store)) {
     cli::cli_abort(c(
-      "{.arg bucket} is required.",
-      "i" = "Set it in {.fn .sandbox_defaults} or pass {.code bucket = \"my-bucket\"} to {.fn sandbox_up}."
+      "{.arg store} is required and must be a {.cls datom_store}.",
+      "i" = "Build one with {.fn sandbox_store}."
     ))
   }
-
-  .sandbox_check_gh()
 
   local_path <- fs::path(cfg$base_dir, cfg$repo_name)
 
   cli::cli_h2("Sandbox Up: {.val {cfg$project_name}}")
 
-  # 1. Create GitHub repo
-  cli::cli_alert_info("Creating GitHub repo {.val {cfg$repo_name}}...")
+  # Determine whether to create repo or use existing remote_url
+  create_repo <- is.null(store$remote_url)
 
-  create_args <- c("repo", "create", .sandbox_repo_full_name(cfg), "--private")
-  # Check if repo already exists
-  view_result <- .sandbox_gh("repo", "view", .sandbox_repo_full_name(cfg),
-                              "--json", "name", error_on_fail = FALSE)
-  if (view_result$status == 0L) {
-    cli::cli_alert_warning("GitHub repo {.val {cfg$repo_name}} already exists. Reusing.")
+  if (!create_repo) {
+    cli::cli_alert_info("Using existing remote: {.url {store$remote_url}}")
   } else {
-    .sandbox_gh(create_args)
-    cli::cli_alert_success("Created GitHub repo {.val {cfg$repo_name}}.")
+    cli::cli_alert_info("Will create GitHub repo {.val {cfg$repo_name}} via API...")
   }
 
-  remote_url <- .sandbox_remote_url(cfg)
-
-  # 2. Clean up local path if it exists
-
+  # Clean up local path if it exists
   if (fs::dir_exists(local_path)) {
     cli::cli_alert_warning("Local path {.path {local_path}} exists. Removing.")
     fs::dir_delete(local_path)
   }
 
-  # 3. Initialize datom repo
+  # Initialize datom repo (creates GitHub repo if create_repo = TRUE)
   cli::cli_alert_info("Initializing datom repo at {.path {local_path}}...")
 
   datom::datom_init_repo(
     path         = local_path,
     project_name = cfg$project_name,
-    remote_url   = remote_url,
-    bucket       = cfg$bucket,
-    prefix       = cfg$prefix,
-    region       = cfg$region
+    store        = store,
+    create_repo  = create_repo,
+    repo_name    = cfg$repo_name
   )
 
   cli::cli_alert_success("datom repo initialized and pushed.")
 
-  # 4. Optionally populate with example data
+  # Optionally populate with example data
   conn <- NULL
   if (isTRUE(cfg$populate)) {
     cli::cli_alert_info("Populating with example data ({cfg$n_months} month{?s})...")
@@ -309,11 +262,11 @@ sandbox_up <- function(...) {
     cli::cli_alert_success("Populated {n} month{?s} of example data.")
   }
 
-  # 5. Build the environment object
+  # Build the environment object
   env <- list(
     config     = cfg,
+    store      = store,
     local_path = as.character(local_path),
-    remote_url = remote_url,
     conn       = conn,
     created_at = Sys.time()
   )
@@ -323,8 +276,7 @@ sandbox_up <- function(...) {
   cli::cli_h3("Sandbox ready")
   cli::cli_ul()
   cli::cli_li("Local: {.path {local_path}}")
-  cli::cli_li("Remote: {.url {remote_url}}")
-  cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}datom/")
+  cli::cli_li("S3: s3://{store$data$bucket}/{store$data$prefix}datom/")
   cli::cli_end()
 
   invisible(env)
@@ -343,13 +295,14 @@ sandbox_down <- function(env, confirm = interactive()) {
   }
 
   cfg <- env$config
+  store <- env$store
 
   cli::cli_h2("Sandbox Down: {.val {cfg$project_name}}")
 
   if (isTRUE(confirm)) {
     cli::cli_alert_danger("This will permanently delete:")
     cli::cli_ul()
-    cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}datom/ (all objects)")
+    cli::cli_li("S3: s3://{store$data$bucket}/{store$data$prefix}datom/ (all objects)")
     cli::cli_li("GitHub: {.val {cfg$repo_name}}")
     cli::cli_li("Local: {.path {env$local_path}}")
     cli::cli_end()
@@ -363,14 +316,15 @@ sandbox_down <- function(env, confirm = interactive()) {
 
   # 1. Wipe S3
   tryCatch({
-    .sandbox_wipe_s3(cfg)
+    .sandbox_wipe_s3(cfg, store)
   }, error = function(e) {
     cli::cli_alert_danger("S3 cleanup failed: {conditionMessage(e)}")
     cli::cli_alert_info("Continuing with remaining teardown...")
   })
 
-  # 2. Delete GitHub repo
+  # 2. Delete GitHub repo (still use gh CLI — no datom API for deletion)
   tryCatch({
+    .sandbox_check_gh()
     cli::cli_alert_info("Deleting GitHub repo {.val {cfg$repo_name}}...")
     .sandbox_gh("repo", "delete", .sandbox_repo_full_name(cfg), "--yes")
     cli::cli_alert_success("Deleted GitHub repo.")
@@ -394,33 +348,87 @@ sandbox_down <- function(env, confirm = interactive()) {
 #' Reset a sandbox (tear down + stand up with same config)
 #'
 #' @param env Sandbox environment from sandbox_up().
+#' @param store A `datom_store` object. If NULL, reuses env$store.
 #' @param confirm If TRUE (default in interactive), asks before destroying.
 #' @return New sandbox environment.
-sandbox_reset <- function(env, confirm = interactive()) {
+sandbox_reset <- function(env, store = NULL, confirm = interactive()) {
   if (!inherits(env, "datom_sandbox")) {
     cli::cli_abort("{.arg env} must be a {.cls datom_sandbox} from {.fn sandbox_up}.")
   }
 
+  store <- store %||% env$store
+
   cli::cli_h2("Sandbox Reset: {.val {env$config$project_name}}")
 
   sandbox_down(env, confirm = confirm)
-  do.call(sandbox_up, env$config)
+
+  do.call(sandbox_up, c(list(store = store), env$config))
+}
+
+
+#' Recover a sandbox environment for teardown
+#'
+#' Reconstructs the `env` object needed by `sandbox_down()` without
+#' re-creating any infrastructure. Use this when you lost the R session
+#' before tearing down.
+#'
+#' @param store A `datom_store` object.
+#' @param ... Override any defaults from .sandbox_defaults() — same args
+#'   you originally passed to `sandbox_up()`.
+#' @return A `datom_sandbox` object suitable for `sandbox_down()`.
+#'
+#' @examples
+#' \dontrun{
+#' source("dev/dev-sandbox.R")
+#' store <- sandbox_store()
+#' env <- sandbox_recover(
+#'   store        = store,
+#'   project_name = "STUDY_001",
+#'   repo_name    = "study-001-data"
+#' )
+#' sandbox_down(env)
+#' }
+sandbox_recover <- function(store, ...) {
+  cfg <- utils::modifyList(.sandbox_defaults(), list(...))
+
+  local_path <- fs::path(cfg$base_dir, cfg$repo_name)
+
+  env <- list(
+    config     = cfg,
+    store      = store,
+    local_path = as.character(local_path),
+    conn       = NULL,
+    created_at = NA_real_
+  )
+  class(env) <- "datom_sandbox"
+
+  cli::cli_alert_success("Recovered sandbox env for {.val {cfg$project_name}}.")
+  cli::cli_ul()
+  cli::cli_li("Local: {.path {local_path}}")
+  cli::cli_li("S3: s3://{store$data$bucket}/{store$data$prefix}datom/")
+  cli::cli_end()
+  cli::cli_alert_info("Pass this to {.fn sandbox_down} to tear down.")
+
+  invisible(env)
 }
 
 
 #' Print method for sandbox environment
-#' @export
 print.datom_sandbox <- function(x, ...) {
   cfg <- x$config
-  age <- round(difftime(Sys.time(), x$created_at, units = "mins"), 1)
+  store <- x$store
+  age <- if (is.na(x$created_at)) {
+    "unknown"
+  } else {
+    paste0(round(difftime(Sys.time(), x$created_at, units = "mins"), 1), " minutes")
+  }
 
   cli::cli_h3("datom sandbox")
   cli::cli_ul()
   cli::cli_li("Project: {.val {cfg$project_name}}")
   cli::cli_li("Local: {.path {x$local_path}}")
-  cli::cli_li("Remote: {.url {x$remote_url}}")
-  cli::cli_li("S3: s3://{cfg$bucket}/{cfg$prefix}datom/")
-  cli::cli_li("Age: {age} minutes")
+  cli::cli_li("S3: s3://{store$data$bucket}/{store$data$prefix}datom/")
+  cli::cli_li("Age: {age}")
   if (!is.null(x$conn)) {
     cli::cli_li("Connection: available (env$conn)")
   }

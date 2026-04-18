@@ -8,31 +8,28 @@
 #   source("dev/e2e-test.R")
 #
 # Prerequisites:
-#   - `gh` CLI installed and authenticated
 #   - AWS credentials (via keyring, env vars, or any source)
 #   - GITHUB_PAT
 #   - S3 bucket exists
+#   - `gh` CLI for teardown only
 # ──────────────────────────────────────────────────────────────────────────────
 
-# --- Credentials -------------------------------------------------------------
-# sandbox_credentials enforces the project_name <-> env var coupling.
-# Swap keyring calls for plain strings if you prefer.
+# --- Build store -------------------------------------------------------------
+# sandbox_store() constructs a datom_store from keyring credentials.
+# Override arguments for different buckets, orgs, etc.
 
-sandbox_credentials(
-  project_name = "STUDY_001",
-  access_key   = keyring::key_get("AWS_ACCESS_KEY", "datom-developer", "remotes"),
-  secret_key   = keyring::key_get("AWS_SECRET_KEY", "datom-developer", "remotes"),
-  github_pat   = keyring::key_get("GITHUB_PAT", "kol", "remotes")
+store <- sandbox_store(
+  bucket     = "datom-test",
+  prefix     = NULL,
+  region     = "us-east-1"
 )
 
 # --- Stand up sandbox --------------------------------------------------------
 
 env <- sandbox_up(
+  store,
   project_name = "STUDY_001",
   repo_name    = "study-001-data",
-  bucket       = "datom-test",
-  prefix       = NULL,
-  region       = "us-east-1",
   populate     = TRUE,
   n_months     = 2L
 )
@@ -84,6 +81,21 @@ datom_history(conn, "summary_trt_by_sex")
 
 datom_validate(conn)
 datom_status(conn)
+
+# --- Recover env (if you lost the session) -----------------------------------
+# If you closed R without tearing down, re-source the sandbox helpers,
+# build a store, and recover the env object:
+#
+#   devtools::load_all()
+#   source("dev/dev-sandbox.R")
+#
+#   store <- sandbox_store(bucket = "datom-test", prefix = NULL, region = "us-east-1")
+#
+#   env <- sandbox_recover(
+#     store,
+#     project_name = "STUDY_001",
+#     repo_name    = "study-001-data"
+#   )
 
 # --- Tear down ---------------------------------------------------------------
 # sandbox_down(env)
