@@ -18,9 +18,10 @@
 \item{bucket}{Bucket name.}
 }
 \value{
-A list with identity information (aws_account_id, aws_arn).
+Invisible TRUE on success.
 }
 \description{
-Checks AWS identity (STS GetCallerIdentity) and bucket access (HeadBucket).
+Checks bucket access via HeadBucket. This validates both credentials and
+bucket existence/permissions in a single call.
 }
 \keyword{internal}

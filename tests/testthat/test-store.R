@@ -27,7 +27,6 @@ test_that("datom_store_s3() creates valid store with validate = FALSE", {
   expect_equal(store$region, "us-east-1")
   expect_equal(store$access_key, "AKIAIOSFODNN7EXAMPLE")
   expect_false(store$validated)
-  expect_null(store$identity)
 })
 
 test_that("datom_store_s3() accepts NULL prefix", {
@@ -201,17 +200,6 @@ test_that(".datom_mask_secret() shows 5-char secret partially", {
 
 test_that(".datom_validate_s3_store() succeeds with valid mocks", {
   mockery::stub(
-    .datom_validate_s3_store, "paws.storage::sts",
-    function(...) {
-      list(
-        get_caller_identity = function() {
-          list(Account = "123456789012", Arn = "arn:aws:iam::123456789012:user/test")
-        }
-      )
-    }
-  )
-
-  mockery::stub(
     .datom_validate_s3_store, "paws.storage::s3",
     function(...) {
       list(
@@ -228,41 +216,10 @@ test_that(".datom_validate_s3_store() succeeds with valid mocks", {
     bucket = "my-bucket"
   )
 
-  expect_equal(result$aws_account_id, "123456789012")
-  expect_true(grepl("arn:aws", result$aws_arn))
-})
-
-test_that(".datom_validate_s3_store() errors on STS failure", {
-  mockery::stub(
-    .datom_validate_s3_store, "paws.storage::sts",
-    function(...) {
-      list(
-        get_caller_identity = function() stop("InvalidClientTokenId")
-      )
-    }
-  )
-
-  expect_error(
-    .datom_validate_s3_store(
-      access_key = "bad", secret_key = "bad",
-      session_token = NULL, region = "us-east-1", bucket = "b"
-    ),
-    "credential validation failed"
-  )
+  expect_true(result)
 })
 
 test_that(".datom_validate_s3_store() errors on 403 HeadBucket", {
-  mockery::stub(
-    .datom_validate_s3_store, "paws.storage::sts",
-    function(...) {
-      list(
-        get_caller_identity = function() {
-          list(Account = "123456789012", Arn = "arn:aws:iam::123456789012:user/test")
-        }
-      )
-    }
-  )
-
   mockery::stub(
     .datom_validate_s3_store, "paws.storage::s3",
     function(...) {
@@ -282,17 +239,6 @@ test_that(".datom_validate_s3_store() errors on 403 HeadBucket", {
 })
 
 test_that(".datom_validate_s3_store() errors on 404 HeadBucket", {
-  mockery::stub(
-    .datom_validate_s3_store, "paws.storage::sts",
-    function(...) {
-      list(
-        get_caller_identity = function() {
-          list(Account = "123456789012", Arn = "arn:aws:iam::123456789012:user/test")
-        }
-      )
-    }
-  )
-
   mockery::stub(
     .datom_validate_s3_store, "paws.storage::s3",
     function(...) {
@@ -315,7 +261,7 @@ test_that("datom_store_s3() with validate = TRUE calls validation", {
   # Mock the validation function to track it was called
   mockery::stub(
     datom_store_s3, ".datom_validate_s3_store",
-    function(...) list(aws_account_id = "111111111111", aws_arn = "arn:aws:iam::111111111111:user/test")
+    function(...) invisible(TRUE)
   )
 
   store <- datom_store_s3(
@@ -326,7 +272,6 @@ test_that("datom_store_s3() with validate = TRUE calls validation", {
   )
 
   expect_true(store$validated)
-  expect_equal(store$identity$aws_account_id, "111111111111")
 })
 
 test_that("datom_store_s3() with validate = FALSE skips validation", {
@@ -339,7 +284,6 @@ test_that("datom_store_s3() with validate = FALSE skips validation", {
   )
 
   expect_false(store$validated)
-  expect_null(store$identity)
 })
 
 

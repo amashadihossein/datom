@@ -426,10 +426,8 @@ datom_store_s3 <- function(bucket,
   }
 
   # --- Connectivity validation ------------------------------------------------
-  identity <- NULL
-
   if (isTRUE(validate)) {
-    identity <- .datom_validate_s3_store(
+    .datom_validate_s3_store(
       access_key = access_key,
       secret_key = secret_key,
       session_token = session_token,
@@ -446,8 +444,7 @@ datom_store_s3 <- function(bucket,
       access_key = access_key,
       secret_key = secret_key,
       session_token = session_token,
-      validated = isTRUE(validate),
-      identity = identity
+      validated = isTRUE(validate)
     ),
     class = "datom_store_s3"
   )
@@ -490,11 +487,6 @@ print.datom_store_s3 <- function(x, ...) {
   }
 
   cli::cli_li("Validated: {.val {x$validated}}")
-
-  if (!is.null(x$identity)) {
-    cli::cli_li("AWS account: {.val {x$identity$aws_account_id}}")
-  }
-
   cli::cli_end()
   invisible(x)
 }
@@ -519,14 +511,15 @@ print.datom_store_s3 <- function(x, ...) {
 
 #' Validate S3 Store Connectivity
 #'
-#' Checks AWS identity (STS GetCallerIdentity) and bucket access (HeadBucket).
+#' Checks bucket access via HeadBucket. This validates both credentials and
+#' bucket existence/permissions in a single call.
 #'
 #' @param access_key AWS access key ID.
 #' @param secret_key AWS secret access key.
 #' @param session_token Optional session token.
 #' @param region AWS region.
 #' @param bucket Bucket name.
-#' @return A list with identity information (aws_account_id, aws_arn).
+#' @return Invisible TRUE on success.
 #' @keywords internal
 .datom_validate_s3_store <- function(access_key, secret_key, session_token,
                                      region, bucket) {
@@ -544,24 +537,7 @@ print.datom_store_s3 <- function(x, ...) {
     region = region
   )
 
-  # --- STS GetCallerIdentity --------------------------------------------------
-  identity <- tryCatch({
-    sts <- paws.storage::sts(config = config)
-    resp <- sts$get_caller_identity()
-    list(
-      aws_account_id = resp$Account,
-      aws_arn = resp$Arn
-    )
-  }, error = function(e) {
-    cli::cli_abort(c(
-      "AWS credential validation failed.",
-      "x" = "STS GetCallerIdentity returned an error.",
-      "i" = "Check that {.arg access_key} and {.arg secret_key} are valid.",
-      "i" = "Underlying error: {conditionMessage(e)}"
-    ), parent = e)
-  })
-
-  # --- HeadBucket -------------------------------------------------------------
+  # --- HeadBucket (validates credentials + bucket access) ---------------------
   tryCatch({
     s3 <- paws.storage::s3(config = config)
     s3$head_bucket(Bucket = bucket)
@@ -569,9 +545,9 @@ print.datom_store_s3 <- function(x, ...) {
     msg <- conditionMessage(e)
     if (grepl("403|Forbidden|AccessDenied", msg)) {
       cli::cli_abort(c(
-        "AWS credentials are valid but lack access to bucket {.val {bucket}}.",
+        "AWS credentials are invalid or lack access to bucket {.val {bucket}}.",
         "x" = "HeadBucket returned 403 / Access Denied.",
-        "i" = "Check IAM permissions for this bucket."
+        "i" = "Check {.arg access_key}, {.arg secret_key}, and IAM permissions."
       ), parent = e)
     } else if (grepl("404|NoSuchBucket|NotFound", msg)) {
       cli::cli_abort(c(
@@ -587,5 +563,5 @@ print.datom_store_s3 <- function(x, ...) {
     }
   })
 
-  identity
+  invisible(TRUE)
 }
