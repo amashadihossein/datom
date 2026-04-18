@@ -1,7 +1,198 @@
 # Store abstraction for datom storage backends
 #
 # Type-specific constructors: datom_store_s3() (now), datom_store_local() (Phase 12)
-# Composite constructor: datom_store() (Phase 10 Chunk 2)
+# Composite constructor: datom_store() bundles governance + data + git config
+
+
+# --- datom_store: composite constructor ---------------------------------------
+
+#' Create a datom Store
+#'
+#' Bundles a governance store component, a data store component, and git config
+#' into a single store object. Role (developer vs reader) is derived from
+#' `github_pat` presence.
+#'
+#' @param governance A store component (e.g., `datom_store_s3()`) for governance
+#'   files (dispatch, ref, migration history).
+#' @param data A store component (e.g., `datom_store_s3()`) for data files
+#'   (manifest, tables, metadata).
+#' @param github_pat GitHub personal access token. If provided, role is
+#'   `"developer"`. If NULL, role is `"reader"`.
+#' @param remote_url GitHub remote URL. Required when `github_pat` is provided
+#'   and `create_repo = FALSE` will be used in `datom_init_repo()`.
+#' @param github_org GitHub organization for repo creation. NULL for personal repos.
+#' @param validate If `TRUE` (default), validate GitHub PAT via API.
+#'   Set to `FALSE` for tests or offline use.
+#'
+#' @return A `datom_store` object.
+#' @export
+datom_store <- function(governance,
+                        data,
+                        github_pat = NULL,
+                        remote_url = NULL,
+                        github_org = NULL,
+                        validate = TRUE) {
+
+  # --- Validate components are store objects ----------------------------------
+  if (!.is_datom_store_component(governance)) {
+    cli::cli_abort(
+      "{.arg governance} must be a datom store component (e.g., {.fn datom_store_s3})."
+    )
+  }
+
+  if (!.is_datom_store_component(data)) {
+    cli::cli_abort(
+      "{.arg data} must be a datom store component (e.g., {.fn datom_store_s3})."
+    )
+  }
+
+  # --- Validate github_pat ---------------------------------------------------
+  if (!is.null(github_pat)) {
+    if (!is.character(github_pat) || length(github_pat) != 1L ||
+        is.na(github_pat) || !nzchar(github_pat)) {
+      cli::cli_abort("{.arg github_pat} must be a single non-empty string or NULL.")
+    }
+  }
+
+  # --- Validate remote_url ---------------------------------------------------
+  if (!is.null(remote_url)) {
+    if (!is.character(remote_url) || length(remote_url) != 1L ||
+        is.na(remote_url) || !nzchar(remote_url)) {
+      cli::cli_abort("{.arg remote_url} must be a single non-empty string or NULL.")
+    }
+  }
+
+  # --- Validate github_org ---------------------------------------------------
+  if (!is.null(github_org)) {
+    if (!is.character(github_org) || length(github_org) != 1L ||
+        is.na(github_org) || !nzchar(github_org)) {
+      cli::cli_abort("{.arg github_org} must be a single non-empty string or NULL.")
+    }
+  }
+
+  # --- Role derivation --------------------------------------------------------
+  role <- if (!is.null(github_pat)) "developer" else "reader"
+
+  # --- GitHub PAT validation --------------------------------------------------
+  github_identity <- NULL
+
+  if (!is.null(github_pat) && isTRUE(validate)) {
+    github_identity <- .datom_validate_github_pat(github_pat)
+  }
+
+  structure(
+    list(
+      governance = governance,
+      data = data,
+      role = role,
+      github_pat = github_pat,
+      remote_url = remote_url,
+      github_org = github_org,
+      validated = isTRUE(validate),
+      identity = list(
+        github = github_identity,
+        governance = governance$identity,
+        data = data$identity
+      )
+    ),
+    class = "datom_store"
+  )
+}
+
+
+#' Check if Object is a datom Store
+#'
+#' @param x Object to test.
+#' @return TRUE or FALSE.
+#' @keywords internal
+is_datom_store <- function(x) {
+  inherits(x, "datom_store")
+}
+
+
+#' Print a datom Store
+#'
+#' Displays store configuration with masked secrets.
+#'
+#' @param x A `datom_store` object.
+#' @param ... Ignored.
+#' @return Invisible `x`.
+#' @export
+print.datom_store <- function(x, ...) {
+  cli::cli_h3("datom store")
+  cli::cli_ul()
+  cli::cli_li("Role: {.val {x$role}}")
+
+  if (!is.null(x$remote_url)) {
+    cli::cli_li("Remote: {.url {x$remote_url}}")
+  }
+
+  if (!is.null(x$github_org)) {
+    cli::cli_li("GitHub org: {.val {x$github_org}}")
+  }
+
+  if (!is.null(x$github_pat)) {
+    cli::cli_li("GitHub PAT: {.val {(.datom_mask_secret(x$github_pat))}}")
+  }
+
+  if (!is.null(x$identity$github)) {
+    cli::cli_li("GitHub user: {.val {x$identity$github$login}}")
+  }
+
+  cli::cli_end()
+
+  cli::cli_text("")
+  cli::cli_text("{.strong Governance:}")
+  print(x$governance)
+
+  cli::cli_text("")
+  cli::cli_text("{.strong Data:}")
+  print(x$data)
+
+  invisible(x)
+}
+
+
+#' Check if Object is a Store Component
+#'
+#' Returns TRUE for any datom store component type (datom_store_s3, future
+#' datom_store_local, etc.).
+#'
+#' @param x Object to test.
+#' @return TRUE or FALSE.
+#' @keywords internal
+.is_datom_store_component <- function(x) {
+  inherits(x, "datom_store_s3") # extend with || for future backends
+}
+
+
+#' Validate GitHub PAT
+#'
+#' Calls GitHub `GET /user` to verify the PAT is valid.
+#'
+#' @param pat GitHub personal access token.
+#' @return A list with `login` and `id`.
+#' @keywords internal
+.datom_validate_github_pat <- function(pat) {
+  tryCatch({
+    resp <- httr2::request("https://api.github.com/user") |>
+      httr2::req_headers(
+        Authorization = paste("Bearer", pat),
+        Accept = "application/vnd.github+json"
+      ) |>
+      httr2::req_perform()
+
+    body <- httr2::resp_body_json(resp)
+    list(login = body$login, id = body$id)
+  }, error = function(e) {
+    cli::cli_abort(c(
+      "GitHub PAT validation failed.",
+      "x" = "GET /user returned an error.",
+      "i" = "Check that {.arg github_pat} is a valid token.",
+      "i" = "Underlying error: {conditionMessage(e)}"
+    ), parent = e)
+  })
+}
 
 
 # --- datom_store_s3: S3 component constructor ---------------------------------
