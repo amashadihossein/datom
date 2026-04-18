@@ -264,18 +264,18 @@ datom_store_s3 (component)
 
 ## Acceptance Criteria
 
-- [ ] `datom_store_s3()` validates credentials and bucket access at construction time
-- [ ] `datom_store()` bundles governance + data components with role derivation
-- [ ] `datom_init_repo(store = ...)` replaces `bucket`/`prefix`/`region`/`remote_url` params
-- [ ] `datom_init_repo(create_repo = TRUE)` creates GitHub repo via API (no `gh` CLI)
-- [ ] `datom_get_conn(store = ...)` and `datom_clone(store = ...)` accept composite store
-- [ ] No filesystem/git side effects before validation passes in `datom_init_repo()`
-- [ ] `project.yaml` uses `storage.governance` + `storage.data` structure
-- [ ] `.datom_install_store()` bridge injects credentials into env vars (temporary)
-- [ ] `print()` methods mask secrets
-- [ ] Sandbox tooling uses `datom_store()` instead of `sandbox_credentials()`
-- [ ] Full test suite passes, count ≥ 962
-- [ ] E2E workflow succeeds via `dev/e2e-test.R`
+- [x] `datom_store_s3()` validates credentials and bucket access at construction time
+- [x] `datom_store()` bundles governance + data components with role derivation
+- [x] `datom_init_repo(store = ...)` replaces `bucket`/`prefix`/`region`/`remote_url` params
+- [x] `datom_init_repo(create_repo = TRUE)` creates GitHub repo via API (no `gh` CLI)
+- [x] `datom_get_conn(store = ...)` and `datom_clone(store = ...)` accept composite store
+- [x] No filesystem/git side effects before validation passes in `datom_init_repo()`
+- [x] `project.yaml` uses `storage.governance` + `storage.data` structure
+- [x] `.datom_install_store()` bridge injects credentials into env vars (temporary)
+- [x] `print()` methods mask secrets
+- [x] Sandbox tooling uses `datom_store()` instead of `sandbox_credentials()`
+- [x] Full test suite passes, count ≥ 962 (1083 passing)
+- [x] E2E workflow succeeds via `dev/e2e-test.R`
 
 ## Status
 
@@ -287,9 +287,9 @@ datom_store_s3 (component)
 | 4 | ✅ done | Refactored `datom_init_repo()` → store object, two-component project.yaml, +4/-7 tests (1090 total) |
 | 5 | ✅ done | Refactored `datom_get_conn()` + `datom_clone()` → store objects, two-component yaml compat (1088 total) |
 | 6 | ✅ done | sandbox_store() replaces sandbox_credentials(), sandbox_up(store) uses create_repo=TRUE, e2e updated (1088 total) |
-| 7 | not started | |
+| 7 | ✅ done | Vignettes rewritten, dropped paws.storage::sts (HeadBucket only), devtools::check() clean (1083 tests) |
 
 ## Dependencies
 
 - `httr2` — for GitHub REST API (repo creation, PAT validation). Check if already in DESCRIPTION; if not, add.
-- `paws.storage` — already a dependency (STS + S3 checks)
+- `paws.storage` — already a dependency (HeadBucket for validation; STS removed — not in paws.storage)
