@@ -131,6 +131,9 @@ print.datom_conn <- function(x, ...) {
 #'   `"developer"` (i.e., `github_pat` provided).
 #' @param create_repo If `TRUE`, create a GitHub repo via API. Mutually
 #'   exclusive with providing `remote_url` on the store.
+#' @param repo_name GitHub repo name when `create_repo = TRUE`. Defaults to
+#'   `project_name`. Useful when the project name (e.g., `"STUDY_001"`) isn't
+#'   a good GitHub repo name.
 #' @param max_file_size_gb Maximum file size limit in GB. Default 1000 (1TB).
 #' @param git_ignore Character vector of patterns to add to .gitignore.
 #' @param .force If `TRUE`, skip the S3 namespace safety check. Use only for
@@ -142,6 +145,7 @@ datom_init_repo <- function(path = ".",
                            project_name,
                            store,
                            create_repo = FALSE,
+                           repo_name = project_name,
                            max_file_size_gb = 1000,
                            git_ignore = c(
                              ".Rprofile", ".Renviron", ".Rhistory",
@@ -186,7 +190,7 @@ datom_init_repo <- function(path = ".",
 
   if (isTRUE(create_repo)) {
     remote_url <- .datom_create_github_repo(
-      repo_name = project_name,
+      repo_name = repo_name,
       pat = store$github_pat,
       org = store$github_org
     )

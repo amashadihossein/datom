@@ -9,6 +9,7 @@ datom_init_repo(
   project_name,
   store,
   create_repo = FALSE,
+  repo_name = project_name,
   max_file_size_gb = 1000,
   git_ignore = c(".Rprofile", ".Renviron", ".Rhistory", ".Rapp.history", ".Rproj.user/",
     ".DS_Store", "*.csv", "*.tsv", "*.rds", "*.txt", "*.parquet", "*.sas7bdat", ".RData",
@@ -26,6 +27,10 @@ datom_init_repo(
 
 \item{create_repo}{If \code{TRUE}, create a GitHub repo via API. Mutually
 exclusive with providing \code{remote_url} on the store.}
+
+\item{repo_name}{GitHub repo name when \code{create_repo = TRUE}. Defaults to
+\code{project_name}. Useful when the project name (e.g., \code{"STUDY_001"}) isn't
+a good GitHub repo name.}
 
 \item{max_file_size_gb}{Maximum file size limit in GB. Default 1000 (1TB).}
 

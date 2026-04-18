@@ -223,7 +223,8 @@ sandbox_up <- function(store, ...) {
     path         = local_path,
     project_name = cfg$project_name,
     store        = store,
-    create_repo  = create_repo
+    create_repo  = create_repo,
+    repo_name    = cfg$repo_name
   )
 
   cli::cli_alert_success("datom repo initialized and pushed.")
