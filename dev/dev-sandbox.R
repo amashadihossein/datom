@@ -236,7 +236,7 @@ sandbox_up <- function(store, ...) {
   if (isTRUE(cfg$populate)) {
     cli::cli_alert_info("Populating with example data ({cfg$n_months} month{?s})...")
 
-    conn <- datom::datom_get_conn(path = local_path)
+    conn <- datom::datom_get_conn(path = local_path, store = store)
     cutoffs <- datom::datom_example_cutoffs()
     n <- min(cfg$n_months, length(cutoffs))
 
