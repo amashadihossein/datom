@@ -275,26 +275,17 @@ The layout diagrams in this doc and in `datom_specification.md` are normative �
 
 **Pure rename + dispatch wrapper — no behavior change.**
 
-### Chunk 5: `ref.json` + `.datom_resolve_ref()`
+### Chunk 5: `ref.json` + `.datom_resolve_ref()` ✅
 
-**Files**: `R/routing.R` (new), `R/conn.R`, `R/init.R`, tests
+**Commit**: `c596e6d` | **Tests**: 1039 pass
 
-- `ref.json` always present at governance store — created by `datom_init_repo()`
-- Initial content mirrors the data store component from the composite store:
-  ```json
-  {
-    "current": {
-      "bucket": "study-bucket",
-      "prefix": "trial/",
-      "region": "us-east-1"
-    }
-  }
-  ```
-- `.datom_resolve_ref(governance_store)` — reads `ref.json`, returns data location
-- Remove `.datom_s3_resolve_redirect()` and `.redirect.json` support
-- Deprecation warning when `ref.json` has `previous` entries with message
-- Stale credential error handling (governance resolves but data 403s → actionable error)
-- Tests for normal resolution, post-migration resolution, stale credential error
+**Files**: `R/ref.R` (new), `R/conn.R`, `R/sync.R`, `R/validate.R`, `R/utils-s3.R`, `R/utils-validate.R`, tests
+
+- Created `R/ref.R` with `.datom_create_ref(data_store)` and `.datom_resolve_ref(gov_conn)`
+- `ref.json` wired into `datom_init_repo()` (local creation + git staging + S3 push to governance)
+- Added to `datom_sync_dispatch` governance files and `.datom_validate_repo_files`
+- Removed `.datom_s3_resolve_redirect()` and `.redirect.json` from reserved names
+- 11 new tests in `test-ref.R`, removed 10 redirect/path tests
 
 ### Chunk 6: Convention Codification + Spec Update
 
