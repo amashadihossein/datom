@@ -328,9 +328,9 @@ The layout diagrams in this doc and in `datom_specification.md` are normative â€
 - [ ] `.datom_s3_resolve_redirect()` and `.redirect.json` removed
 - [x] Governance store receives dispatch.json, ref.json, migration_history.json
 - [x] Data store receives manifest.json, table data and metadata
-- [ ] Storage abstraction: business logic calls `.datom_storage_*()`, not `.datom_s3_*()`
-- [ ] `datom_conn` uses `client`/`gov_client` (not `s3_client`/`gov_s3_client`), has `backend` field
-- [ ] `.datom_build_s3_key()` renamed to `.datom_build_storage_key()`
+- [x] Storage abstraction: business logic calls `.datom_storage_*()`, not `.datom_s3_*()`
+- [x] `datom_conn` uses `client`/`gov_client` (not `s3_client`/`gov_s3_client`), has `backend` field
+- [x] `.datom_build_s3_key()` renamed to `.datom_build_storage_key()`
 - [ ] `ref.json` always present at governance store, created by `datom_init_repo()`
 - [ ] `.datom_resolve_ref()` reads `ref.json` (single read, no recursion)
 - [ ] Deprecation warning emitted when ref.json has previous entries
@@ -346,7 +346,7 @@ The layout diagrams in this doc and in `datom_specification.md` are normative â€
 | 1 | complete | Pure rename, 1083 tests pass, commit `eef1570` |
 | 2 | complete | Credential wiring, env var bridge removed, 1041 tests pass (42 removed with deleted functions), commit `de3fbf7` |
 | 3 | complete | Gov store wiring for dispatch+migration_history, data store for manifest, .datom_gov_conn helper, 1041 tests pass |
-| 4 | not started | Storage abstraction layer |
+| 4 | complete | Storage abstraction layer, 5 dispatch functions, conn field renames, ~150 call site updates, 1041 tests pass, commit `162d232` |
 | 5 | not started | ref.json + resolve_ref |
 | 6 | not started | Spec + conventions |
 | 7 | not started | Sandbox, E2E, docs |
