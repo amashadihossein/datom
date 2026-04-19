@@ -202,6 +202,12 @@ datom_validate <- function(conn, fix = FALSE) {
       target_conn = gov_conn
     ),
     list(
+      local = fs::path(repo_path, ".datom", "ref.json"),
+      s3_key = ".metadata/ref.json",
+      name = "ref.json",
+      target_conn = gov_conn
+    ),
+    list(
       local = fs::path(repo_path, ".datom", "manifest.json"),
       s3_key = ".metadata/manifest.json",
       name = "manifest.json",

@@ -2,7 +2,7 @@
 
 # Reserved names that cannot be used as table names
 .datom_reserved_names <- c(
-  ".metadata", ".datom", "input_files", "datom", ".redirect.json",
+  ".metadata", ".datom", "input_files", "datom",
   ".git", ".gitignore", "renv"
 )
 

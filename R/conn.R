@@ -394,6 +394,12 @@ datom_init_repo <- function(path = ".",
   jsonlite::write_json(manifest, fs::path(path, ".datom", "manifest.json"),
                        auto_unbox = TRUE, pretty = TRUE)
 
+  # --- Create ref.json --------------------------------------------------------
+  ref <- .datom_create_ref(store$data)
+
+  jsonlite::write_json(ref, fs::path(path, ".datom", "ref.json"),
+                       auto_unbox = TRUE, pretty = TRUE)
+
   # --- Create .gitignore ------------------------------------------------------
   # Always include input_files/ to keep data out of git
   ignore_lines <- unique(c(git_ignore, "input_files/"))
@@ -428,6 +434,7 @@ datom_init_repo <- function(path = ".",
     ".datom/project.yaml",
     ".datom/dispatch.json",
     ".datom/manifest.json",
+    ".datom/ref.json",
     ".gitignore",
     "README.md"
   ))
@@ -464,6 +471,7 @@ datom_init_repo <- function(path = ".",
       gov_client = gov_s3
     )
     .datom_storage_write_json(.datom_gov_conn(gov_conn), ".metadata/dispatch.json", dispatch)
+    .datom_storage_write_json(.datom_gov_conn(gov_conn), ".metadata/ref.json", ref)
     .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
   }, error = function(e) {
     cli::cli_alert_warning(

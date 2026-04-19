@@ -164,6 +164,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
 
   governance_files <- list(
     dispatch.json = fs::path(repo_path, ".datom", "dispatch.json"),
+    ref.json = fs::path(repo_path, ".datom", "ref.json"),
     migration_history.json = fs::path(repo_path, ".datom", "migration_history.json")
   )
 

@@ -1045,7 +1045,7 @@ test_that("datom_init_repo does NOT remove pre-existing parent dir on failure", 
   expect_true(fs::dir_exists(env$work_dir))
 })
 
-test_that("datom_init_repo pushes dispatch.json and manifest.json to S3", {
+test_that("datom_init_repo pushes dispatch.json, ref.json, and manifest.json to S3", {
   env <- setup_init_env()
 
   s3_keys_written <- character()
@@ -1065,6 +1065,7 @@ test_that("datom_init_repo pushes dispatch.json and manifest.json to S3", {
   )
 
   expect_true(".metadata/dispatch.json" %in% s3_keys_written)
+  expect_true(".metadata/ref.json" %in% s3_keys_written)
   expect_true(".metadata/manifest.json" %in% s3_keys_written)
 })
 
@@ -1088,6 +1089,7 @@ test_that("datom_init_repo succeeds even if S3 upload fails", {
   # Files should still be created locally
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "dispatch.json")))
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
 })
 
 

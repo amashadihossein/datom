@@ -23,11 +23,6 @@ test_that("build key with prefix and repo-level metadata", {
   expect_equal(key, "proj/datom/.metadata/dispatch.json")
 })
 
-test_that("build key with prefix and redirect file", {
-  key <- .datom_build_storage_key("proj", ".redirect.json")
-  expect_equal(key, "proj/datom/.redirect.json")
-})
-
 test_that("build key without prefix", {
   key <- .datom_build_storage_key(NULL, "customers", "abc123.parquet")
   expect_equal(key, "datom/customers/abc123.parquet")
