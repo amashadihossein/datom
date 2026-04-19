@@ -9,28 +9,40 @@ new_datom_conn(
   bucket,
   prefix = NULL,
   region = "us-east-1",
-  s3_client,
+  client,
   path = NULL,
   role = c("reader", "developer"),
-  endpoint = NULL
+  endpoint = NULL,
+  gov_bucket = NULL,
+  gov_prefix = NULL,
+  gov_region = NULL,
+  gov_client = NULL
 )
 }
 \arguments{
 \item{project_name}{Project name string.}
 
-\item{bucket}{S3 bucket name.}
+\item{bucket}{S3 bucket name (data store).}
 
-\item{prefix}{S3 prefix (can be NULL).}
+\item{prefix}{S3 prefix (data store, can be NULL).}
 
-\item{region}{AWS region string.}
+\item{region}{AWS region string (data store).}
 
-\item{s3_client}{A \code{paws.storage} S3 client.}
+\item{client}{A \code{paws.storage} S3 client (data store).}
 
 \item{path}{Local repo path (NULL for readers).}
 
 \item{role}{One of \code{"developer"} or \code{"reader"}.}
 
 \item{endpoint}{Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.}
+
+\item{gov_bucket}{Governance S3 bucket name (can be NULL for legacy conns).}
+
+\item{gov_prefix}{Governance S3 prefix (can be NULL).}
+
+\item{gov_region}{Governance AWS region (can be NULL).}
+
+\item{gov_client}{Governance \code{paws.storage} S3 client (can be NULL).}
 }
 \value{
 A \code{datom_conn} object.
@@ -41,5 +53,9 @@ Internal constructor for the \code{datom_conn} S3 class. Two modes:
 \item \strong{Developer}: has \code{path} to local repo + git access
 \item \strong{Reader}: S3-only access, no local repo
 }
+}
+\details{
+The primary fields (\code{bucket}, \code{prefix}, \code{region}, \code{client}) refer to
+the \strong{data store}. Governance store fields are prefixed with \code{gov_}.
 }
 \keyword{internal}

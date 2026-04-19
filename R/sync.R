@@ -4,7 +4,7 @@
 #' This is the recommended entry point at the start of each work session
 #' to ensure the local state is current before syncing or writing tables.
 #'
-#' Git is the source of truth for all metadata (manifest, routing, table
+#' Git is the source of truth for all metadata (manifest, dispatch, table
 #' metadata). The manifest and other metadata files live in git and are
 #' pulled along with any other committed changes.
 #'
@@ -82,14 +82,14 @@ datom_pull <- function(conn) {
 }
 
 
-#' Sync Routing Metadata to S3
+#' Sync Dispatch Metadata to S3
 #'
 #' Updates all metadata in S3 to match the local git repository. This includes
-#' repo-level files (routing.json, manifest.json, migration_history.json) and
+#' repo-level files (dispatch.json, manifest.json, migration_history.json) and
 #' per-table metadata (metadata.json, version_history.json). Requires
 #' interactive confirmation unless `.confirm = FALSE`.
 #'
-#' Used after migration, routing changes, or any situation where S3 metadata
+#' Used after migration, dispatch changes, or any situation where S3 metadata
 #' may be out of sync with git.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
@@ -99,7 +99,7 @@ datom_pull <- function(conn) {
 #' @return Invisibly, a list with `repo_files` (character vector of uploaded
 #'   repo-level keys) and `tables` (list of per-table sync results).
 #' @export
-datom_sync_routing <- function(conn, .confirm = TRUE) {
+datom_sync_dispatch <- function(conn, .confirm = TRUE) {
 
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
@@ -107,14 +107,14 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
 
   if (conn$role != "developer") {
     cli::cli_abort(c(
-      "Sync routing requires {.val developer} role.",
+      "Sync dispatch requires {.val developer} role.",
       "i" = "Current role: {.val {conn$role}}."
     ))
   }
 
   if (is.null(conn$path)) {
     cli::cli_abort(c(
-      "Sync routing requires a local git repo path.",
+      "Sync dispatch requires a local git repo path.",
       "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
@@ -144,7 +144,7 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
     }
 
     cli::cli_alert_warning(
-      "This will update routing metadata for {length(table_names)} table{?s}."
+      "This will update dispatch metadata for {length(table_names)} table{?s}."
     )
     cli::cli_alert_info("Current location: {.url {s3_location}}")
 
@@ -156,20 +156,38 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
   }
 
   # --- Sync repo-level files ---
-  repo_files_synced <- character()
+  # dispatch.json + migration_history.json → governance store
 
-  repo_level_files <- list(
-    routing.json = fs::path(repo_path, ".datom", "routing.json"),
-    manifest.json = fs::path(repo_path, ".datom", "manifest.json"),
+  # manifest.json → data store
+  repo_files_synced <- character()
+  gov_conn <- .datom_gov_conn(conn)
+
+  governance_files <- list(
+    dispatch.json = fs::path(repo_path, ".datom", "dispatch.json"),
+    ref.json = fs::path(repo_path, ".datom", "ref.json"),
     migration_history.json = fs::path(repo_path, ".datom", "migration_history.json")
   )
 
-  for (fname in names(repo_level_files)) {
-    local_path <- repo_level_files[[fname]]
+  data_files <- list(
+    manifest.json = fs::path(repo_path, ".datom", "manifest.json")
+  )
+
+  for (fname in names(governance_files)) {
+    local_path <- governance_files[[fname]]
     if (fs::file_exists(local_path)) {
       data <- jsonlite::read_json(local_path)
       s3_key <- paste0(".metadata/", fname)
-      .datom_s3_write_json(conn, s3_key, data)
+      .datom_storage_write_json(gov_conn, s3_key, data)
+      repo_files_synced <- c(repo_files_synced, s3_key)
+    }
+  }
+
+  for (fname in names(data_files)) {
+    local_path <- data_files[[fname]]
+    if (fs::file_exists(local_path)) {
+      data <- jsonlite::read_json(local_path)
+      s3_key <- paste0(".metadata/", fname)
+      .datom_storage_write_json(conn, s3_key, data)
       repo_files_synced <- c(repo_files_synced, s3_key)
     }
   }
@@ -193,7 +211,7 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
   n_err <- length(table_results) - n_ok
 
   cli::cli_alert_info(
-    "Sync routing complete: {n_ok} table{?s} synced, {n_err} error{?s}."
+    "Sync dispatch complete: {n_ok} table{?s} synced, {n_err} error{?s}."
   )
 
   invisible(list(
@@ -216,7 +234,7 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
   if (fs::file_exists(metadata_path)) {
     data <- jsonlite::read_json(metadata_path)
     s3_key <- paste0(name, "/.metadata/metadata.json")
-    .datom_s3_write_json(conn, s3_key, data)
+    .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
 
@@ -225,7 +243,7 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
   if (fs::file_exists(history_path)) {
     data <- jsonlite::read_json(history_path)
     s3_key <- paste0(name, "/.metadata/version_history.json")
-    .datom_s3_write_json(conn, s3_key, data)
+    .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
 
@@ -237,7 +255,7 @@ datom_sync_routing <- function(conn, .confirm = TRUE) {
       snap_name <- fs::path_file(snap)
       data <- jsonlite::read_json(snap)
       s3_key <- paste0(name, "/.metadata/", snap_name)
-      .datom_s3_write_json(conn, s3_key, data)
+      .datom_storage_write_json(conn, s3_key, data)
       s3_keys <- c(s3_keys, s3_key)
     }
   }

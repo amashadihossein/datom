@@ -3,27 +3,15 @@
 
 # --- .datom_s3_client() --------------------------------------------------------
 
-test_that("creates client when env vars are set", {
-  withr::local_envvar(
-    DATOM_TEST_ACCESS_KEY_ID = "fake-access-key",
-    DATOM_TEST_SECRET_ACCESS_KEY = "fake-secret-key"
-  )
-
-  # Mock paws.storage::s3 to avoid real AWS calls
+test_that("creates client with access_key and secret_key", {
   mock_s3 <- mockery::mock("mock-s3-client")
   mockery::stub(.datom_s3_client, "paws.storage::s3", mock_s3)
 
-  creds <- list(
-    access_key_env = "DATOM_TEST_ACCESS_KEY_ID",
-    secret_key_env = "DATOM_TEST_SECRET_ACCESS_KEY"
-  )
-
-  result <- .datom_s3_client(creds, region = "us-west-2")
+  result <- .datom_s3_client("fake-access-key", "fake-secret-key", region = "us-west-2")
 
   expect_equal(result, "mock-s3-client")
   mockery::expect_called(mock_s3, 1)
 
-  # Verify correct config passed to paws
   call_args <- mockery::mock_args(mock_s3)[[1]]
   config <- call_args$config
   expect_equal(config$credentials$creds$access_key_id, "fake-access-key")
@@ -32,85 +20,47 @@ test_that("creates client when env vars are set", {
 })
 
 test_that("uses default region us-east-1", {
-  withr::local_envvar(
-    DATOM_TEST_ACCESS_KEY_ID = "key",
-    DATOM_TEST_SECRET_ACCESS_KEY = "secret"
-  )
-
   mock_s3 <- mockery::mock("client")
   mockery::stub(.datom_s3_client, "paws.storage::s3", mock_s3)
 
-  creds <- list(
-    access_key_env = "DATOM_TEST_ACCESS_KEY_ID",
-    secret_key_env = "DATOM_TEST_SECRET_ACCESS_KEY"
-  )
-
-  .datom_s3_client(creds)
+  .datom_s3_client("key", "secret")
 
   call_args <- mockery::mock_args(mock_s3)[[1]]
   expect_equal(call_args$config$region, "us-east-1")
 })
 
-test_that("errors when credentials list is malformed", {
-  expect_error(.datom_s3_client(list()), "access_key_env")
-  expect_error(.datom_s3_client(list(access_key_env = "X")), "secret_key_env")
-  expect_error(.datom_s3_client("not a list"), "access_key_env")
-  expect_error(.datom_s3_client(NULL), "access_key_env")
+test_that("errors when access_key is invalid", {
+  expect_error(.datom_s3_client("", "secret"), "access_key")
+  expect_error(.datom_s3_client(NULL, "secret"), "access_key")
+  expect_error(.datom_s3_client(NA_character_, "secret"), "access_key")
+  expect_error(.datom_s3_client(123, "secret"), "access_key")
 })
 
-test_that("errors when access key env var is not set", {
-  withr::local_envvar(
-    DATOM_MISSING_KEY = NA  # ensure unset
-  )
-
-  creds <- list(
-    access_key_env = "DATOM_MISSING_KEY",
-    secret_key_env = "DATOM_TEST_SECRET"
-  )
-
-  expect_error(.datom_s3_client(creds), "DATOM_MISSING_KEY")
+test_that("errors when secret_key is invalid", {
+  expect_error(.datom_s3_client("key", ""), "secret_key")
+  expect_error(.datom_s3_client("key", NULL), "secret_key")
+  expect_error(.datom_s3_client("key", NA_character_), "secret_key")
+  expect_error(.datom_s3_client("key", 123), "secret_key")
 })
 
-test_that("errors when secret key env var is not set", {
-  withr::local_envvar(
-    DATOM_TEST_ACCESS = "key",
-    DATOM_MISSING_SECRET = NA
-  )
+test_that("passes session_token to paws config", {
+  mock_s3 <- mockery::mock("client")
+  mockery::stub(.datom_s3_client, "paws.storage::s3", mock_s3)
 
-  creds <- list(
-    access_key_env = "DATOM_TEST_ACCESS",
-    secret_key_env = "DATOM_MISSING_SECRET"
-  )
+  .datom_s3_client("key", "secret", session_token = "tok123")
 
-  expect_error(.datom_s3_client(creds), "DATOM_MISSING_SECRET")
+  call_args <- mockery::mock_args(mock_s3)[[1]]
+  expect_equal(call_args$config$credentials$creds$session_token, "tok123")
 })
 
-test_that("errors when access key env var is empty string", {
-  withr::local_envvar(
-    DATOM_EMPTY_KEY = "",
-    DATOM_TEST_SECRET = "secret"
-  )
+test_that("passes endpoint to paws config", {
+  mock_s3 <- mockery::mock("client")
+  mockery::stub(.datom_s3_client, "paws.storage::s3", mock_s3)
 
-  creds <- list(
-    access_key_env = "DATOM_EMPTY_KEY",
-    secret_key_env = "DATOM_TEST_SECRET"
-  )
+  .datom_s3_client("key", "secret", endpoint = "https://custom.endpoint.com")
 
-  expect_error(.datom_s3_client(creds), "DATOM_EMPTY_KEY")
-})
-
-test_that("errors when secret key env var is empty string", {
-  withr::local_envvar(
-    DATOM_TEST_ACCESS = "key",
-    DATOM_EMPTY_SECRET = ""
-  )
-
-  creds <- list(
-    access_key_env = "DATOM_TEST_ACCESS",
-    secret_key_env = "DATOM_EMPTY_SECRET"
-  )
-
-  expect_error(.datom_s3_client(creds), "DATOM_EMPTY_SECRET")
+  call_args <- mockery::mock_args(mock_s3)[[1]]
+  expect_equal(call_args$config$endpoint, "https://custom.endpoint.com")
 })
 
 
@@ -521,242 +471,4 @@ test_that("error message includes bucket and key on parse failure", {
       expect_true(grepl("corrupt.json", msg))
     }
   )
-})
-
-
-# --- .datom_s3_resolve_redirect() ----------------------------------------------
-
-test_that("returns current conn when no redirect exists", {
-  conn <- mock_datom_conn("original-client", bucket = "bucket-a", prefix = "proj")
-
-  mockery::stub(.datom_s3_resolve_redirect, ".datom_s3_exists", FALSE)
-
-  result <- .datom_s3_resolve_redirect(conn)
-
-  expect_true(is_datom_conn(result))
-  expect_equal(result$bucket, "bucket-a")
-  expect_equal(result$prefix, "proj")
-  expect_equal(result$s3_client, "original-client")
-})
-
-test_that("follows single redirect to new bucket", {
-  redirect_data <- list(
-    redirect_to = "s3://bucket-b/proj-new/datom/",
-    migrated_at = "2026-01-01T00:00:00Z",
-    credentials = list(
-      access_key_env = "DATOM_NEW_ACCESS",
-      secret_key_env = "DATOM_NEW_SECRET"
-    )
-  )
-
-  conn <- mock_datom_conn("old-client", bucket = "bucket-a", prefix = "proj")
-
-  exists_call <- 0L
-  local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) {
-      exists_call <<- exists_call + 1L
-      exists_call == 1L
-    },
-    .datom_s3_read_json = function(conn, s3_key) {
-      redirect_data
-    },
-    .datom_s3_client = function(credentials, region = "us-east-1") {
-      "new-s3-client"
-    }
-  )
-
-  result <- .datom_s3_resolve_redirect(conn)
-
-  expect_true(is_datom_conn(result))
-  expect_equal(result$bucket, "bucket-b")
-  expect_equal(result$prefix, "proj-new")
-  expect_equal(result$s3_client, "new-s3-client")
-})
-
-test_that("follows chained redirects (2 hops)", {
-  redirect_1 <- list(
-    redirect_to = "s3://bucket-b/proj/datom/",
-    credentials = list(access_key_env = "K2", secret_key_env = "S2")
-  )
-  redirect_2 <- list(
-    redirect_to = "s3://bucket-c/proj-final/datom/",
-    credentials = list(access_key_env = "K3", secret_key_env = "S3")
-  )
-
-  conn <- mock_datom_conn("client-a", bucket = "bucket-a", prefix = "proj")
-
-  exists_call <- 0L
-  read_call <- 0L
-  client_call <- 0L
-  local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) {
-      exists_call <<- exists_call + 1L
-      exists_call <= 2L
-    },
-    .datom_s3_read_json = function(conn, s3_key) {
-      read_call <<- read_call + 1L
-      if (read_call == 1L) redirect_1 else redirect_2
-    },
-    .datom_s3_client = function(credentials, region = "us-east-1") {
-      client_call <<- client_call + 1L
-      paste0("client-", client_call + 1L)
-    }
-  )
-
-  result <- .datom_s3_resolve_redirect(conn)
-
-  expect_true(is_datom_conn(result))
-  expect_equal(result$bucket, "bucket-c")
-  expect_equal(result$prefix, "proj-final")
-})
-
-test_that("reuses client when redirect has no credentials", {
-  redirect_data <- list(
-    redirect_to = "s3://bucket-b/proj/datom/"
-    # No credentials field
-  )
-
-  conn <- mock_datom_conn("original-client", bucket = "bucket-a", prefix = "proj")
-
-  exists_call <- 0L
-  local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) {
-      exists_call <<- exists_call + 1L
-      exists_call == 1L
-    },
-    .datom_s3_read_json = function(conn, s3_key) {
-      redirect_data
-    }
-  )
-
-  result <- .datom_s3_resolve_redirect(conn)
-
-  expect_true(is_datom_conn(result))
-  expect_equal(result$bucket, "bucket-b")
-  expect_equal(result$s3_client, "original-client")
-})
-
-test_that("errors when max depth exceeded", {
-  redirect_data <- list(
-    redirect_to = "s3://bucket-loop/proj/datom/"
-  )
-
-  conn <- mock_datom_conn("client", bucket = "bucket-a", prefix = "proj")
-
-  local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) redirect_data
-  )
-
-  expect_error(
-    .datom_s3_resolve_redirect(conn, max_depth = 3L),
-    "maximum depth"
-  )
-})
-
-test_that("errors when redirect_to is missing", {
-  redirect_data <- list(migrated_at = "2026-01-01")
-
-  conn <- mock_datom_conn("client", bucket = "bucket-a", prefix = "proj")
-
-  mock_exists <- mockery::mock(TRUE)
-  mock_read <- mockery::mock(redirect_data)
-
-  mockery::stub(.datom_s3_resolve_redirect, ".datom_s3_exists", mock_exists)
-  mockery::stub(.datom_s3_resolve_redirect, ".datom_s3_read_json", mock_read)
-
-  expect_error(
-    .datom_s3_resolve_redirect(conn),
-    "redirect_to.*missing"
-  )
-})
-
-test_that("errors when redirect_to is empty string", {
-  redirect_data <- list(redirect_to = "")
-
-  conn <- mock_datom_conn("client", bucket = "bucket-a", prefix = "proj")
-
-  mock_exists <- mockery::mock(TRUE)
-  mock_read <- mockery::mock(redirect_data)
-
-  mockery::stub(.datom_s3_resolve_redirect, ".datom_s3_exists", mock_exists)
-  mockery::stub(.datom_s3_resolve_redirect, ".datom_s3_read_json", mock_read)
-
-  expect_error(
-    .datom_s3_resolve_redirect(conn),
-    "redirect_to.*missing|empty"
-  )
-})
-
-test_that("errors when redirect credentials are incomplete", {
-  redirect_data <- list(
-    redirect_to = "s3://bucket-b/proj/datom/",
-    credentials = list(access_key_env = "ONLY_ACCESS")
-    # missing secret_key_env
-  )
-
-  conn <- mock_datom_conn("client", bucket = "bucket-a", prefix = "proj")
-
-  mock_exists <- mockery::mock(TRUE)
-  mock_read <- mockery::mock(redirect_data)
-
-  mockery::stub(.datom_s3_resolve_redirect, ".datom_s3_exists", mock_exists)
-  mockery::stub(.datom_s3_resolve_redirect, ".datom_s3_read_json", mock_read)
-
-  expect_error(
-    .datom_s3_resolve_redirect(conn),
-    "missing.*access_key_env|secret_key_env"
-  )
-})
-
-test_that("handles redirect_to with trailing slash correctly", {
-  redirect_data <- list(redirect_to = "s3://bucket-b/new-prefix/datom/")
-
-  conn <- mock_datom_conn("client", bucket = "bucket-a", prefix = "proj")
-
-  exists_call <- 0L
-  local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) {
-      exists_call <<- exists_call + 1L
-      exists_call == 1L
-    },
-    .datom_s3_read_json = function(conn, s3_key) redirect_data
-  )
-
-  result <- .datom_s3_resolve_redirect(conn)
-
-  expect_equal(result$bucket, "bucket-b")
-  expect_equal(result$prefix, "new-prefix")
-})
-
-test_that("handles redirect_to without trailing slash", {
-  redirect_data <- list(redirect_to = "s3://bucket-b/new-prefix/datom")
-
-  conn <- mock_datom_conn("client", bucket = "bucket-a", prefix = "proj")
-
-  exists_call <- 0L
-  local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) {
-      exists_call <<- exists_call + 1L
-      exists_call == 1L
-    },
-    .datom_s3_read_json = function(conn, s3_key) redirect_data
-  )
-
-  result <- .datom_s3_resolve_redirect(conn)
-
-  expect_equal(result$bucket, "bucket-b")
-  expect_equal(result$prefix, "new-prefix")
-})
-
-test_that("works with NULL prefix", {
-  conn <- mock_datom_conn("client", bucket = "bucket", prefix = NULL)
-
-  mockery::stub(.datom_s3_resolve_redirect, ".datom_s3_exists", FALSE)
-
-  result <- .datom_s3_resolve_redirect(conn)
-
-  expect_true(is_datom_conn(result))
-  expect_equal(result$bucket, "bucket")
-  expect_null(result$prefix)
 })

@@ -1,12 +1,12 @@
 #' Read a datom Table
 #'
-#' Unified read function with routing via `routing.json`. Reads from S3
+#' Unified read function with dispatch via `dispatch.json`. Reads from S3
 #' metadata cache for data readers.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
 #' @param version Optional metadata_sha (datom version). If NULL, uses current.
-#' @param context Optional context for routing (e.g., "default", "cached").
+#' @param context Optional context for dispatch (e.g., "default", "cached").
 #' @param ... Additional parameters forwarded to routed function.
 #'
 #' @return Data frame or routed function result.
@@ -31,7 +31,7 @@ datom_read <- function(conn,
   data_sha <- .datom_resolve_version(metadata_list, version = version, name = name)
 
   # 3. Download and read parquet
-  # TODO: Phase 6 will add routing via context + routing.json
+  # TODO: Phase 6 will add dispatch via context + dispatch.json
   .datom_read_parquet(conn, name, data_sha)
 }
 
@@ -54,8 +54,8 @@ datom_read <- function(conn,
   metadata_key <- paste0(name, "/.metadata/metadata.json")
   history_key <- paste0(name, "/.metadata/version_history.json")
 
-  current <- .datom_s3_read_json(conn, metadata_key)
-  history <- .datom_s3_read_json(conn, history_key)
+  current <- .datom_storage_read_json(conn, metadata_key)
+  history <- .datom_storage_read_json(conn, history_key)
 
   list(current = current, history = history)
 }
@@ -164,7 +164,7 @@ datom_read <- function(conn,
   tmp <- tempfile(fileext = ".parquet")
   on.exit(unlink(tmp), add = TRUE)
 
-  .datom_s3_download(conn, s3_key, tmp)
+  .datom_storage_download(conn, s3_key, tmp)
 
   arrow::read_parquet(tmp)
 }
@@ -235,11 +235,11 @@ datom_read <- function(conn,
 
   # If metadata doesn't exist yet, it's a new table → full write
 
-  if (!.datom_s3_exists(conn, metadata_key)) {
+  if (!.datom_storage_exists(conn, metadata_key)) {
     return("full")
   }
 
-  current <- .datom_s3_read_json(conn, metadata_key)
+  current <- .datom_storage_read_json(conn, metadata_key)
   current_metadata_sha <- .datom_compute_metadata_sha(current)
 
   if (identical(current_metadata_sha, new_metadata_sha)) {
@@ -343,9 +343,9 @@ datom_read <- function(conn,
   s3_history_key <- paste0(name, "/.metadata/version_history.json")
   s3_versioned_key <- paste0(name, "/.metadata/", metadata_sha, ".json")
 
-  .datom_s3_write_json(conn, s3_metadata_key, metadata)
-  .datom_s3_write_json(conn, s3_history_key, history)
-  .datom_s3_write_json(conn, s3_versioned_key, metadata)
+  .datom_storage_write_json(conn, s3_metadata_key, metadata)
+  .datom_storage_write_json(conn, s3_history_key, history)
+  .datom_storage_write_json(conn, s3_versioned_key, metadata)
 
   invisible(c(s3_metadata_key, s3_history_key, s3_versioned_key))
 }
@@ -380,7 +380,7 @@ datom_read <- function(conn,
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param data Data frame to write. If NULL with name, does metadata-only sync.
 #' @param name Table name. If NULL with NULL data, aliases to
-#'   [datom_sync_routing()].
+#'   [datom_sync_dispatch()].
 #' @param metadata Optional list of custom metadata.
 #' @param message Optional commit message.
 #' @param parents Optional lineage: list of `list(source, table, version)` entries.
@@ -408,7 +408,7 @@ datom_write <- function(conn,
   # Route based on arguments
 
   if (is.null(data) && is.null(name)) {
-    return(datom_sync_routing(conn))
+    return(datom_sync_dispatch(conn))
   }
 
   if (is.null(data) && !is.null(name)) {
@@ -497,7 +497,7 @@ datom_write <- function(conn,
   # 7. Upload parquet to S3 (only if data changed — after git succeeds)
   if (change_type == "full") {
     parquet_key <- paste0(name, "/", data_sha, ".parquet")
-    .datom_s3_upload(conn, tmp, parquet_key)
+    .datom_storage_upload(conn, tmp, parquet_key)
   }
 
   # 8. Push metadata to S3
@@ -507,7 +507,7 @@ datom_write <- function(conn,
   manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   if (fs::file_exists(manifest_path)) {
     manifest_data <- jsonlite::read_json(manifest_path)
-    .datom_s3_write_json(conn, ".metadata/manifest.json", manifest_data)
+    .datom_storage_write_json(conn, ".metadata/manifest.json", manifest_data)
   }
 
   cli::cli_alert_success(

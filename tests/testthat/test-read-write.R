@@ -13,10 +13,10 @@ test_that("reads current version end-to-end", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       if (grepl("metadata.json$", s3_key)) metadata else history
     },
-    .datom_s3_download = function(conn, s3_key, local_path) {
+    .datom_storage_download = function(conn, s3_key, local_path) {
       arrow::write_parquet(test_df, local_path)
       invisible(TRUE)
     }
@@ -41,10 +41,10 @@ test_that("reads specific version end-to-end", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       if (grepl("metadata.json$", s3_key)) metadata else history
     },
-    .datom_s3_download = function(conn, s3_key, local_path) {
+    .datom_storage_download = function(conn, s3_key, local_path) {
       # Should request sha_v1 since we asked for meta_v1
       if (grepl("sha_v1", s3_key)) {
         arrow::write_parquet(df_v1, local_path)
@@ -79,7 +79,7 @@ test_that("errors when version not found", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       if (grepl("metadata.json$", s3_key)) metadata else history
     }
   )
@@ -90,7 +90,7 @@ test_that("errors when version not found", {
 
 test_that("propagates S3 errors from metadata read", {
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       cli::cli_abort("Failed to read JSON from S3.")
     }
   )
@@ -104,10 +104,10 @@ test_that("propagates S3 errors from parquet download", {
   history <- list(list(version = "v1", data_sha = "sha1"))
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       if (grepl("metadata.json$", s3_key)) metadata else history
     },
-    .datom_s3_download = function(conn, s3_key, local_path) {
+    .datom_storage_download = function(conn, s3_key, local_path) {
       cli::cli_abort("Failed to download file from S3.")
     }
   )
@@ -127,7 +127,7 @@ test_that("reads both metadata.json and version_history.json from S3", {
 
   call_keys <- character()
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       call_keys <<- c(call_keys, s3_key)
       if (grepl("metadata.json$", s3_key)) metadata else history
     }
@@ -155,7 +155,7 @@ test_that("validates table name", {
 
 test_that("propagates S3 errors", {
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       cli::cli_abort("Failed to read JSON from S3.")
     }
   )
@@ -422,7 +422,7 @@ test_that("downloads parquet from S3 and reads as data frame", {
   test_df <- data.frame(id = 1:3, name = c("a", "b", "c"))
 
   local_mocked_bindings(
-    .datom_s3_download = function(conn, s3_key, local_path) {
+    .datom_storage_download = function(conn, s3_key, local_path) {
       # Verify correct key construction
       expect_equal(s3_key, "customers/abc123.parquet")
       arrow::write_parquet(test_df, local_path)
@@ -455,7 +455,7 @@ test_that("validates data_sha is non-empty string", {
 
 test_that("propagates S3 download errors", {
   local_mocked_bindings(
-    .datom_s3_download = function(conn, s3_key, local_path) {
+    .datom_storage_download = function(conn, s3_key, local_path) {
       cli::cli_abort("Failed to download file from S3.")
     }
   )
@@ -469,7 +469,7 @@ test_that("constructs correct S3 key for nested table names", {
 
   captured_key <- NULL
   local_mocked_bindings(
-    .datom_s3_download = function(conn, s3_key, local_path) {
+    .datom_storage_download = function(conn, s3_key, local_path) {
       captured_key <<- s3_key
       arrow::write_parquet(test_df, local_path)
       invisible(TRUE)
@@ -686,8 +686,8 @@ test_that("datom_write passes table_type and parents to metadata", {
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) {
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
@@ -721,8 +721,8 @@ test_that("datom_write computes size_bytes from parquet", {
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) {
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
@@ -750,8 +750,8 @@ test_that("datom_write passes original_file_sha to version_history", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path) invisible(TRUE)
     )
 
@@ -780,8 +780,8 @@ test_that("datom_write defaults: derived type, no parents, no original_file_sha"
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) {
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
@@ -821,8 +821,8 @@ test_that("datom_write updates manifest.json locally", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path) invisible(TRUE)
     )
 
@@ -857,8 +857,8 @@ test_that("datom_write includes manifest.json in git commit", {
     committed_files <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_commit = function(path, files, message) {
         committed_files <<- files
         "fake_sha"
@@ -893,8 +893,8 @@ test_that("datom_write pushes manifest.json to S3", {
     s3_keys <- character()
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) {
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) {
         s3_keys <<- c(s3_keys, sk)
         invisible(TRUE)
       },
@@ -927,8 +927,8 @@ test_that("datom_write stores sync fields in manifest when provided", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path) invisible(TRUE)
     )
 
@@ -965,8 +965,8 @@ test_that("datom_write omits sync fields in manifest for derived tables", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path) invisible(TRUE)
     )
 
@@ -1010,7 +1010,7 @@ test_that("datom_write skips manifest update when no changes detected", {
 
 test_that("returns 'full' when table is new (no metadata in S3)", {
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) FALSE
+    .datom_storage_exists = function(conn, s3_key) FALSE
   )
 
   conn <- mock_datom_conn(list())
@@ -1024,8 +1024,8 @@ test_that("returns 'none' when metadata_sha matches", {
   current_meta_sha <- .datom_compute_metadata_sha(current_meta)
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) current_meta
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) current_meta
   )
 
   conn <- mock_datom_conn(list())
@@ -1042,8 +1042,8 @@ test_that("returns 'metadata_only' when data same but metadata different", {
   new_meta_sha <- .datom_compute_metadata_sha(new_meta)
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) current_meta
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) current_meta
   )
 
   conn <- mock_datom_conn(list())
@@ -1059,8 +1059,8 @@ test_that("returns 'full' when data changed", {
   new_meta_sha <- .datom_compute_metadata_sha(new_meta)
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) current_meta
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) current_meta
   )
 
   conn <- mock_datom_conn(list())
@@ -1072,7 +1072,7 @@ test_that("returns 'full' when data changed", {
 test_that("checks correct S3 key for metadata", {
   captured_key <- NULL
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) {
+    .datom_storage_exists = function(conn, s3_key) {
       captured_key <<- s3_key
       FALSE
     }
@@ -1109,7 +1109,7 @@ test_that("writes metadata.json and version_history.json to git repo", {
     # Mock S3 writes — just capture calls
     s3_keys <- character()
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       }
@@ -1157,7 +1157,7 @@ test_that("appends to existing version_history.json", {
     meta_sha <- .datom_compute_metadata_sha(metadata)
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
 
     .datom_write_metadata(conn, "tbl", metadata, meta_sha)
@@ -1183,7 +1183,7 @@ test_that("writes versioned metadata snapshot to S3", {
 
     s3_keys <- character()
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       }
@@ -1211,7 +1211,7 @@ test_that("uses default commit message when none provided", {
     meta_sha <- .datom_compute_metadata_sha(metadata)
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
 
     .datom_write_metadata(conn, "my_table", metadata, meta_sha)
@@ -1233,7 +1233,7 @@ test_that("returns metadata_sha and paths", {
     meta_sha <- .datom_compute_metadata_sha(metadata)
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE)
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
 
     result <- .datom_write_metadata(conn, "tbl", metadata, meta_sha)
@@ -1285,13 +1285,13 @@ test_that("rejects conn without path", {
   )
 })
 
-test_that("NULL data + NULL name delegates to datom_sync_routing", {
+test_that("NULL data + NULL name delegates to datom_sync_dispatch", {
   conn <- mock_datom_conn(list())
   local_mocked_bindings(
-    datom_sync_routing = function(conn) "sync_routing_called"
+    datom_sync_dispatch = function(conn) "sync_dispatch_called"
   )
   result <- datom_write(conn, data = NULL, name = NULL)
-  expect_equal(result, "sync_routing_called")
+  expect_equal(result, "sync_dispatch_called")
 })
 
 test_that("NULL data + name delegates to .datom_sync_metadata", {
@@ -1335,11 +1335,11 @@ test_that("performs full write: parquet + metadata + git", {
     uploaded_keys <- character()
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "full",
-      .datom_s3_upload = function(conn, local_path, s3_key) {
+      .datom_storage_upload = function(conn, local_path, s3_key) {
         uploaded_keys <<- c(uploaded_keys, s3_key)
         invisible(TRUE)
       },
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
       .datom_git_push = function(path) invisible(TRUE)
     )
 
@@ -1383,11 +1383,11 @@ test_that("metadata-only write skips parquet upload", {
     uploaded_keys <- character()
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "metadata_only",
-      .datom_s3_upload = function(conn, local_path, s3_key) {
+      .datom_storage_upload = function(conn, local_path, s3_key) {
         uploaded_keys <<- c(uploaded_keys, s3_key)
         invisible(TRUE)
       },
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
       .datom_git_push = function(path) invisible(TRUE)
     )
 
@@ -1419,8 +1419,8 @@ test_that("uses default commit message when none provided", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_s3_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_s3_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path) invisible(TRUE)
     )
 
@@ -1532,7 +1532,7 @@ test_that("syncs metadata.json to S3 on change", {
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "metadata_only",
       .datom_git_pull = function(...) invisible(TRUE),
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       },
@@ -1568,7 +1568,7 @@ test_that("syncs version_history.json to S3 when present", {
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
       .datom_git_pull = function(...) invisible(TRUE),
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       },
@@ -1604,7 +1604,7 @@ test_that("commits and pushes after sync", {
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "metadata_only",
       .datom_git_pull = function(...) invisible(TRUE),
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
       .datom_git_push = function(path) {
         pushed <<- TRUE
         invisible(TRUE)
@@ -1637,7 +1637,7 @@ test_that("aborts S3 sync when git commit/push fails", {
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "metadata_only",
       .datom_git_pull = function(...) invisible(TRUE),
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_called <<- TRUE
         invisible(TRUE)
       },

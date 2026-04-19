@@ -4,14 +4,7 @@
 \alias{.datom_render_readme}
 \title{Render README.md from Template}
 \usage{
-.datom_render_readme(
-  project_name,
-  bucket,
-  prefix,
-  region,
-  remote_url,
-  cred_names
-)
+.datom_render_readme(project_name, bucket, prefix, region, remote_url)
 }
 \arguments{
 \item{project_name}{Project name string.}
@@ -23,8 +16,6 @@
 \item{region}{AWS region string.}
 
 \item{remote_url}{Git remote URL.}
-
-\item{cred_names}{Named list with \code{access_key_env} and \code{secret_key_env}.}
 }
 \value{
 Character string — the rendered README content.

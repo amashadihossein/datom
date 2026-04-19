@@ -129,9 +129,11 @@ sandbox_store <- function(bucket = "datom-test",
 #' Uses paws.storage directly (no aws CLI dependency). Lists all objects
 #' under prefix/datom/ and deletes them in batches of 1000.
 .sandbox_wipe_s3 <- function(cfg, store) {
-  datom:::.datom_install_store(store, cfg$project_name)
-  cred_names <- datom:::.datom_derive_cred_names(cfg$project_name)
-  s3 <- datom:::.datom_s3_client(cred_names, region = store$data$region)
+  s3 <- datom:::.datom_s3_client(
+    access_key = store$data$access_key,
+    secret_key = store$data$secret_key,
+    region     = store$data$region
+  )
 
   full_prefix <- paste0(
     if (!is.null(store$data$prefix)) paste0(gsub("/+$", "", store$data$prefix), "/") else "",
@@ -234,7 +236,7 @@ sandbox_up <- function(store, ...) {
   if (isTRUE(cfg$populate)) {
     cli::cli_alert_info("Populating with example data ({cfg$n_months} month{?s})...")
 
-    conn <- datom::datom_get_conn(path = local_path)
+    conn <- datom::datom_get_conn(path = local_path, store = store)
     cutoffs <- datom::datom_example_cutoffs()
     n <- min(cfg$n_months, length(cutoffs))
 

@@ -1,4 +1,3 @@
-
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
 # datom <img src="man/figures/logo.svg" align="right" height="139" alt="" />
@@ -25,59 +24,76 @@ datom is the foundational layer for the
 
 ## Installation
 
-``` r
-# install.packages("pak")
-pak::pak("amashadihossein/datom")
-```
+    # install.packages("pak")
+    pak::pak("amashadihossein/datom")
 
 ## Overview
 
 ### For Data Developers (git + S3 access)
 
-``` r
-library(datom)
+    library(datom)
 
-# Initialize a datom repository
-datom_init_repo(
-  path = "my_project",
-  project_name = "MYPROJ",
-  remote_url = "https://github.com/org/my_project.git",
-  bucket = "my-bucket",
-  prefix = "data/"
-)
+    # Build a store with credentials
+    s3 <- datom_store_s3(
+      bucket     = "my-bucket",
+      prefix     = "data/",
+      access_key = keyring::key_get("AWS_ACCESS_KEY"),
+      secret_key = keyring::key_get("AWS_SECRET_KEY")
+    )
 
-# Get connection
-conn <- datom_get_conn(path = "my_project")
+    store <- datom_store(
+      governance = s3,
+      data       = s3,
+      github_pat = keyring::key_get("GITHUB_PAT")
+    )
 
-# Sync input files to versioned storage
-manifest <- datom_sync_manifest(conn)
-datom_sync(conn, manifest)
+    # Initialize a datom repository
+    datom_init_repo(
+      path         = "my_project",
+      project_name = "MYPROJ",
+      store        = store,
+      create_repo  = TRUE,
+      repo_name    = "my-project-data"
+    )
 
-# Write individual tables
-datom_write(conn, data = my_data, name = "customers", message = "Initial load")
-```
+    # Get connection
+    conn <- datom_get_conn(path = "my_project", store = store)
+
+    # Sync input files to versioned storage
+    manifest <- datom_sync_manifest(conn)
+    datom_sync(conn, manifest)
+
+    # Write individual tables
+    datom_write(conn, data = my_data, name = "customers", message = "Initial load")
 
 ### For Data Readers (S3 only)
 
-``` r
-library(datom)
+    library(datom)
 
-# Connect directly to S3
-conn <- datom_get_conn(
-  bucket = "my-bucket",
-  prefix = "data/",
-  project_name = "MYPROJ"
-)
+    # Build a read-only store (no github_pat)
+    reader_s3 <- datom_store_s3(
+      bucket     = "my-bucket",
+      prefix     = "data/",
+      access_key = keyring::key_get("AWS_ACCESS_KEY"),
+      secret_key = keyring::key_get("AWS_SECRET_KEY")
+    )
 
-# List available tables
-datom_list(conn)
+    reader_store <- datom_store(governance = reader_s3, data = reader_s3)
 
-# Read current version
-customers <- datom_read(conn, "customers")
+    # Connect directly to S3
+    conn <- datom_get_conn(
+      store        = reader_store,
+      project_name = "MYPROJ"
+    )
 
-# Read specific version for reproducibility
-customers_v1 <- datom_read(conn, "customers", version = "abc123...")
-```
+    # List available tables
+    datom_list(conn)
+
+    # Read current version
+    customers <- datom_read(conn, "customers")
+
+    # Read specific version for reproducibility
+    customers_v1 <- datom_read(conn, "customers", version = "abc123...")
 
 ## Design Principles
 
@@ -89,11 +105,31 @@ customers_v1 <- datom_read(conn, "customers", version = "abc123...")
 
 ## Related Packages
 
-| Package      | Purpose                                         |
-|--------------|-------------------------------------------------|
-| **datom**    | Version-controlled table storage (this package) |
-| **dpbuild**  | Data product construction                       |
-| **dpdeploy** | Deployment orchestration                        |
-| **dpi**      | Data product access                             |
+<table>
+<thead>
+<tr>
+<th>Package</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>datom</strong></td>
+<td>Version-controlled table storage (this package)</td>
+</tr>
+<tr>
+<td><strong>dpbuild</strong></td>
+<td>Data product construction</td>
+</tr>
+<tr>
+<td><strong>dpdeploy</strong></td>
+<td>Deployment orchestration</td>
+</tr>
+<tr>
+<td><strong>dpi</strong></td>
+<td>Data product access</td>
+</tr>
+</tbody>
+</table>
 
 See `dev/datom_specification.md` for full technical specification.

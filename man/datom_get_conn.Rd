@@ -10,10 +10,11 @@ datom_get_conn(path = NULL, store = NULL, project_name = NULL, endpoint = NULL)
 \item{path}{Path to datom repository. If provided, reads config from
 \code{.datom/project.yaml}.}
 
-\item{store}{A \code{datom_store} object. Required for readers without local repo.
+\item{store}{A \code{datom_store} object. Required for all connections.
 The data component provides bucket, prefix, region, and credentials.}
 
-\item{project_name}{Project name for credential lookup. Required for readers.}
+\item{project_name}{Project name. Required for readers (no local repo).
+Ignored when \code{path} is provided (read from yaml).}
 
 \item{endpoint}{Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.}
 }
@@ -21,7 +22,13 @@ The data component provides bucket, prefix, region, and credentials.}
 A \code{datom_conn} object.
 }
 \description{
-Flexible connection for both developers and readers. Developers provide a
-path to read from \code{.datom/project.yaml}. Readers provide a store and
-project_name directly.
+Flexible connection for both developers and readers.
+}
+\details{
+\strong{Developer} (local repo + store): provide \code{path} and \code{store}. Reads
+project identity from \code{.datom/project.yaml}; uses store for credentials and
+S3 config. Cross-checks bucket/prefix between yaml and store.
+
+\strong{Reader} (no local repo): provide \code{store} and \code{project_name}. Store
+provides everything.
 }

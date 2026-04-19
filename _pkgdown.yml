@@ -32,6 +32,16 @@ reference:
       - is_datom_conn
       - print.datom_conn
 
+  - title: "Store Objects"
+    desc: "Create and inspect storage configuration objects"
+    contents:
+      - datom_store
+      - datom_store_s3
+      - is_datom_store
+      - is_datom_store_s3
+      - print.datom_store
+      - print.datom_store_s3
+
   - title: "Read & Write"
     desc: "Read and write versioned tables"
     contents:
@@ -52,7 +62,7 @@ reference:
       - datom_pull
       - datom_sync
       - datom_sync_manifest
-      - datom_sync_routing
+      - datom_sync_dispatch
 
   - title: "Validation"
     desc: "Validate repository structure and git-S3 consistency"

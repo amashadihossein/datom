@@ -2,23 +2,32 @@
 % Please edit documentation in R/utils-s3.R
 \name{.datom_s3_client}
 \alias{.datom_s3_client}
-\title{Create an S3 Client from Credential Environment Variables}
+\title{Create an S3 Client from Credentials}
 \usage{
-.datom_s3_client(credentials, region = "us-east-1", endpoint = NULL)
+.datom_s3_client(
+  access_key,
+  secret_key,
+  region = "us-east-1",
+  endpoint = NULL,
+  session_token = NULL
+)
 }
 \arguments{
-\item{credentials}{Named list with \code{access_key_env} and \code{secret_key_env}
-pointing to environment variable names.}
+\item{access_key}{AWS access key ID string.}
+
+\item{secret_key}{AWS secret access key string.}
 
 \item{region}{AWS region string (e.g. \code{"us-east-1"}).}
 
 \item{endpoint}{Optional S3 endpoint URL. NULL for default AWS endpoint.}
+
+\item{session_token}{Optional AWS session token for temporary credentials.}
 }
 \value{
 A \code{paws.storage} S3 client.
 }
 \description{
-Reads AWS credentials from the named environment variables and
-constructs a \code{paws.storage::s3()} client. Never stores raw credentials.
+Constructs a \code{paws.storage::s3()} client from credential values.
+Never stores raw credentials beyond the paws client object.
 }
 \keyword{internal}

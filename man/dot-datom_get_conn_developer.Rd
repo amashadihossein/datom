@@ -2,12 +2,14 @@
 % Please edit documentation in R/conn.R
 \name{.datom_get_conn_developer}
 \alias{.datom_get_conn_developer}
-\title{Build Connection from Local Repo (Developer Path)}
+\title{Build Connection from Local Repo + Store (Developer Path)}
 \usage{
-.datom_get_conn_developer(path, endpoint = NULL)
+.datom_get_conn_developer(path, store, endpoint = NULL)
 }
 \arguments{
 \item{path}{Path to datom repository.}
+
+\item{store}{A \code{datom_store} object.}
 
 \item{endpoint}{Optional S3 endpoint URL.}
 }
@@ -15,7 +17,7 @@
 A \code{datom_conn} object.
 }
 \description{
-Reads \code{.datom/project.yaml} and constructs a connection.
-Role is auto-detected: developer if GITHUB_PAT is set, reader otherwise.
+Reads \code{.datom/project.yaml} for project identity and cross-checks against
+the store's S3 config. Uses the store for credentials.
 }
 \keyword{internal}

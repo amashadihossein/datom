@@ -25,7 +25,7 @@ is_valid_datom_repo <- function(path,
       dx <- dx[setdiff(names(dx), "git_initialized")]
     }
     if (!"datom" %in% checks) {
-      dx <- dx[setdiff(names(dx), c("datom_initialized", "datom_routing", "datom_manifest"))]
+      dx <- dx[setdiff(names(dx), c("datom_initialized", "datom_dispatch", "datom_manifest"))]
     }
     if (!"renv" %in% checks) {
       dx <- dx[setdiff(names(dx), "renv_initialized")]
@@ -60,7 +60,7 @@ datom_repository_check <- function(path) {
   list(
     git_initialized = fs::dir_exists(fs::path(path, ".git")),
     datom_initialized = fs::file_exists(fs::path(path, ".datom", "project.yaml")),
-    datom_routing = fs::file_exists(fs::path(path, ".datom", "routing.json")),
+    datom_dispatch = fs::file_exists(fs::path(path, ".datom", "dispatch.json")),
     datom_manifest = fs::file_exists(fs::path(path, ".datom", "manifest.json")),
     renv_initialized = fs::dir_exists(fs::path(path, "renv"))
   )
@@ -74,7 +74,7 @@ datom_repository_check <- function(path) {
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param fix If `TRUE`, attempts to fix inconsistencies by syncing metadata
-#'   to S3 via [datom_sync_routing()].
+#'   to S3 via [datom_sync_dispatch()].
 #'
 #' @return A list with:
 #'   \describe{
@@ -134,7 +134,7 @@ datom_validate <- function(conn, fix = FALSE) {
   if (!is_valid && isTRUE(fix)) {
     cli::cli_alert_info("Attempting to fix by syncing metadata to S3...")
     tryCatch({
-      datom_sync_routing(conn, .confirm = FALSE)
+      datom_sync_dispatch(conn, .confirm = FALSE)
       fixed <- TRUE
       cli::cli_alert_success("Fix applied. Re-run {.fn datom_validate} to verify.")
     }, error = function(e) {
@@ -192,22 +192,32 @@ datom_validate <- function(conn, fix = FALSE) {
 #' @noRd
 .datom_validate_repo_files <- function(conn) {
   repo_path <- conn$path
+  gov_conn <- .datom_gov_conn(conn)
 
   files_to_check <- list(
     list(
-      local = fs::path(repo_path, ".datom", "routing.json"),
-      s3_key = ".metadata/routing.json",
-      name = "routing.json"
+      local = fs::path(repo_path, ".datom", "dispatch.json"),
+      s3_key = ".metadata/dispatch.json",
+      name = "dispatch.json",
+      target_conn = gov_conn
+    ),
+    list(
+      local = fs::path(repo_path, ".datom", "ref.json"),
+      s3_key = ".metadata/ref.json",
+      name = "ref.json",
+      target_conn = gov_conn
     ),
     list(
       local = fs::path(repo_path, ".datom", "manifest.json"),
       s3_key = ".metadata/manifest.json",
-      name = "manifest.json"
+      name = "manifest.json",
+      target_conn = conn
     ),
     list(
       local = fs::path(repo_path, ".datom", "migration_history.json"),
       s3_key = ".metadata/migration_history.json",
-      name = "migration_history.json"
+      name = "migration_history.json",
+      target_conn = gov_conn
     )
   )
 
@@ -219,7 +229,7 @@ datom_validate <- function(conn, fix = FALSE) {
       return(NULL)
     }
 
-    s3_exists <- .datom_s3_exists(conn, fc$s3_key)
+    s3_exists <- .datom_storage_exists(fc$target_conn, fc$s3_key)
 
     status <- if (s3_exists) "ok" else "missing_s3"
 
@@ -298,8 +308,8 @@ datom_validate <- function(conn, fix = FALSE) {
   history_local <- fs::file_exists(fs::path(repo_path, name, "version_history.json"))
 
   # S3 checks
-  metadata_s3 <- .datom_s3_exists(conn, paste0(name, "/.metadata/metadata.json"))
-  history_s3 <- .datom_s3_exists(conn, paste0(name, "/.metadata/version_history.json"))
+  metadata_s3 <- .datom_storage_exists(conn, paste0(name, "/.metadata/metadata.json"))
+  history_s3 <- .datom_storage_exists(conn, paste0(name, "/.metadata/version_history.json"))
 
   # Check that data parquet exists (read data_sha from local metadata)
   data_s3 <- FALSE
@@ -311,7 +321,7 @@ datom_validate <- function(conn, fix = FALSE) {
       )
       if (!is.null(meta$data_sha) && nzchar(meta$data_sha)) {
         data_key <- paste0(name, "/", meta$data_sha, ".parquet")
-        data_s3 <- .datom_s3_exists(conn, data_key)
+        data_s3 <- .datom_storage_exists(conn, data_key)
       }
     }, error = function(e) {
       # Leave data_s3 as FALSE

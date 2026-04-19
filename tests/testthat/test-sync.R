@@ -658,38 +658,38 @@ test_that(".datom_check_rio errors when rio not available", {
 })
 
 
-# --- datom_sync_routing() -----------------------------------------------------
+# --- datom_sync_dispatch() -----------------------------------------------------
 
-test_that("datom_sync_routing rejects non-datom_conn", {
-  expect_error(datom_sync_routing("not_conn"), "datom_conn")
+test_that("datom_sync_dispatch rejects non-datom_conn", {
+  expect_error(datom_sync_dispatch("not_conn"), "datom_conn")
 })
 
-test_that("datom_sync_routing rejects reader role", {
+test_that("datom_sync_dispatch rejects reader role", {
   conn <- mock_datom_conn(list())
   conn$role <- "reader"
   conn$path <- "/tmp"
-  expect_error(datom_sync_routing(conn), "developer")
+  expect_error(datom_sync_dispatch(conn), "developer")
 })
 
-test_that("datom_sync_routing rejects conn without path", {
+test_that("datom_sync_dispatch rejects conn without path", {
   conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- NULL
-  expect_error(datom_sync_routing(conn), "local git repo")
+  expect_error(datom_sync_dispatch(conn), "local git repo")
 })
 
-test_that("datom_sync_routing requires interactive confirmation by default", {
+test_that("datom_sync_dispatch requires interactive confirmation by default", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     # Non-interactive session should fail with .confirm = TRUE
-    expect_error(datom_sync_routing(conn, .confirm = TRUE), "Interactive")
+    expect_error(datom_sync_dispatch(conn, .confirm = TRUE), "Interactive")
   })
 })
 
-test_that("datom_sync_routing syncs repo-level files to S3", {
+test_that("datom_sync_dispatch syncs repo-level files to S3", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -697,7 +697,7 @@ test_that("datom_sync_routing syncs repo-level files to S3", {
 
     # Create repo-level .datom files
     fs::dir_create(".datom")
-    jsonlite::write_json(list(methods = list()), ".datom/routing.json",
+    jsonlite::write_json(list(methods = list()), ".datom/dispatch.json",
                          auto_unbox = TRUE)
     jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
                          auto_unbox = TRUE)
@@ -705,56 +705,56 @@ test_that("datom_sync_routing syncs repo-level files to S3", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- datom_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
-    expect_true(".metadata/routing.json" %in% s3_keys_written)
+    expect_true(".metadata/dispatch.json" %in% s3_keys_written)
     expect_true(".metadata/manifest.json" %in% s3_keys_written)
-    expect_true(".metadata/routing.json" %in% result$repo_files)
+    expect_true(".metadata/dispatch.json" %in% result$repo_files)
     expect_true(".metadata/manifest.json" %in% result$repo_files)
   })
 })
 
-test_that("datom_sync_routing skips missing repo-level files", {
+test_that("datom_sync_dispatch skips missing repo-level files", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
-    # Only create routing.json, not manifest or migration_history
+    # Only create dispatch.json, not manifest or migration_history
     fs::dir_create(".datom")
-    jsonlite::write_json(list(methods = list()), ".datom/routing.json",
+    jsonlite::write_json(list(methods = list()), ".datom/dispatch.json",
                          auto_unbox = TRUE)
 
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- datom_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
     expect_equal(length(result$repo_files), 1)
-    expect_equal(result$repo_files, ".metadata/routing.json")
+    expect_equal(result$repo_files, ".metadata/dispatch.json")
   })
 })
 
-test_that("datom_sync_routing syncs per-table metadata to S3", {
+test_that("datom_sync_dispatch syncs per-table metadata to S3", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     # Create a table directory with metadata
     fs::dir_create("customers")
@@ -766,13 +766,13 @@ test_that("datom_sync_routing syncs per-table metadata to S3", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- datom_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
     expect_true("customers/.metadata/metadata.json" %in% s3_keys_written)
     expect_true("customers/.metadata/version_history.json" %in% s3_keys_written)
@@ -780,14 +780,14 @@ test_that("datom_sync_routing syncs per-table metadata to S3", {
   })
 })
 
-test_that("datom_sync_routing ignores non-table directories", {
+test_that("datom_sync_dispatch ignores non-table directories", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     # Directories that should be ignored
     fs::dir_create("input_files")
@@ -801,28 +801,28 @@ test_that("datom_sync_routing ignores non-table directories", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- datom_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
     # Only repo-level files synced, no table-level
     expect_equal(length(result$tables), 0)
-    expect_equal(result$repo_files, ".metadata/routing.json")
+    expect_equal(result$repo_files, ".metadata/dispatch.json")
   })
 })
 
-test_that("datom_sync_routing handles per-table errors gracefully", {
+test_that("datom_sync_dispatch handles per-table errors gracefully", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     # Two tables: one good, one will fail
     fs::dir_create("good_tbl")
@@ -836,14 +836,14 @@ test_that("datom_sync_routing handles per-table errors gracefully", {
     call_count <- 0L
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         call_count <<- call_count + 1L
         if (grepl("bad_tbl", s3_key)) stop("S3 upload failed")
         invisible(NULL)
       }
     )
 
-    result <- datom_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
     expect_equal(result$tables$good_tbl$action, "synced")
     expect_equal(result$tables$bad_tbl$action, "error")
@@ -851,14 +851,14 @@ test_that("datom_sync_routing handles per-table errors gracefully", {
   })
 })
 
-test_that("datom_sync_routing syncs metadata snapshots from .metadata dir", {
+test_that("datom_sync_dispatch syncs metadata snapshots from .metadata dir", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     # Table with metadata + snapshot
     fs::dir_create("orders")
@@ -871,33 +871,33 @@ test_that("datom_sync_routing syncs metadata snapshots from .metadata dir", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- datom_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
     expect_true("orders/.metadata/metadata.json" %in% s3_keys_written)
     expect_true("orders/.metadata/abc123.json" %in% s3_keys_written)
   })
 })
 
-test_that("datom_sync_routing returns correct summary structure", {
+test_that("datom_sync_dispatch returns correct summary structure", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
-    result <- datom_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
     expect_type(result, "list")
     expect_true("repo_files" %in% names(result))
@@ -907,14 +907,14 @@ test_that("datom_sync_routing returns correct summary structure", {
   })
 })
 
-test_that("datom_sync_routing handles multiple tables", {
+test_that("datom_sync_dispatch handles multiple tables", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/routing.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     for (nm in c("alpha", "beta", "gamma")) {
       fs::dir_create(nm)
@@ -923,10 +923,10 @@ test_that("datom_sync_routing handles multiple tables", {
     }
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
-    result <- datom_sync_routing(conn, .confirm = FALSE)
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
     expect_equal(length(result$tables), 3)
     expect_true(all(purrr::map_chr(result$tables, "action") == "synced"))
@@ -949,7 +949,7 @@ test_that(".datom_sync_table_metadata uploads metadata and version_history", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
@@ -972,7 +972,7 @@ test_that(".datom_sync_table_metadata handles table with no version_history", {
     jsonlite::write_json(list(x = 1), "tbl/metadata.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
     result <- .datom_sync_table_metadata(conn, "tbl")

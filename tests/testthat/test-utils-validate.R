@@ -118,204 +118,30 @@ test_that("accepts name at exactly 128 characters", {
 })
 
 
-# =============================================================================
-# .datom_derive_cred_names()
-# =============================================================================
-
-test_that("derives standard cred names from simple project_name", {
-  result <- .datom_derive_cred_names("clinical_data")
-  expect_equal(result$access_key_env, "DATOM_CLINICAL_DATA_ACCESS_KEY_ID")
-  expect_equal(result$secret_key_env, "DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY")
-})
-
-test_that("converts hyphens to underscores", {
-  result <- .datom_derive_cred_names("my-project")
-  expect_equal(result$access_key_env, "DATOM_MY_PROJECT_ACCESS_KEY_ID")
-  expect_equal(result$secret_key_env, "DATOM_MY_PROJECT_SECRET_ACCESS_KEY")
-})
-
-test_that("converts spaces to underscores", {
-  result <- .datom_derive_cred_names("my project")
-  expect_equal(result$access_key_env, "DATOM_MY_PROJECT_ACCESS_KEY_ID")
-})
-
-test_that("uppercases lowercase input", {
-  result <- .datom_derive_cred_names("alpha")
-  expect_equal(result$access_key_env, "DATOM_ALPHA_ACCESS_KEY_ID")
-})
-
-test_that("handles already-uppercase input", {
-  result <- .datom_derive_cred_names("ALPHA")
-  expect_equal(result$access_key_env, "DATOM_ALPHA_ACCESS_KEY_ID")
-})
-
-test_that("collapses consecutive hyphens/spaces", {
-  result <- .datom_derive_cred_names("my--project  name")
-  expect_equal(result$access_key_env, "DATOM_MY_PROJECT_NAME_ACCESS_KEY_ID")
-})
-
-test_that("returns a list with correct names", {
-  result <- .datom_derive_cred_names("x")
-  expect_type(result, "list")
-  expect_named(result, c("access_key_env", "secret_key_env"))
-})
-
-test_that("aborts on non-string input", {
-  expect_error(.datom_derive_cred_names(123), "single non-empty string")
-  expect_error(.datom_derive_cred_names(NULL), "single non-empty string")
-  expect_error(.datom_derive_cred_names(c("a", "b")), "single non-empty string")
-})
-
-test_that("aborts on empty string", {
-  expect_error(.datom_derive_cred_names(""), "single non-empty string")
-})
-
-test_that("aborts on NA", {
-  expect_error(.datom_derive_cred_names(NA_character_), "single non-empty string")
-})
-
-
-# =============================================================================
-# .datom_check_credentials()
-# =============================================================================
-
-test_that("succeeds when all reader credentials are set", {
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "fake_secret"
-  )
-
-  result <- .datom_check_credentials("myproj", role = "reader")
-  expect_type(result, "list")
-  expect_equal(result$access_key_env, "DATOM_MYPROJ_ACCESS_KEY_ID")
-  expect_equal(result$secret_key_env, "DATOM_MYPROJ_SECRET_ACCESS_KEY")
-})
-
-test_that("returns invisibly on success", {
-  withr::local_envvar(
-    DATOM_X_ACCESS_KEY_ID = "k",
-    DATOM_X_SECRET_ACCESS_KEY = "s"
-  )
-
-  expect_invisible(.datom_check_credentials("x", role = "reader"))
-})
-
-test_that("succeeds when all developer credentials are set", {
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "fake_secret",
-    GITHUB_PAT = "ghp_fake"
-  )
-
-  result <- .datom_check_credentials("myproj", role = "developer")
-  expect_equal(result$access_key_env, "DATOM_MYPROJ_ACCESS_KEY_ID")
-})
-
-test_that("aborts when access key is missing (reader)", {
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = NA,
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "fake_secret"
-  )
-
-  expect_error(.datom_check_credentials("myproj", role = "reader"), "ACCESS_KEY_ID")
-})
-
-test_that("aborts when secret key is missing (reader)", {
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = NA
-  )
-
-  expect_error(.datom_check_credentials("myproj", role = "reader"), "SECRET_ACCESS_KEY")
-})
-
-test_that("aborts when both S3 credentials are missing", {
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = NA,
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = NA
-  )
-
-  expect_error(.datom_check_credentials("myproj", role = "reader"), "ACCESS_KEY_ID")
-})
-
-test_that("reader does not check GITHUB_PAT", {
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "fake_secret",
-    GITHUB_PAT = NA
-  )
-
-  # Should succeed — reader doesn't need GITHUB_PAT
-  expect_no_error(.datom_check_credentials("myproj", role = "reader"))
-})
-
-test_that("developer aborts when GITHUB_PAT is missing", {
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "fake_secret",
-    GITHUB_PAT = NA
-  )
-
-  expect_error(.datom_check_credentials("myproj", role = "developer"), "GITHUB_PAT")
-})
-
-test_that("developer aborts listing all missing vars", {
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = NA,
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = NA,
-    GITHUB_PAT = NA
-  )
-
-  expect_error(.datom_check_credentials("myproj", role = "developer"), "ACCESS_KEY_ID")
-  expect_error(.datom_check_credentials("myproj", role = "developer"), "GITHUB_PAT")
-})
-
-test_that("credential check uses derived names from project_name", {
-  withr::local_envvar(
-    DATOM_CLINICAL_DATA_ACCESS_KEY_ID = "k",
-    DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY = "s"
-  )
-
-  result <- .datom_check_credentials("clinical_data", role = "reader")
-  expect_equal(result$access_key_env, "DATOM_CLINICAL_DATA_ACCESS_KEY_ID")
-})
-
-test_that("defaults to reader role", {
-  withr::local_envvar(
-    DATOM_X_ACCESS_KEY_ID = "k",
-    DATOM_X_SECRET_ACCESS_KEY = "s",
-    GITHUB_PAT = NA
-  )
-
-  # Should succeed because default is reader (no GITHUB_PAT needed)
-  expect_no_error(.datom_check_credentials("x"))
-})
-
-
-# --- .datom_check_s3_namespace_free() ------------------------------------------
+# --- .datom_check_namespace_free() ------------------------------------------
 
 test_that("returns TRUE when namespace is free (no manifest on S3)", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) FALSE
+    .datom_storage_exists = function(conn, s3_key) FALSE
   )
 
-  expect_true(.datom_check_s3_namespace_free(conn))
+  expect_true(.datom_check_namespace_free(conn))
 })
 
 test_that("aborts when namespace is occupied by another project", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) {
       list(project_name = "OTHER_PROJECT", tables = list())
     }
   )
 
   expect_error(
-    .datom_check_s3_namespace_free(conn),
+    .datom_check_namespace_free(conn),
     "already occupied.*OTHER_PROJECT"
   )
 })
@@ -324,8 +150,8 @@ test_that("aborts when namespace is occupied by same project name", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) {
       list(project_name = "test-project", tables = list())
     }
   )
@@ -333,7 +159,7 @@ test_that("aborts when namespace is occupied by same project name", {
   # Even same project name is blocked — use .force to override
 
   expect_error(
-    .datom_check_s3_namespace_free(conn),
+    .datom_check_namespace_free(conn),
     "already occupied"
   )
 })
@@ -342,14 +168,14 @@ test_that("shows <unknown> when manifest has no project_name field", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) {
       list(tables = list())  # pre-Phase 7 manifest without project_name
     }
   )
 
   expect_error(
-    .datom_check_s3_namespace_free(conn),
+    .datom_check_namespace_free(conn),
     "already occupied.*unknown"
   )
 })
@@ -358,14 +184,14 @@ test_that("shows <unreadable> when manifest read fails", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) {
       stop("access denied")
     }
   )
 
   expect_error(
-    .datom_check_s3_namespace_free(conn),
+    .datom_check_namespace_free(conn),
     "already occupied.*unreadable"
   )
 })
@@ -374,14 +200,14 @@ test_that("error message includes S3 location", {
   conn <- mock_datom_conn(list(), bucket = "my-bucket", prefix = "data/prod")
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) {
       list(project_name = "PROD_DATA")
     }
   )
 
   expect_error(
-    .datom_check_s3_namespace_free(conn),
+    .datom_check_namespace_free(conn),
     "my-bucket"
   )
 })
@@ -390,14 +216,14 @@ test_that("error message suggests .force = TRUE", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) TRUE,
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) {
       list(project_name = "EXISTING")
     }
   )
 
   expect_error(
-    .datom_check_s3_namespace_free(conn),
+    .datom_check_namespace_free(conn),
     "\\.force = TRUE"
   )
 })

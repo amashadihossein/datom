@@ -9,7 +9,7 @@ test_that("rejects non-datom_conn", {
 
 test_that("returns empty data frame when manifest has no tables", {
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       list(updated_at = "2026-01-01", tables = list(), summary = list())
     }
   )
@@ -39,7 +39,7 @@ test_that("returns data frame with one row per table", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) manifest
+    .datom_storage_read_json = function(conn, s3_key) manifest
   )
 
   conn <- mock_datom_conn(list())
@@ -61,7 +61,7 @@ test_that("filters tables by glob pattern", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) manifest
+    .datom_storage_read_json = function(conn, s3_key) manifest
   )
 
   conn <- mock_datom_conn(list())
@@ -79,7 +79,7 @@ test_that("returns empty data frame when pattern matches nothing", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) manifest
+    .datom_storage_read_json = function(conn, s3_key) manifest
   )
 
   conn <- mock_datom_conn(list())
@@ -100,7 +100,7 @@ test_that("includes version_count when include_versions = TRUE", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) manifest
+    .datom_storage_read_json = function(conn, s3_key) manifest
   )
 
   conn <- mock_datom_conn(list())
@@ -116,7 +116,7 @@ test_that("includes version_count when include_versions = TRUE", {
 test_that("reads correct S3 key for manifest", {
   captured_key <- NULL
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       captured_key <<- s3_key
       list(tables = list())
     }
@@ -130,7 +130,7 @@ test_that("reads correct S3 key for manifest", {
 
 test_that("errors when manifest cannot be read from S3", {
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) stop("NoSuchKey")
+    .datom_storage_read_json = function(conn, s3_key) stop("NoSuchKey")
   )
 
   conn <- mock_datom_conn(list())
@@ -145,7 +145,7 @@ test_that("handles missing fields gracefully with NA", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) manifest
+    .datom_storage_read_json = function(conn, s3_key) manifest
   )
 
   conn <- mock_datom_conn(list())
@@ -170,7 +170,7 @@ test_that("truncates hashes by default (short_hash = TRUE)", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) manifest
+    .datom_storage_read_json = function(conn, s3_key) manifest
   )
 
   conn <- mock_datom_conn(list())
@@ -194,7 +194,7 @@ test_that("returns full hashes with short_hash = FALSE", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) manifest
+    .datom_storage_read_json = function(conn, s3_key) manifest
   )
 
   conn <- mock_datom_conn(list())
@@ -242,7 +242,7 @@ test_that("returns data frame with version history", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) history
+    .datom_storage_read_json = function(conn, s3_key) history
   )
 
   conn <- mock_datom_conn(list())
@@ -264,7 +264,7 @@ test_that("limits results to n entries", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) history
+    .datom_storage_read_json = function(conn, s3_key) history
   )
 
   conn <- mock_datom_conn(list())
@@ -276,7 +276,7 @@ test_that("limits results to n entries", {
 
 test_that("returns empty data frame for empty history", {
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) list()
+    .datom_storage_read_json = function(conn, s3_key) list()
   )
 
   conn <- mock_datom_conn(list())
@@ -290,7 +290,7 @@ test_that("returns empty data frame for empty history", {
 test_that("reads correct S3 key for version history", {
   captured_key <- NULL
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       captured_key <<- s3_key
       list()
     }
@@ -304,7 +304,7 @@ test_that("reads correct S3 key for version history", {
 
 test_that("errors when version history cannot be read from S3", {
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) stop("NoSuchKey")
+    .datom_storage_read_json = function(conn, s3_key) stop("NoSuchKey")
   )
 
   conn <- mock_datom_conn(list())
@@ -323,7 +323,7 @@ test_that("handles author as list (name + email)", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) history
+    .datom_storage_read_json = function(conn, s3_key) history
   )
 
   conn <- mock_datom_conn(list())
@@ -338,7 +338,7 @@ test_that("handles missing fields with NA", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) history
+    .datom_storage_read_json = function(conn, s3_key) history
   )
 
   conn <- mock_datom_conn(list())
@@ -364,7 +364,7 @@ test_that("truncates version and data_sha by default (short_hash = TRUE)", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) history
+    .datom_storage_read_json = function(conn, s3_key) history
   )
 
   conn <- mock_datom_conn(list())
@@ -388,7 +388,7 @@ test_that("returns full hashes with short_hash = FALSE", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) history
+    .datom_storage_read_json = function(conn, s3_key) history
   )
 
   conn <- mock_datom_conn(list())
@@ -424,7 +424,7 @@ test_that("returns parents from current metadata", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       expect_equal(s3_key, "customers/.metadata/metadata.json")
       metadata
     }
@@ -448,7 +448,7 @@ test_that("returns NULL for imported table (no parents)", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) metadata
+    .datom_storage_read_json = function(conn, s3_key) metadata
   )
 
   conn <- mock_datom_conn(list())
@@ -465,7 +465,7 @@ test_that("returns NULL for derived table with no recorded lineage", {
   )
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) metadata
+    .datom_storage_read_json = function(conn, s3_key) metadata
   )
 
   conn <- mock_datom_conn(list())
@@ -487,7 +487,7 @@ test_that("reads versioned metadata snapshot when version provided", {
 
   captured_key <- NULL
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       captured_key <<- s3_key
       versioned_meta
     }
@@ -503,7 +503,7 @@ test_that("reads versioned metadata snapshot when version provided", {
 
 test_that("errors when table not found (current)", {
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       stop("Failed to read JSON from S3")
     }
   )
@@ -514,7 +514,7 @@ test_that("errors when table not found (current)", {
 
 test_that("errors when versioned snapshot not found", {
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       stop("Failed to read JSON from S3")
     }
   )
@@ -544,7 +544,7 @@ test_that("datom_status returns connection info for reader", {
   conn$role <- "reader"
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       list(tables = list(a = list(), b = list()))
     }
   )
@@ -562,7 +562,7 @@ test_that("datom_status handles S3 manifest read failure", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) stop("S3 error")
+    .datom_storage_read_json = function(conn, s3_key) stop("S3 error")
   )
 
   result <- datom_status(conn)
@@ -578,7 +578,7 @@ test_that("datom_status shows git info for developer", {
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
       .datom_status_git = function(path) {
         list(uncommitted = c("R/foo.R"), branch = "main")
       }
@@ -598,7 +598,7 @@ test_that("datom_status shows clean git when no changes", {
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -630,7 +630,7 @@ test_that("datom_status shows input_files sync state", {
     ), ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -652,7 +652,7 @@ test_that("datom_status omits input_files when dir missing", {
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -679,7 +679,7 @@ test_that("datom_status detects changed input files", {
     ), ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -696,7 +696,7 @@ test_that("datom_status returns correct structure", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .datom_s3_read_json = function(conn, s3_key) list(tables = list())
+    .datom_storage_read_json = function(conn, s3_key) list(tables = list())
   )
 
   result <- datom_status(conn)
@@ -716,7 +716,7 @@ test_that("datom_status handles empty input_files dir", {
     fs::dir_create("input_files")
 
     local_mocked_bindings(
-      .datom_s3_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
