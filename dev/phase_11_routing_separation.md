@@ -239,7 +239,43 @@ The layout diagrams in this doc and in `datom_specification.md` are normative �
 - Tests verifying files land in the correct store component
 - **Note**: ref.json is NOT created in this chunk — that's Chunk 4
 
-### Chunk 4: `ref.json` + `.datom_resolve_ref()`
+### Chunk 4: Storage Abstraction Layer
+
+**Files**: `R/utils-s3.R` (rename to `R/utils-storage.R`), `R/utils-path.R`, `R/conn.R`, `R/read_write.R`, `R/sync.R`, `R/validate.R`, `R/query.R`, tests
+
+**Problem**: Business logic (~30 call sites) calls `.datom_s3_write_json(conn, ...)` directly. When `datom_store_local()` arrives (Phase 12), every call site would need branching. The generic `datom_conn` object also carries S3-specific field names (`bucket`, `s3_client`, etc.).
+
+**Principle**: `do_x_s3(<S3 params>)` is fine — it's an explicit backend implementation. `do_x(<S3 params>)` is not — it pretends to be generic but assumes S3.
+
+**Changes**:
+
+1. **Add 5 generic storage dispatch functions** (new, in `R/utils-storage.R`):
+   - `.datom_storage_upload(conn, key, local_path)` → dispatches to `.datom_s3_upload()`
+   - `.datom_storage_download(conn, key, local_path)` → dispatches to `.datom_s3_download()`
+   - `.datom_storage_exists(conn, key)` → dispatches to `.datom_s3_exists()`
+   - `.datom_storage_read_json(conn, key)` → dispatches to `.datom_s3_read_json()`
+   - `.datom_storage_write_json(conn, key, data)` → dispatches to `.datom_s3_write_json()`
+   - Dispatch on `conn$backend` field (value: `"s3"`, future `"local"`)
+
+2. **Rename generic-but-S3-named helpers**:
+   - `.datom_build_s3_key()` → `.datom_build_storage_key()` (logic is just paste — not S3-specific)
+   - `.datom_check_s3_namespace_free()` → `.datom_check_namespace_free()` (generic concept)
+
+3. **Conn field cleanup**:
+   - Add `backend` field (`"s3"`) to `datom_conn` for dispatch
+   - Rename `s3_client` → `client`, `gov_s3_client` → `gov_client`
+   - Keep `bucket`/`prefix`/`region`/`gov_bucket`/`gov_prefix`/`gov_region` — these are accurate for S3 and will be reinterpreted by local backend (e.g., `bucket` = root dir, `prefix` = subdir)
+
+4. **Switch all ~30 call sites** from `.datom_s3_*()` to `.datom_storage_*()`:
+   - `R/read_write.R`, `R/sync.R`, `R/validate.R`, `R/conn.R`, `R/query.R`
+
+5. **Keep `.datom_s3_*()` functions** as-is — they're the S3 backend implementation, correctly named
+
+6. **Update all tests** — rename references, update mock_datom_conn with `backend` and `client` fields
+
+**Pure rename + dispatch wrapper — no behavior change.**
+
+### Chunk 5: `ref.json` + `.datom_resolve_ref()`
 
 **Files**: `R/routing.R` (new), `R/conn.R`, `R/init.R`, tests
 
@@ -260,7 +296,7 @@ The layout diagrams in this doc and in `datom_specification.md` are normative �
 - Stale credential error handling (governance resolves but data 403s → actionable error)
 - Tests for normal resolution, post-migration resolution, stale credential error
 
-### Chunk 5: Convention Codification + Spec Update
+### Chunk 6: Convention Codification + Spec Update
 
 **Files**: `dev/datom_specification.md`, `.github/copilot-instructions.md`
 
@@ -270,9 +306,10 @@ The layout diagrams in this doc and in `datom_specification.md` are normative �
 - Document namespace ownership (datom vs datom_ops)
 - Document governance store accessibility principle
 - Document one-project-one-backend convention
+- Document storage abstraction layer pattern (generic dispatch + backend implementations)
 - Update all S3 storage structure diagrams
 
-### Chunk 6: Sandbox, E2E, Documentation
+### Chunk 7: Sandbox, E2E, Documentation
 
 **Files**: `dev/dev-sandbox.R`, `dev/e2e-test.R`, vignettes, roxygen
 
@@ -291,6 +328,9 @@ The layout diagrams in this doc and in `datom_specification.md` are normative �
 - [ ] `.datom_s3_resolve_redirect()` and `.redirect.json` removed
 - [x] Governance store receives dispatch.json, ref.json, migration_history.json
 - [x] Data store receives manifest.json, table data and metadata
+- [ ] Storage abstraction: business logic calls `.datom_storage_*()`, not `.datom_s3_*()`
+- [ ] `datom_conn` uses `client`/`gov_client` (not `s3_client`/`gov_s3_client`), has `backend` field
+- [ ] `.datom_build_s3_key()` renamed to `.datom_build_storage_key()`
 - [ ] `ref.json` always present at governance store, created by `datom_init_repo()`
 - [ ] `.datom_resolve_ref()` reads `ref.json` (single read, no recursion)
 - [ ] Deprecation warning emitted when ref.json has previous entries
@@ -306,9 +346,10 @@ The layout diagrams in this doc and in `datom_specification.md` are normative �
 | 1 | complete | Pure rename, 1083 tests pass, commit `eef1570` |
 | 2 | complete | Credential wiring, env var bridge removed, 1041 tests pass (42 removed with deleted functions), commit `de3fbf7` |
 | 3 | complete | Gov store wiring for dispatch+migration_history, data store for manifest, .datom_gov_conn helper, 1041 tests pass |
-| 4 | not started | |
-| 5 | not started | |
-| 6 | not started | |
+| 4 | not started | Storage abstraction layer |
+| 5 | not started | ref.json + resolve_ref |
+| 6 | not started | Spec + conventions |
+| 7 | not started | Sandbox, E2E, docs |
 
 ## Dependencies
 
