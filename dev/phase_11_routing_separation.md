@@ -327,7 +327,7 @@ The layout diagrams in this doc and in `datom_specification.md` are normative â€
 - [x] Deprecation warning emitted when ref.json has previous entries
 - [ ] Stale data credentials produce clear, actionable error message
 - [x] Namespace conventions documented in spec
-- [ ] Full test suite passes, count â‰¥ Phase 10 final count
+- [x] Full test suite passes, count â‰¥ Phase 10 final count
 - [ ] E2E workflow succeeds
 
 ## Status
@@ -339,8 +339,8 @@ The layout diagrams in this doc and in `datom_specification.md` are normative â€
 | 3 | complete | Gov store wiring for dispatch+migration_history, data store for manifest, .datom_gov_conn helper, 1041 tests pass |
 | 4 | complete | Storage abstraction layer, 5 dispatch functions, conn field renames, ~150 call site updates, 1041 tests pass, commit `162d232` |
 | 5 | complete | ref.json + resolve_ref, 1039 tests pass, commit `c596e6d` |
-| 6 | in progress | Spec + conventions |
-| 7 | not started | Sandbox, E2E, docs |
+| 6 | complete | Spec + conventions, commit `dea7ad1` |
+| 7 | complete | Sandbox fix, devtools::check() clean, 1039 tests pass |
 
 ## Dependencies
 
