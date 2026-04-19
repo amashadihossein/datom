@@ -197,48 +197,6 @@ print.datom_store <- function(x, ...) {
 
 # --- datom_store_s3: S3 component constructor ---------------------------------
 
-# --- Env var bridge (temporary) -----------------------------------------------
-
-#' Install Store Credentials into Environment Variables
-#'
-#' Temporary bridge: sets `DATOM_{PROJECT}_ACCESS_KEY_ID`,
-#' `DATOM_{PROJECT}_SECRET_ACCESS_KEY`, and `GITHUB_PAT` from a composite store
-#' so existing S3/git code works unchanged. Removed in Phase 11 when
-#' `.datom_s3_client()` accepts credentials directly.
-#'
-#' Uses the **data** component's credentials for S3 env vars (the governance
-#' component may differ, but existing code expects a single set).
-#'
-#' @param store A `datom_store` object.
-#' @param project_name Project name (used to derive env var names).
-#' @return Invisibly, a named list of the env var names that were set.
-#' @keywords internal
-.datom_install_store <- function(store, project_name) {
-  if (!is_datom_store(store)) {
-    cli::cli_abort("{.arg store} must be a {.cls datom_store} object.")
-  }
-
-  cred_names <- .datom_derive_cred_names(project_name)
-
-  # Set S3 credentials from data component
-  do.call(Sys.setenv, stats::setNames(
-    list(store$data$access_key, store$data$secret_key),
-    c(cred_names$access_key_env, cred_names$secret_key_env)
-  ))
-
-  # Set GITHUB_PAT if present
-  if (!is.null(store$github_pat)) {
-    Sys.setenv(GITHUB_PAT = store$github_pat)
-  }
-
-  invisible(list(
-    access_key_env = cred_names$access_key_env,
-    secret_key_env = cred_names$secret_key_env,
-    github_pat_set = !is.null(store$github_pat)
-  ))
-}
-
-
 # --- GitHub repo creation -----------------------------------------------------
 
 #' Create a GitHub Repository

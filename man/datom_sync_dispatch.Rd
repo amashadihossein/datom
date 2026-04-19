@@ -2,7 +2,7 @@
 % Please edit documentation in R/sync.R
 \name{datom_sync_dispatch}
 \alias{datom_sync_dispatch}
-\title{Sync Routing Metadata to S3}
+\title{Sync Dispatch Metadata to S3}
 \usage{
 datom_sync_dispatch(conn, .confirm = TRUE)
 }

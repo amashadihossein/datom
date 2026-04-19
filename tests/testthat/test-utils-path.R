@@ -136,11 +136,7 @@ test_that("render_readme returns a character string", {
     bucket = "my-bucket",
     prefix = "data/",
     region = "us-east-1",
-    remote_url = "https://github.com/org/repo.git",
-    cred_names = list(
-      access_key_env = "DATOM_STUDY_001_ACCESS_KEY_ID",
-      secret_key_env = "DATOM_STUDY_001_SECRET_ACCESS_KEY"
-    )
+    remote_url = "https://github.com/org/repo.git"
   )
 
   expect_type(readme, "character")
@@ -153,11 +149,7 @@ test_that("render_readme includes project name as heading", {
     bucket = "b",
     prefix = NULL,
     region = "us-east-1",
-    remote_url = "https://github.com/org/repo.git",
-    cred_names = list(
-      access_key_env = "DATOM_STUDY_001_ACCESS_KEY_ID",
-      secret_key_env = "DATOM_STUDY_001_SECRET_ACCESS_KEY"
-    )
+    remote_url = "https://github.com/org/repo.git"
   )
 
   expect_match(readme, "# STUDY_001", fixed = TRUE)
@@ -169,11 +161,7 @@ test_that("render_readme includes bucket and region", {
     bucket = "clinical-data-bucket",
     prefix = NULL,
     region = "eu-west-1",
-    remote_url = "https://github.com/org/repo.git",
-    cred_names = list(
-      access_key_env = "A",
-      secret_key_env = "S"
-    )
+    remote_url = "https://github.com/org/repo.git"
   )
 
   expect_match(readme, "clinical-data-bucket", fixed = TRUE)
@@ -186,8 +174,7 @@ test_that("render_readme shows prefix when provided", {
     bucket = "b",
     prefix = "study-001/",
     region = "us-east-1",
-    remote_url = "url",
-    cred_names = list(access_key_env = "A", secret_key_env = "S")
+    remote_url = "url"
   )
 
   expect_match(readme, "study-001/", fixed = TRUE)
@@ -200,29 +187,23 @@ test_that("render_readme shows *(none)* when prefix is NULL", {
     bucket = "b",
     prefix = NULL,
     region = "us-east-1",
-    remote_url = "url",
-    cred_names = list(access_key_env = "A", secret_key_env = "S")
+    remote_url = "url"
   )
 
   expect_match(readme, "*(none)*", fixed = TRUE)
-  expect_match(readme, "prefix       = NULL", fixed = TRUE)
 })
 
-test_that("render_readme includes credential env var names", {
+test_that("render_readme includes store-based connection examples", {
   readme <- .datom_render_readme(
     project_name = "STUDY_001",
     bucket = "b",
     prefix = NULL,
     region = "us-east-1",
-    remote_url = "url",
-    cred_names = list(
-      access_key_env = "DATOM_STUDY_001_ACCESS_KEY_ID",
-      secret_key_env = "DATOM_STUDY_001_SECRET_ACCESS_KEY"
-    )
+    remote_url = "url"
   )
 
-  expect_match(readme, "DATOM_STUDY_001_ACCESS_KEY_ID", fixed = TRUE)
-  expect_match(readme, "DATOM_STUDY_001_SECRET_ACCESS_KEY", fixed = TRUE)
+  expect_match(readme, "datom_get_conn", fixed = TRUE)
+  expect_match(readme, "datom_store_s3", fixed = TRUE)
 })
 
 test_that("render_readme includes remote URL in clone command", {
@@ -231,8 +212,7 @@ test_that("render_readme includes remote URL in clone command", {
     bucket = "b",
     prefix = NULL,
     region = "us-east-1",
-    remote_url = "https://github.com/org/study-data.git",
-    cred_names = list(access_key_env = "A", secret_key_env = "S")
+    remote_url = "https://github.com/org/study-data.git"
   )
 
   expect_match(readme, "git clone https://github.com/org/study-data.git",
@@ -245,8 +225,7 @@ test_that("render_readme includes datom version and date", {
     bucket = "b",
     prefix = NULL,
     region = "us-east-1",
-    remote_url = "url",
-    cred_names = list(access_key_env = "A", secret_key_env = "S")
+    remote_url = "url"
   )
 
   expect_match(readme, format(Sys.Date(), "%Y-%m-%d"), fixed = TRUE)

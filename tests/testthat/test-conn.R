@@ -289,16 +289,14 @@ test_that("print.datom_conn does not expose s3_client details", {
 # datom_get_conn() — dispatch
 # =============================================================================
 
-test_that("aborts when no arguments provided", {
-  expect_error(datom_get_conn(), "path.*store")
+test_that("aborts when store is NULL", {
+  expect_error(datom_get_conn(), "store.*required")
 })
 
-test_that("aborts when both path and store provided", {
-  comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
-  store <- datom_store(governance = comp, data = comp, validate = FALSE)
+test_that("aborts when store is not a datom_store", {
   expect_error(
-    datom_get_conn(path = "some/path", store = store, project_name = "p"),
-    "not both"
+    datom_get_conn(store = list(a = 1), project_name = "p"),
+    "datom_store"
   )
 })
 
@@ -347,15 +345,15 @@ create_test_datom_repo <- function(project_name = "testproj",
 test_that("developer path reads project.yaml and creates connection", {
   dir <- create_test_datom_repo(project_name = "myproj", bucket = "my-bucket")
 
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "fake_secret",
-    GITHUB_PAT = "ghp_fake"
-  )
+  comp <- datom_store_s3(bucket = "my-bucket", access_key = "fake_key",
+                         secret_key = "fake_secret", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
+                       remote_url = "https://github.com/test/repo.git",
+                       validate = FALSE)
 
-  mockery::stub(datom_get_conn, ".datom_s3_client", mock_s3_client)
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
 
-  conn <- datom_get_conn(path = dir)
+  conn <- datom_get_conn(path = dir, store = store)
 
   expect_s3_class(conn, "datom_conn")
   expect_equal(conn$project_name, "myproj")
@@ -364,58 +362,59 @@ test_that("developer path reads project.yaml and creates connection", {
   expect_equal(conn$path, as.character(fs::path_abs(dir)))
 })
 
-test_that("developer path falls back to reader role without GITHUB_PAT", {
+test_that("developer path uses reader role when store is reader", {
   dir <- create_test_datom_repo(project_name = "myproj", bucket = "my-bucket")
 
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "fake_secret",
-    GITHUB_PAT = NA
-  )
+  comp <- datom_store_s3(bucket = "my-bucket", access_key = "fake_key",
+                         secret_key = "fake_secret", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, validate = FALSE)
 
-  mockery::stub(datom_get_conn, ".datom_s3_client", mock_s3_client)
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
 
-  conn <- datom_get_conn(path = dir)
+  conn <- datom_get_conn(path = dir, store = store)
 
   expect_s3_class(conn, "datom_conn")
   expect_equal(conn$role, "reader")
   expect_null(conn$path)
 })
 
-test_that("developer path reads prefix from project.yaml", {
+test_that("developer path uses prefix from store", {
   dir <- create_test_datom_repo(prefix = "alpha/beta/")
 
-  withr::local_envvar(
-    DATOM_TESTPROJ_ACCESS_KEY_ID = "k",
-    DATOM_TESTPROJ_SECRET_ACCESS_KEY = "s",
-    GITHUB_PAT = "ghp_x"
-  )
+  comp <- datom_store_s3(bucket = "test-bucket", prefix = "alpha/beta/",
+                         access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                       remote_url = "https://github.com/test/repo.git",
+                       validate = FALSE)
 
-  mockery::stub(datom_get_conn, ".datom_s3_client", mock_s3_client)
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
 
-  conn <- datom_get_conn(path = dir)
+  conn <- datom_get_conn(path = dir, store = store)
   expect_equal(conn$prefix, "alpha/beta/")
 })
 
-test_that("developer path reads region from project.yaml", {
+test_that("developer path uses region from store", {
   dir <- create_test_datom_repo(region = "eu-west-1")
 
-  withr::local_envvar(
-    DATOM_TESTPROJ_ACCESS_KEY_ID = "k",
-    DATOM_TESTPROJ_SECRET_ACCESS_KEY = "s",
-    GITHUB_PAT = "ghp_x"
-  )
+  comp <- datom_store_s3(bucket = "test-bucket", prefix = "test-prefix/",
+                         region = "eu-west-1", access_key = "k",
+                         secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                       remote_url = "https://github.com/test/repo.git",
+                       validate = FALSE)
 
-  mockery::stub(datom_get_conn, ".datom_s3_client", mock_s3_client)
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
 
-  conn <- datom_get_conn(path = dir)
+  conn <- datom_get_conn(path = dir, store = store)
   expect_equal(conn$region, "eu-west-1")
 })
 
 test_that("developer path aborts when project.yaml is missing", {
   dir <- withr::local_tempdir()
+  comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, validate = FALSE)
 
-  expect_error(datom_get_conn(path = dir), "No datom config")
+  expect_error(datom_get_conn(path = dir, store = store), "No datom config")
 })
 
 test_that("developer path aborts when project_name missing from yaml", {
@@ -426,44 +425,21 @@ test_that("developer path aborts when project_name missing from yaml", {
     list(storage = list(bucket = "b")),
     fs::path(datom_dir, "project.yaml")
   )
+  comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, validate = FALSE)
 
-  expect_error(datom_get_conn(path = dir), "project_name")
+  expect_error(datom_get_conn(path = dir, store = store), "project_name")
 })
 
-test_that("developer path aborts when storage section missing from yaml", {
-  dir <- withr::local_tempdir()
-  datom_dir <- fs::path(dir, ".datom")
-  fs::dir_create(datom_dir)
-  yaml::write_yaml(
-    list(project_name = "p"),
-    fs::path(datom_dir, "project.yaml")
-  )
+test_that("developer path cross-checks bucket mismatch", {
+  dir <- create_test_datom_repo(project_name = "myproj", bucket = "yaml-bucket")
+  comp <- datom_store_s3(bucket = "different-bucket", access_key = "k",
+                         secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                       remote_url = "https://github.com/test/repo.git",
+                       validate = FALSE)
 
-  expect_error(datom_get_conn(path = dir), "storage")
-})
-
-test_that("developer path aborts when bucket missing from yaml", {
-  dir <- withr::local_tempdir()
-  datom_dir <- fs::path(dir, ".datom")
-  fs::dir_create(datom_dir)
-  yaml::write_yaml(
-    list(project_name = "p", storage = list(region = "us-east-1")),
-    fs::path(datom_dir, "project.yaml")
-  )
-
-  expect_error(datom_get_conn(path = dir), "storage.data.bucket")
-})
-
-test_that("developer path aborts when credentials missing", {
-  dir <- create_test_datom_repo(project_name = "myproj")
-
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = NA,
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = NA,
-    GITHUB_PAT = NA
-  )
-
-  expect_error(datom_get_conn(path = dir), "ACCESS_KEY_ID")
+  expect_error(datom_get_conn(path = dir, store = store), "mismatch")
 })
 
 
@@ -477,11 +453,6 @@ test_that("reader path creates connection from store", {
                          validate = FALSE)
   store <- datom_store(governance = comp, data = comp, validate = FALSE)
 
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "fake_secret"
-  )
-
   local_mocked_bindings(
     .datom_s3_client = function(...) mock_s3_client()
   )
@@ -494,13 +465,6 @@ test_that("reader path creates connection from store", {
   expect_equal(conn$project_name, "myproj")
   expect_equal(conn$role, "reader")
   expect_null(conn$path)
-})
-
-test_that("reader path aborts when store is not datom_store", {
-  expect_error(
-    datom_get_conn(store = list(a = 1), project_name = "p"),
-    "datom_store"
-  )
 })
 
 test_that("reader path aborts when project_name is missing", {
@@ -517,11 +481,6 @@ test_that("reader path uses region from store", {
   comp <- datom_store_s3(bucket = "b", region = "ap-southeast-1",
                          access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, validate = FALSE)
-
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "k",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "s"
-  )
 
   local_mocked_bindings(
     .datom_s3_client = function(...) mock_s3_client()
@@ -552,14 +511,6 @@ setup_init_env <- function(env = parent.frame()) {
     github_pat = "ghp_fake",
     remote_url = bare_dir,
     validate = FALSE
-  )
-
-  # Bridge still needs env vars for existing S3 code
-  withr::local_envvar(
-    .local_envir = env,
-    DATOM_TESTPROJ_ACCESS_KEY_ID = "AKIAEXAMPLE",
-    DATOM_TESTPROJ_SECRET_ACCESS_KEY = "secretkey",
-    GITHUB_PAT = "ghp_fake"
   )
 
   local_mocked_bindings(
@@ -813,7 +764,7 @@ test_that("datom_init_repo handles prefix = NULL in store", {
   expect_true(is.null(cfg$storage$data$prefix))
 })
 
-test_that("datom_init_repo normalizes project_name for cred env vars", {
+test_that("datom_init_repo stores project_name in config for hyphenated names", {
   bare_dir <- withr::local_tempdir()
   git2r::init(bare_dir, bare = TRUE)
   work_dir <- withr::local_tempdir()
@@ -821,12 +772,6 @@ test_that("datom_init_repo normalizes project_name for cred env vars", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
                        remote_url = bare_dir, validate = FALSE)
-
-  withr::local_envvar(
-    DATOM_MY_DATA_ACCESS_KEY_ID = "k",
-    DATOM_MY_DATA_SECRET_ACCESS_KEY = "s",
-    GITHUB_PAT = "ghp_x"
-  )
 
   local_mocked_bindings(
     .datom_s3_client = function(...) list(put_object = function(...) list()),
@@ -914,7 +859,7 @@ test_that("datom_init_repo README.md contains project name", {
   expect_match(readme_text, "# testproj", fixed = TRUE)
   expect_match(readme_text, "my-bucket", fixed = TRUE)
   expect_match(readme_text, "study/", fixed = TRUE)
-  expect_match(readme_text, "DATOM_TESTPROJ_ACCESS_KEY_ID", fixed = TRUE)
+  expect_match(readme_text, "datom_get_conn", fixed = TRUE)
 })
 
 test_that("datom_init_repo commits README.md to git", {
@@ -1299,43 +1244,38 @@ test_that("print.datom_conn omits endpoint when NULL", {
 test_that(".datom_s3_client passes endpoint to paws config", {
   skip_if_not_installed("paws.storage")
 
-  withr::local_envvar(
-    DATOM_PROJ_ACCESS_KEY_ID = "test-key",
-    DATOM_PROJ_SECRET_ACCESS_KEY = "test-secret"
-  )
-
-  creds <- list(
-    access_key_env = "DATOM_PROJ_ACCESS_KEY_ID",
-    secret_key_env = "DATOM_PROJ_SECRET_ACCESS_KEY"
-  )
+  mock_s3 <- mockery::mock("client1", "client2")
+  mockery::stub(.datom_s3_client, "paws.storage::s3", mock_s3)
 
   # With endpoint
-  client <- .datom_s3_client(
-    creds,
+  .datom_s3_client("test-key", "test-secret",
     region = "us-east-1",
     endpoint = "https://custom.s3.endpoint.com"
   )
-  expect_true(is.list(client))
 
-  # Without endpoint (default NULL) — should still create valid client
+  call_args <- mockery::mock_args(mock_s3)[[1]]
+  expect_equal(call_args$config$endpoint, "https://custom.s3.endpoint.com")
 
-  client_default <- .datom_s3_client(creds, region = "us-east-1")
-  expect_true(is.list(client_default))
+  # Without endpoint
+  .datom_s3_client("test-key", "test-secret", region = "us-east-1")
+  call_args2 <- mockery::mock_args(mock_s3)[[2]]
+  expect_null(call_args2$config$endpoint)
 })
 
 test_that("datom_get_conn forwards endpoint to developer path", {
   dir <- create_test_datom_repo(project_name = "myproj")
 
-  withr::local_envvar(
-    DATOM_MYPROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_MYPROJ_SECRET_ACCESS_KEY = "fake_secret",
-    GITHUB_PAT = "ghp_fake"
-  )
+  comp <- datom_store_s3(bucket = "test-bucket", prefix = "test-prefix/",
+                         access_key = "fake_key", secret_key = "fake_secret",
+                         validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
+                       remote_url = "https://github.com/test/repo.git",
+                       validate = FALSE)
 
   captured_endpoint <- NULL
   local_mocked_bindings(
-    .datom_s3_client = function(credentials, region = "us-east-1",
-                                endpoint = NULL) {
+    .datom_s3_client = function(access_key, secret_key, region = "us-east-1",
+                                endpoint = NULL, session_token = NULL) {
       captured_endpoint <<- endpoint
       mock_s3_client()
     }
@@ -1343,6 +1283,7 @@ test_that("datom_get_conn forwards endpoint to developer path", {
 
   conn <- datom_get_conn(
     path = dir,
+    store = store,
     endpoint = "https://my-endpoint.com"
   )
 
@@ -1355,15 +1296,10 @@ test_that("datom_get_conn forwards endpoint to reader path", {
                          secret_key = "fake_secret", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, validate = FALSE)
 
-  withr::local_envvar(
-    DATOM_PROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_PROJ_SECRET_ACCESS_KEY = "fake_secret"
-  )
-
   captured_endpoint <- NULL
   local_mocked_bindings(
-    .datom_s3_client = function(credentials, region = "us-east-1",
-                                endpoint = NULL) {
+    .datom_s3_client = function(access_key, secret_key, region = "us-east-1",
+                                endpoint = NULL, session_token = NULL) {
       captured_endpoint <<- endpoint
       mock_s3_client()
     }
@@ -1384,15 +1320,10 @@ test_that("datom_get_conn endpoint defaults to NULL when not specified", {
                          secret_key = "fake_secret", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, validate = FALSE)
 
-  withr::local_envvar(
-    DATOM_PROJ_ACCESS_KEY_ID = "fake_key",
-    DATOM_PROJ_SECRET_ACCESS_KEY = "fake_secret"
-  )
-
   captured_endpoint <- "sentinel"
   local_mocked_bindings(
-    .datom_s3_client = function(credentials, region = "us-east-1",
-                                endpoint = NULL) {
+    .datom_s3_client = function(access_key, secret_key, region = "us-east-1",
+                                endpoint = NULL, session_token = NULL) {
       captured_endpoint <<- endpoint
       mock_s3_client()
     }
@@ -1478,12 +1409,6 @@ test_that("datom_clone aborts if cloned repo is not a datom repo", {
 
 test_that("datom_clone clones and returns a datom_conn", {
   withr::with_tempdir({
-    withr::local_envvar(
-      GITHUB_PAT = "fake-pat",
-      DATOM_MYPROJ_ACCESS_KEY_ID = "fakekey",
-      DATOM_MYPROJ_SECRET_ACCESS_KEY = "fakesecret"
-    )
-
     bare_dir <- withr::local_tempdir()
     git2r::init(bare_dir, bare = TRUE)
 

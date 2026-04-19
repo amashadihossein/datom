@@ -19,6 +19,5 @@ A \code{datom_conn} object.
 \description{
 Constructs a connection from a store object and project_name.
 Uses the data component of the store for S3 configuration.
-Always reader role (no local repo = can't be developer).
 }
 \keyword{internal}

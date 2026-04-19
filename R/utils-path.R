@@ -134,7 +134,6 @@
 #' @param prefix S3 prefix (can be NULL).
 #' @param region AWS region string.
 #' @param remote_url Git remote URL.
-#' @param cred_names Named list with `access_key_env` and `secret_key_env`.
 #'
 #' @return Character string — the rendered README content.
 #' @keywords internal
@@ -142,8 +141,7 @@
                                 bucket,
                                 prefix,
                                 region,
-                                remote_url,
-                                cred_names) {
+                                remote_url) {
   template_path <- system.file(
     "templates", "README.md",
     package = "datom",
@@ -163,8 +161,6 @@
     prefix_code    = prefix_code,
     region         = region,
     remote_url     = remote_url,
-    access_key_env = cred_names[["access_key_env"]],
-    secret_key_env = cred_names[["secret_key_env"]],
     created_at     = format(Sys.Date(), "%Y-%m-%d"),
     datom_version   = as.character(utils::packageVersion("datom")),
     .open  = "{{{",

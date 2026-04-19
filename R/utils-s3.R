@@ -5,46 +5,40 @@
 # `prefix/datom/`. The full key is built internally via `.datom_build_s3_key()`.
 
 
-#' Create an S3 Client from Credential Environment Variables
+#' Create an S3 Client from Credentials
 #'
-#' Reads AWS credentials from the named environment variables and
-#' constructs a `paws.storage::s3()` client. Never stores raw credentials.
+#' Constructs a `paws.storage::s3()` client from credential values.
+#' Never stores raw credentials beyond the paws client object.
 #'
-#' @param credentials Named list with `access_key_env` and `secret_key_env`
-#'   pointing to environment variable names.
+#' @param access_key AWS access key ID string.
+#' @param secret_key AWS secret access key string.
 #' @param region AWS region string (e.g. `"us-east-1"`).
 #' @param endpoint Optional S3 endpoint URL. NULL for default AWS endpoint.
+#' @param session_token Optional AWS session token for temporary credentials.
 #' @return A `paws.storage` S3 client.
 #' @keywords internal
-.datom_s3_client <- function(credentials, region = "us-east-1", endpoint = NULL) {
-  if (!is.list(credentials) ||
-      !all(c("access_key_env", "secret_key_env") %in% names(credentials))) {
-    cli::cli_abort(
-      "{.arg credentials} must be a list with {.val access_key_env} and {.val secret_key_env}."
-    )
+.datom_s3_client <- function(access_key, secret_key, region = "us-east-1",
+                             endpoint = NULL, session_token = NULL) {
+  if (!is.character(access_key) || length(access_key) != 1L ||
+      is.na(access_key) || !nzchar(access_key)) {
+    cli::cli_abort("{.arg access_key} must be a single non-empty string.")
   }
 
-  access_key <- Sys.getenv(credentials$access_key_env, unset = "")
-  if (!nzchar(access_key)) {
-    cli::cli_abort(
-      "Environment variable {.envvar {credentials$access_key_env}} is not set or is empty."
-    )
+  if (!is.character(secret_key) || length(secret_key) != 1L ||
+      is.na(secret_key) || !nzchar(secret_key)) {
+    cli::cli_abort("{.arg secret_key} must be a single non-empty string.")
   }
 
-  secret_key <- Sys.getenv(credentials$secret_key_env, unset = "")
-  if (!nzchar(secret_key)) {
-    cli::cli_abort(
-      "Environment variable {.envvar {credentials$secret_key_env}} is not set or is empty."
-    )
+  creds <- list(
+    access_key_id = access_key,
+    secret_access_key = secret_key
+  )
+  if (!is.null(session_token)) {
+    creds$session_token <- session_token
   }
 
   config <- list(
-    credentials = list(
-      creds = list(
-        access_key_id = access_key,
-        secret_access_key = secret_key
-      )
-    ),
+    credentials = list(creds = creds),
     region = region
   )
 
@@ -325,7 +319,9 @@
         )
       )
     }
-    new_client <- .datom_s3_client(creds)
+    ak <- Sys.getenv(creds$access_key_env, unset = "")
+    sk <- Sys.getenv(creds$secret_key_env, unset = "")
+    new_client <- .datom_s3_client(ak, sk)
   }
 
   # Build a new conn for the redirect target

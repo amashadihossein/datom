@@ -303,7 +303,7 @@ The layout diagrams in this doc and in `datom_specification.md` are normative â€
 
 | Chunk | Status | Notes |
 |-------|--------|-------|
-| 1 | not started | |
+| 1 | complete | Pure rename, 1083 tests pass |
 | 2 | not started | |
 | 3 | not started | |
 | 4 | not started | |

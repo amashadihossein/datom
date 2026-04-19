@@ -203,12 +203,6 @@ datom_init_repo <- function(path = ".",
     ))
   }
 
-  # --- Install env var bridge (temporary) -------------------------------------
-  .datom_install_store(store, project_name)
-
-  # --- Credential validation (developer role required) ------------------------
-  cred_names <- .datom_check_credentials(project_name, role = "developer")
-
   # --- S3 namespace safety check ----------------------------------------------
   # Use data component for S3 operations (where manifest lives)
   bucket <- store$data$bucket
@@ -217,7 +211,10 @@ datom_init_repo <- function(path = ".",
 
   if (!isTRUE(.force)) {
     tryCatch({
-      s3_check_client <- .datom_s3_client(cred_names, region = region)
+      s3_check_client <- .datom_s3_client(
+        store$data$access_key, store$data$secret_key,
+        region = region
+      )
       check_conn <- new_datom_conn(
         project_name, bucket, prefix, region,
         s3_check_client, NULL, "reader"
@@ -353,8 +350,7 @@ datom_init_repo <- function(path = ".",
     bucket       = store$data$bucket,
     prefix       = store$data$prefix,
     region       = store$data$region,
-    remote_url   = remote_url,
-    cred_names   = cred_names
+    remote_url   = remote_url
   )
 
   writeLines(readme_content, fs::path(path, "README.md"))
@@ -392,7 +388,10 @@ datom_init_repo <- function(path = ".",
 
   # Push repo-level files to S3
   tryCatch({
-    s3_client <- .datom_s3_client(cred_names, region = region)
+    s3_client <- .datom_s3_client(
+      store$data$access_key, store$data$secret_key,
+      region = region
+    )
     init_conn <- new_datom_conn(
       project_name, bucket, prefix, region,
       s3_client, path, "developer"
@@ -497,11 +496,7 @@ datom_clone <- function(path, store, ...) {
     ))
   }
 
-  # Install store env vars so datom_get_conn can find credentials
-  cfg <- yaml::read_yaml(yaml_path)
-  .datom_install_store(store, cfg$project_name)
-
-  conn <- datom_get_conn(path = path)
+  conn <- datom_get_conn(path = path, store = store)
 
   cli::cli_alert_success(
     "Cloned {.val {conn$project_name}} to {.path {path}}"
@@ -513,15 +508,21 @@ datom_clone <- function(path, store, ...) {
 
 #' Get a datom Connection
 #'
-#' Flexible connection for both developers and readers. Developers provide a
-#' path to read from `.datom/project.yaml`. Readers provide a store and
-#' project_name directly.
+#' Flexible connection for both developers and readers.
+#'
+#' **Developer** (local repo + store): provide `path` and `store`. Reads
+#' project identity from `.datom/project.yaml`; uses store for credentials and
+#' S3 config. Cross-checks bucket/prefix between yaml and store.
+#'
+#' **Reader** (no local repo): provide `store` and `project_name`. Store
+#' provides everything.
 #'
 #' @param path Path to datom repository. If provided, reads config from
 #'   `.datom/project.yaml`.
-#' @param store A `datom_store` object. Required for readers without local repo.
+#' @param store A `datom_store` object. Required for all connections.
 #'   The data component provides bucket, prefix, region, and credentials.
-#' @param project_name Project name for credential lookup. Required for readers.
+#' @param project_name Project name. Required for readers (no local repo).
+#'   Ignored when `path` is provided (read from yaml).
 #' @param endpoint Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.
 #'
 #' @return A `datom_conn` object.
@@ -531,25 +532,19 @@ datom_get_conn <- function(path = NULL,
                           project_name = NULL,
                           endpoint = NULL) {
 
-  has_path <- !is.null(path)
-  has_store <- !is.null(store)
-
-  if (!has_path && !has_store) {
+  if (is.null(store)) {
     cli::cli_abort(c(
-      "Must provide either {.arg path} or {.arg store} + {.arg project_name}.",
-      "i" = "Developers: {.code datom_get_conn(path = \"my_project\")}",
-      "i" = "Readers: {.code datom_get_conn(store = my_store, project_name = \"...\")}"
+      "{.arg store} is required.",
+      "i" = "Create one with {.code datom_store(governance = datom_store_s3(...), data = datom_store_s3(...))}."
     ))
   }
 
-  if (has_path && has_store) {
-    cli::cli_abort(
-      "Provide either {.arg path} or {.arg store}/{.arg project_name}, not both."
-    )
+  if (!is_datom_store(store)) {
+    cli::cli_abort("{.arg store} must be a {.cls datom_store} object.")
   }
 
-  if (has_path) {
-    .datom_get_conn_developer(path, endpoint = endpoint)
+  if (!is.null(path)) {
+    .datom_get_conn_developer(path, store, endpoint = endpoint)
   } else {
     .datom_get_conn_reader(store, project_name, endpoint = endpoint)
   }
@@ -558,16 +553,17 @@ datom_get_conn <- function(path = NULL,
 
 # --- Internal connection builders ---------------------------------------------
 
-#' Build Connection from Local Repo (Developer Path)
+#' Build Connection from Local Repo + Store (Developer Path)
 #'
-#' Reads `.datom/project.yaml` and constructs a connection.
-#' Role is auto-detected: developer if GITHUB_PAT is set, reader otherwise.
+#' Reads `.datom/project.yaml` for project identity and cross-checks against
+#' the store's S3 config. Uses the store for credentials.
 #'
 #' @param path Path to datom repository.
+#' @param store A `datom_store` object.
 #' @param endpoint Optional S3 endpoint URL.
 #' @return A `datom_conn` object.
 #' @keywords internal
-.datom_get_conn_developer <- function(path, endpoint = NULL) {
+.datom_get_conn_developer <- function(path, store, endpoint = NULL) {
   path <- fs::path_abs(path)
 
   yaml_path <- fs::path(path, ".datom", "project.yaml")
@@ -585,30 +581,33 @@ datom_get_conn <- function(path = NULL,
     cli::cli_abort("Invalid {.file project.yaml}: missing {.field project_name}.")
   }
 
+  # Use store for credentials and S3 config
+  bucket <- store$data$bucket
+  prefix <- store$data$prefix
+  region <- store$data$region
+
+  # Cross-check: yaml bucket must match store bucket (if yaml has storage config)
   storage <- cfg$storage
-  if (is.null(storage)) {
-    cli::cli_abort("Invalid {.file project.yaml}: missing {.field storage} section.")
+  if (!is.null(storage)) {
+    data_storage <- storage$data %||% storage
+    yaml_bucket <- data_storage$bucket
+    if (!is.null(yaml_bucket) && !identical(yaml_bucket, bucket)) {
+      cli::cli_abort(c(
+        "Store/config mismatch: store data bucket is {.val {bucket}} but {.file project.yaml} says {.val {yaml_bucket}}.",
+        "i" = "Ensure the store matches the project configuration."
+      ))
+    }
   }
 
-  # Support two-component structure (storage.data.*) and legacy flat (storage.*)
-  data_storage <- storage$data %||% storage
+  # Role from store
+  role <- store$role
 
-  bucket <- data_storage$bucket
-  if (is.null(bucket) || !nzchar(bucket)) {
-    cli::cli_abort("Invalid {.file project.yaml}: missing {.field storage.data.bucket}.")
-  }
-
-  prefix <- data_storage$prefix  # can be NULL
-  region <- data_storage$region %||% Sys.getenv("AWS_DEFAULT_REGION", unset = "us-east-1")
-
-  # Auto-detect role
-  role <- if (nzchar(Sys.getenv("GITHUB_PAT", unset = ""))) "developer" else "reader"
-
-  # Validate credentials for the detected role
-  cred_names <- .datom_check_credentials(project_name, role = role)
-
-  # Create S3 client
-  s3_client <- .datom_s3_client(cred_names, region = region, endpoint = endpoint)
+  # Create S3 client from store credentials
+  s3_client <- .datom_s3_client(
+    store$data$access_key, store$data$secret_key,
+    region = region, endpoint = endpoint,
+    session_token = store$data$session_token
+  )
 
   new_datom_conn(
     project_name = project_name,
@@ -627,7 +626,6 @@ datom_get_conn <- function(path = NULL,
 #'
 #' Constructs a connection from a store object and project_name.
 #' Uses the data component of the store for S3 configuration.
-#' Always reader role (no local repo = can't be developer).
 #'
 #' @param store A `datom_store` object.
 #' @param project_name Project name string.
@@ -635,27 +633,20 @@ datom_get_conn <- function(path = NULL,
 #' @return A `datom_conn` object.
 #' @keywords internal
 .datom_get_conn_reader <- function(store, project_name, endpoint = NULL) {
-  if (!is_datom_store(store)) {
-    cli::cli_abort("{.arg store} must be a {.cls datom_store} object.")
-  }
-
   if (is.null(project_name) || !nzchar(project_name)) {
-    cli::cli_abort("{.arg project_name} is required for reader connections.")
+    cli::cli_abort("{.arg project_name} is required for reader connections (no local repo).")
   }
-
-  # Install env var bridge so .datom_check_credentials finds them
-  .datom_install_store(store, project_name)
 
   bucket <- store$data$bucket
   prefix <- store$data$prefix
   region <- store$data$region
-
-  # Role from store (developer if github_pat provided, reader otherwise)
   role <- store$role
 
-  cred_names <- .datom_check_credentials(project_name, role = role)
-
-  s3_client <- .datom_s3_client(cred_names, region = region, endpoint = endpoint)
+  s3_client <- .datom_s3_client(
+    store$data$access_key, store$data$secret_key,
+    region = region, endpoint = endpoint,
+    session_token = store$data$session_token
+  )
 
   new_datom_conn(
     project_name = project_name,
@@ -664,7 +655,7 @@ datom_get_conn <- function(path = NULL,
     region = region,
     s3_client = s3_client,
     path = NULL,
-    role = "reader",
+    role = role,
     endpoint = endpoint
   )
 }

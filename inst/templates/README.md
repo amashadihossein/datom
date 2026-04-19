@@ -18,44 +18,37 @@
 git clone {{{remote_url}}}
 ```
 
-### 2. Set environment variables
+### 2. Create a store and connect
 
-**All users** (developers and readers) need S3 credentials:
-
-```r
-Sys.setenv(
-  {{{access_key_env}}} = "<your-access-key>",
-  {{{secret_key_env}}} = "<your-secret-key>"
-)
-```
-
-**Developers** also need a GitHub PAT for git operations:
-
-```r
-Sys.setenv(GITHUB_PAT = "<your-github-pat>")
-```
-
-### 3. Connect
-
-**Developer** (has git clone):
+**Developer** (has git clone + S3 + GitHub access):
 
 ```r
 library(datom)
-conn <- datom_get_conn(path = ".")
+
+store <- datom_store(
+  governance = datom_store_s3("{{{bucket}}}", {{{prefix_code}}}, "{{{region}}}", access_key = "...", secret_key = "..."),
+  data       = datom_store_s3("{{{bucket}}}", {{{prefix_code}}}, "{{{region}}}", access_key = "...", secret_key = "..."),
+  github_pat = Sys.getenv("GITHUB_PAT"),
+  remote_url = "{{{remote_url}}}"
+)
+
+conn <- datom_get_conn(path = ".", store = store)
 ```
 
 **Reader** (S3 only, no git clone needed):
 
 ```r
 library(datom)
-conn <- datom_get_conn(
-  bucket       = "{{{bucket}}}",
-  prefix       = {{{prefix_code}}},
-  project_name = "{{{project_name}}}"
+
+store <- datom_store(
+  governance = datom_store_s3("{{{bucket}}}", {{{prefix_code}}}, "{{{region}}}", access_key = "...", secret_key = "..."),
+  data       = datom_store_s3("{{{bucket}}}", {{{prefix_code}}}, "{{{region}}}", access_key = "...", secret_key = "...")
 )
+
+conn <- datom_get_conn(store = store, project_name = "{{{project_name}}}")
 ```
 
-### 4. Explore
+### 3. Explore
 
 ```r
 # List all tables
@@ -76,8 +69,7 @@ datom_read(conn, "table_name", version = "a8ee7a31")
 - **Do not commit data files** to this repository. The `.gitignore` is configured
   to exclude common data formats. Actual data lives in S3 as parquet files;
   git tracks only metadata.
-- Credential environment variable names are derived from the project name.
-  See the datom documentation for details.
+- See the datom documentation for details on store configuration.
 
 ---
 

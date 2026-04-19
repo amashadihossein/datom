@@ -3,27 +3,15 @@
 
 # --- .datom_s3_client() --------------------------------------------------------
 
-test_that("creates client when env vars are set", {
-  withr::local_envvar(
-    DATOM_TEST_ACCESS_KEY_ID = "fake-access-key",
-    DATOM_TEST_SECRET_ACCESS_KEY = "fake-secret-key"
-  )
-
-  # Mock paws.storage::s3 to avoid real AWS calls
+test_that("creates client with access_key and secret_key", {
   mock_s3 <- mockery::mock("mock-s3-client")
   mockery::stub(.datom_s3_client, "paws.storage::s3", mock_s3)
 
-  creds <- list(
-    access_key_env = "DATOM_TEST_ACCESS_KEY_ID",
-    secret_key_env = "DATOM_TEST_SECRET_ACCESS_KEY"
-  )
-
-  result <- .datom_s3_client(creds, region = "us-west-2")
+  result <- .datom_s3_client("fake-access-key", "fake-secret-key", region = "us-west-2")
 
   expect_equal(result, "mock-s3-client")
   mockery::expect_called(mock_s3, 1)
 
-  # Verify correct config passed to paws
   call_args <- mockery::mock_args(mock_s3)[[1]]
   config <- call_args$config
   expect_equal(config$credentials$creds$access_key_id, "fake-access-key")
@@ -32,85 +20,47 @@ test_that("creates client when env vars are set", {
 })
 
 test_that("uses default region us-east-1", {
-  withr::local_envvar(
-    DATOM_TEST_ACCESS_KEY_ID = "key",
-    DATOM_TEST_SECRET_ACCESS_KEY = "secret"
-  )
-
   mock_s3 <- mockery::mock("client")
   mockery::stub(.datom_s3_client, "paws.storage::s3", mock_s3)
 
-  creds <- list(
-    access_key_env = "DATOM_TEST_ACCESS_KEY_ID",
-    secret_key_env = "DATOM_TEST_SECRET_ACCESS_KEY"
-  )
-
-  .datom_s3_client(creds)
+  .datom_s3_client("key", "secret")
 
   call_args <- mockery::mock_args(mock_s3)[[1]]
   expect_equal(call_args$config$region, "us-east-1")
 })
 
-test_that("errors when credentials list is malformed", {
-  expect_error(.datom_s3_client(list()), "access_key_env")
-  expect_error(.datom_s3_client(list(access_key_env = "X")), "secret_key_env")
-  expect_error(.datom_s3_client("not a list"), "access_key_env")
-  expect_error(.datom_s3_client(NULL), "access_key_env")
+test_that("errors when access_key is invalid", {
+  expect_error(.datom_s3_client("", "secret"), "access_key")
+  expect_error(.datom_s3_client(NULL, "secret"), "access_key")
+  expect_error(.datom_s3_client(NA_character_, "secret"), "access_key")
+  expect_error(.datom_s3_client(123, "secret"), "access_key")
 })
 
-test_that("errors when access key env var is not set", {
-  withr::local_envvar(
-    DATOM_MISSING_KEY = NA  # ensure unset
-  )
-
-  creds <- list(
-    access_key_env = "DATOM_MISSING_KEY",
-    secret_key_env = "DATOM_TEST_SECRET"
-  )
-
-  expect_error(.datom_s3_client(creds), "DATOM_MISSING_KEY")
+test_that("errors when secret_key is invalid", {
+  expect_error(.datom_s3_client("key", ""), "secret_key")
+  expect_error(.datom_s3_client("key", NULL), "secret_key")
+  expect_error(.datom_s3_client("key", NA_character_), "secret_key")
+  expect_error(.datom_s3_client("key", 123), "secret_key")
 })
 
-test_that("errors when secret key env var is not set", {
-  withr::local_envvar(
-    DATOM_TEST_ACCESS = "key",
-    DATOM_MISSING_SECRET = NA
-  )
+test_that("passes session_token to paws config", {
+  mock_s3 <- mockery::mock("client")
+  mockery::stub(.datom_s3_client, "paws.storage::s3", mock_s3)
 
-  creds <- list(
-    access_key_env = "DATOM_TEST_ACCESS",
-    secret_key_env = "DATOM_MISSING_SECRET"
-  )
+  .datom_s3_client("key", "secret", session_token = "tok123")
 
-  expect_error(.datom_s3_client(creds), "DATOM_MISSING_SECRET")
+  call_args <- mockery::mock_args(mock_s3)[[1]]
+  expect_equal(call_args$config$credentials$creds$session_token, "tok123")
 })
 
-test_that("errors when access key env var is empty string", {
-  withr::local_envvar(
-    DATOM_EMPTY_KEY = "",
-    DATOM_TEST_SECRET = "secret"
-  )
+test_that("passes endpoint to paws config", {
+  mock_s3 <- mockery::mock("client")
+  mockery::stub(.datom_s3_client, "paws.storage::s3", mock_s3)
 
-  creds <- list(
-    access_key_env = "DATOM_EMPTY_KEY",
-    secret_key_env = "DATOM_TEST_SECRET"
-  )
+  .datom_s3_client("key", "secret", endpoint = "https://custom.endpoint.com")
 
-  expect_error(.datom_s3_client(creds), "DATOM_EMPTY_KEY")
-})
-
-test_that("errors when secret key env var is empty string", {
-  withr::local_envvar(
-    DATOM_TEST_ACCESS = "key",
-    DATOM_EMPTY_SECRET = ""
-  )
-
-  creds <- list(
-    access_key_env = "DATOM_TEST_ACCESS",
-    secret_key_env = "DATOM_EMPTY_SECRET"
-  )
-
-  expect_error(.datom_s3_client(creds), "DATOM_EMPTY_SECRET")
+  call_args <- mockery::mock_args(mock_s3)[[1]]
+  expect_equal(call_args$config$endpoint, "https://custom.endpoint.com")
 })
 
 
@@ -560,7 +510,8 @@ test_that("follows single redirect to new bucket", {
     .datom_s3_read_json = function(conn, s3_key) {
       redirect_data
     },
-    .datom_s3_client = function(credentials, region = "us-east-1") {
+    .datom_s3_client = function(access_key, secret_key, region = "us-east-1",
+                               endpoint = NULL, session_token = NULL) {
       "new-s3-client"
     }
   )
@@ -597,7 +548,8 @@ test_that("follows chained redirects (2 hops)", {
       read_call <<- read_call + 1L
       if (read_call == 1L) redirect_1 else redirect_2
     },
-    .datom_s3_client = function(credentials, region = "us-east-1") {
+    .datom_s3_client = function(access_key, secret_key, region = "us-east-1",
+                               endpoint = NULL, session_token = NULL) {
       client_call <<- client_call + 1L
       paste0("client-", client_call + 1L)
     }
