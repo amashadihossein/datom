@@ -9,7 +9,7 @@
 \arguments{
 \item{bucket}{S3 bucket name.}
 
-\item{key}{S3 object key (from \code{.datom_build_s3_key()}).}
+\item{key}{S3 object key (from \code{.datom_build_storage_key()}).}
 }
 \value{
 Character string S3 URI.

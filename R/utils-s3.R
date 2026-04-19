@@ -2,7 +2,7 @@
 #
 # Low-level S3 wrappers around paws.storage.
 # Functions accept a `datom_conn` object and an `s3_key` relative to
-# `prefix/datom/`. The full key is built internally via `.datom_build_s3_key()`.
+# `prefix/datom/`. The full key is built internally via `.datom_build_storage_key()`.
 
 
 #' Create an S3 Client from Credentials
@@ -66,12 +66,12 @@
     )
   }
 
-  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
+  full_key <- .datom_build_storage_key(conn$prefix, s3_key)
   body <- readBin(local_path, what = "raw", n = fs::file_size(local_path))
 
   tryCatch(
     {
-      conn$s3_client$put_object(
+      conn$client$put_object(
         Bucket = conn$bucket,
         Key = full_key,
         Body = body
@@ -105,12 +105,12 @@
 #' @return Invisible `TRUE` on success.
 #' @keywords internal
 .datom_s3_download <- function(conn, s3_key, local_path) {
-  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
+  full_key <- .datom_build_storage_key(conn$prefix, s3_key)
   fs::dir_create(fs::path_dir(local_path))
 
   tryCatch(
     {
-      resp <- conn$s3_client$get_object(
+      resp <- conn$client$get_object(
         Bucket = conn$bucket,
         Key = full_key
       )
@@ -143,11 +143,11 @@
 #' @return `TRUE` or `FALSE`.
 #' @keywords internal
 .datom_s3_exists <- function(conn, s3_key) {
-  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
+  full_key <- .datom_build_storage_key(conn$prefix, s3_key)
 
   tryCatch(
     {
-      conn$s3_client$head_object(
+      conn$client$head_object(
         Bucket = conn$bucket,
         Key = full_key
       )
@@ -183,10 +183,10 @@
 #' @return Parsed R list.
 #' @keywords internal
 .datom_s3_read_json <- function(conn, s3_key) {
-  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
+  full_key <- .datom_build_storage_key(conn$prefix, s3_key)
 
   resp <- tryCatch(
-    conn$s3_client$get_object(
+    conn$client$get_object(
       Bucket = conn$bucket,
       Key = full_key
     ),
@@ -232,14 +232,14 @@
 #' @return Invisible `TRUE` on success.
 #' @keywords internal
 .datom_s3_write_json <- function(conn, s3_key, data) {
-  full_key <- .datom_build_s3_key(conn$prefix, s3_key)
+  full_key <- .datom_build_storage_key(conn$prefix, s3_key)
   json_raw <- charToRaw(
     jsonlite::toJSON(data, auto_unbox = TRUE, pretty = TRUE)
   )
 
   tryCatch(
     {
-      conn$s3_client$put_object(
+      conn$client$put_object(
         Bucket = conn$bucket,
         Key = full_key,
         Body = json_raw,
@@ -292,7 +292,7 @@
   redirect <- .datom_s3_read_json(conn, ".redirect.json")
 
   if (is.null(redirect$redirect_to) || !nzchar(redirect$redirect_to)) {
-    redirect_key <- .datom_build_s3_key(conn$prefix, ".redirect.json")
+    redirect_key <- .datom_build_storage_key(conn$prefix, ".redirect.json")
     cli::cli_abort(
       c(
         "Invalid redirect: {.field redirect_to} is missing or empty.",
@@ -308,14 +308,14 @@
   parsed <- .datom_parse_s3_uri(redirect_uri)
 
   # Build new client if redirect provides credentials
-  new_client <- conn$s3_client
+  new_client <- conn$client
   if (!is.null(redirect$credentials)) {
     creds <- redirect$credentials
     if (is.null(creds$access_key_env) || is.null(creds$secret_key_env)) {
       cli::cli_abort(
         c(
           "Invalid redirect credentials: missing {.field access_key_env} or {.field secret_key_env}.",
-          "x" = "Redirect from: {.val {conn$bucket}}/{.val {(.datom_build_s3_key(conn$prefix, '.redirect.json'))}}"
+          "x" = "Redirect from: {.val {conn$bucket}}/{.val {(.datom_build_storage_key(conn$prefix, '.redirect.json'))}}"
         )
       )
     }
@@ -330,7 +330,7 @@
     bucket = parsed$bucket,
     prefix = parsed$prefix,
     region = conn$region,
-    s3_client = new_client,
+    client = new_client,
     path = conn$path,
     role = conn$role
   )

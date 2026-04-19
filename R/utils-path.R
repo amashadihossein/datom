@@ -14,22 +14,22 @@
 #' @examples
 #' \dontrun{
 #' # Data file
-#' .datom_build_s3_key("proj", "customers", "abc123.parquet")
+#' .datom_build_storage_key("proj", "customers", "abc123.parquet")
 #' # → "proj/datom/customers/abc123.parquet"
 #'
 #' # Table metadata
-#' .datom_build_s3_key("proj", "customers", ".metadata", "metadata.json")
+#' .datom_build_storage_key("proj", "customers", ".metadata", "metadata.json")
 #' # → "proj/datom/customers/.metadata/metadata.json"
 #'
 #' # Repo-level metadata
-#' .datom_build_s3_key("proj", ".metadata", "dispatch.json")
+#' .datom_build_storage_key("proj", ".metadata", "dispatch.json")
 #' # → "proj/datom/.metadata/dispatch.json"
 #'
 #' # No prefix
-#' .datom_build_s3_key(NULL, "customers", "abc123.parquet")
+#' .datom_build_storage_key(NULL, "customers", "abc123.parquet")
 #' # → "datom/customers/abc123.parquet"
 #' }
-.datom_build_s3_key <- function(prefix = NULL, ...) {
+.datom_build_storage_key <- function(prefix = NULL, ...) {
   segments <- c(...)
 
   if (length(segments) == 0L) {
@@ -109,7 +109,7 @@
 #' Convenience function that combines bucket and key into an S3 URI.
 #'
 #' @param bucket S3 bucket name.
-#' @param key S3 object key (from `.datom_build_s3_key()`).
+#' @param key S3 object key (from `.datom_build_storage_key()`).
 #' @return Character string S3 URI.
 #' @keywords internal
 .datom_build_s3_uri <- function(bucket, key) {

@@ -486,7 +486,7 @@ test_that("returns current conn when no redirect exists", {
   expect_true(is_datom_conn(result))
   expect_equal(result$bucket, "bucket-a")
   expect_equal(result$prefix, "proj")
-  expect_equal(result$s3_client, "original-client")
+  expect_equal(result$client, "original-client")
 })
 
 test_that("follows single redirect to new bucket", {
@@ -521,7 +521,7 @@ test_that("follows single redirect to new bucket", {
   expect_true(is_datom_conn(result))
   expect_equal(result$bucket, "bucket-b")
   expect_equal(result$prefix, "proj-new")
-  expect_equal(result$s3_client, "new-s3-client")
+  expect_equal(result$client, "new-s3-client")
 })
 
 test_that("follows chained redirects (2 hops)", {
@@ -585,7 +585,7 @@ test_that("reuses client when redirect has no credentials", {
 
   expect_true(is_datom_conn(result))
   expect_equal(result$bucket, "bucket-b")
-  expect_equal(result$s3_client, "original-client")
+  expect_equal(result$client, "original-client")
 })
 
 test_that("errors when max depth exceeded", {

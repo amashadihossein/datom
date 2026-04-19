@@ -70,15 +70,15 @@
 #'   `datom_init_repo()` before the repo is fully initialised).
 #' @return Invisible `TRUE` if the namespace is free.
 #' @keywords internal
-.datom_check_s3_namespace_free <- function(conn) {
-  occupied <- .datom_s3_exists(conn, ".metadata/manifest.json")
+.datom_check_namespace_free <- function(conn) {
+  occupied <- .datom_storage_exists(conn, ".metadata/manifest.json")
 
   if (!occupied) return(invisible(TRUE))
 
   # Namespace is occupied — try to read the project name for a helpful message
 
   existing_project <- tryCatch({
-    manifest <- .datom_s3_read_json(conn, ".metadata/manifest.json")
+    manifest <- .datom_storage_read_json(conn, ".metadata/manifest.json")
     manifest$project_name %||% "<unknown>"
   }, error = function(e) {
     "<unreadable>"

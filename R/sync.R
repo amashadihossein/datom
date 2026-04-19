@@ -176,7 +176,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
     if (fs::file_exists(local_path)) {
       data <- jsonlite::read_json(local_path)
       s3_key <- paste0(".metadata/", fname)
-      .datom_s3_write_json(gov_conn, s3_key, data)
+      .datom_storage_write_json(gov_conn, s3_key, data)
       repo_files_synced <- c(repo_files_synced, s3_key)
     }
   }
@@ -186,7 +186,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
     if (fs::file_exists(local_path)) {
       data <- jsonlite::read_json(local_path)
       s3_key <- paste0(".metadata/", fname)
-      .datom_s3_write_json(conn, s3_key, data)
+      .datom_storage_write_json(conn, s3_key, data)
       repo_files_synced <- c(repo_files_synced, s3_key)
     }
   }
@@ -233,7 +233,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
   if (fs::file_exists(metadata_path)) {
     data <- jsonlite::read_json(metadata_path)
     s3_key <- paste0(name, "/.metadata/metadata.json")
-    .datom_s3_write_json(conn, s3_key, data)
+    .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
 
@@ -242,7 +242,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
   if (fs::file_exists(history_path)) {
     data <- jsonlite::read_json(history_path)
     s3_key <- paste0(name, "/.metadata/version_history.json")
-    .datom_s3_write_json(conn, s3_key, data)
+    .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
 
@@ -254,7 +254,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
       snap_name <- fs::path_file(snap)
       data <- jsonlite::read_json(snap)
       s3_key <- paste0(name, "/.metadata/", snap_name)
-      .datom_s3_write_json(conn, s3_key, data)
+      .datom_storage_write_json(conn, s3_key, data)
       s3_keys <- c(s3_keys, s3_key)
     }
   }

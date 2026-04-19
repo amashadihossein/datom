@@ -223,7 +223,7 @@ datom_validate <- function(conn, fix = FALSE) {
       return(NULL)
     }
 
-    s3_exists <- .datom_s3_exists(fc$target_conn, fc$s3_key)
+    s3_exists <- .datom_storage_exists(fc$target_conn, fc$s3_key)
 
     status <- if (s3_exists) "ok" else "missing_s3"
 
@@ -302,8 +302,8 @@ datom_validate <- function(conn, fix = FALSE) {
   history_local <- fs::file_exists(fs::path(repo_path, name, "version_history.json"))
 
   # S3 checks
-  metadata_s3 <- .datom_s3_exists(conn, paste0(name, "/.metadata/metadata.json"))
-  history_s3 <- .datom_s3_exists(conn, paste0(name, "/.metadata/version_history.json"))
+  metadata_s3 <- .datom_storage_exists(conn, paste0(name, "/.metadata/metadata.json"))
+  history_s3 <- .datom_storage_exists(conn, paste0(name, "/.metadata/version_history.json"))
 
   # Check that data parquet exists (read data_sha from local metadata)
   data_s3 <- FALSE
@@ -315,7 +315,7 @@ datom_validate <- function(conn, fix = FALSE) {
       )
       if (!is.null(meta$data_sha) && nzchar(meta$data_sha)) {
         data_key <- paste0(name, "/", meta$data_sha, ".parquet")
-        data_s3 <- .datom_s3_exists(conn, data_key)
+        data_s3 <- .datom_storage_exists(conn, data_key)
       }
     }, error = function(e) {
       # Leave data_s3 as FALSE

@@ -20,7 +20,7 @@ test_that("creates a reader connection with required fields", {
     bucket = "my-bucket",
     prefix = "project-alpha/",
     region = "us-east-1",
-    s3_client = mock_s3_client(),
+    client = mock_s3_client(),
     role = "reader"
   )
 
@@ -40,7 +40,7 @@ test_that("creates a developer connection with path", {
     project_name = "clinical_data",
     bucket = "my-bucket",
     region = "us-east-1",
-    s3_client = mock_s3_client(),
+    client = mock_s3_client(),
     path = dir,
     role = "developer"
   )
@@ -55,7 +55,7 @@ test_that("prefix defaults to NULL", {
     project_name = "proj",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client(),
+    client = mock_s3_client(),
     role = "reader"
   )
 
@@ -68,7 +68,7 @@ test_that("developer requires path", {
       project_name = "proj",
       bucket = "b",
       region = "us-east-1",
-      s3_client = mock_s3_client(),
+      client = mock_s3_client(),
       role = "developer"
     ),
     "path"
@@ -81,7 +81,7 @@ test_that("aborts on empty project_name", {
       project_name = "",
       bucket = "b",
       region = "us-east-1",
-      s3_client = mock_s3_client()
+      client = mock_s3_client()
     ),
     "project_name"
   )
@@ -93,7 +93,7 @@ test_that("aborts on NA project_name", {
       project_name = NA_character_,
       bucket = "b",
       region = "us-east-1",
-      s3_client = mock_s3_client()
+      client = mock_s3_client()
     ),
     "project_name"
   )
@@ -105,7 +105,7 @@ test_that("aborts on empty bucket", {
       project_name = "p",
       bucket = "",
       region = "us-east-1",
-      s3_client = mock_s3_client()
+      client = mock_s3_client()
     ),
     "bucket"
   )
@@ -117,7 +117,7 @@ test_that("aborts on empty region", {
       project_name = "p",
       bucket = "b",
       region = "",
-      s3_client = mock_s3_client()
+      client = mock_s3_client()
     ),
     "region"
   )
@@ -130,7 +130,7 @@ test_that("aborts on non-string prefix", {
       bucket = "b",
       prefix = 123,
       region = "us-east-1",
-      s3_client = mock_s3_client()
+      client = mock_s3_client()
     ),
     "prefix"
   )
@@ -142,7 +142,7 @@ test_that("aborts on non-string path", {
       project_name = "p",
       bucket = "b",
       region = "us-east-1",
-      s3_client = mock_s3_client(),
+      client = mock_s3_client(),
       path = 123,
       role = "developer"
     ),
@@ -155,7 +155,7 @@ test_that("role defaults to reader", {
     project_name = "p",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client()
+    client = mock_s3_client()
   )
 
   expect_equal(conn$role, "reader")
@@ -167,7 +167,7 @@ test_that("aborts on invalid role", {
       project_name = "p",
       bucket = "b",
       region = "us-east-1",
-      s3_client = mock_s3_client(),
+      client = mock_s3_client(),
       role = "admin"
     ),
     "reader.*developer"
@@ -184,7 +184,7 @@ test_that("is_datom_conn returns TRUE for datom_conn objects", {
     project_name = "p",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client()
+    client = mock_s3_client()
   )
 
   expect_true(is_datom_conn(conn))
@@ -208,7 +208,7 @@ test_that("print.datom_conn outputs key fields", {
     bucket = "my-bucket",
     prefix = "proj/",
     region = "us-east-1",
-    s3_client = mock_s3_client(),
+    client = mock_s3_client(),
     role = "reader"
   )
 
@@ -228,7 +228,7 @@ test_that("print.datom_conn shows path for developer", {
     project_name = "proj",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client(),
+    client = mock_s3_client(),
     path = dir,
     role = "developer"
   )
@@ -245,7 +245,7 @@ test_that("print.datom_conn omits prefix when NULL", {
     project_name = "proj",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client()
+    client = mock_s3_client()
   )
 
   output <- cli::cli_fmt(print(conn))
@@ -259,7 +259,7 @@ test_that("print.datom_conn returns x invisibly", {
     project_name = "proj",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client()
+    client = mock_s3_client()
   )
 
   expect_invisible(print(conn))
@@ -269,12 +269,12 @@ test_that("print.datom_conn returns x invisibly", {
   expect_s3_class(result$value, "datom_conn")
 })
 
-test_that("print.datom_conn does not expose s3_client details", {
+test_that("print.datom_conn does not expose client details", {
   conn <- new_datom_conn(
     project_name = "proj",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client()
+    client = mock_s3_client()
   )
 
   output <- cli::cli_fmt(print(conn))
@@ -515,8 +515,8 @@ setup_init_env <- function(env = parent.frame()) {
 
   local_mocked_bindings(
     .datom_s3_client = function(...) list(put_object = function(...) list()),
-    .datom_s3_write_json = function(...) invisible(TRUE),
-    .datom_s3_exists = function(...) FALSE,
+    .datom_storage_write_json = function(...) invisible(TRUE),
+    .datom_storage_exists = function(...) FALSE,
     .env = env
   )
 
@@ -775,8 +775,8 @@ test_that("datom_init_repo stores project_name in config for hyphenated names", 
 
   local_mocked_bindings(
     .datom_s3_client = function(...) list(put_object = function(...) list()),
-    .datom_s3_write_json = function(...) invisible(TRUE),
-    .datom_s3_exists = function(...) FALSE
+    .datom_storage_write_json = function(...) invisible(TRUE),
+    .datom_storage_exists = function(...) FALSE
   )
 
   datom_init_repo(path = work_dir, project_name = "my-data", store = store)
@@ -1052,7 +1052,7 @@ test_that("datom_init_repo pushes dispatch.json and manifest.json to S3", {
 
   # Override the S3 stubs from setup_init_env to capture writes
   local_mocked_bindings(
-    .datom_s3_write_json = function(conn, s3_key, data) {
+    .datom_storage_write_json = function(conn, s3_key, data) {
       s3_keys_written <<- c(s3_keys_written, s3_key)
       invisible(TRUE)
     }
@@ -1096,12 +1096,12 @@ test_that("datom_init_repo succeeds even if S3 upload fails", {
 test_that("datom_init_repo aborts when S3 namespace is occupied", {
   env <- setup_init_env()
 
-  # Override .datom_s3_exists to report namespace is occupied
+  # Override .datom_storage_exists to report namespace is occupied
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) {
+    .datom_storage_exists = function(conn, s3_key) {
       grepl("manifest\\.json", s3_key)
     },
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       list(project_name = "EXISTING_PROJECT", tables = list())
     }
   )
@@ -1122,15 +1122,15 @@ test_that("datom_init_repo aborts when S3 namespace is occupied", {
 test_that("datom_init_repo proceeds when .force = TRUE despite occupied namespace", {
   env <- setup_init_env()
 
-  # Override .datom_s3_exists to report namespace is occupied
+  # Override .datom_storage_exists to report namespace is occupied
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) {
+    .datom_storage_exists = function(conn, s3_key) {
       grepl("manifest\\.json", s3_key)
     },
-    .datom_s3_read_json = function(conn, s3_key) {
+    .datom_storage_read_json = function(conn, s3_key) {
       list(project_name = "EXISTING_PROJECT", tables = list())
     },
-    .datom_s3_write_json = function(...) invisible(TRUE)
+    .datom_storage_write_json = function(...) invisible(TRUE)
   )
 
   result <- datom_init_repo(
@@ -1164,8 +1164,8 @@ test_that("datom_init_repo warns but continues when S3 connectivity fails during
 
   # .datom_s3_client will work but .datom_s3_exists will fail with network error
   local_mocked_bindings(
-    .datom_s3_exists = function(conn, s3_key) stop("Network error"),
-    .datom_s3_write_json = function(...) invisible(TRUE)
+    .datom_storage_exists = function(conn, s3_key) stop("Network error"),
+    .datom_storage_write_json = function(...) invisible(TRUE)
   )
 
   # Should succeed — connectivity failure during namespace check is a warning, not fatal
@@ -1190,7 +1190,7 @@ test_that("new_datom_conn stores endpoint when provided", {
     project_name = "p",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client(),
+    client = mock_s3_client(),
     endpoint = "https://my-access-point.s3-accesspoint.us-east-1.amazonaws.com"
   )
 
@@ -1205,7 +1205,7 @@ test_that("new_datom_conn endpoint defaults to NULL", {
     project_name = "p",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client()
+    client = mock_s3_client()
   )
 
   expect_null(conn$endpoint)
@@ -1216,7 +1216,7 @@ test_that("print.datom_conn shows endpoint when non-NULL", {
     project_name = "proj",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client(),
+    client = mock_s3_client(),
     endpoint = "https://custom-endpoint.example.com"
   )
 
@@ -1232,7 +1232,7 @@ test_that("print.datom_conn omits endpoint when NULL", {
     project_name = "proj",
     bucket = "b",
     region = "us-east-1",
-    s3_client = mock_s3_client()
+    client = mock_s3_client()
   )
 
   output <- cli::cli_fmt(print(conn))

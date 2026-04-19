@@ -16,21 +16,22 @@ mock_datom_conn <- function(mock_client,
                            gov_bucket = NULL,
                            gov_prefix = NULL,
                            gov_region = NULL,
-                           gov_s3_client = NULL) {
+                           gov_client = NULL) {
   structure(
     list(
       project_name = "test-project",
+      backend = "s3",
       bucket = bucket,
       prefix = prefix,
       region = "us-east-1",
-      s3_client = mock_client,
+      client = mock_client,
       path = NULL,
       role = "reader",
       endpoint = NULL,
       gov_bucket = gov_bucket,
       gov_prefix = gov_prefix,
       gov_region = gov_region,
-      gov_s3_client = gov_s3_client
+      gov_client = gov_client
     ),
     class = "datom_conn"
   )

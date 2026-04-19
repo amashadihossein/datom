@@ -21,7 +21,7 @@ datom_list <- function(conn,
   }
 
   manifest <- tryCatch(
-    .datom_s3_read_json(conn, ".metadata/manifest.json"),
+    .datom_storage_read_json(conn, ".metadata/manifest.json"),
     error = function(e) {
       cli::cli_abort(c(
         "Could not read manifest from S3.",
@@ -117,7 +117,7 @@ datom_history <- function(conn,
   history_key <- paste0(name, "/.metadata/version_history.json")
 
   history <- tryCatch(
-    .datom_s3_read_json(conn, history_key),
+    .datom_storage_read_json(conn, history_key),
     error = function(e) {
       cli::cli_abort(c(
         "No version history found for table {.val {name}}.",
@@ -205,7 +205,7 @@ datom_get_parents <- function(conn, name, version = NULL) {
   }
 
   metadata <- tryCatch(
-    .datom_s3_read_json(conn, metadata_key),
+    .datom_storage_read_json(conn, metadata_key),
     error = function(e) {
       if (is.null(version)) {
         cli::cli_abort(c(
@@ -267,7 +267,7 @@ datom_status <- function(conn) {
 
   # --- Table count from S3 manifest ---
   table_info <- tryCatch({
-    manifest <- .datom_s3_read_json(conn, ".metadata/manifest.json")
+    manifest <- .datom_storage_read_json(conn, ".metadata/manifest.json")
     n <- length(manifest$tables %||% list())
     list(count = n, available = TRUE)
   }, error = function(e) {

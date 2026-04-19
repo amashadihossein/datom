@@ -273,7 +273,7 @@ test_that("datom_validate returns valid when everything consistent", {
                          auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) TRUE
+      .datom_storage_exists = function(conn, s3_key) TRUE
     )
 
     result <- datom_validate(conn)
@@ -296,7 +296,7 @@ test_that("datom_validate detects repo-level files missing from S3", {
     jsonlite::write_json(list(), ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) FALSE
+      .datom_storage_exists = function(conn, s3_key) FALSE
     )
 
     result <- datom_validate(conn)
@@ -322,7 +322,7 @@ test_that("datom_validate detects table metadata missing from S3", {
     )
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) {
+      .datom_storage_exists = function(conn, s3_key) {
         # Repo-level files exist, but table metadata does not
         grepl("^\\.metadata/", s3_key)
       }
@@ -351,7 +351,7 @@ test_that("datom_validate detects data parquet missing from S3", {
     jsonlite::write_json(list(), "tbl/version_history.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) {
+      .datom_storage_exists = function(conn, s3_key) {
         # metadata files exist, but parquet does not
         !grepl("\\.parquet$", s3_key)
       }
@@ -377,7 +377,7 @@ test_that("datom_validate ignores non-table directories", {
     fs::dir_create(".git")
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) TRUE
+      .datom_storage_exists = function(conn, s3_key) TRUE
     )
 
     result <- datom_validate(conn)
@@ -396,7 +396,7 @@ test_that("datom_validate returns correct structure", {
     fs::dir_create(".datom")
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) TRUE
+      .datom_storage_exists = function(conn, s3_key) TRUE
     )
 
     result <- datom_validate(conn)
@@ -423,7 +423,7 @@ test_that("datom_validate with fix = TRUE calls datom_sync_dispatch on failure",
     sync_called <- FALSE
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) FALSE,
+      .datom_storage_exists = function(conn, s3_key) FALSE,
       datom_sync_dispatch = function(conn, .confirm = TRUE) {
         sync_called <<- TRUE
         invisible(list(repo_files = character(), tables = list()))
@@ -448,7 +448,7 @@ test_that("datom_validate with fix = TRUE does not call sync when valid", {
     sync_called <- FALSE
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) TRUE,
+      .datom_storage_exists = function(conn, s3_key) TRUE,
       datom_sync_dispatch = function(conn, .confirm = TRUE) {
         sync_called <<- TRUE
         invisible(list(repo_files = character(), tables = list()))
@@ -487,7 +487,7 @@ test_that("datom_validate handles multiple tables with mixed status", {
     )
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) {
+      .datom_storage_exists = function(conn, s3_key) {
         grepl("good_tbl", s3_key)
       }
     )
@@ -510,7 +510,7 @@ test_that("datom_validate handles fix failure gracefully", {
     jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) FALSE,
+      .datom_storage_exists = function(conn, s3_key) FALSE,
       datom_sync_dispatch = function(conn, .confirm = TRUE) {
         stop("Sync failed")
       }
@@ -533,7 +533,7 @@ test_that("datom_validate skips repo files not present locally", {
     fs::dir_create(".datom")
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) TRUE
+      .datom_storage_exists = function(conn, s3_key) TRUE
     )
 
     result <- datom_validate(conn)
@@ -561,7 +561,7 @@ test_that("datom_validate detects project_name mismatch in manifest", {
     )
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) TRUE
+      .datom_storage_exists = function(conn, s3_key) TRUE
     )
 
     result <- datom_validate(conn)
@@ -585,7 +585,7 @@ test_that("datom_validate passes when project_name matches", {
     jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) TRUE
+      .datom_storage_exists = function(conn, s3_key) TRUE
     )
 
     result <- datom_validate(conn)
@@ -608,7 +608,7 @@ test_that("datom_validate tolerates pre-Phase-7 manifest without project_name", 
     jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_exists = function(conn, s3_key) TRUE
+      .datom_storage_exists = function(conn, s3_key) TRUE
     )
 
     result <- datom_validate(conn)

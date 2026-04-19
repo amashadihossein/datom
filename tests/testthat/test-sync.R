@@ -705,7 +705,7 @@ test_that("datom_sync_dispatch syncs repo-level files to S3", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
@@ -734,7 +734,7 @@ test_that("datom_sync_dispatch skips missing repo-level files", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
@@ -766,7 +766,7 @@ test_that("datom_sync_dispatch syncs per-table metadata to S3", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
@@ -801,7 +801,7 @@ test_that("datom_sync_dispatch ignores non-table directories", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
@@ -836,7 +836,7 @@ test_that("datom_sync_dispatch handles per-table errors gracefully", {
     call_count <- 0L
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         call_count <<- call_count + 1L
         if (grepl("bad_tbl", s3_key)) stop("S3 upload failed")
         invisible(NULL)
@@ -871,7 +871,7 @@ test_that("datom_sync_dispatch syncs metadata snapshots from .metadata dir", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
@@ -894,7 +894,7 @@ test_that("datom_sync_dispatch returns correct summary structure", {
     jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
     result <- datom_sync_dispatch(conn, .confirm = FALSE)
@@ -923,7 +923,7 @@ test_that("datom_sync_dispatch handles multiple tables", {
     }
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
     result <- datom_sync_dispatch(conn, .confirm = FALSE)
@@ -949,7 +949,7 @@ test_that(".datom_sync_table_metadata uploads metadata and version_history", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) {
+      .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
@@ -972,7 +972,7 @@ test_that(".datom_sync_table_metadata handles table with no version_history", {
     jsonlite::write_json(list(x = 1), "tbl/metadata.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_s3_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
     result <- .datom_sync_table_metadata(conn, "tbl")

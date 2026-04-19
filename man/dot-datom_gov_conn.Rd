@@ -10,13 +10,13 @@
 \item{conn}{A \code{datom_conn} object with governance fields populated.}
 }
 \value{
-A list with \code{bucket}, \code{prefix}, \code{s3_client} pointing to the
+A list with \code{bucket}, \code{prefix}, \code{client} pointing to the
 governance store.
 }
 \description{
 Returns a lightweight connection that routes S3 operations to the governance
-store. Existing S3 helpers (\code{.datom_s3_write_json}, \code{.datom_s3_exists}, etc.)
-read \code{conn$bucket}, \code{conn$prefix}, and \code{conn$s3_client} — this swaps in the
+store. The storage dispatch layer (\code{.datom_storage_write_json}, etc.)
+read \code{conn$bucket}, \code{conn$prefix}, and \code{conn$client} — this swaps in the
 governance equivalents so the helpers work transparently.
 }
 \keyword{internal}

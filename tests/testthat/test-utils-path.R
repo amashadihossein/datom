@@ -1,51 +1,51 @@
 # Tests for S3 path construction and parsing utilities
 # Phase 1, Chunk 2
 
-# --- .datom_build_s3_key() -----------------------------------------------------
+# --- .datom_build_storage_key() -----------------------------------------------------
 
 test_that("build key with prefix and table data file", {
-  key <- .datom_build_s3_key("proj", "customers", "abc123.parquet")
+  key <- .datom_build_storage_key("proj", "customers", "abc123.parquet")
   expect_equal(key, "proj/datom/customers/abc123.parquet")
 })
 
 test_that("build key with prefix and table metadata", {
-  key <- .datom_build_s3_key("proj", "customers", ".metadata", "metadata.json")
+  key <- .datom_build_storage_key("proj", "customers", ".metadata", "metadata.json")
   expect_equal(key, "proj/datom/customers/.metadata/metadata.json")
 })
 
 test_that("build key with prefix and versioned metadata", {
-  key <- .datom_build_s3_key("proj", "customers", ".metadata", "xyz789.json")
+  key <- .datom_build_storage_key("proj", "customers", ".metadata", "xyz789.json")
   expect_equal(key, "proj/datom/customers/.metadata/xyz789.json")
 })
 
 test_that("build key with prefix and repo-level metadata", {
-  key <- .datom_build_s3_key("proj", ".metadata", "dispatch.json")
+  key <- .datom_build_storage_key("proj", ".metadata", "dispatch.json")
   expect_equal(key, "proj/datom/.metadata/dispatch.json")
 })
 
 test_that("build key with prefix and redirect file", {
-  key <- .datom_build_s3_key("proj", ".redirect.json")
+  key <- .datom_build_storage_key("proj", ".redirect.json")
   expect_equal(key, "proj/datom/.redirect.json")
 })
 
 test_that("build key without prefix", {
-  key <- .datom_build_s3_key(NULL, "customers", "abc123.parquet")
+  key <- .datom_build_storage_key(NULL, "customers", "abc123.parquet")
   expect_equal(key, "datom/customers/abc123.parquet")
 })
 
 test_that("build key with multi-level prefix", {
-  key <- .datom_build_s3_key("org/project-alpha", "orders", "def456.parquet")
+  key <- .datom_build_storage_key("org/project-alpha", "orders", "def456.parquet")
   expect_equal(key, "org/project-alpha/datom/orders/def456.parquet")
 })
 
 test_that("build key strips leading/trailing slashes from segments", {
-  key <- .datom_build_s3_key("/proj/", "/customers/", "/abc123.parquet/")
+  key <- .datom_build_storage_key("/proj/", "/customers/", "/abc123.parquet/")
   expect_equal(key, "proj/datom/customers/abc123.parquet")
 })
 
 test_that("build key errors with no segments", {
-  expect_error(.datom_build_s3_key("proj"), "At least one path segment")
-  expect_error(.datom_build_s3_key(NULL), "At least one path segment")
+  expect_error(.datom_build_storage_key("proj"), "At least one path segment")
+  expect_error(.datom_build_storage_key(NULL), "At least one path segment")
 })
 
 
@@ -115,14 +115,14 @@ test_that("build URI errors on empty key", {
 
 test_that("parse then build produces correct key", {
   parsed <- .datom_parse_s3_uri("s3://my-bucket/proj")
-  key <- .datom_build_s3_key(parsed$prefix, "customers", ".metadata", "metadata.json")
+  key <- .datom_build_storage_key(parsed$prefix, "customers", ".metadata", "metadata.json")
   uri <- .datom_build_s3_uri(parsed$bucket, key)
   expect_equal(uri, "s3://my-bucket/proj/datom/customers/.metadata/metadata.json")
 })
 
 test_that("round-trip with no prefix", {
   parsed <- .datom_parse_s3_uri("s3://my-bucket")
-  key <- .datom_build_s3_key(parsed$prefix, "orders", "abc.parquet")
+  key <- .datom_build_storage_key(parsed$prefix, "orders", "abc.parquet")
   uri <- .datom_build_s3_uri(parsed$bucket, key)
   expect_equal(uri, "s3://my-bucket/datom/orders/abc.parquet")
 })
