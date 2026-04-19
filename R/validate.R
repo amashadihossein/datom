@@ -192,22 +192,26 @@ datom_validate <- function(conn, fix = FALSE) {
 #' @noRd
 .datom_validate_repo_files <- function(conn) {
   repo_path <- conn$path
+  gov_conn <- .datom_gov_conn(conn)
 
   files_to_check <- list(
     list(
       local = fs::path(repo_path, ".datom", "dispatch.json"),
       s3_key = ".metadata/dispatch.json",
-      name = "dispatch.json"
+      name = "dispatch.json",
+      target_conn = gov_conn
     ),
     list(
       local = fs::path(repo_path, ".datom", "manifest.json"),
       s3_key = ".metadata/manifest.json",
-      name = "manifest.json"
+      name = "manifest.json",
+      target_conn = conn
     ),
     list(
       local = fs::path(repo_path, ".datom", "migration_history.json"),
       s3_key = ".metadata/migration_history.json",
-      name = "migration_history.json"
+      name = "migration_history.json",
+      target_conn = gov_conn
     )
   )
 
@@ -219,7 +223,7 @@ datom_validate <- function(conn, fix = FALSE) {
       return(NULL)
     }
 
-    s3_exists <- .datom_s3_exists(conn, fc$s3_key)
+    s3_exists <- .datom_s3_exists(fc$target_conn, fc$s3_key)
 
     status <- if (s3_exists) "ok" else "missing_s3"
 

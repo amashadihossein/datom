@@ -156,16 +156,33 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
   }
 
   # --- Sync repo-level files ---
-  repo_files_synced <- character()
+  # dispatch.json + migration_history.json → governance store
 
-  repo_level_files <- list(
+  # manifest.json → data store
+  repo_files_synced <- character()
+  gov_conn <- .datom_gov_conn(conn)
+
+  governance_files <- list(
     dispatch.json = fs::path(repo_path, ".datom", "dispatch.json"),
-    manifest.json = fs::path(repo_path, ".datom", "manifest.json"),
     migration_history.json = fs::path(repo_path, ".datom", "migration_history.json")
   )
 
-  for (fname in names(repo_level_files)) {
-    local_path <- repo_level_files[[fname]]
+  data_files <- list(
+    manifest.json = fs::path(repo_path, ".datom", "manifest.json")
+  )
+
+  for (fname in names(governance_files)) {
+    local_path <- governance_files[[fname]]
+    if (fs::file_exists(local_path)) {
+      data <- jsonlite::read_json(local_path)
+      s3_key <- paste0(".metadata/", fname)
+      .datom_s3_write_json(gov_conn, s3_key, data)
+      repo_files_synced <- c(repo_files_synced, s3_key)
+    }
+  }
+
+  for (fname in names(data_files)) {
+    local_path <- data_files[[fname]]
     if (fs::file_exists(local_path)) {
       data <- jsonlite::read_json(local_path)
       s3_key <- paste0(".metadata/", fname)

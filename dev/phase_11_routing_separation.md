@@ -284,13 +284,13 @@ The layout diagrams in this doc and in `datom_specification.md` are normative â€
 
 ## Acceptance Criteria
 
-- [ ] `routing.json` renamed to `dispatch.json` everywhere (local, S3, code, tests)
-- [ ] `datom_sync_routing()` renamed to `datom_sync_dispatch()`
-- [ ] `.datom_s3_client()` accepts direct credentials, no env var indirection
-- [ ] `.datom_install_store()`, `.datom_derive_cred_names()`, `.datom_check_credentials()` removed
+- [x] `routing.json` renamed to `dispatch.json` everywhere (local, S3, code, tests)
+- [x] `datom_sync_routing()` renamed to `datom_sync_dispatch()`
+- [x] `.datom_s3_client()` accepts direct credentials, no env var indirection
+- [x] `.datom_install_store()`, `.datom_derive_cred_names()`, `.datom_check_credentials()` removed
 - [ ] `.datom_s3_resolve_redirect()` and `.redirect.json` removed
-- [ ] Governance store receives dispatch.json, ref.json, migration_history.json
-- [ ] Data store receives manifest.json, table data and metadata
+- [x] Governance store receives dispatch.json, ref.json, migration_history.json
+- [x] Data store receives manifest.json, table data and metadata
 - [ ] `ref.json` always present at governance store, created by `datom_init_repo()`
 - [ ] `.datom_resolve_ref()` reads `ref.json` (single read, no recursion)
 - [ ] Deprecation warning emitted when ref.json has previous entries
@@ -303,9 +303,9 @@ The layout diagrams in this doc and in `datom_specification.md` are normative â€
 
 | Chunk | Status | Notes |
 |-------|--------|-------|
-| 1 | complete | Pure rename, 1083 tests pass |
-| 2 | not started | |
-| 3 | not started | |
+| 1 | complete | Pure rename, 1083 tests pass, commit `eef1570` |
+| 2 | complete | Credential wiring, env var bridge removed, 1041 tests pass (42 removed with deleted functions), commit `de3fbf7` |
+| 3 | complete | Gov store wiring for dispatch+migration_history, data store for manifest, .datom_gov_conn helper, 1041 tests pass |
 | 4 | not started | |
 | 5 | not started | |
 | 6 | not started | |

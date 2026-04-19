@@ -12,7 +12,11 @@
 #' @return A `datom_conn` object.
 mock_datom_conn <- function(mock_client,
                            bucket = "test-bucket",
-                           prefix = "proj") {
+                           prefix = "proj",
+                           gov_bucket = NULL,
+                           gov_prefix = NULL,
+                           gov_region = NULL,
+                           gov_s3_client = NULL) {
   structure(
     list(
       project_name = "test-project",
@@ -22,7 +26,11 @@ mock_datom_conn <- function(mock_client,
       s3_client = mock_client,
       path = NULL,
       role = "reader",
-      endpoint = NULL
+      endpoint = NULL,
+      gov_bucket = gov_bucket,
+      gov_prefix = gov_prefix,
+      gov_region = gov_region,
+      gov_s3_client = gov_s3_client
     ),
     class = "datom_conn"
   )
