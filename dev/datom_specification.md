@@ -23,10 +23,12 @@ The primary utility motivating datom is building version-tracked data products. 
 2. **S3 metadata caching**: Metadata synced to S3 enables data reader access without GitHub
 3. **Separated workflows**: Data developers need git + S3 access for writes; data readers need only S3 access for reads
 4. **Content addressing**: SHA-based storage for efficient deduplication
-5. **Implicit location**: Data location derived from connection + redirect chain, not stored in metadata
-6. **Language agnostic**: Designed for R and Python implementations
-7. **Storage agnostic**: Initial S3 support with extensibility to other cloud providers
-8. **One repo per project**: Each git repository manages a single project/prefix
+5. **Explicit data reference**: Data location stored in `ref.json` at the governance store, resolved via `.datom_resolve_ref()` — single read, no recursion
+6. **Two-store architecture**: Governance store (dispatch, ref, migration history) and data store (manifest, table data/metadata) can target different buckets
+7. **Storage abstraction**: Business logic calls `.datom_storage_*()` dispatch functions; backend-specific code (`.datom_s3_*()`) is isolated behind a dispatch layer keyed on `conn$backend`
+8. **Language agnostic**: Designed for R and Python implementations
+9. **Storage agnostic**: Initial S3 support with extensibility to other cloud providers
+10. **One repo per project**: Each git repository manages a single project/prefix
 
 ---
 
@@ -40,7 +42,7 @@ datom distinguishes between **versioned content** and **tracked configuration**:
 |----------|-------|------------|-------------------------------|
 | **Data** | `{data_sha}.parquet` | Yes | Yes |
 | **Metadata** | `metadata.json`, `{metadata_sha}.json` | Yes | Yes |
-| **Configuration** | `routing.json`, `project.yaml`, `manifest.json` | No | No |
+| **Configuration** | `dispatch.json`, `project.yaml`, `manifest.json` | No | No |
 
 ### datom Version = metadata_sha
 
@@ -77,8 +79,8 @@ All files live in one repo for simplicity, but:
 Day 1:  datom_write() → version "xyz789" created
         git commit includes: metadata.json, version_history.json
         
-Day 2:  Edit routing.json (add "cached" context)
-        git commit includes: routing.json only
+Day 2:  Edit dispatch.json (add "cached" context)
+        git commit includes: dispatch.json only
         
 Result: datom version unchanged ("xyz789")
         git log shows both commits
@@ -121,27 +123,34 @@ repo/
 │   └── orders.tsv
 ├── .datom/
 │   ├── project.yaml              # Project configuration
-│   ├── routing.json              # Methods configuration (repo-wide)
+│   ├── dispatch.json             # Methods configuration (repo-wide)
+│   ├── ref.json                  # Data location reference
 │   ├── manifest.json             # Repository catalog
-│   ├── migration_history.json    # Audit trail of location changes
-│   └── state/                    # Operation integrity tracking
-│       └── {operation_id}.json
+│   └── migration_history.json    # Audit trail of location changes
 └── .gitignore                     # Ignores input_files/* and data formats
 ```
 
 **Note:** Contents of `input_files/` are gitignored. Only metadata tracked in git; actual data files stay local and sync to S3 as parquet.
 
-**Cloud Storage (S3)**:
+**Cloud Storage (S3) — Governance Store**:
 ```
-bucket/
+governance-bucket/
 └── {optional_prefix}/
     └── datom/
         ├── .access/                   # Reserved for datomaccess package (do not read/write)
+        └── .metadata/
+            ├── dispatch.json          # Methods (synced from git)
+            ├── ref.json               # Data location reference
+            └── migration_history.json # Audit trail
+```
+
+**Cloud Storage (S3) — Data Store**:
+```
+data-bucket/
+└── {optional_prefix}/
+    └── datom/
         ├── .metadata/
-        │   ├── routing.json           # Methods (synced from git)
-        │   ├── manifest.json          # Repository catalog
-        │   └── migration_history.json # Audit trail
-        ├── .redirect.json             # Only present post-migration in OLD bucket
+        │   └── manifest.json          # Repository catalog
         └── {table_name}/
             ├── {data_sha}.parquet     # Data files (content-addressed)
             └── .metadata/
@@ -150,21 +159,22 @@ bucket/
                 └── version_history.json
 ```
 
+**Note:** Governance and data stores may be the same bucket+prefix or different ones. The two-store split enables organizations to keep routing/governance metadata in a central bucket while data lives in project-specific buckets.
+
 ### Location Resolution
 
-Data location is implicit, not stored in metadata. Resolution follows redirect chain:
+Data location is stored explicitly in `ref.json` at the governance store. Resolution is a single read:
 
 ```
 datom_read(conn, "customers", ...)
         │
         ▼
-1. Check conn.bucket/prefix/datom/.redirect.json
-2. If found → follow to new location, repeat step 1
-3. If not found → this is current location
-4. Read from resolved location
+1. Read ref.json from governance store (.metadata/ref.json)
+2. Extract current.bucket, current.prefix, current.region
+3. Read data from resolved location in data store
 ```
 
-**Post-migration credential requirement**: If old code points to bucket-A but data migrated to bucket-B, user needs credentials for both buckets (bucket-A for redirect, bucket-B for data). Updating code to point directly to bucket-B avoids dual-credential need.
+**Post-migration**: `ref.json` may contain `previous` entries with sunset dates. `.datom_resolve_ref()` emits a deprecation warning when previous entries exist, alerting operators that old location cleanup is pending. No redirect chain — migration is a ref.json update + data copy.
 
 ---
 
@@ -237,22 +247,41 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 
 **Why no git commit SHA?** datom uses git as a versioning and conflict-management mechanism, not as a code repository. The meaningful version identifier is `metadata_sha` (content-addressed, deterministic). Since datom doesn't pair code with data, the git commit SHA adds no reproducibility value — data is either imported from a file or written from an R session, neither of which is captured by the commit. When git context is needed, `timestamp` + `author` or `git log --all -S "<metadata_sha>"` locates the commit directly. Git commit SHA enrichment was considered and designed but deferred — see "Deferred to v2" for the approach if a compelling use case emerges.
 
-### .redirect.json
+### ref.json
 
-Left in OLD bucket post-migration:
+Always present at the governance store, created by `datom_init_repo()`. Stores the authoritative data location:
 
 ```json
 {
-  "redirect_to": "s3://bucket-B/proj/datom/",
-  "migrated_at": "2024-06-01T00:00:00Z",
-  "credentials": {
-    "access_key_env": "DATOM_CLINICAL_DATA_ACCESS_KEY_ID_2",
-    "secret_key_env": "DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY_2"
+  "current": {
+    "bucket": "study-bucket",
+    "prefix": "trial/",
+    "region": "us-east-1"
   }
 }
 ```
 
-Enables old code to find data at new location. Credential env var names follow convention with `_2`, `_3`, etc. suffix for redirects.
+Post-migration, may contain `previous` entries:
+
+```json
+{
+  "current": {
+    "bucket": "bucket-B",
+    "prefix": "proj/",
+    "region": "us-east-1"
+  },
+  "previous": [
+    {
+      "bucket": "bucket-A",
+      "prefix": "proj/",
+      "region": "us-east-1",
+      "sunset_date": "2025-01-01"
+    }
+  ]
+}
+```
+
+`.datom_resolve_ref()` reads `ref.json` from the governance store and returns the `current` data location. When `previous` entries exist, it emits a deprecation warning.
 
 ---
 
@@ -274,7 +303,7 @@ datom_store_s3(
 )
 ```
 
-Creates a single S3 storage component (used for governance or data). When `validate = TRUE`, runs `HeadBucket` to verify credentials and bucket access. Returns `datom_store_s3` S3 class.
+Creates a single S3 storage component (used for governance or data). When `validate = TRUE`, runs `HeadBucket` to verify credentials and bucket access. Returns `datom_store_s3` S3 class with `type = "s3"`.
 
 Future backends (`datom_store_local()`, `datom_store_gcs()`) will have their own constructors.
 
@@ -296,10 +325,6 @@ Bundles governance + data store components with git config:
 - `remote_url`: existing GitHub repo URL (mutually exclusive with `create_repo` in `datom_init_repo()`)
 - `github_org`: for org repo creation; NULL → personal repo
 - When `validate = TRUE` and `github_pat` provided, validates PAT via `GET /user`
-
-### `.datom_install_store()` — Env Var Bridge (Temporary)
-
-`.datom_install_store(store, project_name)` injects store credentials into env vars (`DATOM_{PROJECT}_ACCESS_KEY_ID`, etc.) so existing S3 code works unchanged. Called inside `datom_init_repo()` / `datom_get_conn()`. **Phase 11 removes this** by wiring `.datom_s3_client()` directly to store credentials.
 
 ### `.datom_create_github_repo()` — GitHub Repo Creation
 
@@ -334,7 +359,7 @@ One-time setup for data developers:
 - **S3 namespace safety check**: checks `{prefix}/datom/.metadata/manifest.json` on S3 before writing. Pass `.force = TRUE` to override.
 - Creates folder structure, initializes git with remote
 - Creates `.datom/project.yaml` with two-component storage config (`storage.governance` + `storage.data`)
-- Creates `.datom/routing.json` with default methods
+- Creates `.datom/dispatch.json` with default methods
 - Creates `.datom/manifest.json` with `project_name` at the top level
 - Pushes initial commit to git, then uploads routing + manifest to S3
 
@@ -363,7 +388,7 @@ Flexible connection for both developers and readers:
 `endpoint`: Optional S3 endpoint URL. When `NULL` (default), standard S3 is used. datomaccess sets this to route reads through S3 access points for IAM enforcement. Stored in the returned `datom_conn` object and forwarded to all S3 operations.
 
 - Validates credentials based on `project_name` → `DATOM_{PROJECT_NAME}_*`
-- Follows redirect chain to resolve current data location (**Planned — not yet integrated.** The `.datom_s3_resolve_redirect()` function exists but is not wired into connection builders. Integration point may be influenced by datomaccess.)
+- Resolves data location from ref.json at governance store
 - Auto-detects developer vs reader based on GITHUB_PAT presence
 
 Returns: Connection object (`datom_conn` S3 class)
@@ -410,9 +435,9 @@ datom_read(
 )
 ```
 
-Unified read function with routing via routing.json:
+Unified read function with routing via dispatch.json:
 - `version`: metadata_sha (datom version) — if NULL, uses current
-- `context`: runtime behavior selection (default: "default") (**Planned — not yet implemented.** Currently reads parquet directly; routing dispatch via `context` and `routing.json` will be added when downstream consumers exist.)
+- `context`: runtime behavior selection (default: "default") (**Planned — not yet implemented.** Currently reads parquet directly; routing dispatch via `context` and `dispatch.json` will be added when downstream consumers exist.)
 - Metadata always from S3 for readers
 - Additional parameters in `...` forwarded to routed function
 
@@ -438,8 +463,8 @@ Flexible write operations:
 | data | name | Behavior |
 |------|------|----------|
 | provided | provided | Normal write: commit → push → S3 sync |
-| NULL | provided | Metadata-only sync for single table (e.g., after editing routing.json) |
-| NULL | NULL | Aliases to `datom_sync_routing()` |
+| NULL | provided | Metadata-only sync for single table (e.g., after editing dispatch.json) |
+| NULL | NULL | Aliases to `datom_sync_dispatch()` |
 
 For normal writes:
 - Change detection via metadata_sha comparison (alphabetically sorted fields)
@@ -463,15 +488,16 @@ Required by datomaccess to walk lineage for access gate computation.
 
 Returns: List of parent entries (each with `source`, `table`, `version`), or `NULL`.
 
-#### datom_sync_routing() — Data Developers
+#### datom_sync_dispatch() — Data Developers
 
 ```r
-datom_sync_routing(conn, .confirm = TRUE)
+datom_sync_dispatch(conn, .confirm = TRUE)
 ```
 
-Updates all metadata in S3 to match git after migration or routing changes:
+Updates all metadata in S3 to match git after migration or dispatch changes:
 - Interactive confirmation required (set `.confirm = FALSE` for programmatic use)
-- Updates routing.json, migration_history.json for all tables
+- Pushes governance files (dispatch.json, ref.json, migration_history.json) to governance store
+- Pushes data files (manifest.json, per-table metadata) to data store
 - Used after external migration (aws cli, etc.) and project.yaml update
 
 ```
@@ -559,16 +585,16 @@ datom_validate(conn, fix = FALSE)
 
 Checks that git metadata matches S3 storage for all tables and repo-level files. Reports mismatches as a structured result.
 
-- **Repo-level checks**: routing.json, manifest.json, migration_history.json exist on S3
+- **Repo-level checks**: dispatch.json, ref.json, manifest.json, migration_history.json exist on correct S3 stores (governance vs data)
 - **Per-table checks**: metadata.json, version_history.json, and `{data_sha}.parquet` exist on S3 for each table tracked in git
-- `fix = TRUE`: attempts to repair inconsistencies by calling `datom_sync_routing(conn, .confirm = FALSE)`
+- `fix = TRUE`: attempts to repair inconsistencies by calling `datom_sync_dispatch(conn, .confirm = FALSE)`
 
 Returns: List with `valid` (logical), `repo_files` (data frame), `tables` (data frame), `fixed` (logical).
 
 #### datom_migrate() — Data Developers (Future)
 
 ```r
-datom_migrate(conn_from, conn_to, tables, update_redirects)
+datom_migrate(conn_from, conn_to, tables, update_ref = TRUE)
 ```
 
 **Not yet implemented.** Managed migration — see "Deferred to v2."
@@ -615,7 +641,7 @@ Validates datom repository structure. Used internally by datom functions and ext
 | Check | Validates |
 |-------|-----------|
 | `git` | Git repository initialized |
-| `datom` | `.datom/project.yaml`, `.datom/routing.json`, `.datom/manifest.json` exist |
+| `datom` | `.datom/project.yaml`, `.datom/dispatch.json`, `.datom/manifest.json` exist |
 | `renv` | `renv/` directory exists |
 
 Returns: TRUE or FALSE
@@ -722,21 +748,14 @@ data <- datom_read(conn, "customers", version = "xyz789")
 # 1. Copy data externally (aws cli, console, etc.)
 #    aws s3 sync s3://bucket-A/proj/ s3://bucket-B/proj/
 
-# 2. Place .redirect.json in old bucket with credentials for new bucket
-#    {
-#      "redirect_to": "s3://bucket-B/proj/datom/",
-#      "migrated_at": "...",
-#      "credentials": {
-#        "access_key_env": "DATOM_CLINICAL_DATA_ACCESS_KEY_ID_2",
-#        "secret_key_env": "DATOM_CLINICAL_DATA_SECRET_ACCESS_KEY_2"
-#      }
-#    }
+# 2. Update ref.json to point to new data location
+#    (add previous entry for old location with sunset date)
 
 # 3. Update project.yaml with new bucket
 conn <- datom_get_conn("my_project")
 
-# 4. Sync routing to new location (interactive confirmation)
-datom_sync_routing(conn)
+# 4. Sync dispatch to new location (interactive confirmation)
+datom_sync_dispatch(conn)
 ```
 
 ### Data Product Integration
@@ -789,12 +808,12 @@ class DataProduct:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 1. Follow redirect chain to resolve current location           │
-│ 2. Read version_history.json from S3                           │
+│ 1. Resolve data location from ref.json (governance store)     │
+│ 2. Read version_history.json from data store S3               │
 │ 3. Lookup version (metadata_sha) → get data_sha                │
-│ 4. Get routing method from routing.json                        │
+│ 4. Get dispatch method from dispatch.json                     │
 │ 5. Download {data_sha}.parquet and {version}.json from S3      │
-│ 6. Apply context-specific processing via routing               │
+│ 6. Apply context-specific processing via dispatch              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -812,7 +831,7 @@ class DataProduct:
 - `.datom_has_changes()` checks S3 (the final destination). If S3 is stale, changes are re-detected.
 - `.datom_git_commit()` returns HEAD SHA when files are already committed (no-op on re-run).
 - S3 uploads are content-addressed (parquet) or unconditional overwrites (metadata JSON), so re-uploading is safe.
-- `datom_sync_routing()` is the escape hatch: a full local → S3 push that's always safe to run.
+- `datom_sync_dispatch()` is the escape hatch: a full local → S3 push that's always safe to run.
 
 **Key functions and their ordering:**
 
@@ -822,7 +841,7 @@ class DataProduct:
 | `.datom_sync_metadata()` | local → git → S3 | Hard error, S3 untouched |
 | `datom_sync()` (per-table) | via `datom_write()` | Per above |
 | `datom_sync()` (manifest) | local → git → S3 | Warning, S3 skipped |
-| `datom_sync_routing()` | local → S3 only | N/A (recovery tool) |
+| `datom_sync_dispatch()` | local → S3 only | N/A (recovery tool) |
 | `datom_init_repo()` | local → git only | Cleanup on failure |
 
 ### Change Detection
@@ -848,15 +867,9 @@ class DataProduct:
 
 ## Project Configuration
 
-### Credential Naming Convention (Internal)
+### Credential Handling
 
-Credentials are now provided via `datom_store_s3()` objects. Internally, `.datom_install_store()` maps them to env vars for backward compatibility:
-
-**Convention:** `DATOM_{PROJECT_NAME}_ACCESS_KEY_ID` / `DATOM_{PROJECT_NAME}_SECRET_ACCESS_KEY`
-
-This bridge is temporary — Phase 11 removes it by wiring `.datom_s3_client()` directly to store credentials.
-
-- Redirects append `_2`, `_3`, etc. for chained migrations
+Credentials are provided via `datom_store_s3()` objects and passed directly to `paws.storage::s3()` clients. No env var indirection or naming conventions — each `datom_conn` holds `client` (data store S3 client) and `gov_client` (governance store S3 client) created from the store’s credentials.
 
 ### .datom/project.yaml
 
@@ -894,7 +907,7 @@ renv: false  # renv integration deferred — see Deferred to v2
 
 **Secrets are never persisted.** The `type` field enables future backend dispatch. The two-component structure (governance + data) allows routing files and data files to target different buckets/prefixes.
 
-### .datom/routing.json
+### .datom/dispatch.json
 
 ```json
 {
@@ -957,10 +970,9 @@ Documentary only — does not drive runtime behavior.
 
 ### Environment Validation
 
-- Check required environment variables on connection
+- Credentials validated via store objects (`datom_store_s3()` runs `HeadBucket`)
 - GITHUB_PAT presence determines developer vs reader role
-- Use standard AWS and GitHub variable names
-- No custom configuration functions
+- No env var naming conventions — credentials passed directly via store objects
 
 ### Project Structure Validation
 
@@ -968,20 +980,18 @@ Documentary only — does not drive runtime behavior.
 - Validate `input_files/` is flat (no subdirectories)
 - Called internally by all operations
 
-### Routing Implementation
+### Dispatch Implementation
 
 ```r
 datom_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 
   if (is.null(context)) context <- "default"
 
-  # Location already resolved via redirect chain in conn
-  
-  # Read routing.json from S3 metadata
-  routing_info <- .get_routing_from_s3(conn)
+  # Read dispatch.json from S3 metadata
+  dispatch_info <- .get_dispatch_from_s3(conn)
 
   # Get R method for the specified context
-  r_methods <- routing_info$methods$r
+  r_methods <- dispatch_info$methods$r
   if (!context %in% names(r_methods)) {
     stop("Context '", context, "' not found for R")
   }
@@ -992,6 +1002,26 @@ datom_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
   # Call with R conventions, forwarding extra parameters
   func(conn, name, version, ...)
 }
+```
+
+### Storage Abstraction Layer
+
+Business logic calls generic `.datom_storage_*()` functions that dispatch to backend-specific implementations based on `conn$backend`:
+
+| Generic Function | S3 Implementation | Purpose |
+|---|---|---|
+| `.datom_storage_upload()` | `.datom_s3_upload()` | Upload file to storage |
+| `.datom_storage_download()` | `.datom_s3_download()` | Download file from storage |
+| `.datom_storage_exists()` | `.datom_s3_exists()` | Check if key exists |
+| `.datom_storage_read_json()` | `.datom_s3_read_json()` | Read JSON from storage |
+| `.datom_storage_write_json()` | `.datom_s3_write_json()` | Write JSON to storage |
+
+The dispatch layer lives in `R/utils-storage.R`. Each function takes a `conn` (or governance sub-connection via `.datom_gov_conn()`) and a storage key. The `backend` field on `conn` determines which implementation is called (currently only `"s3"` is supported).
+
+This enables adding new backends (e.g., `datom_store_local()` for local filesystem) by:
+1. Creating a new store constructor
+2. Implementing the 5 backend functions
+3. Adding a `switch()` case in each dispatch function
 ```
 
 ---
@@ -1020,12 +1050,14 @@ datom_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 
 ### Connection Architecture
 
-- `datom_conn` S3 class wraps project_name, bucket, prefix, region, s3_client, path, role, endpoint
+- `datom_conn` S3 class wraps project_name, bucket, prefix, region, client, gov_client, path, role, endpoint, backend
+- `client`: S3 client for data store; `gov_client`: S3 client for governance store
+- `backend`: storage backend type (currently always `"s3"`), used by `.datom_storage_*()` dispatch
 - Two modes: **developer** (has local repo path + git) and **reader** (S3 only, no local repo)
 - Role derived from composite store: `github_pat` present → developer; absent → reader
 - `datom_get_conn(path = ...)` reads two-component `.datom/project.yaml` (developer path)
 - `datom_get_conn(store = ..., project_name = ...)` builds connection from store (reader path)
-- Credential env var names derived from `project_name` via `.datom_install_store()` bridge (temporary — Phase 11 removes)
+- Credentials passed directly to `paws.storage::s3()` — no env var bridge
 - `endpoint`: optional S3 endpoint override stored in conn; when set, all `.datom_s3_*` calls route through it. Used by datomaccess to enforce S3 access point routing.
 - `datom_init_repo()` sets local git config (`user.name`, `user.email`) from global config or fallback — `git2r::default_signature()` requires local config on freshly init'd repos
 
@@ -1063,7 +1095,7 @@ All stored as parquet regardless of input format.
 - Data developers: Validates git + S3 access (GITHUB_PAT present)
 - Data readers: Validates S3 read access only
 - Auto-detects user type based on GITHUB_PAT presence
-- Follows redirect chain to resolve current location
+- Resolves data location from ref.json at governance store
 
 **Operations**:
 - Project structure check before all operations
@@ -1075,9 +1107,9 @@ All stored as parquet regardless of input format.
 
 ### Testing Coverage
 
-- **Unit**: SHA computation (sorting optional, OFF by default for data; alphabetical for metadata), routing, metadata operations, redirect following
+- **Unit**: SHA computation (sorting optional, OFF by default for data; alphabetical for metadata), dispatch, metadata operations, ref.json resolution
 - **Integration**: Full workflow, S3 metadata access, sync verification, migration scenarios
-- **Edge cases**: Network failures, corrupt files, missing metadata, concurrent writes, chained redirects
+- **Edge cases**: Network failures, corrupt files, missing metadata, concurrent writes, ref.json migration warnings
 
 ---
 
@@ -1094,9 +1126,10 @@ All stored as parquet regardless of input format.
 
 ### Storage Backend Extensibility
 
-- **Current**: AWS S3
+- **Current**: AWS S3 (via `paws.storage`)
+- **Next**: Local filesystem (`datom_store_local()`) — enables onboarding staircase
 - **Planned**: Google Cloud Storage, Azure Blob Storage
-- Architecture supports any object storage with minimal changes
+- Architecture uses `.datom_storage_*()` dispatch layer keyed on `conn$backend`; adding a backend requires implementing 5 functions
 
 ### Query Interface Extensibility
 
@@ -1186,8 +1219,8 @@ Team workflows are fully supported:
 | Cross-language | R only | R + Python planned |
 | Configuration | Package-specific | Standard env vars |
 | Read interface | Package-specific | Unified with routing |
-| Location | Stored in metadata | Implicit + redirect chain |
-| Migration | Manual | Redirect-based continuity |
+| Location | Stored in metadata | Explicit via ref.json at governance store |
+| Migration | Manual | ref.json update + data copy |
 
 ---
 
@@ -1199,14 +1232,15 @@ datom provides robust data versioning optimized for clinical data science workfl
 
 1. Single read function (`datom_read()`) with routing for all access patterns
 2. **datom version = metadata_sha**: uniquely identifies (data, metadata) pair
-3. **Credential naming convention**: `DATOM_{PROJECT_NAME}_*` auto-generated, enabling multi-repo composition
+3. **Direct credential passing**: Store objects provide credentials directly to S3 clients — no env var indirection
 4. Multi-language support via routing layer (R first, Python planned)
-5. Cloud storage agnostic design (S3 first, extensible)
+5. Cloud storage agnostic design (S3 first, extensible via `.datom_storage_*()` dispatch)
 6. Optimized for clinical/scientific workflows with many tables
 7. One repository per project with optional bucket prefix support
 8. Deterministic SHA computation via alphabetical field sorting
 9. Manual conflict resolution for rare concurrent write scenarios
-10. Implicit location with redirect chain for seamless migration
-11. project.yaml authoritative; routing.json and S3 metadata derived
+10. Explicit data location via ref.json at governance store
+11. project.yaml authoritative; dispatch.json and S3 metadata derived
+12. Two-store architecture: governance (dispatch, ref, migration history) and data (manifest, tables)
 
 This architecture keeps datom focused on core versioning while providing clear extension points for enterprise features. As part of the larger data product ecosystem (with dpbuild, dpdeploy, and dpi), datom serves as the foundational layer for reproducible analytical workflows.

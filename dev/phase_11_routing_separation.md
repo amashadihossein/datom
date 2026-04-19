@@ -316,17 +316,17 @@ The layout diagrams in this doc and in `datom_specification.md` are normative â€
 - [x] `datom_sync_routing()` renamed to `datom_sync_dispatch()`
 - [x] `.datom_s3_client()` accepts direct credentials, no env var indirection
 - [x] `.datom_install_store()`, `.datom_derive_cred_names()`, `.datom_check_credentials()` removed
-- [ ] `.datom_s3_resolve_redirect()` and `.redirect.json` removed
+- [x] `.datom_s3_resolve_redirect()` and `.redirect.json` removed
 - [x] Governance store receives dispatch.json, ref.json, migration_history.json
 - [x] Data store receives manifest.json, table data and metadata
 - [x] Storage abstraction: business logic calls `.datom_storage_*()`, not `.datom_s3_*()`
 - [x] `datom_conn` uses `client`/`gov_client` (not `s3_client`/`gov_s3_client`), has `backend` field
 - [x] `.datom_build_s3_key()` renamed to `.datom_build_storage_key()`
-- [ ] `ref.json` always present at governance store, created by `datom_init_repo()`
-- [ ] `.datom_resolve_ref()` reads `ref.json` (single read, no recursion)
-- [ ] Deprecation warning emitted when ref.json has previous entries
+- [x] `ref.json` always present at governance store, created by `datom_init_repo()`
+- [x] `.datom_resolve_ref()` reads `ref.json` (single read, no recursion)
+- [x] Deprecation warning emitted when ref.json has previous entries
 - [ ] Stale data credentials produce clear, actionable error message
-- [ ] Namespace conventions documented in spec
+- [x] Namespace conventions documented in spec
 - [ ] Full test suite passes, count â‰¥ Phase 10 final count
 - [ ] E2E workflow succeeds
 
@@ -338,8 +338,8 @@ The layout diagrams in this doc and in `datom_specification.md` are normative â€
 | 2 | complete | Credential wiring, env var bridge removed, 1041 tests pass (42 removed with deleted functions), commit `de3fbf7` |
 | 3 | complete | Gov store wiring for dispatch+migration_history, data store for manifest, .datom_gov_conn helper, 1041 tests pass |
 | 4 | complete | Storage abstraction layer, 5 dispatch functions, conn field renames, ~150 call site updates, 1041 tests pass, commit `162d232` |
-| 5 | not started | ref.json + resolve_ref |
-| 6 | not started | Spec + conventions |
+| 5 | complete | ref.json + resolve_ref, 1039 tests pass, commit `c596e6d` |
+| 6 | in progress | Spec + conventions |
 | 7 | not started | Sandbox, E2E, docs |
 
 ## Dependencies
