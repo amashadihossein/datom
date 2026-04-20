@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| (none) | — | — |
+| Phase 13: Reader Ref Resolution | In Progress | `dev/phase_13_reader_ref_resolution.md` |
 
 ### Completed Phases
 
