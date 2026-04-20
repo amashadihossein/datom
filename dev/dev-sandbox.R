@@ -85,6 +85,42 @@ sandbox_store <- function(bucket = "datom-test",
 }
 
 
+#' Build a local-backend datom_store for sandbox use
+#'
+#' Constructs a `datom_store` with local filesystem components. No AWS
+#' credentials needed — data lives on disk.
+#'
+#' @param path Root directory for local storage. Created if it doesn't exist.
+#' @param prefix Storage prefix (default NULL).
+#' @param github_pat GitHub PAT (still required for governance/git).
+#' @param github_org GitHub org for repo creation (NULL = personal).
+#' @param remote_url Pre-existing remote URL (NULL = create_repo in sandbox_up).
+#'
+#' @return A `datom_store` object (developer role, local backend).
+sandbox_store_local <- function(path,
+                                prefix = NULL,
+                                github_pat = keyring::key_get("GITHUB_PAT", "kol", "remotes"),
+                                github_org = NULL,
+                                remote_url = NULL) {
+  fs::dir_create(path)
+
+  comp <- datom::datom_store_local(
+    path     = path,
+    prefix   = prefix,
+    validate = FALSE
+  )
+
+  datom::datom_store(
+    governance = comp,
+    data       = comp,
+    github_pat = github_pat,
+    github_org = github_org,
+    remote_url = remote_url,
+    validate   = FALSE
+  )
+}
+
+
 # --- Helpers (gh CLI — used only for teardown) --------------------------------
 
 .sandbox_check_gh <- function() {

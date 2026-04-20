@@ -16,13 +16,15 @@
 \arguments{
 \item{project_name}{Project name string.}
 
-\item{prefix}{S3 prefix (can be NULL).}
+\item{backend}{Storage backend (\code{"s3"} or \code{"local"}).}
 
-\item{region}{AWS region string.}
+\item{root}{Storage root (S3 bucket name or local directory path).}
+
+\item{prefix}{Storage prefix (can be NULL).}
+
+\item{region}{AWS region string (NULL for local backend).}
 
 \item{remote_url}{Git remote URL.}
-
-\item{bucket}{S3 bucket name.}
 }
 \value{
 Character string — the rendered README content.

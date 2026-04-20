@@ -147,7 +147,7 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 - CRAN vignette strategy (eval=FALSE or pre-computed)
 - `devtools::check()` clean
 
-**Status**: Not started
+**Status**: Complete
 
 ### Chunk 6: Polish + spec update
 
@@ -163,7 +163,7 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 ## Current State
 
-Chunk 0-4 complete. Starting Chunk 5 (E2E).
+Chunk 0-5 complete. Starting Chunk 6 (Polish).
 
 **Branch**: `phase/12-filesystem-backend` (off `main`)
 

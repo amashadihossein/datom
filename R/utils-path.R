@@ -130,9 +130,10 @@
 #' project-specific values using `{{{ }}}` delimiters.
 #'
 #' @param project_name Project name string.
-#' @param bucket S3 bucket name.
-#' @param prefix S3 prefix (can be NULL).
-#' @param region AWS region string.
+#' @param backend Storage backend (`"s3"` or `"local"`).
+#' @param root Storage root (S3 bucket name or local directory path).
+#' @param prefix Storage prefix (can be NULL).
+#' @param region AWS region string (NULL for local backend).
 #' @param remote_url Git remote URL.
 #'
 #' @return Character string — the rendered README content.
