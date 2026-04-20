@@ -16,6 +16,7 @@
 # --- Configuration -----------------------------------------------------------
 
 local_storage_dir <- fs::path_abs("../datom-local-e2e")
+local_gov_dir <- fs::path_abs("../datom-local-e2e-gov")
 repo_name <- paste0("datom-local-e2e-", format(Sys.time(), "%Y%m%d%H%M%S"))
 project_name <- "LOCAL_E2E"
 
@@ -23,6 +24,7 @@ project_name <- "LOCAL_E2E"
 
 store <- sandbox_store_local(
   path       = local_storage_dir,
+  gov_path   = local_gov_dir,
   prefix     = "e2e/",
   github_org = NULL
 )

@@ -20,6 +20,7 @@
 
 store <- sandbox_store(
   bucket     = "datom-test",
+  gov_bucket = "datom-gov-test",
   prefix     = NULL,
   region     = "us-east-1"
 )

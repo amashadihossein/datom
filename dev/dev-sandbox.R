@@ -58,6 +58,7 @@
 #'
 #' @return A `datom_store` object (developer role).
 sandbox_store <- function(bucket = "datom-test",
+                          gov_bucket = "datom-gov-test",
                           prefix = "sandbox/",
                           region = "us-east-1",
                           access_key = keyring::key_get("AWS_ACCESS_KEY", "datom-developer", "remotes"),
@@ -65,7 +66,7 @@ sandbox_store <- function(bucket = "datom-test",
                           github_pat = keyring::key_get("GITHUB_PAT", "kol", "remotes"),
                           github_org = NULL,
                           remote_url = NULL) {
-  comp <- datom::datom_store_s3(
+  data_comp <- datom::datom_store_s3(
     bucket     = bucket,
     prefix     = prefix,
     region     = region,
@@ -74,9 +75,18 @@ sandbox_store <- function(bucket = "datom-test",
     validate   = FALSE
   )
 
+  gov_comp <- datom::datom_store_s3(
+    bucket     = gov_bucket,
+    prefix     = prefix,
+    region     = region,
+    access_key = access_key,
+    secret_key = secret_key,
+    validate   = FALSE
+  )
+
   datom::datom_store(
-    governance = comp,
-    data       = comp,
+    governance = gov_comp,
+    data       = data_comp,
     github_pat = github_pat,
     github_org = github_org,
     remote_url = remote_url,
@@ -98,21 +108,29 @@ sandbox_store <- function(bucket = "datom-test",
 #'
 #' @return A `datom_store` object (developer role, local backend).
 sandbox_store_local <- function(path,
+                                gov_path = paste0(path, "-gov"),
                                 prefix = NULL,
                                 github_pat = keyring::key_get("GITHUB_PAT", "kol", "remotes"),
                                 github_org = NULL,
                                 remote_url = NULL) {
   fs::dir_create(path)
+  fs::dir_create(gov_path)
 
-  comp <- datom::datom_store_local(
+  data_comp <- datom::datom_store_local(
     path     = path,
     prefix   = prefix,
     validate = FALSE
   )
 
+  gov_comp <- datom::datom_store_local(
+    path     = gov_path,
+    prefix   = prefix,
+    validate = FALSE
+  )
+
   datom::datom_store(
-    governance = comp,
-    data       = comp,
+    governance = gov_comp,
+    data       = data_comp,
     github_pat = github_pat,
     github_org = github_org,
     remote_url = remote_url,
@@ -164,24 +182,29 @@ sandbox_store_local <- function(path,
 #'
 #' Uses paws.storage directly (no aws CLI dependency). Lists all objects
 #' under prefix/datom/ and deletes them in batches of 1000.
-.sandbox_wipe_s3 <- function(cfg, store) {
+.sandbox_wipe_s3_component <- function(store_component, label = "data") {
+  if (!inherits(store_component, "datom_store_s3")) {
+    cli::cli_alert_info("Skipping {label} S3 wipe (not an S3 store).")
+    return(invisible(0L))
+  }
+
   s3 <- datom:::.datom_s3_client(
-    access_key = store$data$access_key,
-    secret_key = store$data$secret_key,
-    region     = store$data$region
+    access_key = store_component$access_key,
+    secret_key = store_component$secret_key,
+    region     = store_component$region
   )
 
   full_prefix <- paste0(
-    if (!is.null(store$data$prefix)) paste0(gsub("/+$", "", store$data$prefix), "/") else "",
+    if (!is.null(store_component$prefix)) paste0(gsub("/+$", "", store_component$prefix), "/") else "",
     "datom/"
   )
 
-  cli::cli_alert_info("Listing S3 objects under {.val {store$data$bucket}/{full_prefix}}...")
+  cli::cli_alert_info("Listing {label} S3 objects under {.val {store_component$bucket}/{full_prefix}}...")
 
   all_keys <- character()
   continuation <- NULL
   repeat {
-    args <- list(Bucket = store$data$bucket, Prefix = full_prefix, MaxKeys = 1000L)
+    args <- list(Bucket = store_component$bucket, Prefix = full_prefix, MaxKeys = 1000L)
     if (!is.null(continuation)) args$ContinuationToken <- continuation
 
     resp <- do.call(s3$list_objects_v2, args)
@@ -196,22 +219,22 @@ sandbox_store_local <- function(path,
   }
 
   if (length(all_keys) == 0L) {
-    cli::cli_alert_info("No S3 objects found. Nothing to delete.")
+    cli::cli_alert_info("No {label} S3 objects found. Nothing to delete.")
     return(invisible(0L))
   }
 
-  cli::cli_alert_warning("Deleting {length(all_keys)} S3 object{?s}...")
+  cli::cli_alert_warning("Deleting {length(all_keys)} {label} S3 object{?s}...")
 
   batches <- split(all_keys, ceiling(seq_along(all_keys) / 1000))
   for (batch in batches) {
     objects <- purrr::map(batch, ~ list(Key = .x))
     s3$delete_objects(
-      Bucket = store$data$bucket,
+      Bucket = store_component$bucket,
       Delete = list(Objects = objects, Quiet = TRUE)
     )
   }
 
-  cli::cli_alert_success("Deleted {length(all_keys)} S3 object{?s}.")
+  cli::cli_alert_success("Deleted {length(all_keys)} {label} S3 object{?s}.")
   invisible(length(all_keys))
 }
 
@@ -352,11 +375,17 @@ sandbox_down <- function(env, confirm = interactive()) {
     }
   }
 
-  # 1. Wipe S3
+  # 1. Wipe S3 (both data and governance stores)
   tryCatch({
-    .sandbox_wipe_s3(cfg, store)
+    .sandbox_wipe_s3_component(store$data, "data")
   }, error = function(e) {
-    cli::cli_alert_danger("S3 cleanup failed: {conditionMessage(e)}")
+    cli::cli_alert_danger("Data S3 cleanup failed: {conditionMessage(e)}")
+    cli::cli_alert_info("Continuing with remaining teardown...")
+  })
+  tryCatch({
+    .sandbox_wipe_s3_component(store$governance, "governance")
+  }, error = function(e) {
+    cli::cli_alert_danger("Governance S3 cleanup failed: {conditionMessage(e)}")
     cli::cli_alert_info("Continuing with remaining teardown...")
   })
 
