@@ -10,7 +10,7 @@ Add a local filesystem storage backend so datom works without S3. Enables CRAN v
 - GitHub PAT always required (decided during design). No "demo mode" without governance
 - Git always required. GitHub always required for non-trivial use
 - For CRAN vignette: `eval = FALSE` with pre-computed outputs (no credential-free escape hatch)
-- `conn$bucket` reused as root directory path for local backend (avoids changing all callers)
+- `conn$bucket` renamed to `conn$root` (Chunk 0) — backend-neutral naming for the root location
 - Local store path layout mirrors S3: `{root}/{prefix}/datom/{table}/...`
 
 ## Design Decisions
@@ -39,15 +39,36 @@ GitHub PAT backs the role claim in both S3 and local backends. Local without PAT
 - No credentials to validate (filesystem permissions are implicit)
 - Class: `datom_store_local`
 
-### `conn$bucket` for local
+### `conn$root` (generalized from `bucket`)
 
-Reuse `bucket` field to hold root directory path. Backend-specific functions know how to interpret it. No structural changes to `datom_conn`.
+Rename `conn$bucket` → `conn$root` to be backend-neutral. S3: root = bucket name. Local: root = directory path. Azure: root = container. Each backend's functions interpret `root` in context. Done as Chunk 0 before adding local backend.
 
 ### `conn$client` for local
 
 `NULL` — not needed. `.datom_local_*()` functions use `conn$bucket` (path) + `conn$prefix` directly via `fs::`.
 
 ## Chunks
+
+### Chunk 0: Generalize conn field names (`bucket` → `root`)
+
+**Scope**: Pure mechanical rename — no behavior change. Makes conn fields backend-neutral before adding local backend.
+
+**Changes**:
+- `conn$bucket` → `conn$root` everywhere (R/, tests/)
+- `conn$gov_bucket` → `conn$gov_root` everywhere
+- `new_datom_conn()` parameter `bucket` → `root`, `gov_bucket` → `gov_root`
+- `mock_datom_conn()` in test helper updated
+- `.datom_gov_conn()` updated
+- `print.datom_conn()` labels updated
+- `ref.json` field: `bucket` → `root` (and `.datom_create_ref()` / `.datom_resolve_ref()`)
+- `utils-s3.R`: `conn$root` mapped to `Bucket =` in paws API calls
+- Display messages in `query.R`, `sync.R`, `ref.R` updated
+
+**Not changed**: `region`/`gov_region` — kept for now (only S3 uses it; local ignores via NULL). `datom_store_s3$bucket` field unchanged (store objects are backend-specific).
+
+**Tests**: All existing tests pass with renamed fields. Test count ≥ 1039.
+
+**Status**: Not started
 
 ### Chunk 1: `datom_store_local()` constructor
 
@@ -133,7 +154,7 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 ## Current State
 
-Starting chunk 1.
+Starting Chunk 0 (conn field generalization).
 
 ## Acceptance Criteria
 
