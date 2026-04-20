@@ -135,7 +135,7 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 **Tests**: Init + get_conn + clone round-trips with local stores. Cross-check tests with local yaml.
 
-**Status**: Not started
+**Status**: Complete
 
 ### Chunk 5: E2E + vignette
 
@@ -163,22 +163,21 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 ## Current State
 
-Chunk 0 complete (commit `5b043de`). Chunk 1 complete (commit `4047b83`). Chunk 2 complete (commit `2f59653`). Chunk 3 complete (commit `7442995`). Starting Chunk 4.
+Chunk 0-4 complete. Starting Chunk 5 (E2E).
 
 **Branch**: `phase/12-filesystem-backend` (off `main`)
 
 **Key context for new sessions**:
 - `conn$root` is the generalized field (was `conn$bucket`). S3 stores still have `$bucket` on the store object; the conn maps it to `$root`.
-- `project.yaml` now uses `root` (not `bucket`) under `storage.data` and `storage.governance`.
-- `ref.json` uses `root` (not `bucket`) under `current` and `previous` entries.
-- `datom_store_s3$bucket` is **unchanged** — store objects remain backend-specific.
-- `datom_store_local$path` is the local store field. Constructor auto-creates dirs, normalizes to absolute path.
-- `.is_datom_store_component()` recognizes both `datom_store_s3` and `datom_store_local`.
-- All `.datom_local_*()` functions implemented in `R/utils-local.R` — mirror `.datom_s3_*()` API.
-- Dispatch wired: all `.datom_storage_*()` functions route `backend = "local"` to `.datom_local_*()`.
-- `region`/`gov_region` remain on conn (not removed). Local backend will set them to NULL.
-- Test count: 1113. Must not drop below this.
-- Key files: `R/conn.R` (constructor, init, get_conn), `R/utils-storage.R` (dispatch), `R/utils-s3.R` (S3 backend), `R/utils-local.R` (local backend), `R/store.R` (store constructors), `R/ref.R` (ref.json).
+- `conn$backend` is now `"s3"` or `"local"` (was hardcoded `"s3"`).
+- `new_datom_conn()` accepts `backend` param. Region can be NULL for local.
+- `.datom_store_backend/root/region()` accessors extract backend-neutral fields from store components.
+- `.datom_build_init_conn()` creates conn from store component (S3 client or NULL for local).
+- `datom_init_repo()` fully backend-neutral: skips S3 check for local, dispatches storage push.
+- `project.yaml` stores `type: local` (no region field) or `type: s3` (with region).
+- Full `datom_init_repo()` → `datom_get_conn()` round-trip works with local stores.
+- Test count: 1153. Must not drop below this.
+- Key files: `R/conn.R`, `R/utils-storage.R`, `R/utils-s3.R`, `R/utils-local.R`, `R/store.R`, `R/ref.R`, `R/utils-path.R`.
 
 ## Acceptance Criteria
 
