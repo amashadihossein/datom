@@ -130,17 +130,19 @@
 #' project-specific values using `{{{ }}}` delimiters.
 #'
 #' @param project_name Project name string.
-#' @param bucket S3 bucket name.
-#' @param prefix S3 prefix (can be NULL).
-#' @param region AWS region string.
+#' @param backend Storage backend (`"s3"` or `"local"`).
+#' @param root Storage root (S3 bucket name or local directory path).
+#' @param prefix Storage prefix (can be NULL).
+#' @param region AWS region string (NULL for local backend).
 #' @param remote_url Git remote URL.
 #'
 #' @return Character string — the rendered README content.
 #' @keywords internal
 .datom_render_readme <- function(project_name,
-                                bucket,
+                                backend = "s3",
+                                root,
                                 prefix,
-                                region,
+                                region = NULL,
                                 remote_url) {
   template_path <- system.file(
     "templates", "README.md",
@@ -152,17 +154,30 @@
 
   prefix_display <- if (is.null(prefix)) "*(none)*" else paste0("`", prefix, "`")
   prefix_code <- if (is.null(prefix)) "NULL" else paste0('"', prefix, '"')
+  region_display <- region %||% "*(n/a)*"
+
+  # Store constructor snippet for README
+  if (backend == "local") {
+    store_constructor <- paste0('datom_store_local("', root, '", ', prefix_code, ')')
+  } else {
+    store_constructor <- paste0(
+      'datom_store_s3("', root, '", ', prefix_code, ', "',
+      region_display, '", access_key = "...", secret_key = "...")'
+    )
+  }
 
   glue::glue(
     template,
-    project_name   = project_name,
-    bucket         = bucket,
-    prefix_display = prefix_display,
-    prefix_code    = prefix_code,
-    region         = region,
-    remote_url     = remote_url,
-    created_at     = format(Sys.Date(), "%Y-%m-%d"),
-    datom_version   = as.character(utils::packageVersion("datom")),
+    project_name      = project_name,
+    backend           = backend,
+    root              = root,
+    prefix_display    = prefix_display,
+    prefix_code       = prefix_code,
+    region            = region_display,
+    remote_url        = remote_url,
+    store_constructor = store_constructor,
+    created_at        = format(Sys.Date(), "%Y-%m-%d"),
+    datom_version     = as.character(utils::packageVersion("datom")),
     .open  = "{{{",
     .close = "}}}"
   )

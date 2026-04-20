@@ -17,7 +17,7 @@ mock_s3_client <- function() {
 test_that("creates a reader connection with required fields", {
   conn <- new_datom_conn(
     project_name = "clinical_data",
-    bucket = "my-bucket",
+    root = "my-bucket",
     prefix = "project-alpha/",
     region = "us-east-1",
     client = mock_s3_client(),
@@ -26,7 +26,7 @@ test_that("creates a reader connection with required fields", {
 
   expect_s3_class(conn, "datom_conn")
   expect_equal(conn$project_name, "clinical_data")
-  expect_equal(conn$bucket, "my-bucket")
+  expect_equal(conn$root, "my-bucket")
   expect_equal(conn$prefix, "project-alpha/")
   expect_equal(conn$region, "us-east-1")
   expect_equal(conn$role, "reader")
@@ -38,7 +38,7 @@ test_that("creates a developer connection with path", {
 
   conn <- new_datom_conn(
     project_name = "clinical_data",
-    bucket = "my-bucket",
+    root = "my-bucket",
     region = "us-east-1",
     client = mock_s3_client(),
     path = dir,
@@ -53,7 +53,7 @@ test_that("creates a developer connection with path", {
 test_that("prefix defaults to NULL", {
   conn <- new_datom_conn(
     project_name = "proj",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client(),
     role = "reader"
@@ -66,7 +66,7 @@ test_that("developer requires path", {
   expect_error(
     new_datom_conn(
       project_name = "proj",
-      bucket = "b",
+      root = "b",
       region = "us-east-1",
       client = mock_s3_client(),
       role = "developer"
@@ -79,7 +79,7 @@ test_that("aborts on empty project_name", {
   expect_error(
     new_datom_conn(
       project_name = "",
-      bucket = "b",
+      root = "b",
       region = "us-east-1",
       client = mock_s3_client()
     ),
@@ -91,7 +91,7 @@ test_that("aborts on NA project_name", {
   expect_error(
     new_datom_conn(
       project_name = NA_character_,
-      bucket = "b",
+      root = "b",
       region = "us-east-1",
       client = mock_s3_client()
     ),
@@ -99,15 +99,15 @@ test_that("aborts on NA project_name", {
   )
 })
 
-test_that("aborts on empty bucket", {
+test_that("aborts on empty root", {
   expect_error(
     new_datom_conn(
       project_name = "p",
-      bucket = "",
+      root = "",
       region = "us-east-1",
       client = mock_s3_client()
     ),
-    "bucket"
+    "root"
   )
 })
 
@@ -115,7 +115,7 @@ test_that("aborts on empty region", {
   expect_error(
     new_datom_conn(
       project_name = "p",
-      bucket = "b",
+      root = "b",
       region = "",
       client = mock_s3_client()
     ),
@@ -127,7 +127,7 @@ test_that("aborts on non-string prefix", {
   expect_error(
     new_datom_conn(
       project_name = "p",
-      bucket = "b",
+      root = "b",
       prefix = 123,
       region = "us-east-1",
       client = mock_s3_client()
@@ -140,7 +140,7 @@ test_that("aborts on non-string path", {
   expect_error(
     new_datom_conn(
       project_name = "p",
-      bucket = "b",
+      root = "b",
       region = "us-east-1",
       client = mock_s3_client(),
       path = 123,
@@ -153,7 +153,7 @@ test_that("aborts on non-string path", {
 test_that("role defaults to reader", {
   conn <- new_datom_conn(
     project_name = "p",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client()
   )
@@ -165,7 +165,7 @@ test_that("aborts on invalid role", {
   expect_error(
     new_datom_conn(
       project_name = "p",
-      bucket = "b",
+      root = "b",
       region = "us-east-1",
       client = mock_s3_client(),
       role = "admin"
@@ -182,7 +182,7 @@ test_that("aborts on invalid role", {
 test_that("is_datom_conn returns TRUE for datom_conn objects", {
   conn <- new_datom_conn(
     project_name = "p",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client()
   )
@@ -205,7 +205,7 @@ test_that("is_datom_conn returns FALSE for other objects", {
 test_that("print.datom_conn outputs key fields", {
   conn <- new_datom_conn(
     project_name = "clinical_data",
-    bucket = "my-bucket",
+    root = "my-bucket",
     prefix = "proj/",
     region = "us-east-1",
     client = mock_s3_client(),
@@ -226,7 +226,7 @@ test_that("print.datom_conn shows path for developer", {
 
   conn <- new_datom_conn(
     project_name = "proj",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client(),
     path = dir,
@@ -243,7 +243,7 @@ test_that("print.datom_conn shows path for developer", {
 test_that("print.datom_conn omits prefix when NULL", {
   conn <- new_datom_conn(
     project_name = "proj",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client()
   )
@@ -257,7 +257,7 @@ test_that("print.datom_conn omits prefix when NULL", {
 test_that("print.datom_conn returns x invisibly", {
   conn <- new_datom_conn(
     project_name = "proj",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client()
   )
@@ -272,7 +272,7 @@ test_that("print.datom_conn returns x invisibly", {
 test_that("print.datom_conn does not expose client details", {
   conn <- new_datom_conn(
     project_name = "proj",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client()
   )
@@ -320,13 +320,13 @@ create_test_datom_repo <- function(project_name = "testproj",
     storage = list(
       governance = list(
         type = "s3",
-        bucket = bucket,
+        root = bucket,
         prefix = prefix,
         region = region
       ),
       data = list(
         type = "s3",
-        bucket = bucket,
+        root = bucket,
         prefix = prefix,
         region = region
       ),
@@ -357,7 +357,7 @@ test_that("developer path reads project.yaml and creates connection", {
 
   expect_s3_class(conn, "datom_conn")
   expect_equal(conn$project_name, "myproj")
-  expect_equal(conn$bucket, "my-bucket")
+  expect_equal(conn$root, "my-bucket")
   expect_equal(conn$role, "developer")
   expect_equal(conn$path, as.character(fs::path_abs(dir)))
 })
@@ -422,7 +422,7 @@ test_that("developer path aborts when project_name missing from yaml", {
   datom_dir <- fs::path(dir, ".datom")
   fs::dir_create(datom_dir)
   yaml::write_yaml(
-    list(storage = list(bucket = "b")),
+    list(storage = list(root = "b")),
     fs::path(datom_dir, "project.yaml")
   )
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
@@ -431,7 +431,7 @@ test_that("developer path aborts when project_name missing from yaml", {
   expect_error(datom_get_conn(path = dir, store = store), "project_name")
 })
 
-test_that("developer path cross-checks bucket mismatch", {
+test_that("developer path cross-checks root mismatch", {
   dir <- create_test_datom_repo(project_name = "myproj", bucket = "yaml-bucket")
   comp <- datom_store_s3(bucket = "different-bucket", access_key = "k",
                          secret_key = "s", validate = FALSE)
@@ -460,7 +460,7 @@ test_that("reader path creates connection from store", {
   conn <- datom_get_conn(store = store, project_name = "myproj")
 
   expect_s3_class(conn, "datom_conn")
-  expect_equal(conn$bucket, "reader-bucket")
+  expect_equal(conn$root, "reader-bucket")
   expect_equal(conn$prefix, "data/")
   expect_equal(conn$project_name, "myproj")
   expect_equal(conn$role, "reader")
@@ -638,18 +638,18 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   cfg <- yaml::read_yaml(yaml_path)
   expect_equal(cfg$project_name, "testproj")
   expect_equal(cfg$storage$governance$type, "s3")
-  expect_equal(cfg$storage$governance$bucket, "gov-bucket")
+  expect_equal(cfg$storage$governance$root, "gov-bucket")
   expect_equal(cfg$storage$governance$prefix, "gov/")
   expect_equal(cfg$storage$governance$region, "eu-west-1")
   expect_equal(cfg$storage$data$type, "s3")
-  expect_equal(cfg$storage$data$bucket, "my-bucket")
+  expect_equal(cfg$storage$data$root, "my-bucket")
   expect_equal(cfg$storage$data$prefix, "data/")
   expect_equal(cfg$storage$data$region, "eu-west-1")
   expect_equal(cfg$storage$max_file_size_gb, 500)
   expect_equal(cfg$git$remote_url, env$bare_dir)
-  # No top-level storage$type, storage$bucket, or storage$credentials
+  # No top-level storage$type, storage$root, or storage$credentials
   expect_null(cfg$storage$type)
-  expect_null(cfg$storage$bucket)
+  expect_null(cfg$storage$root)
   expect_null(cfg$storage$credentials)
 })
 
@@ -1190,7 +1190,7 @@ test_that("datom_init_repo warns but continues when S3 connectivity fails during
 test_that("new_datom_conn stores endpoint when provided", {
   conn <- new_datom_conn(
     project_name = "p",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client(),
     endpoint = "https://my-access-point.s3-accesspoint.us-east-1.amazonaws.com"
@@ -1205,7 +1205,7 @@ test_that("new_datom_conn stores endpoint when provided", {
 test_that("new_datom_conn endpoint defaults to NULL", {
   conn <- new_datom_conn(
     project_name = "p",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client()
   )
@@ -1216,7 +1216,7 @@ test_that("new_datom_conn endpoint defaults to NULL", {
 test_that("print.datom_conn shows endpoint when non-NULL", {
   conn <- new_datom_conn(
     project_name = "proj",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client(),
     endpoint = "https://custom-endpoint.example.com"
@@ -1232,7 +1232,7 @@ test_that("print.datom_conn shows endpoint when non-NULL", {
 test_that("print.datom_conn omits endpoint when NULL", {
   conn <- new_datom_conn(
     project_name = "proj",
-    bucket = "b",
+    root = "b",
     region = "us-east-1",
     client = mock_s3_client()
   )
@@ -1425,12 +1425,12 @@ test_that("datom_clone clones and returns a datom_conn", {
         storage = list(
           data = list(
             type = "s3",
-            bucket = "test-bucket",
+            root = "test-bucket",
             region = "us-east-1"
           ),
           governance = list(
             type = "s3",
-            bucket = "test-bucket",
+            root = "test-bucket",
             region = "us-east-1"
           )
         )
@@ -1457,7 +1457,7 @@ test_that("datom_clone clones and returns a datom_conn", {
 
     expect_s3_class(conn, "datom_conn")
     expect_equal(conn$project_name, "MYPROJ")
-    expect_equal(conn$bucket, "test-bucket")
+    expect_equal(conn$root, "test-bucket")
     expect_true(fs::dir_exists("clone_target/.datom"))
     expect_true(fs::file_exists("clone_target/.datom/project.yaml"))
   })
@@ -1474,4 +1474,170 @@ test_that("datom_clone aborts on clone failure", {
       "Failed to clone"
     )
   })
+})
+
+
+# ==============================================================================
+# Local backend connection tests (Phase 12, Chunk 4)
+# ==============================================================================
+
+test_that("new_datom_conn works with backend = 'local' and NULL region", {
+  conn <- new_datom_conn(
+    project_name = "test_proj",
+    root = "/data/store",
+    prefix = "proj/",
+    region = NULL,
+    client = NULL,
+    role = "reader",
+    backend = "local"
+  )
+
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$backend, "local")
+  expect_equal(conn$root, "/data/store")
+  expect_null(conn$region)
+  expect_null(conn$client)
+})
+
+test_that("new_datom_conn with backend = 's3' rejects NULL region", {
+  expect_error(
+    new_datom_conn(
+      project_name = "p", root = "b", region = NULL,
+      client = mock_s3_client(), backend = "s3"
+    ),
+    "region"
+  )
+})
+
+test_that(".datom_build_init_conn creates local conn from local store", {
+  local_store <- datom_store_local(path = "/data/store", prefix = "proj/", validate = FALSE)
+
+  conn <- .datom_build_init_conn(
+    "test_proj", local_store, NULL, "reader",
+    gov_store = local_store
+  )
+
+  expect_equal(conn$backend, "local")
+  expect_match(conn$root, "data/store")
+  expect_null(conn$client)
+  expect_match(conn$gov_root, "data/store")
+  expect_null(conn$gov_client)
+})
+
+test_that(".datom_build_init_conn creates s3 conn from s3 store", {
+  s3_store <- datom_store_s3(
+    bucket = "b", prefix = "p/", region = "us-east-1",
+    access_key = "AK", secret_key = "SK", validate = FALSE
+  )
+
+  local_mocked_bindings(
+    .datom_s3_client = function(...) list(put_object = function(...) list())
+  )
+
+  conn <- .datom_build_init_conn(
+    "test_proj", s3_store, NULL, "reader",
+    gov_store = s3_store
+  )
+
+  expect_equal(conn$backend, "s3")
+  expect_equal(conn$root, "b")
+  expect_false(is.null(conn$client))
+})
+
+test_that(".datom_store_backend returns correct backend", {
+  s3 <- datom_store_s3(bucket = "b", access_key = "a", secret_key = "s", validate = FALSE)
+  local <- datom_store_local(path = "/tmp/x", validate = FALSE)
+
+  expect_equal(.datom_store_backend(s3), "s3")
+  expect_equal(.datom_store_backend(local), "local")
+})
+
+test_that(".datom_store_root returns correct root", {
+  s3 <- datom_store_s3(bucket = "my-bucket", access_key = "a", secret_key = "s", validate = FALSE)
+  local <- datom_store_local(path = "/data/store", validate = FALSE)
+
+  expect_equal(.datom_store_root(s3), "my-bucket")
+  expect_match(.datom_store_root(local), "data/store")
+})
+
+test_that(".datom_store_region returns correct region", {
+  s3 <- datom_store_s3(bucket = "b", region = "eu-west-1", access_key = "a", secret_key = "s", validate = FALSE)
+  local <- datom_store_local(path = "/tmp/x", validate = FALSE)
+
+  expect_equal(.datom_store_region(s3), "eu-west-1")
+  expect_null(.datom_store_region(local))
+})
+
+test_that("print.datom_conn shows backend", {
+  conn <- new_datom_conn(
+    project_name = "p", root = "/data", region = NULL,
+    client = NULL, role = "reader", backend = "local"
+  )
+  out <- capture.output(print(conn), type = "message")
+  combined <- paste(out, collapse = "\n")
+  expect_match(combined, "local")
+})
+
+# --- Local init_repo setup helper -------------------------------------------
+
+setup_local_init_env <- function(env = parent.frame()) {
+  bare_dir <- withr::local_tempdir(.local_envir = env)
+  git2r::init(bare_dir, bare = TRUE)
+  work_dir <- withr::local_tempdir(.local_envir = env)
+  store_dir <- withr::local_tempdir(.local_envir = env)
+
+  comp <- datom_store_local(path = store_dir, prefix = "proj/", validate = TRUE)
+  store <- datom_store(
+    governance = comp, data = comp,
+    github_pat = "ghp_fake",
+    remote_url = bare_dir,
+    validate = FALSE
+  )
+
+  list(bare_dir = bare_dir, work_dir = work_dir, store_dir = store_dir, store = store)
+}
+
+test_that("datom_init_repo works with local stores", {
+  env <- setup_local_init_env()
+
+  datom_init_repo(
+    path = env$work_dir,
+    project_name = "local_test",
+    store = env$store
+  )
+
+  # Check files created
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "project.yaml")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+
+  # Check project.yaml has local backend
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_equal(cfg$storage$data$type, "local")
+  expect_equal(cfg$storage$governance$type, "local")
+  expect_null(cfg$storage$data$region)
+
+  # Check storage files were pushed
+  store_base <- fs::path(env$store_dir, "proj/", "datom")
+  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "manifest.json")))
+  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "dispatch.json")))
+  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "ref.json")))
+})
+
+test_that("datom_get_conn works with local stores after init", {
+  env <- setup_local_init_env()
+
+  datom_init_repo(
+    path = env$work_dir,
+    project_name = "local_conn_test",
+    store = env$store
+  )
+
+  conn <- datom_get_conn(path = env$work_dir, store = env$store)
+
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$backend, "local")
+  expect_equal(conn$project_name, "local_conn_test")
+  expect_equal(conn$role, "developer")
+  expect_null(conn$client)
 })

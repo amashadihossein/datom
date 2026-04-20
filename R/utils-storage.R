@@ -4,8 +4,7 @@
 # based on `conn$backend`. Business logic calls these — never the backend
 # functions directly (e.g. `.datom_s3_upload()`).
 #
-# Currently supports: "s3"
-# Future backends: "local" (Phase 12)
+# Currently supports: "s3", "local"
 
 
 #' Upload File to Storage
@@ -19,6 +18,7 @@
   backend <- conn$backend %||% "s3"
   switch(backend,
     s3 = .datom_s3_upload(conn, local_path, key),
+    local = .datom_local_upload(conn, local_path, key),
     cli::cli_abort("Unsupported storage backend: {.val {backend}}")
   )
 }
@@ -35,6 +35,7 @@
   backend <- conn$backend %||% "s3"
   switch(backend,
     s3 = .datom_s3_download(conn, key, local_path),
+    local = .datom_local_download(conn, key, local_path),
     cli::cli_abort("Unsupported storage backend: {.val {backend}}")
   )
 }
@@ -50,6 +51,7 @@
   backend <- conn$backend %||% "s3"
   switch(backend,
     s3 = .datom_s3_exists(conn, key),
+    local = .datom_local_exists(conn, key),
     cli::cli_abort("Unsupported storage backend: {.val {backend}}")
   )
 }
@@ -65,6 +67,7 @@
   backend <- conn$backend %||% "s3"
   switch(backend,
     s3 = .datom_s3_read_json(conn, key),
+    local = .datom_local_read_json(conn, key),
     cli::cli_abort("Unsupported storage backend: {.val {backend}}")
   )
 }
@@ -81,6 +84,7 @@
   backend <- conn$backend %||% "s3"
   switch(backend,
     s3 = .datom_s3_write_json(conn, key, data),
+    local = .datom_local_write_json(conn, key, data),
     cli::cli_abort("Unsupported storage backend: {.val {backend}}")
   )
 }

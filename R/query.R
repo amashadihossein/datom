@@ -248,7 +248,7 @@ datom_status <- function(conn) {
   status <- list(
     connection = list(
       project_name = conn$project_name,
-      bucket = conn$bucket,
+      root = conn$root,
       prefix = conn$prefix,
       region = conn$region,
       role = conn$role,
@@ -259,7 +259,7 @@ datom_status <- function(conn) {
   # --- Connection summary ---
   cli::cli_h2("datom status")
   cli::cli_alert_info("Project: {.val {conn$project_name}}")
-  cli::cli_alert_info("Bucket: {.val {conn$bucket}}")
+  cli::cli_alert_info("Root: {.val {conn$root}}")
   if (!is.null(conn$prefix)) {
     cli::cli_alert_info("Prefix: {.val {conn$prefix}}")
   }

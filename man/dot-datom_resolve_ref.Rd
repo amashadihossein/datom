@@ -8,11 +8,11 @@
 }
 \arguments{
 \item{gov_conn}{A \code{datom_conn}-like object scoped to the governance store
-(i.e., \code{bucket}, \code{prefix}, \code{client} point to the governance bucket).
+(i.e., \code{root}, \code{prefix}, \code{client} point to the governance store).
 Typically produced by \code{.datom_gov_conn(conn)}.}
 }
 \value{
-A named list with \code{bucket}, \code{prefix}, \code{region} for the current
+A named list with \code{root}, \code{prefix}, \code{region} for the current
 data location.
 }
 \description{

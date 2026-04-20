@@ -85,7 +85,7 @@
   })
 
   s3_location <- paste0(
-    "s3://", conn$bucket, "/",
+    "s3://", conn$root, "/",
     if (!is.null(conn$prefix)) paste0(gsub("/+$", "", conn$prefix), "/") else "",
     "datom/"
   )

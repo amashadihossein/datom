@@ -4,7 +4,7 @@
 
 Picture an analytical workflow built to derive specific insights from evolving data served as snapshots. Your dataset might consist of 50 or 100 different tables from which you create additional derived tables as your analysis requires. As these tables evolve and your transformation logic changes, ensuring that outputs remain trackable and reproducible for all collaborators becomes increasingly difficult. This scenario is familiar in clinical data science, where agility is key and reproducibility is paramount.
 
-datom serves as a foundational building block for addressing this use case, leveraging only tools readily available to data scientists: git, GitHub, and cloud object storage. While initially supporting AWS S3, datom is designed to be cloud storage agnostic. Similarly, though we begin with an R implementation, the architecture supports future Python and other language implementations.
+datom serves as a foundational building block for addressing this use case, leveraging only tools readily available to data scientists: git, GitHub, and cloud object storage. While initially supporting AWS S3 and local filesystem, datom is designed to be storage agnostic. Similarly, though we begin with an R implementation, the architecture supports future Python and other language implementations.
 
 The package enables version-controlled data management by abstracting tables as code in git while storing actual data in cloud storage. For collections of tabular datasets that evolve over time, datom enables:
 
@@ -27,7 +27,7 @@ The primary utility motivating datom is building version-tracked data products. 
 6. **Two-store architecture**: Governance store (dispatch, ref, migration history) and data store (manifest, table data/metadata) can target different buckets
 7. **Storage abstraction**: Business logic calls `.datom_storage_*()` dispatch functions; backend-specific code (`.datom_s3_*()`) is isolated behind a dispatch layer keyed on `conn$backend`
 8. **Language agnostic**: Designed for R and Python implementations
-9. **Storage agnostic**: Initial S3 support with extensibility to other cloud providers
+9. **Storage agnostic**: S3 and local filesystem supported; extensible to other cloud providers
 10. **One repo per project**: Each git repository manages a single project/prefix
 
 ---
@@ -100,8 +100,8 @@ Result: datom version unchanged ("xyz789")
 
 | User Type | Description | Credentials Required |
 |-----------|-------------|---------------------|
-| **Data developers** | Create and update datasets, manage evolving clinical/scientific data | AWS credentials + GITHUB_PAT |
-| **Data readers** | Consume versioned data for analysis, need reproducible access | AWS credentials only |
+| **Data developers** | Create and update datasets, manage evolving clinical/scientific data | Storage credentials (AWS for S3, none for local) + GITHUB_PAT |
+| **Data readers** | Consume versioned data for analysis, need reproducible access | Storage credentials (AWS for S3, none for local) |
 | **Data products** | Analytical applications built on versioned datoms (via dpbuild, dpdeploy, dpi) | AWS credentials only |
 
 User type is auto-detected based on the presence of `GITHUB_PAT`.
@@ -159,7 +159,22 @@ data-bucket/
                 └── version_history.json
 ```
 
-**Note:** Governance and data stores may be the same bucket+prefix or different ones. The two-store split enables organizations to keep routing/governance metadata in a central bucket while data lives in project-specific buckets.
+**Local Filesystem Store** (mirrors S3 layout):
+```
+{root_directory}/
+└── {optional_prefix}/
+    └── datom/
+        ├── .metadata/
+        │   └── manifest.json
+        └── {table_name}/
+            ├── {data_sha}.parquet
+            └── .metadata/
+                ├── metadata.json
+                ├── {metadata_sha}.json
+                └── version_history.json
+```
+
+**Note:** Governance and data stores may be the same bucket+prefix (S3) or same directory (local), or different ones. The two-store split enables organizations to keep routing/governance metadata in a central bucket while data lives in project-specific buckets.
 
 ### Location Resolution
 
@@ -251,12 +266,25 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 
 Always present at the governance store, created by `datom_init_repo()`. Stores the authoritative data location:
 
+S3 backend:
 ```json
 {
   "current": {
-    "bucket": "study-bucket",
+    "type": "s3",
+    "root": "study-bucket",
     "prefix": "trial/",
     "region": "us-east-1"
+  }
+}
+```
+
+Local backend:
+```json
+{
+  "current": {
+    "type": "local",
+    "root": "/data/storage",
+    "prefix": null
   }
 }
 ```
@@ -305,7 +333,21 @@ datom_store_s3(
 
 Creates a single S3 storage component (used for governance or data). When `validate = TRUE`, runs `HeadBucket` to verify credentials and bucket access. Returns `datom_store_s3` S3 class with `type = "s3"`.
 
-Future backends (`datom_store_local()`, `datom_store_gcs()`) will have their own constructors.
+### `datom_store_local()` — Local Filesystem Component Constructor
+
+```r
+datom_store_local(
+  path,
+  prefix = NULL,
+  validate = TRUE
+)
+```
+
+Creates a local filesystem storage component. `path` is the root directory (analogous to S3 bucket). When `validate = TRUE`, checks that the directory exists and is writable. Returns `datom_store_local` S3 class with fields `$path` (normalized absolute path), `$prefix`, `$validated`.
+
+No credentials needed — filesystem permissions are implicit.
+
+Future backends (`datom_store_gcs()`, `datom_store_azure()`) will have their own constructors.
 
 ### `datom_store()` — Composite Constructor
 
@@ -710,6 +752,34 @@ manifest <- datom_sync_manifest(conn)
 results <- datom_sync(conn, manifest)
 ```
 
+### Local Backend Developer Workflow
+
+```r
+# Create store with local filesystem (no AWS credentials needed)
+store <- datom_store(
+  governance = datom_store_local(
+    path = "/data/storage",
+    prefix = "project-alpha/"
+  ),
+  data = datom_store_local(
+    path = "/data/storage",
+    prefix = "project-alpha/"
+  ),
+  github_pat = keyring::key_get("github_pat")
+)
+
+# Same workflow as S3 from here on
+datom_init_repo(
+  path = "my_project",
+  project_name = "LOCAL_DATA",
+  store = store,
+  create_repo = TRUE
+)
+
+conn <- datom_get_conn("my_project", store = store)
+datom_pull(conn)
+```
+
 ### Data Reader Workflow
 
 ```r
@@ -905,7 +975,20 @@ sync:
 renv: false  # renv integration deferred — see Deferred to v2
 ```
 
-**Secrets are never persisted.** The `type` field enables future backend dispatch. The two-component structure (governance + data) allows routing files and data files to target different buckets/prefixes.
+Local backend project.yaml:
+```yaml
+storage:
+  governance:
+    type: local
+    root: /data/storage
+    prefix: project-alpha/
+  data:
+    type: local
+    root: /data/storage
+    prefix: project-alpha/
+```
+
+**Secrets are never persisted.** The `type` field drives backend dispatch. The two-component structure (governance + data) allows routing files and data files to target different buckets/prefixes.
 
 ### .datom/dispatch.json
 
@@ -1008,17 +1091,19 @@ datom_read <- function(name, version = NULL, context = NULL, conn = NULL, ...) {
 
 Business logic calls generic `.datom_storage_*()` functions that dispatch to backend-specific implementations based on `conn$backend`:
 
-| Generic Function | S3 Implementation | Purpose |
-|---|---|---|
-| `.datom_storage_upload()` | `.datom_s3_upload()` | Upload file to storage |
-| `.datom_storage_download()` | `.datom_s3_download()` | Download file from storage |
-| `.datom_storage_exists()` | `.datom_s3_exists()` | Check if key exists |
-| `.datom_storage_read_json()` | `.datom_s3_read_json()` | Read JSON from storage |
-| `.datom_storage_write_json()` | `.datom_s3_write_json()` | Write JSON to storage |
+| Generic Function | S3 Implementation | Local Implementation | Purpose |
+|---|---|---|---|
+| `.datom_storage_upload()` | `.datom_s3_upload()` | `.datom_local_upload()` | Upload file to storage |
+| `.datom_storage_download()` | `.datom_s3_download()` | `.datom_local_download()` | Download file from storage |
+| `.datom_storage_exists()` | `.datom_s3_exists()` | `.datom_local_exists()` | Check if key exists |
+| `.datom_storage_read_json()` | `.datom_s3_read_json()` | `.datom_local_read_json()` | Read JSON from storage |
+| `.datom_storage_write_json()` | `.datom_s3_write_json()` | `.datom_local_write_json()` | Write JSON to storage |
 
-The dispatch layer lives in `R/utils-storage.R`. Each function takes a `conn` (or governance sub-connection via `.datom_gov_conn()`) and a storage key. The `backend` field on `conn` determines which implementation is called (currently only `"s3"` is supported).
+The dispatch layer lives in `R/utils-storage.R`. Each function takes a `conn` (or governance sub-connection via `.datom_gov_conn()`) and a storage key. The `backend` field on `conn` determines which implementation is called via `switch(conn$backend, s3 = ..., local = ...)`.
 
-This enables adding new backends (e.g., `datom_store_local()` for local filesystem) by:
+Local backend functions live in `R/utils-local.R` and use `fs::` for all filesystem operations. Storage keys are resolved to full paths via `.datom_local_path(conn, key)` = `fs::path(conn$root, .datom_build_storage_key(conn$prefix, key))`.
+
+Adding a new backend (e.g., GCS, Azure) requires:
 1. Creating a new store constructor
 2. Implementing the 5 backend functions
 3. Adding a `switch()` case in each dispatch function
@@ -1050,9 +1135,10 @@ This enables adding new backends (e.g., `datom_store_local()` for local filesyst
 
 ### Connection Architecture
 
-- `datom_conn` S3 class wraps project_name, bucket, prefix, region, client, gov_client, path, role, endpoint, backend
-- `client`: S3 client for data store; `gov_client`: S3 client for governance store
-- `backend`: storage backend type (currently always `"s3"`), used by `.datom_storage_*()` dispatch
+- `datom_conn` S3 class wraps project_name, root, prefix, region, client, gov_client, path, role, endpoint, backend
+- `root`: storage root — S3 bucket name or local directory path (was `bucket` pre-Phase 12)
+- `client`: S3 client for data store (NULL for local backend); `gov_client`: S3 client for governance store (NULL for local)
+- `backend`: storage backend type (`"s3"` or `"local"`), used by `.datom_storage_*()` dispatch
 - Two modes: **developer** (has local repo path + git) and **reader** (S3 only, no local repo)
 - Role derived from composite store: `github_pat` present → developer; absent → reader
 - `datom_get_conn(path = ...)` reads two-component `.datom/project.yaml` (developer path)
@@ -1126,10 +1212,9 @@ All stored as parquet regardless of input format.
 
 ### Storage Backend Extensibility
 
-- **Current**: AWS S3 (via `paws.storage`)
-- **Next**: Local filesystem (`datom_store_local()`) — enables onboarding staircase
+- **Implemented**: AWS S3 (via `paws.storage`) and local filesystem (`datom_store_local()` via `fs`)
 - **Planned**: Google Cloud Storage, Azure Blob Storage
-- Architecture uses `.datom_storage_*()` dispatch layer keyed on `conn$backend`; adding a backend requires implementing 5 functions
+- Architecture uses `.datom_storage_*()` dispatch layer keyed on `conn$backend`; adding a backend requires implementing 5 functions + a store constructor
 
 ### Query Interface Extensibility
 
@@ -1234,7 +1319,7 @@ datom provides robust data versioning optimized for clinical data science workfl
 2. **datom version = metadata_sha**: uniquely identifies (data, metadata) pair
 3. **Direct credential passing**: Store objects provide credentials directly to S3 clients — no env var indirection
 4. Multi-language support via routing layer (R first, Python planned)
-5. Cloud storage agnostic design (S3 first, extensible via `.datom_storage_*()` dispatch)
+5. Storage agnostic design (S3 + local filesystem, extensible via `.datom_storage_*()` dispatch)
 6. Optimized for clinical/scientific workflows with many tables
 7. One repository per project with optional bucket prefix support
 8. Deterministic SHA computation via alphabetical field sorting

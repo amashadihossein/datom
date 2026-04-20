@@ -162,7 +162,47 @@ print.datom_store <- function(x, ...) {
 #' @return TRUE or FALSE.
 #' @keywords internal
 .is_datom_store_component <- function(x) {
-  inherits(x, "datom_store_s3") # extend with || for future backends
+  inherits(x, "datom_store_s3") || inherits(x, "datom_store_local")
+}
+
+
+#' Get Backend Type from Store Component
+#'
+#' @param component A store component object.
+#' @return `"s3"` or `"local"`.
+#' @keywords internal
+.datom_store_backend <- function(component) {
+  if (inherits(component, "datom_store_s3")) return("s3")
+  if (inherits(component, "datom_store_local")) return("local")
+  cli::cli_abort("Unknown store component type: {.cls {class(component)}}")
+}
+
+
+#' Get Root from Store Component
+#'
+#' Returns the storage root: bucket name for S3, directory path for local.
+#'
+#' @param component A store component object.
+#' @return Root string.
+#' @keywords internal
+.datom_store_root <- function(component) {
+  if (inherits(component, "datom_store_s3")) return(component$bucket)
+  if (inherits(component, "datom_store_local")) return(component$path)
+  cli::cli_abort("Unknown store component type: {.cls {class(component)}}")
+}
+
+
+#' Get Region from Store Component
+#'
+#' Returns the AWS region for S3, NULL for local.
+#'
+#' @param component A store component object.
+#' @return Region string or NULL.
+#' @keywords internal
+.datom_store_region <- function(component) {
+  if (inherits(component, "datom_store_s3")) return(component$region)
+  if (inherits(component, "datom_store_local")) return(NULL)
+  cli::cli_abort("Unknown store component type: {.cls {class(component)}}")
 }
 
 
@@ -442,6 +482,109 @@ print.datom_store_s3 <- function(x, ...) {
 
   if (!is.null(x$session_token)) {
     cli::cli_li("Session token: {.val {(.datom_mask_secret(x$session_token))}}")
+  }
+
+  cli::cli_li("Validated: {.val {x$validated}}")
+  cli::cli_end()
+  invisible(x)
+}
+
+
+# --- datom_store_local: local filesystem component constructor ----------------
+
+#' Create a Local Filesystem Store Component
+#'
+#' Constructs a validated local filesystem storage component for use as either
+#' the governance or data component of a `datom_store`. Validates that the path
+#' exists (or is creatable) and is writable.
+#'
+#' @param path Directory path for the store root.
+#' @param prefix Key prefix within the root (e.g., `"project/"`). NULL for no
+#'   prefix.
+#' @param validate If `TRUE` (default), validate that `path` exists and is
+#'   writable. Set to `FALSE` for tests or deferred creation.
+#'
+#' @return A `datom_store_local` object.
+#' @export
+datom_store_local <- function(path,
+                              prefix = NULL,
+                              validate = TRUE) {
+
+  # --- Structural validation --------------------------------------------------
+  if (!is.character(path) || length(path) != 1L ||
+      is.na(path) || !nzchar(path)) {
+    cli::cli_abort("{.arg path} must be a single non-empty string.")
+  }
+
+  if (!is.null(prefix)) {
+    if (!is.character(prefix) || length(prefix) != 1L || is.na(prefix)) {
+      cli::cli_abort("{.arg prefix} must be a single string or NULL.")
+    }
+  }
+
+  # Normalize the path
+  path <- fs::path_abs(path)
+
+  # --- Directory validation ---------------------------------------------------
+  if (isTRUE(validate)) {
+    if (!fs::dir_exists(path)) {
+      # Try to create it
+      tryCatch({
+        fs::dir_create(path, recurse = TRUE)
+        cli::cli_alert_info("Created store directory {.path {path}}.")
+      }, error = function(e) {
+        cli::cli_abort(c(
+          "Store directory {.path {path}} does not exist and could not be created.",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ), parent = e)
+      })
+    }
+
+    # Check writable
+    if (!fs::file_access(path, mode = "write")) {
+      cli::cli_abort(c(
+        "Store directory {.path {path}} is not writable.",
+        "i" = "Check filesystem permissions."
+      ))
+    }
+  }
+
+  structure(
+    list(
+      path = as.character(path),
+      prefix = prefix,
+      validated = isTRUE(validate)
+    ),
+    class = "datom_store_local"
+  )
+}
+
+
+#' Check if Object is a Local Store Component
+#'
+#' @param x Object to test.
+#' @return TRUE or FALSE.
+#' @export
+is_datom_store_local <- function(x) {
+  inherits(x, "datom_store_local")
+}
+
+
+#' Print a Local Store Component
+#'
+#' Displays store configuration.
+#'
+#' @param x A `datom_store_local` object.
+#' @param ... Ignored.
+#' @return Invisible `x`.
+#' @export
+print.datom_store_local <- function(x, ...) {
+  cli::cli_h3("datom local store component")
+  cli::cli_ul()
+  cli::cli_li("Path: {.path {x$path}}")
+
+  if (!is.null(x$prefix)) {
+    cli::cli_li("Prefix: {.val {x$prefix}}")
   }
 
   cli::cli_li("Validated: {.val {x$validated}}")

@@ -6,46 +6,48 @@
 #' - **Developer**: has `path` to local repo + git access
 #' - **Reader**: S3-only access, no local repo
 #'
-#' The primary fields (`bucket`, `prefix`, `region`, `client`) refer to
+#' The primary fields (`root`, `prefix`, `region`, `client`) refer to
 #' the **data store**. Governance store fields are prefixed with `gov_`.
 #'
 #' @param project_name Project name string.
-#' @param bucket S3 bucket name (data store).
-#' @param prefix S3 prefix (data store, can be NULL).
-#' @param region AWS region string (data store).
-#' @param client A `paws.storage` S3 client (data store).
+#' @param root Storage root (S3 bucket name or local directory path).
+#' @param prefix Storage prefix (can be NULL).
+#' @param region AWS region string (data store). Ignored for local backend.
+#' @param client A storage client (paws S3 client or NULL for local).
 #' @param path Local repo path (NULL for readers).
 #' @param role One of `"developer"` or `"reader"`.
 #' @param endpoint Optional S3 endpoint URL (e.g., for S3 access points). NULL for default.
-#' @param gov_bucket Governance S3 bucket name (can be NULL for legacy conns).
-#' @param gov_prefix Governance S3 prefix (can be NULL).
-#' @param gov_region Governance AWS region (can be NULL).
-#' @param gov_client Governance `paws.storage` S3 client (can be NULL).
+#' @param gov_root Governance storage root (can be NULL for legacy conns).
+#' @param gov_prefix Governance prefix (can be NULL).
+#' @param gov_region Governance region (can be NULL).
+#' @param gov_client Governance storage client (can be NULL).
 #'
 #' @return A `datom_conn` object.
 #' @keywords internal
 new_datom_conn <- function(project_name,
-                          bucket,
+                          root,
                           prefix = NULL,
                           region = "us-east-1",
                           client,
                           path = NULL,
                           role = c("reader", "developer"),
                           endpoint = NULL,
-                          gov_bucket = NULL,
+                          gov_root = NULL,
                           gov_prefix = NULL,
                           gov_region = NULL,
-                          gov_client = NULL) {
+                          gov_client = NULL,
+                          backend = "s3") {
   role <- match.arg(role)
+  backend <- match.arg(backend, c("s3", "local"))
 
   if (!is.character(project_name) || length(project_name) != 1L ||
       is.na(project_name) || !nzchar(project_name)) {
     cli::cli_abort("{.arg project_name} must be a single non-empty string.")
   }
 
-  if (!is.character(bucket) || length(bucket) != 1L ||
-      is.na(bucket) || !nzchar(bucket)) {
-    cli::cli_abort("{.arg bucket} must be a single non-empty string.")
+  if (!is.character(root) || length(root) != 1L ||
+      is.na(root) || !nzchar(root)) {
+    cli::cli_abort("{.arg root} must be a single non-empty string.")
   }
 
   if (!is.null(prefix)) {
@@ -54,9 +56,12 @@ new_datom_conn <- function(project_name,
     }
   }
 
-  if (!is.character(region) || length(region) != 1L ||
-      is.na(region) || !nzchar(region)) {
-    cli::cli_abort("{.arg region} must be a single non-empty string.")
+  # Region required for S3, optional (NULL) for local
+  if (backend == "s3") {
+    if (!is.character(region) || length(region) != 1L ||
+        is.na(region) || !nzchar(region)) {
+      cli::cli_abort("{.arg region} must be a single non-empty string.")
+    }
   }
 
   if (!is.null(path)) {
@@ -72,15 +77,15 @@ new_datom_conn <- function(project_name,
   structure(
     list(
       project_name = project_name,
-      backend = "s3",
-      bucket = bucket,
+      backend = backend,
+      root = root,
       prefix = prefix,
       region = region,
       client = client,
       path = path,
       role = role,
       endpoint = endpoint,
-      gov_bucket = gov_bucket,
+      gov_root = gov_root,
       gov_prefix = gov_prefix,
       gov_region = gov_region,
       gov_client = gov_client
@@ -94,11 +99,11 @@ new_datom_conn <- function(project_name,
 #'
 #' Returns a lightweight connection that routes S3 operations to the governance
 #' store. The storage dispatch layer (`.datom_storage_write_json`, etc.)
-#' read `conn$bucket`, `conn$prefix`, and `conn$client` — this swaps in the
+#' read `conn$root`, `conn$prefix`, and `conn$client` — this swaps in the
 #' governance equivalents so the helpers work transparently.
 #'
 #' @param conn A `datom_conn` object with governance fields populated.
-#' @return A list with `bucket`, `prefix`, `client` pointing to the
+#' @return A list with `root`, `prefix`, `client` pointing to the
 #'   governance store.
 #' @keywords internal
 .datom_gov_conn <- function(conn) {
@@ -106,7 +111,7 @@ new_datom_conn <- function(project_name,
     list(
       project_name = conn$project_name,
       backend      = conn$backend,
-      bucket       = conn$gov_bucket,
+      root         = conn$gov_root,
       prefix       = conn$gov_prefix,
       region       = conn$gov_region,
       client    = conn$gov_client,
@@ -141,17 +146,20 @@ print.datom_conn <- function(x, ...) {
   cli::cli_h3("datom connection")
   cli::cli_ul()
   cli::cli_li("Project: {.val {x$project_name}}")
+  cli::cli_li("Backend: {.val {x$backend}}")
   cli::cli_li("Role: {.val {x$role}}")
-  cli::cli_li("Data bucket: {.val {x$bucket}}")
+  cli::cli_li("Data root: {.val {x$root}}")
 
   if (!is.null(x$prefix)) {
     cli::cli_li("Data prefix: {.val {x$prefix}}")
   }
 
-  cli::cli_li("Data region: {.val {x$region}}")
+  if (!is.null(x$region)) {
+    cli::cli_li("Data region: {.val {x$region}}")
+  }
 
-  if (!is.null(x$gov_bucket)) {
-    cli::cli_li("Gov bucket: {.val {x$gov_bucket}}")
+  if (!is.null(x$gov_root)) {
+    cli::cli_li("Gov root: {.val {x$gov_root}}")
     if (!is.null(x$gov_prefix)) {
       cli::cli_li("Gov prefix: {.val {x$gov_prefix}}")
     }
@@ -259,19 +267,20 @@ datom_init_repo <- function(path = ".",
   }
 
   # --- S3 namespace safety check ----------------------------------------------
-  # Use data component for S3 operations (where manifest lives)
-  bucket <- store$data$bucket
-  prefix <- store$data$prefix
-  region <- store$data$region
+  # Use data component for storage operations (where manifest lives)
+  data_backend <- .datom_store_backend(store$data)
+  data_root <- .datom_store_root(store$data)
+  data_prefix <- store$data$prefix
+  data_region <- .datom_store_region(store$data)
 
-  if (!isTRUE(.force)) {
+  if (data_backend == "s3" && !isTRUE(.force)) {
     tryCatch({
       s3_check_client <- .datom_s3_client(
         store$data$access_key, store$data$secret_key,
-        region = region
+        region = data_region
       )
       check_conn <- new_datom_conn(
-        project_name, bucket, prefix, region,
+        project_name, data_root, data_prefix, data_region,
         s3_check_client, NULL, "reader"
       )
       .datom_check_namespace_free(check_conn)
@@ -335,6 +344,23 @@ datom_init_repo <- function(path = ".",
   fs::dir_create(input_dir)
 
   # --- Create project.yaml (two-component structure) --------------------------
+  gov_backend <- .datom_store_backend(store$governance)
+  gov_root <- .datom_store_root(store$governance)
+  gov_region <- .datom_store_region(store$governance)
+
+  gov_yaml <- list(
+    type = gov_backend,
+    root = gov_root,
+    prefix = store$governance$prefix
+  )
+  if (gov_backend == "s3") gov_yaml$region <- gov_region
+
+  data_yaml <- list(
+    type = data_backend,
+    root = data_root,
+    prefix = data_prefix
+  )
+  if (data_backend == "s3") data_yaml$region <- data_region
 
   project_config <- list(
     project_name = project_name,
@@ -342,18 +368,8 @@ datom_init_repo <- function(path = ".",
     created_at = format(Sys.Date(), "%Y-%m-%d"),
     datom_version = as.character(utils::packageVersion("datom")),
     storage = list(
-      governance = list(
-        type = "s3",
-        bucket = store$governance$bucket,
-        prefix = store$governance$prefix,
-        region = store$governance$region
-      ),
-      data = list(
-        type = "s3",
-        bucket = store$data$bucket,
-        prefix = store$data$prefix,
-        region = store$data$region
-      ),
+      governance = gov_yaml,
+      data = data_yaml,
       max_file_size_gb = max_file_size_gb
     ),
     git = list(
@@ -408,9 +424,10 @@ datom_init_repo <- function(path = ".",
   # --- Generate README.md -----------------------------------------------------
   readme_content <- .datom_render_readme(
     project_name = project_name,
-    bucket       = store$data$bucket,
-    prefix       = store$data$prefix,
-    region       = store$data$region,
+    backend      = data_backend,
+    root         = data_root,
+    prefix       = data_prefix,
+    region       = data_region,
     remote_url   = remote_url
   )
 
@@ -448,34 +465,19 @@ datom_init_repo <- function(path = ".",
   # Push initial commit
   .datom_git_push(path)
 
-  # Push repo-level files to S3 (dispatch → governance, manifest → data)
+  # Push repo-level files to storage (dispatch → governance, manifest → data)
   tryCatch({
-    data_s3 <- .datom_s3_client(
-      store$data$access_key, store$data$secret_key,
-      region = region
+    data_conn <- .datom_build_init_conn(
+      project_name, store$data, path, "developer", NULL,
+      gov_store = store$governance
     )
-    data_conn <- new_datom_conn(
-      project_name, bucket, prefix, region,
-      data_s3, path, "developer"
-    )
-    gov_s3 <- .datom_s3_client(
-      store$governance$access_key, store$governance$secret_key,
-      region = store$governance$region
-    )
-    gov_conn <- new_datom_conn(
-      project_name, bucket, prefix, region,
-      data_s3, path, "developer",
-      gov_bucket = store$governance$bucket,
-      gov_prefix = store$governance$prefix,
-      gov_region = store$governance$region,
-      gov_client = gov_s3
-    )
-    .datom_storage_write_json(.datom_gov_conn(gov_conn), ".metadata/dispatch.json", dispatch)
-    .datom_storage_write_json(.datom_gov_conn(gov_conn), ".metadata/ref.json", ref)
+    gov_conn <- .datom_gov_conn(data_conn)
+    .datom_storage_write_json(gov_conn, ".metadata/dispatch.json", dispatch)
+    .datom_storage_write_json(gov_conn, ".metadata/ref.json", ref)
     .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
   }, error = function(e) {
     cli::cli_alert_warning(
-      "Git push succeeded but S3 upload failed: {conditionMessage(e)}"
+      "Git push succeeded but storage upload failed: {conditionMessage(e)}"
     )
     cli::cli_alert_info("Run {.fn datom_sync_dispatch} to fix.")
   })
@@ -628,10 +630,81 @@ datom_get_conn <- function(path = NULL,
 
 # --- Internal connection builders ---------------------------------------------
 
+#' Build a datom_conn from Store Components
+#'
+#' Backend-aware helper that creates the appropriate client (S3 client or NULL)
+#' and assembles a `datom_conn`. Used by `datom_init_repo()`,
+#' `.datom_get_conn_developer()`, and `.datom_get_conn_reader()`.
+#'
+#' @param project_name Project name string.
+#' @param data_store A store component (datom_store_s3 or datom_store_local).
+#' @param path Local repo path (NULL for readers).
+#' @param role One of "developer" or "reader".
+#' @param endpoint Optional S3 endpoint URL.
+#' @param gov_store A store component for governance (can be NULL).
+#' @return A `datom_conn` object.
+#' @keywords internal
+.datom_build_init_conn <- function(project_name, data_store, path, role,
+                                   endpoint = NULL, gov_store = NULL) {
+  backend <- .datom_store_backend(data_store)
+  data_root <- .datom_store_root(data_store)
+  data_prefix <- data_store$prefix
+  data_region <- .datom_store_region(data_store) %||% "us-east-1"
+
+  # Create client based on backend
+  if (backend == "s3") {
+    client <- .datom_s3_client(
+      data_store$access_key, data_store$secret_key,
+      region = data_region, endpoint = endpoint,
+      session_token = data_store$session_token
+    )
+  } else {
+    client <- NULL
+  }
+
+  # Governance store
+  gov_root <- NULL
+  gov_prefix <- NULL
+  gov_region <- NULL
+  gov_client <- NULL
+
+  if (!is.null(gov_store)) {
+    gov_backend <- .datom_store_backend(gov_store)
+    gov_root <- .datom_store_root(gov_store)
+    gov_prefix <- gov_store$prefix
+    gov_region <- .datom_store_region(gov_store)
+
+    if (gov_backend == "s3") {
+      gov_client <- .datom_s3_client(
+        gov_store$access_key, gov_store$secret_key,
+        region = gov_region %||% "us-east-1", endpoint = endpoint,
+        session_token = gov_store$session_token
+      )
+    }
+  }
+
+  new_datom_conn(
+    project_name = project_name,
+    root = data_root,
+    prefix = data_prefix,
+    region = data_region,
+    client = client,
+    path = path,
+    role = role,
+    endpoint = endpoint,
+    gov_root = gov_root,
+    gov_prefix = gov_prefix,
+    gov_region = gov_region,
+    gov_client = gov_client,
+    backend = backend
+  )
+}
+
+
 #' Build Connection from Local Repo + Store (Developer Path)
 #'
 #' Reads `.datom/project.yaml` for project identity and cross-checks against
-#' the store's S3 config. Uses the store for credentials.
+#' the store config. Uses the store for credentials.
 #'
 #' @param path Path to datom repository.
 #' @param store A `datom_store` object.
@@ -656,57 +729,33 @@ datom_get_conn <- function(path = NULL,
     cli::cli_abort("Invalid {.file project.yaml}: missing {.field project_name}.")
   }
 
-  # Use store for credentials and S3 config
-  bucket <- store$data$bucket
+  # Extract backend-neutral fields from store
+  data_backend <- .datom_store_backend(store$data)
+  data_root <- .datom_store_root(store$data)
   prefix <- store$data$prefix
-  region <- store$data$region
+  region <- .datom_store_region(store$data)
 
-  # Cross-check: yaml bucket must match store bucket (if yaml has storage config)
+  # Cross-check: yaml root must match store root (if yaml has storage config)
   storage <- cfg$storage
   if (!is.null(storage)) {
     data_storage <- storage$data %||% storage
-    yaml_bucket <- data_storage$bucket
-    if (!is.null(yaml_bucket) && !identical(yaml_bucket, bucket)) {
+    yaml_root <- data_storage$root
+    if (!is.null(yaml_root) && !identical(yaml_root, data_root)) {
       cli::cli_abort(c(
-        "Store/config mismatch: store data bucket is {.val {bucket}} but {.file project.yaml} says {.val {yaml_bucket}}.",
+        "Store/config mismatch: store data root is {.val {data_root}} but {.file project.yaml} says {.val {yaml_root}}.",
         "i" = "Ensure the store matches the project configuration."
       ))
     }
   }
 
-  # Role from store
   role <- store$role
 
-  # Create S3 client from store credentials
-  client <- .datom_s3_client(
-    store$data$access_key, store$data$secret_key,
-    region = region, endpoint = endpoint,
-    session_token = store$data$session_token
-  )
-
-  # Create governance S3 client
-  gov_bucket <- store$governance$bucket
-  gov_prefix <- store$governance$prefix
-  gov_region <- store$governance$region
-  gov_client <- .datom_s3_client(
-    store$governance$access_key, store$governance$secret_key,
-    region = gov_region, endpoint = endpoint,
-    session_token = store$governance$session_token
-  )
-
-  new_datom_conn(
-    project_name = project_name,
-    bucket = bucket,
-    prefix = prefix,
-    region = region,
-    client = client,
-    path = if (role == "developer") as.character(path) else NULL,
-    role = role,
-    endpoint = endpoint,
-    gov_bucket = gov_bucket,
-    gov_prefix = gov_prefix,
-    gov_region = gov_region,
-    gov_client = gov_client
+  # Build conn via helper
+  .datom_build_init_conn(
+    project_name, store$data,
+    if (role == "developer") as.character(path) else NULL,
+    role, endpoint,
+    gov_store = store$governance
   )
 }
 
@@ -726,39 +775,8 @@ datom_get_conn <- function(path = NULL,
     cli::cli_abort("{.arg project_name} is required for reader connections (no local repo).")
   }
 
-  bucket <- store$data$bucket
-  prefix <- store$data$prefix
-  region <- store$data$region
-  role <- store$role
-
-  client <- .datom_s3_client(
-    store$data$access_key, store$data$secret_key,
-    region = region, endpoint = endpoint,
-    session_token = store$data$session_token
-  )
-
-  # Create governance S3 client
-  gov_bucket <- store$governance$bucket
-  gov_prefix <- store$governance$prefix
-  gov_region <- store$governance$region
-  gov_client <- .datom_s3_client(
-    store$governance$access_key, store$governance$secret_key,
-    region = gov_region, endpoint = endpoint,
-    session_token = store$governance$session_token
-  )
-
-  new_datom_conn(
-    project_name = project_name,
-    bucket = bucket,
-    prefix = prefix,
-    region = region,
-    client = client,
-    path = NULL,
-    role = role,
-    endpoint = endpoint,
-    gov_bucket = gov_bucket,
-    gov_prefix = gov_prefix,
-    gov_region = gov_region,
-    gov_client = gov_client
+  .datom_build_init_conn(
+    project_name, store$data, NULL, store$role, endpoint,
+    gov_store = store$governance
   )
 }

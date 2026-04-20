@@ -86,18 +86,20 @@ cli::cli_alert_success("Wrote {name} ({sha})")
 | Exported functions | `datom_verb` | `datom_read`, `datom_write`, `datom_init` |
 | Internal functions | `.datom_verb` | `.datom_compute_sha`, `.datom_storage_upload` |
 | S3 methods | `verb.class` | `print.datom_conn` |
-| Store constructors | `datom_store_{backend}` | `datom_store_s3`, `datom_store` (composite) |
-| Store predicates | `is_datom_store_{type}` | `is_datom_store`, `is_datom_store_s3` |
+| Store constructors | `datom_store_{backend}` | `datom_store_s3`, `datom_store_local`, `datom_store` (composite) |
+| Store predicates | `is_datom_store_{type}` | `is_datom_store`, `is_datom_store_s3`, `is_datom_store_local` |
 | Storage dispatch | `.datom_storage_verb` | `.datom_storage_upload`, `.datom_storage_read_json` |
 | S3 backend | `.datom_s3_verb` | `.datom_s3_upload`, `.datom_s3_read_json` |
+| Local backend | `.datom_local_verb` | `.datom_local_upload`, `.datom_local_read_json` |
 | Config files | snake_case.yaml/json | `project.yaml`, `dispatch.json` |
 
 ## Key Files
 
 - `dev/datom_specification.md` — Full technical specification
 - `dev/daapr_architecture.md` — Ecosystem context
-- `R/store.R` — Store constructors (`datom_store_s3`, `datom_store`), validation, GitHub repo creation
-- `R/utils-storage.R` — Storage abstraction dispatch (`.datom_storage_*()` → `.datom_s3_*()`)
+- `R/store.R` — Store constructors (`datom_store_s3`, `datom_store_local`, `datom_store`), validation, GitHub repo creation
+- `R/utils-storage.R` — Storage abstraction dispatch (`.datom_storage_*()` → `.datom_s3_*()` or `.datom_local_*()`)
+- `R/utils-local.R` — Local filesystem backend (`.datom_local_*()` functions via `fs::`)
 - `R/ref.R` — Data location reference (`ref.json` create/resolve)
 - `R/` — Source code (organized by domain)
 - `tests/testthat/` — Tests mirror R/ structure
@@ -123,8 +125,11 @@ Auto-detected via `GITHUB_PAT` presence.
 - **S3 namespace check swallows connectivity errors**: `.datom_check_namespace_free()` in `datom_init_repo()` warns but doesn't fail on network errors — offline init still works, S3 push will fail later anyway.
 - **`git2r::clone()` target path**: Must not exist or must be an empty directory. `datom_clone()` validates this upfront.
 - **`paws.storage` has no STS**: `sts` is in `paws.security.identity`, not `paws.storage`. Validation uses `HeadBucket` only (validates both credentials and bucket access).
-- **Storage abstraction**: Business logic must call `.datom_storage_*()`, never `.datom_s3_*()` directly. The dispatch layer in `R/utils-storage.R` routes based on `conn$backend`.
+- **Storage abstraction**: Business logic must call `.datom_storage_*()`, never `.datom_s3_*()` or `.datom_local_*()` directly. The dispatch layer in `R/utils-storage.R` routes based on `conn$backend`.
 - **`datom_conn` has two clients**: `client` (data store) and `gov_client` (governance store). Use `.datom_gov_conn()` to create a sub-connection for governance operations.
+- **`conn$root` is backend-neutral**: S3: root = bucket name. Local: root = directory path. Was `conn$bucket` pre-Phase 12.
+- **`conn$client` is NULL for local backend**: `.datom_local_*()` functions use `conn$root` + `conn$prefix` directly via `fs::`. Never check `is.null(conn$client)` to determine backend — use `conn$backend` instead.
+- **`datom_store_local$path` vs `datom_store_s3$bucket`**: Store components have backend-specific field names. Use `.datom_store_root()` accessor for backend-neutral access.
 - **`ref.json` lives at governance store**: Created by `datom_init_repo()`, resolved by `.datom_resolve_ref()`. Contains `current` data location (bucket/prefix/region).
 - **`datom_init_repo()` validates before side effects**: All store/repo validation happens before any filesystem or git operations. On failure, nothing is left behind.
 - **`project.yaml` two-component structure**: `storage.governance` + `storage.data` — each has its own `type`, `bucket`, `prefix`, `region`. Secrets are never persisted.

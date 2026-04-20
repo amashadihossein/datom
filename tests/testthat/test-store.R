@@ -703,3 +703,124 @@ test_that(".datom_github_username() returns login from API", {
 
   expect_equal(.datom_github_username("ghp_test"), "octocat")
 })
+
+
+# ==============================================================================
+# datom_store_local (Phase 12, Chunk 1)
+# ==============================================================================
+
+# --- Constructor validation ---------------------------------------------------
+
+test_that("datom_store_local() creates valid store with existing directory", {
+  tmp <- withr::local_tempdir()
+  store <- datom_store_local(path = tmp, prefix = "proj/", validate = TRUE)
+
+  expect_s3_class(store, "datom_store_local")
+  expect_equal(store$path, as.character(fs::path_abs(tmp)))
+  expect_equal(store$prefix, "proj/")
+  expect_true(store$validated)
+})
+
+test_that("datom_store_local() creates directory when it doesn't exist", {
+  tmp <- withr::local_tempdir()
+  new_dir <- fs::path(tmp, "new", "nested")
+
+  store <- datom_store_local(path = new_dir, validate = TRUE)
+
+  expect_true(fs::dir_exists(new_dir))
+  expect_equal(store$path, as.character(fs::path_abs(new_dir)))
+})
+
+test_that("datom_store_local() works with validate = FALSE (no dir needed)", {
+  store <- datom_store_local(path = "/fake/nonexistent/path", validate = FALSE)
+
+  expect_s3_class(store, "datom_store_local")
+  expect_false(store$validated)
+})
+
+test_that("datom_store_local() normalizes path to absolute", {
+  tmp <- withr::local_tempdir()
+  store <- datom_store_local(path = tmp, validate = FALSE)
+
+  expect_equal(store$path, as.character(fs::path_abs(tmp)))
+})
+
+test_that("datom_store_local() errors on non-string path", {
+  expect_error(datom_store_local(path = 123), "path")
+  expect_error(datom_store_local(path = NULL), "path")
+  expect_error(datom_store_local(path = ""), "path")
+  expect_error(datom_store_local(path = NA_character_), "path")
+  expect_error(datom_store_local(path = c("a", "b")), "path")
+})
+
+test_that("datom_store_local() errors on invalid prefix", {
+  tmp <- withr::local_tempdir()
+  expect_error(datom_store_local(path = tmp, prefix = 123), "prefix")
+  expect_error(datom_store_local(path = tmp, prefix = NA_character_), "prefix")
+})
+
+test_that("datom_store_local() allows NULL prefix", {
+  tmp <- withr::local_tempdir()
+  store <- datom_store_local(path = tmp, prefix = NULL, validate = TRUE)
+
+  expect_null(store$prefix)
+})
+
+# --- is_datom_store_local -----------------------------------------------------
+
+test_that("is_datom_store_local() recognizes datom_store_local", {
+  store <- datom_store_local(path = "/tmp/test", validate = FALSE)
+  expect_true(is_datom_store_local(store))
+})
+
+test_that("is_datom_store_local() rejects non-local stores", {
+  expect_false(is_datom_store_local(list()))
+  expect_false(is_datom_store_local("string"))
+  expect_false(is_datom_store_local(NULL))
+})
+
+# --- .is_datom_store_component with local -------------------------------------
+
+test_that(".is_datom_store_component() recognizes datom_store_local", {
+  store <- datom_store_local(path = "/tmp/test", validate = FALSE)
+  expect_true(.is_datom_store_component(store))
+})
+
+# --- print.datom_store_local --------------------------------------------------
+
+test_that("print.datom_store_local() produces output", {
+  store <- datom_store_local(path = "/tmp/test", prefix = "proj/", validate = FALSE)
+  out <- capture.output(print(store), type = "message")
+  combined <- paste(out, collapse = "\n")
+
+  expect_match(combined, "local store component")
+  expect_match(combined, "test")
+  expect_match(combined, "proj")
+})
+
+test_that("print.datom_store_local() omits prefix when NULL", {
+  store <- datom_store_local(path = "/tmp/test", validate = FALSE)
+  out <- capture.output(print(store), type = "message")
+  combined <- paste(out, collapse = "\n")
+
+  expect_match(combined, "local store component")
+  expect_no_match(combined, "Prefix")
+})
+
+# --- datom_store() with local components --------------------------------------
+
+test_that("datom_store() accepts datom_store_local components", {
+  local_comp <- datom_store_local(path = "/tmp/test", validate = FALSE)
+  store <- datom_store(governance = local_comp, data = local_comp, validate = FALSE)
+
+  expect_s3_class(store, "datom_store")
+  expect_equal(store$role, "reader")
+})
+
+test_that("datom_store() accepts mixed S3 + local components", {
+  local_comp <- datom_store_local(path = "/tmp/test", validate = FALSE)
+  s3_comp <- make_component()
+  store <- datom_store(governance = s3_comp, data = local_comp, validate = FALSE)
+
+  expect_s3_class(store, "datom_store")
+})

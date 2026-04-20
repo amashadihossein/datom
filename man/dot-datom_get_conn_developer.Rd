@@ -18,6 +18,6 @@ A \code{datom_conn} object.
 }
 \description{
 Reads \code{.datom/project.yaml} for project identity and cross-checks against
-the store's S3 config. Uses the store for credentials.
+the store config. Uses the store for credentials.
 }
 \keyword{internal}
