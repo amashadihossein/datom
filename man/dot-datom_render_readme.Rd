@@ -4,18 +4,25 @@
 \alias{.datom_render_readme}
 \title{Render README.md from Template}
 \usage{
-.datom_render_readme(project_name, bucket, prefix, region, remote_url)
+.datom_render_readme(
+  project_name,
+  backend = "s3",
+  root,
+  prefix,
+  region = NULL,
+  remote_url
+)
 }
 \arguments{
 \item{project_name}{Project name string.}
-
-\item{bucket}{S3 bucket name.}
 
 \item{prefix}{S3 prefix (can be NULL).}
 
 \item{region}{AWS region string.}
 
 \item{remote_url}{Git remote URL.}
+
+\item{bucket}{S3 bucket name.}
 }
 \value{
 Character string — the rendered README content.

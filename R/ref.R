@@ -27,9 +27,9 @@
 .datom_create_ref <- function(data_store) {
   list(
     current = list(
-      root = data_store$bucket,
+      root = .datom_store_root(data_store),
       prefix = data_store$prefix,
-      region = data_store$region
+      region = .datom_store_region(data_store)
     ),
     previous = list()
   )

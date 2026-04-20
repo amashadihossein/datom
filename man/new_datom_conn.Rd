@@ -16,7 +16,8 @@ new_datom_conn(
   gov_root = NULL,
   gov_prefix = NULL,
   gov_region = NULL,
-  gov_client = NULL
+  gov_client = NULL,
+  backend = "s3"
 )
 }
 \arguments{

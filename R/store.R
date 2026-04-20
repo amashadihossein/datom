@@ -166,6 +166,46 @@ print.datom_store <- function(x, ...) {
 }
 
 
+#' Get Backend Type from Store Component
+#'
+#' @param component A store component object.
+#' @return `"s3"` or `"local"`.
+#' @keywords internal
+.datom_store_backend <- function(component) {
+  if (inherits(component, "datom_store_s3")) return("s3")
+  if (inherits(component, "datom_store_local")) return("local")
+  cli::cli_abort("Unknown store component type: {.cls {class(component)}}")
+}
+
+
+#' Get Root from Store Component
+#'
+#' Returns the storage root: bucket name for S3, directory path for local.
+#'
+#' @param component A store component object.
+#' @return Root string.
+#' @keywords internal
+.datom_store_root <- function(component) {
+  if (inherits(component, "datom_store_s3")) return(component$bucket)
+  if (inherits(component, "datom_store_local")) return(component$path)
+  cli::cli_abort("Unknown store component type: {.cls {class(component)}}")
+}
+
+
+#' Get Region from Store Component
+#'
+#' Returns the AWS region for S3, NULL for local.
+#'
+#' @param component A store component object.
+#' @return Region string or NULL.
+#' @keywords internal
+.datom_store_region <- function(component) {
+  if (inherits(component, "datom_store_s3")) return(component$region)
+  if (inherits(component, "datom_store_local")) return(NULL)
+  cli::cli_abort("Unknown store component type: {.cls {class(component)}}")
+}
+
+
 #' Validate GitHub PAT
 #'
 #' Calls GitHub `GET /user` to verify the PAT is valid.

@@ -1,10 +1,9 @@
 # --- .datom_create_ref() -------------------------------------------------------
 
 test_that("creates ref with current data location", {
-  data_store <- list(
-    bucket = "study-bucket",
-    prefix = "trial/",
-    region = "us-east-1"
+  data_store <- datom_store_s3(
+    bucket = "study-bucket", prefix = "trial/", region = "us-east-1",
+    access_key = "AK", secret_key = "SK", validate = FALSE
   )
 
   ref <- .datom_create_ref(data_store)
@@ -16,10 +15,9 @@ test_that("creates ref with current data location", {
 })
 
 test_that("creates ref with NULL prefix", {
-  data_store <- list(
-    bucket = "my-bucket",
-    prefix = NULL,
-    region = "eu-west-1"
+  data_store <- datom_store_s3(
+    bucket = "my-bucket", prefix = NULL, region = "eu-west-1",
+    access_key = "AK", secret_key = "SK", validate = FALSE
   )
 
   ref <- .datom_create_ref(data_store)
@@ -27,6 +25,18 @@ test_that("creates ref with NULL prefix", {
   expect_equal(ref$current$root, "my-bucket")
   expect_null(ref$current$prefix)
   expect_equal(ref$current$region, "eu-west-1")
+})
+
+test_that("creates ref with local store component", {
+  data_store <- datom_store_local(
+    path = "/data/store", prefix = "proj/", validate = FALSE
+  )
+
+  ref <- .datom_create_ref(data_store)
+
+  expect_match(ref$current$root, "data/store")
+  expect_equal(ref$current$prefix, "proj/")
+  expect_null(ref$current$region)
 })
 
 

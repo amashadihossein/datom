@@ -128,7 +128,7 @@ test_that("round-trip with no prefix", {
 test_that("render_readme returns a character string", {
   readme <- .datom_render_readme(
     project_name = "STUDY_001",
-    bucket = "my-bucket",
+    root = "my-bucket",
     prefix = "data/",
     region = "us-east-1",
     remote_url = "https://github.com/org/repo.git"
@@ -141,7 +141,7 @@ test_that("render_readme returns a character string", {
 test_that("render_readme includes project name as heading", {
   readme <- .datom_render_readme(
     project_name = "STUDY_001",
-    bucket = "b",
+    root = "b",
     prefix = NULL,
     region = "us-east-1",
     remote_url = "https://github.com/org/repo.git"
@@ -150,10 +150,10 @@ test_that("render_readme includes project name as heading", {
   expect_match(readme, "# STUDY_001", fixed = TRUE)
 })
 
-test_that("render_readme includes bucket and region", {
+test_that("render_readme includes root and region", {
   readme <- .datom_render_readme(
     project_name = "STUDY_001",
-    bucket = "clinical-data-bucket",
+    root = "clinical-data-bucket",
     prefix = NULL,
     region = "eu-west-1",
     remote_url = "https://github.com/org/repo.git"
@@ -166,7 +166,7 @@ test_that("render_readme includes bucket and region", {
 test_that("render_readme shows prefix when provided", {
   readme <- .datom_render_readme(
     project_name = "P",
-    bucket = "b",
+    root = "b",
     prefix = "study-001/",
     region = "us-east-1",
     remote_url = "url"
@@ -179,7 +179,7 @@ test_that("render_readme shows prefix when provided", {
 test_that("render_readme shows *(none)* when prefix is NULL", {
   readme <- .datom_render_readme(
     project_name = "P",
-    bucket = "b",
+    root = "b",
     prefix = NULL,
     region = "us-east-1",
     remote_url = "url"
@@ -188,10 +188,11 @@ test_that("render_readme shows *(none)* when prefix is NULL", {
   expect_match(readme, "*(none)*", fixed = TRUE)
 })
 
-test_that("render_readme includes store-based connection examples", {
+test_that("render_readme includes store-based connection examples for s3", {
   readme <- .datom_render_readme(
     project_name = "STUDY_001",
-    bucket = "b",
+    backend = "s3",
+    root = "b",
     prefix = NULL,
     region = "us-east-1",
     remote_url = "url"
@@ -201,10 +202,23 @@ test_that("render_readme includes store-based connection examples", {
   expect_match(readme, "datom_store_s3", fixed = TRUE)
 })
 
+test_that("render_readme includes store-based connection examples for local", {
+  readme <- .datom_render_readme(
+    project_name = "STUDY_001",
+    backend = "local",
+    root = "/data/store",
+    prefix = NULL,
+    remote_url = "url"
+  )
+
+  expect_match(readme, "datom_get_conn", fixed = TRUE)
+  expect_match(readme, "datom_store_local", fixed = TRUE)
+})
+
 test_that("render_readme includes remote URL in clone command", {
   readme <- .datom_render_readme(
     project_name = "P",
-    bucket = "b",
+    root = "b",
     prefix = NULL,
     region = "us-east-1",
     remote_url = "https://github.com/org/study-data.git"
@@ -217,7 +231,7 @@ test_that("render_readme includes remote URL in clone command", {
 test_that("render_readme includes datom version and date", {
   readme <- .datom_render_readme(
     project_name = "P",
-    bucket = "b",
+    root = "b",
     prefix = NULL,
     region = "us-east-1",
     remote_url = "url"

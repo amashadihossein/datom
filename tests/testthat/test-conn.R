@@ -1475,3 +1475,169 @@ test_that("datom_clone aborts on clone failure", {
     )
   })
 })
+
+
+# ==============================================================================
+# Local backend connection tests (Phase 12, Chunk 4)
+# ==============================================================================
+
+test_that("new_datom_conn works with backend = 'local' and NULL region", {
+  conn <- new_datom_conn(
+    project_name = "test_proj",
+    root = "/data/store",
+    prefix = "proj/",
+    region = NULL,
+    client = NULL,
+    role = "reader",
+    backend = "local"
+  )
+
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$backend, "local")
+  expect_equal(conn$root, "/data/store")
+  expect_null(conn$region)
+  expect_null(conn$client)
+})
+
+test_that("new_datom_conn with backend = 's3' rejects NULL region", {
+  expect_error(
+    new_datom_conn(
+      project_name = "p", root = "b", region = NULL,
+      client = mock_s3_client(), backend = "s3"
+    ),
+    "region"
+  )
+})
+
+test_that(".datom_build_init_conn creates local conn from local store", {
+  local_store <- datom_store_local(path = "/data/store", prefix = "proj/", validate = FALSE)
+
+  conn <- .datom_build_init_conn(
+    "test_proj", local_store, NULL, "reader",
+    gov_store = local_store
+  )
+
+  expect_equal(conn$backend, "local")
+  expect_match(conn$root, "data/store")
+  expect_null(conn$client)
+  expect_match(conn$gov_root, "data/store")
+  expect_null(conn$gov_client)
+})
+
+test_that(".datom_build_init_conn creates s3 conn from s3 store", {
+  s3_store <- datom_store_s3(
+    bucket = "b", prefix = "p/", region = "us-east-1",
+    access_key = "AK", secret_key = "SK", validate = FALSE
+  )
+
+  local_mocked_bindings(
+    .datom_s3_client = function(...) list(put_object = function(...) list())
+  )
+
+  conn <- .datom_build_init_conn(
+    "test_proj", s3_store, NULL, "reader",
+    gov_store = s3_store
+  )
+
+  expect_equal(conn$backend, "s3")
+  expect_equal(conn$root, "b")
+  expect_false(is.null(conn$client))
+})
+
+test_that(".datom_store_backend returns correct backend", {
+  s3 <- datom_store_s3(bucket = "b", access_key = "a", secret_key = "s", validate = FALSE)
+  local <- datom_store_local(path = "/tmp/x", validate = FALSE)
+
+  expect_equal(.datom_store_backend(s3), "s3")
+  expect_equal(.datom_store_backend(local), "local")
+})
+
+test_that(".datom_store_root returns correct root", {
+  s3 <- datom_store_s3(bucket = "my-bucket", access_key = "a", secret_key = "s", validate = FALSE)
+  local <- datom_store_local(path = "/data/store", validate = FALSE)
+
+  expect_equal(.datom_store_root(s3), "my-bucket")
+  expect_match(.datom_store_root(local), "data/store")
+})
+
+test_that(".datom_store_region returns correct region", {
+  s3 <- datom_store_s3(bucket = "b", region = "eu-west-1", access_key = "a", secret_key = "s", validate = FALSE)
+  local <- datom_store_local(path = "/tmp/x", validate = FALSE)
+
+  expect_equal(.datom_store_region(s3), "eu-west-1")
+  expect_null(.datom_store_region(local))
+})
+
+test_that("print.datom_conn shows backend", {
+  conn <- new_datom_conn(
+    project_name = "p", root = "/data", region = NULL,
+    client = NULL, role = "reader", backend = "local"
+  )
+  out <- capture.output(print(conn), type = "message")
+  combined <- paste(out, collapse = "\n")
+  expect_match(combined, "local")
+})
+
+# --- Local init_repo setup helper -------------------------------------------
+
+setup_local_init_env <- function(env = parent.frame()) {
+  bare_dir <- withr::local_tempdir(.local_envir = env)
+  git2r::init(bare_dir, bare = TRUE)
+  work_dir <- withr::local_tempdir(.local_envir = env)
+  store_dir <- withr::local_tempdir(.local_envir = env)
+
+  comp <- datom_store_local(path = store_dir, prefix = "proj/", validate = TRUE)
+  store <- datom_store(
+    governance = comp, data = comp,
+    github_pat = "ghp_fake",
+    remote_url = bare_dir,
+    validate = FALSE
+  )
+
+  list(bare_dir = bare_dir, work_dir = work_dir, store_dir = store_dir, store = store)
+}
+
+test_that("datom_init_repo works with local stores", {
+  env <- setup_local_init_env()
+
+  datom_init_repo(
+    path = env$work_dir,
+    project_name = "local_test",
+    store = env$store
+  )
+
+  # Check files created
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "project.yaml")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+
+  # Check project.yaml has local backend
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_equal(cfg$storage$data$type, "local")
+  expect_equal(cfg$storage$governance$type, "local")
+  expect_null(cfg$storage$data$region)
+
+  # Check storage files were pushed
+  store_base <- fs::path(env$store_dir, "proj/", "datom")
+  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "manifest.json")))
+  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "dispatch.json")))
+  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "ref.json")))
+})
+
+test_that("datom_get_conn works with local stores after init", {
+  env <- setup_local_init_env()
+
+  datom_init_repo(
+    path = env$work_dir,
+    project_name = "local_conn_test",
+    store = env$store
+  )
+
+  conn <- datom_get_conn(path = env$work_dir, store = env$store)
+
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$backend, "local")
+  expect_equal(conn$project_name, "local_conn_test")
+  expect_equal(conn$role, "developer")
+  expect_null(conn$client)
+})
