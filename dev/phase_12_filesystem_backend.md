@@ -45,7 +45,7 @@ Rename `conn$bucket` → `conn$root` to be backend-neutral. S3: root = bucket na
 
 ### `conn$client` for local
 
-`NULL` — not needed. `.datom_local_*()` functions use `conn$bucket` (path) + `conn$prefix` directly via `fs::`.
+`NULL` — not needed. `.datom_local_*()` functions use `conn$root` (path) + `conn$prefix` directly via `fs::`.
 
 ## Chunks
 
@@ -97,7 +97,7 @@ Rename `conn$bucket` → `conn$root` to be backend-neutral. S3: root = bucket na
 - `.datom_local_list_objects(conn, prefix)` — `fs::dir_ls()` (if needed)
 - `.datom_local_delete(conn, key)` — `fs::file_delete()` (if needed)
 
-Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, then resolved against `conn$bucket` (root path) using `fs::path()`.
+Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, then resolved against `conn$root` (root path) using `fs::path()`.
 
 **Tests**: Each function with temp directories.
 
@@ -119,10 +119,10 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 **Changes**:
 - `datom_store()` accepts `datom_store_local` components (already via `.is_datom_store_component()` update in chunk 1)
-- `new_datom_conn()` accepts `backend = "local"`, relaxes `bucket` validation (path instead of S3 bucket name)
+- `new_datom_conn()` accepts `backend = "local"`, relaxes `root` validation (path instead of S3 bucket name)
 - `datom_init_repo()` builds local conn with `client = NULL`
 - `datom_get_conn()` reader path works with local stores
-- `project.yaml` serialization: `type: local`, `path: /some/dir` instead of `bucket/region/access_key/secret_key`
+- `project.yaml` serialization: `type: local`, `root: /some/dir` instead of S3-specific `bucket/region/access_key/secret_key`
 
 **Tests**: Init + get_conn + clone round-trips with local stores.
 
@@ -154,7 +154,18 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 ## Current State
 
-Starting Chunk 1.
+Chunk 0 complete (commit `5b043de`). Starting Chunk 1.
+
+**Branch**: `phase/12-filesystem-backend` (off `main`)
+
+**Key context for new sessions**:
+- `conn$root` is the generalized field (was `conn$bucket`). S3 stores still have `$bucket` on the store object; the conn maps it to `$root`.
+- `project.yaml` now uses `root` (not `bucket`) under `storage.data` and `storage.governance`.
+- `ref.json` uses `root` (not `bucket`) under `current` and `previous` entries.
+- `datom_store_s3$bucket` is **unchanged** — store objects remain backend-specific.
+- `region`/`gov_region` remain on conn (not removed). Local backend will set them to NULL.
+- Test count: 1039. Must not drop below this.
+- Key files: `R/conn.R` (constructor, init, get_conn), `R/utils-storage.R` (dispatch), `R/utils-s3.R` (S3 backend), `R/store.R` (store constructors), `R/ref.R` (ref.json).
 
 ## Acceptance Criteria
 
