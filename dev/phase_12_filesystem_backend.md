@@ -120,11 +120,22 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 **Changes**:
 - `datom_store()` accepts `datom_store_local` components (already via `.is_datom_store_component()` update in chunk 1)
 - `new_datom_conn()` accepts `backend = "local"`, relaxes `root` validation (path instead of S3 bucket name)
-- `datom_init_repo()` builds local conn with `client = NULL`
-- `datom_get_conn()` reader path works with local stores
-- `project.yaml` serialization: `type: local`, `root: /some/dir` instead of S3-specific `bucket/region/access_key/secret_key`
+- `datom_init_repo()` builds local conn with `client = NULL`, skips S3 namespace check for local backend
+- `datom_get_conn()` developer + reader paths work with local stores (no `.datom_s3_client()` calls for local)
+- `project.yaml` serialization: `type: local`, `root: /some/dir` instead of S3-specific fields
 
-**Tests**: Init + get_conn + clone round-trips with local stores.
+**S3-specific store field accesses that need backend-aware handling**:
+- `.datom_create_ref()` (ref.R:30) — reads `data_store$bucket` and `data_store$region`. Local store has `$path` not `$bucket`, and no `$region`. Need backend-neutral accessor or store method.
+- `.datom_render_readme()` (conn.R:411) — reads `store$data$bucket`, `$region` for README template. Local needs different template or conditional fields.
+- `datom_init_repo()` S3 namespace check (conn.R:263-275) — reads `store$data$access_key`, `$secret_key`, creates `.datom_s3_client()`. Must skip or branch for local.
+- `datom_init_repo()` S3 push block (conn.R:452-475) — creates S3 clients from store credentials. Local backend uses `.datom_storage_*()` dispatch instead.
+- `.datom_get_conn_developer()` (conn.R:660-710) — reads `store$data$bucket`, `$access_key`, `$secret_key`, creates S3 clients. Local: `client = NULL`, root from `$path`.
+- `.datom_get_conn_reader()` (conn.R:729-763) — same pattern as developer path.
+- `project.yaml` cross-check (conn.R:668-675) — reads `data_storage$root` from yaml, compares to `store$data$bucket`. Local: compare to `store$data$path`.
+
+**Design approach**: Each store type should expose a `$root` field (S3: bucket, local: path) so business logic can use `store$data$root` uniformly. Alternatively, add a generic accessor. Decision made during implementation.
+
+**Tests**: Init + get_conn + clone round-trips with local stores. Cross-check tests with local yaml.
 
 **Status**: Not started
 
