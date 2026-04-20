@@ -99,7 +99,7 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 **Tests**: Each function with temp directories.
 
-**Status**: Not started
+**Status**: Complete
 
 ### Chunk 3: Dispatch wiring
 
@@ -109,7 +109,7 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 **Tests**: Existing dispatch tests + new local dispatch tests.
 
-**Status**: Not started
+**Status**: Complete
 
 ### Chunk 4: Connection + init integration
 
@@ -163,7 +163,7 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 ## Current State
 
-Chunk 0 complete (commit `5b043de`). Chunk 1 complete (commit `4047b83`). Starting Chunk 2.
+Chunk 0 complete (commit `5b043de`). Chunk 1 complete (commit `4047b83`). Chunk 2 complete (commit `2f59653`). Chunk 3 complete (commit `7442995`). Starting Chunk 4.
 
 **Branch**: `phase/12-filesystem-backend` (off `main`)
 
@@ -174,9 +174,11 @@ Chunk 0 complete (commit `5b043de`). Chunk 1 complete (commit `4047b83`). Starti
 - `datom_store_s3$bucket` is **unchanged** — store objects remain backend-specific.
 - `datom_store_local$path` is the local store field. Constructor auto-creates dirs, normalizes to absolute path.
 - `.is_datom_store_component()` recognizes both `datom_store_s3` and `datom_store_local`.
+- All `.datom_local_*()` functions implemented in `R/utils-local.R` — mirror `.datom_s3_*()` API.
+- Dispatch wired: all `.datom_storage_*()` functions route `backend = "local"` to `.datom_local_*()`.
 - `region`/`gov_region` remain on conn (not removed). Local backend will set them to NULL.
-- Test count: 1069. Must not drop below this.
-- Key files: `R/conn.R` (constructor, init, get_conn), `R/utils-storage.R` (dispatch), `R/utils-s3.R` (S3 backend), `R/store.R` (store constructors), `R/ref.R` (ref.json).
+- Test count: 1113. Must not drop below this.
+- Key files: `R/conn.R` (constructor, init, get_conn), `R/utils-storage.R` (dispatch), `R/utils-s3.R` (S3 backend), `R/utils-local.R` (local backend), `R/store.R` (store constructors), `R/ref.R` (ref.json).
 
 ## Acceptance Criteria
 
