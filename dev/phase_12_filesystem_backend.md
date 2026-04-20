@@ -80,9 +80,7 @@ Rename `conn$bucket` → `conn$root` to be backend-neutral. S3: root = bucket na
 - `print.datom_store_local(x, ...)` — S3 print method
 - Update `.is_datom_store_component()` to include `datom_store_local`
 
-**Tests**: Constructor validation, predicate, print output, component check.
-
-**Status**: Not started
+**Status**: Complete
 
 ### Chunk 2: `.datom_local_*()` backend functions
 
@@ -165,7 +163,7 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 ## Current State
 
-Chunk 0 complete (commit `5b043de`). Starting Chunk 1.
+Chunk 0 complete (commit `5b043de`). Chunk 1 complete (commit `4047b83`). Starting Chunk 2.
 
 **Branch**: `phase/12-filesystem-backend` (off `main`)
 
@@ -174,8 +172,10 @@ Chunk 0 complete (commit `5b043de`). Starting Chunk 1.
 - `project.yaml` now uses `root` (not `bucket`) under `storage.data` and `storage.governance`.
 - `ref.json` uses `root` (not `bucket`) under `current` and `previous` entries.
 - `datom_store_s3$bucket` is **unchanged** — store objects remain backend-specific.
+- `datom_store_local$path` is the local store field. Constructor auto-creates dirs, normalizes to absolute path.
+- `.is_datom_store_component()` recognizes both `datom_store_s3` and `datom_store_local`.
 - `region`/`gov_region` remain on conn (not removed). Local backend will set them to NULL.
-- Test count: 1039. Must not drop below this.
+- Test count: 1069. Must not drop below this.
 - Key files: `R/conn.R` (constructor, init, get_conn), `R/utils-storage.R` (dispatch), `R/utils-s3.R` (S3 backend), `R/store.R` (store constructors), `R/ref.R` (ref.json).
 
 ## Acceptance Criteria
