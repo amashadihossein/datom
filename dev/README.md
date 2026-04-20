@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| (none) | — | — |
+| Phase 12: Filesystem Backend | In progress | `dev/phase_12_filesystem_backend.md` |
 
 ### Completed Phases
 
