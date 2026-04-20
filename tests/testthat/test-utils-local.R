@@ -272,3 +272,72 @@ test_that(".datom_local_delete() is silent for missing file", {
   result <- .datom_local_delete(conn, "nonexistent/file.txt")
   expect_true(result)
 })
+
+# ==============================================================================
+# Dispatch tests: .datom_storage_*() → .datom_local_*() (Chunk 3)
+# ==============================================================================
+
+test_that(".datom_storage_upload() dispatches to local backend", {
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, "proj")
+
+  src <- fs::path(withr::local_tempdir(), "data.txt")
+  writeLines("dispatch test", src)
+
+  .datom_storage_upload(conn, src, "t1/file.txt")
+
+  dest <- fs::path(store_dir, "proj", "datom", "t1", "file.txt")
+  expect_true(fs::file_exists(dest))
+  expect_equal(readLines(dest), "dispatch test")
+})
+
+test_that(".datom_storage_download() dispatches to local backend", {
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, "proj")
+
+  store_file <- fs::path(store_dir, "proj", "datom", "t1", "file.txt")
+  fs::dir_create(fs::path_dir(store_file))
+  writeLines("download test", store_file)
+
+  dest <- fs::path(withr::local_tempdir(), "out.txt")
+  .datom_storage_download(conn, "t1/file.txt", dest)
+
+  expect_equal(readLines(dest), "download test")
+})
+
+test_that(".datom_storage_exists() dispatches to local backend", {
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, "proj")
+
+  expect_false(.datom_storage_exists(conn, "nope.txt"))
+
+  store_file <- fs::path(store_dir, "proj", "datom", "yes.txt")
+  fs::dir_create(fs::path_dir(store_file))
+  writeLines("hi", store_file)
+
+  expect_true(.datom_storage_exists(conn, "yes.txt"))
+})
+
+test_that(".datom_storage_read_json() dispatches to local backend", {
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, "proj")
+
+  store_file <- fs::path(store_dir, "proj", "datom", "info.json")
+  fs::dir_create(fs::path_dir(store_file))
+  writeLines('{"key": "value"}', store_file)
+
+  result <- .datom_storage_read_json(conn, "info.json")
+  expect_equal(result$key, "value")
+})
+
+test_that(".datom_storage_write_json() dispatches to local backend", {
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, "proj")
+
+  .datom_storage_write_json(conn, "out.json", list(a = 1))
+
+  dest <- fs::path(store_dir, "proj", "datom", "out.json")
+  expect_true(fs::file_exists(dest))
+  parsed <- jsonlite::fromJSON(dest)
+  expect_equal(parsed$a, 1)
+})
