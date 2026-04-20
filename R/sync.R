@@ -131,7 +131,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
     fs::file_exists(fs::path(d, "metadata.json"))
   })]
 
-  s3_location <- paste0("s3://", conn$bucket, "/", conn$prefix %||% "", "datom/")
+  s3_location <- paste0("s3://", conn$root, "/", conn$prefix %||% "", "datom/")
 
   # Interactive confirmation
 

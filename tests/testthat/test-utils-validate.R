@@ -197,7 +197,7 @@ test_that("shows <unreadable> when manifest read fails", {
 })
 
 test_that("error message includes S3 location", {
-  conn <- mock_datom_conn(list(), bucket = "my-bucket", prefix = "data/prod")
+  conn <- mock_datom_conn(list(), root = "my-bucket", prefix = "data/prod")
 
   local_mocked_bindings(
     .datom_storage_exists = function(conn, s3_key) TRUE,

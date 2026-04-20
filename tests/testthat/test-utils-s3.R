@@ -69,7 +69,7 @@ test_that("passes endpoint to paws config", {
 test_that("serializes data and calls put_object with correct args", {
   mock_put <- mockery::mock(list(ETag = "\"abc123\""))
   mock_client <- list(put_object = mock_put)
-  conn <- mock_datom_conn(mock_client, bucket = "my-bucket", prefix = "proj")
+  conn <- mock_datom_conn(mock_client, root = "my-bucket", prefix = "proj")
 
   data <- list(name = "customers", version = 1L)
 
@@ -126,7 +126,7 @@ test_that("handles nested lists correctly", {
 test_that("wraps S3 errors with context", {
   mock_put <- mockery::mock(stop("AccessDenied: 403"))
   mock_client <- list(put_object = mock_put)
-  conn <- mock_datom_conn(mock_client, bucket = "my-bucket")
+  conn <- mock_datom_conn(mock_client, root = "my-bucket")
 
   expect_error(
     .datom_s3_write_json(conn, "some/key.json", list(a = 1)),
@@ -137,7 +137,7 @@ test_that("wraps S3 errors with context", {
 test_that("error message includes bucket and key", {
   mock_put <- mockery::mock(stop("timeout"))
   mock_client <- list(put_object = mock_put)
-  conn <- mock_datom_conn(mock_client, bucket = "test-bucket")
+  conn <- mock_datom_conn(mock_client, root = "test-bucket")
 
   tryCatch(
     .datom_s3_write_json(conn, "path/file.json", list()),
@@ -159,7 +159,7 @@ test_that("uploads file with correct put_object args", {
 
     mock_put <- mockery::mock(list(ETag = "\"abc\""))
     mock_client <- list(put_object = mock_put)
-    conn <- mock_datom_conn(mock_client, bucket = "my-bucket", prefix = "proj")
+    conn <- mock_datom_conn(mock_client, root = "my-bucket", prefix = "proj")
 
     result <- .datom_s3_upload(conn, path, "customers/abc.parquet")
 
@@ -189,7 +189,7 @@ test_that("wraps S3 upload errors with context", {
 
     mock_put <- mockery::mock(stop("AccessDenied"))
     mock_client <- list(put_object = mock_put)
-    conn <- mock_datom_conn(mock_client, bucket = "my-bucket")
+    conn <- mock_datom_conn(mock_client, root = "my-bucket")
 
     expect_error(
       .datom_s3_upload(conn, path, "some/key"),
@@ -205,7 +205,7 @@ test_that("upload error includes bucket, key, and local path", {
 
     mock_put <- mockery::mock(stop("timeout"))
     mock_client <- list(put_object = mock_put)
-    conn <- mock_datom_conn(mock_client, bucket = "test-bucket", prefix = "proj")
+    conn <- mock_datom_conn(mock_client, root = "test-bucket", prefix = "proj")
 
     tryCatch(
       .datom_s3_upload(conn, path, "key.parquet"),
@@ -225,7 +225,7 @@ test_that("downloads file and writes to local path", {
   withr::with_tempdir({
     mock_get <- mockery::mock(list(Body = charToRaw("parquet bytes")))
     mock_client <- list(get_object = mock_get)
-    conn <- mock_datom_conn(mock_client, bucket = "my-bucket", prefix = "proj")
+    conn <- mock_datom_conn(mock_client, root = "my-bucket", prefix = "proj")
 
     dest <- fs::path("output", "data.parquet")
 
@@ -260,7 +260,7 @@ test_that("wraps S3 download errors with context", {
   withr::with_tempdir({
     mock_get <- mockery::mock(stop("NoSuchKey"))
     mock_client <- list(get_object = mock_get)
-    conn <- mock_datom_conn(mock_client, bucket = "my-bucket")
+    conn <- mock_datom_conn(mock_client, root = "my-bucket")
 
     expect_error(
       .datom_s3_download(conn, "missing/key", "out.parquet"),
@@ -273,7 +273,7 @@ test_that("download error includes bucket and key", {
   withr::with_tempdir({
     mock_get <- mockery::mock(stop("AccessDenied"))
     mock_client <- list(get_object = mock_get)
-    conn <- mock_datom_conn(mock_client, bucket = "test-bucket", prefix = "proj")
+    conn <- mock_datom_conn(mock_client, root = "test-bucket", prefix = "proj")
 
     tryCatch(
       .datom_s3_download(conn, "path.parquet", "out.parquet"),
@@ -292,7 +292,7 @@ test_that("download error includes bucket and key", {
 test_that("returns TRUE when object exists", {
   mock_head <- mockery::mock(list(ContentLength = 1024))
   mock_client <- list(head_object = mock_head)
-  conn <- mock_datom_conn(mock_client, bucket = "my-bucket", prefix = "proj")
+  conn <- mock_datom_conn(mock_client, root = "my-bucket", prefix = "proj")
 
   result <- .datom_s3_exists(conn, "abc.parquet")
 
@@ -349,7 +349,7 @@ test_that("reads and parses valid JSON", {
   json <- jsonlite::toJSON(list(name = "customers", version = 1L), auto_unbox = TRUE)
   mock_get <- mockery::mock(list(Body = charToRaw(json)))
   mock_client <- list(get_object = mock_get)
-  conn <- mock_datom_conn(mock_client, bucket = "my-bucket", prefix = "proj")
+  conn <- mock_datom_conn(mock_client, root = "my-bucket", prefix = "proj")
 
   result <- .datom_s3_read_json(conn, ".metadata/test.json")
 
@@ -424,7 +424,7 @@ test_that("round-trips with .datom_s3_write_json", {
 test_that("wraps S3 errors with context", {
   mock_get <- mockery::mock(stop("NoSuchKey: key not found"))
   mock_client <- list(get_object = mock_get)
-  conn <- mock_datom_conn(mock_client, bucket = "my-bucket")
+  conn <- mock_datom_conn(mock_client, root = "my-bucket")
 
   expect_error(
     .datom_s3_read_json(conn, "missing/key.json"),
@@ -435,7 +435,7 @@ test_that("wraps S3 errors with context", {
 test_that("wraps JSON parse errors with context", {
   mock_get <- mockery::mock(list(Body = charToRaw("not valid json {{{")))
   mock_client <- list(get_object = mock_get)
-  conn <- mock_datom_conn(mock_client, bucket = "my-bucket")
+  conn <- mock_datom_conn(mock_client, root = "my-bucket")
 
   expect_error(
     .datom_s3_read_json(conn, "bad.json"),
@@ -446,7 +446,7 @@ test_that("wraps JSON parse errors with context", {
 test_that("error message includes bucket and key on S3 failure", {
   mock_get <- mockery::mock(stop("AccessDenied"))
   mock_client <- list(get_object = mock_get)
-  conn <- mock_datom_conn(mock_client, bucket = "test-bucket")
+  conn <- mock_datom_conn(mock_client, root = "test-bucket")
 
   tryCatch(
     .datom_s3_read_json(conn, "secret/file.json"),
@@ -461,7 +461,7 @@ test_that("error message includes bucket and key on S3 failure", {
 test_that("error message includes bucket and key on parse failure", {
   mock_get <- mockery::mock(list(Body = charToRaw("garbage")))
   mock_client <- list(get_object = mock_get)
-  conn <- mock_datom_conn(mock_client, bucket = "test-bucket")
+  conn <- mock_datom_conn(mock_client, root = "test-bucket")
 
   tryCatch(
     .datom_s3_read_json(conn, "corrupt.json"),

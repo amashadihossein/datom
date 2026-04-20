@@ -72,7 +72,7 @@
   tryCatch(
     {
       conn$client$put_object(
-        Bucket = conn$bucket,
+        Bucket = conn$root,
         Key = full_key,
         Body = body
       )
@@ -82,7 +82,7 @@
       cli::cli_abort(
         c(
           "Failed to upload file to S3.",
-          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Root: {.val {conn$root}}",
           "x" = "Key: {.val {full_key}}",
           "x" = "Local path: {.path {local_path}}",
           "i" = "Underlying error: {conditionMessage(e)}"
@@ -111,7 +111,7 @@
   tryCatch(
     {
       resp <- conn$client$get_object(
-        Bucket = conn$bucket,
+        Bucket = conn$root,
         Key = full_key
       )
       writeBin(resp$Body, local_path)
@@ -121,7 +121,7 @@
       cli::cli_abort(
         c(
           "Failed to download file from S3.",
-          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Root: {.val {conn$root}}",
           "x" = "Key: {.val {full_key}}",
           "x" = "Local path: {.path {local_path}}",
           "i" = "Underlying error: {conditionMessage(e)}"
@@ -148,7 +148,7 @@
   tryCatch(
     {
       conn$client$head_object(
-        Bucket = conn$bucket,
+        Bucket = conn$root,
         Key = full_key
       )
       TRUE
@@ -161,7 +161,7 @@
       cli::cli_abort(
         c(
           "Failed to check S3 object existence.",
-          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Root: {.val {conn$root}}",
           "x" = "Key: {.val {full_key}}",
           "i" = "Underlying error: {conditionMessage(e)}"
         ),
@@ -187,14 +187,14 @@
 
   resp <- tryCatch(
     conn$client$get_object(
-      Bucket = conn$bucket,
+      Bucket = conn$root,
       Key = full_key
     ),
     error = function(e) {
       cli::cli_abort(
         c(
           "Failed to read JSON from S3.",
-          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Root: {.val {conn$root}}",
           "x" = "Key: {.val {full_key}}",
           "i" = "Underlying error: {conditionMessage(e)}"
         ),
@@ -211,7 +211,7 @@
       cli::cli_abort(
         c(
           "Failed to parse JSON from S3 object.",
-          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Root: {.val {conn$root}}",
           "x" = "Key: {.val {full_key}}",
           "i" = "Parse error: {conditionMessage(e)}"
         ),
@@ -240,7 +240,7 @@
   tryCatch(
     {
       conn$client$put_object(
-        Bucket = conn$bucket,
+        Bucket = conn$root,
         Key = full_key,
         Body = json_raw,
         ContentType = "application/json"
@@ -251,7 +251,7 @@
       cli::cli_abort(
         c(
           "Failed to write JSON to S3.",
-          "x" = "Bucket: {.val {conn$bucket}}",
+          "x" = "Root: {.val {conn$root}}",
           "x" = "Key: {.val {full_key}}",
           "i" = "Underlying error: {conditionMessage(e)}"
         ),

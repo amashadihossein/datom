@@ -68,7 +68,7 @@ Rename `conn$bucket` → `conn$root` to be backend-neutral. S3: root = bucket na
 
 **Tests**: All existing tests pass with renamed fields. Test count ≥ 1039.
 
-**Status**: Not started
+**Status**: Complete
 
 ### Chunk 1: `datom_store_local()` constructor
 
@@ -154,7 +154,7 @@ Key: full storage key built via `.datom_build_storage_key(conn$prefix, key)`, th
 
 ## Current State
 
-Starting Chunk 0 (conn field generalization).
+Starting Chunk 1.
 
 ## Acceptance Criteria
 

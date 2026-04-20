@@ -704,7 +704,7 @@ test_that("datom_status returns correct structure", {
   expect_type(result, "list")
   expect_true("connection" %in% names(result))
   expect_true("tables" %in% names(result))
-  expect_equal(result$connection$bucket, "test-bucket")
+  expect_equal(result$connection$root, "test-bucket")
 })
 
 test_that("datom_status handles empty input_files dir", {
