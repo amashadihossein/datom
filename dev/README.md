@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| _None_ | — | — |
+| Phase 14: Public Release Prep | Planned | [phase_14_public_release_prep.md](phase_14_public_release_prep.md) |
 
 ### Completed Phases
 
