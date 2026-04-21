@@ -127,7 +127,7 @@ Auto-detected via `GITHUB_PAT` presence.
 - **`paws.storage` has no STS**: `sts` is in `paws.security.identity`, not `paws.storage`. Validation uses `HeadBucket` only (validates both credentials and bucket access).
 - **Storage abstraction**: Business logic must call `.datom_storage_*()`, never `.datom_s3_*()` or `.datom_local_*()` directly. The dispatch layer in `R/utils-storage.R` routes based on `conn$backend`.
 - **`datom_conn` has two clients**: `client` (data store) and `gov_client` (governance store). Use `.datom_gov_conn()` to create a sub-connection for governance operations.
-- **`conn$root` is backend-neutral**: S3: root = bucket name. Local: root = directory path. Was `conn$bucket` pre-Phase 12.
+- **`conn$root` is backend-neutral**: S3: root = bucket name. Local: root = directory path.
 - **`conn$client` is NULL for local backend**: `.datom_local_*()` functions use `conn$root` + `conn$prefix` directly via `fs::`. Never check `is.null(conn$client)` to determine backend — use `conn$backend` instead.
 - **`datom_store_local$path` vs `datom_store_s3$bucket`**: Store components have backend-specific field names. Use `.datom_store_root()` accessor for backend-neutral access.
 - **`ref.json` lives at governance store**: Created by `datom_init_repo()`, resolved by `.datom_resolve_ref()`. Contains `current` data location (bucket/prefix/region).
@@ -137,6 +137,9 @@ Auto-detected via `GITHUB_PAT` presence.
 - **`datom_init_repo()` validates before side effects**: All store/repo validation happens before any filesystem or git operations. On failure, nothing is left behind.
 - **`project.yaml` two-component structure**: `storage.governance` + `storage.data` — each has its own `type`, `bucket`, `prefix`, `region`. Secrets are never persisted.
 
+- **`_pkgdown.yml` index must be kept in sync**: Adding a new exported symbol requires a matching entry in `_pkgdown.yml`. `pkgdown::build_site()` errors with "N topics missing from index" otherwise. Check after every phase that adds exports.
+- **Non-ASCII characters in R source**: R CMD check warns on any non-ASCII character in `R/*.R` files (even in comments). Use only ASCII — `--` instead of `—`, `->` instead of `→`.
+
 ## Don'ts
 
 - No nested if-else chains
@@ -144,6 +147,7 @@ Auto-detected via `GITHUB_PAT` presence.
 - No credentials in code
 - No `access.json` (renamed to `dispatch.json`)
 - No direct `.datom_s3_*()` calls from business logic (use `.datom_storage_*()` dispatch)
+- No phase/chunk numbers in `R/` source comments (e.g. `# Phase 7`, `# Chunk 3`) — they are meaningless to public readers. Use descriptive comments instead.
 
 ## Critical Thinking
 

@@ -37,10 +37,13 @@ reference:
     contents:
       - datom_store
       - datom_store_s3
+      - datom_store_local
       - is_datom_store
       - is_datom_store_s3
+      - is_datom_store_local
       - print.datom_store
       - print.datom_store_s3
+      - print.datom_store_local
 
   - title: "Read & Write"
     desc: "Read and write versioned tables"
