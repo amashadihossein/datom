@@ -69,8 +69,10 @@ The repo has been private through Phases 1–13. All core functionality is in pl
 - Remove CRAN badge from [README.Rmd](README.Rmd) and regenerate [README.md](README.md) via `devtools::build_readme()`.
 - Create `NEWS.md` with a single top entry: `# datom (development version)` + a short note that the package is pre-release.
 - Decide on [cran-comments.md](cran-comments.md): since there's no imminent CRAN release and it's currently content-free, delete it (can be regenerated with `usethis::use_cran_comments()` when CRAN submission is real). Note the rationale in commit message.
+- **Bonus (discovered during check)**: `R/ref.R` had non-ASCII characters (em-dashes `—` and arrows `→`) in comments, causing a pre-existing R CMD check **WARNING**. Fixed by replacing with `--` and `->`.
 
 **Acceptance**: `devtools::check()` clean; README renders without the CRAN badge; `NEWS.md` exists.
+**Result**: 0 errors, 0 warnings, 2 notes (pre-existing: `pkgdown/` dir, NEWS format nit). 1177 tests passing. ✅
 
 ### Chunk 2 — Contributor-facing scaffolding
 **Scope**: Standard open-source files. Keep them brief and honest — this is a pre-release research package, not a mature product.
@@ -140,7 +142,7 @@ The repo has been private through Phases 1–13. All core functionality is in pl
 
 ## Status tracking
 
-- [ ] Chunk 1 — Metadata hygiene
+- [x] Chunk 1 — Metadata hygiene
 - [ ] Chunk 2 — Contributor scaffolding
 - [ ] Chunk 3 — GitHub Actions CI
 - [ ] Chunk 4 — Dev folder + source-comment public-readiness
