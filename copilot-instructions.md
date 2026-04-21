@@ -334,15 +334,13 @@ These patterns are non-negotiable for every session:
     workflows via `dev/dev-sandbox.R` to catch integration bugs. 5a.
     **Long PR/commit messages — always use a file**: Never pass
     multi-line PR body text inline via `--body "..."` or heredoc
-    (`<< 'EOF'`). Shell quoting and terminal emulation mangle them.
-    Instead: write to a temp file with `create_file`, then pass
-    `--body-file /tmp/filename.md`. Same applies to long commit
+    (`<< 'EOF'`). Shell quoting and terminal emulation malways mangle
+    them. Always write to a temp file with `create_file` first, then
+    pass `--body-file /tmp/filename.md`. Same applies to long commit
     messages: write to a file and use `git commit -F /tmp/msg.md`. For
     short single-line messages (\< 80 chars), inline `--message` / `-m`
-    is fine.
-6.  **Fix bugs immediately**: When E2E reveals a bug, fix it before
-    moving to the next phase. Don’t defer bugs that affect correctness.
-7.  **Phase completion is mandatory**: When a phase is done, immediately
+    is fine
+6.  **Phase completion is mandatory**: When a phase is done, immediately
     follow the Phase Completion Procedure in `dev/README.md` — migrate
     learnings to spec/instructions, update README tables, delete the
     phase doc, and commit. Do NOT start the next phase until this is
