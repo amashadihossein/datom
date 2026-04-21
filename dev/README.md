@@ -46,12 +46,13 @@ Phase plans are **temporary working documents**:
 
 | Phase | Status | File |
 |-------|--------|------|
-| Phase 13: Reader Ref Resolution | In Progress | `dev/phase_13_reader_ref_resolution.md` |
+| _None_ | — | — |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
+| Phase 13: Reader Ref Resolution | 2026-04-21 | 1177 | Conn-time ref resolution wired into both `_get_conn_reader` and `_get_conn_developer` (S3 + local). New helpers: `.datom_resolve_data_location()`, `.datom_check_data_reachable()`, `.datom_check_ref_current()`. Developer migration mismatch → auto-pull git + re-read `project.yaml`. Reader mismatch → warn + proceed with ref-resolved location. Reachability check (HeadBucket / `dir_exists`) gates conn creation. Conn-time ref failure is warn-only; write-time ref failure is a hard abort (prevents orphaned data). `datom_status` and sandbox UI now backend-aware (`Tables on S3`/`Tables on local`, `Data:`/`Governance:` labels instead of hardcoded `s3://`). `.sandbox_wipe_local_component()` added so `sandbox_down()` handles local backends too. Named-lookup pattern adopted for backend UI labels (anticipates GCS/other backends). |
 | Phase 12: Filesystem Backend | 2026-04-19 | 1153 | `datom_store_local()` constructor, `.datom_local_*()` backend functions (`utils-local.R`), dispatch wiring (`switch` arms in `utils-storage.R`), `conn$bucket`→`conn$root` rename, `new_datom_conn(backend=)`, `datom_init_repo()`/`datom_get_conn()` local paths, `project.yaml` type:local, `.datom_store_backend/root/region()` accessors, `.datom_build_init_conn()` helper, `ref.json` backend-neutral, README template backend-neutral, E2E test script (`dev/e2e-test-local.R`), `sandbox_store_local()`, `devtools::check()` clean. |
 | Phase 11: Routing Separation | 2026-04-18 | 1039 | `routing.json` → `dispatch.json`, credential wiring (no env var bridge), gov/data store split, storage abstraction layer (`.datom_storage_*()` dispatch), `ref.json` replaces `.redirect.json`, conn fields `client`/`gov_client`/`backend`, `.datom_build_storage_key()`, spec + copilot-instructions updated, README updated, sandbox fixed, `devtools::check()` clean. E2E passes. |
 | Phase 10: Store Abstraction | 2026-04-18 | 1083 | `datom_store_s3()` + `datom_store()` constructors, `.datom_create_github_repo()` via httr2, `datom_init_repo(store=, create_repo=TRUE, repo_name=)`, `datom_get_conn(store=)`, `datom_clone(path, store)`, two-component `project.yaml` (governance+data), `.datom_install_store()` env-var bridge, HeadBucket validation (STS removed — not in paws.storage), print methods with masked secrets, vignettes rewritten. `devtools::check()` clean. | Full package rename: all function prefixes (`datom_`/`.datom_`), S3 class (`datom_conn`), env vars (`DATOM_`), S3 path segment, `.datom/` config dir, metadata field (`datom_version`), package identity, docs. `devtools::check()` clean. |
@@ -83,7 +84,6 @@ Items discovered during development but intentionally deferred. Review periodica
 |------|---------------|-----------------|----------|
 | Derived datom path convention (raw at top, derived in dp subfolder) | Phase 1 | dpbuild concern — datom handles via prefix param | Low (dpbuild) |
 | renv::init() in datom_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
-| Stale data credentials error message | Phase 11 | **Resolved in Phase 13** — conn-time ref resolution provides actionable errors when governance resolves but data store is unreachable after migration. | — |
 | Vignette content refresh | Phase 11 | `credentials.Rmd`: "Under the Hood" section references env var bridge (removed), STS GetCallerIdentity (uses HeadBucket). Other vignettes may have minor staleness. | Medium |
 | Redirect resolution in datom_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
 | Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |

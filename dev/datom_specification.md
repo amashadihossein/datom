@@ -191,6 +191,32 @@ datom_read(conn, "customers", ...)
 
 **Post-migration**: `ref.json` may contain `previous` entries with sunset dates. `.datom_resolve_ref()` emits a deprecation warning when previous entries exist, alerting operators that old location cleanup is pending. No redirect chain — migration is a ref.json update + data copy.
 
+### Ref Resolution Lifecycle
+
+Ref resolution runs at two points in the conn lifecycle:
+
+**Conn time** (`datom_get_conn()` — both reader and developer roles, both backends):
+1. Build a temporary governance conn, call `.datom_resolve_ref()`.
+2. Detect migration: `store$data` location vs ref location.
+   - **Developer + mismatch** → auto-pull git, re-read `project.yaml`. If still mismatched, abort with "ref.json and project.yaml disagree after pull". Otherwise proceed (pull fixed it, info message).
+   - **Reader + mismatch** → warn "data migrated, update your store config", proceed using the ref-resolved location with the reader's existing data credentials.
+3. Reachability check (`HeadBucket` for S3, `fs::dir_exists()` for local):
+   - Reachable → proceed.
+   - Unreachable + migrated → actionable error mentioning credentials/path after migration.
+   - Unreachable + no migration → generic unreachable error.
+4. **Ref failure at conn time is warn-only**: governance informs, it does not gate reads. If `ref.json` is unreadable, warn with details and proceed using `store$data` location. Data reachability is what gates access — not governance reachability.
+5. **No governance component** → skip ref resolution entirely (backward compatible with pre-Phase 10 stores).
+
+**Write time** (`datom_write()` — before any data SHA computation):
+1. Re-resolve ref via `.datom_check_ref_current(conn)`.
+2. Compare ref root/prefix against `conn$root`/`conn$prefix`.
+3. **Any failure is a hard abort** — network error, missing file, malformed JSON, location mismatch. Writing without a verified location risks orphaning data; there is no safe fallback. Error mentions "orphaning data" and instructs the user to rebuild the conn.
+4. No `conn$gov_root` (legacy conn) → skip check.
+
+**Read time**: no ref re-check. Stale reads fail cleanly (404/403/missing file) → user rebuilds conn → self-healing. No silent corruption risk.
+
+**Credentials vs location**: `ref.json` tells you *where* the data is, not *how to authenticate*. The user's `store$data` credentials are used against the ref-resolved location. For local backend, no credentials — just the path.
+
 ---
 
 ## Metadata Schema
