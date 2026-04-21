@@ -121,7 +121,7 @@
   repo_path <- conn$path
   table_dir <- fs::path(repo_path, name)
 
-  # Pull before write to ensure fresh state (Phase 7)
+  # Pull before write to ensure fresh state
   .datom_git_pull(repo_path)
 
   metadata_path <- fs::path(table_dir, "metadata.json")

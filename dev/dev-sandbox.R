@@ -26,12 +26,20 @@
 #'
 #' Edit these values once to match your dev environment. Every sandbox_*
 #' function pulls from here unless overridden.
+#'
+#' Credentials: set the environment variables below, or pass explicit values
+#' to sandbox_store(). Env vars are never hard-coded here.
+#'
+#'   AWS_ACCESS_KEY   - AWS access key ID
+#'   AWS_SECRET_KEY   - AWS secret access key
+#'   GITHUB_PAT       - GitHub personal access token
 .sandbox_defaults <- function() {
   list(
     project_name = "SANDBOX_TEST",
     github_org    = NULL,            # NULL = personal repo; set to "my-org" for org repos
     repo_name     = "datom-sandbox", # GitHub repo name
-    bucket        = "datom-test",    # REQUIRED — your dev S3 bucket
+    bucket        = "datom-test",    # REQUIRED -- your dev S3 bucket
+    gov_bucket    = "datom-gov-test", # REQUIRED -- your dev governance S3 bucket
     prefix        = "sandbox/",      # S3 prefix (keeps sandbox isolated)
     region        = "us-east-1",
     base_dir      = fs::path_abs("../datom-test"),  # sibling of datom project
@@ -57,14 +65,14 @@
 #' @param remote_url Pre-existing remote URL (NULL = create_repo in sandbox_up).
 #'
 #' @return A `datom_store` object (developer role).
-sandbox_store <- function(bucket = "datom-test",
-                          gov_bucket = "datom-gov-test",
-                          prefix = "sandbox/",
-                          region = "us-east-1",
-                          access_key = keyring::key_get("AWS_ACCESS_KEY", "datom-developer", "remotes"),
-                          secret_key = keyring::key_get("AWS_SECRET_KEY", "datom-developer", "remotes"),
-                          github_pat = keyring::key_get("GITHUB_PAT", "kol", "remotes"),
-                          github_org = NULL,
+sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
+                          gov_bucket = .sandbox_defaults()$gov_bucket,
+                          prefix = .sandbox_defaults()$prefix,
+                          region = .sandbox_defaults()$region,
+                          access_key = Sys.getenv("AWS_ACCESS_KEY"),
+                          secret_key = Sys.getenv("AWS_SECRET_KEY"),
+                          github_pat = Sys.getenv("GITHUB_PAT"),
+                          github_org = .sandbox_defaults()$github_org,
                           remote_url = NULL) {
   data_comp <- datom::datom_store_s3(
     bucket     = bucket,
@@ -110,7 +118,7 @@ sandbox_store <- function(bucket = "datom-test",
 sandbox_store_local <- function(path,
                                 gov_path = paste0(path, "-gov"),
                                 prefix = NULL,
-                                github_pat = keyring::key_get("GITHUB_PAT", "kol", "remotes"),
+                                github_pat = Sys.getenv("GITHUB_PAT"),
                                 github_org = NULL,
                                 remote_url = NULL) {
   fs::dir_create(path)

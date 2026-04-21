@@ -1,10 +1,13 @@
-^tbit\.Rproj$
+^datom\.Rproj$
 ^\.Rproj\.user$
 ^LICENSE\.md$
 ^README\.Rmd$
-^cran-comments\.md$
 ^\.github$
 ^dev$
 ^data-raw$
 ^docs$
 ^_pkgdown\.yml$
+^CONTRIBUTING\.md$
+^SECURITY\.md$
+^NEWS\.md$
+^CODE_OF_CONDUCT\.md$

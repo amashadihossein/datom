@@ -447,7 +447,7 @@ datom_sync <- function(conn,
 
   .datom_check_rio()
 
-  # --- stale-state check (Phase 7) ---
+  # --- stale-state check ---
   .datom_check_git_current(conn$path)
 
   # --- filter to actionable rows ---

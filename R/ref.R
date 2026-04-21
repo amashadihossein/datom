@@ -1,4 +1,4 @@
-# ref.json — Data Location Reference
+# ref.json -- Data Location Reference
 #
 # `ref.json` lives at the **governance store** and tells readers where data
 # currently lives. Always present; never absent. Single read, no recursion.
@@ -118,7 +118,7 @@
 #' @keywords internal
 .datom_resolve_data_location <- function(store, role, path = NULL,
                                           endpoint = NULL) {
-  # No governance component → skip ref resolution (backward compatible)
+  # No governance component -> skip ref resolution (backward compatible)
   if (is.null(store$governance)) return(NULL)
 
   # Build a temporary gov conn to read ref.json
@@ -149,7 +149,7 @@
     backend = gov_backend
   )
 
-  # Resolve ref — fail gracefully if governance store unreachable
+  # Resolve ref -- fail gracefully if governance store unreachable
   ref_location <- tryCatch(
     .datom_resolve_ref(gov_conn),
     error = function(e) {
@@ -174,7 +174,7 @@
   if (migrated) {
     if (role == "developer" && !is.null(path)) {
       # Auto-pull git to sync local project.yaml
-      cli::cli_alert_info("Ref location differs from store — pulling git to sync.")
+      cli::cli_alert_info("Ref location differs from store -- pulling git to sync.")
       tryCatch(
         .datom_git_pull(path),
         error = function(e) {
@@ -256,11 +256,11 @@
           "x" = "HeadBucket returned 404 / Not Found."
         ), parent = e)
       } else {
-        # Network error — warn, don't fail (offline use)
+        # Network error -- warn, don't fail (offline use)
         cli::cli_warn(c(
           "Could not verify data store reachability.",
           "i" = "Underlying error: {conditionMessage(e)}",
-          "i" = "Proceeding anyway — operations may fail later."
+          "i" = "Proceeding anyway -- operations may fail later."
         ))
       }
     })
@@ -294,7 +294,7 @@
 #' @return Invisible TRUE if current, or skips silently if no governance fields.
 #' @keywords internal
 .datom_check_ref_current <- function(conn) {
-  # No governance fields → legacy conn, skip
+  # No governance fields -> legacy conn, skip
   if (is.null(conn$gov_root)) return(invisible(TRUE))
 
   gov_conn <- .datom_gov_conn(conn)
