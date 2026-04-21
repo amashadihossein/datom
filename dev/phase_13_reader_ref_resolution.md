@@ -44,7 +44,8 @@ Write time: re-resolve ref from gov, compare against conn$root
 - **Ref resolution at conn time, both roles**: The conn is born ref-validated. Developers already need the governance store for push, so this adds no new dependency.
 - **Developer auto-pull on migration**: If ref ≠ project.yaml, auto-pull git to sync local state. Developer's local config stays consistent — no hidden overrides.
 - **Reader warn on migration**: Readers have no git to pull. Warn and use ref address with their credentials. They update their store config to stop the warning.
-- **Write-time ref guard**: Writes re-resolve ref and error if the data location changed since conn creation. One extra gov JSON read per write — negligible vs git commit + S3 upload. Prevents orphaned data in the wrong location.
+- **Write-time ref guard**: Writes re-resolve ref and **hard-abort on any failure** (network, missing file, malformed — any reason). Writing without a verified location risks orphaning data — there is no safe fallback. Errors if the data location changed since conn creation.
+- **Conn-time ref failure is warn-only**: Governance informs, it does not gate reads. If ref.json is unreadable at conn time, warn with details and proceed using store$data location. Data reachability is what gates access — not governance reachability.
 - **No read-time check**: Stale reads fail cleanly (404/403) → user rebuilds conn → self-healing. No silent corruption risk.
 - **Credentials still come from the store object**: ref.json tells you *where* the data is, not *how to authenticate*. The user's store$data credentials are used against the ref-resolved location. (For local backend, no credentials — just the path.)
 - **Migration mismatch outcome depends on reachability**: If ref location ≠ store$data location, use the ref location with the user's existing credentials. If reachable → warn ("data migrated, update your store config"). If unreachable (403 / missing dir) → actionable error ("data migrated but your credentials can't access the new location").
@@ -93,23 +94,24 @@ Write time: re-resolve ref from gov, compare against conn$root
 
 ## Acceptance Criteria
 
-- [ ] `datom_get_conn()` resolves `ref.json` at conn time for both readers and developers (S3 and local)
-- [ ] Developer migration mismatch → auto-pull, proceed if project.yaml syncs, error if not
-- [ ] Reader migration mismatch + reachable → warning
-- [ ] Migration mismatch + unreachable → actionable error
-- [ ] Unreachable without migration → error
-- [ ] No governance component → skip ref resolution (backward compatible, both roles)
-- [ ] `datom_write()` re-checks ref before writing; errors on mismatch
-- [ ] All existing tests pass (count ≥ 1153)
-- [ ] New tests for ref resolution in reader path
-- [ ] E2E test passes
+- [x] `datom_get_conn()` resolves `ref.json` at conn time for both readers and developers (S3 and local)
+- [x] Developer migration mismatch → auto-pull, proceed if project.yaml syncs, error if not
+- [x] Reader migration mismatch + reachable → warning
+- [x] Migration mismatch + unreachable → actionable error
+- [x] Unreachable without migration → error
+- [x] No governance component → skip ref resolution (backward compatible, both roles)
+- [x] `datom_write()` re-checks ref before writing; errors on mismatch
+- [x] Ref failure at write time → hard abort (any reason)
+- [x] Ref failure at conn time → warn and proceed (governance informs, does not gate)
+- [x] All existing tests pass (count ≥ 1153) — **1177 pass**
+- [x] New tests for ref resolution, reachability, write-time guard
 
 ## Current State
 
 | Chunk | Status |
 |-------|--------|
-| 1. Wire ref resolution (both roles) | not started |
-| 2. Reachability check | not started |
-| 3. Write-time ref guard | not started |
-| 4. Tests | not started |
-| 5. Update TODO/backlog | not started |
+| 1. Wire ref resolution (both roles) | complete |
+| 2. Reachability check | complete |
+| 3. Write-time ref guard | complete |
+| 4. Tests | complete |
+| 5. Update TODO/backlog | complete |

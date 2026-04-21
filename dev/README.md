@@ -83,7 +83,7 @@ Items discovered during development but intentionally deferred. Review periodica
 |------|---------------|-----------------|----------|
 | Derived datom path convention (raw at top, derived in dp subfolder) | Phase 1 | dpbuild concern — datom handles via prefix param | Low (dpbuild) |
 | renv::init() in datom_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
-| Stale data credentials error message | Phase 11 | Actionable error when governance resolves but data store 403s post-migration. Needs `.datom_resolve_ref()` wired into read path. | Medium |
+| Stale data credentials error message | Phase 11 | **Resolved in Phase 13** — conn-time ref resolution provides actionable errors when governance resolves but data store is unreachable after migration. | — |
 | Vignette content refresh | Phase 11 | `credentials.Rmd`: "Under the Hood" section references env var bridge (removed), STS GetCallerIdentity (uses HeadBucket). Other vignettes may have minor staleness. | Medium |
 | Redirect resolution in datom_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
 | Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |

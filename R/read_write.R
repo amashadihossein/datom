@@ -435,6 +435,9 @@ datom_write <- function(conn,
     ))
   }
 
+  # 0. Write-time ref guard: ensure data location hasn't changed
+  .datom_check_ref_current(conn)
+
   # 1. Compute data SHA
   data_sha <- .datom_compute_data_sha(data)
 

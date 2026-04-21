@@ -750,13 +750,42 @@ datom_get_conn <- function(path = NULL,
 
   role <- store$role
 
+  # Resolve data location via ref.json (if governance store present)
+  ref_location <- .datom_resolve_data_location(
+    store, role, path = as.character(path), endpoint = endpoint
+  )
+
+  # If ref resolved a different location, build a modified data store
+  effective_data_store <- store$data
+  migrated <- FALSE
+  if (!is.null(ref_location)) {
+    ref_root <- ref_location$root
+    ref_prefix <- ref_location$prefix
+    store_root <- .datom_store_root(store$data)
+    store_prefix <- store$data$prefix
+    migrated <- !identical(ref_root, store_root) ||
+      !identical(ref_prefix %||% NULL, store_prefix %||% NULL)
+  }
+
   # Build conn via helper
-  .datom_build_init_conn(
-    project_name, store$data,
+  conn <- .datom_build_init_conn(
+    project_name, effective_data_store,
     if (role == "developer") as.character(path) else NULL,
     role, endpoint,
     gov_store = store$governance
   )
+
+  # Override conn root/prefix/region with ref-resolved values if migrated
+  if (!is.null(ref_location) && migrated) {
+    conn$root <- ref_location$root
+    conn$prefix <- ref_location$prefix
+    conn$region <- ref_location$region
+  }
+
+  # Validate data store reachability
+  .datom_check_data_reachable(conn, migrated = migrated)
+
+  conn
 }
 
 
@@ -775,8 +804,35 @@ datom_get_conn <- function(path = NULL,
     cli::cli_abort("{.arg project_name} is required for reader connections (no local repo).")
   }
 
-  .datom_build_init_conn(
+  # Resolve data location via ref.json (if governance store present)
+  ref_location <- .datom_resolve_data_location(
+    store, store$role, path = NULL, endpoint = endpoint
+  )
+
+  migrated <- FALSE
+  if (!is.null(ref_location)) {
+    ref_root <- ref_location$root
+    ref_prefix <- ref_location$prefix
+    store_root <- .datom_store_root(store$data)
+    store_prefix <- store$data$prefix
+    migrated <- !identical(ref_root, store_root) ||
+      !identical(ref_prefix %||% NULL, store_prefix %||% NULL)
+  }
+
+  conn <- .datom_build_init_conn(
     project_name, store$data, NULL, store$role, endpoint,
     gov_store = store$governance
   )
+
+  # Override conn root/prefix/region with ref-resolved values if migrated
+  if (!is.null(ref_location) && migrated) {
+    conn$root <- ref_location$root
+    conn$prefix <- ref_location$prefix
+    conn$region <- ref_location$region
+  }
+
+  # Validate data store reachability
+  .datom_check_data_reachable(conn, migrated = migrated)
+
+  conn
 }

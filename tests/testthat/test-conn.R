@@ -1641,3 +1641,92 @@ test_that("datom_get_conn works with local stores after init", {
   expect_equal(conn$role, "developer")
   expect_null(conn$client)
 })
+
+
+# =============================================================================
+# Phase 13: .datom_check_data_reachable()
+# =============================================================================
+
+test_that("S3: aborts with actionable error on 403 without migration", {
+  conn <- new_datom_conn(
+    project_name = "p", root = "my-bucket", region = "us-east-1",
+    client = list(head_bucket = function(Bucket) stop("403 Forbidden AccessDenied")),
+    role = "reader"
+  )
+
+  expect_error(
+    .datom_check_data_reachable(conn, migrated = FALSE),
+    "unreachable"
+  )
+})
+
+test_that("S3: aborts with migration-specific message on 403 after migration", {
+  conn <- new_datom_conn(
+    project_name = "p", root = "new-bucket", region = "us-east-1",
+    client = list(head_bucket = function(Bucket) stop("403 Forbidden AccessDenied")),
+    role = "reader"
+  )
+
+  expect_error(
+    .datom_check_data_reachable(conn, migrated = TRUE),
+    "credentials"
+  )
+})
+
+test_that("S3: warns (not errors) on non-403 network error", {
+  conn <- new_datom_conn(
+    project_name = "p", root = "my-bucket", region = "us-east-1",
+    client = list(head_bucket = function(Bucket) stop("Connection timeout")),
+    role = "reader"
+  )
+
+  expect_warning(
+    .datom_check_data_reachable(conn, migrated = FALSE),
+    "reachability"
+  )
+})
+
+test_that("S3: skips check when client has no head_bucket (mock client)", {
+  conn <- new_datom_conn(
+    project_name = "p", root = "my-bucket", region = "us-east-1",
+    client = list(put_object = function(...) NULL),
+    role = "reader"
+  )
+
+  expect_no_error(.datom_check_data_reachable(conn))
+})
+
+test_that("local: aborts when root directory does not exist", {
+  conn <- new_datom_conn(
+    project_name = "p", root = "/nonexistent/path/xyz",
+    client = NULL, role = "reader", backend = "local"
+  )
+
+  expect_error(
+    .datom_check_data_reachable(conn, migrated = FALSE),
+    "does not exist"
+  )
+})
+
+test_that("local: aborts with migration message when dir missing after migration", {
+  conn <- new_datom_conn(
+    project_name = "p", root = "/nonexistent/path/xyz",
+    client = NULL, role = "reader", backend = "local"
+  )
+
+  expect_error(
+    .datom_check_data_reachable(conn, migrated = TRUE),
+    "migrated"
+  )
+})
+
+test_that("local: passes when root directory exists", {
+  dir <- withr::local_tempdir()
+  conn <- new_datom_conn(
+    project_name = "p", root = as.character(dir),
+    client = NULL, role = "reader", backend = "local"
+  )
+
+  expect_no_error(.datom_check_data_reachable(conn))
+})
+
