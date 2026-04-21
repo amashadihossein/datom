@@ -1,0 +1,111 @@
+# datom
+
+datom provides version-controlled data management for reproducible
+workflows. It abstracts tables as code in git while storing actual data
+in cloud storage (S3), enabling:
+
+- Cloud-based data repositories with automatic versioning
+- Complete data lineage tracking
+- Access to any historical version for reproducibility
+- Separation of data developer and data reader workflows
+
+datom is the foundational layer for the
+[daapr](https://github.com/amashadihossein/daapr) ecosystem.
+
+## Installation
+
+``` r
+# install.packages("pak")
+pak::pak("amashadihossein/datom")
+```
+
+## Overview
+
+### For Data Developers (git + S3 access)
+
+``` r
+library(datom)
+
+# Build a store with credentials
+s3 <- datom_store_s3(
+  bucket     = "my-bucket",
+  prefix     = "data/",
+  access_key = keyring::key_get("AWS_ACCESS_KEY"),
+  secret_key = keyring::key_get("AWS_SECRET_KEY")
+)
+
+store <- datom_store(
+  governance = s3,
+  data       = s3,
+  github_pat = keyring::key_get("GITHUB_PAT")
+)
+
+# Initialize a datom repository
+datom_init_repo(
+  path         = "my_project",
+  project_name = "MYPROJ",
+  store        = store,
+  create_repo  = TRUE,
+  repo_name    = "my-project-data"
+)
+
+# Get connection
+conn <- datom_get_conn(path = "my_project", store = store)
+
+# Sync input files to versioned storage
+manifest <- datom_sync_manifest(conn)
+datom_sync(conn, manifest)
+
+# Write individual tables
+datom_write(conn, data = my_data, name = "customers", message = "Initial load")
+```
+
+### For Data Readers (S3 only)
+
+``` r
+library(datom)
+
+# Build a read-only store (no github_pat)
+reader_s3 <- datom_store_s3(
+  bucket     = "my-bucket",
+  prefix     = "data/",
+  access_key = keyring::key_get("AWS_ACCESS_KEY"),
+  secret_key = keyring::key_get("AWS_SECRET_KEY")
+)
+
+reader_store <- datom_store(governance = reader_s3, data = reader_s3)
+
+# Connect directly to S3
+conn <- datom_get_conn(
+  store        = reader_store,
+  project_name = "MYPROJ"
+)
+
+# List available tables
+datom_list(conn)
+
+# Read current version
+customers <- datom_read(conn, "customers")
+
+# Read specific version for reproducibility
+customers_v1 <- datom_read(conn, "customers", version = "abc123...")
+```
+
+## Design Principles
+
+- **Git as source of truth**: All metadata versioned in git
+- **Content addressing**: SHA-based storage for efficient deduplication
+- **Separated workflows**: Developers need git + S3; readers need only
+  S3
+- **Language agnostic**: Parquet storage enables cross-language access
+
+## Related Packages
+
+| Package      | Purpose                                         |
+|--------------|-------------------------------------------------|
+| **datom**    | Version-controlled table storage (this package) |
+| **dpbuild**  | Data product construction                       |
+| **dpdeploy** | Deployment orchestration                        |
+| **dpi**      | Data product access                             |
+
+See `dev/datom_specification.md` for full technical specification.
