@@ -276,10 +276,12 @@ datom_status <- function(conn) {
 
   status$tables <- table_info
 
+  .storage_labels <- c(s3 = "S3", local = "local")
+  storage_label <- .storage_labels[conn$backend] %||% conn$backend
   if (table_info$available) {
-    cli::cli_alert_info("Tables on S3: {.val {table_info$count}}")
+    cli::cli_alert_info("Tables on {storage_label}: {.val {table_info$count}}")
   } else {
-    cli::cli_alert_warning("Could not read S3 manifest.")
+    cli::cli_alert_warning("Could not read {storage_label} manifest.")
   }
 
   # --- Developer-only: git + input_files status ---

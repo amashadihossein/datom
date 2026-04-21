@@ -175,6 +175,15 @@ sandbox_store_local <- function(path,
   }
 }
 
+.sandbox_storage_label <- function(store_component) {
+  if (inherits(store_component, "datom_store_s3")) {
+    paste0("s3://", store_component$bucket, "/",
+           store_component$prefix %||% "", "datom/")
+  } else {
+    as.character(datom:::.datom_store_root(store_component))
+  }
+}
+
 
 # --- S3 cleanup --------------------------------------------------------------
 
@@ -236,6 +245,28 @@ sandbox_store_local <- function(path,
 
   cli::cli_alert_success("Deleted {length(all_keys)} {label} S3 object{?s}.")
   invisible(length(all_keys))
+}
+
+# --- Local cleanup -----------------------------------------------------------
+
+#' Delete the sandbox local store directory
+.sandbox_wipe_local_component <- function(store_component, label = "data") {
+  if (!inherits(store_component, "datom_store_local")) {
+    cli::cli_alert_info("Skipping {label} local wipe (not a local store).")
+    return(invisible(0L))
+  }
+
+  path <- as.character(datom:::.datom_store_root(store_component))
+
+  if (!fs::dir_exists(path)) {
+    cli::cli_alert_info("No {label} local directory found at {.path {path}}.")
+    return(invisible(0L))
+  }
+
+  cli::cli_alert_warning("Removing {label} local directory {.path {path}}...")
+  fs::dir_delete(path)
+  cli::cli_alert_success("Removed {label} local directory.")
+  invisible(TRUE)
 }
 
 # --- Core functions ----------------------------------------------------------
@@ -336,8 +367,9 @@ sandbox_up <- function(store, ...) {
 
   cli::cli_h3("Sandbox ready")
   cli::cli_ul()
-  cli::cli_li("Local: {.path {local_path}}")
-  cli::cli_li("S3: s3://{store$data$bucket}/{store$data$prefix}datom/")
+  cli::cli_li("Git repo: {.path {local_path}}")
+  cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
+  cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
   cli::cli_end()
 
   invisible(env)
@@ -346,7 +378,8 @@ sandbox_up <- function(store, ...) {
 
 #' Tear down a sandbox datom data product
 #'
-#' Deletes S3 objects, GitHub repo, and local directory.
+#' Deletes storage objects (S3 or local filesystem), GitHub repo, and git
+#' directory. Works for both S3 and local backends.
 #'
 #' @param env Sandbox environment from sandbox_up().
 #' @param confirm If TRUE (default in interactive), asks before destroying.
@@ -363,9 +396,10 @@ sandbox_down <- function(env, confirm = interactive()) {
   if (isTRUE(confirm)) {
     cli::cli_alert_danger("This will permanently delete:")
     cli::cli_ul()
-    cli::cli_li("S3: s3://{store$data$bucket}/{store$data$prefix}datom/ (all objects)")
+    cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}} (all objects)")
+    cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}} (all objects)")
     cli::cli_li("GitHub: {.val {cfg$repo_name}}")
-    cli::cli_li("Local: {.path {env$local_path}}")
+    cli::cli_li("Git repo: {.path {env$local_path}}")
     cli::cli_end()
 
     answer <- readline("Type 'yes' to confirm: ")
@@ -375,17 +409,20 @@ sandbox_down <- function(env, confirm = interactive()) {
     }
   }
 
-  # 1. Wipe S3 (both data and governance stores)
+  # 1. Wipe storage (S3 objects or local directories — each helper is a no-op
+  #    when the store component is the wrong backend type)
   tryCatch({
     .sandbox_wipe_s3_component(store$data, "data")
+    .sandbox_wipe_local_component(store$data, "data")
   }, error = function(e) {
-    cli::cli_alert_danger("Data S3 cleanup failed: {conditionMessage(e)}")
+    cli::cli_alert_danger("Data storage cleanup failed: {conditionMessage(e)}")
     cli::cli_alert_info("Continuing with remaining teardown...")
   })
   tryCatch({
     .sandbox_wipe_s3_component(store$governance, "governance")
+    .sandbox_wipe_local_component(store$governance, "governance")
   }, error = function(e) {
-    cli::cli_alert_danger("Governance S3 cleanup failed: {conditionMessage(e)}")
+    cli::cli_alert_danger("Governance storage cleanup failed: {conditionMessage(e)}")
     cli::cli_alert_info("Continuing with remaining teardown...")
   })
 
@@ -471,8 +508,9 @@ sandbox_recover <- function(store, ...) {
 
   cli::cli_alert_success("Recovered sandbox env for {.val {cfg$project_name}}.")
   cli::cli_ul()
-  cli::cli_li("Local: {.path {local_path}}")
-  cli::cli_li("S3: s3://{store$data$bucket}/{store$data$prefix}datom/")
+  cli::cli_li("Git repo: {.path {local_path}}")
+  cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
+  cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
   cli::cli_end()
   cli::cli_alert_info("Pass this to {.fn sandbox_down} to tear down.")
 
@@ -493,8 +531,9 @@ print.datom_sandbox <- function(x, ...) {
   cli::cli_h3("datom sandbox")
   cli::cli_ul()
   cli::cli_li("Project: {.val {cfg$project_name}}")
-  cli::cli_li("Local: {.path {x$local_path}}")
-  cli::cli_li("S3: s3://{store$data$bucket}/{store$data$prefix}datom/")
+  cli::cli_li("Git repo: {.path {x$local_path}}")
+  cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
+  cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
   cli::cli_li("Age: {age}")
   if (!is.null(x$conn)) {
     cli::cli_li("Connection: available (env$conn)")

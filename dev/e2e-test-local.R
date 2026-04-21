@@ -111,6 +111,6 @@ datom_status(conn)
 #   )
 
 # --- Tear down ---------------------------------------------------------------
-# sandbox_down(env)                                    # GitHub repo + git dir
-# fs::dir_delete(local_storage_dir)                    # parquet data store
-# fs::dir_delete(paste0(local_storage_dir, "-gov"))    # governance store
+# Uncomment to clean up (deletes GitHub repo, git dir, and all local storage):
+#
+# sandbox_down(env)
