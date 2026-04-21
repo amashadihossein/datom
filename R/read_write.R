@@ -31,7 +31,6 @@ datom_read <- function(conn,
   data_sha <- .datom_resolve_version(metadata_list, version = version, name = name)
 
   # 3. Download and read parquet
-  # TODO: Phase 6 will add dispatch via context + dispatch.json
   .datom_read_parquet(conn, name, data_sha)
 }
 

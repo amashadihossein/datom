@@ -17,7 +17,6 @@ knitr::opts_chunk$set(
 
 <!-- badges: start -->
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
-[![CRAN status](https://www.r-pkg.org/badges/version/datom)](https://CRAN.R-project.org/package=datom)
 <!-- badges: end -->
 
 datom provides version-controlled data management for reproducible workflows. It abstracts tables as code in git while storing actual data in cloud storage (S3), enabling:
