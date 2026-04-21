@@ -158,8 +158,8 @@ datom_validate <- function(conn, fix = FALSE) {
 #' (two projects sharing the same S3 bucket + prefix).
 #'
 #' @param conn A `datom_conn` object.
-#' @return `TRUE` if consistent or no project_name in manifest (pre-Phase 7
-#'   repos). `FALSE` on mismatch (with a warning).
+#' @return `TRUE` if consistent or no project_name in manifest (legacy
+#'   repos without project tracking). `FALSE` on mismatch (with a warning).
 #' @noRd
 .datom_validate_project_name <- function(conn) {
   manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
@@ -172,7 +172,7 @@ datom_validate <- function(conn, fix = FALSE) {
   )
 
   manifest_project <- manifest$project_name
-  if (is.null(manifest_project)) return(TRUE)  # pre-Phase 7 manifest
+  if (is.null(manifest_project)) return(TRUE)  # legacy manifest without project_name
 
   if (!identical(manifest_project, conn$project_name)) {
     cli::cli_alert_danger(

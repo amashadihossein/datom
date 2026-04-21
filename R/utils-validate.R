@@ -53,7 +53,7 @@
 }
 
 
-# --- S3 namespace safety (Phase 7) -------------------------------------------
+# --- S3 namespace safety -------------------------------------------------------
 
 #' Check Whether an S3 Namespace is Free
 #'

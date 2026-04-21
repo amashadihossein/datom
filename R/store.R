@@ -1,6 +1,6 @@
 # Store abstraction for datom storage backends
 #
-# Type-specific constructors: datom_store_s3() (now), datom_store_local() (Phase 12)
+# Type-specific constructors: datom_store_s3(), datom_store_local()
 # Composite constructor: datom_store() bundles governance + data + git config
 
 

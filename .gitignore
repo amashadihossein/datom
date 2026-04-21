@@ -10,3 +10,5 @@ doc
 docs
 Meta
 vignettes/*.R
+dev/archive/
+dev/datomaccess_overview.md
