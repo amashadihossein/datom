@@ -122,6 +122,7 @@ The repo has been private through Phases 1–13. All core functionality is in pl
 - Dev scripts still run end-to-end (re-run both E2E scripts).
 - `devtools::document()` run after roxygen edits; `devtools::check()` clean.
 - No `Phase N` / `Chunk N` references remain in `R/*.R` comments.
+**Result**: All acceptance criteria met. `R/` is clean of Phase/Chunk refs. 25 test-file headers intentionally left (low visibility, no behavior). `dev/archive/` and `datomaccess_overview.md` untracked + gitignored (kept locally). `sandbox_store()` now uses `Sys.getenv()` defaults. 0 errors, 0 warnings, 1 note. ✅
 
 ### Chunk 5 — Final pass + phase completion
 **Scope**: Integration check before flipping the repo public.
@@ -151,7 +152,7 @@ The repo has been private through Phases 1–13. All core functionality is in pl
 - [x] Chunk 1 — Metadata hygiene
 - [x] Chunk 2 — Contributor scaffolding
 - [x] Chunk 3 — GitHub Actions CI
-- [ ] Chunk 4 — Dev folder + source-comment public-readiness
+- [x] Chunk 4 — Dev folder + source-comment public-readiness
 - [ ] Chunk 5 — Final pass + phase completion
 
 ## Model escalation candidates
