@@ -84,6 +84,7 @@ The repo has been private through Phases 1–13. All core functionality is in pl
 - Update `.Rbuildignore` to ignore the new top-level OSS files so they don't ship in the tarball (`^CONTRIBUTING\.md$`, `^CODE_OF_CONDUCT\.md$`, `^SECURITY\.md$`, `^\.github$` is already there).
 
 **Acceptance**: `devtools::check()` clean; new files visible on GitHub; no build warnings.
+**Result**: 0 errors, 0 warnings, 1 note (pre-existing `pkgdown/` dir). 1177 tests passing. ✅
 
 ### Chunk 3 — GitHub Actions CI
 **Scope**: Public repos without green CI look abandoned. Use the `r-lib/actions` canonicals.
@@ -143,7 +144,7 @@ The repo has been private through Phases 1–13. All core functionality is in pl
 ## Status tracking
 
 - [x] Chunk 1 — Metadata hygiene
-- [ ] Chunk 2 — Contributor scaffolding
+- [x] Chunk 2 — Contributor scaffolding
 - [ ] Chunk 3 — GitHub Actions CI
 - [ ] Chunk 4 — Dev folder + source-comment public-readiness
 - [ ] Chunk 5 — Final pass + phase completion
