@@ -158,16 +158,28 @@ These patterns are non-negotiable for every session:
 0. **Follow the dev process for multi-step work**: Any task spanning more than a single commit **must** follow the phase workflow:
    a. Read `dev/README.md` and relevant dev docs (spec, architecture) to understand current state.
    b. Create a feature branch: `git checkout -b phase/{n}-{name}` from `main`.
-   c. Create a phase doc (`dev/phase_{n}_{name}.md`) with goal, context, chunks, acceptance criteria, and status tracking.
+   c. Create a phase doc (`dev/phase_{n}_{name}.md`) with goal, context, chunks, acceptance criteria, and status tracking. Flag any chunks that likely warrant model escalation (see Model Escalation below) so the cue lands at plan time, not mid-chunk.
    d. Register it as active in the `dev/README.md` Active Phases table.
-   e. Work through chunks in order — update the phase doc as you go (progress, decisions, blockers).
+   e. Work through chunks in order. Updating the phase doc (progress, decisions, blockers) is part of completing each chunk, not an afterthought — phase docs are how context persists across a model's short working memory, and stale docs silently degrade the next chunk. When a chunk spans multiple files or has strict must-never rules, scaffold the phase doc with "read first" and "invariants" subsections before starting.
    f. Complete the Phase Completion Procedure when done. PR to `main`, merge, delete branch.
    Never jump straight to coding on multi-step work. The phase doc is the plan AND the audit trail.
-1. **Read before writing**: Always read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the phase doc description alone.
+1. **Read before writing**: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the phase doc description alone.
 2. **Full test suite before every commit**: Run `devtools::test()` (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost.
-3. **One logical change per commit**: Don't bundle unrelated fixes. Squash related incremental commits before pushing if they tell a cleaner story as one.
+3. **One logical change per commit**: Don't bundle unrelated fixes. Squash related incremental commits before pushing if they tell a cleaner story as one. Scope chunks so this is the natural outcome — if a chunk's scope feels ambiguous before you start, that's a signal to split it.
 4. **Simplicity over cleverness**: If a change doesn't alter behavior, don't add it. When in doubt, do less. Actively resist complexity that exists only for marginally better UX or edge-case coverage.
 5. **E2E after phase completion**: Unit tests are necessary but not sufficient. Before marking a phase complete, run real end-to-end workflows via `dev/dev-sandbox.R` to catch integration bugs.
 5a. **Long PR/commit messages — always use a file**: Never pass multi-line PR body text inline via `--body "..."` or heredoc (`<< 'EOF'`). Shell quoting and terminal emulation mangle them. Instead: write to a temp file with `create_file`, then pass `--body-file /tmp/filename.md`. Same applies to long commit messages: write to a file and use `git commit -F /tmp/msg.md`. For short single-line messages (< 80 chars), inline `--message` / `-m` is fine.
 6. **Fix bugs immediately**: When E2E reveals a bug, fix it before moving to the next phase. Don't defer bugs that affect correctness.
 7. **Phase completion is mandatory**: When a phase is done, immediately follow the Phase Completion Procedure in `dev/README.md` — migrate learnings to spec/instructions, update README tables, delete the phase doc, and commit. Do NOT start the next phase until this is done. A phase is not "complete" until its doc is deleted.
+
+## Model Escalation
+
+Most chunks are routine and suited to a default working model. A few narrow moments are high-leverage enough to justify invoking a more capable model:
+
+- **Design spot-check** before committing to a large or cross-cutting chunk.
+- **Purity audit** after a refactor that touched many files, to catch drift the chunk-level review missed.
+- **Test coverage review** before phase completion, to sanity-check that unit + E2E coverage actually exercises the new behavior.
+
+When you recognize one of these moments mid-session, surface a brief recommendation before proceeding (e.g., "This chunk touches 6 files across 3 modules — consider escalating for a design spot-check"). The user decides whether to switch; don't block on it.
+
+This is a pointer, not a protocol — use judgment. Escalation is cheap compared to a bad phase.
