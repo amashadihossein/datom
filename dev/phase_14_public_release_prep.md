@@ -135,6 +135,7 @@ The repo has been private through Phases 1–13. All core functionality is in pl
   1. Go to **Settings → Pages → Source**: set branch to `gh-pages`, folder `/` → Save. This activates the pkgdown site.
   2. Go to **Settings → General → Danger Zone → Change repository visibility** → Make public.
   3. Confirm GitHub Actions fired on the merge commit: check the **Actions** tab for green R-CMD-check and pkgdown runs.
+- **At phase wrap-up**: read these three steps back to the user before closing the phase.
 
 **Acceptance**: Phase doc deleted, README tables updated, branch merged, repo ready for visibility flip.
 
