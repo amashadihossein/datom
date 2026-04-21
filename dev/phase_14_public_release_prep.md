@@ -131,7 +131,10 @@ The repo has been private through Phases 1–13. All core functionality is in pl
 - Re-run both E2E scripts.
 - Migrate learnings from this phase doc into `.github/copilot-instructions.md` and/or `dev/README.md` as appropriate (likely minimal — mostly mechanical work).
 - Follow the Phase Completion Procedure in [dev/README.md](dev/README.md): update Active/Completed tables, delete this phase doc, PR + merge + delete branch.
-- **After merge**: flip the repo to public in GitHub settings (user action, not a commit).
+- **After merge — user actions (in order)**:
+  1. Go to **Settings → Pages → Source**: set branch to `gh-pages`, folder `/` → Save. This activates the pkgdown site.
+  2. Go to **Settings → General → Danger Zone → Change repository visibility** → Make public.
+  3. Confirm GitHub Actions fired on the merge commit: check the **Actions** tab for green R-CMD-check and pkgdown runs.
 
 **Acceptance**: Phase doc deleted, README tables updated, branch merged, repo ready for visibility flip.
 
