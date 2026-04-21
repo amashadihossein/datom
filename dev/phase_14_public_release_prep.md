@@ -96,6 +96,7 @@ The repo has been private through Phases 1–13. All core functionality is in pl
 **Note**: Workflows will not run on the phase branch unless we push it; they'll run on PR to `main`. That's fine — that's also the first public-facing validation.
 
 **Acceptance**: Workflows exist and are syntactically valid (yamllint or `gh workflow list` after push). Don't block the phase on workflow green runs against `main`; they will run on the phase PR.
+**Result**: `R-CMD-check.yaml` + `pkgdown.yaml` created via `usethis::use_github_action()`. R-CMD-check badge added to README. 0 errors, 0 warnings, 1 note. ✅
 
 ### Chunk 4 — Dev folder + source-comment public-readiness
 **Scope**: Clean up visible-but-not-shipped `dev/` tree and scrub scaffolding residue from source comments. **Zero behavior change** — comments and docs only.
@@ -145,7 +146,7 @@ The repo has been private through Phases 1–13. All core functionality is in pl
 
 - [x] Chunk 1 — Metadata hygiene
 - [x] Chunk 2 — Contributor scaffolding
-- [ ] Chunk 3 — GitHub Actions CI
+- [x] Chunk 3 — GitHub Actions CI
 - [ ] Chunk 4 — Dev folder + source-comment public-readiness
 - [ ] Chunk 5 — Final pass + phase completion
 
