@@ -44,7 +44,15 @@ Phase plans are **temporary working documents**:
 
 ### Active Phases
 
-_None — all phases complete._
+| Phase | Started | Status | Doc |
+|-------|---------|--------|-----|
+| Phase 15 Cleanup | 2026-04-27 | Planning — folding pre-CRAN audit findings into PR #6 | [phase_15_cleanup.md](phase_15_cleanup.md) |
+
+### Drafts (queued, not active)
+
+| Draft | Notes | Doc |
+|-------|-------|-----|
+| Conn finalize & backend accessor refactor | Audit M2 + M6 deferred from Phase 15 cleanup. Numbering TBD (Phase 16 already references a different "Phase 17"). | [draft_phase_conn_refactor.md](draft_phase_conn_refactor.md) |
 
 ### Completed Phases
 
