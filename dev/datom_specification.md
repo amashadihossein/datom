@@ -1264,6 +1264,57 @@ Adding a new backend (e.g., GCS, Azure) requires:
 3. Adding a `switch()` case in each dispatch function
 ```
 
+### Governance Repository Contract
+
+The governance repository is a port surface. datom currently owns both gov and data writes; a planned companion package (working name `datomaccess` / `datomanager`) will eventually take over governance write operations. To make that handoff a port replacement rather than a refactor, all gov-write code lives behind a tagged seam.
+
+**Seam location.** All gov-write helpers live in `R/utils-gov.R` and are tagged with `# GOV_SEAM:` comments. Any new gov-write code must go through this file and carry the marker. Gov-**read** helpers (`.datom_resolve_ref()`, `.datom_resolve_ref_from_clone()`, dispatch reads) are not seam-marked — datom always needs to read gov regardless of who writes it.
+
+**Seam helper inventory:**
+
+| Helper | Purpose |
+|---|---|
+| `.datom_gov_clone_init()` | Clone or open the gov repo at `gov_local_path`; validates remote URL on existing dirs. |
+| `.datom_gov_commit()` | Stage + commit on the gov clone. |
+| `.datom_gov_push()` | Push gov clone to remote (pull-before-push). |
+| `.datom_gov_pull()` | Fetch + fast-forward gov clone. |
+| `.datom_gov_write_dispatch()` | Write `projects/{name}/dispatch.json` to gov clone + storage. |
+| `.datom_gov_write_ref()` | Write `projects/{name}/ref.json` to gov clone + storage. |
+| `.datom_gov_register_project()` | Create `projects/{name}/` folder + initial files; commit + push. |
+| `.datom_gov_unregister_project()` | Remove `projects/{name}/`; commit + push. |
+| `.datom_gov_record_migration()` | Append to `projects/{name}/migration_history.json`; commit + push. |
+| `.datom_gov_destroy()` | Tear down whole gov repo + storage. Refuses if registered projects exist unless `force = TRUE`. Sandbox-only today; companion will own the user-facing equivalent. |
+
+**Commit message conventions (gov repo).** Stable contract — readers/auditors can grep history; the companion package must preserve these strings:
+
+| Operation | Message format |
+|---|---|
+| `register_project` | `Register project {name}` |
+| `unregister_project` | `Unregister project {name}` |
+| `write_dispatch` | `Update dispatch for {name}` |
+| `write_ref` | `Update ref for {name}` |
+| `record_migration` | `Record migration for {name}: {summary}` |
+
+**File initialization.** `.datom_gov_register_project()` creates `projects/{name}/` with three files: `dispatch.json` (default methods), `ref.json` (current data location), and `migration_history.json` (initialized as empty `[]`; appended to by `.datom_gov_record_migration()`).
+
+**Decommission scope matrix.** Three distinct teardown operations exist; their scopes do not overlap:
+
+| Operation | Scope | Caller | Implementation |
+|---|---|---|---|
+| **Project decommission** | one project | datom public API | `datom_decommission(conn, confirm = "{name}")` |
+| **Gov decommission** | whole gov repo + storage | future companion package | `.datom_gov_destroy()` (today: sandbox-only via `:::`) |
+| **Sandbox teardown** | dev playground | `dev/dev-sandbox.R` | `sandbox_down(env, scope = c("all", "project", "gov"))` |
+
+**Concurrency.** Two developers running `datom_sync_dispatch()` on the same project simultaneously could conflict on push. Phase 15 relies on git's standard pull-before-push discipline (built into `.datom_gov_push()`); explicit lock mechanism deferred (see Deferred to v2).
+
+**Future companion package.** The companion package will own:
+- The full gov lifecycle (init, register, unregister, destroy) as user-facing functions.
+- CODEOWNERS automation on `projects/{name}/` for self-serve project ownership without a platform-team gatekeeper.
+- Access-point provisioning (works with `datomaccess` for IAM-enforced reads).
+- Concurrency primitives if needed (advisory locks on `projects/{name}/`).
+
+datom will remain a client: reading gov state freely, writing only via the seam helpers — which the companion will replace with thin shims that delegate to its own implementations. **Do not** introduce a plugin/registry mechanism inside datom for this; the seam contract + tagged helpers are sufficient and avoid premature abstraction.
+
 ---
 
 ## Performance & Security
@@ -1434,6 +1485,10 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
 
 - **Session metadata caching**: Could reduce S3 GETs for repeated reads within a session. Requires careful invalidation design — deferred until the trade-offs are well understood.
 - **renv integration** in `datom_init_repo()`: Currently deferred; `renv` field in project.yaml defaults to `false`.
+- **Gov repo concurrency primitives**: Two developers running `datom_sync_dispatch()` simultaneously rely on git pull-before-push to resolve. Advisory locks on `projects/{name}/` (e.g., a short-lived lock file committed and removed) deferred until contention is observed.
+- **CODEOWNERS automation on `projects/{name}/`**: Self-serve project ownership without a platform-team gatekeeper. Will live in the future governance companion package, not datom.
+- **Companion governance package** (working name `datomaccess` / `datomanager`): Will own the full gov lifecycle (init, register, unregister, destroy) as user-facing functions and replace datom's `# GOV_SEAM:` helpers with thin shims. The seam contract (helper inventory + commit message conventions, see "Governance Repository Contract") is the port surface to preserve. Do not introduce a plugin/registry mechanism inside datom for this — the tagged seam is sufficient.
+- **`datom_migrate_data()`**: Managed migration (data copy + ref.json update + `.datom_gov_record_migration()` invocation in one atomic operation). Deferred; today migration is manual (external `aws s3 sync` + `datom_sync_dispatch()`).
 
 ### Multi-Developer Collaboration (Implemented)
 
