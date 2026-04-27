@@ -17,6 +17,7 @@ new_datom_conn(
   gov_prefix = NULL,
   gov_region = NULL,
   gov_client = NULL,
+  gov_local_path = NULL,
   backend = "s3"
 )
 }
@@ -44,6 +45,8 @@ new_datom_conn(
 \item{gov_region}{Governance region (can be NULL).}
 
 \item{gov_client}{Governance storage client (can be NULL).}
+
+\item{gov_local_path}{Absolute path to the local gov clone (NULL for readers).}
 }
 \value{
 A \code{datom_conn} object.

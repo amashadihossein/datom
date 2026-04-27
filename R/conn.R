@@ -276,7 +276,24 @@ datom_init_repo <- function(path = ".",
     ))
   }
 
-  # --- S3 namespace safety check ----------------------------------------------
+  # --- Resolve gov_local_path ------------------------------------------------
+  gov_local_path <- if (!is.null(store$gov_local_path)) {
+    fs::path_abs(store$gov_local_path)
+  } else if (!is.null(store$gov_repo_url)) {
+    .datom_resolve_gov_local_path(
+      data_local_path = fs::path_abs(path),
+      gov_repo_url    = store$gov_repo_url
+    )
+  } else {
+    NULL
+  }
+
+  # --- Step 0: ensure gov clone is available ---------------------------------
+  if (!is.null(store$gov_repo_url) && !is.null(gov_local_path)) {
+    .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path))
+  }
+
+  # --- S3 namespace safety check for data store ------------------------------
   # Use data component for storage operations (where manifest lives)
   data_backend <- .datom_store_backend(store$data)
   data_root <- .datom_store_root(store$data)
@@ -302,6 +319,21 @@ datom_init_repo <- function(path = ".",
         "Could not verify S3 namespace is free: {conditionMessage(e)}"
       )
     })
+  }
+
+  # --- Gov project namespace check -------------------------------------------
+  # Abort if this project name is already registered in the gov clone. This
+  # prevents a data-first init from completing only to have the gov registration
+  # step fail, which would require manual cleanup.
+  if (!is.null(gov_local_path) && .datom_gov_clone_exists(as.character(gov_local_path))) {
+    gov_project_dir <- .datom_gov_project_path(as.character(gov_local_path), project_name)
+    if (fs::dir_exists(gov_project_dir)) {
+      cli::cli_abort(c(
+        "Project {.val {project_name}} is already registered in the governance repo.",
+        "i" = "Found at: {.path {gov_project_dir}}",
+        "i" = "Use a different project name or decommission the existing project first."
+      ))
+    }
   }
 
   # --- Path setup -------------------------------------------------------------
@@ -398,7 +430,7 @@ datom_init_repo <- function(path = ".",
 
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
 
-  # --- Create dispatch.json ----------------------------------------------------
+  # --- Build dispatch and ref payloads (written to gov, not data clone) ------
   dispatch <- list(
     methods = list(
       r = list(default = "datom::datom_read"),
@@ -406,10 +438,9 @@ datom_init_repo <- function(path = ".",
     )
   )
 
-  jsonlite::write_json(dispatch, fs::path(path, ".datom", "dispatch.json"),
-                       auto_unbox = TRUE, pretty = TRUE)
+  ref <- .datom_create_ref(store$data)
 
-  # --- Create manifest.json ---------------------------------------------------
+  # --- Create manifest.json (data repo only) ----------------------------------
   manifest <- list(
     project_name = project_name,
     updated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
@@ -422,12 +453,6 @@ datom_init_repo <- function(path = ".",
   )
 
   jsonlite::write_json(manifest, fs::path(path, ".datom", "manifest.json"),
-                       auto_unbox = TRUE, pretty = TRUE)
-
-  # --- Create ref.json --------------------------------------------------------
-  ref <- .datom_create_ref(store$data)
-
-  jsonlite::write_json(ref, fs::path(path, ".datom", "ref.json"),
                        auto_unbox = TRUE, pretty = TRUE)
 
   # --- Create .gitignore ------------------------------------------------------
@@ -460,12 +485,10 @@ datom_init_repo <- function(path = ".",
 
   git2r::remote_add(repo, name = "origin", url = remote_url)
 
-  # Stage all created files
+  # Stage data-repo files only (dispatch.json and ref.json live in gov repo)
   git2r::add(repo, c(
     ".datom/project.yaml",
-    ".datom/dispatch.json",
     ".datom/manifest.json",
-    ".datom/ref.json",
     ".gitignore",
     "README.md"
   ))
@@ -479,22 +502,49 @@ datom_init_repo <- function(path = ".",
   # Push initial commit
   .datom_git_push(path)
 
-  # Push repo-level files to storage (dispatch → governance, manifest → data)
-  tryCatch({
-    data_conn <- .datom_build_init_conn(
+  # Build a conn for storage operations (inside tryCatch — S3 client may fail)
+  data_conn <- tryCatch(
+    .datom_build_init_conn(
       project_name, store$data, path, "developer", NULL,
-      gov_store = store$governance
+      gov_store = store$governance,
+      gov_local_path = if (!is.null(gov_local_path)) as.character(gov_local_path) else NULL
+    ),
+    error = function(e) {
+      cli::cli_alert_warning(
+        "Git push succeeded but could not build storage conn: {conditionMessage(e)}"
+      )
+      cli::cli_alert_info("Run {.fn datom_sync_dispatch} to fix.")
+      NULL
+    }
+  )
+
+  # --- Register project in gov repo + mirror to gov storage ------------------
+  # dispatch.json and ref.json live in the gov repo (projects/{name}/),
+  # never in the data clone. .datom_gov_register_project() commits + pushes
+  # both files and mirrors them to gov storage.
+  if (!is.null(gov_local_path) && !is.null(data_conn)) {
+    tryCatch(
+      .datom_gov_register_project(data_conn, project_name, dispatch, ref),
+      error = function(e) {
+        cli::cli_alert_warning(
+          "Data repo pushed but gov registration failed: {conditionMessage(e)}"
+        )
+        cli::cli_alert_info("Run {.fn datom_sync_dispatch} to fix.")
+      }
     )
-    gov_conn <- .datom_gov_conn(data_conn)
-    .datom_storage_write_json(gov_conn, ".metadata/dispatch.json", dispatch)
-    .datom_storage_write_json(gov_conn, ".metadata/ref.json", ref)
-    .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
-  }, error = function(e) {
-    cli::cli_alert_warning(
-      "Git push succeeded but storage upload failed: {conditionMessage(e)}"
-    )
-    cli::cli_alert_info("Run {.fn datom_sync_dispatch} to fix.")
-  })
+  }
+
+  # --- Mirror manifest to data storage ----------------------------------------
+  if (!is.null(data_conn)) {
+    tryCatch({
+      .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
+    }, error = function(e) {
+      cli::cli_alert_warning(
+        "Git push succeeded but manifest storage upload failed: {conditionMessage(e)}"
+      )
+      cli::cli_alert_info("Run {.fn datom_sync_manifest} to fix.")
+    })
+  }
 
   .init_success <- TRUE
 

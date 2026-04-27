@@ -5,17 +5,12 @@
 scaffold_datom_repo <- function(path,
                                git = TRUE,
                                project_yaml = TRUE,
-                               dispatch_json = TRUE,
                                manifest_json = TRUE,
                                renv = TRUE) {
   if (git) fs::dir_create(fs::path(path, ".git"))
   if (project_yaml) {
     fs::dir_create(fs::path(path, ".datom"))
     fs::file_create(fs::path(path, ".datom", "project.yaml"))
-  }
-  if (dispatch_json) {
-    fs::dir_create(fs::path(path, ".datom"))
-    fs::file_create(fs::path(path, ".datom", "dispatch.json"))
   }
   if (manifest_json) {
     fs::dir_create(fs::path(path, ".datom"))
@@ -35,7 +30,7 @@ test_that("returns all TRUE for fully scaffolded repo", {
     dx <- datom_repository_check(getwd())
 
     expect_type(dx, "list")
-    expect_named(dx, c("git_initialized", "datom_initialized", "datom_dispatch",
+    expect_named(dx, c("git_initialized", "datom_initialized",
                         "datom_manifest", "renv_initialized"))
     purrr::walk(dx, ~ expect_true(.x))
   })
@@ -48,7 +43,6 @@ test_that("detects missing .git", {
 
     expect_false(dx$git_initialized)
     expect_true(dx$datom_initialized)
-    expect_true(dx$datom_dispatch)
     expect_true(dx$datom_manifest)
     expect_true(dx$renv_initialized)
   })
@@ -61,18 +55,17 @@ test_that("detects missing project.yaml", {
 
     expect_true(dx$git_initialized)
     expect_false(dx$datom_initialized)
-    expect_true(dx$datom_dispatch)
+    expect_true(dx$datom_manifest)
   })
 })
 
-test_that("detects missing dispatch.json", {
+test_that("datom_repository_check has no dispatch field (lives in gov repo)", {
   withr::with_tempdir({
-    scaffold_datom_repo(getwd(), dispatch_json = FALSE)
+    scaffold_datom_repo(getwd())
     dx <- datom_repository_check(getwd())
 
-    expect_true(dx$datom_initialized)
-    expect_false(dx$datom_dispatch)
-    expect_true(dx$datom_manifest)
+    # dispatch.json moved to gov repo; no longer checked here
+    expect_false("datom_dispatch" %in% names(dx))
   })
 })
 
@@ -81,7 +74,7 @@ test_that("detects missing manifest.json", {
     scaffold_datom_repo(getwd(), manifest_json = FALSE)
     dx <- datom_repository_check(getwd())
 
-    expect_true(dx$datom_dispatch)
+    expect_true(dx$datom_initialized)
     expect_false(dx$datom_manifest)
     expect_true(dx$renv_initialized)
   })
@@ -159,17 +152,15 @@ test_that("checks = 'datom' only evaluates datom components", {
     # Only datom files, no git or renv
     fs::dir_create(".datom")
     fs::file_create(fs::path(".datom", "project.yaml"))
-    fs::file_create(fs::path(".datom", "dispatch.json"))
     fs::file_create(fs::path(".datom", "manifest.json"))
     expect_true(is_valid_datom_repo(getwd(), checks = "datom"))
   })
 })
 
-test_that("checks = 'datom' returns FALSE when dispatch.json missing", {
+test_that("checks = 'datom' returns FALSE when manifest.json missing", {
   withr::with_tempdir({
     fs::dir_create(".datom")
     fs::file_create(fs::path(".datom", "project.yaml"))
-    fs::file_create(fs::path(".datom", "manifest.json"))
     expect_false(is_valid_datom_repo(getwd(), checks = "datom"))
   })
 })

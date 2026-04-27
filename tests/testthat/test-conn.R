@@ -654,18 +654,16 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   expect_null(cfg$storage$credentials)
 })
 
-test_that("datom_init_repo creates dispatch.json", {
+test_that("datom_init_repo does NOT create dispatch.json in data clone (lives in gov repo)", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = env$store)
 
+  # dispatch.json moved to gov repo (projects/{name}/dispatch.json);
+  # it must NOT be in the data clone.
   dispatch_path <- fs::path(env$work_dir, ".datom", "dispatch.json")
-  expect_true(fs::file_exists(dispatch_path))
-
-  dispatch <- jsonlite::read_json(dispatch_path)
-  expect_equal(dispatch$methods$r$default, "datom::datom_read")
-  expect_equal(dispatch$methods$python$default, "datom.read")
+  expect_false(fs::file_exists(dispatch_path))
 })
 
 test_that("datom_init_repo creates manifest.json", {
@@ -1046,7 +1044,7 @@ test_that("datom_init_repo does NOT remove pre-existing parent dir on failure", 
   expect_true(fs::dir_exists(env$work_dir))
 })
 
-test_that("datom_init_repo pushes dispatch.json, ref.json, and manifest.json to S3", {
+test_that("datom_init_repo pushes manifest.json to data storage", {
   env <- setup_init_env()
 
   s3_keys_written <- character()
@@ -1065,9 +1063,12 @@ test_that("datom_init_repo pushes dispatch.json, ref.json, and manifest.json to 
     store = env$store
   )
 
-  expect_true(".metadata/dispatch.json" %in% s3_keys_written)
-  expect_true(".metadata/ref.json" %in% s3_keys_written)
+  # manifest goes to data storage; dispatch/ref go to gov repo (git) not here
   expect_true(".metadata/manifest.json" %in% s3_keys_written)
+  # dispatch and ref are registered in gov repo, not written to S3 directly
+  # by datom_init_repo when no gov_local_path is set
+  expect_false(".metadata/dispatch.json" %in% s3_keys_written)
+  expect_false(".metadata/ref.json" %in% s3_keys_written)
 })
 
 test_that("datom_init_repo succeeds even if S3 upload fails", {
@@ -1087,10 +1088,76 @@ test_that("datom_init_repo succeeds even if S3 upload fails", {
     )
   )
 
-  # Files should still be created locally
-  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "dispatch.json")))
+  # manifest.json is the only file created locally in data clone
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
-  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+  # dispatch.json and ref.json are NOT in the data clone
+  expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "dispatch.json")))
+  expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+})
+
+
+# --- Governance-first ordering (Phase 15, Chunk 5) ---------------------------
+
+# Helper: extends setup_init_env() with a bare gov repo + gov_repo_url
+setup_init_env_with_gov <- function(env = parent.frame()) {
+  base <- setup_init_env(env = env)
+
+  gov_bare <- withr::local_tempdir(.local_envir = env)
+  git2r::init(gov_bare, bare = TRUE)
+  gov_local <- withr::local_tempdir(.local_envir = env)
+  # Remove so .datom_gov_clone_init clones fresh
+  fs::dir_delete(gov_local)
+
+  store <- datom_store(
+    governance = base$store$governance,
+    data = base$store$data,
+    github_pat = "ghp_fake",
+    data_repo_url = base$bare_dir,
+    gov_repo_url = gov_bare,
+    gov_local_path = gov_local,
+    validate = FALSE
+  )
+
+  c(base[c("bare_dir", "work_dir")],
+    list(gov_bare = gov_bare, gov_local = gov_local, store = store))
+}
+
+test_that("datom_init_repo with gov_repo_url clones gov repo before data work", {
+  env <- setup_init_env_with_gov()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  # Gov repo was cloned to gov_local_path
+  expect_true(fs::dir_exists(fs::path(env$gov_local, ".git")))
+})
+
+test_that("datom_init_repo registers project in gov repo", {
+  env <- setup_init_env_with_gov()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  proj_dir <- fs::path(env$gov_local, "projects", "testproj")
+  expect_true(fs::file_exists(fs::path(proj_dir, "dispatch.json")))
+  expect_true(fs::file_exists(fs::path(proj_dir, "ref.json")))
+})
+
+test_that("datom_init_repo aborts when gov project namespace already exists", {
+  env <- setup_init_env_with_gov()
+
+  # Pre-clone gov and create a project dir to simulate collision
+  .datom_gov_clone_init(env$gov_bare, env$gov_local)
+  fs::dir_create(fs::path(env$gov_local, "projects", "testproj"))
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store),
+    "already"
+  )
+
+  # Data clone should not have been created
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
 })
 
 
@@ -1607,10 +1674,12 @@ test_that("datom_init_repo works with local stores", {
     store = env$store
   )
 
-  # Check files created
+  # Check files created in data clone
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "project.yaml")))
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
-  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+  # dispatch.json and ref.json now live in gov repo, NOT in data clone
+  expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+  expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "dispatch.json")))
 
   # Check project.yaml has local backend
   cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
@@ -1618,11 +1687,12 @@ test_that("datom_init_repo works with local stores", {
   expect_equal(cfg$storage$governance$type, "local")
   expect_null(cfg$storage$data$region)
 
-  # Check storage files were pushed
+  # Check manifest was pushed to data storage
   store_base <- fs::path(env$store_dir, "proj/", "datom")
   expect_true(fs::file_exists(fs::path(store_base, ".metadata", "manifest.json")))
-  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "dispatch.json")))
-  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "ref.json")))
+  # dispatch/ref are NOT in storage .metadata/ -- they go to gov repo (no gov_repo_url set here)
+  expect_false(fs::file_exists(fs::path(store_base, ".metadata", "dispatch.json")))
+  expect_false(fs::file_exists(fs::path(store_base, ".metadata", "ref.json")))
 })
 
 test_that("datom_get_conn works with local stores after init", {

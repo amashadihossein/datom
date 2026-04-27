@@ -25,7 +25,7 @@ is_valid_datom_repo <- function(path,
       dx <- dx[setdiff(names(dx), "git_initialized")]
     }
     if (!"datom" %in% checks) {
-      dx <- dx[setdiff(names(dx), c("datom_initialized", "datom_dispatch", "datom_manifest"))]
+      dx <- dx[setdiff(names(dx), c("datom_initialized", "datom_manifest"))]
     }
     if (!"renv" %in% checks) {
       dx <- dx[setdiff(names(dx), "renv_initialized")]
@@ -60,7 +60,6 @@ datom_repository_check <- function(path) {
   list(
     git_initialized = fs::dir_exists(fs::path(path, ".git")),
     datom_initialized = fs::file_exists(fs::path(path, ".datom", "project.yaml")),
-    datom_dispatch = fs::file_exists(fs::path(path, ".datom", "dispatch.json")),
     datom_manifest = fs::file_exists(fs::path(path, ".datom", "manifest.json")),
     renv_initialized = fs::dir_exists(fs::path(path, "renv"))
   )
