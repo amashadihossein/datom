@@ -934,6 +934,171 @@ test_that("datom_sync_dispatch handles multiple tables", {
 })
 
 
+# --- datom_sync_dispatch() gov-first path (Phase 15, Chunk 7) -----------------
+
+test_that("datom_sync_dispatch with gov_local_path calls .datom_gov_write_dispatch", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    project_dir <- fs::path(gov_dir, "projects", "myproj")
+    fs::dir_create(project_dir)
+    jsonlite::write_json(list(methods = list()), fs::path(project_dir, "dispatch.json"),
+                         auto_unbox = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    # Manifest (data repo)
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    write_dispatch_called <- FALSE
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(conn, project_name, dispatch) {
+        write_dispatch_called <<- TRUE
+        invisible(TRUE)
+      },
+      .datom_gov_write_ref = function(conn, project_name, ref) invisible(TRUE),
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
+    )
+
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
+
+    expect_true(write_dispatch_called)
+    expect_true(any(grepl("dispatch.json", result$repo_files)))
+  })
+})
+
+test_that("datom_sync_dispatch with gov_local_path calls .datom_gov_write_ref", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    project_dir <- fs::path(gov_dir, "projects", "myproj")
+    fs::dir_create(project_dir)
+    jsonlite::write_json(list(current = list()), fs::path(project_dir, "ref.json"),
+                         auto_unbox = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    write_ref_called <- FALSE
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(conn, project_name, dispatch) invisible(TRUE),
+      .datom_gov_write_ref = function(conn, project_name, ref) {
+        write_ref_called <<- TRUE
+        invisible(TRUE)
+      },
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
+    )
+
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
+
+    expect_true(write_ref_called)
+    expect_true(any(grepl("ref.json", result$repo_files)))
+  })
+})
+
+test_that("datom_sync_dispatch gov-path still syncs manifest to data storage", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    fs::dir_create(fs::path(gov_dir, "projects", "myproj"))
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    storage_keys <- character()
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(...) invisible(TRUE),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
+      .datom_storage_write_json = function(conn, s3_key, data) {
+        storage_keys <<- c(storage_keys, s3_key)
+        invisible(NULL)
+      }
+    )
+
+    datom_sync_dispatch(conn, .confirm = FALSE)
+
+    expect_true(".metadata/manifest.json" %in% storage_keys)
+  })
+})
+
+test_that("datom_sync_dispatch gov-path dispatch failure is warn-only", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    project_dir <- fs::path(gov_dir, "projects", "myproj")
+    fs::dir_create(project_dir)
+    jsonlite::write_json(list(methods = list()), fs::path(project_dir, "dispatch.json"),
+                         auto_unbox = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(...) stop("gov push failed"),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
+      .datom_storage_write_json = function(...) invisible(NULL)
+    )
+
+    expect_no_error(datom_sync_dispatch(conn, .confirm = FALSE))
+  })
+})
+
+test_that("datom_sync_dispatch gov-path skips files missing from gov clone", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    # project dir exists but is empty -- no dispatch.json or ref.json
+    fs::dir_create(fs::path(gov_dir, "projects", "myproj"))
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    write_dispatch_called <- FALSE
+    write_ref_called <- FALSE
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(...) { write_dispatch_called <<- TRUE },
+      .datom_gov_write_ref = function(...) { write_ref_called <<- TRUE },
+      .datom_storage_write_json = function(...) invisible(NULL)
+    )
+
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
+
+    expect_false(write_dispatch_called)
+    expect_false(write_ref_called)
+    # only manifest synced
+    expect_equal(result$repo_files, ".metadata/manifest.json")
+  })
+})
+
+
 # --- .datom_sync_table_metadata() ----------------------------------------------
 
 test_that(".datom_sync_table_metadata uploads metadata and version_history", {

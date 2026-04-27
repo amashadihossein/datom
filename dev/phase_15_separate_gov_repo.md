@@ -4,9 +4,9 @@
 
 - **Branch**: `phase/15-separate-gov-repo`
 - **Started**: 2026-04-26
-- **Current chunk**: 7 (Chunk 6 done, ready for Chunk 7)
+- **Current chunk**: 8 (Chunk 7 done, ready for Chunk 8)
 - **Test count baseline**: 1177 (end of Phase 14)
-- **Test count after Chunk 6**: 1282
+- **Test count after Chunk 7**: 1291
 - **Test count target**: ≥ 1177 (with new tests for gov-repo split, decommission, two-backend support)
 
 | Chunk | Description | Status | Commit |
@@ -17,8 +17,9 @@
 | 4 | `datom_init_gov()` new exported function | ✅ done | `d3518c2` |
 | 5 | Refactor `datom_init_repo()` to gov-first ordering | ✅ done | `832aa12` |
 | 6 | `datom_clone()` + `datom_pull()` two-repo semantics | ✅ done | `29e08d5` |
-| 7 | Refactor `datom_sync_dispatch()` to commit on gov | ⏳ next | — |
-| 8–10 | Remaining chunks | not started | — |
+| 7 | Refactor `datom_sync_dispatch()` to commit on gov | ✅ done | (pending) |
+| 8 | `datom_decommission()` + sandbox teardown | ⏳ next | — |
+| 9–10 | Remaining chunks | not started | — |
 
 ## Goal
 

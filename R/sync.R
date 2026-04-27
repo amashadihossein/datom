@@ -137,22 +137,28 @@ datom_pull_gov <- function(conn) {
 }
 
 
-#' Sync Dispatch Metadata to S3
+#' Sync Dispatch Metadata to Storage
 #'
-#' Updates all metadata in S3 to match the local git repository. This includes
-#' repo-level files (dispatch.json, manifest.json, migration_history.json) and
-#' per-table metadata (metadata.json, version_history.json). Requires
-#' interactive confirmation unless `.confirm = FALSE`.
+#' Updates metadata in storage to match the current state in git/local files.
+#' This includes repo-level governance files (dispatch.json, ref.json,
+#' migration_history.json) and per-table metadata
+#' (metadata.json, version_history.json). Requires interactive confirmation
+#' unless `.confirm = FALSE`.
 #'
-#' Used after migration, dispatch changes, or any situation where S3 metadata
-#' may be out of sync with git.
+#' When `conn$gov_local_path` is set, dispatch.json and ref.json are re-written
+#' to the governance repo via git commit + push (and then mirrored to gov
+#' storage). Without a gov clone, these are uploaded to gov storage directly
+#' from any local `.datom/` copies (backward-compat fallback).
+#'
+#' Used after migration, dispatch changes, or any situation where storage
+#' metadata may be out of sync with git.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param .confirm If `TRUE` (default), requires interactive confirmation
 #'   before proceeding. Set to `FALSE` for non-interactive use.
 #'
-#' @return Invisibly, a list with `repo_files` (character vector of uploaded
-#'   repo-level keys) and `tables` (list of per-table sync results).
+#' @return Invisibly, a list with `repo_files` (character vector of synced
+#'   keys/paths) and `tables` (list of per-table sync results).
 #' @export
 datom_sync_dispatch <- function(conn, .confirm = TRUE) {
 
@@ -217,38 +223,86 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
   repo_files_synced <- character()
   gov_conn <- .datom_gov_conn(conn)
 
-  governance_files <- list(
-    dispatch.json = fs::path(repo_path, ".datom", "dispatch.json"),
-    ref.json = fs::path(repo_path, ".datom", "ref.json"),
-    migration_history.json = fs::path(repo_path, ".datom", "migration_history.json")
-  )
+  # --- Sync governance files (dispatch, ref, migration_history) --------------
+  if (!is.null(conn$gov_local_path) && nzchar(conn$gov_local_path)) {
+    # Gov-first path: files live in the gov clone.
+    # Re-commit + push + mirror to gov storage via the GOV_SEAM write helpers.
+    gov_path <- conn$gov_local_path
+    project_name_str <- conn$project_name
+    proj_dir <- .datom_gov_project_path(gov_path, project_name_str)
 
-  data_files <- list(
-    manifest.json = fs::path(repo_path, ".datom", "manifest.json")
-  )
+    dispatch_path <- fs::path(proj_dir, "dispatch.json")
+    if (fs::file_exists(dispatch_path)) {
+      dispatch_data <- jsonlite::read_json(dispatch_path)
+      tryCatch({
+        .datom_gov_write_dispatch(conn, project_name_str, dispatch_data)
+        repo_files_synced <- c(repo_files_synced,
+                                paste0("projects/", project_name_str, "/dispatch.json"))
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to sync dispatch to gov: {conditionMessage(e)}")
+      })
+    }
 
-  for (fname in names(governance_files)) {
-    local_path <- governance_files[[fname]]
-    if (fs::file_exists(local_path)) {
-      data <- jsonlite::read_json(local_path)
-      s3_key <- paste0(".metadata/", fname)
-      .datom_storage_write_json(gov_conn, s3_key, data)
-      repo_files_synced <- c(repo_files_synced, s3_key)
+    ref_path <- fs::path(proj_dir, "ref.json")
+    if (fs::file_exists(ref_path)) {
+      ref_data <- jsonlite::read_json(ref_path)
+      tryCatch({
+        .datom_gov_write_ref(conn, project_name_str, ref_data)
+        repo_files_synced <- c(repo_files_synced,
+                                paste0("projects/", project_name_str, "/ref.json"))
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to sync ref to gov: {conditionMessage(e)}")
+      })
+    }
+
+    migration_path <- fs::path(proj_dir, "migration_history.json")
+    if (fs::file_exists(migration_path)) {
+      migration_data <- jsonlite::read_json(migration_path)
+      tryCatch({
+        .datom_storage_write_json(gov_conn,
+                                   paste0("projects/", project_name_str,
+                                          "/migration_history.json"),
+                                   migration_data)
+        repo_files_synced <- c(repo_files_synced,
+                                paste0("projects/", project_name_str,
+                                       "/migration_history.json"))
+      }, error = function(e) {
+        cli::cli_alert_warning(
+          "Failed to mirror migration_history to gov storage: {conditionMessage(e)}"
+        )
+      })
+    }
+
+  } else {
+    # Fallback path: read from .datom/ in the data clone (backward compat for
+    # repos that pre-date the gov-repo split or lack a gov_local_path).
+    governance_files <- list(
+      dispatch.json = fs::path(repo_path, ".datom", "dispatch.json"),
+      ref.json = fs::path(repo_path, ".datom", "ref.json"),
+      migration_history.json = fs::path(repo_path, ".datom", "migration_history.json")
+    )
+
+    for (fname in names(governance_files)) {
+      local_path <- governance_files[[fname]]
+      if (fs::file_exists(local_path)) {
+        data <- jsonlite::read_json(local_path)
+        s3_key <- paste0(".metadata/", fname)
+        .datom_storage_write_json(gov_conn, s3_key, data)
+        repo_files_synced <- c(repo_files_synced, s3_key)
+      }
     }
   }
 
-  for (fname in names(data_files)) {
-    local_path <- data_files[[fname]]
-    if (fs::file_exists(local_path)) {
-      data <- jsonlite::read_json(local_path)
-      s3_key <- paste0(".metadata/", fname)
-      .datom_storage_write_json(conn, s3_key, data)
-      repo_files_synced <- c(repo_files_synced, s3_key)
-    }
+  # --- Sync manifest to data storage -----------------------------------------
+  manifest_local <- fs::path(repo_path, ".datom", "manifest.json")
+  if (fs::file_exists(manifest_local)) {
+    data <- jsonlite::read_json(manifest_local)
+    .datom_storage_write_json(conn, ".metadata/manifest.json", data)
+    repo_files_synced <- c(repo_files_synced, ".metadata/manifest.json")
   }
 
   cli::cli_alert_success(
-    "Synced {length(repo_files_synced)} repo-level file{?s} to S3."
+    "Synced {length(repo_files_synced)} repo-level file{?s}."
   )
 
   # --- Sync per-table metadata ---
