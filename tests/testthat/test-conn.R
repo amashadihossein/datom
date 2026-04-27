@@ -1544,6 +1544,141 @@ test_that("datom_clone aborts on clone failure", {
   })
 })
 
+# --- datom_clone() gov-repo two-repo semantics (Phase 15, Chunk 6) -----------
+
+# Shared helper: make a committed datom-style bare repo
+.make_bare_datom_repo <- function() {
+  bare_dir <- tempfile("bare_"); dir.create(bare_dir)
+  git2r::init(bare_dir, bare = TRUE)
+  work_dir <- tempfile("work_"); dir.create(work_dir)
+  work_repo <- git2r::init(work_dir)
+  git2r::config(work_repo, user.name = "Test", user.email = "t@t.com")
+  fs::dir_create(fs::path(work_dir, ".datom"))
+  yaml::write_yaml(
+    list(project_name = "PROJ",
+         storage = list(
+           data = list(type = "s3", root = "b", region = "us-east-1"),
+           governance = list(type = "s3", root = "b", region = "us-east-1")
+         )),
+    fs::path(work_dir, ".datom", "project.yaml")
+  )
+  git2r::add(work_repo, ".datom/project.yaml")
+  git2r::commit(work_repo, "Init")
+  git2r::remote_add(work_repo, "origin", bare_dir)
+  git2r::push(work_repo, "origin", "refs/heads/master", set_upstream = TRUE)
+  list(bare = bare_dir, work = work_dir)
+}
+
+test_that("datom_clone with gov_repo_url also clones gov repo", {
+  withr::with_tempdir({
+    data_repos <- .make_bare_datom_repo()
+
+    gov_bare <- tempfile("gov_bare_"); dir.create(gov_bare)
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- tempfile("gov_local_")  # does not exist yet
+
+    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s",
+                           validate = FALSE)
+    store <- datom_store(governance = comp, data = comp,
+                         github_pat = "ghp_x",
+                         data_repo_url = data_repos$bare,
+                         gov_repo_url = gov_bare,
+                         gov_local_path = gov_local,
+                         validate = FALSE)
+
+    local_mocked_bindings(
+      .datom_s3_client = function(...) list(fake = TRUE)
+    )
+
+    datom_clone(path = "clone_target", store = store)
+
+    expect_true(fs::dir_exists(fs::path(gov_local, ".git")))
+  })
+})
+
+test_that("datom_clone reuses existing gov clone with matching URL", {
+  withr::with_tempdir({
+    data_repos <- .make_bare_datom_repo()
+
+    gov_bare <- tempfile("gov_bare_"); dir.create(gov_bare)
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- tempfile("gov_local_"); dir.create(gov_local)
+    # Pre-clone gov
+    git2r::clone(gov_bare, gov_local)
+
+    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s",
+                           validate = FALSE)
+    store <- datom_store(governance = comp, data = comp,
+                         github_pat = "ghp_x",
+                         data_repo_url = data_repos$bare,
+                         gov_repo_url = gov_bare,
+                         gov_local_path = gov_local,
+                         validate = FALSE)
+
+    local_mocked_bindings(
+      .datom_s3_client = function(...) list(fake = TRUE)
+    )
+
+    # Should not error (idempotent)
+    expect_no_error(datom_clone(path = "clone_target", store = store))
+  })
+})
+
+test_that("datom_clone aborts when existing gov clone has uncommitted changes", {
+  withr::with_tempdir({
+    data_repos <- .make_bare_datom_repo()
+
+    gov_bare <- tempfile("gov_bare_"); dir.create(gov_bare)
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- tempfile("gov_local_"); dir.create(gov_local)
+    git2r::clone(gov_bare, gov_local)
+
+    # Leave an unstaged change in the gov clone
+    writeLines("dirty", fs::path(gov_local, "dirty.txt"))
+    gov_repo <- git2r::repository(gov_local)
+    git2r::add(gov_repo, "dirty.txt")  # staged change
+
+    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s",
+                           validate = FALSE)
+    store <- datom_store(governance = comp, data = comp,
+                         github_pat = "ghp_x",
+                         data_repo_url = data_repos$bare,
+                         gov_repo_url = gov_bare,
+                         gov_local_path = gov_local,
+                         validate = FALSE)
+
+    expect_error(
+      datom_clone(path = "clone_target", store = store),
+      "uncommitted"
+    )
+  })
+})
+
+test_that("datom_clone aborts when existing gov clone has different remote URL", {
+  withr::with_tempdir({
+    data_repos <- .make_bare_datom_repo()
+
+    gov_bare <- tempfile("gov_bare_"); dir.create(gov_bare)
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- tempfile("gov_local_"); dir.create(gov_local)
+    git2r::clone(gov_bare, gov_local)
+
+    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s",
+                           validate = FALSE)
+    store <- datom_store(governance = comp, data = comp,
+                         github_pat = "ghp_x",
+                         data_repo_url = data_repos$bare,
+                         gov_repo_url = "https://github.com/other/different-gov.git",
+                         gov_local_path = gov_local,
+                         validate = FALSE)
+
+    expect_error(
+      datom_clone(path = "clone_target", store = store),
+      "different remote URL"
+    )
+  })
+})
+
 
 # ==============================================================================
 # Local backend connection tests (Phase 12, Chunk 4)

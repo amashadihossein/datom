@@ -720,9 +720,13 @@ datom_init_gov <- function(gov_store,
 #' recommended way for teammates to join an existing datom project — it wraps
 #' `git2r::clone()` and immediately returns a ready-to-use `datom_conn`.
 #'
+#' When `store$gov_repo_url` is set the governance repo is also cloned (or
+#' verified if it already exists locally). An existing clone with uncommitted
+#' changes causes an error to avoid surprising state.
+#'
 #' @param path Local path to clone into.
 #' @param store A `datom_store` object (from `datom_store()`). Must have
-#'   `remote_url` set and role `"developer"` (i.e., `github_pat` provided).
+#'   `data_repo_url` set and role `"developer"` (i.e., `github_pat` provided).
 #' @param ... Additional arguments passed to [git2r::clone()].
 #'
 #' @return A `datom_conn` object (developer role).
@@ -793,6 +797,35 @@ datom_clone <- function(path, store, ...) {
       "i" = "No {.file .datom/project.yaml} found at {.path {path}}.",
       "i" = "Use {.fn datom_init_repo} to initialize a new datom project."
     ))
+  }
+
+  # --- Clone or verify gov repo when gov_repo_url is set ---------------------
+  if (!is.null(store$gov_repo_url) && nzchar(store$gov_repo_url)) {
+    gov_local_path <- if (!is.null(store$gov_local_path) && nzchar(store$gov_local_path)) {
+      fs::path_abs(store$gov_local_path)
+    } else {
+      .datom_resolve_gov_local_path(
+        data_local_path = path,
+        gov_repo_url    = store$gov_repo_url
+      )
+    }
+
+    # Refuse if the existing gov clone has uncommitted changes
+    if (.datom_gov_clone_exists(as.character(gov_local_path))) {
+      gov_repo  <- git2r::repository(as.character(gov_local_path))
+      gov_status <- git2r::status(gov_repo,
+                                   staged   = TRUE,
+                                   unstaged = TRUE,
+                                   untracked = FALSE)
+      if (length(unlist(gov_status)) > 0L) {
+        cli::cli_abort(c(
+          "Gov clone at {.path {gov_local_path}} has uncommitted changes.",
+          "i" = "Commit or stash before cloning."
+        ))
+      }
+    }
+
+    .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path))
   }
 
   conn <- datom_get_conn(path = path, store = store)

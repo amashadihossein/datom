@@ -64,6 +64,7 @@ reference:
     desc: "Batch sync from files, scan manifests, sync metadata to S3"
     contents:
       - datom_pull
+      - datom_pull_gov
       - datom_sync
       - datom_sync_manifest
       - datom_sync_dispatch

@@ -1133,3 +1133,130 @@ test_that("datom_pull returns invisible result", {
     expect_invisible(datom_pull(conn))
   })
 })
+
+# --- datom_pull() gov semantics (Phase 15, Chunk 6) --------------------------
+
+test_that("datom_pull also pulls gov repo when gov_local_path is set", {
+  withr::with_tempdir({
+    # Data repo
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Initial commit")
+    git2r::remote_add(repo, name = "origin", url = bare_dir)
+    git2r::push(repo, "origin", "refs/heads/master", set_upstream = TRUE)
+
+    # Gov repo
+    gov_bare <- withr::local_tempdir()
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- withr::local_tempdir()
+    # seed gov bare with one commit so it can be cloned
+    gov_work <- withr::local_tempdir()
+    gov_w_repo <- git2r::init(gov_work)
+    git2r::config(gov_w_repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("gov-init", fs::path(gov_work, "README.md"))
+    git2r::add(gov_w_repo, "README.md")
+    git2r::commit(gov_w_repo, "Gov init")
+    git2r::remote_add(gov_w_repo, "origin", gov_bare)
+    git2r::push(gov_w_repo, "origin", "refs/heads/master", set_upstream = TRUE)
+    git2r::clone(gov_bare, gov_local)
+
+    gov_pull_called <- FALSE
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_local
+
+    local_mocked_bindings(
+      .datom_gov_pull = function(conn) { gov_pull_called <<- TRUE; invisible(TRUE) }
+    )
+
+    datom_pull(conn)
+    expect_true(gov_pull_called)
+  })
+})
+
+test_that("datom_pull result includes gov field", {
+  withr::with_tempdir({
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Init")
+    git2r::remote_add(repo, "origin", bare_dir)
+    git2r::push(repo, "origin", "refs/heads/master", set_upstream = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- NULL  # no gov
+
+    result <- datom_pull(conn)
+    expect_true(is.list(result))
+    expect_null(result$gov)  # no gov_local_path -> NULL
+  })
+})
+
+test_that("datom_pull warns but succeeds when gov pull fails", {
+  withr::with_tempdir({
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Init")
+    git2r::remote_add(repo, "origin", bare_dir)
+    git2r::push(repo, "origin", "refs/heads/master", set_upstream = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- "/nonexistent/gov"
+
+    local_mocked_bindings(
+      .datom_gov_pull = function(conn) stop("network failure")
+    )
+
+    expect_no_error(datom_pull(conn))
+  })
+})
+
+
+# --- datom_pull_gov() ---------------------------------------------------------
+
+test_that("datom_pull_gov rejects non-datom_conn", {
+  expect_error(datom_pull_gov("not_conn"), "datom_conn")
+})
+
+test_that("datom_pull_gov rejects reader role", {
+  conn <- mock_datom_conn(list())
+  conn$role <- "reader"
+  expect_error(datom_pull_gov(conn), "developer")
+})
+
+test_that("datom_pull_gov rejects conn without gov_local_path", {
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$gov_local_path <- NULL
+  expect_error(datom_pull_gov(conn), "gov_local_path")
+})
+
+test_that("datom_pull_gov calls .datom_gov_pull and returns invisibly", {
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$gov_local_path <- "/some/gov"
+
+  local_mocked_bindings(
+    .datom_gov_pull = function(conn) invisible(TRUE)
+  )
+
+  expect_invisible(datom_pull_gov(conn))
+})

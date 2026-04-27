@@ -70,15 +70,70 @@ datom_pull <- function(conn) {
 
   if (is.na(commits_pulled) || commits_pulled > 0L) {
     n_msg <- if (is.na(commits_pulled)) "new" else commits_pulled
-    cli::cli_alert_success("Pulled {n_msg} commit{?s} on {.val {branch_name}}.")
+    cli::cli_alert_success("Pulled {n_msg} commit{?s} on {.val {branch_name}} (data repo).")
   } else {
-    cli::cli_alert_info("Already up to date on {.val {branch_name}}.")
+    cli::cli_alert_info("Already up to date on {.val {branch_name}} (data repo).")
+  }
+
+  # --- Pull gov repo when gov_local_path is set ------------------------------
+  gov_result <- NULL
+  if (!is.null(conn$gov_local_path) && nzchar(conn$gov_local_path)) {
+    gov_result <- tryCatch({
+      .datom_gov_pull(conn)
+      cli::cli_alert_success("Gov repo up to date.")
+      list(pulled = TRUE)
+    }, error = function(e) {
+      cli::cli_alert_warning("Gov pull failed: {conditionMessage(e)}")
+      list(pulled = FALSE, error = conditionMessage(e))
+    })
   }
 
   invisible(list(
     commits_pulled = commits_pulled,
-    branch = branch_name
+    branch = branch_name,
+    gov = gov_result
   ))
+}
+
+
+#' Pull Latest Changes from the Governance Repo
+#'
+#' Fetches and merges upstream changes into the local governance clone.
+#' Useful when you need to refresh governance metadata (dispatch, ref,
+#' migration history) without touching the data repo.
+#'
+#' In normal workflows `datom_pull()` handles both repos. Use this only when
+#' you need the gov clone to be current independently.
+#'
+#' Requires a developer connection with `gov_local_path` set.
+#'
+#' @param conn A `datom_conn` object from [datom_get_conn()].
+#'
+#' @return Invisibly, the result of the pull.
+#' @export
+datom_pull_gov <- function(conn) {
+
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
+  }
+
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "Gov pull requires {.val developer} role.",
+      "i" = "Current role: {.val {conn$role}}."
+    ))
+  }
+
+  if (is.null(conn$gov_local_path) || !nzchar(conn$gov_local_path)) {
+    cli::cli_abort(c(
+      "Gov pull requires a local gov clone path.",
+      "i" = "Set {.arg gov_local_path} in {.fn datom_store} to use this function."
+    ))
+  }
+
+  result <- .datom_gov_pull(conn)
+  cli::cli_alert_success("Gov repo up to date.")
+  invisible(result)
 }
 
 
