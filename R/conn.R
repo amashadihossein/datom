@@ -1007,9 +1007,27 @@ datom_get_conn <- function(path = NULL,
 
   role <- store$role
 
+  # gov_local_path: use explicit override from store if set, otherwise derive
+  # sibling default from the gov_repo_url (if available). Computed before ref
+  # resolution so the developer fast path can read from the local gov clone.
+  gov_local_path <- if (!is.null(store$gov_local_path)) {
+    store$gov_local_path
+  } else if (!is.null(store$gov_repo_url)) {
+    as.character(.datom_resolve_gov_local_path(
+      data_local_path = as.character(path),
+      gov_repo_url = store$gov_repo_url
+    ))
+  } else {
+    NULL
+  }
+
   # Resolve data location via ref.json (if governance store present)
   ref_location <- .datom_resolve_data_location(
-    store, role, path = as.character(path), endpoint = endpoint
+    store, role,
+    project_name = project_name,
+    path = as.character(path),
+    gov_local_path = gov_local_path,
+    endpoint = endpoint
   )
 
   # If ref resolved a different location, build a modified data store
@@ -1022,20 +1040,6 @@ datom_get_conn <- function(path = NULL,
     store_prefix <- store$data$prefix
     migrated <- !identical(ref_root, store_root) ||
       !identical(ref_prefix %||% NULL, store_prefix %||% NULL)
-  }
-
-  # Build conn via helper
-  # gov_local_path: use explicit override from store if set, otherwise derive
-  # sibling default from the gov_repo_url (if available).
-  gov_local_path <- if (!is.null(store$gov_local_path)) {
-    store$gov_local_path
-  } else if (!is.null(store$gov_repo_url)) {
-    as.character(.datom_resolve_gov_local_path(
-      data_local_path = as.character(path),
-      gov_repo_url = store$gov_repo_url
-    ))
-  } else {
-    NULL
   }
 
   conn <- .datom_build_init_conn(
@@ -1075,9 +1079,14 @@ datom_get_conn <- function(path = NULL,
     cli::cli_abort("{.arg project_name} is required for reader connections (no local repo).")
   }
 
-  # Resolve data location via ref.json (if governance store present)
+  # Resolve data location via ref.json (if governance store present).
+  # Readers do not have a gov clone -- always read via gov storage client.
   ref_location <- .datom_resolve_data_location(
-    store, store$role, path = NULL, endpoint = endpoint
+    store, store$role,
+    project_name = project_name,
+    path = NULL,
+    gov_local_path = NULL,
+    endpoint = endpoint
   )
 
   migrated <- FALSE

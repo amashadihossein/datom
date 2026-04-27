@@ -4,10 +4,11 @@
 
 - **Branch**: `phase/15-separate-gov-repo`
 - **Started**: 2026-04-26
-- **Current chunk**: 9 (Chunk 8 done)
+- **Current chunk**: 10 (Chunk 9 done)
 - **Test count baseline**: 1177 (end of Phase 14)
 - **Test count after Chunk 7**: 1291
 - **Test count after Chunk 8**: 1315
+- **Test count after Chunk 9**: 1325
 - **Test count target**: ≥ 1177 (with new tests for gov-repo split, decommission, two-backend support)
 
 | Chunk | Description | Status | Commit |
@@ -20,7 +21,8 @@
 | 6 | `datom_clone()` + `datom_pull()` two-repo semantics | ✅ done | `29e08d5` |
 | 7 | Refactor `datom_sync_dispatch()` to commit on gov | ✅ done | `c26224d` |
 | 8 | `datom_decommission()` + sandbox teardown | ✅ done | `897a37b` |
-| 9–10 | Remaining chunks | not started | — |
+| 9 | Data-side write purity audit + role-aware ref reads | ✅ done | (pending) |
+| 10 | E2E + sandbox + spec/docs | not started | — |
 
 ## Goal
 
@@ -280,6 +282,20 @@ These are committed directly to `main` (one commit each), then phase 15 branches
   - Branch on presence of `conn$gov_local_path` (or equivalent indicator), not on backend or role flag directly.
 - Verify `.datom_check_ref_current()` continues to read via `gov_client` for the write-time hard-abort guard. (Write-time guard intentionally hits storage, not the local clone, to catch stale clones.)
 - Tests: write/read flow does not produce gov commits; developer migration-mismatch detection works against gov clone; reader path against gov storage unchanged from Phase 13.
+
+**Done**:
+- Audited all `.datom_git_*()` callers — confirmed clean separation. Only `R/utils-gov.R` writes to gov_path; data-side modules (`conn.R`, `read_write.R`, `sync.R`, `utils-sha.R`, `ref.R`) only touch the data clone.
+- Bug found and fixed: `.datom_resolve_ref()` was still reading the pre-Phase-15 path `.metadata/ref.json`. Now reads project-scoped `projects/{project_name}/ref.json`.
+- New helper `.datom_resolve_ref_from_clone(gov_local_path, project_name)` reads ref.json directly from local gov clone via `jsonlite::read_json`.
+- New helper `.datom_parse_ref(ref, source)` factors out shared validation/migration-warning logic.
+- New helper `.datom_build_gov_resolve_conn(store, endpoint)` builds the temporary gov conn for storage reads.
+- `.datom_resolve_data_location()` signature now takes `project_name` and `gov_local_path`. Branch logic prefers clone read when `gov_local_path` is set AND `projects/{name}/ref.json` exists on disk; otherwise falls back to storage read. Falls back gracefully when clone is missing the file (e.g., not yet pulled).
+- `.datom_check_ref_current()` updated to pass `conn$project_name`. Storage-only (no clone fallback) per spec — write-time guard intentionally hits storage to catch stale clones.
+- `R/conn.R` developer caller reordered: `gov_local_path` is now computed before `.datom_resolve_data_location()` so the developer fast path can use it.
+- `R/validate.R` `.datom_validate_repo_files()` updated: `dispatch.json`/`ref.json`/`migration_history.json` now checked at project-scoped storage keys (`projects/{name}/{file}.json`) against `gov_conn`, with local checks against `conn$gov_local_path/projects/{name}/`. Manifest still checked at `.metadata/manifest.json` against the data conn. Files are skipped (rather than reported missing) when there is no gov clone — readers don't have one.
+- 10 new tests added: `.datom_resolve_ref_from_clone()` happy path + missing-file error; project_name override of conn$project_name; developer-with-clone uses clone (no storage call); reader uses storage; developer falls back to storage when clone ref.json absent.
+
+**Test count: 1325** (1315 + 10 new).
 
 ### Chunk 10 — E2E + sandbox + spec/docs
 

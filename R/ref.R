@@ -38,8 +38,9 @@
 
 #' Resolve Data Location from Governance Store
 #'
-#' Reads `ref.json` from the governance store and returns the current data
-#' location as a named list. Single read, no recursion, no chain-walking.
+#' Reads `projects/{project_name}/ref.json` from the governance store and
+#' returns the current data location as a named list. Single read, no
+#' recursion, no chain-walking.
 #'
 #' If the ref has `previous` entries, a deprecation-style warning is emitted
 #' to alert users that a migration occurred and old locations may sunset.
@@ -47,18 +48,27 @@
 #' @param gov_conn A `datom_conn`-like object scoped to the governance store
 #'   (i.e., `root`, `prefix`, `client` point to the governance store).
 #'   Typically produced by `.datom_gov_conn(conn)`.
+#' @param project_name Project name string. Used to build the project-scoped
+#'   storage key `projects/{project_name}/ref.json`.
 #' @return A named list with `root`, `prefix`, `region` for the current
 #'   data location.
 #' @keywords internal
-.datom_resolve_ref <- function(gov_conn) {
+.datom_resolve_ref <- function(gov_conn, project_name = NULL) {
+  project_name <- project_name %||% gov_conn$project_name
+  if (is.null(project_name) || !nzchar(project_name)) {
+    cli::cli_abort("{.arg project_name} is required to resolve ref.json.")
+  }
+
+  storage_key <- glue::glue("projects/{project_name}/ref.json")
+
   ref <- tryCatch(
-    .datom_storage_read_json(gov_conn, ".metadata/ref.json"),
+    .datom_storage_read_json(gov_conn, storage_key),
     error = function(e) {
       cli::cli_abort(
         c(
           "Failed to read {.file ref.json} from governance store.",
           "x" = "Root: {.val {gov_conn$root}}",
-          "x" = "Prefix: {.val {gov_conn$prefix}}",
+          "x" = "Key: {.val {storage_key}}",
           "i" = "Underlying error: {conditionMessage(e)}",
           "i" = "The governance store may be unreachable or {.file ref.json} may not exist."
         ),
@@ -67,11 +77,71 @@
     }
   )
 
+  .datom_parse_ref(ref, gov_conn$root)
+}
+
+
+#' Resolve Data Location from Local Gov Clone
+#'
+#' Reads `projects/{project_name}/ref.json` directly from a local gov clone
+#' on disk. Faster than storage reads, works offline, and reflects the last
+#' `datom_pull_gov()`. Used for developer connections.
+#'
+#' @param gov_local_path Absolute path to the local gov clone.
+#' @param project_name Project name string.
+#' @return A named list with `root`, `prefix`, `region` for the current
+#'   data location.
+#' @keywords internal
+.datom_resolve_ref_from_clone <- function(gov_local_path, project_name) {
+  if (is.null(gov_local_path) || !nzchar(gov_local_path)) {
+    cli::cli_abort("{.arg gov_local_path} is required to read ref.json from clone.")
+  }
+  if (is.null(project_name) || !nzchar(project_name)) {
+    cli::cli_abort("{.arg project_name} is required to read ref.json from clone.")
+  }
+
+  ref_path <- fs::path(gov_local_path, "projects", project_name, "ref.json")
+  if (!fs::file_exists(ref_path)) {
+    cli::cli_abort(c(
+      "Failed to read {.file ref.json} from local gov clone.",
+      "x" = "Path: {.path {ref_path}}",
+      "i" = "The project may not be registered, or the clone may be stale.",
+      "i" = "Try {.code datom_pull_gov(conn)} to refresh the clone."
+    ))
+  }
+
+  ref <- tryCatch(
+    jsonlite::read_json(ref_path, simplifyVector = FALSE),
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Failed to parse {.file ref.json} from local gov clone.",
+          "x" = "Path: {.path {ref_path}}",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
+
+  .datom_parse_ref(ref, source = ref_path)
+}
+
+
+#' Parse a ref.json structure into a location list
+#'
+#' Common parsing logic shared by storage-backed and clone-backed ref readers.
+#'
+#' @param ref Parsed ref.json content (R list).
+#' @param source Identifier for error messages (root, key, or path).
+#' @return A named list with `root`, `prefix`, `region`.
+#' @keywords internal
+.datom_parse_ref <- function(ref, source) {
   current <- ref$current
   if (is.null(current) || is.null(current$root)) {
     cli::cli_abort(c(
       "Invalid {.file ref.json}: missing {.field current.root}.",
-      "x" = "Governance root: {.val {gov_conn$root}}"
+      "x" = "Source: {.val {source}}"
     ))
   }
 
@@ -96,48 +166,25 @@
 }
 
 
-#' Resolve Data Location via Ref (Conn-Time Helper)
-#'
-#' Called during `datom_get_conn()` for both readers and developers when a
-#' governance store is present. Reads `ref.json` from governance, detects
-#' migration (store$data location != ref location), and returns the
-#' ref-resolved location.
-#'
-#' **Developer migration**: auto-pulls git, re-reads project.yaml. Errors if
-#' project.yaml still disagrees after pull.
-#'
-#' **Reader migration**: warns that the store config is stale, proceeds with
-#' ref-resolved location.
-#'
-#' @param store A `datom_store` object with governance component.
-#' @param role `"developer"` or `"reader"`.
-#' @param path Local repo path (developers only; NULL for readers).
-#' @param endpoint Optional S3 endpoint URL.
-#' @return A named list with `root`, `prefix`, `region` from the ref, or
-#'   NULL if no governance store is present (skip ref resolution).
-#' @keywords internal
-.datom_resolve_data_location <- function(store, role, path = NULL,
-                                          endpoint = NULL) {
-  # No governance component -> skip ref resolution (backward compatible)
-  if (is.null(store$governance)) return(NULL)
-
-  # Build a temporary gov conn to read ref.json
+#' Build a temporary gov conn for ref resolution.
+#' @noRd
+.datom_build_gov_resolve_conn <- function(store, endpoint = NULL) {
   gov_backend <- .datom_store_backend(store$governance)
-  gov_root <- .datom_store_root(store$governance)
-  gov_prefix <- store$governance$prefix
-  gov_region <- .datom_store_region(store$governance)
+  gov_root    <- .datom_store_root(store$governance)
+  gov_prefix  <- store$governance$prefix
+  gov_region  <- .datom_store_region(store$governance)
 
-  if (gov_backend == "s3") {
-    gov_client <- .datom_s3_client(
+  gov_client <- if (gov_backend == "s3") {
+    .datom_s3_client(
       store$governance$access_key, store$governance$secret_key,
       region = gov_region %||% "us-east-1", endpoint = endpoint,
       session_token = store$governance$session_token
     )
   } else {
-    gov_client <- NULL
+    NULL
   }
 
-  gov_conn <- new_datom_conn(
+  new_datom_conn(
     project_name = "ref-resolve",
     root = gov_root,
     prefix = gov_prefix,
@@ -148,13 +195,58 @@
     endpoint = endpoint,
     backend = gov_backend
   )
+}
 
-  # Resolve ref -- fail gracefully if governance store unreachable
+#' Resolve Data Location via Ref (Conn-Time Helper)
+#'
+#' Called during `datom_get_conn()` for both readers and developers when a
+#' governance store is present. Reads `ref.json` from governance, detects
+#' migration (store$data location != ref location), and returns the
+#' ref-resolved location.
+#'
+#' Read path is **role-aware**:
+#' * Developer with `gov_local_path` set: read `projects/{name}/ref.json`
+#'   from the local gov clone (faster, works offline, reflects last
+#'   `datom_pull_gov()`).
+#' * Otherwise (reader, or developer without a clone yet): read via the
+#'   gov storage client.
+#'
+#' @param store A `datom_store` object with governance component.
+#' @param role `"developer"` or `"reader"`.
+#' @param project_name Project name (required when governance is present).
+#' @param path Local repo path (developers only; NULL for readers).
+#' @param gov_local_path Absolute path to the local gov clone (developers
+#'   only; NULL for readers or when the clone does not yet exist).
+#' @param endpoint Optional S3 endpoint URL.
+#' @return A named list with `root`, `prefix`, `region` from the ref, or
+#'   NULL if no governance store is present (skip ref resolution).
+#' @keywords internal
+.datom_resolve_data_location <- function(store, role, project_name = NULL,
+                                          path = NULL, gov_local_path = NULL,
+                                          endpoint = NULL) {
+  # No governance component -> skip ref resolution (backward compatible)
+  if (is.null(store$governance)) return(NULL)
+
+  if (is.null(project_name) || !nzchar(project_name)) {
+    cli::cli_abort("{.arg project_name} is required when a governance store is configured.")
+  }
+
+  # Prefer reading from local gov clone when available (developer path)
+  use_clone <- !is.null(gov_local_path) &&
+    nzchar(gov_local_path) &&
+    fs::dir_exists(gov_local_path) &&
+    fs::file_exists(fs::path(gov_local_path, "projects", project_name, "ref.json"))
+
   ref_location <- tryCatch(
-    .datom_resolve_ref(gov_conn),
+    if (use_clone) {
+      .datom_resolve_ref_from_clone(gov_local_path, project_name)
+    } else {
+      gov_conn <- .datom_build_gov_resolve_conn(store, endpoint)
+      .datom_resolve_ref(gov_conn, project_name)
+    },
     error = function(e) {
       cli::cli_warn(c(
-        "Could not resolve ref.json from governance store.",
+        "Could not resolve ref.json for project {.val {project_name}}.",
         "i" = "Underlying error: {conditionMessage(e)}",
         "i" = "Proceeding with store-configured data location."
       ))
@@ -300,7 +392,7 @@
   gov_conn <- .datom_gov_conn(conn)
 
   ref_location <- tryCatch(
-    .datom_resolve_ref(gov_conn),
+    .datom_resolve_ref(gov_conn, conn$project_name),
     error = function(e) {
       cli::cli_abort(
         c(

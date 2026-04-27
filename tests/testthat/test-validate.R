@@ -407,9 +407,14 @@ test_that("datom_validate with fix = TRUE calls datom_sync_dispatch on failure",
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+    gov_local <- fs::path_abs("gov-clone")
+    fs::dir_create(fs::path(gov_local, "projects", "test-project"))
+    conn$gov_local_path <- as.character(gov_local)
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(),
+                         fs::path(gov_local, "projects", "test-project", "dispatch.json"),
+                         auto_unbox = TRUE)
 
     sync_called <- FALSE
 
@@ -496,9 +501,14 @@ test_that("datom_validate handles fix failure gracefully", {
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+    gov_local <- fs::path_abs("gov-clone")
+    fs::dir_create(fs::path(gov_local, "projects", "test-project"))
+    conn$gov_local_path <- as.character(gov_local)
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
+    jsonlite::write_json(list(),
+                         fs::path(gov_local, "projects", "test-project", "dispatch.json"),
+                         auto_unbox = TRUE)
 
     local_mocked_bindings(
       .datom_storage_exists = function(conn, s3_key) FALSE,

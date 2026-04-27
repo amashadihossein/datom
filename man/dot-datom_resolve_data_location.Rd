@@ -4,14 +4,26 @@
 \alias{.datom_resolve_data_location}
 \title{Resolve Data Location via Ref (Conn-Time Helper)}
 \usage{
-.datom_resolve_data_location(store, role, path = NULL, endpoint = NULL)
+.datom_resolve_data_location(
+  store,
+  role,
+  project_name = NULL,
+  path = NULL,
+  gov_local_path = NULL,
+  endpoint = NULL
+)
 }
 \arguments{
 \item{store}{A \code{datom_store} object with governance component.}
 
 \item{role}{\code{"developer"} or \code{"reader"}.}
 
+\item{project_name}{Project name (required when governance is present).}
+
 \item{path}{Local repo path (developers only; NULL for readers).}
+
+\item{gov_local_path}{Absolute path to the local gov clone (developers
+only; NULL for readers or when the clone does not yet exist).}
 
 \item{endpoint}{Optional S3 endpoint URL.}
 }
@@ -26,10 +38,13 @@ migration (store$data location != ref location), and returns the
 ref-resolved location.
 }
 \details{
-\strong{Developer migration}: auto-pulls git, re-reads project.yaml. Errors if
-project.yaml still disagrees after pull.
-
-\strong{Reader migration}: warns that the store config is stale, proceeds with
-ref-resolved location.
+Read path is \strong{role-aware}:
+\itemize{
+\item Developer with \code{gov_local_path} set: read \code{projects/{name}/ref.json}
+from the local gov clone (faster, works offline, reflects last
+\code{datom_pull_gov()}).
+\item Otherwise (reader, or developer without a clone yet): read via the
+gov storage client.
+}
 }
 \keyword{internal}

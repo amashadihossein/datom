@@ -192,39 +192,56 @@ datom_validate <- function(conn, fix = FALSE) {
 .datom_validate_repo_files <- function(conn) {
   repo_path <- conn$path
   gov_conn <- .datom_gov_conn(conn)
+  gov_local_path <- conn$gov_local_path
+  project_name <- conn$project_name
+
+  proj_key <- function(name) {
+    fs::path("projects", project_name, name)
+  }
+
+  gov_local <- function(name) {
+    if (is.null(gov_local_path) || !nzchar(gov_local_path)) {
+      return(NA_character_)
+    }
+    as.character(fs::path(gov_local_path, "projects", project_name, name))
+  }
 
   files_to_check <- list(
     list(
-      local = fs::path(repo_path, ".datom", "dispatch.json"),
-      s3_key = ".metadata/dispatch.json",
+      local = gov_local("dispatch.json"),
+      s3_key = as.character(proj_key("dispatch.json")),
       name = "dispatch.json",
       target_conn = gov_conn
     ),
     list(
-      local = fs::path(repo_path, ".datom", "ref.json"),
-      s3_key = ".metadata/ref.json",
+      local = gov_local("ref.json"),
+      s3_key = as.character(proj_key("ref.json")),
       name = "ref.json",
       target_conn = gov_conn
     ),
     list(
-      local = fs::path(repo_path, ".datom", "manifest.json"),
+      local = as.character(fs::path(repo_path, ".datom", "manifest.json")),
       s3_key = ".metadata/manifest.json",
       name = "manifest.json",
       target_conn = conn
     ),
     list(
-      local = fs::path(repo_path, ".datom", "migration_history.json"),
-      s3_key = ".metadata/migration_history.json",
+      local = gov_local("migration_history.json"),
+      s3_key = as.character(proj_key("migration_history.json")),
       name = "migration_history.json",
       target_conn = gov_conn
     )
   )
 
   rows <- purrr::map(files_to_check, function(fc) {
+    if (is.na(fc$local)) {
+      # No local clone available (e.g. reader): skip local check
+      return(NULL)
+    }
     local_exists <- fs::file_exists(fc$local)
 
     if (!local_exists) {
-      # File not in git — skip
+      # File not in clone -- skip
       return(NULL)
     }
 
