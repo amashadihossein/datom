@@ -1731,3 +1731,144 @@ test_that("local: passes when root directory exists", {
   expect_no_error(.datom_check_data_reachable(conn))
 })
 
+
+# =============================================================================
+# datom_init_gov()
+# =============================================================================
+
+# Helper: bare + clone setup for datom_init_gov tests
+setup_gov_init_env <- function(env = parent.frame()) {
+  bare_dir <- withr::local_tempdir(.local_envir = env)
+  git2r::init(bare_dir, bare = TRUE)
+
+  gov_dir  <- withr::local_tempdir(.local_envir = env)
+
+  gov_store <- datom_store_local(
+    path = withr::local_tempdir(.local_envir = env),
+    validate = FALSE
+  )
+
+  list(bare_dir = bare_dir, gov_dir = gov_dir, gov_store = gov_store)
+}
+
+# --- Validation ---------------------------------------------------------------
+
+test_that("datom_init_gov aborts on non-store-component gov_store", {
+  expect_error(
+    datom_init_gov(gov_store = list(path = "/tmp"),
+                   gov_repo_url = "https://example.com/gov.git"),
+    "datom_store_s3"
+  )
+})
+
+test_that("datom_init_gov aborts when both create_repo and gov_repo_url are given", {
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_init_gov(gov_store = gov_store,
+                   gov_repo_url = "https://github.com/org/gov.git",
+                   create_repo = TRUE,
+                   repo_name = "gov",
+                   github_pat = "ghp_fake"),
+    "mutually exclusive"
+  )
+})
+
+test_that("datom_init_gov aborts when create_repo = TRUE and repo_name is NULL", {
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_init_gov(gov_store = gov_store,
+                   create_repo = TRUE,
+                   github_pat = "ghp_fake"),
+    "repo_name"
+  )
+})
+
+test_that("datom_init_gov aborts when create_repo = TRUE and github_pat is NULL", {
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_init_gov(gov_store = gov_store,
+                   create_repo = TRUE,
+                   repo_name = "gov"),
+    "github_pat"
+  )
+})
+
+test_that("datom_init_gov aborts when no gov_repo_url and create_repo is FALSE", {
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_init_gov(gov_store = gov_store),
+    "No governance repo URL"
+  )
+})
+
+# --- Happy path (local backend, bare repo as remote) -------------------------
+
+test_that("datom_init_gov seeds skeleton and returns gov_repo_url", {
+  env <- setup_gov_init_env()
+
+  result <- datom_init_gov(
+    gov_store     = env$gov_store,
+    gov_repo_url  = env$bare_dir,
+    gov_local_path = env$gov_dir
+  )
+
+  expect_equal(result, env$bare_dir)
+  expect_true(fs::file_exists(fs::path(env$gov_dir, "README.md")))
+  expect_true(fs::file_exists(fs::path(env$gov_dir, "projects", ".gitkeep")))
+
+  # Commit should exist
+  repo <- git2r::repository(env$gov_dir)
+  commits <- git2r::commits(repo)
+  expect_length(commits, 1L)
+  expect_equal(commits[[1L]]$message, "Initialize governance repository")
+})
+
+# --- Idempotence --------------------------------------------------------------
+
+test_that("datom_init_gov is idempotent: returns silently when already initialised", {
+  env <- setup_gov_init_env()
+
+  # First call
+  datom_init_gov(
+    gov_store      = env$gov_store,
+    gov_repo_url   = env$bare_dir,
+    gov_local_path = env$gov_dir
+  )
+
+  repo_before <- git2r::repository(env$gov_dir)
+  commits_before <- git2r::commits(repo_before)
+
+  # Second call -- should not add more commits
+  result <- datom_init_gov(
+    gov_store      = env$gov_store,
+    gov_repo_url   = env$bare_dir,
+    gov_local_path = env$gov_dir
+  )
+
+  expect_equal(result, env$bare_dir)
+  commits_after <- git2r::commits(git2r::repository(env$gov_dir))
+  expect_equal(length(commits_after), length(commits_before))
+})
+
+# --- create_repo path (mocked) -----------------------------------------------
+
+test_that("datom_init_gov with create_repo = TRUE calls .datom_create_github_repo", {
+  env <- setup_gov_init_env()
+
+  local_mocked_bindings(
+    .datom_create_github_repo = function(repo_name, pat, org = NULL, private = TRUE) {
+      env$bare_dir  # return local bare dir as fake clone URL
+    }
+  )
+
+  result <- datom_init_gov(
+    gov_store      = env$gov_store,
+    gov_local_path = env$gov_dir,
+    create_repo    = TRUE,
+    repo_name      = "acme-gov",
+    github_pat     = "ghp_fake"
+  )
+
+  expect_equal(result, env$bare_dir)
+  expect_true(fs::file_exists(fs::path(env$gov_dir, "projects", ".gitkeep")))
+})

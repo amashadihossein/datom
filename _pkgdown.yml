@@ -26,6 +26,7 @@ reference:
     desc: "Create connections, initialize repositories"
     contents:
       - datom_init_repo
+      - datom_init_gov
       - datom_clone
       - datom_get_conn
       - new_datom_conn

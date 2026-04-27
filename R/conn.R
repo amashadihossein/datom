@@ -506,6 +506,164 @@ datom_init_repo <- function(path = ".",
 }
 
 
+# --- datom_init_gov -----------------------------------------------------------
+
+#' Initialize a Governance Repository
+#'
+#' One-time setup to create a shared governance repository that serves many
+#' data projects in an organisation. Creates the GitHub repo (optionally),
+#' seeds the skeleton (`README.md` + `projects/.gitkeep`), commits, and
+#' pushes.
+#'
+#' Idempotent: if `gov_local_path` already contains an initialised governance
+#' clone (i.e. `projects/.gitkeep` exists), the function returns silently
+#' without making any changes.
+#'
+#' @param gov_store A governance store component (`datom_store_s3` or
+#'   `datom_store_local`).  This is the storage backend that individual data
+#'   projects will use to register their dispatch and ref files.
+#' @param gov_repo_url GitHub URL of the governance repo.  Mutually exclusive
+#'   with `create_repo = TRUE`.
+#' @param gov_local_path Local path for the governance clone.  When `NULL`,
+#'   derived from the basename of `gov_repo_url` (`.git` suffix stripped) in
+#'   the current directory.  When `create_repo = TRUE` and no URL is known
+#'   yet, set this explicitly or let it default to `repo_name`.
+#' @param create_repo If `TRUE`, create a GitHub repo via the API and use the
+#'   returned URL.  Mutually exclusive with providing `gov_repo_url`.
+#' @param repo_name GitHub repo name when `create_repo = TRUE`.  Required
+#'   when `create_repo = TRUE`.
+#' @param github_pat GitHub personal access token.  Required when
+#'   `create_repo = TRUE`.
+#' @param github_org GitHub organisation slug.  `NULL` creates the repo under
+#'   the authenticated user account.
+#' @param private Whether the created repo should be private.  Default `TRUE`.
+#'   Ignored when `create_repo = FALSE`.
+#'
+#' @return Invisible `gov_repo_url` on success.
+#' @export
+datom_init_gov <- function(gov_store,
+                            gov_repo_url = NULL,
+                            gov_local_path = NULL,
+                            create_repo = FALSE,
+                            repo_name = NULL,
+                            github_pat = NULL,
+                            github_org = NULL,
+                            private = TRUE) {
+  .datom_check_git2r()
+
+  # --- Input validation -------------------------------------------------------
+  if (!.is_datom_store_component(gov_store)) {
+    cli::cli_abort(
+      "{.arg gov_store} must be a {.cls datom_store_s3} or {.cls datom_store_local} object."
+    )
+  }
+
+  if (isTRUE(create_repo) && !is.null(gov_repo_url)) {
+    cli::cli_abort(c(
+      "{.arg create_repo} and {.arg gov_repo_url} are mutually exclusive.",
+      "i" = "Either set {.code create_repo = TRUE} or provide {.arg gov_repo_url}, not both."
+    ))
+  }
+
+  if (isTRUE(create_repo) && is.null(repo_name)) {
+    cli::cli_abort(
+      "{.arg repo_name} is required when {.code create_repo = TRUE}."
+    )
+  }
+
+  if (isTRUE(create_repo) && is.null(github_pat)) {
+    cli::cli_abort(
+      "{.arg github_pat} is required when {.code create_repo = TRUE}."
+    )
+  }
+
+  if (!isTRUE(create_repo) && is.null(gov_repo_url)) {
+    cli::cli_abort(c(
+      "No governance repo URL available.",
+      "i" = "Either provide {.arg gov_repo_url} or set {.code create_repo = TRUE}."
+    ))
+  }
+
+  # --- Create GitHub repo if requested ----------------------------------------
+  if (isTRUE(create_repo)) {
+    gov_repo_url <- .datom_create_github_repo(
+      repo_name = repo_name,
+      pat = github_pat,
+      org = github_org,
+      private = private
+    )
+  }
+
+  # --- Resolve gov_local_path -------------------------------------------------
+  if (is.null(gov_local_path)) {
+    base_name <- sub("\\.git$", "", basename(gov_repo_url))
+    gov_local_path <- fs::path_abs(base_name)
+  } else {
+    gov_local_path <- fs::path_abs(gov_local_path)
+  }
+
+  # --- Idempotence check ------------------------------------------------------
+  # If the skeleton already exists (projects/.gitkeep), treat as already done.
+  if (fs::file_exists(fs::path(gov_local_path, "projects", ".gitkeep"))) {
+    if (.datom_gov_clone_exists(gov_local_path)) {
+      .datom_gov_validate_remote(gov_local_path, gov_repo_url)
+    }
+    cli::cli_alert_info("Governance repository already initialised at {.path {gov_local_path}}.")
+    return(invisible(gov_repo_url))
+  }
+
+  # --- Set up local clone -----------------------------------------------------
+  # For create_repo: init locally and set remote (remote is brand-new/empty).
+  # For existing URL: clone the remote.
+  if (isTRUE(create_repo)) {
+    fs::dir_create(gov_local_path)
+    repo <- git2r::init(gov_local_path)
+    git_cfg <- git2r::config()$global
+    author_name  <- git_cfg$user.name  %||% "datom"
+    author_email <- git_cfg$user.email %||% "datom@noreply"
+    git2r::config(repo, user.name = author_name, user.email = author_email)
+    git2r::remote_add(repo, name = "origin", url = gov_repo_url)
+  } else {
+    .datom_gov_clone_init(gov_repo_url, gov_local_path)
+  }
+
+  # --- Seed gov repo skeleton -------------------------------------------------
+  projects_dir <- fs::path(gov_local_path, "projects")
+  gitkeep_path <- fs::path(projects_dir, ".gitkeep")
+  readme_path  <- fs::path(gov_local_path, "README.md")
+
+  fs::dir_create(projects_dir)
+  if (!fs::file_exists(gitkeep_path)) writeLines("", gitkeep_path)
+  if (!fs::file_exists(readme_path)) {
+    writeLines(c("# Governance Repository",
+                 "",
+                 "This repository stores governance metadata for datom data projects.",
+                 "Each registered project has a subdirectory under `projects/`."),
+               readme_path)
+  }
+
+  # --- Commit and push --------------------------------------------------------
+  repo <- git2r::repository(gov_local_path)
+  git_cfg <- git2r::config()$global
+  author_name  <- git_cfg$user.name  %||% "datom"
+  author_email <- git_cfg$user.email %||% "datom@noreply"
+  git2r::config(repo, user.name = author_name, user.email = author_email)
+
+  git2r::add(repo, c("README.md", fs::path("projects", ".gitkeep")))
+  git2r::commit(
+    repo,
+    message = "Initialize governance repository",
+    author  = git2r::default_signature(repo)
+  )
+
+  .datom_git_push(gov_local_path)
+
+  cli::cli_alert_success("Governance repository initialised at {.path {gov_local_path}}.")
+
+  invisible(gov_repo_url)
+}
+
+
 #' Clone a datom Repository
 #'
 #' Clones a remote datom repository and returns a connection. This is the
