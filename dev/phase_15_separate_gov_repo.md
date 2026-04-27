@@ -21,7 +21,7 @@
 | 6 | `datom_clone()` + `datom_pull()` two-repo semantics | ✅ done | `29e08d5` |
 | 7 | Refactor `datom_sync_dispatch()` to commit on gov | ✅ done | `c26224d` |
 | 8 | `datom_decommission()` + sandbox teardown | ✅ done | `897a37b` |
-| 9 | Data-side write purity audit + role-aware ref reads | ✅ done | (pending) |
+| 9 | Data-side write purity audit + role-aware ref reads | ✅ done | `2a3c12a` |
 | 10 | E2E + sandbox + spec/docs | not started | — |
 
 ## Goal
