@@ -386,17 +386,31 @@ sandbox_up <- function(store, ...) {
 
 #' Tear down a sandbox datom data product
 #'
-#' Deletes storage objects (S3 or local filesystem), GitHub repo, and git
-#' directory. Works for both S3 and local backends.
+#' Deletes storage objects (S3 or local filesystem), GitHub repos, and local
+#' clone directories.  Supports scoped teardown so you can tear down just the
+#' project data, just the governance infrastructure, or everything at once.
 #'
 #' @param env Sandbox environment from sandbox_up().
+#' @param scope One of `"all"` (default), `"project"`, or `"gov"`:
+#'   * `"project"` -- decommission the data project only (leaves gov intact).
+#'   * `"gov"` -- destroy the governance repo only (refuses if projects are
+#'     still registered; call `scope = "project"` first, or use
+#'     `force = TRUE`).
+#'   * `"all"` -- project decommission, then gov destroy.
 #' @param confirm If TRUE (default in interactive), asks before destroying.
-sandbox_down <- function(env, confirm = interactive()) {
+#' @param force If TRUE, allow gov destroy even when projects are still
+#'   registered (passed to `.datom_gov_destroy()`).  Ignored for
+#'   `scope = "project"`.
+sandbox_down <- function(env,
+                         scope   = c("all", "project", "gov"),
+                         confirm = interactive(),
+                         force   = FALSE) {
   if (!inherits(env, "datom_sandbox")) {
     cli::cli_abort("{.arg env} must be a {.cls datom_sandbox} from {.fn sandbox_up}.")
   }
 
-  cfg <- env$config
+  scope <- match.arg(scope)
+  cfg   <- env$config
   store <- env$store
 
   cli::cli_h2("Sandbox Down: {.val {cfg$project_name}}")
@@ -404,10 +418,16 @@ sandbox_down <- function(env, confirm = interactive()) {
   if (isTRUE(confirm)) {
     cli::cli_alert_danger("This will permanently delete:")
     cli::cli_ul()
-    cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}} (all objects)")
-    cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}} (all objects)")
-    cli::cli_li("GitHub: {.val {cfg$repo_name}}")
-    cli::cli_li("Git repo: {.path {env$local_path}}")
+    if (scope %in% c("all", "project")) {
+      cli::cli_li("Data storage: {.path {(.sandbox_storage_label(store$data))}}")
+      cli::cli_li("Data GitHub repo: {.val {cfg$repo_name}}")
+      cli::cli_li("Data clone: {.path {env$local_path}}")
+    }
+    if (scope %in% c("all", "gov")) {
+      cli::cli_li("Governance storage: {.path {(.sandbox_storage_label(store$governance))}}")
+      cli::cli_li("Gov GitHub repo: {.val {cfg$gov_repo_name %||% '(unknown)'}}")
+      cli::cli_li("Gov clone: {.path {env$conn$gov_local_path %||% '(unknown)'}}")
+    }
     cli::cli_end()
 
     answer <- readline("Type 'yes' to confirm: ")
@@ -417,44 +437,74 @@ sandbox_down <- function(env, confirm = interactive()) {
     }
   }
 
-  # 1. Wipe storage (S3 objects or local directories — each helper is a no-op
-  #    when the store component is the wrong backend type)
-  tryCatch({
-    .sandbox_wipe_s3_component(store$data, "data")
-    .sandbox_wipe_local_component(store$data, "data")
-  }, error = function(e) {
-    cli::cli_alert_danger("Data storage cleanup failed: {conditionMessage(e)}")
-    cli::cli_alert_info("Continuing with remaining teardown...")
-  })
-  tryCatch({
-    .sandbox_wipe_s3_component(store$governance, "governance")
-    .sandbox_wipe_local_component(store$governance, "governance")
-  }, error = function(e) {
-    cli::cli_alert_danger("Governance storage cleanup failed: {conditionMessage(e)}")
-    cli::cli_alert_info("Continuing with remaining teardown...")
-  })
-
-  # 2. Delete GitHub repo (still use gh CLI — no datom API for deletion)
-  tryCatch({
-    .sandbox_check_gh()
-    cli::cli_alert_info("Deleting GitHub repo {.val {cfg$repo_name}}...")
-    .sandbox_gh("repo", "delete", .sandbox_repo_full_name(cfg), "--yes")
-    cli::cli_alert_success("Deleted GitHub repo.")
-  }, error = function(e) {
-    cli::cli_alert_danger("GitHub repo deletion failed: {conditionMessage(e)}")
-    cli::cli_alert_info("You may need to delete it manually.")
-  })
-
-  # 3. Delete local directory
-  if (fs::dir_exists(env$local_path)) {
-    cli::cli_alert_info("Removing local directory {.path {env$local_path}}...")
-    fs::dir_delete(env$local_path)
-    cli::cli_alert_success("Removed local directory.")
+  # ---- Project decommission --------------------------------------------------
+  if (scope %in% c("all", "project")) {
+    if (!is.null(env$conn)) {
+      datom::datom_decommission(env$conn, confirm = cfg$project_name)
+    } else {
+      # Fallback: manual teardown if conn is not available
+      tryCatch({
+        .sandbox_wipe_s3_component(store$data, "data")
+        .sandbox_wipe_local_component(store$data, "data")
+      }, error = function(e) {
+        cli::cli_alert_danger("Data storage cleanup failed: {conditionMessage(e)}")
+      })
+      tryCatch({
+        .sandbox_check_gh()
+        .sandbox_gh("repo", "delete", .sandbox_repo_full_name(cfg), "--yes")
+        cli::cli_alert_success("Deleted data GitHub repo.")
+      }, error = function(e) {
+        cli::cli_alert_danger("Data GitHub repo deletion failed: {conditionMessage(e)}")
+      })
+      if (fs::dir_exists(env$local_path)) {
+        fs::dir_delete(env$local_path)
+        cli::cli_alert_success("Removed local data clone.")
+      }
+    }
   }
 
-  cli::cli_alert_success("Sandbox {.val {cfg$project_name}} torn down.")
+  # ---- Gov destroy -----------------------------------------------------------
+  if (scope %in% c("all", "gov")) {
+    # Wipe gov storage
+    tryCatch({
+      .sandbox_wipe_s3_component(store$governance, "governance")
+      .sandbox_wipe_local_component(store$governance, "governance")
+    }, error = function(e) {
+      cli::cli_alert_danger("Governance storage cleanup failed: {conditionMessage(e)}")
+      cli::cli_alert_info("Continuing with remaining teardown...")
+    })
+
+    # Delete gov GitHub repo
+    gov_repo_name <- cfg$gov_repo_name %||% NULL
+    if (!is.null(gov_repo_name)) {
+      tryCatch({
+        .sandbox_check_gh()
+        gov_full_name <- paste0(cfg$github_org, "/", gov_repo_name)
+        cli::cli_alert_info("Deleting gov GitHub repo {.val {gov_full_name}}...")
+        .sandbox_gh("repo", "delete", gov_full_name, "--yes")
+        cli::cli_alert_success("Deleted gov GitHub repo.")
+      }, error = function(e) {
+        cli::cli_alert_danger("Gov GitHub repo deletion failed: {conditionMessage(e)}")
+        cli::cli_alert_info("You may need to delete it manually.")
+      })
+    }
+
+    # Destroy local gov clone
+    gov_local_path <- env$conn$gov_local_path %||% NULL
+    if (!is.null(gov_local_path)) {
+      tryCatch(
+        datom::.datom_gov_destroy(gov_local_path, force = force),
+        error = function(e) {
+          cli::cli_alert_danger("Gov clone destroy failed: {conditionMessage(e)}")
+        }
+      )
+    }
+  }
+
+  cli::cli_alert_success("Sandbox {.val {cfg$project_name}} torn down ({scope}).")
   invisible(TRUE)
 }
+
 
 
 #' Reset a sandbox (tear down + stand up with same config)

@@ -2,7 +2,7 @@
 % Please edit documentation in R/sync.R
 \name{datom_sync_dispatch}
 \alias{datom_sync_dispatch}
-\title{Sync Dispatch Metadata to S3}
+\title{Sync Dispatch Metadata to Storage}
 \usage{
 datom_sync_dispatch(conn, .confirm = TRUE)
 }
@@ -13,16 +13,22 @@ datom_sync_dispatch(conn, .confirm = TRUE)
 before proceeding. Set to \code{FALSE} for non-interactive use.}
 }
 \value{
-Invisibly, a list with \code{repo_files} (character vector of uploaded
-repo-level keys) and \code{tables} (list of per-table sync results).
+Invisibly, a list with \code{repo_files} (character vector of synced
+keys/paths) and \code{tables} (list of per-table sync results).
 }
 \description{
-Updates all metadata in S3 to match the local git repository. This includes
-repo-level files (dispatch.json, manifest.json, migration_history.json) and
-per-table metadata (metadata.json, version_history.json). Requires
-interactive confirmation unless \code{.confirm = FALSE}.
+Updates metadata in storage to match the current state in git/local files.
+This includes repo-level governance files (dispatch.json, ref.json,
+migration_history.json) and per-table metadata
+(metadata.json, version_history.json). Requires interactive confirmation
+unless \code{.confirm = FALSE}.
 }
 \details{
-Used after migration, dispatch changes, or any situation where S3 metadata
-may be out of sync with git.
+When \code{conn$gov_local_path} is set, dispatch.json and ref.json are re-written
+to the governance repo via git commit + push (and then mirrored to gov
+storage). Without a gov clone, these are uploaded to gov storage directly
+from any local \verb{.datom/} copies (backward-compat fallback).
+
+Used after migration, dispatch changes, or any situation where storage
+metadata may be out of sync with git.
 }

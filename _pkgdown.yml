@@ -75,6 +75,11 @@ reference:
       - datom_validate
       - is_valid_datom_repo
 
+  - title: "Decommission"
+    desc: "Permanently remove a project and all its artefacts"
+    contents:
+      - datom_decommission
+
   - title: "Example Data"
     desc: "Bundled clinical trial data for examples and vignettes"
     contents:
