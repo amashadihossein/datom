@@ -1071,28 +1071,28 @@ test_that("datom_init_repo pushes manifest.json to data storage", {
   expect_false(".metadata/ref.json" %in% s3_keys_written)
 })
 
-test_that("datom_init_repo succeeds even if S3 upload fails", {
+test_that("datom_init_repo aborts but preserves local clone if storage fails after git push", {
   env <- setup_init_env()
 
-  # Override to make S3 fail
+  # Storage client fails when build_init_conn is called (post-push)
   local_mocked_bindings(
     .datom_s3_client = function(...) stop("S3 unavailable")
   )
 
-  # Should succeed (git push worked, S3 failure is just a warning)
-  expect_no_error(
+  # Post-push storage failure aborts (no more silent partial-success)
+  expect_error(
     datom_init_repo(
       path = env$work_dir,
       project_name = "testproj",
       store = env$store
-    )
+    ),
+    "S3 unavailable"
   )
 
-  # manifest.json is the only file created locally in data clone
+  # Local clone is intact -- git push succeeded, we don't roll back local
+  # files post-push so the user can retry sync_manifest after fixing creds.
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
-  # dispatch.json and ref.json are NOT in the data clone
-  expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "dispatch.json")))
-  expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+  expect_true(fs::dir_exists(fs::path(env$work_dir, ".git")))
 })
 
 
@@ -1121,6 +1121,58 @@ setup_init_env_with_gov <- function(env = parent.frame()) {
   c(base[c("bare_dir", "work_dir")],
     list(gov_bare = gov_bare, gov_local = gov_local, store = store))
 }
+
+test_that("datom_init_repo aborts and rolls back gov clone if pre-push step fails", {
+  env <- setup_init_env_with_gov()
+
+  # Storage namespace check: simulate occupied bucket so init aborts BEFORE
+  # any git work or push.
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) grepl("manifest\\.json", s3_key),
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(project_name = "EXISTING_PROJECT", tables = list())
+    }
+  )
+
+  # Gov clone did not exist before this call -- create_here flag should fire.
+  expect_false(fs::dir_exists(env$gov_local))
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store),
+    "already occupied"
+  )
+
+  # Gov clone should be rolled back (we created it; init aborted pre-push).
+  expect_false(fs::dir_exists(env$gov_local))
+  # Data clone also rolled back.
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+})
+
+test_that("datom_init_repo does NOT roll back a pre-existing gov clone on failure", {
+  env <- setup_init_env_with_gov()
+
+  # Pre-clone the gov repo so it exists before datom_init_repo runs
+  .datom_gov_clone_init(env$gov_bare, env$gov_local)
+  expect_true(fs::dir_exists(fs::path(env$gov_local, ".git")))
+
+  # Force a pre-push failure
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) grepl("manifest\\.json", s3_key),
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(project_name = "EXISTING_PROJECT", tables = list())
+    }
+  )
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store),
+    "already occupied"
+  )
+
+  # Gov clone preserved -- it existed before our call.
+  expect_true(fs::dir_exists(fs::path(env$gov_local, ".git")))
+})
 
 test_that("datom_init_repo with gov_repo_url clones gov repo before data work", {
   env <- setup_init_env_with_gov()

@@ -289,9 +289,32 @@ datom_init_repo <- function(path = ".",
   }
 
   # --- Step 0: ensure gov clone is available ---------------------------------
+  # Capture pre-existence so on.exit cleanup can roll back the clone iff we
+  # created it (and only if a later step fails before git push).
+  .gov_clone_created_here <- FALSE
   if (!is.null(store$gov_repo_url) && !is.null(gov_local_path)) {
+    gov_clone_existed_before <- .datom_gov_clone_exists(as.character(gov_local_path))
     .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path))
+    .gov_clone_created_here <- !gov_clone_existed_before
   }
+
+  # Register gov-clone rollback immediately so failures in the namespace
+  # checks below (which run before the data-side on.exit is set) still
+  # trigger cleanup. Cleared by setting .git_pushed = TRUE after push.
+  .git_pushed <- FALSE
+  .init_success <- FALSE
+  .safe_delete <- function(p, is_dir = TRUE) {
+    tryCatch(
+      if (is_dir) fs::dir_delete(p) else fs::file_delete(p),
+      error = function(e) NULL
+    )
+  }
+  on.exit({
+    if (.gov_clone_created_here && !.init_success && !.git_pushed &&
+        !is.null(gov_local_path) && fs::dir_exists(gov_local_path)) {
+      .safe_delete(as.character(gov_local_path))
+    }
+  }, add = TRUE)
 
   # --- S3 namespace safety check for data store ------------------------------
   # Use data component for storage operations (where manifest lives)
@@ -360,16 +383,8 @@ datom_init_repo <- function(path = ".",
   readme_existed <- fs::file_exists(readme_file)
   git_existed    <- fs::dir_exists(git_dir)
 
-  .safe_delete <- function(p, is_dir = TRUE) {
-    tryCatch(
-      if (is_dir) fs::dir_delete(p) else fs::file_delete(p),
-      error = function(e) NULL
-    )
-  }
-
-  .init_success <- FALSE
   on.exit({
-    if (!.init_success) {
+    if (!.init_success && !.git_pushed) {
       if (!datom_existed  && fs::dir_exists(datom_dir))   .safe_delete(datom_dir)
       if (!input_existed && fs::dir_exists(input_dir))   .safe_delete(input_dir)
       if (!gi_existed    && fs::file_exists(gitignore))  .safe_delete(gitignore, is_dir = FALSE)
@@ -501,50 +516,52 @@ datom_init_repo <- function(path = ".",
 
   # Push initial commit
   .datom_git_push(path)
+  .git_pushed <- TRUE
 
-  # Build a conn for storage operations (inside tryCatch — S3 client may fail)
-  data_conn <- tryCatch(
-    .datom_build_init_conn(
-      project_name, store$data, path, "developer", NULL,
-      gov_store = store$governance,
-      gov_local_path = if (!is.null(gov_local_path)) as.character(gov_local_path) else NULL
-    ),
-    error = function(e) {
-      cli::cli_alert_warning(
-        "Git push succeeded but could not build storage conn: {conditionMessage(e)}"
-      )
-      cli::cli_alert_info("Run {.fn datom_sync_dispatch} to fix.")
-      NULL
-    }
+  # From this point on, the data git remote has been advertised. Failures
+  # below are reported but do NOT roll back local files (user has work to
+  # recover) -- they abort with a clear recovery hint.
+
+  data_conn <- .datom_build_init_conn(
+    project_name, store$data, path, "developer", NULL,
+    gov_store = store$governance,
+    gov_local_path = if (!is.null(gov_local_path)) as.character(gov_local_path) else NULL
   )
 
   # --- Register project in gov repo + mirror to gov storage ------------------
   # dispatch.json and ref.json live in the gov repo (projects/{name}/),
   # never in the data clone. .datom_gov_register_project() commits + pushes
-  # both files and mirrors them to gov storage.
-  if (!is.null(gov_local_path) && !is.null(data_conn)) {
+  # both files and mirrors them to gov storage. A failure here is a hard
+  # abort: the data repo is pushed but no project entry exists in gov, so
+  # readers cannot discover this project. Recovery is manual via
+  # datom_sync_dispatch().
+  if (!is.null(gov_local_path)) {
     tryCatch(
       .datom_gov_register_project(data_conn, project_name, dispatch, ref),
       error = function(e) {
-        cli::cli_alert_warning(
-          "Data repo pushed but gov registration failed: {conditionMessage(e)}"
-        )
-        cli::cli_alert_info("Run {.fn datom_sync_dispatch} to fix.")
+        cli::cli_abort(c(
+          "Data repo pushed but gov registration failed.",
+          "x" = conditionMessage(e),
+          "i" = "Local data clone is intact at {.path {path}}.",
+          "i" = "After fixing the cause (e.g. credentials, connectivity), run {.fn datom_sync_dispatch} to register the project."
+        ), call = NULL)
       }
     )
   }
 
   # --- Mirror manifest to data storage ----------------------------------------
-  if (!is.null(data_conn)) {
-    tryCatch({
-      .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
-    }, error = function(e) {
-      cli::cli_alert_warning(
-        "Git push succeeded but manifest storage upload failed: {conditionMessage(e)}"
-      )
-      cli::cli_alert_info("Run {.fn datom_sync_manifest} to fix.")
-    })
-  }
+  # Manifest is part of the data-side contract -- readers need it to clone.
+  # Failure aborts; user runs datom_sync_manifest after fixing cause.
+  tryCatch({
+    .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
+  }, error = function(e) {
+    cli::cli_abort(c(
+      "Data repo pushed and gov registered but manifest upload failed.",
+      "x" = conditionMessage(e),
+      "i" = "Local data clone is intact at {.path {path}}.",
+      "i" = "After fixing the cause (e.g. credentials, connectivity), run {.fn datom_sync_manifest} to upload the manifest."
+    ), call = NULL)
+  })
 
   .init_success <- TRUE
 
