@@ -210,7 +210,7 @@ These are committed directly to `main` (one commit each), then phase 15 branches
 - All marked `# GOV_SEAM:` with one-line rationale comment.
 - Tests: each helper exercised in isolation against a temp gov clone.
 
-### Chunk 4 — `datom_init_gov()` (new exported function)
+### Chunk 4 — `datom_init_gov()` (new exported function) ✅ `d3518c2`
 
 - Signature: `datom_init_gov(gov_store, gov_repo_url, gov_local_path = NULL, private = TRUE)`.
 - Steps: validate inputs → check namespace free at gov storage → create GitHub repo → clone locally → seed gov repo skeleton (`README.md`, `projects/.gitkeep`) → initial commit + push.
