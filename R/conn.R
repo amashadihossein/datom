@@ -21,6 +21,7 @@
 #' @param gov_prefix Governance prefix (can be NULL).
 #' @param gov_region Governance region (can be NULL).
 #' @param gov_client Governance storage client (can be NULL).
+#' @param gov_local_path Absolute path to the local gov clone (NULL for readers).
 #'
 #' @return A `datom_conn` object.
 #' @keywords internal
@@ -36,6 +37,7 @@ new_datom_conn <- function(project_name,
                           gov_prefix = NULL,
                           gov_region = NULL,
                           gov_client = NULL,
+                          gov_local_path = NULL,
                           backend = "s3") {
   role <- match.arg(role)
   backend <- match.arg(backend, c("s3", "local"))
@@ -70,6 +72,13 @@ new_datom_conn <- function(project_name,
     }
   }
 
+  if (!is.null(gov_local_path)) {
+    if (!is.character(gov_local_path) || length(gov_local_path) != 1L ||
+        is.na(gov_local_path) || !nzchar(gov_local_path)) {
+      cli::cli_abort("{.arg gov_local_path} must be a single non-empty string or NULL.")
+    }
+  }
+
   if (role == "developer" && is.null(path)) {
     cli::cli_abort("Developer connections require a {.arg path} to the local repo.")
   }
@@ -88,7 +97,8 @@ new_datom_conn <- function(project_name,
       gov_root = gov_root,
       gov_prefix = gov_prefix,
       gov_region = gov_region,
-      gov_client = gov_client
+      gov_client = gov_client,
+      gov_local_path = gov_local_path
     ),
     class = "datom_conn"
   )
@@ -649,7 +659,8 @@ datom_get_conn <- function(path = NULL,
 #' @return A `datom_conn` object.
 #' @keywords internal
 .datom_build_init_conn <- function(project_name, data_store, path, role,
-                                   endpoint = NULL, gov_store = NULL) {
+                                   endpoint = NULL, gov_store = NULL,
+                                   gov_local_path = NULL) {
   backend <- .datom_store_backend(data_store)
   data_root <- .datom_store_root(data_store)
   data_prefix <- data_store$prefix
@@ -700,6 +711,7 @@ datom_get_conn <- function(path = NULL,
     gov_prefix = gov_prefix,
     gov_region = gov_region,
     gov_client = gov_client,
+    gov_local_path = gov_local_path,
     backend = backend
   )
 }
@@ -772,11 +784,25 @@ datom_get_conn <- function(path = NULL,
   }
 
   # Build conn via helper
+  # gov_local_path: use explicit override from store if set, otherwise derive
+  # sibling default from the gov_repo_url (if available).
+  gov_local_path <- if (!is.null(store$gov_local_path)) {
+    store$gov_local_path
+  } else if (!is.null(store$gov_repo_url)) {
+    as.character(.datom_resolve_gov_local_path(
+      data_local_path = as.character(path),
+      gov_repo_url = store$gov_repo_url
+    ))
+  } else {
+    NULL
+  }
+
   conn <- .datom_build_init_conn(
     project_name, effective_data_store,
     if (role == "developer") as.character(path) else NULL,
     role, endpoint,
-    gov_store = store$governance
+    gov_store = store$governance,
+    gov_local_path = gov_local_path
   )
 
   # Override conn root/prefix/region with ref-resolved values if migrated
@@ -825,7 +851,8 @@ datom_get_conn <- function(path = NULL,
 
   conn <- .datom_build_init_conn(
     project_name, store$data, NULL, store$role, endpoint,
-    gov_store = store$governance
+    gov_store = store$governance,
+    gov_local_path = NULL
   )
 
   # Override conn root/prefix/region with ref-resolved values if migrated
