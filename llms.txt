@@ -193,8 +193,6 @@ Validate repository structure and git-S3 consistency
 
 - [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
   : Validate Git-Storage Consistency
-- [`datom_repository_check()`](https://amashadihossein.github.io/datom/reference/datom_repository_check.md)
-  : Check datom Repository Structure
 - [`is_valid_datom_repo()`](https://amashadihossein.github.io/datom/reference/is_valid_datom_repo.md)
   : Check if Path is a Valid datom Repository
 
