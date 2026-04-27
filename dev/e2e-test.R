@@ -1,6 +1,10 @@
 # dev/e2e-test.R
 # ──────────────────────────────────────────────────────────────────────────────
-# End-to-end test script for datom
+# End-to-end test script for datom (S3 backend, two-repo gov split)
+#
+# Drives the full Phase 15 workflow:
+#   datom_init_gov() -> datom_init_repo() -> datom_write() ->
+#   datom_sync_dispatch() -> datom_decommission()
 #
 # Usage:
 #   devtools::load_all()
@@ -10,7 +14,7 @@
 # Prerequisites:
 #   - AWS credentials (via keyring, env vars, or any source)
 #   - GITHUB_PAT
-#   - S3 bucket exists
+#   - S3 buckets exist (data + governance)
 #   - `gh` CLI for teardown only
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -26,13 +30,16 @@ store <- sandbox_store(
 )
 
 # --- Stand up sandbox --------------------------------------------------------
+# sandbox_up() now (Phase 15) calls datom_init_gov() first to bootstrap the
+# governance repo + storage, then datom_init_repo() for the data project.
 
 env <- sandbox_up(
   store,
-  project_name = "STUDY_001",
-  repo_name    = "study-001-data",
-  populate     = TRUE,
-  n_months     = 2L
+  project_name  = "STUDY_001",
+  repo_name     = "study-001-data",
+  gov_repo_name = "datom-gov-test",
+  populate      = TRUE,
+  n_months      = 2L
 )
 
 conn <- env$conn
@@ -72,11 +79,18 @@ datom_write(
   )
 )
 
-# --- Verify Phase 8 fields --------------------------------------------------
+# --- Verify lineage ---------------------------------------------------------
 
 datom_list(conn)
 datom_get_parents(conn, "summary_trt_by_sex")
 datom_history(conn, "summary_trt_by_sex")
+
+# --- Sync dispatch (gov-side commit + push) ---------------------------------
+# Phase 15: dispatch.json lives in the governance repo at
+# projects/{project_name}/dispatch.json. datom_sync_dispatch() commits and
+# pushes the gov clone, leaving the data clone untouched.
+
+datom_sync_dispatch(conn, .confirm = FALSE)
 
 # --- Validate and status -----------------------------------------------------
 
@@ -94,9 +108,15 @@ datom_status(conn)
 #
 #   env <- sandbox_recover(
 #     store,
-#     project_name = "STUDY_001",
-#     repo_name    = "study-001-data"
+#     project_name  = "STUDY_001",
+#     repo_name     = "study-001-data",
+#     gov_repo_name = "datom-gov-test"
 #   )
 
 # --- Tear down ---------------------------------------------------------------
+# Phase 15 introduces scoped teardown:
+#   sandbox_down(env, scope = "project")  # decommission data project only
+#   sandbox_down(env, scope = "gov")      # destroy gov (refuses if projects)
+#   sandbox_down(env, scope = "all")      # project then gov (default)
+#
 # sandbox_down(env)

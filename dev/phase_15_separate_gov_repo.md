@@ -9,6 +9,7 @@
 - **Test count after Chunk 7**: 1291
 - **Test count after Chunk 8**: 1315
 - **Test count after Chunk 9**: 1325
+- **Test count after Chunk 10**: 1325 (no new tests; spec/sandbox/E2E only)
 - **Test count target**: ≥ 1177 (with new tests for gov-repo split, decommission, two-backend support)
 
 | Chunk | Description | Status | Commit |
@@ -22,7 +23,7 @@
 | 7 | Refactor `datom_sync_dispatch()` to commit on gov | ✅ done | `c26224d` |
 | 8 | `datom_decommission()` + sandbox teardown | ✅ done | `897a37b` |
 | 9 | Data-side write purity audit + role-aware ref reads | ✅ done | `2a3c12a` |
-| 10 | E2E + sandbox + spec/docs | not started | — |
+| 10 | E2E + sandbox + spec/docs | ✅ done | (pending) |
 
 ## Goal
 

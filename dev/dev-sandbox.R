@@ -37,7 +37,8 @@
   list(
     project_name = "SANDBOX_TEST",
     github_org    = NULL,            # NULL = personal repo; set to "my-org" for org repos
-    repo_name     = "datom-sandbox", # GitHub repo name
+    repo_name     = "datom-sandbox", # GitHub repo name (data repo)
+    gov_repo_name = "datom-sandbox-gov", # GitHub repo name (governance repo)
     bucket        = "datom-test",    # REQUIRED -- your dev S3 bucket
     gov_bucket    = "datom-gov-test", # REQUIRED -- your dev governance S3 bucket
     prefix        = "sandbox/",      # S3 prefix (keeps sandbox isolated)
@@ -298,6 +299,7 @@ sandbox_up <- function(store, ...) {
   }
 
   local_path <- fs::path(cfg$base_dir, cfg$repo_name)
+  gov_local_path <- fs::path(cfg$base_dir, cfg$gov_repo_name)
 
   cli::cli_h2("Sandbox Up: {.val {cfg$project_name}}")
 
@@ -310,13 +312,46 @@ sandbox_up <- function(store, ...) {
     cli::cli_alert_info("Will create GitHub repo {.val {cfg$repo_name}} via API...")
   }
 
-  # Clean up local path if it exists
+  # Clean up local paths if they exist
   if (fs::dir_exists(local_path)) {
     cli::cli_alert_warning("Local path {.path {local_path}} exists. Removing.")
     fs::dir_delete(local_path)
   }
+  if (fs::dir_exists(gov_local_path)) {
+    cli::cli_alert_warning("Gov local path {.path {gov_local_path}} exists. Removing.")
+    fs::dir_delete(gov_local_path)
+  }
 
-  # Initialize datom repo (creates GitHub repo if create_repo = TRUE)
+  # ---- Step 1: bootstrap governance repo (gov-first per Phase 15) ----------
+  if (is.null(store$gov_repo_url)) {
+    cli::cli_alert_info("Initializing governance repo {.val {cfg$gov_repo_name}}...")
+    gov_repo_url <- datom::datom_init_gov(
+      gov_store      = store$governance,
+      gov_local_path = as.character(gov_local_path),
+      create_repo    = TRUE,
+      repo_name      = cfg$gov_repo_name,
+      github_pat     = store$github_pat,
+      github_org     = store$github_org,
+      private        = TRUE
+    )
+
+    # Rebuild store with gov_repo_url + gov_local_path so datom_init_repo can
+    # locate the gov clone we just created.
+    store <- datom::datom_store(
+      governance     = store$governance,
+      data           = store$data,
+      github_pat     = store$github_pat,
+      data_repo_url  = store$data_repo_url,
+      gov_repo_url   = gov_repo_url,
+      gov_local_path = as.character(gov_local_path),
+      github_org     = store$github_org,
+      validate       = FALSE
+    )
+  } else {
+    cli::cli_alert_info("Using existing gov remote: {.url {store$gov_repo_url}}")
+  }
+
+  # ---- Step 2: initialize data repo (creates GitHub data repo if needed) ---
   cli::cli_alert_info("Initializing datom repo at {.path {local_path}}...")
 
   datom::datom_init_repo(
@@ -364,11 +399,12 @@ sandbox_up <- function(store, ...) {
 
   # Build the environment object
   env <- list(
-    config     = cfg,
-    store      = store,
-    local_path = as.character(local_path),
-    conn       = conn,
-    created_at = Sys.time()
+    config         = cfg,
+    store          = store,
+    local_path     = as.character(local_path),
+    gov_local_path = as.character(gov_local_path),
+    conn           = conn,
+    created_at     = Sys.time()
   )
 
   class(env) <- "datom_sandbox"
@@ -376,6 +412,7 @@ sandbox_up <- function(store, ...) {
   cli::cli_h3("Sandbox ready")
   cli::cli_ul()
   cli::cli_li("Git repo: {.path {local_path}}")
+  cli::cli_li("Gov clone: {.path {gov_local_path}}")
   cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
   cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
   cli::cli_end()
@@ -426,7 +463,7 @@ sandbox_down <- function(env,
     if (scope %in% c("all", "gov")) {
       cli::cli_li("Governance storage: {.path {(.sandbox_storage_label(store$governance))}}")
       cli::cli_li("Gov GitHub repo: {.val {cfg$gov_repo_name %||% '(unknown)'}}")
-      cli::cli_li("Gov clone: {.path {env$conn$gov_local_path %||% '(unknown)'}}")
+      cli::cli_li("Gov clone: {.path {env$gov_local_path %||% env$conn$gov_local_path %||% '(unknown)'}}")
     }
     cli::cli_end()
 
@@ -490,10 +527,10 @@ sandbox_down <- function(env,
     }
 
     # Destroy local gov clone
-    gov_local_path <- env$conn$gov_local_path %||% NULL
+    gov_local_path <- env$gov_local_path %||% env$conn$gov_local_path %||% NULL
     if (!is.null(gov_local_path)) {
       tryCatch(
-        datom::.datom_gov_destroy(gov_local_path, force = force),
+        datom:::.datom_gov_destroy(gov_local_path, force = force),
         error = function(e) {
           cli::cli_alert_danger("Gov clone destroy failed: {conditionMessage(e)}")
         }
@@ -554,19 +591,22 @@ sandbox_recover <- function(store, ...) {
   cfg <- utils::modifyList(.sandbox_defaults(), list(...))
 
   local_path <- fs::path(cfg$base_dir, cfg$repo_name)
+  gov_local_path <- fs::path(cfg$base_dir, cfg$gov_repo_name)
 
   env <- list(
-    config     = cfg,
-    store      = store,
-    local_path = as.character(local_path),
-    conn       = NULL,
-    created_at = NA_real_
+    config         = cfg,
+    store          = store,
+    local_path     = as.character(local_path),
+    gov_local_path = as.character(gov_local_path),
+    conn           = NULL,
+    created_at     = NA_real_
   )
   class(env) <- "datom_sandbox"
 
   cli::cli_alert_success("Recovered sandbox env for {.val {cfg$project_name}}.")
   cli::cli_ul()
   cli::cli_li("Git repo: {.path {local_path}}")
+  cli::cli_li("Gov clone: {.path {gov_local_path}}")
   cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
   cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
   cli::cli_end()
@@ -590,6 +630,7 @@ print.datom_sandbox <- function(x, ...) {
   cli::cli_ul()
   cli::cli_li("Project: {.val {cfg$project_name}}")
   cli::cli_li("Git repo: {.path {x$local_path}}")
+  cli::cli_li("Gov clone: {.path {x$gov_local_path %||% '(unknown)'}}")
   cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
   cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
   cli::cli_li("Age: {age}")

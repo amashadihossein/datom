@@ -110,95 +110,128 @@ User type is auto-detected based on the presence of `GITHUB_PAT`.
 
 ## Architecture
 
+### Two Repositories: Governance + Data
+
+datom uses **two separate git repositories**:
+
+- **Governance repository** (one per organization/governance bucket): a thin git repo that tracks routing/governance metadata for *every* data project sharing the governance store. Per-project metadata lives at `projects/{project_name}/`. The governance repo is created once via `datom_init_gov()` and shared across all projects.
+- **Data repository** (one per project): the per-project git repo containing table metadata, version history, and the project manifest. Created by `datom_init_repo()`.
+
+Both repos are git-tracked and pushed to GitHub. They are cloned to **separate** local working directories (siblings by default, e.g. `study-001-data/` next to `acme-gov/`).
+
+```
+                ┌──────────────────────────────────────────┐
+                │ Governance GitHub repo (acme-gov)         │
+                │ Mirrors gov clone:                        │
+                │   projects/STUDY_001/dispatch.json        │
+                │   projects/STUDY_001/ref.json             │
+                │   projects/STUDY_001/migration_history... │
+                │   projects/STUDY_002/...                  │
+                └──────────────────────────────────────────┘
+                              ▲
+                              │ git push/pull
+                              │
+   ┌─────────────────┐        │        ┌─────────────────┐
+   │ Data GitHub repo │       │        │ Data GitHub repo │
+   │  (study-001)     │       │        │  (study-002)     │
+   │ Per-project      │       │        │ Per-project      │
+   │ tables, manifest │       │        │ tables, manifest │
+   └─────────────────┘        │        └─────────────────┘
+```
+
 ### Storage Structure
 
-**Git Repository (Authoritative Source)**:
+**Governance Repository (git, on disk)**:
 ```
-repo/
+acme-gov/
+├── README.md
+├── projects/
+│   ├── .gitkeep
+│   ├── STUDY_001/
+│   │   ├── dispatch.json             # Methods configuration (project-scoped)
+│   │   ├── ref.json                  # Data location reference (project-scoped)
+│   │   └── migration_history.json    # Audit trail of location changes
+│   └── STUDY_002/
+│       └── ...
+└── .git/
+```
+
+**Data Repository (git, on disk — one per project)**:
+```
+study-001-data/
 ├── {table_name}/
 │   ├── metadata.json             # Current metadata only
-│   └── version_history.json      # Index: version → SHA mappings
+│   └── version_history.json      # Index: version -> SHA mappings
 ├── input_files/                   # Flat directory for source files (gitignored)
 │   ├── customers.csv
 │   └── orders.tsv
 ├── .datom/
 │   ├── project.yaml              # Project configuration
-│   ├── dispatch.json             # Methods configuration (repo-wide)
-│   ├── ref.json                  # Data location reference
-│   ├── manifest.json             # Repository catalog
-│   └── migration_history.json    # Audit trail of location changes
-└── .gitignore                     # Ignores input_files/* and data formats
+│   └── manifest.json             # Repository catalog (project-scoped)
+└── .gitignore
 ```
 
-**Note:** Contents of `input_files/` are gitignored. Only metadata tracked in git; actual data files stay local and sync to S3 as parquet.
+**Note:** Contents of `input_files/` are gitignored. Only metadata tracked in git; actual data files stay local and sync to the data store as parquet. **`dispatch.json`, `ref.json`, and `migration_history.json` no longer live in the data repo** — they are owned by the governance repo at `projects/{project_name}/`.
 
-**Cloud Storage (S3) — Governance Store**:
+**Cloud Storage — Governance Store**:
 ```
 governance-bucket/
 └── {optional_prefix}/
     └── datom/
-        ├── .access/                   # Reserved for datomaccess package (do not read/write)
-        └── .metadata/
-            ├── dispatch.json          # Methods (synced from git)
-            ├── ref.json               # Data location reference
-            └── migration_history.json # Audit trail
+        ├── .access/                          # Reserved for datomaccess (do not touch)
+        └── projects/
+            ├── STUDY_001/
+            │   ├── dispatch.json             # Mirrors gov repo
+            │   ├── ref.json
+            │   └── migration_history.json
+            └── STUDY_002/
+                └── ...
 ```
 
-**Cloud Storage (S3) — Data Store**:
+**Cloud Storage — Data Store** (per project):
 ```
 data-bucket/
 └── {optional_prefix}/
     └── datom/
         ├── .metadata/
-        │   └── manifest.json          # Repository catalog
+        │   └── manifest.json          # Project manifest (mirrors data repo)
         └── {table_name}/
             ├── {data_sha}.parquet     # Data files (content-addressed)
             └── .metadata/
                 ├── metadata.json      # Current metadata
-                ├── {metadata_sha}.json # Versioned metadata snapshots
-                └── version_history.json
-```
-
-**Local Filesystem Store** (mirrors S3 layout):
-```
-{root_directory}/
-└── {optional_prefix}/
-    └── datom/
-        ├── .metadata/
-        │   └── manifest.json
-        └── {table_name}/
-            ├── {data_sha}.parquet
-            └── .metadata/
-                ├── metadata.json
                 ├── {metadata_sha}.json
                 └── version_history.json
 ```
 
-**Note:** Governance and data stores may be the same bucket+prefix (S3) or same directory (local), or different ones. The two-store split enables organizations to keep routing/governance metadata in a central bucket while data lives in project-specific buckets.
+**Local Filesystem Store** mirrors the cloud layout (same paths, on disk).
+
+**Note:** Governance and data stores may be the same bucket+prefix or different ones. The two-store + two-repo split lets organizations keep routing/governance metadata centralized while per-project data and tables live in isolated buckets.
 
 ### Location Resolution
 
-Data location is stored explicitly in `ref.json` at the governance store. Resolution is a single read:
+Data location is stored in `ref.json` in the governance repo at `projects/{project_name}/ref.json`. Resolution is **role-aware**:
 
 ```
 datom_read(conn, "customers", ...)
-        │
-        ▼
-1. Read ref.json from governance store (.metadata/ref.json)
-2. Extract current.bucket, current.prefix, current.region
+        |
+        v
+1. Resolve ref.json (role-aware):
+   - Developer with gov_local_path: read from local gov clone (fast/offline)
+   - Reader: read via gov storage client (no clone)
+2. Extract current.root, current.prefix, current.region
 3. Read data from resolved location in data store
 ```
 
-**Post-migration**: `ref.json` may contain `previous` entries with sunset dates. `.datom_resolve_ref()` emits a deprecation warning when previous entries exist, alerting operators that old location cleanup is pending. No redirect chain — migration is a ref.json update + data copy.
+**Post-migration**: `ref.json` may contain `previous` entries with sunset dates. The parser emits a deprecation warning when previous entries exist, alerting operators that old location cleanup is pending. No redirect chain — migration is a ref.json update + data copy + commit on the gov repo.
 
 ### Ref Resolution Lifecycle
 
 Ref resolution runs at two points in the conn lifecycle:
 
 **Conn time** (`datom_get_conn()` — both reader and developer roles, both backends):
-1. Build a temporary governance conn, call `.datom_resolve_ref()`.
+1. Resolve `projects/{project_name}/ref.json` (role-aware: clone for developer, storage for reader).
 2. Detect migration: `store$data` location vs ref location.
-   - **Developer + mismatch** → auto-pull git, re-read `project.yaml`. If still mismatched, abort with "ref.json and project.yaml disagree after pull". Otherwise proceed (pull fixed it, info message).
+   - **Developer + mismatch** → auto-pull git (data repo), re-read `project.yaml`. If still mismatched, abort with "ref.json and project.yaml disagree after pull". Otherwise proceed (pull fixed it, info message).
    - **Reader + mismatch** → warn "data migrated, update your store config", proceed using the ref-resolved location with the reader's existing data credentials.
 3. Reachability check (`HeadBucket` for S3, `fs::dir_exists()` for local):
    - Reachable → proceed.
@@ -208,7 +241,7 @@ Ref resolution runs at two points in the conn lifecycle:
 5. **No governance component** → skip ref resolution entirely (backward compatible with pre-Phase 10 stores).
 
 **Write time** (`datom_write()` — before any data SHA computation):
-1. Re-resolve ref via `.datom_check_ref_current(conn)`.
+1. Re-resolve ref via `.datom_check_ref_current(conn)`. **Storage-only** (no clone fallback) — the write-time guard intentionally hits gov storage to catch stale clones.
 2. Compare ref root/prefix against `conn$root`/`conn$prefix`.
 3. **Any failure is a hard abort** — network error, missing file, malformed JSON, location mismatch. Writing without a verified location risks orphaning data; there is no safe fallback. Error mentions "orphaning data" and instructs the user to rebuild the conn.
 4. No `conn$gov_root` (legacy conn) → skip check.
@@ -217,7 +250,24 @@ Ref resolution runs at two points in the conn lifecycle:
 
 **Credentials vs location**: `ref.json` tells you *where* the data is, not *how to authenticate*. The user's `store$data` credentials are used against the ref-resolved location. For local backend, no credentials — just the path.
 
+### Write Targeting: Data vs Governance
+
+Every datom write is targeted at exactly one of the two repos:
+
+| Operation                    | Data clone   | Gov clone    | Notes                                      |
+|------------------------------|--------------|--------------|--------------------------------------------|
+| `datom_write()`              | git + storage| —            | Tables, manifest, metadata.                |
+| `datom_sync()` / batch       | git + storage| —            | Same as `datom_write()`, multi-table.      |
+| `datom_sync_dispatch()`      | —            | git + storage| Commits/pushes `projects/{name}/dispatch.json`. |
+| `datom_init_gov()`           | —            | git + storage| Creates the gov repo + skeleton.           |
+| `datom_init_repo()`          | git + storage| git + storage| Registers project (writes `projects/{name}/{ref,dispatch,migration_history}.json` + commits gov), then sets up data repo. |
+| `datom_decommission()`       | git + storage| git + storage| Wipes data project + removes `projects/{name}/` from gov + commits gov. |
+| `datom_pull()`               | git only     | git only     | Pulls both clones (no storage refresh — git is source of truth). |
+
+**Invariant**: data-side functions never touch the gov clone after init/decommission, and gov-side functions never touch the data clone. Tested via the data-side write purity audit.
+
 ---
+
 
 ## Metadata Schema
 
@@ -408,6 +458,37 @@ Creates GitHub repos via REST API (`httr2`). Safety: existing+empty → reuse, e
 
 ### Repository Management (Data Developers)
 
+#### datom_init_gov()
+
+```r
+datom_init_gov(
+  gov_store,
+  gov_repo_url = NULL,
+  gov_local_path = NULL,
+  create_repo = FALSE,
+  repo_name = NULL,
+  github_pat = NULL,
+  github_org = NULL,
+  private = TRUE
+)
+```
+
+One-time bootstrap of the **governance repository** for an organization (or any group sharing a governance store). Run once per governance bucket; all subsequent `datom_init_repo()` calls reuse the resulting gov repo.
+
+- `gov_store`: a single `datom_store_s3()` or `datom_store_local()` component (the governance side of `datom_store()`).
+- `create_repo = TRUE`: provisions a new GitHub repo via REST API. Mutually exclusive with `gov_repo_url`.
+- `gov_repo_url`: URL of an existing (empty) governance GitHub repo to adopt.
+- `gov_local_path`: working directory for the gov clone. Defaults to `basename(repo_url)` next to the user's current directory.
+- `private = TRUE`: governance repos default to private — they enumerate every project in the org.
+
+Side effects:
+1. Validates credentials and reachability of `gov_store`.
+2. Creates GitHub repo (if `create_repo = TRUE`) or validates the existing one is empty.
+3. `git2r::clone()` to `gov_local_path`, scaffolds `README.md` + `projects/.gitkeep`, commits, pushes.
+4. Uploads the empty `projects/` skeleton to gov storage.
+
+Returns: the gov repo URL (string), suitable to feed into `datom_store(gov_repo_url = ...)`.
+
 #### datom_init_repo()
 
 ```r
@@ -423,19 +504,38 @@ datom_init_repo(
 )
 ```
 
-One-time setup for data developers:
-- `store`: composite `datom_store()` object (replaces `bucket`/`prefix`/`region`/`data_repo_url`)
-- `create_repo = TRUE`: auto-creates GitHub repo via API from `repo_name` (normalized: lowercase, underscores → hyphens). Requires developer store.
-- `repo_name`: defaults to `project_name`; allows custom GitHub repo name
-- **Validation-first**: all store/repo validation happens before any filesystem or git side effects
-- **S3 namespace safety check**: checks `{prefix}/datom/.metadata/manifest.json` on S3 before writing. Pass `.force = TRUE` to override.
-- Creates folder structure, initializes git with remote
-- Creates `.datom/project.yaml` with two-component storage config (`storage.governance` + `storage.data`)
-- Creates `.datom/dispatch.json` with default methods
-- Creates `.datom/manifest.json` with `project_name` at the top level
-- Pushes initial commit to git, then uploads routing + manifest to S3
+One-time setup for data developers. Requires that `datom_init_gov()` has already been run for the target governance store; the gov repo URL must be present on the store via `datom_store(gov_repo_url = ...)`.
 
-Returns: Invisible TRUE on success. Cleans up on failure.
+- `store`: composite `datom_store()` with both governance and data components, plus `gov_repo_url` (and optionally `gov_local_path`).
+- `create_repo = TRUE`: auto-creates the **data** GitHub repo via API from `repo_name` (normalized: lowercase, underscores -> hyphens).
+- `repo_name`: defaults to `project_name`; allows custom GitHub repo name.
+- **Validation-first**: all store/repo validation happens before any filesystem or git side effects.
+- **Gov clone bootstrap**: pulls or shallow-clones the gov repo to `gov_local_path` if not already present.
+- **Namespace safety check**: aborts if `projects/{project_name}/ref.json` already exists in the gov repo (another project is using this name). Pass `.force = TRUE` to override.
+- Creates data folder structure, initializes git with remote.
+- Creates `.datom/project.yaml` with two-component storage config + `repos.governance` block.
+- Creates `.datom/manifest.json` with `project_name` at the top level.
+- Writes `projects/{project_name}/{ref,dispatch,migration_history}.json` to the gov clone, commits + pushes the gov repo, then uploads the same files to gov storage.
+- Pushes initial commit to the data git remote, then uploads manifest to data storage.
+
+Returns: Invisible TRUE on success. Cleans up gov clone + data clone on failure (best-effort).
+
+#### datom_decommission()
+
+```r
+datom_decommission(
+  conn,
+  force = FALSE,
+  delete_gov_clone = FALSE
+)
+```
+
+Tears down a project. Removes the project's data (storage + GitHub data repo) and its governance footprint (`projects/{project_name}/` from gov clone + gov storage), then commits + pushes the gov repo. Idempotent on partial failure.
+
+- `force = FALSE`: requires interactive confirmation.
+- `delete_gov_clone = FALSE`: gov clone is shared across projects; defaults to leaving it in place. Set `TRUE` only when decommissioning the last project on the governance bucket.
+
+Returns: Invisible list with `data_deleted`, `gov_pruned`, `data_repo_deleted` flags.
 
 #### datom_get_conn()
 
@@ -485,13 +585,13 @@ Returns: `datom_conn` object (developer role)
 datom_pull(conn)
 ```
 
-Pulls latest git changes from remote. Recommended at the start of each work session:
-- Fetches and merges upstream commits (metadata, manifest, routing — all tracked in git)
-- Git is the source of truth — no S3 refresh needed
-- Developer role only (readers have no git access)
-- Reports commits pulled and current branch
+Pulls latest git changes from remotes. Recommended at the start of each work session:
+- Pulls **both** the data repo and the governance repo (`projects/{project_name}/` is what changes).
+- Git is the source of truth — no storage refresh needed.
+- Developer role only (readers have no git access).
+- Reports commits pulled per repo and current branches.
 
-Returns: Invisible list with `commits_pulled` (integer) and `branch` (string)
+Returns: Invisible list with `data` and `governance` sub-lists, each with `commits_pulled` (integer) and `branch` (string).
 
 ### Core Operations
 
@@ -566,11 +666,11 @@ Returns: List of parent entries (each with `source`, `table`, `version`), or `NU
 datom_sync_dispatch(conn, .confirm = TRUE)
 ```
 
-Updates all metadata in S3 to match git after migration or dispatch changes:
-- Interactive confirmation required (set `.confirm = FALSE` for programmatic use)
-- Pushes governance files (dispatch.json, ref.json, migration_history.json) to governance store
-- Pushes data files (manifest.json, per-table metadata) to data store
-- Used after external migration (aws cli, etc.) and project.yaml update
+Updates routing/governance metadata in storage to match the gov clone:
+- Interactive confirmation required (set `.confirm = FALSE` for programmatic use).
+- **Targets the governance repo + governance store only.** Pushes `projects/{project_name}/{dispatch,ref,migration_history}.json` from the gov clone to gov storage. Also commits + pushes the gov repo if there are uncommitted gov-side changes.
+- Does **not** touch the data clone or data store. Use `datom_validate(fix = TRUE)` for data-side reconciliation.
+- Used after external migration (aws cli, etc.) and `project.yaml` update.
 
 ```
 # Warning: This will update routing metadata for all 147 tables.
@@ -657,9 +757,9 @@ datom_validate(conn, fix = FALSE)
 
 Checks that git metadata matches S3 storage for all tables and repo-level files. Reports mismatches as a structured result.
 
-- **Repo-level checks**: dispatch.json, ref.json, manifest.json, migration_history.json exist on correct S3 stores (governance vs data)
-- **Per-table checks**: metadata.json, version_history.json, and `{data_sha}.parquet` exist on S3 for each table tracked in git
-- `fix = TRUE`: attempts to repair inconsistencies by calling `datom_sync_dispatch(conn, .confirm = FALSE)`
+- **Repo-level checks**: `projects/{project_name}/{ref,dispatch,migration_history}.json` exist in gov clone + gov storage; `.datom/manifest.json` exists in data repo + data storage.
+- **Per-table checks**: metadata.json, version_history.json, and `{data_sha}.parquet` exist on data storage for each table tracked in git
+- `fix = TRUE`: attempts to repair inconsistencies by calling `datom_sync_dispatch(conn, .confirm = FALSE)` (gov-side) and re-uploading data-side metadata.
 
 Returns: List with `valid` (logical), `repo_files` (data frame), `tables` (data frame), `fixed` (logical).
 
@@ -713,7 +813,7 @@ Validates datom repository structure. Used internally by datom functions and ext
 | Check | Validates |
 |-------|-----------|
 | `git` | Git repository initialized |
-| `datom` | `.datom/project.yaml`, `.datom/dispatch.json`, `.datom/manifest.json` exist |
+| `datom` | `.datom/project.yaml`, `.datom/manifest.json` exist (gov files live in the governance repo, not here) |
 | `renv` | `renv/` directory exists |
 
 Returns: TRUE or FALSE
@@ -762,12 +862,29 @@ store <- datom_store(
   github_pat = keyring::key_get("github_pat")
 )
 
+# --- Bootstrap governance repo (one-time per organization / gov bucket) ---
+gov_repo_url <- datom_init_gov(
+  gov_store = store$governance,
+  create_repo = TRUE,
+  repo_name  = "acme-gov",
+  github_pat = keyring::key_get("github_pat"),
+  github_org = "acme"
+)
+
+# Re-build the store with gov_repo_url so subsequent calls find the gov repo
+store <- datom_store(
+  governance = store$governance,
+  data = store$data,
+  github_pat = keyring::key_get("github_pat"),
+  gov_repo_url = gov_repo_url
+)
+
 # --- Lead developer: one-time project setup ---
 datom_init_repo(
   path = "my_project",
   project_name = "CLINICAL_DATA",
   store = store,
-  create_repo = TRUE  # auto-creates GitHub repo
+  create_repo = TRUE  # auto-creates GitHub data repo
 )
 
 # --- All other developers: clone existing repo ---
@@ -1024,7 +1141,9 @@ storage:
 
 **Secrets are never persisted.** The `type` field drives backend dispatch. The two-component structure (governance + data) allows routing files and data files to target different buckets/prefixes.
 
-### .datom/dispatch.json
+### projects/{project_name}/dispatch.json (governance repo)
+
+Lives in the **governance repository** at `projects/{project_name}/dispatch.json` and mirrored to gov storage at the same key. Routes `datom_read()` to the appropriate language-specific function per context.
 
 ```json
 {
@@ -1066,7 +1185,9 @@ storage:
 
 **Design rationale**: The "current" fields per table enable sync optimization. When `datom_sync_manifest()` runs, it compares local file SHAs against manifest. Only on mismatch does it fetch the full `version_history.json`. For repos with 100-300 tables, this avoids hundreds of S3 GETs on unchanged re-runs.
 
-### .datom/migration_history.json
+### projects/{project_name}/migration_history.json (governance repo)
+
+Lives in the **governance repository** at `projects/{project_name}/migration_history.json` and mirrored to gov storage. Records location changes for the project:
 
 ```json
 [

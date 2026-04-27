@@ -1,9 +1,12 @@
 # dev/e2e-test-local.R
 # ──────────────────────────────────────────────────────────────────────────────
-# End-to-end test for local filesystem backend
+# End-to-end test for local filesystem backend (Phase 15: two-repo gov split)
 #
-# Mirrors dev/e2e-test.R exactly — same data workflow, same assertions —
+# Mirrors dev/e2e-test.R exactly -- same data workflow, same assertions --
 # using the local backend instead of S3.
+#
+# Drives: datom_init_gov() -> datom_init_repo() -> datom_write() ->
+#         datom_sync_dispatch() -> datom_decommission()
 #
 # Usage:
 #   devtools::load_all()
@@ -16,14 +19,15 @@
 #   - No AWS credentials needed!
 #
 # All artefacts land under ~/projects/dev/datom-test/:
-#   datom-test/local-e2e-data/       ← parquet data store
-#   datom-test/local-e2e-data-gov/   ← governance store
-#   datom-test/datom-local-e2e/      ← git repo (cloned locally)
+#   datom-test/local-e2e-data/      <- parquet data store
+#   datom-test/local-e2e-data-gov/  <- governance store (filesystem)
+#   datom-test/datom-local-e2e/     <- data git clone
+#   datom-test/datom-local-e2e-gov/ <- gov git clone
 # ──────────────────────────────────────────────────────────────────────────────
 
 # --- Build local store -------------------------------------------------------
 
-base_dir      <- fs::path_expand("~/projects/dev/datom-test")
+base_dir          <- fs::path_expand("~/projects/dev/datom-test")
 local_storage_dir <- fs::path(base_dir, "local-e2e-data")
 
 store <- sandbox_store_local(
@@ -36,11 +40,12 @@ store <- sandbox_store_local(
 
 env <- sandbox_up(
   store,
-  project_name = "LOCAL_E2E",
-  repo_name    = "datom-local-e2e",
-  base_dir     = base_dir,
-  populate     = TRUE,
-  n_months     = 2L
+  project_name  = "LOCAL_E2E",
+  repo_name     = "datom-local-e2e",
+  gov_repo_name = "datom-local-e2e-gov",
+  base_dir      = base_dir,
+  populate      = TRUE,
+  n_months      = 2L
 )
 
 conn <- env$conn
@@ -54,7 +59,6 @@ head(dm)
 
 datom_history(conn, "dm")
 
-# Parents should be NULL for imported tables
 datom_get_parents(conn, "dm")
 
 # --- Write a derived table with parents --------------------------------------
@@ -86,6 +90,10 @@ datom_list(conn)
 datom_get_parents(conn, "summary_trt_by_sex")
 datom_history(conn, "summary_trt_by_sex")
 
+# --- Sync dispatch (gov-side commit + push) ---------------------------------
+
+datom_sync_dispatch(conn, .confirm = FALSE)
+
 # --- Validate and status -----------------------------------------------------
 
 datom_validate(conn)
@@ -105,12 +113,16 @@ datom_status(conn)
 #
 #   env <- sandbox_recover(
 #     store,
-#     project_name = "LOCAL_E2E",
-#     repo_name    = "datom-local-e2e",
-#     base_dir     = fs::path_expand("~/projects/dev/datom-test")
+#     project_name  = "LOCAL_E2E",
+#     repo_name     = "datom-local-e2e",
+#     gov_repo_name = "datom-local-e2e-gov",
+#     base_dir      = fs::path_expand("~/projects/dev/datom-test")
 #   )
 
 # --- Tear down ---------------------------------------------------------------
-# Uncomment to clean up (deletes GitHub repo, git dir, and all local storage):
+# Phase 15 scoped teardown:
+#   sandbox_down(env, scope = "project")  # decommission data project only
+#   sandbox_down(env, scope = "gov")      # destroy gov (refuses if projects)
+#   sandbox_down(env, scope = "all")      # project then gov (default)
 #
 # sandbox_down(env)
