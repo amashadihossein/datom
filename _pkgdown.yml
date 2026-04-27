@@ -71,7 +71,6 @@ reference:
     desc: "Validate repository structure and git-S3 consistency"
     contents:
       - datom_validate
-      - datom_repository_check
       - is_valid_datom_repo
 
   - title: "Example Data"
