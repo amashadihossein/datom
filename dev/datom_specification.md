@@ -382,7 +382,9 @@ datom_store(
   governance,
   data,
   github_pat = NULL,
-  remote_url = NULL,
+  data_repo_url = NULL,
+  gov_repo_url = NULL,
+  gov_local_path = NULL,
   github_org = NULL,
   validate = TRUE
 )
@@ -390,7 +392,9 @@ datom_store(
 
 Bundles governance + data store components with git config:
 - `github_pat` present → `role = "developer"`; absent → `role = "reader"`
-- `remote_url`: existing GitHub repo URL (mutually exclusive with `create_repo` in `datom_init_repo()`)
+- `data_repo_url`: existing GitHub data repo URL (mutually exclusive with `create_repo` in `datom_init_repo()`)
+- `gov_repo_url`: existing GitHub governance repo URL
+- `gov_local_path`: override for local governance clone directory (default: `basename(gov_repo_url)` sibling of data repo)
 - `github_org`: for org repo creation; NULL → personal repo
 - When `validate = TRUE` and `github_pat` provided, validates PAT via `GET /user`
 
@@ -420,7 +424,7 @@ datom_init_repo(
 ```
 
 One-time setup for data developers:
-- `store`: composite `datom_store()` object (replaces `bucket`/`prefix`/`region`/`remote_url`)
+- `store`: composite `datom_store()` object (replaces `bucket`/`prefix`/`region`/`data_repo_url`)
 - `create_repo = TRUE`: auto-creates GitHub repo via API from `repo_name` (normalized: lowercase, underscores → hyphens). Requires developer store.
 - `repo_name`: defaults to `project_name`; allows custom GitHub repo name
 - **Validation-first**: all store/repo validation happens before any filesystem or git side effects
@@ -468,7 +472,7 @@ datom_clone(path, store)
 ```
 
 Clones an existing datom repository and returns a ready-to-use connection:
-- `store`: composite `datom_store()` with `remote_url` and `github_pat`
+- `store`: composite `datom_store()` with `data_repo_url` and `github_pat`
 - Wraps `git2r::clone()` + `datom_get_conn(path)`
 - Validates the clone contains `.datom/project.yaml` (is a datom repo)
 - Rejects non-empty target directories
@@ -988,9 +992,13 @@ storage:
     prefix: project-alpha/
     region: us-east-1
 
-# Git remote
-git:
-  remote_url: https://github.com/org/clinical-data.git
+# Git remotes
+repos:
+  data:
+    remote_url: https://github.com/org/clinical-data.git
+  governance:
+    remote_url: https://github.com/org/acme-gov.git
+    local_path: /path/to/acme-gov
 
 # Sync configuration
 sync:

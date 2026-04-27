@@ -62,7 +62,7 @@
 #' @param secret_key AWS secret access key.
 #' @param github_pat GitHub PAT.
 #' @param github_org GitHub org for repo creation (NULL = personal).
-#' @param remote_url Pre-existing remote URL (NULL = create_repo in sandbox_up).
+#' @param data_repo_url Pre-existing data repo URL (NULL = create_repo in sandbox_up).
 #'
 #' @return A `datom_store` object (developer role).
 sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
@@ -73,7 +73,7 @@ sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
                           secret_key = Sys.getenv("AWS_SECRET_KEY"),
                           github_pat = Sys.getenv("GITHUB_PAT"),
                           github_org = .sandbox_defaults()$github_org,
-                          remote_url = NULL) {
+                          data_repo_url = NULL) {
   data_comp <- datom::datom_store_s3(
     bucket     = bucket,
     prefix     = prefix,
@@ -97,7 +97,7 @@ sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
     data       = data_comp,
     github_pat = github_pat,
     github_org = github_org,
-    remote_url = remote_url,
+    data_repo_url = data_repo_url,
     validate   = FALSE
   )
 }
@@ -112,7 +112,7 @@ sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
 #' @param prefix Storage prefix (default NULL).
 #' @param github_pat GitHub PAT (still required for governance/git).
 #' @param github_org GitHub org for repo creation (NULL = personal).
-#' @param remote_url Pre-existing remote URL (NULL = create_repo in sandbox_up).
+#' @param data_repo_url Pre-existing data repo URL (NULL = create_repo in sandbox_up).
 #'
 #' @return A `datom_store` object (developer role, local backend).
 sandbox_store_local <- function(path,
@@ -120,7 +120,7 @@ sandbox_store_local <- function(path,
                                 prefix = NULL,
                                 github_pat = Sys.getenv("GITHUB_PAT"),
                                 github_org = NULL,
-                                remote_url = NULL) {
+                                data_repo_url = NULL) {
   fs::dir_create(path)
   fs::dir_create(gov_path)
 
@@ -141,7 +141,7 @@ sandbox_store_local <- function(path,
     data       = data_comp,
     github_pat = github_pat,
     github_org = github_org,
-    remote_url = remote_url,
+    data_repo_url = data_repo_url,
     validate   = FALSE
   )
 }
@@ -301,11 +301,11 @@ sandbox_up <- function(store, ...) {
 
   cli::cli_h2("Sandbox Up: {.val {cfg$project_name}}")
 
-  # Determine whether to create repo or use existing remote_url
-  create_repo <- is.null(store$remote_url)
+  # Determine whether to create repo or use existing data_repo_url
+  create_repo <- is.null(store$data_repo_url)
 
   if (!create_repo) {
-    cli::cli_alert_info("Using existing remote: {.url {store$remote_url}}")
+    cli::cli_alert_info("Using existing remote: {.url {store$data_repo_url}}")
   } else {
     cli::cli_alert_info("Will create GitHub repo {.val {cfg$repo_name}} via API...")
   }

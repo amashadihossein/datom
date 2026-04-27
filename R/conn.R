@@ -193,7 +193,7 @@ print.datom_conn <- function(x, ...) {
 #' @param store A `datom_store` object (from `datom_store()`). Must have role
 #'   `"developer"` (i.e., `github_pat` provided).
 #' @param create_repo If `TRUE`, create a GitHub repo via API. Mutually
-#'   exclusive with providing `remote_url` on the store.
+#'   exclusive with providing `data_repo_url` on the store.
 #' @param repo_name GitHub repo name when `create_repo = TRUE`. Defaults to
 #'   `project_name`. Useful when the project name (e.g., `"STUDY_001"`) isn't
 #'   a good GitHub repo name.
@@ -241,13 +241,13 @@ datom_init_repo <- function(path = ".",
     cli::cli_abort("{.arg max_file_size_gb} must be a positive number.")
   }
 
-  # --- Resolve remote_url -----------------------------------------------------
-  remote_url <- store$remote_url
+  # --- Resolve data_repo_url -------------------------------------------------
+  remote_url <- store$data_repo_url
 
   if (isTRUE(create_repo) && !is.null(remote_url)) {
     cli::cli_abort(c(
-      "{.arg create_repo} and {.arg remote_url} are mutually exclusive.",
-      "i" = "Either set {.code create_repo = TRUE} or provide {.arg remote_url} on the store, not both."
+      "{.arg create_repo} and {.arg data_repo_url} are mutually exclusive.",
+      "i" = "Either set {.code create_repo = TRUE} or provide {.arg data_repo_url} on the store, not both."
     ))
   }
 
@@ -262,7 +262,7 @@ datom_init_repo <- function(path = ".",
   if (is.null(remote_url)) {
     cli::cli_abort(c(
       "No remote URL available.",
-      "i" = "Either provide {.arg remote_url} on the store or set {.code create_repo = TRUE}."
+      "i" = "Either provide {.arg data_repo_url} on the store or set {.code create_repo = TRUE}."
     ))
   }
 
@@ -372,8 +372,12 @@ datom_init_repo <- function(path = ".",
       data = data_yaml,
       max_file_size_gb = max_file_size_gb
     ),
-    git = list(
-      remote_url = remote_url
+    repos = list(
+      data = list(remote_url = remote_url),
+      governance = list(
+        remote_url = store$gov_repo_url,
+        local_path = store$gov_local_path
+      )
     ),
     sync = list(
       continue_on_error = TRUE,
@@ -528,11 +532,11 @@ datom_clone <- function(path, store, ...) {
     ))
   }
 
-  remote_url <- store$remote_url
+  remote_url <- store$data_repo_url
   if (is.null(remote_url) || !nzchar(remote_url)) {
     cli::cli_abort(c(
-      "{.arg store} must have a {.field remote_url} for cloning.",
-      "i" = "Provide {.arg remote_url} when creating the store."
+      "{.arg store} must have a {.field data_repo_url} for cloning.",
+      "i" = "Provide {.arg data_repo_url} when creating the store."
     ))
   }
 

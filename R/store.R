@@ -18,8 +18,14 @@
 #'   (manifest, tables, metadata).
 #' @param github_pat GitHub personal access token. If provided, role is
 #'   `"developer"`. If NULL, role is `"reader"`.
-#' @param remote_url GitHub remote URL. Required when `github_pat` is provided
-#'   and `create_repo = FALSE` will be used in `datom_init_repo()`.
+#' @param data_repo_url GitHub remote URL for the data repository. Required when
+#'   `github_pat` is provided and `create_repo = FALSE` in `datom_init_repo()`.
+#' @param gov_repo_url GitHub remote URL for the shared governance repository.
+#'   The governance repo is created once per org via `datom_init_gov()` and
+#'   referenced here by every project that uses it.
+#' @param gov_local_path Local directory path for the governance clone. If NULL
+#'   (default), the clone is placed as a sibling of the data repo, named after
+#'   the basename of `gov_repo_url` (e.g., `"acme-gov"`).
 #' @param github_org GitHub organization for repo creation. NULL for personal repos.
 #' @param validate If `TRUE` (default), validate GitHub PAT via API.
 #'   Set to `FALSE` for tests or offline use.
@@ -29,7 +35,9 @@
 datom_store <- function(governance,
                         data,
                         github_pat = NULL,
-                        remote_url = NULL,
+                        data_repo_url = NULL,
+                        gov_repo_url = NULL,
+                        gov_local_path = NULL,
                         github_org = NULL,
                         validate = TRUE) {
 
@@ -54,11 +62,27 @@ datom_store <- function(governance,
     }
   }
 
-  # --- Validate remote_url ---------------------------------------------------
-  if (!is.null(remote_url)) {
-    if (!is.character(remote_url) || length(remote_url) != 1L ||
-        is.na(remote_url) || !nzchar(remote_url)) {
-      cli::cli_abort("{.arg remote_url} must be a single non-empty string or NULL.")
+  # --- Validate data_repo_url ------------------------------------------------
+  if (!is.null(data_repo_url)) {
+    if (!is.character(data_repo_url) || length(data_repo_url) != 1L ||
+        is.na(data_repo_url) || !nzchar(data_repo_url)) {
+      cli::cli_abort("{.arg data_repo_url} must be a single non-empty string or NULL.")
+    }
+  }
+
+  # --- Validate gov_repo_url --------------------------------------------------
+  if (!is.null(gov_repo_url)) {
+    if (!is.character(gov_repo_url) || length(gov_repo_url) != 1L ||
+        is.na(gov_repo_url) || !nzchar(gov_repo_url)) {
+      cli::cli_abort("{.arg gov_repo_url} must be a single non-empty string or NULL.")
+    }
+  }
+
+  # --- Validate gov_local_path ------------------------------------------------
+  if (!is.null(gov_local_path)) {
+    if (!is.character(gov_local_path) || length(gov_local_path) != 1L ||
+        is.na(gov_local_path) || !nzchar(gov_local_path)) {
+      cli::cli_abort("{.arg gov_local_path} must be a single non-empty string or NULL.")
     }
   }
 
@@ -86,7 +110,9 @@ datom_store <- function(governance,
       data = data,
       role = role,
       github_pat = github_pat,
-      remote_url = remote_url,
+      data_repo_url = data_repo_url,
+      gov_repo_url = gov_repo_url,
+      gov_local_path = gov_local_path,
       github_org = github_org,
       validated = isTRUE(validate),
       identity = list(
@@ -123,8 +149,16 @@ print.datom_store <- function(x, ...) {
   cli::cli_ul()
   cli::cli_li("Role: {.val {x$role}}")
 
-  if (!is.null(x$remote_url)) {
-    cli::cli_li("Remote: {.url {x$remote_url}}")
+  if (!is.null(x$data_repo_url)) {
+    cli::cli_li("Data repo: {.url {x$data_repo_url}}")
+  }
+
+  if (!is.null(x$gov_repo_url)) {
+    cli::cli_li("Gov repo: {.url {x$gov_repo_url}}")
+  }
+
+  if (!is.null(x$gov_local_path)) {
+    cli::cli_li("Gov local path: {.path {x$gov_local_path}}")
   }
 
   if (!is.null(x$github_org)) {
@@ -232,6 +266,31 @@ print.datom_store <- function(x, ...) {
       "i" = "Underlying error: {conditionMessage(e)}"
     ), parent = e)
   })
+}
+
+
+#' Resolve the Local Path for the Governance Clone
+#'
+#' Returns the explicit `override` if supplied. Otherwise, places the gov clone
+#' as a sibling of `data_local_path` named after the basename of `gov_repo_url`
+#' (stripping a trailing `.git` suffix). This ensures the gov clone directory
+#' name reflects the gov repo's own identity, not any specific data project.
+#'
+#' @param data_local_path Absolute path to the local data repo directory.
+#' @param gov_repo_url GitHub URL of the governance repo
+#'   (e.g., `"https://github.com/org/acme-gov.git"`).
+#' @param override Optional explicit path. If non-NULL, returned as-is.
+#' @return Absolute path string for the gov clone.
+#' @keywords internal
+.datom_resolve_gov_local_path <- function(data_local_path, gov_repo_url,
+                                          override = NULL) {
+  if (!is.null(override)) return(fs::path_abs(override))
+
+  gov_name <- basename(gov_repo_url)
+  gov_name <- sub("\\.git$", "", gov_name)
+
+  sibling_dir <- dirname(fs::path_abs(data_local_path))
+  fs::path(sibling_dir, gov_name)
 }
 
 

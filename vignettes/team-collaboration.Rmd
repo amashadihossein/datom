@@ -129,7 +129,7 @@ store <- datom_store(
     secret_key = keyring::key_get("AWS_SECRET_KEY")
   ),
   github_pat = keyring::key_get("GITHUB_PAT"),
-  remote_url = "https://github.com/org/study-001-data.git"
+  data_repo_url = "https://github.com/org/study-001-data.git"
 )
 
 conn <- datom_clone(path = "study_001_data", store = store)

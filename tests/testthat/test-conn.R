@@ -332,8 +332,9 @@ create_test_datom_repo <- function(project_name = "testproj",
       ),
       max_file_size_gb = 1000
     ),
-    git = list(
-      remote_url = "https://github.com/test/repo.git"
+    repos = list(
+      data = list(remote_url = "https://github.com/test/repo.git"),
+      governance = list(remote_url = NULL, local_path = NULL)
     )
   )
 
@@ -348,7 +349,7 @@ test_that("developer path reads project.yaml and creates connection", {
   comp <- datom_store_s3(bucket = "my-bucket", access_key = "fake_key",
                          secret_key = "fake_secret", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
@@ -384,7 +385,7 @@ test_that("developer path uses prefix from store", {
   comp <- datom_store_s3(bucket = "test-bucket", prefix = "alpha/beta/",
                          access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
@@ -400,7 +401,7 @@ test_that("developer path uses region from store", {
                          region = "eu-west-1", access_key = "k",
                          secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
@@ -436,7 +437,7 @@ test_that("developer path cross-checks root mismatch", {
   comp <- datom_store_s3(bucket = "different-bucket", access_key = "k",
                          secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   expect_error(datom_get_conn(path = dir, store = store), "mismatch")
@@ -509,7 +510,7 @@ setup_init_env <- function(env = parent.frame()) {
   store <- datom_store(
     governance = comp, data = comp,
     github_pat = "ghp_fake",
-    remote_url = bare_dir,
+    data_repo_url = bare_dir,
     validate = FALSE
   )
 
@@ -529,7 +530,7 @@ setup_init_env <- function(env = parent.frame()) {
 test_that("datom_init_repo aborts on invalid project_name", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/x/y.git", validate = FALSE)
+                       data_repo_url = "https://github.com/x/y.git", validate = FALSE)
   expect_error(datom_init_repo(project_name = "", store = store), "name")
 })
 
@@ -551,10 +552,10 @@ test_that("datom_init_repo rejects reader store", {
   )
 })
 
-test_that("datom_init_repo rejects create_repo with remote_url", {
+test_that("datom_init_repo rejects create_repo with data_repo_url", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/x/y.git", validate = FALSE)
+                       data_repo_url = "https://github.com/x/y.git", validate = FALSE)
   expect_error(
     datom_init_repo(path = withr::local_tempdir(), project_name = "p",
                     store = store, create_repo = TRUE),
@@ -562,7 +563,7 @@ test_that("datom_init_repo rejects create_repo with remote_url", {
   )
 })
 
-test_that("datom_init_repo errors when no remote_url and create_repo is FALSE", {
+test_that("datom_init_repo errors when no data_repo_url and create_repo is FALSE", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
                        validate = FALSE)
@@ -627,7 +628,7 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   dat <- datom_store_s3(bucket = "my-bucket", prefix = "data/", region = "eu-west-1",
                         access_key = "AKIAEXAMPLE", secret_key = "secretkey", validate = FALSE)
   store <- datom_store(governance = gov, data = dat, github_pat = "ghp_fake",
-                       remote_url = env$bare_dir, validate = FALSE)
+                       data_repo_url = env$bare_dir, validate = FALSE)
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = store, max_file_size_gb = 500)
@@ -646,7 +647,7 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   expect_equal(cfg$storage$data$prefix, "data/")
   expect_equal(cfg$storage$data$region, "eu-west-1")
   expect_equal(cfg$storage$max_file_size_gb, 500)
-  expect_equal(cfg$git$remote_url, env$bare_dir)
+  expect_equal(cfg$repos$data$remote_url, env$bare_dir)
   # No top-level storage$type, storage$root, or storage$credentials
   expect_null(cfg$storage$type)
   expect_null(cfg$storage$root)
@@ -754,7 +755,7 @@ test_that("datom_init_repo handles prefix = NULL in store", {
                          access_key = "AKIAEXAMPLE", secret_key = "secretkey",
                          validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
-                       remote_url = env$bare_dir, validate = FALSE)
+                       data_repo_url = env$bare_dir, validate = FALSE)
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = store)
@@ -771,7 +772,7 @@ test_that("datom_init_repo stores project_name in config for hyphenated names", 
 
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = bare_dir, validate = FALSE)
+                       data_repo_url = bare_dir, validate = FALSE)
 
   local_mocked_bindings(
     .datom_s3_client = function(...) list(put_object = function(...) list()),
@@ -783,7 +784,7 @@ test_that("datom_init_repo stores project_name in config for hyphenated names", 
 
   cfg <- yaml::read_yaml(fs::path(work_dir, ".datom", "project.yaml"))
   expect_equal(cfg$project_name, "my-data")
-  expect_equal(cfg$git$remote_url, bare_dir)
+  expect_equal(cfg$repos$data$remote_url, bare_dir)
 })
 
 test_that("datom_init_repo passes is_valid_datom_repo checks", {
@@ -848,7 +849,7 @@ test_that("datom_init_repo README.md contains project name", {
                          access_key = "AKIAEXAMPLE", secret_key = "secretkey",
                          validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
-                       remote_url = env$bare_dir, validate = FALSE)
+                       data_repo_url = env$bare_dir, validate = FALSE)
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = store)
@@ -1271,7 +1272,7 @@ test_that("datom_get_conn forwards endpoint to developer path", {
                          access_key = "fake_key", secret_key = "fake_secret",
                          validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   captured_endpoint <- NULL
@@ -1356,23 +1357,23 @@ test_that("datom_clone rejects reader store", {
   expect_error(datom_clone(path = "x", store = store), "developer")
 })
 
-test_that("datom_clone rejects store without remote_url", {
+test_that("datom_clone rejects store without data_repo_url", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x", validate = FALSE)
-  expect_error(datom_clone(path = "x", store = store), "remote_url")
+  expect_error(datom_clone(path = "x", store = store), "data_repo_url")
 })
 
 test_that("datom_clone rejects empty path", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://x.git", validate = FALSE)
+                       data_repo_url = "https://x.git", validate = FALSE)
   expect_error(datom_clone(path = "", store = store), "path")
 })
 
 test_that("datom_clone rejects non-empty target directory", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://x.git", validate = FALSE)
+                       data_repo_url = "https://x.git", validate = FALSE)
   withr::with_tempdir({
     fs::dir_create("existing")
     writeLines("file", fs::path("existing", "README.md"))
@@ -1400,7 +1401,7 @@ test_that("datom_clone aborts if cloned repo is not a datom repo", {
 
     comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
     store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                         remote_url = bare_dir, validate = FALSE)
+                         data_repo_url = bare_dir, validate = FALSE)
 
     expect_error(
       datom_clone(path = "clone_target", store = store),
@@ -1447,7 +1448,7 @@ test_that("datom_clone clones and returns a datom_conn", {
     comp <- datom_store_s3(bucket = "test-bucket", access_key = "fakekey",
                            secret_key = "fakesecret", validate = FALSE)
     store <- datom_store(governance = comp, data = comp, github_pat = "fake-pat",
-                         remote_url = bare_dir, validate = FALSE)
+                         data_repo_url = bare_dir, validate = FALSE)
 
     local_mocked_bindings(
       .datom_s3_client = function(...) list(fake = TRUE)
@@ -1466,7 +1467,7 @@ test_that("datom_clone clones and returns a datom_conn", {
 test_that("datom_clone aborts on clone failure", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://example.com/no-such-repo.git",
+                       data_repo_url = "https://example.com/no-such-repo.git",
                        validate = FALSE)
   withr::with_tempdir({
     expect_error(
@@ -1590,7 +1591,7 @@ setup_local_init_env <- function(env = parent.frame()) {
   store <- datom_store(
     governance = comp, data = comp,
     github_pat = "ghp_fake",
-    remote_url = bare_dir,
+    data_repo_url = bare_dir,
     validate = FALSE
   )
 
