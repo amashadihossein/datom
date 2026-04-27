@@ -15,7 +15,7 @@
 | 2 | Gov clone read-side helpers + `gov_local_path` in conn | ✅ done | `182ffa9` |
 | 3 | GOV_SEAM write helpers | ✅ done | `34a32c3` |
 | 4 | `datom_init_gov()` new exported function | ✅ done | `d3518c2` |
-| 5 | Refactor `datom_init_repo()` to gov-first ordering | ✅ done | (pending) |
+| 5 | Refactor `datom_init_repo()` to gov-first ordering | ✅ done | `832aa12` |
 | 6 | `datom_clone()` + `datom_pull()` two-repo semantics | ⏳ next | — |
 | 7–10 | Remaining chunks | not started | — |
 
