@@ -70,13 +70,15 @@ Phase 15 standardizes on **GitHub remote required for both repos, both backends.
 
 ```
 ~/projects/
-  clinical-data/        (data repo, sibling of gov)
-  clinical-data-gov/    (gov clone, default sibling location)
+  clinical-data/    (data repo)
+  acme-gov/         (gov clone — named after the gov repo, not the data repo)
 ```
 
-Default: gov clone is a sibling directory named `{data_repo_basename}-gov`. Override via `datom_store(gov_local_path = "...")`.
+The gov repo has its own identity: it predates any single data project and serves the whole org. Its local clone is named after **itself** (the basename of `gov_repo_url`), not after any data repo. This name is stable across all projects pointing at the same gov repo, and matches what `git clone` would produce naturally.
 
-One gov clone can serve many data repos — `datom_clone()` and `datom_init_repo()` reuse an existing gov clone if it matches `gov_repo_url`.
+Default gov local path: sibling of the data repo, directory name = `basename(gov_repo_url)` (strips `.git` suffix; e.g., `https://github.com/my-org/acme-gov.git` → `acme-gov/`). Override via `datom_store(gov_local_path = "...")`.
+
+One gov clone can serve many data repos — `datom_clone()` and `datom_init_repo()` reuse an existing gov clone if it matches `gov_repo_url`. If path exists but remote URL differs → hard error.
 
 ### `project.yaml` schema (revised)
 
@@ -99,7 +101,7 @@ repos:
   data:
     remote_url: https://github.com/my-org/clinical-data.git
   governance:
-    remote_url: https://github.com/my-org/clinical-data-gov.git
+    remote_url: https://github.com/my-org/acme-gov.git
     local_path: null              # null = sibling default; string = override
 ```
 
@@ -181,7 +183,7 @@ These are committed directly to `main` (one commit each), then phase 15 branches
 
 - Update `datom_store()` signature: rename `remote_url` → `data_repo_url`; add `gov_repo_url`, `gov_local_path`.
 - Update `project.yaml` schema (`repos.data.remote_url`, `repos.governance.remote_url`, `repos.governance.local_path`).
-- Helper: `.datom_resolve_gov_local_path(data_local_path, override)` — returns sibling default or override.
+- Helper: `.datom_resolve_gov_local_path(data_local_path, gov_repo_url, override)` — returns `override` if supplied, otherwise sibling of `data_local_path` named `basename(gov_repo_url)` (strips `.git` suffix).
 - Update `print.datom_store` and validation to surface both repo URLs.
 - Update template `inst/templates/project.yaml` if any.
 - Tests: store construction with both URLs, gov_local_path resolution, validation errors on missing URLs.
@@ -191,7 +193,8 @@ These are committed directly to `main` (one commit each), then phase 15 branches
 ### Chunk 2 — `# GOV_SEAM:` helpers (read-side gov clone abstraction)
 
 - New file: `R/utils-gov.R`.
-- Helpers: `.datom_gov_clone_exists(gov_local_path)`, `.datom_gov_clone_open(gov_local_path)`, `.datom_gov_clone_init(gov_repo_url, gov_local_path)` — clone if missing, open if present, validate remote matches.
+- Helpers: `.datom_gov_clone_exists(gov_local_path)`, `.datom_gov_clone_open(gov_local_path)`, `.datom_gov_clone_init(gov_repo_url, gov_local_path)` — clone if missing, open if present, validate remote URL matches; errors if path exists with a different remote.
+- `gov_local_path` is always derived from `gov_repo_url` (or explicit override) — never from the data repo name.
 - Add `gov_local_path` to `datom_conn` (extend `new_datom_conn()`).
 - Path helpers: `.datom_gov_project_path(gov_local_path, project_name)` returns `{gov_local_path}/projects/{name}/`.
 - Tests: clone-init idempotence, mismatch detection (different remote URL), missing remote.
@@ -306,6 +309,7 @@ These are committed directly to `main` (one commit each), then phase 15 branches
 ## Decisions Locked In
 
 - GitHub remote required for both repos, both backends. No local-only git mode.
+- Gov clone local directory is named after the **gov repo** (basename of `gov_repo_url`), never after the data repo. One gov clone serves many data repos; its name must be stable across all of them.
 - `datom_decommission(confirm = name)` literal match; no interactive prompts.
 - `dispatch.json` / `ref.json` / `migration_history.json` live at `projects/{name}/` (project-scoped paths in shared gov).
 - `manifest.json` stays at data repo root (data-versioning state, not gov).
