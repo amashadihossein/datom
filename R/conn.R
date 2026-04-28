@@ -277,16 +277,7 @@ datom_init_repo <- function(path = ".",
   }
 
   # --- Resolve gov_local_path ------------------------------------------------
-  gov_local_path <- if (!is.null(store$gov_local_path)) {
-    fs::path_abs(store$gov_local_path)
-  } else if (!is.null(store$gov_repo_url)) {
-    .datom_resolve_gov_local_path(
-      data_local_path = fs::path_abs(path),
-      gov_repo_url    = store$gov_repo_url
-    )
-  } else {
-    NULL
-  }
+  gov_local_path <- .datom_resolve_or_default_gov_path(store, fs::path_abs(path))
 
   # --- Step 0: ensure gov clone is available ---------------------------------
   # Capture pre-existence so on.exit cleanup can roll back the clone iff we
@@ -330,8 +321,13 @@ datom_init_repo <- function(path = ".",
         region = data_region
       )
       check_conn <- new_datom_conn(
-        project_name, data_root, data_prefix, data_region,
-        s3_check_client, NULL, "reader"
+        project_name = project_name,
+        root         = data_root,
+        prefix       = data_prefix,
+        region       = data_region,
+        client       = s3_check_client,
+        path         = NULL,
+        role         = "reader"
       )
       .datom_check_namespace_free(check_conn)
     }, error = function(e) {
@@ -685,14 +681,17 @@ datom_init_gov <- function(gov_store,
   if (isTRUE(create_repo)) {
     fs::dir_create(gov_local_path)
     repo <- git2r::init(gov_local_path)
-    git_cfg <- git2r::config()$global
-    author_name  <- git_cfg$user.name  %||% "datom"
-    author_email <- git_cfg$user.email %||% "datom@noreply"
-    git2r::config(repo, user.name = author_name, user.email = author_email)
     git2r::remote_add(repo, name = "origin", url = gov_repo_url)
   } else {
     .datom_gov_clone_init(gov_repo_url, gov_local_path)
+    repo <- git2r::repository(gov_local_path)
   }
+
+  # Configure git user (required on freshly init'd repos that lack local cfg)
+  git_cfg <- git2r::config()$global
+  author_name  <- git_cfg$user.name  %||% "datom"
+  author_email <- git_cfg$user.email %||% "datom@noreply"
+  git2r::config(repo, user.name = author_name, user.email = author_email)
 
   # --- Seed gov repo skeleton -------------------------------------------------
   projects_dir <- fs::path(gov_local_path, "projects")
@@ -710,12 +709,6 @@ datom_init_gov <- function(gov_store,
   }
 
   # --- Commit and push --------------------------------------------------------
-  repo <- git2r::repository(gov_local_path)
-  git_cfg <- git2r::config()$global
-  author_name  <- git_cfg$user.name  %||% "datom"
-  author_email <- git_cfg$user.email %||% "datom@noreply"
-  git2r::config(repo, user.name = author_name, user.email = author_email)
-
   git2r::add(repo, c("README.md", fs::path("projects", ".gitkeep")))
   git2r::commit(
     repo,
@@ -818,14 +811,7 @@ datom_clone <- function(path, store, ...) {
 
   # --- Clone or verify gov repo when gov_repo_url is set ---------------------
   if (!is.null(store$gov_repo_url) && nzchar(store$gov_repo_url)) {
-    gov_local_path <- if (!is.null(store$gov_local_path) && nzchar(store$gov_local_path)) {
-      fs::path_abs(store$gov_local_path)
-    } else {
-      .datom_resolve_gov_local_path(
-        data_local_path = path,
-        gov_repo_url    = store$gov_repo_url
-      )
-    }
+    gov_local_path <- .datom_resolve_or_default_gov_path(store, path)
 
     # Refuse if the existing gov clone has uncommitted changes
     if (.datom_gov_clone_exists(as.character(gov_local_path))) {
@@ -1027,16 +1013,7 @@ datom_get_conn <- function(path = NULL,
   # gov_local_path: use explicit override from store if set, otherwise derive
   # sibling default from the gov_repo_url (if available). Computed before ref
   # resolution so the developer fast path can read from the local gov clone.
-  gov_local_path <- if (!is.null(store$gov_local_path)) {
-    store$gov_local_path
-  } else if (!is.null(store$gov_repo_url)) {
-    as.character(.datom_resolve_gov_local_path(
-      data_local_path = as.character(path),
-      gov_repo_url = store$gov_repo_url
-    ))
-  } else {
-    NULL
-  }
+  gov_local_path <- .datom_resolve_or_default_gov_path(store, as.character(path))
 
   # Resolve data location via ref.json (if governance store present)
   ref_location <- .datom_resolve_data_location(

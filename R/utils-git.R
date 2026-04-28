@@ -136,9 +136,11 @@
 #' @param path Repository path.
 #' @param files Character vector of files to add (relative to repo root).
 #' @param message Commit message.
+#' @param staged_deletions If `TRUE`, skip the file-existence check and use
+#'   `git2r::add(force = TRUE)` so deletions can be staged. Default `FALSE`.
 #' @return Commit SHA as a string.
 #' @keywords internal
-.datom_git_commit <- function(path, files, message) {
+.datom_git_commit <- function(path, files, message, staged_deletions = FALSE) {
   .datom_check_git2r()
 
   if (length(files) == 0L) {
@@ -152,19 +154,25 @@
     }
   )
 
-  # Verify all files exist relative to repo root
-  full_paths <- fs::path(path, files)
-  missing <- files[!fs::file_exists(full_paths)]
-  if (length(missing) > 0L) {
-    cli::cli_abort(c(
-      "Cannot stage \u2014 files do not exist:",
-      purrr::set_names(missing, rep("x", length(missing)))
-    ))
+  # Verify all files exist relative to repo root (skip when staging deletions)
+  if (!isTRUE(staged_deletions)) {
+    full_paths <- fs::path(path, files)
+    missing <- files[!fs::file_exists(full_paths)]
+    if (length(missing) > 0L) {
+      cli::cli_abort(c(
+        "Cannot stage \u2014 files do not exist:",
+        purrr::set_names(missing, rep("x", length(missing)))
+      ))
+    }
   }
 
   # Stage
   tryCatch(
-    git2r::add(repo, files),
+    if (isTRUE(staged_deletions)) {
+      git2r::add(repo, files, force = TRUE)
+    } else {
+      git2r::add(repo, files)
+    },
     error = function(e) {
       cli::cli_abort("Failed to stage files: {e$message}")
     }

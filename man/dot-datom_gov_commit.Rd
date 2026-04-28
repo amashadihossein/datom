@@ -4,7 +4,7 @@
 \alias{.datom_gov_commit}
 \title{Stage Files and Commit on the Gov Clone}
 \usage{
-.datom_gov_commit(conn, paths, msg)
+.datom_gov_commit(conn, paths, msg, staged_deletions = FALSE)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} with \code{gov_local_path} set.}
@@ -13,6 +13,9 @@
 root (e.g., \code{"projects/my-study/dispatch.json"}).}
 
 \item{msg}{Commit message string.}
+
+\item{staged_deletions}{If \code{TRUE}, paths represent deleted files; skip the
+existence check and stage with \code{force = TRUE}. Default \code{FALSE}.}
 }
 \value{
 Commit SHA as a string.

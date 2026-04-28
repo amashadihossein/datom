@@ -175,16 +175,18 @@
 #' @param paths Character vector of file paths **relative** to the gov clone
 #'   root (e.g., `"projects/my-study/dispatch.json"`).
 #' @param msg Commit message string.
+#' @param staged_deletions If `TRUE`, paths represent deleted files; skip the
+#'   existence check and stage with `force = TRUE`. Default `FALSE`.
 #' @return Commit SHA as a string.
 #' @keywords internal
-.datom_gov_commit <- function(conn, paths, msg) {
+.datom_gov_commit <- function(conn, paths, msg, staged_deletions = FALSE) {
   # GOV_SEAM: companion package will call this to write gov state.
   gov_path <- conn$gov_local_path
   if (is.null(gov_path)) {
     cli::cli_abort("Cannot commit to gov clone: {.arg conn} has no {.field gov_local_path}.")
   }
   .datom_git_pull(gov_path)
-  .datom_git_commit(gov_path, paths, msg)
+  .datom_git_commit(gov_path, paths, msg, staged_deletions = staged_deletions)
 }
 
 
@@ -391,25 +393,14 @@
   )
   rel_paths <- as.character(fs::path_rel(tracked_files, gov_path))
 
-  # Delete the project directory
+  # Delete the project directory, then commit the staged deletions via the
+  # standard gov-commit helper.
   fs::dir_delete(project_dir)
-
-  # Stage the deletions: git2r::add handles missing (deleted) files correctly
-  .datom_check_git2r()
-  repo <- git2r::repository(gov_path)
-  git2r::add(repo, rel_paths)
-
-  # Pull first (same discipline as .datom_gov_commit), then commit directly
-  # (cannot use .datom_gov_commit here -- files are deleted, existence check
-  # inside .datom_git_commit would abort)
-  .datom_git_pull(gov_path)
-
-  tryCatch(
-    git2r::commit(repo, message = glue::glue("Unregister project {project_name}"),
-                  author = git2r::default_signature(repo)),
-    error = function(e) {
-      cli::cli_abort("Failed to commit unregister: {conditionMessage(e)}")
-    }
+  .datom_gov_commit(
+    conn,
+    paths = rel_paths,
+    msg = glue::glue("Unregister project {project_name}"),
+    staged_deletions = TRUE
   )
   .datom_gov_push(conn)
 

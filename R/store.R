@@ -294,6 +294,34 @@ print.datom_store <- function(x, ...) {
 }
 
 
+#' Resolve Gov Clone Path with Store Defaults
+#'
+#' Convenience wrapper that derives a gov clone path from a `datom_store`:
+#' returns the store's explicit `gov_local_path` if set; otherwise derives a
+#' sibling-of-data default from `gov_repo_url`; otherwise returns `NULL`.
+#'
+#' Centralises the three-arm pattern previously duplicated in
+#' `datom_init_repo()`, `datom_clone()`, and `.datom_get_conn_developer()`.
+#'
+#' @param store A `datom_store` object.
+#' @param data_local_path Absolute path to the local data repo (used to
+#'   compute the sibling default when no override is set).
+#' @return Character path string or `NULL`.
+#' @keywords internal
+.datom_resolve_or_default_gov_path <- function(store, data_local_path) {
+  if (!is.null(store$gov_local_path) && nzchar(store$gov_local_path)) {
+    return(as.character(fs::path_abs(store$gov_local_path)))
+  }
+  if (!is.null(store$gov_repo_url) && nzchar(store$gov_repo_url)) {
+    return(as.character(.datom_resolve_gov_local_path(
+      data_local_path = as.character(data_local_path),
+      gov_repo_url    = store$gov_repo_url
+    )))
+  }
+  NULL
+}
+
+
 # --- datom_store_s3: S3 component constructor ---------------------------------
 
 # --- GitHub repo creation -----------------------------------------------------
