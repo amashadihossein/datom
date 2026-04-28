@@ -412,7 +412,7 @@
       "Data location changed since connection was created.",
       "x" = "ref.json: root={.val {ref_location$root}}, prefix={.val {ref_location$prefix}}",
       "x" = "conn: root={.val {conn$root}}, prefix={.val {conn$prefix}}",
-      "i" = "Rebuild your connection with {.fn datom_get_conn}."
+      "i" = "Run {.fn datom_pull} to refresh your gov clone, then rebuild your connection with {.fn datom_get_conn}."
     ))
   }
 

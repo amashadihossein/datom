@@ -76,16 +76,14 @@ datom_pull <- function(conn) {
   }
 
   # --- Pull gov repo when gov_local_path is set ------------------------------
+  # Abort on failure (symmetric with data pull): a partial pull leaves the
+  # gov clone in an inconsistent state relative to upstream. Users should
+  # resolve the gov pull failure before continuing.
   gov_result <- NULL
   if (!is.null(conn$gov_local_path) && nzchar(conn$gov_local_path)) {
-    gov_result <- tryCatch({
-      .datom_gov_pull(conn)
-      cli::cli_alert_success("Gov repo up to date.")
-      list(pulled = TRUE)
-    }, error = function(e) {
-      cli::cli_alert_warning("Gov pull failed: {conditionMessage(e)}")
-      list(pulled = FALSE, error = conditionMessage(e))
-    })
+    .datom_gov_pull(conn)
+    cli::cli_alert_success("Gov repo up to date.")
+    gov_result <- list(pulled = TRUE)
   }
 
   invisible(list(
@@ -145,10 +143,10 @@ datom_pull_gov <- function(conn) {
 #' (metadata.json, version_history.json). Requires interactive confirmation
 #' unless `.confirm = FALSE`.
 #'
-#' When `conn$gov_local_path` is set, dispatch.json and ref.json are re-written
-#' to the governance repo via git commit + push (and then mirrored to gov
-#' storage). Without a gov clone, these are uploaded to gov storage directly
-#' from any local `.datom/` copies (backward-compat fallback).
+#' Governance files (dispatch.json, ref.json, migration_history.json) are
+#' re-written to the governance repo via git commit + push and then mirrored
+#' to gov storage. Per-table metadata is written from the data clone to the
+#' data store. Requires a developer connection with a gov clone.
 #'
 #' Used after migration, dispatch changes, or any situation where storage
 #' metadata may be out of sync with git.
@@ -192,7 +190,8 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
     fs::file_exists(fs::path(d, "metadata.json"))
   })]
 
-  s3_location <- paste0("s3://", conn$root, "/", conn$prefix %||% "", "datom/")
+  scheme <- c(s3 = "s3://", local = "file://")[conn$backend] %||% ""
+  data_location <- paste0(scheme, conn$root, "/", conn$prefix %||% "", "datom/")
 
   # Interactive confirmation
 
@@ -205,9 +204,9 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
     }
 
     cli::cli_alert_warning(
-      "This will update dispatch metadata for {length(table_names)} table{?s}."
+      "This will update governance metadata and per-table metadata for {length(table_names)} table{?s}."
     )
-    cli::cli_alert_info("Current location: {.url {s3_location}}")
+    cli::cli_alert_info("Current location: {.url {data_location}}")
 
     answer <- readline("Proceed? [y/N] ")
     if (!tolower(answer) %in% c("y", "yes")) {
@@ -224,73 +223,59 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
   gov_conn <- .datom_gov_conn(conn)
 
   # --- Sync governance files (dispatch, ref, migration_history) --------------
-  if (!is.null(conn$gov_local_path) && nzchar(conn$gov_local_path)) {
-    # Gov-first path: files live in the gov clone.
-    # Re-commit + push + mirror to gov storage via the GOV_SEAM write helpers.
-    gov_path <- conn$gov_local_path
-    project_name_str <- conn$project_name
-    proj_dir <- .datom_gov_project_path(gov_path, project_name_str)
+  if (is.null(conn$gov_local_path) || !nzchar(conn$gov_local_path)) {
+    cli::cli_abort(c(
+      "{.fn datom_sync_dispatch} requires a developer connection with a gov clone.",
+      "i" = "Use {.fn datom_get_conn} (or {.fn datom_clone}) on a Phase-15+ project."
+    ))
+  }
 
-    dispatch_path <- fs::path(proj_dir, "dispatch.json")
-    if (fs::file_exists(dispatch_path)) {
-      dispatch_data <- jsonlite::read_json(dispatch_path)
-      tryCatch({
-        .datom_gov_write_dispatch(conn, project_name_str, dispatch_data)
-        repo_files_synced <- c(repo_files_synced,
-                                paste0("projects/", project_name_str, "/dispatch.json"))
-      }, error = function(e) {
-        cli::cli_alert_warning("Failed to sync dispatch to gov: {conditionMessage(e)}")
-      })
-    }
+  # Gov-first path: files live in the gov clone.
+  # Re-commit + push + mirror to gov storage via the GOV_SEAM write helpers.
+  gov_path <- conn$gov_local_path
+  project_name_str <- conn$project_name
+  proj_dir <- .datom_gov_project_path(gov_path, project_name_str)
 
-    ref_path <- fs::path(proj_dir, "ref.json")
-    if (fs::file_exists(ref_path)) {
-      ref_data <- jsonlite::read_json(ref_path)
-      tryCatch({
-        .datom_gov_write_ref(conn, project_name_str, ref_data)
-        repo_files_synced <- c(repo_files_synced,
-                                paste0("projects/", project_name_str, "/ref.json"))
-      }, error = function(e) {
-        cli::cli_alert_warning("Failed to sync ref to gov: {conditionMessage(e)}")
-      })
-    }
+  dispatch_path <- fs::path(proj_dir, "dispatch.json")
+  if (fs::file_exists(dispatch_path)) {
+    dispatch_data <- jsonlite::read_json(dispatch_path)
+    tryCatch({
+      .datom_gov_write_dispatch(conn, project_name_str, dispatch_data)
+      repo_files_synced <- c(repo_files_synced,
+                              paste0("projects/", project_name_str, "/dispatch.json"))
+    }, error = function(e) {
+      cli::cli_alert_warning("Failed to sync dispatch to gov: {conditionMessage(e)}")
+    })
+  }
 
-    migration_path <- fs::path(proj_dir, "migration_history.json")
-    if (fs::file_exists(migration_path)) {
-      migration_data <- jsonlite::read_json(migration_path)
-      tryCatch({
-        .datom_storage_write_json(gov_conn,
-                                   paste0("projects/", project_name_str,
-                                          "/migration_history.json"),
-                                   migration_data)
-        repo_files_synced <- c(repo_files_synced,
-                                paste0("projects/", project_name_str,
-                                       "/migration_history.json"))
-      }, error = function(e) {
-        cli::cli_alert_warning(
-          "Failed to mirror migration_history to gov storage: {conditionMessage(e)}"
-        )
-      })
-    }
+  ref_path <- fs::path(proj_dir, "ref.json")
+  if (fs::file_exists(ref_path)) {
+    ref_data <- jsonlite::read_json(ref_path)
+    tryCatch({
+      .datom_gov_write_ref(conn, project_name_str, ref_data)
+      repo_files_synced <- c(repo_files_synced,
+                              paste0("projects/", project_name_str, "/ref.json"))
+    }, error = function(e) {
+      cli::cli_alert_warning("Failed to sync ref to gov: {conditionMessage(e)}")
+    })
+  }
 
-  } else {
-    # Fallback path: read from .datom/ in the data clone (backward compat for
-    # repos that pre-date the gov-repo split or lack a gov_local_path).
-    governance_files <- list(
-      dispatch.json = fs::path(repo_path, ".datom", "dispatch.json"),
-      ref.json = fs::path(repo_path, ".datom", "ref.json"),
-      migration_history.json = fs::path(repo_path, ".datom", "migration_history.json")
-    )
-
-    for (fname in names(governance_files)) {
-      local_path <- governance_files[[fname]]
-      if (fs::file_exists(local_path)) {
-        data <- jsonlite::read_json(local_path)
-        s3_key <- paste0(".metadata/", fname)
-        .datom_storage_write_json(gov_conn, s3_key, data)
-        repo_files_synced <- c(repo_files_synced, s3_key)
-      }
-    }
+  migration_path <- fs::path(proj_dir, "migration_history.json")
+  if (fs::file_exists(migration_path)) {
+    migration_data <- jsonlite::read_json(migration_path)
+    tryCatch({
+      .datom_storage_write_json(gov_conn,
+                                 paste0("projects/", project_name_str,
+                                        "/migration_history.json"),
+                                 migration_data)
+      repo_files_synced <- c(repo_files_synced,
+                              paste0("projects/", project_name_str,
+                                     "/migration_history.json"))
+    }, error = function(e) {
+      cli::cli_alert_warning(
+        "Failed to mirror migration_history to gov storage: {conditionMessage(e)}"
+      )
+    })
   }
 
   # --- Sync manifest to data storage -----------------------------------------

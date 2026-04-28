@@ -24,10 +24,10 @@ migration_history.json) and per-table metadata
 unless \code{.confirm = FALSE}.
 }
 \details{
-When \code{conn$gov_local_path} is set, dispatch.json and ref.json are re-written
-to the governance repo via git commit + push (and then mirrored to gov
-storage). Without a gov clone, these are uploaded to gov storage directly
-from any local \verb{.datom/} copies (backward-compat fallback).
+Governance files (dispatch.json, ref.json, migration_history.json) are
+re-written to the governance repo via git commit + push and then mirrored
+to gov storage. Per-table metadata is written from the data clone to the
+data store. Requires a developer connection with a gov clone.
 
 Used after migration, dispatch changes, or any situation where storage
 metadata may be out of sync with git.
