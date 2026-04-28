@@ -749,6 +749,68 @@ test_that(".datom_create_github_repo() propagates API errors on create", {
 
 
 # ==============================================================================
+# .datom_delete_github_repo
+# ==============================================================================
+
+test_that(".datom_delete_github_repo() rejects malformed repo_full", {
+  expect_error(.datom_delete_github_repo("noslash", pat = "ghp_x"), "owner/repo")
+  expect_error(.datom_delete_github_repo("", pat = "ghp_x"), "owner/repo")
+  expect_error(.datom_delete_github_repo(NA_character_, pat = "ghp_x"), "owner/repo")
+  expect_error(.datom_delete_github_repo(c("a/b", "c/d"), pat = "ghp_x"), "owner/repo")
+})
+
+test_that(".datom_delete_github_repo() rejects empty pat", {
+  expect_error(.datom_delete_github_repo("owner/repo", pat = ""), "non-empty")
+  expect_error(.datom_delete_github_repo("owner/repo", pat = NA_character_), "non-empty")
+})
+
+test_that(".datom_delete_github_repo() succeeds on 2xx response", {
+  mockery::stub(
+    .datom_delete_github_repo, "httr2::req_perform",
+    function(...) structure(list(status_code = 204L), class = "httr2_response")
+  )
+
+  expect_true(.datom_delete_github_repo("owner/repo", pat = "ghp_test"))
+})
+
+test_that(".datom_delete_github_repo() hints at delete_repo scope on 403", {
+  mockery::stub(
+    .datom_delete_github_repo, "httr2::req_perform",
+    function(...) stop("HTTP 403 Forbidden")
+  )
+
+  expect_error(
+    .datom_delete_github_repo("owner/repo", pat = "ghp_test"),
+    "delete_repo"
+  )
+})
+
+test_that(".datom_delete_github_repo() hints at already-deleted on 404", {
+  mockery::stub(
+    .datom_delete_github_repo, "httr2::req_perform",
+    function(...) stop("HTTP 404 Not Found")
+  )
+
+  expect_error(
+    .datom_delete_github_repo("owner/repo", pat = "ghp_test"),
+    "already deleted"
+  )
+})
+
+test_that(".datom_delete_github_repo() wraps generic network errors", {
+  mockery::stub(
+    .datom_delete_github_repo, "httr2::req_perform",
+    function(...) stop("Network timeout")
+  )
+
+  expect_error(
+    .datom_delete_github_repo("owner/repo", pat = "ghp_test"),
+    "Failed to delete GitHub repo"
+  )
+})
+
+
+# ==============================================================================
 # .datom_github_username (Chunk 3)
 # ==============================================================================
 

@@ -117,8 +117,7 @@ test_that("datom_decommission() deletes data storage objects", {
   expect_true(fs::file_exists(sentinel))
 
   local_mocked_bindings(
-    .datom_gov_unregister_project = function(...) invisible(TRUE),
-    .datom_gh_available = function() FALSE
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
   )
 
   datom_decommission(conn, confirm = "test-proj")
@@ -133,8 +132,7 @@ test_that("datom_decommission() removes local data clone directory", {
   expect_true(fs::dir_exists(e$data_clone))
 
   local_mocked_bindings(
-    .datom_gov_unregister_project = function(...) invisible(TRUE),
-    .datom_gh_available = function() FALSE
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
   )
 
   datom_decommission(conn, confirm = "test-proj")
@@ -156,8 +154,7 @@ test_that("datom_decommission() calls .datom_gov_unregister_project", {
     .datom_gov_unregister_project = function(conn, project_name) {
       called_with <<- project_name
       invisible(TRUE)
-    },
-    .datom_gh_available = function() FALSE
+    }
   )
 
   datom_decommission(conn, confirm = "test-proj")
@@ -175,8 +172,7 @@ test_that("datom_decommission() skips gov unregister when gov_local_path is NULL
     .datom_gov_unregister_project = function(...) {
       unregister_called <<- TRUE
       invisible(TRUE)
-    },
-    .datom_gh_available = function() FALSE
+    }
   )
 
   # Should succeed with a warning, not abort
@@ -195,8 +191,7 @@ test_that("datom_decommission() deletes gov storage prefix", {
   expect_true(fs::file_exists(fs::path(proj_storage, "ref.json")))
 
   local_mocked_bindings(
-    .datom_gov_unregister_project = function(...) invisible(TRUE),
-    .datom_gh_available = function() FALSE
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
   )
 
   datom_decommission(conn, confirm = "test-proj")
@@ -218,8 +213,7 @@ test_that("datom_decommission() leaves other projects in gov storage intact", {
   writeLines("{}", fs::path(proj_storage, "ref.json"))
 
   local_mocked_bindings(
-    .datom_gov_unregister_project = function(...) invisible(TRUE),
-    .datom_gh_available = function() FALSE
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
   )
 
   datom_decommission(conn, confirm = "test-proj")
@@ -237,8 +231,7 @@ test_that("datom_decommission() warns (not aborts) when gov unregister fails", {
   local_mocked_bindings(
     .datom_gov_unregister_project = function(...) {
       stop("gov push failed")
-    },
-    .datom_gh_available = function() FALSE
+    }
   )
 
   # Should not throw; warns and continues
@@ -249,8 +242,7 @@ test_that("datom_decommission() returns invisible TRUE on success", {
   e <- make_decommission_env()
 
   local_mocked_bindings(
-    .datom_gov_unregister_project = function(...) invisible(TRUE),
-    .datom_gh_available = function() FALSE
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
   )
 
   result <- datom_decommission(e$conn, confirm = "test-proj")

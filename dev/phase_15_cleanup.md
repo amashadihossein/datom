@@ -164,8 +164,8 @@ These are not blocking CRAN.
 
 | Chunk | Status | Tests | Commit |
 |-------|--------|-------|--------|
-| 1. init_repo robustness | not-started | — | — |
-| 2. decommission via API | not-started | — | — |
+| 1. init_repo robustness | completed | 1331 | bbca99a |
+| 2. decommission via API | completed | 1341 | (pending) |
 | 3. sync.R polish | not-started | — | — |
 | 4. dedup helpers | not-started | — | — |
 | 5. polish | not-started | — | — |

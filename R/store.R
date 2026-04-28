@@ -398,6 +398,55 @@ print.datom_store <- function(x, ...) {
 }
 
 
+#' Delete a GitHub Repository
+#'
+#' Deletes a GitHub repository via the REST API. Requires a PAT with the
+#' `delete_repo` scope.
+#'
+#' @param repo_full Repository in `"owner/repo"` form.
+#' @param pat GitHub personal access token (must have `delete_repo` scope).
+#' @return Invisible `TRUE` on success; aborts on failure.
+#' @keywords internal
+.datom_delete_github_repo <- function(repo_full, pat) {
+  if (!is.character(repo_full) || length(repo_full) != 1L ||
+      is.na(repo_full) || !nzchar(repo_full) || !grepl("/", repo_full)) {
+    cli::cli_abort("{.arg repo_full} must be in {.code owner/repo} form.")
+  }
+  if (!is.character(pat) || length(pat) != 1L ||
+      is.na(pat) || !nzchar(pat)) {
+    cli::cli_abort("{.arg pat} must be a single non-empty string.")
+  }
+
+  url <- paste0("https://api.github.com/repos/", repo_full)
+  headers <- list(
+    Authorization = paste("Bearer", pat),
+    Accept = "application/vnd.github+json"
+  )
+
+  tryCatch({
+    httr2::request(url) |>
+      httr2::req_headers(!!!headers) |>
+      httr2::req_method("DELETE") |>
+      httr2::req_perform()
+    invisible(TRUE)
+  }, error = function(e) {
+    msg <- conditionMessage(e)
+    hint <- if (grepl("403", msg)) {
+      "PAT may be missing the {.code delete_repo} scope."
+    } else if (grepl("404", msg)) {
+      "Repository not found (already deleted?)."
+    } else {
+      "Check network connectivity and PAT validity."
+    }
+    cli::cli_abort(c(
+      "Failed to delete GitHub repo {.val {repo_full}}.",
+      "i" = "Underlying error: {msg}",
+      "i" = hint
+    ), parent = e)
+  })
+}
+
+
 #' Get GitHub Username from PAT
 #'
 #' Calls `GET /user` to get the authenticated user's login.

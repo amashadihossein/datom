@@ -10,8 +10,9 @@
 #' steps still run):
 #'
 #' 1. Delete all objects under the data storage namespace.
-#' 2. Delete the data GitHub repo (requires `gh` CLI; skipped with a warning
-#'    if unavailable or if the local clone has no GitHub remote).
+#' 2. Delete the data GitHub repo via the GitHub REST API. Requires
+#'    `GITHUB_PAT` with the `delete_repo` scope; skipped with a warning if
+#'    the PAT is unavailable or the local clone has no GitHub remote.
 #' 3. Remove the local data clone directory (`conn$path`).
 #' 4. Unregister the project from the governance repo (git commit + push).
 #'    Skipped with a warning when `conn$gov_local_path` is `NULL`.
@@ -85,28 +86,24 @@ datom_decommission <- function(conn, confirm = NULL) {
           repo_url,
           perl = TRUE
         )
-        if (nzchar(Sys.getenv("GITHUB_PAT")) && .datom_gh_available()) {
-          cli::cli_alert_info("Deleting GitHub repo {.val {repo_full}}...")
-          result <- tryCatch(
-            {
-              system2(
-                "gh", c("repo", "delete", repo_full, "--yes"),
-                stdout = TRUE, stderr = TRUE
-              )
-              TRUE
-            },
-            error = function(e) FALSE
-          )
-          if (isTRUE(result)) {
-            cli::cli_alert_success("Deleted GitHub repo {.val {repo_full}}.")
-          } else {
-            cli::cli_alert_danger(
-              "GitHub repo deletion failed. Delete {.val {repo_full}} manually."
-            )
-          }
-        } else {
+        pat <- Sys.getenv("GITHUB_PAT")
+        if (!nzchar(pat)) {
           cli::cli_alert_warning(
-            "gh CLI or GITHUB_PAT not available. Delete {.val {repo_full}} manually."
+            "GITHUB_PAT not set. Delete {.val {repo_full}} manually."
+          )
+        } else {
+          cli::cli_alert_info("Deleting GitHub repo {.val {repo_full}}...")
+          tryCatch(
+            {
+              .datom_delete_github_repo(repo_full, pat)
+              cli::cli_alert_success("Deleted GitHub repo {.val {repo_full}}.")
+            },
+            error = function(e) {
+              cli::cli_alert_danger(
+                "GitHub repo deletion failed: {conditionMessage(e)}"
+              )
+              cli::cli_alert_info("Delete {.val {repo_full}} manually.")
+            }
           )
         }
       }
@@ -171,13 +168,4 @@ datom_decommission <- function(conn, confirm = NULL) {
 
   cli::cli_alert_success("Decommissioned {.val {project_name}}.")
   invisible(TRUE)
-}
-
-
-#' Check Whether the gh CLI Is Available
-#'
-#' @return Logical scalar.
-#' @keywords internal
-.datom_gh_available <- function() {
-  nzchar(Sys.which("gh"))
 }

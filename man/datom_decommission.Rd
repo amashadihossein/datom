@@ -26,8 +26,9 @@ Teardown order (each step is warn-and-continue on failure so the remaining
 steps still run):
 \enumerate{
 \item Delete all objects under the data storage namespace.
-\item Delete the data GitHub repo (requires \code{gh} CLI; skipped with a warning
-if unavailable or if the local clone has no GitHub remote).
+\item Delete the data GitHub repo via the GitHub REST API. Requires
+\code{GITHUB_PAT} with the \code{delete_repo} scope; skipped with a warning if
+the PAT is unavailable or the local clone has no GitHub remote.
 \item Remove the local data clone directory (\code{conn$path}).
 \item Unregister the project from the governance repo (git commit + push).
 Skipped with a warning when \code{conn$gov_local_path} is \code{NULL}.
