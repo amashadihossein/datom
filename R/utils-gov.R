@@ -483,6 +483,10 @@
 #' @keywords internal
 .datom_gov_destroy <- function(gov_local_path, force = FALSE) {
   # GOV_SEAM: companion package owns the full gov lifecycle.
+  cli::cli_inform(c(
+    "i" = "Destroying local gov clone only -- caller is responsible for storage and GitHub repo deletion.",
+    "i" = "For project-scoped teardown see {.fn datom_decommission}."
+  ))
   if (!.datom_gov_clone_exists(gov_local_path)) {
     cli::cli_alert_info("Gov clone not found at {.path {gov_local_path}} -- nothing to destroy.")
     return(invisible(character(0)))

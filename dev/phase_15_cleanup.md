@@ -167,8 +167,8 @@ These are not blocking CRAN.
 | 1. init_repo robustness | completed | 1331 | bbca99a |
 | 2. decommission via API | completed | 1341 | 18da761 |
 | 3. sync.R polish | completed | 1335 | 193bd6c |
-| 4. dedup helpers | completed | 1335 | (pending) |
-| 5. polish | not-started | — | — |
+| 4. dedup helpers | completed | 1335 | 03e597f |
+| 5. polish | completed | 1335 | (pending) |
 
 Update this table at the end of each chunk.
 

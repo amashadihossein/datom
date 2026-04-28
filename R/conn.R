@@ -666,11 +666,13 @@ datom_init_gov <- function(gov_store,
   }
 
   # --- Idempotence check ------------------------------------------------------
-  # If the skeleton already exists (projects/.gitkeep), treat as already done.
+  # Validate the remote URL on any existing clone first (catches mismatched
+  # gov_repo_url against an existing directory before trusting the skeleton
+  # marker). Then, if the skeleton already exists, treat as already done.
+  if (.datom_gov_clone_exists(gov_local_path)) {
+    .datom_gov_validate_remote(gov_local_path, gov_repo_url)
+  }
   if (fs::file_exists(fs::path(gov_local_path, "projects", ".gitkeep"))) {
-    if (.datom_gov_clone_exists(gov_local_path)) {
-      .datom_gov_validate_remote(gov_local_path, gov_repo_url)
-    }
     cli::cli_alert_info("Governance repository already initialised at {.path {gov_local_path}}.")
     return(invisible(gov_repo_url))
   }

@@ -1297,6 +1297,8 @@ The governance repository is a port surface. datom currently owns both gov and d
 
 **File initialization.** `.datom_gov_register_project()` creates `projects/{name}/` with three files: `dispatch.json` (default methods), `ref.json` (current data location), and `migration_history.json` (initialized as empty `[]`; appended to by `.datom_gov_record_migration()`).
 
+**Migration ordering.** Migration events are prepended (most-recent-first) so the head of `migration_history.json` is the active record.
+
 **Decommission scope matrix.** Three distinct teardown operations exist; their scopes do not overlap:
 
 | Operation | Scope | Caller | Implementation |
