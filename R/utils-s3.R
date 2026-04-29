@@ -274,7 +274,8 @@
 .datom_s3_delete_prefix <- function(conn, prefix_key = NULL) {
   # NULL prefix_key = delete everything under conn's datom namespace root
   if (is.null(prefix_key)) {
-    base <- if (!is.null(conn$prefix) && nzchar(conn$prefix)) {
+    has_prefix <- !is.null(conn$prefix) && !is.na(conn$prefix) && nzchar(conn$prefix)
+    base <- if (isTRUE(has_prefix)) {
       paste0(gsub("^/+|/+$", "", conn$prefix), "/datom/")
     } else {
       "datom/"

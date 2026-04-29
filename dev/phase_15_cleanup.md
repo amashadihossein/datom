@@ -168,7 +168,7 @@ These are not blocking CRAN.
 | 2. decommission via API | completed | 1341 | 18da761 |
 | 3. sync.R polish | completed | 1335 | 193bd6c |
 | 4. dedup helpers | completed | 1335 | 03e597f |
-| 5. polish | completed | 1335 | (pending) |
+| 5. polish | completed | 1335 | f553933 |
 
 Update this table at the end of each chunk.
 

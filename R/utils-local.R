@@ -190,7 +190,8 @@
 #' @keywords internal
 .datom_local_delete_prefix <- function(conn, prefix_key = NULL) {
   if (is.null(prefix_key)) {
-    base <- if (!is.null(conn$prefix) && nzchar(conn$prefix)) {
+    has_prefix <- !is.null(conn$prefix) && !is.na(conn$prefix) && nzchar(conn$prefix)
+    base <- if (isTRUE(has_prefix)) {
       paste0(gsub("^/+|/+$", "", conn$prefix), "/datom")
     } else {
       "datom"

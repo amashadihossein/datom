@@ -513,10 +513,18 @@ sandbox_down <- function(env,
 
     # Delete gov GitHub repo
     gov_repo_name <- cfg$gov_repo_name %||% NULL
+    gov_repo_url  <- store$gov_repo_url %||% env$conn$gov_repo_url %||% NULL
     if (!is.null(gov_repo_name)) {
       tryCatch({
         .sandbox_check_gh()
-        gov_full_name <- paste0(cfg$github_org, "/", gov_repo_name)
+        # Prefer parsing owner/repo from the URL (handles personal accounts
+        # where github_org is NULL); fall back to org+name concatenation.
+        gov_full_name <- if (!is.null(gov_repo_url) && nzchar(gov_repo_url)) {
+          sub(".*github\\.com[:/]([^/]+/[^/]+?)(\\.git)?$", "\\1",
+              gov_repo_url, perl = TRUE)
+        } else {
+          paste0(cfg$github_org, "/", gov_repo_name)
+        }
         cli::cli_alert_info("Deleting gov GitHub repo {.val {gov_full_name}}...")
         .sandbox_gh("repo", "delete", gov_full_name, "--yes")
         cli::cli_alert_success("Deleted gov GitHub repo.")
