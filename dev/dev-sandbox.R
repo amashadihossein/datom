@@ -482,7 +482,6 @@ sandbox_down <- function(env,
       # Fallback: manual teardown if conn is not available
       tryCatch({
         .sandbox_wipe_s3_component(store$data, "data")
-        .sandbox_wipe_local_component(store$data, "data")
       }, error = function(e) {
         cli::cli_alert_danger("Data storage cleanup failed: {conditionMessage(e)}")
       })
@@ -498,6 +497,16 @@ sandbox_down <- function(env,
         cli::cli_alert_success("Removed local data clone.")
       }
     }
+
+    # Mop up the data store root for local backends. datom_decommission()
+    # deletes the datom/ namespace inside the root but leaves the root itself
+    # (it doesn't own the parent directory). The sandbox does own it.
+    # No-op for S3 (root=bucket; we never delete buckets).
+    tryCatch({
+      .sandbox_wipe_local_component(store$data, "data")
+    }, error = function(e) {
+      cli::cli_alert_danger("Data local directory cleanup failed: {conditionMessage(e)}")
+    })
   }
 
   # ---- Gov destroy -----------------------------------------------------------
