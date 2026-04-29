@@ -26,7 +26,7 @@ datom_init_repo(
 \code{"developer"} (i.e., \code{github_pat} provided).}
 
 \item{create_repo}{If \code{TRUE}, create a GitHub repo via API. Mutually
-exclusive with providing \code{remote_url} on the store.}
+exclusive with providing \code{data_repo_url} on the store.}
 
 \item{repo_name}{GitHub repo name when \code{create_repo = TRUE}. Defaults to
 \code{project_name}. Useful when the project name (e.g., \code{"STUDY_001"}) isn't

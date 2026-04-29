@@ -4,7 +4,7 @@
 \alias{.datom_git_commit}
 \title{Commit Changes}
 \usage{
-.datom_git_commit(path, files, message)
+.datom_git_commit(path, files, message, staged_deletions = FALSE)
 }
 \arguments{
 \item{path}{Repository path.}
@@ -12,6 +12,9 @@
 \item{files}{Character vector of files to add (relative to repo root).}
 
 \item{message}{Commit message.}
+
+\item{staged_deletions}{If \code{TRUE}, skip the file-existence check and use
+\code{git2r::add(force = TRUE)} so deletions can be staged. Default \code{FALSE}.}
 }
 \value{
 Commit SHA as a string.

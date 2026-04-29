@@ -8,7 +8,9 @@ datom_store(
   governance,
   data,
   github_pat = NULL,
-  remote_url = NULL,
+  data_repo_url = NULL,
+  gov_repo_url = NULL,
+  gov_local_path = NULL,
   github_org = NULL,
   validate = TRUE
 )
@@ -23,8 +25,16 @@ files (dispatch, ref, migration history).}
 \item{github_pat}{GitHub personal access token. If provided, role is
 \code{"developer"}. If NULL, role is \code{"reader"}.}
 
-\item{remote_url}{GitHub remote URL. Required when \code{github_pat} is provided
-and \code{create_repo = FALSE} will be used in \code{datom_init_repo()}.}
+\item{data_repo_url}{GitHub remote URL for the data repository. Required when
+\code{github_pat} is provided and \code{create_repo = FALSE} in \code{datom_init_repo()}.}
+
+\item{gov_repo_url}{GitHub remote URL for the shared governance repository.
+The governance repo is created once per org via \code{datom_init_gov()} and
+referenced here by every project that uses it.}
+
+\item{gov_local_path}{Local directory path for the governance clone. If NULL
+(default), the clone is placed as a sibling of the data repo, named after
+the basename of \code{gov_repo_url} (e.g., \code{"acme-gov"}).}
 
 \item{github_org}{GitHub organization for repo creation. NULL for personal repos.}
 

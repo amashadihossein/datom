@@ -273,6 +273,49 @@ test_that(".datom_local_delete() is silent for missing file", {
   expect_true(result)
 })
 
+# --- .datom_local_delete_prefix ----------------------------------------------
+
+test_that(".datom_local_delete_prefix() handles NULL prefix on conn", {
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, NULL)
+
+  # No datom dir yet -> no-op
+  expect_equal(.datom_local_delete_prefix(conn, NULL), 0L)
+
+  fs::dir_create(fs::path(store_dir, "datom", "t1"))
+  writeLines("x", fs::path(store_dir, "datom", "t1", "f.parquet"))
+
+  expect_equal(.datom_local_delete_prefix(conn, NULL), 1L)
+  expect_false(fs::dir_exists(fs::path(store_dir, "datom")))
+})
+
+test_that(".datom_local_delete_prefix() handles NA prefix on conn (defensive)", {
+  # Regression: yaml/json round-trip can yield NA where NULL was expected;
+  # nzchar(NA) returns NA and breaks the if-guard with
+  # "missing value where TRUE/FALSE needed".
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, NA_character_)
+
+  expect_equal(.datom_local_delete_prefix(conn, NULL), 0L)
+
+  fs::dir_create(fs::path(store_dir, "datom", "t1"))
+  writeLines("x", fs::path(store_dir, "datom", "t1", "f.parquet"))
+
+  expect_equal(.datom_local_delete_prefix(conn, NULL), 1L)
+  expect_false(fs::dir_exists(fs::path(store_dir, "datom")))
+})
+
+test_that(".datom_local_delete_prefix() honors non-NULL prefix on conn", {
+  store_dir <- withr::local_tempdir()
+  conn <- make_local_conn(store_dir, "proj")
+
+  fs::dir_create(fs::path(store_dir, "proj", "datom", "t1"))
+  writeLines("x", fs::path(store_dir, "proj", "datom", "t1", "f.parquet"))
+
+  expect_equal(.datom_local_delete_prefix(conn, NULL), 1L)
+  expect_false(fs::dir_exists(fs::path(store_dir, "proj", "datom")))
+})
+
 # ==============================================================================
 # Dispatch tests: .datom_storage_*() → .datom_local_*() (Chunk 3)
 # ==============================================================================

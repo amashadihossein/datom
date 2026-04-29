@@ -10,7 +10,7 @@ datom_clone(path, store, ...)
 \item{path}{Local path to clone into.}
 
 \item{store}{A \code{datom_store} object (from \code{datom_store()}). Must have
-\code{remote_url} set and role \code{"developer"} (i.e., \code{github_pat} provided).}
+\code{data_repo_url} set and role \code{"developer"} (i.e., \code{github_pat} provided).}
 
 \item{...}{Additional arguments passed to \code{\link[git2r:clone]{git2r::clone()}}.}
 }
@@ -21,6 +21,11 @@ A \code{datom_conn} object (developer role).
 Clones a remote datom repository and returns a connection. This is the
 recommended way for teammates to join an existing datom project — it wraps
 \code{git2r::clone()} and immediately returns a ready-to-use \code{datom_conn}.
+}
+\details{
+When \code{store$gov_repo_url} is set the governance repo is also cloned (or
+verified if it already exists locally). An existing clone with uncommitted
+changes causes an error to avoid surprising state.
 }
 \examples{
 \dontrun{

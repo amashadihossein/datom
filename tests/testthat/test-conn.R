@@ -332,8 +332,9 @@ create_test_datom_repo <- function(project_name = "testproj",
       ),
       max_file_size_gb = 1000
     ),
-    git = list(
-      remote_url = "https://github.com/test/repo.git"
+    repos = list(
+      data = list(remote_url = "https://github.com/test/repo.git"),
+      governance = list(remote_url = NULL, local_path = NULL)
     )
   )
 
@@ -348,7 +349,7 @@ test_that("developer path reads project.yaml and creates connection", {
   comp <- datom_store_s3(bucket = "my-bucket", access_key = "fake_key",
                          secret_key = "fake_secret", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
@@ -384,7 +385,7 @@ test_that("developer path uses prefix from store", {
   comp <- datom_store_s3(bucket = "test-bucket", prefix = "alpha/beta/",
                          access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
@@ -400,7 +401,7 @@ test_that("developer path uses region from store", {
                          region = "eu-west-1", access_key = "k",
                          secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
@@ -436,7 +437,7 @@ test_that("developer path cross-checks root mismatch", {
   comp <- datom_store_s3(bucket = "different-bucket", access_key = "k",
                          secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   expect_error(datom_get_conn(path = dir, store = store), "mismatch")
@@ -509,7 +510,7 @@ setup_init_env <- function(env = parent.frame()) {
   store <- datom_store(
     governance = comp, data = comp,
     github_pat = "ghp_fake",
-    remote_url = bare_dir,
+    data_repo_url = bare_dir,
     validate = FALSE
   )
 
@@ -529,7 +530,7 @@ setup_init_env <- function(env = parent.frame()) {
 test_that("datom_init_repo aborts on invalid project_name", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/x/y.git", validate = FALSE)
+                       data_repo_url = "https://github.com/x/y.git", validate = FALSE)
   expect_error(datom_init_repo(project_name = "", store = store), "name")
 })
 
@@ -551,10 +552,10 @@ test_that("datom_init_repo rejects reader store", {
   )
 })
 
-test_that("datom_init_repo rejects create_repo with remote_url", {
+test_that("datom_init_repo rejects create_repo with data_repo_url", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://github.com/x/y.git", validate = FALSE)
+                       data_repo_url = "https://github.com/x/y.git", validate = FALSE)
   expect_error(
     datom_init_repo(path = withr::local_tempdir(), project_name = "p",
                     store = store, create_repo = TRUE),
@@ -562,7 +563,7 @@ test_that("datom_init_repo rejects create_repo with remote_url", {
   )
 })
 
-test_that("datom_init_repo errors when no remote_url and create_repo is FALSE", {
+test_that("datom_init_repo errors when no data_repo_url and create_repo is FALSE", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
                        validate = FALSE)
@@ -627,7 +628,7 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   dat <- datom_store_s3(bucket = "my-bucket", prefix = "data/", region = "eu-west-1",
                         access_key = "AKIAEXAMPLE", secret_key = "secretkey", validate = FALSE)
   store <- datom_store(governance = gov, data = dat, github_pat = "ghp_fake",
-                       remote_url = env$bare_dir, validate = FALSE)
+                       data_repo_url = env$bare_dir, validate = FALSE)
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = store, max_file_size_gb = 500)
@@ -646,25 +647,23 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   expect_equal(cfg$storage$data$prefix, "data/")
   expect_equal(cfg$storage$data$region, "eu-west-1")
   expect_equal(cfg$storage$max_file_size_gb, 500)
-  expect_equal(cfg$git$remote_url, env$bare_dir)
+  expect_equal(cfg$repos$data$remote_url, env$bare_dir)
   # No top-level storage$type, storage$root, or storage$credentials
   expect_null(cfg$storage$type)
   expect_null(cfg$storage$root)
   expect_null(cfg$storage$credentials)
 })
 
-test_that("datom_init_repo creates dispatch.json", {
+test_that("datom_init_repo does NOT create dispatch.json in data clone (lives in gov repo)", {
   env <- setup_init_env()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = env$store)
 
+  # dispatch.json moved to gov repo (projects/{name}/dispatch.json);
+  # it must NOT be in the data clone.
   dispatch_path <- fs::path(env$work_dir, ".datom", "dispatch.json")
-  expect_true(fs::file_exists(dispatch_path))
-
-  dispatch <- jsonlite::read_json(dispatch_path)
-  expect_equal(dispatch$methods$r$default, "datom::datom_read")
-  expect_equal(dispatch$methods$python$default, "datom.read")
+  expect_false(fs::file_exists(dispatch_path))
 })
 
 test_that("datom_init_repo creates manifest.json", {
@@ -754,7 +753,7 @@ test_that("datom_init_repo handles prefix = NULL in store", {
                          access_key = "AKIAEXAMPLE", secret_key = "secretkey",
                          validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
-                       remote_url = env$bare_dir, validate = FALSE)
+                       data_repo_url = env$bare_dir, validate = FALSE)
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = store)
@@ -771,7 +770,7 @@ test_that("datom_init_repo stores project_name in config for hyphenated names", 
 
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = bare_dir, validate = FALSE)
+                       data_repo_url = bare_dir, validate = FALSE)
 
   local_mocked_bindings(
     .datom_s3_client = function(...) list(put_object = function(...) list()),
@@ -783,7 +782,7 @@ test_that("datom_init_repo stores project_name in config for hyphenated names", 
 
   cfg <- yaml::read_yaml(fs::path(work_dir, ".datom", "project.yaml"))
   expect_equal(cfg$project_name, "my-data")
-  expect_equal(cfg$git$remote_url, bare_dir)
+  expect_equal(cfg$repos$data$remote_url, bare_dir)
 })
 
 test_that("datom_init_repo passes is_valid_datom_repo checks", {
@@ -848,7 +847,7 @@ test_that("datom_init_repo README.md contains project name", {
                          access_key = "AKIAEXAMPLE", secret_key = "secretkey",
                          validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
-                       remote_url = env$bare_dir, validate = FALSE)
+                       data_repo_url = env$bare_dir, validate = FALSE)
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = store)
@@ -1045,7 +1044,7 @@ test_that("datom_init_repo does NOT remove pre-existing parent dir on failure", 
   expect_true(fs::dir_exists(env$work_dir))
 })
 
-test_that("datom_init_repo pushes dispatch.json, ref.json, and manifest.json to S3", {
+test_that("datom_init_repo pushes manifest.json to data storage", {
   env <- setup_init_env()
 
   s3_keys_written <- character()
@@ -1064,32 +1063,153 @@ test_that("datom_init_repo pushes dispatch.json, ref.json, and manifest.json to 
     store = env$store
   )
 
-  expect_true(".metadata/dispatch.json" %in% s3_keys_written)
-  expect_true(".metadata/ref.json" %in% s3_keys_written)
+  # manifest goes to data storage; dispatch/ref go to gov repo (git) not here
   expect_true(".metadata/manifest.json" %in% s3_keys_written)
+  # dispatch and ref are registered in gov repo, not written to S3 directly
+  # by datom_init_repo when no gov_local_path is set
+  expect_false(".metadata/dispatch.json" %in% s3_keys_written)
+  expect_false(".metadata/ref.json" %in% s3_keys_written)
 })
 
-test_that("datom_init_repo succeeds even if S3 upload fails", {
+test_that("datom_init_repo aborts but preserves local clone if storage fails after git push", {
   env <- setup_init_env()
 
-  # Override to make S3 fail
+  # Storage client fails when build_init_conn is called (post-push)
   local_mocked_bindings(
     .datom_s3_client = function(...) stop("S3 unavailable")
   )
 
-  # Should succeed (git push worked, S3 failure is just a warning)
-  expect_no_error(
+  # Post-push storage failure aborts (no more silent partial-success)
+  expect_error(
     datom_init_repo(
       path = env$work_dir,
       project_name = "testproj",
       store = env$store
-    )
+    ),
+    "S3 unavailable"
   )
 
-  # Files should still be created locally
-  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "dispatch.json")))
+  # Local clone is intact -- git push succeeded, we don't roll back local
+  # files post-push so the user can retry sync_manifest after fixing creds.
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
-  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+  expect_true(fs::dir_exists(fs::path(env$work_dir, ".git")))
+})
+
+
+# --- Governance-first ordering (Phase 15, Chunk 5) ---------------------------
+
+# Helper: extends setup_init_env() with a bare gov repo + gov_repo_url
+setup_init_env_with_gov <- function(env = parent.frame()) {
+  base <- setup_init_env(env = env)
+
+  gov_bare <- withr::local_tempdir(.local_envir = env)
+  git2r::init(gov_bare, bare = TRUE)
+  gov_local <- withr::local_tempdir(.local_envir = env)
+  # Remove so .datom_gov_clone_init clones fresh
+  fs::dir_delete(gov_local)
+
+  store <- datom_store(
+    governance = base$store$governance,
+    data = base$store$data,
+    github_pat = "ghp_fake",
+    data_repo_url = base$bare_dir,
+    gov_repo_url = gov_bare,
+    gov_local_path = gov_local,
+    validate = FALSE
+  )
+
+  c(base[c("bare_dir", "work_dir")],
+    list(gov_bare = gov_bare, gov_local = gov_local, store = store))
+}
+
+test_that("datom_init_repo aborts and rolls back gov clone if pre-push step fails", {
+  env <- setup_init_env_with_gov()
+
+  # Storage namespace check: simulate occupied bucket so init aborts BEFORE
+  # any git work or push.
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) grepl("manifest\\.json", s3_key),
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(project_name = "EXISTING_PROJECT", tables = list())
+    }
+  )
+
+  # Gov clone did not exist before this call -- create_here flag should fire.
+  expect_false(fs::dir_exists(env$gov_local))
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store),
+    "already occupied"
+  )
+
+  # Gov clone should be rolled back (we created it; init aborted pre-push).
+  expect_false(fs::dir_exists(env$gov_local))
+  # Data clone also rolled back.
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+})
+
+test_that("datom_init_repo does NOT roll back a pre-existing gov clone on failure", {
+  env <- setup_init_env_with_gov()
+
+  # Pre-clone the gov repo so it exists before datom_init_repo runs
+  .datom_gov_clone_init(env$gov_bare, env$gov_local)
+  expect_true(fs::dir_exists(fs::path(env$gov_local, ".git")))
+
+  # Force a pre-push failure
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) grepl("manifest\\.json", s3_key),
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(project_name = "EXISTING_PROJECT", tables = list())
+    }
+  )
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store),
+    "already occupied"
+  )
+
+  # Gov clone preserved -- it existed before our call.
+  expect_true(fs::dir_exists(fs::path(env$gov_local, ".git")))
+})
+
+test_that("datom_init_repo with gov_repo_url clones gov repo before data work", {
+  env <- setup_init_env_with_gov()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  # Gov repo was cloned to gov_local_path
+  expect_true(fs::dir_exists(fs::path(env$gov_local, ".git")))
+})
+
+test_that("datom_init_repo registers project in gov repo", {
+  env <- setup_init_env_with_gov()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  proj_dir <- fs::path(env$gov_local, "projects", "testproj")
+  expect_true(fs::file_exists(fs::path(proj_dir, "dispatch.json")))
+  expect_true(fs::file_exists(fs::path(proj_dir, "ref.json")))
+})
+
+test_that("datom_init_repo aborts when gov project namespace already exists", {
+  env <- setup_init_env_with_gov()
+
+  # Pre-clone gov and create a project dir to simulate collision
+  .datom_gov_clone_init(env$gov_bare, env$gov_local)
+  fs::dir_create(fs::path(env$gov_local, "projects", "testproj"))
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store),
+    "already"
+  )
+
+  # Data clone should not have been created
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
 })
 
 
@@ -1271,7 +1391,7 @@ test_that("datom_get_conn forwards endpoint to developer path", {
                          access_key = "fake_key", secret_key = "fake_secret",
                          validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
-                       remote_url = "https://github.com/test/repo.git",
+                       data_repo_url = "https://github.com/test/repo.git",
                        validate = FALSE)
 
   captured_endpoint <- NULL
@@ -1356,23 +1476,23 @@ test_that("datom_clone rejects reader store", {
   expect_error(datom_clone(path = "x", store = store), "developer")
 })
 
-test_that("datom_clone rejects store without remote_url", {
+test_that("datom_clone rejects store without data_repo_url", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x", validate = FALSE)
-  expect_error(datom_clone(path = "x", store = store), "remote_url")
+  expect_error(datom_clone(path = "x", store = store), "data_repo_url")
 })
 
 test_that("datom_clone rejects empty path", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://x.git", validate = FALSE)
+                       data_repo_url = "https://x.git", validate = FALSE)
   expect_error(datom_clone(path = "", store = store), "path")
 })
 
 test_that("datom_clone rejects non-empty target directory", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://x.git", validate = FALSE)
+                       data_repo_url = "https://x.git", validate = FALSE)
   withr::with_tempdir({
     fs::dir_create("existing")
     writeLines("file", fs::path("existing", "README.md"))
@@ -1400,7 +1520,7 @@ test_that("datom_clone aborts if cloned repo is not a datom repo", {
 
     comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
     store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                         remote_url = bare_dir, validate = FALSE)
+                         data_repo_url = bare_dir, validate = FALSE)
 
     expect_error(
       datom_clone(path = "clone_target", store = store),
@@ -1447,7 +1567,7 @@ test_that("datom_clone clones and returns a datom_conn", {
     comp <- datom_store_s3(bucket = "test-bucket", access_key = "fakekey",
                            secret_key = "fakesecret", validate = FALSE)
     store <- datom_store(governance = comp, data = comp, github_pat = "fake-pat",
-                         remote_url = bare_dir, validate = FALSE)
+                         data_repo_url = bare_dir, validate = FALSE)
 
     local_mocked_bindings(
       .datom_s3_client = function(...) list(fake = TRUE)
@@ -1466,12 +1586,147 @@ test_that("datom_clone clones and returns a datom_conn", {
 test_that("datom_clone aborts on clone failure", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                       remote_url = "https://example.com/no-such-repo.git",
+                       data_repo_url = "https://example.com/no-such-repo.git",
                        validate = FALSE)
   withr::with_tempdir({
     expect_error(
       datom_clone(path = "target", store = store),
       "Failed to clone"
+    )
+  })
+})
+
+# --- datom_clone() gov-repo two-repo semantics (Phase 15, Chunk 6) -----------
+
+# Shared helper: make a committed datom-style bare repo
+.make_bare_datom_repo <- function() {
+  bare_dir <- tempfile("bare_"); dir.create(bare_dir)
+  git2r::init(bare_dir, bare = TRUE)
+  work_dir <- tempfile("work_"); dir.create(work_dir)
+  work_repo <- git2r::init(work_dir)
+  git2r::config(work_repo, user.name = "Test", user.email = "t@t.com")
+  fs::dir_create(fs::path(work_dir, ".datom"))
+  yaml::write_yaml(
+    list(project_name = "PROJ",
+         storage = list(
+           data = list(type = "s3", root = "b", region = "us-east-1"),
+           governance = list(type = "s3", root = "b", region = "us-east-1")
+         )),
+    fs::path(work_dir, ".datom", "project.yaml")
+  )
+  git2r::add(work_repo, ".datom/project.yaml")
+  git2r::commit(work_repo, "Init")
+  git2r::remote_add(work_repo, "origin", bare_dir)
+  git2r::push(work_repo, "origin", "refs/heads/master", set_upstream = TRUE)
+  list(bare = bare_dir, work = work_dir)
+}
+
+test_that("datom_clone with gov_repo_url also clones gov repo", {
+  withr::with_tempdir({
+    data_repos <- .make_bare_datom_repo()
+
+    gov_bare <- tempfile("gov_bare_"); dir.create(gov_bare)
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- tempfile("gov_local_")  # does not exist yet
+
+    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s",
+                           validate = FALSE)
+    store <- datom_store(governance = comp, data = comp,
+                         github_pat = "ghp_x",
+                         data_repo_url = data_repos$bare,
+                         gov_repo_url = gov_bare,
+                         gov_local_path = gov_local,
+                         validate = FALSE)
+
+    local_mocked_bindings(
+      .datom_s3_client = function(...) list(fake = TRUE)
+    )
+
+    datom_clone(path = "clone_target", store = store)
+
+    expect_true(fs::dir_exists(fs::path(gov_local, ".git")))
+  })
+})
+
+test_that("datom_clone reuses existing gov clone with matching URL", {
+  withr::with_tempdir({
+    data_repos <- .make_bare_datom_repo()
+
+    gov_bare <- tempfile("gov_bare_"); dir.create(gov_bare)
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- tempfile("gov_local_"); dir.create(gov_local)
+    # Pre-clone gov
+    git2r::clone(gov_bare, gov_local)
+
+    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s",
+                           validate = FALSE)
+    store <- datom_store(governance = comp, data = comp,
+                         github_pat = "ghp_x",
+                         data_repo_url = data_repos$bare,
+                         gov_repo_url = gov_bare,
+                         gov_local_path = gov_local,
+                         validate = FALSE)
+
+    local_mocked_bindings(
+      .datom_s3_client = function(...) list(fake = TRUE)
+    )
+
+    # Should not error (idempotent)
+    expect_no_error(datom_clone(path = "clone_target", store = store))
+  })
+})
+
+test_that("datom_clone aborts when existing gov clone has uncommitted changes", {
+  withr::with_tempdir({
+    data_repos <- .make_bare_datom_repo()
+
+    gov_bare <- tempfile("gov_bare_"); dir.create(gov_bare)
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- tempfile("gov_local_"); dir.create(gov_local)
+    git2r::clone(gov_bare, gov_local)
+
+    # Leave an unstaged change in the gov clone
+    writeLines("dirty", fs::path(gov_local, "dirty.txt"))
+    gov_repo <- git2r::repository(gov_local)
+    git2r::add(gov_repo, "dirty.txt")  # staged change
+
+    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s",
+                           validate = FALSE)
+    store <- datom_store(governance = comp, data = comp,
+                         github_pat = "ghp_x",
+                         data_repo_url = data_repos$bare,
+                         gov_repo_url = gov_bare,
+                         gov_local_path = gov_local,
+                         validate = FALSE)
+
+    expect_error(
+      datom_clone(path = "clone_target", store = store),
+      "uncommitted"
+    )
+  })
+})
+
+test_that("datom_clone aborts when existing gov clone has different remote URL", {
+  withr::with_tempdir({
+    data_repos <- .make_bare_datom_repo()
+
+    gov_bare <- tempfile("gov_bare_"); dir.create(gov_bare)
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- tempfile("gov_local_"); dir.create(gov_local)
+    git2r::clone(gov_bare, gov_local)
+
+    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s",
+                           validate = FALSE)
+    store <- datom_store(governance = comp, data = comp,
+                         github_pat = "ghp_x",
+                         data_repo_url = data_repos$bare,
+                         gov_repo_url = "https://github.com/other/different-gov.git",
+                         gov_local_path = gov_local,
+                         validate = FALSE)
+
+    expect_error(
+      datom_clone(path = "clone_target", store = store),
+      "different remote URL"
     )
   })
 })
@@ -1590,7 +1845,7 @@ setup_local_init_env <- function(env = parent.frame()) {
   store <- datom_store(
     governance = comp, data = comp,
     github_pat = "ghp_fake",
-    remote_url = bare_dir,
+    data_repo_url = bare_dir,
     validate = FALSE
   )
 
@@ -1606,10 +1861,12 @@ test_that("datom_init_repo works with local stores", {
     store = env$store
   )
 
-  # Check files created
+  # Check files created in data clone
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "project.yaml")))
   expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
-  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+  # dispatch.json and ref.json now live in gov repo, NOT in data clone
+  expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
+  expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "dispatch.json")))
 
   # Check project.yaml has local backend
   cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
@@ -1617,11 +1874,12 @@ test_that("datom_init_repo works with local stores", {
   expect_equal(cfg$storage$governance$type, "local")
   expect_null(cfg$storage$data$region)
 
-  # Check storage files were pushed
+  # Check manifest was pushed to data storage
   store_base <- fs::path(env$store_dir, "proj/", "datom")
   expect_true(fs::file_exists(fs::path(store_base, ".metadata", "manifest.json")))
-  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "dispatch.json")))
-  expect_true(fs::file_exists(fs::path(store_base, ".metadata", "ref.json")))
+  # dispatch/ref are NOT in storage .metadata/ -- they go to gov repo (no gov_repo_url set here)
+  expect_false(fs::file_exists(fs::path(store_base, ".metadata", "dispatch.json")))
+  expect_false(fs::file_exists(fs::path(store_base, ".metadata", "ref.json")))
 })
 
 test_that("datom_get_conn works with local stores after init", {
@@ -1730,3 +1988,144 @@ test_that("local: passes when root directory exists", {
   expect_no_error(.datom_check_data_reachable(conn))
 })
 
+
+# =============================================================================
+# datom_init_gov()
+# =============================================================================
+
+# Helper: bare + clone setup for datom_init_gov tests
+setup_gov_init_env <- function(env = parent.frame()) {
+  bare_dir <- withr::local_tempdir(.local_envir = env)
+  git2r::init(bare_dir, bare = TRUE)
+
+  gov_dir  <- withr::local_tempdir(.local_envir = env)
+
+  gov_store <- datom_store_local(
+    path = withr::local_tempdir(.local_envir = env),
+    validate = FALSE
+  )
+
+  list(bare_dir = bare_dir, gov_dir = gov_dir, gov_store = gov_store)
+}
+
+# --- Validation ---------------------------------------------------------------
+
+test_that("datom_init_gov aborts on non-store-component gov_store", {
+  expect_error(
+    datom_init_gov(gov_store = list(path = "/tmp"),
+                   gov_repo_url = "https://example.com/gov.git"),
+    "datom_store_s3"
+  )
+})
+
+test_that("datom_init_gov aborts when both create_repo and gov_repo_url are given", {
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_init_gov(gov_store = gov_store,
+                   gov_repo_url = "https://github.com/org/gov.git",
+                   create_repo = TRUE,
+                   repo_name = "gov",
+                   github_pat = "ghp_fake"),
+    "mutually exclusive"
+  )
+})
+
+test_that("datom_init_gov aborts when create_repo = TRUE and repo_name is NULL", {
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_init_gov(gov_store = gov_store,
+                   create_repo = TRUE,
+                   github_pat = "ghp_fake"),
+    "repo_name"
+  )
+})
+
+test_that("datom_init_gov aborts when create_repo = TRUE and github_pat is NULL", {
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_init_gov(gov_store = gov_store,
+                   create_repo = TRUE,
+                   repo_name = "gov"),
+    "github_pat"
+  )
+})
+
+test_that("datom_init_gov aborts when no gov_repo_url and create_repo is FALSE", {
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_init_gov(gov_store = gov_store),
+    "No governance repo URL"
+  )
+})
+
+# --- Happy path (local backend, bare repo as remote) -------------------------
+
+test_that("datom_init_gov seeds skeleton and returns gov_repo_url", {
+  env <- setup_gov_init_env()
+
+  result <- datom_init_gov(
+    gov_store     = env$gov_store,
+    gov_repo_url  = env$bare_dir,
+    gov_local_path = env$gov_dir
+  )
+
+  expect_equal(result, env$bare_dir)
+  expect_true(fs::file_exists(fs::path(env$gov_dir, "README.md")))
+  expect_true(fs::file_exists(fs::path(env$gov_dir, "projects", ".gitkeep")))
+
+  # Commit should exist
+  repo <- git2r::repository(env$gov_dir)
+  commits <- git2r::commits(repo)
+  expect_length(commits, 1L)
+  expect_equal(commits[[1L]]$message, "Initialize governance repository")
+})
+
+# --- Idempotence --------------------------------------------------------------
+
+test_that("datom_init_gov is idempotent: returns silently when already initialised", {
+  env <- setup_gov_init_env()
+
+  # First call
+  datom_init_gov(
+    gov_store      = env$gov_store,
+    gov_repo_url   = env$bare_dir,
+    gov_local_path = env$gov_dir
+  )
+
+  repo_before <- git2r::repository(env$gov_dir)
+  commits_before <- git2r::commits(repo_before)
+
+  # Second call -- should not add more commits
+  result <- datom_init_gov(
+    gov_store      = env$gov_store,
+    gov_repo_url   = env$bare_dir,
+    gov_local_path = env$gov_dir
+  )
+
+  expect_equal(result, env$bare_dir)
+  commits_after <- git2r::commits(git2r::repository(env$gov_dir))
+  expect_equal(length(commits_after), length(commits_before))
+})
+
+# --- create_repo path (mocked) -----------------------------------------------
+
+test_that("datom_init_gov with create_repo = TRUE calls .datom_create_github_repo", {
+  env <- setup_gov_init_env()
+
+  local_mocked_bindings(
+    .datom_create_github_repo = function(repo_name, pat, org = NULL, private = TRUE) {
+      env$bare_dir  # return local bare dir as fake clone URL
+    }
+  )
+
+  result <- datom_init_gov(
+    gov_store      = env$gov_store,
+    gov_local_path = env$gov_dir,
+    create_repo    = TRUE,
+    repo_name      = "acme-gov",
+    github_pat     = "ghp_fake"
+  )
+
+  expect_equal(result, env$bare_dir)
+  expect_true(fs::file_exists(fs::path(env$gov_dir, "projects", ".gitkeep")))
+})

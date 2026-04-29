@@ -88,3 +88,25 @@
     cli::cli_abort("Unsupported storage backend: {.val {backend}}")
   )
 }
+
+
+#' Delete All Objects Under a Storage Prefix
+#'
+#' Removes every file under `prefix/datom/{prefix_key}` from storage.
+#' For S3 this lists then batch-deletes. For local it removes the directory.
+#' A missing prefix is a no-op (returns 0L). Pass `prefix_key = NULL` to
+#' delete the entire datom namespace for this connection.
+#'
+#' @param conn A `datom_conn` object.
+#' @param prefix_key Relative prefix to delete under (after `prefix/datom/`).
+#'   `NULL` deletes the entire datom namespace root.
+#' @return Invisibly, the count of deleted objects.
+#' @keywords internal
+.datom_storage_delete_prefix <- function(conn, prefix_key = NULL) {
+  backend <- conn$backend %||% "s3"
+  switch(backend,
+    s3    = .datom_s3_delete_prefix(conn, prefix_key),
+    local = .datom_local_delete_prefix(conn, prefix_key),
+    cli::cli_abort("Unsupported storage backend: {.val {backend}}")
+  )
+}

@@ -177,3 +177,33 @@
 
   invisible(TRUE)
 }
+
+
+#' Delete All Files Under a Local Storage Prefix
+#'
+#' Removes the directory at `root/{prefix}/datom/{prefix_key}` and everything
+#' inside it. A missing prefix is a no-op.
+#'
+#' @param conn A `datom_conn` object with `backend = "local"`.
+#' @param prefix_key Relative prefix (after `prefix/datom/`).
+#' @return Invisibly, 1L if the directory was removed, 0L if not found.
+#' @keywords internal
+.datom_local_delete_prefix <- function(conn, prefix_key = NULL) {
+  if (is.null(prefix_key)) {
+    has_prefix <- !is.null(conn$prefix) && !is.na(conn$prefix) && nzchar(conn$prefix)
+    base <- if (isTRUE(has_prefix)) {
+      paste0(gsub("^/+|/+$", "", conn$prefix), "/datom")
+    } else {
+      "datom"
+    }
+    dir_path <- fs::path(conn$root, base)
+  } else {
+    full_key <- .datom_build_storage_key(conn$prefix, prefix_key)
+    dir_path <- fs::path(conn$root, full_key)
+  }
+
+  if (!fs::dir_exists(dir_path)) return(invisible(0L))
+
+  fs::dir_delete(dir_path)
+  invisible(1L)
+}

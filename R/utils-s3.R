@@ -260,3 +260,57 @@
     }
   )
 }
+
+
+#' Delete All S3 Objects Under a Prefix
+#'
+#' Lists every key under `{prefix}/datom/{prefix_key}` and deletes in batches
+#' of up to 1000. A missing prefix is a no-op.
+#'
+#' @param conn A `datom_conn` object.
+#' @param prefix_key Relative prefix (after `prefix/datom/`).
+#' @return Invisibly, the count of deleted objects.
+#' @keywords internal
+.datom_s3_delete_prefix <- function(conn, prefix_key = NULL) {
+  # NULL prefix_key = delete everything under conn's datom namespace root
+  if (is.null(prefix_key)) {
+    has_prefix <- !is.null(conn$prefix) && !is.na(conn$prefix) && nzchar(conn$prefix)
+    base <- if (isTRUE(has_prefix)) {
+      paste0(gsub("^/+|/+$", "", conn$prefix), "/datom/")
+    } else {
+      "datom/"
+    }
+    full_prefix <- base
+  } else {
+    full_prefix <- .datom_build_storage_key(conn$prefix, prefix_key)
+    if (!endsWith(full_prefix, "/")) full_prefix <- paste0(full_prefix, "/")
+  }
+
+  all_keys <- character()
+  continuation <- NULL
+
+  repeat {
+    args <- list(Bucket = conn$root, Prefix = full_prefix, MaxKeys = 1000L)
+    if (!is.null(continuation)) args$ContinuationToken <- continuation
+    resp <- do.call(conn$client$list_objects_v2, args)
+    keys <- purrr::map_chr(resp$Contents %||% list(), "Key")
+    all_keys <- c(all_keys, keys)
+    if (!isTRUE(resp$IsTruncated)) break
+    continuation <- resp$NextContinuationToken
+  }
+
+  if (length(all_keys) == 0L) return(invisible(0L))
+
+  batches <- split(all_keys, ceiling(seq_along(all_keys) / 1000))
+  for (batch in batches) {
+    conn$client$delete_objects(
+      Bucket = conn$root,
+      Delete = list(
+        Objects = purrr::map(batch, ~ list(Key = .x)),
+        Quiet = TRUE
+      )
+    )
+  }
+
+  invisible(length(all_keys))
+}

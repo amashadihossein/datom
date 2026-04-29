@@ -25,7 +25,7 @@ is_valid_datom_repo <- function(path,
       dx <- dx[setdiff(names(dx), "git_initialized")]
     }
     if (!"datom" %in% checks) {
-      dx <- dx[setdiff(names(dx), c("datom_initialized", "datom_dispatch", "datom_manifest"))]
+      dx <- dx[setdiff(names(dx), c("datom_initialized", "datom_manifest"))]
     }
     if (!"renv" %in% checks) {
       dx <- dx[setdiff(names(dx), "renv_initialized")]
@@ -60,7 +60,6 @@ datom_repository_check <- function(path) {
   list(
     git_initialized = fs::dir_exists(fs::path(path, ".git")),
     datom_initialized = fs::file_exists(fs::path(path, ".datom", "project.yaml")),
-    datom_dispatch = fs::file_exists(fs::path(path, ".datom", "dispatch.json")),
     datom_manifest = fs::file_exists(fs::path(path, ".datom", "manifest.json")),
     renv_initialized = fs::dir_exists(fs::path(path, "renv"))
   )
@@ -193,39 +192,56 @@ datom_validate <- function(conn, fix = FALSE) {
 .datom_validate_repo_files <- function(conn) {
   repo_path <- conn$path
   gov_conn <- .datom_gov_conn(conn)
+  gov_local_path <- conn$gov_local_path
+  project_name <- conn$project_name
+
+  proj_key <- function(name) {
+    fs::path("projects", project_name, name)
+  }
+
+  gov_local <- function(name) {
+    if (is.null(gov_local_path) || !nzchar(gov_local_path)) {
+      return(NA_character_)
+    }
+    as.character(fs::path(gov_local_path, "projects", project_name, name))
+  }
 
   files_to_check <- list(
     list(
-      local = fs::path(repo_path, ".datom", "dispatch.json"),
-      s3_key = ".metadata/dispatch.json",
+      local = gov_local("dispatch.json"),
+      s3_key = as.character(proj_key("dispatch.json")),
       name = "dispatch.json",
       target_conn = gov_conn
     ),
     list(
-      local = fs::path(repo_path, ".datom", "ref.json"),
-      s3_key = ".metadata/ref.json",
+      local = gov_local("ref.json"),
+      s3_key = as.character(proj_key("ref.json")),
       name = "ref.json",
       target_conn = gov_conn
     ),
     list(
-      local = fs::path(repo_path, ".datom", "manifest.json"),
+      local = as.character(fs::path(repo_path, ".datom", "manifest.json")),
       s3_key = ".metadata/manifest.json",
       name = "manifest.json",
       target_conn = conn
     ),
     list(
-      local = fs::path(repo_path, ".datom", "migration_history.json"),
-      s3_key = ".metadata/migration_history.json",
+      local = gov_local("migration_history.json"),
+      s3_key = as.character(proj_key("migration_history.json")),
       name = "migration_history.json",
       target_conn = gov_conn
     )
   )
 
   rows <- purrr::map(files_to_check, function(fc) {
+    if (is.na(fc$local)) {
+      # No local clone available (e.g. reader): skip local check
+      return(NULL)
+    }
     local_exists <- fs::file_exists(fc$local)
 
     if (!local_exists) {
-      # File not in git — skip
+      # File not in clone -- skip
       return(NULL)
     }
 

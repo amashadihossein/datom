@@ -26,6 +26,7 @@ reference:
     desc: "Create connections, initialize repositories"
     contents:
       - datom_init_repo
+      - datom_init_gov
       - datom_clone
       - datom_get_conn
       - new_datom_conn
@@ -63,6 +64,7 @@ reference:
     desc: "Batch sync from files, scan manifests, sync metadata to S3"
     contents:
       - datom_pull
+      - datom_pull_gov
       - datom_sync
       - datom_sync_manifest
       - datom_sync_dispatch
@@ -72,6 +74,11 @@ reference:
     contents:
       - datom_validate
       - is_valid_datom_repo
+
+  - title: "Decommission"
+    desc: "Permanently remove a project and all its artefacts"
+    contents:
+      - datom_decommission
 
   - title: "Example Data"
     desc: "Bundled clinical trial data for examples and vignettes"

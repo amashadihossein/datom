@@ -319,12 +319,12 @@ test_that("datom_store() rejects invalid github_pat types", {
   }
 })
 
-test_that("datom_store() rejects invalid remote_url types", {
+test_that("datom_store() rejects invalid data_repo_url types", {
   comp <- make_component()
   for (bad in list(123, c("a", "b"), NA_character_, "")) {
     expect_error(
-      datom_store(governance = comp, data = comp, remote_url = bad, validate = FALSE),
-      "remote_url.*single non-empty string"
+      datom_store(governance = comp, data = comp, data_repo_url = bad, validate = FALSE),
+      "data_repo_url.*single non-empty string"
     )
   }
 })
@@ -337,6 +337,62 @@ test_that("datom_store() rejects invalid github_org types", {
       "github_org.*single non-empty string"
     )
   }
+})
+
+test_that("datom_store() rejects invalid gov_repo_url types", {
+  comp <- make_component()
+  for (bad in list(123, c("a", "b"), NA_character_, "")) {
+    expect_error(
+      datom_store(governance = comp, data = comp, gov_repo_url = bad, validate = FALSE),
+      "gov_repo_url.*single non-empty string"
+    )
+  }
+})
+
+test_that("datom_store() rejects invalid gov_local_path types", {
+  comp <- make_component()
+  for (bad in list(123, c("a", "b"), NA_character_, "")) {
+    expect_error(
+      datom_store(governance = comp, data = comp, gov_local_path = bad, validate = FALSE),
+      "gov_local_path.*single non-empty string"
+    )
+  }
+})
+
+# --- .datom_resolve_gov_local_path() ------------------------------------------
+
+test_that(".datom_resolve_gov_local_path() returns sibling dir from gov_repo_url basename", {
+  result <- .datom_resolve_gov_local_path(
+    data_local_path = "/projects/my-data",
+    gov_repo_url    = "https://github.com/org/acme-gov.git"
+  )
+  expect_equal(as.character(result), "/projects/acme-gov")
+})
+
+test_that(".datom_resolve_gov_local_path() strips .git suffix from URL basename", {
+  result <- .datom_resolve_gov_local_path(
+    data_local_path = "/projects/study",
+    gov_repo_url    = "https://github.com/org/acme-gov.git"
+  )
+  expect_false(grepl("\\.git$", result))
+  expect_equal(basename(result), "acme-gov")
+})
+
+test_that(".datom_resolve_gov_local_path() returns URL with no .git suffix unchanged", {
+  result <- .datom_resolve_gov_local_path(
+    data_local_path = "/projects/study",
+    gov_repo_url    = "https://github.com/org/acme-gov"
+  )
+  expect_equal(basename(result), "acme-gov")
+})
+
+test_that(".datom_resolve_gov_local_path() returns override when provided", {
+  result <- .datom_resolve_gov_local_path(
+    data_local_path = "/projects/my-data",
+    gov_repo_url    = "https://github.com/org/acme-gov.git",
+    override        = "/custom/gov/path"
+  )
+  expect_equal(as.character(result), "/custom/gov/path")
 })
 
 # --- datom_store: role derivation ---------------------------------------------
@@ -364,7 +420,8 @@ test_that("datom_store() creates valid developer store", {
   store <- datom_store(
     governance = gov, data = dat,
     github_pat = "ghp_abc123",
-    remote_url = "https://github.com/org/repo.git",
+    data_repo_url = "https://github.com/org/repo.git",
+    gov_repo_url = "https://github.com/org/acme-gov.git",
     github_org = "my-org",
     validate = FALSE
   )
@@ -375,7 +432,8 @@ test_that("datom_store() creates valid developer store", {
   expect_equal(store$data$bucket, "data-bucket")
   expect_equal(store$role, "developer")
   expect_equal(store$github_pat, "ghp_abc123")
-  expect_equal(store$remote_url, "https://github.com/org/repo.git")
+  expect_equal(store$data_repo_url, "https://github.com/org/repo.git")
+  expect_equal(store$gov_repo_url, "https://github.com/org/acme-gov.git")
   expect_equal(store$github_org, "my-org")
   expect_false(store$validated)
   expect_null(store$identity$github)
@@ -388,7 +446,8 @@ test_that("datom_store() creates valid reader store", {
   expect_true(is_datom_store(store))
   expect_equal(store$role, "reader")
   expect_null(store$github_pat)
-  expect_null(store$remote_url)
+  expect_null(store$data_repo_url)
+  expect_null(store$gov_repo_url)
   expect_null(store$github_org)
 })
 
@@ -504,7 +563,8 @@ test_that("print.datom_store() prints developer store without error", {
   store <- datom_store(
     governance = comp, data = comp,
     github_pat = "ghp_secret_token_12345",
-    remote_url = "https://github.com/org/repo.git",
+    data_repo_url = "https://github.com/org/repo.git",
+    gov_repo_url = "https://github.com/org/acme-gov.git",
     github_org = "my-org",
     validate = FALSE
   )
@@ -516,6 +576,7 @@ test_that("print.datom_store() prints developer store without error", {
   expect_match(full, "developer")
   expect_match(full, "ghp_\\*+")
   expect_match(full, "org/repo")
+  expect_match(full, "acme-gov")
   expect_match(full, "my-org")
   # PAT should be masked
   expect_no_match(full, "secret_token_12345")
@@ -683,6 +744,68 @@ test_that(".datom_create_github_repo() propagates API errors on create", {
   expect_error(
     .datom_create_github_repo("repo", pat = "ghp_test", org = "org"),
     "Failed to create GitHub repo"
+  )
+})
+
+
+# ==============================================================================
+# .datom_delete_github_repo
+# ==============================================================================
+
+test_that(".datom_delete_github_repo() rejects malformed repo_full", {
+  expect_error(.datom_delete_github_repo("noslash", pat = "ghp_x"), "owner/repo")
+  expect_error(.datom_delete_github_repo("", pat = "ghp_x"), "owner/repo")
+  expect_error(.datom_delete_github_repo(NA_character_, pat = "ghp_x"), "owner/repo")
+  expect_error(.datom_delete_github_repo(c("a/b", "c/d"), pat = "ghp_x"), "owner/repo")
+})
+
+test_that(".datom_delete_github_repo() rejects empty pat", {
+  expect_error(.datom_delete_github_repo("owner/repo", pat = ""), "non-empty")
+  expect_error(.datom_delete_github_repo("owner/repo", pat = NA_character_), "non-empty")
+})
+
+test_that(".datom_delete_github_repo() succeeds on 2xx response", {
+  mockery::stub(
+    .datom_delete_github_repo, "httr2::req_perform",
+    function(...) structure(list(status_code = 204L), class = "httr2_response")
+  )
+
+  expect_true(.datom_delete_github_repo("owner/repo", pat = "ghp_test"))
+})
+
+test_that(".datom_delete_github_repo() hints at delete_repo scope on 403", {
+  mockery::stub(
+    .datom_delete_github_repo, "httr2::req_perform",
+    function(...) stop("HTTP 403 Forbidden")
+  )
+
+  expect_error(
+    .datom_delete_github_repo("owner/repo", pat = "ghp_test"),
+    "delete_repo"
+  )
+})
+
+test_that(".datom_delete_github_repo() hints at already-deleted on 404", {
+  mockery::stub(
+    .datom_delete_github_repo, "httr2::req_perform",
+    function(...) stop("HTTP 404 Not Found")
+  )
+
+  expect_error(
+    .datom_delete_github_repo("owner/repo", pat = "ghp_test"),
+    "already deleted"
+  )
+})
+
+test_that(".datom_delete_github_repo() wraps generic network errors", {
+  mockery::stub(
+    .datom_delete_github_repo, "httr2::req_perform",
+    function(...) stop("Network timeout")
+  )
+
+  expect_error(
+    .datom_delete_github_repo("owner/repo", pat = "ghp_test"),
+    "Failed to delete GitHub repo"
   )
 })
 

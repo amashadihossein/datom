@@ -21,6 +21,7 @@
 #' @param gov_prefix Governance prefix (can be NULL).
 #' @param gov_region Governance region (can be NULL).
 #' @param gov_client Governance storage client (can be NULL).
+#' @param gov_local_path Absolute path to the local gov clone (NULL for readers).
 #'
 #' @return A `datom_conn` object.
 #' @keywords internal
@@ -36,6 +37,7 @@ new_datom_conn <- function(project_name,
                           gov_prefix = NULL,
                           gov_region = NULL,
                           gov_client = NULL,
+                          gov_local_path = NULL,
                           backend = "s3") {
   role <- match.arg(role)
   backend <- match.arg(backend, c("s3", "local"))
@@ -70,6 +72,13 @@ new_datom_conn <- function(project_name,
     }
   }
 
+  if (!is.null(gov_local_path)) {
+    if (!is.character(gov_local_path) || length(gov_local_path) != 1L ||
+        is.na(gov_local_path) || !nzchar(gov_local_path)) {
+      cli::cli_abort("{.arg gov_local_path} must be a single non-empty string or NULL.")
+    }
+  }
+
   if (role == "developer" && is.null(path)) {
     cli::cli_abort("Developer connections require a {.arg path} to the local repo.")
   }
@@ -88,7 +97,8 @@ new_datom_conn <- function(project_name,
       gov_root = gov_root,
       gov_prefix = gov_prefix,
       gov_region = gov_region,
-      gov_client = gov_client
+      gov_client = gov_client,
+      gov_local_path = gov_local_path
     ),
     class = "datom_conn"
   )
@@ -193,7 +203,7 @@ print.datom_conn <- function(x, ...) {
 #' @param store A `datom_store` object (from `datom_store()`). Must have role
 #'   `"developer"` (i.e., `github_pat` provided).
 #' @param create_repo If `TRUE`, create a GitHub repo via API. Mutually
-#'   exclusive with providing `remote_url` on the store.
+#'   exclusive with providing `data_repo_url` on the store.
 #' @param repo_name GitHub repo name when `create_repo = TRUE`. Defaults to
 #'   `project_name`. Useful when the project name (e.g., `"STUDY_001"`) isn't
 #'   a good GitHub repo name.
@@ -241,13 +251,13 @@ datom_init_repo <- function(path = ".",
     cli::cli_abort("{.arg max_file_size_gb} must be a positive number.")
   }
 
-  # --- Resolve remote_url -----------------------------------------------------
-  remote_url <- store$remote_url
+  # --- Resolve data_repo_url -------------------------------------------------
+  remote_url <- store$data_repo_url
 
   if (isTRUE(create_repo) && !is.null(remote_url)) {
     cli::cli_abort(c(
-      "{.arg create_repo} and {.arg remote_url} are mutually exclusive.",
-      "i" = "Either set {.code create_repo = TRUE} or provide {.arg remote_url} on the store, not both."
+      "{.arg create_repo} and {.arg data_repo_url} are mutually exclusive.",
+      "i" = "Either set {.code create_repo = TRUE} or provide {.arg data_repo_url} on the store, not both."
     ))
   }
 
@@ -262,11 +272,42 @@ datom_init_repo <- function(path = ".",
   if (is.null(remote_url)) {
     cli::cli_abort(c(
       "No remote URL available.",
-      "i" = "Either provide {.arg remote_url} on the store or set {.code create_repo = TRUE}."
+      "i" = "Either provide {.arg data_repo_url} on the store or set {.code create_repo = TRUE}."
     ))
   }
 
-  # --- S3 namespace safety check ----------------------------------------------
+  # --- Resolve gov_local_path ------------------------------------------------
+  gov_local_path <- .datom_resolve_or_default_gov_path(store, fs::path_abs(path))
+
+  # --- Step 0: ensure gov clone is available ---------------------------------
+  # Capture pre-existence so on.exit cleanup can roll back the clone iff we
+  # created it (and only if a later step fails before git push).
+  .gov_clone_created_here <- FALSE
+  if (!is.null(store$gov_repo_url) && !is.null(gov_local_path)) {
+    gov_clone_existed_before <- .datom_gov_clone_exists(as.character(gov_local_path))
+    .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path))
+    .gov_clone_created_here <- !gov_clone_existed_before
+  }
+
+  # Register gov-clone rollback immediately so failures in the namespace
+  # checks below (which run before the data-side on.exit is set) still
+  # trigger cleanup. Cleared by setting .git_pushed = TRUE after push.
+  .git_pushed <- FALSE
+  .init_success <- FALSE
+  .safe_delete <- function(p, is_dir = TRUE) {
+    tryCatch(
+      if (is_dir) fs::dir_delete(p) else fs::file_delete(p),
+      error = function(e) NULL
+    )
+  }
+  on.exit({
+    if (.gov_clone_created_here && !.init_success && !.git_pushed &&
+        !is.null(gov_local_path) && fs::dir_exists(gov_local_path)) {
+      .safe_delete(as.character(gov_local_path))
+    }
+  }, add = TRUE)
+
+  # --- S3 namespace safety check for data store ------------------------------
   # Use data component for storage operations (where manifest lives)
   data_backend <- .datom_store_backend(store$data)
   data_root <- .datom_store_root(store$data)
@@ -280,8 +321,13 @@ datom_init_repo <- function(path = ".",
         region = data_region
       )
       check_conn <- new_datom_conn(
-        project_name, data_root, data_prefix, data_region,
-        s3_check_client, NULL, "reader"
+        project_name = project_name,
+        root         = data_root,
+        prefix       = data_prefix,
+        region       = data_region,
+        client       = s3_check_client,
+        path         = NULL,
+        role         = "reader"
       )
       .datom_check_namespace_free(check_conn)
     }, error = function(e) {
@@ -292,6 +338,21 @@ datom_init_repo <- function(path = ".",
         "Could not verify S3 namespace is free: {conditionMessage(e)}"
       )
     })
+  }
+
+  # --- Gov project namespace check -------------------------------------------
+  # Abort if this project name is already registered in the gov clone. This
+  # prevents a data-first init from completing only to have the gov registration
+  # step fail, which would require manual cleanup.
+  if (!is.null(gov_local_path) && .datom_gov_clone_exists(as.character(gov_local_path))) {
+    gov_project_dir <- .datom_gov_project_path(as.character(gov_local_path), project_name)
+    if (fs::dir_exists(gov_project_dir)) {
+      cli::cli_abort(c(
+        "Project {.val {project_name}} is already registered in the governance repo.",
+        "i" = "Found at: {.path {gov_project_dir}}",
+        "i" = "Use a different project name or decommission the existing project first."
+      ))
+    }
   }
 
   # --- Path setup -------------------------------------------------------------
@@ -318,16 +379,8 @@ datom_init_repo <- function(path = ".",
   readme_existed <- fs::file_exists(readme_file)
   git_existed    <- fs::dir_exists(git_dir)
 
-  .safe_delete <- function(p, is_dir = TRUE) {
-    tryCatch(
-      if (is_dir) fs::dir_delete(p) else fs::file_delete(p),
-      error = function(e) NULL
-    )
-  }
-
-  .init_success <- FALSE
   on.exit({
-    if (!.init_success) {
+    if (!.init_success && !.git_pushed) {
       if (!datom_existed  && fs::dir_exists(datom_dir))   .safe_delete(datom_dir)
       if (!input_existed && fs::dir_exists(input_dir))   .safe_delete(input_dir)
       if (!gi_existed    && fs::file_exists(gitignore))  .safe_delete(gitignore, is_dir = FALSE)
@@ -372,8 +425,12 @@ datom_init_repo <- function(path = ".",
       data = data_yaml,
       max_file_size_gb = max_file_size_gb
     ),
-    git = list(
-      remote_url = remote_url
+    repos = list(
+      data = list(remote_url = remote_url),
+      governance = list(
+        remote_url = store$gov_repo_url,
+        local_path = store$gov_local_path
+      )
     ),
     sync = list(
       continue_on_error = TRUE,
@@ -384,7 +441,7 @@ datom_init_repo <- function(path = ".",
 
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
 
-  # --- Create dispatch.json ----------------------------------------------------
+  # --- Build dispatch and ref payloads (written to gov, not data clone) ------
   dispatch <- list(
     methods = list(
       r = list(default = "datom::datom_read"),
@@ -392,10 +449,9 @@ datom_init_repo <- function(path = ".",
     )
   )
 
-  jsonlite::write_json(dispatch, fs::path(path, ".datom", "dispatch.json"),
-                       auto_unbox = TRUE, pretty = TRUE)
+  ref <- .datom_create_ref(store$data)
 
-  # --- Create manifest.json ---------------------------------------------------
+  # --- Create manifest.json (data repo only) ----------------------------------
   manifest <- list(
     project_name = project_name,
     updated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
@@ -408,12 +464,6 @@ datom_init_repo <- function(path = ".",
   )
 
   jsonlite::write_json(manifest, fs::path(path, ".datom", "manifest.json"),
-                       auto_unbox = TRUE, pretty = TRUE)
-
-  # --- Create ref.json --------------------------------------------------------
-  ref <- .datom_create_ref(store$data)
-
-  jsonlite::write_json(ref, fs::path(path, ".datom", "ref.json"),
                        auto_unbox = TRUE, pretty = TRUE)
 
   # --- Create .gitignore ------------------------------------------------------
@@ -446,12 +496,10 @@ datom_init_repo <- function(path = ".",
 
   git2r::remote_add(repo, name = "origin", url = remote_url)
 
-  # Stage all created files
+  # Stage data-repo files only (dispatch.json and ref.json live in gov repo)
   git2r::add(repo, c(
     ".datom/project.yaml",
-    ".datom/dispatch.json",
     ".datom/manifest.json",
-    ".datom/ref.json",
     ".gitignore",
     "README.md"
   ))
@@ -464,22 +512,51 @@ datom_init_repo <- function(path = ".",
 
   # Push initial commit
   .datom_git_push(path)
+  .git_pushed <- TRUE
 
-  # Push repo-level files to storage (dispatch → governance, manifest → data)
-  tryCatch({
-    data_conn <- .datom_build_init_conn(
-      project_name, store$data, path, "developer", NULL,
-      gov_store = store$governance
+  # From this point on, the data git remote has been advertised. Failures
+  # below are reported but do NOT roll back local files (user has work to
+  # recover) -- they abort with a clear recovery hint.
+
+  data_conn <- .datom_build_init_conn(
+    project_name, store$data, path, "developer", NULL,
+    gov_store = store$governance,
+    gov_local_path = if (!is.null(gov_local_path)) as.character(gov_local_path) else NULL
+  )
+
+  # --- Register project in gov repo + mirror to gov storage ------------------
+  # dispatch.json and ref.json live in the gov repo (projects/{name}/),
+  # never in the data clone. .datom_gov_register_project() commits + pushes
+  # both files and mirrors them to gov storage. A failure here is a hard
+  # abort: the data repo is pushed but no project entry exists in gov, so
+  # readers cannot discover this project. Recovery is manual via
+  # datom_sync_dispatch().
+  if (!is.null(gov_local_path)) {
+    tryCatch(
+      .datom_gov_register_project(data_conn, project_name, dispatch, ref),
+      error = function(e) {
+        cli::cli_abort(c(
+          "Data repo pushed but gov registration failed.",
+          "x" = conditionMessage(e),
+          "i" = "Local data clone is intact at {.path {path}}.",
+          "i" = "After fixing the cause (e.g. credentials, connectivity), run {.fn datom_sync_dispatch} to register the project."
+        ), call = NULL)
+      }
     )
-    gov_conn <- .datom_gov_conn(data_conn)
-    .datom_storage_write_json(gov_conn, ".metadata/dispatch.json", dispatch)
-    .datom_storage_write_json(gov_conn, ".metadata/ref.json", ref)
+  }
+
+  # --- Mirror manifest to data storage ----------------------------------------
+  # Manifest is part of the data-side contract -- readers need it to clone.
+  # Failure aborts; user runs datom_sync_manifest after fixing cause.
+  tryCatch({
     .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
   }, error = function(e) {
-    cli::cli_alert_warning(
-      "Git push succeeded but storage upload failed: {conditionMessage(e)}"
-    )
-    cli::cli_alert_info("Run {.fn datom_sync_dispatch} to fix.")
+    cli::cli_abort(c(
+      "Data repo pushed and gov registered but manifest upload failed.",
+      "x" = conditionMessage(e),
+      "i" = "Local data clone is intact at {.path {path}}.",
+      "i" = "After fixing the cause (e.g. credentials, connectivity), run {.fn datom_sync_manifest} to upload the manifest."
+    ), call = NULL)
   })
 
   .init_success <- TRUE
@@ -492,15 +569,176 @@ datom_init_repo <- function(path = ".",
 }
 
 
+# --- datom_init_gov -----------------------------------------------------------
+
+#' Initialize a Governance Repository
+#'
+#' One-time setup to create a shared governance repository that serves many
+#' data projects in an organisation. Creates the GitHub repo (optionally),
+#' seeds the skeleton (`README.md` + `projects/.gitkeep`), commits, and
+#' pushes.
+#'
+#' Idempotent: if `gov_local_path` already contains an initialised governance
+#' clone (i.e. `projects/.gitkeep` exists), the function returns silently
+#' without making any changes.
+#'
+#' @param gov_store A governance store component (`datom_store_s3` or
+#'   `datom_store_local`).  This is the storage backend that individual data
+#'   projects will use to register their dispatch and ref files.
+#' @param gov_repo_url GitHub URL of the governance repo.  Mutually exclusive
+#'   with `create_repo = TRUE`.
+#' @param gov_local_path Local path for the governance clone.  When `NULL`,
+#'   derived from the basename of `gov_repo_url` (`.git` suffix stripped) in
+#'   the current directory.  When `create_repo = TRUE` and no URL is known
+#'   yet, set this explicitly or let it default to `repo_name`.
+#' @param create_repo If `TRUE`, create a GitHub repo via the API and use the
+#'   returned URL.  Mutually exclusive with providing `gov_repo_url`.
+#' @param repo_name GitHub repo name when `create_repo = TRUE`.  Required
+#'   when `create_repo = TRUE`.
+#' @param github_pat GitHub personal access token.  Required when
+#'   `create_repo = TRUE`.
+#' @param github_org GitHub organisation slug.  `NULL` creates the repo under
+#'   the authenticated user account.
+#' @param private Whether the created repo should be private.  Default `TRUE`.
+#'   Ignored when `create_repo = FALSE`.
+#'
+#' @return Invisible `gov_repo_url` on success.
+#' @export
+datom_init_gov <- function(gov_store,
+                            gov_repo_url = NULL,
+                            gov_local_path = NULL,
+                            create_repo = FALSE,
+                            repo_name = NULL,
+                            github_pat = NULL,
+                            github_org = NULL,
+                            private = TRUE) {
+  .datom_check_git2r()
+
+  # --- Input validation -------------------------------------------------------
+  if (!.is_datom_store_component(gov_store)) {
+    cli::cli_abort(
+      "{.arg gov_store} must be a {.cls datom_store_s3} or {.cls datom_store_local} object."
+    )
+  }
+
+  if (isTRUE(create_repo) && !is.null(gov_repo_url)) {
+    cli::cli_abort(c(
+      "{.arg create_repo} and {.arg gov_repo_url} are mutually exclusive.",
+      "i" = "Either set {.code create_repo = TRUE} or provide {.arg gov_repo_url}, not both."
+    ))
+  }
+
+  if (isTRUE(create_repo) && is.null(repo_name)) {
+    cli::cli_abort(
+      "{.arg repo_name} is required when {.code create_repo = TRUE}."
+    )
+  }
+
+  if (isTRUE(create_repo) && is.null(github_pat)) {
+    cli::cli_abort(
+      "{.arg github_pat} is required when {.code create_repo = TRUE}."
+    )
+  }
+
+  if (!isTRUE(create_repo) && is.null(gov_repo_url)) {
+    cli::cli_abort(c(
+      "No governance repo URL available.",
+      "i" = "Either provide {.arg gov_repo_url} or set {.code create_repo = TRUE}."
+    ))
+  }
+
+  # --- Create GitHub repo if requested ----------------------------------------
+  if (isTRUE(create_repo)) {
+    gov_repo_url <- .datom_create_github_repo(
+      repo_name = repo_name,
+      pat = github_pat,
+      org = github_org,
+      private = private
+    )
+  }
+
+  # --- Resolve gov_local_path -------------------------------------------------
+  if (is.null(gov_local_path)) {
+    base_name <- sub("\\.git$", "", basename(gov_repo_url))
+    gov_local_path <- fs::path_abs(base_name)
+  } else {
+    gov_local_path <- fs::path_abs(gov_local_path)
+  }
+
+  # --- Idempotence check ------------------------------------------------------
+  # Validate the remote URL on any existing clone first (catches mismatched
+  # gov_repo_url against an existing directory before trusting the skeleton
+  # marker). Then, if the skeleton already exists, treat as already done.
+  if (.datom_gov_clone_exists(gov_local_path)) {
+    .datom_gov_validate_remote(gov_local_path, gov_repo_url)
+  }
+  if (fs::file_exists(fs::path(gov_local_path, "projects", ".gitkeep"))) {
+    cli::cli_alert_info("Governance repository already initialised at {.path {gov_local_path}}.")
+    return(invisible(gov_repo_url))
+  }
+
+  # --- Set up local clone -----------------------------------------------------
+  # For create_repo: init locally and set remote (remote is brand-new/empty).
+  # For existing URL: clone the remote.
+  if (isTRUE(create_repo)) {
+    fs::dir_create(gov_local_path)
+    repo <- git2r::init(gov_local_path)
+    git2r::remote_add(repo, name = "origin", url = gov_repo_url)
+  } else {
+    .datom_gov_clone_init(gov_repo_url, gov_local_path)
+    repo <- git2r::repository(gov_local_path)
+  }
+
+  # Configure git user (required on freshly init'd repos that lack local cfg)
+  git_cfg <- git2r::config()$global
+  author_name  <- git_cfg$user.name  %||% "datom"
+  author_email <- git_cfg$user.email %||% "datom@noreply"
+  git2r::config(repo, user.name = author_name, user.email = author_email)
+
+  # --- Seed gov repo skeleton -------------------------------------------------
+  projects_dir <- fs::path(gov_local_path, "projects")
+  gitkeep_path <- fs::path(projects_dir, ".gitkeep")
+  readme_path  <- fs::path(gov_local_path, "README.md")
+
+  fs::dir_create(projects_dir)
+  if (!fs::file_exists(gitkeep_path)) writeLines("", gitkeep_path)
+  if (!fs::file_exists(readme_path)) {
+    writeLines(c("# Governance Repository",
+                 "",
+                 "This repository stores governance metadata for datom data projects.",
+                 "Each registered project has a subdirectory under `projects/`."),
+               readme_path)
+  }
+
+  # --- Commit and push --------------------------------------------------------
+  git2r::add(repo, c("README.md", fs::path("projects", ".gitkeep")))
+  git2r::commit(
+    repo,
+    message = "Initialize governance repository",
+    author  = git2r::default_signature(repo)
+  )
+
+  .datom_git_push(gov_local_path)
+
+  cli::cli_alert_success("Governance repository initialised at {.path {gov_local_path}}.")
+
+  invisible(gov_repo_url)
+}
+
+
 #' Clone a datom Repository
 #'
 #' Clones a remote datom repository and returns a connection. This is the
 #' recommended way for teammates to join an existing datom project — it wraps
 #' `git2r::clone()` and immediately returns a ready-to-use `datom_conn`.
 #'
+#' When `store$gov_repo_url` is set the governance repo is also cloned (or
+#' verified if it already exists locally). An existing clone with uncommitted
+#' changes causes an error to avoid surprising state.
+#'
 #' @param path Local path to clone into.
 #' @param store A `datom_store` object (from `datom_store()`). Must have
-#'   `remote_url` set and role `"developer"` (i.e., `github_pat` provided).
+#'   `data_repo_url` set and role `"developer"` (i.e., `github_pat` provided).
 #' @param ... Additional arguments passed to [git2r::clone()].
 #'
 #' @return A `datom_conn` object (developer role).
@@ -528,11 +766,11 @@ datom_clone <- function(path, store, ...) {
     ))
   }
 
-  remote_url <- store$remote_url
+  remote_url <- store$data_repo_url
   if (is.null(remote_url) || !nzchar(remote_url)) {
     cli::cli_abort(c(
-      "{.arg store} must have a {.field remote_url} for cloning.",
-      "i" = "Provide {.arg remote_url} when creating the store."
+      "{.arg store} must have a {.field data_repo_url} for cloning.",
+      "i" = "Provide {.arg data_repo_url} when creating the store."
     ))
   }
 
@@ -571,6 +809,28 @@ datom_clone <- function(path, store, ...) {
       "i" = "No {.file .datom/project.yaml} found at {.path {path}}.",
       "i" = "Use {.fn datom_init_repo} to initialize a new datom project."
     ))
+  }
+
+  # --- Clone or verify gov repo when gov_repo_url is set ---------------------
+  if (!is.null(store$gov_repo_url) && nzchar(store$gov_repo_url)) {
+    gov_local_path <- .datom_resolve_or_default_gov_path(store, path)
+
+    # Refuse if the existing gov clone has uncommitted changes
+    if (.datom_gov_clone_exists(as.character(gov_local_path))) {
+      gov_repo  <- git2r::repository(as.character(gov_local_path))
+      gov_status <- git2r::status(gov_repo,
+                                   staged   = TRUE,
+                                   unstaged = TRUE,
+                                   untracked = FALSE)
+      if (length(unlist(gov_status)) > 0L) {
+        cli::cli_abort(c(
+          "Gov clone at {.path {gov_local_path}} has uncommitted changes.",
+          "i" = "Commit or stash before cloning."
+        ))
+      }
+    }
+
+    .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path))
   }
 
   conn <- datom_get_conn(path = path, store = store)
@@ -645,7 +905,8 @@ datom_get_conn <- function(path = NULL,
 #' @return A `datom_conn` object.
 #' @keywords internal
 .datom_build_init_conn <- function(project_name, data_store, path, role,
-                                   endpoint = NULL, gov_store = NULL) {
+                                   endpoint = NULL, gov_store = NULL,
+                                   gov_local_path = NULL) {
   backend <- .datom_store_backend(data_store)
   data_root <- .datom_store_root(data_store)
   data_prefix <- data_store$prefix
@@ -696,6 +957,7 @@ datom_get_conn <- function(path = NULL,
     gov_prefix = gov_prefix,
     gov_region = gov_region,
     gov_client = gov_client,
+    gov_local_path = gov_local_path,
     backend = backend
   )
 }
@@ -750,9 +1012,18 @@ datom_get_conn <- function(path = NULL,
 
   role <- store$role
 
+  # gov_local_path: use explicit override from store if set, otherwise derive
+  # sibling default from the gov_repo_url (if available). Computed before ref
+  # resolution so the developer fast path can read from the local gov clone.
+  gov_local_path <- .datom_resolve_or_default_gov_path(store, as.character(path))
+
   # Resolve data location via ref.json (if governance store present)
   ref_location <- .datom_resolve_data_location(
-    store, role, path = as.character(path), endpoint = endpoint
+    store, role,
+    project_name = project_name,
+    path = as.character(path),
+    gov_local_path = gov_local_path,
+    endpoint = endpoint
   )
 
   # If ref resolved a different location, build a modified data store
@@ -767,12 +1038,12 @@ datom_get_conn <- function(path = NULL,
       !identical(ref_prefix %||% NULL, store_prefix %||% NULL)
   }
 
-  # Build conn via helper
   conn <- .datom_build_init_conn(
     project_name, effective_data_store,
     if (role == "developer") as.character(path) else NULL,
     role, endpoint,
-    gov_store = store$governance
+    gov_store = store$governance,
+    gov_local_path = gov_local_path
   )
 
   # Override conn root/prefix/region with ref-resolved values if migrated
@@ -804,9 +1075,14 @@ datom_get_conn <- function(path = NULL,
     cli::cli_abort("{.arg project_name} is required for reader connections (no local repo).")
   }
 
-  # Resolve data location via ref.json (if governance store present)
+  # Resolve data location via ref.json (if governance store present).
+  # Readers do not have a gov clone -- always read via gov storage client.
   ref_location <- .datom_resolve_data_location(
-    store, store$role, path = NULL, endpoint = endpoint
+    store, store$role,
+    project_name = project_name,
+    path = NULL,
+    gov_local_path = NULL,
+    endpoint = endpoint
   )
 
   migrated <- FALSE
@@ -821,7 +1097,8 @@ datom_get_conn <- function(path = NULL,
 
   conn <- .datom_build_init_conn(
     project_name, store$data, NULL, store$role, endpoint,
-    gov_store = store$governance
+    gov_store = store$governance,
+    gov_local_path = NULL
   )
 
   # Override conn root/prefix/region with ref-resolved values if migrated

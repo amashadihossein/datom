@@ -689,74 +689,53 @@ test_that("datom_sync_dispatch requires interactive confirmation by default", {
   })
 })
 
-test_that("datom_sync_dispatch syncs repo-level files to S3", {
+test_that("datom_sync_dispatch aborts when conn lacks gov_local_path", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+    conn$gov_local_path <- NULL
 
-    # Create repo-level .datom files
-    fs::dir_create(".datom")
-    jsonlite::write_json(list(methods = list()), ".datom/dispatch.json",
-                         auto_unbox = TRUE)
-    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
-                         auto_unbox = TRUE)
-
-    s3_keys_written <- character()
-
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        s3_keys_written <<- c(s3_keys_written, s3_key)
-        invisible(NULL)
-      }
+    expect_error(
+      datom_sync_dispatch(conn, .confirm = FALSE),
+      "gov clone"
     )
-
-    result <- datom_sync_dispatch(conn, .confirm = FALSE)
-
-    expect_true(".metadata/dispatch.json" %in% s3_keys_written)
-    expect_true(".metadata/manifest.json" %in% s3_keys_written)
-    expect_true(".metadata/dispatch.json" %in% result$repo_files)
-    expect_true(".metadata/manifest.json" %in% result$repo_files)
   })
 })
 
-test_that("datom_sync_dispatch skips missing repo-level files", {
-  withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$role <- "developer"
-    conn$path <- getwd()
-
-    # Only create dispatch.json, not manifest or migration_history
-    fs::dir_create(".datom")
-    jsonlite::write_json(list(methods = list()), ".datom/dispatch.json",
+# Helper: build a developer conn with gov clone seeded with project files
+.setup_sync_dispatch_conn <- function(project_name = "myproj",
+                                      seed_dispatch = TRUE,
+                                      seed_ref = TRUE) {
+  gov_dir <- withr::local_tempdir(.local_envir = parent.frame())
+  proj_dir <- fs::path(gov_dir, "projects", project_name)
+  fs::dir_create(proj_dir)
+  if (seed_dispatch) {
+    jsonlite::write_json(list(methods = list()),
+                         fs::path(proj_dir, "dispatch.json"),
                          auto_unbox = TRUE)
+  }
+  if (seed_ref) {
+    jsonlite::write_json(list(current = list()),
+                         fs::path(proj_dir, "ref.json"),
+                         auto_unbox = TRUE)
+  }
+  fs::dir_create(".datom")
+  jsonlite::write_json(list(tables = list()),
+                       ".datom/manifest.json", auto_unbox = TRUE)
 
-    s3_keys_written <- character()
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$path <- getwd()
+  conn$gov_local_path <- gov_dir
+  conn$project_name <- project_name
+  conn
+}
 
-    local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        s3_keys_written <<- c(s3_keys_written, s3_key)
-        invisible(NULL)
-      }
-    )
-
-    result <- datom_sync_dispatch(conn, .confirm = FALSE)
-
-    expect_equal(length(result$repo_files), 1)
-    expect_equal(result$repo_files, ".metadata/dispatch.json")
-  })
-})
-
-test_that("datom_sync_dispatch syncs per-table metadata to S3", {
+test_that("datom_sync_dispatch syncs per-table metadata to storage", {
   withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$role <- "developer"
-    conn$path <- getwd()
+    conn <- .setup_sync_dispatch_conn()
 
-    fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
-
-    # Create a table directory with metadata
     fs::dir_create("customers")
     jsonlite::write_json(list(data_sha = "abc"), "customers/metadata.json",
                          auto_unbox = TRUE)
@@ -766,6 +745,8 @@ test_that("datom_sync_dispatch syncs per-table metadata to S3", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
+      .datom_gov_write_dispatch = function(...) invisible(TRUE),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
       .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
@@ -782,63 +763,42 @@ test_that("datom_sync_dispatch syncs per-table metadata to S3", {
 
 test_that("datom_sync_dispatch ignores non-table directories", {
   withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$role <- "developer"
-    conn$path <- getwd()
+    conn <- .setup_sync_dispatch_conn()
 
-    fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
-
-    # Directories that should be ignored
     fs::dir_create("input_files")
     fs::dir_create("renv")
     fs::dir_create("R")
     fs::dir_create("tests")
-
-    # Hidden directories also ignored
     fs::dir_create(".git")
 
-    s3_keys_written <- character()
-
     local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) {
-        s3_keys_written <<- c(s3_keys_written, s3_key)
-        invisible(NULL)
-      }
+      .datom_gov_write_dispatch = function(...) invisible(TRUE),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
+      .datom_storage_write_json = function(...) invisible(NULL)
     )
 
     result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
-    # Only repo-level files synced, no table-level
     expect_equal(length(result$tables), 0)
-    expect_equal(result$repo_files, ".metadata/dispatch.json")
   })
 })
 
 test_that("datom_sync_dispatch handles per-table errors gracefully", {
   withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$role <- "developer"
-    conn$path <- getwd()
+    conn <- .setup_sync_dispatch_conn()
 
-    fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
-
-    # Two tables: one good, one will fail
     fs::dir_create("good_tbl")
     jsonlite::write_json(list(data_sha = "d1"), "good_tbl/metadata.json",
                          auto_unbox = TRUE)
-
     fs::dir_create("bad_tbl")
     jsonlite::write_json(list(data_sha = "d2"), "bad_tbl/metadata.json",
                          auto_unbox = TRUE)
 
-    call_count <- 0L
-
     local_mocked_bindings(
+      .datom_gov_write_dispatch = function(...) invisible(TRUE),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
       .datom_storage_write_json = function(conn, s3_key, data) {
-        call_count <<- call_count + 1L
-        if (grepl("bad_tbl", s3_key)) stop("S3 upload failed")
+        if (grepl("bad_tbl", s3_key)) stop("storage upload failed")
         invisible(NULL)
       }
     )
@@ -847,20 +807,14 @@ test_that("datom_sync_dispatch handles per-table errors gracefully", {
 
     expect_equal(result$tables$good_tbl$action, "synced")
     expect_equal(result$tables$bad_tbl$action, "error")
-    expect_match(result$tables$bad_tbl$error, "S3 upload failed")
+    expect_match(result$tables$bad_tbl$error, "storage upload failed")
   })
 })
 
 test_that("datom_sync_dispatch syncs metadata snapshots from .metadata dir", {
   withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$role <- "developer"
-    conn$path <- getwd()
+    conn <- .setup_sync_dispatch_conn()
 
-    fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
-
-    # Table with metadata + snapshot
     fs::dir_create("orders")
     jsonlite::write_json(list(data_sha = "d1"), "orders/metadata.json",
                          auto_unbox = TRUE)
@@ -871,13 +825,15 @@ test_that("datom_sync_dispatch syncs metadata snapshots from .metadata dir", {
     s3_keys_written <- character()
 
     local_mocked_bindings(
+      .datom_gov_write_dispatch = function(...) invisible(TRUE),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
       .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys_written <<- c(s3_keys_written, s3_key)
         invisible(NULL)
       }
     )
 
-    result <- datom_sync_dispatch(conn, .confirm = FALSE)
+    datom_sync_dispatch(conn, .confirm = FALSE)
 
     expect_true("orders/.metadata/metadata.json" %in% s3_keys_written)
     expect_true("orders/.metadata/abc123.json" %in% s3_keys_written)
@@ -886,15 +842,12 @@ test_that("datom_sync_dispatch syncs metadata snapshots from .metadata dir", {
 
 test_that("datom_sync_dispatch returns correct summary structure", {
   withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$role <- "developer"
-    conn$path <- getwd()
-
-    fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
+    conn <- .setup_sync_dispatch_conn()
 
     local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_gov_write_dispatch = function(...) invisible(TRUE),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
+      .datom_storage_write_json = function(...) invisible(NULL)
     )
 
     result <- datom_sync_dispatch(conn, .confirm = FALSE)
@@ -909,12 +862,7 @@ test_that("datom_sync_dispatch returns correct summary structure", {
 
 test_that("datom_sync_dispatch handles multiple tables", {
   withr::with_tempdir({
-    conn <- mock_datom_conn(list())
-    conn$role <- "developer"
-    conn$path <- getwd()
-
-    fs::dir_create(".datom")
-    jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
+    conn <- .setup_sync_dispatch_conn()
 
     for (nm in c("alpha", "beta", "gamma")) {
       fs::dir_create(nm)
@@ -923,13 +871,180 @@ test_that("datom_sync_dispatch handles multiple tables", {
     }
 
     local_mocked_bindings(
-      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
+      .datom_gov_write_dispatch = function(...) invisible(TRUE),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
+      .datom_storage_write_json = function(...) invisible(NULL)
     )
 
     result <- datom_sync_dispatch(conn, .confirm = FALSE)
 
     expect_equal(length(result$tables), 3)
     expect_true(all(purrr::map_chr(result$tables, "action") == "synced"))
+  })
+})
+
+
+# --- datom_sync_dispatch() gov-first path (Phase 15, Chunk 7) -----------------
+
+test_that("datom_sync_dispatch with gov_local_path calls .datom_gov_write_dispatch", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    project_dir <- fs::path(gov_dir, "projects", "myproj")
+    fs::dir_create(project_dir)
+    jsonlite::write_json(list(methods = list()), fs::path(project_dir, "dispatch.json"),
+                         auto_unbox = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    # Manifest (data repo)
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    write_dispatch_called <- FALSE
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(conn, project_name, dispatch) {
+        write_dispatch_called <<- TRUE
+        invisible(TRUE)
+      },
+      .datom_gov_write_ref = function(conn, project_name, ref) invisible(TRUE),
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
+    )
+
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
+
+    expect_true(write_dispatch_called)
+    expect_true(any(grepl("dispatch.json", result$repo_files)))
+  })
+})
+
+test_that("datom_sync_dispatch with gov_local_path calls .datom_gov_write_ref", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    project_dir <- fs::path(gov_dir, "projects", "myproj")
+    fs::dir_create(project_dir)
+    jsonlite::write_json(list(current = list()), fs::path(project_dir, "ref.json"),
+                         auto_unbox = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    write_ref_called <- FALSE
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(conn, project_name, dispatch) invisible(TRUE),
+      .datom_gov_write_ref = function(conn, project_name, ref) {
+        write_ref_called <<- TRUE
+        invisible(TRUE)
+      },
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
+    )
+
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
+
+    expect_true(write_ref_called)
+    expect_true(any(grepl("ref.json", result$repo_files)))
+  })
+})
+
+test_that("datom_sync_dispatch gov-path still syncs manifest to data storage", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    fs::dir_create(fs::path(gov_dir, "projects", "myproj"))
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    storage_keys <- character()
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(...) invisible(TRUE),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
+      .datom_storage_write_json = function(conn, s3_key, data) {
+        storage_keys <<- c(storage_keys, s3_key)
+        invisible(NULL)
+      }
+    )
+
+    datom_sync_dispatch(conn, .confirm = FALSE)
+
+    expect_true(".metadata/manifest.json" %in% storage_keys)
+  })
+})
+
+test_that("datom_sync_dispatch gov-path dispatch failure is warn-only", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    project_dir <- fs::path(gov_dir, "projects", "myproj")
+    fs::dir_create(project_dir)
+    jsonlite::write_json(list(methods = list()), fs::path(project_dir, "dispatch.json"),
+                         auto_unbox = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(...) stop("gov push failed"),
+      .datom_gov_write_ref = function(...) invisible(TRUE),
+      .datom_storage_write_json = function(...) invisible(NULL)
+    )
+
+    expect_no_error(datom_sync_dispatch(conn, .confirm = FALSE))
+  })
+})
+
+test_that("datom_sync_dispatch gov-path skips files missing from gov clone", {
+  withr::with_tempdir({
+    gov_dir <- withr::local_tempdir()
+    # project dir exists but is empty -- no dispatch.json or ref.json
+    fs::dir_create(fs::path(gov_dir, "projects", "myproj"))
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_dir
+    conn$project_name <- "myproj"
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE)
+
+    write_dispatch_called <- FALSE
+    write_ref_called <- FALSE
+
+    local_mocked_bindings(
+      .datom_gov_write_dispatch = function(...) { write_dispatch_called <<- TRUE },
+      .datom_gov_write_ref = function(...) { write_ref_called <<- TRUE },
+      .datom_storage_write_json = function(...) invisible(NULL)
+    )
+
+    result <- datom_sync_dispatch(conn, .confirm = FALSE)
+
+    expect_false(write_dispatch_called)
+    expect_false(write_ref_called)
+    # only manifest synced
+    expect_equal(result$repo_files, ".metadata/manifest.json")
   })
 })
 
@@ -1132,4 +1247,131 @@ test_that("datom_pull returns invisible result", {
 
     expect_invisible(datom_pull(conn))
   })
+})
+
+# --- datom_pull() gov semantics (Phase 15, Chunk 6) --------------------------
+
+test_that("datom_pull also pulls gov repo when gov_local_path is set", {
+  withr::with_tempdir({
+    # Data repo
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Initial commit")
+    git2r::remote_add(repo, name = "origin", url = bare_dir)
+    git2r::push(repo, "origin", "refs/heads/master", set_upstream = TRUE)
+
+    # Gov repo
+    gov_bare <- withr::local_tempdir()
+    git2r::init(gov_bare, bare = TRUE)
+    gov_local <- withr::local_tempdir()
+    # seed gov bare with one commit so it can be cloned
+    gov_work <- withr::local_tempdir()
+    gov_w_repo <- git2r::init(gov_work)
+    git2r::config(gov_w_repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("gov-init", fs::path(gov_work, "README.md"))
+    git2r::add(gov_w_repo, "README.md")
+    git2r::commit(gov_w_repo, "Gov init")
+    git2r::remote_add(gov_w_repo, "origin", gov_bare)
+    git2r::push(gov_w_repo, "origin", "refs/heads/master", set_upstream = TRUE)
+    git2r::clone(gov_bare, gov_local)
+
+    gov_pull_called <- FALSE
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- gov_local
+
+    local_mocked_bindings(
+      .datom_gov_pull = function(conn) { gov_pull_called <<- TRUE; invisible(TRUE) }
+    )
+
+    datom_pull(conn)
+    expect_true(gov_pull_called)
+  })
+})
+
+test_that("datom_pull result includes gov field", {
+  withr::with_tempdir({
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Init")
+    git2r::remote_add(repo, "origin", bare_dir)
+    git2r::push(repo, "origin", "refs/heads/master", set_upstream = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- NULL  # no gov
+
+    result <- datom_pull(conn)
+    expect_true(is.list(result))
+    expect_null(result$gov)  # no gov_local_path -> NULL
+  })
+})
+
+test_that("datom_pull aborts when gov pull fails", {
+  withr::with_tempdir({
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Init")
+    git2r::remote_add(repo, "origin", bare_dir)
+    git2r::push(repo, "origin", "refs/heads/master", set_upstream = TRUE)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$gov_local_path <- "/nonexistent/gov"
+
+    local_mocked_bindings(
+      .datom_gov_pull = function(conn) stop("network failure")
+    )
+
+    expect_error(datom_pull(conn), "network failure")
+  })
+})
+
+
+# --- datom_pull_gov() ---------------------------------------------------------
+
+test_that("datom_pull_gov rejects non-datom_conn", {
+  expect_error(datom_pull_gov("not_conn"), "datom_conn")
+})
+
+test_that("datom_pull_gov rejects reader role", {
+  conn <- mock_datom_conn(list())
+  conn$role <- "reader"
+  expect_error(datom_pull_gov(conn), "developer")
+})
+
+test_that("datom_pull_gov rejects conn without gov_local_path", {
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$gov_local_path <- NULL
+  expect_error(datom_pull_gov(conn), "gov_local_path")
+})
+
+test_that("datom_pull_gov calls .datom_gov_pull and returns invisibly", {
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$gov_local_path <- "/some/gov"
+
+  local_mocked_bindings(
+    .datom_gov_pull = function(conn) invisible(TRUE)
+  )
+
+  expect_invisible(datom_pull_gov(conn))
 })

@@ -44,14 +44,21 @@ Phase plans are **temporary working documents**:
 
 ### Active Phases
 
-| Phase | Status | File |
-|-------|--------|------|
-| _None_ | — | — |
+| Phase | Started | Status | Doc |
+|-------|---------|--------|-----|
+| _(none — Phase 15 closed)_ | — | — | — |
+
+### Drafts (queued, not active)
+
+| Draft | Notes | Doc |
+|-------|-------|-----|
+| Conn finalize & backend accessor refactor | Audit M2 + M6 deferred from Phase 15 cleanup. Numbering TBD (Phase 16 already references a different "Phase 17"). | [draft_phase_conn_refactor.md](draft_phase_conn_refactor.md) |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
+| Phase 15: Separate Gov Repo (+ audit cleanup) | 2026-04-29 | 1343 | Split governance and data into two independent git repos with separate histories, remotes, and local clones. New shared governance repo (one per organization / gov bucket) holds `projects/{name}/{ref,dispatch,migration_history}.json`; data repo holds tables + manifest. New exports: `datom_init_gov()`, `datom_decommission()`, `datom_pull_gov()`. Refactored: `datom_init_repo()` (data-first, gov-register), `datom_clone()` + `datom_pull()` (two-repo), `datom_sync_dispatch()` (commits on gov). Breaking: `remote_url` -> `data_repo_url`. New `# GOV_SEAM:` contract isolates gov-write helpers in `R/utils-gov.R` for future companion-package handoff. Role-aware ref reads (developer reads from local clone, reader from storage; write-time guard always hits storage). Sandbox supports scoped teardown (`scope = "all" \| "project" \| "gov"`). **Pre-CRAN audit cleanup** folded in (5 chunks): hard-abort on post-push gov/manifest failures with gov-clone rollback (C1+C2); `datom_decommission()` repo deletion via `httr2` instead of `gh` CLI (H1); backend-blind UI in `datom_sync_dispatch()`, symmetric pull errors, dropped dead pre-Phase-15 fallback (H2-H4+L3); deduped `gov_local_path` resolution / `datom_init_gov()` config / `.datom_gov_unregister_project()` commit logic (M1+M3+M4+M5); style polish (L1+L2+L4+L5). E2E-driven fixes: NA-safe prefix guards in `.datom_local_delete_prefix` / `.datom_s3_delete_prefix`; sandbox mops up data store root after decommission (caller-owned root principle); idempotent `gh repo` deletion in sandbox teardown. |
 | Phase 14: Public Release Prep | 2026-04-21 | 1177 | Pre-public cleanup: fix LICENSE/`.Rbuildignore` (`tbit` rename remnants), add `NEWS.md`, drop CRAN badge, fix R CMD check warning (non-ASCII in `R/ref.R`), add `CONTRIBUTING`, `CODE_OF_CONDUCT`, `SECURITY`, issue/PR templates, GitHub Actions (R-CMD-check + pkgdown), untrack `dev/archive/` + `dev/datomaccess_overview.md` via `.gitignore`, scrub Phase/Chunk refs from `R/` comments, centralize `dev/dev-sandbox.R` credentials to `Sys.getenv()`, fix `_pkgdown.yml` missing `datom_store_local` entries. |
 | Phase 13: Reader Ref Resolution | 2026-04-21 | 1177 | Conn-time ref resolution wired into both `_get_conn_reader` and `_get_conn_developer` (S3 + local). New helpers: `.datom_resolve_data_location()`, `.datom_check_data_reachable()`, `.datom_check_ref_current()`. Developer migration mismatch → auto-pull git + re-read `project.yaml`. Reader mismatch → warn + proceed with ref-resolved location. Reachability check (HeadBucket / `dir_exists`) gates conn creation. Conn-time ref failure is warn-only; write-time ref failure is a hard abort (prevents orphaned data). `datom_status` and sandbox UI now backend-aware (`Tables on S3`/`Tables on local`, `Data:`/`Governance:` labels instead of hardcoded `s3://`). `.sandbox_wipe_local_component()` added so `sandbox_down()` handles local backends too. Named-lookup pattern adopted for backend UI labels (anticipates GCS/other backends). |
 | Phase 12: Filesystem Backend | 2026-04-19 | 1153 | `datom_store_local()` constructor, `.datom_local_*()` backend functions (`utils-local.R`), dispatch wiring (`switch` arms in `utils-storage.R`), `conn$bucket`→`conn$root` rename, `new_datom_conn(backend=)`, `datom_init_repo()`/`datom_get_conn()` local paths, `project.yaml` type:local, `.datom_store_backend/root/region()` accessors, `.datom_build_init_conn()` helper, `ref.json` backend-neutral, README template backend-neutral, E2E test script (`dev/e2e-test-local.R`), `sandbox_store_local()`, `devtools::check()` clean. |
@@ -88,6 +95,10 @@ Items discovered during development but intentionally deferred. Review periodica
 | Vignette content refresh | Phase 11 | `credentials.Rmd`: "Under the Hood" section references env var bridge (removed), STS GetCallerIdentity (uses HeadBucket). Other vignettes may have minor staleness. | Medium |
 | Redirect resolution in datom_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
 | Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |
+| Companion governance package handoff | Phase 15 | `# GOV_SEAM:` helpers in `R/utils-gov.R` are the port surface; commit message conventions are the audit contract. See spec "Governance Repository Contract". | High (next major) |
+| `datom_migrate_data()` (managed migration) | Phase 15 | Today migration is manual (`aws s3 sync` + `datom_sync_dispatch()`). Atomic data-copy + ref.json update + `.datom_gov_record_migration()` deferred. | Medium |
+| CODEOWNERS automation on `projects/{name}/` | Phase 15 | Self-serve project ownership; belongs in companion package, not datom. | Low (companion) |
+| Gov repo concurrency primitives | Phase 15 | Pull-before-push handles current contention. Advisory locks deferred until contention is observed. | Low |
 
 **Backlog lifecycle**:
 1. Discovered during phase work → add here with context

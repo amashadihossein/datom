@@ -4,20 +4,24 @@
 \alias{.datom_resolve_ref}
 \title{Resolve Data Location from Governance Store}
 \usage{
-.datom_resolve_ref(gov_conn)
+.datom_resolve_ref(gov_conn, project_name = NULL)
 }
 \arguments{
 \item{gov_conn}{A \code{datom_conn}-like object scoped to the governance store
 (i.e., \code{root}, \code{prefix}, \code{client} point to the governance store).
 Typically produced by \code{.datom_gov_conn(conn)}.}
+
+\item{project_name}{Project name string. Used to build the project-scoped
+storage key \code{projects/{project_name}/ref.json}.}
 }
 \value{
 A named list with \code{root}, \code{prefix}, \code{region} for the current
 data location.
 }
 \description{
-Reads \code{ref.json} from the governance store and returns the current data
-location as a named list. Single read, no recursion, no chain-walking.
+Reads \code{projects/{project_name}/ref.json} from the governance store and
+returns the current data location as a named list. Single read, no
+recursion, no chain-walking.
 }
 \details{
 If the ref has \code{previous} entries, a deprecation-style warning is emitted
