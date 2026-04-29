@@ -174,13 +174,23 @@ sandbox_store_local <- function(path,
   list(output = result, status = status)
 }
 
-.sandbox_repo_full_name <- function(cfg) {
+.sandbox_repo_full_name <- function(cfg, repo_name = NULL, repo_url = NULL) {
+  repo_name <- repo_name %||% cfg$repo_name
+
+  # Prefer parsing a known github URL when available -- handles edge cases
+  # where the user's PAT auth login differs from the org that owns the repo.
+  if (!is.null(repo_url) && nzchar(repo_url) &&
+      grepl("github\\.com", repo_url, ignore.case = TRUE)) {
+    return(sub(".*github\\.com[:/]([^/]+/[^/]+?)(\\.git)?$", "\\1",
+               repo_url, perl = TRUE))
+  }
+
   if (!is.null(cfg$github_org) && nzchar(cfg$github_org)) {
-    paste0(cfg$github_org, "/", cfg$repo_name)
+    paste0(cfg$github_org, "/", repo_name)
   } else {
-    # Personal repo — need to resolve the authenticated user's login
+    # Personal repo -- resolve the authenticated user's login.
     owner <- trimws(.sandbox_gh("api", "user", "-q", ".login")$output)
-    paste0(owner, "/", cfg$repo_name)
+    paste0(owner, "/", repo_name)
   }
 }
 
@@ -526,14 +536,9 @@ sandbox_down <- function(env,
     if (!is.null(gov_repo_name)) {
       tryCatch({
         .sandbox_check_gh()
-        # Prefer parsing owner/repo from the URL (handles personal accounts
-        # where github_org is NULL); fall back to org+name concatenation.
-        gov_full_name <- if (!is.null(gov_repo_url) && nzchar(gov_repo_url)) {
-          sub(".*github\\.com[:/]([^/]+/[^/]+?)(\\.git)?$", "\\1",
-              gov_repo_url, perl = TRUE)
-        } else {
-          paste0(cfg$github_org, "/", gov_repo_name)
-        }
+        gov_full_name <- .sandbox_repo_full_name(
+          cfg, repo_name = gov_repo_name, repo_url = gov_repo_url
+        )
         cli::cli_alert_info("Deleting gov GitHub repo {.val {gov_full_name}}...")
         .sandbox_gh("repo", "delete", gov_full_name, "--yes")
         cli::cli_alert_success("Deleted gov GitHub repo.")
