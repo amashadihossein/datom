@@ -71,6 +71,7 @@ Reader: S3-only access, no local repo
 <span>  gov_prefix <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  gov_region <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  gov_client <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  gov_local_path <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  backend <span class="op">=</span> <span class="st">"s3"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -125,6 +126,10 @@ Reader: S3-only access, no local repo
 
 <dt id="arg-gov-client">gov_client<a class="anchor" aria-label="anchor" href="#arg-gov-client"></a></dt>
 <dd><p>Governance storage client (can be NULL).</p></dd>
+
+
+<dt id="arg-gov-local-path">gov_local_path<a class="anchor" aria-label="anchor" href="#arg-gov-local-path"></a></dt>
+<dd><p>Absolute path to the local gov clone (NULL for readers).</p></dd>
 
 </dl></div>
     <div class="section level2">

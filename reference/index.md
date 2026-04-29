@@ -6,6 +6,8 @@ Create connections, initialize repositories
 
 - [`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
   : Initialize a datom Repository
+- [`datom_init_gov()`](https://amashadihossein.github.io/datom/reference/datom_init_gov.md)
+  : Initialize a Governance Repository
 - [`datom_clone()`](https://amashadihossein.github.io/datom/reference/datom_clone.md)
   : Clone a datom Repository
 - [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)
@@ -68,12 +70,14 @@ Batch sync from files, scan manifests, sync metadata to S3
 
 - [`datom_pull()`](https://amashadihossein.github.io/datom/reference/datom_pull.md)
   : Pull Latest Changes from Remote
+- [`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
+  : Pull Latest Changes from the Governance Repo
 - [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
   : Sync Files to datom Repository
 - [`datom_sync_manifest()`](https://amashadihossein.github.io/datom/reference/datom_sync_manifest.md)
   : Scan and Prepare Manifest for Sync
 - [`datom_sync_dispatch()`](https://amashadihossein.github.io/datom/reference/datom_sync_dispatch.md)
-  : Sync Dispatch Metadata to S3
+  : Sync Dispatch Metadata to Storage
 
 ## Validation
 
@@ -83,6 +87,13 @@ Validate repository structure and git-S3 consistency
   : Validate Git-Storage Consistency
 - [`is_valid_datom_repo()`](https://amashadihossein.github.io/datom/reference/is_valid_datom_repo.md)
   : Check if Path is a Valid datom Repository
+
+## Decommission
+
+Permanently remove a project and all its artefacts
+
+- [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
+  : Decommission a datom Project
 
 ## Example Data
 

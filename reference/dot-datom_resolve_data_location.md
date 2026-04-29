@@ -9,7 +9,14 @@ location != ref location), and returns the ref-resolved location.
 ## Usage
 
 ``` r
-.datom_resolve_data_location(store, role, path = NULL, endpoint = NULL)
+.datom_resolve_data_location(
+  store,
+  role,
+  project_name = NULL,
+  path = NULL,
+  gov_local_path = NULL,
+  endpoint = NULL
+)
 ```
 
 ## Arguments
@@ -22,9 +29,18 @@ location != ref location), and returns the ref-resolved location.
 
   `"developer"` or `"reader"`.
 
+- project_name:
+
+  Project name (required when governance is present).
+
 - path:
 
   Local repo path (developers only; NULL for readers).
+
+- gov_local_path:
+
+  Absolute path to the local gov clone (developers only; NULL for
+  readers or when the clone does not yet exist).
 
 - endpoint:
 
@@ -37,8 +53,11 @@ governance store is present (skip ref resolution).
 
 ## Details
 
-**Developer migration**: auto-pulls git, re-reads project.yaml. Errors
-if project.yaml still disagrees after pull.
+Read path is **role-aware**:
 
-**Reader migration**: warns that the store config is stale, proceeds
-with ref-resolved location.
+- Developer with `gov_local_path` set: read `projects/{name}/ref.json`
+  from the local gov clone (faster, works offline, reflects last
+  [`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)).
+
+- Otherwise (reader, or developer without a clone yet): read via the gov
+  storage client.

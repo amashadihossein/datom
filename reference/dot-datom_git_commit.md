@@ -5,7 +5,7 @@ Stages the specified files and creates a commit.
 ## Usage
 
 ``` r
-.datom_git_commit(path, files, message)
+.datom_git_commit(path, files, message, staged_deletions = FALSE)
 ```
 
 ## Arguments
@@ -21,6 +21,12 @@ Stages the specified files and creates a commit.
 - message:
 
   Commit message.
+
+- staged_deletions:
+
+  If `TRUE`, skip the file-existence check and use
+  `git2r::add(force = TRUE)` so deletions can be staged. Default
+  `FALSE`.
 
 ## Value
 

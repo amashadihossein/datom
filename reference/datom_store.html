@@ -59,7 +59,9 @@ into a single store object. Role (developer vs reader) is derived from
 <span>  <span class="va">governance</span>,</span>
 <span>  <span class="va">data</span>,</span>
 <span>  github_pat <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  remote_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  data_repo_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  gov_repo_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  gov_local_path <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  github_org <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  validate <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -84,9 +86,21 @@ files (dispatch, ref, migration history).</p></dd>
 <code>"developer"</code>. If NULL, role is <code>"reader"</code>.</p></dd>
 
 
-<dt id="arg-remote-url">remote_url<a class="anchor" aria-label="anchor" href="#arg-remote-url"></a></dt>
-<dd><p>GitHub remote URL. Required when <code>github_pat</code> is provided
-and <code>create_repo = FALSE</code> will be used in <code><a href="datom_init_repo.html">datom_init_repo()</a></code>.</p></dd>
+<dt id="arg-data-repo-url">data_repo_url<a class="anchor" aria-label="anchor" href="#arg-data-repo-url"></a></dt>
+<dd><p>GitHub remote URL for the data repository. Required when
+<code>github_pat</code> is provided and <code>create_repo = FALSE</code> in <code><a href="datom_init_repo.html">datom_init_repo()</a></code>.</p></dd>
+
+
+<dt id="arg-gov-repo-url">gov_repo_url<a class="anchor" aria-label="anchor" href="#arg-gov-repo-url"></a></dt>
+<dd><p>GitHub remote URL for the shared governance repository.
+The governance repo is created once per org via <code><a href="datom_init_gov.html">datom_init_gov()</a></code> and
+referenced here by every project that uses it.</p></dd>
+
+
+<dt id="arg-gov-local-path">gov_local_path<a class="anchor" aria-label="anchor" href="#arg-gov-local-path"></a></dt>
+<dd><p>Local directory path for the governance clone. If NULL
+(default), the clone is placed as a sibling of the data repo, named after
+the basename of <code>gov_repo_url</code> (e.g., <code>"acme-gov"</code>).</p></dd>
 
 
 <dt id="arg-github-org">github_org<a class="anchor" aria-label="anchor" href="#arg-github-org"></a></dt>

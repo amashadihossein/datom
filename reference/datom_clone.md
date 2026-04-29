@@ -22,8 +22,8 @@ datom_clone(path, store, ...)
 
   A `datom_store` object (from
   [`datom_store()`](https://amashadihossein.github.io/datom/reference/datom_store.md)).
-  Must have `remote_url` set and role `"developer"` (i.e., `github_pat`
-  provided).
+  Must have `data_repo_url` set and role `"developer"` (i.e.,
+  `github_pat` provided).
 
 - ...:
 
@@ -33,6 +33,12 @@ datom_clone(path, store, ...)
 ## Value
 
 A `datom_conn` object (developer role).
+
+## Details
+
+When `store$gov_repo_url` is set the governance repo is also cloned (or
+verified if it already exists locally). An existing clone with
+uncommitted changes causes an error to avoid surprising state.
 
 ## Examples
 

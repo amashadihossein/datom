@@ -16,7 +16,8 @@ and
   path,
   role,
   endpoint = NULL,
-  gov_store = NULL
+  gov_store = NULL,
+  gov_local_path = NULL
 )
 ```
 

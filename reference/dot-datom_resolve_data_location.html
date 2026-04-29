@@ -58,7 +58,14 @@ ref-resolved location.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.datom_resolve_data_location</span><span class="op">(</span><span class="va">store</span>, <span class="va">role</span>, path <span class="op">=</span> <span class="cn">NULL</span>, endpoint <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.datom_resolve_data_location</span><span class="op">(</span></span>
+<span>  <span class="va">store</span>,</span>
+<span>  <span class="va">role</span>,</span>
+<span>  project_name <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  path <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  gov_local_path <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  endpoint <span class="op">=</span> <span class="cn">NULL</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -73,8 +80,17 @@ ref-resolved location.</p>
 <dd><p><code>"developer"</code> or <code>"reader"</code>.</p></dd>
 
 
+<dt id="arg-project-name">project_name<a class="anchor" aria-label="anchor" href="#arg-project-name"></a></dt>
+<dd><p>Project name (required when governance is present).</p></dd>
+
+
 <dt id="arg-path">path<a class="anchor" aria-label="anchor" href="#arg-path"></a></dt>
 <dd><p>Local repo path (developers only; NULL for readers).</p></dd>
+
+
+<dt id="arg-gov-local-path">gov_local_path<a class="anchor" aria-label="anchor" href="#arg-gov-local-path"></a></dt>
+<dd><p>Absolute path to the local gov clone (developers
+only; NULL for readers or when the clone does not yet exist).</p></dd>
 
 
 <dt id="arg-endpoint">endpoint<a class="anchor" aria-label="anchor" href="#arg-endpoint"></a></dt>
@@ -88,11 +104,12 @@ NULL if no governance store is present (skip ref resolution).</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p><strong>Developer migration</strong>: auto-pulls git, re-reads project.yaml. Errors if
-project.yaml still disagrees after pull.</p>
-<p><strong>Reader migration</strong>: warns that the store config is stale, proceeds with
-ref-resolved location.</p>
-    </div>
+    <p>Read path is <strong>role-aware</strong>:</p><ul><li><p>Developer with <code>gov_local_path</code> set: read <code>projects/{name}/ref.json</code>
+from the local gov clone (faster, works offline, reflects last
+<code><a href="datom_pull_gov.html">datom_pull_gov()</a></code>).</p></li>
+<li><p>Otherwise (reader, or developer without a clone yet): read via the
+gov storage client.</p></li>
+</ul></div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

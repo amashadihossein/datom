@@ -49,7 +49,7 @@
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.datom_git_commit</span><span class="op">(</span><span class="va">path</span>, <span class="va">files</span>, <span class="va">message</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.datom_git_commit</span><span class="op">(</span><span class="va">path</span>, <span class="va">files</span>, <span class="va">message</span>, staged_deletions <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -66,6 +66,11 @@
 
 <dt id="arg-message">message<a class="anchor" aria-label="anchor" href="#arg-message"></a></dt>
 <dd><p>Commit message.</p></dd>
+
+
+<dt id="arg-staged-deletions">staged_deletions<a class="anchor" aria-label="anchor" href="#arg-staged-deletions"></a></dt>
+<dd><p>If <code>TRUE</code>, skip the file-existence check and use
+<code>git2r::add(force = TRUE)</code> so deletions can be staged. Default <code>FALSE</code>.</p></dd>
 
 </dl></div>
     <div class="section level2">

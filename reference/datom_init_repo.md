@@ -40,7 +40,7 @@ datom_init_repo(
 - create_repo:
 
   If `TRUE`, create a GitHub repo via API. Mutually exclusive with
-  providing `remote_url` on the store.
+  providing `data_repo_url` on the store.
 
 - repo_name:
 

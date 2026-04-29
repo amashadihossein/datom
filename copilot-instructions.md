@@ -253,6 +253,79 @@ Auto-detected via `GITHUB_PAT` presence.
   `storage.data` — each has its own `type`, `bucket`, `prefix`,
   `region`. Secrets are never persisted.
 
+- **Two repos, never one commit touching both**: Phase 15 split
+  governance and data into separate git repos. Data-side functions
+  (`datom_write`, `datom_sync`, `datom_init_repo` step 3+) commit to the
+  data clone only. Gov-side functions (`datom_init_gov`,
+  `datom_sync_dispatch`, `datom_decommission` gov pruning,
+  `datom_init_repo` step 7) commit to the gov clone only. Writes that
+  span both produce two distinct commits in two histories.
+
+- **Gov files live at `projects/{project_name}/`**: `dispatch.json`,
+  `ref.json`, `migration_history.json` are project-scoped under
+  `projects/` in both the gov repo and gov storage. They are NOT in the
+  data repo’s `.datom/` anymore. Anything reading those paths must use
+  the gov clone (`conn$gov_local_path`) or `gov_client` (storage), never
+  the data clone.
+
+- **`# GOV_SEAM:` markers are a contract**: All gov-write helpers in
+  `R/utils-gov.R` are tagged `# GOV_SEAM:`. These define the port
+  surface the future companion package will take over. Do not call them
+  from data-side code paths; do not add new gov-write code outside
+  `R/utils-gov.R` without a seam marker.
+
+- **[`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
+  is data-first then gov**: rationale is asymmetric blast radius — gov
+  registration advertises the project to all org readers, so register
+  only what’s real. A failed data step before gov registration leaves a
+  private failure for the initiating developer; the reverse would
+  advertise a broken pointer publicly.
+
+- **Role-aware ref reads**:
+  [`.datom_resolve_data_location()`](https://amashadihossein.github.io/datom/reference/dot-datom_resolve_data_location.md)
+  branches on presence of `conn$gov_local_path`. Developer (clone
+  present) reads `projects/{name}/ref.json` from local gov clone
+  (offline-friendly, reflects last
+  [`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)).
+  Reader reads via `gov_client` from storage. Write-time guard
+  [`.datom_check_ref_current()`](https://amashadihossein.github.io/datom/reference/dot-datom_check_ref_current.md)
+  ALWAYS reads from storage (no clone fallback) to catch stale clones.
+
+- **[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
+  requires literal confirm**: `confirm = "{project_name}"` must match
+  exactly. No interactive prompts (must be scriptable). Order: data
+  storage → data GitHub repo → local data clone →
+  [`.datom_gov_unregister_project()`](https://amashadihossein.github.io/datom/reference/dot-datom_gov_unregister_project.md)
+  → gov storage `projects/{name}/`.
+
+- **[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
+  ownership boundary**: deletes the `datom/` namespace inside the data
+  store root, **not** the root itself. The root is caller-owned (a
+  bucket the caller administers, or a directory the caller created). For
+  local-backend sandboxes, the sandbox must mop up the root after
+  [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
+  returns – see `.sandbox_wipe_local_component()` in
+  `dev/dev-sandbox.R`.
+
+- **NA-safe optional-string guards**: `nzchar(NA)` returns `NA`, which
+  propagates into `if(...)` as “missing value where TRUE/FALSE needed”.
+  For optional fields that may round-trip through yaml/json
+  (e.g. `conn$prefix`), guard with
+  `!is.null(x) && !is.na(x) && nzchar(x)` and wrap the `if` predicate in
+  `isTRUE(...)`. Pattern is in `.datom_local_delete_prefix` /
+  `.datom_s3_delete_prefix`.
+
+- **[`.datom_gov_destroy()`](https://amashadihossein.github.io/datom/reference/dot-datom_gov_destroy.md)
+  is sandbox-only**: tears down the whole gov repo + storage. Refuses if
+  registered projects exist unless `force = TRUE`. Currently called only
+  by `dev/dev-sandbox.R`; the companion package will eventually own the
+  full gov lifecycle.
+
+- **`gov_local_path` defaults to `basename(gov_repo_url)` sibling**: One
+  gov clone serves many data projects.
+  [`.datom_gov_clone_init()`](https://amashadihossein.github.io/datom/reference/dot-datom_gov_clone_init.md)
+  validates remote URL on existing dirs and errors on mismatch.
+
 - **`_pkgdown.yml` index must be kept in sync**: Adding a new exported
   symbol requires a matching entry in `_pkgdown.yml`.
   [`pkgdown::build_site()`](https://pkgdown.r-lib.org/reference/build_site.html)

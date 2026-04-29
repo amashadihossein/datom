@@ -68,7 +68,7 @@ recommended way for teammates to join an existing datom project — it wraps
 
 <dt id="arg-store">store<a class="anchor" aria-label="anchor" href="#arg-store"></a></dt>
 <dd><p>A <code>datom_store</code> object (from <code><a href="datom_store.html">datom_store()</a></code>). Must have
-<code>remote_url</code> set and role <code>"developer"</code> (i.e., <code>github_pat</code> provided).</p></dd>
+<code>data_repo_url</code> set and role <code>"developer"</code> (i.e., <code>github_pat</code> provided).</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
@@ -78,6 +78,12 @@ recommended way for teammates to join an existing datom project — it wraps
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A <code>datom_conn</code> object (developer role).</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>When <code>store$gov_repo_url</code> is set the governance repo is also cloned (or
+verified if it already exists locally). An existing clone with uncommitted
+changes causes an error to avoid surprising state.</p>
     </div>
 
     <div class="section level2">

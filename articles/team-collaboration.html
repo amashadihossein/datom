@@ -219,7 +219,7 @@ need a store with the <code>remote_url</code> of the existing repo:</p>
 <span>    secret_key <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"AWS_SECRET_KEY"</span><span class="op">)</span></span>
 <span>  <span class="op">)</span>,</span>
 <span>  github_pat <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span>,</span>
-<span>  remote_url <span class="op">=</span> <span class="st">"https://github.com/org/study-001-data.git"</span></span>
+<span>  data_repo_url <span class="op">=</span> <span class="st">"https://github.com/org/study-001-data.git"</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">conn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_clone.html">datom_clone</a></span><span class="op">(</span>path <span class="op">=</span> <span class="st">"study_001_data"</span>, store <span class="op">=</span> <span class="va">store</span><span class="op">)</span></span></code></pre></div>

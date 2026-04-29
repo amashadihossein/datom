@@ -45,7 +45,34 @@
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="development version" id="datom-development-version">datom (development version)<a class="anchor" aria-label="anchor" href="#datom-development-version"></a></h2>
 <div class="section level3">
-<h3 id="changes-development-version">Changes<a class="anchor" aria-label="anchor" href="#changes-development-version"></a></h3>
+<h3 id="phase--separate-governance-repo-development-version">Phase 15 — Separate governance repo<a class="anchor" aria-label="anchor" href="#phase--separate-governance-repo-development-version"></a></h3>
+<p><strong>Breaking changes:</strong></p>
+<ul><li>
+<code><a href="../reference/datom_store.html">datom_store()</a></code>: argument <code>remote_url</code> renamed to <code>data_repo_url</code>. New arguments <code>gov_repo_url</code> and <code>gov_local_path</code> for the shared governance repository.</li>
+<li>
+<code>project.yaml</code>: <code>repos</code> block now has two children, <code>repos.data</code> and <code>repos.governance</code> (each with <code>remote_url</code>; the latter also has <code>local_path</code>).</li>
+<li>
+<code>dispatch.json</code>, <code>ref.json</code>, <code>migration_history.json</code> no longer live in the data repo’s <code>.datom/</code> directory. They live in the governance repo at <code>projects/{project_name}/{file}.json</code> and are mirrored to governance storage at the same path.</li>
+</ul><p><strong>New functions:</strong></p>
+<ul><li>
+<code><a href="../reference/datom_init_gov.html">datom_init_gov()</a></code> — one-time bootstrap of a shared governance repository (one per organization / governance bucket).</li>
+<li>
+<code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> — tear down a project (data storage + GitHub repo + governance entry). Requires <code>confirm = "{project_name}"</code> literal match.</li>
+<li>
+<code><a href="../reference/datom_pull_gov.html">datom_pull_gov()</a></code> — pull the governance repo only (rare; mostly for diagnostics).</li>
+</ul><p><strong>Changed behavior:</strong></p>
+<ul><li>
+<code><a href="../reference/datom_clone.html">datom_clone()</a></code> now clones both the data repo and the governance repo (sibling default; reuses existing gov clone if it matches <code>gov_repo_url</code>).</li>
+<li>
+<code><a href="../reference/datom_pull.html">datom_pull()</a></code> now pulls both repos by default.</li>
+<li>
+<code><a href="../reference/datom_sync_dispatch.html">datom_sync_dispatch()</a></code> now produces a governance-repo commit (and storage upload) for <code>projects/{project_name}/dispatch.json</code>. The data repo is untouched.</li>
+<li>
+<code><a href="../reference/datom_init_repo.html">datom_init_repo()</a></code> now requires <code>gov_repo_url</code> on the store and writes <code>projects/{project_name}/{ref,dispatch,migration_history}.json</code> to the governance repo + storage in a separate commit from the data repo’s initial commit. Two distinct commits across two histories.</li>
+<li>Connection objects gain a <code>gov_local_path</code> field. Developer connections read <code>ref.json</code> from the local gov clone; reader connections read it from gov storage. The write-time guard always reads from storage to detect stale clones.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="other-development-version">Other<a class="anchor" aria-label="anchor" href="#other-development-version"></a></h3>
 <ul><li>Pre-release. The API is experimental and may change without notice.</li>
 </ul></div>
 </div>

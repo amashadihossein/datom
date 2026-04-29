@@ -1,8 +1,8 @@
-# Sync Dispatch Metadata to S3
+# Sync Dispatch Metadata to Storage
 
-Updates all metadata in S3 to match the local git repository. This
-includes repo-level files (dispatch.json, manifest.json,
-migration_history.json) and per-table metadata (metadata.json,
+Updates metadata in storage to match the current state in git/local
+files. This includes repo-level governance files (dispatch.json,
+ref.json, migration_history.json) and per-table metadata (metadata.json,
 version_history.json). Requires interactive confirmation unless
 `.confirm = FALSE`.
 
@@ -26,10 +26,16 @@ datom_sync_dispatch(conn, .confirm = TRUE)
 
 ## Value
 
-Invisibly, a list with `repo_files` (character vector of uploaded
-repo-level keys) and `tables` (list of per-table sync results).
+Invisibly, a list with `repo_files` (character vector of synced
+keys/paths) and `tables` (list of per-table sync results).
 
 ## Details
 
-Used after migration, dispatch changes, or any situation where S3
+Governance files (dispatch.json, ref.json, migration_history.json) are
+re-written to the governance repo via git commit + push and then
+mirrored to gov storage. Per-table metadata is written from the data
+clone to the data store. Requires a developer connection with a gov
+clone.
+
+Used after migration, dispatch changes, or any situation where storage
 metadata may be out of sync with git.
