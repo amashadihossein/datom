@@ -203,6 +203,23 @@ sandbox_store_local <- function(path,
   }
 }
 
+# Idempotent gh repo deletion. Returns invisible(TRUE) if deleted or already
+# gone; emits cli_alert_danger on real failures and rethrows so the caller's
+# tryCatch() can react if needed. Uses `gh repo view` as a pre-check so the
+# common "already deleted" path is an info message, not an error.
+.sandbox_gh_repo_delete <- function(full_name, kind = "GitHub repo") {
+  view <- .sandbox_gh("repo", "view", full_name, "--json", "name",
+                      error_on_fail = FALSE)
+  if (view$status != 0L) {
+    cli::cli_alert_info("{kind} {.val {full_name}} not found -- already deleted.")
+    return(invisible(FALSE))
+  }
+  cli::cli_alert_info("Deleting {kind} {.val {full_name}}...")
+  .sandbox_gh("repo", "delete", full_name, "--yes")
+  cli::cli_alert_success("Deleted {kind} {.val {full_name}}.")
+  invisible(TRUE)
+}
+
 
 # --- S3 cleanup --------------------------------------------------------------
 
@@ -497,8 +514,7 @@ sandbox_down <- function(env,
       })
       tryCatch({
         .sandbox_check_gh()
-        .sandbox_gh("repo", "delete", .sandbox_repo_full_name(cfg), "--yes")
-        cli::cli_alert_success("Deleted data GitHub repo.")
+        .sandbox_gh_repo_delete(.sandbox_repo_full_name(cfg), "data GitHub repo")
       }, error = function(e) {
         cli::cli_alert_danger("Data GitHub repo deletion failed: {conditionMessage(e)}")
       })
@@ -539,9 +555,7 @@ sandbox_down <- function(env,
         gov_full_name <- .sandbox_repo_full_name(
           cfg, repo_name = gov_repo_name, repo_url = gov_repo_url
         )
-        cli::cli_alert_info("Deleting gov GitHub repo {.val {gov_full_name}}...")
-        .sandbox_gh("repo", "delete", gov_full_name, "--yes")
-        cli::cli_alert_success("Deleted gov GitHub repo.")
+        .sandbox_gh_repo_delete(gov_full_name, "gov GitHub repo")
       }, error = function(e) {
         cli::cli_alert_danger("Gov GitHub repo deletion failed: {conditionMessage(e)}")
         cli::cli_alert_info("You may need to delete it manually.")
