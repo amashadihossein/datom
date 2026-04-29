@@ -108,12 +108,31 @@ Reference-style. Each links back to the user-journey article where the concept f
 
 | Chunk | Content | Phase 15 dep | Phase 17 dep |
 |---|---|---|---|
-| 1 | Articles 1–3 + `inst/vignette-setup/resume_article_2.R`, `resume_article_3.R` + simulator LB/AE extension | No | No |
+| 1 | Simulator LB/AE extension + regenerated extdata + Articles 1–3 + `resume_article_2.R`, `resume_article_3.R` + **`README.Rmd` rewrite** | No | No |
 | 2 | Design Notes D1, D5 | No | No |
 | 3 | Articles 4–6 + `resume_article_4.R` … `resume_article_6.R` | Yes | No |
 | 4 | Article 7 + `resume_article_7.R` + Design Notes D2, D3, D4, D6 | Yes | No |
 | 5 | Articles 8–9 + `resume_article_8.R` | Yes | Yes |
-| 6 | Article 10 + `README.Rmd` refresh + `_pkgdown.yml` reorg + final pkgdown build | Yes | Yes |
+| 6 | Article 10 + `_pkgdown.yml` reorg + final pkgdown build | Yes | Yes |
+
+### Locked design decisions (Chunk 1 spot-check, 2026-04-29)
+
+- **Git + GitHub are mandatory from Article 1 onward.** No "no-credentials" framing. Every article (and the README's primary example) requires `GITHUB_PAT` set up via `keyring` in 3 lines. The local backend (`datom_store_local()`) means parquet bytes live in a directory — it does **not** mean git is optional. Articles 1–3 use `create_repo = TRUE` with the local backend (GitHub for metadata, filesystem for data); Article 4 adds S3 for data. This decision is now in `.github/copilot-instructions.md` and `dev/datom_specification.md` as a Design Principle. (Option A from the Chunk 1 spot-check; Options B and C explicitly rejected.)
+- **Filenames**: plain (e.g. `first-extract.Rmd`), no numeric prefixes. Sidebar order is owned by `_pkgdown.yml`, so reordering later is a YAML edit.
+- **Working directory**: vignettes default to `tempdir()` subdirs (`study_dir`, `store_path`); each article shows a one-line override comment for `~/study_001_data` if the reader wants persistence.
+- **Article 1 capability budget**: `datom_store_local()`, `datom_init_repo()`, `datom_write()`, `datom_read()` only. `datom_list`/`datom_status` defer to Article 3.
+- **Resume scripts** (`inst/vignette-setup/resume_article_N.R`):
+  - Take no arguments; honor env vars `DATOM_VIGNETTE_DIR`, `DATOM_VIGNETTE_STORE_PATH`; default to `tempdir()`.
+  - Idempotent — re-run is a no-op if state is already at end-of-article-(N-1).
+  - Self-contained: only `datom`, `fs`, base R, and shipped `datom_example_*` helpers. No network for resume scripts 2–3.
+  - Return `invisible(list(conn = ..., study_dir = ..., store_path = ...))` so power users can `state <- source(...)$value`.
+  - Use `cli::cli_alert_info()` to echo each rebuild step.
+- **All vignette chunks `eval = FALSE` for IO**. Chunk option default set at top of each article via `knitr::opts_chunk$set(eval = FALSE)`.
+- **README is the grabber**: rewrites in Chunk 1 (moved up from Chunk 6). Shows `datom_store_local()` → `datom_init_repo()` → `datom_write()` (twice, to demonstrate duplicate detection) → `datom_list()` → `datom_read()`. Closes with one-paragraph "next steps" pointing to the S3 + governance articles. No AWS/GitHub in the README's primary example.
+- **Simulator LB/AE shape**:
+  - LB: ~700 rows, 3–5 lab tests per subject per visit (CHEM/HEMA), `LBDTC` between enrollment and study end.
+  - AE: ~80 rows, 0–3 events per subject (Poisson-ish), `AESTDTC` post-enrollment, severity + relationship coded.
+  - Written to `inst/extdata/lb.csv` / `ae.csv`. `datom_example_data()` gains `"lb"` and `"ae"` choices.
 
 **Recommended escalation moments** (per copilot-instructions Model Escalation):
 - **Chunk 1 design spot-check** before writing — get the resumable-setup pattern reviewed; it's the cross-cutting pattern that all 10 articles inherit.
