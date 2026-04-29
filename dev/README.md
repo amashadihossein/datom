@@ -46,13 +46,12 @@ Phase plans are **temporary working documents**:
 
 | Phase | Started | Status | Doc |
 |-------|---------|--------|-----|
-| _(none — Phase 15 closed)_ | — | — | — |
+| Phase 16: Vignette overhaul | 2026-04-29 | Chunk 1 — design spot-check | [phase_16_vignettes.md](phase_16_vignettes.md) |
 
 ### Drafts (queued, not active)
 
 | Draft | Notes | Doc |
 |-------|-------|-----|
-| Phase 16: Vignette overhaul | Continuous user-journey vignettes (STUDY-001 spine) + Design Notes. Pure docs phase. Phase 17 (`datom_summary`, `datom_projects`) is a prerequisite for one chunk. | [phase_16_vignettes.md](phase_16_vignettes.md) |
 | Conn finalize & backend accessor refactor | Audit M2 + M6 deferred from Phase 15 cleanup. Numbering TBD. | [draft_phase_conn_refactor.md](draft_phase_conn_refactor.md) |
 
 ### Completed Phases

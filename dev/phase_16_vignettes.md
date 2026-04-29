@@ -1,7 +1,7 @@
 # Phase 16: Vignette Overhaul
 
-**Status**: Draft (planning) — not yet active
-**Branch**: `phase/16-vignettes` (to be created)
+**Status**: Active — Chunk 1 (design spot-check)
+**Branch**: `phase/16-vignettes` (created 2026-04-29)
 **Depends on**: Phase 15 closed (2026-04-29). Phase 17 (`datom_summary`, `datom_projects`) is a prerequisite for Chunk 5.
 
 ---
