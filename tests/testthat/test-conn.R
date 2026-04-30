@@ -739,10 +739,15 @@ test_that("datom_init_repo returns invisible TRUE", {
                             store = env$store)
 
   expect_true(result)
+
+  # Use an independent env (fresh bare + work_dir) so the second push
+  # is FF on its own remote. Reusing env$store would push an unrelated
+  # history to the same bare, which libgit2 rejects on Linux.
+  env2 <- setup_init_env()
   expect_invisible(datom_init_repo(
-    path = withr::local_tempdir(),
+    path = env2$work_dir,
     project_name = "testproj",
-    store = env$store
+    store = env2$store
   ))
 })
 
