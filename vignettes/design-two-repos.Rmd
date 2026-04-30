@@ -1,0 +1,183 @@
+---
+title: "Two Repositories: Governance vs. Data"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Two Repositories: Governance vs. Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE
+)
+```
+
+> **Companion to**: [Governing a Study Portfolio](governing-a-portfolio.html).
+> Read this when you wonder why STUDY-001's git repo and the gov repo
+> are separate clones and not one folder inside the other.
+
+Every datom developer has at least two git clones on their machine: a
+**data clone** for the project they're currently working on, and a
+**governance clone** that's shared with everyone else in the
+organization. They are separate repositories, with separate histories,
+separate remotes, and separate access controls.
+
+This is a deliberate split. It's the structural choice that lets one
+team govern many projects without coupling their cadences.
+
+## What lives where
+
+```
++-----------------------------+         +----------------------------+
+|   Data repo (per project)   |         |   Governance repo (one)    |
+|                             |         |                            |
+|  .datom/                    |         |  projects/                 |
+|    project.yaml             |         |    STUDY_001/              |
+|    manifest.json            |         |      dispatch.json         |
+|  table-name/                |         |      ref.json              |
+|    metadata.json            |         |      migration_history.json|
+|    version_history.json     |         |    STUDY_002/              |
+|  README.md                  |         |      ...                   |
+|                             |         |                            |
+|  Audience: project team     |         |  Audience: organization    |
+|  Cadence: per-write         |         |  Cadence: per-project-     |
+|                             |         |  lifecycle event           |
++-----------------------------+         +----------------------------+
+```
+
+The data repo is **project-scoped**. Its commits track every
+`datom_write()` and every `datom_sync()` for STUDY-001. Its readers
+are STUDY-001's data engineers, plus whoever they explicitly hand the
+URL to.
+
+The governance repo is **organization-scoped**. Its commits track
+projects starting and ending. Its readers are anyone who has any
+business with any datom project — typically all data engineers,
+analysts, and managers in the organization.
+
+These are different lifecycles. STUDY-001 might see thirty `datom_write`
+commits a month; the gov repo might see two commits in the same month
+(one to register STUDY_002, one to decommission a defunct study).
+Mixing them would mean every write to STUDY-001 lands in a repo that
+the entire organization watches, and every governance event gets buried
+in the noise of one project's daily activity.
+
+## Why not one repo with two folders
+
+The cleanest one-repo design would be: data project A and gov metadata
+both inside `org-datom-everything.git`, in `projects/A/data/` and
+`projects/A/gov/`. Tempting because there's exactly one history for
+everything. We rejected it for four reasons.
+
+**Permissions don't compose.** Project teams need write access to
+their project's history. Adding a new analyst to STUDY-001 should not
+also give them write access to the registry that lists every other
+study in the organization. Git permissions are repo-level on every
+hosting platform; splitting along the boundary makes the model
+expressible.
+
+**Pull semantics get muddy.** Today, `datom_pull()` for a project
+pulls only that project's history; `datom_pull_gov()` pulls only the
+registry. With one repo, every pull is everything, every time. A
+manager pulling the registry to see new projects would also be
+pulling every project team's recent writes — a lot of network and
+disk for no benefit.
+
+**Decommissioning leaves scars.** When STUDY-002 is decommissioned,
+its data history goes with it (the data git repo gets deleted along
+with the bucket contents). The gov repo records the
+decommissioning event but doesn't have to carry the corpse of every
+deleted project's commits. With one repo, every decommissioned project
+either lives forever in history or gets surgically excised — both bad.
+
+**The companion-package boundary becomes ambiguous.** datom's
+governance code is on its way out of this package. A future companion
+package (working name: `daapr`) will own gov-side operations —
+registry queries, cross-project audit, governance store administration
+— while datom keeps the per-project data operations. The boundary is
+expressible *because* the artifacts are already split. Functions in
+[R/utils-gov.R](https://github.com/amashadihossein/datom) tagged
+`# GOV_SEAM:` mark exactly the surface that will move.
+
+## How the split shows up in API
+
+The split is visible to you whenever you set up a store:
+
+```{r}
+store <- datom_store(
+  governance     = gov_component,    # 1. governance backend
+  data           = data_component,   # 2. data backend
+  github_pat     = pat,
+  data_repo_url  = "https://...",    # 3. data git remote
+  gov_repo_url   = "https://...",    # 4. gov git remote
+  gov_local_path = "/path/to/clone"  # 5. gov local clone
+)
+```
+
+Five fields, two for each repo plus one for the shared GitHub PAT.
+The repetition is the cost of the split. The benefits — lifecycle
+independence, permission boundaries, decommission safety, future
+companion-package handoff — are why the cost is worth paying.
+
+For readers, the cost is lower: they don't see a data clone at all
+(they read parquet bytes directly from the data store) and the gov
+clone is implicit (datom downloads what it needs over the network).
+A reader's `datom_store(...)` call has fewer fields because most of
+the boilerplate is for engineering, not consumption.
+
+## The governance store is two things
+
+A subtlety worth surfacing: the **governance store** is *both* a git
+repository (the registry, the source of truth) *and* an object-store
+location (where dispatch/ref/migration JSONs are also written). They
+are kept synchronized by datom. The git copy is the canonical version;
+the object-store copy is what readers without a clone reach for.
+
+This is symmetrical to the data side: data git repo (metadata, code,
+versioned commits) plus data object store (the actual parquet bytes).
+In both cases, git is canonical for things humans should review;
+object storage is canonical for things machines should fetch quickly.
+
+The fact that the two halves of "the gov repo" and the two halves of
+"the data repo" follow the same shape is not coincidence — it's the
+core datom pattern applied at two scopes. See [The datom Model: Code
+in Git, Data in Cloud](design-datom-model.html) for the underlying
+principle.
+
+## What a future companion package looks like
+
+If you read [R/utils-gov.R](https://github.com/amashadihossein/datom)
+and look for the `# GOV_SEAM:` markers, you're looking at the future
+boundary. Every function tagged that way is a candidate to move out
+of datom and into the companion package. The contract is simple:
+
+- All gov-write code lives in functions tagged `# GOV_SEAM:`.
+- No data-side code path calls a `# GOV_SEAM:` function directly —
+  the only callers are public datom functions whose own purpose is
+  governance-adjacent (`datom_init_repo`, `datom_decommission`,
+  `datom_init_gov`).
+- The companion package, when it ships, will reimplement these
+  functions and depend on datom for the data-side operations only.
+
+The split into two git repos was the prerequisite. Without it, "lift
+the governance code into a companion package" would mean rewriting
+how every commit is structured. With it, the move is closer to
+mechanical.
+
+## Where this leads
+
+The two-repo split is the structural counterpart to two design
+choices already established:
+
+- The metadata-vs-data split — see [The datom Model: Code in Git,
+  Data in Cloud](design-datom-model.html).
+- The serverless property that follows from "everything is git +
+  object storage" — see [Serverless and Distributed by
+  Design](design-serverless.html).
+
+All three are different views of the same underlying choice: keep
+the moving parts small, keep their interfaces explicit, and let the
+existing tools (git, S3) do the heavy lifting.

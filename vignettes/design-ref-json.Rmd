@@ -1,0 +1,154 @@
+---
+title: "ref.json and Always-Migration-Ready Storage"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{ref.json and Always-Migration-Ready Storage}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE
+)
+```
+
+> **Companion to**: [Promoting to S3](promoting-to-s3.html). Read this when
+> you want to understand *why* the path between your project and its
+> bucket goes through one extra file.
+
+A datom project's git history records what tables exist and what their
+versions are. It does **not** record where the bytes live. That fact —
+which file, which bucket, which region — is kept in a single small JSON
+file in the governance repo: `projects/{project_name}/ref.json`.
+
+The split looks like an extra hop. It is the single design choice that
+makes "we need to move this study to a different bucket" something
+other than a history rewrite.
+
+## Anatomy
+
+A typical `ref.json` after a project has lived in two buckets:
+
+```json
+{
+  "current": {
+    "type":   "s3",
+    "root":   "your-org-datom-data-eu",
+    "prefix": "study-001/",
+    "region": "eu-west-1"
+  },
+  "previous": [
+    {
+      "type":   "s3",
+      "root":   "your-org-datom-data",
+      "prefix": "study-001/",
+      "region": "us-east-1",
+      "until":  "2026-08-15T10:23:00Z"
+    }
+  ],
+  "schema_version": 1
+}
+```
+
+Two slots. `current` is the only place datom writes new bytes to.
+`previous` is an append-only log of where the project used to live.
+Reads hit `current`; writes hit `current`; the `previous` block is
+audit trail.
+
+## Why an indirection at all
+
+If `project.yaml` in your data repo carried the bucket name directly,
+moving buckets would mean rewriting every commit that ever mentioned
+the old name. With `ref.json` factored out into governance, the data
+repo's history is **bucket-agnostic**. Move the bytes, update one
+JSON file, push the gov commit, done. Every historical version still
+resolves correctly because resolution goes through `ref.json`, and
+`ref.json` is current.
+
+That sounds like a small thing. It isn't. It means:
+
+- A regulator request for a 14-month-old version of `dm` works the same
+  way after a bucket migration as before it. No history surgery.
+- Running cost optimization (S3 → S3 in cheaper region, or moving cold
+  studies to a separate bucket) doesn't break any tooling that
+  previously read from the project.
+- Multi-region or multi-cloud futures are not architectural changes;
+  they're new entries in `ref.json`.
+
+## Role-aware reads
+
+Two roles read `ref.json` differently, and the asymmetry is on
+purpose.
+
+**Developers** have a local gov clone. When they call
+`datom_get_conn()`, datom reads `ref.json` from that local clone — no
+network round-trip — and uses the `current` block to talk to the data
+store. If their gov clone is stale (last `datom_pull_gov()` was a week
+ago, the project moved buckets yesterday), the conn-time read warns
+but does not fail. Reads of *existing* versions still work because the
+parquet bytes for those versions were uploaded under the *old*
+location and the data git repo's metadata still points there.
+
+But the moment a developer tries to **write**, datom re-reads
+`ref.json` directly from gov **storage** (not the local clone). That
+read is non-negotiable: writing without a verified current location
+risks orphaning bytes in the wrong bucket, and there is no safe
+fallback. A failed live read aborts the write with a clear message:
+"your gov clone is stale, run `datom_pull_gov()` and retry."
+
+**Readers** (statisticians, dpi consumers) have no local gov clone.
+They read `ref.json` over the network through the gov client every
+time they open a conn. That's slightly more expensive than a local
+read, but readers don't make many conns, and it eliminates an entire
+class of "the file I'm reading is from the bucket we abandoned three
+months ago" failure mode.
+
+## What `ref.json` is not
+
+- **Not a per-version pointer.** It records where the *project* lives
+  today. Resolving a specific `dm` version still goes through the data
+  repo's metadata to get the parquet's content-addressed key, then
+  uses `ref.json`'s `current` block to know which bucket to pull from.
+  Two layers, each doing one job.
+- **Not a credential store.** No keys, no tokens. `ref.json` says
+  "bucket X in region Y." How a particular reader gets to bucket X is
+  a separate concern handled by [`dispatch.json`](design-dispatch.html)
+  and the keyring patterns each reader follows.
+- **Not user-edited.** Every `ref.json` write goes through datom code
+  paths that also append to `migration_history.json`. Hand-editing the
+  file would silently break that link.
+
+## The future: `datom_migrate_data()`
+
+Today's primary use of `ref.json` is the one we already have: a
+project initialized in one bucket today, possibly a different bucket
+later. The plumbing for the "later" half — `previous`,
+`migration_history.json`, conn-time mismatch detection — is wired up.
+What's missing is a single command that orchestrates the move: copy
+parquet bytes to the new bucket, rewrite `ref.json`, append to
+migration history, rewrite `project.yaml`'s storage block, push the
+gov commit, push the data commit.
+
+That command — call it `datom_migrate_data()` — is a planned future
+addition. Until it ships, the explicit decommission-and-replay path
+walked through in [Promoting to S3](promoting-to-s3.html) is the
+supported migration. It loses old version history (you replay each
+table as a fresh version 1) but is mechanically simple.
+
+The fact that the supported path today is the lossy one and the
+plumbing for the lossless one is already in place is intentional. We
+shipped the indirection because it was cheap and it shapes everything
+else; we'll ship the orchestrator when the API has settled.
+
+## Where this leads
+
+`ref.json` is one of two small JSON files that live in the governance
+repo per project. The other is `dispatch.json`. They are deliberately
+separate — see [`dispatch.json` and Self-Serve
+Access](design-dispatch.html) for why. And the gov repo itself is the
+subject of [Two Repositories: Governance vs.
+Data](design-two-repos.html), which explains why the gov repo is not
+just a folder inside the data repo.

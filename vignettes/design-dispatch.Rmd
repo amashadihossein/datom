@@ -1,0 +1,129 @@
+---
+title: "dispatch.json and Self-Serve Access"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{dispatch.json and Self-Serve Access}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE
+)
+```
+
+> **Companion to**: [Handing Off to a Statistician](handing-off.html). Read
+> this when you wonder why a reader needs a `GITHUB_PAT` but no
+> bucket URL.
+
+When a statistician reads `dm` from STUDY-001, they don't tell datom
+"go look in `s3://your-org-datom-data/study-001/dm/...`." They tell
+datom "I want STUDY-001's `dm`, here's my GitHub credential." datom
+fills in everything else.
+
+The lookup table that makes that work is `dispatch.json`. It lives in
+the governance repo, one per project, alongside `ref.json`.
+
+## Anatomy
+
+```json
+{
+  "methods": {
+    "r":      { "default": "datom::datom_read" },
+    "python": { "default": "datom.read" }
+  }
+}
+```
+
+The current schema is small on purpose. `methods` says: "to read this
+project's tables from R, call `datom::datom_read()`. From Python,
+call `datom.read`." That's it.
+
+It looks trivial. The reason it's a separate file from `ref.json` is
+forward-looking, not present-tense.
+
+## Why dispatch is separate from ref
+
+`ref.json` answers **where the bytes live today**. `dispatch.json`
+answers **how a consumer should get them**. These are different
+questions, and they evolve at different rates.
+
+- `ref.json` changes when the data physically moves (bucket migration,
+  region change). The change is rare, mechanical, and orchestrated by
+  datom itself.
+- `dispatch.json` changes when the **access pattern** changes. A new
+  language client. A new reader function (a thin wrapper that adds
+  caching, or row-level filtering, or compliance logging). A
+  per-environment override (dev vs. prod). These changes are about
+  *behavior*, not location, and they're often authored by hand.
+
+Bundling them would make every dispatch change look like a data move
+in `ref.json`'s history, and every data move would force consumers to
+re-read dispatch metadata they don't care about. Splitting them keeps
+each file's history clean and each consumer's read pattern minimal.
+
+## What dispatch enables today
+
+Three properties datom already gives you because of dispatch:
+
+1. **No bucket URLs in user code.** A reader's script says
+   `datom_read(conn, "dm")`. The bucket name appears nowhere. Move the
+   bucket and the reader's script doesn't change.
+
+2. **Symmetric R and Python access.** When the Python `datom` client
+   ships, the same project will be readable from both languages
+   without per-language config in user code. The dispatch entry tells
+   each client which symbol to call.
+
+3. **A single audit point.** "How does my organization read STUDY-001
+   data?" is `cat projects/STUDY_001/dispatch.json`. No grep across
+   data product code, no shared credentials buried in a README.
+
+## What dispatch will enable
+
+The shape of the file (methods → language → entry point) is generous
+relative to current need. That's deliberate. The roadmap for
+dispatch — none of which is in the current package, but all of which
+is unblocked by today's split — looks roughly like:
+
+- **Per-method overrides.** A project might want a custom reader
+  (`our.reader::read_with_phi_filter`) for the R default while leaving
+  Python on the standard one. Today's `default` slot becomes the
+  fallback; method-specific entries layer on top.
+- **Multi-backend dispatch.** When datom learns to read parquet from
+  GCS or Azure Blob, the dispatch file is where backend selection
+  rules go — not in `ref.json`, which only describes location.
+- **Versioned access policies.** Dispatch entries that pin readers to
+  a specific datom version, or that route between local-cache and
+  remote, or that fail closed when the caller is missing PHI access.
+  The file is small enough to gain these fields without breaking
+  existing readers.
+
+The pattern is the same as for `ref.json`: ship the indirection
+because it's cheap and it shapes everything that follows; ship the
+orchestrators that exploit it as the API stabilizes.
+
+## What `dispatch.json` is not
+
+- **Not a credentials file.** It says how to read; it never says with
+  whose keys. Each consumer brings their own credentials, supplied
+  through their language's keyring conventions.
+- **Not a permissions system.** datom's permission model is git +
+  object-store IAM, not dispatch entries. If a reader can pull the gov
+  repo, they see dispatch; whether they can actually read the data
+  bytes is governed by their object-store credentials.
+- **Not per-table.** Dispatch is project-level. Per-table behavior
+  (column filtering, row partitioning) is a feature for the reader
+  function specified in dispatch, not for the dispatch entry itself.
+
+## Where this leads
+
+`dispatch.json` and `ref.json` are the two governance-side files that
+together form the project's public-ish contract: where it lives, how
+to read it. The reason they live in a different repo from the data
+project — and not, say, alongside `manifest.json` — is the subject of
+[Two Repositories: Governance vs.
+Data](design-two-repos.html).
