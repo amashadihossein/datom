@@ -16,6 +16,8 @@ A user journey through STUDY-001 – start here.
   Statistician](https://amashadihossein.github.io/datom/articles/handing-off.md):
 - [A Second Engineer
   Joins](https://amashadihossein.github.io/datom/articles/second-engineer.md):
+- [Governing a Study
+  Portfolio](https://amashadihossein.github.io/datom/articles/governing-a-portfolio.md):
 
 ### Design
 
@@ -25,3 +27,11 @@ Why datom is shaped the way it is.
   Cloud](https://amashadihossein.github.io/datom/articles/design-datom-model.md):
 - [Version SHAs: Data SHA vs. Metadata
   SHA](https://amashadihossein.github.io/datom/articles/design-version-shas.md):
+- [ref.json and Always-Migration-Ready
+  Storage](https://amashadihossein.github.io/datom/articles/design-ref-json.md):
+- [dispatch.json and Self-Serve
+  Access](https://amashadihossein.github.io/datom/articles/design-dispatch.md):
+- [Two Repositories: Governance vs.
+  Data](https://amashadihossein.github.io/datom/articles/design-two-repos.md):
+- [Serverless and Distributed by
+  Design](https://amashadihossein.github.io/datom/articles/design-serverless.md):
