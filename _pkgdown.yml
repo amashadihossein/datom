@@ -94,3 +94,9 @@ articles:
       - first-extract
       - month-2-arrives
       - folder-of-extracts
+
+  - title: "Design"
+    desc: "Why datom is shaped the way it is."
+    contents:
+      - design-datom-model
+      - design-version-shas

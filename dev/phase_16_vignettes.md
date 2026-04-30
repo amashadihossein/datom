@@ -1,6 +1,6 @@
 # Phase 16: Vignette Overhaul
 
-**Status**: Active -- Chunk 1 complete; Chunk 2 next
+**Status**: Active -- Chunk 2 complete; Chunk 3 next (gated on user testing)
 **Branch**: `phase/16-vignettes` (created 2026-04-29)
 **Depends on**: Phase 15 closed (2026-04-29). Phase 17 (`datom_summary`, `datom_projects`) is a prerequisite for Chunk 5.
 
@@ -9,6 +9,7 @@
 - **2026-04-29 (Chunk 0)**: Phase activated. Branch created. Phase doc moved from Drafts to Active in `dev/README.md`.
 - **2026-04-29 (Chunk 1 spot-check)**: Locked git+GitHub-mandatory as a Design Principle (recorded in `.github/copilot-instructions.md`, `dev/datom_specification.md`, and the Locked decisions section below). Option A from the spot-check; Options B (bare-repo) and C (no-remote mode) explicitly rejected.
 - **2026-04-29 (Chunk 1)**: Complete. Simulator extended (LB + AE), `datom_example_data()` gains `"lb"`/`"ae"`, 17 new tests (1360/1360 passing), Articles 1-3 written, resume scripts 2-3 written, `README.Rmd` rewritten as the grabber, three old vignettes deleted, `_pkgdown.yml` gains `articles:` block. R CMD check: 0E/0W/1 pre-existing NOTE. pkgdown::build_site clean. Discovered: `tests/testthat/test-conn.R:742` is occasionally flaky in the full-suite run (bare-repo race condition, pre-existing); not caused by Chunk 1.
+- **2026-04-29 (Chunk 2)**: Complete. Design Notes D1 (`design-datom-model.Rmd`) and D5 (`design-version-shas.Rmd`) written. `_pkgdown.yml` gains `Design` articles group. pkgdown::build_site clean. No code changes; tests untouched.
 
 ---
 
