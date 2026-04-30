@@ -4,22 +4,25 @@
 \alias{datom_example_data}
 \title{Load Example EDC Data}
 \usage{
-datom_example_data(domain = c("dm", "ex"), cutoff_date = NULL)
+datom_example_data(domain = c("dm", "ex", "lb", "ae"), cutoff_date = NULL)
 }
 \arguments{
-\item{domain}{One of \code{"dm"} (demographics) or \code{"ex"} (exposure).}
+\item{domain}{One of \code{"dm"} (demographics, 48 rows), \code{"ex"} (exposure,
+48 rows), \code{"lb"} (labs, ~720 rows: 3 visits x 5 tests per subject),
+or \code{"ae"} (adverse events, ~80 rows).}
 
 \item{cutoff_date}{Optional date string (\code{"YYYY-MM-DD"}) to filter
-subjects enrolled on or before this date, simulating a point-in-time
-EDC extract.}
+rows whose primary date column is on or before this date, simulating
+a point-in-time EDC extract. The date column used per domain:
+\code{RFSTDTC} (dm), \code{EXSTDTC} (ex), \code{LBDTC} (lb), \code{AESTDTC} (ae).}
 }
 \value{
 A data frame.
 }
 \description{
-Loads bundled clinical trial example data (DM and EX domains) for
-use in examples and vignettes. The data simulates a Phase II study
-(STUDY-001) with 48 subjects enrolled over 6 months.
+Loads bundled clinical trial example data for use in examples and
+vignettes. The data simulates a Phase II study (STUDY-001) with 48
+subjects enrolled over 6 months across four SDTM-flavored domains.
 }
 \examples{
 # Full demographics
@@ -27,5 +30,8 @@ dm <- datom_example_data("dm")
 
 # Month-3 snapshot (subjects enrolled by 2026-03-28)
 dm_m3 <- datom_example_data("dm", cutoff_date = "2026-03-28")
+
+# Labs collected through Month 3
+lb_m3 <- datom_example_data("lb", cutoff_date = "2026-03-28")
 
 }

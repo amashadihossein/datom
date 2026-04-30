@@ -10,17 +10,28 @@ experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](h
 [![R-CMD-check](https://github.com/amashadihossein/datom/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/amashadihossein/datom/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
-datom provides version-controlled data management for reproducible
-workflows. It abstracts tables as code in git while storing actual data
-in cloud storage (S3), enabling:
+**datom** is version control for tabular data. It treats every write as
+a content-addressed snapshot, keeps the audit trail in git, and stores
+the bytes wherever you tell it to live – your laptop, S3, or any backend
+datom learns to speak. Whatever you write today is readable, by SHA,
+forever.
 
-- Cloud-based data repositories with automatic versioning
-- Complete data lineage tracking
-- Access to any historical version for reproducibility
-- Separation of data developer and data reader workflows
+It was built for clinical and scientific workflows where reproducing a
+historical analysis is not optional, but nothing in the design is
+domain-specific.
 
-datom is the foundational layer for the
-[daapr](https://github.com/amashadihossein/daapr) ecosystem.
+## Why datom
+
+- **Versioned tables out of the box.** Every `datom_write()` is a new,
+  immutable, hash-named version. Yesterday’s data is still there.
+- **Free duplicate detection.** Re-writing a table you have already
+  written costs nothing – datom recognizes the content and skips.
+- **Code in git, data wherever.** Metadata is diff-able and reviewable
+  in a normal git workflow. Parquet bytes go to S3, a local directory,
+  or (eventually) other cloud backends.
+- **Two roles, one model.** Data engineers write; analysts and
+  downstream pipelines read. Both work against the same versioned source
+  of truth.
 
 ## Installation
 
@@ -29,87 +40,118 @@ datom is the foundational layer for the
 pak::pak("amashadihossein/datom")
 ```
 
-## Overview
+## A two-minute tour
 
-### For Data Developers (git + S3 access)
+datom requires git + GitHub for metadata, regardless of where the data
+lives. The example below uses a **local directory** for parquet bytes –
+the fastest way to see datom work end to end. Swapping the local store
+for `datom_store_s3()` is the only change needed for cloud storage; see
+the [Promoting to
+S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.html)
+article.
 
 ``` r
 library(datom)
+library(fs)
 
-# Build a store with credentials
-s3 <- datom_store_s3(
-  bucket     = "my-bucket",
-  prefix     = "data/",
-  access_key = keyring::key_get("AWS_ACCESS_KEY"),
-  secret_key = keyring::key_get("AWS_SECRET_KEY")
-)
+# 1. Two local directories: one for the parquet bytes, one for governance.
+data_root      <- path(tempdir(), "datom_data_root")
+gov_root       <- path(tempdir(), "datom_gov_root")
+gov_clone_path <- path(tempdir(), "datom_gov_clone")
+study_dir      <- path(tempdir(), "study_001_data")
+dir_create(c(data_root, gov_root))
+
+# 2. Build a store. The GitHub PAT is the only credential needed.
+data_component <- datom_store_local(path = data_root)
+gov_component  <- datom_store_local(path = gov_root)
 
 store <- datom_store(
-  governance = s3,
-  data       = s3,
+  governance = gov_component,
+  data       = data_component,
   github_pat = keyring::key_get("GITHUB_PAT")
 )
 
-# Initialize a datom repository
+# 3. Initialize a shared governance repo (once per organization).
+gov_repo_url <- datom_init_gov(
+  gov_store      = gov_component,
+  gov_local_path = gov_clone_path,
+  create_repo    = TRUE,
+  repo_name      = "datom-governance",
+  github_pat     = store$github_pat
+)
+
+store <- datom_store(
+  governance     = gov_component,
+  data           = data_component,
+  github_pat     = keyring::key_get("GITHUB_PAT"),
+  gov_repo_url   = gov_repo_url,
+  gov_local_path = gov_clone_path
+)
+
+# 4. Initialize a project.
 datom_init_repo(
-  path         = "my_project",
-  project_name = "MYPROJ",
+  path         = study_dir,
+  project_name = "STUDY_001",
   store        = store,
   create_repo  = TRUE,
-  repo_name    = "my-project-data"
+  repo_name    = "study-001-data"
 )
 
-# Get connection
-conn <- datom_get_conn(path = "my_project", store = store)
-
-# Sync input files to versioned storage
-manifest <- datom_sync_manifest(conn)
-datom_sync(conn, manifest)
-
-# Write individual tables
-datom_write(conn, data = my_data, name = "customers", message = "Initial load")
+conn <- datom_get_conn(path = study_dir, store = store)
 ```
 
-### For Data Readers (S3 only)
+Now write a table – twice – and watch datom do the right thing:
 
 ``` r
-library(datom)
+dm <- datom_example_data("dm", cutoff_date = "2026-01-28")
 
-# Build a read-only store (no github_pat)
-reader_s3 <- datom_store_s3(
-  bucket     = "my-bucket",
-  prefix     = "data/",
-  access_key = keyring::key_get("AWS_ACCESS_KEY"),
-  secret_key = keyring::key_get("AWS_SECRET_KEY")
-)
+datom_write(conn, data = dm, name = "dm", message = "Initial DM extract")
+#> v Wrote "dm" (full): "a8ee7a31"
 
-reader_store <- datom_store(governance = reader_s3, data = reader_s3)
+# Same data again. datom recognizes it and skips.
+datom_write(conn, data = dm, name = "dm")
+#> i No changes detected for "dm". Skipping write.
 
-# Connect directly to S3
-conn <- datom_get_conn(
-  store        = reader_store,
-  project_name = "MYPROJ"
-)
-
-# List available tables
 datom_list(conn)
+#>   name current_version current_data_sha last_updated
+#> 1   dm         a8ee7a31         4b6d0a7e 2026-01-28T...
 
-# Read current version
-customers <- datom_read(conn, "customers")
-
-# Read specific version for reproducibility
-customers_v1 <- datom_read(conn, "customers", version = "abc123...")
+# Read back what you wrote -- bit-for-bit.
+identical(datom_read(conn, "dm"), dm)
+#> [1] TRUE
 ```
 
-## Design Principles
+Three core properties just showed up:
 
-- **Git as source of truth**: All metadata versioned in git
-- **Content addressing**: SHA-based storage for efficient deduplication
-- **Separated workflows**: Developers need git + S3; readers need only
-  S3
-- **Language agnostic**: Parquet storage enables cross-language access
+1.  **Versioning** – `dm` has a hash-named version that any colleague
+    can reference and reproduce.
+2.  **Listing** – `datom_list()` shows the current state of every table
+    the project knows about.
+3.  **Duplicate detection** – re-writing the same data is a free no-op,
+    making pipelines safe to re-run.
 
-## Related Packages
+## Where to go next
+
+The [Get Started](https://amashadihossein.github.io/datom/articles/)
+articles follow a single user journey through six months of a clinical
+study, from a first extract on a laptop through a full multi-engineer,
+multi-project governance workflow.
+
+| When you are ready for | Article |
+|----|----|
+| A second monthly extract – versioning in action | [Month 2 Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.html) |
+| Importing a folder of extracts at once | [A Folder of Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.html) |
+| Moving from local storage to S3 | [Promoting to S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.html) |
+| Sharing data with statisticians | [Handing Off to a Statistician](https://amashadihossein.github.io/datom/articles/handing-off.html) |
+| Governing a portfolio of studies | [Governing a Portfolio](https://amashadihossein.github.io/datom/articles/governing-portfolio.html) |
+
+For the design rationale – why two repos, what `ref.json` does, how SHAs
+are computed – see the **Design** articles in the same site.
+
+## Where datom fits
+
+datom is the foundational layer for the
+[daapr](https://github.com/amashadihossein/daapr) ecosystem.
 
 | Package      | Purpose                                         |
 |--------------|-------------------------------------------------|
@@ -118,4 +160,4 @@ customers_v1 <- datom_read(conn, "customers", version = "abc123...")
 | **dpdeploy** | Deployment orchestration                        |
 | **dpi**      | Data product access                             |
 
-See `dev/datom_specification.md` for full technical specification.
+See `dev/datom_specification.md` for the full technical specification.

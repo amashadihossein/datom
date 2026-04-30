@@ -1,13 +1,16 @@
 #' Load Example EDC Data
 #'
-#' Loads bundled clinical trial example data (DM and EX domains) for
-#' use in examples and vignettes. The data simulates a Phase II study
-#' (STUDY-001) with 48 subjects enrolled over 6 months.
+#' Loads bundled clinical trial example data for use in examples and
+#' vignettes. The data simulates a Phase II study (STUDY-001) with 48
+#' subjects enrolled over 6 months across four SDTM-flavored domains.
 #'
-#' @param domain One of `"dm"` (demographics) or `"ex"` (exposure).
+#' @param domain One of `"dm"` (demographics, 48 rows), `"ex"` (exposure,
+#'   48 rows), `"lb"` (labs, ~720 rows: 3 visits x 5 tests per subject),
+#'   or `"ae"` (adverse events, ~80 rows).
 #' @param cutoff_date Optional date string (`"YYYY-MM-DD"`) to filter
-#'   subjects enrolled on or before this date, simulating a point-in-time
-#'   EDC extract.
+#'   rows whose primary date column is on or before this date, simulating
+#'   a point-in-time EDC extract. The date column used per domain:
+#'   `RFSTDTC` (dm), `EXSTDTC` (ex), `LBDTC` (lb), `AESTDTC` (ae).
 #'
 #' @return A data frame.
 #'
@@ -18,8 +21,12 @@
 #' # Month-3 snapshot (subjects enrolled by 2026-03-28)
 #' dm_m3 <- datom_example_data("dm", cutoff_date = "2026-03-28")
 #'
+#' # Labs collected through Month 3
+#' lb_m3 <- datom_example_data("lb", cutoff_date = "2026-03-28")
+#'
 #' @export
-datom_example_data <- function(domain = c("dm", "ex"), cutoff_date = NULL) {
+datom_example_data <- function(domain = c("dm", "ex", "lb", "ae"),
+                               cutoff_date = NULL) {
   domain <- match.arg(domain)
 
   file <- system.file("extdata", paste0(domain, ".csv"), package = "datom")
@@ -31,7 +38,13 @@ datom_example_data <- function(domain = c("dm", "ex"), cutoff_date = NULL) {
 
   if (!is.null(cutoff_date)) {
     cutoff <- as.Date(cutoff_date)
-    date_col <- if (domain == "dm") "RFSTDTC" else "EXSTDTC"
+    date_col <- switch(
+      domain,
+      dm = "RFSTDTC",
+      ex = "EXSTDTC",
+      lb = "LBDTC",
+      ae = "AESTDTC"
+    )
     data <- data[as.Date(data[[date_col]]) <= cutoff, , drop = FALSE]
     rownames(data) <- NULL
   }

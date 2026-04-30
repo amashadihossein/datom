@@ -1,8 +1,14 @@
 # Phase 16: Vignette Overhaul
 
-**Status**: Active — Chunk 1 (design spot-check)
+**Status**: Active -- Chunk 1 complete; Chunk 2 next
 **Branch**: `phase/16-vignettes` (created 2026-04-29)
 **Depends on**: Phase 15 closed (2026-04-29). Phase 17 (`datom_summary`, `datom_projects`) is a prerequisite for Chunk 5.
+
+## Progress log
+
+- **2026-04-29 (Chunk 0)**: Phase activated. Branch created. Phase doc moved from Drafts to Active in `dev/README.md`.
+- **2026-04-29 (Chunk 1 spot-check)**: Locked git+GitHub-mandatory as a Design Principle (recorded in `.github/copilot-instructions.md`, `dev/datom_specification.md`, and the Locked decisions section below). Option A from the spot-check; Options B (bare-repo) and C (no-remote mode) explicitly rejected.
+- **2026-04-29 (Chunk 1)**: Complete. Simulator extended (LB + AE), `datom_example_data()` gains `"lb"`/`"ae"`, 17 new tests (1360/1360 passing), Articles 1-3 written, resume scripts 2-3 written, `README.Rmd` rewritten as the grabber, three old vignettes deleted, `_pkgdown.yml` gains `articles:` block. R CMD check: 0E/0W/1 pre-existing NOTE. pkgdown::build_site clean. Discovered: `tests/testthat/test-conn.R:742` is occasionally flaky in the full-suite run (bare-repo race condition, pre-existing); not caused by Chunk 1.
 
 ---
 
@@ -69,7 +75,7 @@ The thread: *"You are the data engineer for STUDY-001. Extracts arrive monthly. 
 
 | # | Title | Altitude | Persona | State at start | New capability |
 |---|---|---|---|---|---|
-| 1 | First Extract | Single engineer | Engineer | Empty dir | `datom_init_repo(local)`, `datom_write`, `datom_read` |
+| 1 | First Extract | Single engineer | Engineer | Empty dir | `datom_store_local`, `datom_init_gov`, `datom_init_repo`, `datom_write`, `datom_read` |
 | 2 | Month 2 Arrives | Single engineer | Engineer | State of #1 | Change detection, `datom_history()`, version-pinned reads |
 | 3 | A Folder of Extracts | Single engineer | Engineer | State of #2 | `datom_sync()`, `datom_status()`, `datom_validate()` |
 | 4 | Promoting to S3 | Team + cloud | Engineer | State of #3 (local) | `datom_store_s3()`, `create_repo=TRUE`, `ref.json` indirection (light) |
@@ -166,6 +172,7 @@ Reference-style. Each links back to the user-journey article where the concept f
 
 ## Open Items / To Decide During Work
 
+- **Resume scripts: fresh-jump-in vs. continuity-only.** Chunk 1 ships continuity-only resume scripts: they require the prior article's local state to exist (default `tempdir()` within session, or `DATOM_VIGNETTE_DIR=~/...` across sessions) and abort with instructions otherwise. A true fresh-jump-in (run resume for article 5 from a clean machine and have it call `datom_init_gov(create_repo = TRUE)` etc.) collides with GitHub's "repo already exists" check across sessions. Two ways to fix later: (a) suffix repo names with a hash of the local path so each path gets its own remote, or (b) detect existing remotes and switch to `gov_repo_url`/`data_repo_url` mode. Deferred.
 - Article 9 (daapr stack): how speculative is too speculative? Lean: only describe interfaces datom already exposes; describe upstack packages by name + role only, not by API surface.
 - Article 7's introduction of STUDY-002: spin up a second simulated study or just narrate it? Lean: narrate (one-line `datom_init_repo()` for STUDY-002, no real data) — keeps the article focused on governance, not data.
 - pkgdown sidebar grouping labels: confirm "Get Started / Scale Up / Govern / Reference / Design" reads well on the rendered site.
