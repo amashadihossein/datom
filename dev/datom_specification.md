@@ -20,15 +20,16 @@ The primary utility motivating datom is building version-tracked data products. 
 ## Design Principles
 
 1. **Git as source of truth**: All metadata originates in git for version control
-2. **S3 metadata caching**: Metadata synced to S3 enables data reader access without GitHub
-3. **Separated workflows**: Data developers need git + S3 access for writes; data readers need only S3 access for reads
-4. **Content addressing**: SHA-based storage for efficient deduplication
-5. **Explicit data reference**: Data location stored in `ref.json` at the governance store, resolved via `.datom_resolve_ref()` — single read, no recursion
-6. **Two-store architecture**: Governance store (dispatch, ref, migration history) and data store (manifest, table data/metadata) can target different buckets
-7. **Storage abstraction**: Business logic calls `.datom_storage_*()` dispatch functions; backend-specific code (`.datom_s3_*()`) is isolated behind a dispatch layer keyed on `conn$backend`
-8. **Language agnostic**: Designed for R and Python implementations
-9. **Storage agnostic**: S3 and local filesystem supported; extensible to other cloud providers
-10. **One repo per project**: Each git repository manages a single project/prefix
+2. **Git + GitHub remote are mandatory**: Every datom project requires both a data git repo and a governance git repo with remotes (today: GitHub). The storage backend (`datom_store_s3`, `datom_store_local`, future GCS, etc.) controls only where parquet bytes live — it does **not** make git optional. There is no "local-only / no-remote" mode. Reaffirmed Phase 16, 2026-04-29.
+3. **S3 metadata caching**: Metadata synced to S3 enables data reader access without GitHub
+4. **Separated workflows**: Data developers need git + S3 access for writes; data readers need only S3 access for reads
+5. **Content addressing**: SHA-based storage for efficient deduplication
+6. **Explicit data reference**: Data location stored in `ref.json` at the governance store, resolved via `.datom_resolve_ref()` — single read, no recursion
+7. **Two-store architecture**: Governance store (dispatch, ref, migration history) and data store (manifest, table data/metadata) can target different buckets
+8. **Storage abstraction**: Business logic calls `.datom_storage_*()` dispatch functions; backend-specific code (`.datom_s3_*()`) is isolated behind a dispatch layer keyed on `conn$backend`
+9. **Language agnostic**: Designed for R and Python implementations
+10. **Storage agnostic**: S3 and local filesystem supported; extensible to other cloud providers
+11. **One repo per project**: Each git repository manages a single project/prefix
 
 ---
 

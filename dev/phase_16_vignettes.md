@@ -1,8 +1,16 @@
 # Phase 16: Vignette Overhaul
 
-**Status**: Draft (planning) — not yet active
-**Branch**: `phase/16-vignettes` (to be created)
+**Status**: Active -- Chunk 3 complete; Chunk 4 next (Article 7 + Design Notes D2/D3/D4/D6)
+**Branch**: `phase/16-vignettes` (created 2026-04-29)
 **Depends on**: Phase 15 closed (2026-04-29). Phase 17 (`datom_summary`, `datom_projects`) is a prerequisite for Chunk 5.
+
+## Progress log
+
+- **2026-04-29 (Chunk 0)**: Phase activated. Branch created. Phase doc moved from Drafts to Active in `dev/README.md`.
+- **2026-04-29 (Chunk 1 spot-check)**: Locked git+GitHub-mandatory as a Design Principle (recorded in `.github/copilot-instructions.md`, `dev/datom_specification.md`, and the Locked decisions section below). Option A from the spot-check; Options B (bare-repo) and C (no-remote mode) explicitly rejected.
+- **2026-04-29 (Chunk 1)**: Complete. Simulator extended (LB + AE), `datom_example_data()` gains `"lb"`/`"ae"`, 17 new tests (1360/1360 passing), Articles 1-3 written, resume scripts 2-3 written, `README.Rmd` rewritten as the grabber, three old vignettes deleted, `_pkgdown.yml` gains `articles:` block. R CMD check: 0E/0W/1 pre-existing NOTE. pkgdown::build_site clean. Discovered: `tests/testthat/test-conn.R:742` is occasionally flaky in the full-suite run (bare-repo race condition, pre-existing); not caused by Chunk 1.
+- **2026-04-29 (Chunk 2)**: Complete. Design Notes D1 (`design-datom-model.Rmd`) and D5 (`design-version-shas.Rmd`) written. `_pkgdown.yml` gains `Design` articles group. pkgdown::build_site clean. No code changes; tests untouched.
+- **2026-04-29 (Chunk 3)**: Complete. Articles 4 (`promoting-to-s3.Rmd`), 5 (`handing-off.Rmd`), 6 (`second-engineer.Rmd`) written. Resume scripts 4--6 added. `_pkgdown.yml` Get Started group extended to 6 articles. Phase doc gains a Future Work section recording Phase 18 (`datom_migrate_data()`) and the gov-store-migration design problem -- both spawned by Article 4's honest treatment of the local->S3 boundary. AWS creds via `keyring` (parallels GitHub PAT pattern); reader role demonstrated by Article 5 in a different R session. Concurrent-write recovery in Article 6 is `datom_pull()` + retry. No code changes; tests untouched.
 
 ---
 
@@ -69,7 +77,7 @@ The thread: *"You are the data engineer for STUDY-001. Extracts arrive monthly. 
 
 | # | Title | Altitude | Persona | State at start | New capability |
 |---|---|---|---|---|---|
-| 1 | First Extract | Single engineer | Engineer | Empty dir | `datom_init_repo(local)`, `datom_write`, `datom_read` |
+| 1 | First Extract | Single engineer | Engineer | Empty dir | `datom_store_local`, `datom_init_gov`, `datom_init_repo`, `datom_write`, `datom_read` |
 | 2 | Month 2 Arrives | Single engineer | Engineer | State of #1 | Change detection, `datom_history()`, version-pinned reads |
 | 3 | A Folder of Extracts | Single engineer | Engineer | State of #2 | `datom_sync()`, `datom_status()`, `datom_validate()` |
 | 4 | Promoting to S3 | Team + cloud | Engineer | State of #3 (local) | `datom_store_s3()`, `create_repo=TRUE`, `ref.json` indirection (light) |
@@ -108,12 +116,31 @@ Reference-style. Each links back to the user-journey article where the concept f
 
 | Chunk | Content | Phase 15 dep | Phase 17 dep |
 |---|---|---|---|
-| 1 | Articles 1–3 + `inst/vignette-setup/resume_article_2.R`, `resume_article_3.R` + simulator LB/AE extension | No | No |
+| 1 | Simulator LB/AE extension + regenerated extdata + Articles 1–3 + `resume_article_2.R`, `resume_article_3.R` + **`README.Rmd` rewrite** | No | No |
 | 2 | Design Notes D1, D5 | No | No |
 | 3 | Articles 4–6 + `resume_article_4.R` … `resume_article_6.R` | Yes | No |
 | 4 | Article 7 + `resume_article_7.R` + Design Notes D2, D3, D4, D6 | Yes | No |
 | 5 | Articles 8–9 + `resume_article_8.R` | Yes | Yes |
-| 6 | Article 10 + `README.Rmd` refresh + `_pkgdown.yml` reorg + final pkgdown build | Yes | Yes |
+| 6 | Article 10 + `_pkgdown.yml` reorg + final pkgdown build | Yes | Yes |
+
+### Locked design decisions (Chunk 1 spot-check, 2026-04-29)
+
+- **Git + GitHub are mandatory from Article 1 onward.** No "no-credentials" framing. Every article (and the README's primary example) requires `GITHUB_PAT` set up via `keyring` in 3 lines. The local backend (`datom_store_local()`) means parquet bytes live in a directory — it does **not** mean git is optional. Articles 1–3 use `create_repo = TRUE` with the local backend (GitHub for metadata, filesystem for data); Article 4 adds S3 for data. This decision is now in `.github/copilot-instructions.md` and `dev/datom_specification.md` as a Design Principle. (Option A from the Chunk 1 spot-check; Options B and C explicitly rejected.)
+- **Filenames**: plain (e.g. `first-extract.Rmd`), no numeric prefixes. Sidebar order is owned by `_pkgdown.yml`, so reordering later is a YAML edit.
+- **Working directory**: vignettes default to `tempdir()` subdirs (`study_dir`, `store_path`); each article shows a one-line override comment for `~/study_001_data` if the reader wants persistence.
+- **Article 1 capability budget**: `datom_store_local()`, `datom_init_repo()`, `datom_write()`, `datom_read()` only. `datom_list`/`datom_status` defer to Article 3.
+- **Resume scripts** (`inst/vignette-setup/resume_article_N.R`):
+  - Take no arguments; honor env vars `DATOM_VIGNETTE_DIR`, `DATOM_VIGNETTE_STORE_PATH`; default to `tempdir()`.
+  - Idempotent — re-run is a no-op if state is already at end-of-article-(N-1).
+  - Self-contained: only `datom`, `fs`, base R, and shipped `datom_example_*` helpers. No network for resume scripts 2–3.
+  - Return `invisible(list(conn = ..., study_dir = ..., store_path = ...))` so power users can `state <- source(...)$value`.
+  - Use `cli::cli_alert_info()` to echo each rebuild step.
+- **All vignette chunks `eval = FALSE` for IO**. Chunk option default set at top of each article via `knitr::opts_chunk$set(eval = FALSE)`.
+- **README is the grabber**: rewrites in Chunk 1 (moved up from Chunk 6). Shows `datom_store_local()` → `datom_init_repo()` → `datom_write()` (twice, to demonstrate duplicate detection) → `datom_list()` → `datom_read()`. Closes with one-paragraph "next steps" pointing to the S3 + governance articles. No AWS/GitHub in the README's primary example.
+- **Simulator LB/AE shape**:
+  - LB: ~700 rows, 3–5 lab tests per subject per visit (CHEM/HEMA), `LBDTC` between enrollment and study end.
+  - AE: ~80 rows, 0–3 events per subject (Poisson-ish), `AESTDTC` post-enrollment, severity + relationship coded.
+  - Written to `inst/extdata/lb.csv` / `ae.csv`. `datom_example_data()` gains `"lb"` and `"ae"` choices.
 
 **Recommended escalation moments** (per copilot-instructions Model Escalation):
 - **Chunk 1 design spot-check** before writing — get the resumable-setup pattern reviewed; it's the cross-cutting pattern that all 10 articles inherit.
@@ -147,9 +174,19 @@ Reference-style. Each links back to the user-journey article where the concept f
 
 ## Open Items / To Decide During Work
 
+- **Resume scripts: fresh-jump-in vs. continuity-only.** Chunk 1 ships continuity-only resume scripts: they require the prior article's local state to exist (default `tempdir()` within session, or `DATOM_VIGNETTE_DIR=~/...` across sessions) and abort with instructions otherwise. A true fresh-jump-in (run resume for article 5 from a clean machine and have it call `datom_init_gov(create_repo = TRUE)` etc.) collides with GitHub's "repo already exists" check across sessions. Two ways to fix later: (a) suffix repo names with a hash of the local path so each path gets its own remote, or (b) detect existing remotes and switch to `gov_repo_url`/`data_repo_url` mode. Deferred.
 - Article 9 (daapr stack): how speculative is too speculative? Lean: only describe interfaces datom already exposes; describe upstack packages by name + role only, not by API surface.
-- Article 7's introduction of STUDY-002: spin up a second simulated study or just narrate it? Lean: narrate (one-line `datom_init_repo()` for STUDY-002, no real data) — keeps the article focused on governance, not data.
+- Article 7's introduction of STUDY-002: spin up a second simulated study or just narrate it? Lean: narrate (one-line `datom_init_repo()` for STUDY-002, no real data) -- keeps the article focused on governance, not data.
 - pkgdown sidebar grouping labels: confirm "Get Started / Scale Up / Govern / Reference / Design" reads well on the rendered site.
+
+---
+
+## Future Work (spawned during this phase)
+
+These are out of scope for Phase 16 but are referenced from its articles and should become their own phases:
+
+- **Phase 18 (planned): `datom_migrate_data()`.** A first-class API to copy parquet bytes from one data store to another (local -> S3, S3 bucket -> S3 bucket, future GCS, etc.) without resetting project history. The plumbing already exists (`ref.json` `previous` slot, `migration_history.json`, conn-time mismatch detection at `R/conn.R:1037`). What's missing is a single orchestrator that copies bytes, rewrites `ref.json`, appends migration history, rewrites `project.yaml`'s `storage.data` block, and commits the gov repo. Article 4 explicitly defers to this future capability and chooses the decommission-and-replay path instead.
+- **Phase 19-ish: governance store migration.** A harder design problem -- the gov store is the root of trust and is referenced directly by user code (`datom_get_conn(store=...)`), so swapping it has no `ref.json` analogue today. Likely requires a discovery convention (gov-pointer file at a well-known location, or org-wide config). No code today; not yet specified.
 
 ---
 
