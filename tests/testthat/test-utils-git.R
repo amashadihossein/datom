@@ -144,6 +144,95 @@ test_that(".datom_git_author falls back to global config", {
 
 
 # =============================================================================
+# .datom_git_ensure_local_identity()
+# =============================================================================
+
+# Helper: mock git2r::config so the global section is empty (or set to a
+# stubbed value), while passthrough calls (with a repo handle) continue to
+# hit the real git2r::config. libgit2 ignores HOME / XDG_CONFIG_HOME on
+# some platforms, so env-based isolation is unreliable; mocking is.
+local_mock_git_global <- function(global = list(), env = parent.frame()) {
+  real_config <- git2r::config  # capture BEFORE rebinding
+  testthat::local_mocked_bindings(
+    config = function(...) {
+      args <- list(...)
+      if (length(args) > 0 && inherits(args[[1]], "git_repository")) {
+        return(do.call(real_config, args))
+      }
+      list(global = global, local = list())
+    },
+    .package = "git2r",
+    .env = env
+  )
+}
+
+test_that(".datom_git_ensure_local_identity copies global identity to local", {
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+
+  dir <- withr::local_tempdir()
+  repo <- git2r::init(dir)
+
+  res <- .datom_git_ensure_local_identity(repo)
+  expect_identical(res, repo)
+
+  cfg <- git2r::config(repo)
+  expect_equal(cfg$local$user.name, "Global User")
+  expect_equal(cfg$local$user.email, "global@cfg.com")
+})
+
+test_that(".datom_git_ensure_local_identity falls back when no global config", {
+  local_mock_git_global(global = list())
+
+  dir <- withr::local_tempdir()
+  repo <- git2r::init(dir)
+
+  .datom_git_ensure_local_identity(repo)
+
+  cfg <- git2r::config(repo)
+  expect_equal(cfg$local$user.name, "datom")
+  expect_equal(cfg$local$user.email, "datom@noreply")
+})
+
+test_that(".datom_git_ensure_local_identity respects custom fallbacks", {
+  local_mock_git_global(global = list())
+
+  dir <- withr::local_tempdir()
+  repo <- git2r::init(dir)
+
+  .datom_git_ensure_local_identity(
+    repo,
+    fallback_name  = "CI Bot",
+    fallback_email = "ci@example.com"
+  )
+
+  cfg <- git2r::config(repo)
+  expect_equal(cfg$local$user.name, "CI Bot")
+  expect_equal(cfg$local$user.email, "ci@example.com")
+})
+
+test_that(".datom_git_ensure_local_identity enables default_signature on a fresh repo", {
+  # Regression test for the CI failure: .datom_gov_clone_init() previously
+  # did not set local identity, so a subsequent commit via
+  # git2r::default_signature() failed on hosts without global git config.
+  # Here we cannot easily simulate "no global config" against libgit2
+  # itself, but we can verify that after the helper runs, local config has
+  # the expected values and default_signature returns them.
+  local_mock_git_global(global = list())
+
+  dir <- withr::local_tempdir()
+  repo <- git2r::init(dir)
+
+  .datom_git_ensure_local_identity(repo)
+
+  sig <- git2r::default_signature(repo)
+  # Local config takes precedence over global, so we get the fallback.
+  expect_equal(sig$name, "datom")
+  expect_equal(sig$email, "datom@noreply")
+})
+
+
+# =============================================================================
 # .datom_git_branch()
 # =============================================================================
 

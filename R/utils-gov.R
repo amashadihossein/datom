@@ -96,6 +96,10 @@
       }
     )
 
+    # Ensure the fresh clone has a local git identity so subsequent gov
+    # commits succeed even when the host (e.g. CI) has no global git config.
+    .datom_git_ensure_local_identity(git2r::repository(gov_local_path))
+
     cli::cli_alert_success("Cloned gov repo to {.path {gov_local_path}}.")
     return(invisible(gov_local_path))
   }
