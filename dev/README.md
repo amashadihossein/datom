@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Started | Status | Doc |
 |-------|---------|--------|-----|
-| Phase 16: Vignette overhaul | 2026-04-29 | Chunk 2 complete; Chunk 3 next | [phase_16_vignettes.md](phase_16_vignettes.md) |
+| Phase 16: Vignette overhaul | 2026-04-29 | Chunk 3 complete; Chunk 4 next | [phase_16_vignettes.md](phase_16_vignettes.md) |
 
 ### Drafts (queued, not active)
 

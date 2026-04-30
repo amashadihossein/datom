@@ -1,6 +1,6 @@
 # Phase 16: Vignette Overhaul
 
-**Status**: Active -- Chunk 2 complete; Chunk 3 next (gated on user testing)
+**Status**: Active -- Chunk 3 complete; Chunk 4 next (Article 7 + Design Notes D2/D3/D4/D6)
 **Branch**: `phase/16-vignettes` (created 2026-04-29)
 **Depends on**: Phase 15 closed (2026-04-29). Phase 17 (`datom_summary`, `datom_projects`) is a prerequisite for Chunk 5.
 
@@ -10,6 +10,7 @@
 - **2026-04-29 (Chunk 1 spot-check)**: Locked git+GitHub-mandatory as a Design Principle (recorded in `.github/copilot-instructions.md`, `dev/datom_specification.md`, and the Locked decisions section below). Option A from the spot-check; Options B (bare-repo) and C (no-remote mode) explicitly rejected.
 - **2026-04-29 (Chunk 1)**: Complete. Simulator extended (LB + AE), `datom_example_data()` gains `"lb"`/`"ae"`, 17 new tests (1360/1360 passing), Articles 1-3 written, resume scripts 2-3 written, `README.Rmd` rewritten as the grabber, three old vignettes deleted, `_pkgdown.yml` gains `articles:` block. R CMD check: 0E/0W/1 pre-existing NOTE. pkgdown::build_site clean. Discovered: `tests/testthat/test-conn.R:742` is occasionally flaky in the full-suite run (bare-repo race condition, pre-existing); not caused by Chunk 1.
 - **2026-04-29 (Chunk 2)**: Complete. Design Notes D1 (`design-datom-model.Rmd`) and D5 (`design-version-shas.Rmd`) written. `_pkgdown.yml` gains `Design` articles group. pkgdown::build_site clean. No code changes; tests untouched.
+- **2026-04-29 (Chunk 3)**: Complete. Articles 4 (`promoting-to-s3.Rmd`), 5 (`handing-off.Rmd`), 6 (`second-engineer.Rmd`) written. Resume scripts 4--6 added. `_pkgdown.yml` Get Started group extended to 6 articles. Phase doc gains a Future Work section recording Phase 18 (`datom_migrate_data()`) and the gov-store-migration design problem -- both spawned by Article 4's honest treatment of the local->S3 boundary. AWS creds via `keyring` (parallels GitHub PAT pattern); reader role demonstrated by Article 5 in a different R session. Concurrent-write recovery in Article 6 is `datom_pull()` + retry. No code changes; tests untouched.
 
 ---
 
@@ -175,8 +176,17 @@ Reference-style. Each links back to the user-journey article where the concept f
 
 - **Resume scripts: fresh-jump-in vs. continuity-only.** Chunk 1 ships continuity-only resume scripts: they require the prior article's local state to exist (default `tempdir()` within session, or `DATOM_VIGNETTE_DIR=~/...` across sessions) and abort with instructions otherwise. A true fresh-jump-in (run resume for article 5 from a clean machine and have it call `datom_init_gov(create_repo = TRUE)` etc.) collides with GitHub's "repo already exists" check across sessions. Two ways to fix later: (a) suffix repo names with a hash of the local path so each path gets its own remote, or (b) detect existing remotes and switch to `gov_repo_url`/`data_repo_url` mode. Deferred.
 - Article 9 (daapr stack): how speculative is too speculative? Lean: only describe interfaces datom already exposes; describe upstack packages by name + role only, not by API surface.
-- Article 7's introduction of STUDY-002: spin up a second simulated study or just narrate it? Lean: narrate (one-line `datom_init_repo()` for STUDY-002, no real data) — keeps the article focused on governance, not data.
+- Article 7's introduction of STUDY-002: spin up a second simulated study or just narrate it? Lean: narrate (one-line `datom_init_repo()` for STUDY-002, no real data) -- keeps the article focused on governance, not data.
 - pkgdown sidebar grouping labels: confirm "Get Started / Scale Up / Govern / Reference / Design" reads well on the rendered site.
+
+---
+
+## Future Work (spawned during this phase)
+
+These are out of scope for Phase 16 but are referenced from its articles and should become their own phases:
+
+- **Phase 18 (planned): `datom_migrate_data()`.** A first-class API to copy parquet bytes from one data store to another (local -> S3, S3 bucket -> S3 bucket, future GCS, etc.) without resetting project history. The plumbing already exists (`ref.json` `previous` slot, `migration_history.json`, conn-time mismatch detection at `R/conn.R:1037`). What's missing is a single orchestrator that copies bytes, rewrites `ref.json`, appends migration history, rewrites `project.yaml`'s `storage.data` block, and commits the gov repo. Article 4 explicitly defers to this future capability and chooses the decommission-and-replay path instead.
+- **Phase 19-ish: governance store migration.** A harder design problem -- the gov store is the root of trust and is referenced directly by user code (`datom_get_conn(store=...)`), so swapping it has no `ref.json` analogue today. Likely requires a discovery convention (gov-pointer file at a well-known location, or org-wide config). No code today; not yet specified.
 
 ---
 
