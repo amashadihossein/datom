@@ -18,9 +18,14 @@
       <ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="articles/clinical-data-versioning.html">Clinical Data Versioning with datom</a></li>
-    <li><a class="dropdown-item" href="articles/credentials.html">Credential Management</a></li>
-    <li><a class="dropdown-item" href="articles/team-collaboration.html">Team Collaboration with datom</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="articles/first-extract.html">First Extract</a></li>
+    <li><a class="dropdown-item" href="articles/month-2-arrives.html">Month 2 Arrives</a></li>
+    <li><a class="dropdown-item" href="articles/folder-of-extracts.html">A Folder of Extracts</a></li>
+    <li><a class="dropdown-item" href="articles/promoting-to-s3.html">Promoting to S3</a></li>
+    <li><a class="dropdown-item" href="articles/handing-off.html">Handing Off to a Statistician</a></li>
+    <li><a class="dropdown-item" href="articles/second-engineer.html">A Second Engineer Joins</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><a class="dropdown-item" href="articles/index.html">More articles...</a></li>
   </ul></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="search.json"></form></li>
@@ -60,6 +65,7 @@
 <p>datom is an R package for version-controlled data management. It stores tabular data in S3 with git-tracked metadata, enabling reproducibility for clinical/scientific workflows.</p>
 <p><strong>Pre-release status</strong>: This package has not been released and no production data products depend on it. Proceed without backward compatibility or lifecycle management concerns — rename freely, delete freely, break APIs as needed.</p>
 <p><strong>Core concept</strong>: Tables abstracted as code in git; actual data in cloud storage (parquet format).</p>
+<p><strong>Git + GitHub remote are mandatory, always</strong> (decision reaffirmed Phase 16, 2026-04-29). datom is a git-tracked metadata system; there is no “local-only / no-remote” mode and there will not be one. The local filesystem backend (<code><a href="reference/datom_store_local.html">datom_store_local()</a></code>) controls only where parquet <strong>bytes</strong> live — metadata still requires a <code>data_repo_url</code> and <code>gov_repo_url</code> (today: GitHub). Any vignette, README, or onboarding flow that implies otherwise is wrong. Single-user no-GitHub demos are explicitly rejected scope; readers who can’t get a <code>GITHUB_PAT</code> are not the audience. If a future phase wants to add a remoteless mode, it must update this line first.</p>
 </div>
 <div class="section level2">
 <h2 id="documentation-hierarchy">Documentation Hierarchy<a class="anchor" aria-label="anchor" href="#documentation-hierarchy"></a></h2>

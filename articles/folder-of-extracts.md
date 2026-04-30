@@ -1,0 +1,174 @@
+# A Folder of Extracts
+
+> **Where we left off:** STUDY-001 has one table (`dm`) with two
+> versions — month-1 and month-2 extracts.
+
+It is now mid-March. The data management team has switched from emailing
+single CSVs to dropping a **folder** of monthly extracts. Today’s drop
+contains four domains: `dm`, `ex`, `lb` (labs), and `ae` (adverse
+events).
+
+This article introduces three capabilities: scanning an input folder
+([`datom_sync_manifest()`](https://amashadihossein.github.io/datom/reference/datom_sync_manifest.md)),
+syncing all changed files at once
+([`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)),
+and asking datom for the consistency state of the project
+([`datom_status()`](https://amashadihossein.github.io/datom/reference/datom_status.md),
+[`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)).
+
+## Resume the prior state
+
+``` r
+state <- source(
+  system.file("vignette-setup", "resume_article_3.R", package = "datom")
+)$value
+
+conn      <- state$conn
+study_dir <- state$study_dir
+```
+
+If you’ve been working in the same R session since article 1 or 2, skip
+the source call and reuse your existing `conn`.
+
+## Drop the extracts in `input_files/`
+
+[`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
+created an `input_files/` directory inside your data clone. It is
+gitignored — files placed there are never committed; they’re the inbox
+for
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
+
+``` r
+library(datom)
+library(fs)
+
+input_dir <- path(study_dir, "input_files")
+cutoff    <- "2026-03-28"
+
+write.csv(datom_example_data("dm", cutoff_date = cutoff),
+          path(input_dir, "dm.csv"), row.names = FALSE)
+write.csv(datom_example_data("ex", cutoff_date = cutoff),
+          path(input_dir, "ex.csv"), row.names = FALSE)
+write.csv(datom_example_data("lb", cutoff_date = cutoff),
+          path(input_dir, "lb.csv"), row.names = FALSE)
+write.csv(datom_example_data("ae", cutoff_date = cutoff),
+          path(input_dir, "ae.csv"), row.names = FALSE)
+```
+
+## Scan the folder
+
+``` r
+manifest <- datom_sync_manifest(conn)
+#> i Scanned 4 files: 3 new, 1 changed, 0 unchanged.
+manifest
+#>   name       file format file_sha status
+#> 1   dm  .../dm.csv    csv  c41a... changed
+#> 2   ex  .../ex.csv    csv  9b08... new
+#> 3   lb  .../lb.csv    csv  72d3... new
+#> 4   ae  .../ae.csv    csv  1e4a... new
+```
+
+The manifest classifies each file:
+
+- **new** — datom has never seen this table.
+- **changed** — the table exists, but the source file has a new SHA.
+- **unchanged** — same source file as last time. Sync will skip these.
+
+`dm` is `changed` because article 2 wrote month-2; this is the month-3
+update. `ex`, `lb`, and `ae` are brand-new tables.
+
+## Sync everything
+
+``` r
+results <- datom_sync(conn, manifest)
+#> i Syncing 4 tables...
+#> v dm synced (changed).
+#> v ex synced (new).
+#> v lb synced (new).
+#> v ae synced (new).
+#> i Sync complete: 4 succeeded, 0 failed, 0 skipped.
+
+results
+#>   name       file format ... status   result error
+#> 1   dm  .../dm.csv    csv     changed success  <NA>
+#> 2   ex  .../ex.csv    csv     new     success  <NA>
+#> 3   lb  .../lb.csv    csv     new     success  <NA>
+#> 4   ae  .../ae.csv    csv     new     success  <NA>
+```
+
+Each
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+row becomes one git commit and one parquet upload.
+[`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md)
+on any of the four tables now shows its first or incremented version.
+
+## What’s in the project?
+
+``` r
+datom_list(conn)
+#>   name current_version current_data_sha last_updated
+#> 1   ae         3a17b8e2         e91d04ff 2026-03-28T...
+#> 2   dm         d0922fc7         c2e80a14 2026-03-28T...
+#> 3   ex         f44910b5         88a73e02 2026-03-28T...
+#> 4   lb         718e02ca         4c3812dd 2026-03-28T...
+```
+
+## Check the project’s status
+
+[`datom_status()`](https://amashadihossein.github.io/datom/reference/datom_status.md)
+summarizes what’s in your local clone vs. what’s pushed:
+
+``` r
+datom_status(conn)
+#> -- datom status: STUDY_001
+#> v Git: clean, in sync with origin
+#> i Tables on local: 4
+#> i Last commit: <sha> "Update ae"
+```
+
+[`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
+goes a step further — it cross-checks that every table in the local
+manifest has its parquet file in the data store and its metadata in git
+history:
+
+``` r
+datom_validate(conn)
+#> v 4 tables validated.
+#> v Manifest <-> data store: consistent.
+#> v Manifest <-> git history: consistent.
+```
+
+If you ever see a discrepancy from
+[`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md),
+that’s the moment to stop and investigate before doing more work — it
+means the project’s state has drifted from one of git or storage.
+
+## Re-running is safe
+
+If you run
+[`datom_sync_manifest()`](https://amashadihossein.github.io/datom/reference/datom_sync_manifest.md)
+immediately after a successful sync, every file will be `unchanged` and
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+will report nothing to do:
+
+``` r
+datom_sync_manifest(conn)
+#> i Scanned 4 files: 0 new, 0 changed, 4 unchanged.
+
+datom_sync(conn, datom_sync_manifest(conn))
+#> i All files unchanged. Nothing to sync.
+```
+
+This is the property that lets sync run in a cron job without surprises.
+
+## Where you are
+
+- A folder workflow replaces the one-table-at-a-time pattern.
+- Four tables are versioned; the project has a real shape.
+- [`datom_status()`](https://amashadihossein.github.io/datom/reference/datom_status.md)
+  and
+  [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
+  are your two go-to consistency checks.
+
+In the next article, we **promote the project to S3** so a colleague on
+another laptop can read the data without copying files around.

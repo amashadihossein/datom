@@ -1,0 +1,160 @@
+# Version SHAs: Data SHA vs. Metadata SHA
+
+> **Companion to**: [Month 2
+> Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.md).
+> Read this when you’ve noticed that
+> [`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md)
+> shows a `version` column and a `data_sha` column, and you want to know
+> why there are two.
+
+datom uses **two SHAs** to identify a table version:
+
+- **`data_sha`** – a hash of the parquet bytes. Identifies the data.
+- **`metadata_sha`** – a hash of the metadata describing the data.
+  Identifies the version.
+
+This article explains why one SHA isn’t enough, and the small set of
+implementation details that keep both stable across machines, sessions,
+and JSON round-trips.
+
+## Why two SHAs
+
+Imagine you write the same `dm` data frame on two different days, with
+two different commit messages and two different `parents` lists (because
+you regenerated it from different upstream sources). The bytes are
+identical. Are these “the same version”?
+
+datom’s answer:
+
+- `data_sha` is the same – the parquet content is byte-identical.
+- `metadata_sha` is **different** – the surrounding context (parents,
+  message, table type) is different.
+
+So the same data can appear under multiple versions, but each version is
+unique. This matters because:
+
+- **Deduplication.** Two versions with the same `data_sha` share one
+  parquet file in the store. You don’t pay storage cost twice.
+- **Provenance.** A read pinned by `version` (`metadata_sha`) gets you
+  not just the bytes but the lineage that produced them. Two analyses
+  that used the “same data via different upstream paths” can be told
+  apart.
+- **Change detection.**
+  [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+  checks both. If `data_sha` and `metadata_sha` are unchanged, it’s a
+  no-op. If only `metadata_sha` changed (e.g., new parents), datom
+  records a new version *without* re-uploading the parquet.
+
+When you call `datom_read(conn, "dm", version = ...)`, the `version`
+argument is the `metadata_sha`. The lookup goes `metadata_sha` -\>
+metadata entry -\> `data_sha` -\> parquet file.
+
+## Computing `data_sha`
+
+The data SHA hashes the parquet representation, not the in-memory data
+frame. Concretely (from
+[R/utils-sha.R](https://github.com/amashadihossein/datom/blob/main/R/utils-sha.R)):
+
+``` r
+arrow::write_parquet(prepared, tmp)
+digest::digest(file = tmp, algo = "sha256")
+```
+
+A few properties this gives us:
+
+- **Cross-language stability.** Any language that produces the same
+  parquet bytes produces the same SHA. This is what makes datom usable
+  from R today and Python tomorrow without coordination.
+- **Column and row order matter by default.** A reordered data frame is
+  a different table. There are `sort_columns` and `sort_rows` arguments
+  for callers who want order-independent identity, but the default is
+  “what you wrote is what you get.”
+- **Empty data frames are rejected.** Computing a SHA over zero rows or
+  zero columns is almost always a bug; datom errors instead.
+
+## Computing `metadata_sha`
+
+The metadata SHA is more careful. It has to satisfy three properties
+that don’t fall out automatically:
+
+1.  **JSON round-trip stability.** A reader pulling metadata from S3
+    gets a JSON-parsed list, not the original R object. R’s
+    [`serialize()`](https://rdrr.io/r/base/serialize.html) is
+    type-sensitive (`10L` and `10` serialize differently); JSON-parsed
+    data drops that distinction. If we hashed the R object directly, the
+    same metadata would have different SHAs in-memory vs. round-tripped.
+2.  **Field-order independence.** Two writers building metadata in
+    different orders should produce the same SHA.
+3.  **Volatile-field exclusion.** Two writes of identical content at
+    different times must hash to the same value, so version dedup works.
+
+The implementation handles all three:
+
+``` r
+.datom_compute_metadata_sha <- function(metadata) {
+  # 1. Strip volatile fields that don't define content identity
+  volatile <- c("created_at", "datom_version")
+  semantic <- metadata[setdiff(names(metadata), volatile)]
+
+  # 2. Sort field names for order independence
+  sorted_metadata <- semantic[sort(names(semantic))]
+
+  # 3. Hash the JSON canonical form, not the R object
+  canonical <- jsonlite::toJSON(sorted_metadata, auto_unbox = TRUE)
+  digest::digest(canonical, algo = "sha256", serialize = FALSE)
+}
+```
+
+The `serialize = FALSE` is the load-bearing detail. It tells `digest()`
+to hash the bytes of the JSON string, not an R-serialized
+representation. That’s what makes the SHA portable across the git -\> S3
+-\> reader path.
+
+## The volatile-field list
+
+Two fields are explicitly excluded from the SHA:
+
+- `created_at` – a wall-clock timestamp.
+- `datom_version` – the version of the datom package that wrote the
+  metadata.
+
+If either of these participated in the SHA, every re-write of identical
+data would record a “new” version, and `version_history.json` would grow
+forever. The volatile list is short and tightly scoped on purpose;
+adding a field to it is the kind of change that needs explicit
+justification.
+
+## The dedup guard
+
+Even with the volatile list correct,
+[`.datom_write_metadata_local()`](https://amashadihossein.github.io/datom/reference/dot-datom_write_metadata_local.md)
+adds a belt-and-suspenders check: if the most recent entry in
+`version_history.json` already has the same `metadata_sha`, the new
+entry is **not appended**. This protects against:
+
+- Bugs in metadata construction that accidentally produce identical
+  SHAs.
+- Concurrent writers racing on the same git clone (rare, but the cost of
+  the check is trivial).
+- Re-runs of a partially-failed write where some steps succeeded and
+  others didn’t.
+
+The guard relies on `metadata_sha` correctness. If you ever add a new
+field to metadata that affects content identity, make sure it’s *not* in
+the volatile list – otherwise dedup will incorrectly mark new versions
+as duplicates.
+
+## What you can rely on
+
+- A version is uniquely identified by its `metadata_sha`.
+- The same data under different lineage produces a different
+  `metadata_sha` but the same `data_sha`.
+- Identical writes (same data, same metadata) are no-ops at every layer:
+  same parquet filename in the store, no new history entry, no new git
+  commit.
+- A reader on a different machine pulling metadata from S3 computes the
+  same `metadata_sha` as the writer.
+
+These four properties are the foundation that everything in [Auditing &
+Reproducibility](https://amashadihossein.github.io/datom/articles/auditing-reproducibility.md)
+eventually depends on.

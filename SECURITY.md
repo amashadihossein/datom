@@ -19,5 +19,5 @@ and disclosure timeline with you.
 datom never persists credentials to disk. Credentials are passed
 explicitly at connection time and stored in memory only for the lifetime
 of the R session. See the credentials vignette
-([`vignette("credentials", package = "datom")`](https://amashadihossein.github.io/datom/articles/credentials.md))
+([`vignette("credentials", package = "datom")`](https://amashadihossein.github.io/datom/articles/credentials.html))
 for best practices on supplying credentials safely.

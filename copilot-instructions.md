@@ -23,6 +23,18 @@ freely, break APIs as needed.
 **Core concept**: Tables abstracted as code in git; actual data in cloud
 storage (parquet format).
 
+**Git + GitHub remote are mandatory, always** (decision reaffirmed Phase
+16, 2026-04-29). datom is a git-tracked metadata system; there is no
+“local-only / no-remote” mode and there will not be one. The local
+filesystem backend
+([`datom_store_local()`](https://amashadihossein.github.io/datom/reference/datom_store_local.md))
+controls only where parquet **bytes** live — metadata still requires a
+`data_repo_url` and `gov_repo_url` (today: GitHub). Any vignette,
+README, or onboarding flow that implies otherwise is wrong. Single-user
+no-GitHub demos are explicitly rejected scope; readers who can’t get a
+`GITHUB_PAT` are not the audience. If a future phase wants to add a
+remoteless mode, it must update this line first.
+
 ## Documentation Hierarchy
 
     .github/copilot-instructions.md  ← You are here (coding conventions, quick start)

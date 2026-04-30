@@ -1,0 +1,166 @@
+# A Second Engineer Joins
+
+> **Where we left off:** STUDY-001 is on S3. The statistician can read.
+
+The study has grown enough that you bring in a second data engineer.
+Unlike the statistician, the second engineer needs to **write** — to
+register the month-4 lab extract while you’re on vacation.
+
+This article introduces
+[`datom_clone()`](https://amashadihossein.github.io/datom/reference/datom_clone.md)
+(the way a new engineer enters an existing project) and demonstrates the
+**pull-before-push** discipline that keeps two engineers from clobbering
+each other.
+
+This article assumes you’ve completed Article 4. Resume the prior state
+if needed:
+
+``` r
+state <- source(
+  system.file("vignette-setup", "resume_article_6.R", package = "datom")
+)$value
+
+conn      <- state$conn         # original engineer
+study_dir <- state$study_dir
+```
+
+## The second engineer clones
+
+The second engineer (call her Bea) sets up her credentials the same way
+you did:
+
+``` r
+keyring::key_set("GITHUB_PAT")
+keyring::key_set("AWS_ACCESS_KEY_ID")
+keyring::key_set("AWS_SECRET_ACCESS_KEY")
+```
+
+Bea then clones into a fresh directory on her laptop. She uses the
+engineer store (read+write):
+
+``` r
+library(datom)
+library(fs)
+
+bea_dir <- path(tempdir(), "bea_study_001_data")  # different from yours
+
+bea_store <- datom_store(
+  governance     = state$gov_component,    # same gov as you
+  data           = state$data_s3,          # same bucket as you
+  github_pat     = keyring::key_get("GITHUB_PAT"),
+  data_repo_url  = state$data_repo_url,
+  gov_repo_url   = state$gov_repo_url,
+  gov_local_path = path(tempdir(), "bea_gov_clone")
+)
+
+bea_conn <- datom_clone(path = bea_dir, store = bea_store)
+print(bea_conn)
+#> -- datom connection
+#> * Project: "STUDY_001"
+#> * Role: "developer"
+#> * Backend: "s3"
+```
+
+[`datom_clone()`](https://amashadihossein.github.io/datom/reference/datom_clone.md)
+does three things in order: clones the data git repo into `bea_dir`,
+clones the gov repo (if not already present), and returns a developer
+conn. Bea now sees the same four tables you do.
+
+``` r
+datom_list(bea_conn)
+#>   name current_version current_data_sha last_updated
+#> 1   ae    19f44e3a       e91d04ff        2026-04-29T...
+#> 2   dm    8a3b21cc       c2e80a14        2026-04-29T...
+#> 3   ex    5d72e0f1       88a73e02        2026-04-29T...
+#> 4   lb    c1ffea90       4c3812dd        2026-04-29T...
+```
+
+## Concurrent writes
+
+You and Bea both have month-4 extracts in your inboxes. You write `lb`:
+
+``` r
+# In your session
+lb_m4 <- datom_example_data("lb", cutoff_date = "2026-04-28")
+datom_write(conn, lb_m4, "lb",
+            message = "lb extract through 2026-04-28")
+#> v Wrote "lb" (full): "..."
+```
+
+At the same time, Bea writes `ae` from her clone:
+
+``` r
+# In Bea's session
+ae_m4 <- datom_example_data("ae", cutoff_date = "2026-04-28")
+datom_write(bea_conn, ae_m4, "ae",
+            message = "ae extract through 2026-04-28")
+```
+
+What happens to Bea’s write? It depends on which one of you committed
+first. The second commit **fails on push**:
+
+``` r
+#> x Failed to push to origin/main: rejected (non-fast-forward)
+#> i Run datom_pull(conn) to incorporate origin's changes, then retry the write.
+```
+
+This is the same conflict signature any git user has seen. datom’s
+response is the standard one: pull, then retry.
+
+## Pull, then retry
+
+Bea runs
+[`datom_pull()`](https://amashadihossein.github.io/datom/reference/datom_pull.md)
+to bring her clone up to date with your `lb` write:
+
+``` r
+datom_pull(bea_conn)
+#> i Fetching from origin...
+#> v 1 commit pulled.
+#> v Manifest updated: lb -> new version
+```
+
+Now Bea retries her `ae` write. Because `ae` is a different table,
+there’s no conflict at the data level — the two writes commute, and
+after the pull they layer cleanly:
+
+``` r
+datom_write(bea_conn, ae_m4, "ae",
+            message = "ae extract through 2026-04-28")
+#> v Wrote "ae" (full): "..."
+```
+
+If Bea had been writing `lb` (the same table you wrote), her retry would
+produce a **third** version of `lb` — datom does not have a same-table
+merge concept, because there’s no semantic merge of two parquet files.
+Each
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+is a snapshot; the version order tells you who wrote when.
+
+## Push discipline
+
+The rule for two-engineer projects:
+
+1.  **Pull before each writing session**, not just after a conflict. A
+    clean pull at the top of the day prevents most conflicts.
+2.  **Pull again before push** if the writing session was long.
+    Conflicts detected at push time are the more annoying kind.
+3.  **Communicate which tables you’re touching** when working in
+    parallel. datom doesn’t have row-level locks; it’s still a human
+    coordination problem, just one that’s now mechanically enforced.
+
+## Where you are
+
+- Two engineers, one project, on the same S3 store.
+- Concurrent writes to **different tables** are conflict-free after a
+  pull.
+- Concurrent writes to the **same table** produce sequential versions,
+  ordered by who pushed first.
+- Bea has the same capabilities you do — there is no “primary” engineer;
+  the project is shared.
+
+The user-journey track continues with the manager view in **Governing a
+Study Portfolio**, where STUDY-002 joins your gov repo and you start
+caring about the registry shape across projects.
+
+\`\`\`\`
