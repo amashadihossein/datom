@@ -486,13 +486,8 @@ datom_init_repo <- function(path = ".",
   # --- Git init, remote, commit, push -----------------------------------------
   repo <- git2r::init(path)
 
-  # Configure author from global git config or fallback
-  git_cfg <- git2r::config()$global
-  author_name <- git_cfg$user.name %||% "datom"
-  author_email <- git_cfg$user.email %||% "datom@noreply"
-
-  # Set local config so default_signature works in fresh repos
-  git2r::config(repo, user.name = author_name, user.email = author_email)
+  # Set local config so default_signature works even without global git config.
+  .datom_git_ensure_local_identity(repo)
 
   git2r::remote_add(repo, name = "origin", url = remote_url)
 
@@ -690,10 +685,7 @@ datom_init_gov <- function(gov_store,
   }
 
   # Configure git user (required on freshly init'd repos that lack local cfg)
-  git_cfg <- git2r::config()$global
-  author_name  <- git_cfg$user.name  %||% "datom"
-  author_email <- git_cfg$user.email %||% "datom@noreply"
-  git2r::config(repo, user.name = author_name, user.email = author_email)
+  .datom_git_ensure_local_identity(repo)
 
   # --- Seed gov repo skeleton -------------------------------------------------
   projects_dir <- fs::path(gov_local_path, "projects")

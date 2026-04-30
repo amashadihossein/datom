@@ -81,6 +81,34 @@
 }
 
 
+#' Ensure a Repo Has a Local Git Identity
+#'
+#' Sets `user.name` and `user.email` on the **local** config of `repo` so that
+#' `git2r::default_signature(repo)` succeeds even when the host has no global
+#' git identity (e.g. CI runners). Values are taken from global config when
+#' present; otherwise fallback constants are used.
+#'
+#' Idempotent: re-setting the same values is a no-op from git's perspective.
+#'
+#' @param repo A `git2r::repository` handle.
+#' @param fallback_name Identity used when no global `user.name` is set.
+#' @param fallback_email Identity used when no global `user.email` is set.
+#' @return Invisible `repo`.
+#' @keywords internal
+.datom_git_ensure_local_identity <- function(repo,
+                                              fallback_name  = "datom",
+                                              fallback_email = "datom@noreply") {
+  .datom_check_git2r()
+
+  global <- git2r::config()$global %||% list()
+  name   <- global$user.name  %||% fallback_name
+  email  <- global$user.email %||% fallback_email
+
+  git2r::config(repo, user.name = name, user.email = email)
+  invisible(repo)
+}
+
+
 #' Get Current Branch
 #'
 #' Returns the name of the currently checked-out branch.
