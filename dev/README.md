@@ -47,6 +47,7 @@ Phase plans are **temporary working documents**:
 | Phase | Started | Status | Doc |
 |-------|---------|--------|-----|
 | Phase 16: Vignette overhaul | 2026-04-29 | Chunk 4 complete; Phase 17 next, then Chunks 5-6 | [phase_16_vignettes.md](phase_16_vignettes.md) |
+| Phase 17: Portfolio helpers (`datom_summary`, `datom_projects`) | 2026-04-29 | Planning complete; Chunk 1 next | [phase_17_portfolio_helpers.md](phase_17_portfolio_helpers.md) |
 
 ### Drafts (queued, not active)
 
