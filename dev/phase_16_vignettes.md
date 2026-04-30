@@ -1,7 +1,7 @@
 # Phase 16: Vignette Overhaul
 
-**Status**: Active -- Chunk 3 complete; Chunk 4 next (Article 7 + Design Notes D2/D3/D4/D6)
-**Branch**: `phase/16-vignettes` (created 2026-04-29)
+**Status**: Active -- Chunk 4 complete; Phase 17 next, then Chunks 5-6
+**Branch**: `phase/16-chunk-4` (created 2026-04-29)
 **Depends on**: Phase 15 closed (2026-04-29). Phase 17 (`datom_summary`, `datom_projects`) is a prerequisite for Chunk 5.
 
 ## Progress log
@@ -11,6 +11,8 @@
 - **2026-04-29 (Chunk 1)**: Complete. Simulator extended (LB + AE), `datom_example_data()` gains `"lb"`/`"ae"`, 17 new tests (1360/1360 passing), Articles 1-3 written, resume scripts 2-3 written, `README.Rmd` rewritten as the grabber, three old vignettes deleted, `_pkgdown.yml` gains `articles:` block. R CMD check: 0E/0W/1 pre-existing NOTE. pkgdown::build_site clean. Discovered: `tests/testthat/test-conn.R:742` is occasionally flaky in the full-suite run (bare-repo race condition, pre-existing); not caused by Chunk 1.
 - **2026-04-29 (Chunk 2)**: Complete. Design Notes D1 (`design-datom-model.Rmd`) and D5 (`design-version-shas.Rmd`) written. `_pkgdown.yml` gains `Design` articles group. pkgdown::build_site clean. No code changes; tests untouched.
 - **2026-04-29 (Chunk 3)**: Complete. Articles 4 (`promoting-to-s3.Rmd`), 5 (`handing-off.Rmd`), 6 (`second-engineer.Rmd`) written. Resume scripts 4--6 added. `_pkgdown.yml` Get Started group extended to 6 articles. Phase doc gains a Future Work section recording Phase 18 (`datom_migrate_data()`) and the gov-store-migration design problem -- both spawned by Article 4's honest treatment of the local->S3 boundary. AWS creds via `keyring` (parallels GitHub PAT pattern); reader role demonstrated by Article 5 in a different R session. Concurrent-write recovery in Article 6 is `datom_pull()` + retry. No code changes; tests untouched.
+- **2026-04-29 (CI fix, between Chunks 3 and 4)**: PR #8 merged. `.datom_gov_clone_init()` now sets local git identity after clone via new `.datom_git_ensure_local_identity()` helper. Two CI bugs fixed: (a) the gov-clone identity gap that was failing all platforms after PR #7, and (b) `test-conn.R:742` reused one bare repo for two unrelated histories -- macOS libgit2 tolerated, Ubuntu rejected. Both now lint-clean. 1369 tests passing.
+- **2026-04-29 (Chunk 4)**: Complete. Article 7 (`governing-a-portfolio.Rmd`) + `resume_article_7.R` (delegates to article 6's resume since persistent state is identical) + Design Notes D2 (`design-ref-json.Rmd`), D3 (`design-dispatch.Rmd`), D4 (`design-two-repos.Rmd`), D6 (`design-serverless.Rmd`). `_pkgdown.yml` Get Started group at 7 articles, Design group at 6. Article 7 deliberately does NOT use `datom_projects()` (Phase 17); manager view of the registry uses `fs::dir_ls(gov_clone/projects)` instead. STUDY-002 introduced narratively per phase doc decision. No code changes; tests untouched.
 
 ---
 

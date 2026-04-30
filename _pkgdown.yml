@@ -97,9 +97,14 @@ articles:
       - promoting-to-s3
       - handing-off
       - second-engineer
+      - governing-a-portfolio
 
   - title: "Design"
     desc: "Why datom is shaped the way it is."
     contents:
       - design-datom-model
       - design-version-shas
+      - design-ref-json
+      - design-dispatch
+      - design-two-repos
+      - design-serverless
