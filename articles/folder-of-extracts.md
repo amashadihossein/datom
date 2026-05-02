@@ -19,6 +19,7 @@ and asking datom for the consistency state of the project
 ## Resume the prior state
 
 ``` r
+
 state <- source(
   system.file("vignette-setup", "resume_article_3.R", package = "datom")
 )$value
@@ -39,6 +40,7 @@ for
 [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
 
 ``` r
+
 library(datom)
 library(fs)
 
@@ -58,6 +60,7 @@ write.csv(datom_example_data("ae", cutoff_date = cutoff),
 ## Scan the folder
 
 ``` r
+
 manifest <- datom_sync_manifest(conn)
 #> i Scanned 4 files: 3 new, 1 changed, 0 unchanged.
 manifest
@@ -80,6 +83,7 @@ update. `ex`, `lb`, and `ae` are brand-new tables.
 ## Sync everything
 
 ``` r
+
 results <- datom_sync(conn, manifest)
 #> i Syncing 4 tables...
 #> v dm synced (changed).
@@ -105,6 +109,7 @@ on any of the four tables now shows its first or incremented version.
 ## What’s in the project?
 
 ``` r
+
 datom_list(conn)
 #>   name current_version current_data_sha last_updated
 #> 1   ae         3a17b8e2         e91d04ff 2026-03-28T...
@@ -119,6 +124,7 @@ datom_list(conn)
 summarizes what’s in your local clone vs. what’s pushed:
 
 ``` r
+
 datom_status(conn)
 #> -- datom status: STUDY_001
 #> v Git: clean, in sync with origin
@@ -132,6 +138,7 @@ manifest has its parquet file in the data store and its metadata in git
 history:
 
 ``` r
+
 datom_validate(conn)
 #> v 4 tables validated.
 #> v Manifest <-> data store: consistent.
@@ -152,6 +159,7 @@ immediately after a successful sync, every file will be `unchanged` and
 will report nothing to do:
 
 ``` r
+
 datom_sync_manifest(conn)
 #> i Scanned 4 files: 0 new, 0 changed, 4 unchanged.
 

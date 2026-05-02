@@ -138,47 +138,47 @@ dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)</code></p
 </ul></div>
 <div class="section level3">
 <h3 id="naming-conventions">Naming Conventions<a class="anchor" aria-label="anchor" href="#naming-conventions"></a></h3>
-<table class="table"><colgroup><col width="22%"><col width="44%"><col width="33%"></colgroup><thead><tr class="header"><th>Type</th>
+<table class="table"><colgroup><col width="22%"><col width="44%"><col width="33%"></colgroup><thead><tr><th>Type</th>
 <th>Convention</th>
 <th>Example</th>
-</tr></thead><tbody><tr class="odd"><td>Exported functions</td>
+</tr></thead><tbody><tr><td>Exported functions</td>
 <td><code>datom_verb</code></td>
 <td>
 <code>datom_read</code>, <code>datom_write</code>, <code>datom_init</code>
 </td>
-</tr><tr class="even"><td>Internal functions</td>
+</tr><tr><td>Internal functions</td>
 <td><code>.datom_verb</code></td>
 <td>
 <code>.datom_compute_sha</code>, <code>.datom_storage_upload</code>
 </td>
-</tr><tr class="odd"><td>S3 methods</td>
+</tr><tr><td>S3 methods</td>
 <td><code>verb.class</code></td>
 <td><code>print.datom_conn</code></td>
-</tr><tr class="even"><td>Store constructors</td>
+</tr><tr><td>Store constructors</td>
 <td><code>datom_store_{backend}</code></td>
 <td>
 <code>datom_store_s3</code>, <code>datom_store_local</code>, <code>datom_store</code> (composite)</td>
-</tr><tr class="odd"><td>Store predicates</td>
+</tr><tr><td>Store predicates</td>
 <td><code>is_datom_store_{type}</code></td>
 <td>
 <code>is_datom_store</code>, <code>is_datom_store_s3</code>, <code>is_datom_store_local</code>
 </td>
-</tr><tr class="even"><td>Storage dispatch</td>
+</tr><tr><td>Storage dispatch</td>
 <td><code>.datom_storage_verb</code></td>
 <td>
 <code>.datom_storage_upload</code>, <code>.datom_storage_read_json</code>
 </td>
-</tr><tr class="odd"><td>S3 backend</td>
+</tr><tr><td>S3 backend</td>
 <td><code>.datom_s3_verb</code></td>
 <td>
 <code>.datom_s3_upload</code>, <code>.datom_s3_read_json</code>
 </td>
-</tr><tr class="even"><td>Local backend</td>
+</tr><tr><td>Local backend</td>
 <td><code>.datom_local_verb</code></td>
 <td>
 <code>.datom_local_upload</code>, <code>.datom_local_read_json</code>
 </td>
-</tr><tr class="odd"><td>Config files</td>
+</tr><tr><td>Config files</td>
 <td>snake_case.yaml/json</td>
 <td>
 <code>project.yaml</code>, <code>dispatch.json</code>
@@ -247,6 +247,9 @@ dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)</code></p
 <li><p><strong>NA-safe optional-string guards</strong>: <code>nzchar(NA)</code> returns <code>NA</code>, which propagates into <code>if(...)</code> as “missing value where TRUE/FALSE needed”. For optional fields that may round-trip through yaml/json (e.g. <code>conn$prefix</code>), guard with <code>!is.null(x) &amp;&amp; !is.na(x) &amp;&amp; nzchar(x)</code> and wrap the <code>if</code> predicate in <code>isTRUE(...)</code>. Pattern is in <code>.datom_local_delete_prefix</code> / <code>.datom_s3_delete_prefix</code>.</p></li>
 <li><p><strong><code><a href="reference/dot-datom_gov_destroy.html">.datom_gov_destroy()</a></code> is sandbox-only</strong>: tears down the whole gov repo + storage. Refuses if registered projects exist unless <code>force = TRUE</code>. Currently called only by <code>dev/dev-sandbox.R</code>; the companion package will eventually own the full gov lifecycle.</p></li>
 <li><p><strong><code>gov_local_path</code> defaults to <code>basename(gov_repo_url)</code> sibling</strong>: One gov clone serves many data projects. <code><a href="reference/dot-datom_gov_clone_init.html">.datom_gov_clone_init()</a></code> validates remote URL on existing dirs and errors on mismatch.</p></li>
+<li><p><strong><code>ref.json</code> carries <code>current$type</code></strong>: Records the data backend (<code>"s3"</code> or <code>"local"</code>). Set by <code><a href="reference/dot-datom_create_ref.html">.datom_create_ref()</a></code> from <code>.datom_store_backend(data_store)</code>. Readers depend on this to identify the backend without already holding a store – e.g. <code><a href="reference/datom_projects.html">datom_projects()</a></code> populates <code>data_backend</code> from this field.</p></li>
+<li><p><strong>Storage list dispatch returns full keys</strong>: <code>.datom_storage_list_objects(conn, prefix)</code> and the S3/local backends both return keys in their full storage-key form (<code>"{prefix}/datom/..."</code>), NOT relative to the prefix arg. Callers extract project names / paths via regex; do not assume relative-to-prefix output.</p></li>
+<li><p><strong><code><a href="reference/dot-datom_gov_list_projects.html">.datom_gov_list_projects()</a></code> is a pure read, not a GOV_SEAM</strong>: lives in <code>R/utils-gov.R</code> next to the seam helpers but is intentionally NOT marked <code># GOV_SEAM:</code>. Read helpers stay with datom; only gov <strong>writes</strong> are seamed for the future companion package. Same rule applies to any future <code>.datom_gov_read_*()</code> helper.</p></li>
 <li><p><strong><code>_pkgdown.yml</code> index must be kept in sync</strong>: Adding a new exported symbol requires a matching entry in <code>_pkgdown.yml</code>. <code><a href="https://pkgdown.r-lib.org/reference/build_site.html" class="external-link">pkgdown::build_site()</a></code> errors with “N topics missing from index” otherwise. Check after every phase that adds exports.</p></li>
 <li><p><strong>Non-ASCII characters in R source</strong>: R CMD check warns on any non-ASCII character in <code>R/*.R</code> files (even in comments). Use only ASCII — <code>--</code> instead of <code>—</code>, <code>-&gt;</code> instead of <code>→</code>.</p></li>
 </ul></div>

@@ -45,6 +45,7 @@ different R session** (or a fresh
 ### Set up credentials
 
 ``` r
+
 # One-time per machine
 keyring::key_set("GITHUB_PAT")
 keyring::key_set("AWS_ACCESS_KEY_ID")
@@ -58,6 +59,7 @@ conn** against the S3 store. Unlike resume scripts 2–4, this one needs
 network access (S3 + GitHub).
 
 ``` r
+
 state <- source(
   system.file("vignette-setup", "resume_article_5.R", package = "datom")
 )$value
@@ -81,6 +83,7 @@ for a connection.
 ### Read the latest of each table
 
 ``` r
+
 library(datom)
 
 dm <- datom_read(reader_conn, "dm")
@@ -103,6 +106,7 @@ from
 [`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md):
 
 ``` r
+
 hist_dm <- datom_history(reader_conn, "dm")
 hist_dm$version[1L]
 #> [1] "8a3b21cc9f..."
@@ -113,6 +117,7 @@ ex/lb/ae) in her analysis script. Three months from now, when the
 auditor asks “where did this number come from,” she runs:
 
 ``` r
+
 dm_at_analysis <- datom_read(reader_conn, "dm", version = "8a3b21cc9f...")
 ```
 

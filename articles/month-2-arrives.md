@@ -18,6 +18,7 @@ journey up here), source the resume script. It rebuilds the end-state of
 article 1 from scratch:
 
 ``` r
+
 state <- source(
   system.file("vignette-setup", "resume_article_2.R", package = "datom")
 )$value
@@ -37,6 +38,7 @@ call and reuse your existing `conn`.
 ## The month-2 extract
 
 ``` r
+
 library(datom)
 
 dm_m2 <- datom_example_data("dm", cutoff_date = "2026-02-28")
@@ -50,6 +52,7 @@ unchanged.
 ## Write the new version
 
 ``` r
+
 datom_write(
   conn,
   data    = dm_m2,
@@ -72,6 +75,7 @@ again with the same data, it detects that nothing has changed and
 returns without producing a new version.
 
 ``` r
+
 datom_write(conn, data = dm_m2, name = "dm")
 #> i No changes detected for "dm". Skipping write.
 ```
@@ -82,6 +86,7 @@ writes cost nothing and pollute no history.
 ## Look at the history
 
 ``` r
+
 datom_history(conn, "dm")
 #>   version  data_sha  table_type  size_bytes  created_at           message
 #> 1 5c1a3f7b 9e8f1c2d  raw         3812        2026-02-28T10:14:02Z DM extract through 2026-02-28
@@ -98,6 +103,7 @@ The default
 returns the current version:
 
 ``` r
+
 dm_now <- datom_read(conn, "dm")
 nrow(dm_now)
 #> [1] 14
@@ -106,6 +112,7 @@ nrow(dm_now)
 Pass a `version` to retrieve any historical snapshot:
 
 ``` r
+
 hist    <- datom_history(conn, "dm")
 m1_ver  <- hist$version[hist$message == "Initial DM extract through 2026-01-28"]
 

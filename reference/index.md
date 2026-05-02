@@ -57,6 +57,12 @@ List tables, view history, check status
 
 - [`datom_list()`](https://amashadihossein.github.io/datom/reference/datom_list.md)
   : List Available Tables
+- [`datom_summary()`](https://amashadihossein.github.io/datom/reference/datom_summary.md)
+  : Summarize a datom Project
+- [`print(`*`<datom_summary>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_summary.md)
+  : Print a datom_summary
+- [`datom_projects()`](https://amashadihossein.github.io/datom/reference/datom_projects.md)
+  : List Projects Registered in the Governance Repo
 - [`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md)
   : Show Version History
 - [`datom_status()`](https://amashadihossein.github.io/datom/reference/datom_status.md)

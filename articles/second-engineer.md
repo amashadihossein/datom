@@ -16,6 +16,7 @@ This article assumes you’ve completed Article 4. Resume the prior state
 if needed:
 
 ``` r
+
 state <- source(
   system.file("vignette-setup", "resume_article_6.R", package = "datom")
 )$value
@@ -30,6 +31,7 @@ The second engineer (call her Bea) sets up her credentials the same way
 you did:
 
 ``` r
+
 keyring::key_set("GITHUB_PAT")
 keyring::key_set("AWS_ACCESS_KEY_ID")
 keyring::key_set("AWS_SECRET_ACCESS_KEY")
@@ -39,6 +41,7 @@ Bea then clones into a fresh directory on her laptop. She uses the
 engineer store (read+write):
 
 ``` r
+
 library(datom)
 library(fs)
 
@@ -67,6 +70,7 @@ clones the gov repo (if not already present), and returns a developer
 conn. Bea now sees the same four tables you do.
 
 ``` r
+
 datom_list(bea_conn)
 #>   name current_version current_data_sha last_updated
 #> 1   ae    19f44e3a       e91d04ff        2026-04-29T...
@@ -80,6 +84,7 @@ datom_list(bea_conn)
 You and Bea both have month-4 extracts in your inboxes. You write `lb`:
 
 ``` r
+
 # In your session
 lb_m4 <- datom_example_data("lb", cutoff_date = "2026-04-28")
 datom_write(conn, lb_m4, "lb",
@@ -90,6 +95,7 @@ datom_write(conn, lb_m4, "lb",
 At the same time, Bea writes `ae` from her clone:
 
 ``` r
+
 # In Bea's session
 ae_m4 <- datom_example_data("ae", cutoff_date = "2026-04-28")
 datom_write(bea_conn, ae_m4, "ae",
@@ -100,6 +106,7 @@ What happens to Bea’s write? It depends on which one of you committed
 first. The second commit **fails on push**:
 
 ``` r
+
 #> x Failed to push to origin/main: rejected (non-fast-forward)
 #> i Run datom_pull(conn) to incorporate origin's changes, then retry the write.
 ```
@@ -114,6 +121,7 @@ Bea runs
 to bring her clone up to date with your `lb` write:
 
 ``` r
+
 datom_pull(bea_conn)
 #> i Fetching from origin...
 #> v 1 commit pulled.
@@ -125,6 +133,7 @@ there’s no conflict at the data level — the two writes commute, and
 after the pull they layer cleanly:
 
 ``` r
+
 datom_write(bea_conn, ae_m4, "ae",
             message = "ae extract through 2026-04-28")
 #> v Wrote "ae" (full): "..."

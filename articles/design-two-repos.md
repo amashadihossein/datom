@@ -94,6 +94,7 @@ the artifacts are already split. Functions in
 The split is visible to you whenever you set up a store:
 
 ``` r
+
 store <- datom_store(
   governance     = gov_component,    # 1. governance backend
   data           = data_component,   # 2. data backend

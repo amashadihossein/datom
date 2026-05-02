@@ -56,6 +56,7 @@ frame. Concretely (from
 [R/utils-sha.R](https://github.com/amashadihossein/datom/blob/main/R/utils-sha.R)):
 
 ``` r
+
 arrow::write_parquet(prepared, tmp)
 digest::digest(file = tmp, algo = "sha256")
 ```
@@ -91,6 +92,7 @@ that don’t fall out automatically:
 The implementation handles all three:
 
 ``` r
+
 .datom_compute_metadata_sha <- function(metadata) {
   # 1. Strip volatile fields that don't define content identity
   volatile <- c("created_at", "datom_version")

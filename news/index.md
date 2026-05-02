@@ -2,7 +2,42 @@
 
 ## datom (development version)
 
-### Phase 15 — Separate governance repo
+### Phase 17 – Portfolio helpers
+
+**New functions:**
+
+- `datom_summary(conn)` – compact, role-aware overview of a single
+  project (name, role, backend/root/prefix, table count, total versions,
+  last write, and – for developers – the data git remote URL). Returns
+  an S3 `datom_summary` object with a `print` method. Reads
+  `.metadata/manifest.json`.
+- `datom_projects(x)` – lists every project registered in the shared
+  governance repo. Accepts either a `datom_conn` (uses the local gov
+  clone when present – offline, fast) or a `datom_store` (lets a caller
+  enumerate the portfolio before connecting to any one project). Returns
+  a sorted data frame: `name`, `data_backend`, `data_root`,
+  `data_prefix`, `registered_at`. Corrupt registry entries warn and are
+  skipped.
+
+**Schema additions (pre-release; no migration concern):**
+
+- `ref.json`: `current$type` and `previous[].type` now record the data
+  backend (`"s3"` or `"local"`). Required so readers can identify the
+  backend without already holding a store.
+
+**Internal:**
+
+- New storage list dispatch: `.datom_storage_list_objects(conn, prefix)`
+  with
+  [`.datom_s3_list_objects()`](https://amashadihossein.github.io/datom/reference/dot-datom_s3_list_objects.md)
+  and existing
+  [`.datom_local_list_objects()`](https://amashadihossein.github.io/datom/reference/dot-datom_local_list_objects.md)
+  arms.
+- `.datom_gov_list_projects(gov_conn, gov_local_path)` – prefers the
+  local gov clone; falls back to a storage walk. Pure read; not a
+  `GOV_SEAM` helper.
+
+### Phase 15 – Separate governance repo
 
 **Breaking changes:**
 

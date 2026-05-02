@@ -12,6 +12,7 @@ view**. The capabilities are the same ones you’ve been using; the new
 lens is the **governance repo** as a portfolio register.
 
 ``` r
+
 state <- source(
   system.file("vignette-setup", "resume_article_7.R", package = "datom")
 )$value
@@ -27,6 +28,7 @@ shared git repository — the **governance repo** — under a folder named
 after the project. List it:
 
 ``` r
+
 fs::dir_ls(fs::path(gov_clone_path, "projects"), type = "directory")
 #> /tmp/.../gov_clone/projects/STUDY_001
 ```
@@ -34,6 +36,7 @@ fs::dir_ls(fs::path(gov_clone_path, "projects"), type = "directory")
 One folder per project. Inside each:
 
 ``` r
+
 fs::dir_ls(fs::path(gov_clone_path, "projects", "STUDY_001"))
 #> /tmp/.../projects/STUDY_001/dispatch.json
 #> /tmp/.../projects/STUDY_001/migration_history.json
@@ -71,6 +74,7 @@ Extract](https://amashadihossein.github.io/datom/articles/first-extract.md),
 now against a shared gov repo:
 
 ``` r
+
 # (Run by the STUDY-002 engineer on their machine.)
 study_002_dir <- fs::path(tempdir(), "study_002_data")
 
@@ -95,6 +99,7 @@ The portfolio now has two projects. From your gov clone, after a
 refresh:
 
 ``` r
+
 datom_pull_gov(study_001_conn)
 fs::dir_ls(fs::path(gov_clone_path, "projects"), type = "directory")
 #> /tmp/.../gov_clone/projects/STUDY_001
@@ -115,7 +120,8 @@ does exactly that. It’s a fetch + merge against the gov remote, scoped
 to your gov clone. No data-store traffic. Cheap to run on a schedule.
 
 This is the operation behind dashboards like “all studies registered in
-the last 30 days” — and the foundation that a future `datom_projects()`
+the last 30 days” — and the foundation that a future
+[`datom_projects()`](https://amashadihossein.github.io/datom/reference/datom_projects.md)
 listing helper will sit on top of.
 
 ## Decommissioning
@@ -127,6 +133,7 @@ trial. Six months later, regulatory says “you can purge the data.”
 does the full teardown in the right order:
 
 ``` r
+
 study_002_conn <- datom_get_conn(path = study_002_dir, store = study_002_store)
 
 datom_decommission(study_002_conn, confirm = "STUDY_002")

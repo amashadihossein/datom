@@ -73,6 +73,7 @@ See `dev/datom_specification.md` for full spec and
 ### Patterns to Follow
 
 ``` r
+
 # Early validation, flat flow
 datom_write <- function(conn, data, name, metadata = NULL) {
   if (!inherits(conn, "datom_conn")) stop("Invalid connection")
@@ -104,17 +105,17 @@ cli::cli_alert_success("Wrote {name} ({sha})")
 
 ### Naming Conventions
 
-| Type               | Convention              | Example                                                          |
-|--------------------|-------------------------|------------------------------------------------------------------|
-| Exported functions | `datom_verb`            | `datom_read`, `datom_write`, `datom_init`                        |
-| Internal functions | `.datom_verb`           | `.datom_compute_sha`, `.datom_storage_upload`                    |
-| S3 methods         | `verb.class`            | `print.datom_conn`                                               |
+| Type | Convention | Example |
+|----|----|----|
+| Exported functions | `datom_verb` | `datom_read`, `datom_write`, `datom_init` |
+| Internal functions | `.datom_verb` | `.datom_compute_sha`, `.datom_storage_upload` |
+| S3 methods | `verb.class` | `print.datom_conn` |
 | Store constructors | `datom_store_{backend}` | `datom_store_s3`, `datom_store_local`, `datom_store` (composite) |
-| Store predicates   | `is_datom_store_{type}` | `is_datom_store`, `is_datom_store_s3`, `is_datom_store_local`    |
-| Storage dispatch   | `.datom_storage_verb`   | `.datom_storage_upload`, `.datom_storage_read_json`              |
-| S3 backend         | `.datom_s3_verb`        | `.datom_s3_upload`, `.datom_s3_read_json`                        |
-| Local backend      | `.datom_local_verb`     | `.datom_local_upload`, `.datom_local_read_json`                  |
-| Config files       | snake_case.yaml/json    | `project.yaml`, `dispatch.json`                                  |
+| Store predicates | `is_datom_store_{type}` | `is_datom_store`, `is_datom_store_s3`, `is_datom_store_local` |
+| Storage dispatch | `.datom_storage_verb` | `.datom_storage_upload`, `.datom_storage_read_json` |
+| S3 backend | `.datom_s3_verb` | `.datom_s3_upload`, `.datom_s3_read_json` |
+| Local backend | `.datom_local_verb` | `.datom_local_upload`, `.datom_local_read_json` |
+| Config files | snake_case.yaml/json | `project.yaml`, `dispatch.json` |
 
 ## Key Files
 
@@ -337,6 +338,28 @@ Auto-detected via `GITHUB_PAT` presence.
   gov clone serves many data projects.
   [`.datom_gov_clone_init()`](https://amashadihossein.github.io/datom/reference/dot-datom_gov_clone_init.md)
   validates remote URL on existing dirs and errors on mismatch.
+
+- **`ref.json` carries `current$type`**: Records the data backend
+  (`"s3"` or `"local"`). Set by
+  [`.datom_create_ref()`](https://amashadihossein.github.io/datom/reference/dot-datom_create_ref.md)
+  from `.datom_store_backend(data_store)`. Readers depend on this to
+  identify the backend without already holding a store –
+  e.g. [`datom_projects()`](https://amashadihossein.github.io/datom/reference/datom_projects.md)
+  populates `data_backend` from this field.
+
+- **Storage list dispatch returns full keys**:
+  `.datom_storage_list_objects(conn, prefix)` and the S3/local backends
+  both return keys in their full storage-key form
+  (`"{prefix}/datom/..."`), NOT relative to the prefix arg. Callers
+  extract project names / paths via regex; do not assume
+  relative-to-prefix output.
+
+- **[`.datom_gov_list_projects()`](https://amashadihossein.github.io/datom/reference/dot-datom_gov_list_projects.md)
+  is a pure read, not a GOV_SEAM**: lives in `R/utils-gov.R` next to the
+  seam helpers but is intentionally NOT marked `# GOV_SEAM:`. Read
+  helpers stay with datom; only gov **writes** are seamed for the future
+  companion package. Same rule applies to any future
+  `.datom_gov_read_*()` helper.
 
 - **`_pkgdown.yml` index must be kept in sync**: Adding a new exported
   symbol requires a matching entry in `_pkgdown.yml`.

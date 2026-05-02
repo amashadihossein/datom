@@ -28,6 +28,7 @@ domain-specific.
 ## Installation
 
 ``` r
+
 # install.packages("pak")
 pak::pak("amashadihossein/datom")
 ```
@@ -44,6 +45,7 @@ S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.html)
 article.
 
 ``` r
+
 library(datom)
 library(fs)
 
@@ -96,6 +98,7 @@ conn <- datom_get_conn(path = study_dir, store = store)
 Now write a table – twice – and watch datom do the right thing:
 
 ``` r
+
 dm <- datom_example_data("dm", cutoff_date = "2026-01-28")
 
 datom_write(conn, data = dm, name = "dm", message = "Initial DM extract")
@@ -131,13 +134,13 @@ articles follow a single user journey through six months of a clinical
 study, from a first extract on a laptop through a full multi-engineer,
 multi-project governance workflow.
 
-| When you are ready for                          | Article                                                                                            |
-|-------------------------------------------------|----------------------------------------------------------------------------------------------------|
-| A second monthly extract – versioning in action | [Month 2 Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.html)           |
-| Importing a folder of extracts at once          | [A Folder of Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.html)   |
-| Moving from local storage to S3                 | [Promoting to S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.html)           |
-| Sharing data with statisticians                 | [Handing Off to a Statistician](https://amashadihossein.github.io/datom/articles/handing-off.html) |
-| Governing a portfolio of studies                | [Governing a Portfolio](https://amashadihossein.github.io/datom/articles/governing-portfolio.html) |
+| When you are ready for | Article |
+|----|----|
+| A second monthly extract – versioning in action | [Month 2 Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.html) |
+| Importing a folder of extracts at once | [A Folder of Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.html) |
+| Moving from local storage to S3 | [Promoting to S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.html) |
+| Sharing data with statisticians | [Handing Off to a Statistician](https://amashadihossein.github.io/datom/articles/handing-off.html) |
+| Governing a portfolio of studies | [Governing a Portfolio](https://amashadihossein.github.io/datom/articles/governing-portfolio.html) |
 
 For the design rationale – why two repos, what `ref.json` does, how SHAs
 are computed – see the **Design** articles in the same site.

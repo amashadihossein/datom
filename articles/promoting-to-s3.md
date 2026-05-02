@@ -39,6 +39,7 @@ credentials, the same way it stored your GitHub PAT in article 1. Set
 your AWS access keys once:
 
 ``` r
+
 keyring::key_set("AWS_ACCESS_KEY_ID")
 keyring::key_set("AWS_SECRET_ACCESS_KEY")
 ```
@@ -47,6 +48,7 @@ If your organization issues short-lived session tokens (STS), set the
 session token too:
 
 ``` r
+
 keyring::key_set("AWS_SESSION_TOKEN")
 ```
 
@@ -65,6 +67,7 @@ Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practi
 ## Resume the prior state
 
 ``` r
+
 state <- source(
   system.file("vignette-setup", "resume_article_4.R", package = "datom")
 )$value
@@ -82,6 +85,7 @@ Before tearing anything down, capture the latest state of each table in
 memory:
 
 ``` r
+
 library(datom)
 
 cutoff   <- "2026-03-28"
@@ -103,6 +107,7 @@ clears the local clones and parquet store. It is **destructive** and
 requires you to type the project name as `confirm` to proceed.
 
 ``` r
+
 datom_decommission(old_conn, confirm = "STUDY_001")
 #> i Removing data store contents under datom/STUDY_001/
 #> v Deleted GitHub repo `study-001-data`
@@ -118,6 +123,7 @@ removed from it.
 ## Build the S3 store
 
 ``` r
+
 library(fs)
 
 study_dir <- path(tempdir(), "study_001_data")  # fresh clone target
@@ -147,6 +153,7 @@ store <- datom_store(
 ## Re-initialize STUDY_001 on S3
 
 ``` r
+
 datom_init_repo(
   path         = study_dir,
   project_name = "STUDY_001",
@@ -174,6 +181,7 @@ streams it back from S3.
 ## Replay the four tables
 
 ``` r
+
 datom_write(conn, snapshot$dm, "dm",
             message = "Re-establish dm on S3 (was local through 2026-03-28)")
 datom_write(conn, snapshot$ex, "ex",
@@ -191,6 +199,7 @@ above are your audit trail for that.
 ## Confirm
 
 ``` r
+
 datom_list(conn)
 #>   name current_version current_data_sha last_updated
 #> 1   ae    19f44e3a       e91d04ff         2026-04-29T...

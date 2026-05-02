@@ -32,6 +32,7 @@ end. If you’d rather keep the data around, replace the two
 `~/study_001_data` and `~/study_001_local_root`.
 
 ``` r
+
 library(datom)
 library(fs)
 
@@ -53,6 +54,7 @@ For this article, both bytes-stores are local directories. The GitHub
 PAT is the only credential involved.
 
 ``` r
+
 data_component <- datom_store_local(path = data_root)
 gov_component  <- datom_store_local(path = gov_root)
 
@@ -71,6 +73,7 @@ metadata. The governance repo is shared across all your projects, so you
 only set it up once per organization.
 
 ``` r
+
 gov_repo_url <- datom_init_gov(
   gov_store      = gov_component,
   gov_local_path = gov_clone_path,
@@ -83,6 +86,7 @@ gov_repo_url <- datom_init_gov(
 Rebuild the store now that we know the gov repo URL:
 
 ``` r
+
 store <- datom_store(
   governance     = gov_component,
   data           = data_component,
@@ -95,6 +99,7 @@ store <- datom_store(
 ## Initialize the data repository
 
 ``` r
+
 datom_init_repo(
   path         = study_dir,
   project_name = "STUDY_001",
@@ -113,6 +118,7 @@ table.
 ## Connect
 
 ``` r
+
 conn <- datom_get_conn(path = study_dir, store = store)
 print(conn)
 #> -- datom connection
@@ -129,6 +135,7 @@ The month-1 extract has just landed. Load the demographics snapshot for
 subjects enrolled by 2026-01-28:
 
 ``` r
+
 dm_m1 <- datom_example_data("dm", cutoff_date = "2026-01-28")
 nrow(dm_m1)
 #> [1] 6
@@ -137,6 +144,7 @@ nrow(dm_m1)
 Write it as a versioned datom table:
 
 ``` r
+
 datom_write(
   conn,
   data    = dm_m1,
@@ -158,6 +166,7 @@ Three things just happened, in this order:
 ## Read it back
 
 ``` r
+
 dm_back <- datom_read(conn, "dm")
 identical(dm_back, dm_m1)
 #> [1] TRUE
@@ -185,6 +194,7 @@ and we write it without overwriting history.
 If you’re not continuing to article 2 right now:
 
 ``` r
+
 unlink(c(study_dir, data_root, gov_root, gov_clone_path), recursive = TRUE)
 ```
 
