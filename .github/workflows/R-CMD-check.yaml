@@ -21,7 +21,11 @@ jobs:
         config:
           - {os: macos-latest,   r: 'release'}
           - {os: windows-latest, r: 'release'}
-          - {os: ubuntu-latest,   r: 'devel', http-user-agent: 'release'}
+          # ubuntu-latest (devel) temporarily disabled: no R-devel Linux
+          # binaries on Posit PPM, so every PR pays a 15-25 min source-
+          # compile tax for arrow + paws.storage + friends. Restore this
+          # entry as part of the pre-CRAN checklist:
+          #   - {os: ubuntu-latest, r: 'devel', http-user-agent: 'release'}
           - {os: ubuntu-latest,   r: 'release'}
           - {os: ubuntu-latest,   r: 'oldrel-1'}
 
