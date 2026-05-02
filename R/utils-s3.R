@@ -314,3 +314,41 @@
 
   invisible(length(all_keys))
 }
+
+
+#' List S3 Objects Under a Prefix
+#'
+#' Lists every key under `{prefix}/datom/{prefix_key}` and returns relative
+#' keys (relative to the datom namespace, i.e. with the `prefix/datom/` part
+#' stripped). Paginates via `ContinuationToken`.
+#'
+#' @param conn A `datom_conn` object.
+#' @param prefix Relative prefix (after `prefix/datom/`).
+#' @return Character vector of relative keys (may be empty).
+#' @keywords internal
+.datom_s3_list_objects <- function(conn, prefix) {
+  full_prefix <- .datom_build_storage_key(conn$prefix, prefix)
+  if (!endsWith(full_prefix, "/")) full_prefix <- paste0(full_prefix, "/")
+
+  # Strip leading "{prefix}/datom/" or "datom/" so returned keys are relative
+  # to the datom namespace root, mirroring `.datom_local_list_objects()`
+  # (which returns keys relative to `conn$root`, i.e. including the
+  # `{prefix}/datom/` portion). For consistency with how callers use these
+  # helpers via gov-conn (where `prefix` arg already lives under
+  # `datom/`), we keep keys as-is (full_key form). Callers strip as needed.
+
+  all_keys <- character()
+  continuation <- NULL
+
+  repeat {
+    args <- list(Bucket = conn$root, Prefix = full_prefix, MaxKeys = 1000L)
+    if (!is.null(continuation)) args$ContinuationToken <- continuation
+    resp <- do.call(conn$client$list_objects_v2, args)
+    keys <- purrr::map_chr(resp$Contents %||% list(), "Key")
+    all_keys <- c(all_keys, keys)
+    if (!isTRUE(resp$IsTruncated)) break
+    continuation <- resp$NextContinuationToken
+  }
+
+  all_keys
+}

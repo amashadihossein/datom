@@ -157,6 +157,62 @@
 }
 
 
+# --- Read helpers (no GOV_SEAM: pure reads, safe to keep in datom) -----------
+
+#' List Registered Project Names
+#'
+#' Returns the set of project names registered in the governance repo. When a
+#' local gov clone is available, lists directories under
+#' `{gov_local_path}/projects/` (offline-friendly, reflects last
+#' `datom_pull_gov()`). Otherwise lists keys under `projects/` via the gov
+#' storage client and extracts unique top-level segments.
+#'
+#' Skips entries that don't contain a `ref.json` (corrupt registry rows).
+#'
+#' @param gov_conn A gov-scoped `datom_conn` (from `.datom_gov_conn()` or
+#'   `.datom_build_gov_resolve_conn()`).
+#' @param gov_local_path Optional absolute path to a local gov clone. When
+#'   provided and the clone exists, the filesystem path is preferred.
+#' @return Character vector of project names (sorted, may be empty).
+#' @keywords internal
+.datom_gov_list_projects <- function(gov_conn, gov_local_path = NULL) {
+  if (!is.null(gov_local_path) && .datom_gov_clone_exists(gov_local_path)) {
+    projects_dir <- fs::path(gov_local_path, "projects")
+    if (!fs::dir_exists(projects_dir)) return(character(0))
+
+    dirs <- fs::dir_ls(projects_dir, type = "directory")
+    names <- as.character(fs::path_file(dirs))
+
+    # Skip entries lacking ref.json
+    keep <- purrr::map_lgl(names, function(nm) {
+      fs::file_exists(fs::path(projects_dir, nm, "ref.json"))
+    })
+    return(sort(names[keep]))
+  }
+
+  # Storage path: list keys under "projects/" and extract unique top-level
+  # segments that have a ref.json child.
+  keys <- tryCatch(
+    .datom_storage_list_objects(gov_conn, "projects"),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Failed to list projects from governance store.",
+        "x" = "Root: {.val {gov_conn$root}}",
+        "i" = "Underlying error: {conditionMessage(e)}"
+      ), parent = e)
+    }
+  )
+
+  if (length(keys) == 0L) return(character(0))
+
+  # Each key looks like "{gov_prefix}/datom/projects/{name}/ref.json".
+  # Extract the segment immediately after "projects/".
+  matches <- regmatches(keys, regexpr("projects/[^/]+/ref\\.json$", keys))
+  names <- sub("^projects/([^/]+)/ref\\.json$", "\\1", matches)
+  sort(unique(names))
+}
+
+
 # --- GOV_SEAM: write helpers --------------------------------------------------
 #
 # All functions below are marked GOV_SEAM. They define the port surface that a

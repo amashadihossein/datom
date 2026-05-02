@@ -56,6 +56,9 @@ reference:
     desc: "List tables, view history, check status"
     contents:
       - datom_list
+      - datom_summary
+      - print.datom_summary
+      - datom_projects
       - datom_history
       - datom_status
       - datom_get_parents
