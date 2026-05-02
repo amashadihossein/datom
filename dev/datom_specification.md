@@ -371,13 +371,15 @@ Post-migration, may contain `previous` entries:
 ```json
 {
   "current": {
-    "bucket": "bucket-B",
+    "type": "s3",
+    "root": "bucket-B",
     "prefix": "proj/",
     "region": "us-east-1"
   },
   "previous": [
     {
-      "bucket": "bucket-A",
+      "type": "s3",
+      "root": "bucket-A",
       "prefix": "proj/",
       "region": "us-east-1",
       "sunset_date": "2025-01-01"
@@ -721,6 +723,22 @@ Lists available tables from S3 manifest.
 - `short_hash`: If TRUE (default), truncates SHA columns to 8 characters for readability.
 
 Returns: Data frame with table info
+
+#### datom_summary()
+
+```r
+datom_summary(conn)
+```
+
+Compact, role-aware overview of a single project: name, role, backend/root/prefix, table count, total versions, last write time, and (developers only) the data git remote URL. Reads `.metadata/manifest.json` from the data store. Returns an S3 `datom_summary` object with a `print` method.
+
+#### datom_projects()
+
+```r
+datom_projects(x)
+```
+
+Lists every project registered in the shared governance repo. Accepts a `datom_conn` (uses the local gov clone when present -- offline, fast) or a `datom_store` (lets a caller enumerate the portfolio before connecting to any one project). Reads `projects/*/ref.json`. Corrupt entries warn and skip. Returns a sorted data frame with `name`, `data_backend`, `data_root`, `data_prefix`, `registered_at`.
 
 #### datom_history()
 
