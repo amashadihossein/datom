@@ -101,6 +101,8 @@ articles:
       - handing-off
       - second-engineer
       - governing-a-portfolio
+      - auditing-reproducibility
+      - looking-ahead
 
   - title: "Design"
     desc: "Why datom is shaped the way it is."

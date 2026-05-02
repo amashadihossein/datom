@@ -1,8 +1,8 @@
 # Phase 16: Vignette Overhaul
 
-**Status**: Active -- Chunk 4 complete; Phase 17 next, then Chunks 5-6
-**Branch**: `phase/16-chunk-4` (created 2026-04-29)
-**Depends on**: Phase 15 closed (2026-04-29). Phase 17 (`datom_summary`, `datom_projects`) is a prerequisite for Chunk 5.
+**Status**: Active -- Chunk 5 complete; Chunk 6 next
+**Branch**: `phase/16-chunk-5` (created 2026-05-02)
+**Depends on**: Phase 15 closed (2026-04-29). Phase 17 closed (2026-05-01).
 
 ## Progress log
 
@@ -13,6 +13,7 @@
 - **2026-04-29 (Chunk 3)**: Complete. Articles 4 (`promoting-to-s3.Rmd`), 5 (`handing-off.Rmd`), 6 (`second-engineer.Rmd`) written. Resume scripts 4--6 added. `_pkgdown.yml` Get Started group extended to 6 articles. Phase doc gains a Future Work section recording Phase 18 (`datom_migrate_data()`) and the gov-store-migration design problem -- both spawned by Article 4's honest treatment of the local->S3 boundary. AWS creds via `keyring` (parallels GitHub PAT pattern); reader role demonstrated by Article 5 in a different R session. Concurrent-write recovery in Article 6 is `datom_pull()` + retry. No code changes; tests untouched.
 - **2026-04-29 (CI fix, between Chunks 3 and 4)**: PR #8 merged. `.datom_gov_clone_init()` now sets local git identity after clone via new `.datom_git_ensure_local_identity()` helper. Two CI bugs fixed: (a) the gov-clone identity gap that was failing all platforms after PR #7, and (b) `test-conn.R:742` reused one bare repo for two unrelated histories -- macOS libgit2 tolerated, Ubuntu rejected. Both now lint-clean. 1369 tests passing.
 - **2026-04-29 (Chunk 4)**: Complete. Article 7 (`governing-a-portfolio.Rmd`) + `resume_article_7.R` (delegates to article 6's resume since persistent state is identical) + Design Notes D2 (`design-ref-json.Rmd`), D3 (`design-dispatch.Rmd`), D4 (`design-two-repos.Rmd`), D6 (`design-serverless.Rmd`). `_pkgdown.yml` Get Started group at 7 articles, Design group at 6. Article 7 deliberately does NOT use `datom_projects()` (Phase 17); manager view of the registry uses `fs::dir_ls(gov_clone/projects)` instead. STUDY-002 introduced narratively per phase doc decision. No code changes; tests untouched.
+- **2026-05-02 (Chunk 5)**: Complete. Article 8 (`auditing-reproducibility.Rmd`) leverages Phase-17 helpers (`datom_summary()`, `datom_projects()`) and walks through the regulator-request scenario: portfolio snapshot, full-SHA `datom_history()`, pinned `datom_read(version=)`, and `datom_validate()` per project / across portfolio. Article 9 (`looking-ahead.Rmd`) frames datom as the daapr substrate; describes dpbuild/dpdeploy/dpi by name + role only (per locked decision). `resume_article_8.R` delegates to `resume_article_7.R` (Article 8 is read-only). `_pkgdown.yml` Get Started group at 9 articles. pkgdown::build_articles_index clean. No code changes; tests untouched.
 
 ---
 
