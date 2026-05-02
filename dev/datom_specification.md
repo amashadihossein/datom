@@ -795,13 +795,13 @@ datom_migrate(conn_from, conn_to, tables, update_ref = TRUE)
 #### datom_example_data()
 
 ```r
-datom_example_data(domain = c("dm", "ex"), cutoff_date = NULL)
+datom_example_data(domain = c("dm", "ex", "lb", "ae"), cutoff_date = NULL)
 ```
 
-Loads bundled clinical trial example data (DM and EX domains) for use in examples and vignettes. The data simulates a Phase II study (STUDY-001) with 48 subjects.
+Loads bundled clinical trial example data for use in examples and vignettes. The data simulates a Phase II study (STUDY-001) with 48 subjects across four SDTM-style domains.
 
-- `domain`: `"dm"` (demographics) or `"ex"` (exposure)
-- `cutoff_date`: Optional `"YYYY-MM-DD"` to filter subjects enrolled on or before this date, simulating a point-in-time EDC extract
+- `domain`: `"dm"` (demographics), `"ex"` (exposure), `"lb"` (laboratory), or `"ae"` (adverse events)
+- `cutoff_date`: Optional `"YYYY-MM-DD"` to filter rows on or before this date, simulating a point-in-time EDC extract
 
 Returns: Data frame.
 
@@ -1520,7 +1520,7 @@ Team workflows are fully supported:
 - **`datom_pull()`**: Git pull (fetch + merge). Git is the source of truth for all metadata.
 - **`datom_clone()`**: Wraps `git2r::clone()` + `datom_get_conn()` — the recommended way for teammates to join a repo.
 - **Pull-before-push discipline**: `.datom_git_push()` auto-pulls before pushing. `.datom_check_git_current()` detects stale state at `datom_sync()` entry.
-- **Vignettes**: `vignette("team-collaboration")` for workflows, `vignette("credentials")` for credential setup.
+- **Vignettes**: the *Get Started* / *Scale Up* / *Govern* article track walks the team workflow end-to-end (start at *First Extract*; the *Second Engineer Joins* article covers pull-before-push and conflict recovery). *Credentials in Practice* is the credentials reference.
 
 ---
 
