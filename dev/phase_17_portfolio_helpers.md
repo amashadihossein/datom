@@ -1,6 +1,6 @@
 # Phase 17: Portfolio Helpers (`datom_summary`, `datom_projects`)
 
-**Status**: Active -- planning complete; Chunk 1 next
+**Status**: Active -- Chunk 1 complete; Chunk 2 next
 **Branch**: `phase/17-portfolio-helpers` (created 2026-04-29)
 **Depends on**: Phase 16 Chunk 4 closed (PR #9 merged 2026-04-29).
 **Blocks**: Phase 16 Chunk 5 (Article 8 audit/reproducibility uses both helpers).
@@ -8,6 +8,7 @@
 ## Progress log
 
 - **2026-04-29**: Phase activated. Branch cut from main `cb17766`. Phase doc registered in `dev/README.md`.
+- **2026-05-01**: Chunk 1 complete. `datom_summary()` + `print.datom_summary()` shipped in `R/summary.R`. 11 `test_that` blocks (24 expectations) in `tests/testthat/test-summary.R`. `_pkgdown.yml` updated. Test suite: 1393 PASS / 0 FAIL (was 1369; +24 expectations from the new tests). pkgdown reference index builds clean.
 
 ---
 
