@@ -5,10 +5,10 @@
 #
 # Structure:
 #   {
-#     "current": { "root": "...", "prefix": "...", "region": "..." },
+#     "current": { "type": "s3"|"local", "root": "...", "prefix": "...", "region": "..." },
 #     "previous": [
 #       {
-#         "root": "...", "prefix": "...", "region": "...",
+#         "type": "s3"|"local", "root": "...", "prefix": "...", "region": "...",
 #         "migrated_at": "2026-01-15T00:00:00Z",
 #         "sunset_at": "2026-04-15T00:00:00Z"
 #       }
@@ -27,6 +27,7 @@
 .datom_create_ref <- function(data_store) {
   list(
     current = list(
+      type = .datom_store_backend(data_store),
       root = .datom_store_root(data_store),
       prefix = data_store$prefix,
       region = .datom_store_region(data_store)

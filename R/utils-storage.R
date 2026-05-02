@@ -110,3 +110,25 @@
     cli::cli_abort("Unsupported storage backend: {.val {backend}}")
   )
 }
+
+
+#' List Objects Under a Storage Prefix
+#'
+#' Returns the keys of every object under `{prefix}/datom/{prefix_arg}`. Keys
+#' are returned in their full storage-key form (i.e. including the
+#' `{prefix}/datom/` portion), matching what `.datom_local_list_objects()`
+#' and `.datom_s3_list_objects()` return.
+#'
+#' @param conn A `datom_conn` object.
+#' @param prefix Relative prefix to list under (after `prefix/datom/`).
+#' @return Character vector of full storage keys (may be empty).
+#' @keywords internal
+.datom_storage_list_objects <- function(conn, prefix) {
+  backend <- conn$backend %||% "s3"
+  switch(backend,
+    s3    = .datom_s3_list_objects(conn, prefix),
+    local = .datom_local_list_objects(conn, prefix),
+    cli::cli_abort("Unsupported storage backend: {.val {backend}}")
+  )
+}
+

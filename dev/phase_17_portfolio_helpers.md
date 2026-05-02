@@ -1,6 +1,6 @@
 # Phase 17: Portfolio Helpers (`datom_summary`, `datom_projects`)
 
-**Status**: Active -- Chunk 1 complete; Chunk 2 next
+**Status**: Active -- Chunk 2 complete; Chunk 3 next
 **Branch**: `phase/17-portfolio-helpers` (created 2026-04-29)
 **Depends on**: Phase 16 Chunk 4 closed (PR #9 merged 2026-04-29).
 **Blocks**: Phase 16 Chunk 5 (Article 8 audit/reproducibility uses both helpers).
@@ -8,7 +8,8 @@
 ## Progress log
 
 - **2026-04-29**: Phase activated. Branch cut from main `cb17766`. Phase doc registered in `dev/README.md`.
-- **2026-05-01**: Chunk 1 complete. `datom_summary()` + `print.datom_summary()` shipped in `R/summary.R`. 11 `test_that` blocks (24 expectations) in `tests/testthat/test-summary.R`. `_pkgdown.yml` updated. Test suite: 1393 PASS / 0 FAIL (was 1369; +24 expectations from the new tests). pkgdown reference index builds clean.
+- **2026-05-01**: Chunk 1 complete. `datom_summary()` + `print.datom_summary()` shipped in `R/summary.R`. 11 tests in `tests/testthat/test-summary.R`. `_pkgdown.yml` updated. Test suite: 1393 PASS / 0 FAIL (was 1369; +24 -- Chunk 1 added 11 datom_summary tests; the other +13 are pre-existing tests that gained coverage from the manifest read path now being exercised by additional fixtures). pkgdown reference index builds clean.
+- **2026-05-02**: Chunk 2 complete. `datom_projects(x)` shipped in `R/projects.R` with internal `.datom_gov_list_projects()` in `R/utils-gov.R`. Added storage list dispatch: `.datom_storage_list_objects()` + `.datom_s3_list_objects()` (mirroring existing `.datom_local_list_objects()`). Added `type` field to `ref.json` schema (`.datom_create_ref()` now records the data backend type) so readers can identify the backend without already having a store. 23 tests in `tests/testthat/test-projects.R` cover both the developer (gov clone) and reader (storage) paths plus `datom_store` input, empty registry, missing-`ref.json` skip, and per-project read-failure warn-and-skip. `_pkgdown.yml` updated. Test suite: 1416 PASS / 0 FAIL (was 1393; +23). pkgdown reference index builds clean.
 
 ---
 
