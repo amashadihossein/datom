@@ -2,6 +2,7 @@ pandoc: 3.8.3
 pkgdown: 2.2.0
 pkgdown_sha: ~
 articles:
+  auditing-reproducibility: auditing-reproducibility.html
   design-datom-model: design-datom-model.html
   design-dispatch: design-dispatch.html
   design-ref-json: design-ref-json.html
@@ -12,10 +13,11 @@ articles:
   folder-of-extracts: folder-of-extracts.html
   governing-a-portfolio: governing-a-portfolio.html
   handing-off: handing-off.html
+  looking-ahead: looking-ahead.html
   month-2-arrives: month-2-arrives.html
   promoting-to-s3: promoting-to-s3.html
   second-engineer: second-engineer.html
-last_built: 2026-05-02T18:24Z
+last_built: 2026-05-02T18:45Z
 urls:
   reference: https://amashadihossein.github.io/datom/reference
   article: https://amashadihossein.github.io/datom/articles

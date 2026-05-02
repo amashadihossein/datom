@@ -18,6 +18,10 @@ A user journey through STUDY-001 – start here.
   Joins](https://amashadihossein.github.io/datom/articles/second-engineer.md):
 - [Governing a Study
   Portfolio](https://amashadihossein.github.io/datom/articles/governing-a-portfolio.md):
+- [Auditing &
+  Reproducibility](https://amashadihossein.github.io/datom/articles/auditing-reproducibility.md):
+- [Looking Ahead: datom in the daapr
+  Stack](https://amashadihossein.github.io/datom/articles/looking-ahead.md):
 
 ### Design
 
