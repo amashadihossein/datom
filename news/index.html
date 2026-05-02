@@ -21,12 +21,6 @@
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/first-extract.html">First Extract</a></li>
     <li><a class="dropdown-item" href="../articles/month-2-arrives.html">Month 2 Arrives</a></li>
     <li><a class="dropdown-item" href="../articles/folder-of-extracts.html">A Folder of Extracts</a></li>
-    <li><a class="dropdown-item" href="../articles/promoting-to-s3.html">Promoting to S3</a></li>
-    <li><a class="dropdown-item" href="../articles/handing-off.html">Handing Off to a Statistician</a></li>
-    <li><a class="dropdown-item" href="../articles/second-engineer.html">A Second Engineer Joins</a></li>
-    <li><a class="dropdown-item" href="../articles/governing-a-portfolio.html">Governing a Study Portfolio</a></li>
-    <li><a class="dropdown-item" href="../articles/auditing-reproducibility.html">Auditing &amp; Reproducibility</a></li>
-    <li><a class="dropdown-item" href="../articles/looking-ahead.html">Looking Ahead: datom in the daapr Stack</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="../articles/index.html">More articles...</a></li>
   </ul></li>
@@ -52,6 +46,40 @@
 
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="development version" id="datom-development-version">datom (development version)<a class="anchor" aria-label="anchor" href="#datom-development-version"></a></h2>
+<div class="section level3">
+<h3 id="phase--vignette-overhaul-development-version">Phase 16 – Vignette overhaul<a class="anchor" aria-label="anchor" href="#phase--vignette-overhaul-development-version"></a></h3>
+<p>The vignette set is rewritten as a continuous user journey: STUDY-001 over six months, climbing from a single engineer’s first extract to a manager’s portfolio audit. Ten user-journey articles plus six design notes replace the previous three vignettes (<code>clinical-data-versioning</code>, <code>team-collaboration</code>, <code>credentials</code>).</p>
+<p><strong>User journey</strong> (sidebar order):</p>
+<ol style="list-style-type: decimal"><li>
+<em>First Extract</em> – <code>datom_store_local</code>, <code>datom_init_gov</code>, <code>datom_init_repo</code>, <code>datom_write</code>, <code>datom_read</code>.</li>
+<li>
+<em>Month 2 Arrives</em> – change detection, <code>datom_history</code>, version-pinned reads.</li>
+<li>
+<em>A Folder of Extracts</em> – <code>datom_sync</code>, <code>datom_status</code>, <code>datom_validate</code>.</li>
+<li>
+<em>Promoting to S3</em> – <code>datom_store_s3</code>, <code>create_repo = TRUE</code>, <code>ref.json</code> indirection.</li>
+<li>
+<em>Handing Off to a Statistician</em> – reader role, parallel R session, version pinning for reproducibility.</li>
+<li>
+<em>A Second Engineer Joins</em> – <code>datom_clone</code>, <code>datom_pull</code>, conflict recovery.</li>
+<li>
+<em>Governing a Study Portfolio</em> – registry, <code>datom_pull_gov</code>, <code>datom_decommission</code>.</li>
+<li>
+<em>Auditing &amp; Reproducibility</em> – <code>datom_summary</code>, <code>datom_projects</code>, full-SHA history, <code>datom_validate</code> across the portfolio.</li>
+<li>
+<em>Looking Ahead: datom in the daapr Stack</em> – substrate framing.</li>
+<li>
+<em>Credentials in Practice</em> – store construction, roles, recovery utilities reference.</li>
+</ol><p><strong>Design notes</strong>: <code>design-datom-model</code>, <code>design-version-shas</code>, <code>design-ref-json</code>, <code>design-dispatch</code>, <code>design-two-repos</code>, <code>design-serverless</code>.</p>
+<p><strong>Other changes:</strong></p>
+<ul><li>Simulator extended with LB (lab) and AE (adverse events) domains. <code><a href="../reference/datom_example_data.html">datom_example_data()</a></code> gains <code>"lb"</code> and <code>"ae"</code> choices.</li>
+<li>
+<code>inst/vignette-setup/resume_article_N.R</code> lets jump-in readers rebuild the prior article’s end state in one line. Idempotent; honors <code>DATOM_VIGNETTE_DIR</code>.</li>
+<li>
+<code>README.Rmd</code> rewritten as a one-screen grabber using the local backend.</li>
+<li>
+<code>_pkgdown.yml</code> sidebar reorganized into Get Started / Scale Up / Govern / Reference / Design groups.</li>
+</ul></div>
 <div class="section level3">
 <h3 id="phase--portfolio-helpers-development-version">Phase 17 – Portfolio helpers<a class="anchor" aria-label="anchor" href="#phase--portfolio-helpers-development-version"></a></h3>
 <p><strong>New functions:</strong></p>
