@@ -91,18 +91,31 @@ reference:
 
 articles:
   - title: "Get Started"
-    desc: "A user journey through STUDY-001 -- start here."
+    desc: "Your first datom project: simulate, version, read."
     navbar: ~
     contents:
       - first-extract
       - month-2-arrives
       - folder-of-extracts
+
+  - title: "Scale Up"
+    desc: "Promote to S3 and collaborate across a team."
+    contents:
       - promoting-to-s3
       - handing-off
       - second-engineer
+
+  - title: "Govern"
+    desc: "Manage a portfolio, audit history, look ahead."
+    contents:
       - governing-a-portfolio
       - auditing-reproducibility
       - looking-ahead
+
+  - title: "Reference"
+    desc: "Credentials, stores, roles, recovery utilities."
+    contents:
+      - credentials-in-practice
 
   - title: "Design"
     desc: "Why datom is shaped the way it is."

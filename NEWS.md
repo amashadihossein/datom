@@ -1,5 +1,31 @@
 # datom (development version)
 
+## Phase 16 -- Vignette overhaul
+
+The vignette set is rewritten as a continuous user journey: STUDY-001 over six months, climbing from a single engineer's first extract to a manager's portfolio audit. Ten user-journey articles plus six design notes replace the previous three vignettes (`clinical-data-versioning`, `team-collaboration`, `credentials`).
+
+**User journey** (sidebar order):
+
+1. *First Extract* -- `datom_store_local`, `datom_init_gov`, `datom_init_repo`, `datom_write`, `datom_read`.
+2. *Month 2 Arrives* -- change detection, `datom_history`, version-pinned reads.
+3. *A Folder of Extracts* -- `datom_sync`, `datom_status`, `datom_validate`.
+4. *Promoting to S3* -- `datom_store_s3`, `create_repo = TRUE`, `ref.json` indirection.
+5. *Handing Off to a Statistician* -- reader role, parallel R session, version pinning for reproducibility.
+6. *A Second Engineer Joins* -- `datom_clone`, `datom_pull`, conflict recovery.
+7. *Governing a Study Portfolio* -- registry, `datom_pull_gov`, `datom_decommission`.
+8. *Auditing & Reproducibility* -- `datom_summary`, `datom_projects`, full-SHA history, `datom_validate` across the portfolio.
+9. *Looking Ahead: datom in the daapr Stack* -- substrate framing.
+10. *Credentials in Practice* -- store construction, roles, recovery utilities reference.
+
+**Design notes**: `design-datom-model`, `design-version-shas`, `design-ref-json`, `design-dispatch`, `design-two-repos`, `design-serverless`.
+
+**Other changes:**
+
+* Simulator extended with LB (lab) and AE (adverse events) domains. `datom_example_data()` gains `"lb"` and `"ae"` choices.
+* `inst/vignette-setup/resume_article_N.R` lets jump-in readers rebuild the prior article's end state in one line. Idempotent; honors `DATOM_VIGNETTE_DIR`.
+* `README.Rmd` rewritten as a one-screen grabber using the local backend.
+* `_pkgdown.yml` sidebar reorganized into Get Started / Scale Up / Govern / Reference / Design groups.
+
 ## Phase 17 -- Portfolio helpers
 
 **New functions:**
