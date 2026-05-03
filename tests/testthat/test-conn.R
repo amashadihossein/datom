@@ -2253,3 +2253,206 @@ test_that("datom_init_gov with create_repo = TRUE calls .datom_create_github_rep
   expect_equal(result, env$bare_dir)
   expect_true(fs::file_exists(fs::path(env$gov_dir, "projects", ".gitkeep")))
 })
+
+
+# =============================================================================
+# datom_attach_gov()
+# =============================================================================
+
+# Helper: build a no-gov initialised project + bare gov repo + gov_store_local.
+# Returns a list with: conn (developer, no gov), gov_bare, gov_dir, gov_store,
+# work_dir, bare_dir.
+setup_attach_env <- function(env = parent.frame()) {
+  # --- Data side: init a no-gov project --------------------------------------
+  bare_dir <- withr::local_tempdir(.local_envir = env)
+  git2r::init(bare_dir, bare = TRUE)
+  work_dir <- withr::local_tempdir(.local_envir = env)
+
+  data_store <- datom_store_local(
+    path = withr::local_tempdir(.local_envir = env),
+    validate = FALSE
+  )
+  store <- datom_store(
+    governance    = NULL,
+    data          = data_store,
+    github_pat    = "ghp_fake",
+    data_repo_url = bare_dir,
+    validate      = FALSE
+  )
+
+  # Mock gov-irrelevant storage during init
+  local_mocked_bindings(
+    .datom_storage_write_json = function(...) invisible(TRUE),
+    .datom_storage_exists     = function(...) FALSE,
+    .env = env
+  )
+
+  datom_init_repo(path = work_dir, project_name = "attach-proj", store = store)
+
+  # Build a developer conn that mirrors what datom_init_repo() would yield:
+  # local data backend, no gov fields.
+  conn <- new_datom_conn(
+    project_name = "attach-proj",
+    backend      = "local",
+    root         = data_store$path,
+    prefix       = NULL,
+    region       = "us-east-1",
+    client       = NULL,
+    path         = work_dir,
+    role         = "developer"
+  )
+
+  # --- Gov side: bare gov repo + gov_store_local + clone target -------------
+  gov_bare <- withr::local_tempdir(.local_envir = env)
+  git2r::init(gov_bare, bare = TRUE)
+  gov_dir <- withr::local_tempdir(.local_envir = env)
+  # gov_dir was created by withr; .datom_gov_clone_init expects empty/missing.
+  fs::dir_delete(gov_dir)
+
+  gov_store <- datom_store_local(
+    path = withr::local_tempdir(.local_envir = env),
+    validate = FALSE
+  )
+
+  list(
+    bare_dir  = bare_dir,
+    work_dir  = work_dir,
+    conn      = conn,
+    gov_bare  = gov_bare,
+    gov_dir   = gov_dir,
+    gov_store = gov_store
+  )
+}
+
+# --- Validation ---------------------------------------------------------------
+
+test_that("datom_attach_gov rejects non-conn input", {
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_attach_gov(conn = list(), gov_store = gov_store,
+                     gov_repo_url = "https://example.com/gov.git"),
+    "datom_conn"
+  )
+})
+
+test_that("datom_attach_gov rejects reader connections", {
+  reader <- new_datom_conn(
+    project_name = "p", backend = "local",
+    root = "/tmp", client = NULL, role = "reader"
+  )
+  gov_store <- datom_store_local(path = withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_attach_gov(conn = reader, gov_store = gov_store,
+                     gov_repo_url = "https://example.com/gov.git"),
+    "developer connection"
+  )
+})
+
+test_that("datom_attach_gov rejects non-store-component gov_store", {
+  env <- setup_attach_env()
+  expect_error(
+    datom_attach_gov(conn = env$conn, gov_store = list(path = "/tmp"),
+                     gov_repo_url = env$gov_bare),
+    "datom_store_s3"
+  )
+})
+
+test_that("datom_attach_gov aborts when both create_repo and gov_repo_url given", {
+  env <- setup_attach_env()
+  expect_error(
+    datom_attach_gov(conn = env$conn, gov_store = env$gov_store,
+                     gov_repo_url = env$gov_bare,
+                     create_repo = TRUE, repo_name = "gov"),
+    "mutually exclusive"
+  )
+})
+
+test_that("datom_attach_gov aborts when neither create_repo nor gov_repo_url", {
+  env <- setup_attach_env()
+  expect_error(
+    datom_attach_gov(conn = env$conn, gov_store = env$gov_store),
+    "No governance repo URL"
+  )
+})
+
+# --- Happy path ---------------------------------------------------------------
+
+test_that("datom_attach_gov attaches gov, updates project.yaml, returns fresh conn", {
+  env <- setup_attach_env()
+
+  result <- datom_attach_gov(
+    conn           = env$conn,
+    gov_store      = env$gov_store,
+    gov_repo_url   = env$gov_bare,
+    gov_local_path = env$gov_dir
+  )
+
+  # Returned conn has gov fields populated
+  expect_s3_class(result, "datom_conn")
+  expect_equal(result$gov_root, env$gov_store$path)
+  expect_equal(result$gov_local_path, as.character(fs::path_abs(env$gov_dir)))
+
+  # project.yaml updated
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_equal(cfg$storage$governance$type, "local")
+  expect_equal(cfg$storage$governance$root, env$gov_store$path)
+  expect_equal(cfg$repos$governance$remote_url, env$gov_bare)
+
+  # storage block ordering: governance before data
+  expect_equal(names(cfg$storage)[1], "governance")
+  expect_equal(names(cfg$storage)[2], "data")
+
+  # gov clone has projects/{name}/ with the three JSON files
+  proj_dir <- fs::path(env$gov_dir, "projects", "attach-proj")
+  expect_true(fs::dir_exists(proj_dir))
+  expect_true(fs::file_exists(fs::path(proj_dir, "dispatch.json")))
+  expect_true(fs::file_exists(fs::path(proj_dir, "ref.json")))
+  expect_true(fs::file_exists(fs::path(proj_dir, "migration_history.json")))
+
+  # data repo has a new commit
+  data_repo <- git2r::repository(env$work_dir)
+  msgs <- vapply(git2r::commits(data_repo), function(c) c$message, character(1L))
+  expect_true(any(grepl("Attach governance: attach-proj", msgs)))
+})
+
+# --- Idempotency --------------------------------------------------------------
+
+test_that("datom_attach_gov is idempotent: second call no-ops with matching URL", {
+  env <- setup_attach_env()
+
+  first <- datom_attach_gov(
+    conn = env$conn, gov_store = env$gov_store,
+    gov_repo_url = env$gov_bare, gov_local_path = env$gov_dir
+  )
+
+  data_repo <- git2r::repository(env$work_dir)
+  commits_before <- length(git2r::commits(data_repo))
+
+  # Second call -- pass the freshly returned conn
+  second <- datom_attach_gov(
+    conn = first, gov_store = env$gov_store,
+    gov_repo_url = env$gov_bare, gov_local_path = env$gov_dir
+  )
+
+  commits_after <- length(git2r::commits(data_repo))
+  expect_equal(commits_after, commits_before)
+  expect_identical(second$gov_root, first$gov_root)
+})
+
+test_that("datom_attach_gov errors on URL mismatch when already attached", {
+  env <- setup_attach_env()
+
+  first <- datom_attach_gov(
+    conn = env$conn, gov_store = env$gov_store,
+    gov_repo_url = env$gov_bare, gov_local_path = env$gov_dir
+  )
+
+  expect_error(
+    datom_attach_gov(
+      conn = first, gov_store = env$gov_store,
+      gov_repo_url = "https://example.com/different-gov.git",
+      gov_local_path = env$gov_dir
+    ),
+    "different gov repo"
+  )
+})

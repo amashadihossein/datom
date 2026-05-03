@@ -1,6 +1,6 @@
 # Phase 18: Governance On-Demand
 
-**Status**: Active -- Chunks 1-2 complete; Chunk 3 next (`datom_attach_gov()`)
+**Status**: Active -- Chunks 1-3 complete; Chunk 4 next (read/write paths in no-gov mode)
 **Branch**: `phase/18-gov-on-demand` (created 2026-05-02)
 **Depends on**: Phase 16 closed (2026-05-02), Phase 17 closed (2026-05-02).
 **Supersedes**: `dev/draft_phase_conn_refactor.md` (M2 folds in; M6 absorbed as a chunk).
@@ -182,4 +182,27 @@ Tests: 1457 PASS / 0 FAIL (was 1443).
 
 **Plan adjustment**: removed `attach_gov` parameter from Chunks 3-9 implementation expectations. `datom_attach_gov()` (Chunk 3) is the only user-facing switch for gov adoption; init-time intent is expressed via store construction. The vignette plan in Chunk 8 is unchanged in spirit (Article 1 shows no-gov init; Article 4 introduces `datom_attach_gov()`).
 
+### Chunk 3 -- `datom_attach_gov()` on-ramp
+
+New exported function `datom_attach_gov(conn, gov_store, gov_repo_url, gov_local_path = NULL, create_repo = FALSE, repo_name = NULL, github_org = NULL, private = TRUE)` lifts a no-gov project into the gov layer.
+
+Design:
+- Accepts a developer conn from a no-gov project. Reads `.datom/project.yaml`, derives `project_name`.
+- Idempotent: detects already-attached state via `!is.null(conn$gov_root) || !is.null(cfg$storage$governance)`. Matching `gov_repo_url` no-ops; mismatched URL is a hard error (no detach, no swap).
+- `create_repo = TRUE` reads `GITHUB_PAT` from env (no PAT arg -- attach reuses developer context), mutually exclusive with `gov_repo_url`.
+- Resolves `gov_local_path` via `.datom_resolve_gov_local_path()` (sibling of data clone, named after gov repo).
+- Reuses `.datom_gov_clone_init()` / `.datom_gov_validate_remote()` for clone bootstrap.
+- Builds an `attach_conn` (input conn + gov fields) to feed `.datom_gov_register_project()`. Synthesizes a `data_snapshot` store-shaped object for `.datom_create_ref()` (resolver only needs root/prefix/region/type).
+- Updates `project.yaml` atomically: tmp file + `fs::file_move()`. Storage block ordering preserved (governance before data, then `max_file_size_gb`).
+- Commits + pushes the data repo with message `Attach governance: {project_name}`.
+- Returns a fresh `datom_conn` with gov fields populated. Input conn becomes stale; caller rebinds.
+- GOV_SEAM-tagged for companion-package extraction.
+
+Changes:
+- `R/conn.R` -- new `datom_attach_gov()` (~280 lines incl. roxygen) inserted after `datom_init_gov()`.
+- `_pkgdown.yml` -- `datom_attach_gov` added to Connection & Setup group after `datom_init_gov`.
+- `man/datom_attach_gov.Rd` + `NAMESPACE` regenerated.
+- `tests/testthat/test-conn.R` -- new section `datom_attach_gov()` with `setup_attach_env()` helper and 7 test_that blocks: non-conn rejection, reader rejection, non-store-component rejection, mutual exclusion of `create_repo`/`gov_repo_url`, missing-URL rejection, end-to-end attach (project.yaml updated, gov clone seeded, data commit added, returned conn populated), idempotent re-call (no new commits), URL mismatch rejection.
+
+Tests: 1464 PASS / 0 FAIL (was 1457; +7 new).
 

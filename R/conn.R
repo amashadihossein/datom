@@ -740,6 +740,296 @@ datom_init_gov <- function(gov_store,
 }
 
 
+# --- datom_attach_gov ---------------------------------------------------------
+
+#' Attach Governance to an Existing Project
+#'
+#' Promotes a no-governance datom project to gov-attached status. After this
+#' call, the project participates in the governance layer: its dispatch and
+#' ref are registered under `projects/{name}/` in the shared gov repo,
+#' `datom_projects()` and friends can discover it, and migration is enabled
+#' (Phase 19).
+#'
+#' This is the on-ramp from the lightweight gov-on-demand mode to the full
+#' two-tier model. Typical trigger: promoting from a local/laptop filesystem
+#' backend to a shared S3 bucket.
+#'
+#' Once attached, governance cannot be detached. There is no
+#' `datom_detach_gov()`. Calling `datom_attach_gov()` on an already-attached
+#' project is a no-op (idempotent) provided `gov_repo_url` matches what is
+#' already recorded; mismatched URL is a hard error (no swap).
+#'
+#' @param conn A `datom_conn` object for a developer role. Must come from a
+#'   no-governance project (i.e. `is.null(conn$gov_root)`). Idempotent
+#'   re-call is supported only for matching `gov_repo_url`.
+#' @param gov_store A governance store component (`datom_store_s3()` or
+#'   `datom_store_local()`). Where dispatch/ref/migration_history files are
+#'   mirrored.
+#' @param gov_repo_url GitHub remote URL for the shared governance repo.
+#'   Mutually exclusive with `create_repo = TRUE`. Use `datom_init_gov()`
+#'   first if no gov repo exists in your organisation yet.
+#' @param gov_local_path Optional override for the local gov clone directory.
+#'   Defaults to a sibling of the data clone, named after the gov repo.
+#' @param create_repo If `TRUE`, create a fresh GitHub repo for governance
+#'   via the API and seed it. Mutually exclusive with `gov_repo_url`.
+#' @param repo_name GitHub repo name when `create_repo = TRUE`.
+#' @param github_org GitHub organisation slug (when `create_repo = TRUE`).
+#' @param private Whether the created repo should be private (default `TRUE`).
+#'   Ignored when `create_repo = FALSE`.
+#'
+#' @return A fresh `datom_conn` with governance fields populated. The input
+#'   `conn` becomes stale; rebind to the returned value.
+#'
+#' @examples
+#' \dontrun{
+#' # Started with a no-gov project on a laptop
+#' conn <- datom_get_conn(path = ".", store = my_no_gov_store)
+#'
+#' # Promote when ready to share with a team
+#' gov_s3 <- datom_store_s3(bucket = "acme-gov", access_key = "...", secret_key = "...")
+#' conn <- datom_attach_gov(
+#'   conn,
+#'   gov_store = gov_s3,
+#'   gov_repo_url = "https://github.com/acme/acme-gov.git"
+#' )
+#' }
+#' @export
+datom_attach_gov <- function(conn,
+                             gov_store,
+                             gov_repo_url = NULL,
+                             gov_local_path = NULL,
+                             create_repo = FALSE,
+                             repo_name = NULL,
+                             github_org = NULL,
+                             private = TRUE) {
+  # GOV_SEAM: companion package takes over governance attachment.
+  .datom_check_git2r()
+
+  # --- Input validation -------------------------------------------------------
+  if (!is_datom_conn(conn)) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object.")
+  }
+
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "{.fn datom_attach_gov} requires a developer connection.",
+      "i" = "Readers cannot attach governance to a project."
+    ))
+  }
+
+  if (is.null(conn$path)) {
+    cli::cli_abort("{.arg conn} has no local repo {.field path}; cannot update {.file project.yaml}.")
+  }
+
+  if (!.is_datom_store_component(gov_store)) {
+    cli::cli_abort(
+      "{.arg gov_store} must be a {.cls datom_store_s3} or {.cls datom_store_local} object."
+    )
+  }
+
+  if (isTRUE(create_repo) && !is.null(gov_repo_url)) {
+    cli::cli_abort(c(
+      "{.arg create_repo} and {.arg gov_repo_url} are mutually exclusive.",
+      "i" = "Either set {.code create_repo = TRUE} or provide {.arg gov_repo_url}, not both."
+    ))
+  }
+
+  if (isTRUE(create_repo) && is.null(repo_name)) {
+    cli::cli_abort("{.arg repo_name} is required when {.code create_repo = TRUE}.")
+  }
+
+  if (!isTRUE(create_repo) && is.null(gov_repo_url)) {
+    cli::cli_abort(c(
+      "No governance repo URL available.",
+      "i" = "Either provide {.arg gov_repo_url} or set {.code create_repo = TRUE}."
+    ))
+  }
+
+  # --- Read project.yaml from data clone --------------------------------------
+  yaml_path <- fs::path(conn$path, ".datom", "project.yaml")
+  if (!fs::file_exists(yaml_path)) {
+    cli::cli_abort("No {.file .datom/project.yaml} found at {.path {conn$path}}.")
+  }
+  cfg <- yaml::read_yaml(yaml_path)
+  project_name <- cfg$project_name
+
+  # --- Idempotence: already attached? ----------------------------------------
+  already_attached <- !is.null(conn$gov_root) || !is.null(cfg$storage$governance)
+  if (already_attached) {
+    existing_url <- cfg$repos$governance$remote_url
+    if (!is.null(existing_url) && !is.null(gov_repo_url) &&
+        !identical(existing_url, gov_repo_url)) {
+      cli::cli_abort(c(
+        "Project {.val {project_name}} is already attached to a different gov repo.",
+        "x" = "Recorded: {.url {existing_url}}",
+        "x" = "Requested: {.url {gov_repo_url}}",
+        "i" = "Governance cannot be detached or swapped. Use the recorded URL."
+      ))
+    }
+    cli::cli_alert_info("Project {.val {project_name}} is already attached to governance.")
+    return(invisible(conn))
+  }
+
+  # --- Create gov GitHub repo if requested ------------------------------------
+  if (isTRUE(create_repo)) {
+    # Re-use the same PAT discipline as datom_init_gov: it must be available
+    # via the gov_store's credentials' adjacent github_pat. We don't accept
+    # github_pat as an arg here -- attach reuses the conn's developer
+    # context. Surface a clear error if create_repo is requested without a
+    # PAT in the environment.
+    pat <- Sys.getenv("GITHUB_PAT", unset = "")
+    if (!nzchar(pat)) {
+      cli::cli_abort(c(
+        "{.code create_repo = TRUE} requires {.envvar GITHUB_PAT} in the environment.",
+        "i" = "Set it or use {.fn datom_init_gov} first."
+      ))
+    }
+    gov_repo_url <- .datom_create_github_repo(
+      repo_name = repo_name,
+      pat = pat,
+      org = github_org,
+      private = private
+    )
+  }
+
+  # --- Resolve gov_local_path ------------------------------------------------
+  if (is.null(gov_local_path)) {
+    gov_local_path <- as.character(.datom_resolve_gov_local_path(
+      data_local_path = conn$path,
+      gov_repo_url    = gov_repo_url
+    ))
+  } else {
+    gov_local_path <- as.character(fs::path_abs(gov_local_path))
+  }
+
+  # --- Ensure gov clone is available -----------------------------------------
+  # Validate remote on existing clones; clone fresh if absent. Same idempotency
+  # rules as datom_init_repo() / datom_clone().
+  if (.datom_gov_clone_exists(gov_local_path)) {
+    .datom_gov_validate_remote(gov_local_path, gov_repo_url)
+  } else {
+    .datom_gov_clone_init(gov_repo_url, gov_local_path)
+  }
+
+  # --- Gov project namespace check -------------------------------------------
+  gov_project_dir <- .datom_gov_project_path(gov_local_path, project_name)
+  if (fs::dir_exists(gov_project_dir)) {
+    cli::cli_abort(c(
+      "Project {.val {project_name}} is already registered in the governance repo.",
+      "i" = "Found at: {.path {gov_project_dir}}",
+      "i" = "Use a different project name or decommission the existing entry first."
+    ))
+  }
+
+  # --- Build a temporary conn with gov fields populated for register call ---
+  # .datom_gov_register_project() needs a conn carrying gov_local_path and
+  # gov storage fields. Build one from the input conn + the new gov_store.
+  gov_backend <- .datom_store_backend(gov_store)
+  gov_root <- .datom_store_root(gov_store)
+  gov_prefix <- gov_store$prefix
+  gov_region <- .datom_store_region(gov_store)
+  gov_client <- if (gov_backend == "s3") {
+    .datom_s3_client(
+      gov_store$access_key, gov_store$secret_key,
+      region = gov_region %||% "us-east-1",
+      endpoint = conn$endpoint,
+      session_token = gov_store$session_token
+    )
+  } else NULL
+
+  attach_conn <- conn
+  attach_conn$gov_root <- gov_root
+  attach_conn$gov_prefix <- gov_prefix
+  attach_conn$gov_region <- gov_region
+  attach_conn$gov_client <- gov_client
+  attach_conn$gov_local_path <- gov_local_path
+
+  # --- Register project in gov ------------------------------------------------
+  dispatch <- list(
+    methods = list(
+      r = list(default = "datom::datom_read"),
+      python = list(default = "datom.read")
+    )
+  )
+
+  # Build a synthetic "data store component" snapshot for ref creation. The
+  # resolver only reads root/prefix/region/type, all available on the conn.
+  data_snapshot <- structure(
+    list(
+      root   = conn$root,
+      prefix = conn$prefix,
+      region = conn$region
+    ),
+    class = paste0("datom_store_", conn$backend)
+  )
+  ref <- .datom_create_ref(data_snapshot)
+
+  .datom_gov_register_project(attach_conn, project_name, dispatch, ref)
+
+  # --- Update project.yaml in the data clone ----------------------------------
+  # Read-modify-write with a temp file + rename for atomicity, then commit
+  # + push the data repo. If this step fails after gov registration succeeded,
+  # the project is registered but the data clone is stale; user runs git
+  # pull on the data repo or re-invokes datom_attach_gov() (idempotent).
+  gov_yaml <- list(
+    type = gov_backend,
+    root = gov_root,
+    prefix = gov_prefix
+  )
+  if (gov_backend == "s3") gov_yaml$region <- gov_region
+
+  cfg$storage$governance <- gov_yaml
+  cfg$repos$governance <- list(
+    remote_url = gov_repo_url,
+    local_path = gov_local_path
+  )
+
+  # storage block ordering: governance before data (matches init writer)
+  storage_ordered <- list()
+  storage_ordered$governance <- cfg$storage$governance
+  storage_ordered$data <- cfg$storage$data
+  if (!is.null(cfg$storage$max_file_size_gb)) {
+    storage_ordered$max_file_size_gb <- cfg$storage$max_file_size_gb
+  }
+  cfg$storage <- storage_ordered
+
+  tmp_path <- fs::path(conn$path, ".datom", "project.yaml.tmp")
+  yaml::write_yaml(cfg, tmp_path)
+  fs::file_move(tmp_path, yaml_path)
+
+  .datom_git_commit(
+    conn$path,
+    files = ".datom/project.yaml",
+    message = glue::glue("Attach governance: {project_name}")
+  )
+  .datom_git_push(conn$path)
+
+  # --- Return fresh conn ------------------------------------------------------
+  fresh_conn <- new_datom_conn(
+    project_name = conn$project_name,
+    root         = conn$root,
+    prefix       = conn$prefix,
+    region       = conn$region,
+    client       = conn$client,
+    path         = conn$path,
+    role         = conn$role,
+    endpoint     = conn$endpoint,
+    gov_root     = gov_root,
+    gov_prefix   = gov_prefix,
+    gov_region   = gov_region,
+    gov_client   = gov_client,
+    gov_local_path = gov_local_path,
+    backend      = conn$backend
+  )
+
+  cli::cli_alert_success(
+    "Attached governance to project {.val {project_name}}."
+  )
+
+  invisible(fresh_conn)
+}
+
+
 #' Clone a datom Repository
 #'
 #' Clones a remote datom repository and returns a connection. This is the
