@@ -2362,7 +2362,27 @@ test_that("datom_init_gov with create_repo = TRUE calls .datom_create_github_rep
 # Helper: build a no-gov initialised project + bare gov repo + gov_store_local.
 # Returns a list with: conn (developer, no gov), gov_bare, gov_dir, gov_store,
 # work_dir, bare_dir.
-setup_attach_env <- function(env = parent.frame()) {
+# Seed a bare git repo with the gov skeleton (README.md + projects/.gitkeep)
+# so cloning it produces an "initialised" gov clone. Without this, cloning
+# an empty bare repo yields a clone with no skeleton, which now triggers
+# `datom_attach_gov`'s "uninitialised gov" guard.
+seed_bare_gov_repo <- function(bare_dir, env = parent.frame()) {
+  seed_dir <- withr::local_tempdir(.local_envir = env)
+  fs::dir_delete(seed_dir)
+  git2r::clone(bare_dir, seed_dir)
+  repo <- git2r::repository(seed_dir)
+  git2r::config(repo, user.name = "test", user.email = "test@test.test")
+  fs::dir_create(fs::path(seed_dir, "projects"))
+  writeLines("", fs::path(seed_dir, "projects", ".gitkeep"))
+  writeLines("# gov", fs::path(seed_dir, "README.md"))
+  git2r::add(repo, c("README.md", fs::path("projects", ".gitkeep")))
+  git2r::commit(repo, message = "init", author = git2r::default_signature(repo))
+  git2r::push(repo, name = "origin",
+              refspec = paste0("refs/heads/", git2r::repository_head(repo)$name))
+  invisible(TRUE)
+}
+
+setup_attach_env <- function(env = parent.frame(), seed_gov = TRUE) {
   # --- Data side: init a no-gov project --------------------------------------
   bare_dir <- withr::local_tempdir(.local_envir = env)
   git2r::init(bare_dir, bare = TRUE)
@@ -2405,6 +2425,9 @@ setup_attach_env <- function(env = parent.frame()) {
   # --- Gov side: bare gov repo + gov_store_local + clone target -------------
   gov_bare <- withr::local_tempdir(.local_envir = env)
   git2r::init(gov_bare, bare = TRUE)
+  if (isTRUE(seed_gov)) {
+    seed_bare_gov_repo(gov_bare, env = env)
+  }
   gov_dir <- withr::local_tempdir(.local_envir = env)
   # gov_dir was created by withr; .datom_gov_clone_init expects empty/missing.
   fs::dir_delete(gov_dir)
@@ -2555,6 +2578,69 @@ test_that("datom_attach_gov errors on URL mismatch when already attached", {
     ),
     "different gov repo"
   )
+})
+
+# --- Polish: empty/uninitialised gov remote -----------------------------------
+
+test_that("datom_attach_gov redirects to datom_init_gov on empty gov remote", {
+  env <- setup_attach_env(seed_gov = FALSE)
+
+  expect_error(
+    datom_attach_gov(
+      conn = env$conn, gov_store = env$gov_store,
+      gov_repo_url = env$gov_bare, gov_local_path = env$gov_dir
+    ),
+    "empty or uninitialised"
+  )
+})
+
+# --- Transition: no-gov state -> gov-attached state ---------------------------
+
+test_that("no-gov project transitions cleanly to gov-attached after datom_attach_gov", {
+  env <- setup_attach_env()
+
+  # Pre-attach conn rebuilt from project.yaml has no gov fields.
+  pre_conn <- datom_get_conn(
+    path  = env$work_dir,
+    store = datom_store(
+      governance    = NULL,
+      data          = datom_store_local(path = env$conn$root, validate = FALSE),
+      github_pat    = "ghp_fake",
+      data_repo_url = env$bare_dir,
+      validate      = FALSE
+    )
+  )
+
+  expect_null(pre_conn$gov_root)
+  expect_null(pre_conn$gov_local_path)
+
+  # project.yaml has no governance block before attach.
+  cfg_before <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_null(cfg_before$storage$governance)
+  expect_null(cfg_before$repos$governance)
+
+  # Attach gov against the rebuilt conn.
+  post_conn <- datom_attach_gov(
+    conn = pre_conn, gov_store = env$gov_store,
+    gov_repo_url = env$gov_bare, gov_local_path = env$gov_dir
+  )
+
+  # Gov fields populated; data root preserved across transition.
+  expect_false(is.null(post_conn$gov_root))
+  expect_equal(post_conn$gov_root, env$gov_store$path)
+  expect_equal(post_conn$root, pre_conn$root)
+  expect_equal(post_conn$project_name, pre_conn$project_name)
+
+  # project.yaml now carries the governance block.
+  cfg_after <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_false(is.null(cfg_after$storage$governance))
+  expect_equal(cfg_after$repos$governance$remote_url, env$gov_bare)
+
+  # Gov clone has the project namespace files.
+  proj_dir <- fs::path(env$gov_dir, "projects", "attach-proj")
+  expect_true(fs::file_exists(fs::path(proj_dir, "ref.json")))
+  expect_true(fs::file_exists(fs::path(proj_dir, "dispatch.json")))
+  expect_true(fs::file_exists(fs::path(proj_dir, "migration_history.json")))
 })
 
 

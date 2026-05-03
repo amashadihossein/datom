@@ -1,6 +1,6 @@
 # Phase 18: Governance On-Demand
 
-**Status**: Active -- Chunks 1-8 complete; Chunk 9 next (tests + polish)
+**Status**: Active -- Chunks 1-9 complete; Chunk 10 next (phase close)
 **Branch**: `phase/18-gov-on-demand` (created 2026-05-02)
 **Depends on**: Phase 16 closed (2026-05-02), Phase 17 closed (2026-05-02).
 **Supersedes**: `dev/draft_phase_conn_refactor.md` (M2 folds in; M6 absorbed as a chunk).
@@ -86,8 +86,8 @@ This is a much tighter, more coherent scope than today's seam.
 | 6 | ✅ done | **`.datom_conn_for(scope)` accessor** (M6 absorbed). Single accessor `(.datom_conn_for(conn, "data"|"gov"))` replaces ad-hoc `conn$gov_client` / `.datom_gov_conn(conn)` picking across `R/conn.R`, `R/sync.R`, `R/ref.R`, `R/utils-gov.R`, `R/validate.R`. Pure refactor, no behavior change. | Medium (touches many files). |
 | 7 | ✅ done | **Gov-only commands fail clearly when gov absent**: `datom_projects()`, `datom_pull_gov()`, `datom_sync_dispatch()`, `datom_decommission()` (gov-half) all detect `is.null(conn$gov_root)` and emit a single uniform error: "this project has no governance attached; use `datom_attach_gov()` to enable." | Low. |
 | 8 | ✅ done | **Vignettes**: Article 1 (First Extract) drops `datom_init_gov()` and uses `attach_gov = FALSE`; Article 4 (Promoting to S3) introduces `datom_attach_gov()` alongside the S3 promotion -- the natural moment. Articles 5-9 unchanged structurally. Resume scripts updated where they construct stores. README rewritten to drop gov from the primary example. | Medium (locked text changes). |
-| 9 | ⏳ next | **Tests + polish**: unit tests for no-gov paths, `datom_attach_gov()`, transition coverage (no-gov -> attached), failure modes for gov-only commands when gov absent. E2E: `dev/dev-sandbox.R` learns a no-gov mode (`sandbox_up(attach_gov = FALSE)`) and a "promote later" path. **Polish**: `datom_attach_gov()` detects an empty/uninitialized gov remote and redirects the user to `datom_init_gov()` with a clear message (rather than failing inside `.datom_gov_clone_init()` or downstream register). | Medium. |
-| 10 | ☐ todo | **Phase close**: harvest learnings to spec/instructions; update README; PR. | Low. |
+| 9 | ✅ done | **Tests + polish**: unit tests for no-gov paths, `datom_attach_gov()`, transition coverage (no-gov -> attached), failure modes for gov-only commands when gov absent. E2E: `dev/dev-sandbox.R` learns a no-gov mode (`sandbox_up(attach_gov = FALSE)`) and a "promote later" path. **Polish**: `datom_attach_gov()` detects an empty/uninitialized gov remote and redirects the user to `datom_init_gov()` with a clear message (rather than failing inside `.datom_gov_clone_init()` or downstream register). | Medium. |
+| 10 | ⏳ next | **Phase close**: harvest learnings to spec/instructions; update README; PR. | Low. |
 
 ### Recommended escalation moments
 
@@ -307,3 +307,18 @@ Changes:
 - `tests/testthat/test-conn.R` -- 2 new print tests covering both branches.
 
 Tests: 1514 PASS / 0 FAIL (was 1510; +4 from print tests). README rebuilt via `devtools::build_readme()`.
+
+### Chunk 9 -- Tests + polish + sandbox no-gov mode
+
+Polish (R/conn.R `datom_attach_gov`): after gov-clone-init/validate, check `projects/.gitkeep` exists. If absent, abort with a clear redirect to `datom_init_gov()`. Catches the "user pointed `gov_repo_url` at an empty/freshly-created GitHub repo" case before it surfaces deep inside `.datom_gov_register_project()`.
+
+Tests (tests/testthat/test-conn.R):
+- `setup_attach_env()` now seeds the bare gov repo with the skeleton (`README.md` + `projects/.gitkeep`) so cloning yields an "initialised" gov clone. New `seed_gov = FALSE` switch reproduces the empty-remote case for the polish test. All 8 pre-existing `datom_attach_gov` tests still pass against the seeded helper.
+- New empty-remote test: asserts the redirect message ("empty or uninitialised").
+- New transition test: pre-attach conn from a no-gov project has `gov_root` NULL, `project.yaml` carries no governance block; after `datom_attach_gov()`, the returned conn has `gov_root` populated, data root preserved, and `project.yaml` has `storage.governance` + `repos.governance` populated. Gov clone has `projects/{name}/{ref,dispatch,migration_history}.json`.
+
+Sandbox (dev/dev-sandbox.R): `sandbox_store()` and `sandbox_store_local()` accept `attach_gov = TRUE` (default); when FALSE, the gov component is NULL and the gov dir is not created. `sandbox_up()` branches on `has_gov <- !is.null(store$governance)`: skips `datom_init_gov()`, skips gov path cleanup, returns env with `gov_local_path = NULL`. `sandbox_down()` auto-degrades `scope = "all"` to `"project"` for no-gov envs and rejects `scope = "gov"` cleanly. `print.datom_sandbox` shows "not attached" for both gov clone and governance lines. New `sandbox_promote_gov(env, gov_store)` helper: mirrors Article 4's flow (`datom_init_gov()` then `datom_attach_gov()`) and rebuilds the env's store with gov populated.
+
+Smoke-tested the no-gov local sandbox flow end-to-end: store builds, sandbox_up reports "no governance", env shape matches expectations, sandbox_down tears down cleanly.
+
+Tests: 1528 PASS / 0 FAIL (was 1514; +14: 2 new attach tests + 12 from existing suite picking up tighter coverage via the seeded helper).

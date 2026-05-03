@@ -947,6 +947,17 @@ datom_attach_gov <- function(conn,
     .datom_gov_clone_init(gov_repo_url, gov_local_path)
   }
 
+  # --- Verify gov remote is initialised --------------------------------------
+  # An empty remote (newly created, never seeded) clones successfully but has
+  # no skeleton. Surface the missing-skeleton case as a clear redirect rather
+  # than letting it surface deep inside .datom_gov_register_project().
+  if (!fs::file_exists(fs::path(gov_local_path, "projects", ".gitkeep"))) {
+    cli::cli_abort(c(
+      "Governance repo at {.url {gov_repo_url}} is empty or uninitialised.",
+      "i" = "Run {.fn datom_init_gov} first to seed the skeleton, then retry."
+    ))
+  }
+
   # --- Gov project namespace check -------------------------------------------
   gov_project_dir <- .datom_gov_project_path(gov_local_path, project_name)
   if (fs::dir_exists(gov_project_dir)) {
