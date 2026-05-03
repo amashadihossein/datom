@@ -75,19 +75,19 @@ This is a much tighter, more coherent scope than today's seam.
 
 ## Chunks
 
-| Chunk | Content | Risk |
-|---|---|---|
-| 0 | **Phase activation**: this doc + `dev/README.md` Active table update + draft removal + principle amendment in `.github/copilot-instructions.md` and `dev/datom_specification.md`. | Low (docs only). |
-| 1 | **Schema + resolver**: `project.yaml` no-gov shape (`storage.governance` block absent or `null`); `.datom_resolve_data_location()` no-gov branch reads `storage.data` from `project.yaml`; `is_datom_store()` accepts a store with `governance = NULL`. Plumbing only -- no user-facing function changes yet. | Medium (touches the resolver). |
-| 2 | **`datom_init_repo(attach_gov = FALSE)`** path: writes `project.yaml` without gov, no `ref.json`/`dispatch.json`/`migration_history.json`, no gov clone, no gov repo creation. Data repo + GitHub repo creation works as today. | Medium. |
-| 3 | **`datom_attach_gov()`**: idempotent promotion. Initializes gov clone if absent, writes `projects/{name}/{ref,dispatch,migration_history}.json`, updates `project.yaml`'s `storage.governance` block, commits to gov repo. Marked `# GOV_SEAM:`. New export. | Medium. |
-| 4 | **Read/write paths in no-gov mode**: `datom_read` / `datom_write` resolve location from `project.yaml`; skip ref-current write guard; everything else unchanged. `datom_get_conn()` accepts no-gov stores. | High (read/write surface). |
-| 5 | **Decommission no-gov branch**: skip `.datom_gov_unregister_project()` step when gov absent. Data + GitHub + local clone teardown only. | Low. |
-| 6 | **`.datom_conn_for(scope)` accessor** (M6 absorbed). Single accessor `(.datom_conn_for(conn, "data"|"gov"))` replaces ad-hoc `conn$gov_client` / `.datom_gov_conn(conn)` picking across `R/conn.R`, `R/sync.R`, `R/ref.R`, `R/utils-gov.R`, `R/validate.R`. Pure refactor, no behavior change. | Medium (touches many files). |
-| 7 | **Gov-only commands fail clearly when gov absent**: `datom_projects()`, `datom_pull_gov()`, `datom_sync_dispatch()`, `datom_decommission()` (gov-half) all detect `is.null(conn$gov_root)` and emit a single uniform error: "this project has no governance attached; use `datom_attach_gov()` to enable." | Low. |
-| 8 | **Vignettes**: Article 1 (First Extract) drops `datom_init_gov()` and uses `attach_gov = FALSE`; Article 4 (Promoting to S3) introduces `datom_attach_gov()` alongside the S3 promotion -- the natural moment. Articles 5-9 unchanged structurally. Resume scripts updated where they construct stores. README rewritten to drop gov from the primary example. | Medium (locked text changes). |
-| 9 | **Tests + polish**: unit tests for no-gov paths, `datom_attach_gov()`, transition coverage (no-gov -> attached), failure modes for gov-only commands when gov absent. E2E: `dev/dev-sandbox.R` learns a no-gov mode (`sandbox_up(attach_gov = FALSE)`) and a "promote later" path. **Polish**: `datom_attach_gov()` detects an empty/uninitialized gov remote and redirects the user to `datom_init_gov()` with a clear message (rather than failing inside `.datom_gov_clone_init()` or downstream register). | Medium. |
-| 10 | **Phase close**: harvest learnings to spec/instructions; update README; PR. | Low. |
+| Chunk | Status | Content | Risk |
+|---|---|---|---|
+| 0 | ✅ done | **Phase activation**: this doc + `dev/README.md` Active table update + draft removal + principle amendment in `.github/copilot-instructions.md` and `dev/datom_specification.md`. | Low (docs only). |
+| 1 | ✅ done | **Schema + resolver**: `project.yaml` no-gov shape (`storage.governance` block absent or `null`); `.datom_resolve_data_location()` no-gov branch reads `storage.data` from `project.yaml`; `is_datom_store()` accepts a store with `governance = NULL`. Plumbing only -- no user-facing function changes yet. | Medium (touches the resolver). |
+| 2 | ✅ done | **`datom_init_repo(attach_gov = FALSE)`** path: writes `project.yaml` without gov, no `ref.json`/`dispatch.json`/`migration_history.json`, no gov clone, no gov repo creation. Data repo + GitHub repo creation works as today. | Medium. |
+| 3 | ✅ done | **`datom_attach_gov()`**: idempotent promotion. Initializes gov clone if absent, writes `projects/{name}/{ref,dispatch,migration_history}.json`, updates `project.yaml`'s `storage.governance` block, commits to gov repo. Marked `# GOV_SEAM:`. New export. | Medium. |
+| 4 | ✅ done | **Read/write paths in no-gov mode**: `datom_read` / `datom_write` resolve location from `project.yaml`; skip ref-current write guard; everything else unchanged. `datom_get_conn()` accepts no-gov stores. | High (read/write surface). |
+| 5 | ✅ done | **Decommission no-gov branch**: skip `.datom_gov_unregister_project()` step when gov absent. Data + GitHub + local clone teardown only. | Low. |
+| 6 | ⏳ next | **`.datom_conn_for(scope)` accessor** (M6 absorbed). Single accessor `(.datom_conn_for(conn, "data"|"gov"))` replaces ad-hoc `conn$gov_client` / `.datom_gov_conn(conn)` picking across `R/conn.R`, `R/sync.R`, `R/ref.R`, `R/utils-gov.R`, `R/validate.R`. Pure refactor, no behavior change. | Medium (touches many files). |
+| 7 | ☐ todo | **Gov-only commands fail clearly when gov absent**: `datom_projects()`, `datom_pull_gov()`, `datom_sync_dispatch()`, `datom_decommission()` (gov-half) all detect `is.null(conn$gov_root)` and emit a single uniform error: "this project has no governance attached; use `datom_attach_gov()` to enable." | Low. |
+| 8 | ☐ todo | **Vignettes**: Article 1 (First Extract) drops `datom_init_gov()` and uses `attach_gov = FALSE`; Article 4 (Promoting to S3) introduces `datom_attach_gov()` alongside the S3 promotion -- the natural moment. Articles 5-9 unchanged structurally. Resume scripts updated where they construct stores. README rewritten to drop gov from the primary example. | Medium (locked text changes). |
+| 9 | ☐ todo | **Tests + polish**: unit tests for no-gov paths, `datom_attach_gov()`, transition coverage (no-gov -> attached), failure modes for gov-only commands when gov absent. E2E: `dev/dev-sandbox.R` learns a no-gov mode (`sandbox_up(attach_gov = FALSE)`) and a "promote later" path. **Polish**: `datom_attach_gov()` detects an empty/uninitialized gov remote and redirects the user to `datom_init_gov()` with a clear message (rather than failing inside `.datom_gov_clone_init()` or downstream register). | Medium. |
+| 10 | ☐ todo | **Phase close**: harvest learnings to spec/instructions; update README; PR. | Low. |
 
 ### Recommended escalation moments
 
