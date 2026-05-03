@@ -153,7 +153,10 @@ Auto-detected via `GITHUB_PAT` presence.
 - **`.datom_gov_list_projects()` is a pure read, not a GOV_SEAM**: lives in `R/utils-gov.R` next to the seam helpers but is intentionally NOT marked `# GOV_SEAM:`. Read helpers stay with datom; only gov **writes** are seamed for the future companion package. Same rule applies to any future `.datom_gov_read_*()` helper.
 
 - **`_pkgdown.yml` index must be kept in sync**: Adding a new exported symbol requires a matching entry in `_pkgdown.yml`. `pkgdown::build_site()` errors with "N topics missing from index" otherwise. Check after every phase that adds exports.
-- **Non-ASCII characters in R source**: R CMD check warns on any non-ASCII character in `R/*.R` files (even in comments). Use only ASCII — `--` instead of `—`, `->` instead of `→`.
+- **Non-ASCII characters in R source**: R CMD check warns on any non-ASCII character in `R/*.R` files (even in comments). Use only ASCII -- `--` instead of `--`, `->` instead of `->`.
+- **`datom_attach_gov()` requires an initialised gov remote**: The function checks for `projects/.gitkeep` in the cloned gov repo after `datom_init_gov()` seeds the skeleton. If it is absent (e.g. user passed a freshly-created empty GitHub repo as `gov_repo_url`), `datom_attach_gov()` aborts with a clear redirect to `datom_init_gov()`. When writing tests that call `datom_attach_gov()` against a bare local repo, seed the skeleton first (clone bare, commit `README.md` + `projects/.gitkeep`, push to bare).
+- **`datom_conn` carries `gov_root = NULL` for no-gov projects**: `is.null(conn$gov_root)` is the canonical "no governance attached" test. Do not use `is.null(conn$gov_client)` -- local-backend gov conns also have `gov_client = NULL` by convention. `.datom_require_gov(conn, what)` encapsulates the uniform error; call it at user-facing function entry for gov-only commands.
+- **`sandbox_store_local()` / `sandbox_store()` accept `attach_gov = TRUE` (default)**: when `attach_gov = FALSE`, the gov component is `NULL` and no gov dir is created. `sandbox_up()` branches on `!is.null(store$governance)`. `sandbox_promote_gov(env, gov_store)` mirrors Article 4's flow for testing the no-gov -> gov transition end-to-end.
 
 ## Don'ts
 
