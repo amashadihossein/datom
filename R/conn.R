@@ -198,6 +198,12 @@ print.datom_conn <- function(x, ...) {
 #' One-time setup for data developers. Creates folder structure, initializes
 #' git with remote, sets up configuration files, and pushes to S3.
 #'
+#' Governance is optional. When `store$governance` is `NULL` (the gov-on-demand
+#' default), no governance clone is created, no `dispatch.json`/`ref.json` is
+#' written, and `project.yaml` omits the `storage.governance` and
+#' `repos.governance` blocks. The project can be promoted later via
+#' `datom_attach_gov()`.
+#'
 #' @param path Path to the project folder. Defaults to current directory.
 #' @param project_name Project name, used for S3 namespace and git repo.
 #' @param store A `datom_store` object (from `datom_store()`). Must have role
@@ -397,16 +403,10 @@ datom_init_repo <- function(path = ".",
   fs::dir_create(input_dir)
 
   # --- Create project.yaml (two-component structure) --------------------------
-  gov_backend <- .datom_store_backend(store$governance)
-  gov_root <- .datom_store_root(store$governance)
-  gov_region <- .datom_store_region(store$governance)
-
-  gov_yaml <- list(
-    type = gov_backend,
-    root = gov_root,
-    prefix = store$governance$prefix
-  )
-  if (gov_backend == "s3") gov_yaml$region <- gov_region
+  # When governance is absent (gov-on-demand: not yet attached), omit
+  # storage.governance and repos.governance entirely. The resolver and
+  # downstream readers detect a no-gov project by is.null(cfg$storage$governance).
+  has_gov <- !is.null(store$governance)
 
   data_yaml <- list(
     type = data_backend,
@@ -415,23 +415,39 @@ datom_init_repo <- function(path = ".",
   )
   if (data_backend == "s3") data_yaml$region <- data_region
 
+  storage_block <- list()
+  if (has_gov) {
+    gov_backend <- .datom_store_backend(store$governance)
+    gov_root <- .datom_store_root(store$governance)
+    gov_region <- .datom_store_region(store$governance)
+
+    gov_yaml <- list(
+      type = gov_backend,
+      root = gov_root,
+      prefix = store$governance$prefix
+    )
+    if (gov_backend == "s3") gov_yaml$region <- gov_region
+
+    storage_block$governance <- gov_yaml
+  }
+  storage_block$data <- data_yaml
+  storage_block$max_file_size_gb <- max_file_size_gb
+
+  repos_block <- list(data = list(remote_url = remote_url))
+  if (has_gov) {
+    repos_block$governance <- list(
+      remote_url = store$gov_repo_url,
+      local_path = store$gov_local_path
+    )
+  }
+
   project_config <- list(
     project_name = project_name,
     project_description = "",
     created_at = format(Sys.Date(), "%Y-%m-%d"),
     datom_version = as.character(utils::packageVersion("datom")),
-    storage = list(
-      governance = gov_yaml,
-      data = data_yaml,
-      max_file_size_gb = max_file_size_gb
-    ),
-    repos = list(
-      data = list(remote_url = remote_url),
-      governance = list(
-        remote_url = store$gov_repo_url,
-        local_path = store$gov_local_path
-      )
-    ),
+    storage = storage_block,
+    repos = repos_block,
     sync = list(
       continue_on_error = TRUE,
       parallel_uploads = 4L
@@ -442,14 +458,20 @@ datom_init_repo <- function(path = ".",
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
 
   # --- Build dispatch and ref payloads (written to gov, not data clone) ------
-  dispatch <- list(
-    methods = list(
-      r = list(default = "datom::datom_read"),
-      python = list(default = "datom.read")
+  # Only meaningful when gov is attached; otherwise these stay NULL and the
+  # gov registration step below is skipped.
+  dispatch <- NULL
+  ref <- NULL
+  if (has_gov) {
+    dispatch <- list(
+      methods = list(
+        r = list(default = "datom::datom_read"),
+        python = list(default = "datom.read")
+      )
     )
-  )
 
-  ref <- .datom_create_ref(store$data)
+    ref <- .datom_create_ref(store$data)
+  }
 
   # --- Create manifest.json (data repo only) ----------------------------------
   manifest <- list(

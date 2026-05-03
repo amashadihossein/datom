@@ -880,6 +880,125 @@ test_that("datom_init_repo commits README.md to git", {
 })
 
 
+# --- No-governance (gov-on-demand) --------------------------------------------
+
+# Helper: setup_init_env equivalent for a no-gov store.
+setup_init_env_nogov <- function(env = parent.frame()) {
+  bare_dir <- withr::local_tempdir(.local_envir = env)
+  git2r::init(bare_dir, bare = TRUE)
+  work_dir <- withr::local_tempdir(.local_envir = env)
+
+  dat <- datom_store_s3(
+    bucket = "data-bucket", prefix = "data/",
+    access_key = "AKIAEXAMPLE", secret_key = "secretkey",
+    validate = FALSE
+  )
+  store <- datom_store(
+    governance = NULL, data = dat,
+    github_pat = "ghp_fake",
+    data_repo_url = bare_dir,
+    validate = FALSE
+  )
+
+  local_mocked_bindings(
+    .datom_s3_client = function(...) list(put_object = function(...) list()),
+    .datom_storage_write_json = function(...) invisible(TRUE),
+    .datom_storage_exists = function(...) FALSE,
+    .env = env
+  )
+
+  list(bare_dir = bare_dir, work_dir = work_dir, store = store)
+}
+
+test_that("datom_init_repo succeeds with no-gov store", {
+  env <- setup_init_env_nogov()
+
+  result <- datom_init_repo(
+    path = env$work_dir,
+    project_name = "nogov-proj",
+    store = env$store
+  )
+
+  expect_true(result)
+  expect_true(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "project.yaml")))
+  expect_true(fs::file_exists(fs::path(env$work_dir, ".datom", "manifest.json")))
+})
+
+test_that("datom_init_repo no-gov omits storage.governance from project.yaml", {
+  env <- setup_init_env_nogov()
+
+  datom_init_repo(path = env$work_dir, project_name = "nogov-proj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+
+  # storage.governance must be absent (gov-on-demand: not yet attached)
+  expect_null(cfg$storage$governance)
+  # storage.data still present
+  expect_equal(cfg$storage$data$type, "s3")
+  expect_equal(cfg$storage$data$root, "data-bucket")
+})
+
+test_that("datom_init_repo no-gov omits repos.governance from project.yaml", {
+  env <- setup_init_env_nogov()
+
+  datom_init_repo(path = env$work_dir, project_name = "nogov-proj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+
+  # repos.governance must be absent
+  expect_null(cfg$repos$governance)
+  # repos.data still present
+  expect_equal(cfg$repos$data$remote_url, env$bare_dir)
+})
+
+test_that("datom_init_repo no-gov does not create gov clone", {
+  env <- setup_init_env_nogov()
+
+  # Capture sibling dir count before init
+  parent <- fs::path_dir(env$work_dir)
+  before <- fs::dir_ls(parent, all = TRUE)
+
+  datom_init_repo(path = env$work_dir, project_name = "nogov-proj",
+                  store = env$store)
+
+  after <- fs::dir_ls(parent, all = TRUE)
+  # No new sibling directories (gov clone would be one)
+  expect_setequal(before, after)
+})
+
+test_that("datom_init_repo no-gov skips .datom_gov_register_project", {
+  env <- setup_init_env_nogov()
+
+  register_called <- FALSE
+  local_mocked_bindings(
+    .datom_gov_register_project = function(...) {
+      register_called <<- TRUE
+      invisible(TRUE)
+    }
+  )
+
+  datom_init_repo(path = env$work_dir, project_name = "nogov-proj",
+                  store = env$store)
+
+  expect_false(register_called)
+})
+
+test_that("datom_init_repo no-gov still pushes data repo to remote", {
+  env <- setup_init_env_nogov()
+
+  datom_init_repo(path = env$work_dir, project_name = "nogov-proj",
+                  store = env$store)
+
+  bare_repo <- git2r::repository(env$bare_dir)
+  bare_log <- git2r::commits(bare_repo)
+  expect_length(bare_log, 1)
+  expect_match(bare_log[[1]]$message, "Initialize datom repository")
+})
+
+
 # --- Rollback on failure ------------------------------------------------------
 
 test_that("datom_init_repo cleans up .datom on git push failure", {

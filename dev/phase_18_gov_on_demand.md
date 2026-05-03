@@ -1,6 +1,6 @@
 # Phase 18: Governance On-Demand
 
-**Status**: Active -- Chunk 1 (schema + resolver plumbing) complete; Chunk 2 next
+**Status**: Active -- Chunks 1-2 complete; Chunk 3 next (`datom_attach_gov()`)
 **Branch**: `phase/18-gov-on-demand` (created 2026-05-02)
 **Depends on**: Phase 16 closed (2026-05-02), Phase 17 closed (2026-05-02).
 **Supersedes**: `dev/draft_phase_conn_refactor.md` (M2 folds in; M6 absorbed as a chunk).
@@ -167,4 +167,19 @@ Changes:
 No user-facing function changes. `datom_init_repo()`, `datom_get_conn()`, `project.yaml` writer, and conn-resolution flows still require gov today -- those are Chunks 2-4.
 
 Tests: 1443 PASS / 0 FAIL (was 1416). pkgdown not rebuilt (no new exports or doc refs).
+
+### Chunk 2 -- `datom_init_repo()` no-gov path
+
+**Design deviation from plan**: dropped the explicit `attach_gov` parameter. The phase doc proposed `datom_init_repo(attach_gov = FALSE)` as a user-facing switch, but during implementation it became clear the parameter would be redundant: intent is fully expressed by store construction (`datom_store(governance = NULL, ...)` vs `datom_store(governance = gov, ...)`). Adding `attach_gov` as a redundant arg violated DRY without making vignette code samples meaningfully clearer. Vignettes can still socialize the no-gov on-ramp by showing the no-gov `datom_store()` construction directly.
+
+Discovery: gov clone init and `.datom_gov_register_project()` were already gated on `!is.null(gov_local_path)`, which `.datom_resolve_or_default_gov_path()` returns NULL for when both `gov_repo_url` and `gov_local_path` are absent (which Chunk 1 enforced for no-gov stores). So the only code change required in `datom_init_repo()` itself was the `project.yaml` writer.
+
+Changes:
+- `R/conn.R` -- `datom_init_repo()` `project.yaml` writer omits `storage.governance` and `repos.governance` blocks when `is.null(store$governance)`. Dispatch and ref payloads only built when gov attached. Roxygen updated.
+- `tests/testthat/test-conn.R` -- new section "No-governance (gov-on-demand)" with `setup_init_env_nogov()` helper and 6 test_that blocks: end-to-end no-gov init success, `storage.governance` omitted, `repos.governance` omitted, no gov clone created, `.datom_gov_register_project()` not called, data repo still pushed to remote.
+
+Tests: 1457 PASS / 0 FAIL (was 1443).
+
+**Plan adjustment**: removed `attach_gov` parameter from Chunks 3-9 implementation expectations. `datom_attach_gov()` (Chunk 3) is the only user-facing switch for gov adoption; init-time intent is expressed via store construction. The vignette plan in Chunk 8 is unchanged in spirit (Article 1 shows no-gov init; Article 4 introduces `datom_attach_gov()`).
+
 
