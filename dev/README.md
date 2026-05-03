@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Started | Status | Doc |
 |-------|---------|--------|-----|
-| Phase 18: Governance on-demand | 2026-05-02 | Chunks 1-6 complete; Chunk 7 (gov-only command errors) next | [phase_18_gov_on_demand.md](phase_18_gov_on_demand.md) |
+| Phase 18: Governance on-demand | 2026-05-02 | Chunks 1-7 complete; Chunk 8 (vignettes) next | [phase_18_gov_on_demand.md](phase_18_gov_on_demand.md) |
 
 ### Drafts (queued, not active)
 

@@ -674,6 +674,7 @@ test_that("datom_sync_dispatch rejects reader role", {
 test_that("datom_sync_dispatch rejects conn without path", {
   conn <- mock_datom_conn(list())
   conn$role <- "developer"
+  conn$gov_root <- "gov-bucket"
   conn$path <- NULL
   expect_error(datom_sync_dispatch(conn), "local git repo")
 })
@@ -682,6 +683,7 @@ test_that("datom_sync_dispatch requires interactive confirmation by default", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
+    conn$gov_root <- "gov-bucket"
     conn$path <- getwd()
 
     # Non-interactive session should fail with .confirm = TRUE
@@ -694,12 +696,28 @@ test_that("datom_sync_dispatch aborts when conn lacks gov_local_path", {
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+    conn$gov_root <- "gov-bucket"
     conn$gov_local_path <- NULL
 
     expect_error(
       datom_sync_dispatch(conn, .confirm = FALSE),
       "gov clone"
     )
+  })
+})
+
+test_that("datom_sync_dispatch aborts with uniform error when no governance attached", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())  # gov_root = NULL by default
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    err <- tryCatch(
+      datom_sync_dispatch(conn, .confirm = FALSE),
+      error = function(e) e
+    )
+    expect_match(conditionMessage(err), "no governance attached")
+    expect_match(conditionMessage(err), "datom_attach_gov")
   })
 })
 
@@ -727,6 +745,7 @@ test_that("datom_sync_dispatch aborts when conn lacks gov_local_path", {
   conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- getwd()
+  conn$gov_root <- "gov-bucket"
   conn$gov_local_path <- gov_dir
   conn$project_name <- project_name
   conn
@@ -897,6 +916,7 @@ test_that("datom_sync_dispatch with gov_local_path calls .datom_gov_write_dispat
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+    conn$gov_root <- "gov-bucket"
     conn$gov_local_path <- gov_dir
     conn$project_name <- "myproj"
 
@@ -933,6 +953,7 @@ test_that("datom_sync_dispatch with gov_local_path calls .datom_gov_write_ref", 
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+    conn$gov_root <- "gov-bucket"
     conn$gov_local_path <- gov_dir
     conn$project_name <- "myproj"
 
@@ -965,6 +986,7 @@ test_that("datom_sync_dispatch gov-path still syncs manifest to data storage", {
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+    conn$gov_root <- "gov-bucket"
     conn$gov_local_path <- gov_dir
     conn$project_name <- "myproj"
 
@@ -999,6 +1021,7 @@ test_that("datom_sync_dispatch gov-path dispatch failure is warn-only", {
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+    conn$gov_root <- "gov-bucket"
     conn$gov_local_path <- gov_dir
     conn$project_name <- "myproj"
 
@@ -1024,6 +1047,7 @@ test_that("datom_sync_dispatch gov-path skips files missing from gov clone", {
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+    conn$gov_root <- "gov-bucket"
     conn$gov_local_path <- gov_dir
     conn$project_name <- "myproj"
 
@@ -1360,13 +1384,24 @@ test_that("datom_pull_gov rejects reader role", {
 test_that("datom_pull_gov rejects conn without gov_local_path", {
   conn <- mock_datom_conn(list())
   conn$role <- "developer"
+  conn$gov_root <- "gov-bucket"
   conn$gov_local_path <- NULL
   expect_error(datom_pull_gov(conn), "gov_local_path")
+})
+
+test_that("datom_pull_gov aborts with uniform error when no governance attached", {
+  conn <- mock_datom_conn(list())  # gov_root = NULL by default
+  conn$role <- "developer"
+
+  err <- tryCatch(datom_pull_gov(conn), error = function(e) e)
+  expect_match(conditionMessage(err), "no governance attached")
+  expect_match(conditionMessage(err), "datom_attach_gov")
 })
 
 test_that("datom_pull_gov calls .datom_gov_pull and returns invisibly", {
   conn <- mock_datom_conn(list())
   conn$role <- "developer"
+  conn$gov_root <- "gov-bucket"
   conn$gov_local_path <- "/some/gov"
 
   local_mocked_bindings(

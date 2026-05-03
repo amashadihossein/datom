@@ -146,6 +146,28 @@ new_datom_conn <- function(project_name,
 }
 
 
+#' Require Governance Attached on a Connection
+#'
+#' Guard helper used by gov-only commands (`datom_projects`, `datom_pull_gov`,
+#' `datom_sync_dispatch`) to fail with a single uniform message when called
+#' on a no-governance connection. Not used by `datom_decommission` -- that
+#' command's gov-half is conditional, not required.
+#'
+#' @param conn A `datom_conn` object.
+#' @param what Character. The user-facing name of the calling function
+#'   (e.g. `"datom_pull_gov()"`), used in the error message.
+#' @return Invisible `TRUE` when gov is attached. Aborts otherwise.
+#' @keywords internal
+.datom_require_gov <- function(conn, what) {
+  if (!is.null(conn$gov_root)) return(invisible(TRUE))
+
+  cli::cli_abort(c(
+    "{what} requires governance, but this project has no governance attached.",
+    "i" = "Use {.fn datom_attach_gov} to enable governance for this project."
+  ))
+}
+
+
 #' Check if Object is a datom Connection
 #'
 #' @param x Object to test.
