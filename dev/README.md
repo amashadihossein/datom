@@ -177,12 +177,19 @@ At each stage, I will:
 
 ### Chunk Delivery Checklist
 
-After each chunk is implemented, I deliver **four things in order**:
+After each chunk is implemented, I deliver **five things in order**:
 
 1. **Write tests** — full test coverage for the chunk's functions
 2. **Run tests** — execute and fix until all pass (green suite)
 3. **Minimalist walkthrough snippet** — a clean, self-contained R snippet for you to paste into the console and step through interactively (use `debugonce()` to drop into any function)
-4. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit with a concise message (e.g., `"Phase 4 Chunk 2: datom_conn class"`), then you push
+4. **Update the phase doc as part of the same commit** — three things, every chunk, no exceptions:
+   - Flip the chunk's row in the **Chunks table** Status column (e.g. `⏳ next` → `✅ done`; mark the next chunk `⏳ next`)
+   - Update the **Status** header line at the top of the phase doc (`Chunks 1-N complete; Chunk N+1 next`)
+   - Append a **Progress Log** entry for the chunk (what shipped, key decisions, latent bugs caught, test count delta)
+   Also update the `dev/README.md` Active Phases table status line. The phase doc is the audit trail; if it's not updated, the chunk isn't done.
+5. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit (code + phase doc + README together) with a concise message (e.g., `"Phase 4 Chunk 2: datom_conn class"`), then you push
+
+> **Phase docs must carry a Status column in the Chunks table.** When a phase doc is created (Chunk 0), the Chunks table includes a Status column with values `✅ done` / `⏳ next` / `☐ todo`. This is the at-a-glance dashboard a fresh session reads first; the Progress Log is the detail. Both are kept in sync.
 
 ### QA Methods
 

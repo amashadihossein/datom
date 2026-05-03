@@ -5,7 +5,7 @@
 1. **Check active work**: Open `dev/README.md` → see "Active Phases" table
 2. **Load context**: Open the active phase file (e.g., `dev/phase_1_core_utilities.md`)
 3. **Read "Current State"**: Understand where we left off
-4. **Continue work**: Update the phase doc as you go
+4. **Continue work**: Update the phase doc as you go. Every chunk-completing commit must (a) flip the chunk row's Status in the Chunks table, (b) update the Status header line, (c) append a Progress Log entry, and (d) update the `dev/README.md` Active Phases status line. See `dev/README.md` → Chunk Delivery Checklist.
 
 ## Project Overview
 
@@ -179,7 +179,7 @@ These patterns are non-negotiable for every session:
    b. Create a feature branch: `git checkout -b phase/{n}-{name}` from `main`.
    c. Create a phase doc (`dev/phase_{n}_{name}.md`) with goal, context, chunks, acceptance criteria, and status tracking. Flag any chunks that likely warrant model escalation (see Model Escalation below) so the cue lands at plan time, not mid-chunk.
    d. Register it as active in the `dev/README.md` Active Phases table.
-   e. Work through chunks in order. Updating the phase doc (progress, decisions, blockers) is part of completing each chunk, not an afterthought — phase docs are how context persists across a model's short working memory, and stale docs silently degrade the next chunk. When a chunk spans multiple files or has strict must-never rules, scaffold the phase doc with "read first" and "invariants" subsections before starting.
+   e. Work through chunks in order. Updating the phase doc is part of completing each chunk, not an afterthought — phase docs are how context persists across a model's short working memory, and stale docs silently degrade the next chunk. **Every chunk-completing commit must update the phase doc in three places**: (1) flip the chunk's row in the Chunks table Status column (`✅ done` / `⏳ next` / `☐ todo`), (2) update the Status header line at the top, (3) append a Progress Log entry (what shipped, decisions, latent bugs, test count delta). Also update `dev/README.md` Active Phases status line. The code change and the phase-doc update go in **the same commit** — never a follow-up. When a chunk spans multiple files or has strict must-never rules, scaffold the phase doc with "read first" and "invariants" subsections before starting.
    f. Complete the Phase Completion Procedure when done. PR to `main`, merge, delete branch.
    Never jump straight to coding on multi-step work. The phase doc is the plan AND the audit trail.
 1. **Read before writing**: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the phase doc description alone.
