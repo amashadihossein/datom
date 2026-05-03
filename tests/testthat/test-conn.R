@@ -998,6 +998,74 @@ test_that("datom_init_repo no-gov still pushes data repo to remote", {
   expect_match(bare_log[[1]]$message, "Initialize datom repository")
 })
 
+# --- No-gov datom_get_conn() shape -------------------------------------------
+
+test_that("datom_get_conn developer path returns conn with all gov fields NULL for no-gov project", {
+  env <- setup_init_env_nogov()
+
+  datom_init_repo(path = env$work_dir, project_name = "nogov-proj",
+                  store = env$store)
+
+  conn <- datom_get_conn(path = env$work_dir, store = env$store)
+
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$project_name, "nogov-proj")
+  expect_equal(conn$role, "developer")
+  expect_equal(conn$root, "data-bucket")
+  # All governance fields must be NULL
+  expect_null(conn$gov_root)
+  expect_null(conn$gov_prefix)
+  expect_null(conn$gov_region)
+  expect_null(conn$gov_client)
+  expect_null(conn$gov_local_path)
+})
+
+test_that("datom_get_conn reader path returns conn with all gov fields NULL for no-gov store", {
+  data_comp <- datom_store_s3(
+    bucket = "data-bucket", prefix = "data/",
+    access_key = "AKIAEXAMPLE", secret_key = "secretkey",
+    validate = FALSE
+  )
+  store <- datom_store(
+    governance = NULL,
+    data = data_comp,
+    data_repo_url = "https://github.com/example/repo.git",
+    validate = FALSE
+  )
+
+  local_mocked_bindings(
+    .datom_s3_client = function(...) mock_s3_client(),
+    .datom_check_data_reachable = function(...) invisible(TRUE)
+  )
+
+  conn <- datom_get_conn(store = store, project_name = "nogov-proj")
+
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$role, "reader")
+  expect_equal(conn$root, "data-bucket")
+  expect_null(conn$gov_root)
+  expect_null(conn$gov_prefix)
+  expect_null(conn$gov_region)
+  expect_null(conn$gov_client)
+  expect_null(conn$gov_local_path)
+})
+
+test_that(".datom_check_ref_current is a no-op on a no-gov conn", {
+  env <- setup_init_env_nogov()
+
+  datom_init_repo(path = env$work_dir, project_name = "nogov-proj",
+                  store = env$store)
+
+  conn <- datom_get_conn(path = env$work_dir, store = env$store)
+
+  # Tamper with conn$root to simulate a stale conn after a hypothetical
+  # migration. Without gov, there is nothing to compare against, so the
+  # guard short-circuits and returns invisibly.
+  conn$root <- "tampered-bucket"
+  expect_silent(result <- .datom_check_ref_current(conn))
+  expect_true(result)
+})
+
 
 # --- Rollback on failure ------------------------------------------------------
 

@@ -112,6 +112,12 @@ datom_validate <- function(conn, fix = FALSE) {
   # --- Per-table checks ---
   table_checks <- .datom_validate_tables(conn)
 
+  if (is.null(conn$gov_root)) {
+    cli::cli_alert_info(
+      "No governance attached -- skipping dispatch/ref/migration_history checks."
+    )
+  }
+
   all_repo_ok <- nrow(repo_file_checks) == 0L ||
     all(repo_file_checks$status == "ok")
   all_tables_ok <- nrow(table_checks) == 0L ||
@@ -191,47 +197,62 @@ datom_validate <- function(conn, fix = FALSE) {
 #' @noRd
 .datom_validate_repo_files <- function(conn) {
   repo_path <- conn$path
-  gov_conn <- .datom_gov_conn(conn)
-  gov_local_path <- conn$gov_local_path
   project_name <- conn$project_name
+  has_gov <- !is.null(conn$gov_root)
 
-  proj_key <- function(name) {
-    fs::path("projects", project_name, name)
-  }
-
-  gov_local <- function(name) {
-    if (is.null(gov_local_path) || !nzchar(gov_local_path)) {
-      return(NA_character_)
-    }
-    as.character(fs::path(gov_local_path, "projects", project_name, name))
-  }
-
+  # Manifest (data side) is always checked.
   files_to_check <- list(
-    list(
-      local = gov_local("dispatch.json"),
-      s3_key = as.character(proj_key("dispatch.json")),
-      name = "dispatch.json",
-      target_conn = gov_conn
-    ),
-    list(
-      local = gov_local("ref.json"),
-      s3_key = as.character(proj_key("ref.json")),
-      name = "ref.json",
-      target_conn = gov_conn
-    ),
     list(
       local = as.character(fs::path(repo_path, ".datom", "manifest.json")),
       s3_key = ".metadata/manifest.json",
       name = "manifest.json",
       target_conn = conn
-    ),
-    list(
-      local = gov_local("migration_history.json"),
-      s3_key = as.character(proj_key("migration_history.json")),
-      name = "migration_history.json",
-      target_conn = gov_conn
     )
   )
+
+  # Governance files (dispatch / ref / migration_history) only exist when
+  # the project has been gov-attached. For no-gov projects they are
+  # genuinely absent; skipping keeps the validator from reporting false
+  # negatives.
+  if (has_gov) {
+    gov_conn <- .datom_gov_conn(conn)
+    gov_local_path <- conn$gov_local_path
+
+    proj_key <- function(name) {
+      fs::path("projects", project_name, name)
+    }
+
+    gov_local <- function(name) {
+      if (is.null(gov_local_path) || !nzchar(gov_local_path)) {
+        return(NA_character_)
+      }
+      as.character(fs::path(gov_local_path, "projects", project_name, name))
+    }
+
+    files_to_check <- c(
+      list(
+        list(
+          local = gov_local("dispatch.json"),
+          s3_key = as.character(proj_key("dispatch.json")),
+          name = "dispatch.json",
+          target_conn = gov_conn
+        ),
+        list(
+          local = gov_local("ref.json"),
+          s3_key = as.character(proj_key("ref.json")),
+          name = "ref.json",
+          target_conn = gov_conn
+        ),
+        list(
+          local = gov_local("migration_history.json"),
+          s3_key = as.character(proj_key("migration_history.json")),
+          name = "migration_history.json",
+          target_conn = gov_conn
+        )
+      ),
+      files_to_check
+    )
+  }
 
   rows <- purrr::map(files_to_check, function(fc) {
     if (is.na(fc$local)) {

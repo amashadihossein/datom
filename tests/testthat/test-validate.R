@@ -410,6 +410,7 @@ test_that("datom_validate with fix = TRUE calls datom_sync_dispatch on failure",
     gov_local <- fs::path_abs("gov-clone")
     fs::dir_create(fs::path(gov_local, "projects", "test-project"))
     conn$gov_local_path <- as.character(gov_local)
+    conn$gov_root <- "gov-bucket"
 
     fs::dir_create(".datom")
     jsonlite::write_json(list(),
@@ -504,6 +505,7 @@ test_that("datom_validate handles fix failure gracefully", {
     gov_local <- fs::path_abs("gov-clone")
     fs::dir_create(fs::path(gov_local, "projects", "test-project"))
     conn$gov_local_path <- as.character(gov_local)
+    conn$gov_root <- "gov-bucket"
 
     fs::dir_create(".datom")
     jsonlite::write_json(list(),
@@ -629,5 +631,57 @@ test_that(".datom_validate_project_name returns TRUE when no manifest exists", {
     # No manifest.json file
 
     expect_true(.datom_validate_project_name(conn))
+  })
+})
+
+
+# --- No-governance (gov-on-demand) -------------------------------------------
+
+test_that("datom_validate skips dispatch/ref/migration_history checks when gov absent", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    # mock_datom_conn defaults gov_root = NULL, so this is a no-gov conn.
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
+                         auto_unbox = TRUE)
+
+    # Set up storage mock that would FAIL for any gov path -- if the
+    # validator wrongly checks gov files, this surfaces as a missing-S3
+    # status in the result. Manifest must still report ok.
+    local_mocked_bindings(
+      .datom_storage_exists = function(conn, s3_key) {
+        identical(s3_key, ".metadata/manifest.json")
+      }
+    )
+
+    result <- datom_validate(conn)
+
+    # Only manifest.json should appear in repo_files; no gov files.
+    expect_setequal(result$repo_files$file, "manifest.json")
+    expect_true(all(result$repo_files$status == "ok"))
+    expect_true(result$valid)
+  })
+})
+
+test_that(".datom_validate_repo_files includes only manifest for no-gov conn", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(), ".datom/manifest.json", auto_unbox = TRUE)
+
+    local_mocked_bindings(
+      .datom_storage_exists = function(conn, s3_key) TRUE
+    )
+
+    result <- .datom_validate_repo_files(conn)
+
+    expect_equal(nrow(result), 1L)
+    expect_equal(result$file, "manifest.json")
   })
 })

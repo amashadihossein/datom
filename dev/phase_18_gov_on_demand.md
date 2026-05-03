@@ -1,6 +1,6 @@
 # Phase 18: Governance On-Demand
 
-**Status**: Active -- Chunks 1-3 complete; Chunk 4 next (read/write paths in no-gov mode)
+**Status**: Active -- Chunks 1-4 complete; Chunk 5 next (decommission no-gov branch)
 **Branch**: `phase/18-gov-on-demand` (created 2026-05-02)
 **Depends on**: Phase 16 closed (2026-05-02), Phase 17 closed (2026-05-02).
 **Supersedes**: `dev/draft_phase_conn_refactor.md` (M2 folds in; M6 absorbed as a chunk).
@@ -207,39 +207,32 @@ Changes:
 Tests: 1464 PASS / 0 FAIL (was 1457; +7 new).
 
 
----
+### Chunk 4 -- Read/write paths in no-gov mode
 
-## Chunk 4 -- Read First (for the next session)
+**Audit finding (key insight)**: Chunks 1-3 already paved the read/write paths. The audit mapped every read of `conn$gov_*` across `R/` and confirmed only one site needed source changes:
 
-Chunk 4 makes read/write paths work end-to-end against a no-gov project. This is the highest-risk chunk in the phase; the recommended workflow is **design spot-check before code**.
+| Site | Status |
+|---|---|
+| `.datom_resolve_data_location()` (`R/ref.R`) | Already short-circuits on `is.null(store$governance)` (Chunk 1). |
+| `.datom_check_ref_current()` (`R/ref.R`) | Already short-circuits on `is.null(conn$gov_root)` -- locked decision #7. |
+| `.datom_build_init_conn()` (`R/conn.R`) | Already NULL-safe for `gov_store = NULL` (Chunk 1). |
+| `.datom_get_conn_developer()` / `_reader()` | Pure pass-through; all upstream NULL-safe. |
+| `datom_read` / `datom_list` / `datom_history` | Zero gov-field reads. |
+| `datom_write()` | Only gov touch is `.datom_check_ref_current()`. |
+| `datom_pull()` | Already NULL-guards `conn$gov_local_path`. |
+| `datom_pull_gov` / `datom_sync_dispatch` / `datom_decommission` | Already error when gov absent (Chunk 7 polish target). |
+| **`.datom_validate_repo_files()` / `datom_validate()`** | **Only site needing source changes.** Built four `files_to_check` entries unconditionally; gov entries got `gov_local() = NA_character_` and were silently dropped. Now explicitly skip the three gov entries when `is.null(conn$gov_root)`. |
 
-### Files to read in full before editing
+**Open Items resolved during audit**:
+- Reader role pre-gov does **not** need a separate `data_repo_url` field on `datom_get_conn()`. The reader supplies a `datom_store` whose `data` component already carries root/prefix/region directly.
+- `datom_validate()` no-gov mode: skip gov files, emit single info line `"No governance attached -- skipping dispatch/ref/migration_history checks."`.
+- `datom_get_conn()` no-gov conn shape: no field changes; all `gov_*` fields NULL. Converges naturally with `datom_attach_gov()` output.
 
-- [R/ref.R](R/ref.R) -- `.datom_resolve_data_location()` (line 225) and `.datom_check_ref_current()` (line 389). The resolver is already NULL-safe for `store$governance == NULL` (Chunk 1 confirmed). The write-time guard is the one that needs a no-gov branch: today it errors when ref disagrees with store; in no-gov mode there is no ref, so the guard must short-circuit.
-- [R/conn.R](R/conn.R) -- `datom_get_conn()` (line ~1180), `.datom_get_conn_developer()` (line 1280), `.datom_get_conn_reader()` (line 1377). Both call `.datom_resolve_data_location()` and build a `datom_conn`. Audit which gov fields are referenced downstream and confirm they are NULL-safe.
-- [R/read_write.R](R/read_write.R) -- `datom_write()` calls `.datom_check_ref_current(conn)` at line 438. Other call sites in `datom_read` / `datom_list` / `datom_history` should be inventoried.
-- [R/sync.R](R/sync.R), [R/validate.R](R/validate.R) -- callers of gov fields. `datom_validate()` is flagged in Open Items (skip dispatch check when gov absent).
+Changes:
+- `R/validate.R` -- `.datom_validate_repo_files()` builds `files_to_check` from manifest only; conditionally prepends the three gov entries when `!is.null(conn$gov_root)`. `datom_validate()` emits `cli_alert_info("No governance attached -- skipping...")` when `gov_root` is NULL.
+- `tests/testthat/test-validate.R` -- two new tests: `datom_validate` skips gov checks when gov absent (only manifest in `repo_files`); `.datom_validate_repo_files` returns 1-row result for no-gov conn. Two pre-existing tests (`fix = TRUE on failure`, `handles fix failure gracefully`) updated to set `conn$gov_root` explicitly -- they were relying on the implicit-skip-via-NA behavior to land in the gov-checks branch, which the new explicit gating exposed.
+- `tests/testthat/test-conn.R` (no-gov section) -- three new tests: developer `datom_get_conn` returns conn with all `gov_*` fields NULL; reader same; `.datom_check_ref_current` is a no-op on a no-gov conn even after `conn$root` is tampered with (proves the guard correctly stays silent in no-gov mode -- locked decision #7).
 
-### Invariants for Chunk 4
+Pre-existing test path (`mock_datom_conn` defaults `gov_root = NULL`) means the entire 1000+ existing read/write test suite has always been exercising the no-gov branch of `.datom_check_ref_current` -- no test changes needed there.
 
-- **No-gov reads + writes never touch a gov client.** If the code path requires `conn$gov_client` or `conn$gov_local_path`, that path is gov-only and must short-circuit when `is.null(conn$gov_root)`.
-- **No-gov writes are unguarded against stale conns** (locked decision #7). The `.datom_check_ref_current()` call in `datom_write()` becomes a no-op when gov is absent; do not invent a substitute guard.
-- **Reader role pre-gov needs `data_repo_url`** (Open Items). A reader without gov has no ref to resolve from, so they must supply the data repo URL explicitly. Confirm the field set on `datom_get_conn(role = 'reader')` for the no-gov case before implementing.
-- **The Chunk 3 `datom_attach_gov()` returns a fresh conn**: after attach, `datom_get_conn()` on the same project must produce a conn with the same gov-populated shape. The two paths must converge.
-- **`datom_validate()` skips dispatch consistency check when gov absent**, reports it in summary (do not error).
-
-### Suggested chunk decomposition (for the next session to confirm)
-
-1. Audit + design spot-check (escalate). Map every read of `conn$gov_*` across `R/`. Decide: short-circuit at caller, or short-circuit inside the helper?
-2. `.datom_check_ref_current()` no-gov branch + `datom_write()` regression tests.
-3. `datom_get_conn()` no-gov developer path (parallels Chunk 2's `datom_init_repo` work).
-4. `datom_get_conn()` no-gov reader path (depends on Open Items resolution for `data_repo_url`).
-5. `datom_read` / `datom_list` / `datom_history` end-to-end tests against a no-gov project.
-6. `datom_validate()` no-gov summary line.
-
-### Test infrastructure already in place
-
-- `setup_init_env_nogov()` in [tests/testthat/test-conn.R](tests/testthat/test-conn.R) (line ~886) -- builds a no-gov developer init env. Reusable.
-- `setup_attach_env()` in [tests/testthat/test-conn.R](tests/testthat/test-conn.R) (Chunk 3) -- builds a no-gov project + bare gov repo, ready for attach. Reusable for transition tests.
-
-Baseline: **1464 PASS / 0 FAIL** at start of Chunk 4.
+Tests: 1488 PASS / 0 FAIL (was 1464; +24 new). pkgdown not rebuilt (no new exports or doc refs).
