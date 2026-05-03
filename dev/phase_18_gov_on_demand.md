@@ -1,6 +1,6 @@
 # Phase 18: Governance On-Demand
 
-**Status**: Active -- Chunks 1-4 complete; Chunk 5 next (decommission no-gov branch)
+**Status**: Active -- Chunks 1-5 complete; Chunk 6 next (`.datom_conn_for(scope)` accessor)
 **Branch**: `phase/18-gov-on-demand` (created 2026-05-02)
 **Depends on**: Phase 16 closed (2026-05-02), Phase 17 closed (2026-05-02).
 **Supersedes**: `dev/draft_phase_conn_refactor.md` (M2 folds in; M6 absorbed as a chunk).
@@ -236,3 +236,16 @@ Changes:
 Pre-existing test path (`mock_datom_conn` defaults `gov_root = NULL`) means the entire 1000+ existing read/write test suite has always been exercising the no-gov branch of `.datom_check_ref_current` -- no test changes needed there.
 
 Tests: 1488 PASS / 0 FAIL (was 1464; +24 new). pkgdown not rebuilt (no new exports or doc refs).
+
+### Chunk 5 -- Decommission no-gov branch
+
+**Latent bug fixed**: pre-Chunk 5 step 5 condition was `!is.null(conn$gov_client) || conn$backend == "local"`. The local-backend OR clause was correct for has-gov local conns (where `gov_client` is always NULL on local backend by convention) but became a bug for **no-gov local conns**: the branch fired, called `.datom_gov_conn(conn)` which returned a struct with `root = NULL`, and `.datom_local_delete_prefix()` then computed `fs::path(NULL, "projects/{name}")` = `"projects/{name}"` -- a relative path resolved against cwd. Silent no-op at best; potentially destructive if cwd happened to contain a matching directory.
+
+Replaced both step 4 and step 5 conditions with a single `has_gov <- !is.null(conn$gov_root)` check (canonical "gov attached" signal post-Chunk 4). Step 4 now distinguishes three cases: no-gov (info: "No governance attached -- skipping gov unregister"), gov-attached without clone (warning: stale conn), gov-attached with clone (normal path). Step 5: skip cleanly when no gov.
+
+Changes:
+- `R/decommission.R` -- gate steps 4-5 on `has_gov`; differentiate no-gov info from stale-clone warning. Roxygen updated.
+- `man/datom_decommission.Rd` regenerated.
+- `tests/testthat/test-decommission.R` -- new section "No-governance (gov-on-demand)" with `make_decommission_env_nogov()` helper and 3 tests: end-to-end no-gov decommission (data storage + local clone cleared); gov helpers not called; **regression test** that confirms step 5 does not delete `cwd/projects/{name}` (the latent bug above).
+
+Tests: 1493 PASS / 0 FAIL (was 1488; +5 new).

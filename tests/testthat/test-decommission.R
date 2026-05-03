@@ -339,3 +339,96 @@ test_that(".datom_storage_delete_prefix() aborts on unsupported backend", {
   )
   expect_error(.datom_storage_delete_prefix(conn, "key"), "Unsupported storage backend")
 })
+
+
+# =============================================================================
+# datom_decommission() -- no-governance (gov-on-demand)
+# =============================================================================
+
+# Helper: like make_decommission_env() but with all gov fields NULL.
+make_decommission_env_nogov <- function(env = parent.frame()) {
+  data_root <- withr::local_tempdir(.local_envir = env)
+
+  data_clone <- withr::local_tempdir(.local_envir = env)
+  git2r::init(data_clone)
+  data_repo <- git2r::repository(data_clone)
+  git2r::config(data_repo, user.name = "test", user.email = "test@test.com")
+  writeLines("", fs::path(data_clone, ".gitkeep"))
+  git2r::add(data_repo, ".gitkeep")
+  git2r::commit(data_repo, message = "init",
+                 author = git2r::default_signature(data_repo))
+
+  conn <- structure(
+    list(
+      project_name   = "nogov-proj",
+      backend        = "local",
+      root           = data_root,
+      prefix         = NULL,
+      region         = NULL,
+      client         = NULL,
+      path           = data_clone,
+      role           = "developer",
+      endpoint       = NULL,
+      gov_root       = NULL,
+      gov_prefix     = NULL,
+      gov_region     = NULL,
+      gov_client     = NULL,
+      gov_local_path = NULL
+    ),
+    class = "datom_conn"
+  )
+
+  list(
+    conn       = conn,
+    data_root  = data_root,
+    data_clone = data_clone
+  )
+}
+
+test_that("datom_decommission() succeeds for no-gov project", {
+  e <- make_decommission_env_nogov()
+
+  # Write a sentinel file into data storage
+  sentinel <- fs::path(e$data_root, "datom", "tables", "abc.parquet")
+  fs::dir_create(fs::path(e$data_root, "datom", "tables"))
+  writeLines("data", sentinel)
+
+  expect_no_error(datom_decommission(e$conn, confirm = "nogov-proj"))
+  # Data storage cleared
+  expect_false(fs::dir_exists(fs::path(e$data_root, "datom")))
+  # Local clone removed
+  expect_false(fs::dir_exists(e$data_clone))
+})
+
+test_that("datom_decommission() does not call gov helpers for no-gov project", {
+  e <- make_decommission_env_nogov()
+
+  unregister_called <- FALSE
+  local_mocked_bindings(
+    .datom_gov_unregister_project = function(...) {
+      unregister_called <<- TRUE
+      invisible(TRUE)
+    }
+  )
+
+  datom_decommission(e$conn, confirm = "nogov-proj")
+
+  expect_false(unregister_called)
+})
+
+test_that("datom_decommission() does not touch local-backend cwd for no-gov project", {
+  # Regression test: pre-Chunk 5 logic ran step 5 for any local-backend conn,
+  # which on a no-gov conn would compute fs::path(NULL, 'projects/{name}') ==
+  # 'projects/nogov-proj', a relative path. If cwd happened to contain such
+  # a directory, it would be deleted. Now step 5 is gated on gov_root.
+  withr::with_tempdir({
+    accidental <- fs::path(getwd(), "projects", "nogov-proj")
+    fs::dir_create(accidental)
+    writeLines("x", fs::path(accidental, "marker.txt"))
+
+    e <- make_decommission_env_nogov()
+    datom_decommission(e$conn, confirm = "nogov-proj")
+
+    expect_true(fs::file_exists(fs::path(accidental, "marker.txt")))
+  })
+})

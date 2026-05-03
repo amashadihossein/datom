@@ -15,9 +15,12 @@
 #'    the PAT is unavailable or the local clone has no GitHub remote.
 #' 3. Remove the local data clone directory (`conn$path`).
 #' 4. Unregister the project from the governance repo (git commit + push).
-#'    Skipped with a warning when `conn$gov_local_path` is `NULL`.
+#'    Skipped when the project has no governance attached
+#'    (`is.null(conn$gov_root)`); also skipped with a warning when gov is
+#'    attached but `conn$gov_local_path` is `NULL`.
 #' 5. Delete the project folder from governance storage
-#'    (`projects/{project_name}/`). Skipped when there is no governance client.
+#'    (`projects/{project_name}/`). Skipped when the project has no
+#'    governance attached.
 #'
 #' @param conn A `datom_conn` object (developer role required).
 #' @param confirm Character string.  Must equal `conn$project_name` exactly.
@@ -129,7 +132,9 @@ datom_decommission <- function(conn, confirm = NULL) {
   }
 
   # ---- 4. Gov unregister (git commit + push) --------------------------------
-  if (!is.null(conn$gov_local_path)) {
+  has_gov <- !is.null(conn$gov_root)
+
+  if (has_gov && !is.null(conn$gov_local_path)) {
     cli::cli_alert_info("Unregistering {.val {project_name}} from gov repo...")
     tryCatch(
       {
@@ -142,14 +147,16 @@ datom_decommission <- function(conn, confirm = NULL) {
         )
       }
     )
-  } else {
+  } else if (has_gov) {
     cli::cli_alert_warning(
       "No gov_local_path on connection -- skipping gov unregister."
     )
+  } else {
+    cli::cli_alert_info("No governance attached -- skipping gov unregister.")
   }
 
   # ---- 5. Delete gov storage project folder ---------------------------------
-  if (!is.null(conn$gov_client) || conn$backend == "local") {
+  if (has_gov) {
     gov_conn <- .datom_gov_conn(conn)
     proj_prefix <- glue::glue("projects/{project_name}")
     cli::cli_alert_info("Deleting gov storage prefix {.path {proj_prefix}}...")
@@ -163,7 +170,7 @@ datom_decommission <- function(conn, confirm = NULL) {
       }
     )
   } else {
-    cli::cli_alert_info("No gov client -- skipping gov storage deletion.")
+    cli::cli_alert_info("No governance attached -- skipping gov storage deletion.")
   }
 
   cli::cli_alert_success("Decommissioned {.val {project_name}}.")
