@@ -113,6 +113,14 @@ intentional takeover of an existing S3 namespace. Default <code>FALSE</code>.</p
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>Invisible TRUE on success.</p>
     </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>Governance is optional. When <code>store$governance</code> is <code>NULL</code> (the gov-on-demand
+default), no governance clone is created, no <code>dispatch.json</code>/<code>ref.json</code> is
+written, and <code>project.yaml</code> omits the <code>storage.governance</code> and
+<code>repos.governance</code> blocks. The project can be promoted later via
+<code><a href="datom_attach_gov.html">datom_attach_gov()</a></code>.</p>
+    </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

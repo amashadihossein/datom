@@ -92,6 +92,11 @@ laptop, with no AWS account.</p>
 diff-able and auditable) and <strong>data wherever you tell it to
 live</strong> (S3, GCS, a local directory). Even when the data lives on
 your laptop, the metadata still goes to a git remote.</p>
+<p>datom also has a <strong>governance layer</strong> for portfolios
+that share data across teams (registry of projects, dispatch routing,
+managed migration). You don’t need it for your first project, and this
+article doesn’t set it up. We’ll attach governance later, in <a href="promoting-to-s3.html">Promoting to S3</a>, at the natural moment
+when sharing matters.</p>
 <p>Two prerequisites, one-time setup:</p>
 <ul>
 <li>A <strong>GitHub account</strong> and a personal access token (PAT)
@@ -102,7 +107,7 @@ it up automatically.</li>
 creates GitHub repos through the GitHub REST API directly using your
 PAT.</li>
 </ul>
-<p>That’s it. No AWS, no cloud account.</p>
+<p>That’s it. No AWS, no cloud account, no governance repo.</p>
 </div>
 <div class="section level2">
 <h2 id="set-up-your-working-paths">Set up your working paths<a class="anchor" aria-label="anchor" href="#set-up-your-working-paths"></a>
@@ -116,60 +121,30 @@ keep the data around, replace the two <code><a href="https://rdrr.io/r/base/temp
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/amashadihossein/datom" class="external-link">datom</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://fs.r-lib.org" class="external-link">fs</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">study_dir</span>       <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_data"</span><span class="op">)</span>        <span class="co"># data git clone</span></span>
-<span><span class="va">data_root</span>       <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_data_root"</span><span class="op">)</span>   <span class="co"># parquet bytes live here</span></span>
-<span><span class="va">gov_root</span>        <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_gov_root"</span><span class="op">)</span>    <span class="co"># governance bytes</span></span>
-<span><span class="va">gov_clone_path</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_gov_clone"</span><span class="op">)</span>   <span class="co"># governance git clone</span></span>
+<span><span class="va">study_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_data"</span><span class="op">)</span>        <span class="co"># data git clone</span></span>
+<span><span class="va">data_root</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_data_root"</span><span class="op">)</span>   <span class="co"># parquet bytes live here</span></span>
 <span></span>
-<span><span class="fu"><a href="https://fs.r-lib.org/reference/create.html" class="external-link">dir_create</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">data_root</span>, <span class="va">gov_root</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://fs.r-lib.org/reference/create.html" class="external-link">dir_create</a></span><span class="op">(</span><span class="va">data_root</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="build-a-store">Build a store<a class="anchor" aria-label="anchor" href="#build-a-store"></a>
 </h2>
 <p>A <strong>store</strong> bundles all the addresses datom needs: where
-parquet bytes go, where governance bytes go, and the GitHub PAT that
-lets datom push metadata.</p>
-<p>For this article, both bytes-stores are local directories. The GitHub
-PAT is the only credential involved.</p>
+parquet bytes go and the GitHub PAT that lets datom push metadata. We’re
+not attaching governance yet, so <code>governance = NULL</code>.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">data_component</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">data_root</span><span class="op">)</span></span>
-<span><span class="va">gov_component</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">gov_root</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
-<span>  governance <span class="op">=</span> <span class="va">gov_component</span>,</span>
+<span>  governance <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  data       <span class="op">=</span> <span class="va">data_component</span>,</span>
 <span>  github_pat <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="initialize-the-governance-repository">Initialize the governance repository<a class="anchor" aria-label="anchor" href="#initialize-the-governance-repository"></a>
-</h2>
-<p>datom uses <strong>two git repositories per project</strong>: one for
-governance (registry, data location, dispatch) and one for the project’s
-data and metadata. The governance repo is shared across all your
-projects, so you only set it up once per organization.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">gov_repo_url</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_init_gov.html">datom_init_gov</a></span><span class="op">(</span></span>
-<span>  gov_store      <span class="op">=</span> <span class="va">gov_component</span>,</span>
-<span>  gov_local_path <span class="op">=</span> <span class="va">gov_clone_path</span>,</span>
-<span>  create_repo    <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  repo_name      <span class="op">=</span> <span class="st">"datom-governance"</span>,</span>
-<span>  github_pat     <span class="op">=</span> <span class="va">store</span><span class="op">$</span><span class="va">github_pat</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>Rebuild the store now that we know the gov repo URL:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
-<span>  governance     <span class="op">=</span> <span class="va">gov_component</span>,</span>
-<span>  data           <span class="op">=</span> <span class="va">data_component</span>,</span>
-<span>  github_pat     <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span>,</span>
-<span>  gov_repo_url   <span class="op">=</span> <span class="va">gov_repo_url</span>,</span>
-<span>  gov_local_path <span class="op">=</span> <span class="va">gov_clone_path</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level2">
 <h2 id="initialize-the-data-repository">Initialize the data repository<a class="anchor" aria-label="anchor" href="#initialize-the-data-repository"></a>
 </h2>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_init_repo.html">datom_init_repo</a></span><span class="op">(</span></span>
 <span>  path         <span class="op">=</span> <span class="va">study_dir</span>,</span>
 <span>  project_name <span class="op">=</span> <span class="st">"STUDY_001"</span>,</span>
@@ -178,15 +153,16 @@ projects, so you only set it up once per organization.</p>
 <span>  repo_name    <span class="op">=</span> <span class="st">"study-001-data"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <p>This creates a GitHub repo, clones it into <code>study_dir</code>,
-writes a <code>project.yaml</code> that points the repo at your local
-data store, and registers <code>STUDY_001</code> in the governance repo.
-Both git repos are now live on GitHub; both have an empty parquet area
-waiting for your first table.</p>
+and writes a <code>project.yaml</code> that points the repo at your
+local data store. The git repo is now live on GitHub with an empty
+parquet area waiting for your first table. No governance repo is created
+— <code>STUDY_001</code> is a private, laptop-only project at this
+stage.</p>
 </div>
 <div class="section level2">
 <h2 id="connect">Connect<a class="anchor" aria-label="anchor" href="#connect"></a>
 </h2>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">conn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_conn.html">datom_get_conn</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">study_dir</span>, store <span class="op">=</span> <span class="va">store</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">conn</span><span class="op">)</span></span>
 <span><span class="co">#&gt; -- datom connection</span></span>
@@ -194,19 +170,20 @@ waiting for your first table.</p>
 <span><span class="co">#&gt; * Role: "developer"</span></span>
 <span><span class="co">#&gt; * Backend: "local"</span></span>
 <span><span class="co">#&gt; * Root: "/tmp/.../study_001_data_root"</span></span>
-<span><span class="co">#&gt; * Path: "/tmp/.../study_001_data"</span></span></code></pre></div>
+<span><span class="co">#&gt; * Path: "/tmp/.../study_001_data"</span></span>
+<span><span class="co">#&gt; * Governance: not attached</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="write-your-first-extract">Write your first extract<a class="anchor" aria-label="anchor" href="#write-your-first-extract"></a>
 </h2>
 <p>The month-1 extract has just landed. Load the demographics snapshot
 for subjects enrolled by 2026-01-28:</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dm_m1</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_example_data.html">datom_example_data</a></span><span class="op">(</span><span class="st">"dm"</span>, cutoff_date <span class="op">=</span> <span class="st">"2026-01-28"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">dm_m1</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] 6</span></span></code></pre></div>
 <p>Write it as a versioned datom table:</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span></span>
 <span>  <span class="va">conn</span>,</span>
 <span>  data    <span class="op">=</span> <span class="va">dm_m1</span>,</span>
@@ -228,7 +205,7 @@ version is auditable from anywhere with access to the repo.</li>
 <div class="section level2">
 <h2 id="read-it-back">Read it back<a class="anchor" aria-label="anchor" href="#read-it-back"></a>
 </h2>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dm_back</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">dm_back</span>, <span class="va">dm_m1</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
@@ -242,11 +219,11 @@ they just need access to the data root, not git.</p>
 </h2>
 <p>You have a fully versioned datom project on your laptop:</p>
 <ul>
-<li>
-<code>STUDY_001</code> registered in your governance repo</li>
 <li>One table (<code>dm</code>) with one version, one parquet file</li>
-<li>Both git repos pushed to GitHub</li>
+<li>Data git repo pushed to GitHub</li>
 <li>Round-trip read/write working</li>
+<li>No governance attached yet — you’ll add that in <a href="promoting-to-s3.html">Promoting to S3</a>, the natural moment when
+sharing matters.</li>
 </ul>
 <p>In the next article, the <strong>month 2 extract arrives</strong>
 with new subjects, and we write it without overwriting history.</p>
@@ -255,13 +232,12 @@ with new subjects, and we write it without overwriting history.</p>
 <h2 id="cleanup-optional">Cleanup (optional)<a class="anchor" aria-label="anchor" href="#cleanup-optional"></a>
 </h2>
 <p>If you’re not continuing to article 2 right now:</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">study_dir</span>, <span class="va">data_root</span>, <span class="va">gov_root</span>, <span class="va">gov_clone_path</span><span class="op">)</span>, recursive <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
-<p>Note: this removes only your local files. The GitHub repos
-<code>study-001-data</code> and <code>datom-governance</code> remain —
-delete them from the GitHub UI if you don’t want to keep them. Article 7
-introduces <code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> for the scripted
-teardown.</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">study_dir</span>, <span class="va">data_root</span><span class="op">)</span>, recursive <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
+<p>Note: this removes only your local files. The GitHub repo
+<code>study-001-data</code> remains — delete it from the GitHub UI if
+you don’t want to keep it. Article 7 introduces
+<code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> for the scripted teardown.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

@@ -8,6 +8,8 @@ Create connections, initialize repositories
   : Initialize a datom Repository
 - [`datom_init_gov()`](https://amashadihossein.github.io/datom/reference/datom_init_gov.md)
   : Initialize a Governance Repository
+- [`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)
+  : Attach Governance to an Existing Project
 - [`datom_clone()`](https://amashadihossein.github.io/datom/reference/datom_clone.md)
   : Clone a datom Repository
 - [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)

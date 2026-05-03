@@ -28,6 +28,7 @@
 <url><loc>https://amashadihossein.github.io/datom/index.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/news/index.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom-package.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_attach_gov.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_clone.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_decommission.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_example_cutoffs.html</loc></url>
@@ -66,6 +67,7 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_compute_data_sha.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_compute_file_sha.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_compute_metadata_sha.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_conn_for.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_create_github_repo.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_create_ref.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_delete_github_repo.html</loc></url>
@@ -83,7 +85,6 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_gov_clone_init.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_gov_clone_open.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_gov_commit.html</loc></url>
-<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_gov_conn.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_gov_destroy.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_gov_list_projects.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_gov_project_path.html</loc></url>
@@ -112,6 +113,7 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_read_metadata.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_read_parquet.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_render_readme.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_require_gov.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_resolve_data_location.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_resolve_gov_local_path.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_resolve_or_default_gov_path.html</loc></url>

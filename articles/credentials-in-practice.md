@@ -114,24 +114,27 @@ script – always reconstruct from `keyring`.
 
 ### `datom_store(governance, data, github_pat, ...)`
 
-The composite store – one governance component, one data component, plus
-the GitHub PAT and the two repo URLs:
+The composite store – a data component (required), an optional
+governance component, and the GitHub PAT:
 
 ``` r
 
+# Solo project: no governance attached yet.
 store <- datom_store(
-  governance     = gov_local,                       # or datom_store_s3(...)
-  data           = data_s3,                         # or datom_store_local(...)
-  github_pat     = keyring::key_get("GITHUB_PAT"),
-  data_repo_url  = "https://github.com/your-org/study-001-data.git",
-  gov_repo_url   = "https://github.com/your-org/datom-governance.git",
-  gov_local_path = "~/datom-gov-clone"
+  governance = NULL,
+  data       = data_s3,
+  github_pat = keyring::key_get("GITHUB_PAT")
 )
+
+# When sharing or registering in a portfolio, attach gov via
+# datom_attach_gov() -- see the Promoting to S3 article.
 ```
 
-`gov_local_path` is the directory where the governance repo will be
-cloned. One gov clone serves many data projects – you only have one gov
-repo per organization.
+The governance component is optional; the data component is not. A
+`datom_store(governance = NULL, ...)` is valid and useful for the solo
+phase of a project. Governance is added on demand with
+[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md),
+and once attached cannot be detached.
 
 ### Predicates
 

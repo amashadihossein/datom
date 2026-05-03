@@ -16,7 +16,7 @@ recursion, no chain-walking.
 
   A `datom_conn`-like object scoped to the governance store (i.e.,
   `root`, `prefix`, `client` point to the governance store). Typically
-  produced by `.datom_gov_conn(conn)`.
+  produced by `.datom_conn_for(conn, "gov")`.
 
 - project_name:
 

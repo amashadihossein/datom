@@ -8,7 +8,7 @@ from `github_pat` presence.
 
 ``` r
 datom_store(
-  governance,
+  governance = NULL,
   data,
   github_pat = NULL,
   data_repo_url = NULL,
@@ -25,7 +25,11 @@ datom_store(
 
   A store component (e.g.,
   [`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md))
-  for governance files (dispatch, ref, migration history).
+  for governance files (dispatch, ref, migration history), or `NULL` for
+  a no-governance store. A no-governance store represents a project that
+  has not yet been promoted via
+  [`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md);
+  `gov_repo_url` and `gov_local_path` must also be `NULL` in that case.
 
 - data:
 

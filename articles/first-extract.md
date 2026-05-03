@@ -13,6 +13,13 @@ and **data wherever you tell it to live** (S3, GCS, a local directory).
 Even when the data lives on your laptop, the metadata still goes to a
 git remote.
 
+datom also has a **governance layer** for portfolios that share data
+across teams (registry of projects, dispatch routing, managed
+migration). You don’t need it for your first project, and this article
+doesn’t set it up. We’ll attach governance later, in [Promoting to
+S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md),
+at the natural moment when sharing matters.
+
 Two prerequisites, one-time setup:
 
 - A **GitHub account** and a personal access token (PAT) with `repo`
@@ -21,7 +28,7 @@ Two prerequisites, one-time setup:
 - The **`gh` CLI is not required** — datom creates GitHub repos through
   the GitHub REST API directly using your PAT.
 
-That’s it. No AWS, no cloud account.
+That’s it. No AWS, no cloud account, no governance repo.
 
 ## Set up your working paths
 
@@ -36,63 +43,26 @@ end. If you’d rather keep the data around, replace the two
 library(datom)
 library(fs)
 
-study_dir       <- path(tempdir(), "study_001_data")        # data git clone
-data_root       <- path(tempdir(), "study_001_data_root")   # parquet bytes live here
-gov_root        <- path(tempdir(), "study_001_gov_root")    # governance bytes
-gov_clone_path  <- path(tempdir(), "study_001_gov_clone")   # governance git clone
+study_dir <- path(tempdir(), "study_001_data")        # data git clone
+data_root <- path(tempdir(), "study_001_data_root")   # parquet bytes live here
 
-dir_create(c(data_root, gov_root))
+dir_create(data_root)
 ```
 
 ## Build a store
 
 A **store** bundles all the addresses datom needs: where parquet bytes
-go, where governance bytes go, and the GitHub PAT that lets datom push
-metadata.
-
-For this article, both bytes-stores are local directories. The GitHub
-PAT is the only credential involved.
+go and the GitHub PAT that lets datom push metadata. We’re not attaching
+governance yet, so `governance = NULL`.
 
 ``` r
 
 data_component <- datom_store_local(path = data_root)
-gov_component  <- datom_store_local(path = gov_root)
 
 store <- datom_store(
-  governance = gov_component,
+  governance = NULL,
   data       = data_component,
   github_pat = keyring::key_get("GITHUB_PAT")
-)
-```
-
-## Initialize the governance repository
-
-datom uses **two git repositories per project**: one for governance
-(registry, data location, dispatch) and one for the project’s data and
-metadata. The governance repo is shared across all your projects, so you
-only set it up once per organization.
-
-``` r
-
-gov_repo_url <- datom_init_gov(
-  gov_store      = gov_component,
-  gov_local_path = gov_clone_path,
-  create_repo    = TRUE,
-  repo_name      = "datom-governance",
-  github_pat     = store$github_pat
-)
-```
-
-Rebuild the store now that we know the gov repo URL:
-
-``` r
-
-store <- datom_store(
-  governance     = gov_component,
-  data           = data_component,
-  github_pat     = keyring::key_get("GITHUB_PAT"),
-  gov_repo_url   = gov_repo_url,
-  gov_local_path = gov_clone_path
 )
 ```
 
@@ -109,11 +79,11 @@ datom_init_repo(
 )
 ```
 
-This creates a GitHub repo, clones it into `study_dir`, writes a
-`project.yaml` that points the repo at your local data store, and
-registers `STUDY_001` in the governance repo. Both git repos are now
-live on GitHub; both have an empty parquet area waiting for your first
-table.
+This creates a GitHub repo, clones it into `study_dir`, and writes a
+`project.yaml` that points the repo at your local data store. The git
+repo is now live on GitHub with an empty parquet area waiting for your
+first table. No governance repo is created — `STUDY_001` is a private,
+laptop-only project at this stage.
 
 ## Connect
 
@@ -127,6 +97,7 @@ print(conn)
 #> * Backend: "local"
 #> * Root: "/tmp/.../study_001_data_root"
 #> * Path: "/tmp/.../study_001_data"
+#> * Governance: not attached
 ```
 
 ## Write your first extract
@@ -181,10 +152,12 @@ access to the data root, not git.
 
 You have a fully versioned datom project on your laptop:
 
-- `STUDY_001` registered in your governance repo
 - One table (`dm`) with one version, one parquet file
-- Both git repos pushed to GitHub
+- Data git repo pushed to GitHub
 - Round-trip read/write working
+- No governance attached yet — you’ll add that in [Promoting to
+  S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md),
+  the natural moment when sharing matters.
 
 In the next article, the **month 2 extract arrives** with new subjects,
 and we write it without overwriting history.
@@ -195,11 +168,11 @@ If you’re not continuing to article 2 right now:
 
 ``` r
 
-unlink(c(study_dir, data_root, gov_root, gov_clone_path), recursive = TRUE)
+unlink(c(study_dir, data_root), recursive = TRUE)
 ```
 
-Note: this removes only your local files. The GitHub repos
-`study-001-data` and `datom-governance` remain — delete them from the
-GitHub UI if you don’t want to keep them. Article 7 introduces
+Note: this removes only your local files. The GitHub repo
+`study-001-data` remains — delete it from the GitHub UI if you don’t
+want to keep it. Article 7 introduces
 [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
 for the scripted teardown.

@@ -64,3 +64,12 @@ datom_init_repo(
 ## Value
 
 Invisible TRUE on success.
+
+## Details
+
+Governance is optional. When `store$governance` is `NULL` (the
+gov-on-demand default), no governance clone is created, no
+`dispatch.json`/`ref.json` is written, and `project.yaml` omits the
+`storage.governance` and `repos.governance` blocks. The project can be
+promoted later via
+[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md).

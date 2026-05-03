@@ -87,9 +87,12 @@ steps still run):</p><ol><li><p>Delete all objects under the data storage namesp
 the PAT is unavailable or the local clone has no GitHub remote.</p></li>
 <li><p>Remove the local data clone directory (<code>conn$path</code>).</p></li>
 <li><p>Unregister the project from the governance repo (git commit + push).
-Skipped with a warning when <code>conn$gov_local_path</code> is <code>NULL</code>.</p></li>
+Skipped when the project has no governance attached
+(<code>is.null(conn$gov_root)</code>); also skipped with a warning when gov is
+attached but <code>conn$gov_local_path</code> is <code>NULL</code>.</p></li>
 <li><p>Delete the project folder from governance storage
-(<code>projects/{project_name}/</code>). Skipped when there is no governance client.</p></li>
+(<code>projects/{project_name}/</code>). Skipped when the project has no
+governance attached.</p></li>
 </ol></div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

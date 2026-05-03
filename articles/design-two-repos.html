@@ -165,20 +165,28 @@ split. Functions in <a href="https://github.com/amashadihossein/datom" class="ex
 <div class="section level2">
 <h2 id="how-the-split-shows-up-in-api">How the split shows up in API<a class="anchor" aria-label="anchor" href="#how-the-split-shows-up-in-api"></a>
 </h2>
-<p>The split is visible to you whenever you set up a store:</p>
+<p>The data half is required from day one; the gov half is optional and
+attached on demand. A solo project starts with no gov:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
-<span>  governance     <span class="op">=</span> <span class="va">gov_component</span>,    <span class="co"># 1. governance backend</span></span>
-<span>  data           <span class="op">=</span> <span class="va">data_component</span>,   <span class="co"># 2. data backend</span></span>
-<span>  github_pat     <span class="op">=</span> <span class="va">pat</span>,</span>
-<span>  data_repo_url  <span class="op">=</span> <span class="st">"https://..."</span>,    <span class="co"># 3. data git remote</span></span>
-<span>  gov_repo_url   <span class="op">=</span> <span class="st">"https://..."</span>,    <span class="co"># 4. gov git remote</span></span>
-<span>  gov_local_path <span class="op">=</span> <span class="st">"/path/to/clone"</span>  <span class="co"># 5. gov local clone</span></span>
+<span>  governance <span class="op">=</span> <span class="cn">NULL</span>,             <span class="co"># gov is opt-in</span></span>
+<span>  data       <span class="op">=</span> <span class="va">data_component</span>,   <span class="co"># data backend (required)</span></span>
+<span>  github_pat <span class="op">=</span> <span class="va">pat</span></span>
 <span><span class="op">)</span></span></code></pre></div>
-<p>Five fields, two for each repo plus one for the shared GitHub PAT.
-The repetition is the cost of the split. The benefits — lifecycle
-independence, permission boundaries, decommission safety, future
-companion-package handoff — are why the cost is worth paying.</p>
+<p>When a project needs to be shared or registered in an
+organization-wide portfolio, governance is attached:</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">conn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_attach_gov.html">datom_attach_gov</a></span><span class="op">(</span></span>
+<span>  conn        <span class="op">=</span> <span class="va">conn</span>,</span>
+<span>  gov_store   <span class="op">=</span> <span class="va">gov_component</span>,   <span class="co"># gov backend</span></span>
+<span>  create_repo <span class="op">=</span> <span class="cn">TRUE</span>,            <span class="co"># gov git remote (or pass gov_repo_url)</span></span>
+<span>  repo_name   <span class="op">=</span> <span class="st">"datom-governance"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>Once attached, gov cannot be detached – <code>project.yaml</code>’s
+<code>storage.governance</code> block is permanent. The two-repo split
+makes this opt-in shape possible: the data repo is fully functional on
+its own, and the gov repo is layered on top without restructuring
+anything in the data repo’s history.</p>
 <p>For readers, the cost is lower: they don’t see a data clone at all
 (they read parquet bytes directly from the data store) and the gov clone
 is implicit (datom downloads what it needs over the network). A reader’s
@@ -216,7 +224,8 @@ out of datom and into the companion package. The contract is simple:</p>
 <li>No data-side code path calls a <code># GOV_SEAM:</code> function
 directly — the only callers are public datom functions whose own purpose
 is governance-adjacent (<code>datom_init_repo</code>,
-<code>datom_decommission</code>, <code>datom_init_gov</code>).</li>
+<code>datom_decommission</code>, <code>datom_init_gov</code>,
+<code>datom_attach_gov</code>).</li>
 <li>The companion package, when it ships, will reimplement these
 functions and depend on datom for the data-side operations only.</li>
 </ul>

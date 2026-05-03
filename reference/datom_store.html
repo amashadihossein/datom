@@ -58,7 +58,7 @@ into a single store object. Role (developer vs reader) is derived from
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">datom_store</span><span class="op">(</span></span>
-<span>  <span class="va">governance</span>,</span>
+<span>  governance <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  <span class="va">data</span>,</span>
 <span>  github_pat <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  data_repo_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -75,7 +75,10 @@ into a single store object. Role (developer vs reader) is derived from
 
 <dl><dt id="arg-governance">governance<a class="anchor" aria-label="anchor" href="#arg-governance"></a></dt>
 <dd><p>A store component (e.g., <code><a href="datom_store_s3.html">datom_store_s3()</a></code>) for governance
-files (dispatch, ref, migration history).</p></dd>
+files (dispatch, ref, migration history), or <code>NULL</code> for a no-governance
+store. A no-governance store represents a project that has not yet been
+promoted via <code><a href="datom_attach_gov.html">datom_attach_gov()</a></code>; <code>gov_repo_url</code> and <code>gov_local_path</code>
+must also be <code>NULL</code> in that case.</p></dd>
 
 
 <dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>

@@ -17,9 +17,8 @@ extracts unique top-level segments.
 
 - gov_conn:
 
-  A gov-scoped `datom_conn` (from
-  [`.datom_gov_conn()`](https://amashadihossein.github.io/datom/reference/dot-datom_gov_conn.md)
-  or `.datom_build_gov_resolve_conn()`).
+  A gov-scoped `datom_conn` (from `.datom_conn_for(conn, "gov")` or
+  `.datom_build_gov_resolve_conn()`).
 
 - gov_local_path:
 

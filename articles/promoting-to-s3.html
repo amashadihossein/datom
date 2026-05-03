@@ -83,16 +83,28 @@
 <blockquote>
 <p><strong>Where we left off:</strong> STUDY-001 has four tables
 (<code>dm</code>, <code>ex</code>, <code>lb</code>, <code>ae</code>),
-all on your laptop. Both git repos are on GitHub.</p>
+all on your laptop. The data git repo is on GitHub. No governance layer
+is attached yet — articles 1-3 stayed deliberately solo.</p>
 </blockquote>
 <p>A colleague on a different laptop now needs to read the data. Local
 filesystem storage was fine when you were the only one writing; it stops
 working the moment a second person needs the same bytes.</p>
-<p>This article promotes STUDY-001 from local-filesystem data storage to
-<strong>S3</strong>. After this article, your gov repo and data repo are
-unchanged on the GitHub side, but the parquet bytes live in an S3 bucket
-— and any teammate with read access to that bucket can pull a versioned
-snapshot.</p>
+<p>This article does two things, both triggered by the same moment
+(“someone else needs to read this”):</p>
+<ol style="list-style-type: decimal">
+<li>
+<strong>Promote</strong> STUDY-001 from local-filesystem data
+storage to <strong>S3</strong>.</li>
+<li>
+<strong>Attach</strong> the governance layer with
+<code><a href="../reference/datom_attach_gov.html">datom_attach_gov()</a></code> — a shared registry across projects,
+used by readers to discover where data lives and by org-wide tooling to
+see the portfolio. Gov is opt-in and only pays for itself once a project
+is shared.</li>
+</ol>
+<p>After this article, the data git repo on GitHub is unchanged, the
+parquet bytes live in an S3 bucket, and STUDY-001 is registered in a
+governance repo any teammate can clone to find it.</p>
 <div class="section level2">
 <h2 id="a-note-on-local---s3-migration">A note on local -&gt; S3 migration<a class="anchor" aria-label="anchor" href="#a-note-on-local---s3-migration"></a>
 </h2>
@@ -173,20 +185,18 @@ in memory:</p>
 <div class="section level2">
 <h2 id="decommission-the-local-project">Decommission the local project<a class="anchor" aria-label="anchor" href="#decommission-the-local-project"></a>
 </h2>
-<p><code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> removes the project from
-governance, deletes the GitHub repos, and clears the local clones and
-parquet store. It is <strong>destructive</strong> and requires you to
-type the project name as <code>confirm</code> to proceed.</p>
+<p><code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> deletes the GitHub repo and clears
+the local clone and parquet store. It is <strong>destructive</strong>
+and requires you to type the project name as <code>confirm</code> to
+proceed.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_decommission.html">datom_decommission</a></span><span class="op">(</span><span class="va">old_conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span>
 <span><span class="co">#&gt; i Removing data store contents under datom/STUDY_001/</span></span>
 <span><span class="co">#&gt; v Deleted GitHub repo `study-001-data`</span></span>
-<span><span class="co">#&gt; v Removed local data clone /tmp/.../study_001_data</span></span>
-<span><span class="co">#&gt; v Unregistered STUDY_001 from governance</span></span>
-<span><span class="co">#&gt; v Removed gov storage entry projects/STUDY_001/</span></span></code></pre></div>
-<p>The governance repo (<code>datom-governance</code>) is
-<strong>not</strong> decommissioned — it’s a shared registry across all
-your projects. Only <code>STUDY_001</code> is removed from it.</p>
+<span><span class="co">#&gt; v Removed local data clone /tmp/.../study_001_data</span></span></code></pre></div>
+<p>Because no governance layer was attached, decommission is purely
+data-side: no registry to unregister from, no gov storage to clean
+up.</p>
 </div>
 <div class="section level2">
 <h2 id="build-the-s3-store">Build the S3 store<a class="anchor" aria-label="anchor" href="#build-the-s3-store"></a>
@@ -204,17 +214,10 @@ your projects. Only <code>STUDY_001</code> is removed from it.</p>
 <span>  secret_key <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"AWS_SECRET_ACCESS_KEY"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Reuse the existing local gov store - the gov repo carries on.</span></span>
-<span><span class="va">gov_local</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span></span>
-<span>  path <span class="op">=</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_gov_root"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span></span>
 <span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
-<span>  governance     <span class="op">=</span> <span class="va">gov_local</span>,</span>
-<span>  data           <span class="op">=</span> <span class="va">aws_data</span>,</span>
-<span>  github_pat     <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span>,</span>
-<span>  gov_repo_url   <span class="op">=</span> <span class="va">state</span><span class="op">$</span><span class="va">gov_repo_url</span>,</span>
-<span>  gov_local_path <span class="op">=</span> <span class="va">state</span><span class="op">$</span><span class="va">gov_clone_path</span></span>
+<span>  governance <span class="op">=</span> <span class="cn">NULL</span>,                                  <span class="co"># still no gov; attached below</span></span>
+<span>  data       <span class="op">=</span> <span class="va">aws_data</span>,</span>
+<span>  github_pat <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
@@ -236,15 +239,59 @@ your projects. Only <code>STUDY_001</code> is removed from it.</p>
 <span><span class="co">#&gt; * Role: "developer"</span></span>
 <span><span class="co">#&gt; * Backend: "s3"</span></span>
 <span><span class="co">#&gt; * Root: "your-org-datom-data"</span></span>
-<span><span class="co">#&gt; * Prefix: "study-001/"</span></span></code></pre></div>
+<span><span class="co">#&gt; * Prefix: "study-001/"</span></span>
+<span><span class="co">#&gt; * Governance: not attached</span></span></code></pre></div>
 <p>The data backend is now <code>"s3"</code>. From here on, every
 <code><a href="../reference/datom_write.html">datom_write()</a></code> uploads parquet to S3 and every
 <code><a href="../reference/datom_read.html">datom_read()</a></code> streams it back from S3.</p>
 </div>
 <div class="section level2">
+<h2 id="attach-the-governance-layer">Attach the governance layer<a class="anchor" aria-label="anchor" href="#attach-the-governance-layer"></a>
+</h2>
+<p>Now that STUDY-001 lives somewhere a teammate can reach, register it
+in a shared governance repo. <code><a href="../reference/datom_attach_gov.html">datom_attach_gov()</a></code> creates the
+gov GitHub repo (once per organization), records STUDY-001’s data
+location in <code>projects/STUDY_001/ref.json</code>, and updates the
+data repo’s <code>project.yaml</code> so any future conn from this clone
+knows where gov lives.</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">gov_store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store_s3.html">datom_store_s3</a></span><span class="op">(</span></span>
+<span>  bucket     <span class="op">=</span> <span class="st">"your-org-datom-gov"</span>,    <span class="co"># &lt;-- a separate gov bucket</span></span>
+<span>  prefix     <span class="op">=</span> <span class="st">"datom-gov/"</span>,</span>
+<span>  region     <span class="op">=</span> <span class="st">"us-east-1"</span>,</span>
+<span>  access_key <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"AWS_ACCESS_KEY_ID"</span><span class="op">)</span>,</span>
+<span>  secret_key <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"AWS_SECRET_ACCESS_KEY"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">conn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_attach_gov.html">datom_attach_gov</a></span><span class="op">(</span></span>
+<span>  conn        <span class="op">=</span> <span class="va">conn</span>,</span>
+<span>  gov_store   <span class="op">=</span> <span class="va">gov_store</span>,</span>
+<span>  create_repo <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  repo_name   <span class="op">=</span> <span class="st">"datom-governance"</span></span>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt; v Created gov GitHub repo `datom-governance`</span></span>
+<span><span class="co">#&gt; v Cloned gov repo to /tmp/.../datom-governance</span></span>
+<span><span class="co">#&gt; v Registered STUDY_001 in governance</span></span>
+<span><span class="co">#&gt; v Updated project.yaml with governance pointer</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">conn</span><span class="op">)</span></span>
+<span><span class="co">#&gt; -- datom connection</span></span>
+<span><span class="co">#&gt; * Project: "STUDY_001"</span></span>
+<span><span class="co">#&gt; * Role: "developer"</span></span>
+<span><span class="co">#&gt; * Backend: "s3"</span></span>
+<span><span class="co">#&gt; * Root: "your-org-datom-data"</span></span>
+<span><span class="co">#&gt; * Prefix: "study-001/"</span></span>
+<span><span class="co">#&gt; * Gov backend: "s3"</span></span>
+<span><span class="co">#&gt; * Gov root: "your-org-datom-gov"</span></span></code></pre></div>
+<p>Once attached, gov cannot be detached — <code>project.yaml</code>’s
+<code>storage.governance</code> block is permanent. Subsequent projects
+in the same organization reuse the same gov repo and bucket; you only
+run <code>create_repo = TRUE</code> once.</p>
+</div>
+<div class="section level2">
 <h2 id="replay-the-four-tables">Replay the four tables<a class="anchor" aria-label="anchor" href="#replay-the-four-tables"></a>
 </h2>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span><span class="va">conn</span>, <span class="va">snapshot</span><span class="op">$</span><span class="va">dm</span>, <span class="st">"dm"</span>,</span>
 <span>            message <span class="op">=</span> <span class="st">"Re-establish dm on S3 (was local through 2026-03-28)"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span><span class="va">conn</span>, <span class="va">snapshot</span><span class="op">$</span><span class="va">ex</span>, <span class="st">"ex"</span>,</span>
@@ -260,7 +307,7 @@ messages</strong> above are your audit trail for that.</p>
 <div class="section level2">
 <h2 id="confirm">Confirm<a class="anchor" aria-label="anchor" href="#confirm"></a>
 </h2>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_list.html">datom_list</a></span><span class="op">(</span><span class="va">conn</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   name current_version current_data_sha last_updated</span></span>
 <span><span class="co">#&gt; 1   ae    19f44e3a       e91d04ff         2026-04-29T...</span></span>
@@ -282,12 +329,14 @@ commit messages).</p>
 <ul>
 <li>STUDY_001 lives on S3. Your local clone is just a working copy of
 the git metadata.</li>
+<li>Governance is attached: STUDY_001 is registered in a shared gov repo
+and gov bucket. Future projects in this organization reuse both.</li>
 <li>The four tables are at version 1 again, with honest commit messages
 recording the local-era history.</li>
 <li>
 <code>ref.json</code> in the gov repo points at the S3 bucket; any
-teammate who clones the data repo and has S3 read access can read the
-data.</li>
+teammate who clones the gov repo and has S3 read access can discover and
+read the data.</li>
 </ul>
 <p>In the next article, you <strong>hand the project off to a
 statistician</strong> who needs to read the data without write access —

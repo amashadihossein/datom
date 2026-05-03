@@ -102,46 +102,27 @@
 <div class="section level2">
 <h2 id="a-two-minute-tour">A two-minute tour<a class="anchor" aria-label="anchor" href="#a-two-minute-tour"></a>
 </h2>
-<p>datom requires git + GitHub for metadata, regardless of where the data lives. The example below uses a <strong>local directory</strong> for parquet bytes – the fastest way to see datom work end to end. Swapping the local store for <code><a href="reference/datom_store_s3.html">datom_store_s3()</a></code> is the only change needed for cloud storage; see the <a href="https://amashadihossein.github.io/datom/articles/promoting-to-s3.html">Promoting to S3</a> article.</p>
+<p>datom requires git + GitHub for metadata, regardless of where the data lives. The example below uses a <strong>local directory</strong> for parquet bytes – the fastest way to see datom work end to end. Swapping the local store for <code><a href="reference/datom_store_s3.html">datom_store_s3()</a></code> is the only change needed for cloud storage; see the <a href="https://amashadihossein.github.io/datom/articles/promoting-to-s3.html">Promoting to S3</a> article, which also introduces the optional governance layer for portfolios of projects.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/amashadihossein/datom" class="external-link">datom</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://fs.r-lib.org" class="external-link">fs</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 1. Two local directories: one for the parquet bytes, one for governance.</span></span>
-<span><span class="va">data_root</span>      <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"datom_data_root"</span><span class="op">)</span></span>
-<span><span class="va">gov_root</span>       <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"datom_gov_root"</span><span class="op">)</span></span>
-<span><span class="va">gov_clone_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"datom_gov_clone"</span><span class="op">)</span></span>
-<span><span class="va">study_dir</span>      <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_data"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://fs.r-lib.org/reference/create.html" class="external-link">dir_create</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">data_root</span>, <span class="va">gov_root</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co"># 1. One local directory for the parquet bytes.</span></span>
+<span><span class="va">data_root</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"datom_data_root"</span><span class="op">)</span></span>
+<span><span class="va">study_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_data"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://fs.r-lib.org/reference/create.html" class="external-link">dir_create</a></span><span class="op">(</span><span class="va">data_root</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># 2. Build a store. The GitHub PAT is the only credential needed.</span></span>
+<span><span class="co">#    No governance layer yet -- it's optional and added on demand later.</span></span>
 <span><span class="va">data_component</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">data_root</span><span class="op">)</span></span>
-<span><span class="va">gov_component</span>  <span class="op">&lt;-</span> <span class="fu"><a href="reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">gov_root</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
-<span>  governance <span class="op">=</span> <span class="va">gov_component</span>,</span>
+<span>  governance <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  data       <span class="op">=</span> <span class="va">data_component</span>,</span>
 <span>  github_pat <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 3. Initialize a shared governance repo (once per organization).</span></span>
-<span><span class="va">gov_repo_url</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/datom_init_gov.html">datom_init_gov</a></span><span class="op">(</span></span>
-<span>  gov_store      <span class="op">=</span> <span class="va">gov_component</span>,</span>
-<span>  gov_local_path <span class="op">=</span> <span class="va">gov_clone_path</span>,</span>
-<span>  create_repo    <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  repo_name      <span class="op">=</span> <span class="st">"datom-governance"</span>,</span>
-<span>  github_pat     <span class="op">=</span> <span class="va">store</span><span class="op">$</span><span class="va">github_pat</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
-<span>  governance     <span class="op">=</span> <span class="va">gov_component</span>,</span>
-<span>  data           <span class="op">=</span> <span class="va">data_component</span>,</span>
-<span>  github_pat     <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span>,</span>
-<span>  gov_repo_url   <span class="op">=</span> <span class="va">gov_repo_url</span>,</span>
-<span>  gov_local_path <span class="op">=</span> <span class="va">gov_clone_path</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># 4. Initialize a project.</span></span>
+<span><span class="co"># 3. Initialize a project.</span></span>
 <span><span class="fu"><a href="reference/datom_init_repo.html">datom_init_repo</a></span><span class="op">(</span></span>
 <span>  path         <span class="op">=</span> <span class="va">study_dir</span>,</span>
 <span>  project_name <span class="op">=</span> <span class="st">"STUDY_001"</span>,</span>

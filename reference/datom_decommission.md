@@ -40,8 +40,10 @@ remaining steps still run):
 3.  Remove the local data clone directory (`conn$path`).
 
 4.  Unregister the project from the governance repo (git commit + push).
-    Skipped with a warning when `conn$gov_local_path` is `NULL`.
+    Skipped when the project has no governance attached
+    (`is.null(conn$gov_root)`); also skipped with a warning when gov is
+    attached but `conn$gov_local_path` is `NULL`.
 
 5.  Delete the project folder from governance storage
-    (`projects/{project_name}/`). Skipped when there is no governance
-    client.
+    (`projects/{project_name}/`). Skipped when the project has no
+    governance attached.
