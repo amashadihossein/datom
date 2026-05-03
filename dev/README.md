@@ -44,13 +44,13 @@ Phase plans are **temporary working documents**:
 
 ### Active Phases
 
-_None._
+| Phase | Started | Status | Doc |
+|-------|---------|--------|-----|
+| Phase 18: Governance on-demand | 2026-05-02 | Chunk 0 (activation) in progress | [phase_18_gov_on_demand.md](phase_18_gov_on_demand.md) |
 
 ### Drafts (queued, not active)
 
-| Draft | Notes | Doc |
-|-------|-------|-----|
-| Conn finalize & backend accessor refactor | Audit M2 + M6 deferred from Phase 15 cleanup. Numbering TBD. | [draft_phase_conn_refactor.md](draft_phase_conn_refactor.md) |
+_None._
 
 ### Completed Phases
 
@@ -95,7 +95,8 @@ Items discovered during development but intentionally deferred. Review periodica
 | Vignette content refresh | Phase 11 | `credentials.Rmd`: "Under the Hood" section references env var bridge (removed), STS GetCallerIdentity (uses HeadBucket). Other vignettes may have minor staleness. | Medium |
 | Redirect resolution in datom_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
 | Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |
-| Companion governance package handoff | Phase 15 | `# GOV_SEAM:` helpers in `R/utils-gov.R` are the port surface; commit message conventions are the audit contract. See spec "Governance Repository Contract". | High (next major) |
+| Companion governance package handoff | Phase 15 | `# GOV_SEAM:` helpers in `R/utils-gov.R` are the port surface; commit message conventions are the audit contract. See spec "Governance Repository Contract". Phase 18 (gov-on-demand) tightens the seam significantly. | High (next major) |
+| Backend rename: `local` -> `filesystem` | Phase 18 | "Local" implies laptop disk, but the backend supports network mounts and cloud-mounted FS too. Atomic schema bump touching store constructor, predicate, dispatch arms, `project.yaml`, `ref.json`. Defer until there's a second compelling reason to touch the schema. | Low |
 | `datom_migrate_data()` (managed migration) | Phase 15 | Today migration is manual (`aws s3 sync` + `datom_sync_dispatch()`). Atomic data-copy + ref.json update + `.datom_gov_record_migration()` deferred. | Medium |
 | Restore `ubuntu-latest (devel)` in `.github/workflows/R-CMD-check.yaml` | Phase 17 | Disabled 2026-05-02 because Posit PPM has no R-devel Linux binaries; every PR paid a 15-25 min source-compile tax for arrow / paws.storage / friends. Restore as part of the pre-CRAN checklist (CRAN expects devel to pass). | Pre-CRAN |
 | CODEOWNERS automation on `projects/{name}/` | Phase 15 | Self-serve project ownership; belongs in companion package, not datom. | Low (companion) |

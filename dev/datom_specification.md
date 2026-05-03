@@ -20,7 +20,7 @@ The primary utility motivating datom is building version-tracked data products. 
 ## Design Principles
 
 1. **Git as source of truth**: All metadata originates in git for version control
-2. **Git + GitHub remote are mandatory**: Every datom project requires both a data git repo and a governance git repo with remotes (today: GitHub). The storage backend (`datom_store_s3`, `datom_store_local`, future GCS, etc.) controls only where parquet bytes live — it does **not** make git optional. There is no "local-only / no-remote" mode. Reaffirmed Phase 16, 2026-04-29.
+2. **Git + GitHub for the data repo are mandatory; governance is optional and on-demand**: Every datom project requires a data git repo with a remote (today: GitHub) and a storage backend for parquet bytes. The governance layer (portfolio register, dispatch routing, managed migration) is adopted on-demand via `datom_attach_gov()` -- typically when graduating to object storage or migrating data. The storage backend (`datom_store_s3`, `datom_store_local`, future GCS, etc.) controls only where parquet bytes live; it does **not** make git optional. Once gov is attached, it cannot be detached. There is still no "local-only / no-remote" mode for the data repo. Amended Phase 18, 2026-05-02 (supersedes the Phase-16 lock that required gov from day one).
 3. **S3 metadata caching**: Metadata synced to S3 enables data reader access without GitHub
 4. **Separated workflows**: Data developers need git + S3 access for writes; data readers need only S3 access for reads
 5. **Content addressing**: SHA-based storage for efficient deduplication
