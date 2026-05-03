@@ -50,7 +50,10 @@ Phase plans are **temporary working documents**:
 
 ### Drafts (queued, not active)
 
-_None._
+| Draft | Doc | Captured | Notes |
+|-------|-----|----------|-------|
+| Phase 19: Managed Migration | [draft_phase_19_managed_migration.md](draft_phase_19_managed_migration.md) | 2026-05-02 | `datom_migrate_data()`. Locked: requires gov attached. Atomic data-copy + `ref.json` switch + `migration_history.json` record. Cross-backend (s3<->local). |
+| Phase 20: Source Lineage | [draft_phase_20_source_lineage.md](draft_phase_20_source_lineage.md) | 2026-05-02 | Adds `source_lineage` (transitive non-derived sources) alongside `parents`. dpbuild populates both; datom never auto-computes. New `datom_get_lineage()` query helper with three depth modes. |
 
 ### Completed Phases
 
