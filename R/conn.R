@@ -210,6 +210,8 @@ print.datom_conn <- function(x, ...) {
     if (!is.null(x$gov_region) && !identical(x$gov_region, x$region)) {
       cli::cli_li("Gov region: {.val {x$gov_region}}")
     }
+  } else {
+    cli::cli_li("Governance: not attached")
   }
 
   if (!is.null(x$endpoint)) {

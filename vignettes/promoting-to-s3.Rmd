@@ -16,16 +16,25 @@ knitr::opts_chunk$set(
 ```
 
 > **Where we left off:** STUDY-001 has four tables (`dm`, `ex`, `lb`, `ae`),
-> all on your laptop. Both git repos are on GitHub.
+> all on your laptop. The data git repo is on GitHub. No governance layer
+> is attached yet — articles 1-3 stayed deliberately solo.
 
 A colleague on a different laptop now needs to read the data. Local
 filesystem storage was fine when you were the only one writing; it stops
 working the moment a second person needs the same bytes.
 
-This article promotes STUDY-001 from local-filesystem data storage to **S3**.
-After this article, your gov repo and data repo are unchanged on the GitHub
-side, but the parquet bytes live in an S3 bucket — and any teammate with
-read access to that bucket can pull a versioned snapshot.
+This article does two things, both triggered by the same moment ("someone
+else needs to read this"):
+
+1. **Promote** STUDY-001 from local-filesystem data storage to **S3**.
+2. **Attach** the governance layer with `datom_attach_gov()` — a shared
+   registry across projects, used by readers to discover where data lives
+   and by org-wide tooling to see the portfolio. Gov is opt-in and only
+   pays for itself once a project is shared.
+
+After this article, the data git repo on GitHub is unchanged, the parquet
+bytes live in an S3 bucket, and STUDY-001 is registered in a governance
+repo any teammate can clone to find it.
 
 ## A note on local -> S3 migration
 
@@ -111,23 +120,19 @@ Each element is the current version's data frame.
 
 ## Decommission the local project
 
-`datom_decommission()` removes the project from governance, deletes the
-GitHub repos, and clears the local clones and parquet store. It is
-**destructive** and requires you to type the project name as `confirm` to
-proceed.
+`datom_decommission()` deletes the GitHub repo and clears the local clone
+and parquet store. It is **destructive** and requires you to type the
+project name as `confirm` to proceed.
 
 ```{r}
 datom_decommission(old_conn, confirm = "STUDY_001")
 #> i Removing data store contents under datom/STUDY_001/
 #> v Deleted GitHub repo `study-001-data`
 #> v Removed local data clone /tmp/.../study_001_data
-#> v Unregistered STUDY_001 from governance
-#> v Removed gov storage entry projects/STUDY_001/
 ```
 
-The governance repo (`datom-governance`) is **not** decommissioned — it's a
-shared registry across all your projects. Only `STUDY_001` is removed from
-it.
+Because no governance layer was attached, decommission is purely
+data-side: no registry to unregister from, no gov storage to clean up.
 
 ## Build the S3 store
 
@@ -144,17 +149,10 @@ aws_data <- datom_store_s3(
   secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
 )
 
-# Reuse the existing local gov store - the gov repo carries on.
-gov_local <- datom_store_local(
-  path = path(tempdir(), "study_001_gov_root")
-)
-
 store <- datom_store(
-  governance     = gov_local,
-  data           = aws_data,
-  github_pat     = keyring::key_get("GITHUB_PAT"),
-  gov_repo_url   = state$gov_repo_url,
-  gov_local_path = state$gov_clone_path
+  governance = NULL,                                  # still no gov; attached below
+  data       = aws_data,
+  github_pat = keyring::key_get("GITHUB_PAT")
 )
 ```
 
@@ -177,10 +175,55 @@ print(conn)
 #> * Backend: "s3"
 #> * Root: "your-org-datom-data"
 #> * Prefix: "study-001/"
+#> * Governance: not attached
 ```
 
 The data backend is now `"s3"`. From here on, every `datom_write()` uploads
 parquet to S3 and every `datom_read()` streams it back from S3.
+
+## Attach the governance layer
+
+Now that STUDY-001 lives somewhere a teammate can reach, register it in a
+shared governance repo. `datom_attach_gov()` creates the gov GitHub repo
+(once per organization), records STUDY-001's data location in
+`projects/STUDY_001/ref.json`, and updates the data repo's `project.yaml`
+so any future conn from this clone knows where gov lives.
+
+```{r}
+gov_store <- datom_store_s3(
+  bucket     = "your-org-datom-gov",    # <-- a separate gov bucket
+  prefix     = "datom-gov/",
+  region     = "us-east-1",
+  access_key = keyring::key_get("AWS_ACCESS_KEY_ID"),
+  secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
+)
+
+conn <- datom_attach_gov(
+  conn        = conn,
+  gov_store   = gov_store,
+  create_repo = TRUE,
+  repo_name   = "datom-governance"
+)
+#> v Created gov GitHub repo `datom-governance`
+#> v Cloned gov repo to /tmp/.../datom-governance
+#> v Registered STUDY_001 in governance
+#> v Updated project.yaml with governance pointer
+
+print(conn)
+#> -- datom connection
+#> * Project: "STUDY_001"
+#> * Role: "developer"
+#> * Backend: "s3"
+#> * Root: "your-org-datom-data"
+#> * Prefix: "study-001/"
+#> * Gov backend: "s3"
+#> * Gov root: "your-org-datom-gov"
+```
+
+Once attached, gov cannot be detached — `project.yaml`'s
+`storage.governance` block is permanent. Subsequent projects in the same
+organization reuse the same gov repo and bucket; you only run
+`create_repo = TRUE` once.
 
 ## Replay the four tables
 
@@ -222,10 +265,13 @@ that changed (timestamps, commit messages).
 
 - STUDY_001 lives on S3. Your local clone is just a working copy of the git
   metadata.
+- Governance is attached: STUDY_001 is registered in a shared gov repo and
+  gov bucket. Future projects in this organization reuse both.
 - The four tables are at version 1 again, with honest commit messages
   recording the local-era history.
 - `ref.json` in the gov repo points at the S3 bucket; any teammate who
-  clones the data repo and has S3 read access can read the data.
+  clones the gov repo and has S3 read access can discover and read the
+  data.
 
 In the next article, you **hand the project off to a statistician** who
 needs to read the data without write access — the canonical reader role.

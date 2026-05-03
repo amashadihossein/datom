@@ -1,6 +1,6 @@
 # Phase 18: Governance On-Demand
 
-**Status**: Active -- Chunks 1-7 complete; Chunk 8 next (vignettes)
+**Status**: Active -- Chunks 1-8 complete; Chunk 9 next (tests + polish)
 **Branch**: `phase/18-gov-on-demand` (created 2026-05-02)
 **Depends on**: Phase 16 closed (2026-05-02), Phase 17 closed (2026-05-02).
 **Supersedes**: `dev/draft_phase_conn_refactor.md` (M2 folds in; M6 absorbed as a chunk).
@@ -85,8 +85,8 @@ This is a much tighter, more coherent scope than today's seam.
 | 5 | ✅ done | **Decommission no-gov branch**: skip `.datom_gov_unregister_project()` step when gov absent. Data + GitHub + local clone teardown only. | Low. |
 | 6 | ✅ done | **`.datom_conn_for(scope)` accessor** (M6 absorbed). Single accessor `(.datom_conn_for(conn, "data"|"gov"))` replaces ad-hoc `conn$gov_client` / `.datom_gov_conn(conn)` picking across `R/conn.R`, `R/sync.R`, `R/ref.R`, `R/utils-gov.R`, `R/validate.R`. Pure refactor, no behavior change. | Medium (touches many files). |
 | 7 | ✅ done | **Gov-only commands fail clearly when gov absent**: `datom_projects()`, `datom_pull_gov()`, `datom_sync_dispatch()`, `datom_decommission()` (gov-half) all detect `is.null(conn$gov_root)` and emit a single uniform error: "this project has no governance attached; use `datom_attach_gov()` to enable." | Low. |
-| 8 | ⏳ next | **Vignettes**: Article 1 (First Extract) drops `datom_init_gov()` and uses `attach_gov = FALSE`; Article 4 (Promoting to S3) introduces `datom_attach_gov()` alongside the S3 promotion -- the natural moment. Articles 5-9 unchanged structurally. Resume scripts updated where they construct stores. README rewritten to drop gov from the primary example. | Medium (locked text changes). |
-| 9 | ☐ todo | **Tests + polish**: unit tests for no-gov paths, `datom_attach_gov()`, transition coverage (no-gov -> attached), failure modes for gov-only commands when gov absent. E2E: `dev/dev-sandbox.R` learns a no-gov mode (`sandbox_up(attach_gov = FALSE)`) and a "promote later" path. **Polish**: `datom_attach_gov()` detects an empty/uninitialized gov remote and redirects the user to `datom_init_gov()` with a clear message (rather than failing inside `.datom_gov_clone_init()` or downstream register). | Medium. |
+| 8 | ✅ done | **Vignettes**: Article 1 (First Extract) drops `datom_init_gov()` and uses `attach_gov = FALSE`; Article 4 (Promoting to S3) introduces `datom_attach_gov()` alongside the S3 promotion -- the natural moment. Articles 5-9 unchanged structurally. Resume scripts updated where they construct stores. README rewritten to drop gov from the primary example. | Medium (locked text changes). |
+| 9 | ⏳ next | **Tests + polish**: unit tests for no-gov paths, `datom_attach_gov()`, transition coverage (no-gov -> attached), failure modes for gov-only commands when gov absent. E2E: `dev/dev-sandbox.R` learns a no-gov mode (`sandbox_up(attach_gov = FALSE)`) and a "promote later" path. **Polish**: `datom_attach_gov()` detects an empty/uninitialized gov remote and redirects the user to `datom_init_gov()` with a clear message (rather than failing inside `.datom_gov_clone_init()` or downstream register). | Medium. |
 | 10 | ☐ todo | **Phase close**: harvest learnings to spec/instructions; update README; PR. | Low. |
 
 ### Recommended escalation moments
@@ -289,3 +289,21 @@ Changes:
 - `tests/testthat/test-sync.R` -- 2 new tests (uniform error for `datom_sync_dispatch` and `datom_pull_gov`); 8 pre-existing tests updated to set `gov_root = "gov-bucket"` so downstream guards (path / gov_local_path / interactive) are still reached. (Same pattern Chunk 4 applied to `validate.R` tests -- `mock_datom_conn` defaults `gov_root = NULL`, so any test that exercises a code path past the new guard must set it explicitly.)
 
 Tests: 1510 PASS / 0 FAIL (was 1505; +5 net new -- 2 added, 8 patched in place).
+
+
+### Chunk 8 -- Vignettes + README rewritten for gov-on-demand
+
+User-journey track now reflects the gov-on-demand reality: a solo project starts data-only and adopts gov when it's time to share.
+
+Changes:
+- `vignettes/first-extract.Rmd` -- gov fully removed from Article 1. Path setup keeps only `study_dir` + `data_root`. Single-component store (`governance = NULL`). The "Initialize the governance repository" section deleted entirely. Intro and "Where you are" closing signpost gov as opt-in, attached in Article 4.
+- `vignettes/promoting-to-s3.Rmd` -- Article 4 reframed: same article now does both S3 promotion AND `datom_attach_gov()`, paired as the "someone else needs to read this" beat. New "Attach the governance layer" section after re-init. Decommission narration updated -- no gov to unregister at that point. `state$gov_*` reads removed; the `gov_local <- ...` block deleted.
+- `vignettes/design-two-repos.Rmd` -- "How the split shows up in API" rewritten as a two-step (`datom_store(governance = NULL)` then `datom_attach_gov()`) instead of the prior 5-field one-shot. `datom_attach_gov` added to the seam-adjacent caller list.
+- `vignettes/credentials-in-practice.Rmd` -- `datom_store()` reference example updated to the no-gov default; `gov_local_path` paragraph replaced with the opt-in narrative.
+- `README.Rmd` + `README.md` -- two-minute tour drops gov entirely. Single store, one local data dir.
+- `inst/vignette-setup/resume_article_2.R`, `_3.R`, `_4.R` -- drop `DATOM_VIGNETTE_GOV_CLONE` env var, `gov_clone_path` dir check, and `gov_clone_path` / `gov_repo_url` return slots. Articles 1-3 are now genuinely no-gov on disk.
+- `inst/vignette-setup/resume_article_5.R`, `_6.R` -- read `cfg$repos$governance$local_path` written by `datom_attach_gov()` in Article 4 to default `gov_clone_path` (env var still overrides). Add explicit guard if `cfg$storage$governance` is missing (caller hasn't completed Article 4).
+- `R/conn.R` -- `print.datom_conn` now shows `* Governance: not attached` when `gov_root` is NULL. Vignette example outputs are honest about reality.
+- `tests/testthat/test-conn.R` -- 2 new print tests covering both branches.
+
+Tests: 1514 PASS / 0 FAIL (was 1510; +4 from print tests). README rebuilt via `devtools::build_readme()`.

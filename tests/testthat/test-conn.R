@@ -254,6 +254,38 @@ test_that("print.datom_conn omits prefix when NULL", {
   expect_no_match(combined, "Prefix")
 })
 
+test_that("print.datom_conn shows 'Governance: not attached' when gov_root is NULL", {
+  conn <- new_datom_conn(
+    project_name = "proj",
+    root = "b",
+    region = "us-east-1",
+    client = mock_s3_client()
+  )
+
+  output <- cli::cli_fmt(print(conn))
+  combined <- paste(output, collapse = " ")
+
+  expect_match(combined, "Governance: not attached", fixed = TRUE)
+  expect_no_match(combined, "Gov root")
+})
+
+test_that("print.datom_conn shows gov fields and not the not-attached line when gov_root is set", {
+  conn <- new_datom_conn(
+    project_name = "proj",
+    root = "b",
+    region = "us-east-1",
+    client = mock_s3_client(),
+    gov_root = "gov-bucket",
+    gov_prefix = "g/"
+  )
+
+  output <- cli::cli_fmt(print(conn))
+  combined <- paste(output, collapse = " ")
+
+  expect_match(combined, "Gov root", fixed = TRUE)
+  expect_no_match(combined, "Governance: not attached", fixed = TRUE)
+})
+
 test_that("print.datom_conn returns x invisibly", {
   conn <- new_datom_conn(
     project_name = "proj",
