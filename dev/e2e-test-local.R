@@ -1,12 +1,14 @@
 # dev/e2e-test-local.R
 # ──────────────────────────────────────────────────────────────────────────────
-# End-to-end test for local filesystem backend (Phase 15: two-repo gov split)
+# End-to-end test for local filesystem backend.
 #
-# Mirrors dev/e2e-test.R exactly -- same data workflow, same assertions --
-# using the local backend instead of S3.
+# Drives the gov-attached workflow:
+#   datom_init_gov() -> datom_init_repo() -> datom_write() ->
+#   datom_sync_dispatch() -> datom_decommission()
 #
-# Drives: datom_init_gov() -> datom_init_repo() -> datom_write() ->
-#         datom_sync_dispatch() -> datom_decommission()
+# A second block (commented out) exercises the Phase-18 no-gov path:
+#   datom_init_repo() (no gov) -> datom_write() -> datom_attach_gov() ->
+#   datom_sync_dispatch() -> datom_decommission()
 #
 # Usage:
 #   devtools::load_all()
@@ -24,6 +26,10 @@
 #   datom-test/datom-local-e2e/     <- data git clone
 #   datom-test/datom-local-e2e-gov/ <- gov git clone
 # ──────────────────────────────────────────────────────────────────────────────
+
+# =============================================================================
+# A: Gov-attached path (default)
+# =============================================================================
 
 # --- Build local store -------------------------------------------------------
 
@@ -120,9 +126,58 @@ datom_status(conn)
 #   )
 
 # --- Tear down ---------------------------------------------------------------
-# Phase 15 scoped teardown:
-#   sandbox_down(env, scope = "project")  # decommission data project only
-#   sandbox_down(env, scope = "gov")      # destroy gov (refuses if projects)
+# sandbox_down() with default scope = "all" decommissions the data project
+# then destroys the gov repo:
+#   sandbox_down(env, scope = "project")  # data project only
+#   sandbox_down(env, scope = "gov")      # gov only (refuses if projects remain)
 #   sandbox_down(env, scope = "all")      # project then gov (default)
 #
 # sandbox_down(env)
+
+
+# =============================================================================
+# B: No-gov path (Phase 18) -- uncomment to exercise
+# =============================================================================
+#
+# store_nogov <- sandbox_store_local(
+#   path       = fs::path(base_dir, "local-e2e-nogov-data"),
+#   prefix     = NULL,
+#   github_org = NULL,
+#   attach_gov = FALSE
+# )
+#
+# env_nogov <- sandbox_up(
+#   store_nogov,
+#   project_name  = "LOCAL_E2E_NOGOV",
+#   repo_name     = "datom-local-e2e-nogov",
+#   gov_repo_name = "datom-local-e2e-nogov-gov",
+#   base_dir      = base_dir,
+#   populate      = TRUE,
+#   n_months      = 2L
+# )
+#
+# conn_nogov <- env_nogov$conn
+# stopifnot(is.null(conn_nogov$gov_root))
+#
+# datom_list(conn_nogov)
+# datom_write(conn_nogov, data.frame(x = 1L), name = "nogov_table")
+# stopifnot("nogov_table" %in% datom_list(conn_nogov)$name)
+#
+# # datom_projects() should fail clearly (no gov attached)
+# tryCatch(datom_projects(conn_nogov), error = function(e) message("Expected: ", conditionMessage(e)))
+#
+# # Promote to gov-attached
+# gov_store_for_promote <- datom_store_local(
+#   path     = fs::path(base_dir, "local-e2e-nogov-data-gov"),
+#   validate = FALSE
+# )
+# env_nogov <- sandbox_promote_gov(env_nogov, gov_store_for_promote)
+# conn_nogov <- env_nogov$conn
+# stopifnot(!is.null(conn_nogov$gov_root))
+#
+# # Gov-only commands now work
+# datom_sync_dispatch(conn_nogov, .confirm = FALSE)
+# datom_validate(conn_nogov)
+#
+# # Tear down
+# sandbox_down(env_nogov)

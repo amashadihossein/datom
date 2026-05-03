@@ -1,8 +1,8 @@
 # dev/e2e-test.R
 # ──────────────────────────────────────────────────────────────────────────────
-# End-to-end test script for datom (S3 backend, two-repo gov split)
+# End-to-end test script for datom (S3 backend, gov-attached)
 #
-# Drives the full Phase 15 workflow:
+# Drives the full gov-attached workflow:
 #   datom_init_gov() -> datom_init_repo() -> datom_write() ->
 #   datom_sync_dispatch() -> datom_decommission()
 #
@@ -86,7 +86,7 @@ datom_get_parents(conn, "summary_trt_by_sex")
 datom_history(conn, "summary_trt_by_sex")
 
 # --- Sync dispatch (gov-side commit + push) ---------------------------------
-# Phase 15: dispatch.json lives in the governance repo at
+# dispatch.json lives in the governance repo at
 # projects/{project_name}/dispatch.json. datom_sync_dispatch() commits and
 # pushes the gov clone, leaving the data clone untouched.
 
@@ -114,9 +114,10 @@ datom_status(conn)
 #   )
 
 # --- Tear down ---------------------------------------------------------------
-# Phase 15 introduces scoped teardown:
-#   sandbox_down(env, scope = "project")  # decommission data project only
-#   sandbox_down(env, scope = "gov")      # destroy gov (refuses if projects)
+# sandbox_down() with default scope = "all" decommissions the data project
+# then destroys the gov repo:
+#   sandbox_down(env, scope = "project")  # data project only
+#   sandbox_down(env, scope = "gov")      # gov only (refuses if projects remain)
 #   sandbox_down(env, scope = "all")      # project then gov (default)
 #
 # sandbox_down(env)
