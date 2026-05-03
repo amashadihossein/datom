@@ -99,7 +99,7 @@ This is a much tighter, more coherent scope than today's seam.
 
 ## Acceptance Criteria
 
-1. `datom_init_repo()` defaults to `attach_gov = FALSE`; existing tests adapted.
+1. `datom_init_repo()` accepts a no-gov store (`datom_store(governance = NULL, ...)`) and writes a `project.yaml` without `storage.governance` / `repos.governance`. (Chunk 2 dropped the planned `attach_gov` parameter; intent is expressed via store construction.)
 2. `datom_attach_gov()` exported, idempotent, marked `# GOV_SEAM:`, with full test coverage.
 3. `datom_read` / `datom_write` / `datom_list` / `datom_history` work against a no-gov project end-to-end.
 4. `datom_decommission()` works for no-gov and gov-attached projects.
@@ -206,3 +206,40 @@ Changes:
 
 Tests: 1464 PASS / 0 FAIL (was 1457; +7 new).
 
+
+---
+
+## Chunk 4 -- Read First (for the next session)
+
+Chunk 4 makes read/write paths work end-to-end against a no-gov project. This is the highest-risk chunk in the phase; the recommended workflow is **design spot-check before code**.
+
+### Files to read in full before editing
+
+- [R/ref.R](R/ref.R) -- `.datom_resolve_data_location()` (line 225) and `.datom_check_ref_current()` (line 389). The resolver is already NULL-safe for `store$governance == NULL` (Chunk 1 confirmed). The write-time guard is the one that needs a no-gov branch: today it errors when ref disagrees with store; in no-gov mode there is no ref, so the guard must short-circuit.
+- [R/conn.R](R/conn.R) -- `datom_get_conn()` (line ~1180), `.datom_get_conn_developer()` (line 1280), `.datom_get_conn_reader()` (line 1377). Both call `.datom_resolve_data_location()` and build a `datom_conn`. Audit which gov fields are referenced downstream and confirm they are NULL-safe.
+- [R/read_write.R](R/read_write.R) -- `datom_write()` calls `.datom_check_ref_current(conn)` at line 438. Other call sites in `datom_read` / `datom_list` / `datom_history` should be inventoried.
+- [R/sync.R](R/sync.R), [R/validate.R](R/validate.R) -- callers of gov fields. `datom_validate()` is flagged in Open Items (skip dispatch check when gov absent).
+
+### Invariants for Chunk 4
+
+- **No-gov reads + writes never touch a gov client.** If the code path requires `conn$gov_client` or `conn$gov_local_path`, that path is gov-only and must short-circuit when `is.null(conn$gov_root)`.
+- **No-gov writes are unguarded against stale conns** (locked decision #7). The `.datom_check_ref_current()` call in `datom_write()` becomes a no-op when gov is absent; do not invent a substitute guard.
+- **Reader role pre-gov needs `data_repo_url`** (Open Items). A reader without gov has no ref to resolve from, so they must supply the data repo URL explicitly. Confirm the field set on `datom_get_conn(role = 'reader')` for the no-gov case before implementing.
+- **The Chunk 3 `datom_attach_gov()` returns a fresh conn**: after attach, `datom_get_conn()` on the same project must produce a conn with the same gov-populated shape. The two paths must converge.
+- **`datom_validate()` skips dispatch consistency check when gov absent**, reports it in summary (do not error).
+
+### Suggested chunk decomposition (for the next session to confirm)
+
+1. Audit + design spot-check (escalate). Map every read of `conn$gov_*` across `R/`. Decide: short-circuit at caller, or short-circuit inside the helper?
+2. `.datom_check_ref_current()` no-gov branch + `datom_write()` regression tests.
+3. `datom_get_conn()` no-gov developer path (parallels Chunk 2's `datom_init_repo` work).
+4. `datom_get_conn()` no-gov reader path (depends on Open Items resolution for `data_repo_url`).
+5. `datom_read` / `datom_list` / `datom_history` end-to-end tests against a no-gov project.
+6. `datom_validate()` no-gov summary line.
+
+### Test infrastructure already in place
+
+- `setup_init_env_nogov()` in [tests/testthat/test-conn.R](tests/testthat/test-conn.R) (line ~886) -- builds a no-gov developer init env. Reusable.
+- `setup_attach_env()` in [tests/testthat/test-conn.R](tests/testthat/test-conn.R) (Chunk 3) -- builds a no-gov project + bare gov repo, ready for attach. Reusable for transition tests.
+
+Baseline: **1464 PASS / 0 FAIL** at start of Chunk 4.
