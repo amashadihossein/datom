@@ -5,16 +5,12 @@
 #
 # Contract: see resume_article_2.R header.
 #
-# Returns invisible(list(conn, study_dir, gov_clone_path)).
+# Returns invisible(list(conn, study_dir)).
 
 local({
   study_dir <- Sys.getenv(
     "DATOM_VIGNETTE_DIR",
     fs::path(tempdir(), "study_001_data")
-  )
-  gov_clone_path <- Sys.getenv(
-    "DATOM_VIGNETTE_GOV_CLONE",
-    fs::path(tempdir(), "study_001_gov_clone")
   )
 
   project_yaml <- fs::path(study_dir, ".datom", "project.yaml")
@@ -22,12 +18,6 @@ local({
     cli::cli_abort(c(
       "No prior vignette state found at {.path {study_dir}}.",
       "i" = "Run Articles 1 and 2 first, or set {.envvar DATOM_VIGNETTE_DIR} to a directory containing prior state."
-    ))
-  }
-  if (!fs::dir_exists(gov_clone_path)) {
-    cli::cli_abort(c(
-      "No governance clone found at {.path {gov_clone_path}}.",
-      "i" = "Set {.envvar DATOM_VIGNETTE_GOV_CLONE} or re-run prior articles in this session."
     ))
   }
 
@@ -71,8 +61,7 @@ local({
   }
 
   invisible(list(
-    conn           = conn,
-    study_dir      = as.character(study_dir),
-    gov_clone_path = as.character(gov_clone_path)
+    conn      = conn,
+    study_dir = as.character(study_dir)
   ))
 })

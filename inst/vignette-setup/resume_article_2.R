@@ -4,13 +4,15 @@
 # Article 2 ("Month 2 Arrives") with a working conn.
 #
 # Contract:
-#   - No arguments. Honors env vars DATOM_VIGNETTE_DIR and
-#     DATOM_VIGNETTE_GOV_CLONE; defaults to tempdir() subdirs.
+#   - No arguments. Honors env var DATOM_VIGNETTE_DIR; defaults to a
+#     tempdir() subdir.
 #   - Idempotent: if state from Article 1 already exists, this is a no-op.
 #   - Continuity-only: if no prior state is found at the expected paths,
 #     aborts with instructions. Re-creating GitHub repos from scratch is not
 #     attempted (see phase_16_vignettes "Open Items").
-#   - Returns invisible(list(conn = ..., study_dir = ..., gov_clone_path = ...)).
+#   - Article 1 has no governance attached; gov is opt-in and arrives in
+#     Article 4 via datom_attach_gov().
+#   - Returns invisible(list(conn = ..., study_dir = ...)).
 #
 # Usage:
 #   state <- source(
@@ -23,10 +25,6 @@ local({
     "DATOM_VIGNETTE_DIR",
     fs::path(tempdir(), "study_001_data")
   )
-  gov_clone_path <- Sys.getenv(
-    "DATOM_VIGNETTE_GOV_CLONE",
-    fs::path(tempdir(), "study_001_gov_clone")
-  )
 
   # --- Continuity check -----------------------------------------------------
   project_yaml <- fs::path(study_dir, ".datom", "project.yaml")
@@ -35,12 +33,6 @@ local({
       "No Article 1 state found at {.path {study_dir}}.",
       "i" = "Run Article 1 first, or set {.envvar DATOM_VIGNETTE_DIR} to a directory containing prior state.",
       "i" = "Resume scripts in this release require the prior article's local clone to be present."
-    ))
-  }
-  if (!fs::dir_exists(gov_clone_path)) {
-    cli::cli_abort(c(
-      "No governance clone found at {.path {gov_clone_path}}.",
-      "i" = "Set {.envvar DATOM_VIGNETTE_GOV_CLONE} or re-run Article 1 in this session."
     ))
   }
 
@@ -67,8 +59,7 @@ local({
   }
 
   invisible(list(
-    conn           = conn,
-    study_dir      = as.character(study_dir),
-    gov_clone_path = as.character(gov_clone_path)
+    conn      = conn,
+    study_dir = as.character(study_dir)
   ))
 })

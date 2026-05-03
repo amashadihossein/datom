@@ -5,7 +5,7 @@
 1. **Check active work**: Open `dev/README.md` → see "Active Phases" table
 2. **Load context**: Open the active phase file (e.g., `dev/phase_1_core_utilities.md`)
 3. **Read "Current State"**: Understand where we left off
-4. **Continue work**: Update the phase doc as you go
+4. **Continue work**: Update the phase doc as you go. Every chunk-completing commit must (a) flip the chunk row's Status in the Chunks table, (b) update the Status header line, (c) append a Progress Log entry, and (d) update the `dev/README.md` Active Phases status line. See `dev/README.md` → Chunk Delivery Checklist.
 
 ## Project Overview
 
@@ -15,7 +15,7 @@ datom is an R package for version-controlled data management. It stores tabular 
 
 **Core concept**: Tables abstracted as code in git; actual data in cloud storage (parquet format).
 
-**Git + GitHub remote are mandatory, always** (decision reaffirmed Phase 16, 2026-04-29). datom is a git-tracked metadata system; there is no "local-only / no-remote" mode and there will not be one. The local filesystem backend (`datom_store_local()`) controls only where parquet **bytes** live — metadata still requires a `data_repo_url` and `gov_repo_url` (today: GitHub). Any vignette, README, or onboarding flow that implies otherwise is wrong. Single-user no-GitHub demos are explicitly rejected scope; readers who can't get a `GITHUB_PAT` are not the audience. If a future phase wants to add a remoteless mode, it must update this line first.
+**Git + GitHub for the data repo are mandatory, always; the governance layer is optional and on-demand** (amended Phase 18, 2026-05-02; supersedes the Phase-16 lock that required gov from day one). Every datom project requires a data git repo with a remote (today: GitHub) and a storage backend for parquet bytes. The governance layer -- portfolio register, dispatch routing, managed migration -- is adopted on-demand via `datom_attach_gov()`, typically when graduating to object storage or migrating data. Once attached, gov cannot be detached; `project.yaml`'s `storage.governance` block, once populated, is permanent. The companion governance package (TBD name; referred to elsewhere as `datom_access` / `datomanager`) will eventually own the gov surface; the `# GOV_SEAM:` boundary already marks the lift-out. There is still no "local-only / no-remote" mode for the data repo: a `data_repo_url` is required. Single-user no-GitHub demos are explicitly rejected scope.
 
 ## Documentation Hierarchy
 
@@ -153,7 +153,10 @@ Auto-detected via `GITHUB_PAT` presence.
 - **`.datom_gov_list_projects()` is a pure read, not a GOV_SEAM**: lives in `R/utils-gov.R` next to the seam helpers but is intentionally NOT marked `# GOV_SEAM:`. Read helpers stay with datom; only gov **writes** are seamed for the future companion package. Same rule applies to any future `.datom_gov_read_*()` helper.
 
 - **`_pkgdown.yml` index must be kept in sync**: Adding a new exported symbol requires a matching entry in `_pkgdown.yml`. `pkgdown::build_site()` errors with "N topics missing from index" otherwise. Check after every phase that adds exports.
-- **Non-ASCII characters in R source**: R CMD check warns on any non-ASCII character in `R/*.R` files (even in comments). Use only ASCII — `--` instead of `—`, `->` instead of `→`.
+- **Non-ASCII characters in R source**: R CMD check warns on any non-ASCII character in `R/*.R` files (even in comments). Use only ASCII -- `--` instead of `--`, `->` instead of `->`.
+- **`datom_attach_gov()` requires an initialised gov remote**: The function checks for `projects/.gitkeep` in the cloned gov repo after `datom_init_gov()` seeds the skeleton. If it is absent (e.g. user passed a freshly-created empty GitHub repo as `gov_repo_url`), `datom_attach_gov()` aborts with a clear redirect to `datom_init_gov()`. When writing tests that call `datom_attach_gov()` against a bare local repo, seed the skeleton first (clone bare, commit `README.md` + `projects/.gitkeep`, push to bare).
+- **`datom_conn` carries `gov_root = NULL` for no-gov projects**: `is.null(conn$gov_root)` is the canonical "no governance attached" test. Do not use `is.null(conn$gov_client)` -- local-backend gov conns also have `gov_client = NULL` by convention. `.datom_require_gov(conn, what)` encapsulates the uniform error; call it at user-facing function entry for gov-only commands.
+- **`sandbox_store_local()` / `sandbox_store()` accept `attach_gov = TRUE` (default)**: when `attach_gov = FALSE`, the gov component is `NULL` and no gov dir is created. `sandbox_up()` branches on `!is.null(store$governance)`. `sandbox_promote_gov(env, gov_store)` mirrors Article 4's flow for testing the no-gov -> gov transition end-to-end.
 
 ## Don'ts
 
@@ -179,7 +182,7 @@ These patterns are non-negotiable for every session:
    b. Create a feature branch: `git checkout -b phase/{n}-{name}` from `main`.
    c. Create a phase doc (`dev/phase_{n}_{name}.md`) with goal, context, chunks, acceptance criteria, and status tracking. Flag any chunks that likely warrant model escalation (see Model Escalation below) so the cue lands at plan time, not mid-chunk.
    d. Register it as active in the `dev/README.md` Active Phases table.
-   e. Work through chunks in order. Updating the phase doc (progress, decisions, blockers) is part of completing each chunk, not an afterthought — phase docs are how context persists across a model's short working memory, and stale docs silently degrade the next chunk. When a chunk spans multiple files or has strict must-never rules, scaffold the phase doc with "read first" and "invariants" subsections before starting.
+   e. Work through chunks in order. Updating the phase doc is part of completing each chunk, not an afterthought — phase docs are how context persists across a model's short working memory, and stale docs silently degrade the next chunk. **Every chunk-completing commit must update the phase doc in three places**: (1) flip the chunk's row in the Chunks table Status column (`✅ done` / `⏳ next` / `☐ todo`), (2) update the Status header line at the top, (3) append a Progress Log entry (what shipped, decisions, latent bugs, test count delta). Also update `dev/README.md` Active Phases status line. The code change and the phase-doc update go in **the same commit** — never a follow-up. When a chunk spans multiple files or has strict must-never rules, scaffold the phase doc with "read first" and "invariants" subsections before starting.
    f. Complete the Phase Completion Procedure when done. PR to `main`, merge, delete branch.
    Never jump straight to coding on multi-step work. The phase doc is the plan AND the audit trail.
 1. **Read before writing**: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the phase doc description alone.

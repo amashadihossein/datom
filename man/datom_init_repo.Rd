@@ -46,3 +46,10 @@ Invisible TRUE on success.
 One-time setup for data developers. Creates folder structure, initializes
 git with remote, sets up configuration files, and pushes to S3.
 }
+\details{
+Governance is optional. When \code{store$governance} is \code{NULL} (the gov-on-demand
+default), no governance clone is created, no \code{dispatch.json}/\code{ref.json} is
+written, and \code{project.yaml} omits the \code{storage.governance} and
+\code{repos.governance} blocks. The project can be promoted later via
+\code{datom_attach_gov()}.
+}

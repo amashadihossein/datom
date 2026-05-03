@@ -50,7 +50,10 @@ test_that("datom_projects() rejects non-conn / non-store input", {
 
 test_that("datom_projects() errors on conn without governance", {
   conn <- mock_datom_conn(list())  # no gov_root
-  expect_error(datom_projects(conn), "governance")
+  expect_error(datom_projects(conn), "no governance attached")
+  # Hint references datom_attach_gov() per Chunk 7 uniform error.
+  err <- tryCatch(datom_projects(conn), error = function(e) e)
+  expect_match(conditionMessage(err), "datom_attach_gov")
 })
 
 # --- developer / clone path ------------------------------------------------

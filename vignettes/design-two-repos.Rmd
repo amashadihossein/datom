@@ -104,23 +104,34 @@ expressible *because* the artifacts are already split. Functions in
 
 ## How the split shows up in API
 
-The split is visible to you whenever you set up a store:
+The data half is required from day one; the gov half is optional and
+attached on demand. A solo project starts with no gov:
 
 ```{r}
 store <- datom_store(
-  governance     = gov_component,    # 1. governance backend
-  data           = data_component,   # 2. data backend
-  github_pat     = pat,
-  data_repo_url  = "https://...",    # 3. data git remote
-  gov_repo_url   = "https://...",    # 4. gov git remote
-  gov_local_path = "/path/to/clone"  # 5. gov local clone
+  governance = NULL,             # gov is opt-in
+  data       = data_component,   # data backend (required)
+  github_pat = pat
 )
 ```
 
-Five fields, two for each repo plus one for the shared GitHub PAT.
-The repetition is the cost of the split. The benefits — lifecycle
-independence, permission boundaries, decommission safety, future
-companion-package handoff — are why the cost is worth paying.
+When a project needs to be shared or registered in an organization-wide
+portfolio, governance is attached:
+
+```{r}
+conn <- datom_attach_gov(
+  conn        = conn,
+  gov_store   = gov_component,   # gov backend
+  create_repo = TRUE,            # gov git remote (or pass gov_repo_url)
+  repo_name   = "datom-governance"
+)
+```
+
+Once attached, gov cannot be detached -- `project.yaml`'s
+`storage.governance` block is permanent. The two-repo split makes this
+opt-in shape possible: the data repo is fully functional on its own, and
+the gov repo is layered on top without restructuring anything in the
+data repo's history.
 
 For readers, the cost is lower: they don't see a data clone at all
 (they read parquet bytes directly from the data store) and the gov
@@ -158,7 +169,7 @@ of datom and into the companion package. The contract is simple:
 - No data-side code path calls a `# GOV_SEAM:` function directly —
   the only callers are public datom functions whose own purpose is
   governance-adjacent (`datom_init_repo`, `datom_decommission`,
-  `datom_init_gov`).
+  `datom_init_gov`, `datom_attach_gov`).
 - The companion package, when it ships, will reimplement these
   functions and depend on datom for the data-side operations only.
 

@@ -462,6 +462,89 @@ test_that("datom_store() stores component identities", {
   expect_null(store$identity$github)
 })
 
+# --- datom_store: no-governance (gov-on-demand) -------------------------------
+
+test_that("datom_store() accepts governance = NULL", {
+  dat <- make_component(bucket = "data-bucket", prefix = "data/")
+  store <- datom_store(governance = NULL, data = dat, validate = FALSE)
+
+  expect_true(is_datom_store(store))
+  expect_null(store$governance)
+  expect_equal(store$data$bucket, "data-bucket")
+  expect_equal(store$role, "reader")
+  expect_null(store$identity$governance)
+})
+
+test_that("datom_store() accepts default governance (NULL)", {
+  # governance defaults to NULL when omitted
+  dat <- make_component()
+  store <- datom_store(data = dat, validate = FALSE)
+
+  expect_true(is_datom_store(store))
+  expect_null(store$governance)
+})
+
+test_that("datom_store() no-gov store works with developer role", {
+  dat <- make_component()
+  store <- datom_store(
+    governance = NULL,
+    data = dat,
+    github_pat = "ghp_test",
+    data_repo_url = "https://github.com/org/repo.git",
+    validate = FALSE
+  )
+
+  expect_equal(store$role, "developer")
+  expect_null(store$governance)
+  expect_equal(store$data_repo_url, "https://github.com/org/repo.git")
+})
+
+test_that("datom_store() rejects gov_repo_url when governance is NULL", {
+  dat <- make_component()
+  expect_error(
+    datom_store(
+      governance = NULL,
+      data = dat,
+      gov_repo_url = "https://github.com/org/acme-gov.git",
+      validate = FALSE
+    ),
+    "must be NULL when.*governance.*is NULL"
+  )
+})
+
+test_that("datom_store() rejects gov_local_path when governance is NULL", {
+  dat <- make_component()
+  expect_error(
+    datom_store(
+      governance = NULL,
+      data = dat,
+      gov_local_path = "/tmp/gov-clone",
+      validate = FALSE
+    ),
+    "must be NULL when.*governance.*is NULL"
+  )
+})
+
+test_that("print.datom_store() shows 'not attached' for no-gov store", {
+  dat <- make_component()
+  store <- datom_store(governance = NULL, data = dat, validate = FALSE)
+
+  out <- capture.output(print(store), type = "message")
+  expect_true(any(grepl("not attached", out)))
+})
+
+test_that(".datom_resolve_data_location() returns NULL for no-gov store", {
+  dat <- make_component()
+  store <- datom_store(governance = NULL, data = dat, validate = FALSE)
+
+  result <- .datom_resolve_data_location(
+    store,
+    role = "reader",
+    project_name = "any-project"
+  )
+  expect_null(result)
+})
+
 # --- datom_store: GitHub PAT validation ---------------------------------------
 
 test_that("datom_store() validates PAT when validate = TRUE", {

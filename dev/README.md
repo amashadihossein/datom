@@ -44,18 +44,22 @@ Phase plans are **temporary working documents**:
 
 ### Active Phases
 
-_None._
+| Phase | Started | Status | Doc |
+|-------|---------|--------|-----|
+| — | — | — | — |
 
 ### Drafts (queued, not active)
 
-| Draft | Notes | Doc |
-|-------|-------|-----|
-| Conn finalize & backend accessor refactor | Audit M2 + M6 deferred from Phase 15 cleanup. Numbering TBD. | [draft_phase_conn_refactor.md](draft_phase_conn_refactor.md) |
+| Draft | Doc | Captured | Notes |
+|-------|-----|----------|-------|
+| Phase 19: Managed Migration | [draft_phase_19_managed_migration.md](draft_phase_19_managed_migration.md) | 2026-05-02 | `datom_migrate_data()`. Locked: requires gov attached. Atomic data-copy + `ref.json` switch + `migration_history.json` record. Cross-backend (s3<->local). |
+| Phase 20: Source Lineage | [draft_phase_20_source_lineage.md](draft_phase_20_source_lineage.md) | 2026-05-02 | Adds `source_lineage` (transitive non-derived sources) alongside `parents`. dpbuild populates both; datom never auto-computes. New `datom_get_lineage()` query helper with three depth modes. |
 
 ### Completed Phases
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
+| Phase 18: Governance on-demand | 2026-05-03 | 1528 | Made governance optional and on-demand. New flow: `datom_store(governance = NULL)` for solo projects; `datom_attach_gov()` for the promotion moment (typically alongside S3 migration). `datom_init_repo()` writes `project.yaml` without `storage.governance` when no gov store supplied. Gov-only commands (`datom_projects`, `datom_pull_gov`, `datom_sync_dispatch`) emit a uniform "no governance attached -- use `datom_attach_gov()`" error. `.datom_conn_for(conn, scope)` accessor replaces `.datom_gov_conn()` for all scope-switching. `datom_decommission()` no-gov branch skips gov teardown cleanly (latent bug fixed: local no-gov conns no longer accidentally delete `cwd/projects/{name}`). Vignettes rewritten: Article 1 drops gov entirely; Article 4 introduces `datom_attach_gov()` paired with S3 promotion. README primary example is no-gov. Sandbox learns `attach_gov = FALSE` mode and `sandbox_promote_gov()` helper. Acceptance criteria 1-10 all met. |
 | Phase 16: Vignette overhaul | 2026-05-02 | 1416 | Replaced the legacy three vignettes with a 10-article user-journey track (STUDY-001 over six months: first extract -> monthly cadence -> bulk sync -> S3 promotion -> reader handoff -> second engineer -> portfolio governance -> audit/reproducibility -> daapr-stack outlook -> credentials reference) plus a 6-article design-notes track (D1 datom model; D2 ref.json; D3 dispatch.json; D4 two-repo split; D5 version SHAs; D6 serverless). All article IO chunks `eval = FALSE`; jump-in readers get continuity via `inst/vignette-setup/resume_article_N.R` (idempotent, env-var-overridable). Simulator extended with LB + AE domains in Chunk 1. `_pkgdown.yml` reorganized into Get Started / Scale Up / Govern / Reference / Design groups. Coverage review confirms all 28 exports appear in at least one article. Locked decision: git + GitHub are mandatory from Article 1; the local backend only governs parquet bytes, not metadata. `README.Rmd` rewritten as the grabber. Phase 17 (`datom_summary` + `datom_projects`) sequenced between Chunks 4 and 5 to give Article 8 polished portfolio helpers. |
 | Phase 17: Portfolio helpers | 2026-05-02 | 1416 | Added two manager/audit-facing helpers: `datom_summary(conn)` (single-project one-liner; reads `.metadata/manifest.json`; S3 class with print method; developer path includes data git remote URL) and `datom_projects(x)` (portfolio listing; accepts `datom_conn` or `datom_store`; returns data frame with name/data_backend/data_root/data_prefix/registered_at; clone-first read with storage fallback; corrupt entries warn-and-skip). Internal additions: storage list dispatch (`.datom_storage_list_objects` + `.datom_s3_list_objects` mirroring existing local helper); `.datom_gov_list_projects()` pure-read helper in `R/utils-gov.R` (NOT a `GOV_SEAM` -- reads stay with datom, only gov writes are seamed). Pre-release schema bump: added `current$type` field to `ref.json` so readers can identify the data backend without already holding a store. Unblocks Phase 16 Chunks 5-6. |
 | Phase 15: Separate Gov Repo (+ audit cleanup) | 2026-04-29 | 1343 | Split governance and data into two independent git repos with separate histories, remotes, and local clones. New shared governance repo (one per organization / gov bucket) holds `projects/{name}/{ref,dispatch,migration_history}.json`; data repo holds tables + manifest. New exports: `datom_init_gov()`, `datom_decommission()`, `datom_pull_gov()`. Refactored: `datom_init_repo()` (data-first, gov-register), `datom_clone()` + `datom_pull()` (two-repo), `datom_sync_dispatch()` (commits on gov). Breaking: `remote_url` -> `data_repo_url`. New `# GOV_SEAM:` contract isolates gov-write helpers in `R/utils-gov.R` for future companion-package handoff. Role-aware ref reads (developer reads from local clone, reader from storage; write-time guard always hits storage). Sandbox supports scoped teardown (`scope = "all" \| "project" \| "gov"`). **Pre-CRAN audit cleanup** folded in (5 chunks): hard-abort on post-push gov/manifest failures with gov-clone rollback (C1+C2); `datom_decommission()` repo deletion via `httr2` instead of `gh` CLI (H1); backend-blind UI in `datom_sync_dispatch()`, symmetric pull errors, dropped dead pre-Phase-15 fallback (H2-H4+L3); deduped `gov_local_path` resolution / `datom_init_gov()` config / `.datom_gov_unregister_project()` commit logic (M1+M3+M4+M5); style polish (L1+L2+L4+L5). E2E-driven fixes: NA-safe prefix guards in `.datom_local_delete_prefix` / `.datom_s3_delete_prefix`; sandbox mops up data store root after decommission (caller-owned root principle); idempotent `gh repo` deletion in sandbox teardown. |
@@ -95,7 +99,8 @@ Items discovered during development but intentionally deferred. Review periodica
 | Vignette content refresh | Phase 11 | `credentials.Rmd`: "Under the Hood" section references env var bridge (removed), STS GetCallerIdentity (uses HeadBucket). Other vignettes may have minor staleness. | Medium |
 | Redirect resolution in datom_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
 | Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |
-| Companion governance package handoff | Phase 15 | `# GOV_SEAM:` helpers in `R/utils-gov.R` are the port surface; commit message conventions are the audit contract. See spec "Governance Repository Contract". | High (next major) |
+| Companion governance package handoff | Phase 15 | `# GOV_SEAM:` helpers in `R/utils-gov.R` are the port surface; commit message conventions are the audit contract. See spec "Governance Repository Contract". Phase 18 (gov-on-demand) tightens the seam significantly. | High (next major) |
+| Backend rename: `local` -> `filesystem` | Phase 18 | "Local" implies laptop disk, but the backend supports network mounts and cloud-mounted FS too. Atomic schema bump touching store constructor, predicate, dispatch arms, `project.yaml`, `ref.json`. Defer until there's a second compelling reason to touch the schema. | Low |
 | `datom_migrate_data()` (managed migration) | Phase 15 | Today migration is manual (`aws s3 sync` + `datom_sync_dispatch()`). Atomic data-copy + ref.json update + `.datom_gov_record_migration()` deferred. | Medium |
 | Restore `ubuntu-latest (devel)` in `.github/workflows/R-CMD-check.yaml` | Phase 17 | Disabled 2026-05-02 because Posit PPM has no R-devel Linux binaries; every PR paid a 15-25 min source-compile tax for arrow / paws.storage / friends. Restore as part of the pre-CRAN checklist (CRAN expects devel to pass). | Pre-CRAN |
 | CODEOWNERS automation on `projects/{name}/` | Phase 15 | Self-serve project ownership; belongs in companion package, not datom. | Low (companion) |
@@ -173,12 +178,19 @@ At each stage, I will:
 
 ### Chunk Delivery Checklist
 
-After each chunk is implemented, I deliver **four things in order**:
+After each chunk is implemented, I deliver **five things in order**:
 
 1. **Write tests** — full test coverage for the chunk's functions
 2. **Run tests** — execute and fix until all pass (green suite)
 3. **Minimalist walkthrough snippet** — a clean, self-contained R snippet for you to paste into the console and step through interactively (use `debugonce()` to drop into any function)
-4. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit with a concise message (e.g., `"Phase 4 Chunk 2: datom_conn class"`), then you push
+4. **Update the phase doc as part of the same commit** — three things, every chunk, no exceptions:
+   - Flip the chunk's row in the **Chunks table** Status column (e.g. `⏳ next` → `✅ done`; mark the next chunk `⏳ next`)
+   - Update the **Status** header line at the top of the phase doc (`Chunks 1-N complete; Chunk N+1 next`)
+   - Append a **Progress Log** entry for the chunk (what shipped, key decisions, latent bugs caught, test count delta)
+   Also update the `dev/README.md` Active Phases table status line. The phase doc is the audit trail; if it's not updated, the chunk isn't done.
+5. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit (code + phase doc + README together) with a concise message (e.g., `"Phase 4 Chunk 2: datom_conn class"`), then you push
+
+> **Phase docs must carry a Status column in the Chunks table.** When a phase doc is created (Chunk 0), the Chunks table includes a Status column with values `✅ done` / `⏳ next` / `☐ todo`. This is the at-a-glance dashboard a fresh session reads first; the Progress Log is the detail. Both are kept in sync.
 
 ### QA Methods
 

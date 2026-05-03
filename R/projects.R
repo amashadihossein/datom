@@ -56,18 +56,13 @@ datom_projects <- function(x) {
 
 
 # Resolve input to a (gov_conn, gov_local_path) pair.
-# datom_conn -> use .datom_gov_conn() and conn$gov_local_path.
+# datom_conn -> use .datom_conn_for(x, "gov") and conn$gov_local_path.
 # datom_store -> build a transient gov-resolve conn; no clone available.
 .datom_projects_resolve_input <- function(x) {
   if (inherits(x, "datom_conn")) {
-    if (is.null(x$gov_root)) {
-      cli::cli_abort(c(
-        "{.arg x} is a {.cls datom_conn} without a governance store.",
-        "i" = "Rebuild the connection with a store that has {.arg gov_repo_url} set."
-      ))
-    }
+    .datom_require_gov(x, "datom_projects()")
     return(list(
-      gov_conn       = .datom_gov_conn(x),
+      gov_conn       = .datom_conn_for(x, "gov"),
       gov_local_path = x$gov_local_path
     ))
   }

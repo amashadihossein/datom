@@ -31,8 +31,11 @@ steps still run):
 the PAT is unavailable or the local clone has no GitHub remote.
 \item Remove the local data clone directory (\code{conn$path}).
 \item Unregister the project from the governance repo (git commit + push).
-Skipped with a warning when \code{conn$gov_local_path} is \code{NULL}.
+Skipped when the project has no governance attached
+(\code{is.null(conn$gov_root)}); also skipped with a warning when gov is
+attached but \code{conn$gov_local_path} is \code{NULL}.
 \item Delete the project folder from governance storage
-(\verb{projects/\{project_name\}/}). Skipped when there is no governance client.
+(\verb{projects/\{project_name\}/}). Skipped when the project has no
+governance attached.
 }
 }

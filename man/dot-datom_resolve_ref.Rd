@@ -9,7 +9,7 @@
 \arguments{
 \item{gov_conn}{A \code{datom_conn}-like object scoped to the governance store
 (i.e., \code{root}, \code{prefix}, \code{client} point to the governance store).
-Typically produced by \code{.datom_gov_conn(conn)}.}
+Typically produced by \code{.datom_conn_for(conn, "gov")}.}
 
 \item{project_name}{Project name string. Used to build the project-scoped
 storage key \code{projects/{project_name}/ref.json}.}

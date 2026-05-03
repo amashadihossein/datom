@@ -122,6 +122,8 @@ datom_pull_gov <- function(conn) {
     ))
   }
 
+  .datom_require_gov(conn, "datom_pull_gov()")
+
   if (is.null(conn$gov_local_path) || !nzchar(conn$gov_local_path)) {
     cli::cli_abort(c(
       "Gov pull requires a local gov clone path.",
@@ -170,6 +172,8 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
       "i" = "Current role: {.val {conn$role}}."
     ))
   }
+
+  .datom_require_gov(conn, "datom_sync_dispatch()")
 
   if (is.null(conn$path)) {
     cli::cli_abort(c(
@@ -220,7 +224,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
 
   # manifest.json → data store
   repo_files_synced <- character()
-  gov_conn <- .datom_gov_conn(conn)
+  gov_conn <- .datom_conn_for(conn, "gov")
 
   # --- Sync governance files (dispatch, ref, migration_history) --------------
   if (is.null(conn$gov_local_path) || !nzchar(conn$gov_local_path)) {

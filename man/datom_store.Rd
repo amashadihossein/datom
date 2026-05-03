@@ -5,7 +5,7 @@
 \title{Create a datom Store}
 \usage{
 datom_store(
-  governance,
+  governance = NULL,
   data,
   github_pat = NULL,
   data_repo_url = NULL,
@@ -17,7 +17,10 @@ datom_store(
 }
 \arguments{
 \item{governance}{A store component (e.g., \code{datom_store_s3()}) for governance
-files (dispatch, ref, migration history).}
+files (dispatch, ref, migration history), or \code{NULL} for a no-governance
+store. A no-governance store represents a project that has not yet been
+promoted via \code{datom_attach_gov()}; \code{gov_repo_url} and \code{gov_local_path}
+must also be \code{NULL} in that case.}
 
 \item{data}{A store component (e.g., \code{datom_store_s3()}) for data files
 (manifest, tables, metadata).}

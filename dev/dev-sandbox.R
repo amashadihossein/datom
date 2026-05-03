@@ -74,7 +74,8 @@ sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
                           secret_key = Sys.getenv("AWS_SECRET_KEY"),
                           github_pat = Sys.getenv("GITHUB_PAT"),
                           github_org = .sandbox_defaults()$github_org,
-                          data_repo_url = NULL) {
+                          data_repo_url = NULL,
+                          attach_gov = TRUE) {
   data_comp <- datom::datom_store_s3(
     bucket     = bucket,
     prefix     = prefix,
@@ -84,14 +85,18 @@ sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
     validate   = FALSE
   )
 
-  gov_comp <- datom::datom_store_s3(
-    bucket     = gov_bucket,
-    prefix     = prefix,
-    region     = region,
-    access_key = access_key,
-    secret_key = secret_key,
-    validate   = FALSE
-  )
+  gov_comp <- if (isTRUE(attach_gov)) {
+    datom::datom_store_s3(
+      bucket     = gov_bucket,
+      prefix     = prefix,
+      region     = region,
+      access_key = access_key,
+      secret_key = secret_key,
+      validate   = FALSE
+    )
+  } else {
+    NULL
+  }
 
   datom::datom_store(
     governance = gov_comp,
@@ -121,9 +126,9 @@ sandbox_store_local <- function(path,
                                 prefix = NULL,
                                 github_pat = Sys.getenv("GITHUB_PAT"),
                                 github_org = NULL,
-                                data_repo_url = NULL) {
+                                data_repo_url = NULL,
+                                attach_gov = TRUE) {
   fs::dir_create(path)
-  fs::dir_create(gov_path)
 
   data_comp <- datom::datom_store_local(
     path     = path,
@@ -131,11 +136,16 @@ sandbox_store_local <- function(path,
     validate = FALSE
   )
 
-  gov_comp <- datom::datom_store_local(
-    path     = gov_path,
-    prefix   = prefix,
-    validate = FALSE
-  )
+  gov_comp <- if (isTRUE(attach_gov)) {
+    fs::dir_create(gov_path)
+    datom::datom_store_local(
+      path     = gov_path,
+      prefix   = prefix,
+      validate = FALSE
+    )
+  } else {
+    NULL
+  }
 
   datom::datom_store(
     governance = gov_comp,
@@ -326,9 +336,13 @@ sandbox_up <- function(store, ...) {
   }
 
   local_path <- fs::path(cfg$base_dir, cfg$repo_name)
-  gov_local_path <- fs::path(cfg$base_dir, cfg$gov_repo_name)
+  has_gov <- !is.null(store$governance)
+  gov_local_path <- if (has_gov) fs::path(cfg$base_dir, cfg$gov_repo_name) else NULL
 
   cli::cli_h2("Sandbox Up: {.val {cfg$project_name}}")
+  if (!has_gov) {
+    cli::cli_alert_info("No-governance sandbox -- {.fn datom_init_gov} will be skipped.")
+  }
 
   # Determine whether to create repo or use existing data_repo_url
   create_repo <- is.null(store$data_repo_url)
@@ -344,13 +358,13 @@ sandbox_up <- function(store, ...) {
     cli::cli_alert_warning("Local path {.path {local_path}} exists. Removing.")
     fs::dir_delete(local_path)
   }
-  if (fs::dir_exists(gov_local_path)) {
+  if (has_gov && fs::dir_exists(gov_local_path)) {
     cli::cli_alert_warning("Gov local path {.path {gov_local_path}} exists. Removing.")
     fs::dir_delete(gov_local_path)
   }
 
   # ---- Step 1: bootstrap governance repo (gov-first per Phase 15) ----------
-  if (is.null(store$gov_repo_url)) {
+  if (has_gov && is.null(store$gov_repo_url)) {
     cli::cli_alert_info("Initializing governance repo {.val {cfg$gov_repo_name}}...")
     gov_repo_url <- datom::datom_init_gov(
       gov_store      = store$governance,
@@ -374,7 +388,7 @@ sandbox_up <- function(store, ...) {
       github_org     = store$github_org,
       validate       = FALSE
     )
-  } else {
+  } else if (has_gov) {
     cli::cli_alert_info("Using existing gov remote: {.url {store$gov_repo_url}}")
   }
 
@@ -429,7 +443,7 @@ sandbox_up <- function(store, ...) {
     config         = cfg,
     store          = store,
     local_path     = as.character(local_path),
-    gov_local_path = as.character(gov_local_path),
+    gov_local_path = if (has_gov) as.character(gov_local_path) else NULL,
     conn           = conn,
     created_at     = Sys.time()
   )
@@ -439,11 +453,86 @@ sandbox_up <- function(store, ...) {
   cli::cli_h3("Sandbox ready")
   cli::cli_ul()
   cli::cli_li("Git repo: {.path {local_path}}")
-  cli::cli_li("Gov clone: {.path {gov_local_path}}")
+  if (has_gov) {
+    cli::cli_li("Gov clone: {.path {gov_local_path}}")
+  } else {
+    cli::cli_li("Gov clone: not attached")
+  }
   cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
-  cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
+  if (has_gov) {
+    cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
+  } else {
+    cli::cli_li("Governance: not attached (use {.fn sandbox_promote_gov} to attach)")
+  }
   cli::cli_end()
 
+  invisible(env)
+}
+
+
+#' Promote a no-gov sandbox to gov-attached
+#'
+#' Attaches governance to a sandbox that was stood up with `attach_gov = FALSE`.
+#' Mirrors the user-facing flow of Article 4 (Promoting to S3): a project that
+#' started solo graduates to governance via `datom_attach_gov()`.
+#'
+#' @param env A `datom_sandbox` from `sandbox_up()` -- must currently be no-gov.
+#' @param gov_store A governance `datom_store_*` component (S3 or local).
+#' @return The updated `datom_sandbox` env (with `gov_local_path` populated and
+#'   `store$governance` filled in).
+sandbox_promote_gov <- function(env, gov_store) {
+  if (!inherits(env, "datom_sandbox")) {
+    cli::cli_abort("{.arg env} must be a {.cls datom_sandbox}.")
+  }
+  if (!is.null(env$store$governance)) {
+    cli::cli_alert_info("Sandbox already has governance attached. No-op.")
+    return(invisible(env))
+  }
+  if (is.null(env$conn)) {
+    cli::cli_abort(c(
+      "{.arg env$conn} is NULL.",
+      "i" = "Re-stand-up the sandbox with {.code populate = TRUE} or build a conn first."
+    ))
+  }
+
+  cfg <- env$config
+  gov_local_path <- fs::path(cfg$base_dir, cfg$gov_repo_name)
+
+  cli::cli_h2("Sandbox Promote: attaching governance")
+
+  # Mirror datom_init_gov + datom_attach_gov flow.
+  gov_repo_url <- datom::datom_init_gov(
+    gov_store      = gov_store,
+    gov_local_path = as.character(gov_local_path),
+    create_repo    = TRUE,
+    repo_name      = cfg$gov_repo_name,
+    github_pat     = env$store$github_pat,
+    github_org     = env$store$github_org,
+    private        = TRUE
+  )
+
+  new_conn <- datom::datom_attach_gov(
+    conn           = env$conn,
+    gov_store      = gov_store,
+    gov_repo_url   = gov_repo_url,
+    gov_local_path = as.character(gov_local_path)
+  )
+
+  # Rebuild the env's store with the gov component now populated.
+  env$store <- datom::datom_store(
+    governance     = gov_store,
+    data           = env$store$data,
+    github_pat     = env$store$github_pat,
+    data_repo_url  = env$store$data_repo_url,
+    gov_repo_url   = gov_repo_url,
+    gov_local_path = as.character(gov_local_path),
+    github_org     = env$store$github_org,
+    validate       = FALSE
+  )
+  env$gov_local_path <- as.character(gov_local_path)
+  env$conn <- new_conn
+
+  cli::cli_alert_success("Sandbox promoted: governance attached.")
   invisible(env)
 }
 
@@ -476,6 +565,15 @@ sandbox_down <- function(env,
   scope <- match.arg(scope)
   cfg   <- env$config
   store <- env$store
+  has_gov <- !is.null(store$governance)
+
+  if (!has_gov && scope == "gov") {
+    cli::cli_alert_info("Sandbox has no governance attached -- nothing to tear down.")
+    return(invisible(FALSE))
+  }
+  if (!has_gov && scope == "all") {
+    scope <- "project"
+  }
 
   cli::cli_h2("Sandbox Down: {.val {cfg$project_name}}")
 
@@ -666,9 +764,17 @@ print.datom_sandbox <- function(x, ...) {
   cli::cli_ul()
   cli::cli_li("Project: {.val {cfg$project_name}}")
   cli::cli_li("Git repo: {.path {x$local_path}}")
-  cli::cli_li("Gov clone: {.path {x$gov_local_path %||% '(unknown)'}}")
+  if (!is.null(x$gov_local_path)) {
+    cli::cli_li("Gov clone: {.path {x$gov_local_path}}")
+  } else {
+    cli::cli_li("Gov clone: not attached")
+  }
   cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
-  cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
+  if (!is.null(store$governance)) {
+    cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
+  } else {
+    cli::cli_li("Governance: not attached")
+  }
   cli::cli_li("Age: {age}")
   if (!is.null(x$conn)) {
     cli::cli_li("Connection: available (env$conn)")

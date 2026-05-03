@@ -17,10 +17,6 @@ local({
     "DATOM_VIGNETTE_DIR",
     fs::path(tempdir(), "study_001_data")
   )
-  gov_clone_path <- Sys.getenv(
-    "DATOM_VIGNETTE_GOV_CLONE",
-    fs::path(tempdir(), "study_001_gov_clone")
-  )
 
   project_yaml <- fs::path(study_dir, ".datom", "project.yaml")
   if (!fs::file_exists(project_yaml)) {
@@ -31,6 +27,24 @@ local({
   }
 
   cfg <- yaml::read_yaml(project_yaml)
+
+  # Gov is attached in Article 4; project.yaml now records its location.
+  if (is.null(cfg$storage$governance) || is.null(cfg$repos$governance$remote_url)) {
+    cli::cli_abort(c(
+      "Project.yaml has no governance entry.",
+      "i" = "Article 5 expects governance to be attached (happens in Article 4).",
+      "i" = "Run Article 4 to completion first."
+    ))
+  }
+
+  # Prefer the gov clone path written by datom_attach_gov(); fall back to env
+  # var override for reproducibility tests.
+  default_gov_clone <- if (is.null(cfg$repos$governance$local_path)) {
+    fs::path(tempdir(), "datom-governance")
+  } else {
+    cfg$repos$governance$local_path
+  }
+  gov_clone_path <- Sys.getenv("DATOM_VIGNETTE_GOV_CLONE", default_gov_clone)
   data_cfg <- cfg$storage$data
   if (!identical(data_cfg$type, "s3")) {
     cli::cli_abort(c(
