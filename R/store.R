@@ -13,7 +13,10 @@
 #' `github_pat` presence.
 #'
 #' @param governance A store component (e.g., `datom_store_s3()`) for governance
-#'   files (dispatch, ref, migration history).
+#'   files (dispatch, ref, migration history), or `NULL` for a no-governance
+#'   store. A no-governance store represents a project that has not yet been
+#'   promoted via `datom_attach_gov()`; `gov_repo_url` and `gov_local_path`
+#'   must also be `NULL` in that case.
 #' @param data A store component (e.g., `datom_store_s3()`) for data files
 #'   (manifest, tables, metadata).
 #' @param github_pat GitHub personal access token. If provided, role is
@@ -32,7 +35,7 @@
 #'
 #' @return A `datom_store` object.
 #' @export
-datom_store <- function(governance,
+datom_store <- function(governance = NULL,
                         data,
                         github_pat = NULL,
                         data_repo_url = NULL,
@@ -42,9 +45,12 @@ datom_store <- function(governance,
                         validate = TRUE) {
 
   # --- Validate components are store objects ----------------------------------
-  if (!.is_datom_store_component(governance)) {
+  # governance is optional: a store with governance = NULL represents a
+  # gov-on-demand project that has not yet been promoted via
+  # datom_attach_gov(). All gov_* arguments must also be NULL in that case.
+  if (!is.null(governance) && !.is_datom_store_component(governance)) {
     cli::cli_abort(
-      "{.arg governance} must be a datom store component (e.g., {.fn datom_store_s3})."
+      "{.arg governance} must be a datom store component (e.g., {.fn datom_store_s3}) or NULL."
     )
   }
 
@@ -52,6 +58,13 @@ datom_store <- function(governance,
     cli::cli_abort(
       "{.arg data} must be a datom store component (e.g., {.fn datom_store_s3})."
     )
+  }
+
+  if (is.null(governance) && (!is.null(gov_repo_url) || !is.null(gov_local_path))) {
+    cli::cli_abort(c(
+      "{.arg gov_repo_url} and {.arg gov_local_path} must be NULL when {.arg governance} is NULL.",
+      "i" = "A no-governance store cannot reference a governance repo."
+    ))
   }
 
   # --- Validate github_pat ---------------------------------------------------
@@ -117,7 +130,7 @@ datom_store <- function(governance,
       validated = isTRUE(validate),
       identity = list(
         github = github_identity,
-        governance = governance$identity,
+        governance = if (!is.null(governance)) governance$identity else NULL,
         data = data$identity
       )
     ),
@@ -177,7 +190,11 @@ print.datom_store <- function(x, ...) {
 
   cli::cli_text("")
   cli::cli_text("{.strong Governance:}")
-  print(x$governance)
+  if (is.null(x$governance)) {
+    cli::cli_text("{.emph not attached}")
+  } else {
+    print(x$governance)
+  }
 
   cli::cli_text("")
   cli::cli_text("{.strong Data:}")

@@ -1,6 +1,6 @@
 # Phase 18: Governance On-Demand
 
-**Status**: Active -- Chunk 0 (activation) in progress
+**Status**: Active -- Chunk 1 (schema + resolver plumbing) complete; Chunk 2 next
 **Branch**: `phase/18-gov-on-demand` (created 2026-05-02)
 **Depends on**: Phase 16 closed (2026-05-02), Phase 17 closed (2026-05-02).
 **Supersedes**: `dev/draft_phase_conn_refactor.md` (M2 folds in; M6 absorbed as a chunk).
@@ -147,3 +147,24 @@ This is a much tighter, more coherent scope than today's seam.
 - This phase amends a Phase-16-locked principle. The amendment is the first Chunk 0 commit so the principle text is current before any code moves.
 - The conn refactor draft (`dev/draft_phase_conn_refactor.md`) is superseded: M2 (dedup `_developer`/`_reader`) is folded into Chunks 1+4 because gov-on-demand rewrites the same surface; M6 (`.datom_conn_for(scope)`) is absorbed as Chunk 6.
 - Pre-release status: no users, no backward-compat concerns. Default flips and schema changes are acceptable without migration plumbing.
+
+---
+
+## Progress Log
+
+### Chunk 0 -- Activation (`f554a57`)
+
+Plan doc landed. Principle amended in `.github/copilot-instructions.md` and `dev/datom_specification.md` (data git+GitHub mandatory; gov optional via `datom_attach_gov()`). `dev/README.md` updated: Phase 18 in Active table, conn-refactor draft removed, `local`->`filesystem` rename added to backlog. `dev/draft_phase_conn_refactor.md` deleted (M2 + M6 absorbed into Chunks 1/4/6).
+
+### Chunk 1 -- Schema + resolver plumbing
+
+Surgical scope landed. Discovery: `.datom_resolve_data_location()` already short-circuits with `if (is.null(store$governance)) return(NULL)` (R/ref.R), and `.datom_build_init_conn()` already handles `gov_store = NULL` (R/conn.R) -- both NULL-safe today. The only gate forbidding a no-gov store was `datom_store()` itself.
+
+Changes:
+- `R/store.R` -- `datom_store(governance = NULL, ...)` accepted. `gov_repo_url` and `gov_local_path` must also be NULL when governance is NULL (consistency check). Identity unpacking is NULL-safe. `print.datom_store` shows "not attached" for the gov line when absent. Roxygen updated.
+- `tests/testthat/test-store.R` -- 8 new test blocks: NULL-governance default, explicit NULL, developer + reader roles with no gov, gov-arg consistency rejection (`gov_repo_url` and `gov_local_path`), print rendering, resolver returns NULL for no-gov store.
+
+No user-facing function changes. `datom_init_repo()`, `datom_get_conn()`, `project.yaml` writer, and conn-resolution flows still require gov today -- those are Chunks 2-4.
+
+Tests: 1443 PASS / 0 FAIL (was 1416). pkgdown not rebuilt (no new exports or doc refs).
+
