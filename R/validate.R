@@ -215,7 +215,7 @@ datom_validate <- function(conn, fix = FALSE) {
   # genuinely absent; skipping keeps the validator from reporting false
   # negatives.
   if (has_gov) {
-    gov_conn <- .datom_gov_conn(conn)
+    gov_conn <- .datom_conn_for(conn, "gov")
     gov_local_path <- conn$gov_local_path
 
     proj_key <- function(name) {

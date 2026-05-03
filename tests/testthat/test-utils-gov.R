@@ -358,7 +358,7 @@ test_that(".datom_gov_register_project() creates files and commits", {
 
   local_mocked_bindings(
     .datom_storage_write_json = function(...) invisible(TRUE),
-    .datom_gov_conn = function(conn) conn
+    .datom_conn_for = function(conn, scope) conn
   )
 
   .datom_gov_register_project(env$conn, "my-study", dispatch, ref)
@@ -378,7 +378,7 @@ test_that(".datom_gov_register_project() migration_history.json is empty array",
 
   local_mocked_bindings(
     .datom_storage_write_json = function(...) invisible(TRUE),
-    .datom_gov_conn = function(conn) conn
+    .datom_conn_for = function(conn, scope) conn
   )
 
   .datom_gov_register_project(
@@ -398,7 +398,7 @@ test_that(".datom_gov_register_project() aborts when project already registered"
 
   local_mocked_bindings(
     .datom_storage_write_json = function(...) invisible(TRUE),
-    .datom_gov_conn = function(conn) conn
+    .datom_conn_for = function(conn, scope) conn
   )
 
   expect_error(
@@ -419,7 +419,7 @@ test_that(".datom_gov_register_project() writes all three files to gov storage",
       keys_written <<- c(keys_written, key)
       invisible(TRUE)
     },
-    .datom_gov_conn = function(conn) conn
+    .datom_conn_for = function(conn, scope) conn
   )
 
   .datom_gov_register_project(
@@ -444,7 +444,7 @@ test_that(".datom_gov_unregister_project() removes project dir and commits", {
   # First register so there's something to remove
   local_mocked_bindings(
     .datom_storage_write_json = function(...) invisible(TRUE),
-    .datom_gov_conn = function(conn) conn
+    .datom_conn_for = function(conn, scope) conn
   )
   .datom_gov_register_project(
     env$conn, "my-proj",
@@ -481,7 +481,7 @@ test_that(".datom_gov_record_migration() appends event to migration_history.json
 
   local_mocked_bindings(
     .datom_storage_write_json = function(...) invisible(TRUE),
-    .datom_gov_conn = function(conn) conn
+    .datom_conn_for = function(conn, scope) conn
   )
 
   # Register project first
@@ -505,7 +505,7 @@ test_that(".datom_gov_record_migration() auto-adds occurred_at", {
 
   local_mocked_bindings(
     .datom_storage_write_json = function(...) invisible(TRUE),
-    .datom_gov_conn = function(conn) conn
+    .datom_conn_for = function(conn, scope) conn
   )
 
   .datom_gov_register_project(
@@ -527,7 +527,7 @@ test_that(".datom_gov_record_migration() prepends (most recent first)", {
 
   local_mocked_bindings(
     .datom_storage_write_json = function(...) invisible(TRUE),
-    .datom_gov_conn = function(conn) conn
+    .datom_conn_for = function(conn, scope) conn
   )
 
   .datom_gov_register_project(

@@ -157,7 +157,7 @@ datom_decommission <- function(conn, confirm = NULL) {
 
   # ---- 5. Delete gov storage project folder ---------------------------------
   if (has_gov) {
-    gov_conn <- .datom_gov_conn(conn)
+    gov_conn <- .datom_conn_for(conn, "gov")
     proj_prefix <- glue::glue("projects/{project_name}")
     cli::cli_alert_info("Deleting gov storage prefix {.path {proj_prefix}}...")
     tryCatch(

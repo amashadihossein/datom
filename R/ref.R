@@ -48,7 +48,7 @@
 #'
 #' @param gov_conn A `datom_conn`-like object scoped to the governance store
 #'   (i.e., `root`, `prefix`, `client` point to the governance store).
-#'   Typically produced by `.datom_gov_conn(conn)`.
+#'   Typically produced by `.datom_conn_for(conn, "gov")`.
 #' @param project_name Project name string. Used to build the project-scoped
 #'   storage key `projects/{project_name}/ref.json`.
 #' @return A named list with `root`, `prefix`, `region` for the current
@@ -390,7 +390,7 @@
   # No governance fields -> legacy conn, skip
   if (is.null(conn$gov_root)) return(invisible(TRUE))
 
-  gov_conn <- .datom_gov_conn(conn)
+  gov_conn <- .datom_conn_for(conn, "gov")
 
   ref_location <- tryCatch(
     .datom_resolve_ref(gov_conn, conn$project_name),

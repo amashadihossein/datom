@@ -7,7 +7,7 @@
 .datom_gov_list_projects(gov_conn, gov_local_path = NULL)
 }
 \arguments{
-\item{gov_conn}{A gov-scoped \code{datom_conn} (from \code{.datom_gov_conn()} or
+\item{gov_conn}{A gov-scoped \code{datom_conn} (from \code{.datom_conn_for(conn, "gov")} or
 \code{.datom_build_gov_resolve_conn()}).}
 
 \item{gov_local_path}{Optional absolute path to a local gov clone. When

@@ -2524,3 +2524,63 @@ test_that("datom_attach_gov errors on URL mismatch when already attached", {
     "different gov repo"
   )
 })
+
+
+# --- .datom_conn_for(scope) accessor ------------------------------------------
+
+test_that(".datom_conn_for(conn, 'data') returns conn unchanged", {
+  conn <- structure(
+    list(project_name = "p", backend = "s3", root = "data-bucket",
+         prefix = "data/", client = list(tag = "data-client"),
+         gov_root = "gov-bucket", gov_prefix = "gov/",
+         gov_client = list(tag = "gov-client")),
+    class = "datom_conn"
+  )
+  expect_identical(.datom_conn_for(conn, "data"), conn)
+})
+
+test_that(".datom_conn_for(conn) defaults to scope = 'data'", {
+  conn <- structure(list(root = "r", gov_root = "g"), class = "datom_conn")
+  expect_identical(.datom_conn_for(conn), conn)
+})
+
+test_that(".datom_conn_for(conn, 'gov') swaps in governance fields", {
+  conn <- structure(
+    list(project_name = "p", backend = "s3",
+         root = "data-bucket", prefix = "data/", region = "us-east-1",
+         client = list(tag = "data-client"),
+         gov_root = "gov-bucket", gov_prefix = "gov/", gov_region = "us-west-2",
+         gov_client = list(tag = "gov-client"),
+         path = NULL, role = "developer", endpoint = NULL),
+    class = "datom_conn"
+  )
+
+  gov <- .datom_conn_for(conn, "gov")
+
+  expect_s3_class(gov, "datom_conn")
+  expect_equal(gov$root, "gov-bucket")
+  expect_equal(gov$prefix, "gov/")
+  expect_equal(gov$region, "us-west-2")
+  expect_equal(gov$client$tag, "gov-client")
+  expect_equal(gov$project_name, "p")
+})
+
+test_that(".datom_conn_for(conn, 'gov') passes through NULL gov fields without abort", {
+  # Pure refactor: the accessor is a shape transform, not a guard.
+  # Gov-only commands (datom_sync_dispatch, datom_pull_gov) own the
+  # user-facing "no governance attached" error -- see Chunk 7.
+  conn <- structure(
+    list(project_name = "p", backend = "local", root = "/tmp/r",
+         gov_root = NULL, gov_prefix = NULL, gov_client = NULL),
+    class = "datom_conn"
+  )
+  gov <- .datom_conn_for(conn, "gov")
+  expect_s3_class(gov, "datom_conn")
+  expect_null(gov$root)
+  expect_null(gov$client)
+})
+
+test_that(".datom_conn_for rejects unknown scope", {
+  conn <- structure(list(root = "r"), class = "datom_conn")
+  expect_error(.datom_conn_for(conn, "bogus"))
+})

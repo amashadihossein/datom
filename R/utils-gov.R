@@ -169,7 +169,7 @@
 #'
 #' Skips entries that don't contain a `ref.json` (corrupt registry rows).
 #'
-#' @param gov_conn A gov-scoped `datom_conn` (from `.datom_gov_conn()` or
+#' @param gov_conn A gov-scoped `datom_conn` (from `.datom_conn_for(conn, "gov")` or
 #'   `.datom_build_gov_resolve_conn()`).
 #' @param gov_local_path Optional absolute path to a local gov clone. When
 #'   provided and the clone exists, the filesystem path is preferred.
@@ -222,7 +222,7 @@
 # always owns those.
 #
 # Every helper accepts a `datom_conn` object. Git ops use `conn$gov_local_path`;
-# storage ops route through `.datom_gov_conn(conn)`.
+# storage ops route through `.datom_conn_for(conn, "gov")`.
 
 
 # GOV_SEAM: low-level commit on the gov clone (pull first for safety).
@@ -316,7 +316,7 @@
   .datom_gov_push(conn)
 
   # Mirror to gov storage
-  gov_conn <- .datom_gov_conn(conn)
+  gov_conn <- .datom_conn_for(conn, "gov")
   .datom_storage_write_json(gov_conn, glue::glue("projects/{project_name}/dispatch.json"),
                              dispatch)
 
@@ -354,7 +354,7 @@
   .datom_gov_push(conn)
 
   # Mirror to gov storage
-  gov_conn <- .datom_gov_conn(conn)
+  gov_conn <- .datom_conn_for(conn, "gov")
   .datom_storage_write_json(gov_conn, glue::glue("projects/{project_name}/ref.json"), ref)
 
   invisible(TRUE)
@@ -409,7 +409,7 @@
   .datom_gov_push(conn)
 
   # Mirror to gov storage
-  gov_conn <- .datom_gov_conn(conn)
+  gov_conn <- .datom_conn_for(conn, "gov")
   .datom_storage_write_json(gov_conn, glue::glue("projects/{project_name}/dispatch.json"),
                              dispatch)
   .datom_storage_write_json(gov_conn, glue::glue("projects/{project_name}/ref.json"), ref)
@@ -516,7 +516,7 @@
   .datom_gov_push(conn)
 
   # Mirror to gov storage
-  gov_conn <- .datom_gov_conn(conn)
+  gov_conn <- .datom_conn_for(conn, "gov")
   .datom_storage_write_json(gov_conn, glue::glue("projects/{project_name}/migration_history.json"),
                              history)
 

@@ -105,18 +105,30 @@ new_datom_conn <- function(project_name,
 }
 
 
-#' Create a Governance-Scoped Connection
+#' Scope-Selecting Connection Accessor
 #'
-#' Returns a lightweight connection that routes S3 operations to the governance
-#' store. The storage dispatch layer (`.datom_storage_write_json`, etc.)
-#' read `conn$root`, `conn$prefix`, and `conn$client` — this swaps in the
-#' governance equivalents so the helpers work transparently.
+#' Returns the connection shaped for either the data or governance store.
+#' The storage dispatch layer (`.datom_storage_*`) reads `conn$root`,
+#' `conn$prefix`, and `conn$client`; this accessor swaps those fields when
+#' callers need to operate on the governance store.
 #'
-#' @param conn A `datom_conn` object with governance fields populated.
-#' @return A list with `root`, `prefix`, `client` pointing to the
-#'   governance store.
+#' Single source of truth for "which store am I talking to right now?" --
+#' replaces ad-hoc `conn$gov_client` peeking and the prior `.datom_gov_conn()`
+#' helper.
+#'
+#' @param conn A `datom_conn` object.
+#' @param scope Either `"data"` (default; returns `conn` unchanged) or
+#'   `"gov"` (returns a sub-conn with governance fields swapped in).
+#' @return A `datom_conn` object scoped to the requested store.
 #' @keywords internal
-.datom_gov_conn <- function(conn) {
+.datom_conn_for <- function(conn, scope = c("data", "gov")) {
+  scope <- match.arg(scope)
+
+  if (scope == "data") return(conn)
+
+  # scope == "gov" -- callers (datom_sync_dispatch, datom_pull_gov,
+  # .datom_gov_*) are responsible for the user-facing "no governance attached"
+  # error before reaching here. This accessor is a pure shape transform.
   structure(
     list(
       project_name = conn$project_name,
@@ -124,7 +136,7 @@ new_datom_conn <- function(project_name,
       root         = conn$gov_root,
       prefix       = conn$gov_prefix,
       region       = conn$gov_region,
-      client    = conn$gov_client,
+      client       = conn$gov_client,
       path         = conn$path,
       role         = conn$role,
       endpoint     = conn$endpoint

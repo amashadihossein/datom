@@ -1,6 +1,6 @@
 # Phase 18: Governance On-Demand
 
-**Status**: Active -- Chunks 1-5 complete; Chunk 6 next (`.datom_conn_for(scope)` accessor)
+**Status**: Active -- Chunks 1-6 complete; Chunk 7 next (gov-only commands fail clearly when gov absent)
 **Branch**: `phase/18-gov-on-demand` (created 2026-05-02)
 **Depends on**: Phase 16 closed (2026-05-02), Phase 17 closed (2026-05-02).
 **Supersedes**: `dev/draft_phase_conn_refactor.md` (M2 folds in; M6 absorbed as a chunk).
@@ -83,8 +83,8 @@ This is a much tighter, more coherent scope than today's seam.
 | 3 | ✅ done | **`datom_attach_gov()`**: idempotent promotion. Initializes gov clone if absent, writes `projects/{name}/{ref,dispatch,migration_history}.json`, updates `project.yaml`'s `storage.governance` block, commits to gov repo. Marked `# GOV_SEAM:`. New export. | Medium. |
 | 4 | ✅ done | **Read/write paths in no-gov mode**: `datom_read` / `datom_write` resolve location from `project.yaml`; skip ref-current write guard; everything else unchanged. `datom_get_conn()` accepts no-gov stores. | High (read/write surface). |
 | 5 | ✅ done | **Decommission no-gov branch**: skip `.datom_gov_unregister_project()` step when gov absent. Data + GitHub + local clone teardown only. | Low. |
-| 6 | ⏳ next | **`.datom_conn_for(scope)` accessor** (M6 absorbed). Single accessor `(.datom_conn_for(conn, "data"|"gov"))` replaces ad-hoc `conn$gov_client` / `.datom_gov_conn(conn)` picking across `R/conn.R`, `R/sync.R`, `R/ref.R`, `R/utils-gov.R`, `R/validate.R`. Pure refactor, no behavior change. | Medium (touches many files). |
-| 7 | ☐ todo | **Gov-only commands fail clearly when gov absent**: `datom_projects()`, `datom_pull_gov()`, `datom_sync_dispatch()`, `datom_decommission()` (gov-half) all detect `is.null(conn$gov_root)` and emit a single uniform error: "this project has no governance attached; use `datom_attach_gov()` to enable." | Low. |
+| 6 | ✅ done | **`.datom_conn_for(scope)` accessor** (M6 absorbed). Single accessor `(.datom_conn_for(conn, "data"|"gov"))` replaces ad-hoc `conn$gov_client` / `.datom_gov_conn(conn)` picking across `R/conn.R`, `R/sync.R`, `R/ref.R`, `R/utils-gov.R`, `R/validate.R`. Pure refactor, no behavior change. | Medium (touches many files). |
+| 7 | ⏳ next | **Gov-only commands fail clearly when gov absent**: `datom_projects()`, `datom_pull_gov()`, `datom_sync_dispatch()`, `datom_decommission()` (gov-half) all detect `is.null(conn$gov_root)` and emit a single uniform error: "this project has no governance attached; use `datom_attach_gov()` to enable." | Low. |
 | 8 | ☐ todo | **Vignettes**: Article 1 (First Extract) drops `datom_init_gov()` and uses `attach_gov = FALSE`; Article 4 (Promoting to S3) introduces `datom_attach_gov()` alongside the S3 promotion -- the natural moment. Articles 5-9 unchanged structurally. Resume scripts updated where they construct stores. README rewritten to drop gov from the primary example. | Medium (locked text changes). |
 | 9 | ☐ todo | **Tests + polish**: unit tests for no-gov paths, `datom_attach_gov()`, transition coverage (no-gov -> attached), failure modes for gov-only commands when gov absent. E2E: `dev/dev-sandbox.R` learns a no-gov mode (`sandbox_up(attach_gov = FALSE)`) and a "promote later" path. **Polish**: `datom_attach_gov()` detects an empty/uninitialized gov remote and redirects the user to `datom_init_gov()` with a clear message (rather than failing inside `.datom_gov_clone_init()` or downstream register). | Medium. |
 | 10 | ☐ todo | **Phase close**: harvest learnings to spec/instructions; update README; PR. | Low. |
@@ -249,3 +249,19 @@ Changes:
 - `tests/testthat/test-decommission.R` -- new section "No-governance (gov-on-demand)" with `make_decommission_env_nogov()` helper and 3 tests: end-to-end no-gov decommission (data storage + local clone cleared); gov helpers not called; **regression test** that confirms step 5 does not delete `cwd/projects/{name}` (the latent bug above).
 
 Tests: 1493 PASS / 0 FAIL (was 1488; +5 new).
+
+
+### Chunk 6 -- `.datom_conn_for(scope)` accessor (pure refactor)
+
+Single accessor `.datom_conn_for(conn, scope = c("data", "gov"))` replaces the prior `.datom_gov_conn(conn)` helper and any ad-hoc gov-field peeking. `scope = "data"` returns `conn` unchanged; `scope = "gov"` returns the gov-shaped sub-conn (root/prefix/region/client swapped from `gov_*` fields, other fields preserved). M6 from the superseded conn-refactor draft, absorbed here per the phase plan.
+
+**Design note**: the accessor is intentionally a pure shape transform with no abort-on-no-gov. Initial implementation included an abort, which broke a `datom_sync_dispatch` test that mocks a bare conn -- a signal that the abort belongs at the gov-only-command level (Chunk 7), not in the accessor. Keeping the accessor permissive matches the prior `.datom_gov_conn()` behavior exactly, preserving "pure refactor, no behavior change".
+
+Changes:
+- `R/conn.R` -- added `.datom_conn_for()`; removed `.datom_gov_conn()`. `datom_attach_gov()`'s `attach_conn$gov_client <- gov_client` setter is unchanged (it's a writer, not a reader).
+- `R/decommission.R`, `R/ref.R` (caller + docstring), `R/projects.R` (caller + comment), `R/validate.R`, `R/sync.R`, `R/utils-gov.R` (4 callers + docstring + routing comment) -- all `.datom_gov_conn(conn)` call sites replaced with `.datom_conn_for(conn, "gov")`.
+- `tests/testthat/test-utils-gov.R` -- 8 mock stubs updated to `.datom_conn_for = function(conn, scope) conn`.
+- `tests/testthat/test-conn.R` -- 5 new tests: data-scope identity, default-scope = data, gov-scope field swap, gov-scope NULL pass-through (codifies the no-abort design decision), unknown-scope match.arg error.
+- `man/dot-datom_gov_conn.Rd` deleted; `man/dot-datom_conn_for.Rd` created.
+
+Tests: 1505 PASS / 0 FAIL (was 1493; +12 new).

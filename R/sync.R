@@ -220,7 +220,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
 
   # manifest.json → data store
   repo_files_synced <- character()
-  gov_conn <- .datom_gov_conn(conn)
+  gov_conn <- .datom_conn_for(conn, "gov")
 
   # --- Sync governance files (dispatch, ref, migration_history) --------------
   if (is.null(conn$gov_local_path) || !nzchar(conn$gov_local_path)) {
