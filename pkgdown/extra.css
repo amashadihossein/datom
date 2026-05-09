@@ -1,0 +1,30 @@
+/* datom vignette flavor boxes
+ *
+ * Usage:
+ *   <div class="datom-callout datom-callout-goal" markdown="1">...</div>
+ *   <div class="datom-callout datom-callout-tip"  markdown="1">...</div>
+ *   <div class="datom-callout datom-callout-warn" markdown="1">...</div>
+ *
+ * No background fill -- works in light and dark mode.
+ * Border colour uses CSS custom properties so it inherits the active theme.
+ */
+
+.datom-callout {
+  border-left: 4px solid;
+  border-radius: 0.25rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  clear: both;
+}
+
+.datom-callout-goal {
+  border-color: var(--bs-info, #0dcaf0);
+}
+
+.datom-callout-tip {
+  border-color: var(--bs-success, #198754);
+}
+
+.datom-callout-warn {
+  border-color: var(--bs-warning, #ffc107);
+}

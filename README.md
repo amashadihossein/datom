@@ -42,27 +42,42 @@ pak::pak("amashadihossein/datom")
 
 ## A two-minute tour
 
-datom requires git + GitHub for metadata, regardless of where the data
-lives. The example below uses a **local directory** for parquet bytes –
-the fastest way to see datom work end to end. Swapping the local store
-for `datom_store_s3()` is the only change needed for cloud storage; see
-the [Promoting to
-S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.html)
-article, which also introduces the optional governance layer for
-portfolios of projects.
+> **What this tour builds:** a shared, versioned data space with
+> reproducible reads for multiple engineers and analysts – coordinated
+> through a single git history. Every `datom_write()` is a commit; every
+> `datom_read()` resolves to an exact content SHA. No one can silently
+> overwrite history.
+
+**Before you start:** you need a GitHub personal access token (PAT)
+scoped to `repo`. While you don’t need to have this token stored in your
+OS keychain, use of `keyring` is recommended for security and ease of
+use.
+
+``` r
+keyring::key_set("GITHUB_PAT")          # one-time setup
+nzchar(keyring::key_get("GITHUB_PAT"))  # verify -- should return TRUE
+```
+
+See the [Credentials in
+Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.html)
+article for a step-by-step walkthrough of PAT creation and keyring
+setup.
 
 ``` r
 library(datom)
 library(fs)
 
-# 1. One local directory for the parquet bytes.
-data_root <- path(tempdir(), "datom_data_root")
-study_dir <- path(tempdir(), "study_001_data")
-dir_create(data_root)
+# Two paths, two roles:
+#   dev_dir  -- your local workspace for this project (stays on your machine)
+#   data_dir -- where the actual data lives; point this at a shared location
+#               (network drive, S3, etc.) for team access. Temp dir used here
+#               for demonstration -- replace with a real path when you're ready.
+dev_dir  <- path(tempdir(), "study_001_dev")
+data_dir <- path(tempdir(), "study_001_data")
+dir_create(data_dir)
 
-# 2. Build a store. The GitHub PAT is the only credential needed.
-#    No governance layer yet -- it's optional and added on demand later.
-data_component <- datom_store_local(path = data_root)
+# Build a store (the only credential needed is your GitHub PAT).
+data_component <- datom_store_local(path = data_dir)
 
 store <- datom_store(
   governance = NULL,
@@ -70,16 +85,20 @@ store <- datom_store(
   github_pat = keyring::key_get("GITHUB_PAT")
 )
 
-# 3. Initialize a project.
+# Initialize a project: registers it on GitHub and sets up your dev workspace.
 datom_init_repo(
-  path         = study_dir,
+  path         = dev_dir,
   project_name = "STUDY_001",
   store        = store,
   create_repo  = TRUE,
   repo_name    = "study-001-data"
 )
 
-conn <- datom_get_conn(path = study_dir, store = store)
+conn <- datom_get_conn(path = dev_dir, store = store)
+
+# Explore what was created before writing anything.
+fs::dir_tree(dev_dir)   # your local workspace
+fs::dir_tree(data_dir)  # data storage (empty until first write)
 ```
 
 Now write a table – twice – and watch datom do the right thing:
@@ -98,8 +117,9 @@ datom_list(conn)
 #>   name current_version current_data_sha last_updated
 #> 1   dm         a8ee7a31         4b6d0a7e 2026-01-28T...
 
-# Read back what you wrote -- bit-for-bit.
-identical(datom_read(conn, "dm"), dm)
+# datom reads back data as a tibble. Use tibble::as_tibble() on the
+# original for a clean round-trip comparison.
+identical(datom_read(conn, "dm"), tibble::as_tibble(dm))
 #> [1] TRUE
 ```
 
@@ -111,6 +131,16 @@ Three core properties just showed up:
     the project knows about.
 3.  **Duplicate detection** – re-writing the same data is a free no-op,
     making pipelines safe to re-run.
+
+## Teardown
+
+``` r
+unlink(c(dev_dir, data_dir), recursive = TRUE)
+```
+
+This removes only local files. The GitHub repo `study-001-data` remains
+– delete it from the GitHub UI, or use `datom_decommission()` for a full
+scripted teardown including the remote repo.
 
 ## Where to go next
 
