@@ -16,7 +16,7 @@ knitr::opts_chunk$set(
 ```
 
 > **Where we left off:** STUDY-001 has four tables (`dm`, `ex`, `lb`, `ae`),
-> all on your laptop. The data git repo is on GitHub. No governance layer
+> all in a local filesystem store. The data git repo is on GitHub. No governance layer
 > is attached yet — articles 1-3 stayed deliberately solo.
 
 A colleague on a different laptop now needs to read the data. Local

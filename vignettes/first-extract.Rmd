@@ -20,7 +20,8 @@ knitr::opts_chunk$set(
 ```
 
 <div class="datom-callout datom-callout-goal" markdown="1">
-**Goal:** Stand up a versioned datom project on your laptop — write your first
+**Goal:** Stand up a versioned datom project using a local filesystem store --
+write your first
 table, read it back, and confirm git is tracking the history. No AWS account
 needed. The same workflow extends to a shared team space (S3 or a shared
 filesystem) without changing a single function call.
@@ -46,8 +47,8 @@ store for an S3 store in [Promoting to S3](promoting-to-s3.html).
 ## Requirements
 
 datom keeps **metadata in git** (diff-able, auditable) and **data wherever you
-tell it to live** (S3 or a local directory). Even when data lives on your
-laptop, metadata still goes to a git remote — that is how version history stays
+tell it to live** (S3 or a local directory). Even when data lives on a local
+filesystem, metadata still goes to a git remote — that is how version history stays
 reproducible across machines.
 
 You need two things, both one-time:
@@ -224,7 +225,7 @@ store, not to the git repo.
 
 ## Where you are
 
-You have a fully versioned datom project on your laptop:
+You have a fully versioned datom project up and running:
 
 - One table (`dm`) with one version, one parquet file in `data_dir`
 - Metadata committed and pushed to GitHub -- version history is auditable
