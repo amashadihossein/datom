@@ -166,7 +166,7 @@ subjects enrolled by 2026-01-28:
 ```{r}
 dm_m1 <- datom_example_data("dm", cutoff_date = "2026-01-28")
 nrow(dm_m1)
-#> [1] 6
+#> [1] 4
 ```
 
 Write it as a versioned datom table:

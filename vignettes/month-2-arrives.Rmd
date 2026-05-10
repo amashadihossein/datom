@@ -16,7 +16,7 @@ knitr::opts_chunk$set(
 ```
 
 > **Where we left off:** STUDY-001 is initialized. One table (`dm`) holds the
-> first 6 subjects. The data git repo is live on GitHub.
+> first 4 subjects. The data git repo is live on GitHub.
 
 A month has passed. Eight more subjects have enrolled. The data management
 team sends you the month-2 extract, and you need to register the new state
@@ -55,10 +55,10 @@ library(datom)
 
 dm_m2 <- datom_example_data("dm", cutoff_date = "2026-02-28")
 nrow(dm_m2)
-#> [1] 14
+#> [1] 16
 ```
 
-Eight new subjects have been added. The month-1 rows are still there,
+Twelve new subjects have been added. The month-1 rows are still there,
 unchanged.
 
 ## Write the new version
@@ -121,11 +121,11 @@ m1_ver  <- hist$version[hist$message == "Initial DM extract through 2026-01-28"]
 
 dm_m1_again <- datom_read(conn, "dm", version = m1_ver)
 nrow(dm_m1_again)
-#> [1] 6
+#> [1] 4
 ```
 
 The data you get back is bit-for-bit identical to what you wrote in
-article 1, even though the current version of `dm` has 14 rows. This is the
+article 1, even though the current version of `dm` has 16 rows. This is the
 property your future statisticians, regulators, and auditors rely on.
 
 ## Where you are
