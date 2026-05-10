@@ -123,24 +123,39 @@ identical(datom_read(conn, "dm"), tibble::as_tibble(dm))
 #> [1] TRUE
 ```
 
-Three core properties just showed up:
+Three things just happened that are worth pausing on:
 
-1.  **Versioning** – `dm` has a hash-named version that any colleague
-    can reference and reproduce.
-2.  **Listing** – `datom_list()` shows the current state of every table
-    the project knows about.
-3.  **Duplicate detection** – re-writing the same data is a free no-op,
-    making pipelines safe to re-run.
+1.  **Reproducibility is now built in** – every write minted a SHA tied
+    to the data itself. That SHA is how you read back, list, diff, and
+    audit. Same data on any machine returns the same SHA; same SHA
+    always returns the same bytes. `datom_read()`, `datom_list()`, and
+    `datom_history()` are all just different views into the same
+    versioned record.
+2.  **Idempotent writes** – re-writing the same data was a free no-op.
+    Pipelines are safe to re-run without polluting history.
+3.  **Data as code** – the version history is in git: diffable,
+    reviewable, and shareable like any other code asset. The data bytes
+    stayed in `data_dir` – nothing sensitive went to GitHub. Before you
+    tear down, open `https://github.com/<your-username>/study-001-data`
+    and look at the commits: you will see the full audit trail with no
+    data bytes in sight.
 
 ## Teardown
 
+Pick one:
+
 ``` r
+# Option A -- full scripted teardown (deletes local files AND the GitHub repo).
+# Do this BEFORE unlink().
+datom_decommission(conn, confirm = "STUDY_001")
+
+# Option B -- local only (GitHub repo stays; delete it manually from the UI).
 unlink(c(dev_dir, data_dir), recursive = TRUE)
 ```
 
-This removes only local files. The GitHub repo `study-001-data` remains
-– delete it from the GitHub UI, or use `datom_decommission()` for a full
-scripted teardown including the remote repo.
+Do not call `unlink()` before `datom_decommission()` – removing the
+local clone first strips the GitHub remote reference and the remote repo
+will not be deleted.
 
 ## Where to go next
 
