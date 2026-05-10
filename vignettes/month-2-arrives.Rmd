@@ -117,7 +117,7 @@ Pass a `version` to retrieve any historical snapshot:
 
 ```{r}
 hist    <- datom_history(conn, "dm")
-m1_ver  <- hist$version[hist$message == "Initial DM extract through 2026-01-28"]
+m1_ver  <- hist$version[hist$commit_message == "Initial DM extract through 2026-01-28"]
 
 dm_m1_again <- datom_read(conn, "dm", version = m1_ver)
 nrow(dm_m1_again)

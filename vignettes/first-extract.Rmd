@@ -129,10 +129,10 @@ datom_init_repo(
 )
 ```
 
-This creates a GitHub repo, clones it into `study_dir`, and commits a
+This creates a GitHub repo, clones it into `dev_dir`, and commits a
 `project.yaml` that records the project's data store address. The git repo is
-now live on GitHub. No parquet data is pushed to GitHub — only the metadata
-commits travel over the wire; the parquet bytes stay in `data_root`.
+now live on GitHub. No parquet data is pushed to GitHub -- only the metadata
+commits travel over the wire; the parquet bytes stay in `data_dir`.
 
 Take a moment to inspect the repo structure before moving on:
 
@@ -183,7 +183,7 @@ datom_write(
 
 Three things just happened, in this order:
 
-1. The data frame was serialized to parquet and written to `data_root`.
+1. The data frame was serialized to parquet and written to `data_dir`.
    **No data was pushed to the GitHub repo** — parquet bytes never leave
    your local store.
 2. `metadata.json` and `version_history.json` were updated in the git clone
@@ -218,17 +218,17 @@ identical(datom_read(conn, "dm"), tibble::as_tibble(dm_m1))
 ```
 
 The read does **not** go through GitHub. It uses the manifest cached in
-`data_root` to locate the parquet file and stream it back. This is the same
-path a data reader on a different machine takes — they need access to the data
+`data_dir` to locate the parquet file and stream it back. This is the same
+path a data reader on a different machine takes -- they need access to the data
 store, not to the git repo.
 
 ## Where you are
 
 You have a fully versioned datom project on your laptop:
 
-- One table (`dm`) with one version, one parquet file in `data_root`
-- Metadata committed and pushed to GitHub — version history is auditable
-- Parquet data stays local — **nothing sensitive went to GitHub**
+- One table (`dm`) with one version, one parquet file in `data_dir`
+- Metadata committed and pushed to GitHub -- version history is auditable
+- Parquet data stays local -- **nothing sensitive went to GitHub**
 - No governance attached yet; you'll add it in
   [Promoting to S3](promoting-to-s3.html) when sharing matters
 
@@ -237,7 +237,11 @@ write a second version without overwriting the first.
 
 ## Teardown
 
-Pick one:
+**Planning to continue to [Month 2 Arrives](month-2-arrives.html)?** Leave
+everything as-is and reuse your `conn` in the next article. The resume script
+in article 2 is there for users who closed their session; you don't need it.
+
+If you are done exploring, pick one:
 
 ```{r}
 # Option A -- full scripted teardown (deletes local files AND the GitHub repo).
