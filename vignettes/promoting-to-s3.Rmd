@@ -19,12 +19,26 @@ knitr::opts_chunk$set(
 > all in a local filesystem store. The data git repo is on GitHub. No governance layer
 > is attached yet — articles 1-3 stayed deliberately solo.
 
-A colleague on a different laptop now needs to read the data. Local
-filesystem storage was fine when you were the only one writing; it stops
-working the moment a second person needs the same bytes.
+A local filesystem store is a valid and fully supported backend — it works
+for a shared network mount just as well as a local directory. The reason to
+move to S3 is not about access per se; it is about what object storage makes
+possible that a filesystem cannot:
 
-This article does two things, both triggered by the same moment ("someone
-else needs to read this"):
+- **Access management inside datom.** S3 IAM policies let you grant
+  read-only access to a bucket prefix, scoped to a project, audited by
+  CloudTrail — without touching the filesystem or coordinating with IT.
+  datom's reader role maps directly onto a read-only IAM policy; no extra
+  tooling needed.
+- **Logging and automation.** S3 access logs, S3 Event Notifications, and
+  lifecycle rules give you a policy-driven data management layer that a
+  filesystem does not. Future datom tooling (audit reports, automated
+  expiry, cross-account replication) plugs into these hooks.
+- **Scale and durability.** S3 scales without administration. A shared
+  network mount has a single point of failure, quota management, and
+  backup overhead that S3 does not.
+
+This article does two things, both triggered by the same moment (the project
+is ready to graduate from a development filesystem to managed object storage):
 
 1. **Promote** STUDY-001 from local-filesystem data storage to **S3**.
 2. **Attach** the governance layer with `datom_attach_gov()` — a shared
