@@ -26,6 +26,11 @@ needed. The same workflow extends to a shared team space (S3 or a shared
 filesystem) without changing a single function call.
 </div>
 
+> **Already done the two-minute tour in the README?** The tour and this
+> article cover the same ground. If your project initialized cleanly and
+> `datom_read()` returned `TRUE`, you can jump straight to
+> [Month 2 Arrives](month-2-arrives.html).
+
 You are the data engineer for **STUDY-001**, a Phase II clinical trial. The first
 EDC extract has just landed. datom lets you and your collaborators build a
 **shared, versioned data space** — multiple engineers writing new extracts,
@@ -72,10 +77,10 @@ setup steps first.
 
 Two paths are needed, and they serve different roles:
 
-- **`study_dir`** — the local clone of the data git repository. This is
+- **`dev_dir`** — your local clone of the data git repository. This is
   where metadata (`project.yaml`, `metadata.json`, version history) lives.
   In a team setting this would be cloned on every developer's machine.
-- **`data_root`** — the directory where parquet bytes are written. In a team
+- **`data_dir`** — the directory where parquet bytes are written. In a team
   setting this would be an S3 bucket (or a shared network mount), so every
   team member reads from the same physical store.
 
@@ -86,10 +91,14 @@ real paths — or an S3 store — when you are ready for a persistent shared spa
 library(datom)
 library(fs)
 
-study_dir <- path(tempdir(), "study_001_data")        # data git clone
-data_root <- path(tempdir(), "study_001_data_root")   # parquet bytes live here
+# Two paths, two roles:
+#   dev_dir  -- your local workspace for this project (stays on your machine)
+#   data_dir -- where the actual data lives; replace with a real path or S3
+#               store when you are ready for a persistent shared space
+dev_dir  <- path(tempdir(), "study_001_dev")   # data git clone
+data_dir <- path(tempdir(), "study_001_data")  # parquet bytes live here
 
-dir_create(data_root)
+dir_create(data_dir)
 ```
 
 ## Build a store
@@ -99,7 +108,7 @@ GitHub PAT that lets datom push metadata. Governance is not attached yet
 (`governance = NULL`); you'll add it in [Promoting to S3](promoting-to-s3.html).
 
 ```{r}
-data_component <- datom_store_local(path = data_root)
+data_component <- datom_store_local(path = data_dir)
 
 store <- datom_store(
   governance = NULL,
@@ -112,7 +121,7 @@ store <- datom_store(
 
 ```{r}
 datom_init_repo(
-  path         = study_dir,
+  path         = dev_dir,
   project_name = "STUDY_001",
   store        = store,
   create_repo  = TRUE,
@@ -129,23 +138,23 @@ Take a moment to inspect the repo structure before moving on:
 
 ```{r}
 # Metadata layout in the git clone
-fs::dir_tree(study_dir)
+fs::dir_tree(dev_dir)
 
 # Storage layout (empty until first write)
-fs::dir_tree(data_root)
+fs::dir_tree(data_dir)
 ```
 
 ## Connect
 
 ```{r}
-conn <- datom_get_conn(path = study_dir, store = store)
+conn <- datom_get_conn(path = dev_dir, store = store)
 print(conn)
 #> -- datom connection
 #> * Project: "STUDY_001"
 #> * Role: "developer"
 #> * Backend: "local"
-#> * Root: "/tmp/.../study_001_data_root"
-#> * Path: "/tmp/.../study_001_data"
+#> * Root: "/tmp/.../study_001_data"
+#> * Path: "/tmp/.../study_001_dev"
 #> * Governance: not attached
 ```
 
@@ -185,7 +194,7 @@ Three things just happened, in this order:
 After the write, explore what changed:
 
 ```{r}
-fs::dir_tree(data_root)   # parquet file now present
+fs::dir_tree(data_dir)    # parquet file now present
 datom_status(conn)        # table list with SHAs
 datom_history(conn, "dm") # version history
 ```
@@ -228,13 +237,17 @@ write a second version without overwriting the first.
 
 ## Teardown
 
-When you are done exploring, remove all local artefacts:
+Pick one:
 
 ```{r}
-unlink(c(study_dir, data_root), recursive = TRUE)
+# Option A -- full scripted teardown (deletes local files AND the GitHub repo).
+# Do this BEFORE unlink().
+datom_decommission(conn, confirm = "STUDY_001")
+
+# Option B -- local only (GitHub repo stays; delete it manually from the UI).
+unlink(c(dev_dir, data_dir), recursive = TRUE)
 ```
 
-This removes only your local files. The GitHub repo `study-001-data` remains on
-GitHub — delete it from the GitHub UI when you no longer need it. Article 7
-introduces `datom_decommission()`, which handles the full scripted teardown
-including the remote repo.
+Do not call `unlink()` before `datom_decommission()` — removing the local
+clone first strips the GitHub remote reference and the remote repo will not
+be deleted.

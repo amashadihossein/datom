@@ -16,7 +16,7 @@ knitr::opts_chunk$set(
 ```
 
 > **Where we left off:** STUDY-001 is initialized. One table (`dm`) holds the
-> first 6 subjects. Both git repos are live on GitHub.
+> first 6 subjects. The data git repo is live on GitHub.
 
 A month has passed. Eight more subjects have enrolled. The data management
 team sends you the month-2 extract, and you need to register the new state
@@ -37,8 +37,8 @@ state <- source(
   system.file("vignette-setup", "resume_article_2.R", package = "datom")
 )$value
 
-conn       <- state$conn
-study_dir  <- state$study_dir
+conn      <- state$conn
+dev_dir   <- state$dev_dir
 ```
 
 The resume script is idempotent — running it twice in the same session is
