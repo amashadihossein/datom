@@ -35,7 +35,7 @@ state <- source(
 )$value
 
 conn      <- state$conn
-study_dir <- state$study_dir
+dev_dir <- state$dev_dir
 ```
 
 If you've been working in the same R session since article 1 or 2, skip the
@@ -51,7 +51,7 @@ the inbox for `datom_sync()`.
 library(datom)
 library(fs)
 
-input_dir <- path(study_dir, "input_files")
+input_dir <- path(dev_dir, "input_files")
 cutoff    <- "2026-03-28"
 
 write.csv(datom_example_data("dm", cutoff_date = cutoff),
