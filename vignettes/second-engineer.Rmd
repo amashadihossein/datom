@@ -34,7 +34,7 @@ state <- source(
 )$value
 
 conn      <- state$conn         # original engineer
-study_dir <- state$study_dir
+dev_dir <- state$dev_dir
 ```
 
 ## The second engineer clones

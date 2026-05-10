@@ -93,7 +93,7 @@ state <- source(
 )$value
 
 old_conn  <- state$conn
-study_dir <- state$study_dir
+dev_dir   <- state$dev_dir
 ```
 
 `old_conn` is the local-backend conn from article 3. We'll use it to read
@@ -139,7 +139,7 @@ data-side: no registry to unregister from, no gov storage to clean up.
 ```{r}
 library(fs)
 
-study_dir <- path(tempdir(), "study_001_data")  # fresh clone target
+dev_dir <- path(tempdir(), "study_001_dev")  # fresh clone target
 
 aws_data <- datom_store_s3(
   bucket     = "your-org-datom-data",   # <-- replace with a bucket you own
@@ -160,14 +160,13 @@ store <- datom_store(
 
 ```{r}
 datom_init_repo(
-  path         = study_dir,
-  project_name = "STUDY_001",
+  path         = dev_dir,
   store        = store,
   create_repo  = TRUE,
   repo_name    = "study-001-data"
 )
 
-conn <- datom_get_conn(path = study_dir, store = store)
+conn <- datom_get_conn(path = dev_dir, store = store)
 print(conn)
 #> -- datom connection
 #> * Project: "STUDY_001"
