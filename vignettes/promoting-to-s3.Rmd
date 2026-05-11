@@ -197,10 +197,16 @@ parquet to S3 and every `datom_read()` streams it back from S3.
 ## Attach the governance layer
 
 Now that STUDY-001 lives somewhere a teammate can reach, register it in a
-shared governance repo. `datom_attach_gov()` creates the gov GitHub repo
-(once per organization), records STUDY-001's data location in
-`projects/STUDY_001/ref.json`, and updates the data repo's `project.yaml`
-so any future conn from this clone knows where gov lives.
+shared governance repo. Governance is a two-step setup:
+
+1.  **Once per organization:** `datom_init_gov()` creates the gov GitHub
+    repo and seeds the skeleton (`projects/` directory, README, etc.).
+    You only run this the very first time anyone in your org adopts
+    governance.
+2.  **Once per project:** `datom_attach_gov()` records STUDY-001's data
+    location in `projects/STUDY_001/ref.json` and updates the data
+    repo's `project.yaml` so any future conn from this clone knows
+    where gov lives.
 
 ```{r}
 gov_store <- datom_store_s3(
@@ -211,13 +217,23 @@ gov_store <- datom_store_s3(
   secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
 )
 
-conn <- datom_attach_gov(
-  conn        = conn,
+# Step 1: seed the gov repo (once per organization)
+gov_repo_url <- datom_init_gov(
   gov_store   = gov_store,
   create_repo = TRUE,
-  repo_name   = "datom-governance"
+  repo_name   = "datom-governance",
+  github_pat  = Sys.getenv("GITHUB_PAT")
 )
 #> v Created gov GitHub repo `datom-governance`
+#> v Seeded skeleton (projects/, README.md)
+#> v Pushed initial commit
+
+# Step 2: attach this project to gov (once per project)
+conn <- datom_attach_gov(
+  conn         = conn,
+  gov_store    = gov_store,
+  gov_repo_url = gov_repo_url
+)
 #> v Cloned gov repo to /tmp/.../datom-governance
 #> v Registered STUDY_001 in governance
 #> v Updated project.yaml with governance pointer
