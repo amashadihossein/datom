@@ -41,7 +41,7 @@ conn      <- state$conn
 dev_dir   <- state$dev_dir
 ```
 
-The resume script is idempotent — running it twice in the same session is
+The resume script is idempotent -- running it twice in the same session is
 safe. It uses `tempdir()` paths by default; set `DATOM_VIGNETTE_DIR` and
 related env vars to override.
 
@@ -73,7 +73,7 @@ datom_write(
 #> v Wrote "dm" (full): "5c1a3f7b"
 ```
 
-`(full)` means both the data and the metadata changed — datom uploaded a new
+`(full)` means both the data and the metadata changed -- datom uploaded a new
 parquet file and recorded a new entry in the version history. The previous
 version is **still on disk and still in git**; nothing was overwritten.
 
@@ -88,7 +88,7 @@ datom_write(conn, data = dm_m2, name = "dm")
 #> i No changes detected for "dm". Skipping write.
 ```
 
-This is what makes pipelines safe to re-run — accidental duplicate writes
+This is what makes pipelines safe to re-run -- accidental duplicate writes
 cost nothing and pollute no history.
 
 ## Look at the history
@@ -100,7 +100,7 @@ datom_history(conn, "dm")
 #> 2 a8ee7a31 4b6d0a7e  raw         1734        2026-01-28T09:02:11Z Initial DM extract through 2026-01-28
 ```
 
-Two rows, newest first. The `version` column is the **metadata SHA** — the
+Two rows, newest first. The `version` column is the **metadata SHA** -- the
 identifier you use to pin a read.
 
 ## Pin a read to a specific version
@@ -132,7 +132,7 @@ property your future statisticians, regulators, and auditors rely on.
 
 - `dm` has two versions; you can read either at any time.
 - Re-writing the same data is a free no-op.
-- Version SHAs are stable across machines — share one and a colleague reads
+- Version SHAs are stable across machines -- share one and a colleague reads
   the same bytes you did.
 
 In the next article, **a folder of extracts arrives** instead of a single

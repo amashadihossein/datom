@@ -109,7 +109,7 @@ change.
 ## Where to go next
 
 - **Reference**: the final user-journey article,
-  [Credentials in Practice](credentials.html), is the lookup
+  [Credentials in Practice](credentials-in-practice.html), is the lookup
   reference for the credential and store-construction patterns the
   earlier articles use without explanation.
 - **Design Notes**: the six articles under the *Design* group on the

@@ -46,9 +46,9 @@ developer's clone of any project, with the gov clone refreshed:
 ```{r}
 datom_pull_gov(conn)
 datom_projects(conn)
-#>        name data_backend          data_root data_prefix        registered_at
-#> 1 STUDY_001           s3 your-org-datom-data   study-001/ 2026-04-12T14:08:11Z
-#> 2 STUDY_002           s3 your-org-datom-data   study-002/ 2026-04-30T09:22:03Z
+#>        name data_backend      data_root data_prefix        registered_at
+#> 1 STUDY_001           s3 study-001-datom            2026-04-12T14:08:11Z
+#> 2 STUDY_002           s3 study-002-datom            2026-04-30T09:22:03Z
 ```
 
 `datom_projects()` reads `ref.json` for every project registered in the
@@ -64,10 +64,10 @@ datom_summary(conn)
 #> -- datom project summary --
 #> * Project:    "STUDY_001"
 #> * Role:       "developer"
-#> * Backend:    S3 -- "your-org-datom-data/study-001/"
+#> * Backend:    S3 -- "study-001-datom/"
 #> * Tables:     4 (24 versions total)
 #> * Last write: "2026-03-30T17:42:08Z"
-#> * Remote:     "https://github.com/your-org/study-001-data.git"
+#> * Remote:     "https://github.com/acme/study-001-data.git"
 ```
 
 Six months, four tables, twenty-four versions. That total is the audit

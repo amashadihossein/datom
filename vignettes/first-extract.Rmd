@@ -34,21 +34,21 @@ filesystem) without changing a single function call.
 
 You are the data engineer for **STUDY-001**, a Phase II clinical trial. The first
 EDC extract has just landed. datom lets you and your collaborators build a
-**shared, versioned data space** — multiple engineers writing new extracts,
+**shared, versioned data space** -- multiple engineers writing new extracts,
 multiple analysts reading any version, all coordinated through a single git
 history. Every write is a git commit; every read resolves to an exact version
 SHA. No one can silently overwrite history, and anyone with access to the repo
 can reproduce any past analysis by pinning to a SHA.
 
-This first article walks the local-only path. The same workflow — same
-functions, same commands — works for a shared S3 space once you swap the local
+This first article walks the local-only path. The same workflow -- same
+functions, same commands -- works for a shared S3 space once you swap the local
 store for an S3 store in [Promoting to S3](promoting-to-s3.html).
 
 ## Requirements
 
 datom keeps **metadata in git** (diff-able, auditable) and **data wherever you
 tell it to live** (S3 or a local directory). Even when data lives on a local
-filesystem, metadata still goes to a git remote — that is how version history stays
+filesystem, metadata still goes to a git remote -- that is how version history stays
 reproducible across machines.
 
 You need two things, both one-time:
@@ -58,7 +58,7 @@ You need two things, both one-time:
   every article after this picks it up automatically.
   See [Credentials in Practice](credentials-in-practice.html) for a step-by-step
   walkthrough of PAT creation and keyring setup.
-- **The `gh` CLI is not required** — datom creates GitHub repos through the
+- **The `gh` CLI is not required** -- datom creates GitHub repos through the
   GitHub REST API directly using your PAT.
 
 No AWS, no cloud account, no governance repo for this article.
@@ -78,15 +78,15 @@ setup steps first.
 
 Two paths are needed, and they serve different roles:
 
-- **`dev_dir`** — your local clone of the data git repository. This is
+- **`dev_dir`** -- your local clone of the data git repository. This is
   where metadata (`project.yaml`, `metadata.json`, version history) lives.
   In a team setting this would be cloned on every developer's machine.
-- **`data_dir`** — the directory where parquet bytes are written. In a team
+- **`data_dir`** -- the directory where parquet bytes are written. In a team
   setting this would be an S3 bucket (or a shared network mount), so every
   team member reads from the same physical store.
 
 Here both point to temporary directories for demonstration. Replace them with
-real paths — or an S3 store — when you are ready for a persistent shared space.
+real paths -- or an S3 store -- when you are ready for a persistent shared space.
 
 ```{r}
 library(datom)
@@ -185,7 +185,7 @@ datom_write(
 Three things just happened, in this order:
 
 1. The data frame was serialized to parquet and written to `data_dir`.
-   **No data was pushed to the GitHub repo** — parquet bytes never leave
+   **No data was pushed to the GitHub repo** -- parquet bytes never leave
    your local store.
 2. `metadata.json` and `version_history.json` were updated in the git clone
    and committed.
@@ -253,6 +253,6 @@ datom_decommission(conn, confirm = "STUDY_001")
 unlink(c(dev_dir, data_dir), recursive = TRUE)
 ```
 
-Do not call `unlink()` before `datom_decommission()` — removing the local
+Do not call `unlink()` before `datom_decommission()` -- removing the local
 clone first strips the GitHub remote reference and the remote repo will not
 be deleted.
