@@ -18,16 +18,19 @@ knitr::opts_chunk$set(
 S3 is where datom turns into shared, governed infrastructure. By the end of
 this article you can:
 
-- Grant a teammate read-only access to a single project without copying
-  files or coordinating with IT.
-- Hand a regulator or auditor a log of every access to the data.
-- Set retention and archival rules on old versions automatically.
-- Plug the project into your organization's portfolio — discoverable by
-  name, governed alongside every other study.
+- Give a teammate read-only access to the project -- your cloud admin
+  generates scoped credentials, the teammate stores them in keyring, and
+  datom's reader role works out of the box.
+- Register the project in a shared governance portfolio, discoverable by
+  name across your organization.
 
-None of this is possible on a local or shared filesystem. From your code,
-nothing changes: the same `datom_write()`, `datom_read()`, and
-`datom_history()` calls you've used so far.
+Moving to S3 also lays the foundation for capabilities datom will integrate
+over time: access logs, automated retention rules, cross-account replication.
+None of that requires any code changes on your part -- it follows from
+choosing object storage as the backend.
+
+From your code, nothing changes: the same `datom_write()`, `datom_read()`,
+and `datom_history()` calls you've used so far.
 
 ## Two ways to read this article
 
