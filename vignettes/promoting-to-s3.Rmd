@@ -217,12 +217,15 @@ gov_store <- datom_store_s3(
   secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
 )
 
+gov_dir <- path(tempdir(), "datom-governance")  # sibling of dev_dir
+
 # Step 1: seed the gov repo (once per organization)
 gov_repo_url <- datom_init_gov(
-  gov_store   = gov_store,
-  create_repo = TRUE,
-  repo_name   = "datom-governance",
-  github_pat  = Sys.getenv("GITHUB_PAT")
+  gov_store      = gov_store,
+  gov_local_path = gov_dir,
+  create_repo    = TRUE,
+  repo_name      = "datom-governance",
+  github_pat     = Sys.getenv("GITHUB_PAT")
 )
 #> v Created gov GitHub repo `datom-governance`
 #> v Seeded skeleton (projects/, README.md)
@@ -230,9 +233,10 @@ gov_repo_url <- datom_init_gov(
 
 # Step 2: attach this project to gov (once per project)
 conn <- datom_attach_gov(
-  conn         = conn,
-  gov_store    = gov_store,
-  gov_repo_url = gov_repo_url
+  conn           = conn,
+  gov_store      = gov_store,
+  gov_repo_url   = gov_repo_url,
+  gov_local_path = gov_dir
 )
 #> v Cloned gov repo to /tmp/.../datom-governance
 #> v Registered STUDY_001 in governance
