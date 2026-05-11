@@ -38,8 +38,24 @@ local({
 
   cli::cli_alert_info("Resuming from Article 1 state at {.path {dev_dir}}.")
 
+  cfg <- yaml::read_yaml(project_yaml)
+  data_cfg <- cfg$storage$data
+  if (!identical(data_cfg$type, "local")) {
+    cli::cli_abort(c(
+      "Article 2 resume expects a local-backend project.",
+      "i" = "Current backend is {.val {data_cfg$type}}. Use the matching resume script."
+    ))
+  }
+
+  store <- datom::datom_store(
+    governance = NULL,
+    data       = datom::datom_store_local(path = data_cfg$root),
+    github_pat = keyring::key_get("GITHUB_PAT"),
+    data_repo_url = cfg$repos$data$remote_url
+  )
+
   # --- Rebuild conn ---------------------------------------------------------
-  conn <- datom::datom_get_conn(path = dev_dir)
+  conn <- datom::datom_get_conn(path = dev_dir, store = store)
 
   # --- Verify expected end state of Article 1 -------------------------------
   tables <- tryCatch(datom::datom_list(conn), error = function(e) NULL)
