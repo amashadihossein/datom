@@ -323,33 +323,19 @@ If you want to clean up:
 datom_decommission(conn, confirm = "STUDY_001")
 ```
 
-After decommission, clean up the governance infrastructure manually (it is
-shared and datom does not destroy it automatically):
+After decommission, the only remaining artefact is the **governance
+infrastructure itself** — the gov GitHub repo and gov S3 bucket root.
+These are shared across projects and datom does not destroy them
+automatically. Delete them manually once you are done with all
+gov-dependent articles:
 
 ```{r}
-# Delete the gov GitHub repo (once you are done with all gov-dependent articles)
+# Delete the gov GitHub repo
 system2("gh", c("repo", "delete", "your-org/datom-governance", "--yes"))
-
-# Empty the gov S3 prefix
-s3 <- paws.storage::s3(
-  config = list(
-    credentials = list(
-      creds = list(
-        access_key_id     = keyring::key_get("AWS_ACCESS_KEY_ID"),
-        secret_access_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
-      )
-    ),
-    region = "us-east-1"
-  )
-)
-objects <- s3$list_objects_v2(Bucket = "your-org-datom-gov", Prefix = "datom-gov/")
-if (length(objects$Contents) > 0) {
-  keys <- lapply(objects$Contents, function(x) list(Key = x$Key))
-  s3$delete_objects(
-    Bucket = "your-org-datom-gov",
-    Delete = list(Objects = keys)
-  )
-}
 ```
+
+The gov S3 bucket content (`projects/STUDY_001/`) was already removed by
+`datom_decommission()`. If the bucket is otherwise empty, delete it via
+your AWS console or S3 management tooling.
 
 ````
