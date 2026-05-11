@@ -30,8 +30,8 @@
 #' Credentials: set the environment variables below, or pass explicit values
 #' to sandbox_store(). Env vars are never hard-coded here.
 #'
-#'   AWS_ACCESS_KEY   - AWS access key ID
-#'   AWS_SECRET_KEY   - AWS secret access key
+#'   AWS_ACCESS_KEY_ID      - AWS access key ID
+#'   AWS_SECRET_ACCESS_KEY   - AWS secret access key
 #'   GITHUB_PAT       - GitHub personal access token
 .sandbox_defaults <- function() {
   list(
@@ -70,8 +70,8 @@ sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
                           gov_bucket = .sandbox_defaults()$gov_bucket,
                           prefix = .sandbox_defaults()$prefix,
                           region = .sandbox_defaults()$region,
-                          access_key = Sys.getenv("AWS_ACCESS_KEY"),
-                          secret_key = Sys.getenv("AWS_SECRET_KEY"),
+                          access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
+                          secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY"),
                           github_pat = Sys.getenv("GITHUB_PAT"),
                           github_org = .sandbox_defaults()$github_org,
                           data_repo_url = NULL,
