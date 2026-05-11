@@ -15,45 +15,55 @@ knitr::opts_chunk$set(
 )
 ```
 
-S3 is where datom becomes team infrastructure: project-scoped access control,
-audit logging, and lifecycle automation — managed through your cloud provider
-and integrated with datom's reader/writer role model.
+S3 is where datom turns into shared, governed infrastructure. By the end of
+this article you can:
 
-This article covers two paths to the same destination:
+- Grant a teammate read-only access to a single project without copying
+  files or coordinating with IT.
+- Hand a regulator or auditor a log of every access to the data.
+- Set retention and archival rules on old versions automatically.
+- Plug the project into your organization's portfolio — discoverable by
+  name, governed alongside every other study.
 
-- **Starting fresh on S3** — skip the "Where we left off" context and the
-  promotion steps; jump straight to
-  [Set up AWS credentials](#set-up-aws-credentials).
-- **Promoting an existing local-filesystem project to S3** — follow the
-  article in order. The promotion path snapshots the current data,
-  decommissions the local project, then re-establishes it on S3.
+None of this is possible on a local or shared filesystem. From your code,
+nothing changes: the same `datom_write()`, `datom_read()`, and
+`datom_history()` calls you've used so far.
 
-Both paths converge at [Build the S3 store](#build-the-s3-store) and follow
-identical steps from there.
+## Two ways to read this article
+
+- **Starting fresh on S3** — skip the migration note and the promotion
+  steps; jump straight to [Set up AWS credentials](#set-up-aws-credentials).
+- **Promoting an existing local-filesystem project to S3** — follow in
+  order. You'll snapshot the current data, retire the local project, then
+  re-establish it on S3.
+
+Both paths converge at [Build the S3 store](#build-the-s3-store).
 
 > **Where we left off (promotion path):** STUDY-001 has four tables
 > (`dm`, `ex`, `lb`, `ae`), all in a local filesystem store. The data git
 > repo is on GitHub. No governance layer is attached yet -- articles 1-3
 > stayed deliberately solo.
 
-## A note on local -> S3 migration (promotion path only)
+## What promotion looks like today (promotion path only)
 
-> **Starting fresh on S3?** Skip this section and go straight to
-> [Set up AWS credentials](#set-up-aws-credentials).
+> **Starting fresh on S3?** Skip this section.
 
-datom's `ref.json` has slots for `previous` data locations and a
-`migration_history.json` is initialized for every project. The intent is a
-future `datom_migrate_data()` that copies bytes from one store to another
-without resetting history. **That capability isn't shipped yet** (planned
-for a future release). Until it is, the practical path is to retire the
-local project and re-establish it on S3.
+A built-in, history-preserving migration (`datom_migrate_data()`) is
+planned but not yet shipped. Today, promoting a project means:
 
-We choose this honest, slightly-lossy path here because:
+1. Snapshot the current version of each table.
+2. Retire the local project (`datom_decommission()`).
+3. Initialize a new project on S3 with the same name.
+4. Re-write the snapshotted tables as version 1 on S3.
 
-- The history of a *brand-new* study with three months of extracts is
-  recoverable: re-write the four current tables and you're done.
-- Studies that have run for a year on local storage shouldn't have run on
-  local storage -- they are the audience for `datom_migrate_data()` later.
+The trade-off is that **per-table version history from the local era is
+not carried forward** — only the latest version of each table is. For a
+study with a few months of extracts this is cheap; the git commit log
+preserves the narrative even when the data history restarts.
+
+If preserving full per-version history across the move matters to you right
+now, the cleaner path is to start a new project directly on S3 (next
+section) and write your data there going forward.
 
 ## Set up AWS credentials
 
