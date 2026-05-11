@@ -47,7 +47,7 @@ datom_decommission <- function(conn, confirm = NULL) {
     cli::cli_abort(
       c(
         "Confirmation does not match the project name.",
-        "i" = "Pass {.code confirm = \"{project_name}\"} to proceed."
+        "i" = "Check {.code conn$project_name} and pass it as {.arg confirm}."
       )
     )
   }

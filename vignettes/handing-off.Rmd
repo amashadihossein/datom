@@ -25,17 +25,17 @@ asks where the numbers came from.
 This article is a **role-switch article**. You stop being the engineer for
 a moment; you become the statistician on a different laptop, in a different
 R session, with read-only credentials. The capabilities introduced are not
-new functions — they're a new way of using `datom_get_conn()` and
+new functions -- they're a new way of using `datom_get_conn()` and
 `datom_read()`.
 
 ## What the engineer sends
 
 You (the engineer) message the statistician three pieces of information:
 
-1. **Governance repo URL** — `https://github.com/your-org/datom-governance.git`.
-2. **Data bucket / prefix / region** — `your-org-datom-data`, `study-001/`,
+1. **Governance repo URL** -- `https://github.com/acme/datom-governance.git`.
+2. **Data bucket / prefix / region** -- `study-001-datom`, `""` (empty prefix),
    `us-east-1`.
-3. **Project name** — `STUDY_001`.
+3. **Project name** -- `STUDY_001`.
 
 Plus the credentials she'll need to set up herself:
 
@@ -45,7 +45,7 @@ Plus the credentials she'll need to set up herself:
 - An AWS profile with **read** access to the data bucket.
 
 You do **not** send her any data files. The point of datom is that there's
-nothing to send — she pulls bytes herself.
+nothing to send -- she pulls bytes herself.
 
 ## What the statistician does
 
@@ -64,7 +64,7 @@ keyring::key_set("AWS_SECRET_ACCESS_KEY")
 ### Resume the prior state
 
 The resume script for article 5 does the work of building a **reader conn**
-against the S3 store. Unlike resume scripts 2–4, this one needs network
+against the S3 store. Unlike resume scripts 2-4, this one needs network
 access (S3 + GitHub).
 
 ```{r}
@@ -78,8 +78,8 @@ print(reader_conn)
 #> * Project: "STUDY_001"
 #> * Role: "reader"
 #> * Backend: "s3"
-#> * Root: "your-org-datom-data"
-#> * Prefix: "study-001/"
+#> * Root: "study-001-datom"
+#> * Prefix: ""
 ```
 
 The conn's `role` is `"reader"`. Reader connections do not have a local data
@@ -123,7 +123,7 @@ did this number come from," she runs:
 dm_at_analysis <- datom_read(reader_conn, "dm", version = "8a3b21cc9f...")
 ```
 
-…and gets back the exact bytes the analysis used, even if STUDY_001 has
+...and gets back the exact bytes the analysis used, even if STUDY_001 has
 moved on through versions 4, 5, 6.
 
 ## Why this matters
@@ -135,7 +135,7 @@ Three things just happened that don't happen with shared CSVs:
    ever happens.
 2. **The version is identifiable.** The same SHA references the same bytes
    on every machine, forever. This is the audit story regulators want.
-3. **The handoff is one-way.** The reader role has no write capability —
+3. **The handoff is one-way.** The reader role has no write capability --
    the statistician *cannot* accidentally create a fork by saving a new
    version. The engineer remains the data steward.
 
@@ -145,7 +145,7 @@ You're back to being the engineer. The statistician has what she needs.
 Nothing in your workflow changed.
 
 In the next article, **a second engineer joins** the project. Unlike the
-statistician, she needs to write — and that means handling pull-before-push
+statistician, she needs to write -- and that means handling pull-before-push
 discipline.
 
 ````

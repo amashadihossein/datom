@@ -7,7 +7,7 @@
 # is identical.
 #
 # Returns invisible(list(
-#   conn, study_dir, gov_clone_path,
+#   conn, dev_dir, gov_clone_path,
 #   data_s3, gov_component,
 #   data_repo_url, gov_repo_url
 # )).

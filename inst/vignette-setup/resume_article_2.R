@@ -12,7 +12,7 @@
 #     attempted (see phase_16_vignettes "Open Items").
 #   - Article 1 has no governance attached; gov is opt-in and arrives in
 #     Article 4 via datom_attach_gov().
-#   - Returns invisible(list(conn = ..., study_dir = ...)).
+#   - Returns invisible(list(conn = ..., dev_dir = ...)).
 #
 # Usage:
 #   state <- source(
@@ -21,25 +21,41 @@
 #   conn <- state$conn
 
 local({
-  study_dir <- Sys.getenv(
+  dev_dir <- Sys.getenv(
     "DATOM_VIGNETTE_DIR",
-    fs::path(tempdir(), "study_001_data")
+    fs::path(tempdir(), "study_001_dev")
   )
 
   # --- Continuity check -----------------------------------------------------
-  project_yaml <- fs::path(study_dir, ".datom", "project.yaml")
+  project_yaml <- fs::path(dev_dir, ".datom", "project.yaml")
   if (!fs::file_exists(project_yaml)) {
     cli::cli_abort(c(
-      "No Article 1 state found at {.path {study_dir}}.",
+      "No Article 1 state found at {.path {dev_dir}}.",
       "i" = "Run Article 1 first, or set {.envvar DATOM_VIGNETTE_DIR} to a directory containing prior state.",
       "i" = "Resume scripts in this release require the prior article's local clone to be present."
     ))
   }
 
-  cli::cli_alert_info("Resuming from Article 1 state at {.path {study_dir}}.")
+  cli::cli_alert_info("Resuming from Article 1 state at {.path {dev_dir}}.")
+
+  cfg <- yaml::read_yaml(project_yaml)
+  data_cfg <- cfg$storage$data
+  if (!identical(data_cfg$type, "local")) {
+    cli::cli_abort(c(
+      "Article 2 resume expects a local-backend project.",
+      "i" = "Current backend is {.val {data_cfg$type}}. Use the matching resume script."
+    ))
+  }
+
+  store <- datom::datom_store(
+    governance = NULL,
+    data       = datom::datom_store_local(path = data_cfg$root),
+    github_pat = keyring::key_get("GITHUB_PAT"),
+    data_repo_url = cfg$repos$data$remote_url
+  )
 
   # --- Rebuild conn ---------------------------------------------------------
-  conn <- datom::datom_get_conn(path = study_dir)
+  conn <- datom::datom_get_conn(path = dev_dir, store = store)
 
   # --- Verify expected end state of Article 1 -------------------------------
   tables <- tryCatch(datom::datom_list(conn), error = function(e) NULL)
@@ -60,6 +76,6 @@ local({
 
   invisible(list(
     conn      = conn,
-    study_dir = as.character(study_dir)
+    dev_dir = as.character(dev_dir)
   ))
 })

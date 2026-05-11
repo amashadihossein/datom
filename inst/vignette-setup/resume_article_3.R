@@ -5,25 +5,41 @@
 #
 # Contract: see resume_article_2.R header.
 #
-# Returns invisible(list(conn, study_dir)).
+# Returns invisible(list(conn, dev_dir)).
 
 local({
-  study_dir <- Sys.getenv(
+  dev_dir <- Sys.getenv(
     "DATOM_VIGNETTE_DIR",
-    fs::path(tempdir(), "study_001_data")
+    fs::path(tempdir(), "study_001_dev")
   )
 
-  project_yaml <- fs::path(study_dir, ".datom", "project.yaml")
+  project_yaml <- fs::path(dev_dir, ".datom", "project.yaml")
   if (!fs::file_exists(project_yaml)) {
     cli::cli_abort(c(
-      "No prior vignette state found at {.path {study_dir}}.",
+      "No prior vignette state found at {.path {dev_dir}}.",
       "i" = "Run Articles 1 and 2 first, or set {.envvar DATOM_VIGNETTE_DIR} to a directory containing prior state."
     ))
   }
 
-  cli::cli_alert_info("Resuming from Article 2 state at {.path {study_dir}}.")
+  cli::cli_alert_info("Resuming from Article 2 state at {.path {dev_dir}}.")
 
-  conn <- datom::datom_get_conn(path = study_dir)
+  cfg <- yaml::read_yaml(project_yaml)
+  data_cfg <- cfg$storage$data
+  if (!identical(data_cfg$type, "local")) {
+    cli::cli_abort(c(
+      "Article 3 resume expects a local-backend project.",
+      "i" = "Current backend is {.val {data_cfg$type}}. Use the matching resume script."
+    ))
+  }
+
+  store <- datom::datom_store(
+    governance = NULL,
+    data       = datom::datom_store_local(path = data_cfg$root),
+    github_pat = keyring::key_get("GITHUB_PAT"),
+    data_repo_url = cfg$repos$data$remote_url
+  )
+
+  conn <- datom::datom_get_conn(path = dev_dir, store = store)
 
   # --- Verify dm has both month-1 and month-2 versions ----------------------
   dm_history <- tryCatch(
@@ -62,6 +78,6 @@ local({
 
   invisible(list(
     conn      = conn,
-    study_dir = as.character(study_dir)
+    dev_dir = as.character(dev_dir)
   ))
 })
