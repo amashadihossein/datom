@@ -309,4 +309,47 @@ that changed (timestamps, commit messages).
 In the next article, you **hand the project off to a statistician** who
 needs to read the data without write access — the canonical reader role.
 
+## Teardown
+
+Skip this if you plan to continue to the next article — the S3 project and
+gov registration are the starting state for **Article 5: Handing Off**.
+
+If you want to clean up:
+
+```{r}
+# Remove all datom artefacts for this project (S3 data, GitHub repo, local
+# clone). Because governance is attached, the gov storage folder is also
+# removed and the project is unregistered from the gov repo.
+datom_decommission(conn, confirm = "STUDY_001")
+```
+
+After decommission, clean up the governance infrastructure manually (it is
+shared and datom does not destroy it automatically):
+
+```{r}
+# Delete the gov GitHub repo (once you are done with all gov-dependent articles)
+system2("gh", c("repo", "delete", "your-org/datom-governance", "--yes"))
+
+# Empty the gov S3 prefix
+s3 <- paws.storage::s3(
+  config = list(
+    credentials = list(
+      creds = list(
+        access_key_id     = keyring::key_get("AWS_ACCESS_KEY_ID"),
+        secret_access_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
+      )
+    ),
+    region = "us-east-1"
+  )
+)
+objects <- s3$list_objects_v2(Bucket = "your-org-datom-gov", Prefix = "datom-gov/")
+if (length(objects$Contents) > 0) {
+  keys <- lapply(objects$Contents, function(x) list(Key = x$Key))
+  s3$delete_objects(
+    Bucket = "your-org-datom-gov",
+    Delete = list(Objects = keys)
+  )
+}
+```
+
 ````
