@@ -10,18 +10,18 @@
 # these values out-of-band; using the clone here keeps the vignette
 # self-contained).
 #
-# Returns invisible(list(conn, study_dir, gov_clone_path, bucket, prefix, region)).
+# Returns invisible(list(conn, dev_dir, gov_clone_path, bucket, prefix, region)).
 
 local({
-  study_dir <- Sys.getenv(
+  dev_dir <- Sys.getenv(
     "DATOM_VIGNETTE_DIR",
-    fs::path(tempdir(), "study_001_data")
+    fs::path(tempdir(), "study_001_dev")
   )
 
-  project_yaml <- fs::path(study_dir, ".datom", "project.yaml")
+  project_yaml <- fs::path(dev_dir, ".datom", "project.yaml")
   if (!fs::file_exists(project_yaml)) {
     cli::cli_abort(c(
-      "No Article 4 state found at {.path {study_dir}}.",
+      "No Article 4 state found at {.path {dev_dir}}.",
       "i" = "Run Article 4 first, or set {.envvar DATOM_VIGNETTE_DIR}."
     ))
   }
@@ -112,7 +112,7 @@ local({
 
   invisible(list(
     conn           = reader_conn,
-    study_dir      = as.character(study_dir),
+    dev_dir      = as.character(dev_dir),
     gov_clone_path = as.character(gov_clone_path),
     bucket         = data_cfg$root,
     prefix         = data_cfg$prefix,

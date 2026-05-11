@@ -10,21 +10,21 @@
 # the engineer's data clone for backend metadata.
 #
 # Returns invisible(list(
-#   conn, study_dir, gov_clone_path,
+#   conn, dev_dir, gov_clone_path,
 #   data_s3, gov_component,
 #   data_repo_url, gov_repo_url
 # )).
 
 local({
-  study_dir <- Sys.getenv(
+  dev_dir <- Sys.getenv(
     "DATOM_VIGNETTE_DIR",
-    fs::path(tempdir(), "study_001_data")
+    fs::path(tempdir(), "study_001_dev")
   )
 
-  project_yaml <- fs::path(study_dir, ".datom", "project.yaml")
+  project_yaml <- fs::path(dev_dir, ".datom", "project.yaml")
   if (!fs::file_exists(project_yaml)) {
     cli::cli_abort(c(
-      "No Article 4 state found at {.path {study_dir}}.",
+      "No Article 4 state found at {.path {dev_dir}}.",
       "i" = "Run Article 4 first, or set {.envvar DATOM_VIGNETTE_DIR}."
     ))
   }
@@ -104,11 +104,11 @@ local({
     gov_local_path = gov_clone_path
   )
 
-  conn <- datom::datom_get_conn(path = study_dir, store = store)
+  conn <- datom::datom_get_conn(path = dev_dir, store = store)
 
   invisible(list(
     conn           = conn,
-    study_dir      = as.character(study_dir),
+    dev_dir      = as.character(dev_dir),
     gov_clone_path = as.character(gov_clone_path),
     data_s3        = data_s3,
     gov_component  = gov_component,
