@@ -41,7 +41,7 @@ they explicitly hand the URL to.
 
 The governance repo is **organization-scoped**. Its commits track
 projects starting and ending. Its readers are anyone who has any
-business with any datom project — typically all data engineers,
+business with any datom project – typically all data engineers,
 analysts, and managers in the organization.
 
 These are different lifecycles. STUDY-001 might see thirty `datom_write`
@@ -70,7 +70,7 @@ for a project pulls only that project’s history;
 [`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
 pulls only the registry. With one repo, every pull is everything, every
 time. A manager pulling the registry to see new projects would also be
-pulling every project team’s recent writes — a lot of network and disk
+pulling every project team’s recent writes – a lot of network and disk
 for no benefit.
 
 **Decommissioning leaves scars.** When STUDY-002 is decommissioned, its
@@ -78,12 +78,12 @@ data history goes with it (the data git repo gets deleted along with the
 bucket contents). The gov repo records the decommissioning event but
 doesn’t have to carry the corpse of every deleted project’s commits.
 With one repo, every decommissioned project either lives forever in
-history or gets surgically excised — both bad.
+history or gets surgically excised – both bad.
 
 **The companion-package boundary becomes ambiguous.** datom’s governance
 code is on its way out of this package. A future companion package
-(working name: `daapr`) will own gov-side operations — registry queries,
-cross-project audit, governance store administration — while datom keeps
+(working name: `daapr`) will own gov-side operations – registry queries,
+cross-project audit, governance store administration – while datom keeps
 the per-project data operations. The boundary is expressible *because*
 the artifacts are already split. Functions in
 [R/utils-gov.R](https://github.com/amashadihossein/datom) tagged
@@ -142,7 +142,7 @@ both cases, git is canonical for things humans should review; object
 storage is canonical for things machines should fetch quickly.
 
 The fact that the two halves of “the gov repo” and the two halves of
-“the data repo” follow the same shape is not coincidence — it’s the core
+“the data repo” follow the same shape is not coincidence – it’s the core
 datom pattern applied at two scopes. See [The datom Model: Code in Git,
 Data in
 Cloud](https://amashadihossein.github.io/datom/articles/design-datom-model.md)
@@ -156,7 +156,7 @@ boundary. Every function tagged that way is a candidate to move out of
 datom and into the companion package. The contract is simple:
 
 - All gov-write code lives in functions tagged `# GOV_SEAM:`.
-- No data-side code path calls a `# GOV_SEAM:` function directly — the
+- No data-side code path calls a `# GOV_SEAM:` function directly – the
   only callers are public datom functions whose own purpose is
   governance-adjacent (`datom_init_repo`, `datom_decommission`,
   `datom_init_gov`, `datom_attach_gov`).
@@ -172,11 +172,11 @@ commit is structured. With it, the move is closer to mechanical.
 The two-repo split is the structural counterpart to two design choices
 already established:
 
-- The metadata-vs-data split — see [The datom Model: Code in Git, Data
+- The metadata-vs-data split – see [The datom Model: Code in Git, Data
   in
   Cloud](https://amashadihossein.github.io/datom/articles/design-datom-model.md).
 - The serverless property that follows from “everything is git + object
-  storage” — see [Serverless and Distributed by
+  storage” – see [Serverless and Distributed by
   Design](https://amashadihossein.github.io/datom/articles/design-serverless.md).
 
 All three are different views of the same underlying choice: keep the

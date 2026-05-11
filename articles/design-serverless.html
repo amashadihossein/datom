@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Serverless and Distributed by Design">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Serverless and Distributed by Design">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -82,8 +83,8 @@
     
 <blockquote>
 <p><strong>Companion to</strong>: <a href="governing-a-portfolio.html">Governing a Study Portfolio</a>. Read
-this when you want to understand what runs where — and what doesn’t run
-anywhere — when datom is in production.</p>
+this when you want to understand what runs where – and what doesn’t run
+anywhere – when datom is in production.</p>
 </blockquote>
 <p>There is no datom server.</p>
 <p>Not “you can run it without one.” Not “we ship a default daemon you
@@ -100,7 +101,7 @@ it, and what it costs.</p>
 both of which your organization almost certainly already has:</p>
 <ol style="list-style-type: decimal">
 <li>
-<strong>A git host.</strong> GitHub, GitLab, internal Gitea —
+<strong>A git host.</strong> GitHub, GitLab, internal Gitea –
 anything that speaks the git protocol over HTTPS. datom uses it for the
 data repos and the governance repo.</li>
 <li>
@@ -137,7 +138,7 @@ data SHA, downloads the parquet bytes, returns the data frame.</li>
 two infrastructure pieces. Two developers writing to the same project at
 the same time coordinate through git’s existing pull-before-push
 discipline, not through a central lock manager. A reader far away from
-the writer never has to talk to the writer’s machine — they both talk to
+the writer never has to talk to the writer’s machine – they both talk to
 the same object store and the same git host.</p>
 </div>
 <div class="section level2">
@@ -149,7 +150,7 @@ the same object store and the same git host.</p>
 them. Whoever runs the tool also has to keep its uptime, its backups,
 its secrets, its upgrades, its compliance scope. A package that has no
 service has no service to run. The git-host SLA and the object-store SLA
-become datom’s SLA — both of which the organization is already paying
+become datom’s SLA – both of which the organization is already paying
 for.</p>
 <p><strong>Permission alignment.</strong> Every credential a datom user
 needs is already a credential the organization knows how to manage:
@@ -172,14 +173,14 @@ additional state to restore.</p>
 notifications. “Someone wrote a new version of <code>lb</code>” is not
 an event datom emits; it is a fact a teammate discovers next time they
 <code><a href="../reference/datom_pull.html">datom_pull()</a></code>. For clinical pipelines that’s the right
-cadence — extracts arrive on a weekly to monthly schedule, and the value
+cadence – extracts arrive on a weekly to monthly schedule, and the value
 of a real-time event bus is low. For tighter loops, a thin notification
 layer can sit on top (GitHub Actions, S3 event triggers); datom doesn’t
 ship one because the right shape depends on the organization.</p>
 <p><strong>No central enforcement of policy.</strong> “Every write must
 include a PHI review note in its commit message” is a policy you can
 document, review in code review, and lint with a CI hook on the data
-repo — but datom itself will not refuse a commit that lacks one. The
+repo – but datom itself will not refuse a commit that lacks one. The
 trade-off is that no central component knows about every project, so no
 central component can be a single point of policy failure. Organizations
 that need server-side enforcement layer a CI gate on top of their git
@@ -221,11 +222,11 @@ the credentials, and the network is a complete datom client.</p>
 <p>The serverless property is not a separate decision; it falls out of
 the choices already made:</p>
 <ul>
-<li>Metadata in git — see <a href="design-datom-model.html">The datom
+<li>Metadata in git – see <a href="design-datom-model.html">The datom
 Model: Code in Git, Data in Cloud</a>.</li>
-<li>Two repos for project vs. organization scope — see <a href="design-two-repos.html">Two Repositories: Governance
+<li>Two repos for project vs. organization scope – see <a href="design-two-repos.html">Two Repositories: Governance
 vs. Data</a>.</li>
-<li>Indirection through <code>ref.json</code> for portable storage — see
+<li>Indirection through <code>ref.json</code> for portable storage – see
 <a href="design-ref-json.html"><code>ref.json</code> and
 Always-Migration-Ready Storage</a>.</li>
 </ul>

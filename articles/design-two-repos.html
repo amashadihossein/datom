@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Two Repositories: Governance vs. Data">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Two Repositories: Governance vs. Data">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -116,7 +117,7 @@ STUDY-001. Its readers are STUDY-001’s data engineers, plus whoever they
 explicitly hand the URL to.</p>
 <p>The governance repo is <strong>organization-scoped</strong>. Its
 commits track projects starting and ending. Its readers are anyone who
-has any business with any datom project — typically all data engineers,
+has any business with any datom project – typically all data engineers,
 analysts, and managers in the organization.</p>
 <p>These are different lifecycles. STUDY-001 might see thirty
 <code>datom_write</code> commits a month; the gov repo might see two
@@ -145,19 +146,19 @@ expressible.</p>
 history; <code><a href="../reference/datom_pull_gov.html">datom_pull_gov()</a></code> pulls only the registry. With one
 repo, every pull is everything, every time. A manager pulling the
 registry to see new projects would also be pulling every project team’s
-recent writes — a lot of network and disk for no benefit.</p>
+recent writes – a lot of network and disk for no benefit.</p>
 <p><strong>Decommissioning leaves scars.</strong> When STUDY-002 is
 decommissioned, its data history goes with it (the data git repo gets
 deleted along with the bucket contents). The gov repo records the
 decommissioning event but doesn’t have to carry the corpse of every
 deleted project’s commits. With one repo, every decommissioned project
-either lives forever in history or gets surgically excised — both
+either lives forever in history or gets surgically excised – both
 bad.</p>
 <p><strong>The companion-package boundary becomes ambiguous.</strong>
 datom’s governance code is on its way out of this package. A future
 companion package (working name: <code>daapr</code>) will own gov-side
-operations — registry queries, cross-project audit, governance store
-administration — while datom keeps the per-project data operations. The
+operations – registry queries, cross-project audit, governance store
+administration – while datom keeps the per-project data operations. The
 boundary is expressible <em>because</em> the artifacts are already
 split. Functions in <a href="https://github.com/amashadihossein/datom" class="external-link">R/utils-gov.R</a> tagged
 <code># GOV_SEAM:</code> mark exactly the surface that will move.</p>
@@ -207,7 +208,7 @@ versioned commits) plus data object store (the actual parquet bytes). In
 both cases, git is canonical for things humans should review; object
 storage is canonical for things machines should fetch quickly.</p>
 <p>The fact that the two halves of “the gov repo” and the two halves of
-“the data repo” follow the same shape is not coincidence — it’s the core
+“the data repo” follow the same shape is not coincidence – it’s the core
 datom pattern applied at two scopes. See <a href="design-datom-model.html">The datom Model: Code in Git, Data in
 Cloud</a> for the underlying principle.</p>
 </div>
@@ -222,7 +223,7 @@ out of datom and into the companion package. The contract is simple:</p>
 <li>All gov-write code lives in functions tagged
 <code># GOV_SEAM:</code>.</li>
 <li>No data-side code path calls a <code># GOV_SEAM:</code> function
-directly — the only callers are public datom functions whose own purpose
+directly – the only callers are public datom functions whose own purpose
 is governance-adjacent (<code>datom_init_repo</code>,
 <code>datom_decommission</code>, <code>datom_init_gov</code>,
 <code>datom_attach_gov</code>).</li>
@@ -240,10 +241,10 @@ mechanical.</p>
 <p>The two-repo split is the structural counterpart to two design
 choices already established:</p>
 <ul>
-<li>The metadata-vs-data split — see <a href="design-datom-model.html">The datom Model: Code in Git, Data in
+<li>The metadata-vs-data split – see <a href="design-datom-model.html">The datom Model: Code in Git, Data in
 Cloud</a>.</li>
 <li>The serverless property that follows from “everything is git +
-object storage” — see <a href="design-serverless.html">Serverless and
+object storage” – see <a href="design-serverless.html">Serverless and
 Distributed by Design</a>.</li>
 </ul>
 <p>All three are different views of the same underlying choice: keep the

@@ -1,0 +1,201 @@
+# Buckets and Prefixes
+
+How you map studies and data products onto S3 buckets and prefixes
+shapes your IAM story, your retention policy, and (eventually) your
+migration costs. This article describes the **convention datom
+recommends** for new projects, explains why, and shows when to deviate.
+
+> **datom enforces nothing here.** `bucket` and `prefix` are plain
+> strings that produce keys of the form
+> `{prefix}/datom/{project_name}/...`. The patterns below are
+> *conventions* – ways to organize the namespace that make access
+> control and lifecycle management cleaner. Pick what fits your
+> organization; the package supports anything.
+
+## The recommended convention: bucket-per-study
+
+For most clinical-trial work, use **one bucket per study**, with
+**prefixes distinguishing data products**:
+
+    study-001-datom/                          # one bucket = one study
+        datom/STUDY_001/...                   # raw data (prefix = "")
+        adam/datom/ADAM_STUDY_001/...         # ADaM (prefix = "adam/")
+        tlf/datom/TLF_STUDY_001/...           # TLFs (prefix = "tlf/")
+
+In code:
+
+``` r
+
+# Raw clinical extracts
+raw_store <- datom_store_s3(
+  bucket     = "study-001-datom",
+  prefix     = "",                        # raw lives at the bucket root
+  region     = "us-east-1",
+  access_key = ..., secret_key = ...
+)
+
+# ADaM data product (derived)
+adam_store <- datom_store_s3(
+  bucket     = "study-001-datom",
+  prefix     = "adam/",
+  region     = "us-east-1",
+  access_key = ..., secret_key = ...
+)
+```
+
+### Why this works
+
+1.  **Bucket = study = IRB unit.** A study is the natural unit of
+    consent, audit, and access governance. Aligning the storage boundary
+    with the governance boundary makes “grant a reader access to
+    STUDY-001” a one-sentence IAM policy.
+
+2.  **Prefix = data product.** Each derived product (ADaM, TLF, custom
+    pools) lives under its own prefix. Lifecycle rules apply naturally:
+    raw stays for the full retention window, intermediate products can
+    sunset earlier.
+
+3.  **It scales gracefully.** When you outgrow it (many studies under
+    one program, IT pressure to consolidate buckets), the upgrade path
+    to **program-per-bucket** is mechanical: replace the empty prefix
+    with `study-XYZ/`. No datom code change required.
+
+4.  **It plays well with the decommission boundary.**
+    [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
+    removes the `datom/{project}/` namespace inside the bucket – the
+    bucket itself is caller-owned. With Pattern A the user mental model
+    is “the bucket is the study”, and the boundary is intuitive.
+
+### Sub-study visibility (subset of prefixes)
+
+A common requirement: an analyst should see ADaM but not raw clinical
+data. Three mechanisms work with Pattern A, none of which require any
+datom code change:
+
+1.  **IAM policy with `Resource` ARN + prefix.** Attach to the analyst’s
+    role:
+
+    ``` json
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::study-001-datom",
+        "arn:aws:s3:::study-001-datom/adam/*"
+      ],
+      "Condition": {
+        "StringLike": {"s3:prefix": ["adam/*"]}
+      }
+    }
+    ```
+
+    The analyst constructs
+    `datom_store_s3(bucket="study-001-datom", prefix="adam/")`; attempts
+    to read raw return 403.
+
+2.  **S3 Access Points** – create an access point `adam-readers` on
+    `study-001-datom` with a prefix policy restricting reads to `adam/`.
+    datom carries an optional `endpoint` field on `datom_conn` for
+    exactly this case; the planned governance companion package will
+    provision access points automatically.
+
+3.  **Lake Formation / bucket policies** for organizations already
+    running fine-grained data governance.
+
+The same mechanism applies to the **gov bucket** for per-project
+visibility: a reader’s gov credentials can be scoped to
+`projects/STUDY_001/*`.
+
+## Governance bucket convention
+
+Governance is **organization-scoped by design**: one gov repo, many
+projects registered under `projects/{name}/`. Recommend:
+
+    acme-datom-gov/                           # one bucket per organization
+        projects/STUDY_001/...
+        projects/ADAM_STUDY_001/...
+        projects/STUDY_002/...
+
+In code:
+
+``` r
+
+gov_store <- datom_store_s3(
+  bucket     = "acme-datom-gov",
+  prefix     = "",                        # dedicated bucket; no prefix needed
+  region     = "us-east-1",
+  access_key = ..., secret_key = ...
+)
+```
+
+Use a **dedicated bucket with empty prefix** when you can. Use a prefix
+(e.g. `prefix = "datom-gov/"`) only when you must share the bucket with
+other tooling – the prefix then namespaces datom inside a multi-tenant
+bucket.
+
+## Alternative patterns
+
+### Program-per-bucket
+
+When a single compound has many studies (multiple phases, indications,
+populations), consolidate at the program level:
+
+    compound-X-datom/
+        study-001/datom/STUDY_001/...         # prefix = "study-001/"
+        study-001/adam/datom/ADAM_STUDY_001/...
+        study-002/datom/STUDY_002/...
+        study-002/adam/datom/ADAM_STUDY_002/...
+
+- **IAM**: scope at prefix level (`study-001/*`) rather than bucket
+  level. More policy work; fewer buckets.
+- **When to use**: 20+ studies under one program; IT pressure on bucket
+  counts; consistent IRB scope per program.
+- **Migration from Pattern A**: each study’s bucket becomes a top-level
+  prefix in the program bucket. Move data once via the future
+  `datom_migrate_data()`; `ref.json` is rewritten and readers pick up
+  the new location automatically.
+
+### Org-per-bucket
+
+One bucket for the whole organization, everything prefixed:
+
+    acme-datom/
+        program-X/study-001/datom/STUDY_001/...
+        program-Y/study-042/datom/STUDY_042/...
+
+- **IAM**: requires policy-document discipline. Only viable with mature
+  IAM tooling (Lake Formation, SCPs, OPA).
+- **When to use**: large organizations with centralized data governance,
+  where the bucket-count overhead of Pattern A becomes a real cost.
+- **Trade-off**: highest flexibility, weakest natural boundaries.
+
+## Migration between patterns
+
+The patterns are not mutually exclusive in time. A common path:
+
+1.  Start with **Pattern A** (bucket-per-study). Simple, fast,
+    IRB-aligned.
+2.  Around 20-30 studies, IT requests bucket consolidation. Migrate to
+    **Pattern B** (program-per-bucket).
+3.  Eventually, large orgs centralize on **Pattern C** with Lake
+    Formation.
+
+datom’s `ref.json` is the migration commit point: once gov updates the
+location, readers automatically follow. Per-version history is preserved
+when `datom_migrate_data()` ships; until then, migrations decommission +
+re-init (see [S3 Setup and
+Promotion](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md)
+for the mechanics).
+
+## Quick decision guide
+
+| You have… | Use |
+|----|----|
+| One study, small team, no special IAM needs | Pattern A, empty data prefix |
+| Multiple data products per study (raw + ADaM + TLF) | Pattern A, prefix per product |
+| Many studies under one compound, IT wants fewer buckets | Pattern B |
+| Enterprise data lake with central governance | Pattern C |
+| Sharing the gov bucket with other tooling | Pattern A or B with `prefix = "datom-gov/"` |
+
+When in doubt: **start with Pattern A**. You can migrate later; the
+inverse is rarely true.

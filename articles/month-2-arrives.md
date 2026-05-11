@@ -1,7 +1,7 @@
 # Month 2 Arrives
 
 > **Where we left off:** STUDY-001 is initialized. One table (`dm`)
-> holds the first 6 subjects. Both git repos are live on GitHub.
+> holds the first 4 subjects. The data git repo is live on GitHub.
 
 A month has passed. Eight more subjects have enrolled. The data
 management team sends you the month-2 extract, and you need to register
@@ -23,11 +23,11 @@ state <- source(
   system.file("vignette-setup", "resume_article_2.R", package = "datom")
 )$value
 
-conn       <- state$conn
-study_dir  <- state$study_dir
+conn      <- state$conn
+dev_dir   <- state$dev_dir
 ```
 
-The resume script is idempotent — running it twice in the same session
+The resume script is idempotent – running it twice in the same session
 is safe. It uses [`tempdir()`](https://rdrr.io/r/base/tempfile.html)
 paths by default; set `DATOM_VIGNETTE_DIR` and related env vars to
 override.
@@ -43,10 +43,10 @@ library(datom)
 
 dm_m2 <- datom_example_data("dm", cutoff_date = "2026-02-28")
 nrow(dm_m2)
-#> [1] 14
+#> [1] 16
 ```
 
-Eight new subjects have been added. The month-1 rows are still there,
+Twelve new subjects have been added. The month-1 rows are still there,
 unchanged.
 
 ## Write the new version
@@ -62,7 +62,7 @@ datom_write(
 #> v Wrote "dm" (full): "5c1a3f7b"
 ```
 
-`(full)` means both the data and the metadata changed — datom uploaded a
+`(full)` means both the data and the metadata changed – datom uploaded a
 new parquet file and recorded a new entry in the version history. The
 previous version is **still on disk and still in git**; nothing was
 overwritten.
@@ -80,7 +80,7 @@ datom_write(conn, data = dm_m2, name = "dm")
 #> i No changes detected for "dm". Skipping write.
 ```
 
-This is what makes pipelines safe to re-run — accidental duplicate
+This is what makes pipelines safe to re-run – accidental duplicate
 writes cost nothing and pollute no history.
 
 ## Look at the history
@@ -93,7 +93,7 @@ datom_history(conn, "dm")
 #> 2 a8ee7a31 4b6d0a7e  raw         1734        2026-01-28T09:02:11Z Initial DM extract through 2026-01-28
 ```
 
-Two rows, newest first. The `version` column is the **metadata SHA** —
+Two rows, newest first. The `version` column is the **metadata SHA** –
 the identifier you use to pin a read.
 
 ## Pin a read to a specific version
@@ -114,15 +114,15 @@ Pass a `version` to retrieve any historical snapshot:
 ``` r
 
 hist    <- datom_history(conn, "dm")
-m1_ver  <- hist$version[hist$message == "Initial DM extract through 2026-01-28"]
+m1_ver  <- hist$version[hist$commit_message == "Initial DM extract through 2026-01-28"]
 
 dm_m1_again <- datom_read(conn, "dm", version = m1_ver)
 nrow(dm_m1_again)
-#> [1] 6
+#> [1] 4
 ```
 
 The data you get back is bit-for-bit identical to what you wrote in
-article 1, even though the current version of `dm` has 14 rows. This is
+article 1, even though the current version of `dm` has 16 rows. This is
 the property your future statisticians, regulators, and auditors rely
 on.
 
@@ -130,7 +130,7 @@ on.
 
 - `dm` has two versions; you can read either at any time.
 - Re-writing the same data is a free no-op.
-- Version SHAs are stable across machines — share one and a colleague
+- Version SHAs are stable across machines – share one and a colleague
   reads the same bytes you did.
 
 In the next article, **a folder of extracts arrives** instead of a

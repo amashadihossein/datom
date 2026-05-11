@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="A Folder of Extracts">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="A Folder of Extracts">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -82,7 +83,7 @@
     
 <blockquote>
 <p><strong>Where we left off:</strong> STUDY-001 has one table
-(<code>dm</code>) with two versions — month-1 and month-2 extracts.</p>
+(<code>dm</code>) with two versions – month-1 and month-2 extracts.</p>
 </blockquote>
 <p>It is now mid-March. The data management team has switched from
 emailing single CSVs to dropping a <strong>folder</strong> of monthly
@@ -103,7 +104,7 @@ of the project (<code><a href="../reference/datom_status.html">datom_status()</a
 <span><span class="op">)</span><span class="op">$</span><span class="va">value</span></span>
 <span></span>
 <span><span class="va">conn</span>      <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">conn</span></span>
-<span><span class="va">study_dir</span> <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">study_dir</span></span></code></pre></div>
+<span><span class="va">dev_dir</span> <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">dev_dir</span></span></code></pre></div>
 <p>If you’ve been working in the same R session since article 1 or 2,
 skip the source call and reuse your existing <code>conn</code>.</p>
 </div>
@@ -111,14 +112,14 @@ skip the source call and reuse your existing <code>conn</code>.</p>
 <h2 id="drop-the-extracts-in-input_files">Drop the extracts in <code>input_files/</code><a class="anchor" aria-label="anchor" href="#drop-the-extracts-in-input_files"></a>
 </h2>
 <p><code><a href="../reference/datom_init_repo.html">datom_init_repo()</a></code> created an <code>input_files/</code>
-directory inside your data clone. It is gitignored — files placed there
+directory inside your data clone. It is gitignored – files placed there
 are never committed; they’re the inbox for
 <code><a href="../reference/datom_sync.html">datom_sync()</a></code>.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/amashadihossein/datom" class="external-link">datom</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://fs.r-lib.org" class="external-link">fs</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">input_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="va">study_dir</span>, <span class="st">"input_files"</span><span class="op">)</span></span>
+<span><span class="va">input_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="va">dev_dir</span>, <span class="st">"input_files"</span><span class="op">)</span></span>
 <span><span class="va">cutoff</span>    <span class="op">&lt;-</span> <span class="st">"2026-03-28"</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/write.table.html" class="external-link">write.csv</a></span><span class="op">(</span><span class="fu"><a href="../reference/datom_example_data.html">datom_example_data</a></span><span class="op">(</span><span class="st">"dm"</span>, cutoff_date <span class="op">=</span> <span class="va">cutoff</span><span class="op">)</span>,</span>
@@ -145,12 +146,12 @@ are never committed; they’re the inbox for
 <p>The manifest classifies each file:</p>
 <ul>
 <li>
-<strong>new</strong> — datom has never seen this table.</li>
+<strong>new</strong> – datom has never seen this table.</li>
 <li>
-<strong>changed</strong> — the table exists, but the source file has
+<strong>changed</strong> – the table exists, but the source file has
 a new SHA.</li>
 <li>
-<strong>unchanged</strong> — same source file as last time. Sync
+<strong>unchanged</strong> – same source file as last time. Sync
 will skip these.</li>
 </ul>
 <p><code>dm</code> is <code>changed</code> because article 2 wrote
@@ -201,7 +202,7 @@ vs. what’s pushed:</p>
 <span><span class="co">#&gt; v Git: clean, in sync with origin</span></span>
 <span><span class="co">#&gt; i Tables on local: 4</span></span>
 <span><span class="co">#&gt; i Last commit: &lt;sha&gt; "Update ae"</span></span></code></pre></div>
-<p><code><a href="../reference/datom_validate.html">datom_validate()</a></code> goes a step further — it cross-checks
+<p><code><a href="../reference/datom_validate.html">datom_validate()</a></code> goes a step further – it cross-checks
 that every table in the local manifest has its parquet file in the data
 store and its metadata in git history:</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
@@ -210,7 +211,7 @@ store and its metadata in git history:</p>
 <span><span class="co">#&gt; v Manifest &lt;-&gt; data store: consistent.</span></span>
 <span><span class="co">#&gt; v Manifest &lt;-&gt; git history: consistent.</span></span></code></pre></div>
 <p>If you ever see a discrepancy from <code><a href="../reference/datom_validate.html">datom_validate()</a></code>,
-that’s the moment to stop and investigate before doing more work — it
+that’s the moment to stop and investigate before doing more work – it
 means the project’s state has drifted from one of git or storage.</p>
 </div>
 <div class="section level2">
@@ -239,8 +240,8 @@ surprises.</p>
 your two go-to consistency checks.</li>
 </ul>
 <p>In the next article, we <strong>promote the project to S3</strong> so
-a colleague on another laptop can read the data without copying files
-around.</p>
+any machine with access to the data store can read the data without
+copying files around.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

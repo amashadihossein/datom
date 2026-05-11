@@ -15,8 +15,8 @@ Your first datom project: simulate, version, read.
 
 Promote to S3 and collaborate across a team.
 
-- [Promoting to
-  S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md):
+- [S3 Setup and
+  Promotion](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md):
 - [Handing Off to a
   Statistician](https://amashadihossein.github.io/datom/articles/handing-off.md):
 - [A Second Engineer
@@ -35,10 +35,12 @@ Manage a portfolio, audit history, look ahead.
 
 ### Reference
 
-Credentials, stores, roles, recovery utilities.
+Credentials, conventions, stores, roles, recovery utilities.
 
 - [Credentials in
   Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.md):
+- [Buckets and
+  Prefixes](https://amashadihossein.github.io/datom/articles/buckets-and-prefixes.md):
 
 ### Design
 

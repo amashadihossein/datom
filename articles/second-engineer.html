@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="A Second Engineer Joins">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="A Second Engineer Joins">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -86,7 +87,7 @@ statistician can read.</p>
 </blockquote>
 <p>The study has grown enough that you bring in a second data engineer.
 Unlike the statistician, the second engineer needs to
-<strong>write</strong> — to register the month-4 lab extract while
+<strong>write</strong> – to register the month-4 lab extract while
 you’re on vacation.</p>
 <p>This article introduces <code><a href="../reference/datom_clone.html">datom_clone()</a></code> (the way a new
 engineer enters an existing project) and demonstrates the
@@ -100,7 +101,7 @@ state if needed:</p>
 <span><span class="op">)</span><span class="op">$</span><span class="va">value</span></span>
 <span></span>
 <span><span class="va">conn</span>      <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">conn</span>         <span class="co"># original engineer</span></span>
-<span><span class="va">study_dir</span> <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">study_dir</span></span></code></pre></div>
+<span><span class="va">dev_dir</span> <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">dev_dir</span></span></code></pre></div>
 <div class="section level2">
 <h2 id="the-second-engineer-clones">The second engineer clones<a class="anchor" aria-label="anchor" href="#the-second-engineer-clones"></a>
 </h2>
@@ -181,7 +182,7 @@ your <code>lb</code> write:</p>
 <span><span class="co">#&gt; v 1 commit pulled.</span></span>
 <span><span class="co">#&gt; v Manifest updated: lb -&gt; new version</span></span></code></pre></div>
 <p>Now Bea retries her <code>ae</code> write. Because <code>ae</code> is
-a different table, there’s no conflict at the data level — the two
+a different table, there’s no conflict at the data level – the two
 writes commute, and after the pull they layer cleanly:</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span><span class="va">bea_conn</span>, <span class="va">ae_m4</span>, <span class="st">"ae"</span>,</span>
@@ -189,7 +190,7 @@ writes commute, and after the pull they layer cleanly:</p>
 <span><span class="co">#&gt; v Wrote "ae" (full): "..."</span></span></code></pre></div>
 <p>If Bea had been writing <code>lb</code> (the same table you wrote),
 her retry would produce a <strong>third</strong> version of
-<code>lb</code> — datom does not have a same-table merge concept,
+<code>lb</code> – datom does not have a same-table merge concept,
 because there’s no semantic merge of two parquet files. Each
 <code><a href="../reference/datom_write.html">datom_write()</a></code> is a snapshot; the version order tells you
 who wrote when.</p>
@@ -222,7 +223,7 @@ enforced.</li>
 conflict-free after a pull.</li>
 <li>Concurrent writes to the <strong>same table</strong> produce
 sequential versions, ordered by who pushed first.</li>
-<li>Bea has the same capabilities you do — there is no “primary”
+<li>Bea has the same capabilities you do – there is no “primary”
 engineer; the project is shared.</li>
 </ul>
 <p>The user-journey track continues with the manager view in

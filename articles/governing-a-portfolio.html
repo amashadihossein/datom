@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Governing a Study Portfolio">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Governing a Study Portfolio">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -84,7 +85,7 @@
 <p><strong>Where we left off:</strong> Two engineers share STUDY-001 on
 S3. Writes serialize through a pull-before-push discipline.</p>
 </blockquote>
-<p>A new study, STUDY-002, is starting. You — or your manager — now have
+<p>A new study, STUDY-002, is starting. You – or your manager – now have
 to think one level up: not “how do I version this study?” but “how do my
 studies relate to each other?”</p>
 <p>This article is the first time we look at datom from the
@@ -102,7 +103,7 @@ portfolio register.</p>
 <h2 id="what-governance-is-mechanically">What governance is, mechanically<a class="anchor" aria-label="anchor" href="#what-governance-is-mechanically"></a>
 </h2>
 <p>Every datom project you’ve initialized so far has registered itself
-in a shared git repository — the <strong>governance repo</strong> —
+in a shared git repository – the <strong>governance repo</strong> –
 under a folder named after the project. List it:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">fs</span><span class="fu">::</span><span class="fu"><a href="https://fs.r-lib.org/reference/dir_ls.html" class="external-link">dir_ls</a></span><span class="op">(</span><span class="fu">fs</span><span class="fu">::</span><span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="va">gov_clone_path</span>, <span class="st">"projects"</span><span class="op">)</span>, type <span class="op">=</span> <span class="st">"directory"</span><span class="op">)</span></span>
@@ -129,7 +130,7 @@ without rewriting history. See the <a href="design-ref-json.html"><code>ref.json
 <strong><code>migration_history.json</code></strong> is the
 append-only log of those moves.</li>
 </ul>
-<p>You don’t normally read these by hand — datom does. But the
+<p>You don’t normally read these by hand – datom does. But the
 manager-level property of the gov repo is that <strong>every datom
 project in your organization is one folder away from being
 discoverable</strong>. A <code>git clone</code> of the gov repo is a
@@ -143,7 +144,7 @@ don’t directly manage; they’ll do the day-to-day work. As the manager,
 your job is to make sure STUDY-002 lands in the same gov repo as
 STUDY-001 so the portfolio stays coherent.</p>
 <p>You don’t need to do anything special. The STUDY-002 engineer points
-at the existing gov repo and runs the standard initialization — the same
+at the existing gov repo and runs the standard initialization – the same
 sequence from <a href="first-extract.html">First Extract</a>, now
 against a shared gov repo:</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
@@ -152,7 +153,7 @@ against a shared gov repo:</p>
 <span></span>
 <span><span class="va">study_002_store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
 <span>  governance     <span class="op">=</span> <span class="va">state</span><span class="op">$</span><span class="va">gov_component</span>,    <span class="co"># SAME gov as STUDY-001</span></span>
-<span>  data           <span class="op">=</span> <span class="va">state</span><span class="op">$</span><span class="va">data_s3</span>,          <span class="co"># could be a different bucket</span></span>
+<span>  data           <span class="op">=</span> <span class="va">state</span><span class="op">$</span><span class="va">data_s3</span>,          <span class="co"># in real life: a different bucket (Pattern A)</span></span>
 <span>  github_pat     <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span>,</span>
 <span>  gov_repo_url   <span class="op">=</span> <span class="va">state</span><span class="op">$</span><span class="va">gov_repo_url</span>,     <span class="co"># SAME gov repo URL</span></span>
 <span>  gov_local_path <span class="op">=</span> <span class="fu">fs</span><span class="fu">::</span><span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_002_gov_clone"</span><span class="op">)</span></span>
@@ -165,6 +166,13 @@ against a shared gov repo:</p>
 <span>  create_repo  <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  repo_name    <span class="op">=</span> <span class="st">"study-002-data"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
+<blockquote>
+<p><strong>In production:</strong> STUDY-002 would get its own bucket
+(e.g. <code>study-002-datom</code>) so its IRB, lifecycle, and retention
+are independent. The vignette reuses the STUDY-001 bucket only for
+self-containment. See <a href="buckets-and-prefixes.html">Buckets and
+Prefixes</a>.</p>
+</blockquote>
 <p>The portfolio now has two projects. From your gov clone, after a
 refresh:</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
@@ -185,7 +193,7 @@ registered now?” not “what’s the latest version of <code>lb</code>?”</p>
 against the gov remote, scoped to your gov clone. No data-store traffic.
 Cheap to run on a schedule.</p>
 <p>This is the operation behind dashboards like “all studies registered
-in the last 30 days” — and the foundation that a future
+in the last 30 days” – and the foundation that a future
 <code><a href="../reference/datom_projects.html">datom_projects()</a></code> listing helper will sit on top of.</p>
 </div>
 <div class="section level2">
@@ -226,7 +234,7 @@ delete:</p>
 <ul>
 <li>The governance repo itself. STUDY-001 is still registered, still
 discoverable.</li>
-<li>Any external references — copies of STUDY-002 data your team
+<li>Any external references – copies of STUDY-002 data your team
 downloaded for analyses, reports the statistician wrote against pinned
 versions, audit logs you exported. datom owns the source of truth, not
 the downstream artefacts.</li>
@@ -251,7 +259,7 @@ the shared gov repo. No special manager-only command.</li>
 touching any project’s data clone.</li>
 <li>
 <code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> is the single command that cleanly
-removes a project from every place it lives — data store, GitHub,
+removes a project from every place it lives – data store, GitHub,
 governance.</li>
 </ul>
 <p>The user-journey track continues with <strong>Auditing &amp;

@@ -1,81 +1,110 @@
-# Promoting to S3
+# S3 Setup and Promotion
 
-> **Where we left off:** STUDY-001 has four tables (`dm`, `ex`, `lb`,
-> `ae`), all on your laptop. The data git repo is on GitHub. No
-> governance layer is attached yet — articles 1-3 stayed deliberately
-> solo.
+S3 is where datom turns into shared, governed infrastructure. By the end
+of this article you can:
 
-A colleague on a different laptop now needs to read the data. Local
-filesystem storage was fine when you were the only one writing; it stops
-working the moment a second person needs the same bytes.
+- Give a teammate read-only access to the project – your cloud admin
+  generates scoped credentials, the teammate passes them to
+  [`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md),
+  and datom’s reader role works out of the box.
+- Register the project in a shared governance portfolio, discoverable by
+  name across your organization.
 
-This article does two things, both triggered by the same moment
-(“someone else needs to read this”):
+Moving to S3 also lays the foundation for capabilities datom will
+integrate over time: access logs, automated retention rules,
+cross-account replication. None of that requires any code changes on
+your part – it follows from choosing object storage as the backend.
 
-1.  **Promote** STUDY-001 from local-filesystem data storage to **S3**.
-2.  **Attach** the governance layer with
-    [`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)
-    — a shared registry across projects, used by readers to discover
-    where data lives and by org-wide tooling to see the portfolio. Gov
-    is opt-in and only pays for itself once a project is shared.
+From your code, nothing changes: the same
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md),
+[`datom_read()`](https://amashadihossein.github.io/datom/reference/datom_read.md),
+and
+[`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md)
+calls you’ve used so far.
 
-After this article, the data git repo on GitHub is unchanged, the
-parquet bytes live in an S3 bucket, and STUDY-001 is registered in a
-governance repo any teammate can clone to find it.
+## Two ways to read this article
 
-## A note on local -\> S3 migration
+- **Starting fresh on S3** – skip the promotion sections (labeled
+  below); jump straight to [Set up AWS
+  credentials](#set-up-aws-credentials).
+- **Promoting an existing local-filesystem project to S3** – follow in
+  order. You’ll snapshot the current data, retire the local project,
+  then re-establish it on S3.
 
-datom’s `ref.json` has slots for `previous` data locations and a
-`migration_history.json` is initialized for every project. The intent is
-a future `datom_migrate_data()` that copies bytes from one store to
-another without resetting history. **That capability isn’t shipped yet**
-(planned for a future release). Until it is, the practical path is to
-retire the local project and re-establish it on S3.
+Both paths converge at [Build the S3 store](#build-the-s3-store).
 
-We choose this honest, slightly-lossy path here because:
+> **Where we left off (promotion path):** STUDY-001 has four tables
+> (`dm`, `ex`, `lb`, `ae`), all in a local filesystem store. The data
+> git repo is on GitHub. No governance layer is attached yet – articles
+> 1-3 stayed deliberately local-only.
 
-- The history of a *brand-new* study with three months of extracts is
-  recoverable: re-write the four current tables and you’re done.
-- Studies that have run for a year on local storage shouldn’t have run
-  on local storage — they are the audience for `datom_migrate_data()`
-  later.
+## What promotion looks like today (promotion path only)
 
-If preserving history across a backend change matters to your project
-**right now**, start on S3 from article 1 and skip this article.
+> **Starting fresh on S3?** Skip to [Set up AWS
+> credentials](#set-up-aws-credentials).
+
+A built-in, history-preserving migration (`datom_migrate_data()`) is
+planned but not yet shipped. Today, promoting a project means:
+
+1.  Snapshot the current version of each table.
+2.  Retire the local project
+    ([`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)).
+3.  Initialize a new project on S3 with the same name.
+4.  Re-write the snapshotted tables as version 1 on S3.
+
+The trade-off is that **per-table version history from the local era is
+not carried forward** – only the latest version of each table is. For a
+study with a few months of extracts this is cheap; the git commit log
+preserves the narrative even when the data history restarts.
+
+If preserving full per-version history across the move matters to you
+right now, the cleaner path is to start a new project directly on S3
+(fresh-start path) and write your data there going forward.
 
 ## Set up AWS credentials
 
-datom uses the [keyring](https://r-lib.github.io/keyring/) package for
-credentials, the same way it stored your GitHub PAT in article 1. Set
-your AWS access keys once:
+[`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md)
+takes `access_key` and `secret_key` as plain strings. How you supply
+them is up to you:
 
 ``` r
 
-keyring::key_set("AWS_ACCESS_KEY_ID")
-keyring::key_set("AWS_SECRET_ACCESS_KEY")
+# Option A: inline (fine for interactive sessions; don't commit to git)
+access_key <- "AKIAIOSFODNN7EXAMPLE"
+secret_key <- "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+# Option B: environment variables (CI/CD, Docker)
+access_key <- Sys.getenv("AWS_ACCESS_KEY_ID")
+secret_key <- Sys.getenv("AWS_SECRET_ACCESS_KEY")
+
+# Option C: keyring (recommended for interactive developer machines)
+access_key <- keyring::key_get("AWS_ACCESS_KEY_ID")
+secret_key <- keyring::key_get("AWS_SECRET_ACCESS_KEY")
 ```
 
-If your organization issues short-lived session tokens (STS), set the
-session token too:
-
-``` r
-
-keyring::key_set("AWS_SESSION_TOKEN")
-```
+The rest of this article uses the keyring form as a placeholder –
+substitute whichever pattern fits your environment.
 
 You will also need:
 
-- A **bucket** you can read and write. datom does not create buckets for
-  you — bucket lifecycle (encryption, versioning, retention) is your
+- A **bucket** you can read and write to. datom does not create buckets
+  – bucket lifecycle (encryption, versioning, retention) is your
   organization’s policy domain, not datom’s.
-- A **prefix** within the bucket if you share the bucket with other
-  projects. Below we use `study-001/`.
+- A **prefix** within the bucket. For raw clinical data we recommend one
+  bucket per study with an **empty prefix** at the bucket root. Derived
+  data products (ADaM, TLF) then live under named prefixes (`adam/`,
+  `tlf/`) in the same bucket. See [Buckets and
+  Prefixes](https://amashadihossein.github.io/datom/articles/buckets-and-prefixes.md)
+  for the full convention and alternatives.
 
-The full credential reference, including how to scope a reader-only PAT
-and how to handle SSO + assume-role flows, is in [Credentials in
+The full credential reference – including scoped reader credentials and
+how to handle assume-role flows – is in [Credentials in
 Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.md).
 
-## Resume the prior state
+## Resume the prior state (promotion path only)
+
+> **Starting fresh on S3?** Skip to [Build the S3
+> store](#build-the-s3-store).
 
 ``` r
 
@@ -83,23 +112,20 @@ state <- source(
   system.file("vignette-setup", "resume_article_4.R", package = "datom")
 )$value
 
-old_conn  <- state$conn
-study_dir <- state$study_dir
+old_conn <- state$conn
+dev_dir  <- state$dev_dir
 ```
 
 `old_conn` is the local-backend conn from article 3. We’ll use it to
 read the four current tables, then decommission it.
 
-## Snapshot the current data
+## Snapshot the current data (promotion path only)
 
-Before tearing anything down, capture the latest state of each table in
-memory:
+Before tearing anything down, capture the latest version of each table
+in memory:
 
 ``` r
 
-library(datom)
-
-cutoff   <- "2026-03-28"
 snapshot <- list(
   dm = datom_read(old_conn, "dm"),
   ex = datom_read(old_conn, "ex"),
@@ -108,129 +134,90 @@ snapshot <- list(
 )
 ```
 
-Each element is the current version’s data frame.
-
-## Decommission the local project
+## Decommission the local project (promotion path only)
 
 [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-deletes the GitHub repo and clears the local clone and parquet store. It
-is **destructive** and requires you to type the project name as
+deletes the data GitHub repo, clears the local clone and parquet store.
+It is **destructive** and requires you to type the project name as
 `confirm` to proceed.
 
 ``` r
 
 datom_decommission(old_conn, confirm = "STUDY_001")
-#> i Removing data store contents under datom/STUDY_001/
-#> v Deleted GitHub repo `study-001-data`
-#> v Removed local data clone /tmp/.../study_001_data
+#> i Deleting data storage objects...
+#> v Data storage objects deleted.
+#> i Deleting GitHub repo "your-org/study-001-data"...
+#> v Deleted GitHub repo "your-org/study-001-data".
+#> i Removing local clone /tmp/.../study_001_dev...
+#> v Removed local clone.
+#> v Decommissioned "STUDY_001".
 ```
 
-Because no governance layer was attached, decommission is purely
-data-side: no registry to unregister from, no gov storage to clean up.
+Because no governance layer was attached, decommission is data-side
+only: nothing to unregister from gov.
 
 ## Build the S3 store
 
+Both paths resume here.
+
 ``` r
 
+library(datom)
 library(fs)
 
-study_dir <- path(tempdir(), "study_001_data")  # fresh clone target
+dev_dir <- path(tempdir(), "study_001_dev")  # fresh local clone target
 
 aws_data <- datom_store_s3(
-  bucket     = "your-org-datom-data",   # <-- replace with a bucket you own
-  prefix     = "study-001/",
+  bucket     = "study-001-datom",        # <-- one bucket per study (Pattern A)
+  prefix     = "",                       # raw data at the bucket root
   region     = "us-east-1",
   access_key = keyring::key_get("AWS_ACCESS_KEY_ID"),
   secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
 )
 
 store <- datom_store(
-  governance = NULL,                                  # still no gov; attached below
+  governance = NULL,          # no gov yet; attached below
   data       = aws_data,
   github_pat = keyring::key_get("GITHUB_PAT")
 )
 ```
 
-## Re-initialize STUDY_001 on S3
+## Initialize STUDY_001 on S3
 
 ``` r
 
 datom_init_repo(
-  path         = study_dir,
+  path         = dev_dir,
   project_name = "STUDY_001",
   store        = store,
   create_repo  = TRUE,
   repo_name    = "study-001-data"
 )
 
-conn <- datom_get_conn(path = study_dir, store = store)
+conn <- datom_get_conn(path = dev_dir, store = store)
 print(conn)
 #> -- datom connection
 #> * Project: "STUDY_001"
 #> * Role: "developer"
 #> * Backend: "s3"
-#> * Root: "your-org-datom-data"
-#> * Prefix: "study-001/"
+#> * Root: "study-001-datom"
+#> * Prefix: ""
 #> * Governance: not attached
 ```
 
-The data backend is now `"s3"`. From here on, every
+The data backend is now `"s3"`. Every
 [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
-uploads parquet to S3 and every
+will upload parquet to S3 and every
 [`datom_read()`](https://amashadihossein.github.io/datom/reference/datom_read.md)
-streams it back from S3.
+will stream it back from S3.
 
-## Attach the governance layer
+## Write your first tables
 
-Now that STUDY-001 lives somewhere a teammate can reach, register it in
-a shared governance repo.
-[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)
-creates the gov GitHub repo (once per organization), records STUDY-001’s
-data location in `projects/STUDY_001/ref.json`, and updates the data
-repo’s `project.yaml` so any future conn from this clone knows where gov
-lives.
+**Promotion path:** re-write the snapshotted tables as version 1 on S3.
 
 ``` r
 
-gov_store <- datom_store_s3(
-  bucket     = "your-org-datom-gov",    # <-- a separate gov bucket
-  prefix     = "datom-gov/",
-  region     = "us-east-1",
-  access_key = keyring::key_get("AWS_ACCESS_KEY_ID"),
-  secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
-)
-
-conn <- datom_attach_gov(
-  conn        = conn,
-  gov_store   = gov_store,
-  create_repo = TRUE,
-  repo_name   = "datom-governance"
-)
-#> v Created gov GitHub repo `datom-governance`
-#> v Cloned gov repo to /tmp/.../datom-governance
-#> v Registered STUDY_001 in governance
-#> v Updated project.yaml with governance pointer
-
-print(conn)
-#> -- datom connection
-#> * Project: "STUDY_001"
-#> * Role: "developer"
-#> * Backend: "s3"
-#> * Root: "your-org-datom-data"
-#> * Prefix: "study-001/"
-#> * Gov backend: "s3"
-#> * Gov root: "your-org-datom-gov"
-```
-
-Once attached, gov cannot be detached — `project.yaml`’s
-`storage.governance` block is permanent. Subsequent projects in the same
-organization reuse the same gov repo and bucket; you only run
-`create_repo = TRUE` once.
-
-## Replay the four tables
-
-``` r
-
+# Promotion path only -- snapshot was captured above
 datom_write(conn, snapshot$dm, "dm",
             message = "Re-establish dm on S3 (was local through 2026-03-28)")
 datom_write(conn, snapshot$ex, "ex",
@@ -241,9 +228,94 @@ datom_write(conn, snapshot$ae, "ae",
             message = "Re-establish ae on S3 (was local through 2026-03-28)")
 ```
 
-Each table now has version 1 in the S3-backed project. The history of
-versions 1–3 from the local project is gone; the **commit messages**
-above are your audit trail for that.
+Per-table version history from the local era is not carried forward –
+the commit messages above are your audit trail.
+
+------------------------------------------------------------------------
+
+**Fresh-start path:** write the first extract directly.
+
+``` r
+
+# Fresh-start path only -- use the built-in example data
+cutoff <- "2026-01-28"
+datom_write(conn, datom_example_data("dm", cutoff_date = cutoff), "dm",
+            message = paste("dm: first extract, cutoff", cutoff))
+datom_write(conn, datom_example_data("ex", cutoff_date = cutoff), "ex",
+            message = paste("ex: first extract, cutoff", cutoff))
+datom_write(conn, datom_example_data("lb", cutoff_date = cutoff), "lb",
+            message = paste("lb: first extract, cutoff", cutoff))
+datom_write(conn, datom_example_data("ae", cutoff_date = cutoff), "ae",
+            message = paste("ae: first extract, cutoff", cutoff))
+```
+
+------------------------------------------------------------------------
+
+## Attach the governance layer
+
+Now that STUDY-001 lives somewhere a teammate can reach, register it in
+a shared governance repo. Governance is a two-step setup:
+
+1.  **Once per organization:**
+    [`datom_init_gov()`](https://amashadihossein.github.io/datom/reference/datom_init_gov.md)
+    creates the gov GitHub repo and seeds the skeleton (`projects/`
+    directory, README, etc.). Run this the very first time anyone in
+    your org adopts governance.
+2.  **Once per project:**
+    [`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)
+    records STUDY-001’s data location in `projects/STUDY_001/ref.json`
+    and updates `project.yaml` so any future conn from this clone knows
+    where gov lives.
+
+``` r
+
+gov_store <- datom_store_s3(
+  bucket     = "acme-datom-gov",         # <-- one dedicated gov bucket per organization
+  prefix     = "",                       # dedicated bucket -> empty prefix
+  region     = "us-east-1",
+  access_key = keyring::key_get("AWS_ACCESS_KEY_ID"),
+  secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
+)
+
+gov_dir <- path(tempdir(), "datom-governance")  # explicit local path
+
+# Step 1: seed the gov repo (once per organization)
+gov_repo_url <- datom_init_gov(
+  gov_store      = gov_store,
+  gov_local_path = gov_dir,
+  create_repo    = TRUE,
+  repo_name      = "datom-governance",
+  github_pat     = keyring::key_get("GITHUB_PAT")
+)
+#> v Created gov GitHub repo `datom-governance`
+#> v Seeded skeleton (projects/, README.md)
+#> v Pushed initial commit
+
+# Step 2: attach this project to gov (once per project)
+conn <- datom_attach_gov(
+  conn           = conn,
+  gov_store      = gov_store,
+  gov_repo_url   = gov_repo_url,
+  gov_local_path = gov_dir
+)
+#> v Registered STUDY_001 in governance
+#> v Updated project.yaml with governance pointer
+
+print(conn)
+#> -- datom connection
+#> * Project: "STUDY_001"
+#> * Role: "developer"
+#> * Backend: "s3"
+#> * Root: "study-001-datom"
+#> * Prefix: ""
+#> * Gov backend: "s3"
+#> * Gov root: "acme-datom-gov"
+```
+
+Once attached, gov cannot be detached – `project.yaml`’s
+`storage.governance` block is permanent. Subsequent projects in the same
+organization reuse the same gov repo and bucket; you only run
+`create_repo = TRUE` once.
 
 ## Confirm
 
@@ -255,29 +327,51 @@ datom_list(conn)
 #> 2   dm    8a3b21cc       c2e80a14         2026-04-29T...
 #> 3   ex    5d72e0f1       88a73e02         2026-04-29T...
 #> 4   lb    c1ffea90       4c3812dd         2026-04-29T...
-
-# Note: data_sha values match the local project (parquet bytes are identical).
-# Version SHAs are new because metadata (commit times, messages) differs.
 ```
-
-The `data_sha` column matches the local project’s last `data_sha` for
-each table — the **bytes** are identical, datom is just storing them in
-a different place. Version SHAs are different because they include
-metadata that changed (timestamps, commit messages).
 
 ## Where you are
 
 - STUDY_001 lives on S3. Your local clone is just a working copy of the
   git metadata.
 - Governance is attached: STUDY_001 is registered in a shared gov repo
-  and gov bucket. Future projects in this organization reuse both.
-- The four tables are at version 1 again, with honest commit messages
-  recording the local-era history.
+  and gov bucket. Future projects in the same organization reuse both.
 - `ref.json` in the gov repo points at the S3 bucket; any teammate who
-  clones the gov repo and has S3 read access can discover and read the
-  data.
+  clones the gov repo and has S3 read credentials can discover and read
+  the data.
 
 In the next article, you **hand the project off to a statistician** who
-needs to read the data without write access — the canonical reader role.
+needs to read the data without write access – the canonical reader role.
+
+## Teardown
+
+Skip this if you plan to continue to the next article – the S3 project
+and gov registration are the starting state for **Article 5: Handing
+Off**.
+
+If you want to clean up:
+
+``` r
+
+# Remove all datom artefacts for this project (S3 data, GitHub data repo,
+# local clone, gov storage prefix, gov git registration).
+datom_decommission(conn, confirm = "STUDY_001")
+```
+
+After decommission, the only remaining artefact is the **governance
+infrastructure itself** (gov GitHub repo and gov S3 bucket root). These
+are shared across projects and datom does not destroy them
+automatically. Delete them manually once you are done with all
+gov-dependent articles:
+
+``` r
+
+# Delete the gov GitHub repo
+system2("gh", c("repo", "delete", "your-org/datom-governance", "--yes"))
+```
+
+The gov S3 bucket content was already removed by
+[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md).
+If the bucket is otherwise empty, delete it via your AWS console or S3
+management tooling.
 
 \`\`\`\`

@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="dispatch.json and Self-Serve Access">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="dispatch.json and Self-Serve Access">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -157,10 +158,10 @@ product code, no shared credentials buried in a README.</p></li>
 <div class="section level2">
 <h2 id="what-dispatch-will-enable">What dispatch will enable<a class="anchor" aria-label="anchor" href="#what-dispatch-will-enable"></a>
 </h2>
-<p>The shape of the file (methods → language → entry point) is generous
-relative to current need. That’s deliberate. The roadmap for dispatch —
-none of which is in the current package, but all of which is unblocked
-by today’s split — looks roughly like:</p>
+<p>The shape of the file (methods -&gt; language -&gt; entry point) is
+generous relative to current need. That’s deliberate. The roadmap for
+dispatch – none of which is in the current package, but all of which is
+unblocked by today’s split – looks roughly like:</p>
 <ul>
 <li>
 <strong>Per-method overrides.</strong> A project might want a custom
@@ -170,7 +171,7 @@ slot becomes the fallback; method-specific entries layer on top.</li>
 <li>
 <strong>Multi-backend dispatch.</strong> When datom learns to read
 parquet from GCS or Azure Blob, the dispatch file is where backend
-selection rules go — not in <code>ref.json</code>, which only describes
+selection rules go – not in <code>ref.json</code>, which only describes
 location.</li>
 <li>
 <strong>Versioned access policies.</strong> Dispatch entries that
@@ -209,8 +210,8 @@ itself.</li>
 <p><code>dispatch.json</code> and <code>ref.json</code> are the two
 governance-side files that together form the project’s public-ish
 contract: where it lives, how to read it. The reason they live in a
-different repo from the data project — and not, say, alongside
-<code>manifest.json</code> — is the subject of <a href="design-two-repos.html">Two Repositories: Governance vs.
+different repo from the data project – and not, say, alongside
+<code>manifest.json</code> – is the subject of <a href="design-two-repos.html">Two Repositories: Governance vs.
 Data</a>.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

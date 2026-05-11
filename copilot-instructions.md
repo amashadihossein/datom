@@ -374,9 +374,25 @@ Auto-detected via `GITHUB_PAT` presence.
   errors with “N topics missing from index” otherwise. Check after every
   phase that adds exports.
 
-- **Non-ASCII characters in R source**: R CMD check warns on any
-  non-ASCII character in `R/*.R` files (even in comments). Use only
-  ASCII – `--` instead of `--`, `->` instead of `->`.
+- **Non-ASCII characters in R source and vignettes**: R CMD check warns
+  on any non-ASCII character in `R/*.R` files (even in comments), and
+  pkgdown/knitr can silently mangle them in `.Rmd` vignettes too. Use
+  only ASCII everywhere – `--` instead of em-dash, `->` instead of `->`,
+  `...` instead of ellipsis (`\u2026`), straight quotes. Bulk-check with
+  `LC_ALL=C grep -lr '[^[:print:][:space:]]' vignettes/*.Rmd R/*.R`.
+
+- **[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)
+  synthetic data snapshot must use backend-correct field names**: When
+  building the data store snapshot inside
+  [`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)
+  for `ref.json`, map `conn$root` to `bucket` (s3) or `path` (local)
+  before calling
+  [`.datom_create_ref()`](https://amashadihossein.github.io/datom/reference/dot-datom_create_ref.md).
+  [`.datom_store_root()`](https://amashadihossein.github.io/datom/reference/dot-datom_store_root.md)
+  reads `$bucket` for s3 / `$path` for local – passing
+  `root = conn$root` directly leaves the field name wrong and produces a
+  ref.json with an empty root. See `R/conn.R` and regression test in
+  `tests/testthat/test-conn.R`.
 
 - **[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)
   requires an initialised gov remote**: The function checks for
@@ -482,14 +498,26 @@ These patterns are non-negotiable for every session:
 5.  **E2E after phase completion**: Unit tests are necessary but not
     sufficient. Before marking a phase complete, run real end-to-end
     workflows via `dev/dev-sandbox.R` to catch integration bugs. 5a.
-    **Long PR/commit messages — always use a file**: Never pass
-    multi-line PR body text inline via `--body "..."` or heredoc
-    (`<< 'EOF'`). Shell quoting and terminal emulation malways mangle
-    them. Always write to a temp file with `create_file` first, then
-    pass `--body-file /tmp/filename.md`. Same applies to long commit
-    messages: write to a file and use `git commit -F /tmp/msg.md`. For
-    short single-line messages (\< 80 chars), inline `--message` / `-m`
-    is fine
+    **Long text in CLI calls — always use a temp file, first try**: For
+    `gh issue create --body`, `gh pr create --body`, `git commit -F`, or
+    any CLI call that takes multi-line text: write the text to a temp
+    file with `create_file` first, then pass
+    `--body-file /tmp/filename.md` or `git commit -F /tmp/msg.md`. Never
+    attempt the inline heredoc (`<< 'EOF'`) or `--body "..."` form first
+    — shell quoting and terminal emulation always mangle them and risk
+    duplicate side effects (e.g. duplicate issues). For short
+    single-line messages (\< 80 chars), inline `--message` / `-m` is
+    fine. 5b. **Check in before implementing**: When the user asks a
+    question (clarifying, exploratory, or directional), answer the
+    question first. Do not implement anything until the user has
+    confirmed the direction. The signal that implementation is wanted is
+    explicit: “go ahead”, “do it”, “yes”, or equivalent — not merely
+    absence of objection. 5c. **Before retrying any remote-mutating
+    action, verify remote state first**: Before a second attempt at
+    `gh issue create`, `git push`, `gh pr create`, etc., run a read-only
+    check (`gh issue list`, `git log --remotes`, `gh pr list`) to
+    confirm whether the first attempt already succeeded. Acting on stale
+    local evidence is how duplicates happen.
 6.  **Phase completion is mandatory**: When a phase is done, immediately
     follow the Phase Completion Procedure in `dev/README.md` — migrate
     learnings to spec/instructions, update README tables, delete the

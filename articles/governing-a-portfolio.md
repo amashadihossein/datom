@@ -3,7 +3,7 @@
 > **Where we left off:** Two engineers share STUDY-001 on S3. Writes
 > serialize through a pull-before-push discipline.
 
-A new study, STUDY-002, is starting. You — or your manager — now have to
+A new study, STUDY-002, is starting. You – or your manager – now have to
 think one level up: not “how do I version this study?” but “how do my
 studies relate to each other?”
 
@@ -24,7 +24,7 @@ gov_clone_path <- state$gov_clone_path
 ## What governance is, mechanically
 
 Every datom project you’ve initialized so far has registered itself in a
-shared git repository — the **governance repo** — under a folder named
+shared git repository – the **governance repo** – under a folder named
 after the project. List it:
 
 ``` r
@@ -55,7 +55,7 @@ Three files, all small JSON, all committed to git:
   design note.
 - **`migration_history.json`** is the append-only log of those moves.
 
-You don’t normally read these by hand — datom does. But the
+You don’t normally read these by hand – datom does. But the
 manager-level property of the gov repo is that **every datom project in
 your organization is one folder away from being discoverable**. A
 `git clone` of the gov repo is a list of all your active studies.
@@ -68,7 +68,7 @@ your job is to make sure STUDY-002 lands in the same gov repo as
 STUDY-001 so the portfolio stays coherent.
 
 You don’t need to do anything special. The STUDY-002 engineer points at
-the existing gov repo and runs the standard initialization — the same
+the existing gov repo and runs the standard initialization – the same
 sequence from [First
 Extract](https://amashadihossein.github.io/datom/articles/first-extract.md),
 now against a shared gov repo:
@@ -80,7 +80,7 @@ study_002_dir <- fs::path(tempdir(), "study_002_data")
 
 study_002_store <- datom_store(
   governance     = state$gov_component,    # SAME gov as STUDY-001
-  data           = state$data_s3,          # could be a different bucket
+  data           = state$data_s3,          # in real life: a different bucket (Pattern A)
   github_pat     = keyring::key_get("GITHUB_PAT"),
   gov_repo_url   = state$gov_repo_url,     # SAME gov repo URL
   gov_local_path = fs::path(tempdir(), "study_002_gov_clone")
@@ -94,6 +94,12 @@ datom_init_repo(
   repo_name    = "study-002-data"
 )
 ```
+
+> **In production:** STUDY-002 would get its own bucket (e.g.
+> `study-002-datom`) so its IRB, lifecycle, and retention are
+> independent. The vignette reuses the STUDY-001 bucket only for
+> self-containment. See [Buckets and
+> Prefixes](https://amashadihossein.github.io/datom/articles/buckets-and-prefixes.md).
 
 The portfolio now has two projects. From your gov clone, after a
 refresh:
@@ -120,7 +126,7 @@ does exactly that. It’s a fetch + merge against the gov remote, scoped
 to your gov clone. No data-store traffic. Cheap to run on a schedule.
 
 This is the operation behind dashboards like “all studies registered in
-the last 30 days” — and the foundation that a future
+the last 30 days” – and the foundation that a future
 [`datom_projects()`](https://amashadihossein.github.io/datom/reference/datom_projects.md)
 listing helper will sit on top of.
 
@@ -168,7 +174,7 @@ does **not** delete:
 
 - The governance repo itself. STUDY-001 is still registered, still
   discoverable.
-- Any external references — copies of STUDY-002 data your team
+- Any external references – copies of STUDY-002 data your team
   downloaded for analyses, reports the statistician wrote against pinned
   versions, audit logs you exported. datom owns the source of truth, not
   the downstream artefacts.
@@ -191,7 +197,7 @@ the same safety with better audit.
   refreshes the registry without touching any project’s data clone.
 - [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
   is the single command that cleanly removes a project from every place
-  it lives — data store, GitHub, governance.
+  it lives – data store, GitHub, governance.
 
 The user-journey track continues with **Auditing & Reproducibility**,
 where the manager view sharpens further: regulator requests, version

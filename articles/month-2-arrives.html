@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Month 2 Arrives">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Month 2 Arrives">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -82,7 +83,7 @@
     
 <blockquote>
 <p><strong>Where we left off:</strong> STUDY-001 is initialized. One
-table (<code>dm</code>) holds the first 6 subjects. Both git repos are
+table (<code>dm</code>) holds the first 4 subjects. The data git repo is
 live on GitHub.</p>
 </blockquote>
 <p>A month has passed. Eight more subjects have enrolled. The data
@@ -102,9 +103,9 @@ article 1 from scratch:</p>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"vignette-setup"</span>, <span class="st">"resume_article_2.R"</span>, package <span class="op">=</span> <span class="st">"datom"</span><span class="op">)</span></span>
 <span><span class="op">)</span><span class="op">$</span><span class="va">value</span></span>
 <span></span>
-<span><span class="va">conn</span>       <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">conn</span></span>
-<span><span class="va">study_dir</span>  <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">study_dir</span></span></code></pre></div>
-<p>The resume script is idempotent — running it twice in the same
+<span><span class="va">conn</span>      <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">conn</span></span>
+<span><span class="va">dev_dir</span>   <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">dev_dir</span></span></code></pre></div>
+<p>The resume script is idempotent – running it twice in the same
 session is safe. It uses <code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code> paths by default; set
 <code>DATOM_VIGNETTE_DIR</code> and related env vars to override.</p>
 <p>If you’re continuing in the same R session as article 1, skip the
@@ -118,9 +119,9 @@ source call and reuse your existing <code>conn</code>.</p>
 <span></span>
 <span><span class="va">dm_m2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_example_data.html">datom_example_data</a></span><span class="op">(</span><span class="st">"dm"</span>, cutoff_date <span class="op">=</span> <span class="st">"2026-02-28"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">dm_m2</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 14</span></span></code></pre></div>
-<p>Eight new subjects have been added. The month-1 rows are still there,
-unchanged.</p>
+<span><span class="co">#&gt; [1] 16</span></span></code></pre></div>
+<p>Twelve new subjects have been added. The month-1 rows are still
+there, unchanged.</p>
 </div>
 <div class="section level2">
 <h2 id="write-the-new-version">Write the new version<a class="anchor" aria-label="anchor" href="#write-the-new-version"></a>
@@ -133,7 +134,7 @@ unchanged.</p>
 <span>  message <span class="op">=</span> <span class="st">"DM extract through 2026-02-28"</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt; v Wrote "dm" (full): "5c1a3f7b"</span></span></code></pre></div>
-<p><code>(full)</code> means both the data and the metadata changed —
+<p><code>(full)</code> means both the data and the metadata changed –
 datom uploaded a new parquet file and recorded a new entry in the
 version history. The previous version is <strong>still on disk and still
 in git</strong>; nothing was overwritten.</p>
@@ -147,7 +148,7 @@ returns without producing a new version.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span><span class="va">conn</span>, data <span class="op">=</span> <span class="va">dm_m2</span>, name <span class="op">=</span> <span class="st">"dm"</span><span class="op">)</span></span>
 <span><span class="co">#&gt; i No changes detected for "dm". Skipping write.</span></span></code></pre></div>
-<p>This is what makes pipelines safe to re-run — accidental duplicate
+<p>This is what makes pipelines safe to re-run – accidental duplicate
 writes cost nothing and pollute no history.</p>
 </div>
 <div class="section level2">
@@ -159,7 +160,7 @@ writes cost nothing and pollute no history.</p>
 <span><span class="co">#&gt; 1 5c1a3f7b 9e8f1c2d  raw         3812        2026-02-28T10:14:02Z DM extract through 2026-02-28</span></span>
 <span><span class="co">#&gt; 2 a8ee7a31 4b6d0a7e  raw         1734        2026-01-28T09:02:11Z Initial DM extract through 2026-01-28</span></span></code></pre></div>
 <p>Two rows, newest first. The <code>version</code> column is the
-<strong>metadata SHA</strong> — the identifier you use to pin a
+<strong>metadata SHA</strong> – the identifier you use to pin a
 read.</p>
 </div>
 <div class="section level2">
@@ -174,13 +175,13 @@ version:</p>
 <p>Pass a <code>version</code> to retrieve any historical snapshot:</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">hist</span>    <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span></span>
-<span><span class="va">m1_ver</span>  <span class="op">&lt;-</span> <span class="va">hist</span><span class="op">$</span><span class="va">version</span><span class="op">[</span><span class="va">hist</span><span class="op">$</span><span class="va">message</span> <span class="op">==</span> <span class="st">"Initial DM extract through 2026-01-28"</span><span class="op">]</span></span>
+<span><span class="va">m1_ver</span>  <span class="op">&lt;-</span> <span class="va">hist</span><span class="op">$</span><span class="va">version</span><span class="op">[</span><span class="va">hist</span><span class="op">$</span><span class="va">commit_message</span> <span class="op">==</span> <span class="st">"Initial DM extract through 2026-01-28"</span><span class="op">]</span></span>
 <span></span>
 <span><span class="va">dm_m1_again</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span>, version <span class="op">=</span> <span class="va">m1_ver</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">dm_m1_again</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 6</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 4</span></span></code></pre></div>
 <p>The data you get back is bit-for-bit identical to what you wrote in
-article 1, even though the current version of <code>dm</code> has 14
+article 1, even though the current version of <code>dm</code> has 16
 rows. This is the property your future statisticians, regulators, and
 auditors rely on.</p>
 </div>
@@ -192,7 +193,7 @@ auditors rely on.</p>
 <code>dm</code> has two versions; you can read either at any
 time.</li>
 <li>Re-writing the same data is a free no-op.</li>
-<li>Version SHAs are stable across machines — share one and a colleague
+<li>Version SHAs are stable across machines – share one and a colleague
 reads the same bytes you did.</li>
 </ul>
 <p>In the next article, <strong>a folder of extracts arrives</strong>

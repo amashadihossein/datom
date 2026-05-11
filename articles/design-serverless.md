@@ -2,8 +2,8 @@
 
 > **Companion to**: [Governing a Study
 > Portfolio](https://amashadihossein.github.io/datom/articles/governing-a-portfolio.md).
-> Read this when you want to understand what runs where — and what
-> doesn’t run anywhere — when datom is in production.
+> Read this when you want to understand what runs where – and what
+> doesn’t run anywhere – when datom is in production.
 
 There is no datom server.
 
@@ -20,7 +20,7 @@ and what it costs.
 A working datom deployment needs exactly two infrastructural things,
 both of which your organization almost certainly already has:
 
-1.  **A git host.** GitHub, GitLab, internal Gitea — anything that
+1.  **A git host.** GitHub, GitLab, internal Gitea – anything that
     speaks the git protocol over HTTPS. datom uses it for the data repos
     and the governance repo.
 2.  **An object store.** S3, or a filesystem path that one or more
@@ -57,7 +57,7 @@ There is no shared computation. There is no shared state outside the two
 infrastructure pieces. Two developers writing to the same project at the
 same time coordinate through git’s existing pull-before-push discipline,
 not through a central lock manager. A reader far away from the writer
-never has to talk to the writer’s machine — they both talk to the same
+never has to talk to the writer’s machine – they both talk to the same
 object store and the same git host.
 
 ## Why no server
@@ -69,7 +69,7 @@ tools” in clinical environments is the burden of running them. Whoever
 runs the tool also has to keep its uptime, its backups, its secrets, its
 upgrades, its compliance scope. A package that has no service has no
 service to run. The git-host SLA and the object-store SLA become datom’s
-SLA — both of which the organization is already paying for.
+SLA – both of which the organization is already paying for.
 
 **Permission alignment.** Every credential a datom user needs is already
 a credential the organization knows how to manage: git-platform PATs and
@@ -93,7 +93,7 @@ Three things become harder, and we accept the trade.
 “Someone wrote a new version of `lb`” is not an event datom emits; it is
 a fact a teammate discovers next time they
 [`datom_pull()`](https://amashadihossein.github.io/datom/reference/datom_pull.md).
-For clinical pipelines that’s the right cadence — extracts arrive on a
+For clinical pipelines that’s the right cadence – extracts arrive on a
 weekly to monthly schedule, and the value of a real-time event bus is
 low. For tighter loops, a thin notification layer can sit on top (GitHub
 Actions, S3 event triggers); datom doesn’t ship one because the right
@@ -101,7 +101,7 @@ shape depends on the organization.
 
 **No central enforcement of policy.** “Every write must include a PHI
 review note in its commit message” is a policy you can document, review
-in code review, and lint with a CI hook on the data repo — but datom
+in code review, and lint with a CI hook on the data repo – but datom
 itself will not refuse a commit that lacks one. The trade-off is that no
 central component knows about every project, so no central component can
 be a single point of policy failure. Organizations that need server-side
@@ -144,12 +144,12 @@ the credentials, and the network is a complete datom client.
 The serverless property is not a separate decision; it falls out of the
 choices already made:
 
-- Metadata in git — see [The datom Model: Code in Git, Data in
+- Metadata in git – see [The datom Model: Code in Git, Data in
   Cloud](https://amashadihossein.github.io/datom/articles/design-datom-model.md).
-- Two repos for project vs. organization scope — see [Two Repositories:
+- Two repos for project vs. organization scope – see [Two Repositories:
   Governance
   vs. Data](https://amashadihossein.github.io/datom/articles/design-two-repos.md).
-- Indirection through `ref.json` for portable storage — see [`ref.json`
+- Indirection through `ref.json` for portable storage – see [`ref.json`
   and Always-Migration-Ready
   Storage](https://amashadihossein.github.io/datom/articles/design-ref-json.md).
 

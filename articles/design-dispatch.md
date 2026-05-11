@@ -71,17 +71,17 @@ Three properties datom already gives you because of dispatch:
 
 ## What dispatch will enable
 
-The shape of the file (methods → language → entry point) is generous
-relative to current need. That’s deliberate. The roadmap for dispatch —
+The shape of the file (methods -\> language -\> entry point) is generous
+relative to current need. That’s deliberate. The roadmap for dispatch –
 none of which is in the current package, but all of which is unblocked
-by today’s split — looks roughly like:
+by today’s split – looks roughly like:
 
 - **Per-method overrides.** A project might want a custom reader
   (`our.reader::read_with_phi_filter`) for the R default while leaving
   Python on the standard one. Today’s `default` slot becomes the
   fallback; method-specific entries layer on top.
 - **Multi-backend dispatch.** When datom learns to read parquet from GCS
-  or Azure Blob, the dispatch file is where backend selection rules go —
+  or Azure Blob, the dispatch file is where backend selection rules go –
   not in `ref.json`, which only describes location.
 - **Versioned access policies.** Dispatch entries that pin readers to a
   specific datom version, or that route between local-cache and remote,
@@ -110,6 +110,6 @@ that exploit it as the API stabilizes.
 `dispatch.json` and `ref.json` are the two governance-side files that
 together form the project’s public-ish contract: where it lives, how to
 read it. The reason they live in a different repo from the data project
-— and not, say, alongside `manifest.json` — is the subject of [Two
+– and not, say, alongside `manifest.json` – is the subject of [Two
 Repositories: Governance vs.
 Data](https://amashadihossein.github.io/datom/articles/design-two-repos.md).

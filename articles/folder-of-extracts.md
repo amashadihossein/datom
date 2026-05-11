@@ -1,7 +1,7 @@
 # A Folder of Extracts
 
 > **Where we left off:** STUDY-001 has one table (`dm`) with two
-> versions — month-1 and month-2 extracts.
+> versions – month-1 and month-2 extracts.
 
 It is now mid-March. The data management team has switched from emailing
 single CSVs to dropping a **folder** of monthly extracts. Today’s drop
@@ -25,7 +25,7 @@ state <- source(
 )$value
 
 conn      <- state$conn
-study_dir <- state$study_dir
+dev_dir <- state$dev_dir
 ```
 
 If you’ve been working in the same R session since article 1 or 2, skip
@@ -35,7 +35,7 @@ the source call and reuse your existing `conn`.
 
 [`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
 created an `input_files/` directory inside your data clone. It is
-gitignored — files placed there are never committed; they’re the inbox
+gitignored – files placed there are never committed; they’re the inbox
 for
 [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
 
@@ -44,7 +44,7 @@ for
 library(datom)
 library(fs)
 
-input_dir <- path(study_dir, "input_files")
+input_dir <- path(dev_dir, "input_files")
 cutoff    <- "2026-03-28"
 
 write.csv(datom_example_data("dm", cutoff_date = cutoff),
@@ -73,9 +73,9 @@ manifest
 
 The manifest classifies each file:
 
-- **new** — datom has never seen this table.
-- **changed** — the table exists, but the source file has a new SHA.
-- **unchanged** — same source file as last time. Sync will skip these.
+- **new** – datom has never seen this table.
+- **changed** – the table exists, but the source file has a new SHA.
+- **unchanged** – same source file as last time. Sync will skip these.
 
 `dm` is `changed` because article 2 wrote month-2; this is the month-3
 update. `ex`, `lb`, and `ae` are brand-new tables.
@@ -133,7 +133,7 @@ datom_status(conn)
 ```
 
 [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
-goes a step further — it cross-checks that every table in the local
+goes a step further – it cross-checks that every table in the local
 manifest has its parquet file in the data store and its metadata in git
 history:
 
@@ -147,7 +147,7 @@ datom_validate(conn)
 
 If you ever see a discrepancy from
 [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md),
-that’s the moment to stop and investigate before doing more work — it
+that’s the moment to stop and investigate before doing more work – it
 means the project’s state has drifted from one of git or storage.
 
 ## Re-running is safe
@@ -178,5 +178,6 @@ This is the property that lets sync run in a cron job without surprises.
   [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
   are your two go-to consistency checks.
 
-In the next article, we **promote the project to S3** so a colleague on
-another laptop can read the data without copying files around.
+In the next article, we **promote the project to S3** so any machine
+with access to the data store can read the data without copying files
+around.

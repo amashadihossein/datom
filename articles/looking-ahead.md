@@ -94,7 +94,7 @@ about how you’ve structured your projects will need to change.
 ## Where to go next
 
 - **Reference**: the final user-journey article, [Credentials in
-  Practice](https://amashadihossein.github.io/datom/articles/credentials.md),
+  Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.md),
   is the lookup reference for the credential and store-construction
   patterns the earlier articles use without explanation.
 - **Design Notes**: the six articles under the *Design* group on the

@@ -6,8 +6,8 @@
 > project and its bucket goes through one extra file.
 
 A datom project’s git history records what tables exist and what their
-versions are. It does **not** record where the bytes live. That fact —
-which file, which bucket, which region — is kept in a single small JSON
+versions are. It does **not** record where the bytes live. That fact –
+which file, which bucket, which region – is kept in a single small JSON
 file in the governance repo: `projects/{project_name}/ref.json`.
 
 The split looks like an extra hop. It is the single design choice that
@@ -58,7 +58,7 @@ That sounds like a small thing. It isn’t. It means:
 
 - A regulator request for a 14-month-old version of `dm` works the same
   way after a bucket migration as before it. No history surgery.
-- Running cost optimization (S3 → S3 in cheaper region, or moving cold
+- Running cost optimization (S3 -\> S3 in cheaper region, or moving cold
   studies to a separate bucket) doesn’t break any tooling that
   previously read from the project.
 - Multi-region or multi-cloud futures are not architectural changes;
@@ -70,7 +70,7 @@ Two roles read `ref.json` differently, and the asymmetry is on purpose.
 
 **Developers** have a local gov clone. When they call
 [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md),
-datom reads `ref.json` from that local clone — no network round-trip —
+datom reads `ref.json` from that local clone – no network round-trip –
 and uses the `current` block to talk to the data store. If their gov
 clone is stale (last
 [`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
@@ -115,14 +115,14 @@ failure mode.
 
 Today’s primary use of `ref.json` is the one we already have: a project
 initialized in one bucket today, possibly a different bucket later. The
-plumbing for the “later” half — `previous`, `migration_history.json`,
-conn-time mismatch detection — is wired up. What’s missing is a single
+plumbing for the “later” half – `previous`, `migration_history.json`,
+conn-time mismatch detection – is wired up. What’s missing is a single
 command that orchestrates the move: copy parquet bytes to the new
 bucket, rewrite `ref.json`, append to migration history, rewrite
 `project.yaml`’s storage block, push the gov commit, push the data
 commit.
 
-That command — call it `datom_migrate_data()` — is a planned future
+That command – call it `datom_migrate_data()` – is a planned future
 addition. Until it ships, the explicit decommission-and-replay path
 walked through in [Promoting to
 S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md)
@@ -138,7 +138,7 @@ ship the orchestrator when the API has settled.
 
 `ref.json` is one of two small JSON files that live in the governance
 repo per project. The other is `dispatch.json`. They are deliberately
-separate — see [`dispatch.json` and Self-Serve
+separate – see [`dispatch.json` and Self-Serve
 Access](https://amashadihossein.github.io/datom/articles/design-dispatch.md)
 for why. And the gov repo itself is the subject of [Two Repositories:
 Governance vs.

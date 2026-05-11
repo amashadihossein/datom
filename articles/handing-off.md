@@ -11,7 +11,7 @@ safety review asks where the numbers came from.
 This article is a **role-switch article**. You stop being the engineer
 for a moment; you become the statistician on a different laptop, in a
 different R session, with read-only credentials. The capabilities
-introduced are not new functions — they’re a new way of using
+introduced are not new functions – they’re a new way of using
 [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)
 and
 [`datom_read()`](https://amashadihossein.github.io/datom/reference/datom_read.md).
@@ -20,11 +20,11 @@ and
 
 You (the engineer) message the statistician three pieces of information:
 
-1.  **Governance repo URL** —
-    `https://github.com/your-org/datom-governance.git`.
-2.  **Data bucket / prefix / region** — `your-org-datom-data`,
-    `study-001/`, `us-east-1`.
-3.  **Project name** — `STUDY_001`.
+1.  **Governance repo URL** –
+    `https://github.com/acme/datom-governance.git`.
+2.  **Data bucket / prefix / region** – `study-001-datom`, `""` (empty
+    prefix), `us-east-1`.
+3.  **Project name** – `STUDY_001`.
 
 Plus the credentials she’ll need to set up herself:
 
@@ -34,7 +34,7 @@ Plus the credentials she’ll need to set up herself:
 - An AWS profile with **read** access to the data bucket.
 
 You do **not** send her any data files. The point of datom is that
-there’s nothing to send — she pulls bytes herself.
+there’s nothing to send – she pulls bytes herself.
 
 ## What the statistician does
 
@@ -55,7 +55,7 @@ keyring::key_set("AWS_SECRET_ACCESS_KEY")
 ### Resume the prior state
 
 The resume script for article 5 does the work of building a **reader
-conn** against the S3 store. Unlike resume scripts 2–4, this one needs
+conn** against the S3 store. Unlike resume scripts 2-4, this one needs
 network access (S3 + GitHub).
 
 ``` r
@@ -70,8 +70,8 @@ print(reader_conn)
 #> * Project: "STUDY_001"
 #> * Role: "reader"
 #> * Backend: "s3"
-#> * Root: "your-org-datom-data"
-#> * Prefix: "study-001/"
+#> * Root: "study-001-datom"
+#> * Prefix: ""
 ```
 
 The conn’s `role` is `"reader"`. Reader connections do not have a local
@@ -135,7 +135,7 @@ Three things just happened that don’t happen with shared CSVs:
     bytes on every machine, forever. This is the audit story regulators
     want.
 3.  **The handoff is one-way.** The reader role has no write capability
-    — the statistician *cannot* accidentally create a fork by saving a
+    – the statistician *cannot* accidentally create a fork by saving a
     new version. The engineer remains the data steward.
 
 ## Where you are
@@ -144,7 +144,7 @@ You’re back to being the engineer. The statistician has what she needs.
 Nothing in your workflow changed.
 
 In the next article, **a second engineer joins** the project. Unlike the
-statistician, she needs to write — and that means handling
+statistician, she needs to write – and that means handling
 pull-before-push discipline.
 
 \`\`\`\`

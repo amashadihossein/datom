@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="ref.json and Always-Migration-Ready Storage">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="ref.json and Always-Migration-Ready Storage">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -87,7 +88,7 @@ goes through one extra file.</p>
 </blockquote>
 <p>A datom project’s git history records what tables exist and what
 their versions are. It does <strong>not</strong> record where the bytes
-live. That fact — which file, which bucket, which region — is kept in a
+live. That fact – which file, which bucket, which region – is kept in a
 single small JSON file in the governance repo:
 <code>projects/{project_name}/ref.json</code>.</p>
 <p>The split looks like an extra hop. It is the single design choice
@@ -138,9 +139,9 @@ correctly because resolution goes through <code>ref.json</code>, and
 <li>A regulator request for a 14-month-old version of <code>dm</code>
 works the same way after a bucket migration as before it. No history
 surgery.</li>
-<li>Running cost optimization (S3 → S3 in cheaper region, or moving cold
-studies to a separate bucket) doesn’t break any tooling that previously
-read from the project.</li>
+<li>Running cost optimization (S3 -&gt; S3 in cheaper region, or moving
+cold studies to a separate bucket) doesn’t break any tooling that
+previously read from the project.</li>
 <li>Multi-region or multi-cloud futures are not architectural changes;
 they’re new entries in <code>ref.json</code>.</li>
 </ul>
@@ -152,7 +153,7 @@ they’re new entries in <code>ref.json</code>.</li>
 is on purpose.</p>
 <p><strong>Developers</strong> have a local gov clone. When they call
 <code><a href="../reference/datom_get_conn.html">datom_get_conn()</a></code>, datom reads <code>ref.json</code> from
-that local clone — no network round-trip — and uses the
+that local clone – no network round-trip – and uses the
 <code>current</code> block to talk to the data store. If their gov clone
 is stale (last <code><a href="../reference/datom_pull_gov.html">datom_pull_gov()</a></code> was a week ago, the project
 moved buckets yesterday), the conn-time read warns but does not fail.
@@ -201,13 +202,13 @@ silently break that link.</li>
 </h2>
 <p>Today’s primary use of <code>ref.json</code> is the one we already
 have: a project initialized in one bucket today, possibly a different
-bucket later. The plumbing for the “later” half — <code>previous</code>,
-<code>migration_history.json</code>, conn-time mismatch detection — is
+bucket later. The plumbing for the “later” half – <code>previous</code>,
+<code>migration_history.json</code>, conn-time mismatch detection – is
 wired up. What’s missing is a single command that orchestrates the move:
 copy parquet bytes to the new bucket, rewrite <code>ref.json</code>,
 append to migration history, rewrite <code>project.yaml</code>’s storage
 block, push the gov commit, push the data commit.</p>
-<p>That command — call it <code>datom_migrate_data()</code> — is a
+<p>That command – call it <code>datom_migrate_data()</code> – is a
 planned future addition. Until it ships, the explicit
 decommission-and-replay path walked through in <a href="promoting-to-s3.html">Promoting to S3</a> is the supported
 migration. It loses old version history (you replay each table as a
@@ -222,7 +223,7 @@ else; we’ll ship the orchestrator when the API has settled.</p>
 </h2>
 <p><code>ref.json</code> is one of two small JSON files that live in the
 governance repo per project. The other is <code>dispatch.json</code>.
-They are deliberately separate — see <a href="design-dispatch.html"><code>dispatch.json</code> and Self-Serve
+They are deliberately separate – see <a href="design-dispatch.html"><code>dispatch.json</code> and Self-Serve
 Access</a> for why. And the gov repo itself is the subject of <a href="design-two-repos.html">Two Repositories: Governance vs. Data</a>,
 which explains why the gov repo is not just a folder inside the data
 repo.</p>

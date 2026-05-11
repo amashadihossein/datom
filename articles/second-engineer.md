@@ -3,7 +3,7 @@
 > **Where we left off:** STUDY-001 is on S3. The statistician can read.
 
 The study has grown enough that you bring in a second data engineer.
-Unlike the statistician, the second engineer needs to **write** — to
+Unlike the statistician, the second engineer needs to **write** – to
 register the month-4 lab extract while you’re on vacation.
 
 This article introduces
@@ -22,7 +22,7 @@ state <- source(
 )$value
 
 conn      <- state$conn         # original engineer
-study_dir <- state$study_dir
+dev_dir <- state$dev_dir
 ```
 
 ## The second engineer clones
@@ -129,7 +129,7 @@ datom_pull(bea_conn)
 ```
 
 Now Bea retries her `ae` write. Because `ae` is a different table,
-there’s no conflict at the data level — the two writes commute, and
+there’s no conflict at the data level – the two writes commute, and
 after the pull they layer cleanly:
 
 ``` r
@@ -140,7 +140,7 @@ datom_write(bea_conn, ae_m4, "ae",
 ```
 
 If Bea had been writing `lb` (the same table you wrote), her retry would
-produce a **third** version of `lb` — datom does not have a same-table
+produce a **third** version of `lb` – datom does not have a same-table
 merge concept, because there’s no semantic merge of two parquet files.
 Each
 [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
@@ -165,7 +165,7 @@ The rule for two-engineer projects:
   pull.
 - Concurrent writes to the **same table** produce sequential versions,
   ordered by who pushed first.
-- Bea has the same capabilities you do — there is no “primary” engineer;
+- Bea has the same capabilities you do – there is no “primary” engineer;
   the project is shared.
 
 The user-journey track continues with the manager view in **Governing a
