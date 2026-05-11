@@ -1000,13 +1000,20 @@ datom_attach_gov <- function(conn,
   )
 
   # Build a synthetic "data store component" snapshot for ref creation. The
-  # resolver only reads root/prefix/region/type, all available on the conn.
+  # accessor `.datom_store_root()` expects backend-specific field names
+  # (`bucket` for s3, `path` for local), so map `conn$root` to the correct
+  # field. Without this, ref.json is written with an empty `root` and the
+  # first write fails the .datom_check_ref_current() guard.
+  snap_fields <- list(prefix = conn$prefix, region = conn$region)
+  if (conn$backend == "s3") {
+    snap_fields$bucket <- conn$root
+  } else if (conn$backend == "local") {
+    snap_fields$path <- conn$root
+  } else {
+    cli::cli_abort("Unknown backend in conn: {.val {conn$backend}}")
+  }
   data_snapshot <- structure(
-    list(
-      root   = conn$root,
-      prefix = conn$prefix,
-      region = conn$region
-    ),
+    snap_fields,
     class = paste0("datom_store_", conn$backend)
   )
   ref <- .datom_create_ref(data_snapshot)

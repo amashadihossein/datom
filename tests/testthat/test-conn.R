@@ -2532,6 +2532,17 @@ test_that("datom_attach_gov attaches gov, updates project.yaml, returns fresh co
   expect_true(fs::file_exists(fs::path(proj_dir, "ref.json")))
   expect_true(fs::file_exists(fs::path(proj_dir, "migration_history.json")))
 
+  # ref.json carries the data location, not an empty root (regression: prior
+  # build of the synthetic data_snapshot used `root=` instead of `bucket=`/
+  # `path=`, so .datom_store_root() returned NULL and ref.json shipped with
+  # root="").
+  ref <- jsonlite::fromJSON(
+    fs::path(proj_dir, "ref.json"),
+    simplifyVector = FALSE
+  )
+  expect_equal(ref$current$type, "local")
+  expect_equal(ref$current$root, env$conn$root)
+
   # data repo has a new commit
   data_repo <- git2r::repository(env$work_dir)
   msgs <- vapply(git2r::commits(data_repo), function(c) c$message, character(1L))
