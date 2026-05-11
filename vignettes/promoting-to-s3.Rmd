@@ -96,8 +96,12 @@ You will also need:
 - A **bucket** you can read and write to. datom does not create buckets --
   bucket lifecycle (encryption, versioning, retention) is your
   organization's policy domain, not datom's.
-- A **prefix** within the bucket if you share the bucket with other
-  projects. Below we use `study-001/`.
+- A **prefix** within the bucket. For raw clinical data we recommend
+  one bucket per study with an **empty prefix** at the bucket root.
+  Derived data products (ADaM, TLF) then live under named prefixes
+  (`adam/`, `tlf/`) in the same bucket. See
+  [Buckets and Prefixes](buckets-and-prefixes.html) for the full
+  convention and alternatives.
 
 The full credential reference -- including scoped reader credentials and
 how to handle assume-role flows -- is in
@@ -164,8 +168,8 @@ library(fs)
 dev_dir <- path(tempdir(), "study_001_dev")  # fresh local clone target
 
 aws_data <- datom_store_s3(
-  bucket     = "your-org-datom-data",   # <-- replace with a bucket you own
-  prefix     = "study-001/",
+  bucket     = "study-001-datom",        # <-- one bucket per study (Pattern A)
+  prefix     = "",                       # raw data at the bucket root
   region     = "us-east-1",
   access_key = keyring::key_get("AWS_ACCESS_KEY_ID"),
   secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
@@ -195,8 +199,8 @@ print(conn)
 #> * Project: "STUDY_001"
 #> * Role: "developer"
 #> * Backend: "s3"
-#> * Root: "your-org-datom-data"
-#> * Prefix: "study-001/"
+#> * Root: "study-001-datom"
+#> * Prefix: ""
 #> * Governance: not attached
 ```
 
@@ -255,8 +259,8 @@ shared governance repo. Governance is a two-step setup:
 
 ```{r}
 gov_store <- datom_store_s3(
-  bucket     = "your-org-datom-gov",    # <-- a separate gov bucket
-  prefix     = "datom-gov/",
+  bucket     = "acme-datom-gov",         # <-- one dedicated gov bucket per organization
+  prefix     = "",                       # dedicated bucket -> empty prefix
   region     = "us-east-1",
   access_key = keyring::key_get("AWS_ACCESS_KEY_ID"),
   secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
@@ -291,10 +295,10 @@ print(conn)
 #> * Project: "STUDY_001"
 #> * Role: "developer"
 #> * Backend: "s3"
-#> * Root: "your-org-datom-data"
-#> * Prefix: "study-001/"
+#> * Root: "study-001-datom"
+#> * Prefix: ""
 #> * Gov backend: "s3"
-#> * Gov root: "your-org-datom-gov"
+#> * Gov root: "acme-datom-gov"
 ```
 
 Once attached, gov cannot be detached -- `project.yaml`'s

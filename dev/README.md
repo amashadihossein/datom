@@ -94,7 +94,7 @@ Items discovered during development but intentionally deferred. Review periodica
 
 | Item | Discovered In | Reason Deferred | Priority |
 |------|---------------|-----------------|----------|
-| Derived datom path convention (raw at top, derived in dp subfolder) | Phase 1 | dpbuild concern — datom handles via prefix param | Low (dpbuild) |
+| Derived datom path convention (raw at top, derived in dp subfolder) | Phase 1 | Documented as Pattern A in `vignettes/buckets-and-prefixes.Rmd` (Phase 16); datom code stays convention-agnostic via `bucket`/`prefix` params. Will migrate to `datomaccess` package when extracted. | Done (documented) |
 | renv::init() in datom_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
 | Vignette content refresh | Phase 11 | `credentials.Rmd`: "Under the Hood" section references env var bridge (removed), STS GetCallerIdentity (uses HeadBucket). Other vignettes may have minor staleness. | Medium |
 | Redirect resolution in datom_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
