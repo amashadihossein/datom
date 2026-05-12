@@ -1,6 +1,6 @@
 # Phase 20: Transitive Source Lineage
 
-**Status**: Chunk 2 -- next
+**Status**: Chunk 3 -- next
 **Branch**: `phase/20-source-lineage`
 **Started**: 2026-05-11
 **Depends on**: Phase 18 (gov-on-demand) closed
@@ -92,8 +92,8 @@ The rule is total because of decision (6): every parent -- raw or derived -- has
 | # | Title | Scope | Status |
 |---|-------|-------|--------|
 | 1 | Schema plumbing | `source_lineage` parameter on `datom_write()`/`datom_sync()`; validation; auto-self for imports; metadata SHA includes lineage | ✅ done |
-| 2 | `datom_get_lineage()` query helper | New export with `depth = c("source", "parents")` modes; flat reads, no walking | ⏳ next |
-| 3 | `datom_validate_lineage()` audit helper | On-demand union check: fetch parents' lineages, compare to declared. Report missing/extra/wrong-version deltas. Integrated into `datom_validate()`? (decide in chunk) | ☐ todo |
+| 2 | `datom_get_lineage()` query helper | New export with `depth = c("source", "parents")` modes; flat reads, no walking | ✅ done |
+| 3 | `datom_validate_lineage()` audit helper | On-demand union check: fetch parents' lineages, compare to declared. Report missing/extra/wrong-version deltas. Integrated into `datom_validate()`? (decide in chunk) | ⏳ next |
 | 4 | Spec + vignette + pkgdown | Update `dev/datom_specification.md` schema section; new article "Tracing data lineage"; `_pkgdown.yml` entries; dpbuild contract note in `dev/daapr_architecture.md` | ☐ todo |
 
 All chunks are routine for the default working model. No escalation flagged at plan time. If Chunk 3's union-comparison logic grows (e.g. specific delta reporting with cli styling) it may warrant a coverage spot-check before commit -- surface at the time, not now.
@@ -234,3 +234,10 @@ Cross-project parents: if a parent's `project` differs from `conn$project_name`,
 - `source_lineage` IS version-bearing (in `metadata_sha`, not in volatile list). SHA stable across JSON round-trip confirmed by test.
 - 22 new tests (1530 -> 1552). 0 failures.
 - Chunk 2 next.
+
+### 2026-05-12 -- Chunk 2 done (datom_get_lineage)
+- `datom_get_lineage()` added to `R/query.R`. Single storage read of metadata.json (or versioned snapshot). `depth = "source"` returns `source_lineage`; `depth = "parents"` returns `parents`. `match.arg()` rejects any other value.
+- `datom_get_parents()` retained unchanged as a standalone export.
+- NAMESPACE and `_pkgdown.yml` updated.
+- 18 new tests (1552 -> 1570). 0 failures.
+- Chunk 3 next.

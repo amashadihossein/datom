@@ -533,7 +533,113 @@ test_that("rejects invalid version argument", {
 })
 
 
-# --- datom_status() ------------------------------------------------------------
+# --- datom_get_lineage() -------------------------------------------------------
+
+test_that("datom_get_lineage rejects non-datom_conn", {
+  expect_error(datom_get_lineage("not_conn", "tbl"), "datom_conn")
+})
+
+test_that("datom_get_lineage validates table name", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_get_lineage(conn, ""), "must not be empty")
+  expect_error(datom_get_lineage(conn, "bad name!"), class = "rlang_error")
+})
+
+test_that("rejects invalid depth", {
+  conn <- mock_datom_conn(list())
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) list(source_lineage = NULL)
+  )
+  expect_error(datom_get_lineage(conn, "tbl", depth = "all"), "should be one of")
+})
+
+test_that("rejects invalid version argument", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_get_lineage(conn, "tbl", version = ""), "non-empty")
+  expect_error(datom_get_lineage(conn, "tbl", version = 123), "non-empty")
+})
+
+test_that("depth = 'source' returns source_lineage from current metadata", {
+  sl <- list(
+    list(project = "raw-proj", table = "dm", version_sha = "v1"),
+    list(project = "raw-proj", table = "lb", version_sha = "v2")
+  )
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) list(source_lineage = sl)
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_get_lineage(conn, "analysis_pop")
+
+  expect_length(result, 2)
+  expect_equal(result[[1]]$project, "raw-proj")
+  expect_equal(result[[1]]$table, "dm")
+  expect_equal(result[[2]]$table, "lb")
+})
+
+test_that("depth = 'parents' returns parents from current metadata", {
+  parents <- list(list(source = "p", table = "dm_clean", version = "sha_abc"))
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) list(parents = parents)
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_get_lineage(conn, "analysis_pop", depth = "parents")
+
+  expect_length(result, 1)
+  expect_equal(result[[1]]$table, "dm_clean")
+})
+
+test_that("depth = 'source' returns NULL when source_lineage absent", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) list(data_sha = "abc")
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_get_lineage(conn, "old_table")
+  expect_null(result)
+})
+
+test_that("depth = 'parents' returns NULL when parents absent", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) list(data_sha = "abc")
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_get_lineage(conn, "old_table", depth = "parents")
+  expect_null(result)
+})
+
+test_that("reads versioned metadata snapshot when version provided", {
+  sl <- list(list(project = "p", table = "t", version_sha = "v1"))
+  captured_key <- NULL
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      captured_key <<- key
+      list(source_lineage = sl)
+    }
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_get_lineage(conn, "tbl", version = "meta_sha_123")
+
+  expect_true(grepl("meta_sha_123\\.json$", captured_key))
+  expect_equal(result[[1]]$version_sha, "v1")
+})
+
+test_that("errors on missing table (no metadata)", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) stop("not found")
+  )
+  conn <- mock_datom_conn(list())
+  expect_error(datom_get_lineage(conn, "ghost"), "No metadata found")
+})
+
+test_that("errors on missing version snapshot", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) stop("not found")
+  )
+  conn <- mock_datom_conn(list())
+  expect_error(
+    datom_get_lineage(conn, "tbl", version = "nonexistent_sha"),
+    "not found"
+  )
+})
 
 test_that("datom_status rejects non-datom_conn", {
   expect_error(datom_status("not_conn"), "datom_conn")
