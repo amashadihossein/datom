@@ -641,6 +641,193 @@ test_that("errors on missing version snapshot", {
   )
 })
 
+
+# --- datom_validate_lineage() --------------------------------------------------
+
+test_that("datom_validate_lineage rejects non-datom_conn", {
+  expect_error(datom_validate_lineage("not_conn", "tbl"), "datom_conn")
+})
+
+test_that("datom_validate_lineage validates table name", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_validate_lineage(conn, ""), "must not be empty")
+})
+
+test_that("datom_validate_lineage rejects invalid version argument", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_validate_lineage(conn, "tbl", version = ""), "non-empty")
+  expect_error(datom_validate_lineage(conn, "tbl", version = 123), "non-empty")
+})
+
+test_that("returns unchecked when table has no parents", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) list(data_sha = "abc")
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_validate_lineage(conn, "raw_dm")
+
+  expect_equal(result$status, "unchecked")
+  expect_length(result$missing, 0)
+  expect_length(result$extra, 0)
+})
+
+test_that("returns ok when declared matches computed union exactly", {
+  sl_a <- list(list(project = "raw", table = "dm", version_sha = "v1"))
+  sl_b <- list(list(project = "raw", table = "lb", version_sha = "v2"))
+  parents <- list(
+    list(table = "dm_clean", version = "p_sha_a"),
+    list(table = "lb_clean", version = "p_sha_b")
+  )
+  declared_sl <- c(sl_a, sl_b)
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (grepl("dm_clean", key)) list(source_lineage = sl_a)
+      else if (grepl("lb_clean", key)) list(source_lineage = sl_b)
+      else list(parents = parents, source_lineage = declared_sl)
+    }
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_validate_lineage(conn, "analysis_pop")
+
+  expect_equal(result$status, "ok")
+  expect_length(result$missing, 0)
+  expect_length(result$extra, 0)
+  expect_length(result$wrong_version, 0)
+})
+
+test_that("detects missing entry (in union, absent from declared)", {
+  sl_a <- list(list(project = "raw", table = "dm", version_sha = "v1"))
+  sl_b <- list(list(project = "raw", table = "lb", version_sha = "v2"))
+  parents <- list(
+    list(table = "dm_clean", version = "p_sha_a"),
+    list(table = "lb_clean", version = "p_sha_b")
+  )
+  declared_sl <- sl_a  # missing lb
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (grepl("dm_clean", key)) list(source_lineage = sl_a)
+      else if (grepl("lb_clean", key)) list(source_lineage = sl_b)
+      else list(parents = parents, source_lineage = declared_sl)
+    }
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_validate_lineage(conn, "analysis_pop")
+
+  expect_equal(result$status, "mismatch")
+  expect_length(result$missing, 1)
+  expect_equal(result$missing[[1]]$table, "lb")
+  expect_length(result$extra, 0)
+})
+
+test_that("detects extra entry (declared but not in union)", {
+  sl_a <- list(list(project = "raw", table = "dm", version_sha = "v1"))
+  parents <- list(list(table = "dm_clean", version = "p_sha_a"))
+  phantom <- list(project = "raw", table = "phantom", version_sha = "v_ph")
+  declared_sl <- c(sl_a, list(phantom))
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (grepl("dm_clean", key)) list(source_lineage = sl_a)
+      else list(parents = parents, source_lineage = declared_sl)
+    }
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_validate_lineage(conn, "analysis_pop")
+
+  expect_equal(result$status, "mismatch")
+  expect_length(result$extra, 1)
+  expect_equal(result$extra[[1]]$table, "phantom")
+  expect_length(result$missing, 0)
+})
+
+test_that("detects wrong version_sha (project+table match, sha differs)", {
+  sl_actual  <- list(list(project = "raw", table = "dm", version_sha = "v_actual"))
+  sl_declared <- list(list(project = "raw", table = "dm", version_sha = "v_stale"))
+  parents <- list(list(table = "dm_clean", version = "p_sha"))
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (grepl("dm_clean", key)) list(source_lineage = sl_actual)
+      else list(parents = parents, source_lineage = sl_declared)
+    }
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_validate_lineage(conn, "analysis_pop")
+
+  expect_equal(result$status, "mismatch")
+  expect_length(result$wrong_version, 1)
+  expect_equal(result$wrong_version[[1]]$declared$version_sha, "v_stale")
+  expect_equal(result$wrong_version[[1]]$computed$version_sha, "v_actual")
+  expect_length(result$missing, 0)
+  expect_length(result$extra, 0)
+})
+
+test_that("returns error status when parent metadata is unreachable", {
+  parents <- list(list(table = "missing_parent", version = "sha"))
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (grepl("missing_parent", key)) stop("not found")
+      else list(parents = parents, source_lineage = list())
+    }
+  )
+  conn <- mock_datom_conn(list())
+  result <- datom_validate_lineage(conn, "tbl")
+
+  expect_equal(result$status, "error")
+  expect_true(nzchar(result$message))
+})
+
+test_that("checks versioned snapshot when version provided", {
+  sl <- list(list(project = "raw", table = "dm", version_sha = "v1"))
+  parents <- list(list(table = "dm_clean", version = "p_sha"))
+
+  captured_key <- NULL
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (!grepl("dm_clean", key)) captured_key <<- key
+      if (grepl("dm_clean", key)) list(source_lineage = sl)
+      else list(parents = parents, source_lineage = sl)
+    }
+  )
+  conn <- mock_datom_conn(list())
+  datom_validate_lineage(conn, "tbl", version = "meta_sha_xyz")
+
+  expect_true(grepl("meta_sha_xyz\\.json$", captured_key))
+})
+
+
+# --- .datom_lineage_union() ----------------------------------------------------
+
+test_that("union of empty lists returns empty list", {
+  expect_length(.datom_lineage_union(list(list(), list())), 0)
+})
+
+test_that("union deduplicates identical entries", {
+  e <- list(project = "p", table = "t", version_sha = "v")
+  result <- .datom_lineage_union(list(list(e), list(e)))
+  expect_length(result, 1)
+})
+
+test_that("union keeps distinct entries", {
+  a <- list(project = "p", table = "t1", version_sha = "v1")
+  b <- list(project = "p", table = "t2", version_sha = "v2")
+  result <- .datom_lineage_union(list(list(a), list(b)))
+  expect_length(result, 2)
+})
+
+test_that("union keeps both versions when project+table same but sha differs", {
+  v1 <- list(project = "p", table = "t", version_sha = "v1")
+  v2 <- list(project = "p", table = "t", version_sha = "v2")
+  result <- .datom_lineage_union(list(list(v1), list(v2)))
+  expect_length(result, 2)
+})
+
+
+# --- datom_status() ------------------------------------------------------------
+
 test_that("datom_status rejects non-datom_conn", {
   expect_error(datom_status("not_conn"), "datom_conn")
 })

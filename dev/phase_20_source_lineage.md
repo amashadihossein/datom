@@ -1,6 +1,6 @@
 # Phase 20: Transitive Source Lineage
 
-**Status**: Chunk 3 -- next
+**Status**: Chunk 4 -- next
 **Branch**: `phase/20-source-lineage`
 **Started**: 2026-05-11
 **Depends on**: Phase 18 (gov-on-demand) closed
@@ -93,8 +93,8 @@ The rule is total because of decision (6): every parent -- raw or derived -- has
 |---|-------|-------|--------|
 | 1 | Schema plumbing | `source_lineage` parameter on `datom_write()`/`datom_sync()`; validation; auto-self for imports; metadata SHA includes lineage | ✅ done |
 | 2 | `datom_get_lineage()` query helper | New export with `depth = c("source", "parents")` modes; flat reads, no walking | ✅ done |
-| 3 | `datom_validate_lineage()` audit helper | On-demand union check: fetch parents' lineages, compare to declared. Report missing/extra/wrong-version deltas. Integrated into `datom_validate()`? (decide in chunk) | ⏳ next |
-| 4 | Spec + vignette + pkgdown | Update `dev/datom_specification.md` schema section; new article "Tracing data lineage"; `_pkgdown.yml` entries; dpbuild contract note in `dev/daapr_architecture.md` | ☐ todo |
+| 3 | `datom_validate_lineage()` audit helper | On-demand union check: fetch parents' lineages, compare to declared. Report missing/extra/wrong-version deltas. Integrated into `datom_validate()`? (decide in chunk) | ✅ done |
+| 4 | Spec + vignette + pkgdown | Update `dev/datom_specification.md` schema section; new article "Tracing data lineage"; `_pkgdown.yml` entries; dpbuild contract note in `dev/daapr_architecture.md` | ⏳ next |
 
 All chunks are routine for the default working model. No escalation flagged at plan time. If Chunk 3's union-comparison logic grows (e.g. specific delta reporting with cli styling) it may warrant a coverage spot-check before commit -- surface at the time, not now.
 
@@ -241,3 +241,13 @@ Cross-project parents: if a parent's `project` differs from `conn$project_name`,
 - NAMESPACE and `_pkgdown.yml` updated.
 - 18 new tests (1552 -> 1570). 0 failures.
 - Chunk 3 next.
+
+### 2026-05-12 -- Chunk 3 done (datom_validate_lineage)
+- `datom_validate_lineage()` added in new file `R/lineage.R`.
+- Fetches subject metadata + each parent's metadata; unions parents' `source_lineage` via `.datom_lineage_union()`; diffs against declared via `.datom_lineage_diff()`.
+- Returns structured result: `status` (ok/mismatch/unchecked/error), `missing`, `extra`, `wrong_version`, `message`.
+- Decision: NOT integrated into `datom_validate()` -- that function checks git/S3 consistency; lineage correctness is a separate semantic concern.
+- Bug caught during implementation: `glue::glue()` on cli-markup strings fails. Fixed by using `paste0()` for the stored message string while keeping `cli::cli_alert_*()` for display.
+- NAMESPACE and `_pkgdown.yml` updated.
+- 32 new tests (1570 -> 1602). 0 failures.
+- Chunk 4 next.

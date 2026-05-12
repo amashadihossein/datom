@@ -64,6 +64,7 @@ reference:
       - datom_status
       - datom_get_parents
       - datom_get_lineage
+      - datom_validate_lineage
 
   - title: "Sync Operations"
     desc: "Batch sync from files, scan manifests, sync metadata to S3"
