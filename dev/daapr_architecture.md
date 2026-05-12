@@ -304,7 +304,7 @@ The foundational layer for version-controlled table storage. See **[datom Packag
 
 ### Integration Points
 
-**dpbuild → datom**:
+**dpbuild -> datom**:
 ```r
 # dpbuild creates data products using datom for storage
 dp_build(
@@ -316,6 +316,13 @@ dp_build(
   )
 )
 ```
+
+**dpbuild lineage contract**: When dpbuild calls `datom_write()` for a derived table it must supply both `parents` (immediate inputs, identified by metadata_sha) and `source_lineage` (transitive closure of raw sources). dpbuild computes `source_lineage` by:
+1. Calling `datom_get_lineage(depth = "source")` on each parent table.
+2. Unioning the resulting lists and deduplicating by `(project, table, version_sha)`.
+3. When two parents supply the same `(project, table)` with different `version_sha` values, both entries are included -- datom stores them; dpbuild or the analyst resolves the conflict.
+
+This keeps datom's write path simple (store-and-serve) while letting dpbuild pre-compute the full provenance graph once, at write time.
 
 **dpi → datom**:
 ```r

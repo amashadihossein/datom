@@ -284,6 +284,11 @@ Current state only — no history stored here:
     {"source": "med-mm-001", "table": "os_data", "version": "a3f8c1..."},
     {"source": "med-mm-002", "table": "os_data", "version": "b9e2d4..."}
   ],
+  "source_lineage": [
+    {"project": "raw-uploads", "table": "dm",  "version_sha": "d1e2f3..."},
+    {"project": "raw-uploads", "table": "lb",  "version_sha": "a4b5c6..."},
+    {"project": "med-mm-001", "table": "os_data", "version_sha": "a3f8c1..."}
+  ],
   "size_bytes": 1048576,
   "nrow": 10000,
   "ncol": 15,
@@ -301,7 +306,8 @@ Current state only — no history stored here:
 |-------|-------------|
 | `data_sha` | SHA of the parquet file stored in S3 |
 | `table_type` | `"imported"` (from source file via `datom_sync`) or `"derived"` (from data frame via `datom_write`) |
-| `parents` | Lineage. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version}` entries, or `null` if lineage not recorded. Each entry: `source` = project_name of the parent data space, `table` = table name, `version` = metadata_sha at derivation time. Required by datomaccess for access gate computation; also used by dp_dev for dependency tracking. |
+| `parents` | Immediate parents only. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version}` entries, or `null` if lineage not recorded. Each entry: `source` = project_name of the parent data space, `table` = table name, `version` = metadata_sha at derivation time. Required by datomaccess for access gate computation. |
+| `source_lineage` | Transitive closure of all raw-source tables that contributed data to this table. A flat list of `{project, table, version_sha}` entries where `version_sha` is the `data_sha` (content address) of the source table. For `"imported"` tables: a single self-entry. For `"derived"` tables: required when `parents` is non-null -- dpbuild pre-computes this by unioning the `source_lineage` lists of all parents and deduplicating. Enables one-hop source attribution without DAG traversal. **Walker invariant**: tools that walk lineage must follow `parents`, never `source_lineage` -- `source_lineage` entries are terminal leaves and following them would infinite-loop on the self-entry. |
 | `size_bytes` | Size of the parquet file in bytes |
 | `nrow`, `ncol` | Table dimensions |
 | `colnames` | Column names array |
@@ -644,7 +650,8 @@ Flexible write operations:
 For normal writes:
 - Change detection via metadata_sha comparison (alphabetically sorted fields)
 - Handles: no-op, metadata-only update, or full update with S3 upload
-- `parents`: list of `list(source, table, version)` entries recording lineage. `NULL` if lineage not recorded. In practice, supplied by dp_dev which tracks dependency versions automatically (e.g., via targets). `datom_sync()` never passes `parents` — imported tables always have `parents: null`.
+- `parents`: list of `list(source, table, version)` entries recording immediate parent lineage. `NULL` if lineage not recorded. Supplied by dpbuild, which tracks dependency versions automatically (e.g., via targets). `datom_sync()` never passes `parents` -- imported tables always have `parents: null`.
+- `source_lineage`: flat transitive closure of all raw-source tables. Required when `parents` is non-null. dpbuild computes this by unioning the `source_lineage` of all parents plus any imported parent self-entries. For `datom_sync()`, auto-computed as a single self-entry (project, table, data_sha of the imported file).
 
 Returns: List with deployment details
 
@@ -662,6 +669,42 @@ Reads the `parents` field from a table's metadata:
 Required by datomaccess to walk lineage for access gate computation.
 
 Returns: List of parent entries (each with `source`, `table`, `version`), or `NULL`.
+
+#### datom_get_lineage() — All Users
+
+```r
+datom_get_lineage(conn, name, version = NULL, depth = c("source", "parents"))
+```
+
+Reads lineage metadata for a table:
+- `depth = "source"`: returns `source_lineage` (transitive closure of raw sources; flat list).
+- `depth = "parents"`: returns `parents` (immediate parents only; same as `datom_get_parents()`).
+- `version`: metadata_sha of a specific version. If `NULL`, reads current metadata.
+- Returns `NULL` when the requested field is absent.
+
+Returns: List of lineage entries, or `NULL`.
+
+#### datom_validate_lineage() — Data Developers
+
+```r
+datom_validate_lineage(conn, name, version = NULL)
+```
+
+Audits a derived table's `source_lineage` for consistency against its declared parents:
+
+1. Reads the subject table's metadata.
+2. Reads each parent's metadata (using `parent$version` to fetch the versioned snapshot).
+3. Unions the parents' `source_lineage` lists (the "computed" lineage).
+4. Diffs declared vs computed: reports missing entries, extra entries, and wrong-version entries (same project+table, different sha).
+
+Returns a named list:
+- `status`: `"ok"`, `"mismatch"`, `"unchecked"` (no parents), or `"error"` (unreachable parent).
+- `missing`: entries in computed but absent from declared.
+- `extra`: entries declared but absent from computed.
+- `wrong_version`: entries where project+table match but `version_sha` differs.
+- `message`: human-readable summary string.
+
+Does **not** hard-abort on unreachable parents -- returns `status = "error"` so callers can decide whether to warn or stop.
 
 #### datom_sync_dispatch() — Data Developers
 

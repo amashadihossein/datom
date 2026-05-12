@@ -1,6 +1,6 @@
 # Phase 20: Transitive Source Lineage
 
-**Status**: Chunk 4 -- next
+**Status**: COMPLETE
 **Branch**: `phase/20-source-lineage`
 **Started**: 2026-05-11
 **Depends on**: Phase 18 (gov-on-demand) closed
@@ -94,7 +94,7 @@ The rule is total because of decision (6): every parent -- raw or derived -- has
 | 1 | Schema plumbing | `source_lineage` parameter on `datom_write()`/`datom_sync()`; validation; auto-self for imports; metadata SHA includes lineage | ✅ done |
 | 2 | `datom_get_lineage()` query helper | New export with `depth = c("source", "parents")` modes; flat reads, no walking | ✅ done |
 | 3 | `datom_validate_lineage()` audit helper | On-demand union check: fetch parents' lineages, compare to declared. Report missing/extra/wrong-version deltas. Integrated into `datom_validate()`? (decide in chunk) | ✅ done |
-| 4 | Spec + vignette + pkgdown | Update `dev/datom_specification.md` schema section; new article "Tracing data lineage"; `_pkgdown.yml` entries; dpbuild contract note in `dev/daapr_architecture.md` | ⏳ next |
+| 4 | Spec + vignette + pkgdown | Update `dev/datom_specification.md` schema section; new article "Tracing data lineage"; `_pkgdown.yml` entries; dpbuild contract note in `dev/daapr_architecture.md` | ✅ done |
 
 All chunks are routine for the default working model. No escalation flagged at plan time. If Chunk 3's union-comparison logic grows (e.g. specific delta reporting with cli styling) it may warrant a coverage spot-check before commit -- surface at the time, not now.
 
@@ -251,3 +251,10 @@ Cross-project parents: if a parent's `project` differs from `conn$project_name`,
 - NAMESPACE and `_pkgdown.yml` updated.
 - 32 new tests (1570 -> 1602). 0 failures.
 - Chunk 4 next.
+
+### 2026-05-12 -- Chunk 4 done (spec + vignette + pkgdown)
+- `dev/datom_specification.md`: metadata schema section updated with `source_lineage` field (schema, transitivity rule, walker invariant note); `datom_write()` params updated; new sections for `datom_get_lineage()` and `datom_validate_lineage()`.
+- New vignette `vignettes/source-lineage.Rmd`: "Tracing Data Lineage" -- sync, write with lineage, propagation, validation, key-points summary.
+- `_pkgdown.yml`: vignette added under "Govern" section.
+- `dev/daapr_architecture.md`: dpbuild lineage contract subsection added (union/dedup algorithm, conflict handling).
+- Tests unchanged: 1602. Phase complete.
