@@ -1,6 +1,6 @@
 # Phase 20: Transitive Source Lineage
 
-**Status**: Chunk 1 -- next
+**Status**: Chunk 2 -- next
 **Branch**: `phase/20-source-lineage`
 **Started**: 2026-05-11
 **Depends on**: Phase 18 (gov-on-demand) closed
@@ -91,8 +91,8 @@ The rule is total because of decision (6): every parent -- raw or derived -- has
 
 | # | Title | Scope | Status |
 |---|-------|-------|--------|
-| 1 | Schema plumbing | `source_lineage` parameter on `datom_write()`/`datom_sync()`; validation; auto-self for imports; metadata SHA includes lineage | ⏳ next |
-| 2 | `datom_get_lineage()` query helper | New export with `depth = c("source", "parents")` modes; flat reads, no walking | ☐ todo |
+| 1 | Schema plumbing | `source_lineage` parameter on `datom_write()`/`datom_sync()`; validation; auto-self for imports; metadata SHA includes lineage | ✅ done |
+| 2 | `datom_get_lineage()` query helper | New export with `depth = c("source", "parents")` modes; flat reads, no walking | ⏳ next |
 | 3 | `datom_validate_lineage()` audit helper | On-demand union check: fetch parents' lineages, compare to declared. Report missing/extra/wrong-version deltas. Integrated into `datom_validate()`? (decide in chunk) | ☐ todo |
 | 4 | Spec + vignette + pkgdown | Update `dev/datom_specification.md` schema section; new article "Tracing data lineage"; `_pkgdown.yml` entries; dpbuild contract note in `dev/daapr_architecture.md` | ☐ todo |
 
@@ -223,5 +223,14 @@ Cross-project parents: if a parent's `project` differs from `conn$project_name`,
 - Phase doc created from the draft, expanded with the design decisions made during planning conversation (decisions 3-12 above).
 - Pre-conditions for design captured: no DAG walking, no cross-project conn resolution, self-as-source for imports, structural mandate for derived tables, datom validates schema only (semantic correctness via on-demand `datom_validate_lineage()`).
 - Walker invariant flagged: any future traversal must follow `parents`, never `source_lineage` (avoids self-as-source infinite loop).
-- Draft file `dev/draft_phase_20_source_lineage.md` -- delete on first commit of Chunk 1 (or keep until phase completion; decide on first commit).
+- Draft file `dev/draft_phase_20_source_lineage.md` deleted.
 - Chunk 1 next.
+
+### 2026-05-12 -- Chunk 1 done (schema plumbing)
+- `.datom_validate_source_lineage()` added to `R/utils-sha.R`: validates NULL, empty list, or list of entries with non-empty `project`/`table`/`version_sha` strings; extra fields pass through.
+- `.datom_build_metadata()` extended with `source_lineage = NULL` param; field inserted into metadata after `parents`.
+- `datom_write()` extended with `source_lineage = NULL` param. Structural mandate enforced: `parents` non-NULL and `source_lineage` NULL -> hard error.
+- `datom_sync()` auto-builds `source_lineage = [{self}]` for imported tables. Bootstrap decision: `version_sha` in the self-entry uses `data_sha` (content-addressed, no circularity with `metadata_sha`).
+- `source_lineage` IS version-bearing (in `metadata_sha`, not in volatile list). SHA stable across JSON round-trip confirmed by test.
+- 22 new tests (1530 -> 1552). 0 failures.
+- Chunk 2 next.

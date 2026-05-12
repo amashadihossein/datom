@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Started | Status | Doc |
 |-------|---------|--------|-----|
-| Phase 20: Source Lineage | 2026-05-11 | Chunk 1 -- next | [phase_20_source_lineage.md](phase_20_source_lineage.md) |
+| Phase 20: Source Lineage | 2026-05-11 | Chunk 2 -- next | [phase_20_source_lineage.md](phase_20_source_lineage.md) |
 
 ### Drafts (queued, not active)
 

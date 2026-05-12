@@ -574,6 +574,100 @@ test_that("parents defaults to NULL", {
   expect_null(result$parents)
 })
 
+# --- .datom_build_metadata() -- source_lineage ---------------------------------
+
+test_that("includes source_lineage when provided", {
+  df <- data.frame(x = 1)
+  sl <- list(list(project = "raw-proj", table = "dm", version_sha = "data_sha_abc"))
+  result <- .datom_build_metadata(df, "sha", source_lineage = sl)
+
+  expect_length(result$source_lineage, 1)
+  expect_equal(result$source_lineage[[1]]$project, "raw-proj")
+  expect_equal(result$source_lineage[[1]]$table, "dm")
+  expect_equal(result$source_lineage[[1]]$version_sha, "data_sha_abc")
+})
+
+test_that("source_lineage defaults to NULL", {
+  df <- data.frame(x = 1)
+  result <- .datom_build_metadata(df, "sha")
+  expect_null(result$source_lineage)
+})
+
+test_that("source_lineage participates in metadata_sha", {
+  df <- data.frame(x = 1)
+
+  meta_no_sl <- .datom_build_metadata(df, "sha")
+  meta_with_sl <- .datom_build_metadata(df, "sha",
+    source_lineage = list(list(project = "p", table = "t", version_sha = "v"))
+  )
+  meta_with_sl$created_at <- meta_no_sl$created_at
+
+  sha_no <- .datom_compute_metadata_sha(meta_no_sl)
+  sha_with <- .datom_compute_metadata_sha(meta_with_sl)
+
+  expect_false(sha_no == sha_with)
+})
+
+test_that("source_lineage sha stable across JSON round-trip", {
+  df <- data.frame(x = 1)
+  sl <- list(list(project = "p", table = "t", version_sha = "v1"))
+  meta <- .datom_build_metadata(df, "sha", source_lineage = sl)
+  sha1 <- .datom_compute_metadata_sha(meta)
+
+  # Simulate JSON round-trip (as happens when reading back from storage)
+  meta_rt <- jsonlite::fromJSON(jsonlite::toJSON(meta, auto_unbox = TRUE), simplifyVector = FALSE)
+  sha2 <- .datom_compute_metadata_sha(meta_rt)
+
+  expect_equal(sha1, sha2)
+})
+
+# --- .datom_validate_source_lineage() ------------------------------------------
+
+test_that("NULL is valid", {
+  expect_invisible(.datom_validate_source_lineage(NULL))
+})
+
+test_that("empty list is valid", {
+  expect_invisible(.datom_validate_source_lineage(list()))
+})
+
+test_that("valid entries pass", {
+  sl <- list(
+    list(project = "p1", table = "t1", version_sha = "v1"),
+    list(project = "p2", table = "t2", version_sha = "v2", extra_field = "ok")
+  )
+  expect_invisible(.datom_validate_source_lineage(sl))
+})
+
+test_that("named list (not a list of entries) is rejected", {
+  expect_error(
+    .datom_validate_source_lineage(list(project = "p", table = "t", version_sha = "v")),
+    "list of entry lists"
+  )
+})
+
+test_that("non-list entry is rejected", {
+  expect_error(
+    .datom_validate_source_lineage(list("not_a_list")),
+    "Entry 1"
+  )
+})
+
+test_that("missing required field is rejected", {
+  sl <- list(list(project = "p", table = "t"))  # missing version_sha
+  expect_error(.datom_validate_source_lineage(sl), "version_sha")
+})
+
+test_that("empty string field is rejected", {
+  sl <- list(list(project = "p", table = "t", version_sha = ""))
+  expect_error(.datom_validate_source_lineage(sl), "non-empty")
+})
+
+test_that("non-string field is rejected", {
+  sl <- list(list(project = "p", table = "t", version_sha = 123))
+  expect_error(.datom_validate_source_lineage(sl), "non-empty string")
+})
+
 test_that("table_type and parents participate in metadata_sha", {
   df <- data.frame(x = 1)
 
@@ -695,9 +789,10 @@ test_that("datom_write passes table_type and parents to metadata", {
     )
 
     parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_abc"))
+    source_lineage <- list(list(project = "proj_a", table = "tbl1", version_sha = "data_sha_abc"))
     datom_write(
       conn, data = data.frame(x = 1), name = "derived_tbl",
-      parents = parents, .table_type = "derived"
+      parents = parents, source_lineage = source_lineage, .table_type = "derived"
     )
 
     expect_equal(captured_meta$table_type, "derived")
@@ -798,8 +893,97 @@ test_that("datom_write defaults: derived type, no parents, no original_file_sha"
   })
 })
 
+# --- datom_write() -- source_lineage -------------------------------------------
 
-# --- datom_write() manifest integration ----------------------------------------
+test_that("datom_write errors when parents non-NULL and source_lineage is NULL", {
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$path <- tempdir()
+
+  parents <- list(list(source = "p", table = "t", version = "v"))
+  expect_error(
+    datom_write(conn, data = data.frame(x = 1), name = "tbl", parents = parents),
+    "source_lineage.*required"
+  )
+})
+
+test_that("datom_write errors with malformed source_lineage entry", {
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$path <- tempdir()
+
+  parents <- list(list(source = "p", table = "t", version = "v"))
+  bad_sl <- list(list(project = "p", table = "t"))  # missing version_sha
+  expect_error(
+    datom_write(conn, data = data.frame(x = 1), name = "tbl",
+                parents = parents, source_lineage = bad_sl),
+    "version_sha"
+  )
+})
+
+test_that("datom_write stores source_lineage in metadata", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    captured_meta <- NULL
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) {
+        if (grepl("metadata.json$", sk)) captured_meta <<- d
+        invisible(TRUE)
+      },
+      .datom_git_push = function(path) invisible(TRUE)
+    )
+
+    parents <- list(list(source = "proj_a", table = "raw_dm", version = "sha_abc"))
+    sl <- list(list(project = "proj_a", table = "raw_dm", version_sha = "data_sha_abc"))
+    datom_write(conn, data = data.frame(x = 1), name = "derived_tbl",
+                parents = parents, source_lineage = sl)
+
+    expect_length(captured_meta$source_lineage, 1)
+    expect_equal(captured_meta$source_lineage[[1]]$project, "proj_a")
+    expect_equal(captured_meta$source_lineage[[1]]$table, "raw_dm")
+    expect_equal(captured_meta$source_lineage[[1]]$version_sha, "data_sha_abc")
+  })
+})
+
+test_that("datom_write allows NULL source_lineage when parents is also NULL", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    captured_meta <- NULL
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) {
+        if (grepl("metadata.json$", sk)) captured_meta <<- d
+        invisible(TRUE)
+      },
+      .datom_git_push = function(path) invisible(TRUE)
+    )
+
+    # No parents, no source_lineage -- this is the rare direct datom_write() without parents
+    datom_write(conn, data = data.frame(x = 1), name = "plain_tbl")
+    expect_null(captured_meta$source_lineage)
+  })
+})
 
 test_that("datom_write updates manifest.json locally", {
   withr::with_tempdir({

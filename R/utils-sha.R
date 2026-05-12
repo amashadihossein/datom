@@ -1,3 +1,54 @@
+# Internal helpers for SHA computation, metadata operations, and lineage validation
+
+
+#' Validate source_lineage Field Structure
+#'
+#' Checks that `source_lineage` is either NULL or a list of entries each
+#' containing non-empty string fields `project`, `table`, and `version_sha`.
+#' Extra fields are allowed (pass-through). Aborts with a cli error pointing
+#' to the first invalid entry.
+#'
+#' @param x Value to validate.
+#' @return Invisibly TRUE if valid.
+#' @keywords internal
+.datom_validate_source_lineage <- function(x) {
+  if (is.null(x)) return(invisible(TRUE))
+
+  if (!is.list(x) || (length(x) > 0L && !is.null(names(x)))) {
+    cli::cli_abort(
+      "{.arg source_lineage} must be a list of entry lists, not a named list."
+    )
+  }
+
+  required_fields <- c("project", "table", "version_sha")
+
+  for (i in seq_along(x)) {
+    entry <- x[[i]]
+    if (!is.list(entry)) {
+      cli::cli_abort(
+        "Entry {i} of {.arg source_lineage} must be a list, not {.cls {class(entry)}}."
+      )
+    }
+    missing <- setdiff(required_fields, names(entry))
+    if (length(missing) > 0L) {
+      cli::cli_abort(
+        "Entry {i} of {.arg source_lineage} is missing required field{?s}: {.val {missing}}."
+      )
+    }
+    for (field in required_fields) {
+      val <- entry[[field]]
+      if (!is.character(val) || length(val) != 1L || !nzchar(val)) {
+        cli::cli_abort(
+          "Entry {i} of {.arg source_lineage}: field {.field {field}} must be a non-empty string."
+        )
+      }
+    }
+  }
+
+  invisible(TRUE)
+}
+
+
 # Internal helpers for SHA computation and metadata operations
 
 #' Compute SHA-256 of Data
