@@ -184,48 +184,11 @@ datom_history <- function(conn,
 #'
 #' @return List of parent entries (each with `source`, `table`, `version`),
 #'   or `NULL` if no lineage is recorded.
+#' @seealso [datom_get_lineage()] for a unified interface that also exposes
+#'   the transitive `source_lineage` field via `depth = "source"`.
 #' @export
 datom_get_parents <- function(conn, name, version = NULL) {
-
-  if (!inherits(conn, "datom_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
-  }
-
-  .datom_validate_name(name)
-
-  if (is.null(version)) {
-    # Read current metadata.json
-    metadata_key <- paste0(name, "/.metadata/metadata.json")
-  } else {
-    if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
-      cli::cli_abort("{.arg version} must be a single non-empty string or NULL.")
-    }
-    # Read versioned snapshot
-    metadata_key <- paste0(name, "/.metadata/", version, ".json")
-  }
-
-  metadata <- tryCatch(
-    .datom_storage_read_json(conn, metadata_key),
-    error = function(e) {
-      if (is.null(version)) {
-        cli::cli_abort(c(
-          "No metadata found for table {.val {name}}.",
-          "i" = "The table may not exist.",
-          "i" = "Underlying error: {conditionMessage(e)}"
-        ))
-      } else {
-        cli::cli_abort(c(
-          "Version {.val {version}} not found for table {.val {name}}.",
-          "i" = "Use {.fn datom_history} to see available versions.",
-          "i" = "Underlying error: {conditionMessage(e)}"
-        ))
-      }
-    }
-  )
-
-  # parents is NULL for imported tables or when not recorded
-
-  metadata$parents
+  datom_get_lineage(conn, name, version = version, depth = "parents")
 }
 
 

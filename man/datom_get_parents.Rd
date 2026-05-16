@@ -24,3 +24,7 @@ Reads the \code{parents} field from a table's metadata. Returns the lineage
 entries recorded at write time by dp_dev or other callers. For imported
 tables or derived tables with no recorded lineage, returns \code{NULL}.
 }
+\seealso{
+\code{\link[=datom_get_lineage]{datom_get_lineage()}} for a unified interface that also exposes
+the transitive \code{source_lineage} field via \code{depth = "source"}.
+}
