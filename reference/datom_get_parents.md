@@ -31,3 +31,9 @@ datom_get_parents(conn, name, version = NULL)
 
 List of parent entries (each with `source`, `table`, `version`), or
 `NULL` if no lineage is recorded.
+
+## See also
+
+[`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
+for a unified interface that also exposes the transitive
+`source_lineage` field via `depth = "source"`.
