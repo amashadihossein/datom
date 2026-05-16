@@ -24,6 +24,7 @@
 <url><loc>https://amashadihossein.github.io/datom/articles/month-2-arrives.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/articles/promoting-to-s3.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/articles/second-engineer.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/articles/source-lineage.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/authors.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/copilot-instructions.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/index.html</loc></url>
@@ -35,6 +36,7 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_example_cutoffs.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_example_data.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_get_conn.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_get_lineage.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_get_parents.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_history.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_init_gov.html</loc></url>
@@ -54,6 +56,7 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_sync_dispatch.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_sync_manifest.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_validate.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_validate_lineage.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_write.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_abbreviate_sha.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_build_init_conn.html</loc></url>
@@ -98,6 +101,8 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_gov_write_dispatch.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_gov_write_ref.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_has_changes.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_lineage_diff.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_lineage_union.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_local_delete.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_local_delete_prefix.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_local_download.html</loc></url>
@@ -143,6 +148,7 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_validate_github_pat.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_validate_name.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_validate_s3_store.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_validate_source_lineage.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_write_metadata.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_write_metadata_local.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-is_datom_store_component.html</loc></url>

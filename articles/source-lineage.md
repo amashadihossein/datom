@@ -1,0 +1,261 @@
+# Tracing Data Lineage
+
+datom records two complementary lineage fields in every table’s
+metadata:
+
+- `parents` – the **immediate** inputs used to derive this table
+  (identified by `metadata_sha`, the datom version identifier).
+- `source_lineage` – the **transitive closure** of all raw tables that
+  contributed data, stored as a flat list of
+  `{project, table, version_sha}` entries where `version_sha` is the
+  content SHA of the source parquet file.
+
+Together they answer two different audit questions without walking a
+DAG:
+
+| Question | Field | Tool |
+|----|----|----|
+| “What exact versions did my script read?” | `parents` | `datom_get_lineage(depth = "parents")` |
+| “What raw data is ultimately in this table?” | `source_lineage` | `datom_get_lineage(depth = "source")` |
+
+This article shows how lineage is recorded and how to query and validate
+it.
+
+------------------------------------------------------------------------
+
+## Setup
+
+``` r
+
+library(datom)
+```
+
+The code below uses a local-backend sandbox so it runs without S3 or
+GitHub credentials. In production, replace
+[`datom_store_local()`](https://amashadihossein.github.io/datom/reference/datom_store_local.md)
+with
+[`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md)
+and
+[`datom_store()`](https://amashadihossein.github.io/datom/reference/datom_store.md)
+– the API is identical.
+
+``` r
+
+# Not evaluated -- illustrates a real-world setup.
+# In practice this is done once per project with datom_init_repo().
+store <- datom_store(
+  data      = datom_store_s3(bucket = "my-datom-bucket", prefix = "lineage-demo"),
+  gov       = datom_store_s3(bucket = "my-gov-bucket",   prefix = "gov")
+)
+```
+
+------------------------------------------------------------------------
+
+## A simple study: raw imports to derived analysis
+
+Imagine a clinical study with two raw source tables:
+
+``` r
+
+raw_dm <- datom_example_data()          # Demographics
+raw_lb <- datom_example_data()          # Lab results (illustrative)
+```
+
+They are imported via
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
+datom automatically records each imported table’s own SHA as its
+`source_lineage` – a single self-entry.
+
+``` r
+
+datom_sync(conn, list(dm = raw_dm, lb = raw_lb))
+```
+
+After syncing, the imported tables carry their own lineage:
+
+``` r
+
+datom_get_lineage(conn, "dm", depth = "source")
+#> [[1]]
+#> [[1]]$project
+#> [1] "my-study"
+#>
+#> [[1]]$table
+#> [1] "dm"
+#>
+#> [[1]]$version_sha
+#> [1] "abc123..."
+```
+
+The self-entry means: “the raw content of `dm` is itself a source.”
+
+------------------------------------------------------------------------
+
+## Deriving a table
+
+A downstream script reads both raw tables and produces a cleaned
+demographics table:
+
+``` r
+
+# Read the current versions
+raw_dm_data <- datom_read(conn, "dm")
+raw_lb_data <- datom_read(conn, "lb")
+
+# ... cleaning logic ...
+dm_clean <- raw_dm_data  # simplified
+
+# Retrieve the metadata shas to identify exactly which versions were read
+dm_version  <- datom_history(conn, "dm")[1, "version"]
+lb_version  <- datom_history(conn, "lb")[1, "version"]
+```
+
+When writing the derived table, supply `parents` (which versions were
+read) and `source_lineage` (the union of all raw sources):
+
+``` r
+
+# datom_get_lineage fetches the source_lineage of each parent
+dm_lineage <- datom_get_lineage(conn, "dm", depth = "source")
+lb_lineage <- datom_get_lineage(conn, "lb", depth = "source")
+
+# Union is a simple c() here because both are single self-entries;
+# dpbuild automates this for complex pipelines.
+full_lineage <- c(dm_lineage, lb_lineage)
+
+datom_write(
+  conn,
+  data           = dm_clean,
+  name           = "dm_clean",
+  parents        = list(
+    list(source = "my-study", table = "dm", version = dm_version),
+    list(source = "my-study", table = "lb", version = lb_version)
+  ),
+  source_lineage = full_lineage
+)
+```
+
+Now `dm_clean` knows which raw tables it came from:
+
+``` r
+
+datom_get_lineage(conn, "dm_clean", depth = "source")
+#> [[1]]
+#> $project
+#> [1] "my-study"
+#> $table
+#> [1] "dm"
+#> $version_sha
+#> [1] "abc123..."
+#>
+#> [[2]]
+#> $project
+#> [1] "my-study"
+#> $table
+#> [1] "lb"
+#> $version_sha
+#> [1] "def456..."
+```
+
+And which immediate versions it was derived from:
+
+``` r
+
+datom_get_lineage(conn, "dm_clean", depth = "parents")
+#> [[1]]
+#> $source
+#> [1] "my-study"
+#> $table
+#> [1] "dm"
+#> $version
+#> [1] "..."   # metadata_sha of dm at derivation time
+```
+
+------------------------------------------------------------------------
+
+## Propagating lineage further downstream
+
+An analysis table derived from `dm_clean` propagates the lineage by
+unioning `dm_clean`’s `source_lineage` with any additional raw inputs.
+Since `dm_clean` already encodes both `dm` and `lb`, the analysis table
+inherits the full picture without re-reading the original files:
+
+``` r
+
+# One hop: fetch dm_clean's source lineage (already transitive)
+clean_lineage <- datom_get_lineage(conn, "dm_clean", depth = "source")
+
+datom_write(
+  conn,
+  data           = analysis_pop,
+  name           = "analysis_pop",
+  parents        = list(
+    list(source = "my-study", table = "dm_clean", version = clean_version)
+  ),
+  source_lineage = clean_lineage  # no new raw inputs; pass through
+)
+```
+
+------------------------------------------------------------------------
+
+## Validating lineage consistency
+
+[`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
+checks whether a table’s declared `source_lineage` is consistent with
+its parents’ lineages:
+
+``` r
+
+datom_validate_lineage(conn, "dm_clean")
+#> v Lineage OK for "dm_clean" (2 source entries, 2 parents checked).
+#> $status
+#> [1] "ok"
+#> $missing
+#> list()
+#> $extra
+#> list()
+#> $wrong_version
+#> list()
+#> $message
+#> [1] "ok: 2 source entries match computed lineage from 2 parent(s)"
+```
+
+To see what a mismatch looks like, imagine `dm_clean` was written with
+an incorrect `version_sha` for the `lb` source. The validator catches
+it:
+
+``` r
+
+datom_validate_lineage(conn, "dm_clean_bad")
+#> ! Lineage mismatch for "dm_clean_bad".
+#> $status
+#> [1] "mismatch"
+#> $missing
+#> list()
+#> $extra
+#> list()
+#> $wrong_version
+#> [[1]]
+#>   project table version_sha_declared version_sha_computed
+#>   <chr>   <chr> <chr>                <chr>
+#> 1 my-study lb   wrong000...          def456...
+```
+
+------------------------------------------------------------------------
+
+## Key points
+
+- [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+  auto-populates `source_lineage` for imported tables (a single
+  self-entry using the file’s content SHA).
+- [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+  requires `source_lineage` whenever `parents` is supplied – structural
+  mandate to prevent silent omissions.
+- [`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
+  is a single-read operation – no DAG traversal, no recursive network
+  calls.
+- [`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
+  returns a structured result; it does not hard-abort, so callers can
+  embed it in CI pipelines and decide on action.
+- **Walker invariant**: `source_lineage` entries are terminal leaves.
+  Lineage walkers must follow `parents`, never `source_lineage`.

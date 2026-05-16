@@ -13,7 +13,8 @@ any user-supplied custom metadata.
   custom = NULL,
   table_type = "derived",
   size_bytes = NULL,
-  parents = NULL
+  parents = NULL,
+  source_lineage = NULL
 )
 ```
 
@@ -44,6 +45,11 @@ any user-supplied custom metadata.
 
   Lineage list of parent entries (each with source, table, version), or
   NULL if no lineage recorded.
+
+- source_lineage:
+
+  Pre-computed transitive source list (each entry with project, table,
+  version_sha), or NULL.
 
 ## Value
 

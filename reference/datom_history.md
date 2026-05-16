@@ -6,7 +6,7 @@ S3. Returns the most recent `n` versions.
 ## Usage
 
 ``` r
-datom_history(conn, name, n = 10, short_hash = TRUE)
+datom_history(conn, name, n = 10, short_hash = FALSE)
 ```
 
 ## Arguments

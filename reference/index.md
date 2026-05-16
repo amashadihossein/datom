@@ -71,6 +71,10 @@ List tables, view history, check status
   : Show Repository Status
 - [`datom_get_parents()`](https://amashadihossein.github.io/datom/reference/datom_get_parents.md)
   : Get Parent Lineage for a Table
+- [`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
+  : Get Lineage for a Table
+- [`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
+  : Validate Source Lineage Consistency
 
 ## Sync Operations
 

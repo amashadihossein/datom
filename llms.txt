@@ -266,6 +266,10 @@ List tables, view history, check status
   : Show Repository Status
 - [`datom_get_parents()`](https://amashadihossein.github.io/datom/reference/datom_get_parents.md)
   : Get Parent Lineage for a Table
+- [`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
+  : Get Lineage for a Table
+- [`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
+  : Validate Source Lineage Consistency
 
 ## Sync Operations
 
@@ -339,6 +343,8 @@ Manage a portfolio, audit history, look ahead.
   Portfolio](https://amashadihossein.github.io/datom/articles/governing-a-portfolio.md):
 - [Auditing &
   Reproducibility](https://amashadihossein.github.io/datom/articles/auditing-reproducibility.md):
+- [Tracing Data
+  Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md):
 - [Looking Ahead: datom in the daapr
   Stack](https://amashadihossein.github.io/datom/articles/looking-ahead.md):
 

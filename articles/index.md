@@ -30,6 +30,8 @@ Manage a portfolio, audit history, look ahead.
   Portfolio](https://amashadihossein.github.io/datom/articles/governing-a-portfolio.md):
 - [Auditing &
   Reproducibility](https://amashadihossein.github.io/datom/articles/auditing-reproducibility.md):
+- [Tracing Data
+  Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md):
 - [Looking Ahead: datom in the daapr
   Stack](https://amashadihossein.github.io/datom/articles/looking-ahead.md):
 

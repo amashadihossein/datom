@@ -13,6 +13,7 @@ datom_write(
   metadata = NULL,
   message = NULL,
   parents = NULL,
+  source_lineage = NULL,
   .table_type = "derived",
   .original_file_sha = NULL,
   .original_format = NULL
@@ -47,6 +48,13 @@ datom_write(
 
   Optional lineage: list of `list(source, table, version)` entries. Used
   by dp_dev to track dependency versions. NULL if lineage not recorded.
+
+- source_lineage:
+
+  Required when `parents` is non-NULL. Pre-computed flat list of
+  transitive non-derived source descriptors (each with `project`,
+  `table`, `version_sha`). Set by dpbuild via the union of parents'
+  `source_lineage` fields. NULL for tables without parents.
 
 - .table_type:
 

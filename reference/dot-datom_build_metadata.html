@@ -63,7 +63,8 @@ any user-supplied custom metadata.</p>
 <span>  custom <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  table_type <span class="op">=</span> <span class="st">"derived"</span>,</span>
 <span>  size_bytes <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  parents <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  parents <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  source_lineage <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -94,6 +95,11 @@ any user-supplied custom metadata.</p>
 <dt id="arg-parents">parents<a class="anchor" aria-label="anchor" href="#arg-parents"></a></dt>
 <dd><p>Lineage list of parent entries (each with source, table, version),
 or NULL if no lineage recorded.</p></dd>
+
+
+<dt id="arg-source-lineage">source_lineage<a class="anchor" aria-label="anchor" href="#arg-source-lineage"></a></dt>
+<dd><p>Pre-computed transitive source list (each entry with
+project, table, version_sha), or NULL.</p></dd>
 
 </dl></div>
     <div class="section level2">

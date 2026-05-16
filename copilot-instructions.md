@@ -165,7 +165,63 @@ Auto-detected via `GITHUB_PAT` presence.
   **any** function call or variable starting with `.` in parentheses:
   `{(.datom_build_storage_key(...))}`,
   `{(.sandbox_storage_label(store$data))}`. This applies to `cli_li`,
-  `cli_alert_*`, `cli_abort`, etc. — not just `cli_abort`.  
+  `cli_alert_*`, `cli_abort`, etc. — not just `cli_abort`.
+
+- **glue + cli markup incompatibility**:
+  [`glue::glue()`](https://glue.tidyverse.org/reference/glue.html)
+  parses `{...}` itself, so passing a cli-markup string like
+  `"Mismatch for {.val {name}}"` through `glue()` will fail or mangle
+  output. Keep cli markup out of strings passed to `glue()`. For values
+  stored in variables (e.g. a `message` field built in a helper) use
+  [`paste0()`](https://rdrr.io/r/base/paste.html) to assemble the
+  string; call `cli::cli_alert_*()` separately for display, passing the
+  cli markup directly to the cli function rather than through a
+  variable.
+
+- **[`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md)
+  returns full SHAs by default**: `short_hash = FALSE` is the default.
+  The `version` column is a functional identifier meant to be passed
+  back to `datom_write(parents=)` and
+  [`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
+  – those functions open `{table}/.metadata/{version}.json`, so an
+  8-char abbreviation silently fails with “file not found”. Use
+  `short_hash = TRUE` only for display purposes.
+
+- **`source_lineage` self-entry bootstrap**:
+  [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+  auto-populates `source_lineage = [{project, table, version_sha}]` for
+  imported tables. The `version_sha` in that self-entry uses `data_sha`
+  (the parquet content SHA), NOT `metadata_sha`. This avoids a circular
+  dependency: `metadata_sha` is computed from the metadata which
+  includes `source_lineage` which would need to embed `metadata_sha`.
+  `data_sha` is content-addressed and computed before metadata is
+  assembled. Any future change to the auto-self logic must preserve this
+  ordering.
+
+- **Walker invariant for lineage traversal**: Code that walks lineage
+  must follow `parents`, NEVER `source_lineage`. `source_lineage`
+  entries are terminal leaves – they describe raw sources, not
+  traversable edges. For imported tables, the self-entry in
+  `source_lineage` creates a fixed point that would produce an infinite
+  loop if followed.
+  [`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
+  and
+  [`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
+  are intentionally read-only with no recursion.
+
+- **[`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
+  is separate from
+  [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)**:
+  [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
+  checks git/S3 consistency (are files where git says they are?).
+  [`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
+  checks semantic lineage correctness (does declared `source_lineage`
+  match the union of parents’ lineages?). These are orthogonal concerns.
+  Do not merge them –
+  [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
+  runs per-table storage checks; lineage validation requires cross-table
+  metadata reads and belongs to the caller’s workflow, not the storage
+  consistency pass.
 
 - **[`.datom_git_commit()`](https://amashadihossein.github.io/datom/reference/dot-datom_git_commit.md)
   is idempotent**: Returns HEAD SHA (instead of erroring) when staged
@@ -512,12 +568,25 @@ These patterns are non-negotiable for every session:
     question first. Do not implement anything until the user has
     confirmed the direction. The signal that implementation is wanted is
     explicit: “go ahead”, “do it”, “yes”, or equivalent — not merely
-    absence of objection. 5c. **Before retrying any remote-mutating
-    action, verify remote state first**: Before a second attempt at
-    `gh issue create`, `git push`, `gh pr create`, etc., run a read-only
-    check (`gh issue list`, `git log --remotes`, `gh pr list`) to
-    confirm whether the first attempt already succeeded. Acting on stale
-    local evidence is how duplicates happen.
+    absence of objection. 5d. **Mandatory chunk checkpoint**: After
+    completing and committing a chunk, STOP. Post a one-paragraph
+    summary of what shipped and any decisions made, then ask: “Ready to
+    proceed to Chunk N: \[name\]?” Do not start the next chunk until the
+    user replies with an explicit go-ahead. This applies even if the
+    next chunk seems obvious or low-risk. Completing a chunk is not
+    permission to start the next one. 5e. **Approval signals are
+    explicit, not contextual**: The following are NOT approval to
+    proceed: silence, a question about the work just done, a comment
+    about model behavior, a request to “queue” a model switch, or any
+    message that does not directly address the next action. Explicit
+    approval looks like: “go ahead”, “yes”, “do it”, “proceed”,
+    “continue”, or equivalent affirmatives directed at the next step.
+    5c. **Before retrying any remote-mutating action, verify remote
+    state first**: Before a second attempt at `gh issue create`,
+    `git push`, `gh pr create`, etc., run a read-only check
+    (`gh issue list`, `git log --remotes`, `gh pr list`) to confirm
+    whether the first attempt already succeeded. Acting on stale local
+    evidence is how duplicates happen.
 6.  **Phase completion is mandatory**: When a phase is done, immediately
     follow the Phase Completion Procedure in `dev/README.md` — migrate
     learnings to spec/instructions, update README tables, delete the
@@ -537,10 +606,17 @@ capable model:
 - **Test coverage review** before phase completion, to sanity-check that
   unit + E2E coverage actually exercises the new behavior.
 
-When you recognize one of these moments mid-session, surface a brief
-recommendation before proceeding (e.g., “This chunk touches 6 files
-across 3 modules — consider escalating for a design spot-check”). The
-user decides whether to switch; don’t block on it.
+When you recognize one of these moments, surface a brief recommendation
+and STOP. Do not proceed until the user responds. Example: “The final
+chunk touched 6 files across 3 modules. Consider escalating to a more
+capable model for a purity audit before the Phase Completion Procedure –
+want to do that, or proceed as-is?”
 
-This is a pointer, not a protocol — use judgment. Escalation is cheap
-compared to a bad phase.
+A user message that says “queue a model switch” or “switch for chunk N”
+means: stop work, note the escalation request, and wait. It is NOT
+approval to continue on the current model.
+
+Flagging escalation moments is mandatory at phase planning time (item 0c
+above). If a chunk was flagged at planning, the escalation reminder must
+appear in the chunk checkpoint message (rule 5d) whether or not you
+judge it necessary by the time you get there.
