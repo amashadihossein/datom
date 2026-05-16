@@ -79,21 +79,33 @@ summary_trt_by_sex <- ex |>
   dplyr::group_by(SEX, EXTRT) |>
   dplyr::summarise(n = dplyr::n(), .groups = "drop")
 
+# Fetch source_lineage from each imported parent and union them
+dm_lineage <- datom_get_lineage(conn, "dm", depth = "source")
+ex_lineage <- datom_get_lineage(conn, "ex", depth = "source")
+full_lineage <- c(dm_lineage, ex_lineage)
+
 datom_write(
   conn,
-  data    = summary_trt_by_sex,
-  name    = "summary_trt_by_sex",
-  message = "Derived: summary of treatment by sex",
-  parents = list(
+  data           = summary_trt_by_sex,
+  name           = "summary_trt_by_sex",
+  message        = "Derived: summary of treatment by sex",
+  parents        = list(
     list(source = "LOCAL_E2E", table = "dm", version = dm_meta$version[1]),
     list(source = "LOCAL_E2E", table = "ex", version = ex_meta$version[1])
-  )
+  ),
+  source_lineage = full_lineage
 )
 
 # --- Verify lineage ----------------------------------------------------------
 
 datom_list(conn)
 datom_get_parents(conn, "summary_trt_by_sex")
+datom_get_lineage(conn, "summary_trt_by_sex", depth = "source")   # should show dm + ex raw SHAs
+datom_get_lineage(conn, "summary_trt_by_sex", depth = "parents")  # should show dm + ex versions
+
+result <- datom_validate_lineage(conn, "summary_trt_by_sex")
+stopifnot(result$status == "ok")
+
 datom_history(conn, "summary_trt_by_sex")
 
 # --- Sync dispatch (gov-side commit + push) ---------------------------------
