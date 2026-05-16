@@ -100,7 +100,7 @@ datom_list <- function(conn,
 datom_history <- function(conn,
                          name,
                          n = 10,
-                         short_hash = TRUE) {
+                         short_hash = FALSE) {
 
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")

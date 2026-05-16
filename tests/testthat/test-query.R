@@ -350,7 +350,7 @@ test_that("handles missing fields with NA", {
   expect_true(is.na(result$author))
 })
 
-test_that("truncates version and data_sha by default (short_hash = TRUE)", {
+test_that("truncates version and data_sha when short_hash = TRUE", {
   full_version <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
   full_data_sha <- "2320b970ae25b8393e2b421ecfe4fa0b9218f3de69cda83db4a22d002657aed7"
   history <- list(
@@ -368,7 +368,7 @@ test_that("truncates version and data_sha by default (short_hash = TRUE)", {
   )
 
   conn <- mock_datom_conn(list())
-  result <- datom_history(conn, "dm")
+  result <- datom_history(conn, "dm", short_hash = TRUE)
 
   expect_equal(nchar(result$version), 8)
   expect_equal(result$version, substr(full_version, 1, 8))
@@ -376,7 +376,7 @@ test_that("truncates version and data_sha by default (short_hash = TRUE)", {
   expect_equal(result$data_sha, substr(full_data_sha, 1, 8))
 })
 
-test_that("returns full hashes with short_hash = FALSE", {
+test_that("returns full hashes by default (short_hash = FALSE)", {
   full_version <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
   full_data_sha <- "2320b970ae25b8393e2b421ecfe4fa0b9218f3de69cda83db4a22d002657aed7"
   history <- list(
@@ -392,7 +392,7 @@ test_that("returns full hashes with short_hash = FALSE", {
   )
 
   conn <- mock_datom_conn(list())
-  result <- datom_history(conn, "dm", short_hash = FALSE)
+  result <- datom_history(conn, "dm")
 
   expect_equal(result$version, full_version)
   expect_equal(result$data_sha, full_data_sha)
