@@ -252,9 +252,21 @@ Cross-project parents: if a parent's `project` differs from `conn$project_name`,
 - 32 new tests (1570 -> 1602). 0 failures.
 - Chunk 4 next.
 
-### 2026-05-12 -- Chunk 4 done (spec + vignette + pkgdown)
-- `dev/datom_specification.md`: metadata schema section updated with `source_lineage` field (schema, transitivity rule, walker invariant note); `datom_write()` params updated; new sections for `datom_get_lineage()` and `datom_validate_lineage()`.
-- New vignette `vignettes/source-lineage.Rmd`: "Tracing Data Lineage" -- sync, write with lineage, propagation, validation, key-points summary.
-- `_pkgdown.yml`: vignette added under "Govern" section.
-- `dev/daapr_architecture.md`: dpbuild lineage contract subsection added (union/dedup algorithm, conflict handling).
-- Tests unchanged: 1602. Phase complete.
+### 2026-05-15 -- E2E PASS + bug fixed (short_hash default)
+
+E2E run via `dev/e2e-lineage.R` against local-backend sandbox:
+- Imported table self-lineage verified (project, table, version_sha fields correct).
+- Derived table write with parents + source_lineage succeeded.
+- `datom_get_lineage(depth = "source")` returned 2 entries (dm, ex). Correct.
+- `datom_validate_lineage()` returned status = "ok". Correct.
+- Structural mandate (parents without source_lineage -> hard error) verified.
+- Sandbox teardown clean.
+
+Bug found and fixed: `datom_history()` defaulted to `short_hash = TRUE`, returning
+8-char abbreviated version SHAs. Passing those into `parents[].version` caused
+`datom_validate_lineage()` to look for `{table}/.metadata/{8chars}.json`, which
+does not exist (file is keyed by the full metadata_sha). Fixed by changing the
+default to `short_hash = FALSE` -- version is a functional identifier, not a
+display field. Added gotcha to copilot-instructions.
+
+Phase 20 COMPLETE. All acceptance criteria met.
