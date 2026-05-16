@@ -63,6 +63,8 @@ reference:
       - datom_history
       - datom_status
       - datom_get_parents
+      - datom_get_lineage
+      - datom_validate_lineage
 
   - title: "Sync Operations"
     desc: "Batch sync from files, scan manifests, sync metadata to S3"
@@ -111,6 +113,7 @@ articles:
     contents:
       - governing-a-portfolio
       - auditing-reproducibility
+      - source-lineage
       - looking-ahead
 
   - title: "Reference"

@@ -184,11 +184,13 @@ datom_read <- function(conn,
 #' @param size_bytes Size of the parquet file in bytes. NULL if not yet computed.
 #' @param parents Lineage list of parent entries (each with source, table, version),
 #'   or NULL if no lineage recorded.
+#' @param source_lineage Pre-computed transitive source list (each entry with
+#'   project, table, version_sha), or NULL.
 #' @return Named list suitable for writing as metadata.json.
 #' @keywords internal
 .datom_build_metadata <- function(data, data_sha, custom = NULL,
                                  table_type = "derived", size_bytes = NULL,
-                                 parents = NULL) {
+                                 parents = NULL, source_lineage = NULL) {
   if (!table_type %in% c("imported", "derived")) {
     cli::cli_abort("{.arg table_type} must be {.val imported} or {.val derived}.")
   }
@@ -204,6 +206,7 @@ datom_read <- function(conn,
   )
 
   if (!is.null(parents)) meta$parents <- parents
+  if (!is.null(source_lineage)) meta$source_lineage <- source_lineage
   if (!is.null(size_bytes)) meta$size_bytes <- size_bytes
 
   if (!is.null(custom)) {
@@ -384,6 +387,10 @@ datom_read <- function(conn,
 #' @param message Optional commit message.
 #' @param parents Optional lineage: list of `list(source, table, version)` entries.
 #'   Used by dp_dev to track dependency versions. NULL if lineage not recorded.
+#' @param source_lineage Required when `parents` is non-NULL. Pre-computed flat list
+#'   of transitive non-derived source descriptors (each with `project`, `table`,
+#'   `version_sha`). Set by dpbuild via the union of parents' `source_lineage` fields.
+#'   NULL for tables without parents.
 #' @param .table_type Internal. `"derived"` (default) or `"imported"` (set by `datom_sync()`).
 #' @param .original_file_sha Internal. SHA of source file (set by `datom_sync()`); NULL for derived.
 #' @param .original_format Internal. Original file format (set by `datom_sync()`); NULL for derived.
@@ -396,6 +403,7 @@ datom_write <- function(conn,
                        metadata = NULL,
                        message = NULL,
                        parents = NULL,
+                       source_lineage = NULL,
                        .table_type = "derived",
                        .original_file_sha = NULL,
                        .original_format = NULL) {
@@ -419,6 +427,16 @@ datom_write <- function(conn,
   }
 
   .datom_validate_name(name)
+
+  # source_lineage: validate schema and enforce structural mandate
+  .datom_validate_source_lineage(source_lineage)
+  if (!is.null(parents) && is.null(source_lineage)) {
+    cli::cli_abort(c(
+      "{.arg source_lineage} is required when {.arg parents} is non-NULL.",
+      "i" = "Provide the flat list of transitive non-derived sources.",
+      "i" = "For raw/imported tables use {.fn datom_sync} (auto-populated)."
+    ))
+  }
 
   if (conn$role != "developer") {
     cli::cli_abort(c(
@@ -452,6 +470,7 @@ datom_write <- function(conn,
     custom = metadata,
     table_type = .table_type,
     parents = parents,
+    source_lineage = source_lineage,
     size_bytes = size_bytes
   )
   metadata_sha <- .datom_compute_metadata_sha(meta)

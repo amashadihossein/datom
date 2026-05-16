@@ -11,6 +11,7 @@ datom_write(
   metadata = NULL,
   message = NULL,
   parents = NULL,
+  source_lineage = NULL,
   .table_type = "derived",
   .original_file_sha = NULL,
   .original_format = NULL
@@ -30,6 +31,11 @@ datom_write(
 
 \item{parents}{Optional lineage: list of \code{list(source, table, version)} entries.
 Used by dp_dev to track dependency versions. NULL if lineage not recorded.}
+
+\item{source_lineage}{Required when \code{parents} is non-NULL. Pre-computed flat list
+of transitive non-derived source descriptors (each with \code{project}, \code{table},
+\code{version_sha}). Set by dpbuild via the union of parents' \code{source_lineage} fields.
+NULL for tables without parents.}
 
 \item{.table_type}{Internal. \code{"derived"} (default) or \code{"imported"} (set by \code{datom_sync()}).}
 

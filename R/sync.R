@@ -574,12 +574,23 @@ datom_sync <- function(conn,
       # Import file → data frame
       data <- .datom_import_file(tbl_file, tbl_format)
 
+      # Build self-lineage for imported (raw) tables.
+      # version_sha uses data_sha (content-addressed, independent of metadata_sha)
+      # so there is no circular dependency with the metadata construction.
+      tbl_data_sha <- .datom_compute_data_sha(data)
+      self_lineage <- list(list(
+        project     = conn$project_name,
+        table       = tbl_name,
+        version_sha = tbl_data_sha
+      ))
+
       # Write via datom_write (handles manifest update internally)
       write_result <- datom_write(
         conn,
         data = data,
         name = tbl_name,
         message = paste0("Sync ", tbl_name, " (", manifest$status[i], ")"),
+        source_lineage = self_lineage,
         .table_type = "imported",
         .original_file_sha = tbl_file_sha,
         .original_format = tbl_format

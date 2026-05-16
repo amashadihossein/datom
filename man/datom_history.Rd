@@ -4,7 +4,7 @@
 \alias{datom_history}
 \title{Show Version History}
 \usage{
-datom_history(conn, name, n = 10, short_hash = TRUE)
+datom_history(conn, name, n = 10, short_hash = FALSE)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}

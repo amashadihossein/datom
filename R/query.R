@@ -100,7 +100,7 @@ datom_list <- function(conn,
 datom_history <- function(conn,
                          name,
                          n = 10,
-                         short_hash = TRUE) {
+                         short_hash = FALSE) {
 
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
@@ -226,6 +226,78 @@ datom_get_parents <- function(conn, name, version = NULL) {
   # parents is NULL for imported tables or when not recorded
 
   metadata$parents
+}
+
+
+#' Get Lineage for a Table
+#'
+#' Reads lineage metadata for a table. Depending on `depth`, returns either
+#' the pre-computed transitive source list (`source_lineage`) or the immediate
+#' parent list (`parents`). Both fields are stored flat in the table's
+#' metadata -- no walking or cross-project resolution is performed.
+#'
+#' The two fields answer different questions:
+#' - `"source"`: "what raw datasets does this table ultimately depend on?"
+#'   (audit, regulatory disclosure, reproducibility scope). Pre-computed by
+#'   dpbuild from the union of parents' `source_lineage` fields.
+#' - `"parents"`: "what did this table come from one step back?"
+#'   (debugging, diff, replay). Equivalent to [datom_get_parents()].
+#'
+#' @param conn A `datom_conn` object from [datom_get_conn()].
+#' @param name Table name.
+#' @param version Optional metadata_sha (datom version). If NULL, reads
+#'   current metadata. If provided, fetches the versioned metadata snapshot.
+#' @param depth One of `"source"` (default) or `"parents"`.
+#'
+#' @return For `depth = "source"`: list of source-table descriptors (each with
+#'   `project`, `table`, `version_sha`), or `NULL` if the field is absent.
+#'   For `depth = "parents"`: list of parent entries (each with `source`,
+#'   `table`, `version`), or `NULL` if no lineage is recorded.
+#' @seealso [datom_get_parents()] for a direct shorthand for the `"parents"` depth.
+#' @export
+datom_get_lineage <- function(conn, name, version = NULL,
+                              depth = c("source", "parents")) {
+
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
+  }
+
+  .datom_validate_name(name)
+  depth <- match.arg(depth)
+
+  if (is.null(version)) {
+    metadata_key <- paste0(name, "/.metadata/metadata.json")
+  } else {
+    if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
+      cli::cli_abort("{.arg version} must be a single non-empty string or NULL.")
+    }
+    metadata_key <- paste0(name, "/.metadata/", version, ".json")
+  }
+
+  metadata <- tryCatch(
+    .datom_storage_read_json(conn, metadata_key),
+    error = function(e) {
+      if (is.null(version)) {
+        cli::cli_abort(c(
+          "No metadata found for table {.val {name}}.",
+          "i" = "The table may not exist.",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ))
+      } else {
+        cli::cli_abort(c(
+          "Version {.val {version}} not found for table {.val {name}}.",
+          "i" = "Use {.fn datom_history} to see available versions.",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ))
+      }
+    }
+  )
+
+  if (depth == "source") {
+    metadata$source_lineage
+  } else {
+    metadata$parents
+  }
 }
 
 
