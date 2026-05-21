@@ -198,7 +198,7 @@ print.datom_conn <- function(x, ...) {
     cli::cli_li("Data prefix: {.val {x$prefix}}")
   }
 
-  if (!is.null(x$region)) {
+  if (!is.null(x$region) && x$backend != "local") {
     cli::cli_li("Data region: {.val {x$region}}")
   }
 
@@ -219,7 +219,7 @@ print.datom_conn <- function(x, ...) {
   }
 
   if (!is.null(x$path)) {
-    cli::cli_li("Path: {.path {x$path}}")
+    cli::cli_li("Path: {.path {normalizePath(x$path, mustWork = FALSE)}}")
   }
 
   cli::cli_end()
@@ -641,9 +641,9 @@ datom_init_repo <- function(path = ".",
 #' @param gov_repo_url GitHub URL of the governance repo.  Mutually exclusive
 #'   with `create_repo = TRUE`.
 #' @param gov_local_path Local path for the governance clone.  When `NULL`,
-#'   derived from the basename of `gov_repo_url` (`.git` suffix stripped) in
-#'   the current directory.  When `create_repo = TRUE` and no URL is known
-#'   yet, set this explicitly or let it default to `repo_name`.
+#'   defaults to `tools::R_user_dir("datom", "data")/<repo_name>` (never
+#'   CWD-relative).  When `create_repo = TRUE` and no URL is known yet, set
+#'   this explicitly or let it default to `repo_name` under the user data dir.
 #' @param create_repo If `TRUE`, create a GitHub repo via the API and use the
 #'   returned URL.  Mutually exclusive with providing `gov_repo_url`.
 #' @param repo_name GitHub repo name when `create_repo = TRUE`.  Required
@@ -713,7 +713,7 @@ datom_init_gov <- function(gov_store,
   # --- Resolve gov_local_path -------------------------------------------------
   if (is.null(gov_local_path)) {
     base_name <- sub("\\.git$", "", basename(gov_repo_url))
-    gov_local_path <- fs::path_abs(base_name)
+    gov_local_path <- fs::path(tools::R_user_dir("datom", "data"), base_name)
   } else {
     gov_local_path <- fs::path_abs(gov_local_path)
   }
@@ -726,7 +726,22 @@ datom_init_gov <- function(gov_store,
     .datom_gov_validate_remote(gov_local_path, gov_repo_url)
   }
   if (fs::file_exists(fs::path(gov_local_path, "projects", ".gitkeep"))) {
-    cli::cli_alert_info("Governance repository already initialised at {.path {gov_local_path}}.")
+    # Local skeleton present — but only short-circuit if the remote is also
+    # seeded. A wiped/recreated remote with a stale local clone would silently
+    # no-op otherwise (issue #20).
+    repo_check <- git2r::repository(gov_local_path)
+    remote_refs <- tryCatch(
+      git2r::ls_remotes(repo_check),
+      error = function(e) character(0)
+    )
+    if (length(remote_refs) > 0L) {
+      cli::cli_alert_info("Governance repository already initialised at {.path {gov_local_path}}.")
+      return(invisible(gov_repo_url))
+    }
+    cli::cli_alert_info(
+      "Local skeleton exists but remote is empty — re-pushing to {.val {gov_repo_url}}."
+    )
+    .datom_git_push(gov_local_path)
     return(invisible(gov_repo_url))
   }
 
