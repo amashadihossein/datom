@@ -1,7 +1,7 @@
 # Fix: Issues #17 and #23
 
 **Branch**: `fix/issues-17-23`
-**Status**: Chunk 1 -- in progress
+**Status**: Complete -- all chunks done, 1607 tests passing
 
 ## Goal
 
@@ -57,9 +57,9 @@ principle documented in the updated Copilot instructions.
 
 | # | Name | Files | Status |
 |---|------|-------|--------|
-| 1 | Extend `datom_conn` + credential threading | `R/conn.R`, `R/utils-git.R` | ⏳ next |
-| 2 | `datom_decommission()` conn-first remote + PAT | `R/decommission.R` | ☐ todo |
-| 3 | Tests | `tests/testthat/test-utils-git.R`, `test-conn.R`, `test-decommission.R` | ☐ todo |
+| 1 | Extend `datom_conn` + credential threading | `R/conn.R`, `R/utils-git.R` | ✅ done |
+| 2 | `datom_decommission()` conn-first remote + PAT | `R/decommission.R` | ✅ done |
+| 3 | Tests | `tests/testthat/test-utils-git.R`, `test-conn.R`, `test-decommission.R` | ✅ done |
 
 ---
 
@@ -197,3 +197,5 @@ pat      <- conn$github_pat  # NULL if not set; delete step will fail naturally 
 
 | Date | What shipped |
 |------|-------------|
+| 2026-05-23 | Chunk 1 (`862f7c9`): `data_repo_url`/`github_pat` on `datom_conn`; `pat=` threaded through all git helpers; env-var fallback removed; test mocks updated; credential tests rewritten. 1602 passing. |
+| 2026-05-23 | Chunks 2+3 (`pending commit`): `datom_decommission()` uses `conn$data_repo_url` as sole URL source (aborts if NULL); uses `conn$github_pat` as sole PAT source (warns + skips if NULL); no `git2r::remote_url()` fallback; no `Sys.getenv` fallback. 4 new decommission tests. 1607 passing. |

@@ -47,7 +47,9 @@ make_decommission_env <- function(env = parent.frame()) {
       gov_prefix     = NULL,
       gov_region     = NULL,
       gov_client     = NULL,
-      gov_local_path = gov_clone
+      gov_local_path = gov_clone,
+      data_repo_url  = NULL,
+      github_pat     = NULL
     ),
     class = "datom_conn"
   )
@@ -373,7 +375,9 @@ make_decommission_env_nogov <- function(env = parent.frame()) {
       gov_prefix     = NULL,
       gov_region     = NULL,
       gov_client     = NULL,
-      gov_local_path = NULL
+      gov_local_path = NULL,
+      data_repo_url  = NULL,
+      github_pat     = NULL
     ),
     class = "datom_conn"
   )
@@ -431,4 +435,84 @@ test_that("datom_decommission() does not touch local-backend cwd for no-gov proj
 
     expect_true(fs::file_exists(fs::path(accidental, "marker.txt")))
   })
+})
+
+
+# =============================================================================
+# datom_decommission() -- conn$data_repo_url and conn$github_pat (issues #17/#23)
+# =============================================================================
+
+test_that("datom_decommission() uses conn$data_repo_url (not git clone lookup)", {
+  e <- make_decommission_env()
+  conn <- e$conn
+  # Set a fake GitHub URL -- no live clone needed for URL resolution
+  conn$data_repo_url <- "https://github.com/org/test-proj.git"
+  conn$github_pat    <- "ghp_fake"
+
+  deleted_repo <- NULL
+  local_mocked_bindings(
+    .datom_delete_github_repo = function(repo_full, pat) {
+      deleted_repo <<- repo_full
+      invisible(TRUE)
+    },
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
+  )
+
+  datom_decommission(conn, confirm = "test-proj")
+
+  expect_equal(deleted_repo, "org/test-proj")
+})
+
+test_that("datom_decommission() uses conn$github_pat for repo deletion", {
+  e <- make_decommission_env()
+  conn <- e$conn
+  conn$data_repo_url <- "https://github.com/org/test-proj.git"
+  conn$github_pat    <- "ghp_explicit_token"
+
+  used_pat <- NULL
+  local_mocked_bindings(
+    .datom_delete_github_repo = function(repo_full, pat) {
+      used_pat <<- pat
+      invisible(TRUE)
+    },
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
+  )
+
+  datom_decommission(conn, confirm = "test-proj")
+
+  expect_equal(used_pat, "ghp_explicit_token")
+})
+
+test_that("datom_decommission() warns and skips deletion when conn$github_pat is NULL", {
+  e <- make_decommission_env()
+  conn <- e$conn
+  conn$data_repo_url <- "https://github.com/org/test-proj.git"
+  conn$github_pat    <- NULL
+
+  delete_called <- FALSE
+  local_mocked_bindings(
+    .datom_delete_github_repo = function(...) {
+      delete_called <<- TRUE
+      invisible(TRUE)
+    },
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
+  )
+
+  expect_no_error(datom_decommission(conn, confirm = "test-proj"))
+  expect_false(delete_called)
+})
+
+test_that("datom_decommission() aborts step 2 when data_repo_url is NULL", {
+  e <- make_decommission_env()
+  conn <- e$conn
+  # data_repo_url already NULL in make_decommission_env() -- step 2 aborts
+  # but is caught by outer tryCatch, so overall call succeeds with a warning
+  conn$data_repo_url <- NULL
+
+  local_mocked_bindings(
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
+  )
+
+  # Should not re-throw -- outer tryCatch catches and continues
+  expect_no_error(datom_decommission(conn, confirm = "test-proj"))
 })
