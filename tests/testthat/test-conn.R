@@ -237,7 +237,7 @@ test_that("print.datom_conn shows path for developer", {
   combined <- paste(output, collapse = " ")
 
   expect_match(combined, "developer")
-  expect_match(combined, dir, fixed = TRUE)
+  expect_match(combined, normalizePath(dir, mustWork = FALSE), fixed = TRUE)
 })
 
 test_that("print.datom_conn omits prefix when NULL", {
