@@ -397,10 +397,22 @@ Auto-detected via `GITHUB_PAT` presence.
   by `dev/dev-sandbox.R`; the companion package will eventually own the
   full gov lifecycle.
 
-- **`gov_local_path` defaults to `basename(gov_repo_url)` sibling**: One
-  gov clone serves many data projects.
+- **`gov_local_path` defaults to
+  `tools::R_user_dir("datom","data")/<repo_name>`**:
+  `datom_init_gov(gov_local_path = NULL)` resolves to the user data
+  directory, never CWD. This avoids polluting a package source tree or
+  any other working directory the user happens to be in. One gov clone
+  serves many data projects.
   [`.datom_gov_clone_init()`](https://amashadihossein.github.io/datom/reference/dot-datom_gov_clone_init.md)
   validates remote URL on existing dirs and errors on mismatch.
+
+- **[`datom_init_gov()`](https://amashadihossein.github.io/datom/reference/datom_init_gov.md)
+  idempotence is remote-aware**: The early-return guard checks both
+  local `projects/.gitkeep` AND that `git2r::ls_remotes()` returns at
+  least one ref. If the remote was wiped/recreated and is now empty, the
+  function re-pushes the local skeleton instead of silently no-oping. A
+  completely unreachable remote (fetch errors) propagates as an error –
+  it does not silently succeed.
 
 - **`ref.json` carries `current$type`**: Records the data backend
   (`"s3"` or `"local"`). Set by
