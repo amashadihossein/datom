@@ -785,7 +785,7 @@ test_that("datom_write passes table_type and parents to metadata", {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_abc"))
@@ -821,7 +821,7 @@ test_that("datom_write computes size_bytes from parquet", {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     datom_write(conn, data = data.frame(x = 1:100), name = "tbl")
@@ -847,7 +847,7 @@ test_that("datom_write passes original_file_sha to version_history", {
       .datom_has_changes = function(conn, name, d, m) "full",
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     datom_write(
@@ -880,7 +880,7 @@ test_that("datom_write defaults: derived type, no parents, no original_file_sha"
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "plain_tbl")
@@ -941,7 +941,7 @@ test_that("datom_write stores source_lineage in metadata", {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     parents <- list(list(source = "proj_a", table = "raw_dm", version = "sha_abc"))
@@ -976,7 +976,7 @@ test_that("datom_write allows NULL source_lineage when parents is also NULL", {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     # No parents, no source_lineage -- this is the rare direct datom_write() without parents
@@ -1007,7 +1007,7 @@ test_that("datom_write updates manifest.json locally", {
       .datom_has_changes = function(conn, name, d, m) "full",
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     datom_write(conn, data = data.frame(x = 1:5), name = "my_tbl")
@@ -1047,7 +1047,7 @@ test_that("datom_write includes manifest.json in git commit", {
         committed_files <<- files
         "fake_sha"
       },
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "tbl")
@@ -1082,7 +1082,7 @@ test_that("datom_write pushes manifest.json to S3", {
         s3_keys <<- c(s3_keys, sk)
         invisible(TRUE)
       },
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "tbl")
@@ -1113,7 +1113,7 @@ test_that("datom_write stores sync fields in manifest when provided", {
       .datom_has_changes = function(conn, name, d, m) "full",
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     datom_write(
@@ -1151,7 +1151,7 @@ test_that("datom_write omits sync fields in manifest for derived tables", {
       .datom_has_changes = function(conn, name, d, m) "full",
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "derived_tbl")
@@ -1524,7 +1524,7 @@ test_that("performs full write: parquet + metadata + git", {
         invisible(TRUE)
       },
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     df <- data.frame(id = 1:5, val = letters[1:5])
@@ -1572,7 +1572,7 @@ test_that("metadata-only write skips parquet upload", {
         invisible(TRUE)
       },
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     df <- data.frame(x = 1)
@@ -1605,7 +1605,7 @@ test_that("uses default commit message when none provided", {
       .datom_has_changes = function(conn, name, d, m) "full",
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "my_table")
@@ -1720,7 +1720,7 @@ test_that("syncs metadata.json to S3 on change", {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       },
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     result <- .datom_sync_metadata(conn, "tbl")
@@ -1756,7 +1756,7 @@ test_that("syncs version_history.json to S3 when present", {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       },
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     result <- .datom_sync_metadata(conn, "tbl")
@@ -1789,7 +1789,7 @@ test_that("commits and pushes after sync", {
       .datom_has_changes = function(conn, name, d, m) "metadata_only",
       .datom_git_pull = function(...) invisible(TRUE),
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .datom_git_push = function(path) {
+      .datom_git_push = function(path, pat = NULL) {
         pushed <<- TRUE
         invisible(TRUE)
       }
@@ -1826,7 +1826,7 @@ test_that("aborts S3 sync when git commit/push fails", {
         invisible(TRUE)
       },
       .datom_git_commit = function(path, files, message) stop("Not a git repo"),
-      .datom_git_push = function(path) invisible(TRUE)
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     # Git failure aborts the operation — S3 is never touched

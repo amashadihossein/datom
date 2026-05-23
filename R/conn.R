@@ -22,6 +22,12 @@
 #' @param gov_region Governance region (can be NULL).
 #' @param gov_client Governance storage client (can be NULL).
 #' @param gov_local_path Absolute path to the local gov clone (NULL for readers).
+#' @param data_repo_url HTTPS URL of the data GitHub repository. Populated at
+#'   conn-construction time from the git remote or store. NULL for readers or
+#'   when not yet known.
+#' @param github_pat GitHub personal access token held in memory only. Sourced
+#'   from `store$github_pat` at conn-construction time. Never persisted to disk
+#'   and never printed.
 #'
 #' @return A `datom_conn` object.
 #' @keywords internal
@@ -38,7 +44,9 @@ new_datom_conn <- function(project_name,
                           gov_region = NULL,
                           gov_client = NULL,
                           gov_local_path = NULL,
-                          backend = "s3") {
+                          backend = "s3",
+                          data_repo_url = NULL,
+                          github_pat = NULL) {
   role <- match.arg(role)
   backend <- match.arg(backend, c("s3", "local"))
 
@@ -85,20 +93,22 @@ new_datom_conn <- function(project_name,
 
   structure(
     list(
-      project_name = project_name,
-      backend = backend,
-      root = root,
-      prefix = prefix,
-      region = region,
-      client = client,
-      path = path,
-      role = role,
-      endpoint = endpoint,
-      gov_root = gov_root,
-      gov_prefix = gov_prefix,
-      gov_region = gov_region,
-      gov_client = gov_client,
-      gov_local_path = gov_local_path
+      project_name  = project_name,
+      backend       = backend,
+      root          = root,
+      prefix        = prefix,
+      region        = region,
+      client        = client,
+      path          = path,
+      role          = role,
+      endpoint      = endpoint,
+      gov_root      = gov_root,
+      gov_prefix    = gov_prefix,
+      gov_region    = gov_region,
+      gov_client    = gov_client,
+      gov_local_path = gov_local_path,
+      data_repo_url = data_repo_url,
+      github_pat    = github_pat
     ),
     class = "datom_conn"
   )
@@ -220,6 +230,10 @@ print.datom_conn <- function(x, ...) {
 
   if (!is.null(x$path)) {
     cli::cli_li("Path: {.path {normalizePath(x$path, mustWork = FALSE)}}")
+  }
+
+  if (!is.null(x$data_repo_url)) {
+    cli::cli_li("Data repo: {.url {x$data_repo_url}}")
   }
 
   cli::cli_end()
@@ -564,7 +578,7 @@ datom_init_repo <- function(path = ".",
   )
 
   # Push initial commit
-  .datom_git_push(path)
+  .datom_git_push(path, pat = store$github_pat)
   .git_pushed <- TRUE
 
   # From this point on, the data git remote has been advertised. Failures
@@ -574,7 +588,9 @@ datom_init_repo <- function(path = ".",
   data_conn <- .datom_build_init_conn(
     project_name, store$data, path, "developer", NULL,
     gov_store = store$governance,
-    gov_local_path = if (!is.null(gov_local_path)) as.character(gov_local_path) else NULL
+    gov_local_path = if (!is.null(gov_local_path)) as.character(gov_local_path) else NULL,
+    data_repo_url = remote_url,
+    github_pat    = store$github_pat
   )
 
   # --- Register project in gov repo + mirror to gov storage ------------------
@@ -924,16 +940,14 @@ datom_attach_gov <- function(conn,
 
   # --- Create gov GitHub repo if requested ------------------------------------
   if (isTRUE(create_repo)) {
-    # Re-use the same PAT discipline as datom_init_gov: it must be available
-    # via the gov_store's credentials' adjacent github_pat. We don't accept
-    # github_pat as an arg here -- attach reuses the conn's developer
-    # context. Surface a clear error if create_repo is requested without a
-    # PAT in the environment.
-    pat <- Sys.getenv("GITHUB_PAT", unset = "")
-    if (!nzchar(pat)) {
+    # The PAT must have been supplied via datom_store(github_pat = ...) and
+    # will be present on conn$github_pat. datom does not read env vars
+    # internally -- secrets flow store -> conn -> helper only.
+    pat <- conn$github_pat
+    if (is.null(pat) || !nzchar(pat)) {
       cli::cli_abort(c(
-        "{.code create_repo = TRUE} requires {.envvar GITHUB_PAT} in the environment.",
-        "i" = "Set it or use {.fn datom_init_gov} first."
+        "{.code create_repo = TRUE} requires a GitHub PAT on the store.",
+        "i" = "Pass {.arg github_pat} to {.fn datom_store} when creating the store."
       ))
     }
     gov_repo_url <- .datom_create_github_repo(
@@ -1072,24 +1086,26 @@ datom_attach_gov <- function(conn,
     files = ".datom/project.yaml",
     message = glue::glue("Attach governance: {project_name}")
   )
-  .datom_git_push(conn$path)
+  .datom_git_push(conn$path, pat = conn$github_pat)
 
   # --- Return fresh conn ------------------------------------------------------
   fresh_conn <- new_datom_conn(
-    project_name = conn$project_name,
-    root         = conn$root,
-    prefix       = conn$prefix,
-    region       = conn$region,
-    client       = conn$client,
-    path         = conn$path,
-    role         = conn$role,
-    endpoint     = conn$endpoint,
-    gov_root     = gov_root,
-    gov_prefix   = gov_prefix,
-    gov_region   = gov_region,
-    gov_client   = gov_client,
+    project_name  = conn$project_name,
+    root          = conn$root,
+    prefix        = conn$prefix,
+    region        = conn$region,
+    client        = conn$client,
+    path          = conn$path,
+    role          = conn$role,
+    endpoint      = conn$endpoint,
+    gov_root      = gov_root,
+    gov_prefix    = gov_prefix,
+    gov_region    = gov_region,
+    gov_client    = gov_client,
     gov_local_path = gov_local_path,
-    backend      = conn$backend
+    backend       = conn$backend,
+    data_repo_url = conn$data_repo_url,
+    github_pat    = conn$github_pat
   )
 
   cli::cli_alert_success(
@@ -1162,8 +1178,8 @@ datom_clone <- function(path, store, ...) {
     ))
   }
 
-  # Clone with git credentials
-  cred <- .datom_git_credentials(remote_url)
+  # Clone with git credentials (PAT from store; no env-var fallback)
+  cred <- .datom_git_credentials(remote_url, pat = store$github_pat)
 
   tryCatch(
     git2r::clone(url = remote_url, local_path = path, credentials = cred, ...),
@@ -1280,7 +1296,9 @@ datom_get_conn <- function(path = NULL,
 #' @keywords internal
 .datom_build_init_conn <- function(project_name, data_store, path, role,
                                    endpoint = NULL, gov_store = NULL,
-                                   gov_local_path = NULL) {
+                                   gov_local_path = NULL,
+                                   data_repo_url = NULL,
+                                   github_pat = NULL) {
   backend <- .datom_store_backend(data_store)
   data_root <- .datom_store_root(data_store)
   data_prefix <- data_store$prefix
@@ -1319,20 +1337,22 @@ datom_get_conn <- function(path = NULL,
   }
 
   new_datom_conn(
-    project_name = project_name,
-    root = data_root,
-    prefix = data_prefix,
-    region = data_region,
-    client = client,
-    path = path,
-    role = role,
-    endpoint = endpoint,
-    gov_root = gov_root,
-    gov_prefix = gov_prefix,
-    gov_region = gov_region,
-    gov_client = gov_client,
+    project_name  = project_name,
+    root          = data_root,
+    prefix        = data_prefix,
+    region        = data_region,
+    client        = client,
+    path          = path,
+    role          = role,
+    endpoint      = endpoint,
+    gov_root      = gov_root,
+    gov_prefix    = gov_prefix,
+    gov_region    = gov_region,
+    gov_client    = gov_client,
     gov_local_path = gov_local_path,
-    backend = backend
+    backend       = backend,
+    data_repo_url = data_repo_url,
+    github_pat    = github_pat
   )
 }
 
@@ -1419,6 +1439,14 @@ datom_get_conn <- function(path = NULL,
     gov_store = store$governance,
     gov_local_path = gov_local_path
   )
+
+  # Populate identity fields from store and git remote
+  conn$github_pat <- store$github_pat
+  conn$data_repo_url <- tryCatch({
+    repo <- git2r::repository(as.character(path))
+    remotes <- git2r::remotes(repo)
+    if (length(remotes) > 0L) git2r::remote_url(repo, remotes[[1L]]) else NULL
+  }, error = function(e) NULL)
 
   # Override conn root/prefix/region with ref-resolved values if migrated
   if (!is.null(ref_location) && migrated) {

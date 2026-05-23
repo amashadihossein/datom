@@ -546,7 +546,7 @@ datom_sync <- function(conn,
   .datom_check_rio()
 
   # --- stale-state check ---
-  .datom_check_git_current(conn$path)
+  .datom_check_git_current(conn$path, pat = conn$github_pat)
 
   # --- filter to actionable rows ---
   actionable <- manifest$status %in% c("new", "changed")

@@ -24,19 +24,21 @@
 
 #' Build Git Credentials for HTTPS Remotes
 #'
-#' Returns a `git2r::cred_user_pass` object using `GITHUB_PAT` if the remote
-#' URL is HTTPS. Returns NULL for SSH remotes or when no PAT is available.
+#' Returns a `git2r::cred_user_pass` object when the remote URL is HTTPS and a
+#' PAT has been supplied. Returns NULL for SSH remotes or when `pat` is absent.
+#'
+#' The PAT must be supplied explicitly -- datom does not read environment
+#' variables internally. Callers obtain the PAT from `conn$github_pat`, which
+#' is populated at conn-construction time from `store$github_pat`.
 #'
 #' @param remote_url Character remote URL.
+#' @param pat GitHub personal access token. NULL (default) means no
+#'   authentication; git2r will attempt unauthenticated or SSH access.
 #' @return A `git2r::cred_user_pass` object or NULL.
 #' @keywords internal
-.datom_git_credentials <- function(remote_url) {
+.datom_git_credentials <- function(remote_url, pat = NULL) {
   if (!grepl("^https://", remote_url, ignore.case = TRUE)) return(NULL)
-
-  pat <- Sys.getenv("GITHUB_PAT", unset = "")
-  if (!nzchar(pat)) pat <- Sys.getenv("GITHUB_TOKEN", unset = "")
-  if (!nzchar(pat)) return(NULL)
-
+  if (is.null(pat) || !nzchar(pat)) return(NULL)
   git2r::cred_user_pass(username = "git", password = pat)
 }
 
@@ -234,10 +236,12 @@
 #' Aborts on merge conflicts -- user must resolve manually per spec.
 #'
 #' @param path Repository path.
+#' @param pat GitHub personal access token. Passed directly to
+#'   `.datom_git_credentials()`. NULL means unauthenticated.
 #' @return Invisible TRUE on success.
 #' @keywords internal
-.datom_git_push <- function(path) {
-  .datom_git_pull(path)
+.datom_git_push <- function(path, pat = NULL) {
+  .datom_git_pull(path, pat = pat)
 
   .datom_check_git2r()
 
@@ -245,7 +249,7 @@
   remote_name <- git2r::remotes(repo)[[1L]]
   branch_name <- .datom_git_branch(path)
   remote_url <- git2r::remote_url(repo, remote_name)
-  cred <- .datom_git_credentials(remote_url)
+  cred <- .datom_git_credentials(remote_url, pat = pat)
 
   # Push
   tryCatch(
@@ -267,13 +271,15 @@
 #' Pull from Remote (Fetch + Merge)
 #'
 #' Fetches from the remote and merges upstream changes into the current
-#' branch. Aborts on merge conflicts — user must resolve manually.
+#' branch. Aborts on merge conflicts - user must resolve manually.
 #' This is the primary defense against diverged histories.
 #'
 #' @param path Repository path.
+#' @param pat GitHub personal access token. Passed directly to
+#'   `.datom_git_credentials()`. NULL means unauthenticated.
 #' @return Invisible TRUE on success.
 #' @keywords internal
-.datom_git_pull <- function(path) {
+.datom_git_pull <- function(path, pat = NULL) {
   .datom_check_git2r()
 
   repo <- tryCatch(
@@ -296,7 +302,7 @@
 
   # Build credentials for HTTPS remotes
   remote_url <- git2r::remote_url(repo, remote_name)
-  cred <- .datom_git_credentials(remote_url)
+  cred <- .datom_git_credentials(remote_url, pat = pat)
 
   # Fetch from remote
   tryCatch(
@@ -346,12 +352,14 @@
 #' HEAD SHA. If the local branch is behind, aborts with a clear message
 #' telling the developer to pull first.
 #'
-#' Does NOT auto-pull — lets the developer decide how to resolve.
+#' Does NOT auto-pull - lets the developer decide how to resolve.
 #'
 #' @param path Repository path.
+#' @param pat GitHub personal access token. Passed to
+#'   `.datom_git_credentials()`. NULL means unauthenticated.
 #' @return Invisible `TRUE` if the local branch is up to date.
 #' @keywords internal
-.datom_check_git_current <- function(path) {
+.datom_check_git_current <- function(path, pat = NULL) {
   .datom_check_git2r()
 
   repo <- tryCatch(
@@ -366,9 +374,9 @@
 
   remote_name <- remotes[[1L]]
   remote_url <- git2r::remote_url(repo, remote_name)
-  cred <- .datom_git_credentials(remote_url)
+  cred <- .datom_git_credentials(remote_url, pat = pat)
 
-  # Fetch to update remote refs (cheap — no merge)
+  # Fetch to update remote refs (cheap -- no merge)
   tryCatch(
     git2r::fetch(repo, name = remote_name, credentials = cred),
     error = function(e) {

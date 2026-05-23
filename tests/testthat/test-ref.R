@@ -489,7 +489,7 @@ test_that("developer: auto-pulls and succeeds when project.yaml agrees after pul
   local_mocked_bindings(
     .datom_s3_client = function(...) list(),
     .datom_resolve_ref = function(gov_conn, project_name = NULL) list(root = "new-bucket", prefix = "new/", region = "us-east-1"),
-    .datom_git_pull = function(path) invisible(NULL)
+    .datom_git_pull = function(path, pat = NULL) invisible(NULL)
   )
 
   # Should succeed without error or warning (project.yaml already matches ref)
@@ -522,7 +522,7 @@ test_that("developer: errors when project.yaml still disagrees after pull", {
   local_mocked_bindings(
     .datom_s3_client = function(...) list(),
     .datom_resolve_ref = function(gov_conn, project_name = NULL) list(root = "new-bucket", prefix = "data/", region = "us-east-1"),
-    .datom_git_pull = function(path) invisible(NULL)
+    .datom_git_pull = function(path, pat = NULL) invisible(NULL)
   )
 
   expect_error(
