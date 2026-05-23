@@ -726,7 +726,7 @@ datom_init_gov <- function(gov_store,
     .datom_gov_validate_remote(gov_local_path, gov_repo_url)
   }
   if (fs::file_exists(fs::path(gov_local_path, "projects", ".gitkeep"))) {
-    # Local skeleton present — but only short-circuit if the remote is also
+    # Local skeleton present -- but only short-circuit if the remote is also
     # seeded. A wiped/recreated remote with a stale local clone would silently
     # no-op otherwise (issue #20).
     repo_check <- git2r::repository(gov_local_path)
@@ -740,7 +740,7 @@ datom_init_gov <- function(gov_store,
       return(invisible(gov_repo_url))
     }
     cli::cli_alert_info(
-      "Local skeleton exists but remote is empty — re-pushing to {.val {gov_repo_url}}."
+      "Local skeleton exists but remote is empty -- re-pushing to {.val {gov_repo_url}}."
     )
     .datom_git_push(gov_local_path)
     return(invisible(gov_repo_url))
@@ -1103,7 +1103,7 @@ datom_attach_gov <- function(conn,
 #' Clone a datom Repository
 #'
 #' Clones a remote datom repository and returns a connection. This is the
-#' recommended way for teammates to join an existing datom project — it wraps
+#' recommended way for teammates to join an existing datom project -- it wraps
 #' `git2r::clone()` and immediately returns a ready-to-use `datom_conn`.
 #'
 #' When `store$gov_repo_url` is set the governance repo is also cloned (or
