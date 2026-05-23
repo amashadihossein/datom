@@ -33,19 +33,21 @@ principle documented in the updated Copilot instructions.
    that chain into write/push after init).
 4. `datom_clone()` populates both fields on the returned conn.
 5. `datom_attach_gov()` carries both fields through to the fresh conn it returns.
-6. `.datom_git_credentials()` accepts an optional `pat` argument; falls back to
-   `GITHUB_PAT` / `GITHUB_TOKEN` env vars only when `pat` is NULL or empty.
-7. `.datom_git_push()` and `.datom_git_pull()` accept an optional `pat` argument and
+6. `.datom_git_credentials()` accepts a required `pat` argument (no default);
+   **no env-var fallback** — if `pat` is NULL or empty, returns NULL (unauthenticated).
+   Callers are responsible for supplying the PAT via `conn$github_pat`.
+7. `.datom_git_push()` and `.datom_git_pull()` accept a `pat` argument and
    pass it to `.datom_git_credentials()`.
-8. All callers of `.datom_git_push()` / `.datom_git_pull()` that have `conn` in scope
-   pass `conn$github_pat`; callers that have only `path` (gov helpers) pass `pat = NULL`
-   (env-var fallback is acceptable for gov ops since `datom_init_gov()` takes its own
-   explicit `github_pat`).
-9. `datom_decommission()` uses `conn$data_repo_url` as the primary source for the
-   GitHub remote URL; falls back to `git2r::remote_url()` only if `conn$data_repo_url`
-   is NULL (backward compatibility).
-10. `datom_decommission()` uses `conn$github_pat` as the primary PAT source; falls back
-    to `GITHUB_PAT` env var only if `conn$github_pat` is NULL.
+8. All callers of `.datom_git_push()` / `.datom_git_pull()` pass `conn$github_pat`
+   (or `NULL` for gov helpers where no conn is in scope -- unauthenticated/SSH is
+   acceptable there; gov PAT threading is out of scope).
+9. `datom_decommission()` uses `conn$data_repo_url` as the sole source for the
+   GitHub remote URL; **no `git2r::remote_url()` fallback** -- if `conn$data_repo_url`
+   is NULL, abort with a clear error directing the user to rebuild conn via
+   `datom_get_conn()`.
+10. `datom_decommission()` uses `conn$github_pat` as the sole PAT source;
+    **no env-var fallback** -- if `conn$github_pat` is NULL, the GitHub repo deletion
+    step skips authentication (unauthenticated delete will fail naturally).
 11. `print.datom_conn()` does NOT print the PAT (mask or omit).
 12. All existing tests pass; new tests cover the AC items above.
 
@@ -77,12 +79,10 @@ principle documented in the updated Copilot instructions.
   git2r::cred_user_pass(username = "git", password = pat)
 }
 
-# After
+# After -- no env-var fallback; PAT must be supplied explicitly
 .datom_git_credentials <- function(remote_url, pat = NULL) {
   if (!grepl("^https://", remote_url, ignore.case = TRUE)) return(NULL)
-  if (is.null(pat) || !nzchar(pat)) pat <- Sys.getenv("GITHUB_PAT", unset = "")
-  if (!nzchar(pat)) pat <- Sys.getenv("GITHUB_TOKEN", unset = "")
-  if (!nzchar(pat)) return(NULL)
+  if (is.null(pat) || !nzchar(pat)) return(NULL)
   git2r::cred_user_pass(username = "git", password = pat)
 }
 ```
@@ -135,8 +135,8 @@ for gov ops).
 ### Invariants
 - Never persist `github_pat` to disk (project.yaml, JSON, git).
 - `print.datom_conn()` must not print the raw PAT (either omit or mask).
-- Fallback to env vars is always allowed when no explicit PAT is available.
-- Gov-path callers pass `pat = NULL` -- gov PAT threading is out of scope for this fix.
+- **No env-var fallback inside datom git helpers** -- PAT flows `store → conn → helper`.
+- Gov-path callers pass `pat = NULL` (unauthenticated/SSH acceptable for gov ops).
 
 ---
 
@@ -154,16 +154,15 @@ repo_url <- tryCatch(
 )
 pat <- Sys.getenv("GITHUB_PAT")
 
-# After: conn-first, clone as fallback
-repo_url <- conn$data_repo_url %||% tryCatch(
-  { repo <- git2r::repository(conn$path); git2r::remote_url(repo, "origin") },
-  error = function(e) NULL
-)
-pat <- if (!is.null(conn$github_pat) && nzchar(conn$github_pat)) {
-  conn$github_pat
-} else {
-  Sys.getenv("GITHUB_PAT")
+# After: conn is the sole source; abort if data_repo_url is missing
+if (is.null(conn$data_repo_url)) {
+  cli::cli_abort(c(
+    "Cannot delete GitHub repository: {.field data_repo_url} is not set on this conn.",
+    "i" = "Rebuild the conn with {.fn datom_get_conn} and retry."
+  ))
 }
+repo_url <- conn$data_repo_url
+pat      <- conn$github_pat  # NULL if not set; delete step will fail naturally without auth
 ```
 
 ---
