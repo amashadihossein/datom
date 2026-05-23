@@ -730,8 +730,9 @@ datom_init_gov <- function(gov_store,
     # seeded. A wiped/recreated remote with a stale local clone would silently
     # no-op otherwise (issue #20).
     repo_check <- git2r::repository(gov_local_path)
+    remote_name <- git2r::remotes(repo_check)[[1L]]
     remote_refs <- tryCatch(
-      git2r::ls_remotes(repo_check),
+      git2r::remote_ls(git2r::remote_url(repo_check, remote_name)),
       error = function(e) character(0)
     )
     if (length(remote_refs) > 0L) {
