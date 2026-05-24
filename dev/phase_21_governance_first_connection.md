@@ -1,6 +1,6 @@
 # Phase 21: Governance-First Connection UX (`governance.json`)
 
-**Status**: Planning complete; Chunk 1 next
+**Status**: Chunk 1 complete; Chunk 2 next
 **Started**: 2026-05-23
 **Issue**: GitHub #24
 **Branch**: `phase/21-governance-first-connection`
@@ -152,8 +152,8 @@ Each chunk is sized for one focused session. **Every chunk-completing commit mus
 
 | # | Name | Scope | Tests | Status |
 |---|------|-------|-------|--------|
-| 1 | `governance.json` writer/reader primitives | New file [R/governance_json.R](R/governance_json.R) with builder + local + storage I/O helpers. Pure helpers, no callers yet. | `test-governance_json.R`: schema round-trip, missing file, malformed JSON, secret-leakage guard. | ⏳ next |
-| 2 | Write `governance.json` from `datom_init_repo()` and `datom_attach_gov()` | Wire writers into the existing flows. Remove `storage.governance` and `repos.governance` writes. | Extend `test-conn.R`: assert governance.json on disk + in storage; assert yaml has no governance keys. | ☐ todo |
+| 1 | `governance.json` writer/reader primitives | New file [R/governance_json.R](R/governance_json.R) with builder + local + storage I/O helpers. Pure helpers, no callers yet. | `test-governance_json.R`: schema round-trip, missing file, malformed JSON, secret-leakage guard. | ✅ done |
+| 2 | Write `governance.json` from `datom_init_repo()` and `datom_attach_gov()` | Wire writers into the existing flows. Remove `storage.governance` and `repos.governance` writes. | Extend `test-conn.R`: assert governance.json on disk + in storage; assert yaml has no governance keys. | ⏳ next |
 | 3 | Read `governance.json` in `datom_get_conn()` developer path | Replace yaml-based gov detection with `governance.json` reads. Enforce the four-state matrix in §2.4. | Extend `test-conn.R`: four-state matrix; cross-check; both backends. | ☐ todo |
 | 4 | Read `governance.json` in `datom_get_conn()` reader path | Support gov-first (issue #24 happy path) and data-first (serverless). Hard error on data-first into a gov-attached project. | Extend `test-conn.R`: both entry styles, both backends, no-gov and gov-attached. | ☐ todo |
 | 5 | Refactor `ref.json` bootstrap (core of issue #24) | `.datom_resolve_data_location()` becomes a bootstrap source when `store$data` is credentials-only. Validator behavior unchanged for fully-specified `store$data`. | New tests: ref bootstraps from gov; credentials-only data store builds working conn; ref read failure path. | ☐ todo |
@@ -497,4 +497,4 @@ Final audit:
 
 ## 11. Progress Log
 
-- **2026-05-23**: Phase created from issue #24. After design discussion, scope expanded beyond #24's reader-only fix to introduce `governance.json` as the data-store-side gov pointer (dual of `ref.json` at gov). Splits `storage.governance` / `repos.governance` out of `project.yaml` (no in-git duplication). `gov_local_path` leaves persisted state. Plan rewritten with chunked implementation notes structured for direct execution.
+- **2026-05-23 (Chunk 1)**: Added `R/governance_json.R` with `.datom_create_governance_json()`, `.datom_write_governance_json_local()`, `.datom_read_governance_json_local()`, `.datom_storage_write_governance_json()`, `.datom_storage_read_governance_json()`, `.datom_storage_delete_governance_json()`, `.datom_sync_governance_json()`, `.datom_validate_governance_json()`. 30 new tests (all pass); full suite 1637 passing, 0 failures. Note: `datom_store_s3(validate = FALSE)` required in tests to skip HeadBucket network call. Path normalisation (`fs::path_norm`) applied in builder to avoid double-slash on macOS tempdir paths.
