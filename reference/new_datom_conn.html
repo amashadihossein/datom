@@ -74,7 +74,9 @@ Reader: S3-only access, no local repo
 <span>  gov_region <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  gov_client <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  gov_local_path <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  backend <span class="op">=</span> <span class="st">"s3"</span></span>
+<span>  backend <span class="op">=</span> <span class="st">"s3"</span>,</span>
+<span>  data_repo_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  github_pat <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -132,6 +134,18 @@ Reader: S3-only access, no local repo
 
 <dt id="arg-gov-local-path">gov_local_path<a class="anchor" aria-label="anchor" href="#arg-gov-local-path"></a></dt>
 <dd><p>Absolute path to the local gov clone (NULL for readers).</p></dd>
+
+
+<dt id="arg-data-repo-url">data_repo_url<a class="anchor" aria-label="anchor" href="#arg-data-repo-url"></a></dt>
+<dd><p>HTTPS URL of the data GitHub repository. Populated at
+conn-construction time from the git remote or store. NULL for readers or
+when not yet known.</p></dd>
+
+
+<dt id="arg-github-pat">github_pat<a class="anchor" aria-label="anchor" href="#arg-github-pat"></a></dt>
+<dd><p>GitHub personal access token held in memory only. Sourced
+from <code>store$github_pat</code> at conn-construction time. Never persisted to disk
+and never printed.</p></dd>
 
 </dl></div>
     <div class="section level2">

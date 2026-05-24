@@ -54,7 +54,7 @@ Aborts on merge conflicts – user must resolve manually per spec.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.datom_git_push</span><span class="op">(</span><span class="va">path</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.datom_git_push</span><span class="op">(</span><span class="va">path</span>, pat <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -63,6 +63,11 @@ Aborts on merge conflicts – user must resolve manually per spec.</p>
 
 <dl><dt id="arg-path">path<a class="anchor" aria-label="anchor" href="#arg-path"></a></dt>
 <dd><p>Repository path.</p></dd>
+
+
+<dt id="arg-pat">pat<a class="anchor" aria-label="anchor" href="#arg-pat"></a></dt>
+<dd><p>GitHub personal access token. Passed directly to
+<code><a href="dot-datom_git_credentials.html">.datom_git_credentials()</a></code>. NULL means unauthenticated.</p></dd>
 
 </dl></div>
     <div class="section level2">

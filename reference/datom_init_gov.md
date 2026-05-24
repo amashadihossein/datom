@@ -35,10 +35,10 @@ datom_init_gov(
 
 - gov_local_path:
 
-  Local path for the governance clone. When `NULL`, derived from the
-  basename of `gov_repo_url` (`.git` suffix stripped) in the current
-  directory. When `create_repo = TRUE` and no URL is known yet, set this
-  explicitly or let it default to `repo_name`.
+  Local path for the governance clone. When `NULL`, defaults to
+  `tools::R_user_dir("datom", "data")/<repo_name>` (never CWD-relative).
+  When `create_repo = TRUE` and no URL is known yet, set this explicitly
+  or let it default to `repo_name` under the user data dir.
 
 - create_repo:
 

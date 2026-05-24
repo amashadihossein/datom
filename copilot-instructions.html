@@ -206,8 +206,15 @@ dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)</code></p
 <strong>Data developers</strong>: git + S3 access, create/update data</li>
 <li>
 <strong>Data readers</strong>: S3 only, consume versioned data</li>
-</ol><p>Auto-detected via <code>GITHUB_PAT</code> presence.</p>
+</ol><p>Auto-detected via <code>github_pat</code> on the <code><a href="reference/datom_store.html">datom_store()</a></code> object.</p>
 </div>
+<div class="section level2">
+<h2 id="secret-handling-principle">Secret Handling Principle<a class="anchor" aria-label="anchor" href="#secret-handling-principle"></a></h2>
+<p>datom receives secrets explicitly at runtime; it never discovers, persists, or treats secrets as project state. Users may source secret values from <code>keyring</code>, standard environment variables, CI secret stores, or other mechanisms, but those values must enter datom through store constructors such as <code><a href="reference/datom_store.html">datom_store()</a></code> and <code><a href="reference/datom_store_s3.html">datom_store_s3()</a></code>. Environment variables are a caller-side convenience, not datom’s internal credential contract.</p>
+<ul><li>Never write PATs, access keys, secret keys, or session tokens to <code>project.yaml</code>, metadata JSON, manifests, <code>ref.json</code>, <code>dispatch.json</code>, git remotes, logs, or printed objects.</li>
+<li>Runtime objects may carry secrets only in memory and must mask them in <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> methods.</li>
+<li>Downstream helpers (e.g. git credential helpers) must use the explicit value passed from <code>conn</code> / <code>store</code>. <strong>No env-var fallback inside datom</strong> – if no explicit value is available, the helper returns NULL / unauthenticated. Callers who rely on env vars must read them themselves and pass the value to the store constructor.</li>
+</ul></div>
 <div class="section level2">
 <h2 id="gotchas">Gotchas<a class="anchor" aria-label="anchor" href="#gotchas"></a></h2>
 <ul><li><p><strong>cli pluralization</strong>: <code>{?s}</code> requires a quantity reference immediately before it (e.g., <code>{length(x)} variable{?s}</code>). Without the quantity, cli throws a confusing error.</p></li>
@@ -263,7 +270,7 @@ dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)</code></p
 <h2 id="donts">Don’ts<a class="anchor" aria-label="anchor" href="#donts"></a></h2>
 <ul><li>No nested if-else chains</li>
 <li>No for loops (use purrr)</li>
-<li>No credentials in code</li>
+<li>No credentials in code, docs examples, committed files, git remotes, logs, or unmasked print output</li>
 <li>No <code>access.json</code> (renamed to <code>dispatch.json</code>)</li>
 <li>No direct <code>.datom_s3_*()</code> calls from business logic (use <code>.datom_storage_*()</code> dispatch)</li>
 <li>No phase/chunk numbers in <code>R/</code> source comments (e.g. <code># Phase 7</code>, <code># Chunk 3</code>) — they are meaningless to public readers. Use descriptive comments instead.</li>

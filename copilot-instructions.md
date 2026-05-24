@@ -144,7 +144,33 @@ cli::cli_alert_success("Wrote {name} ({sha})")
 1.  **Data developers**: git + S3 access, create/update data
 2.  **Data readers**: S3 only, consume versioned data
 
-Auto-detected via `GITHUB_PAT` presence.
+Auto-detected via `github_pat` on the
+[`datom_store()`](https://amashadihossein.github.io/datom/reference/datom_store.md)
+object.
+
+## Secret Handling Principle
+
+datom receives secrets explicitly at runtime; it never discovers,
+persists, or treats secrets as project state. Users may source secret
+values from `keyring`, standard environment variables, CI secret stores,
+or other mechanisms, but those values must enter datom through store
+constructors such as
+[`datom_store()`](https://amashadihossein.github.io/datom/reference/datom_store.md)
+and
+[`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md).
+Environment variables are a caller-side convenience, not datom’s
+internal credential contract.
+
+- Never write PATs, access keys, secret keys, or session tokens to
+  `project.yaml`, metadata JSON, manifests, `ref.json`, `dispatch.json`,
+  git remotes, logs, or printed objects.
+- Runtime objects may carry secrets only in memory and must mask them in
+  [`print()`](https://rdrr.io/r/base/print.html) methods.
+- Downstream helpers (e.g. git credential helpers) must use the explicit
+  value passed from `conn` / `store`. **No env-var fallback inside
+  datom** – if no explicit value is available, the helper returns NULL /
+  unauthenticated. Callers who rely on env vars must read them
+  themselves and pass the value to the store constructor.
 
 ## Gotchas
 
@@ -494,7 +520,8 @@ Auto-detected via `GITHUB_PAT` presence.
 
 - No nested if-else chains
 - No for loops (use purrr)
-- No credentials in code
+- No credentials in code, docs examples, committed files, git remotes,
+  logs, or unmasked print output
 - No `access.json` (renamed to `dispatch.json`)
 - No direct `.datom_s3_*()` calls from business logic (use
   `.datom_storage_*()` dispatch)

@@ -89,9 +89,9 @@ with <code>create_repo = TRUE</code>.</p></dd>
 
 <dt id="arg-gov-local-path">gov_local_path<a class="anchor" aria-label="anchor" href="#arg-gov-local-path"></a></dt>
 <dd><p>Local path for the governance clone.  When <code>NULL</code>,
-derived from the basename of <code>gov_repo_url</code> (<code>.git</code> suffix stripped) in
-the current directory.  When <code>create_repo = TRUE</code> and no URL is known
-yet, set this explicitly or let it default to <code>repo_name</code>.</p></dd>
+defaults to <code>tools::R_user_dir("datom", "data")/&lt;repo_name&gt;</code> (never
+CWD-relative).  When <code>create_repo = TRUE</code> and no URL is known yet, set
+this explicitly or let it default to <code>repo_name</code> under the user data dir.</p></dd>
 
 
 <dt id="arg-create-repo">create_repo<a class="anchor" aria-label="anchor" href="#arg-create-repo"></a></dt>

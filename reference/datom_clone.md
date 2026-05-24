@@ -1,7 +1,7 @@
 # Clone a datom Repository
 
 Clones a remote datom repository and returns a connection. This is the
-recommended way for teammates to join an existing datom project — it
+recommended way for teammates to join an existing datom project – it
 wraps
 [`git2r::clone()`](https://docs.ropensci.org/git2r/reference/clone.html)
 and immediately returns a ready-to-use `datom_conn`.

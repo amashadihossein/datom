@@ -23,7 +23,9 @@ new_datom_conn(
   gov_region = NULL,
   gov_client = NULL,
   gov_local_path = NULL,
-  backend = "s3"
+  backend = "s3",
+  data_repo_url = NULL,
+  github_pat = NULL
 )
 ```
 
@@ -81,6 +83,18 @@ new_datom_conn(
 - gov_local_path:
 
   Absolute path to the local gov clone (NULL for readers).
+
+- data_repo_url:
+
+  HTTPS URL of the data GitHub repository. Populated at
+  conn-construction time from the git remote or store. NULL for readers
+  or when not yet known.
+
+- github_pat:
+
+  GitHub personal access token held in memory only. Sourced from
+  `store$github_pat` at conn-construction time. Never persisted to disk
+  and never printed.
 
 ## Value
 

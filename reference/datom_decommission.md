@@ -34,8 +34,11 @@ remaining steps still run):
 1.  Delete all objects under the data storage namespace.
 
 2.  Delete the data GitHub repo via the GitHub REST API. Requires
-    `GITHUB_PAT` with the `delete_repo` scope; skipped with a warning if
-    the PAT is unavailable or the local clone has no GitHub remote.
+    `conn$github_pat` with the `delete_repo` scope; skipped with a
+    warning if `conn$github_pat` is NULL. Aborts if `conn$data_repo_url`
+    is not set (rebuild the conn with
+    [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)
+    first).
 
 3.  Remove the local data clone directory (`conn$path`).
 

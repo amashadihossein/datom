@@ -7,7 +7,7 @@ telling the developer to pull first.
 ## Usage
 
 ``` r
-.datom_check_git_current(path)
+.datom_check_git_current(path, pat = NULL)
 ```
 
 ## Arguments
@@ -16,10 +16,16 @@ telling the developer to pull first.
 
   Repository path.
 
+- pat:
+
+  GitHub personal access token. Passed to
+  [`.datom_git_credentials()`](https://amashadihossein.github.io/datom/reference/dot-datom_git_credentials.md).
+  NULL means unauthenticated.
+
 ## Value
 
 Invisible `TRUE` if the local branch is up to date.
 
 ## Details
 
-Does NOT auto-pull — lets the developer decide how to resolve.
+Does NOT auto-pull - lets the developer decide how to resolve.

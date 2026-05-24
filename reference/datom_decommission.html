@@ -83,8 +83,9 @@ accidental decommissioning in scripts.</p></dd>
     <p>Teardown order (each step is warn-and-continue on failure so the remaining
 steps still run):</p><ol><li><p>Delete all objects under the data storage namespace.</p></li>
 <li><p>Delete the data GitHub repo via the GitHub REST API. Requires
-<code>GITHUB_PAT</code> with the <code>delete_repo</code> scope; skipped with a warning if
-the PAT is unavailable or the local clone has no GitHub remote.</p></li>
+<code>conn$github_pat</code> with the <code>delete_repo</code> scope; skipped with a warning
+if <code>conn$github_pat</code> is NULL. Aborts if <code>conn$data_repo_url</code> is not set
+(rebuild the conn with <code><a href="datom_get_conn.html">datom_get_conn()</a></code> first).</p></li>
 <li><p>Remove the local data clone directory (<code>conn$path</code>).</p></li>
 <li><p>Unregister the project from the governance repo (git commit + push).
 Skipped when the project has no governance attached
