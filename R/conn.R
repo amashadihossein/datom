@@ -1559,6 +1559,27 @@ datom_get_conn <- function(path = NULL,
     conn$region <- ref_location$region
   }
 
+  # --- Data-first gov-discovery probe (Style B) ------------------------------
+  # When the reader supplied no governance store, probe the data storage for
+  # governance.json. If present, the project is gov-attached but the reader
+  # bypassed it -- warn (do not abort): the conn is usable but the data
+  # coordinates may go stale after a migration.
+  if (is.null(store$governance)) {
+    gov_json <- tryCatch(
+      .datom_storage_read_governance_json(conn),
+      error = function(e) NULL
+    )
+    if (!is.null(gov_json)) {
+      cli::cli_warn(c(
+        "Project {.val {project_name}} has governance attached, but you connected with data-store credentials only.",
+        "i" = "Connection resolved using supplied coordinates; these may go stale after a data migration.",
+        "i" = "To stay current, rebuild your store with {.code governance = datom_store_*(...)} and pass credentials only.",
+        "i" = "Gov repo:    {.url {gov_json$gov_repo_url}}",
+        "i" = "Gov storage: {gov_json$gov_storage$type} / {gov_json$gov_storage$root}"
+      ))
+    }
+  }
+
   # Validate data store reachability
   .datom_check_data_reachable(conn, migrated = migrated)
 

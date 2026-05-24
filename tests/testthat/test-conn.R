@@ -612,6 +612,76 @@ test_that("reader path uses region from store", {
 
 
 # =============================================================================
+# datom_get_conn() — reader path: Style B (data-first) gov-discovery probe
+# =============================================================================
+
+# Local-backend helper: data store dir with optional governance.json mirror
+# pre-staged at .metadata/governance.json.
+setup_reader_probe_env <- function(write_gov_json = FALSE, env = parent.frame()) {
+  store_dir <- as.character(fs::path_norm(withr::local_tempdir(.local_envir = env)))
+  # Mirror lives at {root}/datom/.metadata/governance.json
+  meta_dir <- fs::path(store_dir, "datom", ".metadata")
+  fs::dir_create(meta_dir)
+  if (write_gov_json) {
+    gov_json <- list(
+      gov_repo_url = "https://github.com/acme/gov.git",
+      gov_storage  = list(type = "local", root = store_dir),
+      attached_at  = "2026-05-23T00:00:00Z"
+    )
+    jsonlite::write_json(gov_json, fs::path(meta_dir, "governance.json"),
+                         auto_unbox = TRUE, pretty = TRUE)
+  }
+  store_dir
+}
+
+test_that("reader Style B [no-gov data store, no gov.json mirror]: no warning, conn built", {
+  store_dir <- setup_reader_probe_env(write_gov_json = FALSE)
+  data_comp <- datom_store_local(path = store_dir, validate = FALSE)
+  store <- datom_store(governance = NULL, data = data_comp, validate = FALSE)
+  expect_no_warning(
+    conn <- datom_get_conn(store = store, project_name = "p")
+  )
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$root, store_dir)
+  expect_null(conn$gov_root)
+})
+
+test_that("reader Style B [no-gov data store, gov.json mirror present]: warns, conn built", {
+  store_dir <- setup_reader_probe_env(write_gov_json = TRUE)
+  data_comp <- datom_store_local(path = store_dir, validate = FALSE)
+  store <- datom_store(governance = NULL, data = data_comp, validate = FALSE)
+  expect_warning(
+    conn <- datom_get_conn(store = store, project_name = "p"),
+    "governance attached"
+  )
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$root, store_dir)
+  expect_null(conn$gov_root)
+})
+
+test_that("reader Style A [gov store supplied]: skips data-first probe", {
+  store_dir <- setup_reader_probe_env(write_gov_json = TRUE)
+  data_comp <- datom_store_local(path = store_dir, validate = FALSE)
+  gov_comp  <- datom_store_local(path = store_dir, validate = FALSE)
+  # gov-first: no warning about data-first bypass even when gov.json mirror exists.
+  # Suppress the unrelated ref-resolution warning (no projects/p/ref.json in this
+  # synthetic local store) by checking that no "governance attached, but you
+  # connected with data-store credentials only" warning is emitted.
+  warnings_seen <- character(0)
+  withCallingHandlers(
+    conn <- datom_get_conn(store = datom_store(governance = gov_comp, data = data_comp, validate = FALSE),
+                            project_name = "p"),
+    warning = function(w) {
+      warnings_seen <<- c(warnings_seen, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_false(any(grepl("data-store credentials only", warnings_seen)))
+  expect_s3_class(conn, "datom_conn")
+})
+
+
+# =============================================================================
 # datom_init_repo()
 # =============================================================================
 
