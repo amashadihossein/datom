@@ -4,10 +4,13 @@
 \alias{.datom_git_push}
 \title{Push to Remote}
 \usage{
-.datom_git_push(path)
+.datom_git_push(path, pat = NULL)
 }
 \arguments{
 \item{path}{Repository path.}
+
+\item{pat}{GitHub personal access token. Passed directly to
+\code{.datom_git_credentials()}. NULL means unauthenticated.}
 }
 \value{
 Invisible TRUE on success.

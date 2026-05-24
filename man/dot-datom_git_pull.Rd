@@ -4,17 +4,20 @@
 \alias{.datom_git_pull}
 \title{Pull from Remote (Fetch + Merge)}
 \usage{
-.datom_git_pull(path)
+.datom_git_pull(path, pat = NULL)
 }
 \arguments{
 \item{path}{Repository path.}
+
+\item{pat}{GitHub personal access token. Passed directly to
+\code{.datom_git_credentials()}. NULL means unauthenticated.}
 }
 \value{
 Invisible TRUE on success.
 }
 \description{
 Fetches from the remote and merges upstream changes into the current
-branch. Aborts on merge conflicts — user must resolve manually.
+branch. Aborts on merge conflicts - user must resolve manually.
 This is the primary defense against diverged histories.
 }
 \keyword{internal}

@@ -27,8 +27,9 @@ steps still run):
 \enumerate{
 \item Delete all objects under the data storage namespace.
 \item Delete the data GitHub repo via the GitHub REST API. Requires
-\code{GITHUB_PAT} with the \code{delete_repo} scope; skipped with a warning if
-the PAT is unavailable or the local clone has no GitHub remote.
+\code{conn$github_pat} with the \code{delete_repo} scope; skipped with a warning
+if \code{conn$github_pat} is NULL. Aborts if \code{conn$data_repo_url} is not set
+(rebuild the conn with \code{datom_get_conn()} first).
 \item Remove the local data clone directory (\code{conn$path}).
 \item Unregister the project from the governance repo (git commit + push).
 Skipped when the project has no governance attached

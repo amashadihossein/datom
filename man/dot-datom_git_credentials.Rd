@@ -4,16 +4,24 @@
 \alias{.datom_git_credentials}
 \title{Build Git Credentials for HTTPS Remotes}
 \usage{
-.datom_git_credentials(remote_url)
+.datom_git_credentials(remote_url, pat = NULL)
 }
 \arguments{
 \item{remote_url}{Character remote URL.}
+
+\item{pat}{GitHub personal access token. NULL (default) means no
+authentication; git2r will attempt unauthenticated or SSH access.}
 }
 \value{
 A \code{git2r::cred_user_pass} object or NULL.
 }
 \description{
-Returns a \code{git2r::cred_user_pass} object using \code{GITHUB_PAT} if the remote
-URL is HTTPS. Returns NULL for SSH remotes or when no PAT is available.
+Returns a \code{git2r::cred_user_pass} object when the remote URL is HTTPS and a
+PAT has been supplied. Returns NULL for SSH remotes or when \code{pat} is absent.
+}
+\details{
+The PAT must be supplied explicitly -- datom does not read environment
+variables internally. Callers obtain the PAT from \code{conn$github_pat}, which
+is populated at conn-construction time from \code{store$github_pat}.
 }
 \keyword{internal}
