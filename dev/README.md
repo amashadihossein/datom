@@ -46,7 +46,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Started | Status | Doc |
 |-------|---------|--------|-----|
-| Phase 21: Governance-First Connection UX | 2026-05-23 | Chunk 3 complete; Chunk 4 next | [phase_21_governance_first_connection.md](phase_21_governance_first_connection.md) |
+| Phase 21: Governance-First Connection UX | 2026-05-23 | Chunk 4 complete; Chunk 5 next | [phase_21_governance_first_connection.md](phase_21_governance_first_connection.md) |
 
 ### Drafts (queued, not active)
 
