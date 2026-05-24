@@ -119,7 +119,7 @@ datom receives secrets explicitly at runtime; it never discovers, persists, or t
 
 - Never write PATs, access keys, secret keys, or session tokens to `project.yaml`, metadata JSON, manifests, `ref.json`, `dispatch.json`, git remotes, logs, or printed objects.
 - Runtime objects may carry secrets only in memory and must mask them in `print()` methods.
-- If a caller passes an explicit secret (for example `store$github_pat`), downstream helpers must use it and may fall back to standard env vars only when no explicit value was provided.
+- Downstream helpers (e.g. git credential helpers) must use the explicit value passed from `conn` / `store`. **No env-var fallback inside datom** -- if no explicit value is available, the helper returns NULL / unauthenticated. Callers who rely on env vars must read them themselves and pass the value to the store constructor.
 
 ## Gotchas
 
