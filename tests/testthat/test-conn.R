@@ -350,12 +350,6 @@ create_test_datom_repo <- function(project_name = "testproj",
   yaml_content <- list(
     project_name = project_name,
     storage = list(
-      governance = list(
-        type = "s3",
-        root = bucket,
-        prefix = prefix,
-        region = region
-      ),
       data = list(
         type = "s3",
         root = bucket,
@@ -365,8 +359,7 @@ create_test_datom_repo <- function(project_name = "testproj",
       max_file_size_gb = 1000
     ),
     repos = list(
-      data = list(remote_url = "https://github.com/test/repo.git"),
-      governance = list(remote_url = NULL, local_path = NULL)
+      data = list(remote_url = "https://github.com/test/repo.git")
     )
   )
 
@@ -670,10 +663,9 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
 
   cfg <- yaml::read_yaml(yaml_path)
   expect_equal(cfg$project_name, "testproj")
-  expect_equal(cfg$storage$governance$type, "s3")
-  expect_equal(cfg$storage$governance$root, "gov-bucket")
-  expect_equal(cfg$storage$governance$prefix, "gov/")
-  expect_equal(cfg$storage$governance$region, "eu-west-1")
+  # governance coordinates are NOT stored in project.yaml (live in governance.json)
+  expect_null(cfg$storage$governance)
+  expect_null(cfg$repos$governance)
   expect_equal(cfg$storage$data$type, "s3")
   expect_equal(cfg$storage$data$root, "my-bucket")
   expect_equal(cfg$storage$data$prefix, "data/")
@@ -684,6 +676,9 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   expect_null(cfg$storage$type)
   expect_null(cfg$storage$root)
   expect_null(cfg$storage$credentials)
+  # governance.json not written when store$gov_repo_url is absent
+  gov_json_path <- fs::path(env$work_dir, ".datom", "governance.json")
+  expect_false(fs::file_exists(gov_json_path))
 })
 
 test_that("datom_init_repo does NOT create dispatch.json in data clone (lives in gov repo)", {
@@ -2092,10 +2087,10 @@ test_that("datom_init_repo works with local stores", {
   expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "ref.json")))
   expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "dispatch.json")))
 
-  # Check project.yaml has local backend
+  # Check project.yaml has local backend; no governance block (lives in governance.json)
   cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
   expect_equal(cfg$storage$data$type, "local")
-  expect_equal(cfg$storage$governance$type, "local")
+  expect_null(cfg$storage$governance)
   expect_null(cfg$storage$data$region)
 
   # Check manifest was pushed to data storage
@@ -2515,15 +2510,18 @@ test_that("datom_attach_gov attaches gov, updates project.yaml, returns fresh co
   expect_equal(result$gov_root, env$gov_store$path)
   expect_equal(result$gov_local_path, as.character(fs::path_abs(env$gov_dir)))
 
-  # project.yaml updated
+  # project.yaml has NO governance coordinates (those live in governance.json)
   cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
-  expect_equal(cfg$storage$governance$type, "local")
-  expect_equal(cfg$storage$governance$root, env$gov_store$path)
-  expect_equal(cfg$repos$governance$remote_url, env$gov_bare)
+  expect_null(cfg$storage$governance)
+  expect_null(cfg$repos$governance)
 
-  # storage block ordering: governance before data
-  expect_equal(names(cfg$storage)[1], "governance")
-  expect_equal(names(cfg$storage)[2], "data")
+  # governance.json written to data clone with correct fields
+  gov_json_path <- fs::path(env$work_dir, ".datom", "governance.json")
+  expect_true(fs::file_exists(gov_json_path))
+  gov_json <- jsonlite::read_json(gov_json_path)
+  expect_equal(gov_json$gov_repo_url, env$gov_bare)
+  expect_equal(gov_json$gov_storage$type, "local")
+  expect_equal(gov_json$gov_storage$root, env$gov_store$path)
 
   # gov clone has projects/{name}/ with the three JSON files
   proj_dir <- fs::path(env$gov_dir, "projects", "attach-proj")
@@ -2642,10 +2640,15 @@ test_that("no-gov project transitions cleanly to gov-attached after datom_attach
   expect_equal(post_conn$root, pre_conn$root)
   expect_equal(post_conn$project_name, pre_conn$project_name)
 
-  # project.yaml now carries the governance block.
+  # governance.json now present; project.yaml still has NO governance block.
+  gov_json_path <- fs::path(env$work_dir, ".datom", "governance.json")
+  expect_true(fs::file_exists(gov_json_path))
+  gov_json <- jsonlite::read_json(gov_json_path)
+  expect_equal(gov_json$gov_repo_url, env$gov_bare)
+
   cfg_after <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
-  expect_false(is.null(cfg_after$storage$governance))
-  expect_equal(cfg_after$repos$governance$remote_url, env$gov_bare)
+  expect_null(cfg_after$storage$governance)
+  expect_null(cfg_after$repos$governance)
 
   # Gov clone has the project namespace files.
   proj_dir <- fs::path(env$gov_dir, "projects", "attach-proj")

@@ -466,30 +466,10 @@ datom_init_repo <- function(path = ".",
   if (data_backend == "s3") data_yaml$region <- data_region
 
   storage_block <- list()
-  if (has_gov) {
-    gov_backend <- .datom_store_backend(store$governance)
-    gov_root <- .datom_store_root(store$governance)
-    gov_region <- .datom_store_region(store$governance)
-
-    gov_yaml <- list(
-      type = gov_backend,
-      root = gov_root,
-      prefix = store$governance$prefix
-    )
-    if (gov_backend == "s3") gov_yaml$region <- gov_region
-
-    storage_block$governance <- gov_yaml
-  }
   storage_block$data <- data_yaml
   storage_block$max_file_size_gb <- max_file_size_gb
 
   repos_block <- list(data = list(remote_url = remote_url))
-  if (has_gov) {
-    repos_block$governance <- list(
-      remote_url = store$gov_repo_url,
-      local_path = store$gov_local_path
-    )
-  }
 
   project_config <- list(
     project_name = project_name,
@@ -506,6 +486,19 @@ datom_init_repo <- function(path = ".",
   )
 
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
+
+  # --- Write governance.json to data clone (when gov is attached) -------------
+  # governance.json is the canonical governance pointer; project.yaml carries
+  # no governance coordinates. Written only when gov_repo_url is known at init
+  # time; if absent, governance is attached later via datom_attach_gov().
+  gov_json <- NULL
+  if (has_gov && isTRUE(nzchar(store$gov_repo_url))) {
+    gov_json <- .datom_create_governance_json(
+      gov_repo_url = store$gov_repo_url,
+      gov_store    = store$governance
+    )
+    .datom_write_governance_json_local(path, gov_json)
+  }
 
   # --- Build dispatch and ref payloads (written to gov, not data clone) ------
   # Only meaningful when gov is attached; otherwise these stay NULL and the
@@ -564,12 +557,14 @@ datom_init_repo <- function(path = ".",
   git2r::remote_add(repo, name = "origin", url = remote_url)
 
   # Stage data-repo files only (dispatch.json and ref.json live in gov repo)
-  git2r::add(repo, c(
+  staged_files <- c(
     ".datom/project.yaml",
     ".datom/manifest.json",
     ".gitignore",
     "README.md"
-  ))
+  )
+  if (!is.null(gov_json)) staged_files <- c(staged_files, ".datom/governance.json")
+  git2r::add(repo, staged_files)
 
   git2r::commit(
     repo,
@@ -627,6 +622,19 @@ datom_init_repo <- function(path = ".",
       "i" = "After fixing the cause (e.g. credentials, connectivity), run {.fn datom_sync_manifest} to upload the manifest."
     ), call = NULL)
   })
+
+  # --- Mirror governance.json to data storage (when written) -----------------
+  if (!is.null(gov_json)) {
+    tryCatch({
+      .datom_storage_write_governance_json(data_conn, gov_json)
+    }, error = function(e) {
+      cli::cli_warn(c(
+        "governance.json upload to data storage failed.",
+        "x" = conditionMessage(e),
+        "i" = "Local copy is intact. Readers with gov access will resolve location from gov."
+      ))
+    })
+  }
 
   .init_success <- TRUE
 
@@ -922,9 +930,11 @@ datom_attach_gov <- function(conn,
   project_name <- cfg$project_name
 
   # --- Idempotence: already attached? ----------------------------------------
-  already_attached <- !is.null(conn$gov_root) || !is.null(cfg$storage$governance)
+  gov_json_path <- fs::path(conn$path, ".datom", "governance.json")
+  already_attached <- !is.null(conn$gov_root) || fs::file_exists(gov_json_path)
   if (already_attached) {
-    existing_url <- cfg$repos$governance$remote_url
+    existing_gov_json <- .datom_read_governance_json_local(conn$path)
+    existing_url <- if (!is.null(existing_gov_json)) existing_gov_json$gov_repo_url else NULL
     if (!is.null(existing_url) && !is.null(gov_repo_url) &&
         !identical(existing_url, gov_repo_url)) {
       cli::cli_abort(c(
@@ -1050,43 +1060,37 @@ datom_attach_gov <- function(conn,
 
   .datom_gov_register_project(attach_conn, project_name, dispatch, ref)
 
+  # --- Write governance.json (canonical governance attachment record) ---------
+  gov_json <- .datom_create_governance_json(
+    gov_repo_url = gov_repo_url,
+    gov_store    = gov_store
+  )
+  .datom_write_governance_json_local(conn$path, gov_json)
+
   # --- Update project.yaml in the data clone ----------------------------------
-  # Read-modify-write with a temp file + rename for atomicity, then commit
-  # + push the data repo. If this step fails after gov registration succeeded,
-  # the project is registered but the data clone is stale; user runs git
-  # pull on the data repo or re-invokes datom_attach_gov() (idempotent).
-  gov_yaml <- list(
-    type = gov_backend,
-    root = gov_root,
-    prefix = gov_prefix
-  )
-  if (gov_backend == "s3") gov_yaml$region <- gov_region
-
-  cfg$storage$governance <- gov_yaml
-  cfg$repos$governance <- list(
-    remote_url = gov_repo_url,
-    local_path = gov_local_path
-  )
-
-  # storage block ordering: governance before data (matches init writer)
-  storage_ordered <- list()
-  storage_ordered$governance <- cfg$storage$governance
-  storage_ordered$data <- cfg$storage$data
-  if (!is.null(cfg$storage$max_file_size_gb)) {
-    storage_ordered$max_file_size_gb <- cfg$storage$max_file_size_gb
-  }
-  cfg$storage <- storage_ordered
-
+  # project.yaml carries no governance coordinates -- those live in
+  # governance.json. Re-write as-is for atomicity; commit both files together.
   tmp_path <- fs::path(conn$path, ".datom", "project.yaml.tmp")
   yaml::write_yaml(cfg, tmp_path)
   fs::file_move(tmp_path, yaml_path)
 
   .datom_git_commit(
     conn$path,
-    files = ".datom/project.yaml",
+    files = c(".datom/project.yaml", ".datom/governance.json"),
     message = glue::glue("Attach governance: {project_name}")
   )
   .datom_git_push(conn$path, pat = conn$github_pat)
+
+  # --- Mirror governance.json to data storage ---------------------------------
+  tryCatch({
+    .datom_storage_write_governance_json(attach_conn, gov_json)
+  }, error = function(e) {
+    cli::cli_warn(c(
+      "governance.json storage upload failed.",
+      "x" = conditionMessage(e),
+      "i" = "Local copy is intact. Readers with gov access will resolve location from gov."
+    ))
+  })
 
   # --- Return fresh conn ------------------------------------------------------
   fresh_conn <- new_datom_conn(
