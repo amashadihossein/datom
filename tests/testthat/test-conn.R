@@ -470,6 +470,100 @@ test_that("developer path cross-checks root mismatch", {
 
 
 # =============================================================================
+# datom_get_conn() — developer path: governance.json four-state matrix
+# =============================================================================
+
+# Helper: local-backend repo with project.yaml; optionally writes governance.json.
+setup_gov_matrix_env <- function(write_gov_json = FALSE, env = parent.frame()) {
+  store_dir <- as.character(fs::path_norm(withr::local_tempdir(.local_envir = env)))
+  work_dir  <- withr::local_tempdir(.local_envir = env)
+  fs::dir_create(fs::path(work_dir, ".datom"))
+  yaml::write_yaml(
+    list(
+      project_name = "govtest",
+      storage = list(
+        data = list(type = "local", root = store_dir),
+        max_file_size_gb = 1000
+      ),
+      repos = list(data = list(remote_url = "https://github.com/test/r.git"))
+    ),
+    fs::path(work_dir, ".datom", "project.yaml")
+  )
+  if (write_gov_json) {
+    gov_json <- list(
+      gov_repo_url = "https://github.com/acme/gov.git",
+      gov_storage  = list(type = "local", root = as.character(store_dir)),
+      attached_at  = "2026-05-23T00:00:00Z"
+    )
+    jsonlite::write_json(gov_json, fs::path(work_dir, ".datom", "governance.json"),
+                         auto_unbox = TRUE, pretty = TRUE)
+  }
+  list(work_dir = work_dir, store_dir = store_dir)
+}
+
+test_that("four-state matrix [no gov.json + no store$gov]: proceeds as no-gov", {
+  env <- setup_gov_matrix_env(write_gov_json = FALSE)
+  data_comp <- datom_store_local(path = env$store_dir, validate = FALSE)
+  store <- datom_store(governance = NULL, data = data_comp,
+                       github_pat = "ghp_fake", validate = FALSE)
+  conn <- datom_get_conn(path = env$work_dir, store = store)
+  expect_s3_class(conn, "datom_conn")
+  expect_null(conn$gov_root)
+})
+
+test_that("four-state matrix [no gov.json + store$gov set]: warns, treats as no-gov", {
+  env <- setup_gov_matrix_env(write_gov_json = FALSE)
+  gov_comp  <- datom_store_local(path = env$store_dir, validate = FALSE)
+  data_comp <- datom_store_local(path = env$store_dir, validate = FALSE)
+  store <- datom_store(governance = gov_comp, data = data_comp,
+                       github_pat = "ghp_fake", validate = FALSE)
+  expect_warning(
+    conn <- datom_get_conn(path = env$work_dir, store = store),
+    "no governance attached"
+  )
+  # gov fields absent on resulting conn
+  expect_null(conn$gov_root)
+})
+
+test_that("four-state matrix [gov.json present + no store$gov]: aborts with clear message", {
+  env <- setup_gov_matrix_env(write_gov_json = TRUE)
+  data_comp <- datom_store_local(path = env$store_dir, validate = FALSE)
+  store <- datom_store(governance = NULL, data = data_comp,
+                       github_pat = "ghp_fake", validate = FALSE)
+  expect_error(
+    datom_get_conn(path = env$work_dir, store = store),
+    "gov-attached"
+  )
+})
+
+test_that("four-state matrix [gov.json present + store$gov set]: proceeds with gov fields", {
+  env <- setup_gov_matrix_env(write_gov_json = TRUE)
+  gov_comp  <- datom_store_local(path = env$store_dir, validate = FALSE)
+  data_comp <- datom_store_local(path = env$store_dir, validate = FALSE)
+  # No gov_repo_url on store -> cross-check is skipped; gov_local_path=NULL -> no ref resolution
+  store <- datom_store(governance = gov_comp, data = data_comp,
+                       github_pat = "ghp_fake", validate = FALSE)
+  conn <- datom_get_conn(path = env$work_dir, store = store)
+  expect_s3_class(conn, "datom_conn")
+  expect_false(is.null(conn$gov_root))
+  expect_equal(conn$gov_root, as.character(env$store_dir))
+})
+
+test_that("four-state matrix [gov.json present + store$gov set + URL mismatch]: aborts", {
+  env <- setup_gov_matrix_env(write_gov_json = TRUE)
+  gov_comp  <- datom_store_local(path = env$store_dir, validate = FALSE)
+  data_comp <- datom_store_local(path = env$store_dir, validate = FALSE)
+  store <- datom_store(governance = gov_comp, data = data_comp,
+                       gov_repo_url = "https://github.com/other/gov.git",
+                       github_pat = "ghp_fake", validate = FALSE)
+  expect_error(
+    datom_get_conn(path = env$work_dir, store = store),
+    "mismatch"
+  )
+})
+
+
+# =============================================================================
 # datom_get_conn() — reader path (store + project_name)
 # =============================================================================
 

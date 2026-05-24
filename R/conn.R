@@ -1410,10 +1410,55 @@ datom_get_conn <- function(path = NULL,
 
   role <- store$role
 
-  # gov_local_path: use explicit override from store if set, otherwise derive
-  # sibling default from the gov_repo_url (if available). Computed before ref
-  # resolution so the developer fast path can read from the local gov clone.
-  gov_local_path <- .datom_resolve_or_default_gov_path(store, as.character(path))
+  # --- Governance attachment detection (four-state matrix) -------------------
+  # governance.json (in the local clone) is the canonical gov-attachment signal.
+  # project.yaml carries no governance coordinates after Phase 21 Chunk 2.
+  gov_json <- .datom_read_governance_json_local(path)
+  has_gov_json  <- !is.null(gov_json)
+  has_gov_store <- !is.null(store$governance)
+
+  if (has_gov_json && !has_gov_store) {
+    cli::cli_abort(c(
+      "Project {.val {project_name}} is gov-attached but no governance store was supplied.",
+      "i" = "Add {.code governance = datom_store_*(...)} to your {.fn datom_store} call.",
+      "i" = "Supply credentials only -- data location is auto-resolved from {.fn ref.json}.",
+      "i" = "Gov repo:     {.url {gov_json$gov_repo_url}}",
+      "i" = "Gov storage:  {gov_json$gov_storage$type} / {gov_json$gov_storage$root}"
+    ))
+  }
+
+  if (!has_gov_json && has_gov_store) {
+    cli::cli_warn(c(
+      "Project {.val {project_name}} has no governance attached.",
+      "i" = "The governance store credentials supplied will be ignored.",
+      "i" = "Run {.fn datom_attach_gov} if you intend to attach governance."
+    ))
+  }
+
+  # Effective governance store: NULL when no gov.json (includes warn case above)
+  effective_gov_store <- if (has_gov_json) store$governance else NULL
+
+  if (has_gov_json && has_gov_store) {
+    # Cross-check gov_repo_url from governance.json against store, when supplied
+    expected_url <- store$gov_repo_url
+    recorded_url <- gov_json$gov_repo_url
+    if (!is.null(expected_url) && nzchar(expected_url) &&
+        !identical(expected_url, recorded_url)) {
+      cli::cli_abort(c(
+        "Governance URL mismatch for project {.val {project_name}}.",
+        "x" = "governance.json: {.url {recorded_url}}",
+        "x" = "store gov_repo_url: {.url {expected_url}}",
+        "i" = "Run {.fn datom_pull} to sync your local clone, or check your store."
+      ))
+    }
+  }
+
+  # gov_local_path: derive only when gov is actually attached; otherwise NULL.
+  gov_local_path <- if (!is.null(effective_gov_store)) {
+    .datom_resolve_or_default_gov_path(store, as.character(path))
+  } else {
+    NULL
+  }
 
   # Resolve data location via ref.json (if governance store present)
   ref_location <- .datom_resolve_data_location(
@@ -1440,7 +1485,7 @@ datom_get_conn <- function(path = NULL,
     project_name, effective_data_store,
     if (role == "developer") as.character(path) else NULL,
     role, endpoint,
-    gov_store = store$governance,
+    gov_store = effective_gov_store,
     gov_local_path = gov_local_path
   )
 
