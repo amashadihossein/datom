@@ -4,10 +4,13 @@
 \alias{.datom_check_git_current}
 \title{Check Local Branch is Current with Remote}
 \usage{
-.datom_check_git_current(path)
+.datom_check_git_current(path, pat = NULL)
 }
 \arguments{
 \item{path}{Repository path.}
+
+\item{pat}{GitHub personal access token. Passed to
+\code{.datom_git_credentials()}. NULL means unauthenticated.}
 }
 \value{
 Invisible \code{TRUE} if the local branch is up to date.
@@ -18,6 +21,6 @@ HEAD SHA. If the local branch is behind, aborts with a clear message
 telling the developer to pull first.
 }
 \details{
-Does NOT auto-pull — lets the developer decide how to resolve.
+Does NOT auto-pull - lets the developer decide how to resolve.
 }
 \keyword{internal}

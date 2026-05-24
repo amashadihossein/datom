@@ -522,37 +522,27 @@ test_that(".datom_git_push returns invisible TRUE", {
 # .datom_git_credentials()
 # =============================================================================
 
-test_that(".datom_git_credentials returns cred_user_pass for HTTPS with PAT", {
-  withr::local_envvar(GITHUB_PAT = "ghp_testtoken123", GITHUB_TOKEN = NA)
-
-  cred <- .datom_git_credentials("https://github.com/org/repo.git")
+test_that(".datom_git_credentials returns cred_user_pass for HTTPS with explicit PAT", {
+  cred <- .datom_git_credentials("https://github.com/org/repo.git", pat = "ghp_testtoken123")
   expect_s3_class(cred, "cred_user_pass")
 })
 
-test_that(".datom_git_credentials falls back to GITHUB_TOKEN", {
-  withr::local_envvar(GITHUB_PAT = NA, GITHUB_TOKEN = "ghp_fallback456")
+test_that(".datom_git_credentials returns NULL for HTTPS when no PAT supplied", {
+  cred <- .datom_git_credentials("https://github.com/org/repo.git", pat = NULL)
+  expect_null(cred)
+})
 
-  cred <- .datom_git_credentials("https://github.com/org/repo.git")
-  expect_s3_class(cred, "cred_user_pass")
+test_that(".datom_git_credentials returns NULL for HTTPS when PAT is empty string", {
+  cred <- .datom_git_credentials("https://github.com/org/repo.git", pat = "")
+  expect_null(cred)
 })
 
 test_that(".datom_git_credentials returns NULL for SSH remotes", {
-  withr::local_envvar(GITHUB_PAT = "ghp_testtoken123")
-
-  cred <- .datom_git_credentials("git@github.com:org/repo.git")
+  cred <- .datom_git_credentials("git@github.com:org/repo.git", pat = "ghp_testtoken123")
   expect_null(cred)
 })
 
 test_that(".datom_git_credentials returns NULL when no PAT is set", {
-  withr::local_envvar(GITHUB_PAT = NA, GITHUB_TOKEN = NA)
-
-  cred <- .datom_git_credentials("https://github.com/org/repo.git")
-  expect_null(cred)
-})
-
-test_that(".datom_git_credentials handles empty PAT strings", {
-  withr::local_envvar(GITHUB_PAT = "", GITHUB_TOKEN = "")
-
   cred <- .datom_git_credentials("https://github.com/org/repo.git")
   expect_null(cred)
 })

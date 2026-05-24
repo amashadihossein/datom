@@ -19,7 +19,7 @@ A \code{datom_conn} object (developer role).
 }
 \description{
 Clones a remote datom repository and returns a connection. This is the
-recommended way for teammates to join an existing datom project — it wraps
+recommended way for teammates to join an existing datom project -- it wraps
 \code{git2r::clone()} and immediately returns a ready-to-use \code{datom_conn}.
 }
 \details{

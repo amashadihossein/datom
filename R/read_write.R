@@ -513,7 +513,7 @@ datom_write <- function(conn,
   )
   commit_msg <- message %||% paste0("Update ", name)
   commit_sha <- .datom_git_commit(conn$path, git_files, commit_msg)
-  .datom_git_push(conn$path)
+  .datom_git_push(conn$path, pat = conn$github_pat)
 
   # 7. Upload parquet to S3 (only if data changed — after git succeeds)
   if (change_type == "full") {

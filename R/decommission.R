@@ -11,8 +11,9 @@
 #'
 #' 1. Delete all objects under the data storage namespace.
 #' 2. Delete the data GitHub repo via the GitHub REST API. Requires
-#'    `GITHUB_PAT` with the `delete_repo` scope; skipped with a warning if
-#'    the PAT is unavailable or the local clone has no GitHub remote.
+#'    `conn$github_pat` with the `delete_repo` scope; skipped with a warning
+#'    if `conn$github_pat` is NULL. Aborts if `conn$data_repo_url` is not set
+#'    (rebuild the conn with `datom_get_conn()` first).
 #' 3. Remove the local data clone directory (`conn$path`).
 #' 4. Unregister the project from the governance repo (git commit + push).
 #'    Skipped when the project has no governance attached
@@ -70,16 +71,19 @@ datom_decommission <- function(conn, confirm = NULL) {
   # ---- 2. Delete data GitHub repo -------------------------------------------
   tryCatch(
     {
-      # Read the GitHub remote URL from the local clone
-      repo_url <- tryCatch(
-        {
-          repo <- git2r::repository(conn$path)
-          git2r::remote_url(repo, "origin")
-        },
-        error = function(e) NULL
-      )
+      # Use conn$data_repo_url as the sole source -- no filesystem fallback.
+      # If it is NULL the conn was built without git identity (e.g. a bare
+      # test conn); abort with a clear recovery message rather than silently
+      # skipping or doing a fragile clone lookup.
+      repo_url <- conn$data_repo_url
+      if (is.null(repo_url)) {
+        cli::cli_abort(c(
+          "Cannot delete GitHub repository: {.field data_repo_url} is not set on this conn.",
+          "i" = "Rebuild the conn with {.fn datom_get_conn} and retry."
+        ))
+      }
 
-      if (is.null(repo_url) || !grepl("github\\.com", repo_url, ignore.case = TRUE)) {
+      if (!grepl("github\\.com", repo_url, ignore.case = TRUE)) {
         cli::cli_alert_info("No GitHub remote found -- skipping repo deletion.")
       } else {
         # Parse "owner/repo" from the URL (handles HTTPS and SSH)
@@ -89,10 +93,10 @@ datom_decommission <- function(conn, confirm = NULL) {
           repo_url,
           perl = TRUE
         )
-        pat <- Sys.getenv("GITHUB_PAT")
-        if (!nzchar(pat)) {
+        pat <- conn$github_pat
+        if (is.null(pat) || !nzchar(pat)) {
           cli::cli_alert_warning(
-            "GITHUB_PAT not set. Delete {.val {repo_full}} manually."
+            "No GitHub PAT on conn. Delete {.val {repo_full}} manually."
           )
         } else {
           cli::cli_alert_info("Deleting GitHub repo {.val {repo_full}}...")

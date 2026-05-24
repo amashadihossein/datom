@@ -105,7 +105,7 @@ Result: datom version unchanged ("xyz789")
 | **Data readers** | Consume versioned data for analysis, need reproducible access | Storage credentials (AWS for S3, none for local) |
 | **Data products** | Analytical applications built on versioned datoms (via dpbuild, dpdeploy, dpi) | AWS credentials only |
 
-User type is auto-detected based on the presence of `GITHUB_PAT`.
+Developer vs reader role is derived from the `github_pat` field on the `datom_store()` object. Users may source that value from `keyring`, `Sys.getenv("GITHUB_PAT")`, CI secrets, or another runtime secret store before constructing the store.
 
 ---
 
@@ -568,9 +568,9 @@ Flexible connection for both developers and readers:
 
 `endpoint`: Optional S3 endpoint URL. When `NULL` (default), standard S3 is used. datomaccess sets this to route reads through S3 access points for IAM enforcement. Stored in the returned `datom_conn` object and forwarded to all S3 operations.
 
-- Validates credentials based on `project_name` → `DATOM_{PROJECT_NAME}_*`
+- Validates store-provided credentials for the requested project
 - Resolves data location from ref.json at governance store
-- Auto-detects developer vs reader based on GITHUB_PAT presence
+- Auto-detects developer vs reader based on `datom_store()` role
 
 Returns: Connection object (`datom_conn` S3 class)
 
@@ -1148,7 +1148,11 @@ class DataProduct:
 
 ### Credential Handling
 
-Credentials are provided via `datom_store_s3()` objects and passed directly to `paws.storage::s3()` clients. No env var indirection or naming conventions — each `datom_conn` holds `client` (data store S3 client) and `gov_client` (governance store S3 client) created from the store’s credentials.
+Credentials are explicit runtime inputs. datom does not treat environment variables as its internal credential contract and never persists secrets as project state. Users may retrieve secret values from `keyring`, standard environment variables, CI secret stores, or another mechanism, then pass those values into store constructors.
+
+Storage credentials are provided via `datom_store_s3()` objects and passed directly to `paws.storage::s3()` clients. Each `datom_conn` holds `client` (data store S3 client) and `gov_client` (governance store S3 client) created from the store's credentials. GitHub credentials are provided via `datom_store(github_pat = ...)` for developer workflows; helpers may fall back to `GITHUB_PAT` or `GITHUB_TOKEN` only when no explicit PAT was supplied.
+
+Secrets are never written to `project.yaml`, metadata JSON, manifests, `ref.json`, `dispatch.json`, git remotes, logs, or unmasked print output.
 
 ### .datom/project.yaml
 
@@ -1271,8 +1275,8 @@ Documentary only — does not drive runtime behavior.
 ### Environment Validation
 
 - Credentials validated via store objects (`datom_store_s3()` runs `HeadBucket`)
-- GITHUB_PAT presence determines developer vs reader role
-- No env var naming conventions — credentials passed directly via store objects
+- `datom_store(github_pat = ...)` determines developer vs reader role
+- No env var naming conventions inside datom -- credentials are passed directly via store objects
 
 ### Project Structure Validation
 
@@ -1398,7 +1402,8 @@ datom will remain a client: reading gov state freely, writing only via the seam 
 ### Security Considerations
 
 - Never store credentials in files
-- Use standard environment variables exclusively
+- Accept secrets explicitly through store constructors; callers may source them from keyrings, standard environment variables, CI secret stores, or other runtime mechanisms
+- Use explicit secrets before env-var fallback when both are available
 - S3 metadata is read-only for data readers
 - Validate all paths for traversal attacks
 - Respect configured file size limits (**Planned** — `max_file_size_gb` stored in project.yaml but not enforced at runtime)
@@ -1441,16 +1446,16 @@ All stored as parquet regardless of input format.
 ### Validation Requirements
 
 **Initialization (Data Developers)**:
-- Environment variables: AWS credentials and GITHUB_PAT
+- Store-provided storage credentials and `github_pat`
 - GitHub PAT permissions and remote access
 - S3 bucket existence and write permissions
 - Git user.name and user.email configured
 - Validate prefix doesn't conflict with existing data
 
 **Connection**:
-- Data developers: Validates git + S3 access (GITHUB_PAT present)
+- Data developers: Validates git + S3 access (`github_pat` present on store)
 - Data readers: Validates S3 read access only
-- Auto-detects user type based on GITHUB_PAT presence
+- Auto-detects user type based on `datom_store()` role
 - Resolves data location from ref.json at governance store
 
 **Operations**:

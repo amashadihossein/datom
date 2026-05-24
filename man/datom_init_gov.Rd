@@ -24,9 +24,9 @@ projects will use to register their dispatch and ref files.}
 with \code{create_repo = TRUE}.}
 
 \item{gov_local_path}{Local path for the governance clone.  When \code{NULL},
-derived from the basename of \code{gov_repo_url} (\code{.git} suffix stripped) in
-the current directory.  When \code{create_repo = TRUE} and no URL is known
-yet, set this explicitly or let it default to \code{repo_name}.}
+defaults to \verb{tools::R_user_dir("datom", "data")/<repo_name>} (never
+CWD-relative).  When \code{create_repo = TRUE} and no URL is known yet, set
+this explicitly or let it default to \code{repo_name} under the user data dir.}
 
 \item{create_repo}{If \code{TRUE}, create a GitHub repo via the API and use the
 returned URL.  Mutually exclusive with providing \code{gov_repo_url}.}

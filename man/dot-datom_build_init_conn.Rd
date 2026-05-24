@@ -11,7 +11,9 @@
   role,
   endpoint = NULL,
   gov_store = NULL,
-  gov_local_path = NULL
+  gov_local_path = NULL,
+  data_repo_url = NULL,
+  github_pat = NULL
 )
 }
 \arguments{
