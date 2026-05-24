@@ -84,8 +84,11 @@ user provides: gov_store credentials + project_name + data credentials
 ```
 user provides: data_store credentials (root/prefix/region) + project_name
   -> read governance.json from data storage
-  -> if present: hard error directing user to add governance to their store
-                 (with gov_repo_url and gov_storage echoed in the error)
+  -> if present: warn "This project has governance attached. Connection
+                 resolved using supplied coordinates, which may become
+                 stale after a data migration. Upgrade by passing
+                 governance = datom_store_*(...) -- location is
+                 auto-resolved." then proceed with supplied coordinates.
   -> if absent: project is no-gov, use data_store as-is
 ```
 
@@ -315,14 +318,14 @@ Two entry styles:
 **Style B: data-first** (`store$governance` NULL, `store$data` has root)
 - Build a temporary data conn (the existing `.datom_build_init_conn()` does this).
 - Read `governance.json` from data storage via `.datom_storage_read_governance_json(temp_conn)`.
-- If present: abort with "this project is gov-attached. Rebuild your store with `governance = datom_store_*(...)`. You can pass credentials only; location is auto-resolved." Echo `gov_repo_url` and `gov_storage`.
+- If present: **warn** (do not abort) -- message: "This project has governance attached. Your connection was resolved using the coordinates you supplied, which may become stale after a data migration. To stay current, rebuild your store with `governance = datom_store_*(...)` and pass credentials only -- location is auto-resolved. Governance: {gov_repo_url}." Then return the temp conn (warn-and-proceed).
 - If absent: no-gov; return the temp conn (becomes the real conn).
 
 Tests:
 - Style A happy path against an attached project.
 - Style A credentials-only data store (introduces Chunk 6 dependency -- order chunks so this test lands in Chunk 6 if needed).
 - Style B happy path against a no-gov project.
-- Style B against a gov-attached project: expect specific error with `gov_repo_url` in the message.
+- Style B against a gov-attached project: expect a **warning** (not an error) containing `gov_repo_url`; assert conn is returned and usable.
 
 ### Chunk 5 -- `ref.json` as bootstrap
 
@@ -461,7 +464,7 @@ Final audit:
 ## 8. Acceptance Criteria (Phase-Level)
 
 1. A gov-attached reader can construct a connection by supplying gov credentials + project_name + data credentials only -- no data root/prefix/region.
-2. A reader holding only data credentials against a gov-attached project gets a clear error directing them to supply gov credentials.
+2. A reader holding only data credentials against a gov-attached project gets a **warning** (not an error) that the connection may become stale after migration, and the connection succeeds using the supplied coordinates.
 3. A no-gov reader still requires data root/prefix/region.
 4. `governance.json` is written to both git and data storage by `datom_init_repo()` (when gov supplied) and `datom_attach_gov()`.
 5. `project.yaml` no longer contains `storage.governance` or `repos.governance`.
