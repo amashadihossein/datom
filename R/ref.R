@@ -255,7 +255,22 @@
     }
   )
 
-  if (is.null(ref_location)) return(NULL)
+  if (is.null(ref_location)) {
+    # Credentials-only store has no fallback location; abort rather than
+    # silently proceeding with a NULL root.
+    if (is_datom_store_s3_creds(store$data)) {
+      cli::cli_abort(c(
+        "Cannot connect: {.fn datom_store_s3_creds} data store has no location.",
+        "x" = "ref.json could not be resolved for project {.val {project_name}}.",
+        "i" = "Ensure governance is reachable and {.fn datom_pull_gov} is up to date."
+      ))
+    }
+    return(NULL)
+  }
+
+  # Credentials-only data store: no location to compare against.
+  # Return ref_location as-is; the caller synthesises a full datom_store_s3.
+  if (is_datom_store_s3_creds(store$data)) return(ref_location)
 
   # Compare ref location against store$data
   store_root <- .datom_store_root(store$data)

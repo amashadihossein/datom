@@ -1400,7 +1400,7 @@ datom_get_conn <- function(path = NULL,
   if (!is.null(storage)) {
     data_storage <- storage$data %||% storage
     yaml_root <- data_storage$root
-    if (!is.null(yaml_root) && !identical(yaml_root, data_root)) {
+    if (!is.null(yaml_root) && !is.null(data_root) && !identical(yaml_root, data_root)) {
       cli::cli_abort(c(
         "Store/config mismatch: store data root is {.val {data_root}} but {.file project.yaml} says {.val {yaml_root}}.",
         "i" = "Ensure the store matches the project configuration."
@@ -1469,13 +1469,28 @@ datom_get_conn <- function(path = NULL,
     endpoint = endpoint
   )
 
-  # If ref resolved a different location, build a modified data store
+  # Synthesise effective_data_store, handling credentials-only case.
+  # For datom_store_s3_creds, ref_location supplies the location fields;
+  # the client is built from the synthesised full store so the correct
+  # region is used from the start.
   effective_data_store <- store$data
   migrated <- FALSE
-  if (!is.null(ref_location)) {
-    ref_root <- ref_location$root
+
+  if (is_datom_store_s3_creds(store$data)) {
+    # ref_location is guaranteed non-NULL: .datom_resolve_data_location() aborts otherwise.
+    effective_data_store <- datom_store_s3(
+      bucket        = ref_location$root,
+      prefix        = ref_location$prefix,
+      region        = ref_location$region %||% "us-east-1",
+      access_key    = store$data$access_key,
+      secret_key    = store$data$secret_key,
+      session_token = store$data$session_token,
+      validate      = FALSE
+    )
+  } else if (!is.null(ref_location)) {
+    ref_root   <- ref_location$root
     ref_prefix <- ref_location$prefix
-    store_root <- .datom_store_root(store$data)
+    store_root   <- .datom_store_root(store$data)
     store_prefix <- store$data$prefix
     migrated <- !identical(ref_root, store_root) ||
       !identical(ref_prefix %||% NULL, store_prefix %||% NULL)
@@ -1536,18 +1551,32 @@ datom_get_conn <- function(path = NULL,
     endpoint = endpoint
   )
 
+  # Synthesise effective_data_store, handling credentials-only case.
+  effective_data_store <- store$data
   migrated <- FALSE
-  if (!is.null(ref_location)) {
-    ref_root <- ref_location$root
+
+  if (is_datom_store_s3_creds(store$data)) {
+    # ref_location is guaranteed non-NULL: .datom_resolve_data_location() aborts otherwise.
+    effective_data_store <- datom_store_s3(
+      bucket        = ref_location$root,
+      prefix        = ref_location$prefix,
+      region        = ref_location$region %||% "us-east-1",
+      access_key    = store$data$access_key,
+      secret_key    = store$data$secret_key,
+      session_token = store$data$session_token,
+      validate      = FALSE
+    )
+  } else if (!is.null(ref_location)) {
+    ref_root   <- ref_location$root
     ref_prefix <- ref_location$prefix
-    store_root <- .datom_store_root(store$data)
+    store_root   <- .datom_store_root(store$data)
     store_prefix <- store$data$prefix
     migrated <- !identical(ref_root, store_root) ||
       !identical(ref_prefix %||% NULL, store_prefix %||% NULL)
   }
 
   conn <- .datom_build_init_conn(
-    project_name, store$data, NULL, store$role, endpoint,
+    project_name, effective_data_store, NULL, store$role, endpoint,
     gov_store = store$governance,
     gov_local_path = NULL
   )

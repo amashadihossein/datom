@@ -682,6 +682,189 @@ test_that("reader Style A [gov store supplied]: skips data-first probe", {
 
 
 # =============================================================================
+# datom_get_conn() — reader path: datom_store_s3_creds bootstrap (Chunk 6)
+# =============================================================================
+
+# Helper: set up a local gov store with projects/p/ref.json staged at the
+# correct path for local-backend resolution.
+setup_creds_ref_env <- function(
+    data_root  = NULL,
+    data_prefix = NULL,
+    data_region = "eu-west-1",
+    env = parent.frame()
+) {
+  gov_store_dir <- as.character(fs::path_norm(withr::local_tempdir(.local_envir = env)))
+  # ref.json lives at {gov_root}/datom/projects/p/ref.json
+  ref_dir <- fs::path(gov_store_dir, "datom", "projects", "p")
+  fs::dir_create(ref_dir)
+  effective_data_root <- data_root %||% as.character(
+    fs::path_norm(withr::local_tempdir(.local_envir = env))
+  )
+  ref_content <- list(
+    current = list(
+      type   = "local",
+      root   = effective_data_root,
+      prefix = data_prefix,
+      region = data_region
+    ),
+    previous = list()
+  )
+  jsonlite::write_json(ref_content, fs::path(ref_dir, "ref.json"),
+                       auto_unbox = TRUE, pretty = TRUE, null = "null")
+  list(gov_store_dir = gov_store_dir, data_root = effective_data_root)
+}
+
+test_that("reader creds-only: conn has root/prefix/region from ref.json", {
+  env <- setup_creds_ref_env(data_prefix = "proj/", data_region = "eu-west-1")
+  gov_comp   <- datom_store_local(path = env$gov_store_dir, validate = FALSE)
+  creds_comp <- datom_store_s3_creds(access_key = "AKIA", secret_key = "sec")
+  store <- datom_store(governance = gov_comp, data = creds_comp, validate = FALSE)
+
+  local_mocked_bindings(
+    .datom_s3_client = function(...) mock_s3_client()
+  )
+
+  conn <- datom_get_conn(store = store, project_name = "p")
+
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$root, env$data_root)
+  expect_equal(conn$prefix, "proj/")
+  expect_equal(conn$region, "eu-west-1")
+  expect_equal(conn$backend, "s3")
+})
+
+test_that("reader creds-only: hard abort when ref.json is absent", {
+  gov_store_dir <- as.character(fs::path_norm(withr::local_tempdir()))
+  # Create gov root directory structure but no ref.json
+  fs::dir_create(fs::path(gov_store_dir, "datom", "projects", "p"))
+  gov_comp   <- datom_store_local(path = gov_store_dir, validate = FALSE)
+  creds_comp <- datom_store_s3_creds(access_key = "AKIA", secret_key = "sec")
+  store <- datom_store(governance = gov_comp, data = creds_comp, validate = FALSE)
+
+  expect_error(
+    datom_get_conn(store = store, project_name = "p"),
+    "datom_store_s3_creds.*no location|no location.*datom_store_s3_creds|ref.json could not"
+  )
+})
+
+test_that("reader creds-only: region defaults to us-east-1 when absent from ref", {
+  gov_store_dir <- as.character(fs::path_norm(withr::local_tempdir()))
+  data_root <- as.character(fs::path_norm(withr::local_tempdir()))
+  ref_dir <- fs::path(gov_store_dir, "datom", "projects", "p")
+  fs::dir_create(ref_dir)
+  # ref.json with no region field
+  jsonlite::write_json(
+    list(current = list(type = "local", root = data_root, prefix = NULL), previous = list()),
+    fs::path(ref_dir, "ref.json"), auto_unbox = TRUE, null = "null"
+  )
+  gov_comp   <- datom_store_local(path = gov_store_dir, validate = FALSE)
+  creds_comp <- datom_store_s3_creds(access_key = "AKIA", secret_key = "sec")
+  store <- datom_store(governance = gov_comp, data = creds_comp, validate = FALSE)
+
+  local_mocked_bindings(
+    .datom_s3_client = function(...) mock_s3_client()
+  )
+
+  conn <- datom_get_conn(store = store, project_name = "p")
+  expect_equal(conn$region, "us-east-1")
+})
+
+test_that("reader fully-specified store: unchanged behavior (no regression)", {
+  # A normal datom_store_local data component still works as before.
+  env <- setup_creds_ref_env()
+  data_comp <- datom_store_local(path = env$data_root, validate = FALSE)
+  gov_comp  <- datom_store_local(path = env$gov_store_dir, validate = FALSE)
+  store <- datom_store(governance = gov_comp, data = data_comp, validate = FALSE)
+  conn <- datom_get_conn(store = store, project_name = "p")
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$root, env$data_root)
+})
+
+
+# =============================================================================
+# datom_get_conn() — developer path: datom_store_s3_creds bootstrap (Chunk 6)
+# =============================================================================
+
+setup_creds_dev_env <- function(data_prefix = NULL, data_region = "ap-southeast-1",
+                                env = parent.frame()) {
+  gov_store_dir <- as.character(fs::path_norm(withr::local_tempdir(.local_envir = env)))
+  data_root     <- as.character(fs::path_norm(withr::local_tempdir(.local_envir = env)))
+  work_dir      <- withr::local_tempdir(.local_envir = env)
+  fs::dir_create(fs::path(work_dir, ".datom"))
+
+  # Stage ref.json in gov store
+  ref_dir <- fs::path(gov_store_dir, "datom", "projects", "p")
+  fs::dir_create(ref_dir)
+  jsonlite::write_json(
+    list(
+      current = list(type = "local", root = data_root, prefix = data_prefix,
+                     region = data_region),
+      previous = list()
+    ),
+    fs::path(ref_dir, "ref.json"), auto_unbox = TRUE, null = "null", pretty = TRUE
+  )
+
+  # Stage ref.json in gov clone too (developer reads from clone when available)
+  gov_clone_dir <- as.character(fs::path_norm(withr::local_tempdir(.local_envir = env)))
+  clone_ref_dir <- fs::path(gov_clone_dir, "projects", "p")
+  fs::dir_create(clone_ref_dir)
+  jsonlite::write_json(
+    list(
+      current = list(type = "local", root = data_root, prefix = data_prefix,
+                     region = data_region),
+      previous = list()
+    ),
+    fs::path(clone_ref_dir, "ref.json"), auto_unbox = TRUE, null = "null", pretty = TRUE
+  )
+
+  # Stage governance.json in work_dir so gov detection triggers
+  gov_json <- list(
+    gov_repo_url = "https://github.com/acme/gov.git",
+    gov_storage  = list(type = "local", root = gov_store_dir),
+    attached_at  = "2026-05-23T00:00:00Z"
+  )
+  jsonlite::write_json(gov_json, fs::path(work_dir, ".datom", "governance.json"),
+                       auto_unbox = TRUE, pretty = TRUE)
+
+  # project.yaml with data root (will be cross-checked only when data_root is non-NULL)
+  yaml::write_yaml(
+    list(
+      project_name = "p",
+      storage = list(
+        data = list(type = "local", root = data_root),
+        max_file_size_gb = 1000
+      ),
+      repos = list(data = list(remote_url = "https://github.com/test/r.git"))
+    ),
+    fs::path(work_dir, ".datom", "project.yaml")
+  )
+
+  list(work_dir = work_dir, gov_clone_dir = gov_clone_dir,
+       gov_store_dir = gov_store_dir, data_root = data_root)
+}
+
+test_that("developer creds-only: conn has root/prefix/region from ref.json", {
+  env <- setup_creds_dev_env(data_prefix = "myproj/", data_region = "ap-southeast-1")
+  gov_comp   <- datom_store_local(path = env$gov_store_dir, validate = FALSE)
+  creds_comp <- datom_store_s3_creds(access_key = "AKIA", secret_key = "sec")
+  store <- datom_store(governance = gov_comp, data = creds_comp,
+                       gov_local_path = env$gov_clone_dir,
+                       github_pat = "ghp_fake", validate = FALSE)
+
+  local_mocked_bindings(
+    .datom_s3_client = function(...) mock_s3_client()
+  )
+
+  conn <- datom_get_conn(path = env$work_dir, store = store)
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$root, env$data_root)
+  expect_equal(conn$prefix, "myproj/")
+  expect_equal(conn$region, "ap-southeast-1")
+  expect_equal(conn$backend, "s3")
+})
+
+
+# =============================================================================
 # datom_init_repo()
 # =============================================================================
 
