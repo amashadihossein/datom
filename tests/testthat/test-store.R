@@ -175,6 +175,114 @@ test_that("print.datom_store_s3() omits prefix when NULL", {
 })
 
 
+# --- datom_store_s3_creds: credentials-only S3 component ---------------------
+
+test_that("datom_store_s3_creds() creates valid object with required fields", {
+  creds <- datom_store_s3_creds(
+    access_key = "AKIAIOSFODNN7EXAMPLE",
+    secret_key = "wJalrXUtnFEMI/K7MDENG"
+  )
+  expect_s3_class(creds, "datom_store_s3_creds")
+  expect_equal(creds$access_key, "AKIAIOSFODNN7EXAMPLE")
+  expect_equal(creds$secret_key, "wJalrXUtnFEMI/K7MDENG")
+  expect_null(creds$session_token)
+})
+
+test_that("datom_store_s3_creds() accepts session_token", {
+  creds <- datom_store_s3_creds(
+    access_key = "AKIA", secret_key = "sec", session_token = "tok123"
+  )
+  expect_equal(creds$session_token, "tok123")
+})
+
+test_that("datom_store_s3_creds() errors on empty access_key", {
+  expect_error(
+    datom_store_s3_creds(access_key = "", secret_key = "y"),
+    "access_key"
+  )
+})
+
+test_that("datom_store_s3_creds() errors on empty secret_key", {
+  expect_error(
+    datom_store_s3_creds(access_key = "x", secret_key = ""),
+    "secret_key"
+  )
+})
+
+test_that("datom_store_s3_creds() errors on empty session_token", {
+  expect_error(
+    datom_store_s3_creds(access_key = "x", secret_key = "y", session_token = ""),
+    "session_token"
+  )
+})
+
+test_that("is_datom_store_s3_creds() returns TRUE for creds object", {
+  creds <- datom_store_s3_creds(access_key = "x", secret_key = "y")
+  expect_true(is_datom_store_s3_creds(creds))
+})
+
+test_that("is_datom_store_s3_creds() returns FALSE for other types", {
+  expect_false(is_datom_store_s3_creds(list()))
+  expect_false(is_datom_store_s3_creds(
+    datom_store_s3(bucket = "b", access_key = "x", secret_key = "y", validate = FALSE)
+  ))
+})
+
+test_that("print.datom_store_s3_creds() masks secrets and shows ref.json note", {
+  creds <- datom_store_s3_creds(
+    access_key = "AKIAIOSFODNN7EXAMPLE",
+    secret_key = "wJalrXUtnFEMI/K7MDENG"
+  )
+  output_text <- paste(capture.output(print(creds), type = "message"), collapse = "\n")
+  expect_false(grepl("AKIAIOSFODNN7EXAMPLE", output_text))
+  expect_true(grepl("AKIA", output_text))
+  expect_true(grepl("ref.json", output_text))
+  expect_s3_class(creds, "datom_store_s3_creds")
+})
+
+test_that(".is_datom_store_component() accepts datom_store_s3_creds", {
+  creds <- datom_store_s3_creds(access_key = "x", secret_key = "y")
+  expect_true(.is_datom_store_component(creds))
+})
+
+test_that(".datom_store_backend() returns 's3' for datom_store_s3_creds", {
+  creds <- datom_store_s3_creds(access_key = "x", secret_key = "y")
+  expect_equal(.datom_store_backend(creds), "s3")
+})
+
+test_that(".datom_store_root() returns NULL for datom_store_s3_creds", {
+  creds <- datom_store_s3_creds(access_key = "x", secret_key = "y")
+  expect_null(.datom_store_root(creds))
+})
+
+test_that(".datom_store_region() returns NULL for datom_store_s3_creds", {
+  creds <- datom_store_s3_creds(access_key = "x", secret_key = "y")
+  expect_null(.datom_store_region(creds))
+})
+
+test_that("datom_store() accepts creds-only data when governance is present", {
+  creds <- datom_store_s3_creds(access_key = "x", secret_key = "y")
+  gov   <- datom_store_s3(
+    bucket = "gov-bucket", access_key = "x", secret_key = "y", validate = FALSE
+  )
+  store <- datom_store(
+    data       = creds,
+    governance = gov,
+    validate   = FALSE
+  )
+  expect_s3_class(store, "datom_store")
+  expect_s3_class(store$data, "datom_store_s3_creds")
+})
+
+test_that("datom_store() aborts creds-only data without governance", {
+  creds <- datom_store_s3_creds(access_key = "x", secret_key = "y")
+  expect_error(
+    datom_store(data = creds, governance = NULL, validate = FALSE),
+    "requires a governance component"
+  )
+})
+
+
 # --- .datom_mask_secret -------------------------------------------------------
 
 test_that(".datom_mask_secret() shows first 4 chars then ****", {
