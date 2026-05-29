@@ -466,30 +466,10 @@ datom_init_repo <- function(path = ".",
   if (data_backend == "s3") data_yaml$region <- data_region
 
   storage_block <- list()
-  if (has_gov) {
-    gov_backend <- .datom_store_backend(store$governance)
-    gov_root <- .datom_store_root(store$governance)
-    gov_region <- .datom_store_region(store$governance)
-
-    gov_yaml <- list(
-      type = gov_backend,
-      root = gov_root,
-      prefix = store$governance$prefix
-    )
-    if (gov_backend == "s3") gov_yaml$region <- gov_region
-
-    storage_block$governance <- gov_yaml
-  }
   storage_block$data <- data_yaml
   storage_block$max_file_size_gb <- max_file_size_gb
 
   repos_block <- list(data = list(remote_url = remote_url))
-  if (has_gov) {
-    repos_block$governance <- list(
-      remote_url = store$gov_repo_url,
-      local_path = store$gov_local_path
-    )
-  }
 
   project_config <- list(
     project_name = project_name,
@@ -506,6 +486,19 @@ datom_init_repo <- function(path = ".",
   )
 
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
+
+  # --- Write governance.json to data clone (when gov is attached) -------------
+  # governance.json is the canonical governance pointer; project.yaml carries
+  # no governance coordinates. Written only when gov_repo_url is known at init
+  # time; if absent, governance is attached later via datom_attach_gov().
+  gov_json <- NULL
+  if (has_gov && isTRUE(nzchar(store$gov_repo_url))) {
+    gov_json <- .datom_create_governance_json(
+      gov_repo_url = store$gov_repo_url,
+      gov_store    = store$governance
+    )
+    .datom_write_governance_json_local(path, gov_json)
+  }
 
   # --- Build dispatch and ref payloads (written to gov, not data clone) ------
   # Only meaningful when gov is attached; otherwise these stay NULL and the
@@ -564,12 +557,14 @@ datom_init_repo <- function(path = ".",
   git2r::remote_add(repo, name = "origin", url = remote_url)
 
   # Stage data-repo files only (dispatch.json and ref.json live in gov repo)
-  git2r::add(repo, c(
+  staged_files <- c(
     ".datom/project.yaml",
     ".datom/manifest.json",
     ".gitignore",
     "README.md"
-  ))
+  )
+  if (!is.null(gov_json)) staged_files <- c(staged_files, ".datom/governance.json")
+  git2r::add(repo, staged_files)
 
   git2r::commit(
     repo,
@@ -627,6 +622,19 @@ datom_init_repo <- function(path = ".",
       "i" = "After fixing the cause (e.g. credentials, connectivity), run {.fn datom_sync_manifest} to upload the manifest."
     ), call = NULL)
   })
+
+  # --- Mirror governance.json to data storage (when written) -----------------
+  if (!is.null(gov_json)) {
+    tryCatch({
+      .datom_storage_write_governance_json(data_conn, gov_json)
+    }, error = function(e) {
+      cli::cli_warn(c(
+        "governance.json upload to data storage failed.",
+        "x" = conditionMessage(e),
+        "i" = "Local copy is intact. Readers with gov access will resolve location from gov."
+      ))
+    })
+  }
 
   .init_success <- TRUE
 
@@ -922,9 +930,11 @@ datom_attach_gov <- function(conn,
   project_name <- cfg$project_name
 
   # --- Idempotence: already attached? ----------------------------------------
-  already_attached <- !is.null(conn$gov_root) || !is.null(cfg$storage$governance)
+  gov_json_path <- fs::path(conn$path, ".datom", "governance.json")
+  already_attached <- !is.null(conn$gov_root) || fs::file_exists(gov_json_path)
   if (already_attached) {
-    existing_url <- cfg$repos$governance$remote_url
+    existing_gov_json <- .datom_read_governance_json_local(conn$path)
+    existing_url <- if (!is.null(existing_gov_json)) existing_gov_json$gov_repo_url else NULL
     if (!is.null(existing_url) && !is.null(gov_repo_url) &&
         !identical(existing_url, gov_repo_url)) {
       cli::cli_abort(c(
@@ -1050,43 +1060,37 @@ datom_attach_gov <- function(conn,
 
   .datom_gov_register_project(attach_conn, project_name, dispatch, ref)
 
+  # --- Write governance.json (canonical governance attachment record) ---------
+  gov_json <- .datom_create_governance_json(
+    gov_repo_url = gov_repo_url,
+    gov_store    = gov_store
+  )
+  .datom_write_governance_json_local(conn$path, gov_json)
+
   # --- Update project.yaml in the data clone ----------------------------------
-  # Read-modify-write with a temp file + rename for atomicity, then commit
-  # + push the data repo. If this step fails after gov registration succeeded,
-  # the project is registered but the data clone is stale; user runs git
-  # pull on the data repo or re-invokes datom_attach_gov() (idempotent).
-  gov_yaml <- list(
-    type = gov_backend,
-    root = gov_root,
-    prefix = gov_prefix
-  )
-  if (gov_backend == "s3") gov_yaml$region <- gov_region
-
-  cfg$storage$governance <- gov_yaml
-  cfg$repos$governance <- list(
-    remote_url = gov_repo_url,
-    local_path = gov_local_path
-  )
-
-  # storage block ordering: governance before data (matches init writer)
-  storage_ordered <- list()
-  storage_ordered$governance <- cfg$storage$governance
-  storage_ordered$data <- cfg$storage$data
-  if (!is.null(cfg$storage$max_file_size_gb)) {
-    storage_ordered$max_file_size_gb <- cfg$storage$max_file_size_gb
-  }
-  cfg$storage <- storage_ordered
-
+  # project.yaml carries no governance coordinates -- those live in
+  # governance.json. Re-write as-is for atomicity; commit both files together.
   tmp_path <- fs::path(conn$path, ".datom", "project.yaml.tmp")
   yaml::write_yaml(cfg, tmp_path)
   fs::file_move(tmp_path, yaml_path)
 
   .datom_git_commit(
     conn$path,
-    files = ".datom/project.yaml",
+    files = c(".datom/project.yaml", ".datom/governance.json"),
     message = glue::glue("Attach governance: {project_name}")
   )
   .datom_git_push(conn$path, pat = conn$github_pat)
+
+  # --- Mirror governance.json to data storage ---------------------------------
+  tryCatch({
+    .datom_storage_write_governance_json(attach_conn, gov_json)
+  }, error = function(e) {
+    cli::cli_warn(c(
+      "governance.json storage upload failed.",
+      "x" = conditionMessage(e),
+      "i" = "Local copy is intact. Readers with gov access will resolve location from gov."
+    ))
+  })
 
   # --- Return fresh conn ------------------------------------------------------
   fresh_conn <- new_datom_conn(
@@ -1396,7 +1400,7 @@ datom_get_conn <- function(path = NULL,
   if (!is.null(storage)) {
     data_storage <- storage$data %||% storage
     yaml_root <- data_storage$root
-    if (!is.null(yaml_root) && !identical(yaml_root, data_root)) {
+    if (!is.null(yaml_root) && !is.null(data_root) && !identical(yaml_root, data_root)) {
       cli::cli_abort(c(
         "Store/config mismatch: store data root is {.val {data_root}} but {.file project.yaml} says {.val {yaml_root}}.",
         "i" = "Ensure the store matches the project configuration."
@@ -1406,10 +1410,55 @@ datom_get_conn <- function(path = NULL,
 
   role <- store$role
 
-  # gov_local_path: use explicit override from store if set, otherwise derive
-  # sibling default from the gov_repo_url (if available). Computed before ref
-  # resolution so the developer fast path can read from the local gov clone.
-  gov_local_path <- .datom_resolve_or_default_gov_path(store, as.character(path))
+  # --- Governance attachment detection (four-state matrix) -------------------
+  # governance.json (in the local clone) is the canonical gov-attachment signal.
+  # project.yaml carries no governance coordinates after Phase 21 Chunk 2.
+  gov_json <- .datom_read_governance_json_local(path)
+  has_gov_json  <- !is.null(gov_json)
+  has_gov_store <- !is.null(store$governance)
+
+  if (has_gov_json && !has_gov_store) {
+    cli::cli_abort(c(
+      "Project {.val {project_name}} is gov-attached but no governance store was supplied.",
+      "i" = "Add {.code governance = datom_store_*(...)} to your {.fn datom_store} call.",
+      "i" = "Supply credentials only -- data location is auto-resolved from {.fn ref.json}.",
+      "i" = "Gov repo:     {.url {gov_json$gov_repo_url}}",
+      "i" = "Gov storage:  {gov_json$gov_storage$type} / {gov_json$gov_storage$root}"
+    ))
+  }
+
+  if (!has_gov_json && has_gov_store) {
+    cli::cli_warn(c(
+      "Project {.val {project_name}} has no governance attached.",
+      "i" = "The governance store credentials supplied will be ignored.",
+      "i" = "Run {.fn datom_attach_gov} if you intend to attach governance."
+    ))
+  }
+
+  # Effective governance store: NULL when no gov.json (includes warn case above)
+  effective_gov_store <- if (has_gov_json) store$governance else NULL
+
+  if (has_gov_json && has_gov_store) {
+    # Cross-check gov_repo_url from governance.json against store, when supplied
+    expected_url <- store$gov_repo_url
+    recorded_url <- gov_json$gov_repo_url
+    if (!is.null(expected_url) && nzchar(expected_url) &&
+        !identical(expected_url, recorded_url)) {
+      cli::cli_abort(c(
+        "Governance URL mismatch for project {.val {project_name}}.",
+        "x" = "governance.json: {.url {recorded_url}}",
+        "x" = "store gov_repo_url: {.url {expected_url}}",
+        "i" = "Run {.fn datom_pull} to sync your local clone, or check your store."
+      ))
+    }
+  }
+
+  # gov_local_path: derive only when gov is actually attached; otherwise NULL.
+  gov_local_path <- if (!is.null(effective_gov_store)) {
+    .datom_resolve_or_default_gov_path(store, as.character(path))
+  } else {
+    NULL
+  }
 
   # Resolve data location via ref.json (if governance store present)
   ref_location <- .datom_resolve_data_location(
@@ -1420,13 +1469,28 @@ datom_get_conn <- function(path = NULL,
     endpoint = endpoint
   )
 
-  # If ref resolved a different location, build a modified data store
+  # Synthesise effective_data_store, handling credentials-only case.
+  # For datom_store_s3_creds, ref_location supplies the location fields;
+  # the client is built from the synthesised full store so the correct
+  # region is used from the start.
   effective_data_store <- store$data
   migrated <- FALSE
-  if (!is.null(ref_location)) {
-    ref_root <- ref_location$root
+
+  if (is_datom_store_s3_creds(store$data)) {
+    # ref_location is guaranteed non-NULL: .datom_resolve_data_location() aborts otherwise.
+    effective_data_store <- datom_store_s3(
+      bucket        = ref_location$root,
+      prefix        = ref_location$prefix,
+      region        = ref_location$region %||% "us-east-1",
+      access_key    = store$data$access_key,
+      secret_key    = store$data$secret_key,
+      session_token = store$data$session_token,
+      validate      = FALSE
+    )
+  } else if (!is.null(ref_location)) {
+    ref_root   <- ref_location$root
     ref_prefix <- ref_location$prefix
-    store_root <- .datom_store_root(store$data)
+    store_root   <- .datom_store_root(store$data)
     store_prefix <- store$data$prefix
     migrated <- !identical(ref_root, store_root) ||
       !identical(ref_prefix %||% NULL, store_prefix %||% NULL)
@@ -1436,7 +1500,7 @@ datom_get_conn <- function(path = NULL,
     project_name, effective_data_store,
     if (role == "developer") as.character(path) else NULL,
     role, endpoint,
-    gov_store = store$governance,
+    gov_store = effective_gov_store,
     gov_local_path = gov_local_path
   )
 
@@ -1487,18 +1551,32 @@ datom_get_conn <- function(path = NULL,
     endpoint = endpoint
   )
 
+  # Synthesise effective_data_store, handling credentials-only case.
+  effective_data_store <- store$data
   migrated <- FALSE
-  if (!is.null(ref_location)) {
-    ref_root <- ref_location$root
+
+  if (is_datom_store_s3_creds(store$data)) {
+    # ref_location is guaranteed non-NULL: .datom_resolve_data_location() aborts otherwise.
+    effective_data_store <- datom_store_s3(
+      bucket        = ref_location$root,
+      prefix        = ref_location$prefix,
+      region        = ref_location$region %||% "us-east-1",
+      access_key    = store$data$access_key,
+      secret_key    = store$data$secret_key,
+      session_token = store$data$session_token,
+      validate      = FALSE
+    )
+  } else if (!is.null(ref_location)) {
+    ref_root   <- ref_location$root
     ref_prefix <- ref_location$prefix
-    store_root <- .datom_store_root(store$data)
+    store_root   <- .datom_store_root(store$data)
     store_prefix <- store$data$prefix
     migrated <- !identical(ref_root, store_root) ||
       !identical(ref_prefix %||% NULL, store_prefix %||% NULL)
   }
 
   conn <- .datom_build_init_conn(
-    project_name, store$data, NULL, store$role, endpoint,
+    project_name, effective_data_store, NULL, store$role, endpoint,
     gov_store = store$governance,
     gov_local_path = NULL
   )
@@ -1508,6 +1586,27 @@ datom_get_conn <- function(path = NULL,
     conn$root <- ref_location$root
     conn$prefix <- ref_location$prefix
     conn$region <- ref_location$region
+  }
+
+  # --- Data-first gov-discovery probe (Style B) ------------------------------
+  # When the reader supplied no governance store, probe the data storage for
+  # governance.json. If present, the project is gov-attached but the reader
+  # bypassed it -- warn (do not abort): the conn is usable but the data
+  # coordinates may go stale after a migration.
+  if (is.null(store$governance)) {
+    gov_json <- tryCatch(
+      .datom_storage_read_governance_json(conn),
+      error = function(e) NULL
+    )
+    if (!is.null(gov_json)) {
+      cli::cli_warn(c(
+        "Project {.val {project_name}} has governance attached, but you connected with data-store credentials only.",
+        "i" = "Connection resolved using supplied coordinates; these may go stale after a data migration.",
+        "i" = "To stay current, rebuild your store with {.code governance = datom_store_*(...)} and pass credentials only.",
+        "i" = "Gov repo:    {.url {gov_json$gov_repo_url}}",
+        "i" = "Gov storage: {gov_json$gov_storage$type} / {gov_json$gov_storage$root}"
+      ))
+    }
   }
 
   # Validate data store reachability

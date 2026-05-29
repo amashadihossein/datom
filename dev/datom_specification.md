@@ -398,6 +398,42 @@ Post-migration, may contain `previous` entries:
 
 ---
 
+### .datom/governance.json (data clone + data storage mirror)
+
+Present when governance is attached to a project. Created by `datom_init_repo()` (when `gov_repo_url` is set) or `datom_attach_gov()`.
+
+**Two locations:**
+- Git copy (canonical): `{data_clone}/.datom/governance.json`
+- Storage mirror (derived): `{prefix}/datom/.metadata/governance.json` at the data store
+
+The storage mirror allows readers who do not have the data clone to discover that governance is attached and find the governance store without being told explicitly.
+
+**Schema:**
+```json
+{
+  "gov_repo_url": "https://github.com/acme/datom-gov.git",
+  "gov_storage": {
+    "type": "s3",
+    "root": "acme-gov",
+    "prefix": null,
+    "region": "us-east-1"
+  },
+  "attached_at": "2026-05-23T14:00:00Z"
+}
+```
+
+**Invariants:**
+- Never contains credentials, `gov_local_path`, or per-machine state.
+- Git copy is canonical. The storage mirror is always derived from it (same write step as `manifest.json`).
+- Deleted by `datom_decommission()` from both locations.
+- `.datom_sync_governance_json(conn)` repairs a missing or stale storage mirror from the git copy.
+
+**Discovery at connection time:**
+- Developer path: reads from local git clone (`.datom_read_governance_json_local()`).
+- Reader path: if no governance store is supplied, probes data storage mirror (`.datom_storage_read_governance_json()`). If present, warns that credentials-only data-first is stale-migration-prone and echoes `gov_repo_url`.
+
+---
+
 ## Store Objects
 
 Store objects bundle storage configuration + credentials, replacing scattered `bucket`/`prefix`/`region` params and env-var conventions.
@@ -417,6 +453,31 @@ datom_store_s3(
 ```
 
 Creates a single S3 storage component (used for governance or data). When `validate = TRUE`, runs `HeadBucket` to verify credentials and bucket access. Returns `datom_store_s3` S3 class with `type = "s3"`.
+
+### `datom_store_s3_creds()` — Credentials-Only S3 Component
+
+```r
+datom_store_s3_creds(
+  access_key,
+  secret_key,
+  session_token = NULL
+)
+```
+
+An S3 component that carries credentials only -- no `bucket`, `prefix`, or `region`. The data location is resolved at connection time from `ref.json` in the governance store. Must be paired with a governance component in `datom_store()`.
+
+Typical use: a reader connecting to a gov-attached project without needing to know the data bucket. The governance store holds the authoritative location in `ref.json`.
+
+```r
+store <- datom_store(
+  governance = datom_store_s3(bucket = "acme-gov", ...),
+  data       = datom_store_s3_creds(access_key = "...", secret_key = "...")
+)
+conn <- datom_get_conn(store = store, project_name = "my_study")
+# conn$root / conn$prefix / conn$region populated from ref.json
+```
+
+Returns `datom_store_s3_creds` S3 class. `.datom_store_root()` returns NULL; `.datom_store_backend()` returns `"s3"`.
 
 ### `datom_store_local()` — Local Filesystem Component Constructor
 
@@ -522,7 +583,8 @@ One-time setup for data developers. Requires that `datom_init_gov()` has already
 - **Gov clone bootstrap**: pulls or shallow-clones the gov repo to `gov_local_path` if not already present.
 - **Namespace safety check**: aborts if `projects/{project_name}/ref.json` already exists in the gov repo (another project is using this name). Pass `.force = TRUE` to override.
 - Creates data folder structure, initializes git with remote.
-- Creates `.datom/project.yaml` with two-component storage config + `repos.governance` block.
+- Creates `.datom/project.yaml` with two-component storage config (data only; no governance coordinates -- those live in `.datom/governance.json`).
+- Creates `.datom/governance.json` (when `gov_repo_url` is set) recording the governance pointer; mirrors it to data storage.
 - Creates `.datom/manifest.json` with `project_name` at the top level.
 - Writes `projects/{project_name}/{ref,dispatch,migration_history}.json` to the gov clone, commits + pushes the gov repo, then uploads the same files to gov storage.
 - Pushes initial commit to the data git remote, then uploads manifest to data storage.

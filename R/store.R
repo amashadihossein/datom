@@ -60,6 +60,16 @@ datom_store <- function(governance = NULL,
     )
   }
 
+  # datom_store_s3_creds carries no location; governance is mandatory so that
+  # ref.json can supply the bucket/prefix/region at connection time.
+  if (inherits(data, "datom_store_s3_creds") && is.null(governance)) {
+    cli::cli_abort(c(
+      "{.fn datom_store_s3_creds} requires a governance component.",
+      "i" = "Bucket, prefix, and region are resolved from {.file ref.json} at connection time.",
+      "i" = "Supply {.arg governance} so datom knows where to find the ref."
+    ))
+  }
+
   if (is.null(governance) && (!is.null(gov_repo_url) || !is.null(gov_local_path))) {
     cli::cli_abort(c(
       "{.arg gov_repo_url} and {.arg gov_local_path} must be NULL when {.arg governance} is NULL.",
@@ -213,7 +223,9 @@ print.datom_store <- function(x, ...) {
 #' @return TRUE or FALSE.
 #' @keywords internal
 .is_datom_store_component <- function(x) {
-  inherits(x, "datom_store_s3") || inherits(x, "datom_store_local")
+  inherits(x, "datom_store_s3") ||
+    inherits(x, "datom_store_local") ||
+    inherits(x, "datom_store_s3_creds")
 }
 
 
@@ -224,6 +236,7 @@ print.datom_store <- function(x, ...) {
 #' @keywords internal
 .datom_store_backend <- function(component) {
   if (inherits(component, "datom_store_s3")) return("s3")
+  if (inherits(component, "datom_store_s3_creds")) return("s3")
   if (inherits(component, "datom_store_local")) return("local")
   cli::cli_abort("Unknown store component type: {.cls {class(component)}}")
 }
@@ -238,6 +251,7 @@ print.datom_store <- function(x, ...) {
 #' @keywords internal
 .datom_store_root <- function(component) {
   if (inherits(component, "datom_store_s3")) return(component$bucket)
+  if (inherits(component, "datom_store_s3_creds")) return(NULL)
   if (inherits(component, "datom_store_local")) return(component$path)
   cli::cli_abort("Unknown store component type: {.cls {class(component)}}")
 }
@@ -252,6 +266,7 @@ print.datom_store <- function(x, ...) {
 #' @keywords internal
 .datom_store_region <- function(component) {
   if (inherits(component, "datom_store_s3")) return(component$region)
+  if (inherits(component, "datom_store_s3_creds")) return(NULL)
   if (inherits(component, "datom_store_local")) return(NULL)
   cli::cli_abort("Unknown store component type: {.cls {class(component)}}")
 }
@@ -638,6 +653,90 @@ print.datom_store_s3 <- function(x, ...) {
   }
 
   cli::cli_li("Validated: {.val {x$validated}}")
+  cli::cli_end()
+  invisible(x)
+}
+
+
+# --- datom_store_s3_creds: credentials-only S3 component constructor ---------
+
+#' Create a Credentials-Only S3 Store Component
+#'
+#' Constructs an S3 store component that carries only AWS credentials -- no
+#' bucket, prefix, or region. The data location is resolved at connection time
+#' from `ref.json` stored in the governance repo. This is the recommended
+#' construction style for readers when a governance store is in place.
+#'
+#' A `datom_store_s3_creds` component **must** be paired with a governance
+#' component inside `datom_store()`. Attempting to create a composite store
+#' without governance will abort with a clear message.
+#'
+#' @param access_key AWS access key ID.
+#' @param secret_key AWS secret access key.
+#' @param session_token Optional AWS session token (for temporary credentials).
+#'
+#' @return A `datom_store_s3_creds` object.
+#' @export
+datom_store_s3_creds <- function(access_key,
+                                 secret_key,
+                                 session_token = NULL) {
+
+  if (!is.character(access_key) || length(access_key) != 1L ||
+      is.na(access_key) || !nzchar(access_key)) {
+    cli::cli_abort("{.arg access_key} must be a single non-empty string.")
+  }
+
+  if (!is.character(secret_key) || length(secret_key) != 1L ||
+      is.na(secret_key) || !nzchar(secret_key)) {
+    cli::cli_abort("{.arg secret_key} must be a single non-empty string.")
+  }
+
+  if (!is.null(session_token)) {
+    if (!is.character(session_token) || length(session_token) != 1L ||
+        is.na(session_token) || !nzchar(session_token)) {
+      cli::cli_abort("{.arg session_token} must be a single non-empty string or NULL.")
+    }
+  }
+
+  structure(
+    list(
+      access_key    = access_key,
+      secret_key    = secret_key,
+      session_token = session_token
+    ),
+    class = "datom_store_s3_creds"
+  )
+}
+
+
+#' Check if Object is a Credentials-Only S3 Store Component
+#'
+#' @param x Object to test.
+#' @return TRUE or FALSE.
+#' @export
+is_datom_store_s3_creds <- function(x) {
+  inherits(x, "datom_store_s3_creds")
+}
+
+
+#' Print a Credentials-Only S3 Store Component
+#'
+#' Displays masked credentials and a note that location is resolved from
+#' ref.json at connection time.
+#'
+#' @param x A `datom_store_s3_creds` object.
+#' @param ... Ignored.
+#' @return Invisible `x`.
+#' @export
+print.datom_store_s3_creds <- function(x, ...) {
+  cli::cli_h3("datom S3 credentials-only store component")
+  cli::cli_ul()
+  cli::cli_li("Bucket / prefix / region: {.emph <resolved from ref.json>}")
+  cli::cli_li("Access key: {.val {(.datom_mask_secret(x$access_key))}}")
+  cli::cli_li("Secret key: {.val {(.datom_mask_secret(x$secret_key))}}")
+  if (!is.null(x$session_token)) {
+    cli::cli_li("Session token: {.val {(.datom_mask_secret(x$session_token))}}")
+  }
   cli::cli_end()
   invisible(x)
 }

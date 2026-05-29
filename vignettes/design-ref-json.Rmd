@@ -152,3 +152,7 @@ Access](design-dispatch.html) for why. And the gov repo itself is the
 subject of [Two Repositories: Governance vs.
 Data](design-two-repos.html), which explains why the gov repo is not
 just a folder inside the data repo.
+
+The reverse pointer -- from the data repo back to the governance repo --
+is `governance.json`. See [governance.json and the Dual-Pointer
+Pattern](design-governance-json.html) for how the two files work together.

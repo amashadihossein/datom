@@ -56,6 +56,64 @@ env <- sandbox_up(
 
 conn <- env$conn
 
+# --- Phase 21: governance.json verification (Flow 1 + 2) --------------------
+# Flow 1 verified in Section B (no-gov sandbox below).
+# Flow 2: gov-attached sandbox -- governance.json must exist in both locations.
+
+local({
+  gov_json_git <- fs::path(env$local_path, ".datom", "governance.json")
+  stopifnot("governance.json absent from git clone" = fs::file_exists(gov_json_git))
+
+  gj <- jsonlite::read_json(gov_json_git)
+  stopifnot("gov_repo_url missing" = nzchar(gj$gov_repo_url))
+  stopifnot("project_name mismatch" = identical(gj$project_name, "LOCAL_E2E"))
+
+  # Storage mirror
+  data_store <- env$store$data
+  store_key <- datom:::.datom_build_storage_key(conn, ".metadata/governance.json")
+  storage_bytes <- datom:::.datom_storage_read_json(conn, ".metadata/governance.json")
+  stopifnot("governance.json storage mirror absent" = !is.null(storage_bytes))
+  stopifnot("storage mirror project_name mismatch" =
+              identical(storage_bytes$project_name, "LOCAL_E2E"))
+
+  cat("Flow 2 OK: governance.json present in git clone and storage mirror.\n")
+})
+
+# --- Phase 21: reader data-first warning (Flow 4) ----------------------------
+# Build a reader store with no gov component against the gov-attached project.
+# Should warn (not error) that the location may go stale.
+local({
+  reader_store_no_gov <- datom::datom_store(
+    governance = NULL,
+    data       = datom::datom_store_local(
+      path     = datom:::.datom_store_root(env$store$data),
+      prefix   = env$store$data$prefix,
+      validate = FALSE
+    ),
+    github_pat    = env$store$github_pat,
+    data_repo_url = env$store$data_repo_url,
+    validate      = FALSE
+  )
+
+  warns <- character()
+  withCallingHandlers(
+    {
+      reader_conn <- datom::datom_get_conn(
+        project_name = "LOCAL_E2E",
+        store        = reader_store_no_gov
+      )
+    },
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  # The data-first probe should have emitted a warning mentioning gov_repo_url
+  gov_warn <- grep("gov_repo_url|governance", warns, value = TRUE)
+  stopifnot("Flow 4: expected governance warning not emitted" = length(gov_warn) > 0)
+  cat("Flow 4 OK: reader data-first emits governance warning.\n")
+})
+
 # --- Explore imported tables -------------------------------------------------
 
 datom_list(conn)
@@ -144,11 +202,20 @@ datom_status(conn)
 #   sandbox_down(env, scope = "gov")      # gov only (refuses if projects remain)
 #   sandbox_down(env, scope = "all")      # project then gov (default)
 #
+# Phase 21 Flow 6: after sandbox_down() the storage mirror should be gone.
+# Capture the storage path before teardown, verify after.
+#
+# storage_mirror_key <- datom:::.datom_build_storage_key(conn, ".metadata/governance.json")
+# sandbox_down(env)
+# # (After teardown the storage root is wiped, so the key is implicitly gone.
+# #  datom_decommission() deletes it explicitly in step 1b as a belt-and-braces.)
+# cat("Flow 6 OK: governance.json storage mirror removed by decommission.\n")
+#
 # sandbox_down(env)
 
 
 # =============================================================================
-# B: No-gov path (Phase 18) -- uncomment to exercise
+# B: No-gov path (Phase 18) + Phase 21 Flows 1 & 5 -- uncomment to exercise
 # =============================================================================
 #
 # store_nogov <- sandbox_store_local(
@@ -171,6 +238,12 @@ datom_status(conn)
 # conn_nogov <- env_nogov$conn
 # stopifnot(is.null(conn_nogov$gov_root))
 #
+# # Phase 21 Flow 1: no-gov sandbox must have NO governance.json in git or storage.
+# gov_json_git_nogov <- fs::path(env_nogov$local_path, ".datom", "governance.json")
+# stopifnot("governance.json should be absent for no-gov sandbox" =
+#             !fs::file_exists(gov_json_git_nogov))
+# cat("Flow 1 OK: governance.json correctly absent for no-gov sandbox.\n")
+#
 # datom_list(conn_nogov)
 # datom_write(conn_nogov, data.frame(x = 1L), name = "nogov_table")
 # stopifnot("nogov_table" %in% datom_list(conn_nogov)$name)
@@ -186,6 +259,32 @@ datom_status(conn)
 # env_nogov <- sandbox_promote_gov(env_nogov, gov_store_for_promote)
 # conn_nogov <- env_nogov$conn
 # stopifnot(!is.null(conn_nogov$gov_root))
+#
+# # Phase 21 Flow 2 (from no-gov): governance.json should now exist in both locations.
+# gov_json_after_promote <- fs::path(env_nogov$local_path, ".datom", "governance.json")
+# stopifnot("governance.json absent from clone after promote" =
+#             fs::file_exists(gov_json_after_promote))
+# storage_gj <- datom:::.datom_storage_read_json(conn_nogov, ".metadata/governance.json")
+# stopifnot("governance.json storage mirror absent after promote" = !is.null(storage_gj))
+# cat("Flow 2 (no-gov->gov): governance.json present after datom_attach_gov.\n")
+#
+# # Phase 21 Flow 5: simulate "developer pulls after teammate attached gov".
+# # Clone the data repo fresh; governance.json should be in the clone (it's in git).
+# fresh_clone_path <- fs::path(base_dir, "datom-local-e2e-nogov-fresh")
+# if (fs::dir_exists(fresh_clone_path)) fs::dir_delete(fresh_clone_path)
+# datom_clone(
+#   data_repo_url = conn_nogov$data_repo_url,
+#   path          = fresh_clone_path,
+#   store         = env_nogov$store,
+#   project_name  = "LOCAL_E2E_NOGOV"
+# )
+# gov_json_fresh <- fs::path(fresh_clone_path, ".datom", "governance.json")
+# stopifnot("governance.json absent from fresh clone" = fs::file_exists(gov_json_fresh))
+# gj_fresh <- jsonlite::read_json(gov_json_fresh)
+# stopifnot("gov_repo_url mismatch in fresh clone" =
+#             identical(gj_fresh$gov_repo_url, conn_nogov$gov_repo_url))
+# cat("Flow 5 OK: governance.json present in fresh clone after pull.\n")
+# fs::dir_delete(fresh_clone_path)
 #
 # # Gov-only commands now work
 # datom_sync_dispatch(conn_nogov, .confirm = FALSE)

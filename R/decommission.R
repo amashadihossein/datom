@@ -68,6 +68,23 @@ datom_decommission <- function(conn, confirm = NULL) {
     }
   )
 
+  # ---- 1b. Delete governance.json from data storage mirror ------------------
+  # The git copy is gone with the clone (step 3); clean up the storage mirror
+  # here, before the clone is removed, while the conn is still usable.
+  if (!is.null(conn$gov_root)) {
+    tryCatch(
+      {
+        .datom_storage_delete_governance_json(conn)
+        cli::cli_alert_success("governance.json storage mirror deleted.")
+      },
+      error = function(e) {
+        cli::cli_alert_warning(
+          "governance.json storage mirror deletion failed: {conditionMessage(e)}"
+        )
+      }
+    )
+  }
+
   # ---- 2. Delete data GitHub repo -------------------------------------------
   tryCatch(
     {
