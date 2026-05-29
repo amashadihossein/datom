@@ -1,6 +1,6 @@
 # Phase 21: Governance-First Connection UX (`governance.json`)
 
-**Status**: Chunk 8 complete; Chunk 9 next
+**Status**: Chunk 9 complete; Chunk 10 next
 **Started**: 2026-05-23
 **Issue**: GitHub #24
 **Branch**: `phase/21-governance-first-connection`
@@ -160,8 +160,8 @@ Each chunk is sized for one focused session. **Every chunk-completing commit mus
 | 6 | `ref.json` bootstrap for creds-only stores (core of issue #24) | `.datom_resolve_data_location()` skips mismatch logic when data is `datom_store_s3_creds`. Reader and developer paths synthesise `effective_data_store` from creds + ref location. `.datom_build_init_conn()` receives a fully-specified store at call time. | New tests: creds-only + ref → working conn (correct root/prefix/region); creds-only + ref failure → hard abort; fully-specified store → unchanged. | ✅ done |
 | 7 | `datom_decommission()` + `gov_local_path` removal | Decommission deletes governance.json from both locations. Remove `gov_local_path` from every persisted location. | Decommission tests; new regression test asserting no datom-written file contains `gov_local_path`. | ✅ done |
 | 8 | Mirror sync helper + repair story | Internal `.datom_sync_governance_json()` helper for repair after partial failures. Document in spec. | Sync test: mutate storage copy, run sync, assert restored from git copy. | ✅ done |
-| 9 | Docs + vignettes | Update handing-off, credentials-in-practice, design-ref-json; add design-governance-json; update spec and copilot-instructions. | `devtools::check()` clean; pkgdown build clean. | ⏳ next |
-| 10 | E2E + audit | Full `devtools::test()` (record count). Sandbox E2E covering all six flows in §6 Chunk 10 notes. Phase Completion Procedure. | Full suite + E2E transcript in Progress Log. | ☐ todo |
+| 9 | Docs + vignettes | Update handing-off, credentials-in-practice, design-ref-json; add design-governance-json; update spec and copilot-instructions. | `devtools::check()` clean; pkgdown build clean. | ✅ done |
+| 10 | E2E + audit | Full `devtools::test()` (record count). Sandbox E2E covering all six flows in §6 Chunk 10 notes. Phase Completion Procedure. | Full suite + E2E transcript in Progress Log. | ⏳ next |
 
 ---
 
@@ -502,6 +502,7 @@ Final audit:
 - **2026-05-23 (Chunk 3)**: Implemented governance.json four-state matrix in `.datom_get_conn_developer()`. Read `governance.json` from local clone via `.datom_read_governance_json_local()`. Four states: (no/no) proceed; (no/set) warn + treat-as-no-gov; (yes/no) abort with gov_repo_url + gov_storage echoed; (yes/yes) proceed + cross-check URL when `store$gov_repo_url` is set. `effective_gov_store` passed to `.datom_build_init_conn()` instead of `store$governance`. `gov_local_path` derivation gated on `!is.null(effective_gov_store)`. Added 5 four-state matrix tests (local backend; path normalization fix for macOS double-slash). Commit `c0f0e29`. Full suite 1648 passing, 0 failures.
 - **2026-05-23 (Chunk 4)**: Implemented data-first gov-discovery probe in `.datom_get_conn_reader()`. When `store$governance` is NULL, probe data storage for `.metadata/governance.json` via `.datom_storage_read_governance_json(conn)`; if present, warn that supplied coordinates may go stale after a migration (echoing `gov_repo_url` + `gov_storage`); proceed with conn unchanged. Gov-first (Style A) skips the probe. Tightened §6 Chunks table row 4 wording from "Hard error" to "Warn (not error)" to match the authoritative §2.4 + Chunk 4 implementation notes (the prior wording was an outright contradiction). Added 3 reader-path tests (Style B silent / Style B warns / Style A skips probe). Commit `6ab535f`. Full suite 1658 passing, 0 failures.
 
+- **2026-05-29 (Chunk 9)**: Vignette and doc updates. `handing-off.Rmd`: removed "Data bucket / prefix / region" from the engineer's handoff list (two items, not three; location resolved from ref.json). `credentials-in-practice.Rmd`: added `datom_store_s3_creds()` section with before/after comparison; added `is_datom_store_s3_creds()` to predicates list. Created `vignettes/design-governance-json.Rmd` (dual-pointer pattern, schema, lifecycle, two-location table, see-also). `design-ref-json.Rmd`: added see-also paragraph pointing to new design doc. `_pkgdown.yml`: registered `design-governance-json` in Design Decisions section. `.github/copilot-instructions.md`: added `governance.json` mirror gotcha (git canonical, storage derived). ASCII guard: clean. Commit `35f2d35`. Full suite 1700 passing, 0 failures.
 - **2026-05-29 (Chunk 8)**: Sync helper and tests were already complete from Chunk 1. Delivered the spec documentation component: added `.datom/governance.json` spec section (schema, invariants, dual-location pattern, discovery) after `ref.json`; added `datom_store_s3_creds()` spec entry in Store Objects; fixed stale `repos.governance` mention in `datom_init_repo()` spec. Commit `6b1ddda`. Full suite 1700 passing, 0 failures.
 
 - **2026-05-28 (Chunk 7)**: storage mirror deletion to `datom_decommission()` as step 1b (warn-and-continue, skipped when no gov). gov_local_path persistence audit confirmed neither `datom_init_repo()` nor `datom_attach_gov()` write it to disk — no code changes needed there. 6 new tests: mirror deletion happy path, skip when no gov, warn-on-failure, and yaml regression tests for both functions. Commit `24885d9`. Full suite 1700 passing, 0 failures.
