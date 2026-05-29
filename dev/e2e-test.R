@@ -97,6 +97,60 @@ datom_sync_dispatch(conn, .confirm = FALSE)
 datom_validate(conn)
 datom_status(conn)
 
+# --- Phase 21: governance.json verification ----------------------------------
+# Verify governance.json was written to both git clone and S3 mirror.
+
+local({
+  gov_json_git <- fs::path(env$local_path, ".datom", "governance.json")
+  stopifnot("governance.json absent from git clone" = fs::file_exists(gov_json_git))
+  gj <- jsonlite::read_json(gov_json_git)
+  stopifnot("gov_repo_url missing" = nzchar(gj$gov_repo_url))
+  stopifnot("project_name mismatch" = identical(gj$project_name, env$config$project_name))
+
+  storage_gj <- datom:::.datom_storage_read_json(conn, ".metadata/governance.json")
+  stopifnot("governance.json storage mirror absent" = !is.null(storage_gj))
+  stopifnot("storage mirror project_name mismatch" =
+              identical(storage_gj$project_name, env$config$project_name))
+
+  cat("governance.json OK: present in git clone and S3 mirror.\n")
+})
+
+# --- Phase 21: reader with credentials-only data store (issue #24) -----------
+# This is the central scenario: a reader connects using only their credentials.
+# They do NOT know the data bucket, prefix, or region -- that comes from
+# ref.json in the governance repo at connection time.
+
+reader_store <- datom::datom_store(
+  governance = datom::datom_store_s3(
+    bucket     = env$store$governance$bucket,
+    prefix     = env$store$governance$prefix,
+    region     = env$store$governance$region,
+    access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
+    secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY"),
+    validate   = FALSE
+  ),
+  data = datom::datom_store_s3_creds(
+    access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
+    secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY")
+  ),
+  github_pat = Sys.getenv("GITHUB_PAT")
+)
+
+reader_conn <- datom::datom_get_conn(
+  project_name = env$config$project_name,
+  store        = reader_store
+)
+
+# Reader should be able to list and read tables
+reader_tables <- datom::datom_list(reader_conn)
+stopifnot("reader sees no tables" = nrow(reader_tables) > 0)
+
+dm_reader <- datom::datom_read(reader_conn, "dm")
+stopifnot("reader got empty dm" = nrow(dm_reader) > 0)
+
+cat("Phase 21 reader OK: connected via governance + read", nrow(dm_reader), "rows from 'dm'.\n")
+cat("  Data bucket resolved from ref.json:", reader_conn$root, "\n")
+
 # --- Recover env (if you lost the session) -----------------------------------
 # If you closed R without tearing down, re-source the sandbox helpers,
 # build a store, and recover the env object:
