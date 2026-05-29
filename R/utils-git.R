@@ -107,6 +107,15 @@
   email  <- global$user.email %||% fallback_email
 
   git2r::config(repo, user.name = name, user.email = email)
+
+  # git2r's fetch reads http.followRedirects from local config; if the key is
+  # absent (fresh clone or init) it throws "config value not found". Set it
+  # explicitly so fetch/push never hits this.
+  local_cfg <- git2r::config(repo)$local %||% list()
+  if (is.null(local_cfg[["http.followRedirects"]])) {
+    git2r::config(repo, "http.followRedirects" = "true")
+  }
+
   invisible(repo)
 }
 
