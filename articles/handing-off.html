@@ -97,19 +97,18 @@ using <code><a href="../reference/datom_get_conn.html">datom_get_conn()</a></cod
 <div class="section level2">
 <h2 id="what-the-engineer-sends">What the engineer sends<a class="anchor" aria-label="anchor" href="#what-the-engineer-sends"></a>
 </h2>
-<p>You (the engineer) message the statistician three pieces of
+<p>You (the engineer) message the statistician two pieces of
 information:</p>
 <ol style="list-style-type: decimal">
 <li>
 <strong>Governance repo URL</strong> –
 <code>https://github.com/acme/datom-governance.git</code>.</li>
 <li>
-<strong>Data bucket / prefix / region</strong> –
-<code>study-001-datom</code>, <code>""</code> (empty prefix),
-<code>us-east-1</code>.</li>
-<li>
 <strong>Project name</strong> – <code>STUDY_001</code>.</li>
 </ol>
+<p>The data bucket, prefix, and region are resolved automatically at
+connection time from <code>ref.json</code> in the governance repo. The
+statistician does not need to know where the data lives.</p>
 <p>Plus the credentials she’ll need to set up herself:</p>
 <ul>
 <li>A GitHub PAT with <strong>read</strong> access to

@@ -18,13 +18,15 @@ and
 
 ## What the engineer sends
 
-You (the engineer) message the statistician three pieces of information:
+You (the engineer) message the statistician two pieces of information:
 
 1.  **Governance repo URL** –
     `https://github.com/acme/datom-governance.git`.
-2.  **Data bucket / prefix / region** – `study-001-datom`, `""` (empty
-    prefix), `us-east-1`.
-3.  **Project name** – `STUDY_001`.
+2.  **Project name** – `STUDY_001`.
+
+The data bucket, prefix, and region are resolved automatically at
+connection time from `ref.json` in the governance repo. The statistician
+does not need to know where the data lives.
 
 Plus the credentials she’ll need to set up herself:
 

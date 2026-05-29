@@ -54,6 +54,8 @@ Why datom is shaped the way it is.
   SHA](https://amashadihossein.github.io/datom/articles/design-version-shas.md):
 - [ref.json and Always-Migration-Ready
   Storage](https://amashadihossein.github.io/datom/articles/design-ref-json.md):
+- [governance.json and the Dual-Pointer
+  Pattern](https://amashadihossein.github.io/datom/articles/design-governance-json.md):
 - [dispatch.json and Self-Serve
   Access](https://amashadihossein.github.io/datom/articles/design-dispatch.md):
 - [Two Repositories: Governance vs.

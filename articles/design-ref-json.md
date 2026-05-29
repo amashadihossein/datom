@@ -145,3 +145,8 @@ Governance vs.
 Data](https://amashadihossein.github.io/datom/articles/design-two-repos.md),
 which explains why the gov repo is not just a folder inside the data
 repo.
+
+The reverse pointer – from the data repo back to the governance repo –
+is `governance.json`. See [governance.json and the Dual-Pointer
+Pattern](https://amashadihossein.github.io/datom/articles/design-governance-json.md)
+for how the two files work together.

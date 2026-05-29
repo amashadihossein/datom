@@ -281,6 +281,13 @@ internal credential contract.
   all metadata. The manifest is committed to git and pulled with
   everything else.
 
+- **`governance.json` mirror – git canonical, storage derived**: The git
+  copy at `.datom/governance.json` is written and committed first; the
+  storage mirror at `{prefix}/datom/.metadata/governance.json` is pushed
+  in the same step. Never write only one. If the mirror is missing,
+  `.datom_sync_governance_json(conn)` regenerates it from the git copy.
+  The file is write-once – do not update it after creation.
+
 - **S3 namespace check swallows connectivity errors**:
   [`.datom_check_namespace_free()`](https://amashadihossein.github.io/datom/reference/dot-datom_check_namespace_free.md)
   in

@@ -11,6 +11,7 @@
 <url><loc>https://amashadihossein.github.io/datom/articles/credentials-in-practice.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/articles/design-datom-model.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/articles/design-dispatch.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/articles/design-governance-json.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/articles/design-ref-json.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/articles/design-serverless.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/articles/design-two-repos.html</loc></url>
@@ -51,6 +52,7 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_store.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_store_local.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_store_s3.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_store_s3_creds.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_summary.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_sync.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_sync_dispatch.html</loc></url>
@@ -157,12 +159,14 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/is_datom_store.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/is_datom_store_local.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/is_datom_store_s3.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/is_datom_store_s3_creds.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/is_valid_datom_repo.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/new_datom_conn.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/print.datom_conn.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/print.datom_store.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/print.datom_store_local.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/print.datom_store_s3.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/print.datom_store_s3_creds.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/print.datom_summary.html</loc></url>
 </urlset>
 

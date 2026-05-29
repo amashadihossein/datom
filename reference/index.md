@@ -29,18 +29,24 @@ Create and inspect storage configuration objects
   : Create a datom Store
 - [`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md)
   : Create an S3 Store Component
+- [`datom_store_s3_creds()`](https://amashadihossein.github.io/datom/reference/datom_store_s3_creds.md)
+  : Create a Credentials-Only S3 Store Component
 - [`datom_store_local()`](https://amashadihossein.github.io/datom/reference/datom_store_local.md)
   : Create a Local Filesystem Store Component
 - [`is_datom_store()`](https://amashadihossein.github.io/datom/reference/is_datom_store.md)
   : Check if Object is a datom Store
 - [`is_datom_store_s3()`](https://amashadihossein.github.io/datom/reference/is_datom_store_s3.md)
   : Check if Object is an S3 Store Component
+- [`is_datom_store_s3_creds()`](https://amashadihossein.github.io/datom/reference/is_datom_store_s3_creds.md)
+  : Check if Object is a Credentials-Only S3 Store Component
 - [`is_datom_store_local()`](https://amashadihossein.github.io/datom/reference/is_datom_store_local.md)
   : Check if Object is a Local Store Component
 - [`print(`*`<datom_store>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_store.md)
   : Print a datom Store
 - [`print(`*`<datom_store_s3>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_store_s3.md)
   : Print an S3 Store Component
+- [`print(`*`<datom_store_s3_creds>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_store_s3_creds.md)
+  : Print a Credentials-Only S3 Store Component
 - [`print(`*`<datom_store_local>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_store_local.md)
   : Print a Local Store Component
 

@@ -1,0 +1,145 @@
+# governance.json and the Dual-Pointer Pattern
+
+> **Companion to**: [ref.json and Always-Migration-Ready
+> Storage](https://amashadihossein.github.io/datom/articles/design-ref-json.md).
+> Read that article first if you have not already.
+
+The governance repo knows where the data lives – that is the job of
+`ref.json`. The reverse pointer, from the data repo back to the
+governance repo, is the job of `governance.json`.
+
+Together the two files form a **dual-pointer pattern**: each side of the
+two-repo architecture carries a small JSON file that tells a reader how
+to find the other side.
+
+## Why two directions?
+
+`ref.json` solves the reader bootstrap problem: a reader who knows the
+governance repo URL and project name can always find the current data
+location, even after a bucket migration.
+
+`governance.json` solves the repair and discovery problem: given only a
+data clone on disk, the tooling can locate the governance repo without
+requiring the user to remember it. This enables:
+
+- **Sync repair** – if the git copy of `governance.json` drifts from the
+  storage mirror, `.datom_sync_governance_json()` uses the git copy to
+  push a fresh mirror.
+- **Tooling introspection** – scripts that walk a collection of data
+  clones can discover governance without external configuration.
+
+## Anatomy
+
+A typical `governance.json` inside a data clone
+(`.datom/governance.json`):
+
+``` json
+{
+  "gov_repo_url": "https://github.com/acme/datom-governance.git",
+  "project_name": "STUDY_001",
+  "created_at":   "2026-06-01T12:00:00Z",
+  "datom_version": "0.5.0"
+}
+```
+
+All four fields are always present. `gov_repo_url` and `project_name`
+are the functional content; `created_at` and `datom_version` are
+metadata.
+
+## Two locations, one source of truth
+
+`governance.json` lives in two places:
+
+| Location | Path | Purpose |
+|----|----|----|
+| Data git repo | `.datom/governance.json` | Canonical; version-controlled |
+| Data storage | `{prefix}/datom/.metadata/governance.json` | Mirror; enables discovery without cloning |
+
+The git copy is canonical. The storage mirror is derived and can always
+be regenerated from the git copy.
+
+    data git repo
+      .datom/
+        governance.json   <-- canonical
+        manifest.json
+        ...
+
+    data S3 bucket (or local path)
+      datom/
+        .metadata/
+          governance.json   <-- mirror
+        tables/
+          ...
+
+## Lifecycle
+
+### Created
+
+`governance.json` is written in two situations:
+
+1.  **[`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)**
+    – when `governance` is non-NULL and the project has a governance
+    store. Written in the data repo and pushed to storage as part of the
+    final git + push step.
+
+2.  **[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)**
+    – when governance is retrofitted onto an existing no-gov project.
+    Written and mirrored in the same operation.
+
+In both cases the git copy and the storage mirror are written together
+and committed in the same data-side commit.
+
+### Repaired / re-synced
+
+If the storage mirror is missing or stale, call:
+
+``` r
+
+.datom_sync_governance_json(conn)
+```
+
+This reads the git copy from the data clone and overwrites the storage
+mirror. It is idempotent and safe to call multiple times.
+
+### Deleted
+
+[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
+deletes the storage mirror as part of data-storage cleanup (step 1b).
+The git copy is removed with the data repo itself (step 2 – GitHub repo
+deletion + local clone deletion).
+
+## Schema
+
+``` json
+{
+  "gov_repo_url":  "<string> HTTPS or SSH URL of the governance GitHub repo",
+  "project_name":  "<string> project name as registered in the governance repo",
+  "created_at":    "<ISO 8601 UTC timestamp>",
+  "datom_version": "<string> datom package version that wrote the file"
+}
+```
+
+## Invariants
+
+- The git copy is always committed before the storage mirror is pushed.
+- Both copies carry identical content (same JSON bytes, same field
+  values).
+- The file is never updated after creation; it is write-once. The
+  governance repo URL and project name are stable identifiers.
+- The storage key is always `{prefix}/datom/.metadata/governance.json`,
+  where `{prefix}` is the effective prefix from `ref.json`
+  (post-migration prefix for migrated projects).
+
+## See also
+
+- [ref.json and Always-Migration-Ready
+  Storage](https://amashadihossein.github.io/datom/articles/design-ref-json.md)
+  – the forward pointer from governance to data.
+- [Two Repositories: Governance
+  vs. Data](https://amashadihossein.github.io/datom/articles/design-two-repos.md)
+  – explains why the two repos are separate.
+- [Credentials in
+  Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.md)
+  – how
+  [`datom_store_s3_creds()`](https://amashadihossein.github.io/datom/reference/datom_store_s3_creds.md)
+  uses ref.json to spare readers from needing to know the data location.

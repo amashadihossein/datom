@@ -179,10 +179,57 @@ Each constructor has a matching predicate:
 is_datom_store(store)             # TRUE for the composite
 is_datom_store_local(gov_local)   # TRUE
 is_datom_store_s3(data_s3)        # TRUE
+is_datom_store_s3_creds(data_creds) # TRUE
 ```
 
 Useful when writing helper functions that branch on backend without
 unpacking the object.
+
+### `datom_store_s3_creds()` – credentials only, location from governance
+
+When a project has governance attached, the data bucket, prefix, and
+region are recorded in `ref.json` and resolved automatically at
+connection time. Readers do not need to know the data location – they
+only need their credentials:
+
+``` r
+
+# Governance-attached project: credentials-only data component.
+# The bucket / prefix / region come from ref.json at conn time.
+data_creds <- datom_store_s3_creds(
+  access_key = keyring::key_get("AWS_ACCESS_KEY_ID"),
+  secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
+)
+
+reader_store <- datom_store(
+  governance = gov_s3,
+  data       = data_creds,
+  github_pat = keyring::key_get("GITHUB_PAT")
+)
+
+reader_conn <- datom_get_conn(project_name = "STUDY_001", store = reader_store)
+```
+
+Compare with the pre-governance form, where the reader had to know where
+the data lived:
+
+``` r
+
+# Pre-governance (or no-gov project): full location required.
+data_s3_full <- datom_store_s3(
+  bucket     = "study-001-datom",
+  prefix     = "",
+  region     = "us-east-1",
+  access_key = keyring::key_get("AWS_ACCESS_KEY_ID"),
+  secret_key = keyring::key_get("AWS_SECRET_ACCESS_KEY")
+)
+```
+
+[`datom_store_s3_creds()`](https://amashadihossein.github.io/datom/reference/datom_store_s3_creds.md)
+is only valid when the project has governance attached. Passing it to a
+no-gov
+[`datom_store()`](https://amashadihossein.github.io/datom/reference/datom_store.md)
+is an error.
 
 ## Roles: developer vs reader
 
