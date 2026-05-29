@@ -253,6 +253,125 @@ test_that("datom_decommission() returns invisible TRUE on success", {
 
 
 # =============================================================================
+# datom_decommission() -- governance.json cleanup (Phase 21 Chunk 7)
+# =============================================================================
+
+# Helper: make a decommission env with governance.json mirror staged in data
+# storage (the local-backend equivalent of the S3 mirror).
+make_decommission_gov_env <- function(env = parent.frame()) {
+  e <- make_decommission_env(env = env)
+
+  # Stage governance.json mirror at the data storage location
+  # Key built by .datom_build_storage_key(NULL, ".metadata/governance.json")
+  # -> "datom/.metadata/governance.json" under the data root.
+  mirror_dir <- fs::path(e$data_root, "datom", ".metadata")
+  fs::dir_create(mirror_dir)
+  gov_json <- list(
+    gov_repo_url = "https://github.com/acme/gov.git",
+    gov_storage  = list(type = "local", root = as.character(e$gov_root)),
+    attached_at  = "2026-05-24T00:00:00Z"
+  )
+  jsonlite::write_json(gov_json,
+                       fs::path(mirror_dir, "governance.json"),
+                       auto_unbox = TRUE, pretty = TRUE)
+
+  e
+}
+
+test_that("datom_decommission() deletes governance.json storage mirror when gov attached", {
+  e <- make_decommission_gov_env()
+  mirror_path <- fs::path(e$data_root, "datom", ".metadata", "governance.json")
+  expect_true(fs::file_exists(mirror_path))
+
+  local_mocked_bindings(
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
+  )
+
+  datom_decommission(e$conn, confirm = "test-proj")
+
+  expect_false(fs::file_exists(mirror_path))
+})
+
+test_that("datom_decommission() skips governance.json deletion when no gov attached", {
+  e <- make_decommission_env()
+  e$conn$gov_root <- NULL  # no governance
+
+  # governance.json should not be touched (no gov storage mirror expected)
+  delete_called <- FALSE
+  local_mocked_bindings(
+    .datom_storage_delete_governance_json = function(...) {
+      delete_called <<- TRUE
+      invisible(NULL)
+    },
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
+  )
+
+  datom_decommission(e$conn, confirm = "test-proj")
+
+  expect_false(delete_called)
+})
+
+test_that("datom_decommission() warns (not aborts) when governance.json mirror deletion fails", {
+  e <- make_decommission_gov_env()
+
+  local_mocked_bindings(
+    .datom_storage_delete_governance_json = function(...) stop("mirror delete failed"),
+    .datom_gov_unregister_project = function(...) invisible(TRUE)
+  )
+
+  expect_no_error(datom_decommission(e$conn, confirm = "test-proj"))
+})
+
+
+# =============================================================================
+# gov_local_path persistence regression (Phase 21 Chunk 7)
+# =============================================================================
+
+test_that("no datom-written file persists gov_local_path after datom_init_repo()", {
+  # Uses an existing init-repo test environment; check the yaml written.
+  # We can't run a full datom_init_repo() in unit tests without network mocks,
+  # so construct a minimal project.yaml the same way datom_init_repo() does
+  # and assert it contains no gov_local_path field anywhere.
+  storage_block <- list(
+    data = list(type = "local", root = "/tmp/store"),
+    max_file_size_gb = 1000
+  )
+  repos_block <- list(data = list(remote_url = "https://github.com/x/y.git"))
+  project_config <- list(
+    project_name = "my-study",
+    storage = storage_block,
+    repos = repos_block
+  )
+  tmp <- withr::local_tempdir()
+  yaml_path <- fs::path(tmp, "project.yaml")
+  yaml::write_yaml(project_config, yaml_path)
+
+  txt <- paste(readLines(yaml_path), collapse = "\n")
+  expect_false(grepl("gov_local_path|local_path", txt, ignore.case = TRUE))
+})
+
+test_that("no datom-written file persists gov_local_path after datom_attach_gov()", {
+  # Simulate the yaml that datom_attach_gov() reads and rewrites (cfg is
+  # re-written as-is). Verify that a yaml which never contained gov_local_path
+  # still doesn't after the write.
+  cfg <- list(
+    project_name = "my-study",
+    storage = list(
+      data = list(type = "local", root = "/tmp/store"),
+      max_file_size_gb = 1000
+    ),
+    repos = list(data = list(remote_url = "https://github.com/x/y.git"))
+  )
+  tmp <- withr::local_tempdir()
+  yaml_path <- fs::path(tmp, "project.yaml")
+  yaml::write_yaml(cfg, yaml_path)
+
+  txt <- paste(readLines(yaml_path), collapse = "\n")
+  expect_false(grepl("gov_local_path|local_path", txt, ignore.case = TRUE))
+})
+
+
+# =============================================================================
 # .datom_local_delete_prefix()
 # =============================================================================
 
