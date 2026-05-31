@@ -4,7 +4,7 @@
 \alias{.datom_git_push}
 \title{Push to Remote}
 \usage{
-.datom_git_push(path, pat = NULL)
+.datom_git_push(path, pat = NULL, pull_first = TRUE)
 }
 \arguments{
 \item{path}{Repository path.}
