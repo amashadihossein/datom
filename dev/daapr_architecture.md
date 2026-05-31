@@ -324,6 +324,22 @@ dp_build(
 
 This keeps datom's write path simple (store-and-serve) while letting dpbuild pre-compute the full provenance graph once, at write time.
 
+**datomaccess (access governance package)**: The package responsible for reader-facing access control. It sits between the reader and `datom_read()` and is the primary consumer of `source_lineage`. The access gate pattern:
+
+```
+[reader requests derived table]
+  1. datomaccess: GET {table}/.metadata/metadata.json   <- 1 S3 read
+        -> extract source_lineage: [{project, table, version_sha}, ...]
+  2. datomaccess: for each entry, check {project, table, data_sha}
+        against access policy registry              <- in-memory, 0 extra reads
+  3a. all entries authorized -> call datom_read()   <- proceeds normally
+  3b. any entry denied       -> abort with clear error
+```
+
+Critically, step 1 reads the same `metadata.json` that `datom_read()` already needs. A well-integrated implementation shares this fetch (zero extra S3 reads for the access check). The `source_lineage[].version_sha` values are **data_sha** (parquet content address), not metadata_sha. This is the correct key for the policy registry: data_sha is stable across metadata rewrites, so access grants survive re-ingestion of unchanged data, annotation edits, and other metadata-only changes.
+
+See `datom_specification.md` -- "The Two-SHA Design" section -- for the full rationale.
+
 **dpi → datom**:
 ```r
 # dpi reads data products via datom routing

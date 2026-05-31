@@ -25,13 +25,18 @@
 #' @return A list suitable for JSON serialization.
 #' @keywords internal
 .datom_create_ref <- function(data_store) {
+  current <- list(
+    type = .datom_store_backend(data_store),
+    root = .datom_store_root(data_store),
+    prefix = data_store$prefix,
+    region = .datom_store_region(data_store)
+  )
+  # Drop NULL-valued fields so they do not serialize as empty JSON objects
+  # ({}), which would otherwise read back as list() and break location
+  # equality checks (a NULL prefix must stay NULL across a JSON round-trip).
+  current <- current[!vapply(current, is.null, logical(1))]
   list(
-    current = list(
-      type = .datom_store_backend(data_store),
-      root = .datom_store_root(data_store),
-      prefix = data_store$prefix,
-      region = .datom_store_region(data_store)
-    ),
+    current = current,
     previous = list()
   )
 }
@@ -161,9 +166,27 @@
 
   list(
     root = current$root,
-    prefix = current$prefix %||% NULL,
+    prefix = .datom_normalize_prefix(current$prefix),
     region = current$region %||% "us-east-1"
   )
+}
+
+
+#' Normalize a prefix value to NULL or a non-empty string
+#'
+#' A NULL prefix serializes to JSON as an empty object ({}) and reads back as
+#' an empty list, not NULL. Empty strings can also creep in. This collapses
+#' all empty-ish forms (NULL, `list()`, `""`, `NA`) to NULL so that location
+#' equality checks survive a JSON round-trip.
+#'
+#' @param prefix A raw prefix value from a parsed ref.json.
+#' @return NULL or a single non-empty character string.
+#' @keywords internal
+.datom_normalize_prefix <- function(prefix) {
+  if (is.null(prefix) || length(prefix) == 0L) return(NULL)
+  prefix <- as.character(prefix)[[1L]]
+  if (is.na(prefix) || !nzchar(prefix)) return(NULL)
+  prefix
 }
 
 
@@ -272,19 +295,23 @@
   # Return ref_location as-is; the caller synthesises a full datom_store_s3.
   if (is_datom_store_s3_creds(store$data)) return(ref_location)
 
-  # Compare ref location against store$data
+  # Compare ref location against store$data. Normalize both prefixes so that
+  # NULL / "" / list() are all treated as "no prefix" -- otherwise a JSON
+  # round-trip of a NULL prefix (which serializes to {}) triggers a false
+  # migration.
   store_root <- .datom_store_root(store$data)
-  store_prefix <- store$data$prefix
+  store_prefix <- .datom_normalize_prefix(store$data$prefix)
+  ref_prefix <- .datom_normalize_prefix(ref_location$prefix)
 
   migrated <- !identical(ref_location$root, store_root) ||
-    !identical(ref_location$prefix %||% NULL, store_prefix %||% NULL)
+    !identical(ref_prefix, store_prefix)
 
   if (migrated) {
     if (role == "developer" && !is.null(path)) {
       # Auto-pull git to sync local project.yaml
       cli::cli_alert_info("Ref location differs from store -- pulling git to sync.")
       tryCatch(
-        .datom_git_pull(path),
+        .datom_git_pull(path, pat = store$github_pat),
         error = function(e) {
           cli::cli_abort(c(
             "Failed to auto-pull git after detecting migration.",

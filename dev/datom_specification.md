@@ -15,6 +15,8 @@ The package enables version-controlled data management by abstracting tables as 
 
 The primary utility motivating datom is building version-tracked data products. Companion packages (dpbuild, dpdeploy, and dpi) build upon datom to collectively enable creating, managing, and accessing reproducible data products in clinical and scientific workflows.
 
+For quick route lookups across metadata, storage, governance, lineage, and access-control concerns, see `dev/datom_pathways.md`. The pathway map is a companion navigation aid: this specification remains the source of truth for schemas and algorithms, while the pathway map records the intended routes through those components.
+
 ---
 
 ## Design Principles
@@ -304,16 +306,31 @@ Current state only — no history stored here:
 
 | Field | Description |
 |-------|-------------|
-| `data_sha` | SHA of the parquet file stored in S3 |
+| `data_sha` | SHA of the parquet file stored in S3. Direct S3 key: `{table}/{data_sha}.parquet`. |
 | `table_type` | `"imported"` (from source file via `datom_sync`) or `"derived"` (from data frame via `datom_write`) |
-| `parents` | Immediate parents only. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version}` entries, or `null` if lineage not recorded. Each entry: `source` = project_name of the parent data space, `table` = table name, `version` = metadata_sha at derivation time. Required by datomaccess for access gate computation. |
-| `source_lineage` | Transitive closure of all raw-source tables that contributed data to this table. A flat list of `{project, table, version_sha}` entries where `version_sha` is the `data_sha` (content address) of the source table. For `"imported"` tables: a single self-entry. For `"derived"` tables: required when `parents` is non-null -- dpbuild pre-computes this by unioning the `source_lineage` lists of all parents and deduplicating. Enables one-hop source attribution without DAG traversal. **Walker invariant**: tools that walk lineage must follow `parents`, never `source_lineage` -- `source_lineage` entries are terminal leaves and following them would infinite-loop on the self-entry. |
+| `parents` | Immediate parents only. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version}` entries, or `null` if lineage not recorded. Each entry: `source` = project_name of the parent data space, `table` = table name, `version` = **metadata_sha** of the parent version. The metadata_sha is the direct S3 key for the parent's metadata snapshot: `{table}/.metadata/{version}.json`. Purpose: **traversal and retrieval** -- enables one-hop-at-a-time lineage walking and versioned reads without secondary lookups. See note below on the two-SHA design. |
+| `source_lineage` | Transitive closure of all raw-source tables that contributed data to this table. A flat list of `{project, table, version_sha}` entries where `version_sha` is the **data_sha** (content address of the parquet bytes) of the raw source table. The data_sha is the direct S3 key for the source data: `{table}/{version_sha}.parquet`. Purpose: **content identity and permissioning** -- the data_sha is stable across metadata rewrites, making it the correct key for access policy registries. For `"imported"` tables: a single self-entry. For `"derived"` tables: required when `parents` is non-null -- computed by unioning the `source_lineage` lists of all parents and deduplicating. **Walker invariant**: tools that walk lineage must follow `parents`, never `source_lineage` -- `source_lineage` entries are terminal leaves and following them would infinite-loop on the self-entry. |
 | `size_bytes` | Size of the parquet file in bytes |
 | `nrow`, `ncol` | Table dimensions |
 | `colnames` | Column names array |
 | `created_at` | ISO timestamp of creation |
 | `datom_version` | Version of datom that created this |
 | `custom` | User-defined metadata (description, tags, etc.) |
+
+#### The Two-SHA Design: parents vs source_lineage
+
+A derived table's metadata carries two different version identifiers for its parent tables. This is intentional -- they serve different workflows:
+
+| Field | SHA type | Direct S3 key | Primary use case |
+|-------|----------|---------------|------------------|
+| `parents[].version` | metadata_sha | `{table}/.metadata/{sha}.json` | Traversal, versioned retrieval, lineage validation |
+| `source_lineage[].version_sha` | data_sha | `{table}/{sha}.parquet` | Content identity, access policy checks |
+
+**Why metadata_sha in `parents`**: The metadata snapshot file is keyed by metadata_sha. Traversal tools (e.g. `datom_get_lineage`, `datom_validate_lineage`) and versioned reads (`datom_read(version=...)`) need to open that file. Using metadata_sha avoids a secondary lookup -- one GET gives the full provenance record.
+
+**Why data_sha in `source_lineage`**: Access policy registries (in datomaccess) index permissions by `{project, table, data_sha}`. The data_sha is stable across metadata rewrites -- if the same raw bytes are re-ingested with a new message, the data_sha is unchanged and existing policy grants continue to apply without manual reauthorization. Using metadata_sha here would require re-granting access every time metadata changes, which is incorrect semantics.
+
+**The apparent version discrepancy**: For a simple single-project derived table, `parents[dm].version` and `source_lineage[dm].version_sha` will both point to the same physical version of `dm`, but through different SHAs. This is not an error. A future schema enhancement (tracked as a GitHub issue) will add `data_sha` to each `parents` entry, making the bridge between the two fields explicit and self-documenting in the JSON.
 
 ### version_history.json
 
@@ -342,6 +359,8 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 | `commit_message` | Descriptive message for this version |
 
 **Note:** A single data_sha may appear with multiple versions if metadata was updated without data changes.
+
+**Note:** `data_sha` in each entry is the only cheap reverse-lookup path from a content address back to its version history (data_sha → all metadata_shas that reference it). Removing this field would make that direction O(n) over all metadata snapshots. Do not drop it.
 
 **Why no git commit SHA?** datom uses git as a versioning and conflict-management mechanism, not as a code repository. The meaningful version identifier is `metadata_sha` (content-addressed, deterministic). Since datom doesn't pair code with data, the git commit SHA adds no reproducibility value — data is either imported from a file or written from an R session, neither of which is captured by the commit. When git context is needed, `timestamp` + `author` or `git log --all -S "<metadata_sha>"` locates the commit directly. Git commit SHA enrichment was considered and designed but deferred — see "Deferred to v2" for the approach if a compelling use case emerges.
 

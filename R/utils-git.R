@@ -249,8 +249,14 @@
 #'   `.datom_git_credentials()`. NULL means unauthenticated.
 #' @return Invisible TRUE on success.
 #' @keywords internal
-.datom_git_push <- function(path, pat = NULL) {
-  .datom_git_pull(path, pat = pat)
+.datom_git_push <- function(path, pat = NULL, pull_first = TRUE) {
+  .datom_check_git2r()
+
+  # Callers that know the remote is empty (first push, wiped remote) pass
+  # pull_first = FALSE to skip the pre-push sync entirely.
+  if (isTRUE(pull_first)) {
+    .datom_git_pull(path, pat = pat)
+  }
 
   .datom_check_git2r()
 
@@ -319,7 +325,8 @@
     error = function(e) {
       cli::cli_abort(c(
         "Failed to fetch from remote {.val {remote_name}}.",
-        "x" = e$message
+        "x" = e$message,
+        "i" = "Check your credentials and remote access."
       ))
     }
   )

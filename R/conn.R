@@ -572,8 +572,8 @@ datom_init_repo <- function(path = ".",
     author = git2r::default_signature(repo)
   )
 
-  # Push initial commit
-  .datom_git_push(path, pat = store$github_pat)
+  # Push initial commit (remote is brand-new/empty -- skip pre-push pull)
+  .datom_git_push(path, pat = store$github_pat, pull_first = FALSE)
   .git_pushed <- TRUE
 
   # From this point on, the data git remote has been advertised. Failures
@@ -766,7 +766,7 @@ datom_init_gov <- function(gov_store,
     cli::cli_alert_info(
       "Local skeleton exists but remote is empty -- re-pushing to {.val {gov_repo_url}}."
     )
-    .datom_git_push(gov_local_path)
+    .datom_git_push(gov_local_path, pat = github_pat, pull_first = FALSE)
     return(invisible(gov_repo_url))
   }
 
@@ -808,7 +808,8 @@ datom_init_gov <- function(gov_store,
     author  = git2r::default_signature(repo)
   )
 
-  .datom_git_push(gov_local_path)
+  # Remote is brand-new/empty -- no pull needed before first push
+  .datom_git_push(gov_local_path, pat = github_pat, pull_first = FALSE)
 
   cli::cli_alert_success("Governance repository initialised at {.path {gov_local_path}}.")
 

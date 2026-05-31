@@ -58,6 +58,42 @@ test_that("creates ref with local store component", {
 })
 
 
+test_that("NULL prefix survives a JSON round-trip as NULL (not empty list)", {
+  # Regression: a NULL prefix serializes to {} and reads back as an empty
+  # list, which previously triggered a false migration. .datom_create_ref
+  # must drop NULL fields and .datom_parse_ref must normalize empty-ish
+  # values back to NULL.
+  data_store <- datom_store_s3(
+    bucket = "my-bucket", prefix = NULL, region = "us-east-1",
+    access_key = "AK", secret_key = "SK", validate = FALSE
+  )
+
+  ref <- .datom_create_ref(data_store)
+
+  ref_path <- withr::local_tempfile(fileext = ".json")
+  jsonlite::write_json(ref, ref_path, auto_unbox = TRUE, pretty = TRUE)
+  parsed <- .datom_parse_ref(
+    jsonlite::read_json(ref_path, simplifyVector = FALSE),
+    source = ref_path
+  )
+
+  expect_null(parsed$prefix)
+  # The location must compare equal to the originating store (no migration).
+  expect_true(identical(.datom_normalize_prefix(parsed$prefix),
+                        .datom_normalize_prefix(data_store$prefix)))
+})
+
+
+test_that(".datom_normalize_prefix collapses empty-ish forms to NULL", {
+  expect_null(.datom_normalize_prefix(NULL))
+  expect_null(.datom_normalize_prefix(list()))
+  expect_null(.datom_normalize_prefix(""))
+  expect_null(.datom_normalize_prefix(NA_character_))
+  expect_equal(.datom_normalize_prefix("trial/"), "trial/")
+  expect_equal(.datom_normalize_prefix(list("trial/")), "trial/")
+})
+
+
 # --- .datom_resolve_ref() -----------------------------------------------------
 
 test_that("resolves current data location from ref.json", {

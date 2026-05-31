@@ -25,6 +25,7 @@ datom is an R package for version-controlled data management. It stores tabular 
 dev/README.md                    ← Development hub (navigation, phase status)
          ↓
 dev/datom_specification.md        ← Design spec (authoritative reference)
+dev/datom_pathways.md             ← Canonical routes across metadata/gov/storage/access
 dev/daapr_architecture.md        ← Ecosystem context
          ↓
 dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)
@@ -32,6 +33,7 @@ dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)
 
 **Navigation rules**:
 - Start here for conventions → go to `dev/README.md` for current work
+- Before designing a new lookup/traversal path, check `dev/datom_pathways.md` for an existing canonical route
 - Phase docs are temporary: created → worked → learnings migrate to spec → deleted
 - Always update phase docs as you work (progress, decisions, blockers)
 
@@ -98,6 +100,7 @@ cli::cli_alert_success("Wrote {name} ({sha})")
 ## Key Files
 
 - `dev/datom_specification.md` — Full technical specification
+- `dev/datom_pathways.md` — Quick route map for canonical lookups and traversals
 - `dev/daapr_architecture.md` — Ecosystem context
 - `R/store.R` — Store constructors (`datom_store_s3`, `datom_store_local`, `datom_store`), validation, GitHub repo creation
 - `R/utils-storage.R` — Storage abstraction dispatch (`.datom_storage_*()` → `.datom_s3_*()` or `.datom_local_*()`)
@@ -162,7 +165,8 @@ datom receives secrets explicitly at runtime; it never discovers, persists, or t
 - **NA-safe optional-string guards**: `nzchar(NA)` returns `NA`, which propagates into `if(...)` as "missing value where TRUE/FALSE needed". For optional fields that may round-trip through yaml/json (e.g. `conn$prefix`), guard with `!is.null(x) && !is.na(x) && nzchar(x)` and wrap the `if` predicate in `isTRUE(...)`. Pattern is in `.datom_local_delete_prefix` / `.datom_s3_delete_prefix`.
 - **`.datom_gov_destroy()` is sandbox-only**: tears down the whole gov repo + storage. Refuses if registered projects exist unless `force = TRUE`. Currently called only by `dev/dev-sandbox.R`; the companion package will eventually own the full gov lifecycle.
 - **`gov_local_path` defaults to `tools::R_user_dir("datom","data")/<repo_name>`**: `datom_init_gov(gov_local_path = NULL)` resolves to the user data directory, never CWD. This avoids polluting a package source tree or any other working directory the user happens to be in. One gov clone serves many data projects. `.datom_gov_clone_init()` validates remote URL on existing dirs and errors on mismatch.
-- **`datom_init_gov()` idempotence is remote-aware**: The early-return guard checks both local `projects/.gitkeep` AND that `git2r::ls_remotes()` returns at least one ref. If the remote was wiped/recreated and is now empty, the function re-pushes the local skeleton instead of silently no-oping. A completely unreachable remote (fetch errors) propagates as an error -- it does not silently succeed.
+- **`datom_init_gov()` idempotence is remote-aware**: The early-return guard checks both local `projects/.gitkeep` AND that `git2r::remote_ls()` returns at least one ref. If the remote was wiped/recreated and is now empty, the function re-pushes the local skeleton (with `pull_first = FALSE`) instead of silently no-oping. A completely unreachable remote (fetch errors) propagates as an error -- it does not silently succeed.
+- **`.datom_git_push()` accepts `pull_first = TRUE` (default)**: Callers that already know the remote is empty (first push to a new repo, issue #20 re-push after remote wipe) pass `pull_first = FALSE` to skip the pre-push fetch/merge. This avoids libgit2 errors when the remote has no refs yet. Never pass `pull_first = FALSE` for routine pushes to an established remote.
 - **`ref.json` carries `current$type`**: Records the data backend (`"s3"` or `"local"`). Set by `.datom_create_ref()` from `.datom_store_backend(data_store)`. Readers depend on this to identify the backend without already holding a store -- e.g. `datom_projects()` populates `data_backend` from this field.
 - **Storage list dispatch returns full keys**: `.datom_storage_list_objects(conn, prefix)` and the S3/local backends both return keys in their full storage-key form (`"{prefix}/datom/..."`), NOT relative to the prefix arg. Callers extract project names / paths via regex; do not assume relative-to-prefix output.
 - **`.datom_gov_list_projects()` is a pure read, not a GOV_SEAM**: lives in `R/utils-gov.R` next to the seam helpers but is intentionally NOT marked `# GOV_SEAM:`. Read helpers stay with datom; only gov **writes** are seamed for the future companion package. Same rule applies to any future `.datom_gov_read_*()` helper.

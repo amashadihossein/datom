@@ -68,22 +68,30 @@ summary_trt_by_sex <- ex |>
   dplyr::group_by(SEX, EXTRT) |>
   dplyr::summarise(n = dplyr::n(), .groups = "drop")
 
+# Fetch source_lineage from each imported parent and union them
+dm_lineage <- datom_get_lineage(conn, "dm", depth = "source")
+ex_lineage <- datom_get_lineage(conn, "ex", depth = "source")
+
 datom_write(
   conn,
-  data    = summary_trt_by_sex,
-  name    = "summary_trt_by_sex",
-  message = "Derived: summary of treatment by sex",
-  parents = list(
+  data           = summary_trt_by_sex,
+  name           = "summary_trt_by_sex",
+  message        = "Derived: summary of treatment by sex",
+  parents        = list(
     list(source = "STUDY_001", table = "dm", version = dm_meta$version[1]),
     list(source = "STUDY_001", table = "ex", version = ex_meta$version[1])
-  )
+  ),
+  source_lineage = c(dm_lineage, ex_lineage)
 )
 
 # --- Verify lineage ---------------------------------------------------------
 
 datom_list(conn)
 datom_get_parents(conn, "summary_trt_by_sex")
+datom_get_lineage(conn, "summary_trt_by_sex", depth = "source")   # should show dm + ex raw SHAs
+datom_get_lineage(conn, "summary_trt_by_sex", depth = "parents")  # should show dm + ex versions
 datom_history(conn, "summary_trt_by_sex")
+stopifnot(datom_validate_lineage(conn, "summary_trt_by_sex")$status == "ok")
 
 # --- Sync dispatch (gov-side commit + push) ---------------------------------
 # dispatch.json lives in the governance repo at
@@ -104,13 +112,18 @@ local({
   gov_json_git <- fs::path(env$local_path, ".datom", "governance.json")
   stopifnot("governance.json absent from git clone" = fs::file_exists(gov_json_git))
   gj <- jsonlite::read_json(gov_json_git)
-  stopifnot("gov_repo_url missing" = nzchar(gj$gov_repo_url))
-  stopifnot("project_name mismatch" = identical(gj$project_name, env$config$project_name))
+  stopifnot("gov_repo_url missing"    = nzchar(gj$gov_repo_url))
+  stopifnot("gov_storage absent"      = !is.null(gj$gov_storage))
+  stopifnot("gov_storage root absent" = nzchar(gj$gov_storage$root))
+  # governance.json is a governance pointer; project_name lives in project.yaml
+  proj_yaml <- yaml::read_yaml(fs::path(env$local_path, ".datom", "project.yaml"))
+  stopifnot("project.yaml project_name mismatch" =
+              identical(proj_yaml$project_name, env$config$project_name))
 
   storage_gj <- datom:::.datom_storage_read_json(conn, ".metadata/governance.json")
-  stopifnot("governance.json storage mirror absent" = !is.null(storage_gj))
-  stopifnot("storage mirror project_name mismatch" =
-              identical(storage_gj$project_name, env$config$project_name))
+  stopifnot("governance.json storage mirror absent"    = !is.null(storage_gj))
+  stopifnot("storage mirror gov_repo_url missing"      = nzchar(storage_gj$gov_repo_url))
+  stopifnot("storage mirror gov_storage root missing"  = nzchar(storage_gj$gov_storage$root))
 
   cat("governance.json OK: present in git clone and S3 mirror.\n")
 })
@@ -132,8 +145,8 @@ reader_store <- datom::datom_store(
   data = datom::datom_store_s3_creds(
     access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
     secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY")
-  ),
-  github_pat = Sys.getenv("GITHUB_PAT")
+  )
+  # No github_pat: readers have no git access; role = "reader" is auto-derived
 )
 
 reader_conn <- datom::datom_get_conn(
@@ -155,11 +168,11 @@ cat("  Data bucket resolved from ref.json:", reader_conn$root, "\n")
 # If you closed R without tearing down, re-source the sandbox helpers,
 # build a store, and recover the env object:
 #
-#   devtools::load_all()
-#   source("dev/dev-sandbox.R")
-#
+# devtools::load_all("~/projects/dev/tbit/")
+# source("~/projects/dev/tbit/dev/dev-sandbox.R")
+
 #   store <- sandbox_store(bucket = "datom-test", prefix = NULL, region = "us-east-1")
-#
+
 #   env <- sandbox_recover(
 #     store,
 #     project_name  = "STUDY_001",
