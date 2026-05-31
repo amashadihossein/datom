@@ -104,7 +104,7 @@ repo without requiring the user to remember it. This enables:</p>
 <li>
 <strong>Sync repair</strong> – if the git copy of
 <code>governance.json</code> drifts from the storage mirror,
-<code>.datom_sync_governance_json()</code> uses the git copy to push a
+<code><a href="../reference/dot-datom_sync_governance_json.html">.datom_sync_governance_json()</a></code> uses the git copy to push a
 fresh mirror.</li>
 <li>
 <strong>Tooling introspection</strong> – scripts that walk a
@@ -194,7 +194,7 @@ together and committed in the same data-side commit.</p>
 </h3>
 <p>If the storage mirror is missing or stale, call:</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">.datom_sync_governance_json</span><span class="op">(</span><span class="va">conn</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/dot-datom_sync_governance_json.html">.datom_sync_governance_json</a></span><span class="op">(</span><span class="va">conn</span><span class="op">)</span></span></code></pre></div>
 <p>This reads the git copy from the data clone and overwrites the
 storage mirror. It is idempotent and safe to call multiple times.</p>
 </div>

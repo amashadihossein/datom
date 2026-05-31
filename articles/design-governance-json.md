@@ -23,8 +23,9 @@ data clone on disk, the tooling can locate the governance repo without
 requiring the user to remember it. This enables:
 
 - **Sync repair** – if the git copy of `governance.json` drifts from the
-  storage mirror, `.datom_sync_governance_json()` uses the git copy to
-  push a fresh mirror.
+  storage mirror,
+  [`.datom_sync_governance_json()`](https://amashadihossein.github.io/datom/reference/dot-datom_sync_governance_json.md)
+  uses the git copy to push a fresh mirror.
 - **Tooling introspection** – scripts that walk a collection of data
   clones can discover governance without external configuration.
 

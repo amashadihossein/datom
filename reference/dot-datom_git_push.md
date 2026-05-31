@@ -6,7 +6,7 @@ merge conflicts – user must resolve manually per spec.
 ## Usage
 
 ``` r
-.datom_git_push(path, pat = NULL)
+.datom_git_push(path, pat = NULL, pull_first = TRUE)
 ```
 
 ## Arguments

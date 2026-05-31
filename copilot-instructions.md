@@ -50,14 +50,17 @@ are explicitly rejected scope.
     dev/README.md                    ← Development hub (navigation, phase status)
              ↓
     dev/datom_specification.md        ← Design spec (authoritative reference)
+    dev/datom_pathways.md             ← Canonical routes across metadata/gov/storage/access
     dev/daapr_architecture.md        ← Ecosystem context
              ↓
     dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)
 
 **Navigation rules**: - Start here for conventions → go to
-`dev/README.md` for current work - Phase docs are temporary: created →
-worked → learnings migrate to spec → deleted - Always update phase docs
-as you work (progress, decisions, blockers)
+`dev/README.md` for current work - Before designing a new
+lookup/traversal path, check `dev/datom_pathways.md` for an existing
+canonical route - Phase docs are temporary: created → worked → learnings
+migrate to spec → deleted - Always update phase docs as you work
+(progress, decisions, blockers)
 
 ## Architecture Context
 
@@ -128,6 +131,8 @@ cli::cli_alert_success("Wrote {name} ({sha})")
 ## Key Files
 
 - `dev/datom_specification.md` — Full technical specification
+- `dev/datom_pathways.md` — Quick route map for canonical lookups and
+  traversals
 - `dev/daapr_architecture.md` — Ecosystem context
 - `R/store.R` — Store constructors (`datom_store_s3`,
   `datom_store_local`, `datom_store`), validation, GitHub repo creation
@@ -441,11 +446,21 @@ internal credential contract.
 
 - **[`datom_init_gov()`](https://amashadihossein.github.io/datom/reference/datom_init_gov.md)
   idempotence is remote-aware**: The early-return guard checks both
-  local `projects/.gitkeep` AND that `git2r::ls_remotes()` returns at
-  least one ref. If the remote was wiped/recreated and is now empty, the
-  function re-pushes the local skeleton instead of silently no-oping. A
-  completely unreachable remote (fetch errors) propagates as an error –
-  it does not silently succeed.
+  local `projects/.gitkeep` AND that
+  [`git2r::remote_ls()`](https://docs.ropensci.org/git2r/reference/remote_ls.html)
+  returns at least one ref. If the remote was wiped/recreated and is now
+  empty, the function re-pushes the local skeleton (with
+  `pull_first = FALSE`) instead of silently no-oping. A completely
+  unreachable remote (fetch errors) propagates as an error – it does not
+  silently succeed.
+
+- **[`.datom_git_push()`](https://amashadihossein.github.io/datom/reference/dot-datom_git_push.md)
+  accepts `pull_first = TRUE` (default)**: Callers that already know the
+  remote is empty (first push to a new repo, issue \#20 re-push after
+  remote wipe) pass `pull_first = FALSE` to skip the pre-push
+  fetch/merge. This avoids libgit2 errors when the remote has no refs
+  yet. Never pass `pull_first = FALSE` for routine pushes to an
+  established remote.
 
 - **`ref.json` carries `current$type`**: Records the data backend
   (`"s3"` or `"local"`). Set by
