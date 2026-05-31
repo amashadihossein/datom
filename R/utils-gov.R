@@ -245,7 +245,7 @@
   if (is.null(gov_path)) {
     cli::cli_abort("Cannot commit to gov clone: {.arg conn} has no {.field gov_local_path}.")
   }
-  .datom_git_pull(gov_path)
+  .datom_git_pull(gov_path, pat = conn$github_pat)
   .datom_git_commit(gov_path, paths, msg, staged_deletions = staged_deletions)
 }
 
@@ -264,7 +264,7 @@
   if (is.null(gov_path)) {
     cli::cli_abort("Cannot push gov clone: {.arg conn} has no {.field gov_local_path}.")
   }
-  .datom_git_push(gov_path)
+  .datom_git_push(gov_path, pat = conn$github_pat)
 }
 
 
@@ -282,7 +282,7 @@
   if (is.null(gov_path)) {
     cli::cli_abort("Cannot pull gov clone: {.arg conn} has no {.field gov_local_path}.")
   }
-  .datom_git_pull(gov_path)
+  .datom_git_pull(gov_path, pat = conn$github_pat)
 }
 
 

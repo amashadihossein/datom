@@ -10,6 +10,7 @@ This folder contains all development documentation following a hierarchical chai
 dev/README.md                       ← This file: navigation hub
          ↓
 dev/datom_specification.md           ← Design spec (authoritative, evolves slowly)
+dev/datom_pathways.md               ← Canonical route map across metadata/gov/storage/access
 dev/daapr_architecture.md           ← Ecosystem context
 dev/datomaccess_overview.md          ← datomaccess sister package context (forward-looking)
          ↓
@@ -36,6 +37,7 @@ Phase plans are **temporary working documents**:
 |--------------|----------|-----------|
 | Coding style, conventions | `.github/copilot-instructions.md` | Permanent |
 | Architecture, API design | `dev/datom_specification.md` | Permanent, evolves |
+| Canonical lookup/traversal routes | `dev/datom_pathways.md` | Permanent, evolves with schema/routing changes |
 | Ecosystem context | `dev/daapr_architecture.md` | Permanent |
 | Current work, decisions | `dev/phase_*.md` | Temporary |
 | Implementation details discovered | Migrate to spec, then delete | — |
@@ -188,6 +190,7 @@ After each chunk is implemented, I deliver **five things in order**:
    - Flip the chunk's row in the **Chunks table** Status column (e.g. `⏳ next` → `✅ done`; mark the next chunk `⏳ next`)
    - Update the **Status** header line at the top of the phase doc (`Chunks 1-N complete; Chunk N+1 next`)
    - Append a **Progress Log** entry for the chunk (what shipped, key decisions, latent bugs caught, test count delta)
+   - If the chunk changes metadata schema, storage layout, governance refs, lineage, access control, role resolution, migration, or decommissioning, update `dev/datom_pathways.md` or explicitly record "no pathway impact"
    Also update the `dev/README.md` Active Phases table status line. The phase doc is the audit trail; if it's not updated, the chunk isn't done.
 5. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit (code + phase doc + README together) with a concise message (e.g., `"Phase 4 Chunk 2: datom_conn class"`), then you push
 
@@ -252,6 +255,7 @@ git push -u origin phase/10-remotes-refactor
 5. **Update this README** when phase status changes
 6. **Capture deferrals immediately** — when you skip something, document it
 7. **Review backlog** before starting each phase
+8. **Keep pathway map current** — schema/routing changes must update `dev/datom_pathways.md` or record "no pathway impact"
 
 ## Phase Completion Procedure
 
@@ -259,6 +263,7 @@ When a phase is done, perform these steps **in order before starting the next ph
 
 1. **Harvest persistent content** from the phase doc:
    - Design decisions that affect the overall API → migrate to `dev/datom_specification.md`
+   - Canonical lookup/traversal route changes → migrate to `dev/datom_pathways.md`
    - Coding patterns/conventions discovered → migrate to `.github/copilot-instructions.md`
    - Ecosystem learnings → migrate to `dev/daapr_architecture.md`
    - Deferred items → move to the **Backlog** table in this README

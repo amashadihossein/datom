@@ -614,6 +614,30 @@ test_that(".datom_git_pull aborts when no remote configured", {
   expect_error(.datom_git_pull(info$path), "No remote")
 })
 
+test_that(".datom_git_push with pull_first=FALSE succeeds on empty remote", {
+  # Simulate datom_init_gov / datom_init_repo: init local repo, add a
+  # brand-new bare remote, then push. Callers pass pull_first = FALSE
+  # because they already know the remote has no refs.
+  bare_dir <- withr::local_tempdir()
+  git2r::init(bare_dir, bare = TRUE)
+
+  work_dir <- withr::local_tempdir()
+  work_repo <- git2r::init(work_dir)
+  git2r::config(work_repo, user.name = "Test User", user.email = "test@example.com")
+  git2r::remote_add(work_repo, name = "origin", url = bare_dir)
+
+  writeLines("init", fs::path(work_dir, "README.md"))
+  git2r::add(work_repo, "README.md")
+  git2r::commit(work_repo, "Initial commit")
+
+  # pull_first = FALSE: skip pre-push pull, push directly to empty remote
+  expect_no_error(.datom_git_push(work_dir, pull_first = FALSE))
+
+  # Verify the commit landed on the remote
+  remote_refs <- git2r::remote_ls(bare_dir)
+  expect_true(length(remote_refs) > 0L)
+})
+
 test_that(".datom_git_pull aborts on non-git directory", {
   dir <- withr::local_tempdir()
   expect_error(.datom_git_pull(dir), "Not a git repository")
