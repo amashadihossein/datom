@@ -65,6 +65,7 @@ into a single store object. Role (developer vs reader) is derived from
 <span>  gov_repo_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  gov_local_path <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  github_org <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  github_api_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  validate <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -110,6 +111,14 @@ the basename of <code>gov_repo_url</code> (e.g., <code>"acme-gov"</code>).</p></
 
 <dt id="arg-github-org">github_org<a class="anchor" aria-label="anchor" href="#arg-github-org"></a></dt>
 <dd><p>GitHub organization for repo creation. NULL for personal repos.</p></dd>
+
+
+<dt id="arg-github-api-url">github_api_url<a class="anchor" aria-label="anchor" href="#arg-github-api-url"></a></dt>
+<dd><p>GitHub API base URL. <code>NULL</code> (default) uses
+<code>"https://api.github.com"</code>, which is correct for github.com and GitHub
+Enterprise Cloud (GHEC). For GitHub Enterprise Server (GHES) pass the
+server's API root, e.g. <code>"https://github.mycompany.com/api/v3"</code>. A
+trailing <code>/</code> is stripped for consistency.</p></dd>
 
 
 <dt id="arg-validate">validate<a class="anchor" aria-label="anchor" href="#arg-validate"></a></dt>

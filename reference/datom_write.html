@@ -92,7 +92,9 @@
 
 <dt id="arg-parents">parents<a class="anchor" aria-label="anchor" href="#arg-parents"></a></dt>
 <dd><p>Optional lineage: list of <code>list(source, table, version)</code> entries.
-Used by dp_dev to track dependency versions. NULL if lineage not recorded.</p></dd>
+Used by dp_dev to track dependency versions. NULL if lineage not recorded.
+At write time, <code>data_sha</code> is automatically added to each entry from the
+parent's local metadata snapshot (<code>NULL</code> if the snapshot is not in the clone).</p></dd>
 
 
 <dt id="arg-source-lineage">source_lineage<a class="anchor" aria-label="anchor" href="#arg-source-lineage"></a></dt>

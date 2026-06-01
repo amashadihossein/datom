@@ -19,7 +19,8 @@ and
   gov_store = NULL,
   gov_local_path = NULL,
   data_repo_url = NULL,
-  github_pat = NULL
+  github_pat = NULL,
+  github_api_url = NULL
 )
 ```
 

@@ -15,6 +15,7 @@ datom_store(
   gov_repo_url = NULL,
   gov_local_path = NULL,
   github_org = NULL,
+  github_api_url = NULL,
   validate = TRUE
 )
 ```
@@ -64,6 +65,14 @@ datom_store(
 - github_org:
 
   GitHub organization for repo creation. NULL for personal repos.
+
+- github_api_url:
+
+  GitHub API base URL. `NULL` (default) uses `"https://api.github.com"`,
+  which is correct for github.com and GitHub Enterprise Cloud (GHEC).
+  For GitHub Enterprise Server (GHES) pass the server's API root, e.g.
+  `"https://github.mycompany.com/api/v3"`. A trailing `/` is stripped
+  for consistency.
 
 - validate:
 

@@ -76,7 +76,8 @@ Reader: S3-only access, no local repo
 <span>  gov_local_path <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  backend <span class="op">=</span> <span class="st">"s3"</span>,</span>
 <span>  data_repo_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  github_pat <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  github_pat <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  github_api_url <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -146,6 +147,12 @@ when not yet known.</p></dd>
 <dd><p>GitHub personal access token held in memory only. Sourced
 from <code>store$github_pat</code> at conn-construction time. Never persisted to disk
 and never printed.</p></dd>
+
+
+<dt id="arg-github-api-url">github_api_url<a class="anchor" aria-label="anchor" href="#arg-github-api-url"></a></dt>
+<dd><p>GitHub API base URL. Sourced from
+<code>store$github_api_url</code> at conn-construction time. Defaults to
+<code>"https://api.github.com"</code> when not set.</p></dd>
 
 </dl></div>
     <div class="section level2">

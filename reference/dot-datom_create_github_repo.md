@@ -6,7 +6,13 @@ personal repos.
 ## Usage
 
 ``` r
-.datom_create_github_repo(repo_name, pat, org = NULL, private = TRUE)
+.datom_create_github_repo(
+  repo_name,
+  pat,
+  org = NULL,
+  private = TRUE,
+  api_url = "https://api.github.com"
+)
 ```
 
 ## Arguments
@@ -26,6 +32,10 @@ personal repos.
 - private:
 
   Whether the repo should be private (default TRUE).
+
+- api_url:
+
+  GitHub API base URL (default `"https://api.github.com"`).
 
 ## Value
 

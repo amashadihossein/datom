@@ -68,7 +68,8 @@ pushes.</p>
 <span>  repo_name <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  github_pat <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  github_org <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  private <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span>  private <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  github_api_url <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -117,6 +118,12 @@ the authenticated user account.</p></dd>
 <dt id="arg-private">private<a class="anchor" aria-label="anchor" href="#arg-private"></a></dt>
 <dd><p>Whether the created repo should be private.  Default <code>TRUE</code>.
 Ignored when <code>create_repo = FALSE</code>.</p></dd>
+
+
+<dt id="arg-github-api-url">github_api_url<a class="anchor" aria-label="anchor" href="#arg-github-api-url"></a></dt>
+<dd><p>GitHub API base URL. <code>NULL</code> (default) uses
+<code>"https://api.github.com"</code>. For GHES pass the server's API root, e.g.
+<code>"https://github.mycompany.com/api/v3"</code>.</p></dd>
 
 </dl></div>
     <div class="section level2">

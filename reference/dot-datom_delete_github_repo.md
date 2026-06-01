@@ -6,7 +6,7 @@ Deletes a GitHub repository via the REST API. Requires a PAT with the
 ## Usage
 
 ``` r
-.datom_delete_github_repo(repo_full, pat)
+.datom_delete_github_repo(repo_full, pat, api_url = "https://api.github.com")
 ```
 
 ## Arguments
@@ -18,6 +18,10 @@ Deletes a GitHub repository via the REST API. Requires a PAT with the
 - pat:
 
   GitHub personal access token (must have `delete_repo` scope).
+
+- api_url:
+
+  GitHub API base URL (default `"https://api.github.com"`).
 
 ## Value
 

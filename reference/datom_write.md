@@ -48,6 +48,9 @@ datom_write(
 
   Optional lineage: list of `list(source, table, version)` entries. Used
   by dp_dev to track dependency versions. NULL if lineage not recorded.
+  At write time, `data_sha` is automatically added to each entry from
+  the parent's local metadata snapshot (`NULL` if the snapshot is not in
+  the clone).
 
 - source_lineage:
 

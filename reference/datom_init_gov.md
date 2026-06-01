@@ -16,7 +16,8 @@ datom_init_gov(
   repo_name = NULL,
   github_pat = NULL,
   github_org = NULL,
-  private = TRUE
+  private = TRUE,
+  github_api_url = NULL
 )
 ```
 
@@ -63,6 +64,12 @@ datom_init_gov(
 
   Whether the created repo should be private. Default `TRUE`. Ignored
   when `create_repo = FALSE`.
+
+- github_api_url:
+
+  GitHub API base URL. `NULL` (default) uses `"https://api.github.com"`.
+  For GHES pass the server's API root, e.g.
+  `"https://github.mycompany.com/api/v3"`.
 
 ## Value
 
