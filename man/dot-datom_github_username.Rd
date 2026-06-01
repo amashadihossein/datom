@@ -4,10 +4,12 @@
 \alias{.datom_github_username}
 \title{Get GitHub Username from PAT}
 \usage{
-.datom_github_username(pat)
+.datom_github_username(pat, api_url = "https://api.github.com")
 }
 \arguments{
 \item{pat}{GitHub personal access token.}
+
+\item{api_url}{GitHub API base URL (default \code{"https://api.github.com"}).}
 }
 \value{
 Username string.

@@ -119,7 +119,10 @@ datom_decommission <- function(conn, confirm = NULL) {
           cli::cli_alert_info("Deleting GitHub repo {.val {repo_full}}...")
           tryCatch(
             {
-              .datom_delete_github_repo(repo_full, pat)
+              .datom_delete_github_repo(
+                repo_full, pat,
+                api_url = conn$github_api_url %||% "https://api.github.com"
+              )
               cli::cli_alert_success("Deleted GitHub repo {.val {repo_full}}.")
             },
             error = function(e) {

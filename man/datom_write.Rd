@@ -30,7 +30,9 @@ datom_write(
 \item{message}{Optional commit message.}
 
 \item{parents}{Optional lineage: list of \code{list(source, table, version)} entries.
-Used by dp_dev to track dependency versions. NULL if lineage not recorded.}
+Used by dp_dev to track dependency versions. NULL if lineage not recorded.
+At write time, \code{data_sha} is automatically added to each entry from the
+parent's local metadata snapshot (\code{NULL} if the snapshot is not in the clone).}
 
 \item{source_lineage}{Required when \code{parents} is non-NULL. Pre-computed flat list
 of transitive non-derived source descriptors (each with \code{project}, \code{table},

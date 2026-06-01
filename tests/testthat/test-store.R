@@ -1138,3 +1138,155 @@ test_that("datom_store() accepts mixed S3 + local components", {
 
   expect_s3_class(store, "datom_store")
 })
+
+
+# ==============================================================================
+# github_api_url support (Issue 29)
+# ==============================================================================
+
+test_that("datom_store() defaults github_api_url to https://api.github.com", {
+  comp <- make_component()
+  store <- datom_store(governance = comp, data = comp, validate = FALSE)
+  expect_equal(store$github_api_url, "https://api.github.com")
+})
+
+test_that("datom_store() stores custom github_api_url", {
+  comp <- make_component()
+  store <- datom_store(
+    governance = comp, data = comp, validate = FALSE,
+    github_api_url = "https://github.mycompany.com/api/v3"
+  )
+  expect_equal(store$github_api_url, "https://github.mycompany.com/api/v3")
+})
+
+test_that("datom_store() strips trailing slash from github_api_url", {
+  comp <- make_component()
+  store <- datom_store(
+    governance = comp, data = comp, validate = FALSE,
+    github_api_url = "https://github.mycompany.com/api/v3/"
+  )
+  expect_equal(store$github_api_url, "https://github.mycompany.com/api/v3")
+})
+
+test_that("datom_store() strips multiple trailing slashes from github_api_url", {
+  comp <- make_component()
+  store <- datom_store(
+    governance = comp, data = comp, validate = FALSE,
+    github_api_url = "https://github.mycompany.com/api/v3///"
+  )
+  expect_equal(store$github_api_url, "https://github.mycompany.com/api/v3")
+})
+
+test_that("datom_store() errors on non-https github_api_url", {
+  comp <- make_component()
+  expect_error(
+    datom_store(
+      governance = comp, data = comp, validate = FALSE,
+      github_api_url = "http://github.mycompany.com/api/v3"
+    ),
+    "https://"
+  )
+})
+
+test_that("datom_store() errors on empty github_api_url", {
+  comp <- make_component()
+  expect_error(
+    datom_store(
+      governance = comp, data = comp, validate = FALSE,
+      github_api_url = ""
+    ),
+    "github_api_url"
+  )
+})
+
+test_that("datom_store() errors on non-string github_api_url", {
+  comp <- make_component()
+  expect_error(
+    datom_store(
+      governance = comp, data = comp, validate = FALSE,
+      github_api_url = 42
+    ),
+    "github_api_url"
+  )
+})
+
+test_that("print.datom_store() shows custom API URL but not the default", {
+  comp <- make_component()
+
+  default_store <- datom_store(governance = comp, data = comp, validate = FALSE)
+  default_out <- paste(capture.output(print(default_store), type = "message"), collapse = "\n")
+  expect_no_match(default_out, "GitHub API URL")
+
+  ghes_store <- datom_store(
+    governance = comp, data = comp, validate = FALSE,
+    github_api_url = "https://github.mycompany.com/api/v3"
+  )
+  ghes_out <- paste(capture.output(print(ghes_store), type = "message"), collapse = "\n")
+  expect_match(ghes_out, "github.mycompany.com")
+})
+
+test_that(".datom_validate_github_pat() uses custom api_url", {
+  captured_url <- NULL
+
+  mockery::stub(
+    .datom_validate_github_pat, "httr2::req_perform",
+    function(req) {
+      captured_url <<- req$url
+      structure(list(body = ""), class = "httr2_response")
+    }
+  )
+  mockery::stub(
+    .datom_validate_github_pat, "httr2::resp_body_json",
+    list(login = "octocat", id = 1)
+  )
+
+  .datom_validate_github_pat(
+    "ghp_test",
+    api_url = "https://github.mycompany.com/api/v3"
+  )
+  expect_match(captured_url, "github.mycompany.com/api/v3/user")
+})
+
+test_that(".datom_create_github_repo() uses custom api_url for check URL", {
+  captured_urls <- character(0)
+
+  mockery::stub(
+    .datom_create_github_repo, "httr2::req_perform",
+    function(req) {
+      captured_urls <<- c(captured_urls, req$url)
+      structure(list(body = ""), class = "httr2_response")
+    }
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_status", 404L
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_body_json",
+    list(clone_url = "https://github.mycompany.com/myorg/newrepo.git")
+  )
+
+  .datom_create_github_repo(
+    "newrepo", pat = "ghp_test", org = "myorg",
+    api_url = "https://github.mycompany.com/api/v3"
+  )
+
+  expect_true(any(grepl("github.mycompany.com/api/v3/repos/myorg/newrepo", captured_urls)))
+})
+
+test_that(".datom_delete_github_repo() uses custom api_url", {
+  captured_url <- NULL
+
+  mockery::stub(
+    .datom_delete_github_repo, "httr2::req_perform",
+    function(req) {
+      captured_url <<- req$url
+      structure(list(status_code = 204L), class = "httr2_response")
+    }
+  )
+
+  .datom_delete_github_repo(
+    "owner/repo", pat = "ghp_test",
+    api_url = "https://github.mycompany.com/api/v3"
+  )
+  expect_match(captured_url, "github.mycompany.com/api/v3/repos/owner/repo")
+})
