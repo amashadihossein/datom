@@ -777,6 +777,11 @@ test_that("datom_write passes table_type and parents to metadata", {
     conn$role <- "developer"
     conn$path <- getwd()
 
+    # Seed parent snapshot so data_sha enrichment resolves cleanly
+    snap_dir <- fs::dir_create(fs::path(getwd(), "proj_a", "tbl1", ".metadata"))
+    jsonlite::write_json(list(data_sha = "data_sha_abc"), fs::path(snap_dir, "sha_abc.json"),
+                         auto_unbox = TRUE)
+
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
@@ -790,10 +795,10 @@ test_that("datom_write passes table_type and parents to metadata", {
 
     parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_abc"))
     source_lineage <- list(list(project = "proj_a", table = "tbl1", version_sha = "data_sha_abc"))
-    suppressWarnings(datom_write(
+    datom_write(
       conn, data = data.frame(x = 1), name = "derived_tbl",
       parents = parents, source_lineage = source_lineage, .table_type = "derived"
-    ))
+    )
 
     expect_equal(captured_meta$table_type, "derived")
     expect_length(captured_meta$parents, 1)
@@ -1009,6 +1014,11 @@ test_that("datom_write stores source_lineage in metadata", {
     conn$role <- "developer"
     conn$path <- getwd()
 
+    # Seed parent snapshot so data_sha enrichment resolves cleanly
+    snap_dir <- fs::dir_create(fs::path(getwd(), "proj_a", "raw_dm", ".metadata"))
+    jsonlite::write_json(list(data_sha = "data_sha_abc"), fs::path(snap_dir, "sha_abc.json"),
+                         auto_unbox = TRUE)
+
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
@@ -1022,8 +1032,8 @@ test_that("datom_write stores source_lineage in metadata", {
 
     parents <- list(list(source = "proj_a", table = "raw_dm", version = "sha_abc"))
     sl <- list(list(project = "proj_a", table = "raw_dm", version_sha = "data_sha_abc"))
-    suppressWarnings(datom_write(conn, data = data.frame(x = 1), name = "derived_tbl",
-                parents = parents, source_lineage = sl))
+    datom_write(conn, data = data.frame(x = 1), name = "derived_tbl",
+                parents = parents, source_lineage = sl)
 
     expect_length(captured_meta$source_lineage, 1)
     expect_equal(captured_meta$source_lineage[[1]]$project, "proj_a")
