@@ -1,4 +1,4 @@
-# datomaccess / datomanager Integration — Context for datom Development
+# datomanager / datomanager Integration — Context for datom Development
 
 > **Purpose**: This file provides context for development tools (Copilot, Claude, etc.)
 > about planned companion packages, so that datom development decisions remain compatible
@@ -11,7 +11,7 @@
 > - **datomanager** = the companion governance package that owns the GOV_SEAM surface
 >   (gov lifecycle: init, register, decommission, migrate). See `dev/datomanager_scope.md`
 >   for the full scope doc.
-> - **datomaccess** = the access enforcement layer described in this file (roles, grants,
+> - **datomanager** = the access enforcement layer described in this file (roles, grants,
 >   IAM-backed S3 access points). Separate package, further out in the roadmap.
 >
 > **Terminology drift (datom has changed since this doc was written)**:
@@ -21,15 +21,15 @@
 > - `conn$bucket` → `conn$root` (Phase 12; root = bucket for S3, dir path for local)
 > - `datom_get_conn(bucket=, prefix=, ...)` → `datom_get_conn(store=)` (Phase 10)
 > - `.datom_s3_*()` direct calls → `.datom_storage_*()` dispatch layer (Phase 11)
-> - `conn$role` does not exist on datom_conn; roles are a datomaccess concept only
+> - `conn$role` does not exist on datom_conn; roles are a datomanager concept only
 >
 > The access management architecture described below (Sections 3 onwards) remains
 > conceptually valid. The specific datom API references above need updating before
-> datomaccess implementation begins.
+> datomanager implementation begins.
 
 ---
 
-## What is datomaccess?
+## What is datomanager?
 
 A future R package (with Python counterpart) that layers access management on top of datom. It will:
 
@@ -39,11 +39,11 @@ A future R package (with Python counterpart) that layers access management on to
 - **Auto-inherit** access requirements for derived tables by walking lineage
 - **Enforce** access at the cloud storage API level (S3 access points, IAM)
 
-datomaccess depends on datom. datom does **not** depend on datomaccess. datom must work fully without datomaccess installed.
+datomanager depends on datom. datom does **not** depend on datomanager. datom must work fully without datomanager installed.
 
 ---
 
-## What datom Needs to Accommodate datomaccess
+## What datom Needs to Accommodate datomanager
 
 ### 1. Lineage (parents) in Metadata — REQUIRED
 
@@ -76,7 +76,7 @@ Every table written via `datom_write()` should include a `parents` field in `met
 - Each parent entry has: `source` (project_name of source data space), `table` (table name), `version` (metadata_sha at derivation time)
 - For tables derived within the same project, `source` equals `conn$project_name`
 
-**Why:** datomaccess walks lineage upward to compute access gates. dpbuild also uses lineage for data product construction. Even without datomaccess, lineage serves datom's own reproducibility story.
+**Why:** datomanager walks lineage upward to compute access gates. dpbuild also uses lineage for data product construction. Even without datomanager, lineage serves datom's own reproducibility story.
 
 **Files to modify:**
 
@@ -135,7 +135,7 @@ datom_get_parents <- function(conn, name, version = NULL) {
 
 ### 4. Endpoint Override in Connection — REQUIRED
 
-datomaccess will route reads through S3 access points. datom_conn needs to accept an optional endpoint.
+datomanager will route reads through S3 access points. datom_conn needs to accept an optional endpoint.
 
 **Files to modify:**
 
@@ -144,11 +144,11 @@ datomaccess will route reads through S3 access points. datom_conn needs to accep
 - `R/conn.R`: `.datom_get_conn_reader()` — accept and forward `endpoint`
 - `R/utils-s3.R`: `.datom_s3_client()` — when `endpoint` is provided, pass as `endpoint` config to `paws.storage::s3()`
 
-When `endpoint` is NULL (default), everything works exactly as today. datomaccess sets this when loaded.
+When `endpoint` is NULL (default), everything works exactly as today. datomanager sets this when loaded.
 
 ### 5. Reserved Namespace — CONVENTION ONLY
 
-The S3 key prefix `{prefix}/datom/.access/` is reserved for datomaccess. datom should not read, write, or delete keys under this prefix.
+The S3 key prefix `{prefix}/datom/.access/` is reserved for datomanager. datom should not read, write, or delete keys under this prefix.
 
 `datom_list()` already reads from `manifest.json` only, so this is safe by construction. Just document the convention in the spec's storage structure section.
 
@@ -164,8 +164,8 @@ Add to the S3 storage structure diagram:
 bucket/
 └── {optional_prefix}/
     └── datom/
-        ├── .access/                    # Reserved for datomaccess package
-        │   └── (managed by datomaccess)
+        ├── .access/                    # Reserved for datomanager package
+        │   └── (managed by datomanager)
         ├── .metadata/
         │   ├── routing.json
         │   ├── manifest.json
@@ -177,7 +177,7 @@ bucket/
 
 ### 6. Storage Utility Sharing — RECOMMENDED, NOT BLOCKING
 
-datomaccess will need S3 read/write capabilities. datom already has:
+datomanager will need S3 read/write capabilities. datom already has:
 
 ```
 .datom_s3_exists()
@@ -187,7 +187,7 @@ datomaccess will need S3 read/write capabilities. datom already has:
 .datom_s3_download()
 ```
 
-No action needed now. When datomaccess is built, these can be accessed via `datom:::` or re-exported. Just keep these functions with clean interfaces (conn + key based) so they remain reusable.
+No action needed now. When datomanager is built, these can be accessed via `datom:::` or re-exported. Just keep these functions with clean interfaces (conn + key based) so they remain reusable.
 
 ---
 
@@ -213,23 +213,23 @@ datom_write()  → "derived"    (data frame in memory → parquet)
 
 ## Design Invariants (Do Not Break)
 
-These properties are critical for datomaccess integration:
+These properties are critical for datomanager integration:
 
 1. **Three independent layers**: DATA (parquet + SHA) and METADATA (git-tracked JSON) are versioned and immutable once written. Access/routing is a separate mutable layer that does not affect versions.
 
-2. **dispatch.json is method routing, not access routing**: datom's `dispatch.json` controls which R/Python function handles reads (e.g., "default" → `datom::datom_read`). Access routing (who can read what) is a completely separate concern owned by datomaccess, stored in `.access/`.
+2. **dispatch.json is method routing, not access routing**: datom's `dispatch.json` controls which R/Python function handles reads (e.g., "default" → `datom::datom_read`). Access routing (who can read what) is a completely separate concern owned by datomanager, stored in `.access/`.
 
-3. **datom_conn exposes key fields**: `conn$project_name`, `conn$bucket`, `conn$prefix`, `conn$region`, `conn$role` must remain accessible as simple list fields. datomaccess reads these to resolve access points and registry lookups.
+3. **datom_conn exposes key fields**: `conn$project_name`, `conn$bucket`, `conn$prefix`, `conn$region`, `conn$role` must remain accessible as simple list fields. datomanager reads these to resolve access points and registry lookups.
 
 4. **S3 utilities use conn-based interface**: All `.datom_s3_*` functions take `conn` as first argument and derive bucket/client from it. This means swapping the endpoint (via access points) works transparently.
 
-5. **datom works fully without datomaccess**: No conditional logic checking for datomaccess. No optional imports. datom is complete on its own. datomaccess wraps/intercepts from outside.
+5. **datom works fully without datomanager**: No conditional logic checking for datomanager. No optional imports. datom is complete on its own. datomanager wraps/intercepts from outside.
 
 ---
 
 ## Retroactive Access Management Adoption
 
-Users can start with datom alone and add datomaccess later. This works because:
+Users can start with datom alone and add datomanager later. This works because:
 
 - The registry maps roles to current tables — no historical context needed
 - `datom_list()` shows all tables; domain owners group them into roles after the fact
@@ -241,7 +241,7 @@ The only cost of late adoption: older derived tables written without `parents` w
 
 ---
 
-## datomaccess High-Level Architecture (For Context Only)
+## datomanager High-Level Architecture (For Context Only)
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -266,16 +266,16 @@ The only cost of late adoption: older derived tables written without `parents` w
 
 **Enforcement model:**
 
-- **Layer 1 (R-level, advisory):** datomaccess checks registry before `datom_read()`. Bypassable if user calls S3 directly. Useful for development/exploration.
-- **Layer 2 (Cloud IAM, enforced):** datomaccess materializes registry into S3 access points and IAM policies. Unbypassable. Required for compliance/production.
+- **Layer 1 (R-level, advisory):** datomanager checks registry before `datom_read()`. Bypassable if user calls S3 directly. Useful for development/exploration.
+- **Layer 2 (Cloud IAM, enforced):** datomanager materializes registry into S3 access points and IAM policies. Unbypassable. Required for compliance/production.
 
-Layer 1 ships first as datomaccess MVP. Layer 2 adds cloud enforcement later.
+Layer 1 ships first as datomanager MVP. Layer 2 adds cloud enforcement later.
 
 ---
 
 ## Access Resolution — Full Specification
 
-This section describes how datomaccess determines whether a user can read a given table. This is the core algorithm that makes access management work. It relies on three things that datom provides: **lineage** (parents in metadata), **connection context** (project_name, bucket), and **the registry** (roles and grants stored as datom tables in a governance bucket).
+This section describes how datomanager determines whether a user can read a given table. This is the core algorithm that makes access management work. It relies on three things that datom provides: **lineage** (parents in metadata), **connection context** (project_name, bucket), and **the registry** (roles and grants stored as datom tables in a governance bucket).
 
 ### Core Concepts
 
@@ -326,7 +326,7 @@ A domain owner manages the roles for their own study. A governance admin manages
 
 This is the baseline approach. It is correct, simple, and sufficient for most workloads. Optimizations (described later) can be layered on top without changing the interface.
 
-**When a user calls `datom_read(conn, "some_table")`**, datomaccess runs `access_check()`:
+**When a user calls `datom_read(conn, "some_table")`**, datomanager runs `access_check()`:
 
 ```
 access_check(acc, user, conn, table_name):
@@ -490,7 +490,7 @@ Required: {mm001_efficacy, mm002_efficacy}
 Sara has both → ALLOW
 ```
 
-**Cross-bucket metadata reads:** The lineage walk needs to read metadata from med-mm-001 and med-mm-002, which are in different buckets than med-mm-xxx. The `source` field in each parent entry is a `project_name`. datomaccess uses the registry's SOURCES table to look up the bucket/prefix for each source, then constructs a temporary reader connection to fetch metadata:
+**Cross-bucket metadata reads:** The lineage walk needs to read metadata from med-mm-001 and med-mm-002, which are in different buckets than med-mm-xxx. The `source` field in each parent entry is a `project_name`. datomanager uses the registry's SOURCES table to look up the bucket/prefix for each source, then constructs a temporary reader connection to fetch metadata:
 
 ```r
 # Inside the lineage walker (pseudocode)
@@ -644,7 +644,7 @@ During resolution, after collecting the user's roles for a study:
 
 ### Optimized Resolution: Precomputed Leaf Map
 
-This optimization moves the lineage walk from read time to role-definition time. When a domain owner creates or updates a role via `access_create_role()` or `access_update_role()`, datomaccess precomputes the leaf ancestors for every table in the role and stores the result:
+This optimization moves the lineage walk from read time to role-definition time. When a domain owner creates or updates a role via `access_create_role()` or `access_update_role()`, datomanager precomputes the leaf ancestors for every table in the role and stores the result:
 
 ```
 ROLE_LEAVES TABLE (precomputed, stored in registry):
@@ -678,12 +678,12 @@ The Phase B MVP ships with naive walk + session cache. This is correct, simple, 
 
 ---
 
-**Read-time flow with datomaccess (complete):**
+**Read-time flow with datomanager (complete):**
 
 ```
 datom_read(conn, "some_table")
   │
-  ├─ datomaccess intercepts (if loaded)
+  ├─ datomanager intercepts (if loaded)
   │   │
   │   ├─ Check session cache
   │   │   ├─ Cache hit + version valid → ALLOW (no walk)

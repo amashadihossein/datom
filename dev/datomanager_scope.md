@@ -1,8 +1,9 @@
 # datomanager — Companion Governance Package Scope
 
-> **Purpose**: Scopes the creation of `datomanager`, the companion R package that will own
-> datom's governance write surface. This is a persistent vision/planning document, not a
-> phase doc. Update it as decisions solidify.
+> **Purpose**: Scopes the creation of `datomanager`, the companion R package for governance
+> teams. This is a persistent vision/planning document, not a phase doc. Update it as
+> decisions solidify. For the access enforcement design (roles, grants, IAM), see
+> `dev/datomanager_overview.md`.
 >
 > **Status**: Pre-creation. No code exists yet. datom still owns the full GOV_SEAM surface.
 > See `dev/README.md` Backlog for activation priority.
@@ -11,10 +12,15 @@
 
 ## What is datomanager?
 
-`datomanager` is a companion R package that takes over ownership of governance **write**
-operations that currently live in datom behind the `# GOV_SEAM:` tag. It does NOT cover
-access enforcement (roles, grants, IAM) -- that is a separate future concern described in
-`dev/datomaccess_overview.md`.
+`datomanager` is a companion R package for governance teams. It owns two surfaces:
+
+1. **Gov lifecycle writes**: the `# GOV_SEAM:` tagged helpers in datom — project
+   registration, decommission, dispatch, migration records.
+2. **Access enforcement**: roles, grants, and IAM-backed S3 access point provisioning
+   (described in `dev/datomanager_overview.md`).
+
+Governance teams own both. Starting as one package is correct; split later if concerns
+grow sufficiently distinct.
 
 **Dependency direction**: `datomanager` Imports `datom`. datom does NOT import or know
 about datomanager. Users of datom without datomanager continue to get the full data
@@ -22,7 +28,8 @@ management surface; they just cannot perform governance write operations (which 
 means: you get an error if you try to call gov-only commands without a gov store attached).
 
 **Scope in one sentence**: datomanager owns the gov repo lifecycle (init, register,
-decommission, destroy) and data migration (`datom_migrate_data()`). datom retains all reads.
+decommission, destroy), data migration (`datom_migrate_data()`), and access enforcement
+(roles, grants, IAM). datom retains all reads.
 
 ---
 
@@ -161,27 +168,27 @@ Steps 1-4 are a 1-2 day mechanical effort. Step 5 is Phase 19's full scope.
 
 ---
 
-## Relationship to Access Enforcement (datomaccess concept)
+## Relationship to Access Enforcement
 
-`dev/datomaccess_overview.md` describes an access enforcement layer (roles, grants,
-IAM-backed S3 access points) that intercepts `datom_read()`. That is **not** datomanager.
+`dev/datomanager_overview.md` describes an access enforcement layer (roles, grants,
+IAM-backed S3 access points) that intercepts `datom_read()`. This is **also datomanager**.
 
-datomanager owns gov *write* operations (lifecycle management, migration). The access
-enforcement concept from datomaccess_overview.md is a separate package (working name still
-`datomaccess`) that may be built after datomanager is established.
+Governance teams own both the gov lifecycle (who can register/decommission projects) and
+access granting (who can read which tables). datomanager is their single tool. If the two
+concerns grow sufficiently distinct in the future, datomanager can be split — but starting
+as one package is the right call.
 
 **Relationship summary**:
 
 ```
 datom              -- data read/write, versioning, git sync (no access enforcement)
   ↑ Imports
-datomanager        -- gov lifecycle writes, project registration, data migration
-  ↑ (future)
-datomaccess        -- access enforcement (roles, grants, IAM), intercepts datom_read()
+datomanager        -- gov lifecycle (init, register, decommission, migrate)
+                   -- access enforcement (roles, grants, IAM), intercepts datom_read()
 ```
 
-datom ships independently. datomanager layers gov management on top. datomaccess layers
-access control on top of both. Each is optional and adoptable independently.
+datom ships independently and is fully functional without datomanager. datomanager is the
+governance team's companion layer, adoptable on-demand via `datom_attach_gov()`.
 
 ---
 

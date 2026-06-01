@@ -13,7 +13,7 @@ dev/datom_specification.md           ← Design spec (authoritative, evolves slo
 dev/datom_pathways.md               ← Canonical route map across metadata/gov/storage/access
 dev/daapr_architecture.md           ← Ecosystem context
 dev/datomanager_scope.md             ← datomanager companion package scope (gov lifecycle + migration)
-dev/datomaccess_overview.md          ← datomaccess access enforcement context (forward-looking; see stale-notice at top)
+dev/datomanager_overview.md          ← datomanager access enforcement design (roles, grants, IAM; forward-looking)
          ↓
 dev/phase_{n}_{name}.md             ← Active development plans (temporary)
          ↓
