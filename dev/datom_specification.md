@@ -1413,7 +1413,7 @@ Adding a new backend (e.g., GCS, Azure) requires:
 
 ### Governance Repository Contract
 
-The governance repository is a port surface. datom currently owns both gov and data writes; a planned companion package (working name `datomaccess` / `datomanager`) will eventually take over governance write operations. To make that handoff a port replacement rather than a refactor, all gov-write code lives behind a tagged seam.
+The governance repository is a port surface. datom currently owns both gov and data writes; a planned companion package (`datomanager`) will eventually take over governance write operations. To make that handoff a port replacement rather than a refactor, all gov-write code lives behind a tagged seam. See `dev/datomanager_scope.md` for the full scope.
 
 **Seam location.** All gov-write helpers live in `R/utils-gov.R` and are tagged with `# GOV_SEAM:` comments. Any new gov-write code must go through this file and carry the marker. Gov-**read** helpers (`.datom_resolve_ref()`, `.datom_resolve_ref_from_clone()`, dispatch reads) are not seam-marked — datom always needs to read gov regardless of who writes it.
 
@@ -1637,7 +1637,7 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
 - **renv integration** in `datom_init_repo()`: Currently deferred; `renv` field in project.yaml defaults to `false`.
 - **Gov repo concurrency primitives**: Two developers running `datom_sync_dispatch()` simultaneously rely on git pull-before-push to resolve. Advisory locks on `projects/{name}/` (e.g., a short-lived lock file committed and removed) deferred until contention is observed.
 - **CODEOWNERS automation on `projects/{name}/`**: Self-serve project ownership without a platform-team gatekeeper. Will live in the future governance companion package, not datom.
-- **Companion governance package** (working name `datomaccess` / `datomanager`): Will own the full gov lifecycle (init, register, unregister, destroy) as user-facing functions and replace datom's `# GOV_SEAM:` helpers with thin shims. The seam contract (helper inventory + commit message conventions, see "Governance Repository Contract") is the port surface to preserve. Do not introduce a plugin/registry mechanism inside datom for this — the tagged seam is sufficient.
+- **Companion governance package** (`datomanager`): Will own the full gov lifecycle (init, register, unregister, destroy) and data migration as user-facing functions, replacing datom's `# GOV_SEAM:` helpers with thin shims. The seam contract (helper inventory + commit message conventions, see "Governance Repository Contract") is the port surface to preserve. Do not introduce a plugin/registry mechanism inside datom for this -- the tagged seam is sufficient. Scope: `dev/datomanager_scope.md`.
 - **`datom_migrate_data()`**: Managed migration (data copy + ref.json update + `.datom_gov_record_migration()` invocation in one atomic operation). Deferred; today migration is manual (external `aws s3 sync` + `datom_sync_dispatch()`).
 
 ### Multi-Developer Collaboration (Implemented)

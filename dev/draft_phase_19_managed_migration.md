@@ -95,7 +95,7 @@ Today's gov already has the file. Phase 19 adds entries with:
 
 ## Open Questions (decide at activation)
 
-- Should `datom_migrate_data()` live in datom or the future companion package? Lean: companion (it's a gov-write surface; mark `# GOV_SEAM:`).
+- ~~Should `datom_migrate_data()` live in datom or the future companion package?~~ **Settled June 2026**: lives in `datomanager` (the companion governance package). It is a pure gov-write surface (writes `ref.json`, commits to gov repo, calls `.datom_gov_record_migration()`). It is the first delivery chunk of datomanager. See `dev/datomanager_scope.md`.
 - Two-call API (`plan()` then `execute()`) vs single call with `dry_run`? Lean: single call, follow the `terraform plan` pattern but keep it one function.
 - Verify mechanism: full SHA round-trip per object (slow, exhaustive) vs sampling (fast, probabilistic)? Lean: sample by default, full via flag.
 - What happens to in-flight reader conns after switch? Today's stale-conn behavior covers this (read-time check fails clean, user rebuilds).
@@ -104,7 +104,7 @@ Today's gov already has the file. Phase 19 adds entries with:
 
 ## Acceptance Criteria (for activation)
 
-1. `datom_migrate_data()` exported, marked `# GOV_SEAM:`.
+1. `datom_migrate_data()` exported from **datomanager** (not datom). The `# GOV_SEAM:` marker is not needed once it lives natively in datomanager.
 2. Atomic semantics: pre-switch failure leaves no trace; post-switch failure documented.
 3. Cross-backend matrix tested (at minimum local->s3 and s3->local with mocked paws).
 4. `migration_history.json` entries written and verified.

@@ -12,7 +12,8 @@ dev/README.md                       ← This file: navigation hub
 dev/datom_specification.md           ← Design spec (authoritative, evolves slowly)
 dev/datom_pathways.md               ← Canonical route map across metadata/gov/storage/access
 dev/daapr_architecture.md           ← Ecosystem context
-dev/datomaccess_overview.md          ← datomaccess sister package context (forward-looking)
+dev/datomanager_scope.md             ← datomanager companion package scope (gov lifecycle + migration)
+dev/datomaccess_overview.md          ← datomaccess access enforcement context (forward-looking; see stale-notice at top)
          ↓
 dev/phase_{n}_{name}.md             ← Active development plans (temporary)
          ↓
@@ -102,7 +103,7 @@ Items discovered during development but intentionally deferred. Review periodica
 | Vignette content refresh | Phase 11 | Completed in Phase 16 continuation (May 11, 2026). All 17 vignettes ASCII-clean, Pattern A aligned, links verified. | Done |
 | Redirect resolution in datom_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
 | Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |
-| Companion governance package handoff | Phase 15 | `# GOV_SEAM:` helpers in `R/utils-gov.R` are the port surface; commit message conventions are the audit contract. See spec "Governance Repository Contract". Phase 18 (gov-on-demand) tightens the seam significantly. | High (next major) |
+| datomanager package creation | Phase 15 | Companion governance package (settled name: `datomanager`). Scope doc: `dev/datomanager_scope.md`. Owns GOV_SEAM write surface + `datom_migrate_data()` (Phase 19). Effort: ~2 days for lift-out, then Phase 19. Phase 18 (gov-on-demand) tightened the seam; it is ready to lift. | High (next major) |
 | Backend rename: `local` -> `filesystem` | Phase 18 | "Local" implies laptop disk, but the backend supports network mounts and cloud-mounted FS too. Atomic schema bump touching store constructor, predicate, dispatch arms, `project.yaml`, `ref.json`. Defer until there's a second compelling reason to touch the schema. | Low |
 | `datom_migrate_data()` (managed migration) | Phase 15 | Today migration is manual (`aws s3 sync` + `datom_sync_dispatch()`). Atomic data-copy + ref.json update + `.datom_gov_record_migration()` deferred. | Medium |
 | Restore `ubuntu-latest (devel)` in `.github/workflows/R-CMD-check.yaml` | Phase 17 | Disabled 2026-05-02 because Posit PPM has no R-devel Linux binaries; every PR paid a 15-25 min source-compile tax for arrow / paws.storage / friends. Restore as part of the pre-CRAN checklist (CRAN expects devel to pass). | Pre-CRAN |
