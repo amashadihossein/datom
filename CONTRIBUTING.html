@@ -89,6 +89,37 @@
 <li>Use <code>cli::</code> for user-facing messages, <code>fs::</code> for filesystem, <code><a href="https://glue.tidyverse.org/reference/glue.html" class="external-link">glue::glue()</a></code> for string interpolation.</li>
 </ul></div>
 <div class="section level2">
+<h2 id="issue-resolution-workflow">Issue resolution workflow<a class="anchor" aria-label="anchor" href="#issue-resolution-workflow"></a></h2>
+<p>Every code change starts as a GitHub issue. Once an issue is assigned or self-assigned, follow these steps:</p>
+<ol style="list-style-type: decimal"><li><p><strong>Understand the issue.</strong> Read the full issue body and any linked comments. Assess validity of the problem statement and the proposed solution (if any) critically – check whether it is coherent with the current codebase and design before accepting the framing.</p></li>
+<li><p><strong>Scope the work and comment if needed.</strong> If the proposed solution is unclear, incomplete, or requires clarification, post a scoping comment on the issue before writing any code.</p></li>
+<li>
+<p><strong>Create a branch.</strong> Branch off <code>main</code> with a descriptive name:</p>
+<pre><code>git checkout -b issue-{number}-{short-slug}</code></pre>
+</li>
+<li>
+<p><strong>Plan (for non-trivial changes).</strong> If the fix touches more than two files or requires more than one logical commit, write a short plan before coding:</p>
+<ul><li>What needs to change and why.</li>
+<li>Which tests and documentation need updating.</li>
+<li>Any invariants or must-never rules to keep in mind.</li>
+</ul><p>For large cross-cutting work, follow the full phase-doc process described in <code>dev/README.md</code>.</p>
+</li>
+<li><p><strong>Develop.</strong> Make the change. Run <code>devtools::test()</code> (unfiltered) before every commit and include the test count in the commit message. If the count drops, something was lost. Keep commits small and logically focused.</p></li>
+<li>
+<p><strong>Clean up.</strong> Before opening a PR:</p>
+<ul><li>Remove dead code, debug prints, and stray comments.</li>
+<li>Update any affected documentation (<code>man/</code>, vignettes, <code>_pkgdown.yml</code>).</li>
+<li>Run <code>devtools::check()</code> – aim for 0 errors and 0 warnings.</li>
+</ul></li>
+<li>
+<p><strong>Open a PR against <code>main</code>.</strong> Include:</p>
+<ul><li>A <code>Closes #N</code> reference in the description.</li>
+<li>A concise summary of what changed and why.</li>
+<li>The test count delta (e.g. <code>tests: 1713 (+13)</code>).</li>
+</ul><p>Before a second attempt at any remote-mutating action (<code>git push</code>, <code>gh pr create</code>, etc.), verify remote state first (<code>gh pr list</code>, <code>git log --remotes</code>) to avoid duplicates.</p>
+</li>
+</ol></div>
+<div class="section level2">
 <h2 id="questions">Questions<a class="anchor" aria-label="anchor" href="#questions"></a></h2>
 <p>Open an issue or email the maintainer at <a href="mailto:amashadihossein@gmail.com" class="email">amashadihossein@gmail.com</a>.</p>
 </div>
