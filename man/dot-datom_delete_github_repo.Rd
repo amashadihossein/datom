@@ -4,12 +4,14 @@
 \alias{.datom_delete_github_repo}
 \title{Delete a GitHub Repository}
 \usage{
-.datom_delete_github_repo(repo_full, pat)
+.datom_delete_github_repo(repo_full, pat, api_url = "https://api.github.com")
 }
 \arguments{
 \item{repo_full}{Repository in \code{"owner/repo"} form.}
 
 \item{pat}{GitHub personal access token (must have \code{delete_repo} scope).}
+
+\item{api_url}{GitHub API base URL (default \code{"https://api.github.com"}).}
 }
 \value{
 Invisible \code{TRUE} on success; aborts on failure.

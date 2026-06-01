@@ -570,7 +570,7 @@ test_that("datom_decommission() uses conn$data_repo_url (not git clone lookup)",
 
   deleted_repo <- NULL
   local_mocked_bindings(
-    .datom_delete_github_repo = function(repo_full, pat) {
+    .datom_delete_github_repo = function(repo_full, pat, ...) {
       deleted_repo <<- repo_full
       invisible(TRUE)
     },
@@ -590,7 +590,7 @@ test_that("datom_decommission() uses conn$github_pat for repo deletion", {
 
   used_pat <- NULL
   local_mocked_bindings(
-    .datom_delete_github_repo = function(repo_full, pat) {
+    .datom_delete_github_repo = function(repo_full, pat, ...) {
       used_pat <<- pat
       invisible(TRUE)
     },

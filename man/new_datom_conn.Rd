@@ -20,7 +20,8 @@ new_datom_conn(
   gov_local_path = NULL,
   backend = "s3",
   data_repo_url = NULL,
-  github_pat = NULL
+  github_pat = NULL,
+  github_api_url = NULL
 )
 }
 \arguments{
@@ -57,6 +58,10 @@ when not yet known.}
 \item{github_pat}{GitHub personal access token held in memory only. Sourced
 from \code{store$github_pat} at conn-construction time. Never persisted to disk
 and never printed.}
+
+\item{github_api_url}{GitHub API base URL. Sourced from
+\code{store$github_api_url} at conn-construction time. Defaults to
+\code{"https://api.github.com"} when not set.}
 }
 \value{
 A \code{datom_conn} object.

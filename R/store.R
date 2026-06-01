@@ -30,6 +30,11 @@
 #'   (default), the clone is placed as a sibling of the data repo, named after
 #'   the basename of `gov_repo_url` (e.g., `"acme-gov"`).
 #' @param github_org GitHub organization for repo creation. NULL for personal repos.
+#' @param github_api_url GitHub API base URL. `NULL` (default) uses
+#'   `"https://api.github.com"`, which is correct for github.com and GitHub
+#'   Enterprise Cloud (GHEC). For GitHub Enterprise Server (GHES) pass the
+#'   server's API root, e.g. `"https://github.mycompany.com/api/v3"`. A
+#'   trailing `/` is stripped for consistency.
 #' @param validate If `TRUE` (default), validate GitHub PAT via API.
 #'   Set to `FALSE` for tests or offline use.
 #'
@@ -42,6 +47,7 @@ datom_store <- function(governance = NULL,
                         gov_repo_url = NULL,
                         gov_local_path = NULL,
                         github_org = NULL,
+                        github_api_url = NULL,
                         validate = TRUE) {
 
   # --- Validate components are store objects ----------------------------------
@@ -117,6 +123,21 @@ datom_store <- function(governance = NULL,
     }
   }
 
+  # --- Validate and normalise github_api_url ----------------------------------
+  if (!is.null(github_api_url)) {
+    if (!is.character(github_api_url) || length(github_api_url) != 1L ||
+        is.na(github_api_url) || !nzchar(github_api_url)) {
+      cli::cli_abort("{.arg github_api_url} must be a single non-empty string or NULL.")
+    }
+    if (!grepl("^https://", github_api_url)) {
+      cli::cli_abort("{.arg github_api_url} must start with {.code https://}.")
+    }
+    github_api_url <- sub("/+$", "", github_api_url)
+  }
+
+  # Resolved base URL used for all GitHub API calls
+  resolved_api_url <- github_api_url %||% "https://api.github.com"
+
   # --- Role derivation --------------------------------------------------------
   role <- if (!is.null(github_pat)) "developer" else "reader"
 
@@ -124,7 +145,7 @@ datom_store <- function(governance = NULL,
   github_identity <- NULL
 
   if (!is.null(github_pat) && isTRUE(validate)) {
-    github_identity <- .datom_validate_github_pat(github_pat)
+    github_identity <- .datom_validate_github_pat(github_pat, api_url = resolved_api_url)
   }
 
   structure(
@@ -137,6 +158,7 @@ datom_store <- function(governance = NULL,
       gov_repo_url = gov_repo_url,
       gov_local_path = gov_local_path,
       github_org = github_org,
+      github_api_url = resolved_api_url,
       validated = isTRUE(validate),
       identity = list(
         github = github_identity,
@@ -190,6 +212,13 @@ print.datom_store <- function(x, ...) {
 
   if (!is.null(x$github_pat)) {
     cli::cli_li("GitHub PAT: {.val {(.datom_mask_secret(x$github_pat))}}")
+  }
+
+  if (!is.null(x$github_api_url)) {
+    default_api <- "https://api.github.com"
+    if (!identical(x$github_api_url, default_api)) {
+      cli::cli_li("GitHub API URL: {.url {x$github_api_url}}")
+    }
   }
 
   if (!is.null(x$identity$github)) {
@@ -277,11 +306,12 @@ print.datom_store <- function(x, ...) {
 #' Calls GitHub `GET /user` to verify the PAT is valid.
 #'
 #' @param pat GitHub personal access token.
+#' @param api_url GitHub API base URL (default `"https://api.github.com"`).
 #' @return A list with `login` and `id`.
 #' @keywords internal
-.datom_validate_github_pat <- function(pat) {
+.datom_validate_github_pat <- function(pat, api_url = "https://api.github.com") {
   tryCatch({
-    resp <- httr2::request("https://api.github.com/user") |>
+    resp <- httr2::request(paste0(api_url, "/user")) |>
       httr2::req_headers(
         Authorization = paste("Bearer", pat),
         Accept = "application/vnd.github+json"
@@ -372,9 +402,11 @@ print.datom_store <- function(x, ...) {
 #' @param pat GitHub personal access token.
 #' @param org GitHub organization. NULL for personal repos.
 #' @param private Whether the repo should be private (default TRUE).
+#' @param api_url GitHub API base URL (default `"https://api.github.com"`).
 #' @return The clone URL of the created/reused repository.
 #' @keywords internal
-.datom_create_github_repo <- function(repo_name, pat, org = NULL, private = TRUE) {
+.datom_create_github_repo <- function(repo_name, pat, org = NULL, private = TRUE,
+                                      api_url = "https://api.github.com") {
   if (!is.character(repo_name) || length(repo_name) != 1L ||
       is.na(repo_name) || !nzchar(repo_name)) {
     cli::cli_abort("{.arg repo_name} must be a single non-empty string.")
@@ -386,8 +418,8 @@ print.datom_store <- function(x, ...) {
   )
 
   # --- Check if repo exists ---------------------------------------------------
-  owner <- org %||% .datom_github_username(pat)
-  check_url <- paste0("https://api.github.com/repos/", owner, "/", repo_name)
+  owner <- org %||% .datom_github_username(pat, api_url = api_url)
+  check_url <- paste0(api_url, "/repos/", owner, "/", repo_name)
 
   existing <- tryCatch({
     resp <- httr2::request(check_url) |>
@@ -427,9 +459,9 @@ print.datom_store <- function(x, ...) {
 
   # --- Create the repo --------------------------------------------------------
   create_url <- if (!is.null(org)) {
-    paste0("https://api.github.com/orgs/", org, "/repos")
+    paste0(api_url, "/orgs/", org, "/repos")
   } else {
-    "https://api.github.com/user/repos"
+    paste0(api_url, "/user/repos")
   }
 
   body <- list(
@@ -465,9 +497,11 @@ print.datom_store <- function(x, ...) {
 #'
 #' @param repo_full Repository in `"owner/repo"` form.
 #' @param pat GitHub personal access token (must have `delete_repo` scope).
+#' @param api_url GitHub API base URL (default `"https://api.github.com"`).
 #' @return Invisible `TRUE` on success; aborts on failure.
 #' @keywords internal
-.datom_delete_github_repo <- function(repo_full, pat) {
+.datom_delete_github_repo <- function(repo_full, pat,
+                                      api_url = "https://api.github.com") {
   if (!is.character(repo_full) || length(repo_full) != 1L ||
       is.na(repo_full) || !nzchar(repo_full) || !grepl("/", repo_full)) {
     cli::cli_abort("{.arg repo_full} must be in {.code owner/repo} form.")
@@ -477,7 +511,7 @@ print.datom_store <- function(x, ...) {
     cli::cli_abort("{.arg pat} must be a single non-empty string.")
   }
 
-  url <- paste0("https://api.github.com/repos/", repo_full)
+  url <- paste0(api_url, "/repos/", repo_full)
   headers <- list(
     Authorization = paste("Bearer", pat),
     Accept = "application/vnd.github+json"
@@ -512,13 +546,14 @@ print.datom_store <- function(x, ...) {
 #' Calls `GET /user` to get the authenticated user's login.
 #'
 #' @param pat GitHub personal access token.
+#' @param api_url GitHub API base URL (default `"https://api.github.com"`).
 #' @return Username string.
 #' @keywords internal
-.datom_github_username <- function(pat) {
+.datom_github_username <- function(pat, api_url = "https://api.github.com") {
   # Reuse existing validation if identity is cached, but this is a lightweight
 
   # helper for repo creation flow
-  resp <- httr2::request("https://api.github.com/user") |>
+  resp <- httr2::request(paste0(api_url, "/user")) |>
     httr2::req_headers(
       Authorization = paste("Bearer", pat),
       Accept = "application/vnd.github+json"

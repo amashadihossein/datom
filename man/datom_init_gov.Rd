@@ -12,7 +12,8 @@ datom_init_gov(
   repo_name = NULL,
   github_pat = NULL,
   github_org = NULL,
-  private = TRUE
+  private = TRUE,
+  github_api_url = NULL
 )
 }
 \arguments{
@@ -42,6 +43,10 @@ the authenticated user account.}
 
 \item{private}{Whether the created repo should be private.  Default \code{TRUE}.
 Ignored when \code{create_repo = FALSE}.}
+
+\item{github_api_url}{GitHub API base URL. \code{NULL} (default) uses
+\code{"https://api.github.com"}. For GHES pass the server's API root, e.g.
+\code{"https://github.mycompany.com/api/v3"}.}
 }
 \value{
 Invisible \code{gov_repo_url} on success.

@@ -4,7 +4,13 @@
 \alias{.datom_create_github_repo}
 \title{Create a GitHub Repository}
 \usage{
-.datom_create_github_repo(repo_name, pat, org = NULL, private = TRUE)
+.datom_create_github_repo(
+  repo_name,
+  pat,
+  org = NULL,
+  private = TRUE,
+  api_url = "https://api.github.com"
+)
 }
 \arguments{
 \item{repo_name}{Repository name.}
@@ -14,6 +20,8 @@
 \item{org}{GitHub organization. NULL for personal repos.}
 
 \item{private}{Whether the repo should be private (default TRUE).}
+
+\item{api_url}{GitHub API base URL (default \code{"https://api.github.com"}).}
 }
 \value{
 The clone URL of the created/reused repository.

@@ -4,10 +4,12 @@
 \alias{.datom_validate_github_pat}
 \title{Validate GitHub PAT}
 \usage{
-.datom_validate_github_pat(pat)
+.datom_validate_github_pat(pat, api_url = "https://api.github.com")
 }
 \arguments{
 \item{pat}{GitHub personal access token.}
+
+\item{api_url}{GitHub API base URL (default \code{"https://api.github.com"}).}
 }
 \value{
 A list with \code{login} and \code{id}.

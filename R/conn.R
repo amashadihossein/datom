@@ -28,6 +28,9 @@
 #' @param github_pat GitHub personal access token held in memory only. Sourced
 #'   from `store$github_pat` at conn-construction time. Never persisted to disk
 #'   and never printed.
+#' @param github_api_url GitHub API base URL. Sourced from
+#'   `store$github_api_url` at conn-construction time. Defaults to
+#'   `"https://api.github.com"` when not set.
 #'
 #' @return A `datom_conn` object.
 #' @keywords internal
@@ -46,7 +49,8 @@ new_datom_conn <- function(project_name,
                           gov_local_path = NULL,
                           backend = "s3",
                           data_repo_url = NULL,
-                          github_pat = NULL) {
+                          github_pat = NULL,
+                          github_api_url = NULL) {
   role <- match.arg(role)
   backend <- match.arg(backend, c("s3", "local"))
 
@@ -108,7 +112,8 @@ new_datom_conn <- function(project_name,
       gov_client    = gov_client,
       gov_local_path = gov_local_path,
       data_repo_url = data_repo_url,
-      github_pat    = github_pat
+      github_pat    = github_pat,
+      github_api_url = github_api_url
     ),
     class = "datom_conn"
   )
@@ -321,7 +326,8 @@ datom_init_repo <- function(path = ".",
     remote_url <- .datom_create_github_repo(
       repo_name = repo_name,
       pat = store$github_pat,
-      org = store$github_org
+      org = store$github_org,
+      api_url = store$github_api_url
     )
   }
 
@@ -585,7 +591,8 @@ datom_init_repo <- function(path = ".",
     gov_store = store$governance,
     gov_local_path = if (!is.null(gov_local_path)) as.character(gov_local_path) else NULL,
     data_repo_url = remote_url,
-    github_pat    = store$github_pat
+    github_pat    = store$github_pat,
+    github_api_url = store$github_api_url
   )
 
   # --- Register project in gov repo + mirror to gov storage ------------------
@@ -678,6 +685,9 @@ datom_init_repo <- function(path = ".",
 #'   the authenticated user account.
 #' @param private Whether the created repo should be private.  Default `TRUE`.
 #'   Ignored when `create_repo = FALSE`.
+#' @param github_api_url GitHub API base URL. `NULL` (default) uses
+#'   `"https://api.github.com"`. For GHES pass the server's API root, e.g.
+#'   `"https://github.mycompany.com/api/v3"`.
 #'
 #' @return Invisible `gov_repo_url` on success.
 #' @export
@@ -688,7 +698,8 @@ datom_init_gov <- function(gov_store,
                             repo_name = NULL,
                             github_pat = NULL,
                             github_org = NULL,
-                            private = TRUE) {
+                            private = TRUE,
+                            github_api_url = NULL) {
   .datom_check_git2r()
 
   # --- Input validation -------------------------------------------------------
@@ -730,7 +741,8 @@ datom_init_gov <- function(gov_store,
       repo_name = repo_name,
       pat = github_pat,
       org = github_org,
-      private = private
+      private = private,
+      api_url = github_api_url %||% "https://api.github.com"
     )
   }
 
@@ -965,7 +977,8 @@ datom_attach_gov <- function(conn,
       repo_name = repo_name,
       pat = pat,
       org = github_org,
-      private = private
+      private = private,
+      api_url = conn$github_api_url %||% "https://api.github.com"
     )
   }
 
@@ -1110,7 +1123,8 @@ datom_attach_gov <- function(conn,
     gov_local_path = gov_local_path,
     backend       = conn$backend,
     data_repo_url = conn$data_repo_url,
-    github_pat    = conn$github_pat
+    github_pat    = conn$github_pat,
+    github_api_url = conn$github_api_url
   )
 
   cli::cli_alert_success(
@@ -1303,7 +1317,8 @@ datom_get_conn <- function(path = NULL,
                                    endpoint = NULL, gov_store = NULL,
                                    gov_local_path = NULL,
                                    data_repo_url = NULL,
-                                   github_pat = NULL) {
+                                   github_pat = NULL,
+                                   github_api_url = NULL) {
   backend <- .datom_store_backend(data_store)
   data_root <- .datom_store_root(data_store)
   data_prefix <- data_store$prefix
@@ -1357,7 +1372,8 @@ datom_get_conn <- function(path = NULL,
     gov_local_path = gov_local_path,
     backend       = backend,
     data_repo_url = data_repo_url,
-    github_pat    = github_pat
+    github_pat    = github_pat,
+    github_api_url = github_api_url
   )
 }
 
@@ -1507,6 +1523,7 @@ datom_get_conn <- function(path = NULL,
 
   # Populate identity fields from store and git remote
   conn$github_pat <- store$github_pat
+  conn$github_api_url <- store$github_api_url
   conn$data_repo_url <- tryCatch({
     repo <- git2r::repository(as.character(path))
     remotes <- git2r::remotes(repo)
@@ -1581,6 +1598,8 @@ datom_get_conn <- function(path = NULL,
     gov_store = store$governance,
     gov_local_path = NULL
   )
+
+  conn$github_api_url <- store$github_api_url
 
   # Override conn root/prefix/region with ref-resolved values if migrated
   if (!is.null(ref_location) && migrated) {

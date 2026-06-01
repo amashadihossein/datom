@@ -2679,7 +2679,7 @@ test_that("datom_init_gov with create_repo = TRUE calls .datom_create_github_rep
   env <- setup_gov_init_env()
 
   local_mocked_bindings(
-    .datom_create_github_repo = function(repo_name, pat, org = NULL, private = TRUE) {
+    .datom_create_github_repo = function(repo_name, pat, org = NULL, private = TRUE, ...) {
       env$bare_dir  # return local bare dir as fake clone URL
     }
   )
