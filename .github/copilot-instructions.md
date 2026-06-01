@@ -197,6 +197,11 @@ datom receives secrets explicitly at runtime; it never discovers, persists, or t
 
 These patterns are non-negotiable for every session:
 
+0a. **Issue resolution workflow**: Every code change starts as a GitHub issue.
+   Follow the canonical seven-step workflow in `CONTRIBUTING.md` →
+   "Issue resolution workflow". That document is the single source of truth;
+   do not duplicate or paraphrase it here.
+
 0. **Follow the dev process for multi-step work**: Any task spanning more than a single commit **must** follow the phase workflow:
    a. Read `dev/README.md` and relevant dev docs (spec, architecture) to understand current state.
    b. Create a feature branch: `git checkout -b phase/{n}-{name}` from `main`.

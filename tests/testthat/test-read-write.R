@@ -777,6 +777,11 @@ test_that("datom_write passes table_type and parents to metadata", {
     conn$role <- "developer"
     conn$path <- getwd()
 
+    # Seed parent snapshot so data_sha enrichment resolves cleanly
+    snap_dir <- fs::dir_create(fs::path(getwd(), "proj_a", "tbl1", ".metadata"))
+    jsonlite::write_json(list(data_sha = "data_sha_abc"), fs::path(snap_dir, "sha_abc.json"),
+                         auto_unbox = TRUE)
+
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) "full",
@@ -798,6 +803,82 @@ test_that("datom_write passes table_type and parents to metadata", {
     expect_equal(captured_meta$table_type, "derived")
     expect_length(captured_meta$parents, 1)
     expect_equal(captured_meta$parents[[1]]$source, "proj_a")
+  })
+})
+
+test_that("datom_write enriches parents with data_sha from local clone", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    # Seed the parent metadata snapshot in the local clone
+    parent_meta_dir <- fs::dir_create(fs::path(getwd(), "proj_a", "tbl1", ".metadata"))
+    parent_meta <- list(data_sha = "parent_data_sha_xyz", table_type = "imported")
+    jsonlite::write_json(parent_meta, fs::path(parent_meta_dir, "sha_abc.json"),
+                         auto_unbox = TRUE)
+
+    captured_meta <- NULL
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) {
+        if (grepl("metadata.json$", sk)) captured_meta <<- d
+        invisible(TRUE)
+      },
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_abc"))
+    source_lineage <- list(list(project = "proj_a", table = "tbl1", version_sha = "parent_data_sha_xyz"))
+    datom_write(
+      conn, data = data.frame(x = 1), name = "derived_tbl",
+      parents = parents, source_lineage = source_lineage
+    )
+
+    expect_equal(captured_meta$parents[[1]]$data_sha, "parent_data_sha_xyz")
+  })
+})
+
+test_that("datom_write warns and leaves data_sha NULL when parent snapshot missing", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    captured_meta <- NULL
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) {
+        if (grepl("metadata.json$", sk)) captured_meta <<- d
+        invisible(TRUE)
+      },
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_missing"))
+    source_lineage <- list(list(project = "proj_a", table = "tbl1", version_sha = "any"))
+    expect_warning(
+      datom_write(
+        conn, data = data.frame(x = 1), name = "derived_tbl",
+        parents = parents, source_lineage = source_lineage
+      ),
+      "data_sha"
+    )
+    expect_null(captured_meta$parents[[1]]$data_sha)
   })
 })
 
@@ -932,6 +1013,11 @@ test_that("datom_write stores source_lineage in metadata", {
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
+
+    # Seed parent snapshot so data_sha enrichment resolves cleanly
+    snap_dir <- fs::dir_create(fs::path(getwd(), "proj_a", "raw_dm", ".metadata"))
+    jsonlite::write_json(list(data_sha = "data_sha_abc"), fs::path(snap_dir, "sha_abc.json"),
+                         auto_unbox = TRUE)
 
     captured_meta <- NULL
     local_mocked_bindings(

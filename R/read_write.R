@@ -387,6 +387,8 @@ datom_read <- function(conn,
 #' @param message Optional commit message.
 #' @param parents Optional lineage: list of `list(source, table, version)` entries.
 #'   Used by dp_dev to track dependency versions. NULL if lineage not recorded.
+#'   At write time, `data_sha` is automatically added to each entry from the
+#'   parent's local metadata snapshot (`NULL` if the snapshot is not in the clone).
 #' @param source_lineage Required when `parents` is non-NULL. Pre-computed flat list
 #'   of transitive non-derived source descriptors (each with `project`, `table`,
 #'   `version_sha`). Set by dpbuild via the union of parents' `source_lineage` fields.
@@ -436,6 +438,26 @@ datom_write <- function(conn,
       "i" = "Provide the flat list of transitive non-derived sources.",
       "i" = "For raw/imported tables use {.fn datom_sync} (auto-populated)."
     ))
+  }
+
+  # Enrich parents with data_sha from local metadata snapshots
+  if (!is.null(parents)) {
+    parents <- purrr::map(parents, function(p) {
+      meta_path <- fs::path(
+        conn$path, p$source, p$table, ".metadata",
+        paste0(p$version, ".json")
+      )
+      if (fs::file_exists(meta_path)) {
+        snap <- jsonlite::read_json(meta_path)
+        p$data_sha <- snap$data_sha
+      } else {
+        cli::cli_warn(
+          "Could not resolve {.field data_sha} for parent {.val {p$table}} \
+({p$version}): metadata not in local clone."
+        )
+      }
+      p
+    })
   }
 
   if (conn$role != "developer") {
