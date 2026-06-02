@@ -181,7 +181,7 @@ study-001-data/
 governance-bucket/
 └── {optional_prefix}/
     └── datom/
-        ├── .access/                          # Reserved for datomaccess (do not touch)
+        ├── .access/                          # Reserved for datomanager (do not touch)
         └── projects/
             ├── STUDY_001/
             │   ├── dispatch.json             # Mirrors gov repo
@@ -328,7 +328,7 @@ A derived table's metadata carries two different version identifiers for its par
 
 **Why metadata_sha in `parents`**: The metadata snapshot file is keyed by metadata_sha. Traversal tools (e.g. `datom_get_lineage`, `datom_validate_lineage`) and versioned reads (`datom_read(version=...)`) need to open that file. Using metadata_sha avoids a secondary lookup -- one GET gives the full provenance record.
 
-**Why data_sha in `source_lineage`**: Access policy registries (in datomaccess) index permissions by `{project, table, data_sha}`. The data_sha is stable across metadata rewrites -- if the same raw bytes are re-ingested with a new message, the data_sha is unchanged and existing policy grants continue to apply without manual reauthorization. Using metadata_sha here would require re-granting access every time metadata changes, which is incorrect semantics.
+**Why data_sha in `source_lineage`**: Access policy registries (in datomanager) index permissions by `{project, table, data_sha}`. The data_sha is stable across metadata rewrites -- if the same raw bytes are re-ingested with a new message, the data_sha is unchanged and existing policy grants continue to apply without manual reauthorization. Using metadata_sha here would require re-granting access every time metadata changes, which is incorrect semantics.
 
 **The apparent version discrepancy**: For a simple single-project derived table, `parents[dm].version` and `source_lineage[dm].version_sha` will both point to the same physical version of `dm`, but through different SHAs. This is not an error. A future schema enhancement (tracked as a GitHub issue) will add `data_sha` to each `parents` entry, making the bridge between the two fields explicit and self-documenting in the JSON.
 
@@ -645,9 +645,9 @@ Flexible connection for both developers and readers:
 | Developer (has repo) | `path = "my_project"` — reads from .datom/project.yaml; optional `store` for credentials |
 | Reader (S3 only) | `store` + `project_name` — store provides everything |
 | dpbuild / dp_dev | `store` + `project_name` — programmatic setup |
-| datomaccess (access points) | `endpoint` — S3 access point URL overriding default endpoint |
+| datomanager (access points) | `endpoint` — S3 access point URL overriding default endpoint |
 
-`endpoint`: Optional S3 endpoint URL. When `NULL` (default), standard S3 is used. datomaccess sets this to route reads through S3 access points for IAM enforcement. Stored in the returned `datom_conn` object and forwarded to all S3 operations.
+`endpoint`: Optional S3 endpoint URL. When `NULL` (default), standard S3 is used. datomanager sets this to route reads through S3 access points for IAM enforcement. Stored in the returned `datom_conn` object and forwarded to all S3 operations.
 
 - Validates store-provided credentials for the requested project
 - Resolves data location from ref.json at governance store
@@ -747,7 +747,7 @@ Reads the `parents` field from a table's metadata:
 - Returns `NULL` for imported tables or derived tables with no recorded lineage.
 - For versioned reads, fetches the `{version}.json` snapshot from S3.
 
-Required by datomaccess to walk lineage for access gate computation.
+Required by datomanager to walk lineage for access gate computation.
 
 Returns: List of parent entries (each with `source`, `table`, `version`), or `NULL`.
 
@@ -1413,7 +1413,7 @@ Adding a new backend (e.g., GCS, Azure) requires:
 
 ### Governance Repository Contract
 
-The governance repository is a port surface. datom currently owns both gov and data writes; a planned companion package (working name `datomaccess` / `datomanager`) will eventually take over governance write operations. To make that handoff a port replacement rather than a refactor, all gov-write code lives behind a tagged seam.
+The governance repository is a port surface. datom currently owns both gov and data writes; a planned companion package (`datomanager`) will eventually take over governance write operations. To make that handoff a port replacement rather than a refactor, all gov-write code lives behind a tagged seam. See `dev/datomanager_scope.md` for the full scope.
 
 **Seam location.** All gov-write helpers live in `R/utils-gov.R` and are tagged with `# GOV_SEAM:` comments. Any new gov-write code must go through this file and carry the marker. Gov-**read** helpers (`.datom_resolve_ref()`, `.datom_resolve_ref_from_clone()`, dispatch reads) are not seam-marked — datom always needs to read gov regardless of who writes it.
 
@@ -1459,7 +1459,7 @@ The governance repository is a port surface. datom currently owns both gov and d
 **Future companion package.** The companion package will own:
 - The full gov lifecycle (init, register, unregister, destroy) as user-facing functions.
 - CODEOWNERS automation on `projects/{name}/` for self-serve project ownership without a platform-team gatekeeper.
-- Access-point provisioning (works with `datomaccess` for IAM-enforced reads).
+- Access-point provisioning (works with `datomanager` for IAM-enforced reads).
 - Concurrency primitives if needed (advisory locks on `projects/{name}/`).
 
 datom will remain a client: reading gov state freely, writing only via the seam helpers — which the companion will replace with thin shims that delegate to its own implementations. **Do not** introduce a plugin/registry mechanism inside datom for this; the seam contract + tagged helpers are sufficient and avoid premature abstraction.
@@ -1500,7 +1500,7 @@ datom will remain a client: reading gov state freely, writing only via the seam 
 - `datom_get_conn(path = ...)` reads two-component `.datom/project.yaml` (developer path)
 - `datom_get_conn(store = ..., project_name = ...)` builds connection from store (reader path)
 - Credentials passed directly to `paws.storage::s3()` — no env var bridge
-- `endpoint`: optional S3 endpoint override stored in conn; when set, all `.datom_s3_*` calls route through it. Used by datomaccess to enforce S3 access point routing.
+- `endpoint`: optional S3 endpoint override stored in conn; when set, all `.datom_s3_*` calls route through it. Used by datomanager to enforce S3 access point routing.
 - `datom_init_repo()` sets local git config (`user.name`, `user.email`) from global config or fallback — `git2r::default_signature()` requires local config on freshly init'd repos
 
 ### Dependency Strategy
@@ -1637,7 +1637,7 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
 - **renv integration** in `datom_init_repo()`: Currently deferred; `renv` field in project.yaml defaults to `false`.
 - **Gov repo concurrency primitives**: Two developers running `datom_sync_dispatch()` simultaneously rely on git pull-before-push to resolve. Advisory locks on `projects/{name}/` (e.g., a short-lived lock file committed and removed) deferred until contention is observed.
 - **CODEOWNERS automation on `projects/{name}/`**: Self-serve project ownership without a platform-team gatekeeper. Will live in the future governance companion package, not datom.
-- **Companion governance package** (working name `datomaccess` / `datomanager`): Will own the full gov lifecycle (init, register, unregister, destroy) as user-facing functions and replace datom's `# GOV_SEAM:` helpers with thin shims. The seam contract (helper inventory + commit message conventions, see "Governance Repository Contract") is the port surface to preserve. Do not introduce a plugin/registry mechanism inside datom for this — the tagged seam is sufficient.
+- **Companion governance package** (`datomanager`): Will own the full gov lifecycle (init, register, unregister, destroy) and data migration as user-facing functions, replacing datom's `# GOV_SEAM:` helpers with thin shims. The seam contract (helper inventory + commit message conventions, see "Governance Repository Contract") is the port surface to preserve. Do not introduce a plugin/registry mechanism inside datom for this -- the tagged seam is sufficient. Scope: `dev/datomanager_scope.md`.
 - **`datom_migrate_data()`**: Managed migration (data copy + ref.json update + `.datom_gov_record_migration()` invocation in one atomic operation). Deferred; today migration is manual (external `aws s3 sync` + `datom_sync_dispatch()`).
 
 ### Multi-Developer Collaboration (Implemented)
