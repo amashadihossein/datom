@@ -37,11 +37,11 @@ register, dispatch routing, managed migration – is adopted on-demand via
 typically when graduating to object storage or migrating data. Once
 attached, gov cannot be detached; `project.yaml`’s `storage.governance`
 block, once populated, is permanent. The companion governance package
-(TBD name; referred to elsewhere as `datom_access` / `datomanager`) will
-eventually own the gov surface; the `# GOV_SEAM:` boundary already marks
-the lift-out. There is still no “local-only / no-remote” mode for the
-data repo: a `data_repo_url` is required. Single-user no-GitHub demos
-are explicitly rejected scope.
+(`datomanager`) will eventually own the gov surface; the `# GOV_SEAM:`
+boundary already marks the lift-out. See `dev/datomanager_scope.md` for
+full scope. There is still no “local-only / no-remote” mode for the data
+repo: a `data_repo_url` is required. Single-user no-GitHub demos are
+explicitly rejected scope.
 
 ## Documentation Hierarchy
 
@@ -384,8 +384,8 @@ internal credential contract.
 
 - **`# GOV_SEAM:` markers are a contract**: All gov-write helpers in
   `R/utils-gov.R` are tagged `# GOV_SEAM:`. These define the port
-  surface the future companion package will take over. Do not call them
-  from data-side code paths; do not add new gov-write code outside
+  surface the future `datomanager` package will take over. Do not call
+  them from data-side code paths; do not add new gov-write code outside
   `R/utils-gov.R` without a seam marker.
 
 - **[`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
