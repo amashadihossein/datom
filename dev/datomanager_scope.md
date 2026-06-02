@@ -151,20 +151,34 @@ The `R/utils-gov.R` in datom retains only the read helpers after the split.
 
 ## Phase 19: datom_migrate_data() — First Delivery in datomanager
 
-Phase 19 (draft at `dev/draft_phase_19_managed_migration.md`) is the first concrete chunk
+Phase 19 (draft at `dev/draft_managed_migration.md`) is the first concrete chunk
 of datomanager work. Its placement is settled: **datomanager is its home**, not datom.
 
-`datom_migrate_data()` is a pure gov-write surface (writes `ref.json`, commits to gov repo,
-calls `.datom_gov_record_migration()`). It belongs behind the seam.
+`datom_migrate_data()` is the governed migration **verb**. It does not move bytes itself
+-- it orchestrates by calling down into datom's exported storage extension API
+(`datom::datom_storage_copy()`, `datom_storage_verify()`, `datom_storage_list()`,
+`datom_storage_delete_prefix()`, `datom_repo_set_data_store()`). datomanager owns only
+the governed half: writing `ref.json`, committing to the gov repo, and calling
+`.datom_gov_record_migration()`. Those gov writes belong behind the seam.
+
+This split follows the seam between mechanism and policy: moving bytes is a platform
+primitive (datom); declaring the new location authoritative is a governance decision
+(datomanager).
+
+**Prerequisite -- datom Phase 22**: before Phase 19 can be built, datom must export the
+five storage/repo extension functions with stable signatures. See
+`dev/draft_managed_migration.md` Part A.
 
 **Activation ordering**:
-1. Create datomanager package scaffold (DESCRIPTION, NAMESPACE, skeleton R files).
-2. Lift the 9 GOV_SEAM write helpers from datom to datomanager (mechanical move).
-3. Lift the 5 exported functions.
-4. Decouple `datom_init_repo()` from `.datom_gov_register_project()`.
-5. Implement `datom_migrate_data()` in datomanager (Phase 19 chunks).
+1. Ship datom Phase 22 (export `datom_storage_*` + `datom_repo_set_data_store()`).
+2. Create datomanager package scaffold (DESCRIPTION, NAMESPACE, skeleton R files).
+3. Lift the 9 GOV_SEAM write helpers from datom to datomanager (mechanical move).
+4. Lift the 5 exported gov functions.
+5. Decouple `datom_init_repo()` from `.datom_gov_register_project()`.
+6. Implement `datom_migrate_data()` in datomanager (Phase 19 chunks), calling datom's
+   Phase 22 API.
 
-Steps 1-4 are a 1-2 day mechanical effort. Step 5 is Phase 19's full scope.
+Steps 2-5 are a 1-2 day mechanical effort. Step 6 is Phase 19's full scope.
 
 ---
 

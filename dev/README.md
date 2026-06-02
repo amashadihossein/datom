@@ -55,7 +55,7 @@ Phase plans are **temporary working documents**:
 
 | Draft | Doc | Captured | Notes |
 |-------|-----|----------|-------|
-| Phase 19: Managed Migration | [draft_phase_19_managed_migration.md](draft_phase_19_managed_migration.md) | 2026-05-02 | `datom_migrate_data()`. Locked: requires gov attached. Atomic data-copy + `ref.json` switch + `migration_history.json` record. Cross-backend (s3<->local). |
+| Managed Migration (datom Phase 22 + datomanager Phase 19) | [draft_managed_migration.md](draft_managed_migration.md) | 2026-05-02 | Two-package split. **datom Phase 22**: export `datom_storage_*` mechanics (copy/verify/list/delete_prefix) + `datom_repo_set_data_store()` -- the byte-moving platform primitives. **datomanager Phase 19**: governed `datom_migrate_data()` verb (requires gov; atomic copy + `ref.json` switch + `migration_history.json` record; cross-backend s3<->local). Seam: moving bytes is a platform primitive (datom); declaring the new location authoritative is governed (datomanager). |
 
 ### Completed Phases
 
