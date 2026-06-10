@@ -1540,6 +1540,9 @@ datom_get_conn <- function(path = NULL,
   # Validate data store reachability
   .datom_check_data_reachable(conn, migrated = migrated)
 
+  # Validate git remote reachability
+  .datom_check_git_reachable(conn)
+
   conn
 }
 

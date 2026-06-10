@@ -744,3 +744,156 @@ test_that(".datom_check_git_current aborts on non-git directory", {
   dir <- withr::local_tempdir()
   expect_error(.datom_check_git_current(dir), "Not a git repository")
 })
+
+
+# =============================================================================
+# .datom_check_git_reachable()
+# =============================================================================
+
+test_that(".datom_check_git_reachable returns invisible TRUE when data_repo_url is NULL", {
+  conn <- new_datom_conn(
+    project_name = "p", root = "/tmp", client = NULL,
+    role = "reader", backend = "local"
+  )
+  expect_true(.datom_check_git_reachable(conn))
+  expect_invisible(.datom_check_git_reachable(conn))
+})
+
+test_that(".datom_check_git_reachable returns invisible TRUE for reachable local bare repo", {
+  bare_dir <- withr::local_tempdir()
+  git2r::init(bare_dir, bare = TRUE)
+
+  conn <- new_datom_conn(
+    project_name = "p", root = "/tmp", client = NULL,
+    role = "reader", backend = "local",
+    data_repo_url = bare_dir
+  )
+  expect_no_error(.datom_check_git_reachable(conn))
+  expect_invisible(.datom_check_git_reachable(conn))
+})
+
+test_that(".datom_check_git_reachable aborts on HTTPS 401 auth failure", {
+  dir <- withr::local_tempdir()
+  conn <- new_datom_conn(
+    project_name = "p", root = dir, client = NULL,
+    role = "developer", path = dir, backend = "local",
+    data_repo_url = "https://github.com/test/repo.git",
+    github_pat = "bad-pat"
+  )
+  local_mocked_bindings(
+    remote_ls = function(...) stop("request failed with status code: 401"),
+    .package = "git2r"
+  )
+  expect_error(.datom_check_git_reachable(conn), "github_pat")
+})
+
+test_that(".datom_check_git_reachable aborts on HTTPS 403 auth failure", {
+  dir <- withr::local_tempdir()
+  conn <- new_datom_conn(
+    project_name = "p", root = dir, client = NULL,
+    role = "developer", path = dir, backend = "local",
+    data_repo_url = "https://github.com/test/repo.git",
+    github_pat = "bad-pat"
+  )
+  local_mocked_bindings(
+    remote_ls = function(...) stop("request failed with status code: 403"),
+    .package = "git2r"
+  )
+  expect_error(.datom_check_git_reachable(conn), "github_pat")
+})
+
+test_that(".datom_check_git_reachable abort message points to datom_store github_pat arg", {
+  dir <- withr::local_tempdir()
+  conn <- new_datom_conn(
+    project_name = "p", root = dir, client = NULL,
+    role = "developer", path = dir, backend = "local",
+    data_repo_url = "https://github.com/test/repo.git",
+    github_pat = "bad-pat"
+  )
+  local_mocked_bindings(
+    remote_ls = function(...) stop("request failed with status code: 401"),
+    .package = "git2r"
+  )
+  expect_error(.datom_check_git_reachable(conn), "datom_store")
+})
+
+test_that(".datom_check_git_reachable aborts on HTTPS 404 not found", {
+  dir <- withr::local_tempdir()
+  conn <- new_datom_conn(
+    project_name = "p", root = dir, client = NULL,
+    role = "developer", path = dir, backend = "local",
+    data_repo_url = "https://github.com/test/nonexistent.git",
+    github_pat = "some-pat"
+  )
+  local_mocked_bindings(
+    remote_ls = function(...) stop("repository not found"),
+    .package = "git2r"
+  )
+  expect_error(.datom_check_git_reachable(conn), "not found")
+})
+
+test_that(".datom_check_git_reachable warns (not errors) on HTTPS network timeout", {
+  dir <- withr::local_tempdir()
+  conn <- new_datom_conn(
+    project_name = "p", root = dir, client = NULL,
+    role = "developer", path = dir, backend = "local",
+    data_repo_url = "https://github.com/test/repo.git",
+    github_pat = "some-pat"
+  )
+  local_mocked_bindings(
+    remote_ls = function(...) stop("Could not resolve host: github.com"),
+    .package = "git2r"
+  )
+  expect_warning(.datom_check_git_reachable(conn), "reachability")
+})
+
+test_that(".datom_check_git_reachable conn returned on HTTPS network timeout", {
+  # Warn-only: function must not abort so the caller can return the conn
+  dir <- withr::local_tempdir()
+  conn <- new_datom_conn(
+    project_name = "p", root = dir, client = NULL,
+    role = "developer", path = dir, backend = "local",
+    data_repo_url = "https://github.com/test/repo.git",
+    github_pat = "some-pat"
+  )
+  local_mocked_bindings(
+    remote_ls = function(...) stop("Connection timed out"),
+    .package = "git2r"
+  )
+  expect_no_error(withCallingHandlers(
+    .datom_check_git_reachable(conn),
+    warning = function(w) invokeRestart("muffleWarning")
+  ))
+})
+
+test_that(".datom_check_git_reachable warns (not errors) on SSH any error", {
+  dir <- withr::local_tempdir()
+  conn <- new_datom_conn(
+    project_name = "p", root = dir, client = NULL,
+    role = "developer", path = dir, backend = "local",
+    data_repo_url = "git@github.com:test/repo.git"
+  )
+  local_mocked_bindings(
+    remote_ls = function(...) stop("Failed to authenticate SSH session"),
+    .package = "git2r"
+  )
+  expect_warning(.datom_check_git_reachable(conn), "reachability")
+})
+
+test_that(".datom_check_git_reachable SSH error does not abort (warn only)", {
+  # SSH 403-equivalent must not abort -- we can't distinguish from offline
+  dir <- withr::local_tempdir()
+  conn <- new_datom_conn(
+    project_name = "p", root = dir, client = NULL,
+    role = "developer", path = dir, backend = "local",
+    data_repo_url = "git@github.com:test/repo.git"
+  )
+  local_mocked_bindings(
+    remote_ls = function(...) stop("403 forbidden"),
+    .package = "git2r"
+  )
+  expect_no_error(withCallingHandlers(
+    .datom_check_git_reachable(conn),
+    warning = function(w) invokeRestart("muffleWarning")
+  ))
+})
