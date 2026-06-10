@@ -49,7 +49,7 @@ Phase plans are **temporary working documents**:
 
 | Phase | Started | Status | Doc |
 |-------|---------|--------|-----|
-| — | — | No active phases | — |
+| Phase 22: Storage Extension API | 2026-06-10 | ⏳ Chunk 1 next | [phase_22_storage_extension_api.md](phase_22_storage_extension_api.md) |
 
 ### Drafts (queued, not active)
 

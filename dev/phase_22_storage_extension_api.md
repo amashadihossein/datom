@@ -1,0 +1,144 @@
+# Phase 22 — Storage Extension API
+
+**Status**: ⏳ Chunk 1 next
+**Branch**: `phase/22-storage-extension-api`
+**Started**: 2026-06-10
+
+---
+
+## Goal
+
+Export a small, stable, CRAN-committed extension API that exposes datom's existing
+storage-dispatch mechanics so a downstream governance package (datomanager) can move
+and verify bytes without reaching into internals. Naming convention `datom_storage_*` /
+`datom_repo_*` signals infrastructure tier -- intended for package developers, not
+end users.
+
+Prerequisite for datomanager Phase 19 (`gov_migrate_data()`).
+
+---
+
+## Context
+
+Spec: `dev/draft_managed_migration.md` Part A.
+Authority principle: `dev/datomanager_scope.md`.
+Key files to touch: `R/utils-storage.R`, `R/decommission.R`, `R/conn.R` (project.yaml write).
+New file: `R/storage.R` (the six exported functions).
+
+---
+
+## Read Before Each Chunk
+
+- `R/utils-storage.R` — dispatch layer (source of promotions)
+- `R/utils-s3.R` — `head_object`, `get_object`, `put_object` patterns
+- `R/utils-local.R` — `.datom_local_path()`, `fs::file_copy` patterns
+- `R/decommission.R` — steps 2-3 to extract for `datom_repo_delete()`
+- `R/conn.R` — `new_datom_conn()` fields, project.yaml write patterns
+
+---
+
+## Six Exports
+
+| Function | Status | Source |
+|---|---|---|
+| `datom_storage_list(conn, ...)` | ☐ todo | Promote `.datom_storage_list_objects()` |
+| `datom_storage_delete_prefix(conn, ...)` | ☐ todo | Promote `.datom_storage_delete_prefix()` |
+| `datom_storage_copy(from_conn, to_conn, ...)` | ☐ todo | New |
+| `datom_storage_verify(from_conn, to_conn, keys, mode)` | ☐ todo | New |
+| `datom_repo_set_data_store(conn, new_store, ...)` | ☐ todo | New |
+| `datom_repo_delete(conn, confirm, force_gov_attached)` | ☐ todo | Extract from decommission.R |
+
+---
+
+## Chunks
+
+| # | Name | Status | Notes |
+|---|------|--------|-------|
+| 0 | Phase doc + branch setup | ✅ done | Phase doc created, README.md updated, branch pushed |
+| 1 | Promote list + delete_prefix | ⏳ next | Thin wrappers; tests; pkgdown entry |
+| 2 | `datom_storage_copy()` | ☐ todo | All 4 backend combos; tests with mocked S3 |
+| 3 | `datom_storage_verify()` | ☐ todo | `structural` + `content` modes; truncation + hash tests |
+| 4 | `datom_repo_set_data_store()` | ☐ todo | Read-modify-write; govenance untouched; commit+push |
+| 5 | `datom_repo_delete()` | ☐ todo | Extract from decommission.R; guard; refactor decommission |
+| 6 | Spec + phase completion | ☐ todo | Update spec, acceptance criteria, phase completion procedure |
+
+---
+
+## Signatures (pinned)
+
+```r
+# Chunk 1 -- promotions
+datom_storage_list(conn)
+datom_storage_delete_prefix(conn, prefix_key = NULL)
+
+# Chunk 2 -- copy
+datom_storage_copy(from_conn, to_conn)
+
+# Chunk 3 -- verify
+datom_storage_verify(from_conn, to_conn, keys = NULL, mode = c("structural", "content"))
+
+# Chunk 4 -- repo set data store
+datom_repo_set_data_store(conn, new_store, message = NULL)
+
+# Chunk 5 -- repo delete
+datom_repo_delete(conn, confirm, force_gov_attached = FALSE)
+```
+
+---
+
+## Locked Decisions (do not re-open)
+
+1. `datom_storage_copy` -- both args are full `datom_conn` objects. Streaming for all
+   4 combos: `local->local` via `fs::file_copy`; others read bytes then write.
+   Server-side S3 `copy_object` (same-region S3->S3) is issue #46 -- out of scope.
+2. `datom_storage_verify` -- `mode = c("structural", "content")`. Structural = existence
+   + byte size (cheap). Content = re-hash bytes (expensive). `keys = NULL` means verify
+   all from `datom_storage_list()`.
+3. `datom_repo_delete` -- refuses if `is_gov_attached(conn) && !force_gov_attached`.
+   Gov user is stopped with "use `gov_decommission()`"; datomanager opts through with
+   `force_gov_attached = TRUE`. No hidden behavior.
+4. `datom_repo_set_data_store` -- **read-modify-write** on `project.yaml`. Must call
+   `yaml::read_yaml()`, `modifyList()` on only `storage.data`, then write back. Never
+   reconstruct from conn fields (silently drops `storage.governance` on governed
+   projects).
+
+---
+
+## Invariants / Must-Never Rules
+
+- Never call `.datom_s3_*()` or `.datom_local_*()` from the new exported functions;
+  always go through `.datom_storage_*()` dispatch.
+- `datom_repo_set_data_store()` must not touch `storage.governance`. Verify with a
+  regression test that `storage.governance` survives a round-trip.
+- `datom_repo_delete()` must NOT replace `datom_decommission()` -- decommission calls
+  it as a sub-step. Never remove decommission.
+- cli dot-literal gotcha: wrap any `.`-prefixed call in parens inside cli_* calls:
+  `{(.datom_build_storage_key(...))}`.
+- No phase/chunk numbers in `R/` source comments.
+
+---
+
+## Acceptance Criteria
+
+1. Six functions exported with documented, stable signatures, listed in `_pkgdown.yml`.
+2. `datom_storage_copy()` passes the cross-backend matrix (at minimum local->s3 and
+   s3->local with mocked paws; local->local real).
+3. `datom_storage_verify()` both modes tested; `structural` catches a truncated object,
+   `content` catches a corrupted-bytes object.
+4. `datom_repo_set_data_store()` rewrites only `storage.data`, leaves
+   `storage.governance` untouched, commits to the data clone only.
+5. `datom_repo_delete()` removes GitHub repo + clone; refuses a gov-attached conn unless
+   `force_gov_attached = TRUE`; `confirm` interlock enforced.
+6. Spec updated: new "Storage extension API" section.
+7. No `:::`-reachability; every function is a clean export.
+8. Full test suite green; count reported in commit.
+
+---
+
+## Progress Log
+
+### Chunk 0 -- 2026-06-10
+Shipped: Phase doc created, branch `phase/22-storage-extension-api` created from `main`,
+`dev/README.md` Active Phases table updated.
+Decisions: None new; all locked decisions carried from pre-session prompt.
+Tests: 1700 (baseline, no new tests in this chunk).
