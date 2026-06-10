@@ -15,8 +15,8 @@ packages** and therefore **two phases**:
 
 | Phase | Package | Deliverable |
 |-------|---------|-------------|
-| **Phase 22** | datom | Storage extension API (`datom_storage_*`) -- the byte-moving mechanics, exported and CRAN-stable. Prerequisite for Phase 19. |
-| **Phase 19** | datomanager | The governed verb `datom_migrate_data()` -- orchestrates the mechanics and owns the ref switch + migration record. |
+| **Phase 22** | datom | Storage extension API (`datom_storage_*`, `datom_repo_*`) -- the byte-moving + data-repo mechanics, exported and CRAN-stable. Prerequisite for Phase 19. |
+| **Phase 19** | datomanager | The governed verb `gov_migrate_data()` -- orchestrates the mechanics and owns the ref switch + migration record. |
 
 > **Numbering note**: datom Phase 21 (Governance-First Connection UX) already shipped
 > 2026-05-29. The datom-side prerequisite here is **Phase 22**, not 21. The earlier
@@ -33,7 +33,7 @@ datomanager spins out.
 
 Replace today's manual migration workflow (external `aws s3 sync` +
 `datom_sync_dispatch()`) with a single managed entry point:
-`datom_migrate_data(conn, new_data_store, ...)`. The function performs an atomic
+`gov_migrate_data(conn, new_data_store, ...)`. The function performs an atomic
 data-copy + `ref.json` update + migration-history record in one operation, with
 rollback on pre-switch failure.
 
@@ -62,14 +62,14 @@ exists.
 
 ```
 datom (platform)                     datomanager (governance)
-  datom_storage_copy()      <-------  datom_migrate_data()
+  datom_storage_copy()      <-------  gov_migrate_data()
   datom_storage_verify()    <-------    1. precondition checks
   datom_storage_list()      <-------    2. plan
   datom_storage_delete_prefix() <----   3. copy      (calls datom)
   datom_repo_set_data_store() <------    4. verify    (calls datom)
-                                         5. SWITCH ref.json   [GOV_SEAM]
-                                         6. record migration  [GOV_SEAM]
-                                         7. update project.yaml (calls datom)
+  datom_repo_delete()         <------    5. SWITCH ref.json   [GOV_SEAM]
+   (used by gov_decommission,           6. record migration  [GOV_SEAM]
+    not migration)                       7. update project.yaml (calls datom)
                                          8. optional delete source (calls datom)
 ```
 
@@ -80,20 +80,31 @@ cross-package call goes through an exported `datom::datom_*()` symbol.
 
 ## Locked decisions (from Phase 18, do not relitigate)
 
-1. **Migration requires gov.** Hard precondition in `datom_migrate_data()`:
-   `is.null(conn$gov_root)` -> abort with "attach gov first via `datom_attach_gov()`".
+1. **Migration requires gov.** Hard precondition in `gov_migrate_data()`:
+   `is.null(conn$gov_root)` -> abort with "attach gov first via `gov_attach()`".
    A migration without governance has no authoritative address to switch. Decided
    2026-05-02.
 2. **No sidecar redirect.** Pre-gov projects do not migrate via env-var or MOVED-file
    machinery. They attach gov first. The resolver stays simple. Decided 2026-05-02.
-3. **Core split accepted.** datom owns `datom_storage_*` mechanics; datomanager owns the
-   governed `datom_migrate_data()` verb. Confirmed 2026-06-01.
+3. **Core split accepted.** datom owns `datom_storage_*` / `datom_repo_*` mechanics;
+   datomanager owns the governed `gov_migrate_data()` verb. Confirmed 2026-06-01.
 4. **Data-repo write stays datom-owned.** The step-7 rewrite of `project.yaml`'s
    `storage.data` block is a *data-repo* git operation. It is owned by a datom-exported
    helper (`datom_repo_set_data_store()`), which datomanager calls. datomanager never
    touches the data repo directly -- this preserves the two-repos invariant (gov code
    commits only to the gov clone; data-repo writes go through datom). Confirmed
    2026-06-01.
+5. **Prefix = package** (decided 2026-06-09). `datom_*` = datom (platform, all reads,
+   no-gov self-serve writes); `gov_*` = datomanager (governed lifecycle writes);
+   `access_*` = datomanager (future). No symbol is exported by two packages, so there is
+   no R namespace masking and no per-verb gov-state branching -- the prefix carries the
+   authority model. gov **reads** stay `datom_*`. Full rule + rename map in
+   `dev/datomanager_scope.md` ("Naming Convention" + "Authority Principle").
+6. **Data-repo-helper rule is uniform, not migration-only** (decided 2026-06-09). Every
+   data-repo mutation datomanager needs goes through a datom-owned `datom_repo_*` helper.
+   This covers decommission too: `datom_decommission()` does not move wholesale --
+   `datom_repo_delete()` (delete GitHub repo + clone) stays in datom and is the complete
+   no-gov teardown; `gov_decommission()` orchestrates it. See `dev/datomanager_scope.md`.
 
 ---
 
@@ -121,8 +132,10 @@ signature.
 | `datom_storage_list(conn)` | Promote | Exported wrapper over `.datom_storage_list_objects()`. Returns full storage keys under the datom namespace. |
 | `datom_storage_delete_prefix(conn)` | Promote | Exported wrapper over `.datom_storage_delete_prefix()`. Deletes all objects under the conn's datom namespace. Used for rollback and (opt-in) source deletion. |
 | `datom_repo_set_data_store(conn, new_data_store, message = NULL)` | **New** | Rewrite `storage.data` in `project.yaml` on the data clone; commit + push the data repo. The data-side half of a migration's bookkeeping. Owned by datom so the two-repos invariant holds. |
+| `datom_repo_delete(conn, confirm, force_gov_attached = FALSE)` | **New** | Delete the data GitHub repo + local clone. Extracted from `datom_decommission()`'s data-side steps. The complete no-gov teardown (paired with `datom_storage_delete_prefix()`); also the helper `gov_decommission()` calls. See guard note below. |
 
-No user-facing migration verb lives in datom. These five are the entire Phase 22 surface.
+No user-facing *governed* migration verb lives in datom. These six are the entire Phase 22
+surface.
 
 ## Verify contract (pin this before exporting)
 
@@ -155,44 +168,62 @@ of `keys`, integrity depth is expressed by `mode`. Two orthogonal axes, two argu
 All routing stays inside datom's existing `switch(conn$backend, ...)` dispatch; no new
 backend abstraction is introduced.
 
-## The no-gov "half migration" footgun (decide UX, then document loudly)
+## No-gov vs gov: the authority principle (reframe, not a warning)
 
-Because `datom_storage_copy()` is exported from datom, a solo / no-gov developer *can*
-copy their bytes to a new store. But with no `ref.json` to switch, a copy is only half a
-migration -- their conn still points at the old location. This is a deliberate tension:
-a platform primitive legitimately lets a developer relocate their own bytes (backup,
-clone, rehome) without governance in the loop.
+The earlier draft framed `datom_storage_copy()` as a footgun for solo devs ("copy succeeds,
+conn still points at the old location -- label it loudly"). That framing was wrong: the fix
+is already in the API. The governing question is **which file is the location authority**:
 
-Resolution: **keep the primitive available, label it clearly.** These functions are
-documented as infrastructure-tier extension API ("for building governance tooling; end
-users should use `datomanager::datom_migrate_data()` for a complete migration"). We do
-not gate `datom_storage_copy()` on gov -- gating belongs in the governed verb, not the
-primitive. The docs and `@keywords internal`-adjacent framing carry the warning.
+- **No-gov project -- `project.yaml` is authority.** There is no `ref.json`. So
+  `datom_storage_copy()` + `datom_repo_set_data_store()` together are a *complete*,
+  legitimate self-relocation -- not a half-migration. The second primitive closes the loop.
+  Likewise `datom_storage_delete_prefix()` + `datom_repo_delete()` is a *complete* teardown.
+  Both are fully within datom; no governance is involved because there is none to involve.
+- **Gov-attached project -- `ref.json` is authority.** A copy alone is genuinely
+  incomplete, because the authoritative address lives in gov. You **must** go through
+  `datomanager::gov_migrate_data()` (or `gov_decommission()`), which switches `ref.json`
+  and records history.
+
+The Phase 18 lock is on the *governed verb*, not on a solo dev relocating their own bytes.
+So we do not gate `datom_storage_copy()` on gov -- gating belongs in the governed verb. The
+only residual sharp edge is a gov user calling `datom_repo_delete()` directly (deletes the
+data side, orphans the gov registration). Because that helper is also what
+`gov_decommission()` calls, it cannot simply refuse on gov-attached conns; instead it
+carries `confirm = project_name` **plus** `force_gov_attached = FALSE`. An interactive gov
+user is stopped with "use `gov_decommission()`"; datomanager opts through visibly by passing
+`TRUE`. Explicit parameter, not hidden behavior.
+
+> **Convenience-wrapper question (open).** `datom_relocate_data()` -- a one-call wrapper
+> over `copy` + `set_data_store` for the no-gov case -- is *reserved vocabulary*, not
+> necessarily shipped in Phase 22. Lean: ship the two primitives; add the wrapper only if
+> the two-call dance proves annoying. The naming principle is what matters now.
 
 ## Phase 22 acceptance criteria
 
-1. Five functions exported with documented, stable signatures, listed in `_pkgdown.yml`.
+1. Six functions exported with documented, stable signatures, listed in `_pkgdown.yml`.
 2. `datom_storage_copy()` passes the cross-backend matrix (at minimum local->s3 and
    s3->local with mocked paws; local->local real).
 3. `datom_storage_verify()` both modes tested; `structural` catches a truncated object,
    `content` catches a corrupted-bytes object.
 4. `datom_repo_set_data_store()` rewrites only `storage.data`, leaves
    `storage.governance` untouched, commits to the data clone only.
-5. Spec updated: new "Storage extension API" section documenting the five signatures and
+5. `datom_repo_delete()` removes GitHub repo + clone; refuses a gov-attached conn unless
+   `force_gov_attached = TRUE`; `confirm` interlock enforced.
+6. Spec updated: new "Storage extension API" section documenting the six signatures and
    the verify contract.
-6. No `:::`-reachability requirement leaks; every function is a clean export.
-7. Full test suite green; count reported in commit.
+7. No `:::`-reachability requirement leaks; every function is a clean export.
+8. Full test suite green; count reported in commit.
 
 ---
 
-# Part B -- datomanager Phase 19: datom_migrate_data()
+# Part B -- datomanager Phase 19: gov_migrate_data()
 
 ## Function shape
 
 ```r
 # datomanager -- the governed migration verb.
 # Orchestrates by calling datom::datom_storage_*() and datom::datom_repo_set_data_store().
-datom_migrate_data(
+gov_migrate_data(
   conn,
   new_data_store,         # datom_store_s3 / datom_store_local component
   reason = NULL,          # human-readable note for migration_history.json
@@ -238,15 +269,15 @@ Single call with `dry_run`, not a two-call `plan()`/`execute()` -- follows the
 - Step 5 (gov ref switch) is the commit point. Once gov is updated, readers resolve to the
   new location; stale code redirects cleanly through `ref.json`.
 - Steps 6-7 are best-effort cleanup. If they fail, the project *is* migrated but the local
-  clone / migration history is stale; recovery is `datom_pull_gov()` +
-  `datom_sync_dispatch()` (gov) and `datom_pull()` (data).
+  clone / migration history is stale; recovery is `gov_pull()` +
+  `gov_sync_dispatch()` (gov) and `datom_pull()` (data).
 - Step 8 is irreversible; only after explicit opt-in.
 
 ## Failure modes to design for
 
 - Partial copy failure mid-stream: rollback by deleting copied objects at new location.
 - Gov ref switch succeeds but push verify fails: project is migrated; user recovers via
-  `datom_sync_dispatch()`.
+  `gov_sync_dispatch()`.
 - Concurrent migration (two developers): gov-side optimistic locking via
   `migration_history.json` last-entry pre-check + push-with-fail-on-conflict.
 - New store == current store: no-op with informative message (caught in step 1).
@@ -284,17 +315,17 @@ ran.)
 
 ## Phase 19 acceptance criteria
 
-1. `datom_migrate_data()` exported from **datomanager**, marked `# GOV_SEAM:` where it
+1. `gov_migrate_data()` exported from **datomanager**, marked `# GOV_SEAM:` where it
    performs gov writes (steps 5-6).
 2. datomanager calls datom only via `datom::datom_storage_*()` /
    `datom::datom_repo_set_data_store()` -- no `:::`.
-3. datom Phase 22 complete (five functions exported, signatures documented in the datom
+3. datom Phase 22 complete (six functions exported, signatures documented in the datom
    spec).
 4. Atomic semantics: pre-switch failure leaves no trace; post-switch failure documented +
    self-healing path verified.
 5. Cross-backend matrix tested (at minimum local->s3 and s3->local).
 6. `migration_history.json` entries written and verified.
-7. Reader role detects new location after `datom_pull_gov()`.
+7. Reader role detects new location after `gov_pull()`.
 8. Vignette: "Migrating between stores" article.
 9. E2E sandbox supports a migration leg.
 
@@ -302,11 +333,12 @@ ran.)
 
 ## Prerequisites before either phase activates
 
-1. **datom Phase 22** must ship first: the five `datom_storage_*` / `datom_repo_*`
+1. **datom Phase 22** must ship first: the six `datom_storage_*` / `datom_repo_*`
    functions exported with stable, documented signatures.
 2. **datomanager repository** must exist (even as a skeleton) so Phase 19 can be
-   developed there. Per `dev/datomanager_scope.md`, the lift-out of the 9 GOV_SEAM
-   helpers + 5 exported gov functions (~2 days) precedes Phase 19's full scope.
+   developed there. Per `dev/datomanager_scope.md`, the lift-out renames the 5 exported
+   gov functions to `gov_*` (extracting `datom_repo_delete()` to stay in datom) and moves
+   the 9 GOV_SEAM helpers (~2 days) before Phase 19's full scope.
 
 ## Open questions (decide at activation)
 
@@ -316,13 +348,17 @@ ran.)
 - Final name for the data-repo helper: `datom_repo_set_data_store()` vs
   `datom_repo_update_data_pointer()`. Lean: `datom_repo_set_data_store()` (mirrors store
   vocabulary).
+- Ship `datom_relocate_data()` (no-gov one-call relocate wrapper) in Phase 22, or just
+  reserve the name and ship the `copy` + `set_data_store` primitives? Lean: reserve the
+  vocabulary, ship primitives; add the wrapper only if the two-call dance proves annoying.
 - In-flight reader conns after switch: today's stale-conn behavior covers it (read-time
   check fails clean, user rebuilds). Confirm no extra work needed.
 
 ## Notes
 
 This consolidates the Phase 18 design discussion (2026-05-02), the package-boundary
-clarification (2026-06-02), and the platform/governance framing + numbering fix
-(2026-06-01).
+clarification (2026-06-02), the platform/governance framing + numbering fix (2026-06-01),
+and the `gov_*` prefix decision + uniform data-repo-helper rule / decommission split
+(2026-06-09).
 When activated, expand each part into a full chunked plan via the standard phase
 workflow.
