@@ -125,30 +125,52 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 **Question:** How should a project move to a new data store or prefix?
 
-**Canonical route:**
+**The branch is the location authority:**
 
-1. Copy data bytes and metadata mirror to the new data location.
-2. Update governance `ref.json` to point to the new location.
-3. Record migration history in governance.
-4. Let readers resolve the new location from governance.
+- **No-gov project (`project.yaml` is authority)** -- self-serve relocate, fully within
+  datom:
+  1. Copy bytes + metadata mirror to the new location (`datom_storage_copy()`).
+  2. Rewrite `storage.data` in `project.yaml`; commit + push the data repo
+     (`datom_repo_set_data_store()`). This completes the move; rebuild the conn to pick up
+     the new location.
+- **Gov-attached project (`ref.json` is authority)** -- governed migration via
+  datomanager:
+  1. Copy bytes + metadata mirror to the new location.
+  2. Update governance `ref.json` to point to the new location.
+  3. Record migration history in governance.
+  4. Let readers resolve the new location from governance.
 
-**Primary functions/files:** Future `datom_migrate_data()`, `ref.json`, `migration_history.json`, `datom_attach_gov()`.
+**Primary functions/files:** Future `gov_migrate_data()` (datomanager, governed),
+`datom_storage_copy()` / `datom_repo_set_data_store()` (datom data-side helpers; also the
+no-gov self-serve path), `ref.json`, `migration_history.json`.
 
-**Do not:** Change only `project.yaml` or only storage contents. Governance `ref.json` is the routing authority after governance is attached.
+**Do not:** For a gov project, change only `project.yaml` or only storage contents.
+Governance `ref.json` is the routing authority after governance is attached. datomanager
+never writes the data repo directly -- it calls the datom `datom_repo_*` helpers.
 
 ### Given decommission request, remove project safely
 
 **Question:** What is the safe deletion order for a datom project?
 
-**Canonical route:**
+**The branch is the location authority** (same rule as migration):
 
-1. Require literal confirmation matching the project name.
-2. Delete the project's `datom/` namespace inside the data store root.
-3. Delete the data GitHub repo.
-4. Delete the local data clone.
-5. Unregister the project from governance.
-6. Delete governance storage under `projects/{project}/`.
+- **No-gov project** -- self-serve teardown, fully within datom:
+  1. Require literal confirmation matching the project name.
+  2. Delete the project's `datom/` namespace inside the data store root
+     (`datom_storage_delete_prefix()`).
+  3. Delete the data GitHub repo + local clone (`datom_repo_delete()`).
+- **Gov-attached project** -- governed teardown via `gov_decommission()` (datomanager),
+  which orchestrates the datom helpers then cleans up gov:
+  1-3. As above, but via `datom_storage_delete_prefix()` + `datom_repo_delete()` called
+     from datomanager.
+  4. Unregister the project from governance.
+  5. Delete governance storage under `projects/{project}/`.
 
-**Primary functions/files:** `datom_decommission()`, `.datom_gov_unregister_project()`.
+**Primary functions/files:** Future `gov_decommission()` (datomanager, governed),
+`datom_repo_delete()` / `datom_storage_delete_prefix()` (datom data-side helpers; also the
+no-gov self-serve path), `.datom_gov_unregister_project()`.
 
-**Do not:** Delete the storage root itself. Buckets/directories are caller-owned; datom owns only its namespace.
+**Do not:** Delete the storage root itself. Buckets/directories are caller-owned; datom
+owns only its namespace. datomanager never deletes the data repo directly -- it calls
+`datom_repo_delete()`. A gov user must not call `datom_repo_delete()` directly (it guards
+with `force_gov_attached = FALSE`); use `gov_decommission()`.
