@@ -41,7 +41,7 @@ R namespace level -- depending on governance state.
 
 | Prefix | Package | Surface |
 |---|---|---|
-| `datom_*` | datom | Platform mechanics, **all reads**, and no-gov self-serve writes (including data-repo relocate and teardown). |
+| `datom_*` | datom | Platform mechanics, **all reads**, and solo-project self-serve writes (including data-repo relocate and teardown). |
 | `gov_*` | datomanager | Governed lifecycle **writes** (init, attach, register, decommission, dispatch, migrate). |
 | `access_*` | datomanager (future; may split) | Access enforcement (roles, grants, IAM). See `datomanager_overview.md`. |
 
@@ -76,21 +76,31 @@ to do.
 
 ## Authority Principle: data-repo mutations always route through datom
 
-Two location authorities exist, and which one is in force determines which package owns a
-mutating verb:
+**Vocabulary -- two kinds of project, named by their authority.** The prefix names the
+package; this noun names the *thing you are holding*:
 
-- **No-gov project** -- `project.yaml` (in the data repo) is the location authority. datom
+- a **solo project** -- `project.yaml` (in the data repo) is the location authority. datom
   alone provides the **complete** lifecycle: relocate bytes and tear the project down. No
-  datomanager needed.
-- **Gov-attached project** -- `ref.json` (in the gov repo) is the authority. The governed
+  datomanager needed. (Phase 18 already calls `datom_store(governance = NULL)` the "solo"
+  path.)
+- a **governed project** -- `ref.json` (in the gov repo) is the authority. The governed
   verbs live in datomanager and orchestrate datom's helpers; **datomanager never touches
-  the data repo directly.**
+  the data repo directly.** `gov_attach()` promotes a solo project to a governed one (one
+  way -- gov is sticky once attached).
 
-Every data-repo mutation datomanager needs is exposed as a datom-owned `datom_repo_*`
-helper. This preserves the two-repos invariant uniformly: gov code commits only to the gov
-clone; data-repo writes always go through datom.
+The noun makes error messages read naturally:
+*"`gov_sync_dispatch()` requires a governed project -- run `gov_attach()` first."* The
+prefix tells you which package owns the verb; the noun tells you which kind of project the
+verb applies to. ("solo" is preferred over "local" because `local` already names a storage
+*backend* in datom -- `datom_store_local` -- and "a local project" would be misread as
+"a project on the local filesystem backend.")
 
-| datom data-side helper | Does | No-gov self-serve | Governed (via datomanager) |
+Which authority is in force determines which package owns a mutating verb. Every data-repo
+mutation datomanager needs is exposed as a datom-owned `datom_repo_*` helper. This preserves
+the two-repos invariant uniformly: gov code commits only to the gov clone; data-repo writes
+always go through datom.
+
+| datom data-side helper | Does | Solo (self-serve) | Governed (via datomanager) |
 |---|---|---|---|
 | `datom_storage_copy()` / `datom_storage_delete_prefix()` | Move / delete the data **namespace** | relocate / teardown | `gov_migrate_data()` / `gov_decommission()` |
 | `datom_repo_set_data_store()` | Rewrite `storage.data` in `project.yaml`; commit + push data repo | completes a relocate | `gov_migrate_data()` step 7 |
@@ -98,15 +108,15 @@ clone; data-repo writes always go through datom.
 
 **Verb pairs** (prefix carries the authority model; the verb is the honest word for the act):
 
-| Act | Self-serve (datom, no-gov) | Governed (datomanager, gov) |
+| Act | Solo project (datom) | Governed project (datomanager) |
 |---|---|---|
 | move data | `datom_relocate_data()` (or compose `storage_copy` + `repo_set_data_store`) | `gov_migrate_data()` |
 | tear down | `datom_repo_delete()` (+ `storage_delete_prefix`) | `gov_decommission()` |
 
 This resolves the decommission asymmetry: `datom_decommission()` does **not** move
 wholesale to datomanager. Its data-side teardown (delete GitHub repo + local clone) extracts
-to `datom_repo_delete()`, which **stays in datom** and is also the complete no-gov teardown.
-`gov_decommission()` in datomanager calls `datom_repo_delete()` +
+to `datom_repo_delete()`, which **stays in datom** and is also the complete solo-project
+teardown. `gov_decommission()` in datomanager calls `datom_repo_delete()` +
 `datom_storage_delete_prefix()` for the data side, then performs only the gov unregister +
 gov-storage cleanup itself -- never touching the data repo directly. Same step-7 discipline,
 applied to teardown.
@@ -126,7 +136,7 @@ parameter, not hidden behavior.
 | datom today | datomanager | Current file | Notes |
 |---|---|---|---|
 | `datom_init_gov()` | `gov_init()` | `R/conn.R` | Gov repo creation + skeleton push |
-| `datom_attach_gov()` | `gov_attach()` | `R/conn.R` | Promotes no-gov project to gov-attached |
+| `datom_attach_gov()` | `gov_attach()` | `R/conn.R` | Promotes a solo project to a governed one |
 | `datom_decommission()` | `gov_decommission()` | `R/decommission.R` | Gov teardown only; data-side teardown stays in datom as `datom_repo_delete()` (see Authority Principle) |
 | `datom_sync_dispatch()` | `gov_sync_dispatch()` | `R/sync.R` | Writes dispatch.json to gov |
 | `datom_pull_gov()` | `gov_pull()` | `R/sync.R` | Pulls gov clone from remote |
@@ -265,8 +275,9 @@ primitive (datom); declaring the new location authoritative is a governance deci
 (datomanager).
 
 **Prerequisite -- datom Phase 22**: before Phase 19 can be built, datom must export the
-five storage/repo extension functions with stable signatures. See
-`dev/draft_managed_migration.md` Part A.
+six storage/repo extension functions (`datom_storage_copy`, `datom_storage_verify`,
+`datom_storage_list`, `datom_storage_delete_prefix`, `datom_repo_set_data_store`,
+`datom_repo_delete`) with stable signatures. See `dev/draft_managed_migration.md` Part A.
 
 **Activation ordering**:
 1. Ship datom Phase 22 (export `datom_storage_*` + `datom_repo_set_data_store()` +
