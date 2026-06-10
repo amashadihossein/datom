@@ -61,17 +61,19 @@ governance the decision. datomanager orchestrates datom; datom never knows datom
 exists.
 
 ```
-datom (platform)                     datomanager (governance)
-  datom_storage_copy()      <-------  gov_migrate_data()
-  datom_storage_verify()    <-------    1. precondition checks
-  datom_storage_list()      <-------    2. plan
-  datom_storage_delete_prefix() <----   3. copy      (calls datom)
-  datom_repo_set_data_store() <------    4. verify    (calls datom)
-  datom_repo_delete()         <------    5. SWITCH ref.json   [GOV_SEAM]
-   (used by gov_decommission,           6. record migration  [GOV_SEAM]
-    not migration)                       7. update project.yaml (calls datom)
-                                         8. optional delete source (calls datom)
+gov_migrate_data()  (datomanager, governance)   ->  datom helper called
+  1. precondition checks                             (datom_storage_list as probe)
+  2. plan                                            datom_storage_list()
+  3. copy                                            datom_storage_copy()
+  4. verify                                          datom_storage_verify()
+  5. SWITCH ref.json        [GOV_SEAM]               (none -- pure gov write)
+  6. record migration       [GOV_SEAM]               (none -- pure gov write)
+  7. update project.yaml                             datom_repo_set_data_store()
+  8. delete source (opt)                             datom_storage_delete_prefix()
 ```
+
+(`datom_repo_delete()` is NOT used by migration -- it belongs only to decommission. The
+two `[GOV_SEAM]` steps are pure gov writes with no datom call; that is the seam.)
 
 Dependency direction is one-way: datomanager Imports datom. No `:::` anywhere -- every
 cross-package call goes through an exported `datom::datom_*()` symbol.
@@ -95,7 +97,7 @@ cross-package call goes through an exported `datom::datom_*()` symbol.
    commits only to the gov clone; data-repo writes go through datom). Confirmed
    2026-06-01.
 5. **Prefix = package** (decided 2026-06-09). `datom_*` = datom (platform, all reads,
-   no-gov self-serve writes); `gov_*` = datomanager (governed lifecycle writes);
+   solo-project self-serve writes); `gov_*` = datomanager (governed lifecycle writes);
    `access_*` = datomanager (future). No symbol is exported by two packages, so there is
    no R namespace masking and no per-verb gov-state branching -- the prefix carries the
    authority model. gov **reads** stay `datom_*`. Full rule + rename map in
@@ -104,7 +106,8 @@ cross-package call goes through an exported `datom::datom_*()` symbol.
    data-repo mutation datomanager needs goes through a datom-owned `datom_repo_*` helper.
    This covers decommission too: `datom_decommission()` does not move wholesale --
    `datom_repo_delete()` (delete GitHub repo + clone) stays in datom and is the complete
-   no-gov teardown; `gov_decommission()` orchestrates it. See `dev/datomanager_scope.md`.
+   solo-project teardown; `gov_decommission()` orchestrates it. See
+   `dev/datomanager_scope.md`.
 
 ---
 
@@ -132,7 +135,7 @@ signature.
 | `datom_storage_list(conn)` | Promote | Exported wrapper over `.datom_storage_list_objects()`. Returns full storage keys under the datom namespace. |
 | `datom_storage_delete_prefix(conn)` | Promote | Exported wrapper over `.datom_storage_delete_prefix()`. Deletes all objects under the conn's datom namespace. Used for rollback and (opt-in) source deletion. |
 | `datom_repo_set_data_store(conn, new_data_store, message = NULL)` | **New** | Rewrite `storage.data` in `project.yaml` on the data clone; commit + push the data repo. The data-side half of a migration's bookkeeping. Owned by datom so the two-repos invariant holds. |
-| `datom_repo_delete(conn, confirm, force_gov_attached = FALSE)` | **New** | Delete the data GitHub repo + local clone. Extracted from `datom_decommission()`'s data-side steps. The complete no-gov teardown (paired with `datom_storage_delete_prefix()`); also the helper `gov_decommission()` calls. See guard note below. |
+| `datom_repo_delete(conn, confirm, force_gov_attached = FALSE)` | **New** | Delete the data GitHub repo + local clone. Extracted from `datom_decommission()`'s data-side steps. The complete solo-project teardown (paired with `datom_storage_delete_prefix()`); also the helper `gov_decommission()` calls. See guard note below. |
 
 No user-facing *governed* migration verb lives in datom. These six are the entire Phase 22
 surface.
@@ -168,18 +171,21 @@ of `keys`, integrity depth is expressed by `mode`. Two orthogonal axes, two argu
 All routing stays inside datom's existing `switch(conn$backend, ...)` dispatch; no new
 backend abstraction is introduced.
 
-## No-gov vs gov: the authority principle (reframe, not a warning)
+## Solo vs governed projects: the authority principle (reframe, not a warning)
+
+(Vocabulary: a **solo project** has `project.yaml` as its location authority; a **governed
+project** has `ref.json`. Defined in `dev/datomanager_scope.md` "Authority Principle".)
 
 The earlier draft framed `datom_storage_copy()` as a footgun for solo devs ("copy succeeds,
 conn still points at the old location -- label it loudly"). That framing was wrong: the fix
 is already in the API. The governing question is **which file is the location authority**:
 
-- **No-gov project -- `project.yaml` is authority.** There is no `ref.json`. So
+- **Solo project -- `project.yaml` is authority.** There is no `ref.json`. So
   `datom_storage_copy()` + `datom_repo_set_data_store()` together are a *complete*,
   legitimate self-relocation -- not a half-migration. The second primitive closes the loop.
   Likewise `datom_storage_delete_prefix()` + `datom_repo_delete()` is a *complete* teardown.
   Both are fully within datom; no governance is involved because there is none to involve.
-- **Gov-attached project -- `ref.json` is authority.** A copy alone is genuinely
+- **Governed project -- `ref.json` is authority.** A copy alone is genuinely
   incomplete, because the authoritative address lives in gov. You **must** go through
   `datomanager::gov_migrate_data()` (or `gov_decommission()`), which switches `ref.json`
   and records history.
@@ -194,7 +200,7 @@ user is stopped with "use `gov_decommission()`"; datomanager opts through visibl
 `TRUE`. Explicit parameter, not hidden behavior.
 
 > **Convenience-wrapper question (open).** `datom_relocate_data()` -- a one-call wrapper
-> over `copy` + `set_data_store` for the no-gov case -- is *reserved vocabulary*, not
+> over `copy` + `set_data_store` for the solo-project case -- is *reserved vocabulary*, not
 > necessarily shipped in Phase 22. Lean: ship the two primitives; add the wrapper only if
 > the two-call dance proves annoying. The naming principle is what matters now.
 
@@ -348,7 +354,7 @@ ran.)
 - Final name for the data-repo helper: `datom_repo_set_data_store()` vs
   `datom_repo_update_data_pointer()`. Lean: `datom_repo_set_data_store()` (mirrors store
   vocabulary).
-- Ship `datom_relocate_data()` (no-gov one-call relocate wrapper) in Phase 22, or just
+- Ship `datom_relocate_data()` (solo-project one-call relocate wrapper) in Phase 22, or just
   reserve the name and ship the `copy` + `set_data_store` primitives? Lean: reserve the
   vocabulary, ship primitives; add the wrapper only if the two-call dance proves annoying.
 - In-flight reader conns after switch: today's stale-conn behavior covers it (read-time
