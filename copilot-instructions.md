@@ -524,6 +524,15 @@ internal credential contract.
   against a bare local repo, seed the skeleton first (clone bare, commit
   `README.md` + `projects/.gitkeep`, push to bare).
 
+- **`datom_repo_set_data_store()` must use read-modify-write on
+  `project.yaml`**: Read the full yaml first
+  ([`yaml::read_yaml()`](https://yaml.r-lib.org/reference/read_yaml.html)),
+  then `modifyList` only the `storage.data` subtree, then write back.
+  Never reconstruct the full yaml from conn fields – that silently drops
+  `storage.governance` on governed projects. The `storage.governance`
+  block is write-once and permanent once populated; overwriting it with
+  NULL or an empty list is a silent data loss.
+
 - **`datom_conn` carries `gov_root = NULL` for no-gov projects**:
   `is.null(conn$gov_root)` is the canonical “no governance attached”
   test. Do not use `is.null(conn$gov_client)` – local-backend gov conns
