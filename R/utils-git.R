@@ -439,3 +439,74 @@
 
   invisible(TRUE)
 }
+
+
+#' Validate Git Remote Reachability
+#'
+#' Checks that the data git remote URL is reachable and that credentials work.
+#' Called at conn-construction time in `.datom_get_conn_developer()` alongside
+#' `.datom_check_data_reachable()`.
+#'
+#' Failure behaviour:
+#' - No `data_repo_url`: returns invisibly (structural pass, no network needed).
+#' - HTTPS, auth failure (HTTP 401/403): hard abort pointing to `github_pat`.
+#' - HTTPS, URL not found (HTTP 404): hard abort.
+#' - HTTPS, network error (timeout/DNS): warn-only (offline-tolerant).
+#' - SSH, any error: warn-only (cannot reliably distinguish "no agent" from
+#'   "offline").
+#' - SSH, success: invisible TRUE.
+#'
+#' @param conn A `datom_conn` object. Uses `conn$data_repo_url` and
+#'   `conn$github_pat`.
+#' @return Invisible TRUE on success. Warns on network error (offline use ok).
+#' @keywords internal
+.datom_check_git_reachable <- function(conn) {
+  .datom_check_git2r()
+
+  remote_url <- conn$data_repo_url
+  if (is.null(remote_url) || !nzchar(remote_url)) return(invisible(TRUE))
+
+  is_https <- grepl("^https://", remote_url, ignore.case = TRUE)
+  cred <- .datom_git_credentials(remote_url, pat = conn$github_pat)
+
+  tryCatch({
+    git2r::remote_ls(remote_url, credentials = cred)
+    invisible(TRUE)
+  }, error = function(e) {
+    msg <- conditionMessage(e)
+
+    if (!is_https) {
+      # SSH: cannot distinguish auth failure from no agent / offline -> warn
+      cli::cli_warn(c(
+        "Could not verify git remote reachability for {.url {remote_url}}.",
+        "i" = "Underlying error: {msg}",
+        "i" = "Proceeding anyway -- operations may fail if the remote is unreachable."
+      ))
+      return(invisible(TRUE))
+    }
+
+    # HTTPS: classify by error message content
+    if (grepl("401|403|unauthorized|forbidden|authentication required|access denied",
+              msg, ignore.case = TRUE)) {
+      cli::cli_abort(c(
+        "Git remote authentication failed for {.url {remote_url}}.",
+        "x" = msg,
+        "i" = "Check the PAT supplied to {.fn datom_store}({.arg github_pat} = ...)."
+      ), parent = e)
+    } else if (grepl("404|not found|repository not found", msg, ignore.case = TRUE)) {
+      cli::cli_abort(c(
+        "Git remote {.url {remote_url}} was not found.",
+        "x" = msg,
+        "i" = "Check that the repository exists and the URL is correct."
+      ), parent = e)
+    } else {
+      # Network error (timeout, DNS failure, etc.) -- warn, don't block offline use
+      cli::cli_warn(c(
+        "Could not verify git remote reachability.",
+        "i" = "Underlying error: {msg}",
+        "i" = "Proceeding anyway -- operations may fail if the remote is unreachable."
+      ))
+      invisible(TRUE)
+    }
+  })
+}
