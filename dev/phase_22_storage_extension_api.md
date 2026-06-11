@@ -1,6 +1,6 @@
 # Phase 22 — Storage Extension API
 
-**Status**: ⏳ Chunk 2 next
+**Status**: ⏳ Chunk 3 next
 **Branch**: `phase/22-storage-extension-api`
 **Started**: 2026-06-10
 
@@ -43,7 +43,7 @@ New file: `R/storage.R` (the six exported functions).
 |---|---|---|
 | `datom_storage_list(conn, ...)` | ✅ done | Promote `.datom_storage_list_objects()` |
 | `datom_storage_delete_prefix(conn, ...)` | ✅ done | Promote `.datom_storage_delete_prefix()` |
-| `datom_storage_copy(from_conn, to_conn, ...)` | ☐ todo | New |
+| `datom_storage_copy(from_conn, to_conn, ...)` | ✅ done | New |
 | `datom_storage_verify(from_conn, to_conn, keys, mode)` | ☐ todo | New |
 | `datom_repo_set_data_store(conn, new_store, ...)` | ☐ todo | New |
 | `datom_repo_delete(conn, confirm, force_gov_attached)` | ☐ todo | Extract from decommission.R |
@@ -56,8 +56,8 @@ New file: `R/storage.R` (the six exported functions).
 |---|------|--------|-------|
 | 0 | Phase doc + branch setup | ✅ done | Phase doc created, README.md updated, branch pushed |
 | 1 | Promote list + delete_prefix | ✅ done | R/storage.R, 26 tests, pkgdown entry |
-| 2 | `datom_storage_copy()` | ⏳ next | All 4 backend combos; tests with mocked S3 |
-| 3 | `datom_storage_verify()` | ☐ todo | `structural` + `content` modes; truncation + hash tests |
+| 2 | `datom_storage_copy()` | ✅ done | All 4 backend combos; tests with mocked S3 |
+| 3 | `datom_storage_verify()` | ⏳ next | `structural` + `content` modes; truncation + hash tests |
 | 4 | `datom_repo_set_data_store()` | ☐ todo | Read-modify-write; govenance untouched; commit+push |
 | 5 | `datom_repo_delete()` | ☐ todo | Extract from decommission.R; guard; refactor decommission |
 | 6 | Spec + phase completion | ☐ todo | Update spec, acceptance criteria, phase completion procedure |
@@ -151,3 +151,16 @@ Decisions: Internal `.datom_storage_list_objects()` and `.datom_storage_delete_p
 retained unchanged -- wrappers delegate to them. Return-value gotcha noted: local backend
 returns `1L` (dir removed) not object count; docstring updated to reflect this.
 Tests: 1763 (26 new storage tests; full suite 0 fail, 26 pre-existing warnings in test-conn.R).
+
+### Chunk 2 -- 2026-06-10
+Shipped: `datom_storage_copy(from_conn, to_conn)` in `R/storage.R`.
+Two private helpers added to same file: `.datom_storage_rel_key()` (strips namespace prefix
+from full keys returned by list) and `.datom_copy_one()` (dispatches on from/to backend pair).
+41 new tests (67 storage total) covering all 4 backend combos: local->local real tempdir,
+local->s3 mocked put_object, s3->local mocked get_object, s3->s3 both mocked. Verified
+rel-key stripping, correct full-key construction at destination, byte count in return df.
+Decisions: Fail-fast on individual object error (no partial-result accumulation); rollback
+orchestration is Phase 19 concern. Return df visible (not invisible) since caller feeds
+it to datom_storage_verify(). Static-analysis lint false positives on cli-interpolated
+variables are harmless -- code is correct.
+Tests: 1804 (0 fail, 26 pre-existing warnings).

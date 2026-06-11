@@ -193,3 +193,206 @@ test_that("datom_storage_delete_prefix() returns 0L when prefix does not exist",
     expect_equal(n, 0L)
   })
 })
+
+
+# === datom_storage_copy() =====================================================
+
+test_that("datom_storage_copy() errors on non-conn args", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_storage_copy("not-a-conn", conn), "from_conn")
+  expect_error(datom_storage_copy(conn, list()),        "to_conn")
+  expect_error(datom_storage_copy(NULL, conn),          "from_conn")
+})
+
+test_that("datom_storage_copy() returns empty data frame when source is empty", {
+  mock_list <- mockery::mock(list(Contents = list(), IsTruncated = FALSE))
+  from_conn <- mock_datom_conn(list(list_objects_v2 = mock_list))
+  to_conn   <- mock_datom_conn(list())
+
+  result <- datom_storage_copy(from_conn, to_conn)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 0L)
+  expect_named(result, c("key", "bytes"))
+})
+
+test_that("datom_storage_copy() local->local copies files and returns data frame", {
+  withr::with_tempdir({
+    from_root <- fs::dir_create("from")
+    to_root   <- fs::dir_create("to")
+
+    from_conn <- make_local_storage_conn(from_root, prefix = "proj")
+    to_conn   <- make_local_storage_conn(to_root,   prefix = "proj")
+
+    # Seed two objects in source namespace
+    fs::dir_create(fs::path(from_root, "proj/datom/table1"))
+    fs::dir_create(fs::path(from_root, "proj/datom/.metadata"))
+    writeBin(charToRaw("parquet bytes"), fs::path(from_root, "proj/datom/table1/abc.parquet"))
+    writeBin(charToRaw("manifest json"), fs::path(from_root, "proj/datom/.metadata/manifest.json"))
+
+    result <- datom_storage_copy(from_conn, to_conn)
+
+    expect_s3_class(result, "data.frame")
+    expect_named(result, c("key", "bytes"))
+    expect_equal(nrow(result), 2L)
+    expect_true(is.character(result$key))
+    expect_true(is.numeric(result$bytes))
+    # Bytes are positive
+    expect_true(all(result$bytes > 0))
+
+    # Files actually exist at destination
+    expect_true(fs::file_exists(
+      fs::path(to_root, "proj/datom/table1/abc.parquet")
+    ))
+    expect_true(fs::file_exists(
+      fs::path(to_root, "proj/datom/.metadata/manifest.json")
+    ))
+
+    # Content is identical
+    expect_equal(
+      readBin(fs::path(to_root, "proj/datom/table1/abc.parquet"), "raw", 100),
+      charToRaw("parquet bytes")
+    )
+  })
+})
+
+test_that("datom_storage_copy() local->s3 calls put_object with correct args", {
+  withr::with_tempdir({
+    from_root <- fs::dir_create("from")
+    from_conn <- make_local_storage_conn(from_root, prefix = "proj")
+
+    content_raw <- charToRaw("parquet content")
+    fs::dir_create(fs::path(from_root, "proj/datom/table1"))
+    writeBin(content_raw, fs::path(from_root, "proj/datom/table1/abc.parquet"))
+
+    mock_put <- mockery::mock(list())
+    to_conn  <- mock_datom_conn(
+      list(put_object = mock_put),
+      root   = "dest-bucket",
+      prefix = "dest-proj"
+    )
+
+    result <- datom_storage_copy(from_conn, to_conn)
+
+    expect_equal(nrow(result), 1L)
+    expect_equal(result$key, "table1/abc.parquet")
+    expect_equal(result$bytes, length(content_raw))
+
+    mockery::expect_called(mock_put, 1L)
+    put_args <- mockery::mock_args(mock_put)[[1]]
+    expect_equal(put_args$Bucket, "dest-bucket")
+    expect_equal(put_args$Key,    "dest-proj/datom/table1/abc.parquet")
+    expect_equal(put_args$Body,   content_raw)
+  })
+})
+
+test_that("datom_storage_copy() s3->local downloads and writes files", {
+  withr::with_tempdir({
+    to_root  <- fs::dir_create("to")
+    to_conn  <- make_local_storage_conn(to_root, prefix = "proj")
+
+    content_raw <- charToRaw("parquet bytes from s3")
+
+    mock_list <- mockery::mock(list(
+      Contents    = list(list(Key = "src-proj/datom/table1/abc.parquet")),
+      IsTruncated = FALSE
+    ))
+    mock_get <- mockery::mock(list(Body = content_raw))
+    from_conn <- mock_datom_conn(
+      list(list_objects_v2 = mock_list, get_object = mock_get),
+      root   = "src-bucket",
+      prefix = "src-proj"
+    )
+
+    result <- datom_storage_copy(from_conn, to_conn)
+
+    expect_equal(nrow(result), 1L)
+    expect_equal(result$key, "table1/abc.parquet")
+    expect_equal(result$bytes, length(content_raw))
+
+    # get_object called with the correct source full key
+    get_args <- mockery::mock_args(mock_get)[[1]]
+    expect_equal(get_args$Bucket, "src-bucket")
+    expect_equal(get_args$Key,    "src-proj/datom/table1/abc.parquet")
+
+    # File written at destination with correct content
+    dest_path <- fs::path(to_root, "proj/datom/table1/abc.parquet")
+    expect_true(fs::file_exists(dest_path))
+    expect_equal(readBin(dest_path, what = "raw", n = 100), content_raw)
+  })
+})
+
+test_that("datom_storage_copy() s3->s3 streams bytes through memory", {
+  content_raw <- charToRaw("s3 object bytes")
+
+  mock_list <- mockery::mock(list(
+    Contents    = list(list(Key = "from-proj/datom/table1/abc.parquet")),
+    IsTruncated = FALSE
+  ))
+  mock_get <- mockery::mock(list(Body = content_raw))
+  mock_put <- mockery::mock(list())
+
+  from_conn <- mock_datom_conn(
+    list(list_objects_v2 = mock_list, get_object = mock_get),
+    root   = "src-bucket",
+    prefix = "from-proj"
+  )
+  to_conn <- mock_datom_conn(
+    list(put_object = mock_put),
+    root   = "dest-bucket",
+    prefix = "to-proj"
+  )
+
+  result <- datom_storage_copy(from_conn, to_conn)
+
+  expect_equal(nrow(result), 1L)
+  expect_equal(result$key, "table1/abc.parquet")
+  expect_equal(result$bytes, length(content_raw))
+
+  # get from source with correct key
+  get_args <- mockery::mock_args(mock_get)[[1]]
+  expect_equal(get_args$Bucket, "src-bucket")
+  expect_equal(get_args$Key,    "from-proj/datom/table1/abc.parquet")
+
+  # put to destination with new-prefixed key and same bytes
+  mockery::expect_called(mock_put, 1L)
+  put_args <- mockery::mock_args(mock_put)[[1]]
+  expect_equal(put_args$Bucket, "dest-bucket")
+  expect_equal(put_args$Key,    "to-proj/datom/table1/abc.parquet")
+  expect_equal(put_args$Body,   content_raw)
+})
+
+test_that("datom_storage_copy() rel keys are stripped from from_conn prefix", {
+  # Verify returned keys have no source prefix -- ready for datom_storage_verify
+  content_raw <- charToRaw("bytes")
+  mock_list <- mockery::mock(list(
+    Contents = list(
+      list(Key = "old/datom/tableA/v1.parquet"),
+      list(Key = "old/datom/.metadata/manifest.json")
+    ),
+    IsTruncated = FALSE
+  ))
+  mock_get <- mockery::mock(list(Body = content_raw), list(Body = content_raw))
+  mock_put <- mockery::mock(list(), list())
+
+  from_conn <- mock_datom_conn(
+    list(list_objects_v2 = mock_list, get_object = mock_get),
+    root = "src-bucket", prefix = "old"
+  )
+  to_conn <- mock_datom_conn(
+    list(put_object = mock_put),
+    root = "dest-bucket", prefix = "new"
+  )
+
+  result <- datom_storage_copy(from_conn, to_conn)
+
+  expect_equal(nrow(result), 2L)
+  expect_setequal(result$key, c("tableA/v1.parquet", ".metadata/manifest.json"))
+
+  # Both put_object calls should use the new prefix
+  all_dest_keys <- c(
+    mockery::mock_args(mock_put)[[1]]$Key,
+    mockery::mock_args(mock_put)[[2]]$Key
+  )
+  expect_true(all(startsWith(all_dest_keys, "new/datom/")))
+})
