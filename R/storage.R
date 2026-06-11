@@ -256,3 +256,218 @@ datom_storage_copy <- function(from_conn, to_conn) {
   )
   out
 }
+
+
+# ==============================================================================
+# datom_storage_verify() and private helpers
+# ==============================================================================
+
+#' Get Byte Size of a Single Storage Object
+#'
+#' Returns the byte size of the object at `rel_key` without reading its content.
+#' For S3 uses `HEAD`; for local uses `fs::file_size()`. Errors if the object
+#' is not found.
+#'
+#' @param conn A `datom_conn` object.
+#' @param rel_key Relative storage key (after `{prefix}/datom/`).
+#' @return Numeric byte count.
+#' @keywords internal
+.datom_storage_byte_size <- function(conn, rel_key) {
+  if (conn$backend == "s3") {
+    full_key <- .datom_build_storage_key(conn$prefix, rel_key)
+    resp <- conn$client$head_object(Bucket = conn$root, Key = full_key)
+    as.numeric(resp$ContentLength)
+  } else {
+    path <- .datom_local_path(conn, rel_key)
+    as.numeric(fs::file_size(path))
+  }
+}
+
+
+#' Compute SHA-256 Hash of a Storage Object's Content
+#'
+#' For S3, downloads the raw bytes and hashes in memory. For local, hashes
+#' the file directly. Used by `datom_storage_verify()` in `content` mode.
+#'
+#' @param conn A `datom_conn` object.
+#' @param rel_key Relative storage key (after `{prefix}/datom/`).
+#' @return Character SHA-256 hex string.
+#' @keywords internal
+.datom_storage_content_hash <- function(conn, rel_key) {
+  if (conn$backend == "s3") {
+    full_key <- .datom_build_storage_key(conn$prefix, rel_key)
+    resp <- conn$client$get_object(Bucket = conn$root, Key = full_key)
+    digest::digest(resp$Body, algo = "sha256", serialize = FALSE)
+  } else {
+    path <- as.character(.datom_local_path(conn, rel_key))
+    digest::digest(file = path, algo = "sha256")
+  }
+}
+
+
+#' Verify a Single Storage Object
+#'
+#' Checks that the object at `rel_key` in `to_conn` matches the one in
+#' `from_conn`. Returns a named list with `key`, `ok` (logical), and `issue`
+#' (character or `NA_character_`).
+#'
+#' @param from_conn Source `datom_conn`.
+#' @param to_conn Destination `datom_conn`.
+#' @param rel_key Relative key (after `{prefix}/datom/`).
+#' @param mode `"structural"` or `"content"`.
+#' @return Named list: `key`, `ok`, `issue`.
+#' @keywords internal
+.datom_verify_one <- function(from_conn, to_conn, rel_key, mode) {
+  # Source size -- expected to always exist; hard-error if not
+  src_size <- tryCatch(
+    .datom_storage_byte_size(from_conn, rel_key),
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Cannot read source object for verification.",
+          "x" = "Key: {.val {rel_key}}",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
+
+  # Destination -- missing / inaccessible is a verification failure, not an error
+  dest_size <- tryCatch(
+    .datom_storage_byte_size(to_conn, rel_key),
+    error = function(e) NA_real_
+  )
+
+  if (is.na(dest_size)) {
+    return(list(key = rel_key, ok = FALSE, issue = "destination object not found"))
+  }
+
+  if (mode == "structural") {
+    if (!isTRUE(src_size == dest_size)) {
+      return(list(
+        key   = rel_key,
+        ok    = FALSE,
+        issue = paste0("size mismatch: source=", src_size, "B destination=", dest_size, "B")
+      ))
+    }
+    return(list(key = rel_key, ok = TRUE, issue = NA_character_))
+  }
+
+  # content mode: re-hash both sides
+  src_hash  <- .datom_storage_content_hash(from_conn, rel_key)
+  dest_hash <- .datom_storage_content_hash(to_conn,   rel_key)
+
+  if (src_hash != dest_hash) {
+    return(list(
+      key   = rel_key,
+      ok    = FALSE,
+      issue = paste0("content hash mismatch: source=", src_hash,
+                     " destination=", dest_hash)
+    ))
+  }
+
+  list(key = rel_key, ok = TRUE, issue = NA_character_)
+}
+
+
+#' Verify a Copy Between Two datom Storage Namespaces
+#'
+#' Checks that objects in `to_conn`'s datom namespace match their counterparts
+#' in `from_conn`. Two verification modes are available:
+#'
+#' * **`"structural"` (default)**: Confirms each destination object exists and
+#'   its byte size matches the source. Fast -- one `HEAD`/stat per object, no
+#'   byte transfer. Catches truncated or missing objects, which is the dominant
+#'   copy failure mode.
+#' * **`"content"`**: Re-reads destination bytes, recomputes the SHA-256 hash,
+#'   and compares against the source hash. Expensive (full re-download for
+#'   remote backends) but gives true bit-level integrity. Use for regulated or
+#'   paranoid runs.
+#'
+#' @param from_conn A `datom_conn` object (source / reference).
+#' @param to_conn A `datom_conn` object (destination to verify).
+#' @param keys Character vector of relative keys (after `{prefix}/datom/`) to
+#'   verify. `NULL` (default) verifies every key returned by
+#'   `datom_storage_list(from_conn)`. Pass a subset to verify a sample.
+#' @param mode `"structural"` (default) or `"content"`. See above.
+#' @return A data frame with columns:
+#'   * `key` (character): relative storage key.
+#'   * `ok` (logical): `TRUE` if the object passed verification.
+#'   * `issue` (character): description of the mismatch, or `NA` if `ok`.
+#'   Returns a zero-row data frame if `keys` is empty.
+#' @export
+#' @seealso [datom_storage_copy()], [datom_storage_list()]
+#' @examples
+#' \dontrun{
+#' copied <- datom_storage_copy(from_conn, to_conn)
+#' # Verify all copied objects structurally (default, fast)
+#' results <- datom_storage_verify(from_conn, to_conn)
+#' all(results$ok)
+#'
+#' # Verify a subset with full content hash
+#' results <- datom_storage_verify(from_conn, to_conn,
+#'                                 keys  = copied$key[1:10],
+#'                                 mode  = "content")
+#' }
+datom_storage_verify <- function(from_conn, to_conn,
+                                 keys = NULL,
+                                 mode = c("structural", "content")) {
+  if (!inherits(from_conn, "datom_conn")) {
+    cli::cli_abort("{.arg from_conn} must be a {.cls datom_conn} object.")
+  }
+  if (!inherits(to_conn, "datom_conn")) {
+    cli::cli_abort("{.arg to_conn} must be a {.cls datom_conn} object.")
+  }
+  mode <- match.arg(mode)
+
+  if (is.null(keys)) {
+    full_keys <- datom_storage_list(from_conn)
+    rel_keys  <- purrr::map_chr(full_keys, .datom_storage_rel_key, conn = from_conn)
+  } else {
+    if (!is.character(keys)) {
+      cli::cli_abort("{.arg keys} must be a character vector or NULL.")
+    }
+    rel_keys <- keys
+  }
+
+  if (length(rel_keys) == 0L) {
+    return(data.frame(
+      key   = character(0),
+      ok    = logical(0),
+      issue = character(0),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  mode_label <- if (mode == "structural") "structural (size)" else "content (hash)"
+  cli::cli_alert_info(
+    "Verifying {length(rel_keys)} object{?s} -- {.val {mode_label}} mode..."
+  )
+
+  results <- purrr::map(
+    rel_keys, .datom_verify_one,
+    from_conn = from_conn, to_conn = to_conn, mode = mode
+  )
+
+  out <- data.frame(
+    key   = purrr::map_chr(results, "key"),
+    ok    = purrr::map_lgl(results, "ok"),
+    issue = vapply(results, function(r) {
+      v <- r$issue
+      if (is.null(v) || is.na(v)) NA_character_ else as.character(v)
+    }, character(1L)),
+    stringsAsFactors = FALSE
+  )
+
+  n_fail <- sum(!out$ok)
+  if (n_fail == 0L) {
+    cli::cli_alert_success("All {nrow(out)} object{?s} verified successfully.")
+  } else {
+    cli::cli_alert_warning(
+      "{n_fail} of {nrow(out)} object{?s} failed verification."
+    )
+  }
+
+  out
+}

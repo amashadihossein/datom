@@ -396,3 +396,289 @@ test_that("datom_storage_copy() rel keys are stripped from from_conn prefix", {
   )
   expect_true(all(startsWith(all_dest_keys, "new/datom/")))
 })
+
+
+# === datom_storage_verify() ===================================================
+
+test_that("datom_storage_verify() errors on non-conn args", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_storage_verify("x", conn), "from_conn")
+  expect_error(datom_storage_verify(conn, list()), "to_conn")
+  expect_error(datom_storage_verify(NULL, conn), "from_conn")
+})
+
+test_that("datom_storage_verify() errors on invalid mode", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_storage_verify(conn, conn, mode = "wrong"), "arg")
+})
+
+test_that("datom_storage_verify() errors when keys is not character", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_storage_verify(conn, conn, keys = 123L), "character")
+})
+
+test_that("datom_storage_verify() returns empty df when no keys", {
+  mock_list <- mockery::mock(list(Contents = list(), IsTruncated = FALSE))
+  conn <- mock_datom_conn(list(list_objects_v2 = mock_list))
+
+  result <- datom_storage_verify(conn, conn)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 0L)
+  expect_named(result, c("key", "ok", "issue"))
+})
+
+test_that("datom_storage_verify() structural mode passes when sizes match", {
+  withr::with_tempdir({
+    from_conn <- make_local_storage_conn(fs::dir_create("from"), prefix = "proj")
+    to_conn   <- make_local_storage_conn(fs::dir_create("to"),   prefix = "proj")
+
+    content <- charToRaw("parquet content")
+    fs::dir_create("from/proj/datom/table1")
+    fs::dir_create("to/proj/datom/table1")
+    writeBin(content, "from/proj/datom/table1/v1.parquet")
+    writeBin(content, "to/proj/datom/table1/v1.parquet")
+
+    result <- datom_storage_verify(from_conn, to_conn,
+                                   keys = "table1/v1.parquet",
+                                   mode = "structural")
+
+    expect_equal(nrow(result), 1L)
+    expect_true(result$ok[[1]])
+    expect_true(is.na(result$issue[[1]]))
+  })
+})
+
+test_that("datom_storage_verify() structural mode catches truncated destination", {
+  withr::with_tempdir({
+    from_conn <- make_local_storage_conn(fs::dir_create("from"), prefix = "proj")
+    to_conn   <- make_local_storage_conn(fs::dir_create("to"),   prefix = "proj")
+
+    fs::dir_create("from/proj/datom/table1")
+    fs::dir_create("to/proj/datom/table1")
+    writeBin(charToRaw("full parquet content"), "from/proj/datom/table1/v1.parquet")
+    writeBin(charToRaw("truncated"),            "to/proj/datom/table1/v1.parquet")
+
+    result <- datom_storage_verify(from_conn, to_conn,
+                                   keys = "table1/v1.parquet",
+                                   mode = "structural")
+
+    expect_equal(nrow(result), 1L)
+    expect_false(result$ok[[1]])
+    expect_match(result$issue[[1]], "size mismatch")
+  })
+})
+
+test_that("datom_storage_verify() structural mode catches missing destination", {
+  withr::with_tempdir({
+    from_conn <- make_local_storage_conn(fs::dir_create("from"), prefix = "proj")
+    to_conn   <- make_local_storage_conn(fs::dir_create("to"),   prefix = "proj")
+
+    fs::dir_create("from/proj/datom/table1")
+    writeBin(charToRaw("content"), "from/proj/datom/table1/v1.parquet")
+    # destination NOT created
+
+    result <- datom_storage_verify(from_conn, to_conn,
+                                   keys = "table1/v1.parquet",
+                                   mode = "structural")
+
+    expect_false(result$ok[[1]])
+    expect_match(result$issue[[1]], "not found")
+  })
+})
+
+test_that("datom_storage_verify() structural mode uses head_object on S3", {
+  mock_head_src <- mockery::mock(list(ContentLength = 512))
+  mock_head_dst <- mockery::mock(list(ContentLength = 512))
+
+  from_conn <- mock_datom_conn(
+    list(head_object = mock_head_src), root = "src-bucket", prefix = "from-proj"
+  )
+  to_conn <- mock_datom_conn(
+    list(head_object = mock_head_dst), root = "dst-bucket", prefix = "to-proj"
+  )
+
+  result <- datom_storage_verify(from_conn, to_conn,
+                                 keys = "table1/v1.parquet",
+                                 mode = "structural")
+
+  expect_true(result$ok[[1]])
+
+  # head_object called on source with correct key
+  src_args <- mockery::mock_args(mock_head_src)[[1]]
+  expect_equal(src_args$Bucket, "src-bucket")
+  expect_equal(src_args$Key, "from-proj/datom/table1/v1.parquet")
+
+  # head_object called on destination with correct key
+  dst_args <- mockery::mock_args(mock_head_dst)[[1]]
+  expect_equal(dst_args$Bucket, "dst-bucket")
+  expect_equal(dst_args$Key, "to-proj/datom/table1/v1.parquet")
+})
+
+test_that("datom_storage_verify() structural mode S3 catches size mismatch", {
+  mock_head_src <- mockery::mock(list(ContentLength = 1024))
+  mock_head_dst <- mockery::mock(list(ContentLength = 512))  # truncated
+
+  from_conn <- mock_datom_conn(list(head_object = mock_head_src))
+  to_conn   <- mock_datom_conn(list(head_object = mock_head_dst))
+
+  result <- datom_storage_verify(from_conn, to_conn,
+                                 keys = "table1/v1.parquet",
+                                 mode = "structural")
+
+  expect_false(result$ok[[1]])
+  expect_match(result$issue[[1]], "size mismatch")
+})
+
+test_that("datom_storage_verify() content mode passes when hashes match", {
+  withr::with_tempdir({
+    from_conn <- make_local_storage_conn(fs::dir_create("from"), prefix = "proj")
+    to_conn   <- make_local_storage_conn(fs::dir_create("to"),   prefix = "proj")
+
+    content <- charToRaw("exact same parquet bytes")
+    fs::dir_create("from/proj/datom/table1")
+    fs::dir_create("to/proj/datom/table1")
+    writeBin(content, "from/proj/datom/table1/v1.parquet")
+    writeBin(content, "to/proj/datom/table1/v1.parquet")
+
+    result <- datom_storage_verify(from_conn, to_conn,
+                                   keys = "table1/v1.parquet",
+                                   mode = "content")
+
+    expect_true(result$ok[[1]])
+    expect_true(is.na(result$issue[[1]]))
+  })
+})
+
+test_that("datom_storage_verify() content mode catches corrupted bytes", {
+  withr::with_tempdir({
+    from_conn <- make_local_storage_conn(fs::dir_create("from"), prefix = "proj")
+    to_conn   <- make_local_storage_conn(fs::dir_create("to"),   prefix = "proj")
+
+    fs::dir_create("from/proj/datom/table1")
+    fs::dir_create("to/proj/datom/table1")
+    writeBin(charToRaw("original parquet bytes"), "from/proj/datom/table1/v1.parquet")
+    writeBin(charToRaw("CORRUPTED BYTES HERE!"),  "to/proj/datom/table1/v1.parquet")
+
+    result <- datom_storage_verify(from_conn, to_conn,
+                                   keys = "table1/v1.parquet",
+                                   mode = "content")
+
+    expect_false(result$ok[[1]])
+    expect_match(result$issue[[1]], "content hash mismatch")
+  })
+})
+
+test_that("datom_storage_verify() content mode uses get_object on S3", {
+  content_raw <- charToRaw("parquet bytes")
+  mock_get_src <- mockery::mock(list(Body = content_raw))
+  # Same content for size-check (head) + content-check (get) -- structural check runs first
+  mock_head_src <- mockery::mock(list(ContentLength = length(content_raw)))
+  mock_head_dst <- mockery::mock(list(ContentLength = length(content_raw)))
+  mock_get_dst  <- mockery::mock(list(Body = content_raw))
+
+  from_conn <- mock_datom_conn(
+    list(head_object = mock_head_src, get_object = mock_get_src),
+    root = "src-bucket", prefix = "from-proj"
+  )
+  to_conn <- mock_datom_conn(
+    list(head_object = mock_head_dst, get_object = mock_get_dst),
+    root = "dst-bucket", prefix = "to-proj"
+  )
+
+  result <- datom_storage_verify(from_conn, to_conn,
+                                 keys = "table1/v1.parquet",
+                                 mode = "content")
+
+  expect_true(result$ok[[1]])
+  mockery::expect_called(mock_get_src, 1L)
+  mockery::expect_called(mock_get_dst, 1L)
+
+  src_args <- mockery::mock_args(mock_get_src)[[1]]
+  expect_equal(src_args$Bucket, "src-bucket")
+  expect_equal(src_args$Key, "from-proj/datom/table1/v1.parquet")
+})
+
+test_that("datom_storage_verify() content mode S3 catches corrupted bytes", {
+  mock_head_src <- mockery::mock(list(ContentLength = 10))
+  mock_head_dst <- mockery::mock(list(ContentLength = 10))  # same size...
+  mock_get_src  <- mockery::mock(list(Body = charToRaw("origbytes!")))
+  mock_get_dst  <- mockery::mock(list(Body = charToRaw("corruptXX!")))  # ...different content
+
+  from_conn <- mock_datom_conn(list(head_object = mock_head_src, get_object = mock_get_src))
+  to_conn   <- mock_datom_conn(list(head_object = mock_head_dst, get_object = mock_get_dst))
+
+  result <- datom_storage_verify(from_conn, to_conn,
+                                 keys = "table1/v1.parquet",
+                                 mode = "content")
+
+  expect_false(result$ok[[1]])
+  expect_match(result$issue[[1]], "content hash mismatch")
+})
+
+test_that("datom_storage_verify() keys=NULL lists from from_conn", {
+  withr::with_tempdir({
+    from_conn <- make_local_storage_conn(fs::dir_create("from"), prefix = "proj")
+    to_conn   <- make_local_storage_conn(fs::dir_create("to"),   prefix = "proj")
+
+    content <- charToRaw("data")
+    for (nm in c("t1/a.parquet", "t2/b.parquet")) {
+      fs::dir_create(fs::path("from/proj/datom", fs::path_dir(nm)))
+      fs::dir_create(fs::path("to/proj/datom",   fs::path_dir(nm)))
+      writeBin(content, fs::path("from/proj/datom", nm))
+      writeBin(content, fs::path("to/proj/datom",   nm))
+    }
+
+    result <- datom_storage_verify(from_conn, to_conn)  # keys = NULL
+
+    expect_equal(nrow(result), 2L)
+    expect_true(all(result$ok))
+    expect_setequal(result$key, c("t1/a.parquet", "t2/b.parquet"))
+  })
+})
+
+test_that("datom_storage_verify() keys subset verifies only those keys", {
+  withr::with_tempdir({
+    from_conn <- make_local_storage_conn(fs::dir_create("from"), prefix = "proj")
+    to_conn   <- make_local_storage_conn(fs::dir_create("to"),   prefix = "proj")
+
+    # Three objects in source, only two in destination
+    for (nm in c("t1/a.parquet", "t2/b.parquet", "t3/c.parquet")) {
+      fs::dir_create(fs::path("from/proj/datom", fs::path_dir(nm)))
+      writeBin(charToRaw("data"), fs::path("from/proj/datom", nm))
+    }
+    # Put only t1 and t2 in destination
+    for (nm in c("t1/a.parquet", "t2/b.parquet")) {
+      fs::dir_create(fs::path("to/proj/datom", fs::path_dir(nm)))
+      writeBin(charToRaw("data"), fs::path("to/proj/datom", nm))
+    }
+
+    # Verify only the two that exist -- should pass
+    result <- datom_storage_verify(from_conn, to_conn,
+                                   keys = c("t1/a.parquet", "t2/b.parquet"))
+
+    expect_equal(nrow(result), 2L)
+    expect_true(all(result$ok))
+  })
+})
+
+test_that("datom_storage_verify() result has correct column types", {
+  withr::with_tempdir({
+    from_conn <- make_local_storage_conn(fs::dir_create("from"), prefix = "proj")
+    to_conn   <- make_local_storage_conn(fs::dir_create("to"),   prefix = "proj")
+
+    content <- charToRaw("bytes")
+    fs::dir_create("from/proj/datom/t1")
+    fs::dir_create("to/proj/datom/t1")
+    writeBin(content, "from/proj/datom/t1/v.parquet")
+    writeBin(content, "to/proj/datom/t1/v.parquet")
+
+    result <- datom_storage_verify(from_conn, to_conn, keys = "t1/v.parquet")
+
+    expect_s3_class(result, "data.frame")
+    expect_named(result, c("key", "ok", "issue"))
+    expect_type(result$key,   "character")
+    expect_type(result$ok,    "logical")
+    expect_type(result$issue, "character")
+  })
+})

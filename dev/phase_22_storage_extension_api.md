@@ -1,6 +1,6 @@
 # Phase 22 — Storage Extension API
 
-**Status**: ⏳ Chunk 3 next
+**Status**: ⏳ Chunk 4 next
 **Branch**: `phase/22-storage-extension-api`
 **Started**: 2026-06-10
 
@@ -44,7 +44,7 @@ New file: `R/storage.R` (the six exported functions).
 | `datom_storage_list(conn, ...)` | ✅ done | Promote `.datom_storage_list_objects()` |
 | `datom_storage_delete_prefix(conn, ...)` | ✅ done | Promote `.datom_storage_delete_prefix()` |
 | `datom_storage_copy(from_conn, to_conn, ...)` | ✅ done | New |
-| `datom_storage_verify(from_conn, to_conn, keys, mode)` | ☐ todo | New |
+| `datom_storage_verify(from_conn, to_conn, keys, mode)` | ✅ done | New |
 | `datom_repo_set_data_store(conn, new_store, ...)` | ☐ todo | New |
 | `datom_repo_delete(conn, confirm, force_gov_attached)` | ☐ todo | Extract from decommission.R |
 
@@ -57,8 +57,8 @@ New file: `R/storage.R` (the six exported functions).
 | 0 | Phase doc + branch setup | ✅ done | Phase doc created, README.md updated, branch pushed |
 | 1 | Promote list + delete_prefix | ✅ done | R/storage.R, 26 tests, pkgdown entry |
 | 2 | `datom_storage_copy()` | ✅ done | All 4 backend combos; tests with mocked S3 |
-| 3 | `datom_storage_verify()` | ⏳ next | `structural` + `content` modes; truncation + hash tests |
-| 4 | `datom_repo_set_data_store()` | ☐ todo | Read-modify-write; govenance untouched; commit+push |
+| 3 | `datom_storage_verify()` | ✅ done | `structural` + `content` modes; truncation + hash tests |
+| 4 | `datom_repo_set_data_store()` | ⏳ next | Read-modify-write; govenance untouched; commit+push |
 | 5 | `datom_repo_delete()` | ☐ todo | Extract from decommission.R; guard; refactor decommission |
 | 6 | Spec + phase completion | ☐ todo | Update spec, acceptance criteria, phase completion procedure |
 
@@ -164,3 +164,16 @@ orchestration is Phase 19 concern. Return df visible (not invisible) since calle
 it to datom_storage_verify(). Static-analysis lint false positives on cli-interpolated
 variables are harmless -- code is correct.
 Tests: 1804 (0 fail, 26 pre-existing warnings).
+
+### Chunk 3 -- 2026-06-10
+Shipped: `datom_storage_verify(from_conn, to_conn, keys, mode)` in `R/storage.R`.
+Three private helpers: `.datom_storage_byte_size()` (HEAD/stat), `.datom_storage_content_hash()`
+(get_object+digest / digest file), `.datom_verify_one()` (per-key check, returns ok+issue).
+44 new tests (111 storage total). Key coverage: structural catches size mismatch + missing
+destination; content catches corrupted bytes; S3 mocked for both modes; keys=NULL lists
+from from_conn; subset keys; correct column types (key/ok/issue).
+Decisions: Destination missing/inaccessible is ok=FALSE (not hard error), enables bulk-verify
+with partial failures visible in result df. Source missing is a hard error (always expected
+to exist). `issue` column uses NA_character_ for passing objects.
+`_pkgdown.yml` updated with verify entry.
+Tests: 1848 (0 fail, 26 pre-existing warnings).

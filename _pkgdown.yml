@@ -91,6 +91,8 @@ reference:
     contents:
       - datom_storage_list
       - datom_storage_delete_prefix
+      - datom_storage_copy
+      - datom_storage_verify
 
   - title: "Decommission"
     desc: "Permanently remove a project and all its artefacts"
