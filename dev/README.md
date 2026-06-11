@@ -55,7 +55,7 @@ Phase plans are **temporary working documents**:
 
 | Draft | Doc | Captured | Notes |
 |-------|-----|----------|-------|
-| Managed Migration (datom Phase 22 + datomanager Phase 19) | [draft_managed_migration.md](draft_managed_migration.md) | 2026-05-02 | Two-package split. **datom Phase 22**: export `datom_storage_*` mechanics (copy/verify/list/delete_prefix) + `datom_repo_set_data_store()` + `datom_repo_delete()` -- the byte-moving + data-repo platform primitives. **datomanager Phase 19**: governed `gov_migrate_data()` verb (requires gov; atomic copy + `ref.json` switch + `migration_history.json` record; cross-backend s3<->local). Naming: `gov_*` = datomanager governed writes, `datom_*` = datom platform + reads + no-gov self-serve. Decommission split the same way (`datom_repo_delete()` stays in datom; `gov_decommission()` orchestrates). |
+| datomanager Phase 19: gov_migrate_data() | [draft_managed_migration.md](draft_managed_migration.md) | 2026-05-02 | Governed migration verb. Requires gov; atomic copy + `ref.json` switch + `migration_history.json` record; cross-backend s3<->local. datom Phase 22 (storage extension API) shipped 2026-06-10 -- the six `datom_storage_*` / `datom_repo_*` exports are the stable platform surface Phase 19 calls into. datomanager package scaffold is the remaining prerequisite. See draft for Phase 19 spec and acceptance criteria. |
 
 ### Completed Phases
 
@@ -99,14 +99,11 @@ Items discovered during development but intentionally deferred. Review periodica
 
 | Item | Discovered In | Reason Deferred | Priority |
 |------|---------------|-----------------|----------|
-| Derived datom path convention (raw at top, derived in dp subfolder) | Phase 1 | Documented as Pattern A in `vignettes/buckets-and-prefixes.Rmd` (Phase 16); datom code stays convention-agnostic via `bucket`/`prefix` params. Will migrate to `datomaccess` package when extracted. | Done (documented) |
 | renv::init() in datom_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
-| Vignette content refresh | Phase 11 | Completed in Phase 16 continuation (May 11, 2026). All 17 vignettes ASCII-clean, Pattern A aligned, links verified. | Done |
-| Redirect resolution in datom_get_conn | Phase 4 | Needs S3 read infra tested end-to-end | Medium (Phase 5) |
 | Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |
-| datomanager package creation | Phase 15 | Companion governance package (settled name: `datomanager`). Scope doc: `dev/datomanager_scope.md`. Owns GOV_SEAM write surface (renamed `gov_*` on lift-out) + `gov_migrate_data()` (Phase 19). Effort: ~2 days for lift-out, then Phase 19. Phase 18 (gov-on-demand) tightened the seam; it is ready to lift. | High (next major) |
+| datomanager package creation | Phase 15 | Companion governance package (settled name: `datomanager`). Scope doc: `dev/datomanager_scope.md`. Owns GOV_SEAM write surface (renamed `gov_*` on lift-out) + `gov_migrate_data()` (Phase 19). datom Phase 22 (storage extension API) complete 2026-06-10; datomanager scaffold is the remaining gate. Effort: ~2 days for lift-out, then Phase 19. | High (next major) |
 | Backend rename: `local` -> `filesystem` | Phase 18 | "Local" implies laptop disk, but the backend supports network mounts and cloud-mounted FS too. Atomic schema bump touching store constructor, predicate, dispatch arms, `project.yaml`, `ref.json`. Defer until there's a second compelling reason to touch the schema. | Low |
-| `gov_migrate_data()` (managed migration) | Phase 15 | Today migration is manual (`aws s3 sync` + `datom_sync_dispatch()`). Atomic data-copy + ref.json update + `.datom_gov_record_migration()` deferred. Lives in datomanager (Phase 19); calls datom `datom_storage_*` / `datom_repo_*` helpers (Phase 22). | Medium |
+| `gov_migrate_data()` (managed migration) | Phase 15 | Today migration is manual (`aws s3 sync` + `datom_sync_dispatch()`). Atomic data-copy + ref.json update + `.datom_gov_record_migration()` deferred. Lives in datomanager (Phase 19); calls datom `datom_storage_*` / `datom_repo_*` helpers (all six now exported in Phase 22). | Medium |
 | Restore `ubuntu-latest (devel)` in `.github/workflows/R-CMD-check.yaml` | Phase 17 | Disabled 2026-05-02 because Posit PPM has no R-devel Linux binaries; every PR paid a 15-25 min source-compile tax for arrow / paws.storage / friends. Restore as part of the pre-CRAN checklist (CRAN expects devel to pass). | Pre-CRAN |
 | CODEOWNERS automation on `projects/{name}/` | Phase 15 | Self-serve project ownership; belongs in companion package, not datom. | Low (companion) |
 | Gov repo concurrency primitives | Phase 15 | Pull-before-push handles current contention. Advisory locks deferred until contention is observed. | Low |
@@ -116,21 +113,6 @@ Items discovered during development but intentionally deferred. Review periodica
 2. When planning next phase → review for inclusion
 3. If promoting to spec → move to `datom_specification.md` "Deferred to v2" section
 4. If abandoned → delete with brief note why
-
-### Phase Roadmap
-
-| Phase | Name | Dependencies | Est. Effort |
-|-------|------|--------------|-------------|
-| 1 | Core Utilities | None | 1 week |
-| 2 | S3 Operations | Phase 1 | 1 week |
-| 3 | Git Operations | Phase 1 | 1 week |
-| 4 | Connection & Init | Phases 1-3 | 1 week |
-| 5 | Read/Write Workflows | Phase 4 | 1-2 weeks |
-| 6 | Sync & Validation | Phase 5 | 1 week |
-| 7 | Multi-Developer Collaboration | Phases 1-6 | 1-2 weeks |
-| 8 | Metadata Enrichment & Table Types | Phases 1-6 (parallel w/ 7) | 1 week |
-| 10 | Store Abstraction | Phases 1-8 | 1-2 weeks |
-| 11 | Routing Separation | Phase 10 | 1-2 weeks |
 
 ## Quick Context for New Sessions
 
