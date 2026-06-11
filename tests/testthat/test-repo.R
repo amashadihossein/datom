@@ -296,3 +296,156 @@ test_that("datom_repo_set_data_store() returns SHA invisibly", {
     expect_true(nzchar(result$value))
   })
 })
+
+
+# === datom_repo_delete() ======================================================
+
+make_clone_conn <- function(path, gov_root = NULL, data_repo_url = NULL,
+                            github_pat = NULL) {
+  structure(
+    list(
+      project_name   = "TEST_PROJECT",
+      backend        = "local",
+      root           = as.character(path),
+      prefix         = NULL,
+      region         = NULL,
+      client         = NULL,
+      path           = as.character(path),
+      role           = "developer",
+      endpoint       = NULL,
+      gov_root       = gov_root,
+      gov_client     = NULL,
+      gov_local_path = NULL,
+      github_pat     = github_pat,
+      data_repo_url  = data_repo_url,
+      github_api_url = NULL
+    ),
+    class = "datom_conn"
+  )
+}
+
+test_that("datom_repo_delete() errors on non-conn", {
+  expect_error(datom_repo_delete("x", "X"), "datom_conn")
+  expect_error(datom_repo_delete(NULL, "X"), "datom_conn")
+})
+
+test_that("datom_repo_delete() errors on reader role", {
+  conn <- structure(
+    list(role = "reader", project_name = "P", gov_root = NULL),
+    class = "datom_conn"
+  )
+  expect_error(datom_repo_delete(conn, "P"), "developer")
+})
+
+test_that("datom_repo_delete() errors when confirm does not match", {
+  conn <- structure(
+    list(role = "developer", project_name = "MY_PROJECT", gov_root = NULL),
+    class = "datom_conn"
+  )
+  expect_error(datom_repo_delete(conn, "wrong"), "Confirmation does not match")
+  expect_error(datom_repo_delete(conn, NULL),    "Confirmation does not match")
+})
+
+test_that("datom_repo_delete() errors on gov-attached conn without force flag", {
+  conn <- structure(
+    list(role = "developer", project_name = "MY_PROJECT", gov_root = "gov-bucket"),
+    class = "datom_conn"
+  )
+  expect_error(
+    datom_repo_delete(conn, "MY_PROJECT"),
+    "gov_decommission"
+  )
+})
+
+test_that("datom_repo_delete() proceeds on gov-attached conn with force_gov_attached = TRUE", {
+  withr::with_tempdir({
+    clone_dir <- fs::dir_create("clone")
+    conn <- make_clone_conn(clone_dir, gov_root = "gov-bucket",
+                            data_repo_url = NULL)
+
+    # data_repo_url = NULL triggers the warn-and-continue branch
+    result <- datom_repo_delete(conn, "TEST_PROJECT", force_gov_attached = TRUE)
+    expect_true(result)
+    # clone removed despite gov being attached
+    expect_false(fs::dir_exists(clone_dir))
+  })
+})
+
+test_that("datom_repo_delete() removes local clone directory", {
+  withr::with_tempdir({
+    clone_dir <- fs::dir_create("clone")
+    conn <- make_clone_conn(clone_dir, data_repo_url = NULL)
+
+    expect_true(fs::dir_exists(clone_dir))
+    datom_repo_delete(conn, "TEST_PROJECT")
+    expect_false(fs::dir_exists(clone_dir))
+  })
+})
+
+test_that("datom_repo_delete() skips clone removal when path is NULL", {
+  conn <- make_clone_conn(withr::local_tempdir(), data_repo_url = NULL)
+  conn$path <- NULL
+  # Should not error; clone removal simply skipped
+  expect_true(datom_repo_delete(conn, "TEST_PROJECT"))
+})
+
+test_that("datom_repo_delete() skips GitHub deletion for non-GitHub URL", {
+  withr::with_tempdir({
+    clone_dir <- fs::dir_create("clone")
+    conn <- make_clone_conn(
+      clone_dir,
+      data_repo_url = "https://gitlab.com/org/repo.git",
+      github_pat    = "fake-pat"
+    )
+    # Should not call .datom_delete_github_repo -- no mock needed
+    result <- datom_repo_delete(conn, "TEST_PROJECT")
+    expect_true(result)
+    expect_false(fs::dir_exists(clone_dir))
+  })
+})
+
+test_that("datom_repo_delete() warns and continues when no PAT provided", {
+  withr::with_tempdir({
+    clone_dir <- fs::dir_create("clone")
+    conn <- make_clone_conn(
+      clone_dir,
+      data_repo_url = "https://github.com/org/repo.git",
+      github_pat    = NULL  # no PAT
+    )
+    # Should warn about missing PAT but still remove clone
+    expect_no_error(datom_repo_delete(conn, "TEST_PROJECT"))
+    expect_false(fs::dir_exists(clone_dir))
+  })
+})
+
+test_that("datom_repo_delete() calls .datom_delete_github_repo with correct args", {
+  withr::with_tempdir({
+    clone_dir <- fs::dir_create("clone")
+    conn <- make_clone_conn(
+      clone_dir,
+      data_repo_url = "https://github.com/org/my-repo.git",
+      github_pat    = "fake-pat-value"
+    )
+
+    mock_delete <- mockery::mock(invisible(TRUE))
+    mockery::stub(datom_repo_delete, ".datom_delete_github_repo", mock_delete)
+
+    datom_repo_delete(conn, "TEST_PROJECT")
+
+    mockery::expect_called(mock_delete, 1L)
+    call_args <- mockery::mock_args(mock_delete)[[1]]
+    expect_equal(call_args[[1]], "org/my-repo")
+    expect_equal(call_args[[2]], "fake-pat-value")
+  })
+})
+
+test_that("datom_repo_delete() returns TRUE invisibly", {
+  withr::with_tempdir({
+    clone_dir <- fs::dir_create("clone")
+    conn <- make_clone_conn(clone_dir, data_repo_url = NULL)
+
+    result <- withVisible(datom_repo_delete(conn, "TEST_PROJECT"))
+    expect_true(result$value)
+    expect_false(result$visible)
+  })
+})

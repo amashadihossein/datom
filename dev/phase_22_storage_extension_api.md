@@ -1,6 +1,6 @@
 # Phase 22 — Storage Extension API
 
-**Status**: ⏳ Chunk 5 next
+**Status**: ⏳ Chunk 6 next
 **Branch**: `phase/22-storage-extension-api`
 **Started**: 2026-06-10
 
@@ -46,7 +46,7 @@ New file: `R/storage.R` (the six exported functions).
 | `datom_storage_copy(from_conn, to_conn, ...)` | ✅ done | New |
 | `datom_storage_verify(from_conn, to_conn, keys, mode)` | ✅ done | New |
 | `datom_repo_set_data_store(conn, new_store, ...)` | ✅ done | New |
-| `datom_repo_delete(conn, confirm, force_gov_attached)` | ☐ todo | Extract from decommission.R |
+| `datom_repo_delete(conn, confirm, force_gov_attached)` | ✅ done | Extract from decommission.R |
 
 ---
 
@@ -59,8 +59,8 @@ New file: `R/storage.R` (the six exported functions).
 | 2 | `datom_storage_copy()` | ✅ done | All 4 backend combos; tests with mocked S3 |
 | 3 | `datom_storage_verify()` | ✅ done | `structural` + `content` modes; truncation + hash tests |
 | 4 | `datom_repo_set_data_store()` | ✅ done | Read-modify-write; govenance untouched; commit+push |
-| 5 | `datom_repo_delete()` | ⏳ next | Extract from decommission.R; guard; refactor decommission |
-| 6 | Spec + phase completion | ☐ todo | Update spec, acceptance criteria, phase completion procedure |
+| 5 | `datom_repo_delete()` | ✅ done | Extract from decommission.R; guard; refactor decommission |
+| 6 | Spec + phase completion | ⏳ next | Update spec, acceptance criteria, phase completion procedure |
 
 ---
 
@@ -189,3 +189,14 @@ Decisions: `datom_store_local()` normalises path to absolute via `fs::path_abs()
 must compare against `new_store$path` not `as.character(new_dir)`. `R/repo.R` is a new file
 (keeps `datom_repo_*` helpers separate from storage primitives).
 Tests: 1877 (0 fail, 26 pre-existing warnings).
+
+### Chunk 5 -- 2026-06-10
+Shipped: `datom_repo_delete(conn, confirm, force_gov_attached)` added to `R/repo.R`.
+`datom_decommission()` refactored: steps 2-3 (GitHub repo deletion + clone removal) extracted
+and replaced with a single `datom_repo_delete(conn, confirm, force_gov_attached = TRUE)` call.
+Guard: `!is.null(conn$gov_root) && !force_gov_attached` aborts with "use gov_decommission()".
+20 new tests in `test-repo.R` (49 total). All 40 existing decommission tests pass unchanged.
+Decisions: `datom_decommission()` passes `force_gov_attached = TRUE` to retain its current
+behaviour (decommission is the authorised gov teardown). `datom_repo_delete()` is warn-and-continue
+on step failures matching the existing decommission contract.
+Tests: 1897 (0 fail, 26 pre-existing warnings).

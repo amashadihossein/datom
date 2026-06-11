@@ -118,3 +118,140 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
   )
   invisible(sha)
 }
+
+
+#' Delete the Data GitHub Repository and Local Clone
+#'
+#' Deletes the data-side GitHub repository via the GitHub REST API and removes
+#' the local clone directory. This is the data-side teardown step for a datom
+#' project.
+#'
+#' **Solo projects** (no governance attached): call this together with
+#' [datom_storage_delete_prefix()] for a complete teardown.
+#'
+#' **Governed projects**: use `datomanager::gov_decommission()` instead.
+#' That function calls `datom_repo_delete()` internally (with
+#' `force_gov_attached = TRUE`). Calling `datom_repo_delete()` directly on
+#' a governed project without that flag is refused to prevent accidentally
+#' orphaning the governance registration.
+#'
+#' Steps:
+#' 1. Delete the data GitHub repo via the GitHub REST API (requires
+#'    `conn$github_pat` with `delete_repo` scope; skipped with a warning
+#'    when `conn$github_pat` is NULL or when the remote is not GitHub).
+#'    Aborts if `conn$data_repo_url` is not set.
+#' 2. Remove the local clone directory (`conn$path`).
+#'
+#' Each step is warn-and-continue on failure so the other still runs.
+#'
+#' @param conn A `datom_conn` object (developer role required).
+#' @param confirm Character string. Must equal `conn$project_name` exactly.
+#'   No interactive prompts -- this must be supplied explicitly.
+#' @param force_gov_attached Logical. `FALSE` (default) refuses to run when
+#'   governance is attached (`!is.null(conn$gov_root)`). Pass `TRUE` only
+#'   when called programmatically from `datomanager::gov_decommission()`.
+#' @return Invisible `TRUE` on success.
+#' @export
+#' @seealso [datom_storage_delete_prefix()], [datom_repo_set_data_store()]
+#' @examples
+#' \dontrun{
+#' # Solo project teardown (no governance)
+#' datom_storage_delete_prefix(conn)
+#' datom_repo_delete(conn, confirm = conn$project_name)
+#' }
+datom_repo_delete <- function(conn, confirm, force_gov_attached = FALSE) {
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object.")
+  }
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "{.fn datom_repo_delete} requires a developer connection.",
+      "i" = "Current role: {.val {conn$role}}"
+    ))
+  }
+
+  project_name <- conn$project_name
+
+  if (!identical(confirm, project_name)) {
+    cli::cli_abort(c(
+      "Confirmation does not match the project name.",
+      "i" = "Pass {.code conn$project_name} ({.val {project_name}}) as {.arg confirm}."
+    ))
+  }
+
+  # Gov-attached guard: refuse unless caller explicitly opts through
+  if (!is.null(conn$gov_root) && !isTRUE(force_gov_attached)) {
+    cli::cli_abort(c(
+      "{.fn datom_repo_delete} refuses to delete a governed project's data repo.",
+      "i" = "Use {.fn gov_decommission} from datomanager to tear down a governed project.",
+      "i" = "Or pass {.code force_gov_attached = TRUE} if you are calling this from a governed teardown."
+    ))
+  }
+
+  cli::cli_alert_info("Deleting data repo for {.val {project_name}}...")
+
+  # ---- Step 1. Delete GitHub repo -------------------------------------------
+  tryCatch(
+    {
+      repo_url <- conn$data_repo_url
+      if (is.null(repo_url)) {
+        cli::cli_abort(c(
+          "Cannot delete GitHub repository: {.field data_repo_url} is not set on this conn.",
+          "i" = "Rebuild the conn with {.fn datom_get_conn} and retry."
+        ))
+      }
+
+      if (!grepl("github\\.com", repo_url, ignore.case = TRUE)) {
+        cli::cli_alert_info("No GitHub remote found -- skipping repo deletion.")
+      } else {
+        repo_full <- sub(
+          ".*github\\.com[:/]([^/]+/[^/]+?)(\\.git)?$",
+          "\\1",
+          repo_url,
+          perl = TRUE
+        )
+        pat <- conn$github_pat
+        if (is.null(pat) || !nzchar(pat)) {
+          cli::cli_alert_warning(
+            "No GitHub PAT on conn. Delete {.val {repo_full}} manually."
+          )
+        } else {
+          cli::cli_alert_info("Deleting GitHub repo {.val {repo_full}}...")
+          tryCatch(
+            {
+              .datom_delete_github_repo(
+                repo_full, pat,
+                api_url = conn$github_api_url %||% "https://api.github.com"
+              )
+              cli::cli_alert_success("Deleted GitHub repo {.val {repo_full}}.")
+            },
+            error = function(e) {
+              cli::cli_alert_danger("GitHub repo deletion failed: {conditionMessage(e)}")
+              cli::cli_alert_info("Delete {.val {repo_full}} manually.")
+            }
+          )
+        }
+      }
+    },
+    error = function(e) {
+      cli::cli_alert_danger("GitHub repo deletion step failed: {conditionMessage(e)}")
+      cli::cli_alert_info("Continuing with remaining teardown steps...")
+    }
+  )
+
+  # ---- Step 2. Remove local clone -------------------------------------------
+  if (!is.null(conn$path) && fs::dir_exists(conn$path)) {
+    cli::cli_alert_info("Removing local clone {.path {conn$path}}...")
+    tryCatch(
+      {
+        fs::dir_delete(conn$path)
+        cli::cli_alert_success("Removed local clone.")
+      },
+      error = function(e) {
+        cli::cli_alert_danger("Failed to remove local clone: {conditionMessage(e)}")
+      }
+    )
+  }
+
+  invisible(TRUE)
+}

@@ -85,75 +85,10 @@ datom_decommission <- function(conn, confirm = NULL) {
     )
   }
 
-  # ---- 2. Delete data GitHub repo -------------------------------------------
-  tryCatch(
-    {
-      # Use conn$data_repo_url as the sole source -- no filesystem fallback.
-      # If it is NULL the conn was built without git identity (e.g. a bare
-      # test conn); abort with a clear recovery message rather than silently
-      # skipping or doing a fragile clone lookup.
-      repo_url <- conn$data_repo_url
-      if (is.null(repo_url)) {
-        cli::cli_abort(c(
-          "Cannot delete GitHub repository: {.field data_repo_url} is not set on this conn.",
-          "i" = "Rebuild the conn with {.fn datom_get_conn} and retry."
-        ))
-      }
-
-      if (!grepl("github\\.com", repo_url, ignore.case = TRUE)) {
-        cli::cli_alert_info("No GitHub remote found -- skipping repo deletion.")
-      } else {
-        # Parse "owner/repo" from the URL (handles HTTPS and SSH)
-        repo_full <- sub(
-          ".*github\\.com[:/]([^/]+/[^/]+?)(\\.git)?$",
-          "\\1",
-          repo_url,
-          perl = TRUE
-        )
-        pat <- conn$github_pat
-        if (is.null(pat) || !nzchar(pat)) {
-          cli::cli_alert_warning(
-            "No GitHub PAT on conn. Delete {.val {repo_full}} manually."
-          )
-        } else {
-          cli::cli_alert_info("Deleting GitHub repo {.val {repo_full}}...")
-          tryCatch(
-            {
-              .datom_delete_github_repo(
-                repo_full, pat,
-                api_url = conn$github_api_url %||% "https://api.github.com"
-              )
-              cli::cli_alert_success("Deleted GitHub repo {.val {repo_full}}.")
-            },
-            error = function(e) {
-              cli::cli_alert_danger(
-                "GitHub repo deletion failed: {conditionMessage(e)}"
-              )
-              cli::cli_alert_info("Delete {.val {repo_full}} manually.")
-            }
-          )
-        }
-      }
-    },
-    error = function(e) {
-      cli::cli_alert_danger("GitHub repo deletion step failed: {conditionMessage(e)}")
-      cli::cli_alert_info("Continuing with remaining teardown steps...")
-    }
-  )
-
-  # ---- 3. Remove local data clone -------------------------------------------
-  if (!is.null(conn$path) && fs::dir_exists(conn$path)) {
-    cli::cli_alert_info("Removing local clone {.path {conn$path}}...")
-    tryCatch(
-      {
-        fs::dir_delete(conn$path)
-        cli::cli_alert_success("Removed local clone.")
-      },
-      error = function(e) {
-        cli::cli_alert_danger("Failed to remove local clone: {conditionMessage(e)}")
-      }
-    )
-  }
+  # ---- 2 & 3. Delete GitHub repo + local clone --------------------------------
+  # Delegated to datom_repo_delete() with force_gov_attached = TRUE since
+  # decommission is the authorised gov teardown path.
+  datom_repo_delete(conn, confirm = project_name, force_gov_attached = TRUE)
 
   # ---- 4. Gov unregister (git commit + push) --------------------------------
   has_gov <- !is.null(conn$gov_root)
