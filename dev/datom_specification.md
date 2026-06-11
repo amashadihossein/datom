@@ -983,6 +983,147 @@ list(
 
 ---
 
+## Storage Extension API
+
+A small, stable, CRAN-committed extension API that exposes datom's existing
+storage-dispatch mechanics to downstream package developers (primarily
+datomanager). Functions are intentionally infrastructure-tier — intended for
+package developers, not end users. Naming: `datom_storage_*` for byte-level
+storage primitives; `datom_repo_*` for data-repo git operations.
+
+Every call routes through the internal `.datom_storage_*()` dispatch layer
+(`R/utils-storage.R`); no code in this API calls `.datom_s3_*()` or
+`.datom_local_*()` directly.
+
+### datom_storage_list()
+
+```r
+datom_storage_list(conn)
+```
+
+Returns the full storage keys of every object under the datom namespace for
+`conn` (`{prefix}/datom/...`). Keys are in full storage-key form as returned
+by the internal `.datom_storage_list_objects()` dispatch.
+
+Returns: character vector (empty if namespace contains no objects).
+
+### datom_storage_delete_prefix()
+
+```r
+datom_storage_delete_prefix(conn, prefix_key = NULL)
+```
+
+Deletes every object under `{prefix}/datom/{prefix_key}`. `prefix_key = NULL`
+(default) deletes the entire datom namespace. A missing prefix is a no-op.
+
+Returns: invisibly, a backend-specific count. For S3: number of objects
+deleted (0L if empty). For local: `1L` if the directory was removed, `0L` if
+not found.
+
+### datom_storage_copy()
+
+```r
+datom_storage_copy(from_conn, to_conn)
+```
+
+Enumerates all objects under `from_conn`'s datom namespace and streams each
+to `to_conn`'s namespace. Supports all four backend combinations:
+
+| from | to | Mechanism |
+|------|----|-----------|
+| local | local | `fs::file_copy()` per object |
+| local | S3 | read raw bytes + `put_object` |
+| S3 | local | `get_object` + write to disk |
+| S3 | S3 | stream bytes through memory (get then put) |
+
+Server-side `copy_object` (same-region S3 optimisation) is reserved — issue
+#46.
+
+Policy-free primitive: does not update `project.yaml`, switch `ref.json`, or
+touch governance. Solo-project relocation: combine with
+`datom_repo_set_data_store()`. Governed-project migration: use
+`datomanager::gov_migrate_data()`.
+
+Returns: visible data frame with columns `key` (character, relative key after
+`{prefix}/datom/`) and `bytes` (numeric). Zero-row data frame if source is
+empty.
+
+### datom_storage_verify()
+
+```r
+datom_storage_verify(from_conn, to_conn, keys = NULL, mode = c("structural", "content"))
+```
+
+Verifies that objects in `to_conn`'s namespace match their counterparts in
+`from_conn`.
+
+**`mode = "structural"` (default)**: confirms each destination object exists
+and its byte size matches the source. One HEAD/stat per object — no byte
+transfer. Catches truncated/missing objects (the dominant copy failure mode).
+
+**`mode = "content"`**: re-reads destination bytes, recomputes SHA-256, and
+compares against the source. Expensive (full re-download for remote backends).
+
+`keys = NULL` verifies everything listed by `datom_storage_list(from_conn)`.
+Passing an explicit vector verifies a subset (e.g. a sample or the output
+`$key` column of `datom_storage_copy()`).
+
+Destination missing/inaccessible is a soft failure (`ok = FALSE` in result,
+no error thrown). Source missing is a hard error.
+
+Returns: data frame with columns `key` (character), `ok` (logical), `issue`
+(character, `NA` when ok). Zero-row data frame if `keys` is empty.
+
+### datom_repo_set_data_store()
+
+```r
+datom_repo_set_data_store(conn, new_store, message = NULL)
+```
+
+Rewrites `storage.data` in `.datom/project.yaml` in the data clone to reflect
+`new_store`, then commits and pushes the data repo.
+
+**Read-modify-write contract**: reads the full existing `project.yaml`,
+modifies **only** `storage.data` via `modifyList()`, then writes back.
+Never reconstructs the file from conn fields — this preserves
+`storage.governance` (permanent once written on governed projects) and any
+other fields.
+
+For governed projects: the authoritative address is `ref.json` in the gov
+repo. This function is called by `datomanager::gov_migrate_data()` after the
+ref switch (step 7), never before. datomanager does not touch the data repo
+directly; it routes all data-repo writes through this helper.
+
+Requires developer role and `conn$path` (local clone).
+
+Returns: invisibly, the git commit SHA.
+
+### datom_repo_delete()
+
+```r
+datom_repo_delete(conn, confirm, force_gov_attached = FALSE)
+```
+
+Deletes the data GitHub repository (via GitHub REST API) and removes the local
+clone directory. The data-side teardown step.
+
+**Solo projects**: use together with `datom_storage_delete_prefix()` for a
+complete teardown.
+
+**Governed projects**: use `datomanager::gov_decommission()` — that function
+calls `datom_repo_delete(force_gov_attached = TRUE)` internally. Calling
+`datom_repo_delete()` directly on a governed project without
+`force_gov_attached = TRUE` is refused with a clear message.
+
+`confirm` must equal `conn$project_name` exactly (no interactive prompts).
+
+Each step (GitHub deletion, clone removal) is warn-and-continue on failure so
+the other step still runs.
+
+Returns: invisible `TRUE`.
+
+---
+
 ## User Workflows
 
 ### Data Developer Workflow
