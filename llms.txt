@@ -301,6 +301,25 @@ Validate repository structure and git-S3 consistency
 - [`is_valid_datom_repo()`](https://amashadihossein.github.io/datom/reference/is_valid_datom_repo.md)
   : Check if Path is a Valid datom Repository
 
+## Storage Extension API
+
+Low-level storage primitives for package developers (e.g. datomanager).
+End users should use datom_read / datom_write / datom_decommission
+instead.
+
+- [`datom_storage_list()`](https://amashadihossein.github.io/datom/reference/datom_storage_list.md)
+  : List All Objects in a datom Storage Namespace
+- [`datom_storage_delete_prefix()`](https://amashadihossein.github.io/datom/reference/datom_storage_delete_prefix.md)
+  : Delete All Objects Under a datom Storage Prefix
+- [`datom_storage_copy()`](https://amashadihossein.github.io/datom/reference/datom_storage_copy.md)
+  : Copy All Objects Between Two datom Storage Namespaces
+- [`datom_storage_verify()`](https://amashadihossein.github.io/datom/reference/datom_storage_verify.md)
+  : Verify a Copy Between Two datom Storage Namespaces
+- [`datom_repo_set_data_store()`](https://amashadihossein.github.io/datom/reference/datom_repo_set_data_store.md)
+  : Rewrite the Data Store Pointer in project.yaml
+- [`datom_repo_delete()`](https://amashadihossein.github.io/datom/reference/datom_repo_delete.md)
+  : Delete the Data GitHub Repository and Local Clone
+
 ## Decommission
 
 Permanently remove a project and all its artefacts

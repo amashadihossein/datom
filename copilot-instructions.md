@@ -331,6 +331,13 @@ internal credential contract.
   [`.datom_store_root()`](https://amashadihossein.github.io/datom/reference/dot-datom_store_root.md)
   accessor for backend-neutral access.
 
+- **[`.datom_storage_delete_prefix()`](https://amashadihossein.github.io/datom/reference/dot-datom_storage_delete_prefix.md)
+  local backend returns `1L`, not object count**: The local backend
+  removes the directory and returns `1L` (removed) or `0L` (not found).
+  The S3 backend returns the count of deleted objects. Tests and callers
+  that expect a file count will fail – use structural checks
+  (`dir_exists`) to verify deletion on local.
+
 - **`ref.json` lives at governance store**: Created by
   [`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md),
   resolved by
@@ -524,8 +531,9 @@ internal credential contract.
   against a bare local repo, seed the skeleton first (clone bare, commit
   `README.md` + `projects/.gitkeep`, push to bare).
 
-- **`datom_repo_set_data_store()` must use read-modify-write on
-  `project.yaml`**: Read the full yaml first
+- **[`datom_repo_set_data_store()`](https://amashadihossein.github.io/datom/reference/datom_repo_set_data_store.md)
+  must use read-modify-write on `project.yaml`**: Read the full yaml
+  first
   ([`yaml::read_yaml()`](https://yaml.r-lib.org/reference/read_yaml.html)),
   then `modifyList` only the `storage.data` subtree, then write back.
   Never reconstruct the full yaml from conn fields – that silently drops

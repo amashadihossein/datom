@@ -47,8 +47,14 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_pull.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_pull_gov.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_read.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_repo_delete.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_repo_set_data_store.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_repository_check.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_status.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_storage_copy.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_storage_delete_prefix.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_storage_list.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/datom_storage_verify.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_store.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_store_local.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/datom_store_s3.html</loc></url>
@@ -75,6 +81,7 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_compute_file_sha.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_compute_metadata_sha.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_conn_for.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_copy_one.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_create_github_repo.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_create_governance_json.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_create_ref.html</loc></url>
@@ -140,6 +147,8 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_s3_read_json.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_s3_upload.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_s3_write_json.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_byte_size.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_content_hash.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_delete_governance_json.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_delete_prefix.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_download.html</loc></url>
@@ -147,6 +156,7 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_list_objects.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_read_governance_json.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_read_json.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_rel_key.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_upload.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_write_governance_json.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_storage_write_json.html</loc></url>
@@ -159,6 +169,7 @@
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_validate_name.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_validate_s3_store.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_validate_source_lineage.html</loc></url>
+<url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_verify_one.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_write_governance_json_local.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_write_metadata.html</loc></url>
 <url><loc>https://amashadihossein.github.io/datom/reference/dot-datom_write_metadata_local.html</loc></url>
