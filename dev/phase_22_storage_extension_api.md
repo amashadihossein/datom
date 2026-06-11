@@ -1,6 +1,6 @@
 # Phase 22 — Storage Extension API
 
-**Status**: ⏳ Chunk 1 next
+**Status**: ⏳ Chunk 2 next
 **Branch**: `phase/22-storage-extension-api`
 **Started**: 2026-06-10
 
@@ -41,8 +41,8 @@ New file: `R/storage.R` (the six exported functions).
 
 | Function | Status | Source |
 |---|---|---|
-| `datom_storage_list(conn, ...)` | ☐ todo | Promote `.datom_storage_list_objects()` |
-| `datom_storage_delete_prefix(conn, ...)` | ☐ todo | Promote `.datom_storage_delete_prefix()` |
+| `datom_storage_list(conn, ...)` | ✅ done | Promote `.datom_storage_list_objects()` |
+| `datom_storage_delete_prefix(conn, ...)` | ✅ done | Promote `.datom_storage_delete_prefix()` |
 | `datom_storage_copy(from_conn, to_conn, ...)` | ☐ todo | New |
 | `datom_storage_verify(from_conn, to_conn, keys, mode)` | ☐ todo | New |
 | `datom_repo_set_data_store(conn, new_store, ...)` | ☐ todo | New |
@@ -55,8 +55,8 @@ New file: `R/storage.R` (the six exported functions).
 | # | Name | Status | Notes |
 |---|------|--------|-------|
 | 0 | Phase doc + branch setup | ✅ done | Phase doc created, README.md updated, branch pushed |
-| 1 | Promote list + delete_prefix | ⏳ next | Thin wrappers; tests; pkgdown entry |
-| 2 | `datom_storage_copy()` | ☐ todo | All 4 backend combos; tests with mocked S3 |
+| 1 | Promote list + delete_prefix | ✅ done | R/storage.R, 26 tests, pkgdown entry |
+| 2 | `datom_storage_copy()` | ⏳ next | All 4 backend combos; tests with mocked S3 |
 | 3 | `datom_storage_verify()` | ☐ todo | `structural` + `content` modes; truncation + hash tests |
 | 4 | `datom_repo_set_data_store()` | ☐ todo | Read-modify-write; govenance untouched; commit+push |
 | 5 | `datom_repo_delete()` | ☐ todo | Extract from decommission.R; guard; refactor decommission |
@@ -141,4 +141,13 @@ datom_repo_delete(conn, confirm, force_gov_attached = FALSE)
 Shipped: Phase doc created, branch `phase/22-storage-extension-api` created from `main`,
 `dev/README.md` Active Phases table updated.
 Decisions: None new; all locked decisions carried from pre-session prompt.
-Tests: 1700 (baseline, no new tests in this chunk).
+Tests: 1763 (baseline before chunk 1; includes prior issue #27 fix that added tests).
+
+### Chunk 1 -- 2026-06-10
+Shipped: `datom_storage_list()` + `datom_storage_delete_prefix()` in `R/storage.R`.
+26 tests in `tests/testthat/test-storage.R` (S3 mocked via mockery, local real tempdir).
+`_pkgdown.yml` new "Storage Extension API" section. NAMESPACE + man pages regenerated.
+Decisions: Internal `.datom_storage_list_objects()` and `.datom_storage_delete_prefix()`
+retained unchanged -- wrappers delegate to them. Return-value gotcha noted: local backend
+returns `1L` (dir removed) not object count; docstring updated to reflect this.
+Tests: 1763 (26 new storage tests; full suite 0 fail, 26 pre-existing warnings in test-conn.R).
