@@ -14,7 +14,9 @@ datom_storage_delete_prefix(conn, prefix_key = NULL)
 root for this connection.}
 }
 \value{
-Invisibly, the count of deleted objects (0L if nothing found).
+Invisibly, a backend-specific value. For S3: the count of deleted
+objects (0L if nothing found). For the local backend: \code{1L} if the prefix
+directory existed and was removed, \code{0L} otherwise.
 }
 \description{
 Removes every file under \code{{prefix}/datom/{prefix_key}} from storage.

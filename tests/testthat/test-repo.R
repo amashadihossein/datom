@@ -1,5 +1,4 @@
-# Tests for datom_repo_set_data_store() (R/repo.R)
-# Phase 22, Chunk 4
+# Tests for datom_repo_set_data_store() and datom_repo_delete() (R/repo.R)
 
 # --- helpers ------------------------------------------------------------------
 

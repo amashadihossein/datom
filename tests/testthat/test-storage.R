@@ -1,5 +1,5 @@
-# Tests for datom_storage_list() and datom_storage_delete_prefix()
-# Chunk 1 of Phase 22: Storage Extension API
+# Tests for datom_storage_list(), datom_storage_delete_prefix(),
+# datom_storage_copy(), and datom_storage_verify() (R/storage.R)
 
 # --- Local conn helper --------------------------------------------------------
 
