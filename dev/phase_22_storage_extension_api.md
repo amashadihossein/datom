@@ -1,6 +1,6 @@
 # Phase 22 — Storage Extension API
 
-**Status**: ⏳ Chunk 4 next
+**Status**: ⏳ Chunk 5 next
 **Branch**: `phase/22-storage-extension-api`
 **Started**: 2026-06-10
 
@@ -45,7 +45,7 @@ New file: `R/storage.R` (the six exported functions).
 | `datom_storage_delete_prefix(conn, ...)` | ✅ done | Promote `.datom_storage_delete_prefix()` |
 | `datom_storage_copy(from_conn, to_conn, ...)` | ✅ done | New |
 | `datom_storage_verify(from_conn, to_conn, keys, mode)` | ✅ done | New |
-| `datom_repo_set_data_store(conn, new_store, ...)` | ☐ todo | New |
+| `datom_repo_set_data_store(conn, new_store, ...)` | ✅ done | New |
 | `datom_repo_delete(conn, confirm, force_gov_attached)` | ☐ todo | Extract from decommission.R |
 
 ---
@@ -58,8 +58,8 @@ New file: `R/storage.R` (the six exported functions).
 | 1 | Promote list + delete_prefix | ✅ done | R/storage.R, 26 tests, pkgdown entry |
 | 2 | `datom_storage_copy()` | ✅ done | All 4 backend combos; tests with mocked S3 |
 | 3 | `datom_storage_verify()` | ✅ done | `structural` + `content` modes; truncation + hash tests |
-| 4 | `datom_repo_set_data_store()` | ⏳ next | Read-modify-write; govenance untouched; commit+push |
-| 5 | `datom_repo_delete()` | ☐ todo | Extract from decommission.R; guard; refactor decommission |
+| 4 | `datom_repo_set_data_store()` | ✅ done | Read-modify-write; govenance untouched; commit+push |
+| 5 | `datom_repo_delete()` | ⏳ next | Extract from decommission.R; guard; refactor decommission |
 | 6 | Spec + phase completion | ☐ todo | Update spec, acceptance criteria, phase completion procedure |
 
 ---
@@ -177,3 +177,15 @@ with partial failures visible in result df. Source missing is a hard error (alwa
 to exist). `issue` column uses NA_character_ for passing objects.
 `_pkgdown.yml` updated with verify entry.
 Tests: 1848 (0 fail, 26 pre-existing warnings).
+
+### Chunk 4 -- 2026-06-10
+Shipped: `datom_repo_set_data_store(conn, new_store, message)` in new `R/repo.R`.
+Read-modify-write on `project.yaml`: `yaml::read_yaml()` -> `modifyList` on
+`storage.data` only -> atomic tmp+rename write -> `.datom_git_commit()` + `.datom_git_push()`.
+29 tests in `tests/testthat/test-repo.R`: input validation (non-conn, reader, no path, invalid
+store, missing yaml); local + s3 store replacement; governance block untouched regression;
+region absent for local; custom commit message; invisible SHA return.
+Decisions: `datom_store_local()` normalises path to absolute via `fs::path_abs()` -- tests
+must compare against `new_store$path` not `as.character(new_dir)`. `R/repo.R` is a new file
+(keeps `datom_repo_*` helpers separate from storage primitives).
+Tests: 1877 (0 fail, 26 pre-existing warnings).
