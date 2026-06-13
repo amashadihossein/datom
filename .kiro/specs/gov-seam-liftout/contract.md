@@ -339,7 +339,7 @@ datomanager, which never depended on the removed gov surface.
    2. Decouple `datom_init_repo()` from gov registration; deprecation warning → `gov_attach()` (datom R4/R5).
    3. Remove the five exported gov functions and the nine internal gov-write helpers; drop/relocate their tests (datom R1, R2, R9, R10).
    4. Confirm `datom_repo_delete` / `datom_repo_set_data_store` guards (exist since Phase 22; datom R3).
-   5. NAMESPACE/man cleanup; `R CMD check` clean (datom R8); version bump; migration note for users of the old gov exports.
+   5. NAMESPACE/man cleanup; `R CMD check` clean (datom R8); version bump.
 3. **datomanager side (lands second; against the new datom).**
    1. Pin `Imports: datom (>= <new version>)`.
    2. Implement the nine gov-write behaviors natively — git2r for gov-repo git (C7), own storage IO conforming to the gov storage layout (C8) (datomanager R1).

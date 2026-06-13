@@ -124,8 +124,8 @@ repo, so that data-repo setup is independent of governance.
    project as a Solo_Project with `project.yaml` as its location authority and no governance
    attached.
 4. IF `datom_init_repo()` is called with a gov store argument, THEN THE Datom_Package SHALL
-   initialize the project as a Solo_Project, SHALL NOT perform gov registration from that
-   argument, and SHALL emit a deprecation warning directing the user to `gov_attach()`.
+   initialize the project as a Solo_Project and SHALL NOT perform gov registration from that
+   argument.
 
 ### Requirement 5: Retain gov read surface in datom
 
