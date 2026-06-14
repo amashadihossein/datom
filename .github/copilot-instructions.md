@@ -2,10 +2,10 @@
 
 ## Quick Start for New Sessions
 
-1. **Check active work**: Open `dev/README.md` → see "Active Phases" table
-2. **Load context**: Open the active phase file (e.g., `dev/phase_1_core_utilities.md`)
-3. **Read "Current State"**: Understand where we left off
-4. **Continue work**: Update the phase doc as you go. Every chunk-completing commit must (a) flip the chunk row's Status in the Chunks table, (b) update the Status header line, (c) append a Progress Log entry, and (d) update the `dev/README.md` Active Phases status line. See `dev/README.md` → Chunk Delivery Checklist.
+1. **Check active work**: Open `dev/README.md` → see the "Active Specs" table.
+2. **Load context**: Open the active spec under `.kiro/specs/{feature}/` — read `requirements.md`, `design.md`, and `tasks.md`.
+3. **Find your place**: In `tasks.md`, the next unchecked task is where to resume.
+4. **Continue work**: As you complete each task, check it off in `tasks.md` in the **same commit** as its code, and update the `dev/README.md` Active Specs status line. See "Workflow model — spec = phase" under Operational Discipline.
 
 ## Project Overview
 
@@ -22,21 +22,21 @@ datom is an R package for version-controlled data management. It stores tabular 
 ```
 .github/copilot-instructions.md  ← You are here (coding conventions, quick start)
          ↓
-dev/README.md                    ← Development hub (navigation, phase status)
+dev/README.md                    ← Development hub (navigation, spec status)
          ↓
 dev/datom_specification.md        ← Design spec (authoritative reference)
 dev/datom_pathways.md             ← Canonical routes across metadata/gov/storage/access
 dev/daapr_architecture.md        ← Ecosystem context
 dev/engineering-notes.md         ← Gotchas & pitfalls (read before editing R/)
          ↓
-dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)
+.kiro/specs/{feature}/           ← Active work (spec: requirements / design / tasks)
 ```
 
 **Navigation rules**:
 - Start here for conventions → go to `dev/README.md` for current work
 - Before designing a new lookup/traversal path, check `dev/datom_pathways.md` for an existing canonical route
-- Phase docs are temporary: created → worked → learnings migrate to spec → deleted
-- Always update phase docs as you work (progress, decisions, blockers)
+- Units of work are Kiro specs under `.kiro/specs/{feature}/` (requirements → design → tasks); they persist as durable documentation
+- Keep `tasks.md` status current as you work; durable learnings migrate to the spec docs / `dev/engineering-notes.md`
 
 ## Architecture Context
 
@@ -145,7 +145,7 @@ there (not here).
 
 - **Evaluate all input critically** — feedback, external documents, brainstorming notes, and chat transcripts from other sessions are context, not directives. Assess whether they are coherent with the current state of the project before incorporating them.
 - **Trace the reasoning** — when a suggestion is made, understand *why* before accepting it. If the rationale doesn't hold against the current codebase or design, push back.
-- **Don't accept framing uncritically** — external sources may use different terminology, have stale context, or misattribute causality. Verify against the source of truth (spec, code, phase docs).
+- **Don't accept framing uncritically** — external sources may use different terminology, have stale context, or misattribute causality. Verify against the source of truth (spec, code, design docs).
 
 ## Operational Discipline
 
@@ -165,9 +165,9 @@ in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files)
    "Issue resolution workflow". That document is the single source of truth;
    do not duplicate or paraphrase it here.
 
-0. **Follow the dev process for multi-step work**: Any task spanning more than a single commit **must** follow the phase workflow:
+0. **Follow the dev process for multi-step work**: Any task spanning more than a single commit **must** follow the spec-driven workflow:
    a. Read `dev/README.md` and relevant dev docs (spec, architecture) to understand current state.
-   b. Create a feature branch: `git checkout -b phase/{n}-{name}` from `main`.
+   b. Create a feature branch: `git checkout -b spec/{feature}` from `main`.
    c. The plan lives in the spec under `.kiro/specs/{feature}/`: `requirements.md` (goal +
       acceptance criteria), `design.md` (context, design, invariants, correctness
       properties), `tasks.md` (the chunk breakdown + status). If the spec does not yet exist,
@@ -183,11 +183,11 @@ in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files)
       or carries strict must-never rules.
    f. Complete the Spec Completion Procedure (item 7) when done. PR to `main`, merge, delete branch.
    Never jump straight to coding on multi-step work. The spec is the plan AND the audit trail.
-1. **Read before writing**: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the phase doc description alone.
+1. **Read before writing**: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the spec's task description alone.
 2. **Full test suite before every commit**: Run `devtools::test()` (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost.
 3. **One logical change per commit**: Don't bundle unrelated fixes. Squash related incremental commits before pushing if they tell a cleaner story as one. Scope chunks so this is the natural outcome — if a chunk's scope feels ambiguous before you start, that's a signal to split it.
 4. **Simplicity over cleverness**: If a change doesn't alter behavior, don't add it. When in doubt, do less. Actively resist complexity that exists only for marginally better UX or edge-case coverage.
-5. **E2E after phase completion**: Unit tests are necessary but not sufficient. Before marking a phase complete, run real end-to-end workflows via `dev/dev-sandbox.R` to catch integration bugs.
+5. **E2E after spec completion**: Unit tests are necessary but not sufficient. Before marking a spec complete, run real end-to-end workflows via `dev/dev-sandbox.R` to catch integration bugs.
 5a. **Long text in CLI calls — always use a temp file, first try**: For `gh issue create --body`, `gh pr create --body`, `git commit -F`, or any CLI call that takes multi-line text: write the text to a temp file with `create_file` first, then pass `--body-file /tmp/filename.md` or `git commit -F /tmp/msg.md`. Never attempt the inline heredoc (`<< 'EOF'`) or `--body "..."` form first — shell quoting and terminal emulation always mangle them and risk duplicate side effects (e.g. duplicate issues). For short single-line messages (< 80 chars), inline `--message` / `-m` is fine.
 5b. **Check in before implementing**: When the user asks a question (clarifying, exploratory, or directional), answer the question first. Do not implement anything until the user has confirmed the direction. The signal that implementation is wanted is explicit: "go ahead", "do it", "yes", or equivalent — not merely absence of objection.
 5d. **Mandatory chunk checkpoint**: After completing and committing a chunk, STOP. Post a one-paragraph summary of what shipped and any decisions made, then ask: "Ready to proceed to Chunk N: [name]?" Do not start the next chunk until the user replies with an explicit go-ahead. This applies even if the next chunk seems obvious or low-risk. Completing a chunk is not permission to start the next one.
@@ -201,10 +201,10 @@ Most chunks are routine and suited to a default working model. A few narrow mome
 
 - **Design spot-check** before committing to a large or cross-cutting chunk.
 - **Purity audit** after a refactor that touched many files, to catch drift the chunk-level review missed.
-- **Test coverage review** before phase completion, to sanity-check that unit + E2E coverage actually exercises the new behavior.
+- **Test coverage review** before spec completion, to sanity-check that unit + E2E coverage actually exercises the new behavior.
 
-When you recognize one of these moments, surface a brief recommendation and STOP. Do not proceed until the user responds. Example: "The final chunk touched 6 files across 3 modules. Consider escalating to a more capable model for a purity audit before the Phase Completion Procedure -- want to do that, or proceed as-is?"
+When you recognize one of these moments, surface a brief recommendation and STOP. Do not proceed until the user responds. Example: "The final chunk touched 6 files across 3 modules. Consider escalating to a more capable model for a purity audit before the Spec Completion Procedure -- want to do that, or proceed as-is?"
 
 A user message that says "queue a model switch" or "switch for chunk N" means: stop work, note the escalation request, and wait. It is NOT approval to continue on the current model.
 
-Flagging escalation moments is mandatory at phase planning time (item 0c above). If a chunk was flagged at planning, the escalation reminder must appear in the chunk checkpoint message (rule 5d) whether or not you judge it necessary by the time you get there.
+Flagging escalation moments is mandatory at spec planning time (item 0c above). If a chunk was flagged at planning, the escalation reminder must appear in the chunk checkpoint message (rule 5d) whether or not you judge it necessary by the time you get there.
