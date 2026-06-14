@@ -1,5 +1,25 @@
 # datom Development Hub
 
+## Workflow model (read first): spec = phase
+
+A unit of multi-step work is a **Kiro spec** under `.kiro/specs/{feature}/`:
+`requirements.md` (goal + acceptance), `design.md` (context, invariants, correctness
+properties), `tasks.md` (the chunk breakdown + status). **The spec replaces the legacy
+`dev/phase_{n}_{name}.md` phase doc.**
+
+Everything in this document still applies — just remap the terms:
+
+| Legacy term (used below) | Now |
+|---|---|
+| phase doc `dev/phase_*.md` | the spec `.kiro/specs/{feature}/` |
+| Chunks table / Progress Log | `tasks.md` (checkboxes) + commit history |
+| Active Phases | Active Specs |
+| "delete the phase doc" on completion | **specs persist — never deleted** |
+
+A "chunk" = one task (or a small related group) in `tasks.md` = one commit. All branch,
+test-before-commit, chunk-checkpoint, and review discipline below is unchanged. Works the
+same in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files).
+
 ## Documentation Hierarchy
 
 This folder contains all development documentation following a hierarchical chain:
@@ -45,11 +65,13 @@ Phase plans are **temporary working documents**:
 
 ## Current Development State
 
-### Active Phases
+### Active Specs
 
-| Phase | Started | Status | Doc |
-|-------|---------|--------|-----|
-| — | — | No active phases | — |
+Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow model at top).
+
+| Spec | Started | Status | Location |
+|------|---------|--------|----------|
+| gov-seam-liftout (datom side) | 2026-06-13 | requirements + design done; tasks pending | `.kiro/specs/gov-seam-liftout/` |
 
 ### Drafts (queued, not active)
 
@@ -203,7 +225,8 @@ Every phase gets its own feature branch:
 3. **PR when complete**: Open a pull request to `main`
 4. **Merge + delete**: Squash-merge or merge, then delete the branch
 
-The phase doc is created *on the branch* (not on `main`). After merge, the Phase Completion Procedure deletes the phase doc as usual.
+The spec is created/edited *on the branch* (not on `main`). Specs persist after merge — the
+Spec Completion Procedure does **not** delete them (this replaces the old phase-doc deletion).
 
 ### Git Commit Cadence
 
@@ -241,9 +264,9 @@ git push -u origin phase/10-remotes-refactor
 7. **Review backlog** before starting each phase
 8. **Keep pathway map current** — schema/routing changes must update `dev/datom_pathways.md` or record "no pathway impact"
 
-## Phase Completion Procedure
+## Spec Completion Procedure (formerly Phase Completion)
 
-When a phase is done, perform these steps **in order before starting the next phase**:
+When all of a spec's tasks are done, perform these steps **in order before starting the next spec**:
 
 1. **Harvest persistent content** from the phase doc:
    - Design decisions that affect the overall API → migrate to `dev/datom_specification.md`
@@ -256,12 +279,16 @@ When a phase is done, perform these steps **in order before starting the next ph
    - Move phase from Active → Completed table (with date, test count, summary)
    - Update backlog if needed
 
-3. **Delete the phase doc** — it should contain nothing worth keeping at this point
+3. **Specs persist — do NOT delete them.** (Replaces the old "delete the phase doc" step.)
+   The spec under `.kiro/specs/{feature}/` is durable documentation: mark its tasks complete
+   and leave it in place. Harvest only *additional* durable learnings into the permanent docs
+   per step 1.
 
 4. **PR + merge + delete branch**:
    - Open a PR from `phase/{n}-{name}` to `main`
    - Merge (squash or regular)
    - Delete the feature branch (remote and local)
 
-**Rule**: No phase doc should survive past its completion. If it feels hard to delete,
-that means persistent content hasn't been migrated yet — do that first.
+**Rule**: Kiro specs persist as durable documentation — do not delete them. (Legacy
+`dev/phase_*.md` files, if any are ever created, still must not survive past completion —
+migrate their content and remove them.)
