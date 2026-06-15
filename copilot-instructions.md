@@ -2,16 +2,17 @@
 
 ## Quick Start for New Sessions
 
-1.  **Check active work**: Open `dev/README.md` → see “Active Phases”
-    table
-2.  **Load context**: Open the active phase file (e.g.,
-    `dev/phase_1_core_utilities.md`)
-3.  **Read “Current State”**: Understand where we left off
-4.  **Continue work**: Update the phase doc as you go. Every
-    chunk-completing commit must (a) flip the chunk row’s Status in the
-    Chunks table, (b) update the Status header line, (c) append a
-    Progress Log entry, and (d) update the `dev/README.md` Active Phases
-    status line. See `dev/README.md` → Chunk Delivery Checklist.
+1.  **Check active work**: Open `dev/README.md` → see the “Active Specs”
+    table.
+2.  **Load context**: Open the active spec under
+    `.kiro/specs/{feature}/` — read `requirements.md`, `design.md`, and
+    `tasks.md`.
+3.  **Find your place**: In `tasks.md`, the next unchecked task is where
+    to resume.
+4.  **Continue work**: As you complete each task, check it off in
+    `tasks.md` in the **same commit** as its code, and update the
+    `dev/README.md` Active Specs status line. See “Workflow model — spec
+    = phase” under Operational Discipline.
 
 ## Project Overview
 
@@ -47,21 +48,22 @@ explicitly rejected scope.
 
     .github/copilot-instructions.md  ← You are here (coding conventions, quick start)
              ↓
-    dev/README.md                    ← Development hub (navigation, phase status)
+    dev/README.md                    ← Development hub (navigation, spec status)
              ↓
     dev/datom_specification.md        ← Design spec (authoritative reference)
     dev/datom_pathways.md             ← Canonical routes across metadata/gov/storage/access
     dev/daapr_architecture.md        ← Ecosystem context
     dev/engineering-notes.md         ← Gotchas & pitfalls (read before editing R/)
              ↓
-    dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)
+    .kiro/specs/{feature}/           ← Active work (spec: requirements / design / tasks)
 
 **Navigation rules**: - Start here for conventions → go to
 `dev/README.md` for current work - Before designing a new
 lookup/traversal path, check `dev/datom_pathways.md` for an existing
-canonical route - Phase docs are temporary: created → worked → learnings
-migrate to spec → deleted - Always update phase docs as you work
-(progress, decisions, blockers)
+canonical route - Units of work are Kiro specs under
+`.kiro/specs/{feature}/` (requirements → design → tasks); they persist
+as durable documentation - Keep `tasks.md` status current as you work;
+durable learnings migrate to the spec docs / `dev/engineering-notes.md`
 
 ## Architecture Context
 
@@ -210,11 +212,23 @@ there (not here).
   codebase or design, push back.
 - **Don’t accept framing uncritically** — external sources may use
   different terminology, have stale context, or misattribute causality.
-  Verify against the source of truth (spec, code, phase docs).
+  Verify against the source of truth (spec, code, design docs).
 
 ## Operational Discipline
 
 These patterns are non-negotiable for every session:
+
+**Workflow model — spec = phase.** A unit of multi-step work is a **Kiro
+spec** under `.kiro/specs/{feature}/`. Its `requirements.md` +
+`design.md` + `tasks.md` replace the legacy `dev/phase_{n}_{name}.md`
+phase doc. All branch, chunk, checkpoint, test, and review discipline
+below applies to spec-driven work **unchanged**. Translate legacy
+wording as you read: “phase doc” → “the spec”; “Chunks table” /
+“Progress Log” → “tasks.md” (task checkboxes + commit history); “Active
+Phases” → “Active Specs”. **Specs persist — they are NOT deleted on
+completion** (the old “delete the phase doc” step does not apply). This
+works identically in Kiro (native specs) and Copilot (read/maintain the
+same `.kiro/specs/` files).
 
 0a. **Issue resolution workflow**: Every code change starts as a GitHub
 issue. Follow the canonical seven-step workflow in `CONTRIBUTING.md` →
@@ -222,38 +236,36 @@ issue. Follow the canonical seven-step workflow in `CONTRIBUTING.md` →
 truth; do not duplicate or paraphrase it here.
 
 0.  **Follow the dev process for multi-step work**: Any task spanning
-    more than a single commit **must** follow the phase workflow:
+    more than a single commit **must** follow the spec-driven workflow:
     1.  Read `dev/README.md` and relevant dev docs (spec, architecture)
         to understand current state.
-    2.  Create a feature branch: `git checkout -b phase/{n}-{name}` from
+    2.  Create a feature branch: `git checkout -b spec/{feature}` from
         `main`.
-    3.  Create a phase doc (`dev/phase_{n}_{name}.md`) with goal,
-        context, chunks, acceptance criteria, and status tracking. Flag
-        any chunks that likely warrant model escalation (see Model
-        Escalation below) so the cue lands at plan time, not mid-chunk.
-    4.  Register it as active in the `dev/README.md` Active Phases
+    3.  The plan lives in the spec under `.kiro/specs/{feature}/`:
+        `requirements.md` (goal + acceptance criteria), `design.md`
+        (context, design, invariants, correctness properties),
+        `tasks.md` (the chunk breakdown + status). If the spec does not
+        yet exist, create it (requirements → design → tasks) — do NOT
+        create a `dev/phase_*.md`. Flag any tasks that warrant model
+        escalation (see Model Escalation below) at plan time, not
+        mid-task.
+    4.  Register the spec as active in the `dev/README.md` Active Specs
         table.
-    5.  Work through chunks in order. Updating the phase doc is part of
-        completing each chunk, not an afterthought — phase docs are how
-        context persists across a model’s short working memory, and
-        stale docs silently degrade the next chunk. **Every
-        chunk-completing commit must update the phase doc in three
-        places**: (1) flip the chunk’s row in the Chunks table Status
-        column (`✅ done` / `⏳ next` / `☐ todo`), (2) update the Status
-        header line at the top, (3) append a Progress Log entry (what
-        shipped, decisions, latent bugs, test count delta). Also update
-        `dev/README.md` Active Phases status line. The code change and
-        the phase-doc update go in **the same commit** — never a
-        follow-up. When a chunk spans multiple files or has strict
-        must-never rules, scaffold the phase doc with “read first” and
-        “invariants” subsections before starting.
-    6.  Complete the Phase Completion Procedure when done. PR to `main`,
-        merge, delete branch. Never jump straight to coding on
-        multi-step work. The phase doc is the plan AND the audit trail.
+    5.  Work through tasks in order (1 task / small related group = 1
+        chunk = 1 commit). Updating status is part of completing each
+        task: mark the task done in `tasks.md` in the **same commit** as
+        its code, and update the `dev/README.md` Active Specs status
+        line. The spec’s `design.md` already holds the “read first”
+        context, invariants, and correctness properties; add
+        task-specific notes there when a task spans multiple files or
+        carries strict must-never rules.
+    6.  Complete the Spec Completion Procedure (item 7) when done. PR to
+        `main`, merge, delete branch. Never jump straight to coding on
+        multi-step work. The spec is the plan AND the audit trail.
 1.  **Read before writing**: At the start of each chunk, read the
     relevant source functions AND their callers before editing. Trace
-    the full call chain — don’t edit based on the phase doc description
-    alone.
+    the full call chain — don’t edit based on the spec’s task
+    description alone.
 2.  **Full test suite before every commit**: Run `devtools::test()`
     (unfiltered) and verify the total count. Report the count in every
     commit message. If the count drops, something was lost.
@@ -265,8 +277,8 @@ truth; do not duplicate or paraphrase it here.
 4.  **Simplicity over cleverness**: If a change doesn’t alter behavior,
     don’t add it. When in doubt, do less. Actively resist complexity
     that exists only for marginally better UX or edge-case coverage.
-5.  **E2E after phase completion**: Unit tests are necessary but not
-    sufficient. Before marking a phase complete, run real end-to-end
+5.  **E2E after spec completion**: Unit tests are necessary but not
+    sufficient. Before marking a spec complete, run real end-to-end
     workflows via `dev/dev-sandbox.R` to catch integration bugs. 5a.
     **Long text in CLI calls — always use a temp file, first try**: For
     `gh issue create --body`, `gh pr create --body`, `git commit -F`, or
@@ -301,11 +313,14 @@ truth; do not duplicate or paraphrase it here.
     (`gh issue list`, `git log --remotes`, `gh pr list`) to confirm
     whether the first attempt already succeeded. Acting on stale local
     evidence is how duplicates happen.
-6.  **Phase completion is mandatory**: When a phase is done, immediately
-    follow the Phase Completion Procedure in `dev/README.md` — migrate
-    learnings to spec/instructions, update README tables, delete the
-    phase doc, and commit. Do NOT start the next phase until this is
-    done. A phase is not “complete” until its doc is deleted.
+6.  **Spec completion is mandatory**: When all tasks are done, harvest
+    durable learnings (API/design → `dev/datom_specification.md`;
+    gotchas/pitfalls → `dev/engineering-notes.md`; conventions → these
+    instructions; deferrals → README Backlog), update the
+    `dev/README.md` Active Specs table, and commit. **Specs persist — do
+    NOT delete them** (this replaces the old “delete the phase doc”
+    rule). Then PR + merge + delete the branch. Do NOT start the next
+    spec until this is done.
 
 ## Model Escalation
 
@@ -317,20 +332,20 @@ capable model:
   chunk.
 - **Purity audit** after a refactor that touched many files, to catch
   drift the chunk-level review missed.
-- **Test coverage review** before phase completion, to sanity-check that
+- **Test coverage review** before spec completion, to sanity-check that
   unit + E2E coverage actually exercises the new behavior.
 
 When you recognize one of these moments, surface a brief recommendation
 and STOP. Do not proceed until the user responds. Example: “The final
 chunk touched 6 files across 3 modules. Consider escalating to a more
-capable model for a purity audit before the Phase Completion Procedure –
+capable model for a purity audit before the Spec Completion Procedure –
 want to do that, or proceed as-is?”
 
 A user message that says “queue a model switch” or “switch for chunk N”
 means: stop work, note the escalation request, and wait. It is NOT
 approval to continue on the current model.
 
-Flagging escalation moments is mandatory at phase planning time (item 0c
+Flagging escalation moments is mandatory at spec planning time (item 0c
 above). If a chunk was flagged at planning, the escalation reminder must
 appear in the chunk checkpoint message (rule 5d) whether or not you
 judge it necessary by the time you get there.

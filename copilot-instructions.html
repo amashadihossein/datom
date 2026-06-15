@@ -49,13 +49,13 @@
 <div class="section level2">
 <h2 id="quick-start-for-new-sessions">Quick Start for New Sessions<a class="anchor" aria-label="anchor" href="#quick-start-for-new-sessions"></a></h2>
 <ol style="list-style-type: decimal"><li>
-<strong>Check active work</strong>: Open <code>dev/README.md</code> → see “Active Phases” table</li>
+<strong>Check active work</strong>: Open <code>dev/README.md</code> → see the “Active Specs” table.</li>
 <li>
-<strong>Load context</strong>: Open the active phase file (e.g., <code>dev/phase_1_core_utilities.md</code>)</li>
+<strong>Load context</strong>: Open the active spec under <code>.kiro/specs/{feature}/</code> — read <code>requirements.md</code>, <code>design.md</code>, and <code>tasks.md</code>.</li>
 <li>
-<strong>Read “Current State”</strong>: Understand where we left off</li>
+<strong>Find your place</strong>: In <code>tasks.md</code>, the next unchecked task is where to resume.</li>
 <li>
-<strong>Continue work</strong>: Update the phase doc as you go. Every chunk-completing commit must (a) flip the chunk row’s Status in the Chunks table, (b) update the Status header line, (c) append a Progress Log entry, and (d) update the <code>dev/README.md</code> Active Phases status line. See <code>dev/README.md</code> → Chunk Delivery Checklist.</li>
+<strong>Continue work</strong>: As you complete each task, check it off in <code>tasks.md</code> in the <strong>same commit</strong> as its code, and update the <code>dev/README.md</code> Active Specs status line. See “Workflow model — spec = phase” under Operational Discipline.</li>
 </ol></div>
 <div class="section level2">
 <h2 id="project-overview">Project Overview<a class="anchor" aria-label="anchor" href="#project-overview"></a></h2>
@@ -68,15 +68,15 @@
 <h2 id="documentation-hierarchy">Documentation Hierarchy<a class="anchor" aria-label="anchor" href="#documentation-hierarchy"></a></h2>
 <pre><code>.github/copilot-instructions.md  ← You are here (coding conventions, quick start)
          ↓
-dev/README.md                    ← Development hub (navigation, phase status)
+dev/README.md                    ← Development hub (navigation, spec status)
          ↓
 dev/datom_specification.md        ← Design spec (authoritative reference)
 dev/datom_pathways.md             ← Canonical routes across metadata/gov/storage/access
 dev/daapr_architecture.md        ← Ecosystem context
 dev/engineering-notes.md         ← Gotchas &amp; pitfalls (read before editing R/)
          ↓
-dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)</code></pre>
-<p><strong>Navigation rules</strong>: - Start here for conventions → go to <code>dev/README.md</code> for current work - Before designing a new lookup/traversal path, check <code>dev/datom_pathways.md</code> for an existing canonical route - Phase docs are temporary: created → worked → learnings migrate to spec → deleted - Always update phase docs as you work (progress, decisions, blockers)</p>
+.kiro/specs/{feature}/           ← Active work (spec: requirements / design / tasks)</code></pre>
+<p><strong>Navigation rules</strong>: - Start here for conventions → go to <code>dev/README.md</code> for current work - Before designing a new lookup/traversal path, check <code>dev/datom_pathways.md</code> for an existing canonical route - Units of work are Kiro specs under <code>.kiro/specs/{feature}/</code> (requirements → design → tasks); they persist as durable documentation - Keep <code>tasks.md</code> status current as you work; durable learnings migrate to the spec docs / <code>dev/engineering-notes.md</code></p>
 </div>
 <div class="section level2">
 <h2 id="architecture-context">Architecture Context<a class="anchor" aria-label="anchor" href="#architecture-context"></a></h2>
@@ -239,23 +239,24 @@ dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)</code></p
 <li>
 <strong>Trace the reasoning</strong> — when a suggestion is made, understand <em>why</em> before accepting it. If the rationale doesn’t hold against the current codebase or design, push back.</li>
 <li>
-<strong>Don’t accept framing uncritically</strong> — external sources may use different terminology, have stale context, or misattribute causality. Verify against the source of truth (spec, code, phase docs).</li>
+<strong>Don’t accept framing uncritically</strong> — external sources may use different terminology, have stale context, or misattribute causality. Verify against the source of truth (spec, code, design docs).</li>
 </ul></div>
 <div class="section level2">
 <h2 id="operational-discipline">Operational Discipline<a class="anchor" aria-label="anchor" href="#operational-discipline"></a></h2>
 <p>These patterns are non-negotiable for every session:</p>
+<p><strong>Workflow model — spec = phase.</strong> A unit of multi-step work is a <strong>Kiro spec</strong> under <code>.kiro/specs/{feature}/</code>. Its <code>requirements.md</code> + <code>design.md</code> + <code>tasks.md</code> replace the legacy <code>dev/phase_{n}_{name}.md</code> phase doc. All branch, chunk, checkpoint, test, and review discipline below applies to spec-driven work <strong>unchanged</strong>. Translate legacy wording as you read: “phase doc” → “the spec”; “Chunks table” / “Progress Log” → “tasks.md” (task checkboxes + commit history); “Active Phases” → “Active Specs”. <strong>Specs persist — they are NOT deleted on completion</strong> (the old “delete the phase doc” step does not apply). This works identically in Kiro (native specs) and Copilot (read/maintain the same <code>.kiro/specs/</code> files).</p>
 <p>0a. <strong>Issue resolution workflow</strong>: Every code change starts as a GitHub issue. Follow the canonical seven-step workflow in <code>CONTRIBUTING.md</code> → “Issue resolution workflow”. That document is the single source of truth; do not duplicate or paraphrase it here.</p>
 <ol start="0" style="list-style-type: decimal"><li>
-<strong>Follow the dev process for multi-step work</strong>: Any task spanning more than a single commit <strong>must</strong> follow the phase workflow:
+<strong>Follow the dev process for multi-step work</strong>: Any task spanning more than a single commit <strong>must</strong> follow the spec-driven workflow:
 <ol style="list-style-type: lower-alpha"><li>Read <code>dev/README.md</code> and relevant dev docs (spec, architecture) to understand current state.</li>
-<li>Create a feature branch: <code>git checkout -b phase/{n}-{name}</code> from <code>main</code>.</li>
-<li>Create a phase doc (<code>dev/phase_{n}_{name}.md</code>) with goal, context, chunks, acceptance criteria, and status tracking. Flag any chunks that likely warrant model escalation (see Model Escalation below) so the cue lands at plan time, not mid-chunk.</li>
-<li>Register it as active in the <code>dev/README.md</code> Active Phases table.</li>
-<li>Work through chunks in order. Updating the phase doc is part of completing each chunk, not an afterthought — phase docs are how context persists across a model’s short working memory, and stale docs silently degrade the next chunk. <strong>Every chunk-completing commit must update the phase doc in three places</strong>: (1) flip the chunk’s row in the Chunks table Status column (<code>✅ done</code> / <code>⏳ next</code> / <code>☐ todo</code>), (2) update the Status header line at the top, (3) append a Progress Log entry (what shipped, decisions, latent bugs, test count delta). Also update <code>dev/README.md</code> Active Phases status line. The code change and the phase-doc update go in <strong>the same commit</strong> — never a follow-up. When a chunk spans multiple files or has strict must-never rules, scaffold the phase doc with “read first” and “invariants” subsections before starting.</li>
-<li>Complete the Phase Completion Procedure when done. PR to <code>main</code>, merge, delete branch. Never jump straight to coding on multi-step work. The phase doc is the plan AND the audit trail.</li>
+<li>Create a feature branch: <code>git checkout -b spec/{feature}</code> from <code>main</code>.</li>
+<li>The plan lives in the spec under <code>.kiro/specs/{feature}/</code>: <code>requirements.md</code> (goal + acceptance criteria), <code>design.md</code> (context, design, invariants, correctness properties), <code>tasks.md</code> (the chunk breakdown + status). If the spec does not yet exist, create it (requirements → design → tasks) — do NOT create a <code>dev/phase_*.md</code>. Flag any tasks that warrant model escalation (see Model Escalation below) at plan time, not mid-task.</li>
+<li>Register the spec as active in the <code>dev/README.md</code> Active Specs table.</li>
+<li>Work through tasks in order (1 task / small related group = 1 chunk = 1 commit). Updating status is part of completing each task: mark the task done in <code>tasks.md</code> in the <strong>same commit</strong> as its code, and update the <code>dev/README.md</code> Active Specs status line. The spec’s <code>design.md</code> already holds the “read first” context, invariants, and correctness properties; add task-specific notes there when a task spans multiple files or carries strict must-never rules.</li>
+<li>Complete the Spec Completion Procedure (item 7) when done. PR to <code>main</code>, merge, delete branch. Never jump straight to coding on multi-step work. The spec is the plan AND the audit trail.</li>
 </ol></li>
 <li>
-<strong>Read before writing</strong>: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don’t edit based on the phase doc description alone.</li>
+<strong>Read before writing</strong>: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don’t edit based on the spec’s task description alone.</li>
 <li>
 <strong>Full test suite before every commit</strong>: Run <code>devtools::test()</code> (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost.</li>
 <li>
@@ -263,9 +264,9 @@ dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)</code></p
 <li>
 <strong>Simplicity over cleverness</strong>: If a change doesn’t alter behavior, don’t add it. When in doubt, do less. Actively resist complexity that exists only for marginally better UX or edge-case coverage.</li>
 <li>
-<strong>E2E after phase completion</strong>: Unit tests are necessary but not sufficient. Before marking a phase complete, run real end-to-end workflows via <code>dev/dev-sandbox.R</code> to catch integration bugs. 5a. <strong>Long text in CLI calls — always use a temp file, first try</strong>: For <code>gh issue create --body</code>, <code>gh pr create --body</code>, <code>git commit -F</code>, or any CLI call that takes multi-line text: write the text to a temp file with <code>create_file</code> first, then pass <code>--body-file /tmp/filename.md</code> or <code>git commit -F /tmp/msg.md</code>. Never attempt the inline heredoc (<code>&lt;&lt; 'EOF'</code>) or <code>--body "..."</code> form first — shell quoting and terminal emulation always mangle them and risk duplicate side effects (e.g. duplicate issues). For short single-line messages (&lt; 80 chars), inline <code>--message</code> / <code>-m</code> is fine. 5b. <strong>Check in before implementing</strong>: When the user asks a question (clarifying, exploratory, or directional), answer the question first. Do not implement anything until the user has confirmed the direction. The signal that implementation is wanted is explicit: “go ahead”, “do it”, “yes”, or equivalent — not merely absence of objection. 5d. <strong>Mandatory chunk checkpoint</strong>: After completing and committing a chunk, STOP. Post a one-paragraph summary of what shipped and any decisions made, then ask: “Ready to proceed to Chunk N: [name]?” Do not start the next chunk until the user replies with an explicit go-ahead. This applies even if the next chunk seems obvious or low-risk. Completing a chunk is not permission to start the next one. 5e. <strong>Approval signals are explicit, not contextual</strong>: The following are NOT approval to proceed: silence, a question about the work just done, a comment about model behavior, a request to “queue” a model switch, or any message that does not directly address the next action. Explicit approval looks like: “go ahead”, “yes”, “do it”, “proceed”, “continue”, or equivalent affirmatives directed at the next step. 5c. <strong>Before retrying any remote-mutating action, verify remote state first</strong>: Before a second attempt at <code>gh issue create</code>, <code>git push</code>, <code>gh pr create</code>, etc., run a read-only check (<code>gh issue list</code>, <code>git log --remotes</code>, <code>gh pr list</code>) to confirm whether the first attempt already succeeded. Acting on stale local evidence is how duplicates happen.</li>
+<strong>E2E after spec completion</strong>: Unit tests are necessary but not sufficient. Before marking a spec complete, run real end-to-end workflows via <code>dev/dev-sandbox.R</code> to catch integration bugs. 5a. <strong>Long text in CLI calls — always use a temp file, first try</strong>: For <code>gh issue create --body</code>, <code>gh pr create --body</code>, <code>git commit -F</code>, or any CLI call that takes multi-line text: write the text to a temp file with <code>create_file</code> first, then pass <code>--body-file /tmp/filename.md</code> or <code>git commit -F /tmp/msg.md</code>. Never attempt the inline heredoc (<code>&lt;&lt; 'EOF'</code>) or <code>--body "..."</code> form first — shell quoting and terminal emulation always mangle them and risk duplicate side effects (e.g. duplicate issues). For short single-line messages (&lt; 80 chars), inline <code>--message</code> / <code>-m</code> is fine. 5b. <strong>Check in before implementing</strong>: When the user asks a question (clarifying, exploratory, or directional), answer the question first. Do not implement anything until the user has confirmed the direction. The signal that implementation is wanted is explicit: “go ahead”, “do it”, “yes”, or equivalent — not merely absence of objection. 5d. <strong>Mandatory chunk checkpoint</strong>: After completing and committing a chunk, STOP. Post a one-paragraph summary of what shipped and any decisions made, then ask: “Ready to proceed to Chunk N: [name]?” Do not start the next chunk until the user replies with an explicit go-ahead. This applies even if the next chunk seems obvious or low-risk. Completing a chunk is not permission to start the next one. 5e. <strong>Approval signals are explicit, not contextual</strong>: The following are NOT approval to proceed: silence, a question about the work just done, a comment about model behavior, a request to “queue” a model switch, or any message that does not directly address the next action. Explicit approval looks like: “go ahead”, “yes”, “do it”, “proceed”, “continue”, or equivalent affirmatives directed at the next step. 5c. <strong>Before retrying any remote-mutating action, verify remote state first</strong>: Before a second attempt at <code>gh issue create</code>, <code>git push</code>, <code>gh pr create</code>, etc., run a read-only check (<code>gh issue list</code>, <code>git log --remotes</code>, <code>gh pr list</code>) to confirm whether the first attempt already succeeded. Acting on stale local evidence is how duplicates happen.</li>
 <li>
-<strong>Phase completion is mandatory</strong>: When a phase is done, immediately follow the Phase Completion Procedure in <code>dev/README.md</code> — migrate learnings to spec/instructions, update README tables, delete the phase doc, and commit. Do NOT start the next phase until this is done. A phase is not “complete” until its doc is deleted.</li>
+<strong>Spec completion is mandatory</strong>: When all tasks are done, harvest durable learnings (API/design → <code>dev/datom_specification.md</code>; gotchas/pitfalls → <code>dev/engineering-notes.md</code>; conventions → these instructions; deferrals → README Backlog), update the <code>dev/README.md</code> Active Specs table, and commit. <strong>Specs persist — do NOT delete them</strong> (this replaces the old “delete the phase doc” rule). Then PR + merge + delete the branch. Do NOT start the next spec until this is done.</li>
 </ol></div>
 <div class="section level2">
 <h2 id="model-escalation">Model Escalation<a class="anchor" aria-label="anchor" href="#model-escalation"></a></h2>
@@ -275,10 +276,10 @@ dev/phase_{n}_{name}.md          ← Active work (temporary, detailed)</code></p
 <li>
 <strong>Purity audit</strong> after a refactor that touched many files, to catch drift the chunk-level review missed.</li>
 <li>
-<strong>Test coverage review</strong> before phase completion, to sanity-check that unit + E2E coverage actually exercises the new behavior.</li>
-</ul><p>When you recognize one of these moments, surface a brief recommendation and STOP. Do not proceed until the user responds. Example: “The final chunk touched 6 files across 3 modules. Consider escalating to a more capable model for a purity audit before the Phase Completion Procedure – want to do that, or proceed as-is?”</p>
+<strong>Test coverage review</strong> before spec completion, to sanity-check that unit + E2E coverage actually exercises the new behavior.</li>
+</ul><p>When you recognize one of these moments, surface a brief recommendation and STOP. Do not proceed until the user responds. Example: “The final chunk touched 6 files across 3 modules. Consider escalating to a more capable model for a purity audit before the Spec Completion Procedure – want to do that, or proceed as-is?”</p>
 <p>A user message that says “queue a model switch” or “switch for chunk N” means: stop work, note the escalation request, and wait. It is NOT approval to continue on the current model.</p>
-<p>Flagging escalation moments is mandatory at phase planning time (item 0c above). If a chunk was flagged at planning, the escalation reminder must appear in the chunk checkpoint message (rule 5d) whether or not you judge it necessary by the time you get there.</p>
+<p>Flagging escalation moments is mandatory at spec planning time (item 0c above). If a chunk was flagged at planning, the escalation reminder must appear in the chunk checkpoint message (rule 5d) whether or not you judge it necessary by the time you get there.</p>
 </div>
 </div>
 
