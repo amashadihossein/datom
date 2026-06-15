@@ -16,6 +16,7 @@ mock_datom_conn <- function(mock_client,
                            gov_root = NULL,
                            gov_prefix = NULL,
                            gov_region = NULL,
+                           gov_backend = NULL,
                            gov_client = NULL) {
   structure(
     list(
@@ -31,6 +32,7 @@ mock_datom_conn <- function(mock_client,
       gov_root = gov_root,
       gov_prefix = gov_prefix,
       gov_region = gov_region,
+      gov_backend = gov_backend,
       gov_client = gov_client
     ),
     class = "datom_conn"

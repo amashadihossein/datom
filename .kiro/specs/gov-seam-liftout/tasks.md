@@ -53,32 +53,32 @@ single task.
   - Confirm baseline: run `devtools::test()`, record the starting count (1897, FAIL 0)
   - _Requirements: all (setup)_
 
-- [ ] 1. Add `gov_backend` field and fix `.datom_conn_for` (additive, no breakage)
-  - [ ] 1.1 Add `gov_backend` parameter to `new_datom_conn()` in `R/conn.R`
+- [x] 1. Add `gov_backend` field and fix `.datom_conn_for` (additive, no breakage)
+  - [x] 1.1 Add `gov_backend` parameter to `new_datom_conn()` in `R/conn.R`
     - New named param `gov_backend = NULL`; include it in the `structure()` list between
       `gov_region` and `gov_client`
     - Add the roxygen `@param gov_backend` entry
     - _Requirements: 7.1, 7.2, 7.3; contract C6_
-  - [ ] 1.2 Populate `gov_backend` from the governance store component in `datom_get_conn()`
+  - [x] 1.2 Populate `gov_backend` from the governance store component in `datom_get_conn()`
     - Source it from the gov store backend (mirror how `.datom_build_gov_resolve_conn()`
       derives the gov backend today); pass it through `.datom_build_init_conn()` /
       `new_datom_conn()` call sites
     - Solo projects: `gov_backend` is NULL alongside the other gov fields
     - _Requirements: 7.1, 7.3; contract C6_
-  - [ ] 1.3 Fix `.datom_conn_for(conn, "gov")` to use `conn$gov_backend`
+  - [x] 1.3 Fix `.datom_conn_for(conn, "gov")` to use `conn$gov_backend`
     - Change `backend = conn$backend` → `backend = conn$gov_backend` in the gov branch
     - Update the inline comment that references `datom_sync_dispatch` / `datom_pull_gov`
       (those are being removed) to a backend-neutral note
     - _Requirements: 7.4; contract C6, D3_
-  - [ ] 1.4 Tests for the new field and backend resolution
+  - [x] 1.4 Tests for the new field and backend resolution
     - Unit (test-conn.R): twelve C6 fields present on every conn (solo + governed, S3 +
       local); `gov_backend` NULL on solo
-    - Property 4 (twelve conn fields present on all conns) — `hedgehog::forall`, ≥100 cases
+    - Property 4 (twelve conn fields present on all conns) — testthat loop over a battery of
+      store configs
     - Property 5 (gov-scoped backend resolution: `.datom_conn_for(conn,"gov")$backend == B`
-      independent of `conn$backend`) — `hedgehog::forall`, ≥100 cases
-    - Add `hedgehog` to `Suggests` in DESCRIPTION (not yet a dependency)
+      independent of `conn$backend`) — testthat loop over backend combinations
     - _Requirements: 7.1, 7.3, 7.4_
-  - [ ] 1.5 `R CMD check` (additive only — expect clean), full test suite, commit
+  - [x] 1.5 `R CMD check` (additive only — expect clean), full test suite, commit
 
 - [ ] 2. Decouple `datom_init_repo()` from gov registration
   - [ ] 2.1 Remove gov interaction from `datom_init_repo()` in `R/conn.R`
@@ -155,9 +155,9 @@ single task.
     - _Requirements: 2.6, 5.1, 9.3_
   - [ ] 7.3 Confirm retained surface tests pass and `datom_repo_delete` guards are covered
     - Property 1 (confirm guard) and Property 2 (governance guard) on `datom_repo_delete` —
-      `hedgehog::forall`, ≥100 cases (test-repo.R); add if not already present
-    - Property 3 (gov state read round-trip / C8) on the ref parser — `hedgehog::forall`,
-      ≥100 cases (test-ref.R)
+      testthat loop over a battery of confirm/gov inputs (test-repo.R); add if not already present
+    - Property 3 (gov state read round-trip / C8) on the ref parser — testthat loop over a
+      battery of ref structures (test-ref.R)
     - _Requirements: 3.2, 3.3, 3.4, 3.5, 5.3, 5.4, 9.3_
   - [ ] 7.4 Version bump in DESCRIPTION (dev patch bump)
     - _Requirements: 8.1_
@@ -184,8 +184,9 @@ single task.
 - **Ordering is load-bearing**: write helpers (task 6) are removed only after all their
   internal callers are gone (tasks 2–5), so each intermediate commit keeps `R CMD check`
   green.
-- **Property tests**: `hedgehog` is added to `Suggests` in task 1.4. Each property test
-  carries a comment `# Feature: gov-seam-liftout, Property N: ...` and runs ≥100 cases.
+- **Property tests**: implemented as plain testthat loops over crafted input batteries (no
+  `hedgehog` / external property-testing dependency — dropped to keep the dependency surface
+  lean). Each carries a comment `# Feature: gov-seam-liftout, Property N: ...`.
 - **Chunk checkpoint**: stop after each committed task group and wait for explicit go-ahead
   before starting the next (per copilot-instructions rule 5d).
 - **No pathway impact expected**: this is a code-organization lift-out; gov read/write

@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| gov-seam-liftout (datom side) | 2026-06-13 | tasks defined; in progress (Task 0) on `spec/gov-seam-liftout` | `.kiro/specs/gov-seam-liftout/` |
+| gov-seam-liftout (datom side) | 2026-06-13 | in progress: Task 1 done (gov_backend field + .datom_conn_for fix) on `spec/gov-seam-liftout` | `.kiro/specs/gov-seam-liftout/` |
 
 ### Drafts (queued, not active)
 

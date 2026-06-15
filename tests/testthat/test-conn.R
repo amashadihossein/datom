@@ -3029,7 +3029,7 @@ test_that(".datom_conn_for(conn, 'gov') swaps in governance fields", {
          root = "data-bucket", prefix = "data/", region = "us-east-1",
          client = list(tag = "data-client"),
          gov_root = "gov-bucket", gov_prefix = "gov/", gov_region = "us-west-2",
-         gov_client = list(tag = "gov-client"),
+         gov_backend = "local", gov_client = list(tag = "gov-client"),
          path = NULL, role = "developer", endpoint = NULL),
     class = "datom_conn"
   )
@@ -3042,24 +3042,130 @@ test_that(".datom_conn_for(conn, 'gov') swaps in governance fields", {
   expect_equal(gov$region, "us-west-2")
   expect_equal(gov$client$tag, "gov-client")
   expect_equal(gov$project_name, "p")
+  # backend comes from gov_backend (gov store), independent of data backend
+  expect_equal(gov$backend, "local")
 })
 
 test_that(".datom_conn_for(conn, 'gov') passes through NULL gov fields without abort", {
-  # Pure refactor: the accessor is a shape transform, not a guard.
-  # Gov-only commands (datom_sync_dispatch, datom_pull_gov) own the
-  # user-facing "no governance attached" error -- see Chunk 7.
+  # Pure shape transform, not a guard. Gov-only commands own the user-facing
+  # "no governance attached" error before reaching this accessor.
   conn <- structure(
     list(project_name = "p", backend = "local", root = "/tmp/r",
-         gov_root = NULL, gov_prefix = NULL, gov_client = NULL),
+         gov_root = NULL, gov_prefix = NULL, gov_backend = NULL,
+         gov_client = NULL),
     class = "datom_conn"
   )
   gov <- .datom_conn_for(conn, "gov")
   expect_s3_class(gov, "datom_conn")
   expect_null(gov$root)
   expect_null(gov$client)
+  expect_null(gov$backend)
 })
 
 test_that(".datom_conn_for rejects unknown scope", {
   conn <- structure(list(root = "r"), class = "datom_conn")
   expect_error(.datom_conn_for(conn, "bogus"))
+})
+
+
+# --- gov_backend field + C6 conn interface ------------------------------------
+
+test_that("new_datom_conn carries gov_backend (NULL by default)", {
+  conn <- new_datom_conn(
+    project_name = "p",
+    root = "b",
+    region = "us-east-1",
+    client = mock_s3_client()
+  )
+  expect_true("gov_backend" %in% names(conn))
+  expect_null(conn$gov_backend)
+})
+
+test_that("new_datom_conn sets gov_backend when supplied", {
+  conn <- new_datom_conn(
+    project_name = "p",
+    root = "b",
+    region = "us-east-1",
+    client = mock_s3_client(),
+    gov_root = "gov-bucket",
+    gov_backend = "local"
+  )
+  expect_equal(conn$gov_backend, "local")
+})
+
+test_that("Property 4: all twelve C6 fields present on every conn produced by new_datom_conn", {
+  # Feature: gov-seam-liftout, Property 4: Twelve conn fields present on all conns.
+  # Battery over solo/governed x data backend x gov backend; loop asserts every
+  # conn produced by new_datom_conn carries all twelve fields as named entries
+  # (gov-scoped fields MAY be NULL on solo).
+  c6_fields <- c(
+    "gov_local_path", "gov_root", "gov_prefix", "gov_region", "gov_backend",
+    "gov_client", "github_pat", "project_name", "backend", "root", "prefix",
+    "region"
+  )
+
+  configs <- list(
+    # solo, data on s3
+    list(root = "b", region = "us-east-1", client = mock_s3_client(),
+         backend = "s3"),
+    # solo, data on local
+    list(root = "/tmp/d", region = "us-east-1", client = NULL,
+         backend = "local"),
+    # governed, data s3 / gov s3
+    list(root = "b", region = "us-east-1", client = mock_s3_client(),
+         backend = "s3", gov_root = "g", gov_backend = "s3",
+         gov_client = mock_s3_client(), github_pat = "ghp_x"),
+    # governed, data s3 / gov local (mixed backend)
+    list(root = "b", region = "us-east-1", client = mock_s3_client(),
+         backend = "s3", gov_root = "/tmp/g", gov_backend = "local",
+         github_pat = "ghp_x"),
+    # governed, data local / gov s3 (mixed backend)
+    list(root = "/tmp/d", region = "us-east-1", client = NULL,
+         backend = "local", gov_root = "g", gov_backend = "s3",
+         gov_client = mock_s3_client(), github_pat = "ghp_x")
+  )
+
+  purrr::walk(configs, function(cfg) {
+    conn <- do.call(new_datom_conn, c(list(project_name = "p"), cfg))
+    purrr::walk(c6_fields, function(f) {
+      expect_true(f %in% names(conn),
+                  info = paste("missing field:", f))
+    })
+  })
+})
+
+test_that("Property 5: .datom_conn_for(conn,'gov')$backend == gov_backend, independent of data backend", {
+  # Feature: gov-seam-liftout, Property 5: Gov-scoped backend resolution.
+  # Battery over all data x gov backend combinations; gov sub-conn backend must
+  # equal gov_backend regardless of the data backend.
+  combos <- expand.grid(
+    data_backend = c("s3", "local"),
+    gov_backend  = c("s3", "local"),
+    stringsAsFactors = FALSE
+  )
+
+  purrr::pwalk(combos, function(data_backend, gov_backend) {
+    conn <- structure(
+      list(
+        project_name = "p",
+        backend      = data_backend,
+        root         = "data",
+        prefix       = NULL,
+        region       = "us-east-1",
+        client       = NULL,
+        path         = NULL,
+        role         = "developer",
+        endpoint     = NULL,
+        gov_root     = "gov",
+        gov_prefix   = NULL,
+        gov_region   = "us-east-1",
+        gov_backend  = gov_backend,
+        gov_client   = NULL
+      ),
+      class = "datom_conn"
+    )
+    gov <- .datom_conn_for(conn, "gov")
+    expect_equal(gov$backend, gov_backend,
+                 info = paste("data:", data_backend, "gov:", gov_backend))
+  })
 })

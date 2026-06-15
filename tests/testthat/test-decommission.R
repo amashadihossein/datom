@@ -46,6 +46,7 @@ make_decommission_env <- function(env = parent.frame()) {
       gov_root       = gov_root,
       gov_prefix     = NULL,
       gov_region     = NULL,
+      gov_backend    = "local",
       gov_client     = NULL,
       gov_local_path = gov_clone,
       data_repo_url  = NULL,

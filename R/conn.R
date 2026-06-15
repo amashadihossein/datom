@@ -20,6 +20,10 @@
 #' @param gov_root Governance storage root (can be NULL for legacy conns).
 #' @param gov_prefix Governance prefix (can be NULL).
 #' @param gov_region Governance region (can be NULL).
+#' @param gov_backend Governance storage backend (`"s3"` or `"local"`), set
+#'   from the governance store component. NULL on solo (no-governance) conns.
+#'   Independent of `backend` (the data backend): a project may keep data on
+#'   one backend and governance on another.
 #' @param gov_client Governance storage client (can be NULL).
 #' @param gov_local_path Absolute path to the local gov clone (NULL for readers).
 #' @param data_repo_url HTTPS URL of the data GitHub repository. Populated at
@@ -45,6 +49,7 @@ new_datom_conn <- function(project_name,
                           gov_root = NULL,
                           gov_prefix = NULL,
                           gov_region = NULL,
+                          gov_backend = NULL,
                           gov_client = NULL,
                           gov_local_path = NULL,
                           backend = "s3",
@@ -109,6 +114,7 @@ new_datom_conn <- function(project_name,
       gov_root      = gov_root,
       gov_prefix    = gov_prefix,
       gov_region    = gov_region,
+      gov_backend   = gov_backend,
       gov_client    = gov_client,
       gov_local_path = gov_local_path,
       data_repo_url = data_repo_url,
@@ -141,13 +147,15 @@ new_datom_conn <- function(project_name,
 
   if (scope == "data") return(conn)
 
-  # scope == "gov" -- callers (datom_sync_dispatch, datom_pull_gov,
-  # .datom_gov_*) are responsible for the user-facing "no governance attached"
-  # error before reaching here. This accessor is a pure shape transform.
+  # scope == "gov" -- gov-only callers are responsible for the user-facing
+  # "no governance attached" error before reaching here. This accessor is a
+  # pure shape transform. The gov sub-conn's backend comes from gov_backend
+  # (the governance store's backend), which is independent of conn$backend
+  # (the data backend) -- a project may keep data and gov on different backends.
   structure(
     list(
       project_name = conn$project_name,
-      backend      = conn$backend,
+      backend      = conn$gov_backend,
       root         = conn$gov_root,
       prefix       = conn$gov_prefix,
       region       = conn$gov_region,
@@ -1119,6 +1127,7 @@ datom_attach_gov <- function(conn,
     gov_root      = gov_root,
     gov_prefix    = gov_prefix,
     gov_region    = gov_region,
+    gov_backend   = gov_backend,
     gov_client    = gov_client,
     gov_local_path = gov_local_path,
     backend       = conn$backend,
@@ -1339,6 +1348,7 @@ datom_get_conn <- function(path = NULL,
   gov_root <- NULL
   gov_prefix <- NULL
   gov_region <- NULL
+  gov_backend <- NULL
   gov_client <- NULL
 
   if (!is.null(gov_store)) {
@@ -1368,6 +1378,7 @@ datom_get_conn <- function(path = NULL,
     gov_root      = gov_root,
     gov_prefix    = gov_prefix,
     gov_region    = gov_region,
+    gov_backend   = gov_backend,
     gov_client    = gov_client,
     gov_local_path = gov_local_path,
     backend       = backend,

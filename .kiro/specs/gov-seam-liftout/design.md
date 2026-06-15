@@ -365,21 +365,25 @@ reaching `.datom_conn_for`.
 
 ## Testing Strategy
 
-### Approach: unit tests + property tests + R CMD check
+### Approach: unit tests + property-style tests + R CMD check
 
-- **Property-based tests** (using `hedgehog` for R): verify the five correctness properties
-  with randomized inputs (≥ 100 iterations each).
+- **Property-style tests** (plain testthat): verify the five correctness properties by
+  looping a crafted battery of inputs over each property's input space (no external
+  property-testing dependency). The input spaces here are small and well-understood (guard
+  values, field presence, a JSON round-trip), so an enumerated battery covers them.
 - **Unit tests** (testthat): specific examples, edge cases, structural smoke checks.
 - **R CMD check**: integration gate — 0 errors, 0 warnings.
 
-### Property-based testing library
+### Property-style testing approach
 
-**`hedgehog`** — R's property-based testing library (CRAN). Each property test uses
-`hedgehog::forall()` with a minimum of 100 test cases.
+No external property-testing library is used (`hedgehog` was considered and dropped to keep
+the dependency surface lean — consistent with "simplicity over cleverness"). Each property
+is exercised by iterating an explicit battery of representative + adversarial inputs with
+`purrr::walk()` / `testthat::expect_*`, asserting the property holds for every case.
 
 ### Property test tagging
 
-Each property test includes a comment referencing the design property:
+Each property-style test includes a comment referencing the design property:
 ```r
 # Feature: gov-seam-liftout, Property 5: Gov-scoped backend resolution
 ```
