@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| gov-seam-liftout (datom side) | 2026-06-13 | requirements + design done; tasks pending | `.kiro/specs/gov-seam-liftout/` |
+| gov-seam-liftout (datom side) | 2026-06-13 | tasks defined; in progress (Task 0) on `spec/gov-seam-liftout` | `.kiro/specs/gov-seam-liftout/` |
 
 ### Drafts (queued, not active)
 
@@ -120,7 +120,7 @@ Items discovered during development but intentionally deferred. Review periodica
 |------|---------------|-----------------|----------|
 | renv::init() in datom_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
 | Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |
-| datomanager package creation | Phase 15 | Companion governance package (settled name: `datomanager`). Scope doc: `dev/datomanager_scope.md`. Owns GOV_SEAM write surface (renamed `gov_*` on lift-out) + `gov_migrate_data()` (Phase 19). datom Phase 22 (storage extension API) complete 2026-06-10; datomanager scaffold is the remaining gate. Effort: ~2 days for lift-out, then Phase 19. | High (next major) |
+| datomanager package creation | Phase 15 | Companion governance package (settled name: `datomanager`). Scope doc: `dev/datomanager_scope.md`. Owns GOV_SEAM write surface (renamed `gov_*` on lift-out) + `gov_migrate_data()` (Phase 19). datom Phase 22 (storage extension API) complete 2026-06-10; datomanager scaffold is the remaining gate. Effort: ~2 days for lift-out, then Phase 19. **Starter code for the gov-write reimplementation:** the tried-and-tested helper bodies + their tests are preserved in datom git history at the commit just before the `gov-seam-liftout` merge -- retrieve with `git show <sha>:R/utils-gov.R`, `git show <sha>:R/decommission.R`, `git show <sha>:tests/testthat/test-utils-gov.R` (find `<sha>` via `git log --oneline -- R/utils-gov.R`). Reimplement behavior-equivalent with git2r + own storage IO (contract C3/D2 forbid calling datom internals); contract C5 (commit strings) + C8 (storage layout) pin the observable behavior. | High (next major) |
 | Backend rename: `local` -> `filesystem` | Phase 18 | "Local" implies laptop disk, but the backend supports network mounts and cloud-mounted FS too. Atomic schema bump touching store constructor, predicate, dispatch arms, `project.yaml`, `ref.json`. Defer until there's a second compelling reason to touch the schema. | Low |
 | `gov_migrate_data()` (managed migration) | Phase 15 | Today migration is manual (`aws s3 sync` + `datom_sync_dispatch()`). Atomic data-copy + ref.json update + `.datom_gov_record_migration()` deferred. Lives in datomanager (Phase 19); calls datom `datom_storage_*` / `datom_repo_*` helpers (all six now exported in Phase 22). | Medium |
 | Restore `ubuntu-latest (devel)` in `.github/workflows/R-CMD-check.yaml` | Phase 17 | Disabled 2026-05-02 because Posit PPM has no R-devel Linux binaries; every PR paid a 15-25 min source-compile tax for arrow / paws.storage / friends. Restore as part of the pre-CRAN checklist (CRAN expects devel to pass). | Pre-CRAN |
