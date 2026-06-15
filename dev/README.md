@@ -1,5 +1,25 @@
 # datom Development Hub
 
+## Workflow model (read first): spec = phase
+
+A unit of multi-step work is a **Kiro spec** under `.kiro/specs/{feature}/`:
+`requirements.md` (goal + acceptance), `design.md` (context, invariants, correctness
+properties), `tasks.md` (the chunk breakdown + status). **The spec replaces the legacy
+`dev/phase_{n}_{name}.md` phase doc.**
+
+Everything in this document still applies — just remap the terms:
+
+| Legacy term (used below) | Now |
+|---|---|
+| phase doc `dev/phase_*.md` | the spec `.kiro/specs/{feature}/` |
+| Chunks table / Progress Log | `tasks.md` (checkboxes) + commit history |
+| Active Phases | Active Specs |
+| "delete the phase doc" on completion | **specs persist — never deleted** |
+
+A "chunk" = one task (or a small related group) in `tasks.md` = one commit. All branch,
+test-before-commit, chunk-checkpoint, and review discipline below is unchanged. Works the
+same in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files).
+
 ## Documentation Hierarchy
 
 This folder contains all development documentation following a hierarchical chain:
@@ -15,22 +35,19 @@ dev/daapr_architecture.md           ← Ecosystem context
 dev/datomanager_scope.md             ← datomanager companion package scope (gov lifecycle + migration)
 dev/datomanager_overview.md          ← datomanager access enforcement design (roles, grants, IAM; forward-looking)
          ↓
-dev/phase_{n}_{name}.md             ← Active development plans (temporary)
-         ↓
-dev/phase_{n}_{name}/               ← Sub-phase plans if needed (temporary)
-    └── subphase_{m}_{name}.md
+.kiro/specs/{feature}/              ← Active work: requirements.md, design.md, tasks.md
 ```
 
 ## Documentation Lifecycle
 
-### Active Development Plans
+### Units of Work (Specs)
 
-Phase plans are **temporary working documents**:
+A unit of work is a **Kiro spec** under `.kiro/specs/{feature}/` (see Workflow model at top):
 
-1. **Created** when starting a phase
-2. **Updated continuously** as development proceeds (progress, decisions, blockers)
-3. **Completed** when all acceptance criteria met
-4. **Archived**: Persistent learnings → spec/architecture docs, then delete phase file
+1. **Created** when starting a feature (requirements → design → tasks)
+2. **Updated continuously** as development proceeds (task status in `tasks.md`)
+3. **Completed** when all tasks are checked off and acceptance criteria met
+4. **Persists**: the spec stays as durable documentation; additional durable learnings → spec/architecture docs and `dev/engineering-notes.md`
 
 ### What Goes Where
 
@@ -40,16 +57,18 @@ Phase plans are **temporary working documents**:
 | Architecture, API design | `dev/datom_specification.md` | Permanent, evolves |
 | Canonical lookup/traversal routes | `dev/datom_pathways.md` | Permanent, evolves with schema/routing changes |
 | Ecosystem context | `dev/daapr_architecture.md` | Permanent |
-| Current work, decisions | `dev/phase_*.md` | Temporary |
-| Implementation details discovered | Migrate to spec, then delete | — |
+| Current work, tasks, decisions | `.kiro/specs/{feature}/` | Persists |
+| Implementation gotchas discovered | `dev/engineering-notes.md` | Persists |
 
 ## Current Development State
 
-### Active Phases
+### Active Specs
 
-| Phase | Started | Status | Doc |
-|-------|---------|--------|-----|
-| — | — | No active phases | — |
+Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow model at top).
+
+| Spec | Started | Status | Location |
+|------|---------|--------|----------|
+| gov-seam-liftout (datom side) | 2026-06-13 | requirements + design done; tasks pending | `.kiro/specs/gov-seam-liftout/` |
 
 ### Drafts (queued, not active)
 
@@ -118,16 +137,16 @@ Items discovered during development but intentionally deferred. Review periodica
 
 When starting a new development session:
 
-1. Check **Active Phases** table above
-2. Open the active phase file
-3. Read the **Current Chunk** section
+1. Check the **Active Specs** table above
+2. Open the active spec under `.kiro/specs/{feature}/` (requirements, design, tasks)
+3. In `tasks.md`, find the next unchecked task
 4. Continue from where we left off
 
 ---
 
 ## Collaborative Development Workflow
 
-Within each phase, we work in **chunks** — small, testable units of work.
+Within each spec, we work in **chunks** — small, testable units of work (each chunk = one task, or a small related group, in `tasks.md`).
 
 ### Chunk Lifecycle
 
@@ -170,15 +189,13 @@ After each chunk is implemented, I deliver **five things in order**:
 1. **Write tests** — full test coverage for the chunk's functions
 2. **Run tests** — execute and fix until all pass (green suite)
 3. **Minimalist walkthrough snippet** — a clean, self-contained R snippet for you to paste into the console and step through interactively (use `debugonce()` to drop into any function)
-4. **Update the phase doc as part of the same commit** — three things, every chunk, no exceptions:
-   - Flip the chunk's row in the **Chunks table** Status column (e.g. `⏳ next` → `✅ done`; mark the next chunk `⏳ next`)
-   - Update the **Status** header line at the top of the phase doc (`Chunks 1-N complete; Chunk N+1 next`)
-   - Append a **Progress Log** entry for the chunk (what shipped, key decisions, latent bugs caught, test count delta)
+4. **Update the spec as part of the same commit** — every chunk, no exceptions:
+   - Check off the completed task(s) in `tasks.md`
    - If the chunk changes metadata schema, storage layout, governance refs, lineage, access control, role resolution, migration, or decommissioning, update `dev/datom_pathways.md` or explicitly record "no pathway impact"
-   Also update the `dev/README.md` Active Phases table status line. The phase doc is the audit trail; if it's not updated, the chunk isn't done.
-5. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit (code + phase doc + README together) with a concise message (e.g., `"Phase 4 Chunk 2: datom_conn class"`), then you push
+   Also update the `dev/README.md` Active Specs table status line. `tasks.md` + commit history are the audit trail; if they're not updated, the chunk isn't done.
+5. **Commit after walkthrough** — once you've kicked the tires and confirmed it works, I commit (code + `tasks.md` status together) with a concise message, then you push
 
-> **Phase docs must carry a Status column in the Chunks table.** When a phase doc is created (Chunk 0), the Chunks table includes a Status column with values `✅ done` / `⏳ next` / `☐ todo`. This is the at-a-glance dashboard a fresh session reads first; the Progress Log is the detail. Both are kept in sync.
+> **`tasks.md` is the at-a-glance dashboard.** Task checkboxes show status at a glance; a fresh session reads `tasks.md` first to find the next unchecked task. Commit history is the detailed audit trail.
 
 ### QA Methods
 
@@ -196,54 +213,55 @@ To support step-through debugging:
 
 ### Branch Workflow
 
-Every phase gets its own feature branch:
+Every spec gets its own feature branch:
 
-1. **Create branch**: `git checkout -b phase/{n}-{name}` (from `main`)
-2. **Develop on branch**: All commits for the phase go here
+1. **Create branch**: `git checkout -b spec/{feature}` (from `main`)
+2. **Develop on branch**: All commits for the spec go here
 3. **PR when complete**: Open a pull request to `main`
 4. **Merge + delete**: Squash-merge or merge, then delete the branch
 
-The phase doc is created *on the branch* (not on `main`). After merge, the Phase Completion Procedure deletes the phase doc as usual.
+The spec is created/edited *on the branch* (not on `main`). Specs persist after merge — the
+Spec Completion Procedure does **not** delete them (this replaces the old phase-doc deletion).
 
 ### Git Commit Cadence
 
-Within chunks (on the phase branch):
+Within chunks (on the spec branch):
 
 - **Commit frequently**: After each logical unit (function + test, fix, etc.)
-- **Push at milestones**: Chunk complete, phase complete, or good stopping point
-- **Message format**: `[Phase N Chunk M] Brief description`
+- **Push at milestones**: Task complete, spec complete, or good stopping point
+- **Message format**: `{feature}: brief description` (optionally reference the task)
 
 Example:
 ```bash
-# Start phase
-git checkout -b phase/10-remotes-refactor
+# Start the spec branch
+git checkout -b spec/store-relocate
 
-# Within Chunk 1
+# Within the first task
 git add R/remotes.R tests/testthat/test-remotes.R
-git commit -m "[Phase 10 Chunk 1] datom_remotes_s3 constructor + validation"
+git commit -m "store-relocate: datom_remotes_s3 constructor + validation"
 
 # More work...
-git commit -m "[Phase 10 Chunk 2] .datom_install_remotes + env var bridge"
+git commit -m "store-relocate: .datom_install_remotes + env var bridge"
 
-# Phase complete — PR to main
-git push -u origin phase/10-remotes-refactor
+# Spec complete — PR to main
+git push -u origin spec/store-relocate
 # Open PR, merge, delete branch
 ```
 
 ## Maintenance Rules
 
-1. **Always update phase docs** as you work (decisions, progress, blockers)
-2. **Create sub-phases** for tasks taking >2-3 sessions
-3. **Never let phase docs go stale** — if context changes, update immediately
-4. **Archive promptly** — don't accumulate completed phase files
-5. **Update this README** when phase status changes
-6. **Capture deferrals immediately** — when you skip something, document it
-7. **Review backlog** before starting each phase
+1. **Keep `tasks.md` current** as you work (status, decisions, blockers)
+2. **Split large specs** when scope exceeds a few sessions
+3. **Never let the spec go stale** — if context changes, update requirements/design immediately
+4. **Specs persist** — do not delete them on completion (they are durable documentation)
+5. **Update this README** when spec status changes
+6. **Capture deferrals immediately** — when you skip something, document it in the Backlog
+7. **Review backlog** before starting each spec
 8. **Keep pathway map current** — schema/routing changes must update `dev/datom_pathways.md` or record "no pathway impact"
 
-## Phase Completion Procedure
+## Spec Completion Procedure (formerly Phase Completion)
 
-When a phase is done, perform these steps **in order before starting the next phase**:
+When all of a spec's tasks are done, perform these steps **in order before starting the next spec**:
 
 1. **Harvest persistent content** from the phase doc:
    - Design decisions that affect the overall API → migrate to `dev/datom_specification.md`
@@ -256,12 +274,16 @@ When a phase is done, perform these steps **in order before starting the next ph
    - Move phase from Active → Completed table (with date, test count, summary)
    - Update backlog if needed
 
-3. **Delete the phase doc** — it should contain nothing worth keeping at this point
+3. **Specs persist — do NOT delete them.** (Replaces the old "delete the phase doc" step.)
+   The spec under `.kiro/specs/{feature}/` is durable documentation: mark its tasks complete
+   and leave it in place. Harvest only *additional* durable learnings into the permanent docs
+   per step 1.
 
 4. **PR + merge + delete branch**:
    - Open a PR from `phase/{n}-{name}` to `main`
    - Merge (squash or regular)
    - Delete the feature branch (remote and local)
 
-**Rule**: No phase doc should survive past its completion. If it feels hard to delete,
-that means persistent content hasn't been migrated yet — do that first.
+**Rule**: Kiro specs persist as durable documentation — do not delete them. (Legacy
+`dev/phase_*.md` files, if any are ever created, still must not survive past completion —
+migrate their content and remove them.)
