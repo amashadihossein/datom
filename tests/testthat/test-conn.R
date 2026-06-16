@@ -1662,16 +1662,16 @@ test_that("datom_init_repo aborts but preserves local clone if storage fails aft
 })
 
 
-# --- Governance-first ordering (Phase 15, Chunk 5) ---------------------------
+# --- Init is data-only: gov store arg is ignored (R4) ------------------------
 
-# Helper: extends setup_init_env() with a bare gov repo + gov_repo_url
+# Helper: extends setup_init_env() with a bare gov repo + gov_repo_url on the
+# store. datom_init_repo must ignore the gov component and produce a solo project.
 setup_init_env_with_gov <- function(env = parent.frame()) {
   base <- setup_init_env(env = env)
 
   gov_bare <- withr::local_tempdir(.local_envir = env)
   git2r::init(gov_bare, bare = TRUE)
   gov_local <- withr::local_tempdir(.local_envir = env)
-  # Remove so .datom_gov_clone_init clones fresh
   fs::dir_delete(gov_local)
 
   store <- datom_store(
@@ -1688,94 +1688,25 @@ setup_init_env_with_gov <- function(env = parent.frame()) {
     list(gov_bare = gov_bare, gov_local = gov_local, store = store))
 }
 
-test_that("datom_init_repo aborts and rolls back gov clone if pre-push step fails", {
-  env <- setup_init_env_with_gov()
-
-  # Storage namespace check: simulate occupied bucket so init aborts BEFORE
-  # any git work or push.
-  local_mocked_bindings(
-    .datom_storage_exists = function(conn, s3_key) grepl("manifest\\.json", s3_key),
-    .datom_storage_read_json = function(conn, s3_key) {
-      list(project_name = "EXISTING_PROJECT", tables = list())
-    }
-  )
-
-  # Gov clone did not exist before this call -- create_here flag should fire.
-  expect_false(fs::dir_exists(env$gov_local))
-
-  expect_error(
-    datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    store = env$store),
-    "already occupied"
-  )
-
-  # Gov clone should be rolled back (we created it; init aborted pre-push).
-  expect_false(fs::dir_exists(env$gov_local))
-  # Data clone also rolled back.
-  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
-})
-
-test_that("datom_init_repo does NOT roll back a pre-existing gov clone on failure", {
-  env <- setup_init_env_with_gov()
-
-  # Pre-clone the gov repo so it exists before datom_init_repo runs
-  .datom_gov_clone_init(env$gov_bare, env$gov_local)
-  expect_true(fs::dir_exists(fs::path(env$gov_local, ".git")))
-
-  # Force a pre-push failure
-  local_mocked_bindings(
-    .datom_storage_exists = function(conn, s3_key) grepl("manifest\\.json", s3_key),
-    .datom_storage_read_json = function(conn, s3_key) {
-      list(project_name = "EXISTING_PROJECT", tables = list())
-    }
-  )
-
-  expect_error(
-    datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    store = env$store),
-    "already occupied"
-  )
-
-  # Gov clone preserved -- it existed before our call.
-  expect_true(fs::dir_exists(fs::path(env$gov_local, ".git")))
-})
-
-test_that("datom_init_repo with gov_repo_url clones gov repo before data work", {
+test_that("datom_init_repo ignores a gov store arg and initializes a solo project", {
   env <- setup_init_env_with_gov()
 
   datom_init_repo(path = env$work_dir, project_name = "testproj",
                   store = env$store)
 
-  # Gov repo was cloned to gov_local_path
-  expect_true(fs::dir_exists(fs::path(env$gov_local, ".git")))
-})
+  # No gov clone created (init does no gov interaction)
+  expect_false(fs::dir_exists(env$gov_local))
 
-test_that("datom_init_repo registers project in gov repo", {
-  env <- setup_init_env_with_gov()
+  # project.yaml carries no governance coordinates
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_null(cfg$storage$governance)
+  expect_null(cfg$repos$governance)
 
-  datom_init_repo(path = env$work_dir, project_name = "testproj",
-                  store = env$store)
+  # No governance.json written -> project is not gov-attached
+  expect_false(fs::file_exists(fs::path(env$work_dir, ".datom", "governance.json")))
 
-  proj_dir <- fs::path(env$gov_local, "projects", "testproj")
-  expect_true(fs::file_exists(fs::path(proj_dir, "dispatch.json")))
-  expect_true(fs::file_exists(fs::path(proj_dir, "ref.json")))
-})
-
-test_that("datom_init_repo aborts when gov project namespace already exists", {
-  env <- setup_init_env_with_gov()
-
-  # Pre-clone gov and create a project dir to simulate collision
-  .datom_gov_clone_init(env$gov_bare, env$gov_local)
-  fs::dir_create(fs::path(env$gov_local, "projects", "testproj"))
-
-  expect_error(
-    datom_init_repo(path = env$work_dir, project_name = "testproj",
-                    store = env$store),
-    "already"
-  )
-
-  # Data clone should not have been created
-  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+  # No project registered in the gov repo
+  expect_false(fs::dir_exists(fs::path(env$gov_local, "projects", "testproj")))
 })
 
 

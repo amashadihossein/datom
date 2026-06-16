@@ -129,12 +129,20 @@ storage dispatch correctly for each scope.
 1. Remove the entire "Register project in gov repo" block at the end of `datom_init_repo()`.
 2. Remove the gov namespace collision check (the check that aborts if the project is
    already registered in the gov clone).
-3. Remove the `.gov_clone_created_here` on-exit cleanup (no gov clone interaction).
-4. Keep the `has_gov` flag only for writing `governance.json` to the data clone (that still
-   happens — it's data-side metadata).
-5. If `store$governance` is non-NULL, ignore it silently for the purposes of registration
-   (no warning, no error — the package is pre-release with zero users). The project
-   initializes as a Solo_Project; governance attaches via `gov_attach()`.
+3. Remove the gov-clone `Step 0` init and the `.gov_clone_created_here` on-exit cleanup
+   (no gov clone interaction). Also remove the `gov_local_path` resolution at the top of the
+   function — it is no longer needed.
+4. Remove the `governance.json` write (and its storage mirror) from init. `governance.json`
+   is the governance-attachment marker (Phase 21); writing it without registering the project
+   in gov would leave a broken half-state (readers detect governance but find no `ref.json`).
+   Per R4.3, init leaves the project as a Solo_Project with no governance attached, so it
+   writes no `governance.json`. (This supersedes the earlier plan to keep the write — the
+   `has_gov` local is removed entirely.) `project.yaml` already omits the governance blocks.
+5. Build `data_conn` gov-free (`gov_store = NULL`, `gov_local_path = NULL`) — it is only used
+   for the manifest upload.
+6. If `store$governance` is non-NULL, ignore it silently (no warning, no error — the package
+   is pre-release with zero users). The project initializes as a Solo_Project; governance
+   attaches later via `gov_attach()`.
 
 ### Component 4: Remove five exported gov functions (R2)
 

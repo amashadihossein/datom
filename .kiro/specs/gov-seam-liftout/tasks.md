@@ -80,23 +80,10 @@ single task.
     - _Requirements: 7.1, 7.3, 7.4_
   - [x] 1.5 `R CMD check` (additive only — expect clean), full test suite, commit
 
-- [ ] 2. Decouple `datom_init_repo()` from gov registration
-  - [ ] 2.1 Remove gov interaction from `datom_init_repo()` in `R/conn.R`
-    - Remove the "Register project in gov repo" block (`.datom_gov_register_project` call)
-    - Remove the gov namespace collision check (the `gov_project_dir` already-registered abort)
-    - Remove the gov-clone `Step 0` init (`.datom_gov_clone_init`) and the
-      `.gov_clone_created_here` on-exit rollback
-    - Keep the `has_gov` flag and `governance.json` data-side write (data-side metadata stays)
-    - If `store$governance` is non-NULL, ignore it silently for registration (pre-release,
-      zero users — no warning, no error). Project initializes as a Solo_Project.
-    - Stop building `dispatch`/`ref` payloads here (they were only for gov registration)
-    - _Requirements: 4.1, 4.2, 4.3, 4.4_
-  - [ ] 2.2 Update / remove tests for the init+register path in test-conn.R
-    - Remove assertions that `datom_init_repo()` registers in gov
-    - Add: after init with a gov store arg, project is a Solo_Project (project.yaml is
-      location authority, no gov registration occurred)
-    - _Requirements: 4.3, 4.4; 9.2_
-  - [ ] 2.3 `R CMD check`, full test suite, commit
+- [x] 2. Decouple `datom_init_repo()` from gov registration
+  - [x] 2.1 Remove gov interaction from `datom_init_repo()` in `R/conn.R`
+  - [x] 2.2 Update / remove tests for the init+register path in test-conn.R
+  - [x] 2.3 `R CMD check`, full test suite, commit
 
 - [ ] 3. Remove `datom_pull_gov()`, `datom_sync_dispatch()`, and gov-pull from `datom_pull()`
   - [ ] 3.1 Delete `datom_pull_gov()` and `datom_sync_dispatch()` from `R/sync.R` (defs + roxygen)

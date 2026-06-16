@@ -261,11 +261,12 @@ print.datom_conn <- function(x, ...) {
 #' One-time setup for data developers. Creates folder structure, initializes
 #' git with remote, sets up configuration files, and pushes to S3.
 #'
-#' Governance is optional. When `store$governance` is `NULL` (the gov-on-demand
-#' default), no governance clone is created, no `dispatch.json`/`ref.json` is
-#' written, and `project.yaml` omits the `storage.governance` and
-#' `repos.governance` blocks. The project can be promoted later via
-#' `datom_attach_gov()`.
+#' Initializes the **data repository only**. The project is left as a solo
+#' project: `project.yaml` is the location authority, no `governance.json` /
+#' `dispatch.json` / `ref.json` is written, and `project.yaml` omits the
+#' `storage.governance` and `repos.governance` blocks. A governance store
+#' component on `store`, if present, is ignored here. Governance is attached
+#' later via the governance layer (`gov_attach()`).
 #'
 #' @param path Path to the project folder. Defaults to current directory.
 #' @param project_name Project name, used for S3 namespace and git repo.
@@ -346,22 +347,9 @@ datom_init_repo <- function(path = ".",
     ))
   }
 
-  # --- Resolve gov_local_path ------------------------------------------------
-  gov_local_path <- .datom_resolve_or_default_gov_path(store, fs::path_abs(path))
-
-  # --- Step 0: ensure gov clone is available ---------------------------------
-  # Capture pre-existence so on.exit cleanup can roll back the clone iff we
-  # created it (and only if a later step fails before git push).
-  .gov_clone_created_here <- FALSE
-  if (!is.null(store$gov_repo_url) && !is.null(gov_local_path)) {
-    gov_clone_existed_before <- .datom_gov_clone_exists(as.character(gov_local_path))
-    .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path))
-    .gov_clone_created_here <- !gov_clone_existed_before
-  }
-
-  # Register gov-clone rollback immediately so failures in the namespace
-  # checks below (which run before the data-side on.exit is set) still
-  # trigger cleanup. Cleared by setting .git_pushed = TRUE after push.
+  # State flags + safe-delete helper used by the data-file rollback on.exit
+  # below. datom_init_repo initializes the data repo only -- no gov clone is
+  # created or touched here (governance attaches later via the governance layer).
   .git_pushed <- FALSE
   .init_success <- FALSE
   .safe_delete <- function(p, is_dir = TRUE) {
@@ -370,12 +358,6 @@ datom_init_repo <- function(path = ".",
       error = function(e) NULL
     )
   }
-  on.exit({
-    if (.gov_clone_created_here && !.init_success && !.git_pushed &&
-        !is.null(gov_local_path) && fs::dir_exists(gov_local_path)) {
-      .safe_delete(as.character(gov_local_path))
-    }
-  }, add = TRUE)
 
   # --- S3 namespace safety check for data store ------------------------------
   # Use data component for storage operations (where manifest lives)
@@ -408,21 +390,6 @@ datom_init_repo <- function(path = ".",
         "Could not verify S3 namespace is free: {conditionMessage(e)}"
       )
     })
-  }
-
-  # --- Gov project namespace check -------------------------------------------
-  # Abort if this project name is already registered in the gov clone. This
-  # prevents a data-first init from completing only to have the gov registration
-  # step fail, which would require manual cleanup.
-  if (!is.null(gov_local_path) && .datom_gov_clone_exists(as.character(gov_local_path))) {
-    gov_project_dir <- .datom_gov_project_path(as.character(gov_local_path), project_name)
-    if (fs::dir_exists(gov_project_dir)) {
-      cli::cli_abort(c(
-        "Project {.val {project_name}} is already registered in the governance repo.",
-        "i" = "Found at: {.path {gov_project_dir}}",
-        "i" = "Use a different project name or decommission the existing project first."
-      ))
-    }
   }
 
   # --- Path setup -------------------------------------------------------------
@@ -501,35 +468,6 @@ datom_init_repo <- function(path = ".",
 
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
 
-  # --- Write governance.json to data clone (when gov is attached) -------------
-  # governance.json is the canonical governance pointer; project.yaml carries
-  # no governance coordinates. Written only when gov_repo_url is known at init
-  # time; if absent, governance is attached later via datom_attach_gov().
-  gov_json <- NULL
-  if (has_gov && isTRUE(nzchar(store$gov_repo_url))) {
-    gov_json <- .datom_create_governance_json(
-      gov_repo_url = store$gov_repo_url,
-      gov_store    = store$governance
-    )
-    .datom_write_governance_json_local(path, gov_json)
-  }
-
-  # --- Build dispatch and ref payloads (written to gov, not data clone) ------
-  # Only meaningful when gov is attached; otherwise these stay NULL and the
-  # gov registration step below is skipped.
-  dispatch <- NULL
-  ref <- NULL
-  if (has_gov) {
-    dispatch <- list(
-      methods = list(
-        r = list(default = "datom::datom_read"),
-        python = list(default = "datom.read")
-      )
-    )
-
-    ref <- .datom_create_ref(store$data)
-  }
-
   # --- Create manifest.json (data repo only) ----------------------------------
   manifest <- list(
     project_name = project_name,
@@ -577,7 +515,6 @@ datom_init_repo <- function(path = ".",
     ".gitignore",
     "README.md"
   )
-  if (!is.null(gov_json)) staged_files <- c(staged_files, ".datom/governance.json")
   git2r::add(repo, staged_files)
 
   git2r::commit(
@@ -596,33 +533,12 @@ datom_init_repo <- function(path = ".",
 
   data_conn <- .datom_build_init_conn(
     project_name, store$data, path, "developer", NULL,
-    gov_store = store$governance,
-    gov_local_path = if (!is.null(gov_local_path)) as.character(gov_local_path) else NULL,
+    gov_store = NULL,
+    gov_local_path = NULL,
     data_repo_url = remote_url,
     github_pat    = store$github_pat,
     github_api_url = store$github_api_url
   )
-
-  # --- Register project in gov repo + mirror to gov storage ------------------
-  # dispatch.json and ref.json live in the gov repo (projects/{name}/),
-  # never in the data clone. .datom_gov_register_project() commits + pushes
-  # both files and mirrors them to gov storage. A failure here is a hard
-  # abort: the data repo is pushed but no project entry exists in gov, so
-  # readers cannot discover this project. Recovery is manual via
-  # datom_sync_dispatch().
-  if (!is.null(gov_local_path)) {
-    tryCatch(
-      .datom_gov_register_project(data_conn, project_name, dispatch, ref),
-      error = function(e) {
-        cli::cli_abort(c(
-          "Data repo pushed but gov registration failed.",
-          "x" = conditionMessage(e),
-          "i" = "Local data clone is intact at {.path {path}}.",
-          "i" = "After fixing the cause (e.g. credentials, connectivity), run {.fn datom_sync_dispatch} to register the project."
-        ), call = NULL)
-      }
-    )
-  }
 
   # --- Mirror manifest to data storage ----------------------------------------
   # Manifest is part of the data-side contract -- readers need it to clone.
@@ -631,25 +547,12 @@ datom_init_repo <- function(path = ".",
     .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
   }, error = function(e) {
     cli::cli_abort(c(
-      "Data repo pushed and gov registered but manifest upload failed.",
+      "Data repo pushed but manifest upload failed.",
       "x" = conditionMessage(e),
       "i" = "Local data clone is intact at {.path {path}}.",
       "i" = "After fixing the cause (e.g. credentials, connectivity), run {.fn datom_sync_manifest} to upload the manifest."
     ), call = NULL)
   })
-
-  # --- Mirror governance.json to data storage (when written) -----------------
-  if (!is.null(gov_json)) {
-    tryCatch({
-      .datom_storage_write_governance_json(data_conn, gov_json)
-    }, error = function(e) {
-      cli::cli_warn(c(
-        "governance.json upload to data storage failed.",
-        "x" = conditionMessage(e),
-        "i" = "Local copy is intact. Readers with gov access will resolve location from gov."
-      ))
-    })
-  }
 
   .init_success <- TRUE
 
