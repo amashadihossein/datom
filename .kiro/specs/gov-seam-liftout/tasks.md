@@ -136,8 +136,8 @@ single task.
     - _Requirements: 9.1_
   - [x] 5.4 `R CMD check`, full test suite, commit
 
-- [ ] 6. Remove the nine GOV_SEAM write helpers
-  - [ ] 6.1 Delete everything below `# --- GOV_SEAM: write helpers ---` in `R/utils-gov.R`
+- [x] 6. Remove the nine GOV_SEAM write helpers
+  - [x] 6.1 Delete everything below `# --- GOV_SEAM: write helpers ---` in `R/utils-gov.R`
     - The nine: `.datom_gov_commit`, `.datom_gov_push`, `.datom_gov_pull`,
       `.datom_gov_write_dispatch`, `.datom_gov_write_ref`, `.datom_gov_register_project`,
       `.datom_gov_unregister_project`, `.datom_gov_record_migration`, `.datom_gov_destroy`
@@ -145,12 +145,14 @@ single task.
       `_validate_remote`, `_list_projects`) and `.datom_gov_project_path` (used by reads)
     - Confirm no retained read helper references a deleted write helper
     - _Requirements: 1.1, 1.2, 10.3_
-  - [ ] 6.2 Confirm no internal caller in `R/` references a removed write helper by name
+  - [x] 6.2 Confirm no internal caller in `R/` references a removed write helper by name
     - grep `R/` for each of the nine names — expect zero hits after steps 2–5
     - _Requirements: 1.3_
-  - [ ] 6.3 Delete write-helper tests from test-utils-gov.R; retain read-helper tests
+  - [x] 6.3 Delete write-helper tests from test-utils-gov.R; retain read-helper tests
+    - Also removed the obsolete `datom_init_repo no-gov skips .datom_gov_register_project`
+      test in test-conn.R (it mocked a now-deleted binding)
     - _Requirements: 9.1, 9.3_
-  - [ ] 6.4 `R CMD check`, full test suite, commit
+  - [x] 6.4 `R CMD check` (0E/0W/1 benign NOTE), full test suite (PASS 1832 / FAIL 0), commit
 
 - [ ] 7. NAMESPACE / man cleanup, retained-surface tests, version bump
   - [ ] 7.1 `devtools::document()` — regenerate NAMESPACE (five `export()` entries gone),
