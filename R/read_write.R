@@ -381,8 +381,8 @@ datom_read <- function(conn,
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param data Data frame to write. If NULL with name, does metadata-only sync.
-#' @param name Table name. If NULL with NULL data, aliases to
-#'   [datom_sync_dispatch()].
+#' @param name Table name. If NULL with NULL data, does a data-only metadata
+#'   sync to storage (manifest + per-table metadata).
 #' @param metadata Optional list of custom metadata.
 #' @param message Optional commit message.
 #' @param parents Optional lineage: list of `list(source, table, version)` entries.
@@ -417,7 +417,7 @@ datom_write <- function(conn,
   # Route based on arguments
 
   if (is.null(data) && is.null(name)) {
-    return(datom_sync_dispatch(conn))
+    return(.datom_sync_data_metadata(conn))
   }
 
   if (is.null(data) && !is.null(name)) {

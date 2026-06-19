@@ -22,8 +22,8 @@ datom_write(
 
 \item{data}{Data frame to write. If NULL with name, does metadata-only sync.}
 
-\item{name}{Table name. If NULL with NULL data, aliases to
-\code{\link[=datom_sync_dispatch]{datom_sync_dispatch()}}.}
+\item{name}{Table name. If NULL with NULL data, does a data-only metadata
+sync to storage (manifest + per-table metadata).}
 
 \item{metadata}{Optional list of custom metadata.}
 

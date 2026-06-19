@@ -402,26 +402,21 @@ test_that("datom_validate returns correct structure", {
   })
 })
 
-test_that("datom_validate with fix = TRUE calls datom_sync_dispatch on failure", {
+test_that("datom_validate with fix = TRUE calls metadata sync on failure", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
-    gov_local <- fs::path_abs("gov-clone")
-    fs::dir_create(fs::path(gov_local, "projects", "test-project"))
-    conn$gov_local_path <- as.character(gov_local)
-    conn$gov_root <- "gov-bucket"
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(),
-                         fs::path(gov_local, "projects", "test-project", "dispatch.json"),
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
                          auto_unbox = TRUE)
 
     sync_called <- FALSE
 
     local_mocked_bindings(
       .datom_storage_exists = function(conn, s3_key) FALSE,
-      datom_sync_dispatch = function(conn, .confirm = TRUE) {
+      .datom_sync_data_metadata = function(conn, .confirm = TRUE) {
         sync_called <<- TRUE
         invisible(list(repo_files = character(), tables = list()))
       }
@@ -446,7 +441,7 @@ test_that("datom_validate with fix = TRUE does not call sync when valid", {
 
     local_mocked_bindings(
       .datom_storage_exists = function(conn, s3_key) TRUE,
-      datom_sync_dispatch = function(conn, .confirm = TRUE) {
+      .datom_sync_data_metadata = function(conn, .confirm = TRUE) {
         sync_called <<- TRUE
         invisible(list(repo_files = character(), tables = list()))
       }
@@ -502,19 +497,14 @@ test_that("datom_validate handles fix failure gracefully", {
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
-    gov_local <- fs::path_abs("gov-clone")
-    fs::dir_create(fs::path(gov_local, "projects", "test-project"))
-    conn$gov_local_path <- as.character(gov_local)
-    conn$gov_root <- "gov-bucket"
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(),
-                         fs::path(gov_local, "projects", "test-project", "dispatch.json"),
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
                          auto_unbox = TRUE)
 
     local_mocked_bindings(
       .datom_storage_exists = function(conn, s3_key) FALSE,
-      datom_sync_dispatch = function(conn, .confirm = TRUE) {
+      .datom_sync_data_metadata = function(conn, .confirm = TRUE) {
         stop("Sync failed")
       }
     )

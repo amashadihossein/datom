@@ -72,8 +72,8 @@ datom_repository_check <- function(path) {
 #' files. Reports mismatches as a structured result.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
-#' @param fix If `TRUE`, attempts to fix inconsistencies by syncing metadata
-#'   to S3 via [datom_sync_dispatch()].
+#' @param fix If `TRUE`, attempts to fix inconsistencies by syncing data-side
+#'   metadata (manifest + per-table metadata) to storage.
 #'
 #' @return A list with:
 #'   \describe{
@@ -139,7 +139,7 @@ datom_validate <- function(conn, fix = FALSE) {
   if (!is_valid && isTRUE(fix)) {
     cli::cli_alert_info("Attempting to fix by syncing metadata to S3...")
     tryCatch({
-      datom_sync_dispatch(conn, .confirm = FALSE)
+      .datom_sync_data_metadata(conn, .confirm = FALSE)
       fixed <- TRUE
       cli::cli_alert_success("Fix applied. Re-run {.fn datom_validate} to verify.")
     }, error = function(e) {

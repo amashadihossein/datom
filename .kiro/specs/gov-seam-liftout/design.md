@@ -151,11 +151,24 @@ storage dispatch correctly for each scope.
 | `datom_init_gov()` | R/conn.R | Delete definition + roxygen |
 | `datom_attach_gov()` | R/conn.R | Delete definition + roxygen |
 | `datom_decommission()` | R/decommission.R | Delete entire file |
-| `datom_sync_dispatch()` | R/sync.R | Delete definition + roxygen |
+| `datom_sync_dispatch()` | R/sync.R | Replace with data-only `.datom_sync_data_metadata()` (see below) |
 | `datom_pull_gov()` | R/sync.R | Delete definition + roxygen |
 
 After deletion, `devtools::document()` regenerates NAMESPACE (five `export()` entries
 disappear) and the five `man/*.Rd` files are deleted.
+
+**`datom_sync_dispatch()` split (added during implementation — not in the original plan).**
+`datom_sync_dispatch()` did two kinds of work: gov-write (dispatch.json / ref.json →
+gov repo + gov storage via GOV_SEAM helpers) **and** data-side (manifest + per-table
+metadata → data storage). The gov-write half moves to datomanager (`gov_sync_dispatch`).
+The data-side half is **retained** in datom as a new internal helper
+`.datom_sync_data_metadata(conn, .confirm)` in `R/sync.R` (mirrors manifest +
+per-table metadata to the data store; no gov). This was necessary because
+`datom_sync_dispatch()` had two in-package callers the original removal table missed:
+- `datom_validate(fix = TRUE)` (R/validate.R) — now calls `.datom_sync_data_metadata(conn, .confirm = FALSE)`.
+- `datom_write(data = NULL, name = NULL)` (R/read_write.R) — now calls `.datom_sync_data_metadata(conn)`.
+
+`.datom_sync_table_metadata()` is retained (called by `.datom_sync_data_metadata`).
 
 ### Component 5: Remove nine GOV_SEAM write helpers (R1)
 

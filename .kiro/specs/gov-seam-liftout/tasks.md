@@ -85,17 +85,14 @@ single task.
   - [x] 2.2 Update / remove tests for the init+register path in test-conn.R
   - [x] 2.3 `R CMD check`, full test suite, commit
 
-- [ ] 3. Remove `datom_pull_gov()`, `datom_sync_dispatch()`, and gov-pull from `datom_pull()`
-  - [ ] 3.1 Delete `datom_pull_gov()` and `datom_sync_dispatch()` from `R/sync.R` (defs + roxygen)
-    - _Requirements: 2.4, 2.5_
-  - [ ] 3.2 Remove the `.datom_gov_pull(conn)` branch from `datom_pull()` in `R/sync.R`
-    - `datom_pull()` becomes data-repo-only; datomanager's `gov_pull()` owns gov clone refresh
-    - _Requirements: 10.1, 10.2; contract C7, D1_
-  - [ ] 3.3 Delete corresponding tests in test-sync.R (`datom_sync_dispatch`, `datom_pull_gov`,
-        and the gov-pull branch of `datom_pull`); retain `datom_pull` data-only,
-        `datom_sync_manifest`, `datom_sync` tests
-    - _Requirements: 9.1, 9.3_
-  - [ ] 3.4 `R CMD check` (exports removed, no callers remain), full test suite, commit
+- [x] 3. Remove `datom_pull_gov()`, `datom_sync_dispatch()`, and gov-pull from `datom_pull()`
+  - [x] 3.1 Delete `datom_pull_gov()` from `R/sync.R`; replace `datom_sync_dispatch()` with
+        data-only internal `.datom_sync_data_metadata()`; repoint `datom_validate(fix=TRUE)`
+        and `datom_write(NULL,NULL)` (in-package callers the design missed — Option A split)
+  - [x] 3.2 Remove the `.datom_gov_pull(conn)` branch from `datom_pull()` (data-repo-only)
+  - [x] 3.3 Update tests: retarget dispatch tests to `.datom_sync_data_metadata`, drop
+        gov-first-path + pull-gov tests, fix validate fix-path tests
+  - [x] 3.4 `R CMD check`, full test suite, commit
 
 - [ ] 4. Remove `datom_decommission()`
   - [ ] 4.1 Delete `R/decommission.R` entirely

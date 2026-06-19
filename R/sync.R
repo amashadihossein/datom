@@ -75,92 +75,35 @@ datom_pull <- function(conn) {
     cli::cli_alert_info("Already up to date on {.val {branch_name}} (data repo).")
   }
 
-  # --- Pull gov repo when gov_local_path is set ------------------------------
-  # Abort on failure (symmetric with data pull): a partial pull leaves the
-  # gov clone in an inconsistent state relative to upstream. Users should
-  # resolve the gov pull failure before continuing.
-  gov_result <- NULL
-  if (!is.null(conn$gov_local_path) && nzchar(conn$gov_local_path)) {
-    .datom_gov_pull(conn)
-    cli::cli_alert_success("Gov repo up to date.")
-    gov_result <- list(pulled = TRUE)
-  }
-
   invisible(list(
     commits_pulled = commits_pulled,
-    branch = branch_name,
-    gov = gov_result
+    branch = branch_name
   ))
 }
 
 
-#' Pull Latest Changes from the Governance Repo
+#' Sync Data-Side Metadata to Storage
 #'
-#' Fetches and merges upstream changes into the local governance clone.
-#' Useful when you need to refresh governance metadata (dispatch, ref,
-#' migration history) without touching the data repo.
+#' Mirrors the data repo's metadata to the data store so readers see current
+#' state: the manifest (`.metadata/manifest.json`) and each table's metadata
+#' (`{name}/.metadata/metadata.json`, `version_history.json`).
 #'
-#' In normal workflows `datom_pull()` handles both repos. Use this only when
-#' you need the gov clone to be current independently.
+#' Data-only: governance files (dispatch.json, ref.json, migration_history.json)
+#' are not touched here. Governance sync is owned by the governance layer
+#' (`gov_sync_dispatch()`).
 #'
-#' Requires a developer connection with `gov_local_path` set.
-#'
-#' @param conn A `datom_conn` object from [datom_get_conn()].
-#'
-#' @return Invisibly, the result of the pull.
-#' @export
-datom_pull_gov <- function(conn) {
-
-  if (!inherits(conn, "datom_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
-  }
-
-  if (conn$role != "developer") {
-    cli::cli_abort(c(
-      "Gov pull requires {.val developer} role.",
-      "i" = "Current role: {.val {conn$role}}."
-    ))
-  }
-
-  .datom_require_gov(conn, "datom_pull_gov()")
-
-  if (is.null(conn$gov_local_path) || !nzchar(conn$gov_local_path)) {
-    cli::cli_abort(c(
-      "Gov pull requires a local gov clone path.",
-      "i" = "Set {.arg gov_local_path} in {.fn datom_store} to use this function."
-    ))
-  }
-
-  result <- .datom_gov_pull(conn)
-  cli::cli_alert_success("Gov repo up to date.")
-  invisible(result)
-}
-
-
-#' Sync Dispatch Metadata to Storage
-#'
-#' Updates metadata in storage to match the current state in git/local files.
-#' This includes repo-level governance files (dispatch.json, ref.json,
-#' migration_history.json) and per-table metadata
-#' (metadata.json, version_history.json). Requires interactive confirmation
-#' unless `.confirm = FALSE`.
-#'
-#' Governance files (dispatch.json, ref.json, migration_history.json) are
-#' re-written to the governance repo via git commit + push and then mirrored
-#' to gov storage. Per-table metadata is written from the data clone to the
-#' data store. Requires a developer connection with a gov clone.
-#'
-#' Used after migration, dispatch changes, or any situation where storage
-#' metadata may be out of sync with git.
+#' Used after a failed upload, or by `datom_validate(fix = TRUE)`, to bring
+#' storage metadata back in line with the local data clone. Requires a
+#' developer connection with a local repo path.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param .confirm If `TRUE` (default), requires interactive confirmation
 #'   before proceeding. Set to `FALSE` for non-interactive use.
 #'
 #' @return Invisibly, a list with `repo_files` (character vector of synced
-#'   keys/paths) and `tables` (list of per-table sync results).
-#' @export
-datom_sync_dispatch <- function(conn, .confirm = TRUE) {
+#'   keys) and `tables` (list of per-table sync results).
+#' @keywords internal
+.datom_sync_data_metadata <- function(conn, .confirm = TRUE) {
 
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
@@ -168,16 +111,14 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
 
   if (conn$role != "developer") {
     cli::cli_abort(c(
-      "Sync dispatch requires {.val developer} role.",
+      "Metadata sync requires {.val developer} role.",
       "i" = "Current role: {.val {conn$role}}."
     ))
   }
 
-  .datom_require_gov(conn, "datom_sync_dispatch()")
-
   if (is.null(conn$path)) {
     cli::cli_abort(c(
-      "Sync dispatch requires a local git repo path.",
+      "Metadata sync requires a local git repo path.",
       "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
@@ -194,11 +135,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
     fs::file_exists(fs::path(d, "metadata.json"))
   })]
 
-  scheme <- c(s3 = "s3://", local = "file://")[conn$backend] %||% ""
-  data_location <- paste0(scheme, conn$root, "/", conn$prefix %||% "", "datom/")
-
   # Interactive confirmation
-
   if (isTRUE(.confirm)) {
     if (!interactive()) {
       cli::cli_abort(c(
@@ -208,9 +145,8 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
     }
 
     cli::cli_alert_warning(
-      "This will update governance metadata and per-table metadata for {length(table_names)} table{?s}."
+      "This will update the manifest and per-table metadata for {length(table_names)} table{?s} in data storage."
     )
-    cli::cli_alert_info("Current location: {.url {data_location}}")
 
     answer <- readline("Proceed? [y/N] ")
     if (!tolower(answer) %in% c("y", "yes")) {
@@ -219,70 +155,8 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
     }
   }
 
-  # --- Sync repo-level files ---
-  # dispatch.json + migration_history.json → governance store
-
-  # manifest.json → data store
-  repo_files_synced <- character()
-  gov_conn <- .datom_conn_for(conn, "gov")
-
-  # --- Sync governance files (dispatch, ref, migration_history) --------------
-  if (is.null(conn$gov_local_path) || !nzchar(conn$gov_local_path)) {
-    cli::cli_abort(c(
-      "{.fn datom_sync_dispatch} requires a developer connection with a gov clone.",
-      "i" = "Use {.fn datom_get_conn} (or {.fn datom_clone}) on a Phase-15+ project."
-    ))
-  }
-
-  # Gov-first path: files live in the gov clone.
-  # Re-commit + push + mirror to gov storage via the GOV_SEAM write helpers.
-  gov_path <- conn$gov_local_path
-  project_name_str <- conn$project_name
-  proj_dir <- .datom_gov_project_path(gov_path, project_name_str)
-
-  dispatch_path <- fs::path(proj_dir, "dispatch.json")
-  if (fs::file_exists(dispatch_path)) {
-    dispatch_data <- jsonlite::read_json(dispatch_path)
-    tryCatch({
-      .datom_gov_write_dispatch(conn, project_name_str, dispatch_data)
-      repo_files_synced <- c(repo_files_synced,
-                              paste0("projects/", project_name_str, "/dispatch.json"))
-    }, error = function(e) {
-      cli::cli_alert_warning("Failed to sync dispatch to gov: {conditionMessage(e)}")
-    })
-  }
-
-  ref_path <- fs::path(proj_dir, "ref.json")
-  if (fs::file_exists(ref_path)) {
-    ref_data <- jsonlite::read_json(ref_path)
-    tryCatch({
-      .datom_gov_write_ref(conn, project_name_str, ref_data)
-      repo_files_synced <- c(repo_files_synced,
-                              paste0("projects/", project_name_str, "/ref.json"))
-    }, error = function(e) {
-      cli::cli_alert_warning("Failed to sync ref to gov: {conditionMessage(e)}")
-    })
-  }
-
-  migration_path <- fs::path(proj_dir, "migration_history.json")
-  if (fs::file_exists(migration_path)) {
-    migration_data <- jsonlite::read_json(migration_path)
-    tryCatch({
-      .datom_storage_write_json(gov_conn,
-                                 paste0("projects/", project_name_str,
-                                        "/migration_history.json"),
-                                 migration_data)
-      repo_files_synced <- c(repo_files_synced,
-                              paste0("projects/", project_name_str,
-                                     "/migration_history.json"))
-    }, error = function(e) {
-      cli::cli_alert_warning(
-        "Failed to mirror migration_history to gov storage: {conditionMessage(e)}"
-      )
-    })
-  }
-
   # --- Sync manifest to data storage -----------------------------------------
+  repo_files_synced <- character()
   manifest_local <- fs::path(repo_path, ".datom", "manifest.json")
   if (fs::file_exists(manifest_local)) {
     data <- jsonlite::read_json(manifest_local)
@@ -294,7 +168,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
     "Synced {length(repo_files_synced)} repo-level file{?s}."
   )
 
-  # --- Sync per-table metadata ---
+  # --- Sync per-table metadata -----------------------------------------------
   table_results <- purrr::map(table_names, function(tbl) {
     tryCatch({
       .datom_sync_table_metadata(conn, tbl)
@@ -309,7 +183,7 @@ datom_sync_dispatch <- function(conn, .confirm = TRUE) {
   n_err <- length(table_results) - n_ok
 
   cli::cli_alert_info(
-    "Sync dispatch complete: {n_ok} table{?s} synced, {n_err} error{?s}."
+    "Metadata sync complete: {n_ok} table{?s} synced, {n_err} error{?s}."
   )
 
   invisible(list(
