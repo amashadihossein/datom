@@ -4,7 +4,7 @@
 
 Tasks derive from the design's 7-step commit ordering (design.md → "Ordering of Changes
 Within datom's Branch"). Each numbered task group is one commit; every intermediate state
-passes `R CMD check`. Run the full `devtools::test()` suite before every commit and report
+passes `R CMD check`. Run the full `devtools::test()` suite before every commit and report◊
 the count.
 
 The lift-out is mostly subtractive. datom lands first (it must expose the new interface
@@ -19,7 +19,8 @@ graph TD
     T1 --> T2[2. Decouple init_repo from gov]
     T2 --> T3[3. Remove pull_gov / sync_dispatch / gov-pull]
     T3 --> T4[4. Remove decommission]
-    T4 --> T5[5. Remove init_gov / attach_gov]
+    T4 --> T4A[4A. Add datom_repo_attach_governance export]
+    T4A --> T5[5. Remove init_gov / attach_gov]
     T5 --> T6[6. Remove nine GOV_SEAM write helpers]
     T6 --> T7[7. NAMESPACE/man cleanup + version bump]
     T7 --> T8[8. E2E + spec completion]
@@ -37,10 +38,11 @@ single task.
     { "wave": 3, "tasks": ["2"] },
     { "wave": 4, "tasks": ["3"] },
     { "wave": 5, "tasks": ["4"] },
-    { "wave": 6, "tasks": ["5"] },
-    { "wave": 7, "tasks": ["6"] },
-    { "wave": 8, "tasks": ["7"] },
-    { "wave": 9, "tasks": ["8"] }
+    { "wave": 6, "tasks": ["4A"] },
+    { "wave": 7, "tasks": ["5"] },
+    { "wave": 8, "tasks": ["6"] },
+    { "wave": 9, "tasks": ["7"] },
+    { "wave": 10, "tasks": ["8"] }
   ]
 }
 ```
@@ -103,6 +105,26 @@ single task.
     - _Requirements: 1.3, 2.3_
   - [x] 4.4 `R CMD check`, full test suite, commit
 
+- [x] 4A. Expose data-side governance.json write as a `datom_repo_*` export (additive, C4 gap-closer)
+  - [x] 4A.1 Add `datom_repo_attach_governance(conn, gov_repo_url, gov_store, message = NULL)`
+        to `R/repo.R`: build governance.json, write `.datom/governance.json`, commit + push
+        the data repo, mirror to data storage (warn-and-continue on mirror failure). Wraps
+        existing internal helpers (`.datom_create_governance_json`,
+        `.datom_write_governance_json_local`, `.datom_storage_write_governance_json`)
+    - _Requirements: 11.1, 11.2, 11.3; contract C4.5_
+  - [x] 4A.2 Tests in test-repo.R: input validation (non-conn, reader role, no path, empty
+        url, bad store, missing project.yaml); happy path (git copy + storage mirror both
+        readable); default commit message; mirror-failure warns but git copy persists;
+        invisible SHA return
+    - _Requirements: 9.3, 11.x_
+  - [x] 4A.3 `devtools::document()` (adds `datom_repo_attach_governance` export + man),
+        full test suite, `R CMD check`, commit
+    - Rationale: `governance.json` (the data->gov pointer in the bidirectional gov link) is a
+      data-repo + data-storage write. Task 5 removes `datom_attach_gov()` (its current
+      inline writer); per contract C4 datomanager's `gov_attach()` must perform data-repo
+      mutations only through an exported `datom_repo_*` helper. This task lands that helper
+      before the removal so the data<->gov pointer stays C4-compliant end to end.
+
 - [ ] 5. Remove `datom_init_gov()` + `datom_attach_gov()`; update guard message
   - [ ] 5.1 Delete `datom_init_gov()` and `datom_attach_gov()` from `R/conn.R` (defs + roxygen)
     - _Requirements: 2.1, 2.2_
@@ -135,7 +157,8 @@ single task.
         delete orphaned `man/*.Rd` for the five removed functions
     - _Requirements: 2.6, 8.3_
   - [ ] 7.2 Add `test-namespace.R` — assert removed exports are absent from the namespace and
-        retained gov-read exports (`datom_projects`, `datom_pull`, `datom_repo_delete`) present
+        retained gov-read exports (`datom_projects`, `datom_pull`, `datom_repo_delete`,
+        `datom_repo_attach_governance`) present
     - _Requirements: 2.6, 5.1, 9.3_
   - [ ] 7.3 Confirm retained surface tests pass and `datom_repo_delete` guards are covered
     - Property 1 (confirm guard) and Property 2 (governance guard) on `datom_repo_delete` —

@@ -448,3 +448,218 @@ test_that("datom_repo_delete() returns TRUE invisibly", {
     expect_false(result$visible)
   })
 })
+
+
+# === datom_repo_attach_governance() ===========================================
+
+# Developer conn with a distinct data-store root (so the storage mirror lands
+# outside the git clone) and a local data backend.
+make_attach_conn <- function(clone_path, store_root) {
+  structure(
+    list(
+      project_name   = "TEST_PROJECT",
+      backend        = "local",
+      root           = as.character(store_root),
+      prefix         = "proj",
+      region         = NULL,
+      client         = NULL,
+      path           = as.character(clone_path),
+      role           = "developer",
+      endpoint       = NULL,
+      gov_root       = NULL,
+      gov_client     = NULL,
+      gov_local_path = NULL,
+      github_pat     = NULL,
+      data_repo_url  = NULL,
+      github_api_url = NULL
+    ),
+    class = "datom_conn"
+  )
+}
+
+test_that("datom_repo_attach_governance() errors on non-conn", {
+  store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_repo_attach_governance("x", "https://example.com/gov.git", store),
+    "datom_conn"
+  )
+})
+
+test_that("datom_repo_attach_governance() errors on reader role", {
+  conn <- structure(
+    list(role = "reader", path = "/tmp", project_name = "X"),
+    class = "datom_conn"
+  )
+  store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_repo_attach_governance(conn, "https://example.com/gov.git", store),
+    "developer"
+  )
+})
+
+test_that("datom_repo_attach_governance() errors when conn has no path", {
+  conn <- structure(
+    list(role = "developer", path = NULL, project_name = "X"),
+    class = "datom_conn"
+  )
+  store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
+  expect_error(
+    datom_repo_attach_governance(conn, "https://example.com/gov.git", store),
+    "path"
+  )
+})
+
+test_that("datom_repo_attach_governance() errors on empty gov_repo_url", {
+  withr::with_tempdir({
+    repo_path <- fs::dir_create("repo")
+    write_project_yaml(repo_path)
+    conn  <- make_attach_conn(repo_path, fs::dir_create("store"))
+    store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
+    expect_error(datom_repo_attach_governance(conn, "", store), "non-empty")
+    expect_error(
+      datom_repo_attach_governance(conn, c("a", "b"), store),
+      "non-empty"
+    )
+  })
+})
+
+test_that("datom_repo_attach_governance() errors on invalid gov_store", {
+  withr::with_tempdir({
+    repo_path <- fs::dir_create("repo")
+    write_project_yaml(repo_path)
+    conn <- make_attach_conn(repo_path, fs::dir_create("store"))
+    expect_error(
+      datom_repo_attach_governance(conn, "https://example.com/gov.git",
+                                   list(type = "s3")),
+      "datom_store_s3"
+    )
+  })
+})
+
+test_that("datom_repo_attach_governance() errors when project.yaml missing", {
+  withr::with_tempdir({
+    repo_path <- fs::dir_create("repo")  # no .datom/project.yaml
+    conn  <- make_attach_conn(repo_path, fs::dir_create("store"))
+    store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
+    expect_error(
+      datom_repo_attach_governance(conn, "https://example.com/gov.git", store),
+      "project.yaml"
+    )
+  })
+})
+
+test_that("datom_repo_attach_governance() writes git copy + storage mirror", {
+  skip_if_not_installed("git2r")
+  withr::with_tempdir({
+    repo_path <- fs::dir_create("repo")
+    seed_git_repo(repo_path)
+    write_project_yaml(repo_path)
+
+    repo <- git2r::repository(repo_path)
+    git2r::add(repo, ".datom/project.yaml")
+    git2r::commit(repo, message = "init")
+
+    store_root <- fs::dir_create("data-store")
+    conn       <- make_attach_conn(repo_path, store_root)
+    gov_store  <- datom_store_local(fs::dir_create("gov-store"),
+                                    prefix = "org-gov", validate = FALSE)
+
+    mockery::stub(datom_repo_attach_governance, ".datom_git_push", invisible(TRUE))
+
+    sha <- datom_repo_attach_governance(
+      conn, "https://example.com/gov.git", gov_store
+    )
+
+    expect_type(sha, "character")
+    expect_true(nzchar(sha))
+
+    # Git-canonical copy written + readable
+    git_json <- .datom_read_governance_json_local(repo_path)
+    expect_false(is.null(git_json))
+    expect_equal(git_json$gov_repo_url, "https://example.com/gov.git")
+    expect_equal(git_json$gov_storage$type, "local")
+
+    # Storage mirror written + readable
+    mirror <- .datom_storage_read_governance_json(conn)
+    expect_false(is.null(mirror))
+    expect_equal(mirror$gov_repo_url, "https://example.com/gov.git")
+  })
+})
+
+test_that("datom_repo_attach_governance() uses default commit message", {
+  skip_if_not_installed("git2r")
+  withr::with_tempdir({
+    repo_path <- fs::dir_create("repo")
+    seed_git_repo(repo_path)
+    write_project_yaml(repo_path)
+
+    repo <- git2r::repository(repo_path)
+    git2r::add(repo, ".datom/project.yaml")
+    git2r::commit(repo, message = "init")
+
+    conn      <- make_attach_conn(repo_path, fs::dir_create("data-store"))
+    gov_store <- datom_store_local(fs::dir_create("gov-store"), validate = FALSE)
+
+    mockery::stub(datom_repo_attach_governance, ".datom_git_push", invisible(TRUE))
+
+    datom_repo_attach_governance(conn, "https://example.com/gov.git", gov_store)
+
+    last_msg <- git2r::commits(git2r::repository(repo_path), n = 1)[[1]]$message
+    expect_equal(last_msg, "Attach governance: TEST_PROJECT")
+  })
+})
+
+test_that("datom_repo_attach_governance() warns but succeeds when mirror fails", {
+  skip_if_not_installed("git2r")
+  withr::with_tempdir({
+    repo_path <- fs::dir_create("repo")
+    seed_git_repo(repo_path)
+    write_project_yaml(repo_path)
+
+    repo <- git2r::repository(repo_path)
+    git2r::add(repo, ".datom/project.yaml")
+    git2r::commit(repo, message = "init")
+
+    conn      <- make_attach_conn(repo_path, fs::dir_create("data-store"))
+    gov_store <- datom_store_local(fs::dir_create("gov-store"), validate = FALSE)
+
+    mockery::stub(datom_repo_attach_governance, ".datom_git_push", invisible(TRUE))
+    mockery::stub(
+      datom_repo_attach_governance,
+      ".datom_storage_write_governance_json",
+      function(...) stop("simulated storage failure")
+    )
+
+    expect_warning(
+      datom_repo_attach_governance(conn, "https://example.com/gov.git", gov_store),
+      "storage upload failed"
+    )
+
+    # Git-canonical copy still present despite mirror failure
+    expect_false(is.null(.datom_read_governance_json_local(repo_path)))
+  })
+})
+
+test_that("datom_repo_attach_governance() returns SHA invisibly", {
+  skip_if_not_installed("git2r")
+  withr::with_tempdir({
+    repo_path <- fs::dir_create("repo")
+    seed_git_repo(repo_path)
+    write_project_yaml(repo_path)
+
+    repo <- git2r::repository(repo_path)
+    git2r::add(repo, ".datom/project.yaml")
+    git2r::commit(repo, message = "init")
+
+    conn      <- make_attach_conn(repo_path, fs::dir_create("data-store"))
+    gov_store <- datom_store_local(fs::dir_create("gov-store"), validate = FALSE)
+
+    mockery::stub(datom_repo_attach_governance, ".datom_git_push", invisible(TRUE))
+
+    result <- withVisible(
+      datom_repo_attach_governance(conn, "https://example.com/gov.git", gov_store)
+    )
+    expect_false(result$visible)
+    expect_type(result$value, "character")
+  })
+})

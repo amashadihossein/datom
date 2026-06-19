@@ -238,6 +238,43 @@ cli::cli_abort(c(
 3. Run `R CMD check` — target 0 errors, 0 warnings, only the benign system-time note.
 4. Version bump in DESCRIPTION (patch: `0.0.0.9001` or similar dev bump).
 
+### Component 10: `datom_repo_attach_governance()` — data-side gov pointer write (R11, C4)
+
+**Why (gap found during implementation, not in the original plan):** `governance.json` is
+the **data->gov** half of the bidirectional governance pointer (gov->data is `ref.json` in
+the gov repo). It lives in the data repo (`.datom/governance.json`, git canonical) and is
+mirrored to data storage (`{prefix}/datom/.metadata/governance.json`). Before the lift-out,
+`datom_attach_gov()` wrote it inline. Component 4 removes `datom_attach_gov()`, so
+`gov_attach()` (datomanager) becomes the attachment verb — but writing `governance.json` is
+a **Data_Repo + data-storage** mutation, and contract C4 forbids datomanager from mutating
+the Data_Repo except through an exported `datom_repo_*()` helper. Without this export there
+is no C4-compliant way for `gov_attach()` to record the data->gov pointer.
+
+**Change:** Add an exported `datom_repo_attach_governance(conn, gov_repo_url, gov_store,
+message = NULL)` to `R/repo.R`. It is additive and stays in datom permanently (it is data-side
+mechanism, consistent with the Authority Principle "data-repo mutations always route through
+datom"). It composes the existing internal helpers — no new IO primitives:
+
+1. `.datom_create_governance_json(gov_repo_url, gov_store)` — build content.
+2. `.datom_write_governance_json_local(conn$path, content)` — write `.datom/governance.json`.
+3. `.datom_git_commit(conn$path, ".datom/governance.json", "Attach governance: {name}")` +
+   `.datom_git_push()` — commit/push the Data_Repo.
+4. `.datom_storage_write_governance_json(conn, content)` inside `tryCatch` — mirror to data
+   storage; a mirror failure warns but does not abort (git copy is canonical).
+
+Guards mirror the other `datom_repo_*` exports: developer role, non-NULL `conn$path`,
+non-empty single-string `gov_repo_url`, valid store component, existing `.datom/project.yaml`.
+Returns the data-repo commit SHA invisibly.
+
+**The read side is unchanged.** datom keeps reading `governance.json` (developer four-state
+matrix + reader data-first probe in `datom_get_conn()`); those internal readers are not
+removed. **Idempotence/"already attached?"** is the caller's concern: `gov_attach()` can
+detect prior attachment from `conn$gov_root` (populated by `datom_get_conn()` reading
+governance.json) — no separate read export is needed. **Teardown** is already C4-covered:
+the storage mirror is removed via the exported `datom_storage_delete_prefix()`, and the git
+copy vanishes when `datom_repo_delete()` removes the repo.
+
+
 ## Data Models
 
 ### `datom_conn` object (twelve Conn_Interface_Contract fields)
@@ -466,6 +503,13 @@ The commits are ordered so each intermediate state passes R CMD check:
    - Delete `R/decommission.R`
    - Delete corresponding tests
    - R CMD check: passes
+
+4A. **Add `datom_repo_attach_governance()`** (additive, C4 gap-closer)
+   - New exported `datom_repo_*` helper in `R/repo.R` (data-side governance.json write)
+   - Tests in test-repo.R; `devtools::document()` adds the export + man
+   - Lands before step 5 so the data->gov pointer stays writable in a C4-compliant way
+     after `datom_attach_gov()` is removed
+   - R CMD check: passes (additive only)
 
 5. **Remove `datom_init_gov()` + `datom_attach_gov()`**
    - Delete both from `R/conn.R`
