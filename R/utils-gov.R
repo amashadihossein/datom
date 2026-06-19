@@ -38,7 +38,7 @@
   if (!.datom_gov_clone_exists(gov_local_path)) {
     cli::cli_abort(c(
       "Gov clone not found at {.path {gov_local_path}}.",
-      "i" = "Run {.fn datom_init_gov} to initialise the governance repo first."
+      "i" = "Use the datomanager package to initialise the governance repository first."
     ))
   }
 

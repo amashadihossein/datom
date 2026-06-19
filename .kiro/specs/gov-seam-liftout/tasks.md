@@ -125,16 +125,16 @@ single task.
       mutations only through an exported `datom_repo_*` helper. This task lands that helper
       before the removal so the data<->gov pointer stays C4-compliant end to end.
 
-- [ ] 5. Remove `datom_init_gov()` + `datom_attach_gov()`; update guard message
-  - [ ] 5.1 Delete `datom_init_gov()` and `datom_attach_gov()` from `R/conn.R` (defs + roxygen)
+- [x] 5. Remove `datom_init_gov()` + `datom_attach_gov()`; update guard message
+  - [x] 5.1 Delete `datom_init_gov()` and `datom_attach_gov()` from `R/conn.R` (defs + roxygen)
     - _Requirements: 2.1, 2.2_
-  - [ ] 5.2 Update `.datom_require_gov()` message to point to `gov_attach()` (datomanager)
+  - [x] 5.2 Update `.datom_require_gov()` message to point to `gov_attach()` (datomanager)
     - Replace `{.fn datom_attach_gov}` reference with `{.fn gov_attach}` and "(from datomanager)"
     - Message must not reference datomanager in a way that errors/warns at load (prose only)
     - _Requirements: 6.1, 6.3; contract C1, Component 8_
-  - [ ] 5.3 Delete tests exercising `datom_init_gov()` / `datom_attach_gov()` in test-conn.R
+  - [x] 5.3 Delete tests exercising `datom_init_gov()` / `datom_attach_gov()` in test-conn.R
     - _Requirements: 9.1_
-  - [ ] 5.4 `R CMD check`, full test suite, commit
+  - [x] 5.4 `R CMD check`, full test suite, commit
 
 - [ ] 6. Remove the nine GOV_SEAM write helpers
   - [ ] 6.1 Delete everything below `# --- GOV_SEAM: write helpers ---` in `R/utils-gov.R`

@@ -72,7 +72,8 @@
 #' Write governance.json to Local Git Clone
 #'
 #' Writes `content` to `{path}/.datom/governance.json`. The directory must
-#' already exist (created during `datom_init_repo()` or `datom_attach_gov()`).
+#' already exist (created during `datom_init_repo()` or
+#' `datom_repo_attach_governance()`).
 #'
 #' @param path Absolute path to the root of the local data git clone.
 #' @param content Named list from `.datom_create_governance_json()`.

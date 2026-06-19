@@ -20,8 +20,8 @@ datom_store(
 \item{governance}{A store component (e.g., \code{datom_store_s3()}) for governance
 files (dispatch, ref, migration history), or \code{NULL} for a no-governance
 store. A no-governance store represents a project that has not yet been
-promoted via \code{datom_attach_gov()}; \code{gov_repo_url} and \code{gov_local_path}
-must also be \code{NULL} in that case.}
+promoted to governance (via the datomanager package); \code{gov_repo_url} and
+\code{gov_local_path} must also be \code{NULL} in that case.}
 
 \item{data}{A store component (e.g., \code{datom_store_s3()}) for data files
 (manifest, tables, metadata).}
@@ -33,8 +33,8 @@ must also be \code{NULL} in that case.}
 \code{github_pat} is provided and \code{create_repo = FALSE} in \code{datom_init_repo()}.}
 
 \item{gov_repo_url}{GitHub remote URL for the shared governance repository.
-The governance repo is created once per org via \code{datom_init_gov()} and
-referenced here by every project that uses it.}
+The governance repo is created once per org (via the datomanager package)
+and referenced here by every project that uses it.}
 
 \item{gov_local_path}{Local directory path for the governance clone. If NULL
 (default), the clone is placed as a sibling of the data repo, named after

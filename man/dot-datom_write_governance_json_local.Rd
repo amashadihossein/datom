@@ -16,6 +16,7 @@ Invisible NULL.
 }
 \description{
 Writes \code{content} to \code{{path}/.datom/governance.json}. The directory must
-already exist (created during \code{datom_init_repo()} or \code{datom_attach_gov()}).
+already exist (created during \code{datom_init_repo()} or
+\code{datom_repo_attach_governance()}).
 }
 \keyword{internal}
