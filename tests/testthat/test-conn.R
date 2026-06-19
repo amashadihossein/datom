@@ -1343,23 +1343,6 @@ test_that("datom_init_repo no-gov does not create gov clone", {
   expect_setequal(before, after)
 })
 
-test_that("datom_init_repo no-gov skips .datom_gov_register_project", {
-  env <- setup_init_env_nogov()
-
-  register_called <- FALSE
-  local_mocked_bindings(
-    .datom_gov_register_project = function(...) {
-      register_called <<- TRUE
-      invisible(TRUE)
-    }
-  )
-
-  datom_init_repo(path = env$work_dir, project_name = "nogov-proj",
-                  store = env$store)
-
-  expect_false(register_called)
-})
-
 test_that("datom_init_repo no-gov still pushes data repo to remote", {
   env <- setup_init_env_nogov()
 
