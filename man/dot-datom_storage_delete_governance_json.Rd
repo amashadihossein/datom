@@ -13,8 +13,8 @@
 Invisible NULL.
 }
 \description{
-Called by \code{datom_decommission()}. No-ops silently when key is absent.
-Deletion is implemented via prefix-delete on the exact key path; the
-single-key delete dispatch helper is wired in Chunk 7.
+Removes the governance.json mirror during project teardown. No-ops silently
+when the key is absent. Deletion is implemented via prefix-delete on the
+exact key path.
 }
 \keyword{internal}

@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| gov-seam-liftout (datom side) | 2026-06-13 | in progress: Task 3 done (removed datom_pull_gov/datom_sync_dispatch; data-only .datom_sync_data_metadata; datom_pull data-repo-only) on `spec/gov-seam-liftout` | `.kiro/specs/gov-seam-liftout/` |
+| gov-seam-liftout (datom side) | 2026-06-13 | in progress: Task 4 done (removed datom_decommission + its tests; data-side teardown stays as datom_repo_delete) on `spec/gov-seam-liftout` | `.kiro/specs/gov-seam-liftout/` |
 
 ### Drafts (queued, not active)
 

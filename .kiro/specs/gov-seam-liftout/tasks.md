@@ -94,14 +94,14 @@ single task.
         gov-first-path + pull-gov tests, fix validate fix-path tests
   - [x] 3.4 `R CMD check`, full test suite, commit
 
-- [ ] 4. Remove `datom_decommission()`
-  - [ ] 4.1 Delete `R/decommission.R` entirely
+- [x] 4. Remove `datom_decommission()`
+  - [x] 4.1 Delete `R/decommission.R` entirely
     - _Requirements: 2.3_
-  - [ ] 4.2 Delete `tests/testthat/test-decommission.R`
+  - [x] 4.2 Delete `tests/testthat/test-decommission.R`
     - _Requirements: 9.1, 9.2_
-  - [ ] 4.3 Confirm no remaining references to `datom_decommission` in `R/` or `tests/`
+  - [x] 4.3 Confirm no remaining references to `datom_decommission` in `R/` or `tests/`
     - _Requirements: 1.3, 2.3_
-  - [ ] 4.4 `R CMD check`, full test suite, commit
+  - [x] 4.4 `R CMD check`, full test suite, commit
 
 - [ ] 5. Remove `datom_init_gov()` + `datom_attach_gov()`; update guard message
   - [ ] 5.1 Delete `datom_init_gov()` and `datom_attach_gov()` from `R/conn.R` (defs + roxygen)
@@ -162,9 +162,9 @@ single task.
 
 ## Notes
 
-- **Commit cadence**: one numbered task group = one commit. Report the full
-  `devtools::test()` count in every commit message; if it drops unexpectedly, something was
-  lost beyond the intentionally-removed tests.
+- **Commit cadence**: one numbered task group = one commit, **followed by a push** to
+  `origin/spec/gov-seam-liftout`. Report the full `devtools::test()` count in every commit
+  message; if it drops unexpectedly, something was lost beyond the intentionally-removed tests.
 - **Ordering is load-bearing**: write helpers (task 6) are removed only after all their
   internal callers are gone (tasks 2–5), so each intermediate commit keeps `R CMD check`
   green.

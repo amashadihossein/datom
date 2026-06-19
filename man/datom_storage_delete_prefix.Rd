@@ -27,7 +27,7 @@ namespace for this connection. A missing or empty prefix is a no-op.
 \strong{Irreversible.} Intended for package developers building tools on top of
 datom (e.g. datomanager for rollback or source deletion after migration).
 End users performing a full project teardown should use
-\code{\link[=datom_decommission]{datom_decommission()}} instead.
+\code{\link[=datom_repo_delete]{datom_repo_delete()}} instead.
 }
 \examples{
 \dontrun{
