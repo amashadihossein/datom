@@ -154,23 +154,23 @@ single task.
     - _Requirements: 9.1, 9.3_
   - [x] 6.4 `R CMD check` (0E/0W/1 benign NOTE), full test suite (PASS 1832 / FAIL 0), commit
 
-- [ ] 7. NAMESPACE / man cleanup, retained-surface tests, version bump
-  - [ ] 7.1 `devtools::document()` — regenerate NAMESPACE (five `export()` entries gone),
+- [x] 7. NAMESPACE / man cleanup, retained-surface tests, version bump
+  - [x] 7.1 `devtools::document()` — regenerate NAMESPACE (five `export()` entries gone),
         delete orphaned `man/*.Rd` for the five removed functions
     - _Requirements: 2.6, 8.3_
-  - [ ] 7.2 Add `test-namespace.R` — assert removed exports are absent from the namespace and
+  - [x] 7.2 Add `test-namespace.R` — assert removed exports are absent from the namespace and
         retained gov-read exports (`datom_projects`, `datom_pull`, `datom_repo_delete`,
         `datom_repo_attach_governance`) present
     - _Requirements: 2.6, 5.1, 9.3_
-  - [ ] 7.3 Confirm retained surface tests pass and `datom_repo_delete` guards are covered
+  - [x] 7.3 Confirm retained surface tests pass and `datom_repo_delete` guards are covered
     - Property 1 (confirm guard) and Property 2 (governance guard) on `datom_repo_delete` —
       testthat loop over a battery of confirm/gov inputs (test-repo.R); add if not already present
     - Property 3 (gov state read round-trip / C8) on the ref parser — testthat loop over a
       battery of ref structures (test-ref.R)
     - _Requirements: 3.2, 3.3, 3.4, 3.5, 5.3, 5.4, 9.3_
-  - [ ] 7.4 Version bump in DESCRIPTION (dev patch bump)
+  - [x] 7.4 Version bump in DESCRIPTION (dev patch bump)
     - _Requirements: 8.1_
-  - [ ] 7.5 Final `R CMD check`: 0 errors, 0 warnings, only the benign system-time note;
+  - [x] 7.5 Final `R CMD check`: 0 errors, 0 warnings, only the benign system-time note;
         full test suite, commit
     - _Requirements: 8.1, 8.2, 8.3_
 

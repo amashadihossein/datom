@@ -1,6 +1,6 @@
 Package: datom
 Title: Version-Controlled Data Management for Reproducible Workflows
-Version: 0.0.0.9000
+Version: 0.0.0.9001
 Authors@R: 
     person("Afshin", "Mashadi-Hossein", , "amashadihossein@gmail.com", 
            role = c("aut", "cre"))

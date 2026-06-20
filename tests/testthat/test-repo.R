@@ -450,6 +450,64 @@ test_that("datom_repo_delete() returns TRUE invisibly", {
 })
 
 
+# === datom_repo_delete() property batteries ===================================
+
+# A developer conn that never reaches side effects: the confirm/gov guards run
+# before any clone/GitHub work, so a minimal structure is sufficient here.
+guard_conn <- function(gov_root = NULL, project_name = "TEST_PROJECT") {
+  structure(
+    list(role = "developer", project_name = project_name, gov_root = gov_root),
+    class = "datom_conn"
+  )
+}
+
+test_that("datom_repo_delete() confirm guard rejects every mismatch", {
+  # Feature: gov-seam-liftout, Property 1: datom_repo_delete confirm guard --
+  # any confirm value not identical to conn$project_name must abort before
+  # touching the repo.
+  conn <- guard_conn()
+  # Use a named list so NULL / NA / zero-length entries survive iteration.
+  mismatches <- list(
+    wrong_word   = "wrong",
+    empty        = "",
+    lowercase    = "test_project",
+    trailing_ws  = "TEST_PROJECT ",
+    truncated    = "TEST_PROJEC",
+    na           = NA_character_,
+    null         = NULL,
+    zero_length  = character(0),
+    multi        = c("TEST_PROJECT", "TEST_PROJECT")
+  )
+  for (nm in names(mismatches)) {
+    expect_error(
+      datom_repo_delete(conn, mismatches[[nm]]),
+      "Confirmation does not match",
+      info = paste0("confirm battery case: ", nm)
+    )
+  }
+})
+
+test_that("datom_repo_delete() governance guard refuses governed conns", {
+  # Feature: gov-seam-liftout, Property 2: datom_repo_delete governance guard --
+  # a non-NULL gov_root without force_gov_attached must abort and point at
+  # gov_decommission, regardless of the gov_root value.
+  gov_roots <- c("gov-bucket", "another-gov", "s3://org/gov", "/local/gov/path")
+  for (gr in gov_roots) {
+    conn <- guard_conn(gov_root = gr)
+    expect_error(
+      datom_repo_delete(conn, "TEST_PROJECT"),
+      "gov_decommission",
+      info = paste0("governance battery case: ", gr)
+    )
+  }
+  # Converse: a NULL gov_root must NOT trip the governance guard.
+  conn_solo <- guard_conn(gov_root = NULL)
+  conn_solo$path <- NULL  # skip clone removal so the call completes cleanly
+  conn_solo$data_repo_url <- NULL
+  expect_no_error(datom_repo_delete(conn_solo, "TEST_PROJECT"))
+})
+
+
 # === datom_repo_attach_governance() ===========================================
 
 # Developer conn with a distinct data-store root (so the storage mirror lands

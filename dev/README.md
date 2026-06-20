@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| gov-seam-liftout (datom side) | 2026-06-13 | in progress: Task 5 done (removed `datom_init_gov()` + `datom_attach_gov()` from `R/conn.R`, repointed `.datom_require_gov()` and the dev-conn warn to `gov_attach()`/datomanager, dropped their tests; full suite 1868 pass / 0 fail, R CMD check clean) on `spec/gov-seam-liftout` | `.kiro/specs/gov-seam-liftout/` |
+| gov-seam-liftout (datom side) | 2026-06-13 | in progress: Task 7 done (regenerated NAMESPACE via `document()` — five removed gov exports confirmed absent, no orphaned `man/*.Rd`; added `test-namespace.R` retained-surface assertions + Property 1/2 guard batteries on `datom_repo_delete` and Property 3 gov-state read round-trip on the ref parser; dev version bump to 0.0.0.9001; full suite 1873 pass / 0 fail, R CMD check 0E/0W/1 benign NOTE) on `spec/gov-seam-liftout` | `.kiro/specs/gov-seam-liftout/` |
 
 ### Drafts (queued, not active)
 
