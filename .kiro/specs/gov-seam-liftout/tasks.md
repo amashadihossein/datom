@@ -175,14 +175,29 @@ single task.
     - _Requirements: 8.1, 8.2, 8.3_
 
 - [ ] 8. E2E validation and spec completion
-  - [ ] 8.1 Run a real end-to-end solo-project workflow via `dev/dev-sandbox.R`
+  - [x] 8.1 Run a real end-to-end solo-project workflow via `dev/dev-sandbox.R`
         (init → write → read → `datom_repo_delete`) to confirm datom is fully functional
         without datomanager
+    - Added `dev/e2e-solo-local.R` (local backend, `attach_gov = FALSE`, teardown via
+      `datom_repo_delete()`); ran green: init + 2 months populate + direct write, read
+      (`datom_list`/`datom_read`/`datom_history`), `datom_validate`/`datom_status`,
+      `datom_projects()` errors cleanly without naming datomanager, then `datom_repo_delete`
+      removed the real GitHub repo + clone. No removed gov functions exercised.
     - _Requirements: 6.1, 6.2_
-  - [ ] 8.2 Harvest durable learnings (API/design → `dev/datom_specification.md`; gotchas →
+  - [x] 8.2 Harvest durable learnings (API/design → `dev/datom_specification.md`; gotchas →
         `dev/engineering-notes.md`; pathway impact → `dev/datom_pathways.md` or record
         "no pathway impact")
-  - [ ] 8.3 Update `dev/README.md`: move spec to Completed, record final test count
+    - Spec doc: updated Governance Repository Contract (seam → package boundary; port
+      contract retained), write-targeting table, conn interface (12th field `gov_backend`),
+      and relocated `datom_init_gov`/`datom_decommission`/`datom_sync_dispatch` reference
+      sections; documented `datom_repo_attach_governance`; corrected `datom_init_repo`
+      (solo-only), `governance.json` lifecycle, and `datom_validate(fix=TRUE)`.
+    - Engineering notes: updated all gov-write-surface entries to the post-lift-out reality;
+      added `gov_backend`, `datom_repo_attach_governance`, `.datom_sync_data_metadata`,
+      `datom_repo_delete` guard/ownership, and the broken-gov-sandbox-path note.
+    - Pathways: **no pathway impact** — route shapes unchanged (one function-name correction).
+  - [x] 8.3 Update `dev/README.md`: move spec to Completed, record final test count
+    - Active Specs cleared; Completed row added (2026-06-20, 1873 pass / 0 fail).
   - [ ] 8.4 PR to `main`, merge, delete branch (spec persists — do NOT delete it)
 
 ## Notes

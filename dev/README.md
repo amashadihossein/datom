@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| gov-seam-liftout (datom side) | 2026-06-13 | in progress: Task 7 done (regenerated NAMESPACE via `document()` — five removed gov exports confirmed absent, no orphaned `man/*.Rd`; added `test-namespace.R` retained-surface assertions + Property 1/2 guard batteries on `datom_repo_delete` and Property 3 gov-state read round-trip on the ref parser; dev version bump to 0.0.0.9001; full suite 1873 pass / 0 fail, R CMD check 0E/0W/1 benign NOTE) on `spec/gov-seam-liftout` | `.kiro/specs/gov-seam-liftout/` |
+| _none_ | — | No spec currently active. | — |
 
 ### Drafts (queued, not active)
 
@@ -77,6 +77,12 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 | datomanager Phase 19: gov_migrate_data() | [draft_managed_migration.md](draft_managed_migration.md) | 2026-05-02 | Governed migration verb. Requires gov; atomic copy + `ref.json` switch + `migration_history.json` record; cross-backend s3<->local. datom Phase 22 (storage extension API) shipped 2026-06-10 -- the six `datom_storage_*` / `datom_repo_*` exports are the stable platform surface Phase 19 calls into. datomanager package scaffold is the remaining prerequisite. See draft for Phase 19 spec and acceptance criteria. |
 
 ### Completed Phases
+
+| Phase | Completed | Tests | Summary |
+|-------|-----------|-------|---------|
+| Spec: gov-seam-liftout (datom side) | 2026-06-20 | 1873 | GOV_SEAM lift-out, datom side. Removed the governed **write** surface (5 exports: `datom_init_gov`, `datom_attach_gov`, `datom_decommission`, `datom_sync_dispatch`, `datom_pull_gov`; 9 `.datom_gov_*` write helpers) — it now lives in `datomanager`. datom retains all gov **reads** (`datom_projects`, `datom_pull` (data-repo-only), the six gov-read helpers, `R/ref.R` resolvers). Additive: `gov_backend` 12th conn field + `.datom_conn_for(conn,"gov")` resolves gov dispatch from it (C6); new export `datom_repo_attach_governance()` (C4-compliant data-side `governance.json` write for `datomanager::gov_attach()`); internal `.datom_sync_data_metadata()` split from `datom_sync_dispatch` (data-only half; called by `datom_validate(fix=TRUE)` + `datom_write(NULL,NULL)`). `datom_init_repo()` decoupled from gov registration (solo-only). Added `dev/e2e-solo-local.R` (solo init→write→read→`datom_repo_delete`, passing). R CMD check 0E/0W/1 benign NOTE; dev version 0.0.0.9001. **No pathway impact** (route shapes unchanged). Companion-package starter code recoverable from git history before the merge. |
+
+### Completed Phases (legacy)
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
