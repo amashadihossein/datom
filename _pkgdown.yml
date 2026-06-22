@@ -26,8 +26,6 @@ reference:
     desc: "Create connections, initialize repositories"
     contents:
       - datom_init_repo
-      - datom_init_gov
-      - datom_attach_gov
       - datom_clone
       - datom_get_conn
       - new_datom_conn
@@ -73,10 +71,8 @@ reference:
     desc: "Batch sync from files, scan manifests, sync metadata to S3"
     contents:
       - datom_pull
-      - datom_pull_gov
       - datom_sync
       - datom_sync_manifest
-      - datom_sync_dispatch
 
   - title: "Validation"
     desc: "Validate repository structure and git-S3 consistency"
@@ -86,20 +82,21 @@ reference:
 
   - title: "Storage Extension API"
     desc: >
-      Low-level storage primitives for package developers (e.g. datomanager).
-      End users should use datom_read / datom_write / datom_decommission instead.
+      Low-level storage and data-repo primitives for package developers (e.g.
+      datomanager). End users should use datom_read / datom_write /
+      datom_repo_delete instead.
     contents:
       - datom_storage_list
       - datom_storage_delete_prefix
       - datom_storage_copy
       - datom_storage_verify
       - datom_repo_set_data_store
-      - datom_repo_delete
+      - datom_repo_attach_governance
 
-  - title: "Decommission"
-    desc: "Permanently remove a project and all its artefacts"
+  - title: "Teardown"
+    desc: "Permanently remove a project's data repo and local clone"
     contents:
-      - datom_decommission
+      - datom_repo_delete
 
   - title: "Example Data"
     desc: "Bundled clinical trial data for examples and vignettes"

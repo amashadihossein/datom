@@ -164,7 +164,7 @@
 #' Returns the set of project names registered in the governance repo. When a
 #' local gov clone is available, lists directories under
 #' `{gov_local_path}/projects/` (offline-friendly, reflects last
-#' `datom_pull_gov()`). Otherwise lists keys under `projects/` via the gov
+#' gov-clone refresh). Otherwise lists keys under `projects/` via the gov
 #' storage client and extracts unique top-level segments.
 #'
 #' Skips entries that don't contain a `ref.json` (corrupt registry rows).
