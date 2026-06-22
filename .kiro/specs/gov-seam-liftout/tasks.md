@@ -178,11 +178,18 @@ single task.
   - [x] 8.1 Run a real end-to-end solo-project workflow via `dev/dev-sandbox.R`
         (init → write → read → `datom_repo_delete`) to confirm datom is fully functional
         without datomanager
-    - Added `dev/e2e-solo-local.R` (local backend, `attach_gov = FALSE`, teardown via
+    - Added `dev/e2e-solo-local.R` (local backend, solo, teardown via
       `datom_repo_delete()`); ran green: init + 2 months populate + direct write, read
-      (`datom_list`/`datom_read`/`datom_history`), `datom_validate`/`datom_status`,
-      `datom_projects()` errors cleanly without naming datomanager, then `datom_repo_delete`
-      removed the real GitHub repo + clone. No removed gov functions exercised.
+      (`datom_list`/`datom_read`/`datom_history`), `datom_validate`/`datom_status`, and
+      `datom_projects()` failing cleanly with the gov guard (which, by design, points to
+      `gov_attach()` in datomanager). No removed gov functions exercised.
+    - Follow-up (E2E suite rebuilt solo-only): stripped governance from `dev/dev-sandbox.R`
+      (datom is solo-capable; gov tooling moves to datomanager), so `sandbox_down()` tears
+      down via `datom_repo_delete()` + storage wipe. Replaced the three gov-attached scripts
+      (`e2e-test.R`, `e2e-test-local.R`, `e2e-lineage.R`) with solo equivalents
+      (`e2e-solo-local.R`, `e2e-solo-s3.R`, `e2e-solo-lineage.R`). `e2e-solo-s3.R` ran green.
+      Filed issue #52 (pre-existing `datom_write()` same-project parent `data_sha` path bug,
+      surfaced by the S3 E2E; benign, out of scope).
     - _Requirements: 6.1, 6.2_
   - [x] 8.2 Harvest durable learnings (API/design → `dev/datom_specification.md`; gotchas →
         `dev/engineering-notes.md`; pathway impact → `dev/datom_pathways.md` or record

@@ -3,22 +3,17 @@
 # Solo-project end-to-end test (local filesystem backend, NO governance).
 #
 # Confirms datom is fully functional standalone after the gov-seam lift-out:
-#   init -> write -> read -> datom_repo_delete
+#   init -> write -> read -> datom_repo_delete (via sandbox_down)
 #
 # No AWS credentials needed (local backend). A GitHub PAT IS required: every
-# datom data repo is git+GitHub-backed (there is no no-remote mode). Teardown
-# uses datom_repo_delete() (the solo teardown verb) -- NOT datom_decommission()
-# (removed by the lift-out) and NO gov functions.
+# datom data repo is git+GitHub-backed (there is no no-remote mode). The sandbox
+# is solo-only post-lift-out; teardown routes through datom_repo_delete().
 #
 # Usage (manual) -- works from ANY working directory (e.g. ~/projects/dev/datom-test).
 # All datom paths below are absolute (~-anchored), so getwd() does not matter:
 #   source("~/projects/dev/datom/dev/e2e-solo-local.R")
 # Ensure a GitHub PAT is visible first, e.g.:
 #   Sys.setenv(GITHUB_PAT = system("gh auth token", intern = TRUE))
-#
-# Prerequisites:
-#   - GITHUB_PAT (env var or keyring) with repo create/delete scope
-#   - `gh` CLI not required (datom_repo_delete deletes via httr2)
 #
 # All artefacts land under ~/projects/dev/datom-test/solo-e2e/ and are removed
 # on teardown (including the real GitHub repo created during the run). Nothing
@@ -31,7 +26,7 @@ if (!exists("sandbox_up")) {
   source(file.path(.datom_pkg_dir, "dev", "dev-sandbox.R"))
 }
 
-base_dir <- fs::path_expand("~/projects/dev/datom-test/solo-e2e")
+base_dir  <- fs::path_expand("~/projects/dev/datom-test/solo-e2e")
 if (fs::dir_exists(base_dir)) fs::dir_delete(base_dir)
 fs::dir_create(base_dir)
 
@@ -42,24 +37,12 @@ store_dir <- fs::path(base_dir, "solo-e2e-data")
 store <- sandbox_store_local(
   path       = store_dir,
   prefix     = NULL,
-  github_org = NULL,
-  attach_gov = FALSE          # solo project: NO governance
+  github_org = NULL
 )
 stopifnot("store unexpectedly has governance" = is.null(store$governance))
 
 env <- NULL
 ok  <- FALSE
-
-teardown <- function() {
-  # Solo teardown: datom_repo_delete (GitHub repo + local clone), then wipe the
-  # caller-owned local data-store root (datom_repo_delete does not own it).
-  if (!is.null(env) && !is.null(env$conn)) {
-    cat("\n=== TEARDOWN: datom_repo_delete ===\n")
-    try(datom_repo_delete(env$conn, confirm = proj), silent = FALSE)
-  }
-  try(.sandbox_wipe_local_component(store$data, "data"), silent = TRUE)
-  if (fs::dir_exists(base_dir)) try(fs::dir_delete(base_dir), silent = TRUE)
-}
 
 tryCatch({
   # ---- INIT + WRITE (populate two months of example data) ----
@@ -103,19 +86,27 @@ tryCatch({
   datom_validate(conn)
   datom_status(conn)
 
-  # ---- datom_projects must fail cleanly (no gov), without naming datomanager ----
-  cat("\n=== datom_projects() on solo conn (expect clean gov error) ===\n")
+  # ---- datom_projects must fail cleanly on a solo conn (no governance) ----
+  # By design (.datom_require_gov), the guard names datomanager as guidance --
+  # it points the user to gov_attach() in the companion package. This is the
+  # spec-sanctioned UX (design Component 8 / Task 5.2), distinct from C1's
+  # "no hard dependency on datomanager".
+  cat("\n=== datom_projects() on solo conn (expect clean gov guard) ===\n")
   pe <- tryCatch({ datom_projects(conn); NA_character_ },
                  error = function(e) conditionMessage(e))
   cat("datom_projects error:", pe, "\n")
   stopifnot("datom_projects should error on solo conn" = !is.na(pe))
-  stopifnot("gov error must not name datomanager" =
-              !grepl("datomanager", pe, ignore.case = TRUE))
+  stopifnot("gov error should mention governance" =
+              grepl("governance", pe, ignore.case = TRUE))
+  stopifnot("gov error should point to gov_attach" =
+              grepl("gov_attach", pe, fixed = TRUE))
 
   ok <- TRUE
   cat("\n=== ALL SOLO E2E ASSERTIONS PASSED ===\n")
 }, finally = {
-  teardown()
+  cat("\n=== TEARDOWN (sandbox_down -> datom_repo_delete) ===\n")
+  if (!is.null(env)) try(sandbox_down(env, confirm = FALSE), silent = FALSE)
+  if (fs::dir_exists(base_dir)) try(fs::dir_delete(base_dir), silent = TRUE)
 })
 
 if (!ok) stop("SOLO_E2E_RESULT: FAILED (see messages above; teardown attempted).")
