@@ -57,7 +57,7 @@ Read path is **role-aware**:
 
 - Developer with `gov_local_path` set: read `projects/{name}/ref.json`
   from the local gov clone (faster, works offline, reflects last
-  [`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)).
+  gov-clone refresh).
 
 - Otherwise (reader, or developer without a clone yet): read via the gov
   storage client.

@@ -102,14 +102,13 @@ notes replace the previous three vignettes (`clinical-data-versioning`,
 
 **New functions:**
 
-- [`datom_init_gov()`](https://amashadihossein.github.io/datom/reference/datom_init_gov.md)
-  — one-time bootstrap of a shared governance repository (one per
-  organization / governance bucket).
-- [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-  — tear down a project (data storage + GitHub repo + governance entry).
-  Requires `confirm = "{project_name}"` literal match.
-- [`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
-  — pull the governance repo only (rare; mostly for diagnostics).
+- `datom_init_gov()` — one-time bootstrap of a shared governance
+  repository (one per organization / governance bucket).
+- `datom_decommission()` — tear down a project (data storage + GitHub
+  repo + governance entry). Requires `confirm = "{project_name}"`
+  literal match.
+- `datom_pull_gov()` — pull the governance repo only (rare; mostly for
+  diagnostics).
 
 **Changed behavior:**
 
@@ -118,9 +117,9 @@ notes replace the previous three vignettes (`clinical-data-versioning`,
   default; reuses existing gov clone if it matches `gov_repo_url`).
 - [`datom_pull()`](https://amashadihossein.github.io/datom/reference/datom_pull.md)
   now pulls both repos by default.
-- [`datom_sync_dispatch()`](https://amashadihossein.github.io/datom/reference/datom_sync_dispatch.md)
-  now produces a governance-repo commit (and storage upload) for
-  `projects/{project_name}/dispatch.json`. The data repo is untouched.
+- `datom_sync_dispatch()` now produces a governance-repo commit (and
+  storage upload) for `projects/{project_name}/dispatch.json`. The data
+  repo is untouched.
 - [`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
   now requires `gov_repo_url` on the store and writes
   `projects/{project_name}/{ref,dispatch,migration_history}.json` to the

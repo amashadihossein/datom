@@ -18,9 +18,8 @@ datom_validate(conn, fix = FALSE)
 
 - fix:
 
-  If `TRUE`, attempts to fix inconsistencies by syncing metadata to S3
-  via
-  [`datom_sync_dispatch()`](https://amashadihossein.github.io/datom/reference/datom_sync_dispatch.md).
+  If `TRUE`, attempts to fix inconsistencies by syncing data-side
+  metadata (manifest + per-table metadata) to storage.
 
 ## Value
 

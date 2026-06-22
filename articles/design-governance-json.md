@@ -83,9 +83,8 @@ be regenerated from the git copy.
     store. Written in the data repo and pushed to storage as part of the
     final git + push step.
 
-2.  **[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)**
-    – when governance is retrofitted onto an existing no-gov project.
-    Written and mirrored in the same operation.
+2.  **`datom_attach_gov()`** – when governance is retrofitted onto an
+    existing no-gov project. Written and mirrored in the same operation.
 
 In both cases the git copy and the storage mirror are written together
 and committed in the same data-side commit.
@@ -104,10 +103,9 @@ mirror. It is idempotent and safe to call multiple times.
 
 ### Deleted
 
-[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-deletes the storage mirror as part of data-storage cleanup (step 1b).
-The git copy is removed with the data repo itself (step 2 – GitHub repo
-deletion + local clone deletion).
+`datom_decommission()` deletes the storage mirror as part of
+data-storage cleanup (step 1b). The git copy is removed with the data
+repo itself (step 2 – GitHub repo deletion + local clone deletion).
 
 ## Schema
 

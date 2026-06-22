@@ -85,12 +85,12 @@ data_s3 <- datom_store_s3(
 
 ### What the GITHUB_PAT needs
 
-| Operation | Scope required |
-|----|----|
-| Read a project (clone + pull) | `repo` (read) |
-| Write to a project | `repo` (write) |
+| Operation                             | Scope required  |
+|---------------------------------------|-----------------|
+| Read a project (clone + pull)         | `repo` (read)   |
+| Write to a project                    | `repo` (write)  |
 | `datom_init_repo(create_repo = TRUE)` | `repo` (create) |
-| [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md) repo deletion | `delete_repo` |
+| `datom_decommission()` repo deletion  | `delete_repo`   |
 
 For a fine-grained PAT: `Contents: Read and write` (or `Read` for
 readers), `Administration: Read and write` if you need to create or
@@ -167,8 +167,7 @@ store <- datom_store(
 The governance component is optional; the data component is not. A
 `datom_store(governance = NULL, ...)` is valid and useful for the solo
 phase of a project. Governance is added on demand with
-[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md),
-and once attached cannot be detached.
+`datom_attach_gov()`, and once attached cannot be detached.
 
 ### Predicates
 

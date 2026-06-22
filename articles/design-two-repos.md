@@ -66,8 +66,7 @@ platform; splitting along the boundary makes the model expressible.
 
 **Pull semantics get muddy.** Today,
 [`datom_pull()`](https://amashadihossein.github.io/datom/reference/datom_pull.md)
-for a project pulls only that project’s history;
-[`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
+for a project pulls only that project’s history; `datom_pull_gov()`
 pulls only the registry. With one repo, every pull is everything, every
 time. A manager pulling the registry to see new projects would also be
 pulling every project team’s recent writes – a lot of network and disk

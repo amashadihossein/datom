@@ -121,9 +121,9 @@ you’re connected to. From a manager’s seat you often want only the gov
 side: “what projects are registered now?” not “what’s the latest version
 of `lb`?”
 
-[`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
-does exactly that. It’s a fetch + merge against the gov remote, scoped
-to your gov clone. No data-store traffic. Cheap to run on a schedule.
+`datom_pull_gov()` does exactly that. It’s a fetch + merge against the
+gov remote, scoped to your gov clone. No data-store traffic. Cheap to
+run on a schedule.
 
 This is the operation behind dashboards like “all studies registered in
 the last 30 days” – and the foundation that a future
@@ -135,8 +135,7 @@ listing helper will sit on top of.
 Studies end. STUDY-002 enrolls eight subjects, then sponsors pull the
 trial. Six months later, regulatory says “you can purge the data.”
 
-[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-does the full teardown in the right order:
+`datom_decommission()` does the full teardown in the right order:
 
 ``` r
 
@@ -163,14 +162,10 @@ Five steps, run as a single command:
 
 The first four happen on this engineer’s machine. Step 4 is what makes
 the decommissioning **organization-visible**: any other developer who
-runs
-[`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
-will see STUDY-002 disappear from their gov clone too. The portfolio is
-back to STUDY-001 alone.
+runs `datom_pull_gov()` will see STUDY-002 disappear from their gov
+clone too. The portfolio is back to STUDY-001 alone.
 
-What
-[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-does **not** delete:
+What `datom_decommission()` does **not** delete:
 
 - The governance repo itself. STUDY-001 is still registered, still
   discoverable.
@@ -193,11 +188,10 @@ the same safety with better audit.
 - Adding a project is a normal
   [`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
   against the shared gov repo. No special manager-only command.
-- [`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
-  refreshes the registry without touching any project’s data clone.
-- [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-  is the single command that cleanly removes a project from every place
-  it lives – data store, GitHub, governance.
+- `datom_pull_gov()` refreshes the registry without touching any
+  project’s data clone.
+- `datom_decommission()` is the single command that cleanly removes a
+  project from every place it lives – data store, GitHub, governance.
 
 The user-journey track continues with **Auditing & Reproducibility**,
 where the manager view sharpens further: regulator requests, version

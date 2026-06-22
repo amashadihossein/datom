@@ -33,8 +33,8 @@ datom_write(
 
 - name:
 
-  Table name. If NULL with NULL data, aliases to
-  [`datom_sync_dispatch()`](https://amashadihossein.github.io/datom/reference/datom_sync_dispatch.md).
+  Table name. If NULL with NULL data, does a data-only metadata sync to
+  storage (manifest + per-table metadata).
 
 - metadata:
 

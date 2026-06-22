@@ -72,21 +72,18 @@ Two roles read `ref.json` differently, and the asymmetry is on purpose.
 [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md),
 datom reads `ref.json` from that local clone – no network round-trip –
 and uses the `current` block to talk to the data store. If their gov
-clone is stale (last
-[`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
-was a week ago, the project moved buckets yesterday), the conn-time read
-warns but does not fail. Reads of *existing* versions still work because
-the parquet bytes for those versions were uploaded under the *old*
-location and the data git repo’s metadata still points there.
+clone is stale (last `datom_pull_gov()` was a week ago, the project
+moved buckets yesterday), the conn-time read warns but does not fail.
+Reads of *existing* versions still work because the parquet bytes for
+those versions were uploaded under the *old* location and the data git
+repo’s metadata still points there.
 
 But the moment a developer tries to **write**, datom re-reads `ref.json`
 directly from gov **storage** (not the local clone). That read is
 non-negotiable: writing without a verified current location risks
 orphaning bytes in the wrong bucket, and there is no safe fallback. A
 failed live read aborts the write with a clear message: “your gov clone
-is stale, run
-[`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
-and retry.”
+is stale, run `datom_pull_gov()` and retry.”
 
 **Readers** (statisticians, dpi consumers) have no local gov clone. They
 read `ref.json` over the network through the gov client every time they

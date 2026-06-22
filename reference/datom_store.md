@@ -28,8 +28,7 @@ datom_store(
   [`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md))
   for governance files (dispatch, ref, migration history), or `NULL` for
   a no-governance store. A no-governance store represents a project that
-  has not yet been promoted via
-  [`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md);
+  has not yet been promoted to governance (via the datomanager package);
   `gov_repo_url` and `gov_local_path` must also be `NULL` in that case.
 
 - data:
@@ -52,9 +51,8 @@ datom_store(
 - gov_repo_url:
 
   GitHub remote URL for the shared governance repository. The governance
-  repo is created once per org via
-  [`datom_init_gov()`](https://amashadihossein.github.io/datom/reference/datom_init_gov.md)
-  and referenced here by every project that uses it.
+  repo is created once per org (via the datomanager package) and
+  referenced here by every project that uses it.
 
 - gov_local_path:
 

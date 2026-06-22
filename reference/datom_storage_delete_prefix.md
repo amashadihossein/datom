@@ -32,7 +32,7 @@ directory existed and was removed, `0L` otherwise.
 **Irreversible.** Intended for package developers building tools on top
 of datom (e.g. datomanager for rollback or source deletion after
 migration). End users performing a full project teardown should use
-[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
+[`datom_repo_delete()`](https://amashadihossein.github.io/datom/reference/datom_repo_delete.md)
 instead.
 
 ## Examples

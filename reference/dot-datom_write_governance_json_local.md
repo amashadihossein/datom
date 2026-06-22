@@ -4,7 +4,7 @@ Writes `content` to `{path}/.datom/governance.json`. The directory must
 already exist (created during
 [`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
 or
-[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)).
+[`datom_repo_attach_governance()`](https://amashadihossein.github.io/datom/reference/datom_repo_attach_governance.md)).
 
 ## Usage
 

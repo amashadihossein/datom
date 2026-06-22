@@ -26,7 +26,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -176,7 +176,7 @@ Prefixes</a>.</p>
 <p>The portfolio now has two projects. From your gov clone, after a
 refresh:</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_pull_gov.html">datom_pull_gov</a></span><span class="op">(</span><span class="va">study_001_conn</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="fu">datom_pull_gov</span><span class="op">(</span><span class="va">study_001_conn</span><span class="op">)</span></span>
 <span><span class="fu">fs</span><span class="fu">::</span><span class="fu"><a href="https://fs.r-lib.org/reference/dir_ls.html" class="external-link">dir_ls</a></span><span class="op">(</span><span class="fu">fs</span><span class="fu">::</span><span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="va">gov_clone_path</span>, <span class="st">"projects"</span><span class="op">)</span>, type <span class="op">=</span> <span class="st">"directory"</span><span class="op">)</span></span>
 <span><span class="co">#&gt; /tmp/.../gov_clone/projects/STUDY_001</span></span>
 <span><span class="co">#&gt; /tmp/.../gov_clone/projects/STUDY_002</span></span></code></pre></div>
@@ -189,7 +189,7 @@ refresh:</p>
 data clone and the gov clone for the project you’re connected to. From a
 manager’s seat you often want only the gov side: “what projects are
 registered now?” not “what’s the latest version of <code>lb</code>?”</p>
-<p><code><a href="../reference/datom_pull_gov.html">datom_pull_gov()</a></code> does exactly that. It’s a fetch + merge
+<p><code>datom_pull_gov()</code> does exactly that. It’s a fetch + merge
 against the gov remote, scoped to your gov clone. No data-store traffic.
 Cheap to run on a schedule.</p>
 <p>This is the operation behind dashboards like “all studies registered
@@ -201,12 +201,12 @@ in the last 30 days” – and the foundation that a future
 </h2>
 <p>Studies end. STUDY-002 enrolls eight subjects, then sponsors pull the
 trial. Six months later, regulatory says “you can purge the data.”</p>
-<p><code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> does the full teardown in the right
+<p><code>datom_decommission()</code> does the full teardown in the right
 order:</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">study_002_conn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_conn.html">datom_get_conn</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">study_002_dir</span>, store <span class="op">=</span> <span class="va">study_002_store</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="../reference/datom_decommission.html">datom_decommission</a></span><span class="op">(</span><span class="va">study_002_conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_002"</span><span class="op">)</span></span>
+<span><span class="fu">datom_decommission</span><span class="op">(</span><span class="va">study_002_conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_002"</span><span class="op">)</span></span>
 <span><span class="co">#&gt; i Removing data store contents under datom/STUDY_002/</span></span>
 <span><span class="co">#&gt; v Deleted GitHub repo `study-002-data`</span></span>
 <span><span class="co">#&gt; v Removed local data clone /tmp/.../study_002_data</span></span>
@@ -226,10 +226,10 @@ the deletion.</li>
 </ol>
 <p>The first four happen on this engineer’s machine. Step 4 is what
 makes the decommissioning <strong>organization-visible</strong>: any
-other developer who runs <code><a href="../reference/datom_pull_gov.html">datom_pull_gov()</a></code> will see
+other developer who runs <code>datom_pull_gov()</code> will see
 STUDY-002 disappear from their gov clone too. The portfolio is back to
 STUDY-001 alone.</p>
-<p>What <code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> does <strong>not</strong>
+<p>What <code>datom_decommission()</code> does <strong>not</strong>
 delete:</p>
 <ul>
 <li>The governance repo itself. STUDY-001 is still registered, still
@@ -255,10 +255,10 @@ folder per project, all in shared git.</li>
 <li>Adding a project is a normal <code><a href="../reference/datom_init_repo.html">datom_init_repo()</a></code> against
 the shared gov repo. No special manager-only command.</li>
 <li>
-<code><a href="../reference/datom_pull_gov.html">datom_pull_gov()</a></code> refreshes the registry without
+<code>datom_pull_gov()</code> refreshes the registry without
 touching any project’s data clone.</li>
 <li>
-<code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> is the single command that cleanly
+<code>datom_decommission()</code> is the single command that cleanly
 removes a project from every place it lives – data store, GitHub,
 governance.</li>
 </ul>

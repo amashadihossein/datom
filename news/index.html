@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -106,18 +106,18 @@
 <code>dispatch.json</code>, <code>ref.json</code>, <code>migration_history.json</code> no longer live in the data repo’s <code>.datom/</code> directory. They live in the governance repo at <code>projects/{project_name}/{file}.json</code> and are mirrored to governance storage at the same path.</li>
 </ul><p><strong>New functions:</strong></p>
 <ul><li>
-<code><a href="../reference/datom_init_gov.html">datom_init_gov()</a></code> — one-time bootstrap of a shared governance repository (one per organization / governance bucket).</li>
+<code>datom_init_gov()</code> — one-time bootstrap of a shared governance repository (one per organization / governance bucket).</li>
 <li>
-<code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> — tear down a project (data storage + GitHub repo + governance entry). Requires <code>confirm = "{project_name}"</code> literal match.</li>
+<code>datom_decommission()</code> — tear down a project (data storage + GitHub repo + governance entry). Requires <code>confirm = "{project_name}"</code> literal match.</li>
 <li>
-<code><a href="../reference/datom_pull_gov.html">datom_pull_gov()</a></code> — pull the governance repo only (rare; mostly for diagnostics).</li>
+<code>datom_pull_gov()</code> — pull the governance repo only (rare; mostly for diagnostics).</li>
 </ul><p><strong>Changed behavior:</strong></p>
 <ul><li>
 <code><a href="../reference/datom_clone.html">datom_clone()</a></code> now clones both the data repo and the governance repo (sibling default; reuses existing gov clone if it matches <code>gov_repo_url</code>).</li>
 <li>
 <code><a href="../reference/datom_pull.html">datom_pull()</a></code> now pulls both repos by default.</li>
 <li>
-<code><a href="../reference/datom_sync_dispatch.html">datom_sync_dispatch()</a></code> now produces a governance-repo commit (and storage upload) for <code>projects/{project_name}/dispatch.json</code>. The data repo is untouched.</li>
+<code>datom_sync_dispatch()</code> now produces a governance-repo commit (and storage upload) for <code>projects/{project_name}/dispatch.json</code>. The data repo is untouched.</li>
 <li>
 <code><a href="../reference/datom_init_repo.html">datom_init_repo()</a></code> now requires <code>gov_repo_url</code> on the store and writes <code>projects/{project_name}/{ref,dispatch,migration_history}.json</code> to the governance repo + storage in a separate commit from the data repo’s initial commit. Two distinct commits across two histories.</li>
 <li>Connection objects gain a <code>gov_local_path</code> field. Developer connections read <code>ref.json</code> from the local gov clone; reader connections read it from gov storage. The write-time guard always reads from storage to detect stale clones.</li>

@@ -9,7 +9,7 @@ git with remote, sets up configuration files, and pushes to S3."><meta property=
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -115,11 +115,12 @@ intentional takeover of an existing S3 namespace. Default <code>FALSE</code>.</p
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>Governance is optional. When <code>store$governance</code> is <code>NULL</code> (the gov-on-demand
-default), no governance clone is created, no <code>dispatch.json</code>/<code>ref.json</code> is
-written, and <code>project.yaml</code> omits the <code>storage.governance</code> and
-<code>repos.governance</code> blocks. The project can be promoted later via
-<code><a href="datom_attach_gov.html">datom_attach_gov()</a></code>.</p>
+    <p>Initializes the <strong>data repository only</strong>. The project is left as a solo
+project: <code>project.yaml</code> is the location authority, no <code>governance.json</code> /
+<code>dispatch.json</code> / <code>ref.json</code> is written, and <code>project.yaml</code> omits the
+<code>storage.governance</code> and <code>repos.governance</code> blocks. A governance store
+component on <code>store</code>, if present, is ignored here. Governance is attached
+later via the governance layer (<code>gov_attach()</code>).</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

@@ -6,10 +6,6 @@ Create connections, initialize repositories
 
 - [`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
   : Initialize a datom Repository
-- [`datom_init_gov()`](https://amashadihossein.github.io/datom/reference/datom_init_gov.md)
-  : Initialize a Governance Repository
-- [`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)
-  : Attach Governance to an Existing Project
 - [`datom_clone()`](https://amashadihossein.github.io/datom/reference/datom_clone.md)
   : Clone a datom Repository
 - [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)
@@ -88,14 +84,10 @@ Batch sync from files, scan manifests, sync metadata to S3
 
 - [`datom_pull()`](https://amashadihossein.github.io/datom/reference/datom_pull.md)
   : Pull Latest Changes from Remote
-- [`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md)
-  : Pull Latest Changes from the Governance Repo
 - [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
   : Sync Files to datom Repository
 - [`datom_sync_manifest()`](https://amashadihossein.github.io/datom/reference/datom_sync_manifest.md)
   : Scan and Prepare Manifest for Sync
-- [`datom_sync_dispatch()`](https://amashadihossein.github.io/datom/reference/datom_sync_dispatch.md)
-  : Sync Dispatch Metadata to Storage
 
 ## Validation
 
@@ -108,9 +100,9 @@ Validate repository structure and git-S3 consistency
 
 ## Storage Extension API
 
-Low-level storage primitives for package developers (e.g. datomanager).
-End users should use datom_read / datom_write / datom_decommission
-instead.
+Low-level storage and data-repo primitives for package developers
+(e.g. datomanager). End users should use datom_read / datom_write /
+datom_repo_delete instead.
 
 - [`datom_storage_list()`](https://amashadihossein.github.io/datom/reference/datom_storage_list.md)
   : List All Objects in a datom Storage Namespace
@@ -122,15 +114,15 @@ instead.
   : Verify a Copy Between Two datom Storage Namespaces
 - [`datom_repo_set_data_store()`](https://amashadihossein.github.io/datom/reference/datom_repo_set_data_store.md)
   : Rewrite the Data Store Pointer in project.yaml
+- [`datom_repo_attach_governance()`](https://amashadihossein.github.io/datom/reference/datom_repo_attach_governance.md)
+  : Write the Data-Side Governance Attachment Record
+
+## Teardown
+
+Permanently remove a project’s data repo and local clone
+
 - [`datom_repo_delete()`](https://amashadihossein.github.io/datom/reference/datom_repo_delete.md)
   : Delete the Data GitHub Repository and Local Clone
-
-## Decommission
-
-Permanently remove a project and all its artefacts
-
-- [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-  : Decommission a datom Project
 
 ## Example Data
 

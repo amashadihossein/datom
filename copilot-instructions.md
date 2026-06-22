@@ -34,15 +34,14 @@ supersedes the Phase-16 lock that required gov from day one). Every
 datom project requires a data git repo with a remote (today: GitHub) and
 a storage backend for parquet bytes. The governance layer – portfolio
 register, dispatch routing, managed migration – is adopted on-demand via
-[`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md),
-typically when graduating to object storage or migrating data. Once
-attached, gov cannot be detached; `project.yaml`’s `storage.governance`
-block, once populated, is permanent. The companion governance package
-(`datomanager`) will eventually own the gov surface; the `# GOV_SEAM:`
-boundary already marks the lift-out. See `dev/datomanager_scope.md` for
-full scope. There is still no “local-only / no-remote” mode for the data
-repo: a `data_repo_url` is required. Single-user no-GitHub demos are
-explicitly rejected scope.
+`datom_attach_gov()`, typically when graduating to object storage or
+migrating data. Once attached, gov cannot be detached; `project.yaml`’s
+`storage.governance` block, once populated, is permanent. The companion
+governance package (`datomanager`) will eventually own the gov surface;
+the `# GOV_SEAM:` boundary already marks the lift-out. See
+`dev/datomanager_scope.md` for full scope. There is still no “local-only
+/ no-remote” mode for the data repo: a `data_repo_url` is required.
+Single-user no-GitHub demos are explicitly rejected scope.
 
 ## Documentation Hierarchy
 

@@ -26,7 +26,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -139,7 +139,7 @@ upgrade path to <strong>program-per-bucket</strong> is mechanical:
 replace the empty prefix with <code>study-XYZ/</code>. No datom code
 change required.</p></li>
 <li><p><strong>It plays well with the decommission boundary.</strong>
-<code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> removes the
+<code>datom_decommission()</code> removes the
 <code>datom/{project}/</code> namespace inside the bucket – the bucket
 itself is caller-owned. With Pattern A the user mental model is “the
 bucket is the study”, and the boundary is intuitive.</p></li>

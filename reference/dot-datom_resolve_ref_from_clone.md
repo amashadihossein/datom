@@ -2,8 +2,7 @@
 
 Reads `projects/{project_name}/ref.json` directly from a local gov clone
 on disk. Faster than storage reads, works offline, and reflects the last
-[`datom_pull_gov()`](https://amashadihossein.github.io/datom/reference/datom_pull_gov.md).
-Used for developer connections.
+gov-clone refresh. Used for developer connections.
 
 ## Usage
 

@@ -15,7 +15,7 @@ Reader: S3-only access, no local repo
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -72,6 +72,7 @@ Reader: S3-only access, no local repo
 <span>  gov_root <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  gov_prefix <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  gov_region <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  gov_backend <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  gov_client <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  gov_local_path <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  backend <span class="op">=</span> <span class="st">"s3"</span>,</span>
@@ -127,6 +128,13 @@ Reader: S3-only access, no local repo
 
 <dt id="arg-gov-region">gov_region<a class="anchor" aria-label="anchor" href="#arg-gov-region"></a></dt>
 <dd><p>Governance region (can be NULL).</p></dd>
+
+
+<dt id="arg-gov-backend">gov_backend<a class="anchor" aria-label="anchor" href="#arg-gov-backend"></a></dt>
+<dd><p>Governance storage backend (<code>"s3"</code> or <code>"local"</code>), set
+from the governance store component. NULL on solo (no-governance) conns.
+Independent of <code>backend</code> (the data backend): a project may keep data on
+one backend and governance on another.</p></dd>
 
 
 <dt id="arg-gov-client">gov_client<a class="anchor" aria-label="anchor" href="#arg-gov-client"></a></dt>

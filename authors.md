@@ -10,13 +10,13 @@ Source:
 [`DESCRIPTION`](https://github.com/amashadihossein/datom/blob/main/DESCRIPTION)
 
 Mashadi-Hossein A (2026). *datom: Version-Controlled Data Management for
-Reproducible Workflows*. R package version 0.0.0.9000,
+Reproducible Workflows*. R package version 0.0.0.9001,
 <https://github.com/amashadihossein/datom>.
 
     @Manual{,
       title = {datom: Version-Controlled Data Management for Reproducible Workflows},
       author = {Afshin Mashadi-Hossein},
       year = {2026},
-      note = {R package version 0.0.0.9000},
+      note = {R package version 0.0.0.9001},
       url = {https://github.com/amashadihossein/datom},
     }

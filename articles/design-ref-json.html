@@ -26,7 +26,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -155,7 +155,7 @@ is on purpose.</p>
 <code><a href="../reference/datom_get_conn.html">datom_get_conn()</a></code>, datom reads <code>ref.json</code> from
 that local clone – no network round-trip – and uses the
 <code>current</code> block to talk to the data store. If their gov clone
-is stale (last <code><a href="../reference/datom_pull_gov.html">datom_pull_gov()</a></code> was a week ago, the project
+is stale (last <code>datom_pull_gov()</code> was a week ago, the project
 moved buckets yesterday), the conn-time read warns but does not fail.
 Reads of <em>existing</em> versions still work because the parquet bytes
 for those versions were uploaded under the <em>old</em> location and the
@@ -166,7 +166,7 @@ re-reads <code>ref.json</code> directly from gov
 non-negotiable: writing without a verified current location risks
 orphaning bytes in the wrong bucket, and there is no safe fallback. A
 failed live read aborts the write with a clear message: “your gov clone
-is stale, run <code><a href="../reference/datom_pull_gov.html">datom_pull_gov()</a></code> and retry.”</p>
+is stale, run <code>datom_pull_gov()</code> and retry.”</p>
 <p><strong>Readers</strong> (statisticians, dpi consumers) have no local
 gov clone. They read <code>ref.json</code> over the network through the
 gov client every time they open a conn. That’s slightly more expensive

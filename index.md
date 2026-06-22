@@ -157,9 +157,8 @@ unlink(c(dev_dir, data_dir), recursive = TRUE)
 ```
 
 Do not call [`unlink()`](https://rdrr.io/r/base/unlink.html) before
-[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-– removing the local clone first strips the GitHub remote reference and
-the remote repo will not be deleted.
+`datom_decommission()` – removing the local clone first strips the
+GitHub remote reference and the remote repo will not be deleted.
 
 ## Where to go next
 

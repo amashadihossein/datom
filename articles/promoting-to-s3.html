@@ -26,7 +26,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -132,7 +132,7 @@ deliberately local-only.</p>
 Today, promoting a project means:</p>
 <ol style="list-style-type: decimal">
 <li>Snapshot the current version of each table.</li>
-<li>Retire the local project (<code><a href="../reference/datom_decommission.html">datom_decommission()</a></code>).</li>
+<li>Retire the local project (<code>datom_decommission()</code>).</li>
 <li>Initialize a new project on S3 with the same name.</li>
 <li>Re-write the snapshotted tables as version 1 on S3.</li>
 </ol>
@@ -212,12 +212,12 @@ table in memory:</p>
 <div class="section level2">
 <h2 id="decommission-the-local-project-promotion-path-only">Decommission the local project (promotion path only)<a class="anchor" aria-label="anchor" href="#decommission-the-local-project-promotion-path-only"></a>
 </h2>
-<p><code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> deletes the data GitHub repo,
+<p><code>datom_decommission()</code> deletes the data GitHub repo,
 clears the local clone and parquet store. It is
 <strong>destructive</strong> and requires you to type the project name
 as <code>confirm</code> to proceed.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_decommission.html">datom_decommission</a></span><span class="op">(</span><span class="va">old_conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="fu">datom_decommission</span><span class="op">(</span><span class="va">old_conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span>
 <span><span class="co">#&gt; i Deleting data storage objects...</span></span>
 <span><span class="co">#&gt; v Data storage objects deleted.</span></span>
 <span><span class="co">#&gt; i Deleting GitHub repo "your-org/study-001-data"...</span></span>
@@ -318,11 +318,11 @@ in a shared governance repo. Governance is a two-step setup:</p>
 <ol style="list-style-type: decimal">
 <li>
 <strong>Once per organization:</strong>
-<code><a href="../reference/datom_init_gov.html">datom_init_gov()</a></code> creates the gov GitHub repo and seeds the
+<code>datom_init_gov()</code> creates the gov GitHub repo and seeds the
 skeleton (<code>projects/</code> directory, README, etc.). Run this the
 very first time anyone in your org adopts governance.</li>
 <li>
-<strong>Once per project:</strong> <code><a href="../reference/datom_attach_gov.html">datom_attach_gov()</a></code>
+<strong>Once per project:</strong> <code>datom_attach_gov()</code>
 records STUDY-001’s data location in
 <code>projects/STUDY_001/ref.json</code> and updates
 <code>project.yaml</code> so any future conn from this clone knows where
@@ -340,7 +340,7 @@ gov lives.</li>
 <span><span class="va">gov_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"datom-governance"</span><span class="op">)</span>  <span class="co"># explicit local path</span></span>
 <span></span>
 <span><span class="co"># Step 1: seed the gov repo (once per organization)</span></span>
-<span><span class="va">gov_repo_url</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_init_gov.html">datom_init_gov</a></span><span class="op">(</span></span>
+<span><span class="va">gov_repo_url</span> <span class="op">&lt;-</span> <span class="fu">datom_init_gov</span><span class="op">(</span></span>
 <span>  gov_store      <span class="op">=</span> <span class="va">gov_store</span>,</span>
 <span>  gov_local_path <span class="op">=</span> <span class="va">gov_dir</span>,</span>
 <span>  create_repo    <span class="op">=</span> <span class="cn">TRUE</span>,</span>
@@ -352,7 +352,7 @@ gov lives.</li>
 <span><span class="co">#&gt; v Pushed initial commit</span></span>
 <span></span>
 <span><span class="co"># Step 2: attach this project to gov (once per project)</span></span>
-<span><span class="va">conn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_attach_gov.html">datom_attach_gov</a></span><span class="op">(</span></span>
+<span><span class="va">conn</span> <span class="op">&lt;-</span> <span class="fu">datom_attach_gov</span><span class="op">(</span></span>
 <span>  conn           <span class="op">=</span> <span class="va">conn</span>,</span>
 <span>  gov_store      <span class="op">=</span> <span class="va">gov_store</span>,</span>
 <span>  gov_repo_url   <span class="op">=</span> <span class="va">gov_repo_url</span>,</span>
@@ -414,7 +414,7 @@ project and gov registration are the starting state for <strong>Article
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Remove all datom artefacts for this project (S3 data, GitHub data repo,</span></span>
 <span><span class="co"># local clone, gov storage prefix, gov git registration).</span></span>
-<span><span class="fu"><a href="../reference/datom_decommission.html">datom_decommission</a></span><span class="op">(</span><span class="va">conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">datom_decommission</span><span class="op">(</span><span class="va">conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span></code></pre></div>
 <p>After decommission, the only remaining artefact is the
 <strong>governance infrastructure itself</strong> (gov GitHub repo and
 gov S3 bucket root). These are shared across projects and datom does not
@@ -424,7 +424,7 @@ all gov-dependent articles:</p>
 <code class="sourceCode R"><span><span class="co"># Delete the gov GitHub repo</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/system2.html" class="external-link">system2</a></span><span class="op">(</span><span class="st">"gh"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"repo"</span>, <span class="st">"delete"</span>, <span class="st">"your-org/datom-governance"</span>, <span class="st">"--yes"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <p>The gov S3 bucket content was already removed by
-<code><a href="../reference/datom_decommission.html">datom_decommission()</a></code>. If the bucket is otherwise empty,
+<code>datom_decommission()</code>. If the bucket is otherwise empty,
 delete it via your AWS console or S3 management tooling.</p>
 <p>````</p>
 </div>

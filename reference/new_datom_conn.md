@@ -21,6 +21,7 @@ new_datom_conn(
   gov_root = NULL,
   gov_prefix = NULL,
   gov_region = NULL,
+  gov_backend = NULL,
   gov_client = NULL,
   gov_local_path = NULL,
   backend = "s3",
@@ -76,6 +77,13 @@ new_datom_conn(
 - gov_region:
 
   Governance region (can be NULL).
+
+- gov_backend:
+
+  Governance storage backend (`"s3"` or `"local"`), set from the
+  governance store component. NULL on solo (no-governance) conns.
+  Independent of `backend` (the data backend): a project may keep data
+  on one backend and governance on another.
 
 - gov_client:
 

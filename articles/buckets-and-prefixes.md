@@ -61,10 +61,10 @@ adam_store <- datom_store_s3(
     with `study-XYZ/`. No datom code change required.
 
 4.  **It plays well with the decommission boundary.**
-    [`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-    removes the `datom/{project}/` namespace inside the bucket – the
-    bucket itself is caller-owned. With Pattern A the user mental model
-    is “the bucket is the study”, and the boundary is intuitive.
+    `datom_decommission()` removes the `datom/{project}/` namespace
+    inside the bucket – the bucket itself is caller-owned. With Pattern
+    A the user mental model is “the bucket is the study”, and the
+    boundary is intuitive.
 
 ### Sub-study visibility (subset of prefixes)
 

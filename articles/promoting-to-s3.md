@@ -47,8 +47,7 @@ A built-in, history-preserving migration (`datom_migrate_data()`) is
 planned but not yet shipped. Today, promoting a project means:
 
 1.  Snapshot the current version of each table.
-2.  Retire the local project
-    ([`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)).
+2.  Retire the local project (`datom_decommission()`).
 3.  Initialize a new project on S3 with the same name.
 4.  Re-write the snapshotted tables as version 1 on S3.
 
@@ -136,10 +135,9 @@ snapshot <- list(
 
 ## Decommission the local project (promotion path only)
 
-[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md)
-deletes the data GitHub repo, clears the local clone and parquet store.
-It is **destructive** and requires you to type the project name as
-`confirm` to proceed.
+`datom_decommission()` deletes the data GitHub repo, clears the local
+clone and parquet store. It is **destructive** and requires you to type
+the project name as `confirm` to proceed.
 
 ``` r
 
@@ -256,16 +254,12 @@ datom_write(conn, datom_example_data("ae", cutoff_date = cutoff), "ae",
 Now that STUDY-001 lives somewhere a teammate can reach, register it in
 a shared governance repo. Governance is a two-step setup:
 
-1.  **Once per organization:**
-    [`datom_init_gov()`](https://amashadihossein.github.io/datom/reference/datom_init_gov.md)
-    creates the gov GitHub repo and seeds the skeleton (`projects/`
-    directory, README, etc.). Run this the very first time anyone in
-    your org adopts governance.
-2.  **Once per project:**
-    [`datom_attach_gov()`](https://amashadihossein.github.io/datom/reference/datom_attach_gov.md)
-    records STUDY-001’s data location in `projects/STUDY_001/ref.json`
-    and updates `project.yaml` so any future conn from this clone knows
-    where gov lives.
+1.  **Once per organization:** `datom_init_gov()` creates the gov GitHub
+    repo and seeds the skeleton (`projects/` directory, README, etc.).
+    Run this the very first time anyone in your org adopts governance.
+2.  **Once per project:** `datom_attach_gov()` records STUDY-001’s data
+    location in `projects/STUDY_001/ref.json` and updates `project.yaml`
+    so any future conn from this clone knows where gov lives.
 
 ``` r
 
@@ -369,8 +363,7 @@ gov-dependent articles:
 system2("gh", c("repo", "delete", "your-org/datom-governance", "--yes"))
 ```
 
-The gov S3 bucket content was already removed by
-[`datom_decommission()`](https://amashadihossein.github.io/datom/reference/datom_decommission.md).
+The gov S3 bucket content was already removed by `datom_decommission()`.
 If the bucket is otherwise empty, delete it via your AWS console or S3
 management tooling.
 

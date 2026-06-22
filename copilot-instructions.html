@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -62,7 +62,7 @@
 <p>datom is an R package for version-controlled data management. It stores tabular data in S3 with git-tracked metadata, enabling reproducibility for clinical/scientific workflows.</p>
 <p><strong>Pre-release status</strong>: This package has not been released and no production data products depend on it. Proceed without backward compatibility or lifecycle management concerns — rename freely, delete freely, break APIs as needed.</p>
 <p><strong>Core concept</strong>: Tables abstracted as code in git; actual data in cloud storage (parquet format).</p>
-<p><strong>Git + GitHub for the data repo are mandatory, always; the governance layer is optional and on-demand</strong> (amended Phase 18, 2026-05-02; supersedes the Phase-16 lock that required gov from day one). Every datom project requires a data git repo with a remote (today: GitHub) and a storage backend for parquet bytes. The governance layer – portfolio register, dispatch routing, managed migration – is adopted on-demand via <code><a href="reference/datom_attach_gov.html">datom_attach_gov()</a></code>, typically when graduating to object storage or migrating data. Once attached, gov cannot be detached; <code>project.yaml</code>’s <code>storage.governance</code> block, once populated, is permanent. The companion governance package (<code>datomanager</code>) will eventually own the gov surface; the <code># GOV_SEAM:</code> boundary already marks the lift-out. See <code>dev/datomanager_scope.md</code> for full scope. There is still no “local-only / no-remote” mode for the data repo: a <code>data_repo_url</code> is required. Single-user no-GitHub demos are explicitly rejected scope.</p>
+<p><strong>Git + GitHub for the data repo are mandatory, always; the governance layer is optional and on-demand</strong> (amended Phase 18, 2026-05-02; supersedes the Phase-16 lock that required gov from day one). Every datom project requires a data git repo with a remote (today: GitHub) and a storage backend for parquet bytes. The governance layer – portfolio register, dispatch routing, managed migration – is adopted on-demand via <code>datom_attach_gov()</code>, typically when graduating to object storage or migrating data. Once attached, gov cannot be detached; <code>project.yaml</code>’s <code>storage.governance</code> block, once populated, is permanent. The companion governance package (<code>datomanager</code>) will eventually own the gov surface; the <code># GOV_SEAM:</code> boundary already marks the lift-out. See <code>dev/datomanager_scope.md</code> for full scope. There is still no “local-only / no-remote” mode for the data repo: a <code>data_repo_url</code> is required. Single-user no-GitHub demos are explicitly rejected scope.</p>
 </div>
 <div class="section level2">
 <h2 id="documentation-hierarchy">Documentation Hierarchy<a class="anchor" aria-label="anchor" href="#documentation-hierarchy"></a></h2>

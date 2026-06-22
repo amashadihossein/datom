@@ -26,7 +26,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -182,7 +182,7 @@ data S3 bucket (or local path)
 <code>governance</code> is non-NULL and the project has a governance
 store. Written in the data repo and pushed to storage as part of the
 final git + push step.</p></li>
-<li><p><strong><code><a href="../reference/datom_attach_gov.html">datom_attach_gov()</a></code></strong> – when
+<li><p><strong><code>datom_attach_gov()</code></strong> – when
 governance is retrofitted onto an existing no-gov project. Written and
 mirrored in the same operation.</p></li>
 </ol>
@@ -201,7 +201,7 @@ storage mirror. It is idempotent and safe to call multiple times.</p>
 <div class="section level3">
 <h3 id="deleted">Deleted<a class="anchor" aria-label="anchor" href="#deleted"></a>
 </h3>
-<p><code><a href="../reference/datom_decommission.html">datom_decommission()</a></code> deletes the storage mirror as part
+<p><code>datom_decommission()</code> deletes the storage mirror as part
 of data-storage cleanup (step 1b). The git copy is removed with the data
 repo itself (step 2 – GitHub repo deletion + local clone deletion).</p>
 </div>

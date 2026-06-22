@@ -11,7 +11,7 @@ github_pat presence."><meta property="og:image" content="https://amashadihossein
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -78,8 +78,8 @@ into a single store object. Role (developer vs reader) is derived from
 <dd><p>A store component (e.g., <code><a href="datom_store_s3.html">datom_store_s3()</a></code>) for governance
 files (dispatch, ref, migration history), or <code>NULL</code> for a no-governance
 store. A no-governance store represents a project that has not yet been
-promoted via <code><a href="datom_attach_gov.html">datom_attach_gov()</a></code>; <code>gov_repo_url</code> and <code>gov_local_path</code>
-must also be <code>NULL</code> in that case.</p></dd>
+promoted to governance (via the datomanager package); <code>gov_repo_url</code> and
+<code>gov_local_path</code> must also be <code>NULL</code> in that case.</p></dd>
 
 
 <dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
@@ -99,8 +99,8 @@ must also be <code>NULL</code> in that case.</p></dd>
 
 <dt id="arg-gov-repo-url">gov_repo_url<a class="anchor" aria-label="anchor" href="#arg-gov-repo-url"></a></dt>
 <dd><p>GitHub remote URL for the shared governance repository.
-The governance repo is created once per org via <code><a href="datom_init_gov.html">datom_init_gov()</a></code> and
-referenced here by every project that uses it.</p></dd>
+The governance repo is created once per org (via the datomanager package)
+and referenced here by every project that uses it.</p></dd>
 
 
 <dt id="arg-gov-local-path">gov_local_path<a class="anchor" aria-label="anchor" href="#arg-gov-local-path"></a></dt>

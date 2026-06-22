@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -59,20 +59,6 @@
 
         </dt>
         <dd>Initialize a datom Repository</dd>
-
-        <dt>
-
-          <code><a href="datom_init_gov.html">datom_init_gov()</a></code>
-
-        </dt>
-        <dd>Initialize a Governance Repository</dd>
-
-        <dt>
-
-          <code><a href="datom_attach_gov.html">datom_attach_gov()</a></code>
-
-        </dt>
-        <dd>Attach Governance to an Existing Project</dd>
 
         <dt>
 
@@ -315,13 +301,6 @@
 
         <dt>
 
-          <code><a href="datom_pull_gov.html">datom_pull_gov()</a></code>
-
-        </dt>
-        <dd>Pull Latest Changes from the Governance Repo</dd>
-
-        <dt>
-
           <code><a href="datom_sync.html">datom_sync()</a></code>
 
         </dt>
@@ -333,13 +312,6 @@
 
         </dt>
         <dd>Scan and Prepare Manifest for Sync</dd>
-
-        <dt>
-
-          <code><a href="datom_sync_dispatch.html">datom_sync_dispatch()</a></code>
-
-        </dt>
-        <dd>Sync Dispatch Metadata to Storage</dd>
       </dl></div><div class="section level2">
       <h2 id="validation">Validation<a class="anchor" aria-label="anchor" href="#validation"></a></h2>
 
@@ -366,7 +338,7 @@
       </dl></div><div class="section level2">
       <h2 id="storage-extension-api">Storage Extension API<a class="anchor" aria-label="anchor" href="#storage-extension-api"></a></h2>
 
-      <div class="section-desc"><p>Low-level storage primitives for package developers (e.g. datomanager). End users should use datom_read / datom_write / datom_decommission instead.</p></div>
+      <div class="section-desc"><p>Low-level storage and data-repo primitives for package developers (e.g. datomanager). End users should use datom_read / datom_write / datom_repo_delete instead.</p></div>
 
       <dl></dl></div><div class="section level2">
 
@@ -410,14 +382,14 @@
 
         <dt>
 
-          <code><a href="datom_repo_delete.html">datom_repo_delete()</a></code>
+          <code><a href="datom_repo_attach_governance.html">datom_repo_attach_governance()</a></code>
 
         </dt>
-        <dd>Delete the Data GitHub Repository and Local Clone</dd>
+        <dd>Write the Data-Side Governance Attachment Record</dd>
       </dl></div><div class="section level2">
-      <h2 id="decommission">Decommission<a class="anchor" aria-label="anchor" href="#decommission"></a></h2>
+      <h2 id="teardown">Teardown<a class="anchor" aria-label="anchor" href="#teardown"></a></h2>
 
-      <div class="section-desc"><p>Permanently remove a project and all its artefacts</p></div>
+      <div class="section-desc"><p>Permanently remove a project’s data repo and local clone</p></div>
 
       <dl></dl></div><div class="section level2">
 
@@ -426,10 +398,10 @@
 
       <dl><dt>
 
-          <code><a href="datom_decommission.html">datom_decommission()</a></code>
+          <code><a href="datom_repo_delete.html">datom_repo_delete()</a></code>
 
         </dt>
-        <dd>Decommission a datom Project</dd>
+        <dd>Delete the Data GitHub Repository and Local Clone</dd>
       </dl></div><div class="section level2">
       <h2 id="example-data">Example Data<a class="anchor" aria-label="anchor" href="#example-data"></a></h2>
 
