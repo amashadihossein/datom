@@ -174,7 +174,7 @@ single task.
         full test suite, commit
     - _Requirements: 8.1, 8.2, 8.3_
 
-- [ ] 8. E2E validation and spec completion
+- [x] 8. E2E validation and spec completion
   - [x] 8.1 Run a real end-to-end solo-project workflow via `dev/dev-sandbox.R`
         (init → write → read → `datom_repo_delete`) to confirm datom is fully functional
         without datomanager
@@ -205,7 +205,9 @@ single task.
     - Pathways: **no pathway impact** — route shapes unchanged (one function-name correction).
   - [x] 8.3 Update `dev/README.md`: move spec to Completed, record final test count
     - Active Specs cleared; Completed row added (2026-06-20, 1873 pass / 0 fail).
-  - [ ] 8.4 PR to `main`, merge, delete branch (spec persists — do NOT delete it)
+  - [x] 8.4 PR to `main`, merge, delete branch (spec persists — do NOT delete it)
+    - PR #53 opened (`spec/gov-seam-liftout` → `main`). Squash-merge + branch delete
+      performed by the maintainer. Spec retained as durable documentation.
 
 ## Notes
 
