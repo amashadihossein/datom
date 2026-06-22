@@ -9,8 +9,8 @@ datom_validate(conn, fix = FALSE)
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
-\item{fix}{If \code{TRUE}, attempts to fix inconsistencies by syncing metadata
-to S3 via \code{\link[=datom_sync_dispatch]{datom_sync_dispatch()}}.}
+\item{fix}{If \code{TRUE}, attempts to fix inconsistencies by syncing data-side
+metadata (manifest + per-table metadata) to storage.}
 }
 \value{
 A list with:

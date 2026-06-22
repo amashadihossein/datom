@@ -255,3 +255,112 @@ datom_repo_delete <- function(conn, confirm, force_gov_attached = FALSE) {
 
   invisible(TRUE)
 }
+
+
+#' Write the Data-Side Governance Attachment Record
+#'
+#' Writes `governance.json` -- the data-side pointer recording which governance
+#' repository a project is attached to. This is the data-repo / data-storage
+#' half of attaching governance; the gov-repo registration (writing `ref.json`
+#' and `dispatch.json`, committing to the gov repo) is performed separately by
+#' the governance layer (`datomanager::gov_attach()`).
+#'
+#' `governance.json` is the canonical data->gov pointer in the bidirectional
+#' governance link: the gov repo's `ref.json` points gov->data, and this file
+#' points data->gov, so either repo can find the other. It is written to two
+#' locations, mirroring the manifest pattern (git canonical, storage derived):
+#' * `.datom/governance.json` in the local data clone (git canonical), committed
+#'   and pushed to the data repo.
+#' * `{prefix}/datom/.metadata/governance.json` in data storage (derived mirror;
+#'   a failed mirror write warns but does not abort -- the git copy is canonical
+#'   and readers with gov access resolve location from the gov repo).
+#'
+#' Routing this write through datom upholds the two-repos invariant: the
+#' governance layer never mutates the data repo directly.
+#'
+#' @param conn A `datom_conn` object with `role = "developer"` and a local
+#'   data clone (`conn$path`).
+#' @param gov_repo_url HTTPS clone URL of the governance git repository to
+#'   record.
+#' @param gov_store A `datom_store_s3` or `datom_store_local` component for the
+#'   governance storage. Only its location fields are persisted; credentials
+#'   are discarded.
+#' @param message Optional commit message. Defaults to
+#'   `"Attach governance: {project_name}"`.
+#' @return Invisibly, the SHA of the resulting data-repo commit.
+#' @export
+#' @seealso [datom_repo_delete()], [datom_repo_set_data_store()]
+#' @examples
+#' \dontrun{
+#' # Data-side half of governance attachment (gov-repo registration is
+#' # performed by datomanager::gov_attach()).
+#' datom_repo_attach_governance(conn, gov_repo_url, gov_store)
+#' }
+datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
+                                         message = NULL) {
+  .datom_check_git2r()
+
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object.")
+  }
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "{.fn datom_repo_attach_governance} requires a developer connection.",
+      "i" = "Current role: {.val {conn$role}}"
+    ))
+  }
+  if (is.null(conn$path)) {
+    cli::cli_abort(
+      "{.arg conn} has no local repo {.field path}; cannot write governance.json."
+    )
+  }
+  if (!is.character(gov_repo_url) || length(gov_repo_url) != 1L ||
+      !nzchar(gov_repo_url)) {
+    cli::cli_abort("{.arg gov_repo_url} must be a non-empty character string.")
+  }
+  if (!.is_datom_store_component(gov_store)) {
+    cli::cli_abort(
+      "{.arg gov_store} must be a {.cls datom_store_s3} or {.cls datom_store_local} object."
+    )
+  }
+
+  yaml_path <- fs::path(conn$path, ".datom", "project.yaml")
+  if (!fs::file_exists(yaml_path)) {
+    cli::cli_abort("No {.file .datom/project.yaml} found at {.path {conn$path}}.")
+  }
+
+  project_name <- conn$project_name
+
+  # --- Build + write governance.json (git canonical) -------------------------
+  gov_json <- .datom_create_governance_json(
+    gov_repo_url = gov_repo_url,
+    gov_store    = gov_store
+  )
+  .datom_write_governance_json_local(conn$path, gov_json)
+
+  # --- Commit + push the data repo -------------------------------------------
+  commit_msg <- message %||% glue::glue("Attach governance: {project_name}")
+  sha <- .datom_git_commit(
+    conn$path,
+    files   = ".datom/governance.json",
+    message = commit_msg
+  )
+  .datom_git_push(conn$path, pat = conn$github_pat)
+
+  # --- Mirror to data storage (warn-and-continue on failure) -----------------
+  tryCatch(
+    .datom_storage_write_governance_json(conn, gov_json),
+    error = function(e) {
+      cli::cli_warn(c(
+        "governance.json storage upload failed.",
+        "x" = conditionMessage(e),
+        "i" = "Local copy is intact. Readers with gov access resolve location from gov."
+      ))
+    }
+  )
+
+  cli::cli_alert_success(
+    "Wrote data-side governance record for {.val {project_name}}."
+  )
+  invisible(sha)
+}

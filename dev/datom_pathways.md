@@ -170,7 +170,7 @@ project):
 
 **Primary functions/files:** Future `gov_decommission()` (datomanager, governed),
 `datom_repo_delete()` / `datom_storage_delete_prefix()` (datom data-side helpers; also the
-solo-project self-serve path), `.datom_gov_unregister_project()`.
+solo-project self-serve path), gov unregister (datomanager-owned post gov-seam-liftout).
 
 **Do not:** Delete the storage root itself. Buckets/directories are caller-owned; datom
 owns only its namespace. datomanager never deletes the data repo directly -- it calls

@@ -94,6 +94,61 @@ test_that(".datom_normalize_prefix collapses empty-ish forms to NULL", {
 })
 
 
+test_that(".datom_parse_ref round-trips a battery of gov-state ref structures", {
+  # Feature: gov-seam-liftout, Property 3: gov state read round-trip (C8) --
+  # datom retains the governance *read* surface; the ref parser is the gov-state
+  # reader. Every ref.json structure must survive a JSON write/read round-trip
+  # and parse back to its intended data location.
+  battery <- list(
+    full_s3 = list(
+      current  = list(root = "data-bucket", prefix = "trial/",
+                      region = "us-west-2"),
+      expected = list(root = "data-bucket", prefix = "trial/",
+                      region = "us-west-2")
+    ),
+    null_prefix = list(
+      current  = list(root = "my-bucket", region = "eu-west-1"),
+      expected = list(root = "my-bucket", prefix = NULL, region = "eu-west-1")
+    ),
+    empty_prefix = list(
+      current  = list(root = "b", prefix = "", region = "us-east-1"),
+      expected = list(root = "b", prefix = NULL, region = "us-east-1")
+    ),
+    missing_region = list(
+      current  = list(root = "b2", prefix = "p/"),
+      expected = list(root = "b2", prefix = "p/", region = "us-east-1")
+    ),
+    local_root = list(
+      current  = list(type = "local", root = "/data/store", prefix = "proj/"),
+      expected = list(root = "/data/store", prefix = "proj/",
+                      region = "us-east-1")
+    ),
+    nested_prefix = list(
+      current  = list(root = "bucket", prefix = "a/b/c/", region = "ap-south-1"),
+      expected = list(root = "bucket", prefix = "a/b/c/", region = "ap-south-1")
+    )
+  )
+
+  for (nm in names(battery)) {
+    ref_in <- list(current = battery[[nm]]$current, previous = list())
+
+    ref_path <- withr::local_tempfile(fileext = ".json")
+    jsonlite::write_json(ref_in, ref_path, auto_unbox = TRUE, pretty = TRUE)
+    parsed <- .datom_parse_ref(
+      jsonlite::read_json(ref_path, simplifyVector = FALSE),
+      source = ref_path
+    )
+
+    exp <- battery[[nm]]$expected
+    expect_equal(parsed$root, exp$root, info = paste0("case: ", nm))
+    expect_equal(.datom_normalize_prefix(parsed$prefix),
+                 .datom_normalize_prefix(exp$prefix),
+                 info = paste0("case: ", nm))
+    expect_equal(parsed$region, exp$region, info = paste0("case: ", nm))
+  }
+})
+
+
 # --- .datom_resolve_ref() -----------------------------------------------------
 
 test_that("resolves current data location from ref.json", {

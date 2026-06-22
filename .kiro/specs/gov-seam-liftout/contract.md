@@ -282,6 +282,7 @@ the paired cell(s) and the cited contract clause.
 | P11| Gov-repo git ownership               | R10 (no gov git)          | R1 (own git via git2r)       | C7       |
 | P12| Gov storage layout / serialization   | R5 (reads conform)        | R1 (writes conform)          | C8       |
 | P13| Conn gov fields (twelve)             | R7                        | R2.8                         | C6       |
+| P14| Data-side governance.json write      | R11 (`datom_repo_attach_governance`) | R4 (`gov_attach` calls it) | C4       |
 
 ### Shared lists that must stay identical
 

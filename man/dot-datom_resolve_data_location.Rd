@@ -42,7 +42,7 @@ Read path is \strong{role-aware}:
 \itemize{
 \item Developer with \code{gov_local_path} set: read \code{projects/{name}/ref.json}
 from the local gov clone (faster, works offline, reflects last
-\code{datom_pull_gov()}).
+gov-clone refresh).
 \item Otherwise (reader, or developer without a clone yet): read via the
 gov storage client.
 }

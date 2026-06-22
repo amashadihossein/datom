@@ -1555,13 +1555,13 @@ test_that("rejects conn without path", {
   )
 })
 
-test_that("NULL data + NULL name delegates to datom_sync_dispatch", {
+test_that("NULL data + NULL name delegates to data-only metadata sync", {
   conn <- mock_datom_conn(list())
   local_mocked_bindings(
-    datom_sync_dispatch = function(conn) "sync_dispatch_called"
+    .datom_sync_data_metadata = function(conn) "sync_data_metadata_called"
   )
   result <- datom_write(conn, data = NULL, name = NULL)
-  expect_equal(result, "sync_dispatch_called")
+  expect_equal(result, "sync_data_metadata_called")
 })
 
 test_that("NULL data + name delegates to .datom_sync_metadata", {

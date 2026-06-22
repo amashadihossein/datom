@@ -91,7 +91,7 @@
 #'
 #' Reads `projects/{project_name}/ref.json` directly from a local gov clone
 #' on disk. Faster than storage reads, works offline, and reflects the last
-#' `datom_pull_gov()`. Used for developer connections.
+#' gov-clone refresh. Used for developer connections.
 #'
 #' @param gov_local_path Absolute path to the local gov clone.
 #' @param project_name Project name string.
@@ -112,7 +112,7 @@
       "Failed to read {.file ref.json} from local gov clone.",
       "x" = "Path: {.path {ref_path}}",
       "i" = "The project may not be registered, or the clone may be stale.",
-      "i" = "Try {.code datom_pull_gov(conn)} to refresh the clone."
+      "i" = "Refresh the gov clone (e.g. {.code datomanager::gov_pull()}) and retry."
     ))
   }
 
@@ -231,7 +231,7 @@
 #' Read path is **role-aware**:
 #' * Developer with `gov_local_path` set: read `projects/{name}/ref.json`
 #'   from the local gov clone (faster, works offline, reflects last
-#'   `datom_pull_gov()`).
+#'   gov-clone refresh).
 #' * Otherwise (reader, or developer without a clone yet): read via the
 #'   gov storage client.
 #'
@@ -285,7 +285,7 @@
       cli::cli_abort(c(
         "Cannot connect: {.fn datom_store_s3_creds} data store has no location.",
         "x" = "ref.json could not be resolved for project {.val {project_name}}.",
-        "i" = "Ensure governance is reachable and {.fn datom_pull_gov} is up to date."
+        "i" = "Ensure governance is reachable and the gov clone is up to date (e.g. {.code datomanager::gov_pull()})."
       ))
     }
     return(NULL)

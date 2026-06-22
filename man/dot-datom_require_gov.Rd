@@ -10,15 +10,13 @@
 \item{conn}{A \code{datom_conn} object.}
 
 \item{what}{Character. The user-facing name of the calling function
-(e.g. \code{"datom_pull_gov()"}), used in the error message.}
+(e.g. \code{"datom_projects()"}), used in the error message.}
 }
 \value{
 Invisible \code{TRUE} when gov is attached. Aborts otherwise.
 }
 \description{
-Guard helper used by gov-only commands (\code{datom_projects}, \code{datom_pull_gov},
-\code{datom_sync_dispatch}) to fail with a single uniform message when called
-on a no-governance connection. Not used by \code{datom_decommission} -- that
-command's gov-half is conditional, not required.
+Guard helper used by gov-only commands (e.g. \code{datom_projects}) to fail with
+a single uniform message when called on a no-governance connection.
 }
 \keyword{internal}

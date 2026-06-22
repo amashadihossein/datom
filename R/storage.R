@@ -48,7 +48,7 @@ datom_storage_list <- function(conn) {
 #' **Irreversible.** Intended for package developers building tools on top of
 #' datom (e.g. datomanager for rollback or source deletion after migration).
 #' End users performing a full project teardown should use
-#' [datom_decommission()] instead.
+#' [datom_repo_delete()] instead.
 #'
 #' @param conn A `datom_conn` object.
 #' @param prefix_key Relative prefix to delete under (after

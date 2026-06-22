@@ -1,20 +1,28 @@
 # dev/dev-sandbox.R
 # ──────────────────────────────────────────────────────────────────────────────
 # Developer sandbox: stand up and tear down a complete datom data product
-# infrastructure (GitHub repo + S3 namespace + local repo) in one call.
+# (GitHub repo + storage namespace + local repo) in one call.
+#
+# SOLO-ONLY. After the gov-seam lift-out (spec gov-seam-liftout, 2026-06-20) datom
+# no longer owns the governance write surface -- gov init/attach/decommission live
+# in the companion package `datomanager`. This sandbox therefore stands up only
+# Solo_Projects (no governance attached). The gov-attached sandbox flow will be
+# reintroduced in datomanager's own dev tooling. The previous gov-capable version
+# is preserved in git history.
 #
 # Usage:
-#   source("dev/dev-sandbox.R")
-#   store <- sandbox_store()   # builds store from keyring/env vars
-#   env <- sandbox_up(store)   # creates everything, returns connection info
+#   source("~/projects/dev/datom/dev/dev-sandbox.R")
+#   store <- sandbox_store()          # S3 store from keyring/env vars
+#   # or: store <- sandbox_store_local(path = "~/projects/dev/datom-test/foo")
+#   env <- sandbox_up(store)          # creates everything, returns connection info
 #   # ... work / test ...
-#   sandbox_down(env)          # tears down everything
-#   sandbox_reset(env, store)  # down + up (same config)
+#   sandbox_down(env)                 # tears down everything
+#   sandbox_reset(env, store)         # down + up (same config)
 #
 # Prerequisites:
-#   - AWS credentials accessible (keyring, env vars, etc.)
-#   - GITHUB_PAT accessible
-#   - `gh` CLI for teardown (repo deletion only)
+#   - GITHUB_PAT accessible (every datom data repo is git+GitHub-backed)
+#   - AWS credentials accessible for S3 stores (keyring, env vars, etc.)
+#   - `gh` CLI only for the teardown fallback when no conn is available
 #   - datom loaded (devtools::load_all())
 #
 # All defaults are overridable. Adjust .sandbox_defaults() for your setup.
@@ -31,30 +39,27 @@
 #' to sandbox_store(). Env vars are never hard-coded here.
 #'
 #'   AWS_ACCESS_KEY_ID      - AWS access key ID
-#'   AWS_SECRET_ACCESS_KEY   - AWS secret access key
-#'   GITHUB_PAT       - GitHub personal access token
+#'   AWS_SECRET_ACCESS_KEY  - AWS secret access key
+#'   GITHUB_PAT             - GitHub personal access token
 .sandbox_defaults <- function() {
   list(
     project_name = "SANDBOX_TEST",
-    github_org    = NULL,            # NULL = personal repo; set to "my-org" for org repos
-    repo_name     = "datom-sandbox", # GitHub repo name (data repo)
-    gov_repo_name = "datom-sandbox-gov", # GitHub repo name (governance repo)
-    bucket        = "datom-test",    # REQUIRED -- your dev S3 bucket
-    gov_bucket    = "datom-gov-test", # REQUIRED -- your dev governance S3 bucket
-    prefix        = "sandbox/",      # S3 prefix (keeps sandbox isolated)
-    region        = "us-east-1",
-    base_dir      = fs::path_abs("../datom-test"),  # sibling of datom project
-    populate      = TRUE,            # seed with example data?
-    n_months      = 2L               # how many monthly snapshots to sync
+    github_org   = NULL,             # NULL = personal repo; set to "my-org" for org repos
+    repo_name    = "datom-sandbox",  # GitHub repo name (data repo)
+    bucket       = "datom-test",     # REQUIRED for S3 stores -- your dev S3 bucket
+    prefix       = "sandbox/",       # storage prefix (keeps sandbox isolated)
+    region       = "us-east-1",
+    base_dir     = fs::path_abs("../datom-test"),  # sibling of datom project
+    populate     = TRUE,             # seed with example data?
+    n_months     = 2L                # how many monthly snapshots to sync
   )
 }
 
 # --- Store construction ------------------------------------------------------
 
-#' Build a datom_store for sandbox use
+#' Build a solo datom_store (S3 data backend) for sandbox use
 #'
-#' Constructs a `datom_store` with S3 components from credentials. Defaults
-#' to keyring; override with explicit values or env vars.
+#' Constructs a `datom_store` with an S3 data component only (no governance).
 #'
 #' @param bucket S3 bucket name.
 #' @param prefix S3 prefix.
@@ -65,17 +70,15 @@
 #' @param github_org GitHub org for repo creation (NULL = personal).
 #' @param data_repo_url Pre-existing data repo URL (NULL = create_repo in sandbox_up).
 #'
-#' @return A `datom_store` object (developer role).
+#' @return A solo `datom_store` object (developer role).
 sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
-                          gov_bucket = .sandbox_defaults()$gov_bucket,
                           prefix = .sandbox_defaults()$prefix,
                           region = .sandbox_defaults()$region,
                           access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
                           secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY"),
                           github_pat = Sys.getenv("GITHUB_PAT"),
                           github_org = .sandbox_defaults()$github_org,
-                          data_repo_url = NULL,
-                          attach_gov = TRUE) {
+                          data_repo_url = NULL) {
   data_comp <- datom::datom_store_s3(
     bucket     = bucket,
     prefix     = prefix,
@@ -85,49 +88,34 @@ sandbox_store <- function(bucket = .sandbox_defaults()$bucket,
     validate   = FALSE
   )
 
-  gov_comp <- if (isTRUE(attach_gov)) {
-    datom::datom_store_s3(
-      bucket     = gov_bucket,
-      prefix     = prefix,
-      region     = region,
-      access_key = access_key,
-      secret_key = secret_key,
-      validate   = FALSE
-    )
-  } else {
-    NULL
-  }
-
   datom::datom_store(
-    governance = gov_comp,
-    data       = data_comp,
-    github_pat = github_pat,
-    github_org = github_org,
+    governance    = NULL,
+    data          = data_comp,
+    github_pat    = github_pat,
+    github_org    = github_org,
     data_repo_url = data_repo_url,
-    validate   = FALSE
+    validate      = FALSE
   )
 }
 
 
-#' Build a local-backend datom_store for sandbox use
+#' Build a solo local-backend datom_store for sandbox use
 #'
-#' Constructs a `datom_store` with local filesystem components. No AWS
-#' credentials needed — data lives on disk.
+#' Constructs a `datom_store` with a local filesystem data component only (no
+#' governance). No AWS credentials needed -- data lives on disk.
 #'
 #' @param path Root directory for local storage. Created if it doesn't exist.
 #' @param prefix Storage prefix (default NULL).
-#' @param github_pat GitHub PAT (still required for governance/git).
+#' @param github_pat GitHub PAT (still required: the data repo is git-backed).
 #' @param github_org GitHub org for repo creation (NULL = personal).
 #' @param data_repo_url Pre-existing data repo URL (NULL = create_repo in sandbox_up).
 #'
-#' @return A `datom_store` object (developer role, local backend).
+#' @return A solo `datom_store` object (developer role, local backend).
 sandbox_store_local <- function(path,
-                                gov_path = paste0(path, "-gov"),
                                 prefix = NULL,
                                 github_pat = Sys.getenv("GITHUB_PAT"),
                                 github_org = NULL,
-                                data_repo_url = NULL,
-                                attach_gov = TRUE) {
+                                data_repo_url = NULL) {
   fs::dir_create(path)
 
   data_comp <- datom::datom_store_local(
@@ -136,29 +124,18 @@ sandbox_store_local <- function(path,
     validate = FALSE
   )
 
-  gov_comp <- if (isTRUE(attach_gov)) {
-    fs::dir_create(gov_path)
-    datom::datom_store_local(
-      path     = gov_path,
-      prefix   = prefix,
-      validate = FALSE
-    )
-  } else {
-    NULL
-  }
-
   datom::datom_store(
-    governance = gov_comp,
-    data       = data_comp,
-    github_pat = github_pat,
-    github_org = github_org,
+    governance    = NULL,
+    data          = data_comp,
+    github_pat    = github_pat,
+    github_org    = github_org,
     data_repo_url = data_repo_url,
-    validate   = FALSE
+    validate      = FALSE
   )
 }
 
 
-# --- Helpers (gh CLI — used only for teardown) --------------------------------
+# --- Helpers (gh CLI -- teardown fallback only) -------------------------------
 
 .sandbox_check_gh <- function() {
   rc <- system2("gh", "--version", stdout = FALSE, stderr = FALSE)
@@ -214,9 +191,8 @@ sandbox_store_local <- function(path,
 }
 
 # Idempotent gh repo deletion. Returns invisible(TRUE) if deleted or already
-# gone; emits cli_alert_danger on real failures and rethrows so the caller's
-# tryCatch() can react if needed. Uses `gh repo view` as a pre-check so the
-# common "already deleted" path is an info message, not an error.
+# gone. Used only as a teardown fallback when no conn is available (otherwise
+# datom_repo_delete() handles repo deletion via httr2).
 .sandbox_gh_repo_delete <- function(full_name, kind = "GitHub repo") {
   view <- .sandbox_gh("repo", "view", full_name, "--json", "name",
                       error_on_fail = FALSE)
@@ -231,7 +207,7 @@ sandbox_store_local <- function(path,
 }
 
 
-# --- S3 cleanup --------------------------------------------------------------
+# --- Storage cleanup ---------------------------------------------------------
 
 #' Delete all objects under the sandbox S3 prefix
 #'
@@ -293,8 +269,6 @@ sandbox_store_local <- function(path,
   invisible(length(all_keys))
 }
 
-# --- Local cleanup -----------------------------------------------------------
-
 #' Delete the sandbox local store directory
 .sandbox_wipe_local_component <- function(store_component, label = "data") {
   if (!inherits(store_component, "datom_store_local")) {
@@ -315,14 +289,29 @@ sandbox_store_local <- function(path,
   invisible(TRUE)
 }
 
+#' Wipe the data store namespace (S3 or local), backend-agnostic
+#'
+#' datom_repo_delete() removes the GitHub repo + local clone but NOT the data
+#' store namespace (the store root is caller-owned). The sandbox owns its
+#' namespace, so it wipes it here on teardown.
+.sandbox_wipe_storage <- function(store, label = "data") {
+  tryCatch(.sandbox_wipe_s3_component(store$data, label),
+           error = function(e) cli::cli_alert_danger("{label} S3 cleanup failed: {conditionMessage(e)}"))
+  tryCatch(.sandbox_wipe_local_component(store$data, label),
+           error = function(e) cli::cli_alert_danger("{label} local cleanup failed: {conditionMessage(e)}"))
+  invisible(TRUE)
+}
+
+
 # --- Core functions ----------------------------------------------------------
 
-#' Stand up a sandbox datom data product
+#' Stand up a solo sandbox datom data product
 #'
-#' Creates a GitHub repo (via datom_init_repo with create_repo = TRUE),
-#' and optionally populates with example study data.
+#' Creates a GitHub data repo (via datom_init_repo with create_repo = TRUE),
+#' and optionally populates with example study data. No governance is attached.
 #'
-#' @param store A `datom_store` object (from `sandbox_store()`).
+#' @param store A solo `datom_store` object (from `sandbox_store()` /
+#'   `sandbox_store_local()`).
 #' @param ... Override any defaults from .sandbox_defaults().
 #' @return A sandbox environment list (pass to sandbox_down/sandbox_reset).
 sandbox_up <- function(store, ...) {
@@ -331,18 +320,19 @@ sandbox_up <- function(store, ...) {
   if (missing(store) || !datom::is_datom_store(store)) {
     cli::cli_abort(c(
       "{.arg store} is required and must be a {.cls datom_store}.",
-      "i" = "Build one with {.fn sandbox_store}."
+      "i" = "Build one with {.fn sandbox_store} or {.fn sandbox_store_local}."
+    ))
+  }
+  if (!is.null(store$governance)) {
+    cli::cli_abort(c(
+      "This sandbox is solo-only -- {.arg store} must have no governance component.",
+      "i" = "Governance lives in datomanager after the gov-seam lift-out."
     ))
   }
 
   local_path <- fs::path(cfg$base_dir, cfg$repo_name)
-  has_gov <- !is.null(store$governance)
-  gov_local_path <- if (has_gov) fs::path(cfg$base_dir, cfg$gov_repo_name) else NULL
 
-  cli::cli_h2("Sandbox Up: {.val {cfg$project_name}}")
-  if (!has_gov) {
-    cli::cli_alert_info("No-governance sandbox -- {.fn datom_init_gov} will be skipped.")
-  }
+  cli::cli_h2("Sandbox Up (solo): {.val {cfg$project_name}}")
 
   # Determine whether to create repo or use existing data_repo_url
   create_repo <- is.null(store$data_repo_url)
@@ -353,46 +343,13 @@ sandbox_up <- function(store, ...) {
     cli::cli_alert_info("Will create GitHub repo {.val {cfg$repo_name}} via API...")
   }
 
-  # Clean up local paths if they exist
+  # Clean up local path if it exists
   if (fs::dir_exists(local_path)) {
     cli::cli_alert_warning("Local path {.path {local_path}} exists. Removing.")
     fs::dir_delete(local_path)
   }
-  if (has_gov && fs::dir_exists(gov_local_path)) {
-    cli::cli_alert_warning("Gov local path {.path {gov_local_path}} exists. Removing.")
-    fs::dir_delete(gov_local_path)
-  }
 
-  # ---- Step 1: bootstrap governance repo (gov-first per Phase 15) ----------
-  if (has_gov && is.null(store$gov_repo_url)) {
-    cli::cli_alert_info("Initializing governance repo {.val {cfg$gov_repo_name}}...")
-    gov_repo_url <- datom::datom_init_gov(
-      gov_store      = store$governance,
-      gov_local_path = as.character(gov_local_path),
-      create_repo    = TRUE,
-      repo_name      = cfg$gov_repo_name,
-      github_pat     = store$github_pat,
-      github_org     = store$github_org,
-      private        = TRUE
-    )
-
-    # Rebuild store with gov_repo_url + gov_local_path so datom_init_repo can
-    # locate the gov clone we just created.
-    store <- datom::datom_store(
-      governance     = store$governance,
-      data           = store$data,
-      github_pat     = store$github_pat,
-      data_repo_url  = store$data_repo_url,
-      gov_repo_url   = gov_repo_url,
-      gov_local_path = as.character(gov_local_path),
-      github_org     = store$github_org,
-      validate       = FALSE
-    )
-  } else if (has_gov) {
-    cli::cli_alert_info("Using existing gov remote: {.url {store$gov_repo_url}}")
-  }
-
-  # ---- Step 2: initialize data repo (creates GitHub data repo if needed) ---
+  # ---- Initialize data repo (creates GitHub data repo if needed) -----------
   cli::cli_alert_info("Initializing datom repo at {.path {local_path}}...")
 
   datom::datom_init_repo(
@@ -438,158 +395,50 @@ sandbox_up <- function(store, ...) {
     cli::cli_alert_success("Populated {n} month{?s} of example data.")
   }
 
-  # Build the environment object
   env <- list(
-    config         = cfg,
-    store          = store,
-    local_path     = as.character(local_path),
-    gov_local_path = if (has_gov) as.character(gov_local_path) else NULL,
-    conn           = conn,
-    created_at     = Sys.time()
+    config     = cfg,
+    store      = store,
+    local_path = as.character(local_path),
+    conn       = conn,
+    created_at = Sys.time()
   )
 
   class(env) <- "datom_sandbox"
 
-  cli::cli_h3("Sandbox ready")
+  cli::cli_h3("Sandbox ready (solo)")
   cli::cli_ul()
   cli::cli_li("Git repo: {.path {local_path}}")
-  if (has_gov) {
-    cli::cli_li("Gov clone: {.path {gov_local_path}}")
-  } else {
-    cli::cli_li("Gov clone: not attached")
-  }
   cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
-  if (has_gov) {
-    cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
-  } else {
-    cli::cli_li("Governance: not attached (use {.fn sandbox_promote_gov} to attach)")
-  }
+  cli::cli_li("Governance: not attached (datom is solo-only; gov lives in datomanager)")
   cli::cli_end()
 
   invisible(env)
 }
 
 
-#' Promote a no-gov sandbox to gov-attached
+#' Tear down a solo sandbox datom data product
 #'
-#' Attaches governance to a sandbox that was stood up with `attach_gov = FALSE`.
-#' Mirrors the user-facing flow of Article 4 (Promoting to S3): a project that
-#' started solo graduates to governance via `datom_attach_gov()`.
-#'
-#' @param env A `datom_sandbox` from `sandbox_up()` -- must currently be no-gov.
-#' @param gov_store A governance `datom_store_*` component (S3 or local).
-#' @return The updated `datom_sandbox` env (with `gov_local_path` populated and
-#'   `store$governance` filled in).
-sandbox_promote_gov <- function(env, gov_store) {
-  if (!inherits(env, "datom_sandbox")) {
-    cli::cli_abort("{.arg env} must be a {.cls datom_sandbox}.")
-  }
-  if (!is.null(env$store$governance)) {
-    cli::cli_alert_info("Sandbox already has governance attached. No-op.")
-    return(invisible(env))
-  }
-  if (is.null(env$conn)) {
-    cli::cli_abort(c(
-      "{.arg env$conn} is NULL.",
-      "i" = "Re-stand-up the sandbox with {.code populate = TRUE} or build a conn first."
-    ))
-  }
-
-  cfg <- env$config
-  gov_local_path <- fs::path(cfg$base_dir, cfg$gov_repo_name)
-
-  cli::cli_h2("Sandbox Promote: attaching governance")
-
-  # Mirror datom_init_gov + datom_attach_gov flow.
-  gov_repo_url <- datom::datom_init_gov(
-    gov_store      = gov_store,
-    gov_local_path = as.character(gov_local_path),
-    create_repo    = TRUE,
-    repo_name      = cfg$gov_repo_name,
-    github_pat     = env$store$github_pat,
-    github_org     = env$store$github_org,
-    private        = TRUE
-  )
-
-  new_conn <- datom::datom_attach_gov(
-    conn           = env$conn,
-    gov_store      = gov_store,
-    gov_repo_url   = gov_repo_url,
-    gov_local_path = as.character(gov_local_path)
-  )
-
-  # Rebuild the env's store with the gov component now populated.
-  env$store <- datom::datom_store(
-    governance     = gov_store,
-    data           = env$store$data,
-    github_pat     = env$store$github_pat,
-    data_repo_url  = env$store$data_repo_url,
-    gov_repo_url   = gov_repo_url,
-    gov_local_path = as.character(gov_local_path),
-    github_org     = env$store$github_org,
-    validate       = FALSE
-  )
-  env$gov_local_path <- as.character(gov_local_path)
-  env$conn <- new_conn
-
-  cli::cli_alert_success("Sandbox promoted: governance attached.")
-  invisible(env)
-}
-
-
-#' Tear down a sandbox datom data product
-#'
-#' Deletes storage objects (S3 or local filesystem), GitHub repos, and local
-#' clone directories.  Supports scoped teardown so you can tear down just the
-#' project data, just the governance infrastructure, or everything at once.
+#' Deletes the data GitHub repo + local clone (via `datom_repo_delete()`), then
+#' wipes the data store namespace (S3 or local) that the sandbox owns.
 #'
 #' @param env Sandbox environment from sandbox_up().
-#' @param scope One of `"all"` (default), `"project"`, or `"gov"`:
-#'   * `"project"` -- decommission the data project only (leaves gov intact).
-#'   * `"gov"` -- destroy the governance repo only (refuses if projects are
-#'     still registered; call `scope = "project"` first, or use
-#'     `force = TRUE`).
-#'   * `"all"` -- project decommission, then gov destroy.
 #' @param confirm If TRUE (default in interactive), asks before destroying.
-#' @param force If TRUE, allow gov destroy even when projects are still
-#'   registered (passed to `.datom_gov_destroy()`).  Ignored for
-#'   `scope = "project"`.
-sandbox_down <- function(env,
-                         scope   = c("all", "project", "gov"),
-                         confirm = interactive(),
-                         force   = FALSE) {
+sandbox_down <- function(env, confirm = interactive()) {
   if (!inherits(env, "datom_sandbox")) {
     cli::cli_abort("{.arg env} must be a {.cls datom_sandbox} from {.fn sandbox_up}.")
   }
 
-  scope <- match.arg(scope)
   cfg   <- env$config
   store <- env$store
-  has_gov <- !is.null(store$governance)
 
-  if (!has_gov && scope == "gov") {
-    cli::cli_alert_info("Sandbox has no governance attached -- nothing to tear down.")
-    return(invisible(FALSE))
-  }
-  if (!has_gov && scope == "all") {
-    scope <- "project"
-  }
-
-  cli::cli_h2("Sandbox Down: {.val {cfg$project_name}}")
+  cli::cli_h2("Sandbox Down (solo): {.val {cfg$project_name}}")
 
   if (isTRUE(confirm)) {
     cli::cli_alert_danger("This will permanently delete:")
     cli::cli_ul()
-    if (scope %in% c("all", "project")) {
-      cli::cli_li("Data storage: {.path {(.sandbox_storage_label(store$data))}}")
-      cli::cli_li("Data GitHub repo: {.val {cfg$repo_name}}")
-      cli::cli_li("Data clone: {.path {env$local_path}}")
-    }
-    if (scope %in% c("all", "gov")) {
-      cli::cli_li("Governance storage: {.path {(.sandbox_storage_label(store$governance))}}")
-      cli::cli_li("Gov GitHub repo: {.val {cfg$gov_repo_name %||% '(unknown)'}}")
-      cli::cli_li("Gov clone: {.path {env$gov_local_path %||% env$conn$gov_local_path %||% '(unknown)'}}")
-    }
+    cli::cli_li("Data storage: {.path {(.sandbox_storage_label(store$data))}}")
+    cli::cli_li("Data GitHub repo: {.val {cfg$repo_name}}")
+    cli::cli_li("Data clone: {.path {env$local_path}}")
     cli::cli_end()
 
     answer <- readline("Type 'yes' to confirm: ")
@@ -599,83 +448,35 @@ sandbox_down <- function(env,
     }
   }
 
-  # ---- Project decommission --------------------------------------------------
-  if (scope %in% c("all", "project")) {
-    if (!is.null(env$conn)) {
-      datom::datom_decommission(env$conn, confirm = cfg$project_name)
-    } else {
-      # Fallback: manual teardown if conn is not available
-      tryCatch({
-        .sandbox_wipe_s3_component(store$data, "data")
-      }, error = function(e) {
-        cli::cli_alert_danger("Data storage cleanup failed: {conditionMessage(e)}")
-      })
-      tryCatch({
-        .sandbox_check_gh()
-        .sandbox_gh_repo_delete(.sandbox_repo_full_name(cfg), "data GitHub repo")
-      }, error = function(e) {
-        cli::cli_alert_danger("Data GitHub repo deletion failed: {conditionMessage(e)}")
-      })
-      if (fs::dir_exists(env$local_path)) {
-        fs::dir_delete(env$local_path)
-        cli::cli_alert_success("Removed local data clone.")
-      }
-    }
-
-    # Mop up the data store root for local backends. datom_decommission()
-    # deletes the datom/ namespace inside the root but leaves the root itself
-    # (it doesn't own the parent directory). The sandbox does own it.
-    # No-op for S3 (root=bucket; we never delete buckets).
+  # ---- Delete data repo + clone --------------------------------------------
+  if (!is.null(env$conn)) {
+    tryCatch(
+      datom::datom_repo_delete(env$conn, confirm = cfg$project_name),
+      error = function(e) cli::cli_alert_danger("datom_repo_delete failed: {conditionMessage(e)}")
+    )
+  } else {
+    # Fallback (e.g. after sandbox_recover with no conn): use gh + fs directly.
     tryCatch({
-      .sandbox_wipe_local_component(store$data, "data")
-    }, error = function(e) {
-      cli::cli_alert_danger("Data local directory cleanup failed: {conditionMessage(e)}")
-    })
-  }
-
-  # ---- Gov destroy -----------------------------------------------------------
-  if (scope %in% c("all", "gov")) {
-    # Wipe gov storage
-    tryCatch({
-      .sandbox_wipe_s3_component(store$governance, "governance")
-      .sandbox_wipe_local_component(store$governance, "governance")
-    }, error = function(e) {
-      cli::cli_alert_danger("Governance storage cleanup failed: {conditionMessage(e)}")
-      cli::cli_alert_info("Continuing with remaining teardown...")
-    })
-
-    # Delete gov GitHub repo
-    gov_repo_name <- cfg$gov_repo_name %||% NULL
-    gov_repo_url  <- store$gov_repo_url %||% env$conn$gov_repo_url %||% NULL
-    if (!is.null(gov_repo_name)) {
-      tryCatch({
-        .sandbox_check_gh()
-        gov_full_name <- .sandbox_repo_full_name(
-          cfg, repo_name = gov_repo_name, repo_url = gov_repo_url
-        )
-        .sandbox_gh_repo_delete(gov_full_name, "gov GitHub repo")
-      }, error = function(e) {
-        cli::cli_alert_danger("Gov GitHub repo deletion failed: {conditionMessage(e)}")
-        cli::cli_alert_info("You may need to delete it manually.")
-      })
-    }
-
-    # Destroy local gov clone
-    gov_local_path <- env$gov_local_path %||% env$conn$gov_local_path %||% NULL
-    if (!is.null(gov_local_path)) {
-      tryCatch(
-        datom:::.datom_gov_destroy(gov_local_path, force = force),
-        error = function(e) {
-          cli::cli_alert_danger("Gov clone destroy failed: {conditionMessage(e)}")
-        }
+      .sandbox_check_gh()
+      .sandbox_gh_repo_delete(
+        .sandbox_repo_full_name(cfg, repo_url = store$data_repo_url),
+        "data GitHub repo"
       )
+    }, error = function(e) {
+      cli::cli_alert_danger("Data GitHub repo deletion failed: {conditionMessage(e)}")
+    })
+    if (fs::dir_exists(env$local_path)) {
+      fs::dir_delete(env$local_path)
+      cli::cli_alert_success("Removed local data clone.")
     }
   }
 
-  cli::cli_alert_success("Sandbox {.val {cfg$project_name}} torn down ({scope}).")
+  # ---- Wipe the data store namespace (caller-owned; not removed above) -----
+  .sandbox_wipe_storage(store, "data")
+
+  cli::cli_alert_success("Sandbox {.val {cfg$project_name}} torn down.")
   invisible(TRUE)
 }
-
 
 
 #' Reset a sandbox (tear down + stand up with same config)
@@ -701,48 +502,44 @@ sandbox_reset <- function(env, store = NULL, confirm = interactive()) {
 
 #' Recover a sandbox environment for teardown
 #'
-#' Reconstructs the `env` object needed by `sandbox_down()` without
-#' re-creating any infrastructure. Use this when you lost the R session
-#' before tearing down.
+#' Reconstructs the `env` object needed by `sandbox_down()` without re-creating
+#' any infrastructure. Use this when you lost the R session before tearing down.
+#' Rebuilds a conn from the local clone when present (so teardown can route
+#' through `datom_repo_delete()`); otherwise teardown falls back to gh + fs.
 #'
 #' @param store A `datom_store` object.
-#' @param ... Override any defaults from .sandbox_defaults() — same args
-#'   you originally passed to `sandbox_up()`.
+#' @param ... Override any defaults from .sandbox_defaults() -- same args you
+#'   originally passed to `sandbox_up()`.
 #' @return A `datom_sandbox` object suitable for `sandbox_down()`.
-#'
-#' @examples
-#' \dontrun{
-#' source("dev/dev-sandbox.R")
-#' store <- sandbox_store()
-#' env <- sandbox_recover(
-#'   store        = store,
-#'   project_name = "STUDY_001",
-#'   repo_name    = "study-001-data"
-#' )
-#' sandbox_down(env)
-#' }
 sandbox_recover <- function(store, ...) {
   cfg <- utils::modifyList(.sandbox_defaults(), list(...))
 
   local_path <- fs::path(cfg$base_dir, cfg$repo_name)
-  gov_local_path <- fs::path(cfg$base_dir, cfg$gov_repo_name)
+
+  conn <- NULL
+  if (fs::dir_exists(local_path)) {
+    conn <- tryCatch(
+      datom::datom_get_conn(path = as.character(local_path), store = store),
+      error = function(e) {
+        cli::cli_alert_info("Could not rebuild conn from clone: {conditionMessage(e)}")
+        NULL
+      }
+    )
+  }
 
   env <- list(
-    config         = cfg,
-    store          = store,
-    local_path     = as.character(local_path),
-    gov_local_path = as.character(gov_local_path),
-    conn           = NULL,
-    created_at     = NA_real_
+    config     = cfg,
+    store      = store,
+    local_path = as.character(local_path),
+    conn       = conn,
+    created_at = NA_real_
   )
   class(env) <- "datom_sandbox"
 
   cli::cli_alert_success("Recovered sandbox env for {.val {cfg$project_name}}.")
   cli::cli_ul()
   cli::cli_li("Git repo: {.path {local_path}}")
-  cli::cli_li("Gov clone: {.path {gov_local_path}}")
   cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
-  cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
   cli::cli_end()
   cli::cli_alert_info("Pass this to {.fn sandbox_down} to tear down.")
 
@@ -760,21 +557,12 @@ print.datom_sandbox <- function(x, ...) {
     paste0(round(difftime(Sys.time(), x$created_at, units = "mins"), 1), " minutes")
   }
 
-  cli::cli_h3("datom sandbox")
+  cli::cli_h3("datom sandbox (solo)")
   cli::cli_ul()
   cli::cli_li("Project: {.val {cfg$project_name}}")
   cli::cli_li("Git repo: {.path {x$local_path}}")
-  if (!is.null(x$gov_local_path)) {
-    cli::cli_li("Gov clone: {.path {x$gov_local_path}}")
-  } else {
-    cli::cli_li("Gov clone: not attached")
-  }
   cli::cli_li("Data: {.path {(.sandbox_storage_label(store$data))}}")
-  if (!is.null(store$governance)) {
-    cli::cli_li("Governance: {.path {(.sandbox_storage_label(store$governance))}}")
-  } else {
-    cli::cli_li("Governance: not attached")
-  }
+  cli::cli_li("Governance: not attached")
   cli::cli_li("Age: {age}")
   if (!is.null(x$conn)) {
     cli::cli_li("Connection: available (env$conn)")

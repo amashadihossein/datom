@@ -72,7 +72,8 @@
 #' Write governance.json to Local Git Clone
 #'
 #' Writes `content` to `{path}/.datom/governance.json`. The directory must
-#' already exist (created during `datom_init_repo()` or `datom_attach_gov()`).
+#' already exist (created during `datom_init_repo()` or
+#' `datom_repo_attach_governance()`).
 #'
 #' @param path Absolute path to the root of the local data git clone.
 #' @param content Named list from `.datom_create_governance_json()`.
@@ -153,9 +154,9 @@
 
 #' Delete governance.json Mirror from Data Storage
 #'
-#' Called by `datom_decommission()`. No-ops silently when key is absent.
-#' Deletion is implemented via prefix-delete on the exact key path; the
-#' single-key delete dispatch helper is wired in Chunk 7.
+#' Removes the governance.json mirror during project teardown. No-ops silently
+#' when the key is absent. Deletion is implemented via prefix-delete on the
+#' exact key path.
 #'
 #' @param conn A `datom_conn` for the data store.
 #' @return Invisible NULL.

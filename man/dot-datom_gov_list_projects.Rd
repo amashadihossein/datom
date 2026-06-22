@@ -20,7 +20,7 @@ Character vector of project names (sorted, may be empty).
 Returns the set of project names registered in the governance repo. When a
 local gov clone is available, lists directories under
 \verb{\{gov_local_path\}/projects/} (offline-friendly, reflects last
-\code{datom_pull_gov()}). Otherwise lists keys under \verb{projects/} via the gov
+gov-clone refresh). Otherwise lists keys under \verb{projects/} via the gov
 storage client and extracts unique top-level segments.
 }
 \details{

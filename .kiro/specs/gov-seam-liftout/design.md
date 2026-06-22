@@ -129,12 +129,20 @@ storage dispatch correctly for each scope.
 1. Remove the entire "Register project in gov repo" block at the end of `datom_init_repo()`.
 2. Remove the gov namespace collision check (the check that aborts if the project is
    already registered in the gov clone).
-3. Remove the `.gov_clone_created_here` on-exit cleanup (no gov clone interaction).
-4. Keep the `has_gov` flag only for writing `governance.json` to the data clone (that still
-   happens — it's data-side metadata).
-5. If `store$governance` is non-NULL, ignore it silently for the purposes of registration
-   (no warning, no error — the package is pre-release with zero users). The project
-   initializes as a Solo_Project; governance attaches via `gov_attach()`.
+3. Remove the gov-clone `Step 0` init and the `.gov_clone_created_here` on-exit cleanup
+   (no gov clone interaction). Also remove the `gov_local_path` resolution at the top of the
+   function — it is no longer needed.
+4. Remove the `governance.json` write (and its storage mirror) from init. `governance.json`
+   is the governance-attachment marker (Phase 21); writing it without registering the project
+   in gov would leave a broken half-state (readers detect governance but find no `ref.json`).
+   Per R4.3, init leaves the project as a Solo_Project with no governance attached, so it
+   writes no `governance.json`. (This supersedes the earlier plan to keep the write — the
+   `has_gov` local is removed entirely.) `project.yaml` already omits the governance blocks.
+5. Build `data_conn` gov-free (`gov_store = NULL`, `gov_local_path = NULL`) — it is only used
+   for the manifest upload.
+6. If `store$governance` is non-NULL, ignore it silently (no warning, no error — the package
+   is pre-release with zero users). The project initializes as a Solo_Project; governance
+   attaches later via `gov_attach()`.
 
 ### Component 4: Remove five exported gov functions (R2)
 
@@ -143,11 +151,24 @@ storage dispatch correctly for each scope.
 | `datom_init_gov()` | R/conn.R | Delete definition + roxygen |
 | `datom_attach_gov()` | R/conn.R | Delete definition + roxygen |
 | `datom_decommission()` | R/decommission.R | Delete entire file |
-| `datom_sync_dispatch()` | R/sync.R | Delete definition + roxygen |
+| `datom_sync_dispatch()` | R/sync.R | Replace with data-only `.datom_sync_data_metadata()` (see below) |
 | `datom_pull_gov()` | R/sync.R | Delete definition + roxygen |
 
 After deletion, `devtools::document()` regenerates NAMESPACE (five `export()` entries
 disappear) and the five `man/*.Rd` files are deleted.
+
+**`datom_sync_dispatch()` split (added during implementation — not in the original plan).**
+`datom_sync_dispatch()` did two kinds of work: gov-write (dispatch.json / ref.json →
+gov repo + gov storage via GOV_SEAM helpers) **and** data-side (manifest + per-table
+metadata → data storage). The gov-write half moves to datomanager (`gov_sync_dispatch`).
+The data-side half is **retained** in datom as a new internal helper
+`.datom_sync_data_metadata(conn, .confirm)` in `R/sync.R` (mirrors manifest +
+per-table metadata to the data store; no gov). This was necessary because
+`datom_sync_dispatch()` had two in-package callers the original removal table missed:
+- `datom_validate(fix = TRUE)` (R/validate.R) — now calls `.datom_sync_data_metadata(conn, .confirm = FALSE)`.
+- `datom_write(data = NULL, name = NULL)` (R/read_write.R) — now calls `.datom_sync_data_metadata(conn)`.
+
+`.datom_sync_table_metadata()` is retained (called by `.datom_sync_data_metadata`).
 
 ### Component 5: Remove nine GOV_SEAM write helpers (R1)
 
@@ -216,6 +237,43 @@ cli::cli_abort(c(
 2. Delete orphaned `man/` files for removed functions.
 3. Run `R CMD check` — target 0 errors, 0 warnings, only the benign system-time note.
 4. Version bump in DESCRIPTION (patch: `0.0.0.9001` or similar dev bump).
+
+### Component 10: `datom_repo_attach_governance()` — data-side gov pointer write (R11, C4)
+
+**Why (gap found during implementation, not in the original plan):** `governance.json` is
+the **data->gov** half of the bidirectional governance pointer (gov->data is `ref.json` in
+the gov repo). It lives in the data repo (`.datom/governance.json`, git canonical) and is
+mirrored to data storage (`{prefix}/datom/.metadata/governance.json`). Before the lift-out,
+`datom_attach_gov()` wrote it inline. Component 4 removes `datom_attach_gov()`, so
+`gov_attach()` (datomanager) becomes the attachment verb — but writing `governance.json` is
+a **Data_Repo + data-storage** mutation, and contract C4 forbids datomanager from mutating
+the Data_Repo except through an exported `datom_repo_*()` helper. Without this export there
+is no C4-compliant way for `gov_attach()` to record the data->gov pointer.
+
+**Change:** Add an exported `datom_repo_attach_governance(conn, gov_repo_url, gov_store,
+message = NULL)` to `R/repo.R`. It is additive and stays in datom permanently (it is data-side
+mechanism, consistent with the Authority Principle "data-repo mutations always route through
+datom"). It composes the existing internal helpers — no new IO primitives:
+
+1. `.datom_create_governance_json(gov_repo_url, gov_store)` — build content.
+2. `.datom_write_governance_json_local(conn$path, content)` — write `.datom/governance.json`.
+3. `.datom_git_commit(conn$path, ".datom/governance.json", "Attach governance: {name}")` +
+   `.datom_git_push()` — commit/push the Data_Repo.
+4. `.datom_storage_write_governance_json(conn, content)` inside `tryCatch` — mirror to data
+   storage; a mirror failure warns but does not abort (git copy is canonical).
+
+Guards mirror the other `datom_repo_*` exports: developer role, non-NULL `conn$path`,
+non-empty single-string `gov_repo_url`, valid store component, existing `.datom/project.yaml`.
+Returns the data-repo commit SHA invisibly.
+
+**The read side is unchanged.** datom keeps reading `governance.json` (developer four-state
+matrix + reader data-first probe in `datom_get_conn()`); those internal readers are not
+removed. **Idempotence/"already attached?"** is the caller's concern: `gov_attach()` can
+detect prior attachment from `conn$gov_root` (populated by `datom_get_conn()` reading
+governance.json) — no separate read export is needed. **Teardown** is already C4-covered:
+the storage mirror is removed via the exported `datom_storage_delete_prefix()`, and the git
+copy vanishes when `datom_repo_delete()` removes the repo.
+
 
 ## Data Models
 
@@ -365,21 +423,25 @@ reaching `.datom_conn_for`.
 
 ## Testing Strategy
 
-### Approach: unit tests + property tests + R CMD check
+### Approach: unit tests + property-style tests + R CMD check
 
-- **Property-based tests** (using `hedgehog` for R): verify the five correctness properties
-  with randomized inputs (≥ 100 iterations each).
+- **Property-style tests** (plain testthat): verify the five correctness properties by
+  looping a crafted battery of inputs over each property's input space (no external
+  property-testing dependency). The input spaces here are small and well-understood (guard
+  values, field presence, a JSON round-trip), so an enumerated battery covers them.
 - **Unit tests** (testthat): specific examples, edge cases, structural smoke checks.
 - **R CMD check**: integration gate — 0 errors, 0 warnings.
 
-### Property-based testing library
+### Property-style testing approach
 
-**`hedgehog`** — R's property-based testing library (CRAN). Each property test uses
-`hedgehog::forall()` with a minimum of 100 test cases.
+No external property-testing library is used (`hedgehog` was considered and dropped to keep
+the dependency surface lean — consistent with "simplicity over cleverness"). Each property
+is exercised by iterating an explicit battery of representative + adversarial inputs with
+`purrr::walk()` / `testthat::expect_*`, asserting the property holds for every case.
 
 ### Property test tagging
 
-Each property test includes a comment referencing the design property:
+Each property-style test includes a comment referencing the design property:
 ```r
 # Feature: gov-seam-liftout, Property 5: Gov-scoped backend resolution
 ```
@@ -441,6 +503,13 @@ The commits are ordered so each intermediate state passes R CMD check:
    - Delete `R/decommission.R`
    - Delete corresponding tests
    - R CMD check: passes
+
+4A. **Add `datom_repo_attach_governance()`** (additive, C4 gap-closer)
+   - New exported `datom_repo_*` helper in `R/repo.R` (data-side governance.json write)
+   - Tests in test-repo.R; `devtools::document()` adds the export + man
+   - Lands before step 5 so the data->gov pointer stays writable in a C4-compliant way
+     after `datom_attach_gov()` is removed
+   - R CMD check: passes (additive only)
 
 5. **Remove `datom_init_gov()` + `datom_attach_gov()`**
    - Delete both from `R/conn.R`

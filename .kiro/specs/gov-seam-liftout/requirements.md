@@ -232,3 +232,33 @@ responsibility, so that datomanager owns it cleanly and datom never reaches into
 3. THE Datom_Package SHALL NOT provide a gov-storage write function for gov state; after the
    lift-out its gov-storage access is read-only and conforms to the gov storage layout
    (contract C8).
+
+### Requirement 11: Expose data-side governance attachment write as a datom_repo_ helper
+
+**User Story:** As a datomanager developer, I want datom to expose the data-side
+`governance.json` write as an exported `datom_repo_*` helper, so that `gov_attach()` can
+record the data->gov pointer without mutating the Data_Repo directly (contract C4).
+
+_Context: `governance.json` is the data-side half of the bidirectional governance pointer
+(gov->data is `ref.json` in the gov repo; data->gov is `governance.json` in the data repo +
+its data-storage mirror). Before the lift-out, `datom_attach_gov()` wrote it inline. After
+the lift-out that function is removed (Requirement 2.2) and `gov_attach()` owns attachment,
+but per contract C4 datomanager may mutate the Data_Repo only through an exported
+`datom_repo_*()` helper. This requirement keeps the data->gov pointer writable in a
+C4-compliant way._
+
+#### Acceptance Criteria
+
+1. THE Datom_Package SHALL export `datom_repo_attach_governance(conn, gov_repo_url,
+   gov_store)` which, on a developer conn with a local data clone, writes
+   `.datom/governance.json` (git canonical), commits and pushes it to the Data_Repo, and
+   mirrors it to `{prefix}/datom/.metadata/governance.json` in data storage.
+2. WHEN the data-storage mirror write fails, THE datom_repo_attach_governance SHALL warn and
+   complete successfully, leaving the git-canonical copy intact (the git copy is canonical;
+   readers with gov access resolve location from the gov repo).
+3. IF `datom_repo_attach_governance()` is called with a conn that is not a developer conn,
+   has no local clone path, an empty/invalid `gov_repo_url`, an invalid `gov_store`, or a
+   data clone lacking `.datom/project.yaml`, THEN THE datom_repo_attach_governance SHALL
+   abort before writing or committing anything.
+4. THE Datom_Package SHALL write `governance.json` content conforming to the schema read by
+   its own retained governance.json readers, so the value round-trips.

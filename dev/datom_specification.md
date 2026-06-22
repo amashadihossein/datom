@@ -255,19 +255,25 @@ Ref resolution runs at two points in the conn lifecycle:
 
 ### Write Targeting: Data vs Governance
 
-Every datom write is targeted at exactly one of the two repos:
+Every datom write is targeted at exactly one of the two repos. **Post gov-seam lift-out
+(2026-06-20):** datom owns only data-side writes; gov-side writes (rows marked *datomanager*)
+moved to the companion package.
 
 | Operation                    | Data clone   | Gov clone    | Notes                                      |
 |------------------------------|--------------|--------------|--------------------------------------------|
 | `datom_write()`              | git + storage| —            | Tables, manifest, metadata.                |
 | `datom_sync()` / batch       | git + storage| —            | Same as `datom_write()`, multi-table.      |
-| `datom_sync_dispatch()`      | —            | git + storage| Commits/pushes `projects/{name}/dispatch.json`. |
-| `datom_init_gov()`           | —            | git + storage| Creates the gov repo + skeleton.           |
-| `datom_init_repo()`          | git + storage| git + storage| Registers project (writes `projects/{name}/{ref,dispatch,migration_history}.json` + commits gov), then sets up data repo. |
-| `datom_decommission()`       | git + storage| git + storage| Wipes data project + removes `projects/{name}/` from gov + commits gov. |
-| `datom_pull()`               | git only     | git only     | Pulls both clones (no storage refresh — git is source of truth). |
+| `datom_init_repo()`          | git + storage| —            | Data-repo only; leaves the project a Solo_Project (no gov registration). |
+| `datom_repo_attach_governance()` | git + storage| —        | Writes the data-side `governance.json` pointer (git canonical + storage mirror). Gov-repo registration is datomanager's `gov_attach()`. |
+| `datom_repo_delete()`        | git (repo+clone)| —         | Deletes the data GitHub repo + local clone (not the caller-owned store root). |
+| `datom_pull()`               | git only     | —            | Data clone only (no storage refresh — git is source of truth). Gov clone refresh is datomanager's `gov_pull()`. |
+| `gov_sync_dispatch()` *(datomanager)* | —   | git + storage| Was `datom_sync_dispatch()`; data-only half retained as internal `.datom_sync_data_metadata()`. |
+| `gov_init()` *(datomanager)* | —            | git + storage| Was `datom_init_gov()`. Creates the gov repo + skeleton. |
+| `gov_decommission()` *(datomanager)* | git + storage| git + storage| Was `datom_decommission()`. Orchestrates `datom_repo_delete()` + `datom_storage_delete_prefix()`, then prunes gov. |
 
-**Invariant**: data-side functions never touch the gov clone after init/decommission, and gov-side functions never touch the data clone. Tested via the data-side write purity audit.
+**Invariant**: data-side functions never touch the gov clone, and gov-side functions (now in
+datomanager) never touch the data clone except through exported `datom_repo_*` / `datom_storage_*`
+helpers. Tested via the data-side write purity audit.
 
 ---
 
@@ -419,7 +425,11 @@ Post-migration, may contain `previous` entries:
 
 ### .datom/governance.json (data clone + data storage mirror)
 
-Present when governance is attached to a project. Created by `datom_init_repo()` (when `gov_repo_url` is set) or `datom_attach_gov()`.
+Present when governance is attached to a project. **Post gov-seam lift-out:** written by
+`datom_repo_attach_governance()` (the exported data-side helper that `datomanager::gov_attach()`
+calls). It is no longer written by `datom_init_repo()` (now solo-only) or the removed
+`datom_attach_gov()`. Removed on teardown via `datom_storage_delete_prefix()` (storage mirror)
++ `datom_repo_delete()` (the git copy vanishes with the repo).
 
 **Two locations:**
 - Git copy (canonical): `{data_clone}/.datom/governance.json`
@@ -444,7 +454,7 @@ The storage mirror allows readers who do not have the data clone to discover tha
 **Invariants:**
 - Never contains credentials, `gov_local_path`, or per-machine state.
 - Git copy is canonical. The storage mirror is always derived from it (same write step as `manifest.json`).
-- Deleted by `datom_decommission()` from both locations.
+- Deleted on teardown: storage mirror via `datom_storage_delete_prefix()`; git copy with the repo via `datom_repo_delete()` (governed teardown orchestrated by `datomanager::gov_decommission()`).
 - `.datom_sync_governance_json(conn)` repairs a missing or stale storage mirror from the git copy.
 
 **Discovery at connection time:**
@@ -547,7 +557,10 @@ Creates GitHub repos via REST API (`httr2`). Safety: existing+empty → reuse, e
 
 ### Repository Management (Data Developers)
 
-#### datom_init_gov()
+#### datom_init_gov() — RELOCATED to datomanager (gov-seam-liftout, 2026-06-20)
+
+> Removed from datom. The gov-repo bootstrap is now `datomanager::gov_init()`. The signature
+> and behaviour below are retained as the **port contract** the companion reimplements.
 
 ```r
 datom_init_gov(
@@ -593,24 +606,55 @@ datom_init_repo(
 )
 ```
 
-One-time setup for data developers. Requires that `datom_init_gov()` has already been run for the target governance store; the gov repo URL must be present on the store via `datom_store(gov_repo_url = ...)`.
+One-time setup for data developers. After the gov-seam lift-out, `datom_init_repo()`
+initializes **only the data repo** and leaves the project a Solo_Project (no governance
+attached). Governance is attached later via `datomanager::gov_attach()` (which calls
+`datom_repo_attach_governance()` for the data-side pointer write).
 
-- `store`: composite `datom_store()` with both governance and data components, plus `gov_repo_url` (and optionally `gov_local_path`).
+- `store`: composite `datom_store()` with a data component (and optionally a governance
+  component, which is **ignored for registration** — init never writes gov state).
 - `create_repo = TRUE`: auto-creates the **data** GitHub repo via API from `repo_name` (normalized: lowercase, underscores -> hyphens).
 - `repo_name`: defaults to `project_name`; allows custom GitHub repo name.
 - **Validation-first**: all store/repo validation happens before any filesystem or git side effects.
-- **Gov clone bootstrap**: pulls or shallow-clones the gov repo to `gov_local_path` if not already present.
-- **Namespace safety check**: aborts if `projects/{project_name}/ref.json` already exists in the gov repo (another project is using this name). Pass `.force = TRUE` to override.
 - Creates data folder structure, initializes git with remote.
-- Creates `.datom/project.yaml` with two-component storage config (data only; no governance coordinates -- those live in `.datom/governance.json`).
-- Creates `.datom/governance.json` (when `gov_repo_url` is set) recording the governance pointer; mirrors it to data storage.
+- Creates `.datom/project.yaml` with the data storage config (no governance coordinates).
 - Creates `.datom/manifest.json` with `project_name` at the top level.
-- Writes `projects/{project_name}/{ref,dispatch,migration_history}.json` to the gov clone, commits + pushes the gov repo, then uploads the same files to gov storage.
 - Pushes initial commit to the data git remote, then uploads manifest to data storage.
+- **No gov interaction**: does not bootstrap a gov clone, does not write
+  `projects/{name}/*.json`, does not write `.datom/governance.json`, performs no gov
+  namespace check. A `store$governance` component, if present, is silently ignored for
+  registration purposes.
 
-Returns: Invisible TRUE on success. Cleans up gov clone + data clone on failure (best-effort).
+Returns: Invisible TRUE on success. Cleans up the data clone on failure (best-effort).
 
-#### datom_decommission()
+#### datom_repo_attach_governance()
+
+```r
+datom_repo_attach_governance(conn, gov_repo_url, gov_store, message = NULL)
+```
+
+Added in the gov-seam lift-out (C4 gap-closer). Writes the **data-side** half of the
+bidirectional governance pointer: `.datom/governance.json` in the data clone (git canonical),
+commits + pushes the data repo, then mirrors to `{prefix}/datom/.metadata/governance.json` in
+data storage (a failed mirror warns but does not abort — the git copy is canonical).
+
+This is the only C4-compliant way for `datomanager::gov_attach()` to record the data->gov
+pointer, since datomanager may mutate the data repo only through an exported `datom_repo_*`
+helper. The gov-repo registration (writing `ref.json`/`dispatch.json` to the gov repo) is
+datomanager's responsibility.
+
+Guards (abort before any write): non-developer conn, NULL `conn$path`, empty/invalid
+`gov_repo_url`, invalid `gov_store`, or a data clone missing `.datom/project.yaml`.
+
+Returns: the data-repo commit SHA, invisibly.
+
+#### datom_decommission() — RELOCATED to datomanager (gov-seam-liftout, 2026-06-20)
+
+> Removed from datom. Solo-project data teardown is now `datom_repo_delete(conn, confirm)`
+> (deletes the data GitHub repo + local clone). Governed teardown is
+> `datomanager::gov_decommission()`, which orchestrates `datom_repo_delete()` +
+> `datom_storage_delete_prefix()` then prunes gov. The signature below is the historical
+> record / port contract.
 
 ```r
 datom_decommission(
@@ -726,7 +770,7 @@ Flexible write operations:
 |------|------|----------|
 | provided | provided | Normal write: commit → push → S3 sync |
 | NULL | provided | Metadata-only sync for single table (e.g., after editing dispatch.json) |
-| NULL | NULL | Aliases to `datom_sync_dispatch()` |
+| NULL | NULL | Data-side metadata resync (internal `.datom_sync_data_metadata()`; was `datom_sync_dispatch()` pre-lift-out) |
 
 For normal writes:
 - Change detection via metadata_sha comparison (alphabetically sorted fields)
@@ -787,7 +831,13 @@ Returns a named list:
 
 Does **not** hard-abort on unreachable parents -- returns `status = "error"` so callers can decide whether to warn or stop.
 
-#### datom_sync_dispatch() — Data Developers
+#### datom_sync_dispatch() — RELOCATED to datomanager (gov-seam-liftout, 2026-06-20)
+
+> Removed from datom. The gov-write half is now `datomanager::gov_sync_dispatch()`. The
+> **data-side** half (mirror manifest + per-table metadata to the data store) was retained in
+> datom as the internal `.datom_sync_data_metadata(conn, .confirm)`, called by
+> `datom_validate(fix = TRUE)` and `datom_write(data = NULL, name = NULL)`. The signature and
+> behaviour below are the historical record / port contract for the gov-write half.
 
 ```r
 datom_sync_dispatch(conn, .confirm = TRUE)
@@ -900,9 +950,9 @@ datom_validate(conn, fix = FALSE)
 
 Checks that git metadata matches S3 storage for all tables and repo-level files. Reports mismatches as a structured result.
 
-- **Repo-level checks**: `projects/{project_name}/{ref,dispatch,migration_history}.json` exist in gov clone + gov storage; `.datom/manifest.json` exists in data repo + data storage.
+- **Repo-level checks**: when gov is attached, `projects/{project_name}/{ref,dispatch,migration_history}.json` are read-checked in gov clone + gov storage (skipped for solo projects); `.datom/manifest.json` exists in data repo + data storage.
 - **Per-table checks**: metadata.json, version_history.json, and `{data_sha}.parquet` exist on data storage for each table tracked in git
-- `fix = TRUE`: attempts to repair inconsistencies by calling `datom_sync_dispatch(conn, .confirm = FALSE)` (gov-side) and re-uploading data-side metadata.
+- `fix = TRUE`: attempts to repair inconsistencies by re-syncing **data-side** metadata (manifest + per-table metadata) to storage via the internal `.datom_sync_data_metadata(conn, .confirm = FALSE)`. Gov-side repair is datomanager's responsibility (`gov_sync_dispatch()`).
 
 Returns: List with `valid` (logical), `repo_files` (data frame), `tables` (data frame), `fixed` (logical).
 
@@ -1554,24 +1604,55 @@ Adding a new backend (e.g., GCS, Azure) requires:
 
 ### Governance Repository Contract
 
-The governance repository is a port surface. datom currently owns both gov and data writes; a planned companion package (`datomanager`) will eventually take over governance write operations. To make that handoff a port replacement rather than a refactor, all gov-write code lives behind a tagged seam. See `dev/datomanager_scope.md` for the full scope.
+> **GOV_SEAM lift-out (datom side) completed 2026-06-20** (spec `gov-seam-liftout`).
+> The governance **write** surface has been removed from datom and now lives in the
+> companion package `datomanager`. datom retains all gov **reads** and the data-side
+> teardown/attachment helpers. The seam is no longer a set of in-datom helpers tagged
+> `# GOV_SEAM:` — it is now the package boundary itself. The inventory below is retained as
+> the **port contract** the companion reimplements (behaviour-equivalent, with its own
+> git2r + storage IO; see `dev/datomanager_scope.md`). The pre-removal helper bodies are
+> recoverable from git history at the commit before the `gov-seam-liftout` merge.
+>
+> **Removed from datom** (5 exports + 9 internal write helpers):
+> `datom_init_gov()`, `datom_attach_gov()`, `datom_decommission()`, `datom_sync_dispatch()`,
+> `datom_pull_gov()`; `.datom_gov_commit/push/pull`, `.datom_gov_write_dispatch/write_ref`,
+> `.datom_gov_register_project/unregister_project`, `.datom_gov_record_migration`,
+> `.datom_gov_destroy`.
+>
+> **Retained in datom:** the six gov-**read** helpers (`.datom_gov_clone_exists/open/init`,
+> `.datom_gov_validate_remote`, `.datom_gov_list_projects`, `.datom_gov_project_path`), the
+> `R/ref.R` resolvers, `datom_projects()` and `datom_pull()` (now data-repo-only).
+>
+> **Added in datom:** `datom_repo_attach_governance()` (exported; the C4-compliant data-side
+> `governance.json` write that `datomanager::gov_attach()` calls) and the internal
+> `.datom_sync_data_metadata()` (the data-only half split out of the old
+> `datom_sync_dispatch()`; called by `datom_validate(fix=TRUE)` and `datom_write(NULL,NULL)`).
+>
+> The remainder of this section documents the **port contract** (what datomanager must
+> preserve), not datom's current surface.
 
-**Seam location.** All gov-write helpers live in `R/utils-gov.R` and are tagged with `# GOV_SEAM:` comments. Any new gov-write code must go through this file and carry the marker. Gov-**read** helpers (`.datom_resolve_ref()`, `.datom_resolve_ref_from_clone()`, dispatch reads) are not seam-marked — datom always needs to read gov regardless of who writes it.
+The governance repository is a port surface. Before the lift-out, datom owned both gov and
+data writes behind a tagged seam in `R/utils-gov.R`. The companion package (`datomanager`)
+now owns governance write operations. See `dev/datomanager_scope.md` for the full scope.
 
-**Seam helper inventory:**
+**Gov-read helpers stay in datom** (`.datom_resolve_ref()`, `.datom_resolve_ref_from_clone()`,
+`.datom_gov_list_projects()`, dispatch reads) — datom always needs to read gov regardless of
+who writes it.
 
-| Helper | Purpose |
+**Port contract — write operations the companion reimplements:**
+
+| Operation | Purpose |
 |---|---|
-| `.datom_gov_clone_init()` | Clone or open the gov repo at `gov_local_path`; validates remote URL on existing dirs. |
-| `.datom_gov_commit()` | Stage + commit on the gov clone. |
-| `.datom_gov_push()` | Push gov clone to remote (pull-before-push). |
-| `.datom_gov_pull()` | Fetch + fast-forward gov clone. |
-| `.datom_gov_write_dispatch()` | Write `projects/{name}/dispatch.json` to gov clone + storage. |
-| `.datom_gov_write_ref()` | Write `projects/{name}/ref.json` to gov clone + storage. |
-| `.datom_gov_register_project()` | Create `projects/{name}/` folder + initial files; commit + push. |
-| `.datom_gov_unregister_project()` | Remove `projects/{name}/`; commit + push. |
-| `.datom_gov_record_migration()` | Append to `projects/{name}/migration_history.json`; commit + push. |
-| `.datom_gov_destroy()` | Tear down whole gov repo + storage. Refuses if registered projects exist unless `force = TRUE`. Sandbox-only today; companion will own the user-facing equivalent. |
+| clone/open gov repo | Clone or open the gov repo at `gov_local_path`; validate remote URL on existing dirs. |
+| commit | Stage + commit on the gov clone. |
+| push | Push gov clone to remote (pull-before-push). |
+| pull | Fetch + fast-forward gov clone. |
+| write dispatch | Write `projects/{name}/dispatch.json` to gov clone + storage. |
+| write ref | Write `projects/{name}/ref.json` to gov clone + storage. |
+| register project | Create `projects/{name}/` folder + initial files; commit + push. |
+| unregister project | Remove `projects/{name}/`; commit + push. |
+| record migration | Append to `projects/{name}/migration_history.json`; commit + push. |
+| destroy gov | Tear down whole gov repo + storage. Refuses if registered projects exist unless forced. |
 
 **Commit message conventions (gov repo).** Stable contract — readers/auditors can grep history; the companion package must preserve these strings:
 
@@ -1587,15 +1668,16 @@ The governance repository is a port surface. datom currently owns both gov and d
 
 **Migration ordering.** Migration events are prepended (most-recent-first) so the head of `migration_history.json` is the active record.
 
-**Decommission scope matrix.** Three distinct teardown operations exist; their scopes do not overlap:
+**Decommission scope matrix.** Three distinct teardown operations exist; their scopes do not overlap (post-lift-out ownership shown):
 
 | Operation | Scope | Caller | Implementation |
 |---|---|---|---|
-| **Project decommission** | one project | datom public API | `datom_decommission(conn, confirm = "{name}")` |
-| **Gov decommission** | whole gov repo + storage | future companion package | `.datom_gov_destroy()` (today: sandbox-only via `:::`) |
-| **Sandbox teardown** | dev playground | `dev/dev-sandbox.R` | `sandbox_down(env, scope = c("all", "project", "gov"))` |
+| **Data-repo delete** | one project's data repo + clone | datom public API | `datom_repo_delete(conn, confirm = "{name}")` (guards governed projects unless `force_gov_attached = TRUE`) |
+| **Project decommission** | one governed project (data + gov) | datomanager | `gov_decommission()` — orchestrates `datom_repo_delete()` + `datom_storage_delete_prefix()`, then prunes gov |
+| **Gov decommission** | whole gov repo + storage | datomanager | gov-destroy (companion-owned; was datom's sandbox-only `.datom_gov_destroy()`) |
+| **Sandbox teardown** | dev playground | `dev/dev-sandbox.R` | `sandbox_down(env, scope = ...)` (solo path uses `datom_repo_delete()`; gov path now requires datomanager) |
 
-**Concurrency.** Two developers running `datom_sync_dispatch()` on the same project simultaneously could conflict on push. Phase 15 relies on git's standard pull-before-push discipline (built into `.datom_gov_push()`); explicit lock mechanism deferred (see Deferred to v2).
+**Concurrency.** Two developers writing gov state for the same project simultaneously could conflict on push. The gov-write layer (now in datomanager) relies on git's standard pull-before-push discipline; explicit lock mechanism deferred (see Deferred to v2).
 
 **Future companion package.** The companion package will own:
 - The full gov lifecycle (init, register, unregister, destroy) as user-facing functions.
@@ -1632,7 +1714,9 @@ datom will remain a client: reading gov state freely, writing only via the seam 
 
 ### Connection Architecture
 
-- `datom_conn` S3 class wraps project_name, root, prefix, region, client, gov_client, path, role, endpoint, backend
+- `datom_conn` S3 class wraps project_name, root, prefix, region, client, gov_client, path, role, endpoint, backend, and the governance-scoped fields (`gov_root`, `gov_prefix`, `gov_region`, `gov_backend`, `gov_local_path`), plus `data_repo_url`, `github_pat`, `github_api_url`
+- **Twelve-field interface contract (C6)** — present on every conn (solo or governed; gov-scoped fields MAY be NULL on solo): `gov_local_path`, `gov_root`, `gov_prefix`, `gov_region`, `gov_backend`, `gov_client`, `github_pat`, `project_name`, `backend`, `root`, `prefix`, `region`. This is the surface `datomanager` reads; keep it stable.
+- `gov_backend`: governance storage backend (`"s3"` or `"local"`), set from the governance store component **independent of the data backend**. `.datom_conn_for(conn, "gov")` resolves gov-scoped storage dispatch from `gov_backend` (NOT `conn$backend`), so mixed-backend projects (e.g. data on S3, gov on local) route each scope correctly. NULL on solo projects.
 - `root`: storage root — S3 bucket name or local directory path (was `bucket` pre-Phase 12)
 - `client`: S3 client for data store (NULL for local backend); `gov_client`: S3 client for governance store (NULL for local)
 - `backend`: storage backend type (`"s3"` or `"local"`), used by `.datom_storage_*()` dispatch

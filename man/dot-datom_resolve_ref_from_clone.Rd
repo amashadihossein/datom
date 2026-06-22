@@ -18,6 +18,6 @@ data location.
 \description{
 Reads \code{projects/{project_name}/ref.json} directly from a local gov clone
 on disk. Faster than storage reads, works offline, and reflects the last
-\code{datom_pull_gov()}. Used for developer connections.
+gov-clone refresh. Used for developer connections.
 }
 \keyword{internal}

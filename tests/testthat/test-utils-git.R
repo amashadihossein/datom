@@ -615,7 +615,7 @@ test_that(".datom_git_pull aborts when no remote configured", {
 })
 
 test_that(".datom_git_push with pull_first=FALSE succeeds on empty remote", {
-  # Simulate datom_init_gov / datom_init_repo: init local repo, add a
+  # Simulate datom_init_repo: init local repo, add a
   # brand-new bare remote, then push. Callers pass pull_first = FALSE
   # because they already know the remote has no refs.
   bare_dir <- withr::local_tempdir()

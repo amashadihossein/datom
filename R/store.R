@@ -15,8 +15,8 @@
 #' @param governance A store component (e.g., `datom_store_s3()`) for governance
 #'   files (dispatch, ref, migration history), or `NULL` for a no-governance
 #'   store. A no-governance store represents a project that has not yet been
-#'   promoted via `datom_attach_gov()`; `gov_repo_url` and `gov_local_path`
-#'   must also be `NULL` in that case.
+#'   promoted to governance (via the datomanager package); `gov_repo_url` and
+#'   `gov_local_path` must also be `NULL` in that case.
 #' @param data A store component (e.g., `datom_store_s3()`) for data files
 #'   (manifest, tables, metadata).
 #' @param github_pat GitHub personal access token. If provided, role is
@@ -24,8 +24,8 @@
 #' @param data_repo_url GitHub remote URL for the data repository. Required when
 #'   `github_pat` is provided and `create_repo = FALSE` in `datom_init_repo()`.
 #' @param gov_repo_url GitHub remote URL for the shared governance repository.
-#'   The governance repo is created once per org via `datom_init_gov()` and
-#'   referenced here by every project that uses it.
+#'   The governance repo is created once per org (via the datomanager package)
+#'   and referenced here by every project that uses it.
 #' @param gov_local_path Local directory path for the governance clone. If NULL
 #'   (default), the clone is placed as a sibling of the data repo, named after
 #'   the basename of `gov_repo_url` (e.g., `"acme-gov"`).
@@ -52,8 +52,8 @@ datom_store <- function(governance = NULL,
 
   # --- Validate components are store objects ----------------------------------
   # governance is optional: a store with governance = NULL represents a
-  # gov-on-demand project that has not yet been promoted via
-  # datom_attach_gov(). All gov_* arguments must also be NULL in that case.
+  # gov-on-demand project that has not yet been promoted to governance (via
+  # the datomanager package). All gov_* arguments must also be NULL in that case.
   if (!is.null(governance) && !.is_datom_store_component(governance)) {
     cli::cli_abort(
       "{.arg governance} must be a datom store component (e.g., {.fn datom_store_s3}) or NULL."
