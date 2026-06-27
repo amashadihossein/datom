@@ -39,7 +39,7 @@ graph TD
 
 ## Tasks
 
-- [ ] 0. Branch, register spec, baseline
+- [x] 0. Branch, register spec, baseline
   - Create `spec/vignettes-gov-liftout` from `main`.
   - Add a row to the `dev/README.md` Active Specs table (status: tasks started).
   - Record baseline: run `devtools::test()` and note the count; confirm `R CMD build` +
@@ -47,6 +47,10 @@ graph TD
   - Confirm preservation precondition (Property 3): `datomanager/dev/vignettes-from-datom/`
     contains `governing-a-portfolio.Rmd`, `auditing-reproducibility.Rmd`, `NOTE.md`.
   - _Requirements: all (setup)_
+  - **Baseline (2026-06-27):** `devtools::test()` = 1873 PASS / 0 FAIL / 0 SKIP (26 benign
+    WARN). `R CMD build --no-manual` clean (vignettes knit OK; 2 pre-existing R-version
+    NOTEs). `pkgdown::build_site()` clean. Precondition satisfied: all three Bucket C files
+    present at `datomanager/dev/vignettes-from-datom/`.
 
 - [ ] 1. Park Bucket B verbatim under `dev/vignettes-deferred/`
   - `git mv` each Bucket B vignette into `dev/vignettes-deferred/`:
