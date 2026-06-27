@@ -83,7 +83,7 @@ graph TD
     authored in Task 3). No `R/` or `NAMESPACE` change. `_pkgdown.yml` entries removed in
     Task 5.
 
-- [ ] 3. Author `vignettes/start-on-s3.Rmd` (new, gov-free S3 start)
+- [x] 3. Author `vignettes/start-on-s3.Rmd` (new, gov-free S3 start)
   - Follow `design.md` Component 1. Confirm `datom_init_repo()` / `datom_store_s3()` /
     `datom_repo_delete()` signatures against `R/repo.R`, `R/store.R` before finalizing.
   - `governance = NULL`; no gov calls; no migration; teardown via `datom_repo_delete()`.
@@ -91,6 +91,17 @@ graph TD
     `promoting-to-s3.Rmd` arc can reattach later without contradiction.
   - ASCII only (Property 4). All chunks `eval = FALSE` to match the suite.
   - _Requirements: 2.1, 2.2, 2.3, 2.4_
+  - **Done (2026-06-27):** Authored `vignettes/start-on-s3.Rmd`. Confirmed live signatures
+    first: `datom_store_s3()` **requires** `access_key`/`secret_key` (design skeleton omitted
+    them as illustrative) -- used the established Options A/B/C credential pattern;
+    `datom_store(governance = NULL, ...)`, `datom_init_repo(path, project_name, store,
+    create_repo, repo_name, ...)`, `datom_repo_delete(conn, confirm)` all verified. Solo S3
+    project (R2.1), no gov/migration calls (R2.2), teardown via `datom_repo_delete()` (R2.3),
+    complementary-entry-points forward-pointer to managed migration / companion package
+    (R2.4). Stands alone (not wired into resume-script chain). Checks pass: ASCII clean (P4),
+    no removed-export refs, no dead links (P5 -- all 5 cross-links to surviving Bucket A
+    articles), conn print output matches `print.datom_conn`. Knits clean (`eval = FALSE`).
+    No `R/`/`NAMESPACE` change. `_pkgdown.yml` entry added in Task 5.
 
 - [ ] 4. Bucket A in-place fixes
   - [ ] 4.1 `first-extract.Rmd`: `datom_decommission()` -> `datom_repo_delete()`; repoint the

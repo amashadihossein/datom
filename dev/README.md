@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| vignettes-gov-liftout | 2026-06-27 | In progress (via Copilot) -- Tasks 0-2 done (9 Bucket B vignettes parked; 2 Bucket C articles removed after byte-identical preservation check). Trims the vignette suite to a minimal gov-free set, parks deferred gov-interface articles under `dev/vignettes-deferred/`, and removes two pure-gov articles (preserved in `datomanager/dev/vignettes-from-datom/`). Docs-only; no `R/`/NAMESPACE changes. | [.kiro/specs/vignettes-gov-liftout/](../.kiro/specs/vignettes-gov-liftout/) |
+| vignettes-gov-liftout | 2026-06-27 | In progress (via Copilot) -- Tasks 0-3 done (Bucket B parked; Bucket C removed; new gov-free `start-on-s3.Rmd` authored + knit-verified). Trims the vignette suite to a minimal gov-free set, parks deferred gov-interface articles under `dev/vignettes-deferred/`, and removes two pure-gov articles (preserved in `datomanager/dev/vignettes-from-datom/`). Docs-only; no `R/`/NAMESPACE changes. | [.kiro/specs/vignettes-gov-liftout/](../.kiro/specs/vignettes-gov-liftout/) |
 
 ### Drafts (queued, not active)
 

@@ -1,0 +1,256 @@
+---
+title: "Starting on S3"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Starting on S3}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE
+)
+```
+
+```{=html}
+<link rel="stylesheet" href="../inst/vignette-setup/datom.css">
+```
+
+<div class="datom-callout datom-callout-goal" markdown="1">
+**Goal:** Stand up a versioned datom project whose data lives directly in
+**Amazon S3** -- no local-filesystem detour and no migration step. Write your
+first table, read it back, and confirm git is tracking the history. This is the
+"I'm already sold, start me in object storage" path.
+</div>
+
+> **Want to dabble locally first?** Start with
+> [First Extract](first-extract.html) instead -- it uses a local filesystem
+> store and needs no AWS account. The two paths use the **same functions**; the
+> only difference is which store you build. You can read either one first.
+
+You are the data engineer for **STUDY-001**, a Phase II clinical trial, and your
+team already works in S3. There is no reason to stage data on a laptop: you want
+the very first extract to land in the shared object store, versioned from commit
+one. datom supports that directly. Metadata still lives in a git repository (so
+version history is diff-able and reproducible across machines); only the choice
+of data store changes.
+
+## Requirements
+
+datom keeps **metadata in git** and **data wherever you tell it to live**. For
+this article that is an S3 bucket. You need three things:
+
+- **A GitHub account** with a personal access token (PAT) scoped to `repo`.
+  Store it in your OS keychain once with `keyring::key_set("GITHUB_PAT")`. The
+  `gh` CLI is **not** required -- datom creates the metadata repo through the
+  GitHub REST API directly using your PAT.
+- **An S3 bucket** you can read and write. datom does **not** create buckets:
+  bucket lifecycle (encryption, versioning, retention) is your organization's
+  policy domain. A common convention is one bucket per study, with raw data at
+  the bucket root (an empty prefix) and derived products under named prefixes
+  (`adam/`, `tlf/`).
+- **AWS credentials** (an access key and secret key) authorized for that bucket.
+
+<div class="datom-callout datom-callout-tip" markdown="1">
+**Verify your keyring setup** before continuing:
+
+```r
+nzchar(keyring::key_get("GITHUB_PAT"))   # should return TRUE
+```
+</div>
+
+## Set up AWS credentials
+
+`datom_store_s3()` takes `access_key` and `secret_key` as plain strings. datom
+never reads them from the environment on your behalf -- you pass the values in
+explicitly. How you source them is up to you:
+
+```{r}
+# Option A: inline (fine for a quick interactive session; never commit these)
+access_key <- "AKIAIOSFODNN7EXAMPLE"
+secret_key <- "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+# Option B: environment variables (CI/CD, Docker)
+access_key <- Sys.getenv("AWS_ACCESS_KEY_ID")
+secret_key <- Sys.getenv("AWS_SECRET_ACCESS_KEY")
+
+# Option C: keyring (recommended for an interactive developer machine)
+access_key <- keyring::key_get("AWS_ACCESS_KEY_ID")
+secret_key <- keyring::key_get("AWS_SECRET_ACCESS_KEY")
+```
+
+The rest of this article uses the keyring form as a placeholder -- substitute
+whichever pattern fits your environment.
+
+## Build the S3 store
+
+A **store** bundles the addresses datom needs: where parquet bytes go and the
+GitHub PAT that lets datom push metadata. The data component is now an S3
+component instead of a local one.
+
+Governance is **not attached** (`governance = NULL`). A solo project's location
+authority is its own `project.yaml`; you do not need a portfolio register to get
+started. Governance is opt-in and added later (see
+[Governance and migration come later](#governance-and-migration-come-later)).
+
+```{r}
+library(datom)
+
+data_component <- datom_store_s3(
+  bucket = "study-001-data",   # one bucket per study
+  prefix = NULL,               # raw data at the bucket root
+  region = "us-east-1",
+  access_key = access_key,
+  secret_key = secret_key
+)
+
+store <- datom_store(
+  governance = NULL,
+  data       = data_component,
+  github_pat = keyring::key_get("GITHUB_PAT")
+)
+```
+
+By default `datom_store_s3()` validates connectivity to the bucket as the store
+is built, so a credential or permission problem surfaces immediately rather than
+at first write.
+
+## Initialize the data repository
+
+You still need a local working directory for the **git clone** -- the metadata
+repository. The data itself never lands there; it goes straight to S3.
+
+```{r}
+library(fs)
+
+dev_dir <- path(tempdir(), "study_001_dev")   # data git clone (metadata only)
+
+datom_init_repo(
+  path         = dev_dir,
+  project_name = "STUDY_001",
+  store        = store,
+  create_repo  = TRUE,
+  repo_name    = "study-001-data"
+)
+```
+
+This creates a GitHub repo, clones it into `dev_dir`, and commits a
+`project.yaml` that records the project's S3 data store address. No parquet data
+is pushed to GitHub -- only metadata commits travel over the wire.
+
+## Connect
+
+```{r}
+conn <- datom_get_conn(path = dev_dir, store = store)
+print(conn)
+#> -- datom connection
+#> * Project: "STUDY_001"
+#> * Backend: "s3"
+#> * Role: "developer"
+#> * Data root: "study-001-data"
+#> * Data region: "us-east-1"
+#> * Governance: not attached
+#> * Path: "/tmp/.../study_001_dev"
+#> * Data repo: <https://github.com/.../study-001-data>
+```
+
+## Write your first extract
+
+The month-1 extract has just landed. Load the demographics snapshot for
+subjects enrolled by 2026-01-28 and write it as a versioned datom table:
+
+```{r}
+dm_m1 <- datom_example_data("dm", cutoff_date = "2026-01-28")
+
+datom_write(
+  conn,
+  data    = dm_m1,
+  name    = "dm",
+  message = "Initial DM extract through 2026-01-28"
+)
+#> v Wrote "dm" (full): "a8ee7a31"
+```
+
+Three things just happened, in order:
+
+1. The data frame was serialized to parquet and uploaded **to S3** -- not to
+   GitHub.
+2. `metadata.json` and `version_history.json` were updated in the git clone and
+   committed.
+3. The metadata commit was pushed to GitHub. The version is auditable from any
+   machine with repo access, while the raw data stays in your bucket.
+
+## Read it back
+
+```{r}
+dm_back <- datom_read(conn, "dm")
+
+identical(datom_read(conn, "dm"), tibble::as_tibble(dm_m1))
+#> [1] TRUE
+```
+
+datom stores data in [Apache Parquet](https://parquet.apache.org/) and reads it
+back as a `tibble`. The read streams the parquet object from S3 using the
+manifest; it does **not** go through GitHub. A data reader on another machine
+takes the same path -- they need access to the bucket, not to the git repo.
+
+Inspect the version history at any time:
+
+```{r}
+datom_status(conn)        # table list with SHAs
+datom_history(conn, "dm") # version history
+```
+
+## Where you are
+
+You have a fully versioned datom project running directly on S3:
+
+- One table (`dm`) with one version, one parquet object in your bucket
+- Metadata committed and pushed to GitHub -- version history is auditable
+- Parquet data lives in S3 -- **nothing sensitive went to GitHub**
+- No governance attached; the project stands on its own `project.yaml`
+
+From here, the monthly-cadence workflow in [Month 2 Arrives](month-2-arrives.html)
+and the bulk-import workflow in [A Folder of Extracts](folder-of-extracts.html)
+apply unchanged -- they are written against a local store, but every function
+call is identical on S3. To trace how one table descends from another, see
+[Tracing Data Lineage](source-lineage.html).
+
+## Governance and migration come later
+
+Two capabilities are deliberately **not** part of this starting story:
+
+- **Governance** -- a shared portfolio register, dispatch-based reader access,
+  and managed teardown. It is opt-in and provided by the governance companion
+  package (`datomanager`), adopted when a project graduates from solo to
+  shared/managed. Starting on S3 does not commit you to it.
+- **Managed migration** -- moving an existing project's data between backends
+  (local to S3, or S3 to S3) while preserving history. That is a separate,
+  governed workflow documented with the companion package. Because you started
+  on S3, you do not need it now; it remains available later without
+  contradicting anything you set up here.
+
+In other words, **start-on-S3** and **migrate-to-S3** are complementary entry
+points: this article is the greenfield path, and managed migration is the
+move-an-existing-project path.
+
+For where datom sits in the broader data-product stack, see
+[Looking Ahead](looking-ahead.html).
+
+## Teardown
+
+When you are done exploring, tear the project down. `datom_repo_delete()` removes
+the GitHub metadata repo and the local clone. **Do this before** deleting the
+local directory by hand -- removing the clone first strips the GitHub remote
+reference and the remote repo will not be deleted.
+
+```{r}
+datom_repo_delete(conn, confirm = "STUDY_001")
+```
+
+`datom_repo_delete()` does **not** empty your S3 bucket -- bucket lifecycle is
+your organization's domain, not datom's. Remove the project's objects from S3
+with your own tooling (for example, the AWS CLI) if you no longer need them.
