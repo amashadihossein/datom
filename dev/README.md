@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| _none_ | — | No spec currently active. | — |
+| vignettes-gov-liftout | 2026-06-27 | Planned -- ready for execution (via Copilot). Trims the vignette suite to a minimal gov-free set, parks deferred gov-interface articles under `dev/vignettes-deferred/`, and removes two pure-gov articles (preserved in `datomanager/dev/vignettes-from-datom/`). Docs-only; no `R/`/NAMESPACE changes. | [.kiro/specs/vignettes-gov-liftout/](../.kiro/specs/vignettes-gov-liftout/) |
 
 ### Drafts (queued, not active)
 
