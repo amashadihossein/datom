@@ -52,7 +52,7 @@ graph TD
     NOTEs). `pkgdown::build_site()` clean. Precondition satisfied: all three Bucket C files
     present at `datomanager/dev/vignettes-from-datom/`.
 
-- [ ] 1. Park Bucket B verbatim under `dev/vignettes-deferred/`
+- [x] 1. Park Bucket B verbatim under `dev/vignettes-deferred/`
   - `git mv` each Bucket B vignette into `dev/vignettes-deferred/`:
     `promoting-to-s3.Rmd`, `handing-off.Rmd`, `second-engineer.Rmd`,
     `credentials-in-practice.Rmd`, `buckets-and-prefixes.Rmd`, `design-ref-json.Rmd`,
@@ -64,6 +64,12 @@ graph TD
     note.
   - Do NOT edit any moved file's content (Property 2).
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+  - **Done (2026-06-27):** 14 files relocated as pure git renames (`git diff --stat` shows
+    0 insertions / 0 deletions -> Property 2 satisfied). 9 vignettes -> `dev/vignettes-deferred/`,
+    5 resume scripts (`resume_article_4.R`..`_8.R`) -> `dev/vignettes-deferred/vignette-setup/`.
+    `inst/vignette-setup/` retains only `datom.css`, `resume_article_2.R`, `resume_article_3.R`.
+    Parking `README.md` written (rationale, original grouping, 10-article journey order,
+    reassembly checklist). No `R/` or `NAMESPACE` change.
 
 - [ ] 2. Remove Bucket C copies from datom
   - Verify Property 3 precondition again, then `git rm vignettes/governing-a-portfolio.Rmd
