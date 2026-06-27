@@ -71,11 +71,17 @@ graph TD
     Parking `README.md` written (rationale, original grouping, 10-article journey order,
     reassembly checklist). No `R/` or `NAMESPACE` change.
 
-- [ ] 2. Remove Bucket C copies from datom
+- [x] 2. Remove Bucket C copies from datom
   - Verify Property 3 precondition again, then `git rm vignettes/governing-a-portfolio.Rmd
     vignettes/auditing-reproducibility.Rmd`.
   - (Their `_pkgdown.yml` entries are removed in Task 5.)
   - _Requirements: 4.1, 4.2_
+  - **Done (2026-06-27):** Re-verified Property 3 rigorously -- both datom copies were
+    confirmed **byte-identical** (`diff -q`) to the preserved copies at
+    `datomanager/dev/vignettes-from-datom/`, and `NOTE.md` present. Then `git rm` both.
+    `vignettes/` now holds the 8 surviving Bucket A articles (9th, `start-on-s3.Rmd`, is
+    authored in Task 3). No `R/` or `NAMESPACE` change. `_pkgdown.yml` entries removed in
+    Task 5.
 
 - [ ] 3. Author `vignettes/start-on-s3.Rmd` (new, gov-free S3 start)
   - Follow `design.md` Component 1. Confirm `datom_init_repo()` / `datom_store_s3()` /
