@@ -1,7 +1,7 @@
 # Serverless and Distributed by Design
 
-> **Companion to**: [Governing a Study
-> Portfolio](https://amashadihossein.github.io/datom/articles/governing-a-portfolio.md).
+> **Companion to**: [The datom Model: Code in Git, Data in
+> Cloud](https://amashadihossein.github.io/datom/articles/design-datom-model.md).
 > Read this when you want to understand what runs where – and what
 > doesn’t run anywhere – when datom is in production.
 
@@ -146,12 +146,9 @@ choices already made:
 
 - Metadata in git – see [The datom Model: Code in Git, Data in
   Cloud](https://amashadihossein.github.io/datom/articles/design-datom-model.md).
-- Two repos for project vs. organization scope – see [Two Repositories:
-  Governance
-  vs. Data](https://amashadihossein.github.io/datom/articles/design-two-repos.md).
-- Indirection through `ref.json` for portable storage – see [`ref.json`
-  and Always-Migration-Ready
-  Storage](https://amashadihossein.github.io/datom/articles/design-ref-json.md).
+- Two repos for project vs. organization scope – the organization-scope
+  governance repo is managed by the governance companion package.
+- Indirection through `ref.json` for portable, migration-ready storage.
 
 If you’re picturing a deployment diagram for datom and feeling like
 you’re missing something, you’re not. The diagram is your git host, your

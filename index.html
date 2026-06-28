@@ -110,7 +110,7 @@
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_set</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span>          <span class="co"># one-time setup</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/nchar.html" class="external-link">nzchar</a></span><span class="op">(</span><span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span><span class="op">)</span>  <span class="co"># verify -- should return TRUE</span></span></code></pre></div>
-<p>See the <a href="https://amashadihossein.github.io/datom/articles/credentials-in-practice.html">Credentials in Practice</a> article for a step-by-step walkthrough of PAT creation and keyring setup.</p>
+<p>Using <code>keyring</code> keeps the PAT out of your code and command history; see the <code>keyring</code> package documentation for setup details.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/amashadihossein/datom" class="external-link">datom</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://fs.r-lib.org" class="external-link">fs</a></span><span class="op">)</span></span>
@@ -183,16 +183,16 @@
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Option A -- full scripted teardown (deletes local files AND the GitHub repo).</span></span>
 <span><span class="co"># Do this BEFORE unlink().</span></span>
-<span><span class="fu">datom_decommission</span><span class="op">(</span><span class="va">conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/datom_repo_delete.html">datom_repo_delete</a></span><span class="op">(</span><span class="va">conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Option B -- local only (GitHub repo stays; delete it manually from the UI).</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">dev_dir</span>, <span class="va">data_dir</span><span class="op">)</span>, recursive <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
-<p>Do not call <code><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink()</a></code> before <code>datom_decommission()</code> – removing the local clone first strips the GitHub remote reference and the remote repo will not be deleted.</p>
+<p>Do not call <code><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink()</a></code> before <code><a href="reference/datom_repo_delete.html">datom_repo_delete()</a></code> – removing the local clone first strips the GitHub remote reference and the remote repo will not be deleted.</p>
 </div>
 <div class="section level2">
 <h2 id="where-to-go-next">Where to go next<a class="anchor" aria-label="anchor" href="#where-to-go-next"></a>
 </h2>
-<p>The <a href="https://amashadihossein.github.io/datom/articles/">Get Started</a> articles follow a single user journey through six months of a clinical study, from a first extract on a laptop through a full multi-engineer, multi-project governance workflow.</p>
+<p>The <a href="https://amashadihossein.github.io/datom/articles/">Get Started</a> articles follow a single clinical study from its first extract on a laptop through monthly versioning and bulk imports, then show how to start directly on S3 and trace how derived tables descend from their sources.</p>
 <table class="table">
 <colgroup>
 <col width="50%">
@@ -212,16 +212,16 @@
 <td><a href="https://amashadihossein.github.io/datom/articles/folder-of-extracts.html">A Folder of Extracts</a></td>
 </tr>
 <tr>
-<td>Moving from local storage to S3</td>
-<td><a href="https://amashadihossein.github.io/datom/articles/promoting-to-s3.html">Promoting to S3</a></td>
+<td>Starting directly in S3 object storage</td>
+<td><a href="https://amashadihossein.github.io/datom/articles/start-on-s3.html">Starting on S3</a></td>
 </tr>
 <tr>
-<td>Sharing data with statisticians</td>
-<td><a href="https://amashadihossein.github.io/datom/articles/handing-off.html">Handing Off to a Statistician</a></td>
+<td>Tracing how derived tables descend from raw</td>
+<td><a href="https://amashadihossein.github.io/datom/articles/source-lineage.html">Tracing Data Lineage</a></td>
 </tr>
 <tr>
-<td>Governing a portfolio of studies</td>
-<td><a href="https://amashadihossein.github.io/datom/articles/governing-portfolio.html">Governing a Portfolio</a></td>
+<td>Where datom fits in the daapr stack</td>
+<td><a href="https://amashadihossein.github.io/datom/articles/looking-ahead.html">Looking Ahead</a></td>
 </tr>
 </tbody>
 </table>

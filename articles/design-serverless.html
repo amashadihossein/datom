@@ -82,9 +82,10 @@
     
     
 <blockquote>
-<p><strong>Companion to</strong>: <a href="governing-a-portfolio.html">Governing a Study Portfolio</a>. Read
-this when you want to understand what runs where – and what doesn’t run
-anywhere – when datom is in production.</p>
+<p><strong>Companion to</strong>: <a href="design-datom-model.html">The
+datom Model: Code in Git, Data in Cloud</a>. Read this when you want to
+understand what runs where – and what doesn’t run anywhere – when datom
+is in production.</p>
 </blockquote>
 <p>There is no datom server.</p>
 <p>Not “you can run it without one.” Not “we ship a default daemon you
@@ -224,11 +225,11 @@ the choices already made:</p>
 <ul>
 <li>Metadata in git – see <a href="design-datom-model.html">The datom
 Model: Code in Git, Data in Cloud</a>.</li>
-<li>Two repos for project vs. organization scope – see <a href="design-two-repos.html">Two Repositories: Governance
-vs. Data</a>.</li>
-<li>Indirection through <code>ref.json</code> for portable storage – see
-<a href="design-ref-json.html"><code>ref.json</code> and
-Always-Migration-Ready Storage</a>.</li>
+<li>Two repos for project vs. organization scope – the
+organization-scope governance repo is managed by the governance
+companion package.</li>
+<li>Indirection through <code>ref.json</code> for portable,
+migration-ready storage.</li>
 </ul>
 <p>If you’re picturing a deployment diagram for datom and feeling like
 you’re missing something, you’re not. The diagram is your git host, your

@@ -11,38 +11,21 @@ Your first datom project: simulate, version, read.
 - [A Folder of
   Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.md):
 
-### Scale Up
+### Start on S3
 
-Promote to S3 and collaborate across a team.
+Begin directly in object storage.
 
-- [S3 Setup and
-  Promotion](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md):
-- [Handing Off to a
-  Statistician](https://amashadihossein.github.io/datom/articles/handing-off.md):
-- [A Second Engineer
-  Joins](https://amashadihossein.github.io/datom/articles/second-engineer.md):
+- [Starting on
+  S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md):
 
-### Govern
+### Lineage & Roadmap
 
-Manage a portfolio, audit history, look ahead.
+Trace data lineage; where datom sits in the daapr stack.
 
-- [Governing a Study
-  Portfolio](https://amashadihossein.github.io/datom/articles/governing-a-portfolio.md):
-- [Auditing &
-  Reproducibility](https://amashadihossein.github.io/datom/articles/auditing-reproducibility.md):
 - [Tracing Data
   Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md):
 - [Looking Ahead: datom in the daapr
   Stack](https://amashadihossein.github.io/datom/articles/looking-ahead.md):
-
-### Reference
-
-Credentials, conventions, stores, roles, recovery utilities.
-
-- [Credentials in
-  Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.md):
-- [Buckets and
-  Prefixes](https://amashadihossein.github.io/datom/articles/buckets-and-prefixes.md):
 
 ### Design
 
@@ -52,13 +35,5 @@ Why datom is shaped the way it is.
   Cloud](https://amashadihossein.github.io/datom/articles/design-datom-model.md):
 - [Version SHAs: Data SHA vs. Metadata
   SHA](https://amashadihossein.github.io/datom/articles/design-version-shas.md):
-- [ref.json and Always-Migration-Ready
-  Storage](https://amashadihossein.github.io/datom/articles/design-ref-json.md):
-- [governance.json and the Dual-Pointer
-  Pattern](https://amashadihossein.github.io/datom/articles/design-governance-json.md):
-- [dispatch.json and Self-Serve
-  Access](https://amashadihossein.github.io/datom/articles/design-dispatch.md):
-- [Two Repositories: Governance vs.
-  Data](https://amashadihossein.github.io/datom/articles/design-two-repos.md):
 - [Serverless and Distributed by
   Design](https://amashadihossein.github.io/datom/articles/design-serverless.md):

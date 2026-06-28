@@ -157,6 +157,5 @@ as duplicates.
 - A reader on a different machine pulling metadata from S3 computes the
   same `metadata_sha` as the writer.
 
-These four properties are the foundation that everything in [Auditing &
-Reproducibility](https://amashadihossein.github.io/datom/articles/auditing-reproducibility.md)
-eventually depends on.
+These four properties are the foundation that every reproducibility and
+audit workflow eventually depends on.

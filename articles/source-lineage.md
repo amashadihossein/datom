@@ -44,8 +44,8 @@ and
 # Not evaluated -- illustrates a real-world setup.
 # In practice this is done once per project with datom_init_repo().
 store <- datom_store(
-  data      = datom_store_s3(bucket = "my-datom-bucket", prefix = "lineage-demo"),
-  gov       = datom_store_s3(bucket = "my-gov-bucket",   prefix = "gov")
+  governance = NULL,
+  data       = datom_store_s3(bucket = "my-datom-bucket", prefix = "lineage-demo")
 )
 ```
 

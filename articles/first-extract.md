@@ -22,9 +22,9 @@ overwrite history, and anyone with access to the repo can reproduce any
 past analysis by pinning to a SHA.
 
 This first article walks the local-only path. The same workflow – same
-functions, same commands – works for a shared S3 space once you swap the
-local store for an S3 store in [Promoting to
-S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md).
+functions, same commands – works for a shared S3 space: you build an S3
+store instead of a local one (see [Starting on
+S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md)).
 
 ## Requirements
 
@@ -38,9 +38,8 @@ You need two things, both one-time:
 - **A GitHub account** with a personal access token (PAT) scoped to
   `repo`. Store it in your OS keychain once with
   `keyring::key_set("GITHUB_PAT")`; every article after this picks it up
-  automatically. See [Credentials in
-  Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.md)
-  for a step-by-step walkthrough of PAT creation and keyring setup.
+  automatically. Using `keyring` keeps the PAT out of your code and
+  command history.
 - **The `gh` CLI is not required** – datom creates GitHub repos through
   the GitHub REST API directly using your PAT.
 
@@ -53,9 +52,7 @@ No AWS, no cloud account, no governance repo for this article.
 nzchar(keyring::key_get("GITHUB_PAT"))   # should return TRUE
 ```
 
-If it errors, follow the [Credentials in
-Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.md)
-setup steps first.
+If it errors, set the PAT with `keyring::key_set("GITHUB_PAT")` first.
 
 ## Set up your working paths
 
@@ -92,8 +89,8 @@ dir_create(data_dir)
 
 A **store** bundles the addresses datom needs: where parquet bytes go
 and the GitHub PAT that lets datom push metadata. Governance is not
-attached yet (`governance = NULL`); you’ll add it in [Promoting to
-S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md).
+attached (`governance = NULL`); it is opt-in and added later through the
+governance companion package when sharing across a portfolio matters.
 
 ``` r
 
@@ -229,9 +226,8 @@ You have a fully versioned datom project up and running:
 - One table (`dm`) with one version, one parquet file in `data_dir`
 - Metadata committed and pushed to GitHub – version history is auditable
 - Parquet data stays local – **nothing sensitive went to GitHub**
-- No governance attached yet; you’ll add it in [Promoting to
-  S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md)
-  when sharing matters
+- No governance attached; it is opt-in and added later through the
+  governance companion package when sharing across a portfolio matters
 
 In the next article, the **month-2 extract arrives** with new subjects,
 and you write a second version without overwriting the first.
@@ -250,12 +246,13 @@ If you are done exploring, pick one:
 
 # Option A -- full scripted teardown (deletes local files AND the GitHub repo).
 # Do this BEFORE unlink().
-datom_decommission(conn, confirm = "STUDY_001")
+datom_repo_delete(conn, confirm = "STUDY_001")
 
 # Option B -- local only (GitHub repo stays; delete it manually from the UI).
 unlink(c(dev_dir, data_dir), recursive = TRUE)
 ```
 
 Do not call [`unlink()`](https://rdrr.io/r/base/unlink.html) before
-`datom_decommission()` – removing the local clone first strips the
-GitHub remote reference and the remote repo will not be deleted.
+[`datom_repo_delete()`](https://amashadihossein.github.io/datom/reference/datom_repo_delete.md)
+– removing the local clone first strips the GitHub remote reference and
+the remote repo will not be deleted.

@@ -81,8 +81,8 @@
 
     
     
-<p>You’ve now seen datom’s full surface from a single first extract
-through governing a portfolio and answering a regulator. This article
+<p>You’ve now seen datom’s core surface, from a single first extract
+through monthly versioning, bulk imports, and data lineage. This article
 steps back and frames where datom fits in the wider
 <strong>daapr</strong> ecosystem – and, just as importantly, what datom
 deliberately does <strong>not</strong> do.</p>
@@ -95,9 +95,10 @@ deliberately does <strong>not</strong> do.</p>
 (parquet, content addressed by a SHA over its bytes).</li>
 <li>A <strong>version</strong> is a metadata commit in git that points
 at a data SHA.</li>
-<li>A <strong>project</strong> is a pair of git repos – a private data
-repo per study, and a shared governance repo for portfolio-wide
-registration – combined with a storage location for parquet bytes.</li>
+<li>A <strong>project</strong> is a private data git repo per study,
+combined with a storage location for parquet bytes. A shared governance
+repo for portfolio-wide registration is available on demand through the
+governance companion package.</li>
 </ul>
 <p>Everything you’ve read in the previous nine articles is built from
 those three primitives. The combination of <em>git for metadata</em> and
@@ -121,7 +122,7 @@ filters – those happen in your R session, in your analysis code, or
 upstack.</li>
 <li>
 <strong>datom is not a UI.</strong> There is no dashboard, no web
-app, no central service. The only “shared state” is the gov repo on
+app, no central service. The only “shared state” is the data git repo on
 GitHub and the parquet objects in S3 (or local filesystem). Both are
 durable and inspectable without datom.</li>
 <li>
@@ -200,7 +201,7 @@ you have:</p>
 <ul>
 <li>Versioned, auditable tables.</li>
 <li>Reproducibility by SHA pin.</li>
-<li>A portfolio register and decommission discipline.</li>
+<li>Clean project teardown via <code><a href="../reference/datom_repo_delete.html">datom_repo_delete()</a></code>.</li>
 <li>Cross-team handoff via the reader role.</li>
 </ul>
 <p>That set is enough for many clinical workflows – particularly extract
@@ -218,11 +219,10 @@ change.</p>
 </h2>
 <ul>
 <li>
-<strong>Reference</strong>: the final user-journey article, <a href="credentials-in-practice.html">Credentials in Practice</a>, is the
-lookup reference for the credential and store-construction patterns the
-earlier articles use without explanation.</li>
+<strong>Credentials</strong>: PAT and AWS credential setup is shown
+inline where each store is built – see <a href="first-extract.html">First Extract</a> (local) and <a href="start-on-s3.html">Starting on S3</a> (S3).</li>
 <li>
-<strong>Design Notes</strong>: the six articles under the
+<strong>Design Notes</strong>: the articles under the
 <em>Design</em> group on the sidebar explain <em>why</em> datom looks
 the way it does. They’re not required reading – the user journey already
 runs end-to-end – but they’re the right next step if you want to extend

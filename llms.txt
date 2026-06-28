@@ -55,10 +55,8 @@ keyring::key_set("GITHUB_PAT")          # one-time setup
 nzchar(keyring::key_get("GITHUB_PAT"))  # verify -- should return TRUE
 ```
 
-See the [Credentials in
-Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.html)
-article for a step-by-step walkthrough of PAT creation and keyring
-setup.
+Using `keyring` keeps the PAT out of your code and command history; see
+the `keyring` package documentation for setup details.
 
 ``` r
 
@@ -150,30 +148,32 @@ Pick one:
 
 # Option A -- full scripted teardown (deletes local files AND the GitHub repo).
 # Do this BEFORE unlink().
-datom_decommission(conn, confirm = "STUDY_001")
+datom_repo_delete(conn, confirm = "STUDY_001")
 
 # Option B -- local only (GitHub repo stays; delete it manually from the UI).
 unlink(c(dev_dir, data_dir), recursive = TRUE)
 ```
 
 Do not call [`unlink()`](https://rdrr.io/r/base/unlink.html) before
-`datom_decommission()` – removing the local clone first strips the
-GitHub remote reference and the remote repo will not be deleted.
+[`datom_repo_delete()`](https://amashadihossein.github.io/datom/reference/datom_repo_delete.md)
+– removing the local clone first strips the GitHub remote reference and
+the remote repo will not be deleted.
 
 ## Where to go next
 
 The [Get Started](https://amashadihossein.github.io/datom/articles/)
-articles follow a single user journey through six months of a clinical
-study, from a first extract on a laptop through a full multi-engineer,
-multi-project governance workflow.
+articles follow a single clinical study from its first extract on a
+laptop through monthly versioning and bulk imports, then show how to
+start directly on S3 and trace how derived tables descend from their
+sources.
 
 | When you are ready for | Article |
 |----|----|
 | A second monthly extract – versioning in action | [Month 2 Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.html) |
 | Importing a folder of extracts at once | [A Folder of Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.html) |
-| Moving from local storage to S3 | [Promoting to S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.html) |
-| Sharing data with statisticians | [Handing Off to a Statistician](https://amashadihossein.github.io/datom/articles/handing-off.html) |
-| Governing a portfolio of studies | [Governing a Portfolio](https://amashadihossein.github.io/datom/articles/governing-portfolio.html) |
+| Starting directly in S3 object storage | [Starting on S3](https://amashadihossein.github.io/datom/articles/start-on-s3.html) |
+| Tracing how derived tables descend from raw | [Tracing Data Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.html) |
+| Where datom fits in the daapr stack | [Looking Ahead](https://amashadihossein.github.io/datom/articles/looking-ahead.html) |
 
 For the design rationale – why two repos, what `ref.json` does, how SHAs
 are computed – see the **Design** articles in the same site.
@@ -340,38 +340,21 @@ Your first datom project: simulate, version, read.
 - [A Folder of
   Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.md):
 
-### Scale Up
+### Start on S3
 
-Promote to S3 and collaborate across a team.
+Begin directly in object storage.
 
-- [S3 Setup and
-  Promotion](https://amashadihossein.github.io/datom/articles/promoting-to-s3.md):
-- [Handing Off to a
-  Statistician](https://amashadihossein.github.io/datom/articles/handing-off.md):
-- [A Second Engineer
-  Joins](https://amashadihossein.github.io/datom/articles/second-engineer.md):
+- [Starting on
+  S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md):
 
-### Govern
+### Lineage & Roadmap
 
-Manage a portfolio, audit history, look ahead.
+Trace data lineage; where datom sits in the daapr stack.
 
-- [Governing a Study
-  Portfolio](https://amashadihossein.github.io/datom/articles/governing-a-portfolio.md):
-- [Auditing &
-  Reproducibility](https://amashadihossein.github.io/datom/articles/auditing-reproducibility.md):
 - [Tracing Data
   Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md):
 - [Looking Ahead: datom in the daapr
   Stack](https://amashadihossein.github.io/datom/articles/looking-ahead.md):
-
-### Reference
-
-Credentials, conventions, stores, roles, recovery utilities.
-
-- [Credentials in
-  Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.md):
-- [Buckets and
-  Prefixes](https://amashadihossein.github.io/datom/articles/buckets-and-prefixes.md):
 
 ### Design
 
@@ -381,13 +364,5 @@ Why datom is shaped the way it is.
   Cloud](https://amashadihossein.github.io/datom/articles/design-datom-model.md):
 - [Version SHAs: Data SHA vs. Metadata
   SHA](https://amashadihossein.github.io/datom/articles/design-version-shas.md):
-- [ref.json and Always-Migration-Ready
-  Storage](https://amashadihossein.github.io/datom/articles/design-ref-json.md):
-- [governance.json and the Dual-Pointer
-  Pattern](https://amashadihossein.github.io/datom/articles/design-governance-json.md):
-- [dispatch.json and Self-Serve
-  Access](https://amashadihossein.github.io/datom/articles/design-dispatch.md):
-- [Two Repositories: Governance vs.
-  Data](https://amashadihossein.github.io/datom/articles/design-two-repos.md):
 - [Serverless and Distributed by
   Design](https://amashadihossein.github.io/datom/articles/design-serverless.md):

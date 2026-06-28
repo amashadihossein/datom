@@ -130,12 +130,10 @@ of immutable parquet files, and it’s deliberately not more than that.
 Once you accept “metadata in git, data in object store,” several other
 datom design choices stop looking arbitrary:
 
-- The two-repo split (governance vs. project) – see [Two Repositories:
-  Governance
-  vs. Data](https://amashadihossein.github.io/datom/articles/design-two-repos.md).
-- The `ref.json` indirection layer – see [`ref.json` and
-  Always-Migration-Ready
-  Storage](https://amashadihossein.github.io/datom/articles/design-ref-json.md).
+- The two-repo split (governance vs. project) – the organization-scope
+  governance repo is managed by the governance companion package.
+- The `ref.json` indirection layer for portable, migration-ready
+  storage.
 - The two-flavor SHA scheme (data SHA + metadata SHA) – see [Version
   SHAs: Data SHA vs. Metadata
   SHA](https://amashadihossein.github.io/datom/articles/design-version-shas.md).

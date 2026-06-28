@@ -223,10 +223,10 @@ that.</p>
 <p>Once you accept “metadata in git, data in object store,” several
 other datom design choices stop looking arbitrary:</p>
 <ul>
-<li>The two-repo split (governance vs. project) – see <a href="design-two-repos.html">Two Repositories: Governance
-vs. Data</a>.</li>
-<li>The <code>ref.json</code> indirection layer – see <a href="design-ref-json.html"><code>ref.json</code> and
-Always-Migration-Ready Storage</a>.</li>
+<li>The two-repo split (governance vs. project) – the organization-scope
+governance repo is managed by the governance companion package.</li>
+<li>The <code>ref.json</code> indirection layer for portable,
+migration-ready storage.</li>
 <li>The two-flavor SHA scheme (data SHA + metadata SHA) – see <a href="design-version-shas.html">Version SHAs: Data SHA vs. Metadata
 SHA</a>.</li>
 </ul>

@@ -1,9 +1,9 @@
 # Looking Ahead: datom in the daapr Stack
 
-You’ve now seen datom’s full surface from a single first extract through
-governing a portfolio and answering a regulator. This article steps back
-and frames where datom fits in the wider **daapr** ecosystem – and, just
-as importantly, what datom deliberately does **not** do.
+You’ve now seen datom’s core surface, from a single first extract
+through monthly versioning, bulk imports, and data lineage. This article
+steps back and frames where datom fits in the wider **daapr** ecosystem
+– and, just as importantly, what datom deliberately does **not** do.
 
 ## What datom is
 
@@ -12,9 +12,10 @@ A versioned table store. That’s the whole product.
 - A **table** is a data frame stored once per content (parquet, content
   addressed by a SHA over its bytes).
 - A **version** is a metadata commit in git that points at a data SHA.
-- A **project** is a pair of git repos – a private data repo per study,
-  and a shared governance repo for portfolio-wide registration –
-  combined with a storage location for parquet bytes.
+- A **project** is a private data git repo per study, combined with a
+  storage location for parquet bytes. A shared governance repo for
+  portfolio-wide registration is available on demand through the
+  governance companion package.
 
 Everything you’ve read in the previous nine articles is built from those
 three primitives. The combination of *git for metadata* and *object
@@ -35,8 +36,8 @@ The boundary is just as important as the surface:
   returns a data frame. Joins, aggregations, filters – those happen in
   your R session, in your analysis code, or upstack.
 - **datom is not a UI.** There is no dashboard, no web app, no central
-  service. The only “shared state” is the gov repo on GitHub and the
-  parquet objects in S3 (or local filesystem). Both are durable and
+  service. The only “shared state” is the data git repo on GitHub and
+  the parquet objects in S3 (or local filesystem). Both are durable and
   inspectable without datom.
 - **datom is not a permissions system.** Access is whatever GitHub and
   your object store grant. datom reads and writes through your existing
@@ -79,7 +80,8 @@ have:
 
 - Versioned, auditable tables.
 - Reproducibility by SHA pin.
-- A portfolio register and decommission discipline.
+- Clean project teardown via
+  [`datom_repo_delete()`](https://amashadihossein.github.io/datom/reference/datom_repo_delete.md).
 - Cross-team handoff via the reader role.
 
 That set is enough for many clinical workflows – particularly extract
@@ -93,15 +95,16 @@ about how you’ve structured your projects will need to change.
 
 ## Where to go next
 
-- **Reference**: the final user-journey article, [Credentials in
-  Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.md),
-  is the lookup reference for the credential and store-construction
-  patterns the earlier articles use without explanation.
-- **Design Notes**: the six articles under the *Design* group on the
-  sidebar explain *why* datom looks the way it does. They’re not
-  required reading – the user journey already runs end-to-end – but
-  they’re the right next step if you want to extend datom or build on
-  top of it.
+- **Credentials**: PAT and AWS credential setup is shown inline where
+  each store is built – see [First
+  Extract](https://amashadihossein.github.io/datom/articles/first-extract.md)
+  (local) and [Starting on
+  S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md)
+  (S3).
+- **Design Notes**: the articles under the *Design* group on the sidebar
+  explain *why* datom looks the way it does. They’re not required
+  reading – the user journey already runs end-to-end – but they’re the
+  right next step if you want to extend datom or build on top of it.
 - **Source**:
   [github.com/amashadihossein/datom](https://github.com/amashadihossein/datom).
   Issues and discussion welcome.
