@@ -148,7 +148,7 @@ graph TD
     (README.Rmd unchanged since Task 4, so README.md already current). No `R/`/`NAMESPACE`
     change.
 
-- [ ] 6. Verify and complete the spec
+- [x] 6. Verify and complete the spec
   - Run the seven checks in `design.md` -> "Testing Strategy". All must pass.
   - Confirm `git status` shows zero changes under `R/` and to `NAMESPACE` (Property 1).
   - Harvest learnings: note in `dev/engineering-notes.md` that the deferred suite lives in
@@ -156,6 +156,22 @@ graph TD
   - Update `dev/README.md` Active Specs (status: complete; specs persist, do not delete).
   - PR to `main`, merge, delete the branch.
   - _Requirements: 5.1, 5.2, 5.3, 5.4_
+  - **Done (2026-06-27):** All 7 Testing-Strategy checks PASS -- (1) no removed-export refs in
+    vignettes; (2) no links to moved/removed articles; (3) ASCII clean (`vignettes/*.Rmd`);
+    (4) `R CMD build` exit 0, vignettes knit OK, no non-ASCII warning (only the 2 pre-existing
+    R-version NOTEs, identical to the Task-0 baseline); (5) `pkgdown::build_site()` clean, 9
+    articles rendered, no missing-topic / broken-article-link (only benign pandoc
+    `--highlight-style` deprecation warnings); (6) `devtools::test()` = **1873** PASS / 0 FAIL,
+    exact baseline match; (7) zero `R/` + `NAMESPACE` changes across the whole branch
+    (`git diff origin/main...HEAD`). Harvested to `dev/engineering-notes.md`: vignette parking
+    location + handed-off articles, the "pkgdown renders every `vignettes/*.Rmd`" exclusion
+    gotcha, and the generated-`README.md` smart-typography ASCII-scope clarification. README
+    Active Specs -> Completed (spec persists). **PR/merge/delete branch pending user
+    approval** (irreversible remote step, gated).
+  - **Tooling note:** the 7-check run surfaced a *zsh glob* gotcha in the verification script
+    (unmatched `rm -f /tmp/datom_*.tar.gz` aborts the `&&` chain under zsh `nomatch`, so an
+    early "build exit=1" was the failed glob, not R CMD build). Re-ran with `setopt
+    NULL_GLOB`; build is genuinely clean. Not a datom code issue.
 
 ## Notes
 
