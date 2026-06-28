@@ -65,9 +65,8 @@ keyring::key_set("GITHUB_PAT")          # one-time setup
 nzchar(keyring::key_get("GITHUB_PAT"))  # verify -- should return TRUE
 ```
 
-See the
-[Credentials in Practice](https://amashadihossein.github.io/datom/articles/credentials-in-practice.html)
-article for a step-by-step walkthrough of PAT creation and keyring setup.
+Using `keyring` keeps the PAT out of your code and command history; see the
+`keyring` package documentation for setup details.
 
 ```r
 library(datom)
@@ -151,30 +150,30 @@ Pick one:
 ```r
 # Option A -- full scripted teardown (deletes local files AND the GitHub repo).
 # Do this BEFORE unlink().
-datom_decommission(conn, confirm = "STUDY_001")
+datom_repo_delete(conn, confirm = "STUDY_001")
 
 # Option B -- local only (GitHub repo stays; delete it manually from the UI).
 unlink(c(dev_dir, data_dir), recursive = TRUE)
 ```
 
-Do not call `unlink()` before `datom_decommission()` -- removing the local
+Do not call `unlink()` before `datom_repo_delete()` -- removing the local
 clone first strips the GitHub remote reference and the remote repo will not
 be deleted.
 
 ## Where to go next
 
 The [Get Started](https://amashadihossein.github.io/datom/articles/) articles
-follow a single user journey through six months of a clinical study, from a
-first extract on a laptop through a full multi-engineer, multi-project
-governance workflow.
+follow a single clinical study from its first extract on a laptop through
+monthly versioning and bulk imports, then show how to start directly on S3 and
+trace how derived tables descend from their sources.
 
 | When you are ready for | Article |
 |---|---|
 | A second monthly extract -- versioning in action | [Month 2 Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.html) |
 | Importing a folder of extracts at once | [A Folder of Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.html) |
-| Moving from local storage to S3 | [Promoting to S3](https://amashadihossein.github.io/datom/articles/promoting-to-s3.html) |
-| Sharing data with statisticians | [Handing Off to a Statistician](https://amashadihossein.github.io/datom/articles/handing-off.html) |
-| Governing a portfolio of studies | [Governing a Portfolio](https://amashadihossein.github.io/datom/articles/governing-portfolio.html) |
+| Starting directly in S3 object storage | [Starting on S3](https://amashadihossein.github.io/datom/articles/start-on-s3.html) |
+| Tracing how derived tables descend from raw | [Tracing Data Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.html) |
+| Where datom fits in the daapr stack | [Looking Ahead](https://amashadihossein.github.io/datom/articles/looking-ahead.html) |
 
 For the design rationale -- why two repos, what `ref.json` does, how SHAs are
 computed -- see the **Design** articles in the same site.

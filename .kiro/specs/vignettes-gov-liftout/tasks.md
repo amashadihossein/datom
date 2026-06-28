@@ -103,18 +103,35 @@ graph TD
     articles), conn print output matches `print.datom_conn`. Knits clean (`eval = FALSE`).
     No `R/`/`NAMESPACE` change. `_pkgdown.yml` entry added in Task 5.
 
-- [ ] 4. Bucket A in-place fixes
-  - [ ] 4.1 `first-extract.Rmd`: `datom_decommission()` -> `datom_repo_delete()`; repoint the
+- [x] 4. Bucket A in-place fixes
+  - [x] 4.1 `first-extract.Rmd`: `datom_decommission()` -> `datom_repo_delete()`; repoint the
     two forward-links to the moved `promoting-to-s3` (soften to prose or point at
     `start-on-s3.html`).
-  - [ ] 4.2 `source-lineage.Rmd`: setup store `gov = datom_store_s3(...)` -> `governance = NULL`.
-  - [ ] 4.3 `looking-ahead.Rmd`: reword gov framing to companion-package terms.
-  - [ ] 4.4 `design-datom-model.Rmd`, `design-serverless.Rmd`: reword conceptual gov mentions;
+  - [x] 4.2 `source-lineage.Rmd`: setup store `gov = datom_store_s3(...)` -> `governance = NULL`.
+  - [x] 4.3 `looking-ahead.Rmd`: reword gov framing to companion-package terms.
+  - [x] 4.4 `design-datom-model.Rmd`, `design-serverless.Rmd`: reword conceptual gov mentions;
     verify neither calls a removed function.
-  - [ ] 4.5 `month-2-arrives.Rmd`, `folder-of-extracts.Rmd`, `design-version-shas.Rmd`,
+  - [x] 4.5 `month-2-arrives.Rmd`, `folder-of-extracts.Rmd`, `design-version-shas.Rmd`,
     `README.Rmd`: verify, fix any dead cross-links / gov mentions.
   - Sweep dead links (Property 5): no surviving article links to a moved article's `.html`.
   - _Requirements: 1.2, 1.3_
+  - **Done (2026-06-27):** 19 edits across 7 source files. `first-extract`: decommission ->
+    `datom_repo_delete` (code + caveat), 3 promoting-to-s3 links + 2 credentials-in-practice
+    links repointed/softened. `source-lineage`: `gov = datom_store_s3(...)` -> `governance =
+    NULL` (also fixed the wrong arg name). `looking-ahead`: intro, project-primitive,
+    shared-state, capabilities-list, and Where-to-go-next all reworded to companion-package /
+    on-demand gov framing; dead credentials link replaced; "six" design articles -> "the"
+    articles. `design-datom-model` + `design-serverless`: dead design-two-repos /
+    design-ref-json / governing-a-portfolio links converted to prose or repointed to surviving
+    design articles. `design-version-shas`: dead auditing-reproducibility link removed.
+    `month-2-arrives`, `folder-of-extracts`: verified clean (no edit needed). `README.Rmd`:
+    decommission -> `datom_repo_delete`, dead credentials link softened, Where-to-go-next table
+    rebuilt to surviving articles (added start-on-s3 + lineage + looking-ahead). Verification:
+    zero dead links + zero removed-export refs remain (P5); ASCII clean (P4); all 9 surviving
+    cross-link targets are Bucket A; 6 edited vignettes knit clean; no `R/`/`NAMESPACE` change
+    (P1). **README.md re-knit here** (`devtools::build_readme()`) for a self-consistent commit
+    -- pulled forward from Task 5, which now just confirms currency + does the `_pkgdown.yml`
+    restructure.
 
 - [ ] 5. `_pkgdown.yml` articles restructure + README re-knit
   - Replace the `articles:` section with the Bucket-A-only grouping in `design.md`
