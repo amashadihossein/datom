@@ -1,0 +1,182 @@
+# Implementation Plan: Vignettes post GOV_SEAM lift-out (datom side)
+
+> **Execute with GitHub Copilot.** Documentation-only phase — no `R/` or `NAMESPACE` changes
+> (Property 1). Read `requirements.md` and `design.md` first. One task group = one commit; keep
+> the build green at each step. Because nothing here changes code, "tests" means
+> `R CMD build` + `pkgdown::build_site()` + the unchanged `devtools::test()` count.
+
+## Overview
+
+Six task groups, each one commit. Buckets are moved (B/C) or fixed in place (A), the new
+S3 article is authored, `_pkgdown.yml` is restructured to a Bucket-A-only site, and the
+build + site are verified. No code changes (Property 1).
+
+## Task Dependency Graph
+
+```mermaid
+graph TD
+    T0[0. Branch + register spec + baseline] --> T1[1. Park Bucket B verbatim]
+    T0 --> T2[2. Remove Bucket C from datom]
+    T1 --> T3[3. New start-on-s3 vignette]
+    T2 --> T3
+    T3 --> T4[4. Bucket A in-place fixes + dead links]
+    T4 --> T5[5. _pkgdown.yml restructure + README re-knit]
+    T5 --> T6[6. Verify build + site, spec completion]
+```
+
+```json
+{
+  "waves": [
+    { "wave": 1, "tasks": ["0"] },
+    { "wave": 2, "tasks": ["1", "2"] },
+    { "wave": 3, "tasks": ["3"] },
+    { "wave": 4, "tasks": ["4"] },
+    { "wave": 5, "tasks": ["5"] },
+    { "wave": 6, "tasks": ["6"] }
+  ]
+}
+```
+
+## Tasks
+
+- [x] 0. Branch, register spec, baseline
+  - Create `spec/vignettes-gov-liftout` from `main`.
+  - Add a row to the `dev/README.md` Active Specs table (status: tasks started).
+  - Record baseline: run `devtools::test()` and note the count; confirm `R CMD build` +
+    `pkgdown::build_site()` currently succeed (they should, since `eval = FALSE`).
+  - Confirm preservation precondition (Property 3): `datomanager/dev/vignettes-from-datom/`
+    contains `governing-a-portfolio.Rmd`, `auditing-reproducibility.Rmd`, `NOTE.md`.
+  - _Requirements: all (setup)_
+  - **Baseline (2026-06-27):** `devtools::test()` = 1873 PASS / 0 FAIL / 0 SKIP (26 benign
+    WARN). `R CMD build --no-manual` clean (vignettes knit OK; 2 pre-existing R-version
+    NOTEs). `pkgdown::build_site()` clean. Precondition satisfied: all three Bucket C files
+    present at `datomanager/dev/vignettes-from-datom/`.
+
+- [x] 1. Park Bucket B verbatim under `dev/vignettes-deferred/`
+  - `git mv` each Bucket B vignette into `dev/vignettes-deferred/`:
+    `promoting-to-s3.Rmd`, `handing-off.Rmd`, `second-engineer.Rmd`,
+    `credentials-in-practice.Rmd`, `buckets-and-prefixes.Rmd`, `design-ref-json.Rmd`,
+    `design-governance-json.Rmd`, `design-dispatch.Rmd`, `design-two-repos.Rmd`.
+  - `git mv` `inst/vignette-setup/resume_article_4.R` .. `resume_article_8.R` into
+    `dev/vignettes-deferred/vignette-setup/`. Leave `resume_article_2.R` and `_3.R` in place.
+  - Write `dev/vignettes-deferred/README.md`: parking rationale, original `_pkgdown.yml`
+    grouping per file, the user-journey ordering, and the "blocked on datomanager gov API"
+    note.
+  - Do NOT edit any moved file's content (Property 2).
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+  - **Done (2026-06-27):** 14 files relocated as pure git renames (`git diff --stat` shows
+    0 insertions / 0 deletions -> Property 2 satisfied). 9 vignettes -> `dev/vignettes-deferred/`,
+    5 resume scripts (`resume_article_4.R`..`_8.R`) -> `dev/vignettes-deferred/vignette-setup/`.
+    `inst/vignette-setup/` retains only `datom.css`, `resume_article_2.R`, `resume_article_3.R`.
+    Parking `README.md` written (rationale, original grouping, 10-article journey order,
+    reassembly checklist). No `R/` or `NAMESPACE` change.
+
+- [x] 2. Remove Bucket C copies from datom
+  - Verify Property 3 precondition again, then `git rm vignettes/governing-a-portfolio.Rmd
+    vignettes/auditing-reproducibility.Rmd`.
+  - (Their `_pkgdown.yml` entries are removed in Task 5.)
+  - _Requirements: 4.1, 4.2_
+  - **Done (2026-06-27):** Re-verified Property 3 rigorously -- both datom copies were
+    confirmed **byte-identical** (`diff -q`) to the preserved copies at
+    `datomanager/dev/vignettes-from-datom/`, and `NOTE.md` present. Then `git rm` both.
+    `vignettes/` now holds the 8 surviving Bucket A articles (9th, `start-on-s3.Rmd`, is
+    authored in Task 3). No `R/` or `NAMESPACE` change. `_pkgdown.yml` entries removed in
+    Task 5.
+
+- [x] 3. Author `vignettes/start-on-s3.Rmd` (new, gov-free S3 start)
+  - Follow `design.md` Component 1. Confirm `datom_init_repo()` / `datom_store_s3()` /
+    `datom_repo_delete()` signatures against `R/repo.R`, `R/store.R` before finalizing.
+  - `governance = NULL`; no gov calls; no migration; teardown via `datom_repo_delete()`.
+  - Add the forward-pointer to managed migration (companion package) so the deferred
+    `promoting-to-s3.Rmd` arc can reattach later without contradiction.
+  - ASCII only (Property 4). All chunks `eval = FALSE` to match the suite.
+  - _Requirements: 2.1, 2.2, 2.3, 2.4_
+  - **Done (2026-06-27):** Authored `vignettes/start-on-s3.Rmd`. Confirmed live signatures
+    first: `datom_store_s3()` **requires** `access_key`/`secret_key` (design skeleton omitted
+    them as illustrative) -- used the established Options A/B/C credential pattern;
+    `datom_store(governance = NULL, ...)`, `datom_init_repo(path, project_name, store,
+    create_repo, repo_name, ...)`, `datom_repo_delete(conn, confirm)` all verified. Solo S3
+    project (R2.1), no gov/migration calls (R2.2), teardown via `datom_repo_delete()` (R2.3),
+    complementary-entry-points forward-pointer to managed migration / companion package
+    (R2.4). Stands alone (not wired into resume-script chain). Checks pass: ASCII clean (P4),
+    no removed-export refs, no dead links (P5 -- all 5 cross-links to surviving Bucket A
+    articles), conn print output matches `print.datom_conn`. Knits clean (`eval = FALSE`).
+    No `R/`/`NAMESPACE` change. `_pkgdown.yml` entry added in Task 5.
+
+- [x] 4. Bucket A in-place fixes
+  - [x] 4.1 `first-extract.Rmd`: `datom_decommission()` -> `datom_repo_delete()`; repoint the
+    two forward-links to the moved `promoting-to-s3` (soften to prose or point at
+    `start-on-s3.html`).
+  - [x] 4.2 `source-lineage.Rmd`: setup store `gov = datom_store_s3(...)` -> `governance = NULL`.
+  - [x] 4.3 `looking-ahead.Rmd`: reword gov framing to companion-package terms.
+  - [x] 4.4 `design-datom-model.Rmd`, `design-serverless.Rmd`: reword conceptual gov mentions;
+    verify neither calls a removed function.
+  - [x] 4.5 `month-2-arrives.Rmd`, `folder-of-extracts.Rmd`, `design-version-shas.Rmd`,
+    `README.Rmd`: verify, fix any dead cross-links / gov mentions.
+  - Sweep dead links (Property 5): no surviving article links to a moved article's `.html`.
+  - _Requirements: 1.2, 1.3_
+  - **Done (2026-06-27):** 19 edits across 7 source files. `first-extract`: decommission ->
+    `datom_repo_delete` (code + caveat), 3 promoting-to-s3 links + 2 credentials-in-practice
+    links repointed/softened. `source-lineage`: `gov = datom_store_s3(...)` -> `governance =
+    NULL` (also fixed the wrong arg name). `looking-ahead`: intro, project-primitive,
+    shared-state, capabilities-list, and Where-to-go-next all reworded to companion-package /
+    on-demand gov framing; dead credentials link replaced; "six" design articles -> "the"
+    articles. `design-datom-model` + `design-serverless`: dead design-two-repos /
+    design-ref-json / governing-a-portfolio links converted to prose or repointed to surviving
+    design articles. `design-version-shas`: dead auditing-reproducibility link removed.
+    `month-2-arrives`, `folder-of-extracts`: verified clean (no edit needed). `README.Rmd`:
+    decommission -> `datom_repo_delete`, dead credentials link softened, Where-to-go-next table
+    rebuilt to surviving articles (added start-on-s3 + lineage + looking-ahead). Verification:
+    zero dead links + zero removed-export refs remain (P5); ASCII clean (P4); all 9 surviving
+    cross-link targets are Bucket A; 6 edited vignettes knit clean; no `R/`/`NAMESPACE` change
+    (P1). **README.md re-knit here** (`devtools::build_readme()`) for a self-consistent commit
+    -- pulled forward from Task 5, which now just confirms currency + does the `_pkgdown.yml`
+    restructure.
+
+- [x] 5. `_pkgdown.yml` articles restructure + README re-knit
+  - Replace the `articles:` section with the Bucket-A-only grouping in `design.md`
+    Component 5. Leave the `reference:` (function index) section untouched.
+  - Re-knit README: `devtools::build_readme()`.
+  - _Requirements: 1.1, 1.4, 4.3_
+  - **Done (2026-06-27):** Replaced the `articles:` section with the Bucket-A-only grouping
+    (Get Started / Start on S3 / Lineage & Roadmap / Design), kept the file's expanded
+    `contents:` style to match `reference:`. Removed the Scale Up, Govern, and Reference
+    groups (all their entries are parked/handed-off). Validated: `yaml::read_yaml()` parses;
+    the 9 indexed articles exactly match the 9 `.Rmd` on disk (zero dead topics, zero
+    unlisted -- `setdiff` empty both ways, MATCH TRUE); `reference:` section present and
+    untouched (diff scoped to articles only, -19/+5). README re-knit confirmed a **no-op**
+    (README.Rmd unchanged since Task 4, so README.md already current). No `R/`/`NAMESPACE`
+    change.
+
+- [x] 6. Verify and complete the spec
+  - Run the seven checks in `design.md` -> "Testing Strategy". All must pass.
+  - Confirm `git status` shows zero changes under `R/` and to `NAMESPACE` (Property 1).
+  - Harvest learnings: note in `dev/engineering-notes.md` that the deferred suite lives in
+    `dev/vignettes-deferred/` and the two gov articles moved to datomanager.
+  - Update `dev/README.md` Active Specs (status: complete; specs persist, do not delete).
+  - PR to `main`, merge, delete the branch.
+  - _Requirements: 5.1, 5.2, 5.3, 5.4_
+  - **Done (2026-06-27):** All 7 Testing-Strategy checks PASS -- (1) no removed-export refs in
+    vignettes; (2) no links to moved/removed articles; (3) ASCII clean (`vignettes/*.Rmd`);
+    (4) `R CMD build` exit 0, vignettes knit OK, no non-ASCII warning (only the 2 pre-existing
+    R-version NOTEs, identical to the Task-0 baseline); (5) `pkgdown::build_site()` clean, 9
+    articles rendered, no missing-topic / broken-article-link (only benign pandoc
+    `--highlight-style` deprecation warnings); (6) `devtools::test()` = **1873** PASS / 0 FAIL,
+    exact baseline match; (7) zero `R/` + `NAMESPACE` changes across the whole branch
+    (`git diff origin/main...HEAD`). Harvested to `dev/engineering-notes.md`: vignette parking
+    location + handed-off articles, the "pkgdown renders every `vignettes/*.Rmd`" exclusion
+    gotcha, and the generated-`README.md` smart-typography ASCII-scope clarification. README
+    Active Specs -> Completed (spec persists). **PR/merge/delete branch pending user
+    approval** (irreversible remote step, gated).
+  - **Tooling note:** the 7-check run surfaced a *zsh glob* gotcha in the verification script
+    (unmatched `rm -f /tmp/datom_*.tar.gz` aborts the `&&` chain under zsh `nomatch`, so an
+    early "build exit=1" was the failed glob, not R CMD build). Re-ran with `setopt
+    NULL_GLOB`; build is genuinely clean. Not a datom code issue.
+
+## Notes
+
+- The datomanager-side preservation (Bucket C) is already done by Kiro; this spec only
+  removes the datom copies. If `datomanager/dev/vignettes-from-datom/` is missing, STOP and
+  restore it before Task 2.
+- This is documentation-only. If any task appears to need an `R/` or `NAMESPACE` edit, that
+  is a signal the task is mis-scoped — re-read `design.md` rather than editing code.

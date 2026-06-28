@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| _none_ | — | No spec currently active. | — |
+| _(none active)_ | | | |
 
 ### Drafts (queued, not active)
 
@@ -80,6 +80,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Phase | Completed | Tests | Summary |
 |-------|-----------|-------|---------|
+| Spec: vignettes-gov-liftout | 2026-06-27 | 1873 | Vignette-suite cleanup after the GOV_SEAM lift-out (docs-only; **no `R/`/NAMESPACE changes**). Trimmed the rendered pkgdown site to a minimal gov-free set. **Bucket A** (kept/fixed): `first-extract`, `month-2-arrives`, `folder-of-extracts`, `source-lineage`, `looking-ahead`, `design-datom-model`, `design-version-shas`, `design-serverless`, + new **`start-on-s3.Rmd`** (gov-free S3-native start; complements local-first `first-extract`). In-place fixes: `datom_decommission()` -> `datom_repo_delete()`, `gov =` store component dropped, gov framing reworded to companion-package/on-demand terms, all dead cross-links repointed. **Bucket B** (parked verbatim, build-ignored): 9 gov-interface vignettes + `resume_article_4-8.R` moved to `dev/vignettes-deferred/` with a parking README (reassembly map) -- blocked on datomanager's gov API. **Bucket C** (handed off): `governing-a-portfolio` + `auditing-reproducibility` `git rm`'d from datom (byte-identical copies preserved at `datomanager/dev/vignettes-from-datom/`). `_pkgdown.yml` `articles:` restructured to Bucket-A-only (9 indexed == 9 on disk); `reference:` untouched. All 7 verification checks pass (no removed-export refs, no dead links, ASCII clean, R CMD build clean, pkgdown clean, test count 1873 unchanged, R/+NAMESPACE clean). **No pathway impact.** |
 | Spec: gov-seam-liftout (datom side) | 2026-06-20 | 1873 | GOV_SEAM lift-out, datom side. Removed the governed **write** surface (5 exports: `datom_init_gov`, `datom_attach_gov`, `datom_decommission`, `datom_sync_dispatch`, `datom_pull_gov`; 9 `.datom_gov_*` write helpers) — it now lives in `datomanager`. datom retains all gov **reads** (`datom_projects`, `datom_pull` (data-repo-only), the six gov-read helpers, `R/ref.R` resolvers). Additive: `gov_backend` 12th conn field + `.datom_conn_for(conn,"gov")` resolves gov dispatch from it (C6); new export `datom_repo_attach_governance()` (C4-compliant data-side `governance.json` write for `datomanager::gov_attach()`); internal `.datom_sync_data_metadata()` split from `datom_sync_dispatch` (data-only half; called by `datom_validate(fix=TRUE)` + `datom_write(NULL,NULL)`). `datom_init_repo()` decoupled from gov registration (solo-only). Added `dev/e2e-solo-local.R` (solo init→write→read→`datom_repo_delete`, passing). R CMD check 0E/0W/1 benign NOTE; dev version 0.0.0.9001. **No pathway impact** (route shapes unchanged). Companion-package starter code recoverable from git history before the merge. |
 
 ### Completed Phases (legacy)

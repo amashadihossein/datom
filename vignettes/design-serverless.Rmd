@@ -15,7 +15,7 @@ knitr::opts_chunk$set(
 )
 ```
 
-> **Companion to**: [Governing a Study Portfolio](governing-a-portfolio.html).
+> **Companion to**: [The datom Model: Code in Git, Data in Cloud](design-datom-model.html).
 > Read this when you want to understand what runs where -- and what
 > doesn't run anywhere -- when datom is in production.
 
@@ -160,11 +160,9 @@ the choices already made:
 
 - Metadata in git -- see [The datom Model: Code in Git, Data in
   Cloud](design-datom-model.html).
-- Two repos for project vs. organization scope -- see [Two
-  Repositories: Governance vs. Data](design-two-repos.html).
-- Indirection through `ref.json` for portable storage -- see
-  [`ref.json` and Always-Migration-Ready
-  Storage](design-ref-json.html).
+- Two repos for project vs. organization scope -- the organization-scope
+  governance repo is managed by the governance companion package.
+- Indirection through `ref.json` for portable, migration-ready storage.
 
 If you're picturing a deployment diagram for datom and feeling like
 you're missing something, you're not. The diagram is your git host,

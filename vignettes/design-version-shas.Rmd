@@ -164,6 +164,5 @@ versions as duplicates.
 - A reader on a different machine pulling metadata from S3 computes
   the same `metadata_sha` as the writer.
 
-These four properties are the foundation that everything in
-[Auditing & Reproducibility](auditing-reproducibility.html) eventually
-depends on.
+These four properties are the foundation that every reproducibility and
+audit workflow eventually depends on.
