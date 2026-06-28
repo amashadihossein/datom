@@ -133,11 +133,20 @@ graph TD
     -- pulled forward from Task 5, which now just confirms currency + does the `_pkgdown.yml`
     restructure.
 
-- [ ] 5. `_pkgdown.yml` articles restructure + README re-knit
+- [x] 5. `_pkgdown.yml` articles restructure + README re-knit
   - Replace the `articles:` section with the Bucket-A-only grouping in `design.md`
     Component 5. Leave the `reference:` (function index) section untouched.
   - Re-knit README: `devtools::build_readme()`.
   - _Requirements: 1.1, 1.4, 4.3_
+  - **Done (2026-06-27):** Replaced the `articles:` section with the Bucket-A-only grouping
+    (Get Started / Start on S3 / Lineage & Roadmap / Design), kept the file's expanded
+    `contents:` style to match `reference:`. Removed the Scale Up, Govern, and Reference
+    groups (all their entries are parked/handed-off). Validated: `yaml::read_yaml()` parses;
+    the 9 indexed articles exactly match the 9 `.Rmd` on disk (zero dead topics, zero
+    unlisted -- `setdiff` empty both ways, MATCH TRUE); `reference:` section present and
+    untouched (diff scoped to articles only, -19/+5). README re-knit confirmed a **no-op**
+    (README.Rmd unchanged since Task 4, so README.md already current). No `R/`/`NAMESPACE`
+    change.
 
 - [ ] 6. Verify and complete the spec
   - Run the seven checks in `design.md` -> "Testing Strategy". All must pass.

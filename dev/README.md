@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| vignettes-gov-liftout | 2026-06-27 | In progress (via Copilot) -- Tasks 0-4 done (Bucket B parked; Bucket C removed; new `start-on-s3.Rmd`; all surviving articles + README fixed -- dead links + gov framing reworded to companion-package terms, `datom_decommission` -> `datom_repo_delete`). Trims the vignette suite to a minimal gov-free set, parks deferred gov-interface articles under `dev/vignettes-deferred/`, and removes two pure-gov articles (preserved in `datomanager/dev/vignettes-from-datom/`). Docs-only; no `R/`/NAMESPACE changes. | [.kiro/specs/vignettes-gov-liftout/](../.kiro/specs/vignettes-gov-liftout/) |
+| vignettes-gov-liftout | 2026-06-27 | In progress (via Copilot) -- Tasks 0-5 done (Bucket B parked; Bucket C removed; new `start-on-s3.Rmd`; all articles + README fixed; `_pkgdown.yml` restructured to Bucket-A-only -- 9 indexed articles match disk). Task 6 (full build + site verification + spec completion) remains. Trims the vignette suite to a minimal gov-free set, parks deferred gov-interface articles under `dev/vignettes-deferred/`, and removes two pure-gov articles (preserved in `datomanager/dev/vignettes-from-datom/`). Docs-only; no `R/`/NAMESPACE changes. | [.kiro/specs/vignettes-gov-liftout/](../.kiro/specs/vignettes-gov-liftout/) |
 
 ### Drafts (queued, not active)
 
