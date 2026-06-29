@@ -3,7 +3,27 @@
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - 'vignettes/**'
+      - 'inst/vignette-setup/**'
+      - 'README.md'
+      - 'README.Rmd'
+      - 'NEWS.md'
+      - '_pkgdown.yml'
+      - 'docs/**'
+      - 'dev/**'
+      - 'man/figures/**'
   pull_request:
+    paths-ignore:
+      - 'vignettes/**'
+      - 'inst/vignette-setup/**'
+      - 'README.md'
+      - 'README.Rmd'
+      - 'NEWS.md'
+      - '_pkgdown.yml'
+      - 'docs/**'
+      - 'dev/**'
+      - 'man/figures/**'
 
 name: R-CMD-check.yaml
 
