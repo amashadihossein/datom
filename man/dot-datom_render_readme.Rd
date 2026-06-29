@@ -10,7 +10,8 @@
   root,
   prefix,
   region = NULL,
-  remote_url
+  remote_url,
+  gov = NULL
 )
 }
 \arguments{
@@ -25,6 +26,11 @@
 \item{region}{AWS region string (NULL for local backend).}
 
 \item{remote_url}{Git remote URL.}
+
+\item{gov}{Governance store component (e.g. from \code{datom_store_s3()}), or
+\code{NULL} for a solo project with no governance attached. Determines whether
+the rendered store snippets use \code{governance = NULL} or a gov-store
+constructor.}
 }
 \value{
 Character string — the rendered README content.

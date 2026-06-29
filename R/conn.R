@@ -493,7 +493,8 @@ datom_init_repo <- function(path = ".",
     root         = data_root,
     prefix       = data_prefix,
     region       = data_region,
-    remote_url   = remote_url
+    remote_url   = remote_url,
+    gov          = store$governance
   )
 
   writeLines(readme_content, fs::path(path, "README.md"))
