@@ -14,3 +14,4 @@
 ^NEWS\.md$
 ^CODE_OF_CONDUCT\.md$
 ^\.kiro$
+^cran-comments\.md$

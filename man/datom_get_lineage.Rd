@@ -38,6 +38,26 @@ dpbuild from the union of parents' \code{source_lineage} fields.
 (debugging, diff, replay). Equivalent to \code{\link[=datom_get_parents]{datom_get_parents()}}.
 }
 }
+\examples{
+\dontrun{
+tmp <- tempfile("datom_lineage_")
+store <- datom_store(
+  data = datom_store_local(path = file.path(tmp, "storage")),
+  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+datom_init_repo(
+  path = file.path(tmp, "repo"),
+  project_name = "example_project",
+  store = store
+)
+conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+datom_write(conn, data = datom_example_data("dm"), name = "dm")
+datom_get_lineage(conn, "dm", depth = "source")
+unlink(tmp, recursive = TRUE)
+}
+}
 \seealso{
 \code{\link[=datom_get_parents]{datom_get_parents()}} for a direct shorthand for the \code{"parents"} depth.
 }

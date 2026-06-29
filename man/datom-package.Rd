@@ -6,7 +6,7 @@
 \alias{datom-package}
 \title{datom: Version-Controlled Data Management for Reproducible Workflows}
 \description{
-Provides version-controlled data management by abstracting tables as code in git while storing actual data in cloud storage. Enables setting up cloud-based repositories, syncing data with automatic versioning, tracking complete data lineage, and accessing any historical version for reproducibility. Designed for clinical and scientific workflows where reproducibility is paramount.
+Provides version-controlled data management by abstracting tables as code in 'git' while storing actual data in cloud storage ('S3'). Enables setting up cloud-based repositories via 'GitHub', syncing data with automatic versioning, tracking complete data lineage, and accessing any historical version for reproducibility. Designed for clinical and scientific workflows where reproducibility is paramount.
 }
 \seealso{
 Useful links:

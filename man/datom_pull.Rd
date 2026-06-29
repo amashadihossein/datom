@@ -30,8 +30,20 @@ Requires developer role (readers have no git access).
 }
 \examples{
 \dontrun{
-conn <- datom_get_conn("path/to/repo")
+tmp <- tempfile("datom_pull_")
+store <- datom_store(
+  data = datom_store_local(path = file.path(tmp, "storage")),
+  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+datom_init_repo(
+  path = file.path(tmp, "repo"),
+  project_name = "example_project",
+  store = store
+)
+conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
 datom_pull(conn)
-#> ✔ Pulled 2 commits on main.
+unlink(tmp, recursive = TRUE)
 }
 }

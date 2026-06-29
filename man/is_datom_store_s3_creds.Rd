@@ -15,3 +15,11 @@ TRUE or FALSE.
 \description{
 Check if Object is a Credentials-Only S3 Store Component
 }
+\examples{
+creds <- datom_store_s3_creds(
+  access_key = "AKIAIOSFODNN7EXAMPLE",
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+is_datom_store_s3_creds(creds)
+is_datom_store_s3_creds("not a store")
+}

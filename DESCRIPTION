@@ -1,15 +1,15 @@
 Package: datom
 Title: Version-Controlled Data Management for Reproducible Workflows
-Version: 0.0.0.9001
+Version: 0.1.0
 Authors@R: 
     person("Afshin", "Mashadi-Hossein", , "amashadihossein@gmail.com", 
            role = c("aut", "cre"))
 Description: Provides version-controlled data management by abstracting tables 
-    as code in git while storing actual data in cloud storage. Enables setting 
-    up cloud-based repositories, syncing data with automatic versioning, 
-    tracking complete data lineage, and accessing any historical version for 
-    reproducibility. Designed for clinical and scientific workflows where 
-    reproducibility is paramount.
+    as code in 'git' while storing actual data in cloud storage ('S3'). Enables
+    setting up cloud-based repositories via 'GitHub', syncing data with automatic
+    versioning, tracking complete data lineage, and accessing any historical
+    version for reproducibility. Designed for clinical and scientific workflows
+    where reproducibility is paramount.
 License: MIT + file LICENSE
 URL: https://github.com/amashadihossein/datom,
     https://amashadihossein.github.io/datom/
@@ -19,21 +19,22 @@ Imports:
     cli,
     digest,
     fs,
+    glue,
     httr2,
     jsonlite,
     paws.storage,
     purrr,
-    rlang
+    rlang,
+    utils,
+    yaml
 Suggests: 
     git2r,
-    glue,
     knitr,
     mockery,
     rio,
     rmarkdown,
     testthat (>= 3.0.0),
-    withr,
-    yaml
+    withr
 Config/testthat/edition: 3
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

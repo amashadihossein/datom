@@ -26,3 +26,30 @@ a data frame, and calls \code{\link[=datom_write]{datom_write()}} to store as pa
 metadata. Updates the local \code{.datom/manifest.json} after each successful
 write.
 }
+\examples{
+\dontrun{
+tmp <- tempfile("datom_sync_")
+store <- datom_store(
+  data = datom_store_local(path = file.path(tmp, "storage")),
+  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+datom_init_repo(
+  path = file.path(tmp, "repo"),
+  project_name = "example_project",
+  store = store
+)
+conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+input_dir <- file.path(tmp, "repo", "input_files")
+dir.create(input_dir)
+file.copy(
+  system.file("extdata/dm.csv", package = "datom"),
+  file.path(input_dir, "dm.csv")
+)
+manifest <- datom_sync_manifest(conn)
+result <- datom_sync(conn, manifest)
+result[, c("name", "status", "result")]
+unlink(tmp, recursive = TRUE)
+}
+}

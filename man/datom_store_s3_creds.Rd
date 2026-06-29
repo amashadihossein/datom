@@ -27,3 +27,11 @@ A \code{datom_store_s3_creds} component \strong{must} be paired with a governanc
 component inside \code{datom_store()}. Attempting to create a composite store
 without governance will abort with a clear message.
 }
+\examples{
+creds <- datom_store_s3_creds(
+  access_key = "AKIAIOSFODNN7EXAMPLE",
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+creds
+is_datom_store_s3_creds(creds)
+}

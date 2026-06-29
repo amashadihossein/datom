@@ -38,3 +38,15 @@ Constructs a validated S3 storage component for use as either the governance
 or data component of a \code{datom_store}. Validates credentials and bucket access
 at construction time (unless \code{validate = FALSE}).
 }
+\examples{
+s3 <- datom_store_s3(
+  bucket = "my-datom-bucket",
+  prefix = "project/",
+  region = "us-east-1",
+  access_key = "AKIAIOSFODNN7EXAMPLE",
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  validate = FALSE
+)
+s3
+is_datom_store_s3(s3)
+}

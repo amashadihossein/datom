@@ -11,6 +11,26 @@
 #'
 #' @return Data frame with table info (name, current_version, last_updated, etc.).
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' tmp <- tempfile("datom_list_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' datom_init_repo(
+#'   path = file.path(tmp, "repo"),
+#'   project_name = "example_project",
+#'   store = store
+#' )
+#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+#' datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#' datom_list(conn)
+#' unlink(tmp, recursive = TRUE)
+#' }
 datom_list <- function(conn,
                       pattern = NULL,
                       include_versions = FALSE,
@@ -97,6 +117,26 @@ datom_list <- function(conn,
 #' @return Data frame with columns: version, data_sha, timestamp, author,
 #'   commit_message.
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' tmp <- tempfile("datom_hist_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' datom_init_repo(
+#'   path = file.path(tmp, "repo"),
+#'   project_name = "example_project",
+#'   store = store
+#' )
+#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+#' datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#' datom_history(conn, "dm")
+#' unlink(tmp, recursive = TRUE)
+#' }
 datom_history <- function(conn,
                          name,
                          n = 10,
@@ -187,6 +227,26 @@ datom_history <- function(conn,
 #' @seealso [datom_get_lineage()] for a unified interface that also exposes
 #'   the transitive `source_lineage` field via `depth = "source"`.
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' tmp <- tempfile("datom_parents_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' datom_init_repo(
+#'   path = file.path(tmp, "repo"),
+#'   project_name = "example_project",
+#'   store = store
+#' )
+#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+#' datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#' datom_get_parents(conn, "dm")
+#' unlink(tmp, recursive = TRUE)
+#' }
 datom_get_parents <- function(conn, name, version = NULL) {
   datom_get_lineage(conn, name, version = version, depth = "parents")
 }
@@ -218,6 +278,26 @@ datom_get_parents <- function(conn, name, version = NULL) {
 #'   `table`, `version`), or `NULL` if no lineage is recorded.
 #' @seealso [datom_get_parents()] for a direct shorthand for the `"parents"` depth.
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' tmp <- tempfile("datom_lineage_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' datom_init_repo(
+#'   path = file.path(tmp, "repo"),
+#'   project_name = "example_project",
+#'   store = store
+#' )
+#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+#' datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#' datom_get_lineage(conn, "dm", depth = "source")
+#' unlink(tmp, recursive = TRUE)
+#' }
 datom_get_lineage <- function(conn, name, version = NULL,
                               depth = c("source", "parents")) {
 
@@ -274,6 +354,25 @@ datom_get_lineage <- function(conn, name, version = NULL,
 #' @return Invisibly, a list with `connection`, `tables`, and optionally
 #'   `git` and `input_files` status details.
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' tmp <- tempfile("datom_status_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' datom_init_repo(
+#'   path = file.path(tmp, "repo"),
+#'   project_name = "example_project",
+#'   store = store
+#' )
+#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+#' datom_status(conn)
+#' unlink(tmp, recursive = TRUE)
+#' }
 datom_status <- function(conn) {
 
   if (!inherits(conn, "datom_conn")) {

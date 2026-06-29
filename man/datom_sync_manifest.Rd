@@ -23,3 +23,30 @@ Scans a flat \verb{input_files/} directory and computes file SHAs. Compares
 against the current \code{.datom/manifest.json} to detect new or changed files.
 Returns a manifest data frame for review before calling \code{\link[=datom_sync]{datom_sync()}}.
 }
+\examples{
+\dontrun{
+tmp <- tempfile("datom_sync_")
+store <- datom_store(
+  data = datom_store_local(path = file.path(tmp, "storage")),
+  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+datom_init_repo(
+  path = file.path(tmp, "repo"),
+  project_name = "example_project",
+  store = store
+)
+conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+# Copy example CSVs into the input_files directory
+input_dir <- file.path(tmp, "repo", "input_files")
+dir.create(input_dir)
+file.copy(
+  system.file("extdata/dm.csv", package = "datom"),
+  file.path(input_dir, "dm.csv")
+)
+manifest <- datom_sync_manifest(conn)
+manifest
+unlink(tmp, recursive = TRUE)
+}
+}

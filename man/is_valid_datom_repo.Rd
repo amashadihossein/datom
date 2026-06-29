@@ -24,3 +24,10 @@ TRUE or FALSE.
 \description{
 Validates datom repository structure. Used internally and by dpbuild.
 }
+\examples{
+# A plain directory is not a valid datom repository.
+tmp <- tempfile("datom_valid_")
+dir.create(tmp)
+is_valid_datom_repo(tmp)
+unlink(tmp, recursive = TRUE)
+}
