@@ -27,10 +27,10 @@ git clone {{{remote_url}}}
 library(datom)
 
 store <- datom_store(
-  governance = {{{store_constructor}}},
-  data       = {{{store_constructor}}},
-  github_pat = Sys.getenv("GITHUB_PAT"),
-  remote_url = "{{{remote_url}}}"
+  governance    = {{{gov_constructor}}},
+  data          = {{{store_constructor}}},
+  github_pat    = Sys.getenv("GITHUB_PAT"),
+  data_repo_url = "{{{remote_url}}}"
 )
 
 conn <- datom_get_conn(path = ".", store = store)
@@ -42,7 +42,7 @@ conn <- datom_get_conn(path = ".", store = store)
 library(datom)
 
 store <- datom_store(
-  governance = {{{store_constructor}}},
+  governance = {{{gov_constructor}}},
   data       = {{{store_constructor}}}
 )
 

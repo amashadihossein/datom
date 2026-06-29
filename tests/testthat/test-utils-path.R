@@ -241,3 +241,62 @@ test_that("render_readme includes datom version and date", {
   expect_match(readme, as.character(utils::packageVersion("datom")),
                fixed = TRUE)
 })
+
+test_that("render_readme uses data_repo_url, never the removed remote_url arg", {
+  readme <- .datom_render_readme(
+    project_name = "STUDY_001",
+    backend = "local",
+    root = "/data/store",
+    prefix = NULL,
+    remote_url = "https://github.com/org/study-data.git"
+  )
+
+  # The store snippet must use the current argument name ...
+  expect_match(readme, "data_repo_url = ", fixed = TRUE)
+  # ... and never the renamed-away `remote_url =` argument.
+  expect_no_match(readme, "remote_url = ", fixed = TRUE)
+})
+
+test_that("render_readme renders governance = NULL for a solo project (no gov)", {
+  readme <- .datom_render_readme(
+    project_name = "STUDY_001",
+    backend = "local",
+    root = "/data/store",
+    prefix = NULL,
+    remote_url = "url",
+    gov = NULL
+  )
+
+  expect_match(readme, "governance    = NULL", fixed = TRUE) # developer
+  expect_match(readme, "governance = NULL", fixed = TRUE)    # reader
+  # Must NOT hardcode the data store as the governance store.
+  expect_no_match(readme, "governance = datom_store_local", fixed = TRUE)
+})
+
+test_that("render_readme renders a gov constructor when governance is attached", {
+  gov <- datom_store_local(path = tempfile("gov"), prefix = NULL,
+                           validate = FALSE)
+  readme <- .datom_render_readme(
+    project_name = "STUDY_001",
+    backend = "local",
+    root = "/data/store",
+    prefix = NULL,
+    remote_url = "url",
+    gov = gov
+  )
+
+  expect_no_match(readme, "governance    = NULL", fixed = TRUE)
+  expect_match(readme, "governance    = datom_store_local", fixed = TRUE)
+})
+
+test_that(".datom_store_constructor_snippet covers component types", {
+  loc <- datom_store_local(path = tempfile("loc"), prefix = "p/",
+                           validate = FALSE)
+  expect_match(.datom_store_constructor_snippet(loc),
+               'datom_store_local("', fixed = TRUE)
+  expect_match(.datom_store_constructor_snippet(loc), '"p/"', fixed = TRUE)
+
+  creds <- datom_store_s3_creds(access_key = "AK", secret_key = "SK")
+  expect_match(.datom_store_constructor_snippet(creds),
+               "datom_store_s3_creds(", fixed = TRUE)
+})

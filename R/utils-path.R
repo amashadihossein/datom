@@ -135,6 +135,10 @@
 #' @param prefix Storage prefix (can be NULL).
 #' @param region AWS region string (NULL for local backend).
 #' @param remote_url Git remote URL.
+#' @param gov Governance store component (e.g. from `datom_store_s3()`), or
+#'   `NULL` for a solo project with no governance attached. Determines whether
+#'   the rendered store snippets use `governance = NULL` or a gov-store
+#'   constructor.
 #'
 #' @return Character string — the rendered README content.
 #' @keywords internal
@@ -143,7 +147,8 @@
                                 root,
                                 prefix,
                                 region = NULL,
-                                remote_url) {
+                                remote_url,
+                                gov = NULL) {
   template_path <- system.file(
     "templates", "README.md",
     package = "datom",
@@ -166,6 +171,14 @@
     )
   }
 
+  # Governance constructor snippet: NULL for a solo project (gov-on-demand,
+  # not yet attached), or a constructor mirroring the attached gov component.
+  gov_constructor <- if (is.null(gov)) {
+    "NULL"
+  } else {
+    .datom_store_constructor_snippet(gov)
+  }
+
   glue::glue(
     template,
     project_name      = project_name,
@@ -176,9 +189,41 @@
     region            = region_display,
     remote_url        = remote_url,
     store_constructor = store_constructor,
+    gov_constructor   = gov_constructor,
     created_at        = format(Sys.Date(), "%Y-%m-%d"),
     datom_version     = as.character(utils::packageVersion("datom")),
     .open  = "{{{",
     .close = "}}}"
   )
+}
+
+
+#' Build a Store-Constructor Snippet for a Component
+#'
+#' Renders a copy/paste `datom_store_local(...)` or `datom_store_s3(...)` call
+#' string for a store component, for embedding in a generated README. Secrets
+#' are shown as placeholders.
+#'
+#' @param component A store component (`datom_store_local`, `datom_store_s3`,
+#'   or `datom_store_s3_creds`).
+#' @return Character scalar — an R constructor call as text.
+#' @keywords internal
+.datom_store_constructor_snippet <- function(component) {
+  backend <- .datom_store_backend(component)
+  prefix  <- component$prefix
+  prefix_code <- if (is.null(prefix)) "NULL" else paste0('"', prefix, '"')
+
+  if (backend == "local") {
+    return(paste0('datom_store_local("', .datom_store_root(component), '", ',
+                  prefix_code, ')'))
+  }
+
+  # s3 / s3_creds
+  if (inherits(component, "datom_store_s3_creds")) {
+    return('datom_store_s3_creds(access_key = "...", secret_key = "...")')
+  }
+
+  region <- .datom_store_region(component) %||% "us-east-1"
+  paste0('datom_store_s3("', .datom_store_root(component), '", ', prefix_code,
+         ', "', region, '", access_key = "...", secret_key = "...")')
 }
