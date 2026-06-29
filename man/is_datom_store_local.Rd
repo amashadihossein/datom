@@ -15,3 +15,10 @@ TRUE or FALSE.
 \description{
 Check if Object is a Local Store Component
 }
+\examples{
+tmp <- tempfile("datom_store_")
+store <- datom_store_local(path = tmp, validate = TRUE)
+is_datom_store_local(store)
+is_datom_store_local("not a store")
+unlink(tmp, recursive = TRUE)
+}

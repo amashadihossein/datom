@@ -40,6 +40,17 @@
 #'
 #' @return A `datom_store` object.
 #' @export
+#'
+#' @examples
+#' tmp <- tempfile("datom_store_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = tmp),
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' store
+#' is_datom_store(store)
+#' unlink(tmp, recursive = TRUE)
 datom_store <- function(governance = NULL,
                         data,
                         github_pat = NULL,
@@ -176,6 +187,17 @@ datom_store <- function(governance = NULL,
 #' @param x Object to test.
 #' @return TRUE or FALSE.
 #' @export
+#'
+#' @examples
+#' tmp <- tempfile("datom_store_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = tmp),
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' is_datom_store(store)
+#' is_datom_store("not a store")
+#' unlink(tmp, recursive = TRUE)
 is_datom_store <- function(x) {
   inherits(x, "datom_store")
 }
@@ -583,6 +605,18 @@ print.datom_store <- function(x, ...) {
 #'
 #' @return A `datom_store_s3` object.
 #' @export
+#'
+#' @examples
+#' s3 <- datom_store_s3(
+#'   bucket = "my-datom-bucket",
+#'   prefix = "project/",
+#'   region = "us-east-1",
+#'   access_key = "AKIAIOSFODNN7EXAMPLE",
+#'   secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+#'   validate = FALSE
+#' )
+#' s3
+#' is_datom_store_s3(s3)
 datom_store_s3 <- function(bucket,
                            prefix = NULL,
                            region = "us-east-1",
@@ -657,6 +691,16 @@ datom_store_s3 <- function(bucket,
 #' @param x Object to test.
 #' @return TRUE or FALSE.
 #' @export
+#'
+#' @examples
+#' s3 <- datom_store_s3(
+#'   bucket = "my-datom-bucket",
+#'   access_key = "AKIAIOSFODNN7EXAMPLE",
+#'   secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+#'   validate = FALSE
+#' )
+#' is_datom_store_s3(s3)
+#' is_datom_store_s3("not a store")
 is_datom_store_s3 <- function(x) {
   inherits(x, "datom_store_s3")
 }
@@ -712,6 +756,14 @@ print.datom_store_s3 <- function(x, ...) {
 #'
 #' @return A `datom_store_s3_creds` object.
 #' @export
+#'
+#' @examples
+#' creds <- datom_store_s3_creds(
+#'   access_key = "AKIAIOSFODNN7EXAMPLE",
+#'   secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+#' )
+#' creds
+#' is_datom_store_s3_creds(creds)
 datom_store_s3_creds <- function(access_key,
                                  secret_key,
                                  session_token = NULL) {
@@ -749,6 +801,14 @@ datom_store_s3_creds <- function(access_key,
 #' @param x Object to test.
 #' @return TRUE or FALSE.
 #' @export
+#'
+#' @examples
+#' creds <- datom_store_s3_creds(
+#'   access_key = "AKIAIOSFODNN7EXAMPLE",
+#'   secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+#' )
+#' is_datom_store_s3_creds(creds)
+#' is_datom_store_s3_creds("not a store")
 is_datom_store_s3_creds <- function(x) {
   inherits(x, "datom_store_s3_creds")
 }
@@ -793,6 +853,13 @@ print.datom_store_s3_creds <- function(x, ...) {
 #'
 #' @return A `datom_store_local` object.
 #' @export
+#'
+#' @examples
+#' tmp <- tempfile("datom_store_")
+#' store <- datom_store_local(path = tmp, validate = TRUE)
+#' store
+#' is_datom_store_local(store)
+#' unlink(tmp, recursive = TRUE)
 datom_store_local <- function(path,
                               prefix = NULL,
                               validate = TRUE) {
@@ -852,6 +919,13 @@ datom_store_local <- function(path,
 #' @param x Object to test.
 #' @return TRUE or FALSE.
 #' @export
+#'
+#' @examples
+#' tmp <- tempfile("datom_store_")
+#' store <- datom_store_local(path = tmp, validate = TRUE)
+#' is_datom_store_local(store)
+#' is_datom_store_local("not a store")
+#' unlink(tmp, recursive = TRUE)
 is_datom_store_local <- function(x) {
   inherits(x, "datom_store_local")
 }

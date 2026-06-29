@@ -31,6 +31,26 @@
 #'     \item{message}{Human-readable summary string.}
 #'   }
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' tmp <- tempfile("datom_lineage_val_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' datom_init_repo(
+#'   path = file.path(tmp, "repo"),
+#'   project_name = "example_project",
+#'   store = store
+#' )
+#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+#' datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#' datom_validate_lineage(conn, "dm")
+#' unlink(tmp, recursive = TRUE)
+#' }
 datom_validate_lineage <- function(conn, name, version = NULL) {
 
   if (!inherits(conn, "datom_conn")) {

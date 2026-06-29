@@ -282,6 +282,23 @@ print.datom_conn <- function(x, ...) {
 #'
 #' @return Invisible TRUE on success.
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' tmp <- tempfile("datom_init_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' datom_init_repo(
+#'   path = file.path(tmp, "repo"),
+#'   project_name = "example_project",
+#'   store = store
+#' )
+#' unlink(tmp, recursive = TRUE)
+#' }
 datom_init_repo <- function(path = ".",
                            project_name,
                            store,
@@ -701,6 +718,25 @@ datom_clone <- function(path, store, ...) {
 #'
 #' @return A `datom_conn` object.
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' tmp <- tempfile("datom_conn_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' datom_init_repo(
+#'   path = file.path(tmp, "repo"),
+#'   project_name = "example_project",
+#'   store = store
+#' )
+#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+#' conn
+#' unlink(tmp, recursive = TRUE)
+#' }
 datom_get_conn <- function(path = NULL,
                           store = NULL,
                           project_name = NULL,

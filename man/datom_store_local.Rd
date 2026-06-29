@@ -23,3 +23,10 @@ Constructs a validated local filesystem storage component for use as either
 the governance or data component of a \code{datom_store}. Validates that the path
 exists (or is creatable) and is writable.
 }
+\examples{
+tmp <- tempfile("datom_store_")
+store <- datom_store_local(path = tmp, validate = TRUE)
+store
+is_datom_store_local(store)
+unlink(tmp, recursive = TRUE)
+}

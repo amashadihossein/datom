@@ -37,3 +37,10 @@ each \code{projects/{name}/ref.json} is fetched.
 Corrupt registry entries (missing \code{ref.json}, unreadable JSON) emit a
 warning and are skipped -- one bad project does not take down the listing.
 }
+\examples{
+\dontrun{
+# Requires a governance store and registered projects.
+# datom_projects(conn)
+# datom_projects(store)
+}
+}

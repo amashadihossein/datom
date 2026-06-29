@@ -28,6 +28,13 @@
 #'   `registered_at` (character ISO8601 from clone mtime; NA on storage path).
 #'
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Requires a governance store and registered projects.
+#' # datom_projects(conn)
+#' # datom_projects(store)
+#' }
 datom_projects <- function(x) {
   ctx <- .datom_projects_resolve_input(x)
   gov_conn       <- ctx$gov_conn

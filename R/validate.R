@@ -9,6 +9,13 @@
 #'
 #' @return TRUE or FALSE.
 #' @export
+#'
+#' @examples
+#' # A plain directory is not a valid datom repository.
+#' tmp <- tempfile("datom_valid_")
+#' dir.create(tmp)
+#' is_valid_datom_repo(tmp)
+#' unlink(tmp, recursive = TRUE)
 is_valid_datom_repo <- function(path,
                                checks = c("all", "git", "datom", "renv"),
                                verbose = FALSE) {
@@ -83,6 +90,25 @@ datom_repository_check <- function(path) {
 #'     \item{fixed}{Logical — `TRUE` if `fix = TRUE` was applied.}
 #'   }
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' tmp <- tempfile("datom_validate_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' datom_init_repo(
+#'   path = file.path(tmp, "repo"),
+#'   project_name = "example_project",
+#'   store = store
+#' )
+#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+#' datom_validate(conn)
+#' unlink(tmp, recursive = TRUE)
+#' }
 datom_validate <- function(conn, fix = FALSE) {
 
   if (!inherits(conn, "datom_conn")) {

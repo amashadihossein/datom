@@ -15,3 +15,13 @@ TRUE or FALSE.
 \description{
 Check if Object is an S3 Store Component
 }
+\examples{
+s3 <- datom_store_s3(
+  bucket = "my-datom-bucket",
+  access_key = "AKIAIOSFODNN7EXAMPLE",
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  validate = FALSE
+)
+is_datom_store_s3(s3)
+is_datom_store_s3("not a store")
+}

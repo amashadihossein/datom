@@ -59,3 +59,14 @@ Bundles a governance store component, a data store component, and git config
 into a single store object. Role (developer vs reader) is derived from
 \code{github_pat} presence.
 }
+\examples{
+tmp <- tempfile("datom_store_")
+store <- datom_store(
+  data = datom_store_local(path = tmp),
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+store
+is_datom_store(store)
+unlink(tmp, recursive = TRUE)
+}
