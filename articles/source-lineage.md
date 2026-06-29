@@ -25,28 +25,47 @@ it.
 
 ## Setup
 
+The walkthrough below is illustrative (`eval = FALSE`) – it shows the
+calls without needing live credentials. As in the other articles, keep
+machine-specific values up front:
+
 ``` r
 
 library(datom)
+
+project_name <- "my-study"
+bucket       <- "my-datom-bucket"
+prefix       <- "lineage-demo"
+region       <- "us-east-1"
+access_key   <- keyring::key_get("AWS_ACCESS_KEY_ID")
+secret_key   <- keyring::key_get("AWS_SECRET_ACCESS_KEY")
+github_pat   <- keyring::key_get("GITHUB_PAT")
 ```
 
-The code below uses a local-backend sandbox so it runs without S3 or
-GitHub credentials. In production, replace
-[`datom_store_local()`](https://amashadihossein.github.io/datom/reference/datom_store_local.md)
-with
-[`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md)
+Writing derived tables (below) needs a **developer** connection. The
+lineage *queries* –
+[`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
 and
-[`datom_store()`](https://amashadihossein.github.io/datom/reference/datom_store.md)
-– the API is identical.
+[`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
+– are reads, so they work just as well from a **reader** connection
+(build the same store with `github_pat` omitted). This setup assumes the
+project already exists:
 
 ``` r
 
-# Not evaluated -- illustrates a real-world setup.
-# In practice this is done once per project with datom_init_repo().
 store <- datom_store(
   governance = NULL,
-  data       = datom_store_s3(bucket = "my-datom-bucket", prefix = "lineage-demo")
+  data       = datom_store_s3(
+    bucket     = bucket,
+    prefix     = prefix,
+    region     = region,
+    access_key = access_key,
+    secret_key = secret_key
+  ),
+  github_pat = github_pat            # omit for a read-only reader connection
 )
+
+conn <- datom_get_conn(path = "path/to/my-study-dev", store = store)
 ```
 
 ------------------------------------------------------------------------
@@ -57,8 +76,8 @@ Imagine a clinical study with two raw source tables:
 
 ``` r
 
-raw_dm <- datom_example_data()          # Demographics
-raw_lb <- datom_example_data()          # Lab results (illustrative)
+raw_dm <- datom_example_data("dm")      # Demographics
+raw_lb <- datom_example_data("lb")      # Lab results
 ```
 
 They are imported via

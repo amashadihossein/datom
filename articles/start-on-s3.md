@@ -44,30 +44,64 @@ live**. For this article that is an S3 bucket. You need three things:
 nzchar(keyring::key_get("GITHUB_PAT"))   # should return TRUE
 ```
 
-## Set up AWS credentials
+## Configure your environment
+
+Everything machine-specific lives here. Credentials have several valid
+sources, so they get their own section (and their own chunks) below; set
+the rest once:
+
+``` r
+
+library(datom)
+library(fs)
+
+# --- Settings you control --------------------------------------------------
+project_name <- "STUDY_001"        # logical project name (recorded in metadata)
+repo_name    <- "study-001-data"   # GitHub repo name for the metadata repo
+
+bucket <- "study-001-data"         # an S3 bucket you can read/write
+                                   #   (datom does NOT create buckets)
+prefix <- NULL                     # raw data at the bucket root; use e.g.
+                                   #   "adam/" for a derived-products prefix
+region <- "us-east-1"              # the bucket's AWS region
+
+# Local working directory for the metadata git clone. The data itself never
+# lands here -- it goes straight to S3. A temp dir is fine for this walkthrough.
+dev_dir <- path(tempdir(), "study_001_dev")
+
+# GitHub PAT (scoped to `repo`), read from your OS keychain by name.
+github_pat <- keyring::key_get("GITHUB_PAT")
+# ---------------------------------------------------------------------------
+```
+
+## Set your AWS credentials
 
 [`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md)
 takes `access_key` and `secret_key` as plain strings. datom never reads
 them from the environment on your behalf – you pass the values in
-explicitly. How you source them is up to you:
+explicitly. **Run exactly one** of the chunks below, whichever fits your
+environment, then continue.
 
 ``` r
 
-# Option A: inline (fine for a quick interactive session; never commit these)
-access_key <- "AKIAIOSFODNN7EXAMPLE"
-secret_key <- "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-
-# Option B: environment variables (CI/CD, Docker)
-access_key <- Sys.getenv("AWS_ACCESS_KEY_ID")
-secret_key <- Sys.getenv("AWS_SECRET_ACCESS_KEY")
-
-# Option C: keyring (recommended for an interactive developer machine)
+# Option A -- keyring (recommended for an interactive developer machine)
 access_key <- keyring::key_get("AWS_ACCESS_KEY_ID")
 secret_key <- keyring::key_get("AWS_SECRET_ACCESS_KEY")
 ```
 
-The rest of this article uses the keyring form as a placeholder –
-substitute whichever pattern fits your environment.
+``` r
+
+# Option B -- environment variables (CI/CD, Docker)
+access_key <- Sys.getenv("AWS_ACCESS_KEY_ID")
+secret_key <- Sys.getenv("AWS_SECRET_ACCESS_KEY")
+```
+
+``` r
+
+# Option C -- inline (fine for a quick session; never commit these values)
+access_key <- "AKIAIOSFODNN7EXAMPLE"
+secret_key <- "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+```
 
 ## Build the S3 store
 
@@ -83,12 +117,10 @@ later](#governance-and-migration-come-later)).
 
 ``` r
 
-library(datom)
-
 data_component <- datom_store_s3(
-  bucket = "study-001-data",   # one bucket per study
-  prefix = NULL,               # raw data at the bucket root
-  region = "us-east-1",
+  bucket     = bucket,
+  prefix     = prefix,
+  region     = region,
   access_key = access_key,
   secret_key = secret_key
 )
@@ -96,7 +128,7 @@ data_component <- datom_store_s3(
 store <- datom_store(
   governance = NULL,
   data       = data_component,
-  github_pat = keyring::key_get("GITHUB_PAT")
+  github_pat = github_pat
 )
 ```
 
@@ -108,22 +140,18 @@ first write.
 
 ## Initialize the data repository
 
-You still need a local working directory for the **git clone** – the
-metadata repository. The data itself never lands there; it goes straight
-to S3.
+The local working directory (`dev_dir`) holds only the **git clone** –
+the metadata repository. The data itself never lands there; it goes
+straight to S3.
 
 ``` r
 
-library(fs)
-
-dev_dir <- path(tempdir(), "study_001_dev")   # data git clone (metadata only)
-
 datom_init_repo(
   path         = dev_dir,
-  project_name = "STUDY_001",
+  project_name = project_name,
   store        = store,
   create_repo  = TRUE,
-  repo_name    = "study-001-data"
+  repo_name    = repo_name
 )
 ```
 
@@ -177,23 +205,40 @@ Three things just happened, in order:
     from any machine with repo access, while the raw data stays in your
     bucket.
 
-## Read it back
+## Read it back as a reader
+
+Writing is a developer action. Reading is what analysts and downstream
+pipelines do, using the **reader role** – a connection built from the
+bucket credentials alone, with no GitHub PAT and no local clone. Leave
+`github_pat` unset and connect by project name:
 
 ``` r
 
-dm_back <- datom_read(conn, "dm")
+reader_store <- datom_store(
+  governance = NULL,
+  data       = datom_store_s3(
+    bucket     = bucket,
+    prefix     = prefix,
+    region     = region,
+    access_key = access_key,
+    secret_key = secret_key
+  )
+)                                         # no PAT -> reader role
 
-identical(datom_read(conn, "dm"), tibble::as_tibble(dm_m1))
+reader_conn <- datom_get_conn(store = reader_store, project_name = project_name)
+
+dm_back <- datom_read(reader_conn, "dm")
+identical(dm_back, tibble::as_tibble(dm_m1))
 #> [1] TRUE
 ```
 
 datom stores data in [Apache Parquet](https://parquet.apache.org/) and
 reads it back as a `tibble`. The read streams the parquet object from S3
-using the manifest; it does **not** go through GitHub. A data reader on
-another machine takes the same path – they need access to the bucket,
-not to the git repo.
+directly; it does **not** go through GitHub. A teammate on another
+machine takes the same path – they need access to the bucket, not to the
+git repo.
 
-Inspect the version history at any time:
+Inspect the version history at any time (developer connection):
 
 ``` r
 
@@ -237,9 +282,6 @@ Two capabilities are deliberately **not** part of this starting story:
 In other words, **start-on-S3** and **migrate-to-S3** are complementary
 entry points: this article is the greenfield path, and managed migration
 is the move-an-existing-project path.
-
-For where datom sits in the broader data-product stack, see [Looking
-Ahead](https://amashadihossein.github.io/datom/articles/looking-ahead.md).
 
 ## Teardown
 

@@ -173,21 +173,7 @@ sources.
 | Importing a folder of extracts at once | [A Folder of Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.html) |
 | Starting directly in S3 object storage | [Starting on S3](https://amashadihossein.github.io/datom/articles/start-on-s3.html) |
 | Tracing how derived tables descend from raw | [Tracing Data Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.html) |
-| Where datom fits in the daapr stack | [Looking Ahead](https://amashadihossein.github.io/datom/articles/looking-ahead.html) |
 
 For the design rationale – why two repos, what `ref.json` does, how SHAs
-are computed – see the **Design** articles in the same site.
-
-## Where datom fits
-
-datom is the foundational layer for the
-[daapr](https://github.com/amashadihossein/daapr) ecosystem.
-
-| Package      | Purpose                                         |
-|--------------|-------------------------------------------------|
-| **datom**    | Version-controlled table storage (this package) |
-| **dpbuild**  | Data product construction                       |
-| **dpdeploy** | Deployment orchestration                        |
-| **dpi**      | Data product access                             |
-
-See `dev/datom_specification.md` for the full technical specification.
+are computed – see the **Design** articles in the same site, or
+`dev/datom_specification.md` for the full technical specification.

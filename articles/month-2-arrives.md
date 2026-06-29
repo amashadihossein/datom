@@ -3,7 +3,7 @@
 > **Where we left off:** STUDY-001 is initialized. One table (`dm`)
 > holds the first 4 subjects. The data git repo is live on GitHub.
 
-A month has passed. Eight more subjects have enrolled. The data
+A month has passed. Twelve more subjects have enrolled. The data
 management team sends you the month-2 extract, and you need to register
 the new state without losing the old one.
 
@@ -11,29 +11,40 @@ This article introduces three capabilities: writing a second version of
 an existing table, asking datom for a table’s full history, and reading
 any historical version by its SHA.
 
-## Resume the prior state
+## Reconnect (only if you closed your session)
 
-If you closed your R session after article 1 (or you’re picking the
-journey up here), source the resume script. It rebuilds the end-state of
-article 1 from scratch:
+If you’re continuing in the same R session as [First
+Extract](https://amashadihossein.github.io/datom/articles/first-extract.md),
+you already have `conn` and `store` – skip ahead to the extract below.
+
+If you closed your session, re-run the same configuration block to
+reconnect. The project already exists, so you reconnect with
+[`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)
+rather than initializing again:
 
 ``` r
 
-state <- source(
-  system.file("vignette-setup", "resume_article_2.R", package = "datom")
-)$value
+library(datom)
+library(fs)
 
-conn      <- state$conn
-dev_dir   <- state$dev_dir
+# The same machine-specific settings you used in article 1.
+project_name <- "STUDY_001"
+dev_dir      <- path(tempdir(), "study_001_dev")
+data_dir     <- path(tempdir(), "study_001_data")
+github_pat   <- keyring::key_get("GITHUB_PAT")
+
+store <- datom_store(
+  governance = NULL,
+  data       = datom_store_local(path = data_dir),
+  github_pat = github_pat
+)
+
+conn <- datom_get_conn(path = dev_dir, store = store)
 ```
 
-The resume script is idempotent – running it twice in the same session
-is safe. It uses [`tempdir()`](https://rdrr.io/r/base/tempfile.html)
-paths by default; set `DATOM_VIGNETTE_DIR` and related env vars to
-override.
-
-If you’re continuing in the same R session as article 1, skip the source
-call and reuse your existing `conn`.
+Temp directories do not survive a new R session. To follow the journey
+across sessions, point `dev_dir` and `data_dir` at persistent paths in
+article 1.
 
 ## The month-2 extract
 
@@ -88,9 +99,9 @@ writes cost nothing and pollute no history.
 ``` r
 
 datom_history(conn, "dm")
-#>   version  data_sha  table_type  size_bytes  created_at           message
-#> 1 5c1a3f7b 9e8f1c2d  raw         3812        2026-02-28T10:14:02Z DM extract through 2026-02-28
-#> 2 a8ee7a31 4b6d0a7e  raw         1734        2026-01-28T09:02:11Z Initial DM extract through 2026-01-28
+#>    version  data_sha timestamp            author commit_message
+#> 1 5c1a3f7b 9e8f1c2d 2026-02-28T10:14:02Z you    DM extract through 2026-02-28
+#> 2 a8ee7a31 4b6d0a7e 2026-01-28T09:02:11Z you    Initial DM extract
 ```
 
 Two rows, newest first. The `version` column is the **metadata SHA** –
@@ -106,15 +117,15 @@ returns the current version:
 
 dm_now <- datom_read(conn, "dm")
 nrow(dm_now)
-#> [1] 14
+#> [1] 16
 ```
 
 Pass a `version` to retrieve any historical snapshot:
 
 ``` r
 
-hist    <- datom_history(conn, "dm")
-m1_ver  <- hist$version[hist$commit_message == "Initial DM extract through 2026-01-28"]
+hist   <- datom_history(conn, "dm")
+m1_ver <- hist$version[nrow(hist)]   # oldest row is the month-1 version
 
 dm_m1_again <- datom_read(conn, "dm", version = m1_ver)
 nrow(dm_m1_again)
@@ -126,6 +137,27 @@ article 1, even though the current version of `dm` has 16 rows. This is
 the property your future statisticians, regulators, and auditors rely
 on.
 
+## The analyst’s view (reader role)
+
+A statistician doesn’t need your developer connection or local clone.
+They build a **reader** connection – data store only, no PAT – and pin
+the same SHA:
+
+``` r
+
+reader_store <- datom_store(
+  governance = NULL,
+  data       = datom_store_local(path = data_dir)
+)
+reader_conn <- datom_get_conn(store = reader_store, project_name = project_name)
+
+nrow(datom_read(reader_conn, "dm", version = m1_ver))
+#> [1] 4
+```
+
+Same SHA, same bytes – whether read by the engineer who wrote it or an
+analyst on another machine.
+
 ## Where you are
 
 - `dm` has two versions; you can read either at any time.
@@ -133,7 +165,10 @@ on.
 - Version SHAs are stable across machines – share one and a colleague
   reads the same bytes you did.
 
-In the next article, **a folder of extracts arrives** instead of a
-single table, and we use
+**Carry on:** keep this R session open and reuse `conn`, `store`, and
+your settings in the next article. Do **not** tear down – the journey
+continues. In [A Folder of
+Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.md),
+a whole folder arrives instead of a single table, and we use
 [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
-to import them all at once.
+to import them at once.

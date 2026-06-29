@@ -16,20 +16,32 @@ and asking datom for the consistency state of the project
 ([`datom_status()`](https://amashadihossein.github.io/datom/reference/datom_status.md),
 [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)).
 
-## Resume the prior state
+## Reconnect (only if you closed your session)
+
+If you’ve been working in the same R session since article 1 or 2, you
+already have `conn` and `store` – skip ahead to the drop below.
+
+If you closed your session, re-run the configuration block to reconnect:
 
 ``` r
 
-state <- source(
-  system.file("vignette-setup", "resume_article_3.R", package = "datom")
-)$value
+library(datom)
+library(fs)
 
-conn      <- state$conn
-dev_dir <- state$dev_dir
+# The same machine-specific settings from the earlier articles.
+project_name <- "STUDY_001"
+dev_dir      <- path(tempdir(), "study_001_dev")
+data_dir     <- path(tempdir(), "study_001_data")
+github_pat   <- keyring::key_get("GITHUB_PAT")
+
+store <- datom_store(
+  governance = NULL,
+  data       = datom_store_local(path = data_dir),
+  github_pat = github_pat
+)
+
+conn <- datom_get_conn(path = dev_dir, store = store)
 ```
-
-If you’ve been working in the same R session since article 1 or 2, skip
-the source call and reuse your existing `conn`.
 
 ## Drop the extracts in `input_files/`
 
@@ -169,6 +181,22 @@ datom_sync(conn, datom_sync_manifest(conn))
 
 This is the property that lets sync run in a cron job without surprises.
 
+## Read as a reader
+
+Any of the four tables is now readable through a **reader** connection –
+no PAT, no local clone, just the data store:
+
+``` r
+
+reader_store <- datom_store(
+  governance = NULL,
+  data       = datom_store_local(path = data_dir)
+)
+reader_conn <- datom_get_conn(store = reader_store, project_name = project_name)
+
+datom_read(reader_conn, "lb")   # labs, fresh from the month-3 drop
+```
+
 ## Where you are
 
 - A folder workflow replaces the one-table-at-a-time pattern.
@@ -178,6 +206,31 @@ This is the property that lets sync run in a cron job without surprises.
   [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
   are your two go-to consistency checks.
 
-In the next article, we **promote the project to S3** so any machine
-with access to the data store can read the data without copying files
-around.
+This is the end of the local Get Started journey. From here, [Starting
+on S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md)
+shows the same workflow with data in object storage, and [Tracing Data
+Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md)
+shows how derived tables record where they came from.
+
+## Tear down
+
+When you’re done, remove the project. Pick the one option that fits, and
+copy only that chunk:
+
+``` r
+
+# Option A -- full scripted teardown (deletes local files AND the GitHub repo).
+# Do this BEFORE any manual unlink().
+datom_repo_delete(conn, confirm = "STUDY_001")
+```
+
+``` r
+
+# Option B -- local only (the GitHub repo stays; delete it from the UI later).
+unlink(c(dev_dir, data_dir), recursive = TRUE)
+```
+
+Do not call [`unlink()`](https://rdrr.io/r/base/unlink.html) before
+[`datom_repo_delete()`](https://amashadihossein.github.io/datom/reference/datom_repo_delete.md)
+– removing the local clone first strips the GitHub remote reference and
+the remote repo will not be deleted.

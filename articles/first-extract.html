@@ -139,34 +139,31 @@ PAT.</li>
 </div>
 </div>
 <div class="section level2">
-<h2 id="set-up-your-working-paths">Set up your working paths<a class="anchor" aria-label="anchor" href="#set-up-your-working-paths"></a>
+<h2 id="configure-your-environment">Configure your environment<a class="anchor" aria-label="anchor" href="#configure-your-environment"></a>
 </h2>
-<p>Two paths are needed, and they serve different roles:</p>
-<ul>
-<li>
-<strong><code>dev_dir</code></strong> – your local clone of the data
-git repository. This is where metadata (<code>project.yaml</code>,
-<code>metadata.json</code>, version history) lives. In a team setting
-this would be cloned on every developer’s machine.</li>
-<li>
-<strong><code>data_dir</code></strong> – the directory where parquet
-bytes are written. In a team setting this would be an S3 bucket (or a
-shared network mount), so every team member reads from the same physical
-store.</li>
-</ul>
-<p>Here both point to temporary directories for demonstration. Replace
-them with real paths – or an S3 store – when you are ready for a
-persistent shared space.</p>
+<p>Everything machine-specific lives in one block. Set these values once
+for your environment; every code chunk after this is copy/paste
+as-is.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/amashadihossein/datom" class="external-link">datom</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://fs.r-lib.org" class="external-link">fs</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Two paths, two roles:</span></span>
-<span><span class="co">#   dev_dir  -- your local workspace for this project (stays on your machine)</span></span>
-<span><span class="co">#   data_dir -- where the actual data lives; replace with a real path or S3</span></span>
-<span><span class="co">#               store when you are ready for a persistent shared space</span></span>
-<span><span class="va">dev_dir</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_dev"</span><span class="op">)</span>   <span class="co"># data git clone</span></span>
-<span><span class="va">data_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_data"</span><span class="op">)</span>  <span class="co"># parquet bytes live here</span></span>
+<span><span class="co"># --- Settings you control --------------------------------------------------</span></span>
+<span><span class="va">project_name</span> <span class="op">&lt;-</span> <span class="st">"STUDY_001"</span>          <span class="co"># logical project name (recorded in metadata)</span></span>
+<span><span class="va">repo_name</span>    <span class="op">&lt;-</span> <span class="st">"study-001-data"</span>     <span class="co"># GitHub repo name for the metadata repo</span></span>
+<span></span>
+<span><span class="co"># dev_dir  -- your local clone of the metadata git repo (stays on your machine)</span></span>
+<span><span class="co"># data_dir -- where parquet bytes are written; point at a shared location</span></span>
+<span><span class="co">#             (network mount, or an S3 store) for a real team space. Temp dirs</span></span>
+<span><span class="co">#             are used here so the article leaves nothing behind.</span></span>
+<span><span class="va">dev_dir</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_dev"</span><span class="op">)</span></span>
+<span><span class="va">data_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_data"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Your GitHub personal access token (PAT), scoped to `repo`. Stored once in your</span></span>
+<span><span class="co"># OS keychain with keyring::key_set("GITHUB_PAT"); read here by name so the</span></span>
+<span><span class="co"># token never appears in your code or command history.</span></span>
+<span><span class="va">github_pat</span> <span class="op">&lt;-</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span></span>
+<span><span class="co"># ---------------------------------------------------------------------------</span></span>
 <span></span>
 <span><span class="fu"><a href="https://fs.r-lib.org/reference/create.html" class="external-link">dir_create</a></span><span class="op">(</span><span class="va">data_dir</span><span class="op">)</span></span></code></pre></div>
 </div>
@@ -179,12 +176,10 @@ Governance is not attached (<code>governance = NULL</code>); it is
 opt-in and added later through the governance companion package when
 sharing across a portfolio matters.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">data_component</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">data_dir</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
+<code class="sourceCode R"><span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
 <span>  governance <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  data       <span class="op">=</span> <span class="va">data_component</span>,</span>
-<span>  github_pat <span class="op">=</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span></span>
+<span>  data       <span class="op">=</span> <span class="fu"><a href="../reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">data_dir</span><span class="op">)</span>,</span>
+<span>  github_pat <span class="op">=</span> <span class="va">github_pat</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
@@ -193,10 +188,10 @@ sharing across a portfolio matters.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_init_repo.html">datom_init_repo</a></span><span class="op">(</span></span>
 <span>  path         <span class="op">=</span> <span class="va">dev_dir</span>,</span>
-<span>  project_name <span class="op">=</span> <span class="st">"STUDY_001"</span>,</span>
+<span>  project_name <span class="op">=</span> <span class="va">project_name</span>,</span>
 <span>  store        <span class="op">=</span> <span class="va">store</span>,</span>
 <span>  create_repo  <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  repo_name    <span class="op">=</span> <span class="st">"study-001-data"</span></span>
+<span>  repo_name    <span class="op">=</span> <span class="va">repo_name</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <p>This creates a GitHub repo, clones it into <code>dev_dir</code>, and
 commits a <code>project.yaml</code> that records the project’s data
@@ -262,25 +257,38 @@ where you put it.</li>
 <span><span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span> <span class="co"># version history</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="read-it-back">Read it back<a class="anchor" aria-label="anchor" href="#read-it-back"></a>
+<h2 id="read-it-back-as-a-reader">Read it back as a reader<a class="anchor" aria-label="anchor" href="#read-it-back-as-a-reader"></a>
 </h2>
+<p>Writing is a developer action. Reading is what analysts and
+downstream pipelines do, and they use the <strong>reader role</strong> –
+a connection built from the data store alone, with no GitHub PAT and no
+local clone. You build a reader store by leaving <code>github_pat</code>
+unset, then connect by project name:</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">dm_back</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span></span></code></pre></div>
-<p>datom stores data in <a href="https://parquet.apache.org/" class="external-link">Apache
-Parquet</a> format and reads it back as a <code>tibble</code>. If your
-original object was not already a tibble, the classes will differ even
-though the data is identical:</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span>, <span class="va">dm_m1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] FALSE  # dm_m1 may carry extra classes (e.g. data.frame)</span></span>
+<code class="sourceCode R"><span><span class="va">reader_store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
+<span>  governance <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  data       <span class="op">=</span> <span class="fu"><a href="../reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">data_dir</span><span class="op">)</span>   <span class="co"># same data location</span></span>
+<span><span class="op">)</span>                                                    <span class="co"># no PAT -&gt; reader role</span></span>
 <span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span>, <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/as_tibble.html" class="external-link">as_tibble</a></span><span class="op">(</span><span class="va">dm_m1</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] TRUE   # compare as tibble for a clean round-trip check</span></span></code></pre></div>
-<p>The read does <strong>not</strong> go through GitHub. It uses the
-manifest cached in <code>data_dir</code> to locate the parquet file and
-stream it back. This is the same path a data reader on a different
-machine takes – they need access to the data store, not to the git
-repo.</p>
+<span><span class="va">reader_conn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_conn.html">datom_get_conn</a></span><span class="op">(</span>store <span class="op">=</span> <span class="va">reader_store</span>, project_name <span class="op">=</span> <span class="va">project_name</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">reader_conn</span><span class="op">)</span></span>
+<span><span class="co">#&gt; -- datom connection</span></span>
+<span><span class="co">#&gt; * Project: "STUDY_001"</span></span>
+<span><span class="co">#&gt; * Role: "reader"</span></span>
+<span><span class="co">#&gt; * Backend: "local"</span></span></code></pre></div>
+<p>Read the table back through the reader connection:</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">dm_back</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">reader_conn</span>, <span class="st">"dm"</span><span class="op">)</span></span></code></pre></div>
+<p>datom stores data in <a href="https://parquet.apache.org/" class="external-link">Apache
+Parquet</a> format and reads it back as a <code>tibble</code>. Compare
+as a tibble for a clean round-trip check:</p>
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">reader_conn</span>, <span class="st">"dm"</span><span class="op">)</span>, <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/as_tibble.html" class="external-link">as_tibble</a></span><span class="op">(</span><span class="va">dm_m1</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>The read does <strong>not</strong> go through GitHub. The reader
+resolves the parquet file from the data store and streams it back –
+exactly the path a teammate on another machine takes. They need access
+to the data store, not to the git repo.</p>
 </div>
 <div class="section level2">
 <h2 id="where-you-are">Where you are<a class="anchor" aria-label="anchor" href="#where-you-are"></a>
@@ -304,19 +312,23 @@ with new subjects, and you write a second version without overwriting
 the first.</p>
 </div>
 <div class="section level2">
-<h2 id="teardown">Teardown<a class="anchor" aria-label="anchor" href="#teardown"></a>
+<h2 id="carry-on-or-tear-down">Carry on, or tear down<a class="anchor" aria-label="anchor" href="#carry-on-or-tear-down"></a>
 </h2>
-<p><strong>Planning to continue to <a href="month-2-arrives.html">Month
-2 Arrives</a>?</strong> Leave everything as-is and reuse your
-<code>conn</code> in the next article. The resume script in article 2 is
-there for users who closed their session; you don’t need it.</p>
-<p>If you are done exploring, pick one:</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<p><strong>Continuing to <a href="month-2-arrives.html">Month 2
+Arrives</a>?</strong> Stop here. Keep your R session open and reuse
+<code>conn</code>, <code>store</code>, and your settings
+(<code>dev_dir</code>, <code>data_dir</code>, <code>project_name</code>)
+in the next article – do <strong>not</strong> tear anything down. If you
+closed your session, article 2 opens with the same configuration block
+so you can reconnect.</p>
+<p><strong>Done exploring?</strong> Tear the project down. Pick the one
+option that fits, and copy only that chunk:</p>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Option A -- full scripted teardown (deletes local files AND the GitHub repo).</span></span>
-<span><span class="co"># Do this BEFORE unlink().</span></span>
-<span><span class="fu"><a href="../reference/datom_repo_delete.html">datom_repo_delete</a></span><span class="op">(</span><span class="va">conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Option B -- local only (GitHub repo stays; delete it manually from the UI).</span></span>
+<span><span class="co"># Do this BEFORE any manual unlink().</span></span>
+<span><span class="fu"><a href="../reference/datom_repo_delete.html">datom_repo_delete</a></span><span class="op">(</span><span class="va">conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Option B -- local only (the GitHub repo stays; delete it from the UI later).</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">dev_dir</span>, <span class="va">data_dir</span><span class="op">)</span>, recursive <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
 <p>Do not call <code><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink()</a></code> before
 <code><a href="../reference/datom_repo_delete.html">datom_repo_delete()</a></code> – removing the local clone first strips

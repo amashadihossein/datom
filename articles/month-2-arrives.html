@@ -86,30 +86,41 @@
 table (<code>dm</code>) holds the first 4 subjects. The data git repo is
 live on GitHub.</p>
 </blockquote>
-<p>A month has passed. Eight more subjects have enrolled. The data
+<p>A month has passed. Twelve more subjects have enrolled. The data
 management team sends you the month-2 extract, and you need to register
 the new state without losing the old one.</p>
 <p>This article introduces three capabilities: writing a second version
 of an existing table, asking datom for a table’s full history, and
 reading any historical version by its SHA.</p>
 <div class="section level2">
-<h2 id="resume-the-prior-state">Resume the prior state<a class="anchor" aria-label="anchor" href="#resume-the-prior-state"></a>
+<h2 id="reconnect-only-if-you-closed-your-session">Reconnect (only if you closed your session)<a class="anchor" aria-label="anchor" href="#reconnect-only-if-you-closed-your-session"></a>
 </h2>
-<p>If you closed your R session after article 1 (or you’re picking the
-journey up here), source the resume script. It rebuilds the end-state of
-article 1 from scratch:</p>
+<p>If you’re continuing in the same R session as <a href="first-extract.html">First Extract</a>, you already have
+<code>conn</code> and <code>store</code> – skip ahead to the extract
+below.</p>
+<p>If you closed your session, re-run the same configuration block to
+reconnect. The project already exists, so you reconnect with
+<code><a href="../reference/datom_get_conn.html">datom_get_conn()</a></code> rather than initializing again:</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">state</span> <span class="op">&lt;-</span> <span class="kw"><a href="https://rdrr.io/r/base/source.html" class="external-link">source</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"vignette-setup"</span>, <span class="st">"resume_article_2.R"</span>, package <span class="op">=</span> <span class="st">"datom"</span><span class="op">)</span></span>
-<span><span class="op">)</span><span class="op">$</span><span class="va">value</span></span>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/amashadihossein/datom" class="external-link">datom</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://fs.r-lib.org" class="external-link">fs</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">conn</span>      <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">conn</span></span>
-<span><span class="va">dev_dir</span>   <span class="op">&lt;-</span> <span class="va">state</span><span class="op">$</span><span class="va">dev_dir</span></span></code></pre></div>
-<p>The resume script is idempotent – running it twice in the same
-session is safe. It uses <code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code> paths by default; set
-<code>DATOM_VIGNETTE_DIR</code> and related env vars to override.</p>
-<p>If you’re continuing in the same R session as article 1, skip the
-source call and reuse your existing <code>conn</code>.</p>
+<span><span class="co"># The same machine-specific settings you used in article 1.</span></span>
+<span><span class="va">project_name</span> <span class="op">&lt;-</span> <span class="st">"STUDY_001"</span></span>
+<span><span class="va">dev_dir</span>      <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_dev"</span><span class="op">)</span></span>
+<span><span class="va">data_dir</span>     <span class="op">&lt;-</span> <span class="fu"><a href="https://fs.r-lib.org/reference/path.html" class="external-link">path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="st">"study_001_data"</span><span class="op">)</span></span>
+<span><span class="va">github_pat</span>   <span class="op">&lt;-</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
+<span>  governance <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  data       <span class="op">=</span> <span class="fu"><a href="../reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">data_dir</span><span class="op">)</span>,</span>
+<span>  github_pat <span class="op">=</span> <span class="va">github_pat</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">conn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_conn.html">datom_get_conn</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">dev_dir</span>, store <span class="op">=</span> <span class="va">store</span><span class="op">)</span></span></code></pre></div>
+<p>Temp directories do not survive a new R session. To follow the
+journey across sessions, point <code>dev_dir</code> and
+<code>data_dir</code> at persistent paths in article 1.</p>
 </div>
 <div class="section level2">
 <h2 id="the-month-2-extract">The month-2 extract<a class="anchor" aria-label="anchor" href="#the-month-2-extract"></a>
@@ -156,9 +167,9 @@ writes cost nothing and pollute no history.</p>
 </h2>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;   version  data_sha  table_type  size_bytes  created_at           message</span></span>
-<span><span class="co">#&gt; 1 5c1a3f7b 9e8f1c2d  raw         3812        2026-02-28T10:14:02Z DM extract through 2026-02-28</span></span>
-<span><span class="co">#&gt; 2 a8ee7a31 4b6d0a7e  raw         1734        2026-01-28T09:02:11Z Initial DM extract through 2026-01-28</span></span></code></pre></div>
+<span><span class="co">#&gt;    version  data_sha timestamp            author commit_message</span></span>
+<span><span class="co">#&gt; 1 5c1a3f7b 9e8f1c2d 2026-02-28T10:14:02Z you    DM extract through 2026-02-28</span></span>
+<span><span class="co">#&gt; 2 a8ee7a31 4b6d0a7e 2026-01-28T09:02:11Z you    Initial DM extract</span></span></code></pre></div>
 <p>Two rows, newest first. The <code>version</code> column is the
 <strong>metadata SHA</strong> – the identifier you use to pin a
 read.</p>
@@ -171,11 +182,11 @@ version:</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dm_now</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">dm_now</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 14</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 16</span></span></code></pre></div>
 <p>Pass a <code>version</code> to retrieve any historical snapshot:</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">hist</span>    <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span></span>
-<span><span class="va">m1_ver</span>  <span class="op">&lt;-</span> <span class="va">hist</span><span class="op">$</span><span class="va">version</span><span class="op">[</span><span class="va">hist</span><span class="op">$</span><span class="va">commit_message</span> <span class="op">==</span> <span class="st">"Initial DM extract through 2026-01-28"</span><span class="op">]</span></span>
+<code class="sourceCode R"><span><span class="va">hist</span>   <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span></span>
+<span><span class="va">m1_ver</span> <span class="op">&lt;-</span> <span class="va">hist</span><span class="op">$</span><span class="va">version</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">hist</span><span class="op">)</span><span class="op">]</span>   <span class="co"># oldest row is the month-1 version</span></span>
 <span></span>
 <span><span class="va">dm_m1_again</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span>, version <span class="op">=</span> <span class="va">m1_ver</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">dm_m1_again</span><span class="op">)</span></span>
@@ -184,6 +195,24 @@ version:</p>
 article 1, even though the current version of <code>dm</code> has 16
 rows. This is the property your future statisticians, regulators, and
 auditors rely on.</p>
+</div>
+<div class="section level2">
+<h2 id="the-analysts-view-reader-role">The analyst’s view (reader role)<a class="anchor" aria-label="anchor" href="#the-analysts-view-reader-role"></a>
+</h2>
+<p>A statistician doesn’t need your developer connection or local clone.
+They build a <strong>reader</strong> connection – data store only, no
+PAT – and pin the same SHA:</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">reader_store</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_store.html">datom_store</a></span><span class="op">(</span></span>
+<span>  governance <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  data       <span class="op">=</span> <span class="fu"><a href="../reference/datom_store_local.html">datom_store_local</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">data_dir</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">reader_conn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_conn.html">datom_get_conn</a></span><span class="op">(</span>store <span class="op">=</span> <span class="va">reader_store</span>, project_name <span class="op">=</span> <span class="va">project_name</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="fu"><a href="../reference/datom_read.html">datom_read</a></span><span class="op">(</span><span class="va">reader_conn</span>, <span class="st">"dm"</span>, version <span class="op">=</span> <span class="va">m1_ver</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 4</span></span></code></pre></div>
+<p>Same SHA, same bytes – whether read by the engineer who wrote it or
+an analyst on another machine.</p>
 </div>
 <div class="section level2">
 <h2 id="where-you-are">Where you are<a class="anchor" aria-label="anchor" href="#where-you-are"></a>
@@ -196,9 +225,12 @@ time.</li>
 <li>Version SHAs are stable across machines – share one and a colleague
 reads the same bytes you did.</li>
 </ul>
-<p>In the next article, <strong>a folder of extracts arrives</strong>
-instead of a single table, and we use <code><a href="../reference/datom_sync.html">datom_sync()</a></code> to
-import them all at once.</p>
+<p><strong>Carry on:</strong> keep this R session open and reuse
+<code>conn</code>, <code>store</code>, and your settings in the next
+article. Do <strong>not</strong> tear down – the journey continues. In
+<a href="folder-of-extracts.html">A Folder of Extracts</a>, a whole
+folder arrives instead of a single table, and we use
+<code><a href="../reference/datom_sync.html">datom_sync()</a></code> to import them at once.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

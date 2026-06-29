@@ -18,14 +18,12 @@ Begin directly in object storage.
 - [Starting on
   S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md):
 
-### Lineage & Roadmap
+### Lineage
 
-Trace data lineage; where datom sits in the daapr stack.
+Trace how derived tables descend from their sources.
 
 - [Tracing Data
   Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md):
-- [Looking Ahead: datom in the daapr
-  Stack](https://amashadihossein.github.io/datom/articles/looking-ahead.md):
 
 ### Design
 
