@@ -118,11 +118,10 @@ articles:
     contents:
       - start-on-s3
 
-  - title: "Lineage & Roadmap"
-    desc: "Trace data lineage; where datom sits in the daapr stack."
+  - title: "Lineage"
+    desc: "Trace how derived tables descend from their sources."
     contents:
       - source-lineage
-      - looking-ahead
 
   - title: "Design"
     desc: "Why datom is shaped the way it is."

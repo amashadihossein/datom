@@ -42,15 +42,19 @@ real gov API** once it ships. This directory is the source of truth for that fut
 | `design-dispatch.Rmd` | Design | dispatch.json and Self-Serve Access |
 | `design-two-repos.Rmd` | Design | Two Repositories: Governance vs. Data |
 
-### Resume scripts (5), under `vignette-setup/`
+### Resume scripts, under `vignette-setup/`
 
-The `resume_article_N.R` chain lets a reader jump into article N without running the prior
-articles. These five support the parked (and handed-off) articles and were moved out of
-`inst/vignette-setup/`. `resume_article_2.R` and `resume_article_3.R` stay in `inst/`
-(Bucket A depends on them).
+The `resume_article_N.R` chain let a reader jump into article N without running the prior
+articles. The whole chain now lives here: the rendered Get Started articles no longer source
+a resume script (the sourcing UX was pulled until `datomanager` is ready), so
+`resume_article_2.R` and `resume_article_3.R` were moved out of `inst/vignette-setup/`
+alongside the rest. `inst/vignette-setup/` keeps only `datom.css` (still linked by the
+rendered articles).
 
 | Script | Rebuilds the state for |
 |--------|------------------------|
+| `resume_article_2.R` | Article 2 (`month-2-arrives`) -- parked here |
+| `resume_article_3.R` | Article 3 (`folder-of-extracts`) -- parked here |
 | `resume_article_4.R` | Article 4 (`promoting-to-s3`) -- parked here |
 | `resume_article_5.R` | Article 5 (`handing-off`) -- parked here |
 | `resume_article_6.R` | Article 6 (`second-engineer`) -- parked here |
@@ -66,14 +70,15 @@ datom resume chain and will be needed when the journey is reassembled.
 The original suite told one story: STUDY_001 over six months. Ordering, with disposition:
 
 1. `first-extract` -- stays (rendered)
-2. `month-2-arrives` -- stays (rendered; `resume_article_2.R`)
-3. `folder-of-extracts` -- stays (rendered; `resume_article_3.R`)
+2. `month-2-arrives` -- stays (rendered; `resume_article_2.R` parked here)
+3. `folder-of-extracts` -- stays (rendered; `resume_article_3.R` parked here)
 4. `promoting-to-s3` -- **parked here** (`resume_article_4.R`)
 5. `handing-off` -- **parked here** (`resume_article_5.R`)
 6. `second-engineer` -- **parked here** (`resume_article_6.R`)
 7. `governing-a-portfolio` -- **handed off to datomanager** (`resume_article_7.R` parked here)
 8. `auditing-reproducibility` -- **handed off to datomanager** (`resume_article_8.R` parked here)
-9. `looking-ahead` -- stays (rendered)
+9. `looking-ahead` -- **parked here** (daapr/ecosystem framing pulled from the
+   rendered site until the stack is integrated; no resume script)
 10. `credentials-in-practice` -- **parked here** (Reference track, no resume script)
 
 Standalone Design track (not part of the numbered journey):

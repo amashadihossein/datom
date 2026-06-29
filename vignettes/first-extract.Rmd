@@ -72,30 +72,31 @@ nzchar(keyring::key_get("GITHUB_PAT"))   # should return TRUE
 If it errors, set the PAT with `keyring::key_set("GITHUB_PAT")` first.
 </div>
 
-## Set up your working paths
+## Configure your environment
 
-Two paths are needed, and they serve different roles:
-
-- **`dev_dir`** -- your local clone of the data git repository. This is
-  where metadata (`project.yaml`, `metadata.json`, version history) lives.
-  In a team setting this would be cloned on every developer's machine.
-- **`data_dir`** -- the directory where parquet bytes are written. In a team
-  setting this would be an S3 bucket (or a shared network mount), so every
-  team member reads from the same physical store.
-
-Here both point to temporary directories for demonstration. Replace them with
-real paths -- or an S3 store -- when you are ready for a persistent shared space.
+Everything machine-specific lives in one block. Set these values once for your
+environment; every code chunk after this is copy/paste as-is.
 
 ```{r}
 library(datom)
 library(fs)
 
-# Two paths, two roles:
-#   dev_dir  -- your local workspace for this project (stays on your machine)
-#   data_dir -- where the actual data lives; replace with a real path or S3
-#               store when you are ready for a persistent shared space
-dev_dir  <- path(tempdir(), "study_001_dev")   # data git clone
-data_dir <- path(tempdir(), "study_001_data")  # parquet bytes live here
+# --- Settings you control --------------------------------------------------
+project_name <- "STUDY_001"          # logical project name (recorded in metadata)
+repo_name    <- "study-001-data"     # GitHub repo name for the metadata repo
+
+# dev_dir  -- your local clone of the metadata git repo (stays on your machine)
+# data_dir -- where parquet bytes are written; point at a shared location
+#             (network mount, or an S3 store) for a real team space. Temp dirs
+#             are used here so the article leaves nothing behind.
+dev_dir  <- path(tempdir(), "study_001_dev")
+data_dir <- path(tempdir(), "study_001_data")
+
+# Your GitHub personal access token (PAT), scoped to `repo`. Stored once in your
+# OS keychain with keyring::key_set("GITHUB_PAT"); read here by name so the
+# token never appears in your code or command history.
+github_pat <- keyring::key_get("GITHUB_PAT")
+# ---------------------------------------------------------------------------
 
 dir_create(data_dir)
 ```
@@ -108,12 +109,10 @@ GitHub PAT that lets datom push metadata. Governance is not attached
 companion package when sharing across a portfolio matters.
 
 ```{r}
-data_component <- datom_store_local(path = data_dir)
-
 store <- datom_store(
   governance = NULL,
-  data       = data_component,
-  github_pat = keyring::key_get("GITHUB_PAT")
+  data       = datom_store_local(path = data_dir),
+  github_pat = github_pat
 )
 ```
 
@@ -122,10 +121,10 @@ store <- datom_store(
 ```{r}
 datom_init_repo(
   path         = dev_dir,
-  project_name = "STUDY_001",
+  project_name = project_name,
   store        = store,
   create_repo  = TRUE,
-  repo_name    = "study-001-data"
+  repo_name    = repo_name
 )
 ```
 
@@ -199,28 +198,44 @@ datom_status(conn)        # table list with SHAs
 datom_history(conn, "dm") # version history
 ```
 
-## Read it back
+## Read it back as a reader
+
+Writing is a developer action. Reading is what analysts and downstream
+pipelines do, and they use the **reader role** -- a connection built from the
+data store alone, with no GitHub PAT and no local clone. You build a reader
+store by leaving `github_pat` unset, then connect by project name:
 
 ```{r}
-dm_back <- datom_read(conn, "dm")
+reader_store <- datom_store(
+  governance = NULL,
+  data       = datom_store_local(path = data_dir)   # same data location
+)                                                    # no PAT -> reader role
+
+reader_conn <- datom_get_conn(store = reader_store, project_name = project_name)
+print(reader_conn)
+#> -- datom connection
+#> * Project: "STUDY_001"
+#> * Role: "reader"
+#> * Backend: "local"
+```
+
+Read the table back through the reader connection:
+
+```{r}
+dm_back <- datom_read(reader_conn, "dm")
 ```
 
 datom stores data in [Apache Parquet](https://parquet.apache.org/) format and
-reads it back as a `tibble`. If your original object was not already a tibble,
-the classes will differ even though the data is identical:
+reads it back as a `tibble`. Compare as a tibble for a clean round-trip check:
 
 ```{r}
-identical(datom_read(conn, "dm"), dm_m1)
-#> [1] FALSE  # dm_m1 may carry extra classes (e.g. data.frame)
-
-identical(datom_read(conn, "dm"), tibble::as_tibble(dm_m1))
-#> [1] TRUE   # compare as tibble for a clean round-trip check
+identical(datom_read(reader_conn, "dm"), tibble::as_tibble(dm_m1))
+#> [1] TRUE
 ```
 
-The read does **not** go through GitHub. It uses the manifest cached in
-`data_dir` to locate the parquet file and stream it back. This is the same
-path a data reader on a different machine takes -- they need access to the data
-store, not to the git repo.
+The read does **not** go through GitHub. The reader resolves the parquet file
+from the data store and streams it back -- exactly the path a teammate on
+another machine takes. They need access to the data store, not to the git repo.
 
 ## Where you are
 
@@ -235,20 +250,25 @@ You have a fully versioned datom project up and running:
 In the next article, the **month-2 extract arrives** with new subjects, and you
 write a second version without overwriting the first.
 
-## Teardown
+## Carry on, or tear down
 
-**Planning to continue to [Month 2 Arrives](month-2-arrives.html)?** Leave
-everything as-is and reuse your `conn` in the next article. The resume script
-in article 2 is there for users who closed their session; you don't need it.
+**Continuing to [Month 2 Arrives](month-2-arrives.html)?** Stop here. Keep your
+R session open and reuse `conn`, `store`, and your settings (`dev_dir`,
+`data_dir`, `project_name`) in the next article -- do **not** tear anything
+down. If you closed your session, article 2 opens with the same configuration
+block so you can reconnect.
 
-If you are done exploring, pick one:
+**Done exploring?** Tear the project down. Pick the one option that fits, and
+copy only that chunk:
 
 ```{r}
 # Option A -- full scripted teardown (deletes local files AND the GitHub repo).
-# Do this BEFORE unlink().
+# Do this BEFORE any manual unlink().
 datom_repo_delete(conn, confirm = "STUDY_001")
+```
 
-# Option B -- local only (GitHub repo stays; delete it manually from the UI).
+```{r}
+# Option B -- local only (the GitHub repo stays; delete it from the UI later).
 unlink(c(dev_dir, data_dir), recursive = TRUE)
 ```
 
