@@ -73,3 +73,23 @@ project: `project.yaml` is the location authority, no `governance.json`
 `storage.governance` and `repos.governance` blocks. A governance store
 component on `store`, if present, is ignored here. Governance is
 attached later via the governance layer (`gov_attach()`).
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+tmp <- tempfile("datom_init_")
+store <- datom_store(
+  data = datom_store_local(path = file.path(tmp, "storage")),
+  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+datom_init_repo(
+  path = file.path(tmp, "repo"),
+  project_name = "example_project",
+  store = store
+)
+unlink(tmp, recursive = TRUE)
+} # }
+```

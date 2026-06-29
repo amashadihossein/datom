@@ -28,3 +28,19 @@ datom_store_local(path, prefix = NULL, validate = TRUE)
 ## Value
 
 A `datom_store_local` object.
+
+## Examples
+
+``` r
+tmp <- tempfile("datom_store_")
+store <- datom_store_local(path = tmp, validate = TRUE)
+#> ℹ Created store directory /tmp/Rtmp7aXn78/datom_store_1a233ebe24fa.
+store
+#> 
+#> ── datom local store component 
+#> • Path: /tmp/Rtmp7aXn78/datom_store_1a233ebe24fa
+#> • Validated: TRUE
+is_datom_store_local(store)
+#> [1] TRUE
+unlink(tmp, recursive = TRUE)
+```

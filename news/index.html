@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -45,86 +45,85 @@
     </div>
 
     <div class="section level2">
-<h2 class="pkg-version" data-toc-text="development version" id="datom-development-version">datom (development version)<a class="anchor" aria-label="anchor" href="#datom-development-version"></a></h2>
+<h2 class="pkg-version" data-toc-text="0.1.0" id="datom-010">datom 0.1.0<a class="anchor" aria-label="anchor" href="#datom-010"></a></h2>
+<p>Initial CRAN release. <code>datom</code> provides version-controlled data management for reproducible scientific and clinical workflows — tables are tracked as code in git while actual data lives in cloud storage (S3) or a local filesystem backend.</p>
 <div class="section level3">
-<h3 id="phase--vignette-overhaul-development-version">Phase 16 – Vignette overhaul<a class="anchor" aria-label="anchor" href="#phase--vignette-overhaul-development-version"></a></h3>
-<p>The vignette set is rewritten as a continuous user journey: STUDY-001 over six months, climbing from a single engineer’s first extract to a manager’s portfolio audit. Ten user-journey articles plus six design notes replace the previous three vignettes (<code>clinical-data-versioning</code>, <code>team-collaboration</code>, <code>credentials</code>).</p>
-<p><strong>User journey</strong> (sidebar order):</p>
-<ol style="list-style-type: decimal"><li>
-<em>First Extract</em> – <code>datom_store_local</code>, <code>datom_init_gov</code>, <code>datom_init_repo</code>, <code>datom_write</code>, <code>datom_read</code>.</li>
+<h3 id="core-readwriteversion-0-1-0">Core read/write/version<a class="anchor" aria-label="anchor" href="#core-readwriteversion-0-1-0"></a></h3>
+<ul><li>
+<code><a href="../reference/datom_write.html">datom_write()</a></code> — write a data frame as a versioned parquet table with automatic SHA-based deduplication.</li>
 <li>
-<em>Month 2 Arrives</em> – change detection, <code>datom_history</code>, version-pinned reads.</li>
+<code><a href="../reference/datom_read.html">datom_read()</a></code> — read the current or any historical version of a table.</li>
 <li>
-<em>A Folder of Extracts</em> – <code>datom_sync</code>, <code>datom_status</code>, <code>datom_validate</code>.</li>
+<code><a href="../reference/datom_history.html">datom_history()</a></code> — view the full version history of a table.</li>
 <li>
-<em>Promoting to S3</em> – <code>datom_store_s3</code>, <code>create_repo = TRUE</code>, <code>ref.json</code> indirection.</li>
-<li>
-<em>Handing Off to a Statistician</em> – reader role, parallel R session, version pinning for reproducibility.</li>
-<li>
-<em>A Second Engineer Joins</em> – <code>datom_clone</code>, <code>datom_pull</code>, conflict recovery.</li>
-<li>
-<em>Governing a Study Portfolio</em> – registry, <code>datom_pull_gov</code>, <code>datom_decommission</code>.</li>
-<li>
-<em>Auditing &amp; Reproducibility</em> – <code>datom_summary</code>, <code>datom_projects</code>, full-SHA history, <code>datom_validate</code> across the portfolio.</li>
-<li>
-<em>Looking Ahead: datom in the daapr Stack</em> – substrate framing.</li>
-<li>
-<em>Credentials in Practice</em> – store construction, roles, recovery utilities reference.</li>
-</ol><p><strong>Design notes</strong>: <code>design-datom-model</code>, <code>design-version-shas</code>, <code>design-ref-json</code>, <code>design-dispatch</code>, <code>design-two-repos</code>, <code>design-serverless</code>.</p>
-<p><strong>Other changes:</strong></p>
-<ul><li>Simulator extended with LB (lab) and AE (adverse events) domains. <code><a href="../reference/datom_example_data.html">datom_example_data()</a></code> gains <code>"lb"</code> and <code>"ae"</code> choices.</li>
-<li>
-<code>inst/vignette-setup/resume_article_N.R</code> lets jump-in readers rebuild the prior article’s end state in one line. Idempotent; honors <code>DATOM_VIGNETTE_DIR</code>.</li>
-<li>
-<code>README.Rmd</code> rewritten as a one-screen grabber using the local backend.</li>
-<li>
-<code>_pkgdown.yml</code> sidebar reorganized into Get Started / Scale Up / Govern / Reference / Design groups.</li>
+<code><a href="../reference/datom_list.html">datom_list()</a></code> — list tables in a project with optional glob filtering.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="phase--portfolio-helpers-development-version">Phase 17 – Portfolio helpers<a class="anchor" aria-label="anchor" href="#phase--portfolio-helpers-development-version"></a></h3>
-<p><strong>New functions:</strong></p>
+<h3 id="sync-0-1-0">Sync<a class="anchor" aria-label="anchor" href="#sync-0-1-0"></a></h3>
 <ul><li>
-<code>datom_summary(conn)</code> – compact, role-aware overview of a single project (name, role, backend/root/prefix, table count, total versions, last write, and – for developers – the data git remote URL). Returns an S3 <code>datom_summary</code> object with a <code>print</code> method. Reads <code>.metadata/manifest.json</code>.</li>
+<code><a href="../reference/datom_sync_manifest.html">datom_sync_manifest()</a></code> — build a sync manifest from a directory of files, detecting new, changed, and unchanged tables.</li>
 <li>
-<code>datom_projects(x)</code> – lists every project registered in the shared governance repo. Accepts either a <code>datom_conn</code> (uses the local gov clone when present – offline, fast) or a <code>datom_store</code> (lets a caller enumerate the portfolio before connecting to any one project). Returns a sorted data frame: <code>name</code>, <code>data_backend</code>, <code>data_root</code>, <code>data_prefix</code>, <code>registered_at</code>. Corrupt registry entries warn and are skipped.</li>
-</ul><p><strong>Schema additions (pre-release; no migration concern):</strong></p>
-<ul><li>
-<code>ref.json</code>: <code>current$type</code> and <code>previous[].type</code> now record the data backend (<code>"s3"</code> or <code>"local"</code>). Required so readers can identify the backend without already holding a store.</li>
-</ul><p><strong>Internal:</strong></p>
-<ul><li>New storage list dispatch: <code>.datom_storage_list_objects(conn, prefix)</code> with <code><a href="../reference/dot-datom_s3_list_objects.html">.datom_s3_list_objects()</a></code> and existing <code><a href="../reference/dot-datom_local_list_objects.html">.datom_local_list_objects()</a></code> arms.</li>
-<li>
-<code>.datom_gov_list_projects(gov_conn, gov_local_path)</code> – prefers the local gov clone; falls back to a storage walk. Pure read; not a <code>GOV_SEAM</code> helper.</li>
+<code><a href="../reference/datom_sync.html">datom_sync()</a></code> — execute the manifest to write all new/changed tables in one pass.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="phase--separate-governance-repo-development-version">Phase 15 – Separate governance repo<a class="anchor" aria-label="anchor" href="#phase--separate-governance-repo-development-version"></a></h3>
-<p><strong>Breaking changes:</strong></p>
-<ul><li>
-<code><a href="../reference/datom_store.html">datom_store()</a></code>: argument <code>remote_url</code> renamed to <code>data_repo_url</code>. New arguments <code>gov_repo_url</code> and <code>gov_local_path</code> for the shared governance repository.</li>
+<h3 id="query--lineage-0-1-0">Query &amp; lineage<a class="anchor" aria-label="anchor" href="#query--lineage-0-1-0"></a></h3>
+<ul><li><p><code><a href="../reference/datom_get_lineage.html">datom_get_lineage()</a></code> / <code><a href="../reference/datom_get_parents.html">datom_get_parents()</a></code> — retrieve parent and source lineage for a table version.</p></li>
+<li><p><code><a href="../reference/datom_validate_lineage.html">datom_validate_lineage()</a></code> — verify that declared lineage is consistent with stored metadata.</p></li>
+<li><p><code><a href="../reference/datom_status.html">datom_status()</a></code> — show connection, table, git, and input-file status.</p></li>
 <li>
-<code>project.yaml</code>: <code>repos</code> block now has two children, <code>repos.data</code> and <code>repos.governance</code> (each with <code>remote_url</code>; the latter also has <code>local_path</code>).</li>
-<li>
-<code>dispatch.json</code>, <code>ref.json</code>, <code>migration_history.json</code> no longer live in the data repo’s <code>.datom/</code> directory. They live in the governance repo at <code>projects/{project_name}/{file}.json</code> and are mirrored to governance storage at the same path.</li>
-</ul><p><strong>New functions:</strong></p>
-<ul><li>
-<code>datom_init_gov()</code> — one-time bootstrap of a shared governance repository (one per organization / governance bucket).</li>
-<li>
-<code>datom_decommission()</code> — tear down a project (data storage + GitHub repo + governance entry). Requires <code>confirm = "{project_name}"</code> literal match.</li>
-<li>
-<code>datom_pull_gov()</code> — pull the governance repo only (rare; mostly for diagnostics).</li>
-</ul><p><strong>Changed behavior:</strong></p>
-<ul><li>
-<code><a href="../reference/datom_clone.html">datom_clone()</a></code> now clones both the data repo and the governance repo (sibling default; reuses existing gov clone if it matches <code>gov_repo_url</code>).</li>
-<li>
-<code><a href="../reference/datom_pull.html">datom_pull()</a></code> now pulls both repos by default.</li>
-<li>
-<code>datom_sync_dispatch()</code> now produces a governance-repo commit (and storage upload) for <code>projects/{project_name}/dispatch.json</code>. The data repo is untouched.</li>
-<li>
-<code><a href="../reference/datom_init_repo.html">datom_init_repo()</a></code> now requires <code>gov_repo_url</code> on the store and writes <code>projects/{project_name}/{ref,dispatch,migration_history}.json</code> to the governance repo + storage in a separate commit from the data repo’s initial commit. Two distinct commits across two histories.</li>
-<li>Connection objects gain a <code>gov_local_path</code> field. Developer connections read <code>ref.json</code> from the local gov clone; reader connections read it from gov storage. The write-time guard always reads from storage to detect stale clones.</li>
+<p><code><a href="../reference/datom_summary.html">datom_summary()</a></code> — compact project overview (backend, table count, versions,</p>
+<p>last write).</p>
+</li>
+<li><p><code><a href="../reference/datom_projects.html">datom_projects()</a></code> — list all projects registered in a governance repository.</p></li>
 </ul></div>
 <div class="section level3">
-<h3 id="other-development-version">Other<a class="anchor" aria-label="anchor" href="#other-development-version"></a></h3>
-<ul><li>Pre-release. The API is experimental and may change without notice.</li>
+<h3 id="storage-management-0-1-0">Storage management<a class="anchor" aria-label="anchor" href="#storage-management-0-1-0"></a></h3>
+<ul><li>
+<code><a href="../reference/datom_storage_list.html">datom_storage_list()</a></code> — enumerate objects in a project namespace.</li>
+<li>
+<code><a href="../reference/datom_storage_copy.html">datom_storage_copy()</a></code> — copy all objects between two storage backends.</li>
+<li>
+<code><a href="../reference/datom_storage_verify.html">datom_storage_verify()</a></code> — verify object integrity after a copy or migration.</li>
+<li>
+<code><a href="../reference/datom_storage_delete_prefix.html">datom_storage_delete_prefix()</a></code> — delete objects under a prefix.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="repository--governance-0-1-0">Repository &amp; governance<a class="anchor" aria-label="anchor" href="#repository--governance-0-1-0"></a></h3>
+<ul><li>
+<code><a href="../reference/datom_init_repo.html">datom_init_repo()</a></code> — one-time project setup (folder structure, git, initial push).</li>
+<li>
+<code><a href="../reference/datom_clone.html">datom_clone()</a></code> — clone an existing project for a new team member.</li>
+<li>
+<code><a href="../reference/datom_pull.html">datom_pull()</a></code> — pull latest commits from the data (and optionally governance) repository.</li>
+<li>
+<code><a href="../reference/datom_get_conn.html">datom_get_conn()</a></code> — establish a connection to an existing project.</li>
+<li>
+<code><a href="../reference/datom_repo_set_data_store.html">datom_repo_set_data_store()</a></code> — update the storage backend for a project.</li>
+<li>
+<code><a href="../reference/datom_repo_delete.html">datom_repo_delete()</a></code> — tear down a project (storage + GitHub repo).</li>
+<li>
+<code><a href="../reference/datom_repo_attach_governance.html">datom_repo_attach_governance()</a></code> — attach a governance layer to a solo project.</li>
+<li>
+<code><a href="../reference/datom_validate.html">datom_validate()</a></code> / <code><a href="../reference/is_valid_datom_repo.html">is_valid_datom_repo()</a></code> — structural validation of the local repository.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="store-constructors-0-1-0">Store constructors<a class="anchor" aria-label="anchor" href="#store-constructors-0-1-0"></a></h3>
+<ul><li>
+<code><a href="../reference/datom_store.html">datom_store()</a></code> — composite store bundling governance + data + git config.</li>
+<li>
+<code><a href="../reference/datom_store_s3.html">datom_store_s3()</a></code> — S3 backend store component.</li>
+<li>
+<code><a href="../reference/datom_store_s3_creds.html">datom_store_s3_creds()</a></code> — credentials-only S3 component (for readers).</li>
+<li>
+<code><a href="../reference/datom_store_local.html">datom_store_local()</a></code> — local filesystem backend store component.</li>
+<li>Predicates: <code><a href="../reference/is_datom_store.html">is_datom_store()</a></code>, <code><a href="../reference/is_datom_store_s3.html">is_datom_store_s3()</a></code>, <code><a href="../reference/is_datom_store_s3_creds.html">is_datom_store_s3_creds()</a></code>, <code><a href="../reference/is_datom_store_local.html">is_datom_store_local()</a></code>.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="example-data-0-1-0">Example data<a class="anchor" aria-label="anchor" href="#example-data-0-1-0"></a></h3>
+<ul><li>
+<code><a href="../reference/datom_example_data.html">datom_example_data()</a></code> — bundled clinical-trial-style data (DM, EX, LB, AE domains) with optional date cutoff filtering.</li>
+<li>
+<code><a href="../reference/datom_example_cutoffs.html">datom_example_cutoffs()</a></code> — six monthly cutoff dates for vignette reproducibility.</li>
 </ul></div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

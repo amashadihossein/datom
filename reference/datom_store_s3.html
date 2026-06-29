@@ -11,7 +11,7 @@ at construction time (unless validate = FALSE)."><meta property="og:image" conte
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -106,6 +106,29 @@ at construction time. Set to <code>FALSE</code> for tests or offline use.</p></d
     <p>A <code>datom_store_s3</code> object.</p>
     </div>
 
+    <div class="section level2">
+    <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="va">s3</span> <span class="op">&lt;-</span> <span class="fu">datom_store_s3</span><span class="op">(</span></span></span>
+<span class="r-in"><span>  bucket <span class="op">=</span> <span class="st">"my-datom-bucket"</span>,</span></span>
+<span class="r-in"><span>  prefix <span class="op">=</span> <span class="st">"project/"</span>,</span></span>
+<span class="r-in"><span>  region <span class="op">=</span> <span class="st">"us-east-1"</span>,</span></span>
+<span class="r-in"><span>  access_key <span class="op">=</span> <span class="st">"AKIAIOSFODNN7EXAMPLE"</span>,</span></span>
+<span class="r-in"><span>  secret_key <span class="op">=</span> <span class="st">"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"</span>,</span></span>
+<span class="r-in"><span>  validate <span class="op">=</span> <span class="cn">FALSE</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">s3</span></span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> ── datom S3 store component </span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> • Bucket: <span style="color: #0000BB;">"my-datom-bucket"</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> • Prefix: <span style="color: #0000BB;">"project/"</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> • Region: <span style="color: #0000BB;">"us-east-1"</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> • Access key: <span style="color: #0000BB;">"AKIA****"</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> • Secret key: <span style="color: #0000BB;">"wJal****"</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> • Validated: <span style="color: #0000BB;">FALSE</span></span>
+<span class="r-in"><span><span class="fu"><a href="is_datom_store_s3.html">is_datom_store_s3</a></span><span class="op">(</span><span class="va">s3</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] TRUE</span>
+</code></pre></div>
+    </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
 

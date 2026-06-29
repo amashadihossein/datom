@@ -79,3 +79,26 @@ datom_write(
 ## Value
 
 List with deployment details.
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+tmp <- tempfile("datom_write_")
+store <- datom_store(
+  data = datom_store_local(path = file.path(tmp, "storage")),
+  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+datom_init_repo(
+  path = file.path(tmp, "repo"),
+  project_name = "example_project",
+  store = store
+)
+conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+dm <- datom_example_data("dm")
+datom_write(conn, data = dm, name = "dm")
+unlink(tmp, recursive = TRUE)
+} # }
+```

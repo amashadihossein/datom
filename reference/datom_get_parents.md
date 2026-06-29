@@ -37,3 +37,26 @@ List of parent entries (each with `source`, `table`, `version`), or
 [`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
 for a unified interface that also exposes the transitive
 `source_lineage` field via `depth = "source"`.
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+tmp <- tempfile("datom_parents_")
+store <- datom_store(
+  data = datom_store_local(path = file.path(tmp, "storage")),
+  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+datom_init_repo(
+  path = file.path(tmp, "repo"),
+  project_name = "example_project",
+  store = store
+)
+conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+datom_write(conn, data = datom_example_data("dm"), name = "dm")
+datom_get_parents(conn, "dm")
+unlink(tmp, recursive = TRUE)
+} # }
+```

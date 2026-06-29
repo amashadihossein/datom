@@ -13,7 +13,7 @@ construction style for readers when a governance store is in place."><meta prope
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -90,6 +90,22 @@ component inside <code><a href="datom_store.html">datom_store()</a></code>. Atte
 without governance will abort with a clear message.</p>
     </div>
 
+    <div class="section level2">
+    <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="va">creds</span> <span class="op">&lt;-</span> <span class="fu">datom_store_s3_creds</span><span class="op">(</span></span></span>
+<span class="r-in"><span>  access_key <span class="op">=</span> <span class="st">"AKIAIOSFODNN7EXAMPLE"</span>,</span></span>
+<span class="r-in"><span>  secret_key <span class="op">=</span> <span class="st">"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">creds</span></span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> ── datom S3 credentials-only store component </span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> • Bucket / prefix / region: &lt;resolved from ref.json&gt;</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> • Access key: <span style="color: #0000BB;">"AKIA****"</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> • Secret key: <span style="color: #0000BB;">"wJal****"</span></span>
+<span class="r-in"><span><span class="fu"><a href="is_datom_store_s3_creds.html">is_datom_store_s3_creds</a></span><span class="op">(</span><span class="va">creds</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] TRUE</span>
+</code></pre></div>
+    </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
 

@@ -42,3 +42,13 @@ Read path:
 Corrupt registry entries (missing `ref.json`, unreadable JSON) emit a
 warning and are skipped – one bad project does not take down the
 listing.
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+# Requires a governance store and registered projects.
+# datom_projects(conn)
+# datom_projects(store)
+} # }
+```

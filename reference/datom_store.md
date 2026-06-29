@@ -80,3 +80,32 @@ datom_store(
 ## Value
 
 A `datom_store` object.
+
+## Examples
+
+``` r
+tmp <- tempfile("datom_store_")
+store <- datom_store(
+  data = datom_store_local(path = tmp),
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+#> ℹ Created store directory /tmp/Rtmp7aXn78/datom_store_1a236622bd19.
+store
+#> 
+#> ── datom store 
+#> • Role: "reader"
+#> • Data repo: <https://github.com/example/my-project>
+#> 
+#> Governance:
+#> not attached
+#> 
+#> Data:
+#> 
+#> ── datom local store component 
+#>   • Path: /tmp/Rtmp7aXn78/datom_store_1a236622bd19
+#>   • Validated: TRUE
+is_datom_store(store)
+#> [1] TRUE
+unlink(tmp, recursive = TRUE)
+```

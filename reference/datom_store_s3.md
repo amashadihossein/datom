@@ -52,3 +52,27 @@ datom_store_s3(
 ## Value
 
 A `datom_store_s3` object.
+
+## Examples
+
+``` r
+s3 <- datom_store_s3(
+  bucket = "my-datom-bucket",
+  prefix = "project/",
+  region = "us-east-1",
+  access_key = "AKIAIOSFODNN7EXAMPLE",
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  validate = FALSE
+)
+s3
+#> 
+#> ── datom S3 store component 
+#> • Bucket: "my-datom-bucket"
+#> • Prefix: "project/"
+#> • Region: "us-east-1"
+#> • Access key: "AKIA****"
+#> • Secret key: "wJal****"
+#> • Validated: FALSE
+is_datom_store_s3(s3)
+#> [1] TRUE
+```

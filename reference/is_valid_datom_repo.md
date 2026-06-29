@@ -30,3 +30,14 @@ is_valid_datom_repo(
 ## Value
 
 TRUE or FALSE.
+
+## Examples
+
+``` r
+# A plain directory is not a valid datom repository.
+tmp <- tempfile("datom_valid_")
+dir.create(tmp)
+is_valid_datom_repo(tmp)
+#> [1] FALSE
+unlink(tmp, recursive = TRUE)
+```

@@ -37,3 +37,20 @@ component inside
 [`datom_store()`](https://amashadihossein.github.io/datom/reference/datom_store.md).
 Attempting to create a composite store without governance will abort
 with a clear message.
+
+## Examples
+
+``` r
+creds <- datom_store_s3_creds(
+  access_key = "AKIAIOSFODNN7EXAMPLE",
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+creds
+#> 
+#> ── datom S3 credentials-only store component 
+#> • Bucket / prefix / region: <resolved from ref.json>
+#> • Access key: "AKIA****"
+#> • Secret key: "wJal****"
+is_datom_store_s3_creds(creds)
+#> [1] TRUE
+```
