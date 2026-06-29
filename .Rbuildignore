@@ -7,6 +7,8 @@
 ^data-raw$
 ^docs$
 ^_pkgdown\.yml$
+^pkgdown$
+^datom\.code-workspace$
 ^CONTRIBUTING\.md$
 ^SECURITY\.md$
 ^NEWS\.md$
