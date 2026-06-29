@@ -60,7 +60,8 @@ project-specific values using <code>{{{ }}}</code> delimiters.</p>
 <span>  <span class="va">root</span>,</span>
 <span>  <span class="va">prefix</span>,</span>
 <span>  region <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  <span class="va">remote_url</span></span>
+<span>  <span class="va">remote_url</span>,</span>
+<span>  gov <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -90,6 +91,13 @@ project-specific values using <code>{{{ }}}</code> delimiters.</p>
 
 <dt id="arg-remote-url">remote_url<a class="anchor" aria-label="anchor" href="#arg-remote-url"></a></dt>
 <dd><p>Git remote URL.</p></dd>
+
+
+<dt id="arg-gov">gov<a class="anchor" aria-label="anchor" href="#arg-gov"></a></dt>
+<dd><p>Governance store component (e.g. from <code><a href="datom_store_s3.html">datom_store_s3()</a></code>), or
+<code>NULL</code> for a solo project with no governance attached. Determines whether
+the rendered store snippets use <code>governance = NULL</code> or a gov-store
+constructor.</p></dd>
 
 </dl></div>
     <div class="section level2">

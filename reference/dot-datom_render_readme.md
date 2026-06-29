@@ -12,7 +12,8 @@ project-specific values using `{{{ }}}` delimiters.
   root,
   prefix,
   region = NULL,
-  remote_url
+  remote_url,
+  gov = NULL
 )
 ```
 
@@ -41,6 +42,14 @@ project-specific values using `{{{ }}}` delimiters.
 - remote_url:
 
   Git remote URL.
+
+- gov:
+
+  Governance store component (e.g. from
+  [`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md)),
+  or `NULL` for a solo project with no governance attached. Determines
+  whether the rendered store snippets use `governance = NULL` or a
+  gov-store constructor.
 
 ## Value
 
