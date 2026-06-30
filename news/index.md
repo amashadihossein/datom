@@ -7,6 +7,9 @@ management for reproducible scientific and clinical workflows — tables
 are tracked as code in git while actual data lives in cloud storage (S3)
 or a local filesystem backend.
 
+datom is experimental: the API may change without a deprecation cycle
+until it reaches a stable release.
+
 ### Core read/write/version
 
 - [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
