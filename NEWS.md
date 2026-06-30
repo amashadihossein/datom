@@ -4,6 +4,9 @@ Initial CRAN release. `datom` provides version-controlled data management for
 reproducible scientific and clinical workflows — tables are tracked as code in
 git while actual data lives in cloud storage (S3) or a local filesystem backend.
 
+datom is experimental: the API may change without a deprecation cycle until it
+reaches a stable release.
+
 ## Core read/write/version
 
 * `datom_write()` — write a data frame as a versioned parquet table with
