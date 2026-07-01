@@ -4,19 +4,22 @@
 
 This design prepares the `datom` R package for its first CRAN submission by resolving
 `R CMD check --as-cran` blockers, addressing reviewer-rejection-class issues, and polishing
-metadata. The work divides into three sequential workstreams that can each be committed
-independently.
+metadata. No new runtime behavior, modules, or functions are introduced — all changes target
+package metadata, documentation, and namespace declarations.
 
-**Workstream A — Mechanical blockers** (Req 1–3): dependency declarations + NAMESPACE.
-**Workstream B — Metadata & docs** (Req 4, 6–9): version bump, DESCRIPTION text, license,
-NEWS, cran-comments.
-**Workstream C — Examples** (Req 5): the largest effort; converting `\dontrun{}` to
-runnable/`\donttest{}` and adding examples to undocumented exports.
+The work divides into three sequential workstreams that can each be committed independently:
+
+- **Workstream A — Mechanical blockers** (Req 1–3): dependency declarations + NAMESPACE.
+- **Workstream B — Metadata & docs** (Req 4, 6–9): version bump, DESCRIPTION text, license,
+  NEWS, cran-comments.
+- **Workstream C — Examples** (Req 5): the largest effort; converting `\dontrun{}` to
+  runnable examples where possible, adding `@examples` blocks to all exports, using the
+  correct CRAN tag (`\dontrun{}` for network/credential-gated, bare for offline-capable).
 
 Requirement 10 (ORCID / CITATION) is optional and deferred to maintainer preference.
 Requirement 11 (CI-executable vignettes) is explicitly out of scope.
 
-## Architecture / Approach
+## Architecture
 
 No new modules, packages, or runtime behaviors are introduced. All changes are to
 package metadata (DESCRIPTION, NAMESPACE, LICENSE/LICENSE.md), documentation (roxygen
@@ -31,7 +34,7 @@ headers in `R/*.R`, NEWS.md, cran-comments.md), and one roxygen directive in
 |--------|-----------|
 | Move `glue` from Suggests → Imports | Used unconditionally on core paths (ref.R, repo.R, utils-path.R, projects.R) |
 | Move `yaml` from Suggests → Imports | Used unconditionally on core paths (conn.R, repo.R, ref.R) |
-| Add `utils` to Imports | `utils::` qualified calls in 8 files; required by CRAN even for base-shipped packages |
+| Add `utils` to Imports | `utils::` qualified calls in 8+ files; required by CRAN even for base-shipped packages |
 | Add `#' @importFrom rlang %||%` to `R/datom-package.R` | Resolves the operator for all 17 files via collation; avoids pinning R ≥ 4.4.0 |
 
 The `@importFrom` directive is placed in `R/datom-package.R` (the canonical location for
@@ -66,177 +69,185 @@ currently contain any of these names, so only the Description field changes.
 
 #### License consistency (Req 8)
 
-`LICENSE` already says `COPYRIGHT HOLDER: Afshin Mashadi-Hossein` which matches `Authors@R`.
-`LICENSE.md` says `Copyright (c) 2025 datom authors` — update to
-`Copyright (c) 2025 Afshin Mashadi-Hossein` for consistency.
+`LICENSE` says `COPYRIGHT HOLDER: Afshin Mashadi-Hossein` which matches `Authors@R`.
+`LICENSE.md` must say `Copyright (c) 2025 Afshin Mashadi-Hossein` (not "datom authors").
 
 #### NEWS.md rewrite (Req 9)
 
-Replace the entire Phase-narrative content with a user-facing `# datom 0.1.0` entry.
-Structure:
+Replace all Phase-narrative content with a user-facing `# datom 0.1.0` entry. Structure:
 - Brief package purpose statement (one paragraph).
-- Feature groups: Core (write/read/version), Sync, Query & lineage, Storage management,
-  Governance attachment, Example data.
-- Note on pre-release status / API stability disclaimer removed (it's now a release).
+- Feature groups: Core read/write/version, Sync, Query & lineage, Storage management,
+  Repository & governance, Store constructors, Example data.
+- No phase numbers, no removed functions, no internal development narrative.
 
 #### cran-comments.md (Req 6)
 
-Create a template with placeholders for the maintainer to fill after running
-`R CMD check --as-cran`. Structure follows the standard form:
-
-```markdown
-## R CMD check results
-
-0 errors | 0 warnings | N notes
-
-* This is a new submission.
-
-## Test environments
-
-* [to be filled: e.g., macOS (local), ubuntu-latest (GHA), windows-latest (GHA)]
-* R x.y.z
-
-## Downstream dependencies
-
-None (new package).
-```
-
+Template with placeholders for the maintainer to fill after running `R CMD check --as-cran`.
+Standard structure: test environments, check result summary, downstream dependencies.
 Add `^cran-comments\.md$` to `.Rbuildignore` so it doesn't ship in the tarball.
 
 ### Workstream C — Examples
 
-This is the largest workstream. The 37 exported symbols (from NAMESPACE) break down as:
+This is the largest workstream. The exported symbols (from NAMESPACE) are classified into
+three example categories based on whether they can execute in CRAN's check environment.
 
-#### Category 1 — Already have runnable examples (no change needed)
-- `datom_example_data()` — reads from `inst/extdata`, runs without network.
-- `datom_example_cutoffs()` — pure computation, already runnable.
+#### Classification of exports
 
-#### Category 2 — Can have genuinely runnable examples (Local_Backend)
+```mermaid
+graph TD
+    A[Exported function] --> B{Needs network/credentials/remote?}
+    B -->|No| C{Needs git2r or git identity?}
+    B -->|Yes| D["\\dontrun{} — cannot execute offline"]
+    C -->|No| E["Bare runnable example"]
+    C -->|Yes| D
+```
 
-Functions that work against a local datom repo, using `datom_store_local()` +
-`withr::with_tempdir()` for a self-contained example that needs no network/creds:
+**Key architectural constraint:** `datom_init_repo()` calls `.datom_git_push()` which
+requires a live GitHub remote. There is **no offline / no-remote mode** — a `data_repo_url`
+is mandatory by design. Every function that operates on a `datom_conn` therefore requires a
+live GitHub remote + storage backend and **cannot execute** in CRAN's check environment.
 
-| Function | Example strategy |
-|----------|-----------------|
-| `datom_store_local()` | Constructor call with a tempdir path |
-| `is_datom_store_local()` | Predicate on the above |
-| `print.datom_store_local` | Implicit from above |
-| `datom_store()` | Composite with `data = datom_store_local(...)`, `governance = NULL` |
-| `is_datom_store()` | Predicate on the above |
-| `print.datom_store` | Implicit from above |
-| `datom_init_repo()` | Init a local repo in tempdir (requires git2r — wrap in `\donttest{}` since git2r is Suggests + needs git configured) |
-| `datom_write()` | Write example data to the local repo |
-| `datom_read()` | Read it back |
-| `datom_list()` | List tables in the local repo |
-| `datom_history()` | Show version history |
-| `datom_status()` | Show repo status |
-| `datom_validate()` | Validate the local repo |
-| `is_valid_datom_repo()` | Predicate on the path |
-| `datom_sync_manifest()` | Build manifest from inst/extdata CSVs |
-| `datom_sync()` | Sync the manifest |
-| `datom_summary()` | Summarize the local project |
-| `datom_get_parents()` | Show parent lineage |
-| `datom_get_lineage()` | Show full lineage |
-| `datom_validate_lineage()` | Validate lineage consistency |
+Additionally, `\donttest{}` examples **are executed** by `R CMD check --as-cran` (the
+`--run-donttest` flag is active by default). This means `\donttest{}` is NOT safe for
+credential/network-gated functions.
 
-**Note on git2r dependency**: `datom_init_repo()` and the write/sync path require `git2r`
-(which is in Suggests). Examples that call these must be wrapped in `\donttest{}` because
-CRAN check environments may not have `git2r` or a configured git identity. This is
-acceptable — `\donttest{}` is explicitly permitted by CRAN for examples that are runnable
-but depend on optional infrastructure.
+#### Final classification
 
-**CORRECTION (post-check finding):** `\donttest{}` examples **are executed** by
-`R CMD check --as-cran` (that is exactly what `--run-donttest` does). The connection-based
-functions cannot be tagged `\donttest{}` because they would then be run and fail:
-`datom_init_repo()` calls `.datom_git_push()` to the data repo's GitHub remote, and there is
-**no offline / no-remote mode** (a `data_repo_url` is mandatory by design). Every function
-that operates on a `datom_conn` therefore requires a live GitHub remote + storage backend and
-**cannot execute** in CRAN's check environment.
+| Category | Tag | Functions |
+|----------|-----|-----------|
+| **Genuinely runnable** | bare `@examples` | Store constructors with `validate = FALSE` or local-only: `datom_store_local`, `datom_store`, `datom_store_s3`, `datom_store_s3_creds`; all predicates: `is_datom_store`, `is_datom_store_s3`, `is_datom_store_s3_creds`, `is_datom_store_local`; filesystem check: `is_valid_datom_repo`; bundled data: `datom_example_data`, `datom_example_cutoffs` |
+| **Cannot execute** | `\dontrun{}` | All conn-based functions: `datom_init_repo`, `datom_write`, `datom_read`, `datom_list`, `datom_history`, `datom_sync_manifest`, `datom_sync`, `datom_status`, `datom_validate`, `datom_summary`, `datom_get_parents`, `datom_get_lineage`, `datom_validate_lineage`, `datom_clone`, `datom_pull`, `datom_get_conn`, `datom_projects`, `datom_repo_set_data_store`, `datom_repo_delete`, `datom_repo_attach_governance`, `datom_storage_list`, `datom_storage_delete_prefix`, `datom_storage_copy`, `datom_storage_verify` |
+| **Print methods** | (via dispatch) | `print.datom_conn`, `print.datom_store`, `print.datom_store_local`, `print.datom_store_s3`, `print.datom_store_s3_creds`, `print.datom_summary` — exercised implicitly by their parent examples |
 
-The correct, CRAN-acceptable tag for examples that genuinely require credentials/network is
-`\dontrun{}`. CRAN permits `\dontrun{}` for exactly this case; reviewers object to
-`\dontrun{}` only when an example *could* be made runnable. Here it cannot.
+**Deviation from Requirement 5.1:** Req 5.1 ("no `\dontrun{}`") is not fully achievable
+given the architecture. `\dontrun{}` is the correct, CRAN-permitted tag for
+credential/network-gated examples. The realized improvement is that ~12 exported functions
+now have genuinely runnable examples (previously zero did). Full runnability of the
+connection workflow is only possible via the deferred CI-credentials work (Req 11).
 
-**Final classification:**
-
-- **Genuinely runnable (bare examples, executed by check):** the store constructors
-  (`datom_store`, `datom_store_s3`, `datom_store_s3_creds`, `datom_store_local` — all with
-  `validate = FALSE` or local dir creation, no network), their predicates
-  (`is_datom_store*`), `is_valid_datom_repo()` (pure filesystem check), and the pre-existing
-  `datom_example_data()` / `datom_example_cutoffs()`.
-- **`\dontrun{}` (cannot execute — needs GitHub remote / S3 / live conn):** everything that
-  takes or builds a `datom_conn` — `datom_init_repo`, `datom_write`, `datom_read`,
-  `datom_list`, `datom_history`, `datom_sync_manifest`, `datom_sync`, `datom_status`,
-  `datom_validate`, `datom_summary`, `datom_get_parents`, `datom_get_lineage`,
-  `datom_validate_lineage`, `datom_clone`, `datom_pull`, `datom_get_conn`, `datom_projects`,
-  and the `datom_repo_*` / `datom_storage_*` families. The `\dontrun{}` bodies are written as
-  self-contained, coherent code (local-backend setup) so they read as complete usage even
-  though they are not run.
-- Internal helpers (`.datom_build_storage_key`, `.datom_parse_s3_uri`) keep `\dontrun{}` —
-  they call non-exported functions that are not on the search path during example runs.
-
-**Deviation from Requirement 5:** Req 5.1 ("no `\dontrun{}`") is not achievable given the
-architecture; `\dontrun{}` is the correct tag for the credential/network-gated functions. The
-realized improvement is that ~12 exported functions now have genuinely runnable examples
-(previously all were `\dontrun{}`). Full runnability of the connection workflow is only
-possible via the deferred CI-credentials work (Req 11).
-
-#### Category 3 — Require network/credentials → `\donttest{}`
-
-Functions that require S3 credentials, GitHub API, or network:
-
-| Function | Reason |
-|----------|--------|
-| `datom_store_s3()` | S3 bucket required |
-| `is_datom_store_s3()` | Trivial predicate — can use a mock object, runnable |
-| `print.datom_store_s3` | Same |
-| `datom_store_s3_creds()` | Credential constructor — can be runnable with fake values |
-| `is_datom_store_s3_creds()` | Trivial predicate — runnable |
-| `print.datom_store_s3_creds` | Same |
-| `datom_clone()` | Needs GitHub remote |
-| `datom_pull()` | Needs existing clone with remote |
-| `datom_get_conn()` | Can work locally if path-based — `\donttest{}` |
-| `datom_projects()` | Needs governance store |
-| `datom_repo_set_data_store()` | Needs active conn with remote |
-| `datom_repo_delete()` | Destructive, needs remote |
-| `datom_repo_attach_governance()` | Needs governance store |
-| `datom_storage_list()` | Needs active conn |
-| `datom_storage_delete_prefix()` | Destructive, needs active conn |
-| `datom_storage_copy()` | Needs two active conns |
-| `datom_storage_verify()` | Needs active conn |
-
-**Refinement**: `is_datom_store_s3()`, `is_datom_store_s3_creds()`, and their print methods
-can have genuinely runnable examples because the constructors don't validate credentials at
-construction time — they just build the S3 object. So these become bare runnable examples
-with fake placeholder values (e.g., `access_key = "AKIAIOSFODNN7EXAMPLE"`).
-
-#### Category 4 — print.datom_conn
-
-`print.datom_conn` is an S3 method dispatched implicitly. It doesn't need its own
-`@examples` block; the class is demonstrated in other functions' examples.
-
-#### Example placement convention
+#### Example writing conventions
 
 - Each `@examples` block is self-contained (no reliance on external state).
-- `\donttest{}` wraps anything requiring git2r, git identity, or network.
-- No `\dontrun{}` anywhere.
-- Cleanup (`unlink`) is explicit.
+- `\dontrun{}` bodies are written as coherent, complete usage demonstrations so they read as
+  documentation even though they are not executed.
+- No credentials or real secrets in any example — all placeholder values are obviously fake
+  (e.g., `"AKIAIOSFODNN7EXAMPLE"`, `"https://github.com/user/project"`).
+- Cleanup (`unlink`) is explicit in runnable examples that create temp files.
+- Every exported function gets an `@examples` block — no exceptions.
+
+## Components and Interfaces
+
+No new components or interfaces are introduced. This work modifies existing package
+infrastructure files:
+
+| Component | Type | Change |
+|-----------|------|--------|
+| `DESCRIPTION` | Package metadata | Imports field, Version, Description text |
+| `R/datom-package.R` | Package-level roxygen | `@importFrom` directive |
+| `NAMESPACE` | Generated | Regenerated via `devtools::document()` |
+| `LICENSE.md` | License text | Copyright holder name |
+| `NEWS.md` | Changelog | Complete rewrite as release notes |
+| `cran-comments.md` | Submission cover letter | New file |
+| `.Rbuildignore` | Build exclusion list | Add cran-comments entry |
+| `R/*.R` (multiple) | Roxygen headers | `@examples` blocks added/converted |
+
+## Data Models
+
+No data models are introduced or modified. This feature changes only package metadata and
+documentation — no runtime data structures, schemas, or storage formats are affected.
 
 ## Correctness Properties
 
-1. **No source-code behavior change.** No function body is modified in any workstream.
-   Only metadata (DESCRIPTION, NAMESPACE, LICENSE.md), documentation (roxygen `@examples`,
-   NEWS.md, cran-comments.md), and the `@importFrom` directive change.
-2. **NAMESPACE is always regenerated.** After editing `R/datom-package.R`, the maintainer
-   runs `roxygen2::roxygenise()` (or `devtools::document()`). The NAMESPACE shown in the
-   tasks is the expected output, not a hand edit.
-3. **Test count must not drop.** No test files are modified; existing tests must still pass
-   at the same count after every commit.
-4. **`git2r` and `rio` stay in Suggests.** They are properly guarded; moving them would be
-   incorrect.
-5. **No credentials in examples.** All placeholder values in examples are obviously fake
-   (AWS example keys, `https://github.com/fake/repo`). Consistent with the project's
-   secret-handling principle.
+*A property is a characteristic or behavior that should hold true across all valid executions of a system-essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
+
+Note: Property-based testing (PBT with generated random inputs) does not apply to this
+feature — there are no pure functions, data transformations, or algorithms being written.
+The properties below are structural invariants verified by `R CMD check` and manual
+inspection rather than by randomized test generation.
+
+### Property 1: No dependency/namespace errors after blocker fixes
+
+*For any* run of `R CMD check --as-cran` after Workstream A is applied, the check SHALL produce 0 ERRORs and 0 WARNINGs attributable to undeclared dependencies or missing namespace imports.
+
+**Validates: Requirements 1.7, 2.2, 3.4**
+
+### Property 2: Every exported function has an examples block
+
+*For any* exported function listed in NAMESPACE, the corresponding `.Rd` man page SHALL contain an `\examples{}` section.
+
+**Validates: Requirements 5.4**
+
+### Property 3: Runnable examples execute without error
+
+*For any* exported function whose `@examples` block is bare (not wrapped in `\dontrun{}`), that example SHALL execute without error in a fresh R session with no network access and no credentials.
+
+**Validates: Requirements 5.2, 5.5**
+
+### Property 4: dontrun is used only where genuinely required
+
+*For any* exported function whose `@examples` block uses `\dontrun{}`, that function SHALL require network access, credentials, or a live git remote to execute — conditions that cannot be met under `R CMD check`.
+
+**Validates: Requirements 5.1, 5.3**
+
+### Property 5: Consistent identity across license and author metadata
+
+*For any* of the files DESCRIPTION (Authors@R), LICENSE, and LICENSE.md, the copyright holder / author identity SHALL be `Afshin Mashadi-Hossein`.
+
+**Validates: Requirements 8.1, 8.2**
+
+## Error Handling
+
+No error handling changes are introduced. All existing `cli::cli_abort()` / `stop()` calls
+remain unchanged. The sole "error" surface is `R CMD check` itself — the validation gate —
+and errors there are resolved by the metadata/documentation fixes described above.
+
+## Testing Strategy
+
+### Why property-based testing does NOT apply
+
+This feature consists entirely of:
+- Metadata file edits (DESCRIPTION, NAMESPACE, LICENSE.md)
+- Documentation edits (roxygen `@examples` blocks, NEWS.md)
+- A new static file (cran-comments.md)
+
+There are **no pure functions being written**, no data transformations, no algorithms, and no
+input/output behavior that varies across inputs. The correctness gate is a single invocation
+of `R CMD check --as-cran` — a pass/fail smoke test, not a property that holds across a
+range of generated inputs. Property-based testing is therefore not applicable.
+
+### Verification approach
+
+The authoritative validation gate for all requirements is **`R CMD check --as-cran`**
+(equivalently `devtools::check()`), run by the maintainer or CI. R is not available in the
+development environment, so verification is deferred to the maintainer.
+
+### Verification assertions (smoke tests)
+
+These assertions capture the expected outcome of running the validation gate after all
+workstreams are applied:
+
+| ID | Assertion | Validates |
+|----|-----------|-----------|
+| V1 | After blockers are applied, `R CMD check --as-cran` produces 0 ERRORs and 0 WARNINGs from dependency/namespace issues | Req 1, 2, 3 |
+| V2 | No `\dontrun{}` appears in any exported function's documentation **that could instead be a runnable example** (i.e., `\dontrun{}` is only used where genuinely required by network/credential constraints) | Req 5 |
+| V3 | Every exported function has an `@examples` block | Req 5.4 |
+| V4 | Runnable examples execute without error in a fresh R session with no network and no credentials | Req 5.5 |
+| V5 | DESCRIPTION, LICENSE, LICENSE.md, and Authors@R present a consistent identity (`Afshin Mashadi-Hossein`) | Req 8 |
+
+### Unit testing
+
+No new unit tests are required. The existing test suite (1873 tests) must continue to pass
+at the same count after every commit — the "test count must not drop" invariant. No test
+files are modified.
+
+### Verification checklist for maintainer
+
+1. Run `devtools::document()` — confirm NAMESPACE contains `importFrom(rlang,"%||%")`.
+2. Run `devtools::check()` — confirm 0 errors, 0 warnings.
+3. Grep for `\\dontrun` in `man/` — confirm it only appears on conn/network-gated functions.
+4. Grep for exported functions missing `\examples` in `man/` — confirm none.
+5. Inspect `LICENSE`, `LICENSE.md`, `DESCRIPTION` `Authors@R` — confirm consistent holder.
+6. Fill in actual test environments and results in `cran-comments.md`.
 
 ## Sequencing
 
@@ -245,7 +256,11 @@ sequence is A → B → C because:
 - A is prerequisite-free and the highest priority (fixes check failures).
 - B is mostly text editing and quick.
 - C is the largest effort and benefits from having the correct NAMESPACE/Imports already
-  in place (so example code referencing `%||%` or `glue` is coherent).
+  in place (so example code is coherent).
+
+Within each workstream, changes are committed atomically (one commit per workstream or
+logical sub-unit). The final validation (task 12) is performed by the maintainer after all
+three workstreams land.
 
 ## Out of Scope
 
@@ -253,4 +268,4 @@ sequence is A → B → C because:
   submission time.
 - Requirement 11 (CI-executable vignettes) — explicitly deferred per requirements.
 - Modifying any function body or runtime behavior.
-- Adding or modifying tests.
+- Adding or modifying unit tests.
