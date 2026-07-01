@@ -733,8 +733,15 @@ test_that(".datom_check_git_current passes when ahead of remote", {
 test_that(".datom_check_git_current tolerates network errors gracefully", {
   info <- create_test_repo()
 
-  # Add a fake remote that will fail on fetch
+  # A remote must exist so the fetch code path is reached, but the fetch itself
+  # is stubbed to raise a network-like error. This exercises the graceful
+  # error handling WITHOUT any real egress (previously this dialed out to
+  # invalid.example.com, tripping a real DNS lookup during R CMD check).
   git2r::remote_add(info$repo, name = "origin", url = "https://invalid.example.com/repo.git")
+  mockery::stub(
+    .datom_check_git_current, "git2r::fetch",
+    function(...) stop("simulated network failure")
+  )
 
   # Network error should warn but not abort
   expect_no_error(.datom_check_git_current(info$path))

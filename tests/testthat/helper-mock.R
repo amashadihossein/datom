@@ -38,3 +38,35 @@ mock_datom_conn <- function(mock_client,
     class = "datom_conn"
   )
 }
+
+#' Evaluate a connection-creating expression, muffling only the benign,
+#' well-understood conn-time warnings.
+#'
+#' `datom_get_conn()` / `datom_clone()` emit two expected warnings for the
+#' mock / local fixtures used throughout the suite:
+#'   * "... has no governance attached ..." (a `store$governance` is supplied
+#'     but no governance is actually attached), plus its paired
+#'     "credentials supplied will be ignored" note; and
+#'   * "Could not resolve ref.json ..." (the mock governance store has no
+#'     `ref.json`, so conn-time ref resolution is warn-only).
+#'
+#' These are incidental to what most connection tests assert (conn fields,
+#' roles, endpoints, project names). This helper muffles ONLY those messages;
+#' any other warning propagates so genuine regressions stay visible (the
+#' suite targets WARN 0). Tests that specifically assert one of these warnings
+#' pass a narrower `pattern` so the asserted warning still reaches
+#' `expect_warning()`.
+#'
+#' @param expr Expression that creates a connection.
+#' @param pattern Regex of warning messages to muffle.
+#' @return The value of `expr`.
+muffle_conn_warnings <- function(
+    expr,
+    pattern = "has no governance attached|credentials supplied will be ignored|Could not resolve ref\\.json") {
+  withCallingHandlers(
+    expr,
+    warning = function(w) {
+      if (grepl(pattern, conditionMessage(w))) invokeRestart("muffleWarning")
+    }
+  )
+}
