@@ -379,7 +379,7 @@ test_that("developer path reads project.yaml and creates connection", {
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
 
-  conn <- datom_get_conn(path = dir, store = store)
+  conn <- muffle_conn_warnings(datom_get_conn(path = dir, store = store))
 
   expect_s3_class(conn, "datom_conn")
   expect_equal(conn$project_name, "myproj")
@@ -397,7 +397,7 @@ test_that("developer path uses reader role when store is reader", {
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
 
-  conn <- datom_get_conn(path = dir, store = store)
+  conn <- muffle_conn_warnings(datom_get_conn(path = dir, store = store))
 
   expect_s3_class(conn, "datom_conn")
   expect_equal(conn$role, "reader")
@@ -415,7 +415,7 @@ test_that("developer path uses prefix from store", {
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
 
-  conn <- datom_get_conn(path = dir, store = store)
+  conn <- muffle_conn_warnings(datom_get_conn(path = dir, store = store))
   expect_equal(conn$prefix, "alpha/beta/")
 })
 
@@ -431,7 +431,7 @@ test_that("developer path uses region from store", {
 
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
 
-  conn <- datom_get_conn(path = dir, store = store)
+  conn <- muffle_conn_warnings(datom_get_conn(path = dir, store = store))
   expect_equal(conn$region, "eu-west-1")
 })
 
@@ -518,7 +518,10 @@ test_that("four-state matrix [no gov.json + store$gov set]: warns, treats as no-
   store <- datom_store(governance = gov_comp, data = data_comp,
                        github_pat = "ghp_fake", validate = FALSE)
   expect_warning(
-    conn <- datom_get_conn(path = env$work_dir, store = store),
+    conn <- muffle_conn_warnings(
+      datom_get_conn(path = env$work_dir, store = store),
+      pattern = "Could not resolve ref\\.json"
+    ),
     "no governance attached"
   )
   # gov fields absent on resulting conn
@@ -543,7 +546,7 @@ test_that("four-state matrix [gov.json present + store$gov set]: proceeds with g
   # No gov_repo_url on store -> cross-check is skipped; gov_local_path=NULL -> no ref resolution
   store <- datom_store(governance = gov_comp, data = data_comp,
                        github_pat = "ghp_fake", validate = FALSE)
-  conn <- datom_get_conn(path = env$work_dir, store = store)
+  conn <- muffle_conn_warnings(datom_get_conn(path = env$work_dir, store = store))
   expect_s3_class(conn, "datom_conn")
   expect_false(is.null(conn$gov_root))
   expect_equal(conn$gov_root, as.character(env$store_dir))
@@ -577,7 +580,7 @@ test_that("reader path creates connection from store", {
     .datom_s3_client = function(...) mock_s3_client()
   )
 
-  conn <- datom_get_conn(store = store, project_name = "myproj")
+  conn <- muffle_conn_warnings(datom_get_conn(store = store, project_name = "myproj"))
 
   expect_s3_class(conn, "datom_conn")
   expect_equal(conn$root, "reader-bucket")
@@ -606,7 +609,7 @@ test_that("reader path uses region from store", {
     .datom_s3_client = function(...) mock_s3_client()
   )
 
-  conn <- datom_get_conn(store = store, project_name = "myproj")
+  conn <- muffle_conn_warnings(datom_get_conn(store = store, project_name = "myproj"))
   expect_equal(conn$region, "ap-southeast-1")
 })
 
@@ -742,7 +745,7 @@ test_that("reader creds-only: hard abort when ref.json is absent", {
   store <- datom_store(governance = gov_comp, data = creds_comp, validate = FALSE)
 
   expect_error(
-    datom_get_conn(store = store, project_name = "p"),
+    muffle_conn_warnings(datom_get_conn(store = store, project_name = "p")),
     "datom_store_s3_creds.*no location|no location.*datom_store_s3_creds|ref.json could not"
   )
 })
@@ -1339,8 +1342,9 @@ test_that("datom_init_repo no-gov does not create gov clone", {
                   store = env$store)
 
   after <- fs::dir_ls(parent, all = TRUE)
-  # No new sibling directories (gov clone would be one)
-  expect_setequal(before, after)
+  # No new sibling directories (gov clone would be one). unname() because
+  # fs::dir_ls() returns a named vector and expect_setequal() ignores names.
+  expect_setequal(unname(before), unname(after))
 })
 
 test_that("datom_init_repo no-gov still pushes data repo to remote", {
@@ -1883,11 +1887,11 @@ test_that("datom_get_conn forwards endpoint to developer path", {
     }
   )
 
-  conn <- datom_get_conn(
+  conn <- muffle_conn_warnings(datom_get_conn(
     path = dir,
     store = store,
     endpoint = "https://my-endpoint.com"
-  )
+  ))
 
   expect_equal(conn$endpoint, "https://my-endpoint.com")
   expect_equal(captured_endpoint, "https://my-endpoint.com")
@@ -1907,11 +1911,11 @@ test_that("datom_get_conn forwards endpoint to reader path", {
     }
   )
 
-  conn <- datom_get_conn(
+  conn <- muffle_conn_warnings(datom_get_conn(
     store = store,
     project_name = "proj",
     endpoint = "https://reader-endpoint.com"
-  )
+  ))
 
   expect_equal(conn$endpoint, "https://reader-endpoint.com")
   expect_equal(captured_endpoint, "https://reader-endpoint.com")
@@ -1931,7 +1935,7 @@ test_that("datom_get_conn endpoint defaults to NULL when not specified", {
     }
   )
 
-  conn <- datom_get_conn(store = store, project_name = "proj")
+  conn <- muffle_conn_warnings(datom_get_conn(store = store, project_name = "proj"))
 
   expect_null(conn$endpoint)
   expect_null(captured_endpoint)
@@ -2053,7 +2057,7 @@ test_that("datom_clone clones and returns a datom_conn", {
       .datom_s3_client = function(...) list(fake = TRUE)
     )
 
-    conn <- datom_clone(path = "clone_target", store = store)
+    conn <- muffle_conn_warnings(datom_clone(path = "clone_target", store = store))
 
     expect_s3_class(conn, "datom_conn")
     expect_equal(conn$project_name, "MYPROJ")
@@ -2069,6 +2073,10 @@ test_that("datom_clone aborts on clone failure", {
                        data_repo_url = "https://example.com/no-such-repo.git",
                        validate = FALSE)
   withr::with_tempdir({
+    # Simulate the clone failure locally -- stub git2r::clone so no real network
+    # connection is attempted (previously libgit2 actually dialed example.com).
+    mockery::stub(datom_clone, "git2r::clone",
+                  function(...) stop("simulated clone failure"))
     expect_error(
       datom_clone(path = "target", store = store),
       "Failed to clone"
@@ -2122,7 +2130,7 @@ test_that("datom_clone with gov_repo_url also clones gov repo", {
       .datom_s3_client = function(...) list(fake = TRUE)
     )
 
-    datom_clone(path = "clone_target", store = store)
+    muffle_conn_warnings(datom_clone(path = "clone_target", store = store))
 
     expect_true(fs::dir_exists(fs::path(gov_local, ".git")))
   })
@@ -2152,7 +2160,7 @@ test_that("datom_clone reuses existing gov clone with matching URL", {
     )
 
     # Should not error (idempotent)
-    expect_no_error(datom_clone(path = "clone_target", store = store))
+    expect_no_error(muffle_conn_warnings(datom_clone(path = "clone_target", store = store)))
   })
 })
 
@@ -2371,7 +2379,7 @@ test_that("datom_get_conn works with local stores after init", {
     store = env$store
   )
 
-  conn <- datom_get_conn(path = env$work_dir, store = env$store)
+  conn <- muffle_conn_warnings(datom_get_conn(path = env$work_dir, store = env$store))
 
   expect_s3_class(conn, "datom_conn")
   expect_equal(conn$backend, "local")
