@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Version-Controlled Data Management for Reproducible Workflows • datom</title>
+<title>A Unified Framework for Versioned, Traceable Tabular Data • datom</title>
 <!-- favicons --><link rel="icon" type="image/png" sizes="96x96" href="favicon-96x96.png">
 <link rel="icon" type="”image/svg+xml”" href="favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
@@ -16,9 +16,9 @@
 <script src="deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><link href="extra.css" rel="stylesheet">
-<meta property="og:title" content="Version-Controlled Data Management for Reproducible Workflows">
-<meta name="description" content="Provides version-controlled data management by abstracting tables as code in git while storing actual data in cloud storage (S3). Enables setting up cloud-based repositories via GitHub, syncing data with automatic versioning, tracking complete data lineage, and accessing any historical version for reproducibility. Designed for clinical and scientific workflows where reproducibility is paramount.">
-<meta property="og:description" content="Provides version-controlled data management by abstracting tables as code in git while storing actual data in cloud storage (S3). Enables setting up cloud-based repositories via GitHub, syncing data with automatic versioning, tracking complete data lineage, and accessing any historical version for reproducibility. Designed for clinical and scientific workflows where reproducibility is paramount.">
+<meta property="og:title" content="A Unified Framework for Versioned, Traceable Tabular Data">
+<meta name="description" content="Provides versioned storage for tabular data without a database or a server. Each table is written as an immutable, content-addressed version -- identical content is detected and stored only once -- while its version history and metadata are kept as code in a git repository and the data itself in a local filesystem or cloud object storage (S3). Any past version can be read back exactly by its identifier, and each table records the sources it was derived from, so a project carries full data lineage. A lightweight reader role retrieves current or historical data from storage alone, without git or write access, giving downstream analyses and pipelines a single versioned source of truth. It targets analytical and scientific data management, such as preparing clinical study datasets, and is designed as a foundation for higher-level governance tooling.">
+<meta property="og:description" content="Provides versioned storage for tabular data without a database or a server. Each table is written as an immutable, content-addressed version -- identical content is detected and stored only once -- while its version history and metadata are kept as code in a git repository and the data itself in a local filesystem or cloud object storage (S3). Any past version can be read back exactly by its identifier, and each table records the sources it was derived from, so a project carries full data lineage. A lightweight reader role retrieves current or historical data from storage alone, without git or write access, giving downstream analyses and pipelines a single versioned source of truth. It targets analytical and scientific data management, such as preparing clinical study datasets, and is designed as a foundation for higher-level governance tooling.">
 <meta property="og:image" content="https://amashadihossein.github.io/datom/logo.svg">
 </head>
 <body>
@@ -43,8 +43,6 @@
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="articles/first-extract.html">First Extract</a></li>
-    <li><a class="dropdown-item" href="articles/month-2-arrives.html">Month 2 Arrives</a></li>
-    <li><a class="dropdown-item" href="articles/folder-of-extracts.html">A Folder of Extracts</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="articles/index.html">More articles...</a></li>
   </ul>
@@ -77,21 +75,69 @@
 </div>
 <!-- badges: start -->
 
-<p><strong>datom</strong> is version control for tabular data. It treats every write as a content-addressed snapshot, keeps the audit trail in git, and stores the bytes wherever you tell it to live – your laptop, S3, or any backend datom learns to speak. Whatever you write today is readable, by SHA, forever.</p>
-<p>It was built for clinical and scientific workflows where reproducing a historical analysis is not optional, but nothing in the design is domain-specific.</p>
+<p>Give datom a table. Get back a key. Data as code.</p>
+<p>Working with analytical data introduces a set of recurring challenges: where to store it, how to version it, how to track provenance across tables, how to share it reliably with collaborators, and how to demonstrate – months later, for a readout or an audit – exactly what was present at a given point in time.</p>
+<p><strong>datom</strong> addresses these concerns through a single durable key: a name, a version, an address. From that key the data remains accessible as it evolves – new versions land, new tables are derived, storage backends change – and the key continues to resolve. Users reference data by name; datom manages what sits beneath: storage, versioning, deduplication, and a complete, traceable history of where every table came from.</p>
+<p>No server. No database. No executable to install. Just your storage and git.</p>
+<p>For a clinical statistician, this provides a path from raw EDC extracts to a locked, addressable, auditable analysis dataset. For any scientist managing a collection of data files, it offers the same rigour without requiring a database or a data platform. datom is deliberately a foundation: rigorous enough to use on its own, and designed as the data layer that governance and higher-level tooling can be built on top of.</p>
+<blockquote>
+<p><em>datom – the atomic, immutable unit of your data.</em></p>
+</blockquote>
 <div class="section level2">
-<h2 id="why-datom">Why datom<a class="anchor" aria-label="anchor" href="#why-datom"></a>
+<h2 id="where-it-stands">Where it stands<a class="anchor" aria-label="anchor" href="#where-it-stands"></a>
 </h2>
-<ul>
-<li>
-<strong>Versioned tables out of the box.</strong> Every <code><a href="reference/datom_write.html">datom_write()</a></code> is a new, immutable, hash-named version. Yesterday’s data is still there.</li>
-<li>
-<strong>Free duplicate detection.</strong> Re-writing a table you have already written costs nothing – datom recognizes the content and skips.</li>
-<li>
-<strong>Code in git, data wherever.</strong> Metadata is diff-able and reviewable in a normal git workflow. Parquet bytes go to S3, a local directory, or (eventually) other cloud backends.</li>
-<li>
-<strong>Two roles, one model.</strong> Data engineers write; analysts and downstream pipelines read. Both work against the same versioned source of truth.</li>
-</ul>
+<table class="table">
+<colgroup>
+<col width="50%">
+<col width="50%">
+</colgroup>
+<thead><tr>
+<th>Capability</th>
+<th>Status</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Immutable, content-addressed versioning</td>
+<td>✅ Today</td>
+</tr>
+<tr>
+<td>Exact historical reads by version SHA</td>
+<td>✅ Today</td>
+</tr>
+<tr>
+<td>Data lineage / provenance at every version</td>
+<td>✅ Today</td>
+</tr>
+<tr>
+<td>Reader/developer split (read-only from storage alone)</td>
+<td>✅ Today</td>
+</tr>
+<tr>
+<td>Backends: local filesystem + S3</td>
+<td>✅ Today</td>
+</tr>
+<tr>
+<td>Serverless – no server, database, or daemon</td>
+<td>✅ Today</td>
+</tr>
+<tr>
+<td>Governed backend migration (local to S3, S3 to S3)</td>
+<td>🧩 Enablement-ready – datom ships the storage API; companion package pending</td>
+</tr>
+<tr>
+<td>Access control</td>
+<td>🧩 Enablement-ready – hooks exist; companion package pending</td>
+</tr>
+<tr>
+<td>Cross-language read/write (Python, CLI)</td>
+<td>🔭 Vision – open Parquet + git makes this feasible</td>
+</tr>
+<tr>
+<td>Metadata diffs and built-in data contracts</td>
+<td>🔭 Vision – planned on the roadmap</td>
+</tr>
+</tbody>
+</table>
 </div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
@@ -192,7 +238,7 @@
 <div class="section level2">
 <h2 id="where-to-go-next">Where to go next<a class="anchor" aria-label="anchor" href="#where-to-go-next"></a>
 </h2>
-<p>The <a href="https://amashadihossein.github.io/datom/articles/">Get Started</a> articles follow a single clinical study from its first extract on a laptop through monthly versioning and bulk imports, then show how to start directly on S3 and trace how derived tables descend from their sources.</p>
+<p>The <a href="https://amashadihossein.github.io/datom/articles/">Get Started</a> article walks through a complete sync-based workflow – from a single file to a batch of extracts – on a local filesystem, then the S3 article mirrors it in object storage.</p>
 <table class="table">
 <colgroup>
 <col width="50%">
@@ -204,15 +250,7 @@
 </tr></thead>
 <tbody>
 <tr>
-<td>A second monthly extract – versioning in action</td>
-<td><a href="https://amashadihossein.github.io/datom/articles/month-2-arrives.html">Month 2 Arrives</a></td>
-</tr>
-<tr>
-<td>Importing a folder of extracts at once</td>
-<td><a href="https://amashadihossein.github.io/datom/articles/folder-of-extracts.html">A Folder of Extracts</a></td>
-</tr>
-<tr>
-<td>Starting directly in S3 object storage</td>
+<td>The same workflow directly in S3 object storage</td>
 <td><a href="https://amashadihossein.github.io/datom/articles/start-on-s3.html">Starting on S3</a></td>
 </tr>
 <tr>

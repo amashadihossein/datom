@@ -2,18 +2,14 @@
 
 ### Get Started
 
-Your first datom project: simulate, version, read.
+Your first datom project: sync, version, read.
 
 - [First
   Extract](https://amashadihossein.github.io/datom/articles/first-extract.md):
-- [Month 2
-  Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.md):
-- [A Folder of
-  Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.md):
 
 ### Start on S3
 
-Begin directly in object storage.
+The same workflow directly in object storage.
 
 - [Starting on
   S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md):

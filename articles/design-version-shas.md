@@ -1,7 +1,7 @@
 # Version SHAs: Data SHA vs. Metadata SHA
 
-> **Companion to**: [Month 2
-> Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.md).
+> **Companion to**: [First
+> Extract](https://amashadihossein.github.io/datom/articles/first-extract.md).
 > Read this when you’ve noticed that
 > [`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md)
 > shows a `version` column and a `data_sha` column, and you want to know
