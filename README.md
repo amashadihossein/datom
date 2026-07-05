@@ -10,28 +10,47 @@ experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](h
 [![R-CMD-check](https://github.com/amashadihossein/datom/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/amashadihossein/datom/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
-**datom** is version control for tabular data. It treats every write as
-a content-addressed snapshot, keeps the audit trail in git, and stores
-the bytes wherever you tell it to live – your laptop, S3, or any backend
-datom learns to speak. Whatever you write today is readable, by SHA,
-forever.
+Give datom a table. Get back a key. Data as code.
 
-It was built for clinical and scientific workflows where reproducing a
-historical analysis is not optional, but nothing in the design is
-domain-specific.
+Working with analytical data introduces a set of recurring challenges:
+where to store it, how to version it, how to track provenance across
+tables, how to share it reliably with collaborators, and how to
+demonstrate – months later, for a readout or an audit – exactly what was
+present at a given point in time.
 
-## Why datom
+**datom** addresses these concerns through a single durable key: a name,
+a version, an address. From that key the data remains accessible as it
+evolves – new versions land, new tables are derived, storage backends
+change – and the key continues to resolve. Users reference data by name;
+datom manages what sits beneath: storage, versioning, deduplication, and
+a complete, traceable history of where every table came from.
 
-- **Versioned tables out of the box.** Every `datom_write()` is a new,
-  immutable, hash-named version. Yesterday’s data is still there.
-- **Free duplicate detection.** Re-writing a table you have already
-  written costs nothing – datom recognizes the content and skips.
-- **Code in git, data wherever.** Metadata is diff-able and reviewable
-  in a normal git workflow. Parquet bytes go to S3, a local directory,
-  or (eventually) other cloud backends.
-- **Two roles, one model.** Data engineers write; analysts and
-  downstream pipelines read. Both work against the same versioned source
-  of truth.
+No server. No database. No executable to install. Just your storage and
+git.
+
+For a clinical statistician, this provides a path from raw EDC extracts
+to a locked, addressable, auditable analysis dataset. For any scientist
+managing a collection of data files, it offers the same rigour without
+requiring a database or a data platform. datom is deliberately a
+foundation: rigorous enough to use on its own, and designed as the data
+layer that governance and higher-level tooling can be built on top of.
+
+> *datom – the atomic, immutable unit of your data.*
+
+## Where it stands
+
+| Capability | Status |
+|----|----|
+| Immutable, content-addressed versioning | ✅ Today |
+| Exact historical reads by version SHA | ✅ Today |
+| Data lineage / provenance at every version | ✅ Today |
+| Reader/developer split (read-only from storage alone) | ✅ Today |
+| Backends: local filesystem + S3 | ✅ Today |
+| Serverless – no server, database, or daemon | ✅ Today |
+| Governed backend migration (local to S3, S3 to S3) | 🧩 Enablement-ready – datom ships the storage API; companion package pending |
+| Access control | 🧩 Enablement-ready – hooks exist; companion package pending |
+| Cross-language read/write (Python, CLI) | 🔭 Vision – open Parquet + git makes this feasible |
+| Metadata diffs and built-in data contracts | 🔭 Vision – planned on the roadmap |
 
 ## Installation
 
@@ -158,16 +177,13 @@ not be deleted.
 ## Where to go next
 
 The [Get Started](https://amashadihossein.github.io/datom/articles/)
-articles follow a single clinical study from its first extract on a
-laptop through monthly versioning and bulk imports, then show how to
-start directly on S3 and trace how derived tables descend from their
-sources.
+article walks through a complete sync-based workflow – from a single
+file to a batch of extracts – on a local filesystem, then the S3 article
+mirrors it in object storage.
 
 | When you are ready for | Article |
 |----|----|
-| A second monthly extract – versioning in action | [Month 2 Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.html) |
-| Importing a folder of extracts at once | [A Folder of Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.html) |
-| Starting directly in S3 object storage | [Starting on S3](https://amashadihossein.github.io/datom/articles/start-on-s3.html) |
+| The same workflow directly in S3 object storage | [Starting on S3](https://amashadihossein.github.io/datom/articles/start-on-s3.html) |
 | Tracing how derived tables descend from raw | [Tracing Data Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.html) |
 
 For the design rationale – why two repos, what `ref.json` does, how SHAs
