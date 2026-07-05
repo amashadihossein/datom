@@ -21,9 +21,10 @@ knitr::opts_chunk$set(
 
 <div class="datom-callout datom-callout-goal" markdown="1">
 **Goal:** Stand up a versioned datom project whose data lives directly in
-**Amazon S3** -- no local-filesystem detour and no migration step. Write your
-first table, read it back, and confirm git is tracking the history. This is the
-"I'm already sold, start me in object storage" path.
+**Amazon S3** and onboard data using `datom_sync()`. The same progressive
+workflow from [First Extract](first-extract.html) applies here -- one file,
+update, no-op, batch -- with the only difference being which store you build.
+This is the "start me in object storage" path.
 </div>
 
 > **Want to dabble locally first?** Start with
@@ -37,6 +38,17 @@ the very first extract to land in the shared object store, versioned from commit
 one. datom supports that directly. Metadata still lives in a git repository (so
 version history is diff-able and reproducible across machines); only the choice
 of data store changes.
+
+<div class="datom-callout datom-callout-tip" markdown="1">
+**Two locations, two roles:**
+
+- **Input folder** (mutable, disposable) -- a landing zone for data not yet
+  onboarded. Files here can be overwritten or deleted freely. Re-syncing
+  already-onboarded content is a no-op. Nothing here is the source of truth.
+- **Storage** (immutable, permanent) -- once `datom_sync()` onboards a file,
+  storage holds the versioned, content-addressed copy in S3. The original input
+  file is no longer needed; the onboarded data stands on its own.
+</div>
 
 ## Requirements
 
@@ -144,7 +156,7 @@ store <- datom_store(
 
 By default `datom_store_s3()` validates connectivity to the bucket as the store
 is built, so a credential or permission problem surfaces immediately rather than
-at first write.
+at first sync.
 
 ## Initialize the data repository
 
@@ -165,6 +177,10 @@ This creates a GitHub repo, clones it into `dev_dir`, and commits a
 `project.yaml` that records the project's S3 data store address. No parquet data
 is pushed to GitHub -- only metadata commits travel over the wire.
 
+`datom_init_repo()` also creates an `input_files/` directory inside the clone.
+It is gitignored -- files placed there are never committed. It is the inbox for
+`datom_sync()`.
+
 ## Connect
 
 ```{r}
@@ -181,38 +197,155 @@ print(conn)
 #> * Data repo: <https://github.com/.../study-001-data>
 ```
 
-## Write your first extract
+## Step 1: Sync one file
 
-The month-1 extract has just landed. Load the demographics snapshot for
-subjects enrolled by 2026-01-28 and write it as a versioned datom table:
+The month-1 extract has just landed. Drop it in the input folder:
 
 ```{r}
-dm_m1 <- datom_example_data("dm", cutoff_date = "2026-01-28")
+# The input folder lives inside the git clone but is gitignored.
+# Files placed here are the raw material for datom_sync().
+input_dir <- path(dev_dir, "input_files")
 
-datom_write(
-  conn,
-  data    = dm_m1,
-  name    = "dm",
-  message = "Initial DM extract through 2026-01-28"
+write.csv(
+  datom_example_data("dm", cutoff_date = "2026-01-28"),
+  path(input_dir, "dm.csv"),
+  row.names = FALSE
 )
-#> v Wrote "dm" (full): "a8ee7a31"
+```
+
+Scan and sync:
+
+```{r}
+manifest <- datom_sync_manifest(conn)
+#> i Scanned 1 file: 1 new, 0 changed, 0 unchanged.
+
+datom_sync(conn, manifest)
+#> i Syncing 1 table...
+#> v dm synced (new).
+#> i Sync complete: 1 succeeded, 0 failed, 0 skipped.
 ```
 
 Three things just happened, in order:
 
-1. The data frame was serialized to parquet and uploaded **to S3** -- not to
-   GitHub.
+1. The CSV was read and serialized to parquet, then uploaded **to S3** -- not to
+   GitHub, and not to the local filesystem.
 2. `metadata.json` and `version_history.json` were updated in the git clone and
    committed.
 3. The metadata commit was pushed to GitHub. The version is auditable from any
    machine with repo access, while the raw data stays in your bucket.
 
-## Read it back as a reader
+Confirm:
 
-Writing is a developer action. Reading is what analysts and downstream
-pipelines do, using the **reader role** -- a connection built from the bucket
-credentials alone, with no GitHub PAT and no local clone. Leave `github_pat`
-unset and connect by project name:
+```{r}
+datom_list(conn)
+#>   name current_version current_data_sha last_updated
+#> 1   dm        a8ee7a31         4b6d0a7e 2026-01-28T...
+
+datom_history(conn, "dm")
+#>    version  data_sha timestamp            message
+#> 1 a8ee7a31 4b6d0a7e 2026-01-28T09:02:11Z dm synced from dm.csv
+```
+
+The input file is now disposable -- storage (S3) is the source of truth:
+
+```{r}
+file_delete(path(input_dir, "dm.csv"))
+datom_read(conn, "dm")   # still works -- reads from S3
+```
+
+## Step 2: Update one file
+
+The month-2 extract arrives with new subjects:
+
+```{r}
+write.csv(
+  datom_example_data("dm", cutoff_date = "2026-02-28"),
+  path(input_dir, "dm.csv"),
+  row.names = FALSE
+)
+
+manifest <- datom_sync_manifest(conn)
+#> i Scanned 1 file: 0 new, 1 changed, 0 unchanged.
+
+datom_sync(conn, manifest)
+#> i Syncing 1 table...
+#> v dm synced (changed).
+#> i Sync complete: 1 succeeded, 0 failed, 0 skipped.
+```
+
+Two versions now coexist in S3. Read either one:
+
+```{r}
+datom_history(conn, "dm")
+#>    version  data_sha timestamp            message
+#> 1 5c1a3f7b 9e8f1c2d 2026-02-28T10:14:02Z dm synced from dm.csv
+#> 2 a8ee7a31 4b6d0a7e 2026-01-28T09:02:11Z dm synced from dm.csv
+
+# Current version (month 2)
+nrow(datom_read(conn, "dm"))
+#> [1] 16
+
+# Prior version (month 1) by SHA
+hist   <- datom_history(conn, "dm")
+m1_ver <- hist$version[nrow(hist)]   # oldest row is the month-1 version
+nrow(datom_read(conn, "dm", version = m1_ver))
+#> [1] 4
+```
+
+## Step 3: No-op repeat
+
+```{r}
+manifest <- datom_sync_manifest(conn)
+#> i Scanned 1 file: 0 new, 0 changed, 1 unchanged.
+
+datom_sync(conn, manifest)
+#> i All files unchanged. Nothing to sync.
+```
+
+Identical content is never re-uploaded. Safe to run on a schedule.
+
+## Step 4: A batch of files
+
+Month-3 brings four domains at once:
+
+```{r}
+cutoff <- "2026-03-28"
+
+write.csv(datom_example_data("dm", cutoff_date = cutoff),
+          path(input_dir, "dm.csv"), row.names = FALSE)
+write.csv(datom_example_data("ex", cutoff_date = cutoff),
+          path(input_dir, "ex.csv"), row.names = FALSE)
+write.csv(datom_example_data("lb", cutoff_date = cutoff),
+          path(input_dir, "lb.csv"), row.names = FALSE)
+write.csv(datom_example_data("ae", cutoff_date = cutoff),
+          path(input_dir, "ae.csv"), row.names = FALSE)
+
+manifest <- datom_sync_manifest(conn)
+#> i Scanned 4 files: 3 new, 1 changed, 0 unchanged.
+
+datom_sync(conn, manifest)
+#> i Syncing 4 tables...
+#> v dm synced (changed).
+#> v ex synced (new).
+#> v lb synced (new).
+#> v ae synced (new).
+#> i Sync complete: 4 succeeded, 0 failed, 0 skipped.
+```
+
+All four tables are now versioned in S3:
+
+```{r}
+datom_list(conn)
+#>   name current_version current_data_sha last_updated
+#> 1   ae        3a17b8e2         e91d04ff 2026-03-28T...
+#> 2   dm        d0922fc7         c2e80a14 2026-03-28T...
+#> 3   ex        f44910b5         88a73e02 2026-03-28T...
+#> 4   lb        718e02ca         4c3812dd 2026-03-28T...
+```
+
+## Reading as a reader
+
+The reader role connects with bucket credentials alone -- no PAT, no git clone:
 
 ```{r}
 reader_store <- datom_store(
@@ -228,36 +361,22 @@ reader_store <- datom_store(
 
 reader_conn <- datom_get_conn(store = reader_store, project_name = project_name)
 
-dm_back <- datom_read(reader_conn, "dm")
-identical(dm_back, tibble::as_tibble(dm_m1))
-#> [1] TRUE
+datom_read(reader_conn, "lb")   # labs, streamed directly from S3
 ```
 
-datom stores data in [Apache Parquet](https://parquet.apache.org/) and reads it
-back as a `tibble`. The read streams the parquet object from S3 directly; it
-does **not** go through GitHub. A teammate on another machine takes the same
-path -- they need access to the bucket, not to the git repo.
-
-Inspect the version history at any time (developer connection):
-
-```{r}
-datom_status(conn)        # table list with SHAs
-datom_history(conn, "dm") # version history
-```
+The read streams the parquet object from S3 directly; it does **not** go through
+GitHub. A teammate on another machine takes the same path -- they need access to
+the bucket, not to the git repo.
 
 ## Where you are
 
-You have a fully versioned datom project running directly on S3:
+- The same sync workflow (one file, update, no-op, batch) works identically
+  on S3 -- the backend is transparent.
+- Four tables versioned in your bucket; metadata auditable on GitHub.
+- Parquet data lives in S3 -- **nothing sensitive went to GitHub**.
+- No governance attached; the project stands on its own `project.yaml`.
 
-- One table (`dm`) with one version, one parquet object in your bucket
-- Metadata committed and pushed to GitHub -- version history is auditable
-- Parquet data lives in S3 -- **nothing sensitive went to GitHub**
-- No governance attached; the project stands on its own `project.yaml`
-
-From here, the monthly-cadence workflow in [Month 2 Arrives](month-2-arrives.html)
-and the bulk-import workflow in [A Folder of Extracts](folder-of-extracts.html)
-apply unchanged -- they are written against a local store, but every function
-call is identical on S3. To trace how one table descends from another, see
+To trace how derived tables descend from their sources, see
 [Tracing Data Lineage](source-lineage.html).
 
 ## Governance and migration come later

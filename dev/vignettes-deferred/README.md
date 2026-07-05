@@ -69,9 +69,10 @@ datom resume chain and will be needed when the journey is reassembled.
 
 The original suite told one story: STUDY_001 over six months. Ordering, with disposition:
 
-1. `first-extract` -- stays (rendered)
-2. `month-2-arrives` -- stays (rendered; `resume_article_2.R` parked here)
-3. `folder-of-extracts` -- stays (rendered; `resume_article_3.R` parked here)
+1. `first-extract` -- stays (rendered; **rewritten in issue-65 to cover the full
+   sync arc: one file, update, no-op, batch. Absorbs the content of articles 2+3.**)
+2. `month-2-arrives` -- **removed** (content consolidated into `first-extract`)
+3. `folder-of-extracts` -- **removed** (content consolidated into `first-extract`)
 4. `promoting-to-s3` -- **parked here** (`resume_article_4.R`)
 5. `handing-off` -- **parked here** (`resume_article_5.R`)
 6. `second-engineer` -- **parked here** (`resume_article_6.R`)

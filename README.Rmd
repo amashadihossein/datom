@@ -181,16 +181,14 @@ be deleted.
 
 ## Where to go next
 
-The [Get Started](https://amashadihossein.github.io/datom/articles/) articles
-follow a single clinical study from its first extract on a laptop through
-monthly versioning and bulk imports, then show how to start directly on S3 and
-trace how derived tables descend from their sources.
+The [Get Started](https://amashadihossein.github.io/datom/articles/) article
+walks through a complete sync-based workflow -- from a single file to a batch
+of extracts -- on a local filesystem, then the S3 article mirrors it in object
+storage.
 
 | When you are ready for | Article |
 |---|---|
-| A second monthly extract -- versioning in action | [Month 2 Arrives](https://amashadihossein.github.io/datom/articles/month-2-arrives.html) |
-| Importing a folder of extracts at once | [A Folder of Extracts](https://amashadihossein.github.io/datom/articles/folder-of-extracts.html) |
-| Starting directly in S3 object storage | [Starting on S3](https://amashadihossein.github.io/datom/articles/start-on-s3.html) |
+| The same workflow directly in S3 object storage | [Starting on S3](https://amashadihossein.github.io/datom/articles/start-on-s3.html) |
 | Tracing how derived tables descend from raw | [Tracing Data Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.html) |
 
 For the design rationale -- why two repos, what `ref.json` does, how SHAs are
