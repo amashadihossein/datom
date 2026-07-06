@@ -1,0 +1,64 @@
+# Workflow derived from https://github.com/r-lib/actions/tree/v2/examples
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - 'vignettes/**'
+      - 'inst/vignette-setup/**'
+      - 'README.md'
+      - 'README.Rmd'
+      - 'NEWS.md'
+      - '_pkgdown.yml'
+      - 'docs/**'
+      - 'dev/**'
+      - 'man/figures/**'
+  pull_request:
+    paths-ignore:
+      - 'vignettes/**'
+      - 'inst/vignette-setup/**'
+      - 'README.md'
+      - 'README.Rmd'
+      - 'NEWS.md'
+      - '_pkgdown.yml'
+      - 'docs/**'
+      - 'dev/**'
+      - 'man/figures/**'
+
+name: test-coverage.yaml
+
+permissions: read-all
+
+jobs:
+  test-coverage:
+    runs-on: ubuntu-latest
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::covr, any::xml2
+          needs: coverage
+
+      - name: Test coverage
+        run: |
+          cov <- covr::package_coverage(
+            quiet = FALSE,
+            clean = FALSE,
+            install_path = file.path(normalizePath(Sys.getenv("RUNNER_TEMP"), winslash = "/"), "package")
+          )
+          covr::to_cobertura(cov)
+        shell: Rscript {0}
+
+      - uses: codecov/codecov-action@v4
+        with:
+          files: ./cobertura.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

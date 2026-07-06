@@ -34,6 +34,7 @@ Imports:
     utils,
     yaml
 Suggests: 
+    covr,
     git2r,
     knitr,
     mockery,
