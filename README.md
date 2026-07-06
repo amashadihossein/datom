@@ -47,9 +47,12 @@ datom rests on a few assumptions about the work it supports. Where they
 hold, it removes a considerable amount of unnecessary cost and
 complexity. Where they do not, another tool is the better choice.
 
-**Your tables are modest in size** – gigabytes, not tens of terabytes.
-If you require transactional (ACID) guarantees or high-throughput
-concurrent writes over very large tables, a database or warehouse is the
+**Individual tables are modest in size** – typically under a terabyte
+each, though there is no hard limit and no constraint on how many tables
+you manage. In aggregate the data can be large; datom simply assumes
+each table fits comfortably in a single read. If you require
+transactional (ACID) guarantees or high-throughput concurrent writes
+over very large individual tables, a database or warehouse is the
 appropriate tool.
 
 **Your computation fits in memory.** Most of the analysis runs
@@ -57,12 +60,12 @@ comfortably on a modern workstation. If your work depends on
 distributed, server-side aggregation over big data, datom is not
 intended to replace that.
 
-**You are not already invested in a platform that does this.** If a
-large team already operates a data platform or a custom solution that
-provides versioning, lineage, and governed access, datom adds little you
-do not have. Its value is greatest when the alternative is to build or
-buy that capability – and when you would rather not carry the recurring
-cost of compute, servers, and platform maintenance.
+**You are not already getting this from an existing investment.** If a
+combination of platform and custom tooling already delivers versioning,
+lineage, and governed access at a cost you find acceptable, datom has
+little to add. Its value is greatest when that capability is missing –
+and when you would rather not take on the recurring cost of compute,
+servers, and platform maintenance to get it.
 
 In short, datom aims to be what this kind of work needs, and not what it
 does not.
