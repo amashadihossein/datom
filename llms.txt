@@ -1,4 +1,4 @@
-# datom [![datom logo](reference/figures/logo-light.svg)](https://amashadihossein.github.io/datom/)
+# datom
 
 ## A right-sized foundation for versioned, traceable data
 
