@@ -70,21 +70,52 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header">
-<img src="logo.svg" class="logo" alt=""><h1 id="datom-">datom <a class="anchor" aria-label="anchor" href="#datom-"></a>
+<img src="logo.svg" class="logo" alt=""><h1 id="datom-">datom <a href="https://amashadihossein.github.io/datom/"><picture><source media="(prefers-color-scheme: dark)" srcset="reference/figures/logo-dark.svg"><img src="reference/figures/logo-light.svg" align="right" height="139" alt="datom logo"></source></picture></a>
+<a class="anchor" aria-label="anchor" href="#datom-"></a>
 </h1>
 </div>
 <!-- badges: start -->
 
-<p>Give datom a table. Get back a key. Data as code.</p>
-<p>Working with analytical data introduces a set of recurring challenges: where to store it, how to version it, how to track provenance across tables, how to share it reliably with collaborators, and how to demonstrate – months later, for a readout or an audit – exactly what was present at a given point in time.</p>
-<p><strong>datom</strong> addresses these concerns through a single durable key: a name, a version, an address. From that key the data remains accessible as it evolves – new versions land, new tables are derived, storage backends change – and the key continues to resolve. Users reference data by name; datom manages what sits beneath: storage, versioning, deduplication, and a complete, traceable history of where every table came from.</p>
-<p>No server. No database. No executable to install. Just your storage and git.</p>
-<p>For a clinical statistician, this provides a path from raw EDC extracts to a locked, addressable, auditable analysis dataset. For any scientist managing a collection of data files, it offers the same rigour without requiring a database or a data platform. datom is deliberately a foundation: rigorous enough to use on its own, and designed as the data layer that governance and higher-level tooling can be built on top of.</p>
+<div class="section level2">
+<h2 id="a-right-sized-foundation-for-versioned-traceable-data">A right-sized foundation for versioned, traceable data<a class="anchor" aria-label="anchor" href="#a-right-sized-foundation-for-versioned-traceable-data"></a>
+</h2>
+<p>Analytical work depends on data that continues to change. A single project may involve dozens or hundreds of tables, with further tables derived from them and transformation logic that evolves alongside the analysis. Keeping this body of data trackable and reproducible – across revisions and across collaborators – is a substantial, ongoing task, and one that ad-hoc collections of dated files handle poorly.</p>
+<p>A common response is to adopt a data platform: a warehouse, a lakehouse, or a relational database. For datasets of this size, that is usually more machinery than the problem warrants. Distributed compute, transactional guarantees, and a running server carry real cost and operational overhead, and even then the versioning and lineage that motivated the move often still require custom work.</p>
+<p><strong>datom</strong> provides that capability directly. It offers versioned, content-addressed storage with deduplication, complete data lineage, and reproducible access to any prior state, alongside a clear separation between those who write data and those who read it. It is built on tools already available to most data scientists – git and optionally cloud object storage – and requires no server, database, or platform to operate. In practice, you hand datom a set of tables and receive a durable, versioned reference to them; datom manages what sits beneath.</p>
+<p>It is deliberately modest to adopt, and it does not constrain what follows: the same setup serves a single analyst today and, with the governance layer, a managed portfolio of projects later.</p>
 <blockquote>
 <p><em>datom – the atomic, immutable unit of your data.</em></p>
 </blockquote>
+</div>
 <div class="section level2">
-<h2 id="where-it-stands">Where it stands<a class="anchor" aria-label="anchor" href="#where-it-stands"></a>
+<h2 id="where-datom-fits-and-where-it-does-not">Where datom fits, and where it does not<a class="anchor" aria-label="anchor" href="#where-datom-fits-and-where-it-does-not"></a>
+</h2>
+<p>datom rests on a few assumptions about the work it supports. Where they hold, it removes a considerable amount of unnecessary cost and complexity. Where they do not, another tool is the better choice.</p>
+<p><strong>Individual tables are modest in size</strong> – typically under a terabyte each, though there is no hard limit and no constraint on how many tables you manage. In aggregate the data can be large; datom simply assumes each table fits comfortably in a single read. If you require transactional (ACID) guarantees or high-throughput concurrent writes over very large individual tables, a database or warehouse is the appropriate tool.</p>
+<p><strong>Your computation fits in memory.</strong> Most of the analysis runs comfortably on a modern workstation. If your work depends on distributed, server-side aggregation over big data, datom is not intended to replace that.</p>
+<p><strong>You are not already getting this from an existing investment.</strong> If a combination of platform and custom tooling already delivers versioning, lineage, and governed access at a cost you find acceptable, datom has little to add. Its value is greatest when that capability is missing – and when you would rather not take on the recurring cost of compute, servers, and platform maintenance to get it.</p>
+<p>In short, datom aims to be what this kind of work needs, and not what it does not.</p>
+</div>
+<div class="section level2">
+<h2 id="clinical-statistical-programming-and-data-management">Clinical statistical programming and data management<a class="anchor" aria-label="anchor" href="#clinical-statistical-programming-and-data-management"></a>
+</h2>
+<p>datom’s primary use case today is clinical data science – the regulated, audit-sensitive environment where statistical programmers and data managers produce datasets that underpin regulatory submissions.</p>
+<p>In a typical clinical trial, raw EDC extracts arrive in periodic cuts. Each cut generates a new set of SDTM or ADaM tables. Derived datasets depend on earlier ones, and the transformation logic evolves as the study matures. At lock, a submission package must demonstrate exactly which data was present at each milestone, which derivations produced it, and that no silent edits occurred between cuts.</p>
+<p>datom provides this out of the box:</p>
+<ul>
+<li>
+<strong>Immutable, SHA-addressed versions</strong> – every data cut is a content-stamped snapshot. Reviewers and auditors can retrieve exactly what existed at any prior point.</li>
+<li>
+<strong>Complete lineage</strong> – every derived table records which parent tables (and which versions of those parents) it descends from, traceable back to the raw source.</li>
+<li>
+<strong>Reader/developer separation</strong> – statisticians who consume data operate in a read-only mode that requires no git access, no server, and no platform credentials beyond storage. Data managers who produce data operate through a git-backed write path with full audit trail.</li>
+<li>
+<strong>No infrastructure to maintain</strong> – no database server, no scheduler, no platform team. The data sits in object storage (or a shared filesystem); the audit trail sits in git.</li>
+</ul>
+<p>This supports the path from raw EDC extracts through to locked, auditable analysis datasets – with reproducibility, traceability, and governance built into the data layer rather than bolted on after the fact.</p>
+</div>
+<div class="section level2">
+<h2 id="capabilities">Capabilities<a class="anchor" aria-label="anchor" href="#capabilities"></a>
 </h2>
 <table class="table">
 <colgroup>
@@ -98,43 +129,43 @@
 <tbody>
 <tr>
 <td>Immutable, content-addressed versioning</td>
-<td>✅ Today</td>
+<td>✅ Supported</td>
 </tr>
 <tr>
 <td>Exact historical reads by version SHA</td>
-<td>✅ Today</td>
+<td>✅ Supported</td>
 </tr>
 <tr>
 <td>Data lineage / provenance at every version</td>
-<td>✅ Today</td>
+<td>✅ Supported</td>
 </tr>
 <tr>
 <td>Reader/developer split (read-only from storage alone)</td>
-<td>✅ Today</td>
+<td>✅ Supported</td>
 </tr>
 <tr>
 <td>Backends: local filesystem + S3</td>
-<td>✅ Today</td>
+<td>✅ Supported</td>
 </tr>
 <tr>
 <td>Serverless – no server, database, or daemon</td>
-<td>✅ Today</td>
+<td>✅ Supported</td>
 </tr>
 <tr>
-<td>Governed backend migration (local to S3, S3 to S3)</td>
-<td>🧩 Enablement-ready – datom ships the storage API; companion package pending</td>
+<td>Governed backend migration (local ↔︎ S3)</td>
+<td>🧩 Planned – datom ships the storage API; companion package pending</td>
 </tr>
 <tr>
 <td>Access control</td>
-<td>🧩 Enablement-ready – hooks exist; companion package pending</td>
+<td>🧩 Planned – hooks exist; companion package pending</td>
 </tr>
 <tr>
 <td>Cross-language read/write (Python, CLI)</td>
-<td>🔭 Vision – open Parquet + git makes this feasible</td>
+<td>🔭 On the roadmap – open Parquet + git makes this feasible</td>
 </tr>
 <tr>
 <td>Metadata diffs and built-in data contracts</td>
-<td>🔭 Vision – planned on the roadmap</td>
+<td>🔭 On the roadmap</td>
 </tr>
 </tbody>
 </table>
@@ -306,6 +337,7 @@
 <ul class="list-unstyled">
 <li><a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></li>
 <li><a href="https://github.com/amashadihossein/datom/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/amashadihossein/datom/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a></li>
+<li><a href="https://codecov.io/gh/amashadihossein/datom" class="external-link"><img src="https://codecov.io/gh/amashadihossein/datom/graph/badge.svg" alt="Codecov test coverage"></a></li>
 </ul>
 </div>
 

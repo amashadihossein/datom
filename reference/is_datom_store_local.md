@@ -23,7 +23,7 @@ TRUE or FALSE.
 ``` r
 tmp <- tempfile("datom_store_")
 store <- datom_store_local(path = tmp, validate = TRUE)
-#> ℹ Created store directory /tmp/RtmpDhiXoF/datom_store_1a245b8cf17e.
+#> ℹ Created store directory /tmp/Rtmp589ZMh/datom_store_1a685476177b.
 is_datom_store_local(store)
 #> [1] TRUE
 is_datom_store_local("not a store")
