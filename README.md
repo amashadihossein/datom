@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# datom <a href="https://amashadihossein.github.io/datom/"><picture><source media="(prefers-color-scheme: dark)" srcset="man/figures/logo-dark.svg"><img src="man/figures/logo-light.svg" align="right" height="139" alt="datom logo" /></picture></a>
+# datom <img src="man/figures/logo.svg" align="right" height="139" alt="" />
 
 <!-- badges: start -->
 
