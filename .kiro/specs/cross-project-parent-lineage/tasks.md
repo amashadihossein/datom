@@ -25,14 +25,16 @@ consumers.
     "4": { "dependsOn": ["1", "2", "3"] },
     "4.1": { "dependsOn": ["4"] },
     "5": { "dependsOn": ["4"] },
+    "5.1": { "dependsOn": ["5"] },
+    "5.2": { "dependsOn": ["5"] },
     "6": { "dependsOn": ["1", "5"] },
-    "7": { "dependsOn": ["1.1", "2.1", "3.1", "4.1", "5", "6"] }
+    "7": { "dependsOn": ["1.1", "2.1", "3.1", "4.1", "5", "5.1", "5.2", "6"] }
   },
   "waves": [
     { "wave": 1, "tasks": ["1", "2", "3"] },
     { "wave": 2, "tasks": ["1.1", "2.1", "3.1", "4"] },
     { "wave": 3, "tasks": ["4.1", "5"] },
-    { "wave": 4, "tasks": ["6"] },
+    { "wave": 4, "tasks": ["5.1", "5.2", "6"] },
     { "wave": 5, "tasks": ["7"] }
   ]
 }
@@ -73,8 +75,9 @@ consumers.
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
 - [ ] 3. Implement `datom_parent(conn, table, version)` export
-  - Add to R/lineage.R with roxygen (`@param`, `@return`, `@export`,
-    `@examples`). No `data_sha` parameter.
+  - Add to R/lineage.R with roxygen (`@param`, `@return`, `@export`, and a
+    `\dontrun{}` `@examples` block — it needs a live conn/storage read). No
+    `data_sha` parameter.
   - Validate args first (abort before any read): `inherits(conn,
     "datom_conn")`; `.datom_validate_name(table)`; `version` single
     non-empty string.
@@ -115,12 +118,14 @@ consumers.
     `.datom_build_metadata()`; leave local -> git -> storage ordering,
     `.datom_write_metadata_local()`, and `.datom_push_metadata_s3()`
     unchanged.
-  - Keep `.datom_validate_source_lineage()` on the NULL-parents path (imported
-    self-entry path from `datom_sync()` unchanged).
+  - Replace the public `source_lineage` parameter with an internal dotted
+    `.source_lineage` (matching `.table_type` / `.original_file_sha`), used
+    only by the imported path; update the call site in `R/sync.R` to pass
+    `.source_lineage`. Keep `.datom_validate_source_lineage()` on that
+    imported path.
   - Update `datom_write()` roxygen: `parents` is a list of `datom_parent()`
-    records; `source_lineage` is derived from parents when parents are
-    supplied (retained-but-overridden), otherwise used as-is.
-  - _Requirements: 4.1-4.5, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 6.3_
+    records; `source_lineage` is derived from parents (no public parameter).
+  - _Requirements: 4.1-4.5, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 6.3_
 
 - [ ] 4.1 Rewrite parent tests in tests/testthat/test-read-write.R
   - Replace the old enrichment-based tests: writing with resolved
@@ -135,16 +140,37 @@ consumers.
   - NULL parents: no parents recorded; no parents-based `source_lineage`.
   - _Requirements: 4.1, 4.2, 4.3, 5.1, 5.3, 5.4, 5.6, 5.7_
 
-- [ ] 5. Remove `datom_validate_lineage()` and validator-only helpers
+- [ ] 5. Remove `datom_validate_lineage()` and update the full reference surface
   - Delete `datom_validate_lineage()`, `.datom_lineage_result()`, and
     `.datom_lineage_diff()` from R/lineage.R (keep `datom_lineage_union()`).
   - Regenerate NAMESPACE (roxygen) so the export is gone; remove
     `datom_validate_lineage` from `_pkgdown.yml`.
-  - Remove/relocate validator tests (e.g. tests/testthat/test-lineage.R);
-    retain any union assertions under the new helper's tests.
-  - Update the two `dev/engineering-notes.md` entries that describe
-    `datom_validate_lineage()` to point at the composable recipe.
-  - _Requirements: 9.1, 9.2_
+  - Remove the validator cases in **`tests/testthat/test-query.R`** (there is
+    no `test-lineage.R`); retain any union assertions under task 1.1.
+  - Rework the `datom_validate_lineage()` **calls** in `dev/e2e-solo-lineage.R`
+    and `dev/e2e-solo-s3.R` to the recompute recipe (they would otherwise
+    break).
+  - Update stale references in `dev/engineering-notes.md` (the two entries),
+    `dev/datom_pathways.md`, `dev/datom_specification.md`, and
+    `dev/README.md`.
+  - Replace or remove any roxygen `@seealso` / `\link{datom_validate_lineage}`
+    cross-references so R CMD check reports no broken links.
+  - _Requirements: 9.1, 9.2, 9.8_
+
+- [ ] 5.1 Rewrite the lineage vignette
+  - Rewrite the "Validating lineage consistency" section of
+    `vignettes/source-lineage.Rmd` (it calls and explains
+    `datom_validate_lineage()`) to teach the composable recompute recipe
+    using `datom_get_parents()`, per-parent `datom_get_lineage()`, and
+    `datom_lineage_union()`. Keep `eval = FALSE` chunks consistent.
+  - _Requirements: 9.5, 9.6, 9.7_
+
+- [ ] 5.2 Update NEWS.md
+  - Record the removal of `datom_validate_lineage()`, the addition of
+    `datom_parent()` and `datom_lineage_union()`, and the `parents` contract
+    change (records now require resolved `datom_parent()` records;
+    `source_lineage` is derived).
+  - _Requirements: 9.9_
 
 - [ ] 6. Update reads and document the recompute recipe
   - Update `datom_get_parents()` roxygen `@return` (R/query.R) to list
@@ -165,10 +191,13 @@ consumers.
   - Run `devtools::test()`; ensure WARN 0 and all pass.
   - Lint: ASCII-only and <= 80 cols on every changed `R/*.R`.
   - Confirm `pkgdown::build_site()` has zero missing/extra topics for the two
-    added exports and the removed one.
-  - Grep the package and tests for lingering `datom_validate_lineage`
-    references.
-  - _Requirements: 10.1, 10.2, 10.3, 10.7, 10.8_
+    added exports and the removed one, and that no `.Rd` retains a broken
+    `\link{datom_validate_lineage}` (R CMD check WARN 0).
+  - Confirm `vignettes/source-lineage.Rmd` no longer references the removed
+    function.
+  - Grep the whole repo (R, tests, vignettes, dev, NEWS) for lingering
+    `datom_validate_lineage` references.
+  - _Requirements: 10.1, 10.2, 10.3, 10.7, 10.8, 10.9_
 
 ## Notes
 
@@ -179,9 +208,9 @@ consumers.
   `.datom_storage_write_json`; the fail-closed guard in
   tests/testthat/setup.R enforces no real network egress. Cross-project
   tests use exactly two distinct mock stores.
-- Open item carried from design: the `source_lineage` parameter of
-  `datom_write()` is retained-but-overridden when `parents` is supplied
-  (Requirement 5.7); confirm during task 4 whether to keep or drop it from
-  the public signature.
+- Resolved from spec review: the public `source_lineage` parameter of
+  `datom_write()` is removed and replaced by an internal `.source_lineage`
+  (imported path only); `datom_validate_lineage()` removal is signed off; the
+  validator's tests live in `tests/testthat/test-query.R`.
 - Downstream dp_dev / dpbuild migration to `datom_parent()` is out of scope
   and tracked separately.

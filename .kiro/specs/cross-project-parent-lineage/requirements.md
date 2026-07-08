@@ -245,10 +245,13 @@ independently readable without traversal or bloat.
 6. IF the Datom_Writer persists a table with a NULL or empty `parents`
    argument, THEN THE Datom_Writer SHALL record no `parents` entries and
    SHALL NOT derive a parents-based `source_lineage` for that table.
-7. WHERE a caller supplies an explicit `source_lineage` argument alongside
-   non-NULL `parents`, THE Datom_Writer SHALL treat the derived union as
-   authoritative and SHALL NOT require the caller to precompute
-   `source_lineage`.
+7. THE Datom_Writer SHALL NOT expose a public `source_lineage` parameter for
+   derived writes; it SHALL derive `source_lineage` from the parents' union
+   (avoiding a silently-discarded public argument).
+8. THE Datom_Writer SHALL accept an internal, dotted `.source_lineage`
+   argument (following the existing `.table_type` / `.original_file_sha`
+   convention) used only by `datom_sync()` for the imported self-entry path,
+   and SHALL derive `source_lineage` from parents on the derived path.
 
 ### Requirement 6: Data_Sha authoritativeness and audit invariant
 
@@ -333,10 +336,24 @@ connection per project.
 
 1. THE datom package SHALL remove the exported `datom_validate_lineage()`
    function.
-2. WHEN `datom_validate_lineage()` is removed, THE datom package SHALL
-   update NAMESPACE, the `_pkgdown.yml` reference index, its tests, and any
-   documentation or engineering notes that reference it, so that R CMD check
-   and the pkgdown build complete with zero errors.
+2. WHEN `datom_validate_lineage()` is removed, THE datom package SHALL update
+   every referencing surface so that R CMD check and the pkgdown build
+   complete with zero errors and zero warnings, specifically: NAMESPACE; the
+   `_pkgdown.yml` reference index; its tests in
+   `tests/testthat/test-query.R`; `NEWS.md`; the vignette
+   `vignettes/source-lineage.Rmd`; the dev scripts `dev/e2e-solo-lineage.R`
+   and `dev/e2e-solo-s3.R`; the dev docs `dev/engineering-notes.md`,
+   `dev/datom_pathways.md`, `dev/datom_specification.md`, and `dev/README.md`;
+   and any roxygen `@seealso` / `\link` cross-references.
+7. THE datom package SHALL rewrite `vignettes/source-lineage.Rmd` so it
+   teaches the composable recompute recipe instead of calling
+   `datom_validate_lineage()`.
+8. THE datom package SHALL replace or remove every roxygen `@seealso` and
+   `\link{}` reference to `datom_validate_lineage()` so that R CMD check
+   reports no broken cross-references.
+9. THE datom package SHALL record in `NEWS.md` the removal of
+   `datom_validate_lineage()`, the addition of `datom_parent()` and
+   `datom_lineage_union()`, and the `parents` contract change.
 3. WHEN a caller invokes `datom_get_parents()` on a derived table, THE
    Lineage_Reads SHALL return each recorded parent's `source`, `table`,
    `version`, and `data_sha`, sufficient to select the parent's project
@@ -380,6 +397,10 @@ never touch the network.
 8. WHEN a function is exported for this feature, THE datom package SHALL
    provide roxygen documentation covering the function's parameters and
    return value.
+9. WHERE an exported function's roxygen example requires a live connection or
+   a storage read (e.g. `datom_parent()`), THE example SHALL be wrapped in
+   `\dontrun{}` so it does not execute under R CMD check or trip the
+   fail-closed network guard.
 
 ## Out of Scope
 

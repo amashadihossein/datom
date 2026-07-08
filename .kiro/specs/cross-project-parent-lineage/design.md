@@ -69,13 +69,17 @@ conn per parent project.
 | File | Change |
 |---|---|
 | `R/lineage.R` | Remove `datom_validate_lineage()`. Add exported `datom_parent()` and exported `datom_lineage_union()` (promoted from `.datom_lineage_union()`). Remove/retire `.datom_lineage_result()`, `.datom_lineage_diff()` (validator-only). |
-| `R/read_write.R` | Remove the parent-enrichment block in `datom_write()`. Add parent validation + source_lineage derivation. Record lean parent entries. Adjust the `source_lineage` parameter contract. |
+| `R/read_write.R` | Remove the parent-enrichment block in `datom_write()`. Add parent validation + source_lineage derivation. Record lean parent entries. Replace the public `source_lineage` parameter with an internal `.source_lineage` (used only by `datom_sync()`). |
+| `R/sync.R` | Update the imported-table write call to pass `.source_lineage` instead of `source_lineage`. |
 | `R/utils-sha.R` | Add `.datom_validate_parents()` mirroring `.datom_validate_source_lineage()`. |
 | `R/query.R` | Update roxygen for `datom_get_parents()` / `datom_get_lineage()` to state parent entries include `data_sha`. |
 | `NAMESPACE` | Add `datom_parent`, `datom_lineage_union`; remove `datom_validate_lineage`. (roxygen-generated.) |
 | `_pkgdown.yml` | Add the two new exports to the reference index; remove `datom_validate_lineage`. |
-| `dev/engineering-notes.md` | Update the two entries referencing `datom_validate_lineage`. |
-| `tests/testthat/` | New `test-parent.R`; rewrite parent tests in `test-read-write.R`; remove `test` coverage of the validator; add union-helper tests. |
+| `NEWS.md` | Record the removal, the two new exports, and the `parents` contract change. |
+| `vignettes/source-lineage.Rmd` | Rewrite the validation section to teach the composable recompute recipe. |
+| `dev/engineering-notes.md`, `dev/datom_pathways.md`, `dev/datom_specification.md`, `dev/README.md` | Update entries that describe/reference `datom_validate_lineage`. |
+| `dev/e2e-solo-lineage.R`, `dev/e2e-solo-s3.R` | Replace the `datom_validate_lineage()` calls with the recompute recipe (these scripts call the function and would otherwise break). |
+| `tests/testthat/` | New `test-parent.R`; rewrite parent tests in `test-read-write.R`; remove the validator tests in `test-query.R`; add union-helper tests. |
 
 ## Components and Interfaces
 
@@ -91,8 +95,21 @@ pure-data record.
 #' @param version Parent version (metadata_sha; single non-empty string).
 #' @return A list with source, table, version, data_sha, source_lineage.
 #' @export
+#' @examples
+#' \dontrun{
+#'   p <- datom_parent(conn, "dm", "v_dm_9f3")
+#' }
 datom_parent <- function(conn, table, version) { ... }
 ```
+
+The example is `\dontrun{}` because it needs a live conn + storage read and
+would otherwise trip the fail-closed test/network guard under R CMD check
+(Req 10.9).
+
+Optional (Req note, not required): emit a soft `cli::cli_warn()` when a
+parent's snapshot has a `NULL`/absent `source_lineage`, since that is a
+silent lineage gap for an audit-focused record. Left as an optional
+enhancement.
 
 Behavior (Req 1, 2, 3, 6):
 1. Validate args:
@@ -215,17 +232,18 @@ Removed:
 - The mandate branch `if (!is.null(parents) && is.null(source_lineage)) abort`
   — no longer needed, since the union is derived (Req 5.7).
 
-`source_lineage` parameter contract (Req 5.7): the parameter is retained in
-the signature for backward call-shape compatibility but is overridden when
-`parents` is non-NULL — the derived union wins. When `parents` is NULL, the
-parameter behaves as today (e.g. `datom_sync()` imported self-entry path is
-unchanged). Recommend documenting the parameter as "derived from parents
-when parents is supplied; otherwise used as-is (internal/imported paths)."
+`source_lineage` parameter contract (Req 5.7, 5.8): the public
+`source_lineage` parameter is **removed** to avoid a silently-discarded
+argument. Derived writes always derive `source_lineage` from the parents'
+union. An internal dotted `.source_lineage` argument (matching the existing
+`.table_type` / `.original_file_sha` convention) carries the imported
+self-entry lineage from `datom_sync()`; `R/sync.R` is updated to pass
+`.source_lineage`. On the derived path `.source_lineage` is unused.
 
-`.datom_validate_source_lineage(source_lineage)` is still called for the
-NULL-parents / imported path; when parents are supplied, validation of the
-derived union is implicit (it is produced by `datom_lineage_union` from
-already-validated parent entries).
+`.datom_validate_source_lineage()` is still called for the imported path via
+`.source_lineage`; when parents are supplied, validation of the derived union
+is implicit (it is produced by `datom_lineage_union` from already-validated
+parent entries).
 
 Downstream unchanged: `.datom_build_metadata(..., parents = parents,
 source_lineage = source_lineage, ...)` receives the lean parents and derived
@@ -255,8 +273,23 @@ Delete the exported function and its validator-only helpers
 - `dev/engineering-notes.md`: revise the two entries that describe
   `datom_validate_lineage()` (the "separate from datom_validate()" entry and
   the "walker invariant" entry) to reflect the composable recipe.
-- Remove `tests/testthat/test-lineage.R` validator cases (retain/relocate any
-  union/diff unit tests that still apply to `datom_lineage_union`).
+- `dev/datom_pathways.md`, `dev/datom_specification.md`, `dev/README.md`:
+  update stale references.
+- `dev/e2e-solo-lineage.R`, `dev/e2e-solo-s3.R`: these **call**
+  `datom_validate_lineage()` and will break; replace with the recompute
+  recipe (`datom_get_parents` + per-parent `datom_get_lineage` +
+  `datom_lineage_union`, then compare).
+- `NEWS.md`: record removal + the two new exports + the `parents` contract
+  change.
+- `vignettes/source-lineage.Rmd`: rewrite the "Validating lineage
+  consistency" section (it calls and explains the function) to the composable
+  recipe. It is `eval = FALSE`, so it will not fail R CMD check, but a CRAN
+  vignette must not demo a nonexistent function.
+- Replace/remove any roxygen `@seealso` / `\link{datom_validate_lineage}`
+  cross-references to avoid broken-link R CMD check warnings.
+- Remove the validator cases in `tests/testthat/test-query.R` (the tests
+  live there, not in a `test-lineage.R`, which does not exist); retain/relocate
+  any union assertions to the `datom_lineage_union` tests.
 
 ### 7. Documented recipe (roxygen example, R/lineage.R or a vignette)
 
@@ -339,6 +372,40 @@ computed by `datom_write()` (Req 5.1, 5.2).
 All aborts use `cli::cli_abort`; nothing partially writes because validation
 and derivation occur before the local->git->storage pipeline begins.
 
+## Correctness Properties
+
+### Property 1: data_sha fidelity
+A Parent_Record's `data_sha` always equals the parent snapshot's `data_sha`;
+no code path or parameter lets a caller influence it
+(`formals(datom_parent)` has no `data_sha`).
+**Validates: Requirements 6.1, 6.4**
+
+### Property 2: union derivation
+A derived table's recorded `source_lineage` equals `datom_lineage_union()` of
+its parents' `source_lineage`, deduplicated by {project, table, version_sha}.
+**Validates: Requirements 5.1**
+
+### Property 3: lean parent entries
+Every Recorded_Parent_Entry contains exactly `source, table, version,
+data_sha` and no `source_lineage`.
+**Validates: Requirements 5.3, 5.4**
+
+### Property 4: union algebra
+`datom_lineage_union()` is order-independent and idempotent: permuting inputs
+yields the same set, `union(union(x)) == union(x)`, and empty input yields
+`list()`.
+**Validates: Requirements 8.2, 8.3, 8.4**
+
+### Property 5: all-or-nothing construction
+`datom_parent()` either returns a complete five-field record or aborts; it
+never returns a partial record.
+**Validates: Requirements 1.12, 2.2**
+
+### Property 6: one conn per project
+No exported function accepts more than one connection; a parent is bound to
+its conn only at construction.
+**Validates: Requirements 3.5, 4.5**
+
 ## Testing Strategy
 
 All tests mock the storage dispatch layer (`.datom_storage_read_json`,
@@ -374,8 +441,9 @@ New `tests/testthat/test-parent.R` (`datom_parent`):
   tolerated; fields preserved — Req 8.
 
 Removal:
-- delete `datom_validate_lineage` tests; confirm no references remain
-  (grep in tests) — Req 9.1, 9.2.
+- delete the `datom_validate_lineage` cases in `tests/testthat/test-query.R`;
+  confirm no references remain (grep across R, tests, vignettes, dev) — Req
+  9.1, 9.2.
 
 Quality gates: `devtools::test()` WARN 0; ASCII + <=80 col lint clean;
 roxygen + `_pkgdown.yml` updated so `pkgdown::build_site()` has zero missing
@@ -396,11 +464,20 @@ topics — Req 10.1-10.3, 10.7, 10.8.
 | 9 Composable inspection replaces validator | removal + reads + recipe |
 | 10 Package quality | testing strategy + NAMESPACE/pkgdown/roxygen tasks |
 
-## Open Design Note
+## Resolved Design Decisions (from spec review)
 
-The `source_lineage` parameter of `datom_write()` is retained-but-overridden
-when `parents` is supplied (Req 5.7). If preferred, it could instead be
-removed from the public signature and kept only on an internal path used by
-`datom_sync()`. Retaining-but-overriding is the lower-churn choice and keeps
-`datom_sync()`'s imported self-entry path (no parents) working unchanged.
-Flagging for confirmation during implementation.
+- **`source_lineage` parameter:** removed from the public `datom_write()`
+  signature; replaced by an internal dotted `.source_lineage` used only by
+  `datom_sync()`. This avoids a silently-discarded public argument (the
+  reviewer's footgun). `R/sync.R` updates its call site accordingly.
+- **Validator removal confirmed:** removing `datom_validate_lineage()` is an
+  intentional public-API removal, signed off. The one-call cross-project
+  validator is replaced by `datom_lineage_union()` + the documented recipe.
+- **Cleanup surface:** the validator is referenced beyond code — `NEWS.md`,
+  `vignettes/source-lineage.Rmd`, `dev/e2e-solo-lineage.R`,
+  `dev/e2e-solo-s3.R`, `dev/datom_pathways.md`, `dev/datom_specification.md`,
+  `dev/README.md`, `dev/engineering-notes.md`, and possible roxygen
+  `@seealso`/`\link`. All are enumerated in the removal task; the e2e scripts
+  actively call it and must be reworked to the recipe.
+- **Test location:** validator tests are in `tests/testthat/test-query.R`
+  (there is no `test-lineage.R`).
