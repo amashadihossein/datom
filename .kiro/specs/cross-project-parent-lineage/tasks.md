@@ -138,7 +138,11 @@ consumers.
     fails; write still succeeds.
   - Supplying `source_lineage` alongside parents: derived union wins.
   - NULL parents: no parents recorded; no parents-based `source_lineage`.
-  - _Requirements: 4.1, 4.2, 4.3, 5.1, 5.3, 5.4, 5.6, 5.7_
+  - Heads-up: after the `source_lineage` -> `.source_lineage` rename, existing
+    test call sites (and `R/sync.R`) that pass `source_lineage=` on the
+    imported path will fail loudly; update them to `.source_lineage=`. The
+    full run in task 7 surfaces any missed ones.
+  - _Requirements: 4.1, 4.2, 4.3, 5.1, 5.3, 5.4, 5.6, 5.7, 5.8_
 
 - [ ] 5. Remove `datom_validate_lineage()` and update the full reference surface
   - Delete `datom_validate_lineage()`, `.datom_lineage_result()`, and
@@ -155,7 +159,7 @@ consumers.
     `dev/README.md`.
   - Replace or remove any roxygen `@seealso` / `\link{datom_validate_lineage}`
     cross-references so R CMD check reports no broken links.
-  - _Requirements: 9.1, 9.2, 9.8_
+  - _Requirements: 9.1, 9.2, 9.4_
 
 - [ ] 5.1 Rewrite the lineage vignette
   - Rewrite the "Validating lineage consistency" section of
@@ -163,14 +167,14 @@ consumers.
     `datom_validate_lineage()`) to teach the composable recompute recipe
     using `datom_get_parents()`, per-parent `datom_get_lineage()`, and
     `datom_lineage_union()`. Keep `eval = FALSE` chunks consistent.
-  - _Requirements: 9.5, 9.6, 9.7_
+  - _Requirements: 9.3, 9.8, 9.9_
 
 - [ ] 5.2 Update NEWS.md
   - Record the removal of `datom_validate_lineage()`, the addition of
     `datom_parent()` and `datom_lineage_union()`, and the `parents` contract
     change (records now require resolved `datom_parent()` records;
     `source_lineage` is derived).
-  - _Requirements: 9.9_
+  - _Requirements: 9.5_
 
 - [ ] 6. Update reads and document the recompute recipe
   - Update `datom_get_parents()` roxygen `@return` (R/query.R) to list
@@ -184,7 +188,7 @@ consumers.
     `datom_get_lineage(conn_C, "C", depth = "source")`. Read each parent
     through a conn scoped to that parent's project; never one conn across
     stores.
-  - _Requirements: 9.3, 9.4, 9.5, 9.6_
+  - _Requirements: 9.6, 9.7, 9.8, 9.9_
 
 - [ ] 7. Quality gates and full verification
   - Run `devtools::document()` to sync NAMESPACE and `.Rd`.

@@ -258,9 +258,9 @@ the metadata SHA, the recorded shape change alters `metadata_sha` relative to
 No behavioral change to `datom_get_parents()` / `datom_get_lineage()`; the
 recorded `parents[]` now includes `data_sha`, so:
 - Update `datom_get_parents()` roxygen `@return` to list
-  `source, table, version, data_sha` (Req 9.3).
+  `source, table, version, data_sha` (Req 9.6).
 - `datom_get_lineage(depth = "source")` already returns
-  `metadata$source_lineage` (Req 9.4).
+  `metadata$source_lineage` (Req 9.7).
 
 ### 6. Removal of `datom_validate_lineage()` (R/lineage.R)
 

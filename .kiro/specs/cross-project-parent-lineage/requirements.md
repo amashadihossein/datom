@@ -345,28 +345,28 @@ connection per project.
    and `dev/e2e-solo-s3.R`; the dev docs `dev/engineering-notes.md`,
    `dev/datom_pathways.md`, `dev/datom_specification.md`, and `dev/README.md`;
    and any roxygen `@seealso` / `\link` cross-references.
-7. THE datom package SHALL rewrite `vignettes/source-lineage.Rmd` so it
+3. THE datom package SHALL rewrite `vignettes/source-lineage.Rmd` so it
    teaches the composable recompute recipe instead of calling
    `datom_validate_lineage()`.
-8. THE datom package SHALL replace or remove every roxygen `@seealso` and
+4. THE datom package SHALL replace or remove every roxygen `@seealso` and
    `\link{}` reference to `datom_validate_lineage()` so that R CMD check
    reports no broken cross-references.
-9. THE datom package SHALL record in `NEWS.md` the removal of
+5. THE datom package SHALL record in `NEWS.md` the removal of
    `datom_validate_lineage()`, the addition of `datom_parent()` and
    `datom_lineage_union()`, and the `parents` contract change.
-3. WHEN a caller invokes `datom_get_parents()` on a derived table, THE
+6. WHEN a caller invokes `datom_get_parents()` on a derived table, THE
    Lineage_Reads SHALL return each recorded parent's `source`, `table`,
    `version`, and `data_sha`, sufficient to select the parent's project
    connection and its pinned version.
-4. WHEN a caller invokes `datom_get_lineage()` with `depth = "source"` on a
+7. WHEN a caller invokes `datom_get_lineage()` with `depth = "source"` on a
    table, THE Lineage_Reads SHALL return that table's recorded
    `source_lineage`.
-5. THE datom package SHALL provide a documented recipe showing how to
+8. THE datom package SHALL provide a documented recipe showing how to
    recompute the parents' `source_lineage` union by reading each parent's
    lineage through the appropriate `Conn` and applying the
    Lineage_Union_Helper, and how to compare it against the derived table's
    recorded `source_lineage`.
-6. THE documented recipe SHALL read each parent through a `Conn` scoped to
+9. THE documented recipe SHALL read each parent through a `Conn` scoped to
    that parent's project and SHALL NOT rely on a single `Conn` reaching
    across project stores.
 
