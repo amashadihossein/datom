@@ -89,14 +89,18 @@ already understand why this matters.
 
 The split lets datom support two roles cleanly:
 
-- **Data developers** push to git and write to the object store.
-- **Data readers** pull from git (or, in many real workflows, just read
-  the object store directly through the cached manifest) and read from
-  the object store.
+- **Data developers** have a local git clone of the project, push to the
+  remote, and write to the object store.
+- **Data readers** connect to the object store directly -- no git clone,
+  no write credentials required. `datom_get_conn(store = ...,
+  project_name = "...")` (reader form, no `path`) resolves everything it
+  needs from the metadata mirrored to storage at write time: the manifest,
+  per-table `metadata.json`, and versioned snapshots.
 
-Readers never need write credentials. A statistician with read-only S3
-access can reproduce any historical analysis -- the metadata they need
-is already on the data side, cached when the developer wrote.
+Readers never need a git clone or write credentials. A statistician with
+read-only S3 access can read any table and reproduce any historical
+analysis -- the metadata they need is already in the object store,
+mirrored there when the developer wrote.
 
 ## Property 4: Storage is swappable
 
