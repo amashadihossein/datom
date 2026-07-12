@@ -88,11 +88,22 @@ raw_dm <- datom_example_data("dm")      # Demographics
 raw_lb <- datom_example_data("lb")      # Lab results
 ```
 
-They are imported via `datom_sync()`. datom automatically records each
-imported table's own SHA as its `source_lineage` -- a single self-entry.
+They are onboarded via `datom_sync()`, the file-based workflow shown in the
+"Your first extract" article: stage the raw tables as files in the clone's
+gitignored `input_files/` inbox, scan them into a manifest with
+`datom_sync_manifest()`, then `datom_sync()`. datom automatically records
+each imported table's own content SHA as its `source_lineage` -- a single
+self-entry.
 
 ```{r}
-datom_sync(conn, list(dm = raw_dm, lb = raw_lb))
+# input_files/ lives inside the git clone and is the sync inbox.
+input_dir <- file.path("path/to/my-study-dev", "input_files")
+
+write.csv(raw_dm, file.path(input_dir, "dm.csv"), row.names = FALSE)
+write.csv(raw_lb, file.path(input_dir, "lb.csv"), row.names = FALSE)
+
+manifest <- datom_sync_manifest(conn)   # scans input_files/
+datom_sync(conn, manifest)              # onboards; self-lineage recorded
 ```
 
 After syncing, the imported tables carry their own lineage:
@@ -196,6 +207,9 @@ lineage, and `datom_write()` unions it into `analysis_pop` without
 re-reading the original files:
 
 ```{r}
+# Identify the dm_clean version this analysis was derived from.
+clean_version <- datom_history(conn, "dm_clean")[1, "version"]
+
 datom_write(
   conn,
   data    = analysis_pop,
