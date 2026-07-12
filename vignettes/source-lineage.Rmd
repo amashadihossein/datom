@@ -89,7 +89,8 @@ raw_lb <- datom_example_data("lb")      # Lab results
 ```
 
 They are onboarded via `datom_sync()`, the file-based workflow shown in the
-"Your first extract" article: stage the raw tables as files in the clone's
+[Getting Started](getting-started.html) article: stage the raw tables as files
+in the clone's
 gitignored `input_files/` inbox, scan them into a manifest with
 `datom_sync_manifest()`, then `datom_sync()`. datom automatically records
 each imported table's own content SHA as its `source_lineage` -- a single

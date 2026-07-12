@@ -15,7 +15,7 @@ knitr::opts_chunk$set(
 )
 ```
 
-> **Companion to**: [First Extract](first-extract.html). Read this when you
+> **Companion to**: [Getting Started](getting-started.html). Read this when you
 > want to understand *why* datom split storage in two.
 
 The single design decision that shapes everything else in datom is this:

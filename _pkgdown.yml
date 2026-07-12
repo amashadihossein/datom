@@ -110,7 +110,7 @@ articles:
     desc: "Your first datom project: sync, version, read."
     navbar: ~
     contents:
-      - first-extract
+      - getting-started
 
   - title: "Start on S3"
     desc: "The same workflow directly in object storage."
