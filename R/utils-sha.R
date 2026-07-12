@@ -64,10 +64,19 @@
 .datom_validate_parents <- function(x) {
   if (is.null(x)) return(invisible(TRUE))
 
+  # Parents are meant to come from datom_parent(); every failure points there
+  # as the remedy, so a raw list lacking data_sha gets a friendly message in
+  # the same single validation pass.
+  remedy <- paste0(
+    "Declare parents with {.fn datom_parent} so each carries a ",
+    "resolved {.field data_sha}."
+  )
+
   if (!is.list(x) || (length(x) > 0L && !is.null(names(x)))) {
-    cli::cli_abort(
-      "{.arg parents} must be a list of entry lists, not a named list."
-    )
+    cli::cli_abort(c(
+      "{.arg parents} must be a list of entry lists, not a named list.",
+      "i" = remedy
+    ))
   }
 
   required_fields <- c("source", "table", "version", "data_sha")
@@ -75,23 +84,27 @@
   for (i in seq_along(x)) {
     entry <- x[[i]]
     if (!is.list(entry)) {
-      cli::cli_abort(
-        "Entry {i} of {.arg parents} must be a list, not {.cls {class(entry)}}."
-      )
+      cli::cli_abort(c(
+        paste0("Entry {i} of {.arg parents} must be a list, not ",
+               "{.cls {class(entry)}}."),
+        "i" = remedy
+      ))
     }
     missing <- setdiff(required_fields, names(entry))
     if (length(missing) > 0L) {
-      cli::cli_abort(paste0(
-        "Entry {i} of {.arg parents} is missing ",
-        "required field{?s}: {.val {missing}}."
+      cli::cli_abort(c(
+        paste0("Entry {i} of {.arg parents} is missing ",
+               "required field{?s}: {.val {missing}}."),
+        "i" = remedy
       ))
     }
     for (field in required_fields) {
       val <- entry[[field]]
       if (!is.character(val) || length(val) != 1L || !nzchar(val)) {
-        cli::cli_abort(paste0(
-          "Entry {i} of {.arg parents}: field ",
-          "{.field {field}} must be a non-empty string."
+        cli::cli_abort(c(
+          paste0("Entry {i} of {.arg parents}: field ",
+                 "{.field {field}} must be a non-empty string."),
+          "i" = remedy
         ))
       }
     }

@@ -396,36 +396,6 @@ datom_read <- function(conn,
 }
 
 
-#' Check parents carry a resolved data_sha
-#'
-#' Guards the derived write path: a parent lacking a non-empty `data_sha`
-#' means the caller passed a raw list rather than a resolved record. Points
-#' the caller to [datom_parent()] as the remedy. Structural validation of
-#' the remaining fields is left to `.datom_validate_parents()`.
-#'
-#' @param parents The `parents` argument to [datom_write()].
-#' @return Invisibly TRUE when every entry carries a resolved `data_sha`.
-#' @keywords internal
-.datom_check_parents_resolved <- function(parents) {
-  if (!is.list(parents) || !is.null(names(parents))) {
-    return(invisible(TRUE))
-  }
-  for (i in seq_along(parents)) {
-    p <- parents[[i]]
-    sha <- if (is.list(p)) p$data_sha else NULL
-    if (is.null(sha) || !is.character(sha) || length(sha) != 1L ||
-        is.na(sha) || !nzchar(sha)) {
-      cli::cli_abort(c(
-        "Parent entry {i} is missing a resolved {.field data_sha}.",
-        "i" = paste0("Declare parents with {.fn datom_parent} so ",
-                     "{.field data_sha} is resolved from the parent store.")
-      ))
-    }
-  }
-  invisible(TRUE)
-}
-
-
 #' Write a datom Table
 #'
 #' Writes data to a datom repository. Commits to git, pushes, and syncs to S3.
@@ -511,7 +481,6 @@ datom_write <- function(conn,
   # source_lineage from their union and record lean parent edges. When no
   # parents are given, use the internal .source_lineage (imported path).
   if (!is.null(parents)) {
-    .datom_check_parents_resolved(parents)
     .datom_validate_parents(parents)
     parent_lineages <- lapply(parents, function(p) p$source_lineage)
     source_lineage <- datom_lineage_union(parent_lineages)

@@ -148,7 +148,7 @@ datom_parent <- function(conn, table, version) {
     source         = conn$project_name,
     table          = table,
     version        = version,
-    data_sha       = snap$data_sha,
+    data_sha       = data_sha,
     source_lineage = source_lineage
   )
 }
