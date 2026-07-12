@@ -11,7 +11,7 @@ datom_write(
   metadata = NULL,
   message = NULL,
   parents = NULL,
-  source_lineage = NULL,
+  .source_lineage = NULL,
   .table_type = "derived",
   .original_file_sha = NULL,
   .original_format = NULL
@@ -29,21 +29,27 @@ sync to storage (manifest + per-table metadata).}
 
 \item{message}{Optional commit message.}
 
-\item{parents}{Optional lineage: list of \code{list(source, table, version)} entries.
-Used by dp_dev to track dependency versions. NULL if lineage not recorded.
-At write time, \code{data_sha} is automatically added to each entry from the
-parent's local metadata snapshot (\code{NULL} if the snapshot is not in the clone).}
+\item{parents}{Optional list of parent records produced by
+\code{\link[=datom_parent]{datom_parent()}}, each carrying \code{source}, \code{table}, \code{version},
+\code{data_sha}, and \code{source_lineage}. When supplied, the table's
+\code{source_lineage} is derived as the deduplicated union of the parents'
+\code{source_lineage} and each parent is recorded lean (\code{source}, \code{table},
+\code{version}, \code{data_sha}). NULL if no lineage is recorded. There is no
+public \code{source_lineage} parameter; it is always derived from \code{parents}.}
 
-\item{source_lineage}{Required when \code{parents} is non-NULL. Pre-computed flat list
-of transitive non-derived source descriptors (each with \code{project}, \code{table},
-\code{version_sha}). Set by dpbuild via the union of parents' \code{source_lineage} fields.
-NULL for tables without parents.}
+\item{.source_lineage}{Internal. Flat list of transitive non-derived
+source descriptors (each with \code{project}, \code{table}, \code{version_sha}) for the
+imported self-entry path, set by \code{\link[=datom_sync]{datom_sync()}}. Unused on the derived
+(parents) path.}
 
-\item{.table_type}{Internal. \code{"derived"} (default) or \code{"imported"} (set by \code{datom_sync()}).}
+\item{.table_type}{Internal. \code{"derived"} (default) or \code{"imported"}
+(set by \code{datom_sync()}).}
 
-\item{.original_file_sha}{Internal. SHA of source file (set by \code{datom_sync()}); NULL for derived.}
+\item{.original_file_sha}{Internal. SHA of source file
+(set by \code{datom_sync()}); NULL for derived.}
 
-\item{.original_format}{Internal. Original file format (set by \code{datom_sync()}); NULL for derived.}
+\item{.original_format}{Internal. Original file format
+(set by \code{datom_sync()}); NULL for derived.}
 }
 \value{
 List with deployment details.

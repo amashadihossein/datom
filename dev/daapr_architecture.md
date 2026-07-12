@@ -317,12 +317,35 @@ dp_build(
 )
 ```
 
-**dpbuild lineage contract**: When dpbuild calls `datom_write()` for a derived table it must supply both `parents` (immediate inputs, identified by metadata_sha) and `source_lineage` (transitive closure of raw sources). dpbuild computes `source_lineage` by:
-1. Calling `datom_get_lineage(depth = "source")` on each parent table.
-2. Unioning the resulting lists and deduplicating by `(project, table, version_sha)`.
-3. When two parents supply the same `(project, table)` with different `version_sha` values, both entries are included -- datom stores them; dpbuild or the analyst resolves the conflict.
+**dpbuild lineage contract**: When dpbuild calls `datom_write()` for a derived
+table, it declares each parent with `datom_parent(conn, table, version)`,
+passing a connection scoped to that parent's project (one conn per parent
+project). `datom_parent()` reads the parent's versioned metadata snapshot,
+extracts the authoritative `data_sha`, and captures the parent's
+`source_lineage`. dpbuild passes the resulting records as `parents` to
+`datom_write()`:
 
-This keeps datom's write path simple (store-and-serve) while letting dpbuild pre-compute the full provenance graph once, at write time.
+```r
+datom_write(
+  conn,       # writer's own project conn
+  data = derived_df,
+  name = "summary",
+  parents = list(
+    datom_parent(conn_a, "dm", dm_version),   # conn scoped to project A
+    datom_parent(conn_b, "lb", lb_version)    # conn scoped to project B
+  )
+)
+```
+
+**`datom_write()` derives `source_lineage`** as the deduplicated union of the
+parents' captured `source_lineage` fields -- there is no `source_lineage`
+argument for dpbuild to supply or pre-compute. The union/dedup is handled by
+`datom_lineage_union()` inside `datom_write()`. Cross-project resolution
+happens via the per-parent conns inside `datom_parent()`.
+
+When two parents supply the same `(project, table)` with different
+`version_sha` values, both entries are retained in the union -- `datom_write()`
+stores them; dpbuild or the analyst resolves the conflict.
 
 **datomaccess (access governance package)**: The package responsible for reader-facing access control. It sits between the reader and `datom_read()` and is the primary consumer of `source_lineage`. The access gate pattern:
 

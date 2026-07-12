@@ -22,13 +22,13 @@ knitr::opts_chunk$set(
 <div class="datom-callout datom-callout-goal" markdown="1">
 **Goal:** Stand up a versioned datom project whose data lives directly in
 **Amazon S3** and onboard data using `datom_sync()`. The same progressive
-workflow from [First Extract](first-extract.html) applies here -- one file,
+workflow from [Getting Started](getting-started.html) applies here -- one file,
 update, no-op, batch -- with the only difference being which store you build.
 This is the "start me in object storage" path.
 </div>
 
 > **Want to dabble locally first?** Start with
-> [First Extract](first-extract.html) instead -- it uses a local filesystem
+> [Getting Started](getting-started.html) instead -- it uses a local filesystem
 > store and needs no AWS account. The two paths use the **same functions**; the
 > only difference is which store you build. You can read either one first.
 

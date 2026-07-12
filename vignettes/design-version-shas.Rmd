@@ -15,7 +15,7 @@ knitr::opts_chunk$set(
 )
 ```
 
-> **Companion to**: [First Extract](first-extract.html). Read this when
+> **Companion to**: [Getting Started](getting-started.html). Read this when
 > you've noticed that `datom_history()` shows a `version` column and a
 > `data_sha` column, and you want to know why there are two.
 

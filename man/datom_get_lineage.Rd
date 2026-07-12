@@ -17,10 +17,11 @@ current metadata. If provided, fetches the versioned metadata snapshot.}
 \item{depth}{One of \code{"source"} (default) or \code{"parents"}.}
 }
 \value{
-For \code{depth = "source"}: list of source-table descriptors (each with
-\code{project}, \code{table}, \code{version_sha}), or \code{NULL} if the field is absent.
+For \code{depth = "source"}: the table's recorded \code{source_lineage} --
+a list of source-table descriptors (each with \code{project}, \code{table},
+\code{version_sha}), or \code{NULL} if the field is absent.
 For \code{depth = "parents"}: list of parent entries (each with \code{source},
-\code{table}, \code{version}), or \code{NULL} if no lineage is recorded.
+\code{table}, \code{version}, \code{data_sha}), or \code{NULL} if no lineage is recorded.
 }
 \description{
 Reads lineage metadata for a table. Depending on \code{depth}, returns either
@@ -32,8 +33,8 @@ metadata -- no walking or cross-project resolution is performed.
 The two fields answer different questions:
 \itemize{
 \item \code{"source"}: "what raw datasets does this table ultimately depend on?"
-(audit, regulatory disclosure, reproducibility scope). Pre-computed by
-dpbuild from the union of parents' \code{source_lineage} fields.
+(audit, regulatory disclosure, reproducibility scope). Derived at write
+time as the deduplicated union of the parents' \code{source_lineage} fields.
 \item \code{"parents"}: "what did this table come from one step back?"
 (debugging, diff, replay). Equivalent to \code{\link[=datom_get_parents]{datom_get_parents()}}.
 }

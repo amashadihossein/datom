@@ -213,8 +213,8 @@ datom_history <- function(conn,
 #' Get Parent Lineage for a Table
 #'
 #' Reads the `parents` field from a table's metadata. Returns the lineage
-#' entries recorded at write time by dp_dev or other callers. For imported
-#' tables or derived tables with no recorded lineage, returns `NULL`.
+#' entries recorded at write time by [datom_write()]. For imported tables or
+#' derived tables with no recorded lineage, returns `NULL`.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
@@ -222,8 +222,11 @@ datom_history <- function(conn,
 #'   current metadata. If provided, fetches the versioned metadata snapshot
 #'   from S3.
 #'
-#' @return List of parent entries (each with `source`, `table`, `version`),
-#'   or `NULL` if no lineage is recorded.
+#' @return List of parent entries (each with `source`, `table`, `version`,
+#'   `data_sha`), or `NULL` if no lineage is recorded. The `data_sha` field
+#'   is the parent's authoritative data SHA recorded via [datom_parent()],
+#'   and together with `source` and `version` is sufficient to select the
+#'   parent's project connection and its pinned version.
 #' @seealso [datom_get_lineage()] for a unified interface that also exposes
 #'   the transitive `source_lineage` field via `depth = "source"`.
 #' @export
@@ -261,8 +264,8 @@ datom_get_parents <- function(conn, name, version = NULL) {
 #'
 #' The two fields answer different questions:
 #' - `"source"`: "what raw datasets does this table ultimately depend on?"
-#'   (audit, regulatory disclosure, reproducibility scope). Pre-computed by
-#'   dpbuild from the union of parents' `source_lineage` fields.
+#'   (audit, regulatory disclosure, reproducibility scope). Derived at write
+#'   time as the deduplicated union of the parents' `source_lineage` fields.
 #' - `"parents"`: "what did this table come from one step back?"
 #'   (debugging, diff, replay). Equivalent to [datom_get_parents()].
 #'
@@ -272,10 +275,11 @@ datom_get_parents <- function(conn, name, version = NULL) {
 #'   current metadata. If provided, fetches the versioned metadata snapshot.
 #' @param depth One of `"source"` (default) or `"parents"`.
 #'
-#' @return For `depth = "source"`: list of source-table descriptors (each with
-#'   `project`, `table`, `version_sha`), or `NULL` if the field is absent.
+#' @return For `depth = "source"`: the table's recorded `source_lineage` --
+#'   a list of source-table descriptors (each with `project`, `table`,
+#'   `version_sha`), or `NULL` if the field is absent.
 #'   For `depth = "parents"`: list of parent entries (each with `source`,
-#'   `table`, `version`), or `NULL` if no lineage is recorded.
+#'   `table`, `version`, `data_sha`), or `NULL` if no lineage is recorded.
 #' @seealso [datom_get_parents()] for a direct shorthand for the `"parents"` depth.
 #' @export
 #'

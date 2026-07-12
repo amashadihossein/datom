@@ -765,7 +765,7 @@ test_that("version_history skips duplicate entry when latest version matches", {
 
 # --- datom_write() — Phase 8 enriched params -----------------------------------
 
-test_that("datom_write passes table_type and parents to metadata", {
+test_that("datom_write records lean parents and derived source_lineage", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -776,11 +776,6 @@ test_that("datom_write passes table_type and parents to metadata", {
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
-
-    # Seed parent snapshot so data_sha enrichment resolves cleanly
-    snap_dir <- fs::dir_create(fs::path(getwd(), "proj_a", "tbl1", ".metadata"))
-    jsonlite::write_json(list(data_sha = "data_sha_abc"), fs::path(snap_dir, "sha_abc.json"),
-                         auto_unbox = TRUE)
 
     captured_meta <- NULL
     local_mocked_bindings(
@@ -793,60 +788,67 @@ test_that("datom_write passes table_type and parents to metadata", {
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
-    parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_abc"))
-    source_lineage <- list(list(project = "proj_a", table = "tbl1", version_sha = "data_sha_abc"))
+    # Resolved parent records as produced by datom_parent(): each carries
+    # source, table, version, data_sha, and source_lineage.
+    parents <- list(
+      list(
+        source = "proj_a", table = "tbl1", version = "sha_abc",
+        data_sha = "data_sha_abc",
+        source_lineage = list(list(
+          project = "proj_a", table = "tbl1", version_sha = "data_sha_abc"
+        ))
+      ),
+      list(
+        source = "proj_b", table = "tbl2", version = "sha_def",
+        data_sha = "data_sha_def",
+        source_lineage = list(list(
+          project = "proj_b", table = "tbl2", version_sha = "data_sha_def"
+        ))
+      )
+    )
+
     datom_write(
       conn, data = data.frame(x = 1), name = "derived_tbl",
-      parents = parents, source_lineage = source_lineage, .table_type = "derived"
+      parents = parents, .table_type = "derived"
     )
 
     expect_equal(captured_meta$table_type, "derived")
-    expect_length(captured_meta$parents, 1)
+    expect_length(captured_meta$parents, 2)
+
+    # parents[] are lean: exactly source, table, version, data_sha and
+    # never carry a nested source_lineage.
+    for (p in captured_meta$parents) {
+      expect_setequal(names(p), c("source", "table", "version", "data_sha"))
+      expect_null(p$source_lineage)
+    }
     expect_equal(captured_meta$parents[[1]]$source, "proj_a")
+    expect_equal(captured_meta$parents[[1]]$data_sha, "data_sha_abc")
+    expect_equal(captured_meta$parents[[2]]$table, "tbl2")
+
+    # Top-level source_lineage equals the union of the parents' lineages.
+    expected_sl <- datom_lineage_union(
+      lapply(parents, function(p) p$source_lineage)
+    )
+    expect_equal(captured_meta$source_lineage, expected_sl)
+    expect_length(captured_meta$source_lineage, 2)
   })
 })
 
-test_that("datom_write enriches parents with data_sha from local clone", {
-  withr::with_tempdir({
-    repo <- git2r::init(".")
-    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
-    writeLines("init", "README.md")
-    git2r::add(repo, "README.md")
-    git2r::commit(repo, "init")
+test_that("datom_write rejects raw parents lacking data_sha", {
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$path <- tempdir()
 
-    conn <- mock_datom_conn(list())
-    conn$role <- "developer"
-    conn$path <- getwd()
-
-    # Seed the parent metadata snapshot in the local clone
-    parent_meta_dir <- fs::dir_create(fs::path(getwd(), "proj_a", "tbl1", ".metadata"))
-    parent_meta <- list(data_sha = "parent_data_sha_xyz", table_type = "imported")
-    jsonlite::write_json(parent_meta, fs::path(parent_meta_dir, "sha_abc.json"),
-                         auto_unbox = TRUE)
-
-    captured_meta <- NULL
-    local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
-      .datom_storage_write_json = function(conn, sk, d) {
-        if (grepl("metadata.json$", sk)) captured_meta <<- d
-        invisible(TRUE)
-      },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
-    )
-
-    parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_abc"))
-    source_lineage <- list(list(project = "proj_a", table = "tbl1", version_sha = "parent_data_sha_xyz"))
-    datom_write(
-      conn, data = data.frame(x = 1), name = "derived_tbl",
-      parents = parents, source_lineage = source_lineage
-    )
-
-    expect_equal(captured_meta$parents[[1]]$data_sha, "parent_data_sha_xyz")
-  })
+  # Raw list without a resolved data_sha (i.e. not a datom_parent() record).
+  parents <- list(list(source = "p", table = "t", version = "v"))
+  expect_error(
+    datom_write(conn, data = data.frame(x = 1), name = "tbl",
+                parents = parents),
+    "datom_parent"
+  )
 })
 
-test_that("datom_write warns and leaves data_sha NULL when parent snapshot missing", {
+test_that("datom_write does not read parent snapshots (no enrichment)", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -866,19 +868,29 @@ test_that("datom_write warns and leaves data_sha NULL when parent snapshot missi
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
+      # Any parent-snapshot read during write would abort -- proves the
+      # old enrichment path is gone.
+      .datom_storage_read_json = function(conn, s3_key) {
+        cli::cli_abort("no parent snapshot reads allowed during write")
+      },
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
-    parents <- list(list(source = "proj_a", table = "tbl1", version = "sha_missing"))
-    source_lineage <- list(list(project = "proj_a", table = "tbl1", version_sha = "any"))
-    expect_warning(
+    parents <- list(list(
+      source = "proj_a", table = "tbl1", version = "sha_abc",
+      data_sha = "data_sha_abc",
+      source_lineage = list(list(
+        project = "proj_a", table = "tbl1", version_sha = "data_sha_abc"
+      ))
+    ))
+
+    expect_no_error(
       datom_write(
         conn, data = data.frame(x = 1), name = "derived_tbl",
-        parents = parents, source_lineage = source_lineage
-      ),
-      "data_sha"
+        parents = parents
+      )
     )
-    expect_null(captured_meta$parents[[1]]$data_sha)
+    expect_equal(captured_meta$parents[[1]]$data_sha, "data_sha_abc")
   })
 })
 
@@ -976,33 +988,24 @@ test_that("datom_write defaults: derived type, no parents, no original_file_sha"
 
 # --- datom_write() -- source_lineage -------------------------------------------
 
-test_that("datom_write errors when parents non-NULL and source_lineage is NULL", {
+test_that("datom_write validates parent source_lineage structure", {
   conn <- mock_datom_conn(list())
   conn$role <- "developer"
   conn$path <- tempdir()
 
-  parents <- list(list(source = "p", table = "t", version = "v"))
-  expect_error(
-    datom_write(conn, data = data.frame(x = 1), name = "tbl", parents = parents),
-    "source_lineage.*required"
-  )
-})
-
-test_that("datom_write errors with malformed source_lineage entry", {
-  conn <- mock_datom_conn(list())
-  conn$role <- "developer"
-  conn$path <- tempdir()
-
-  parents <- list(list(source = "p", table = "t", version = "v"))
-  bad_sl <- list(list(project = "p", table = "t"))  # missing version_sha
+  # Resolved parent (has data_sha) but a malformed nested source_lineage.
+  parents <- list(list(
+    source = "p", table = "t", version = "v", data_sha = "d",
+    source_lineage = list(list(project = "p", table = "t"))  # no version_sha
+  ))
   expect_error(
     datom_write(conn, data = data.frame(x = 1), name = "tbl",
-                parents = parents, source_lineage = bad_sl),
+                parents = parents),
     "version_sha"
   )
 })
 
-test_that("datom_write stores source_lineage in metadata", {
+test_that("datom_write records .source_lineage on the imported path", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -1013,11 +1016,6 @@ test_that("datom_write stores source_lineage in metadata", {
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
-
-    # Seed parent snapshot so data_sha enrichment resolves cleanly
-    snap_dir <- fs::dir_create(fs::path(getwd(), "proj_a", "raw_dm", ".metadata"))
-    jsonlite::write_json(list(data_sha = "data_sha_abc"), fs::path(snap_dir, "sha_abc.json"),
-                         auto_unbox = TRUE)
 
     captured_meta <- NULL
     local_mocked_bindings(
@@ -1030,13 +1028,16 @@ test_that("datom_write stores source_lineage in metadata", {
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
-    parents <- list(list(source = "proj_a", table = "raw_dm", version = "sha_abc"))
-    sl <- list(list(project = "proj_a", table = "raw_dm", version_sha = "data_sha_abc"))
-    datom_write(conn, data = data.frame(x = 1), name = "derived_tbl",
-                parents = parents, source_lineage = sl)
+    # Imported self-entry path (as datom_sync passes it): no parents.
+    sl <- list(list(
+      project = "test-project", table = "raw_dm", version_sha = "data_sha_abc"
+    ))
+    datom_write(conn, data = data.frame(x = 1), name = "raw_dm",
+                .source_lineage = sl, .table_type = "imported")
 
+    expect_null(captured_meta$parents)
     expect_length(captured_meta$source_lineage, 1)
-    expect_equal(captured_meta$source_lineage[[1]]$project, "proj_a")
+    expect_equal(captured_meta$source_lineage[[1]]$project, "test-project")
     expect_equal(captured_meta$source_lineage[[1]]$table, "raw_dm")
     expect_equal(captured_meta$source_lineage[[1]]$version_sha, "data_sha_abc")
   })

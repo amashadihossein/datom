@@ -314,8 +314,8 @@ Current state only — no history stored here:
 |-------|-------------|
 | `data_sha` | SHA of the parquet file stored in S3. Direct S3 key: `{table}/{data_sha}.parquet`. |
 | `table_type` | `"imported"` (from source file via `datom_sync`) or `"derived"` (from data frame via `datom_write`) |
-| `parents` | Immediate parents only. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version}` entries, or `null` if lineage not recorded. Each entry: `source` = project_name of the parent data space, `table` = table name, `version` = **metadata_sha** of the parent version. The metadata_sha is the direct S3 key for the parent's metadata snapshot: `{table}/.metadata/{version}.json`. Purpose: **traversal and retrieval** -- enables one-hop-at-a-time lineage walking and versioned reads without secondary lookups. See note below on the two-SHA design. |
-| `source_lineage` | Transitive closure of all raw-source tables that contributed data to this table. A flat list of `{project, table, version_sha}` entries where `version_sha` is the **data_sha** (content address of the parquet bytes) of the raw source table. The data_sha is the direct S3 key for the source data: `{table}/{version_sha}.parquet`. Purpose: **content identity and permissioning** -- the data_sha is stable across metadata rewrites, making it the correct key for access policy registries. For `"imported"` tables: a single self-entry. For `"derived"` tables: required when `parents` is non-null -- computed by unioning the `source_lineage` lists of all parents and deduplicating. **Walker invariant**: tools that walk lineage must follow `parents`, never `source_lineage` -- `source_lineage` entries are terminal leaves and following them would infinite-loop on the self-entry. |
+| `parents` | Immediate parents only. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version, data_sha}` entries, or `null` if lineage not recorded. Each entry is a record produced by `datom_parent(conn, table, version)`: `source` = `conn$project_name` of the parent, `table` = table name, `version` = **metadata_sha** of the parent version, `data_sha` = authoritative content SHA of the parent's parquet file (resolved from the parent's own store at construction time). The metadata_sha is the direct S3 key for the parent's metadata snapshot: `{table}/.metadata/{version}.json`. Purpose: **traversal and retrieval** -- enables one-hop-at-a-time lineage walking and versioned reads without secondary lookups. See note below on the two-SHA design. |
+| `source_lineage` | Transitive closure of all raw-source tables that contributed data to this table. A flat list of `{project, table, version_sha}` entries where `version_sha` is the **data_sha** (content address of the parquet bytes) of the raw source table. The data_sha is the direct S3 key for the source data: `{table}/{version_sha}.parquet`. Purpose: **content identity and permissioning** -- the data_sha is stable across metadata rewrites, making it the correct key for access policy registries. For `"imported"` tables: a single self-entry. For `"derived"` tables: **derived by `datom_write()` as the deduplicated union of the parents' captured `source_lineage` fields** via `datom_lineage_union()`; callers do not supply it. **Walker invariant**: tools that walk lineage must follow `parents`, never `source_lineage` -- `source_lineage` entries are terminal leaves and following them would infinite-loop on the self-entry. |
 | `size_bytes` | Size of the parquet file in bytes |
 | `nrow`, `ncol` | Table dimensions |
 | `colnames` | Column names array |
@@ -332,11 +332,11 @@ A derived table's metadata carries two different version identifiers for its par
 | `parents[].version` | metadata_sha | `{table}/.metadata/{sha}.json` | Traversal, versioned retrieval, lineage validation |
 | `source_lineage[].version_sha` | data_sha | `{table}/{sha}.parquet` | Content identity, access policy checks |
 
-**Why metadata_sha in `parents`**: The metadata snapshot file is keyed by metadata_sha. Traversal tools (e.g. `datom_get_lineage`, `datom_validate_lineage`) and versioned reads (`datom_read(version=...)`) need to open that file. Using metadata_sha avoids a secondary lookup -- one GET gives the full provenance record.
+**Why metadata_sha in `parents`**: The metadata snapshot file is keyed by metadata_sha. Traversal tools (e.g. `datom_get_lineage`, `datom_parent`) and versioned reads (`datom_read(version=...)`) need to open that file. Using metadata_sha avoids a secondary lookup -- one GET gives the full provenance record.
 
 **Why data_sha in `source_lineage`**: Access policy registries (in datomanager) index permissions by `{project, table, data_sha}`. The data_sha is stable across metadata rewrites -- if the same raw bytes are re-ingested with a new message, the data_sha is unchanged and existing policy grants continue to apply without manual reauthorization. Using metadata_sha here would require re-granting access every time metadata changes, which is incorrect semantics.
 
-**The apparent version discrepancy**: For a simple single-project derived table, `parents[dm].version` and `source_lineage[dm].version_sha` will both point to the same physical version of `dm`, but through different SHAs. This is not an error. A future schema enhancement (tracked as a GitHub issue) will add `data_sha` to each `parents` entry, making the bridge between the two fields explicit and self-documenting in the JSON.
+**The `parents` bridge — `data_sha` added**: Recorded parent entries are now `{source, table, version, data_sha}`. The `data_sha` field bridges the two SHA types explicitly in the JSON: it is resolved from the parent's own store at `datom_parent()` construction time and makes the link between `parents[].version` (metadata_sha) and `source_lineage[].version_sha` (data_sha) self-documenting without a secondary lookup.
 
 ### version_history.json
 
@@ -775,8 +775,8 @@ Flexible write operations:
 For normal writes:
 - Change detection via metadata_sha comparison (alphabetically sorted fields)
 - Handles: no-op, metadata-only update, or full update with S3 upload
-- `parents`: list of `list(source, table, version)` entries recording immediate parent lineage. `NULL` if lineage not recorded. Supplied by dpbuild, which tracks dependency versions automatically (e.g., via targets). `datom_sync()` never passes `parents` -- imported tables always have `parents: null`.
-- `source_lineage`: flat transitive closure of all raw-source tables. Required when `parents` is non-null. dpbuild computes this by unioning the `source_lineage` of all parents plus any imported parent self-entries. For `datom_sync()`, auto-computed as a single self-entry (project, table, data_sha of the imported file).
+- `parents`: list of `list(source, table, version, data_sha)` entries recording immediate parent lineage. Records are produced by `datom_parent(conn, table, version)` — one conn per parent project — which resolves `data_sha` and `source_lineage` from the parent's own store. `NULL` if lineage not recorded. `datom_sync()` never passes `parents` — imported tables always have `parents: null`.
+- `source_lineage`: derived by `datom_write()` as the deduplicated union of the parents' captured `source_lineage` fields; there is no `source_lineage` argument to supply. For `datom_sync()`, auto-computed as a single self-entry (project, table, data_sha of the imported file).
 
 Returns: List with deployment details
 
@@ -793,7 +793,7 @@ Reads the `parents` field from a table's metadata:
 
 Required by datomanager to walk lineage for access gate computation.
 
-Returns: List of parent entries (each with `source`, `table`, `version`), or `NULL`.
+Returns: List of parent entries (each with `source`, `table`, `version`, `data_sha`), or `NULL`.
 
 #### datom_get_lineage() — All Users
 
@@ -809,27 +809,44 @@ Reads lineage metadata for a table:
 
 Returns: List of lineage entries, or `NULL`.
 
-#### datom_validate_lineage() — Data Developers
+#### Recomputing lineage consistency (composable recipe) — Data Developers
+
+There is no dedicated `datom_validate_lineage()` function. `datom_write()`
+derives a derived table's `source_lineage` from the union of its parents'
+lineages at write time, and lineage is version-pinned, so a recompute equals
+the recorded value in normal operation. To audit consistency, compose the
+existing reads plus `datom_lineage_union()`:
 
 ```r
-datom_validate_lineage(conn, name, version = NULL)
+# conn_c is scoped to the derived table's project.
+parents <- datom_get_parents(conn_c, "c")
+
+# Read each parent through a conn scoped to that parent's project.
+parent_sls <- lapply(parents, function(p) {
+  datom_get_lineage(conn_for(p$source), p$table,
+                    version = p$version, depth = "source")
+})
+
+recomputed <- datom_lineage_union(parent_sls)
+recorded   <- datom_get_lineage(conn_c, "c", depth = "source")
+identical(recomputed, recorded)
 ```
 
-Audits a derived table's `source_lineage` for consistency against its declared parents:
+Steps:
 
-1. Reads the subject table's metadata.
-2. Reads each parent's metadata (using `parent$version` to fetch the versioned snapshot).
-3. Unions the parents' `source_lineage` lists (the "computed" lineage).
-4. Diffs declared vs computed: reports missing entries, extra entries, and wrong-version entries (same project+table, different sha).
-
-Returns a named list:
-- `status`: `"ok"`, `"mismatch"`, `"unchecked"` (no parents), or `"error"` (unreachable parent).
-- `missing`: entries in computed but absent from declared.
-- `extra`: entries declared but absent from computed.
-- `wrong_version`: entries where project+table match but `version_sha` differs.
-- `message`: human-readable summary string.
-
-Does **not** hard-abort on unreachable parents -- returns `status = "error"` so callers can decide whether to warn or stop.
+1. `datom_get_parents(conn, name)` returns each parent's `source`, `table`,
+   `version`, and `data_sha` -- enough to select the parent's project
+   connection and its pinned version.
+2. For each parent, read its `source_lineage` with
+   `datom_get_lineage(parent_conn, parent$table, version = parent$version,
+   depth = "source")`, using a connection scoped to that parent's project
+   (`parent$source`). This honors the one-connection-per-project model; no
+   single connection reaches across project stores.
+3. Union the parents' lineages with `datom_lineage_union()` (dedup by
+   `{project, table, version_sha}`).
+4. Compare the union to the derived table's recorded `source_lineage`
+   (`datom_get_lineage(conn, name, depth = "source")`). Callers decide
+   whether a difference is a warning or a hard stop.
 
 #### datom_sync_dispatch() — RELOCATED to datomanager (gov-seam-liftout, 2026-06-20)
 
@@ -1874,7 +1891,7 @@ Team workflows are fully supported:
 - **`datom_pull()`**: Git pull (fetch + merge). Git is the source of truth for all metadata.
 - **`datom_clone()`**: Wraps `git2r::clone()` + `datom_get_conn()` — the recommended way for teammates to join a repo.
 - **Pull-before-push discipline**: `.datom_git_push()` auto-pulls before pushing. `.datom_check_git_current()` detects stale state at `datom_sync()` entry.
-- **Vignettes**: the *Get Started* / *Scale Up* / *Govern* article track walks the team workflow end-to-end (start at *First Extract*; the *Second Engineer Joins* article covers pull-before-push and conflict recovery). *Credentials in Practice* is the credentials reference.
+- **Vignettes**: the *Get Started* / *Scale Up* / *Govern* article track walks the team workflow end-to-end (start at *Getting Started*; the *Second Engineer Joins* article covers pull-before-push and conflict recovery). *Credentials in Practice* is the credentials reference.
 
 ---
 

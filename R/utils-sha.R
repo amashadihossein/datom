@@ -49,6 +49,75 @@
 }
 
 
+#' Validate parents Field Structure
+#'
+#' Checks that `parents` is either NULL or a list of entries each
+#' containing non-empty string fields `source`, `table`, `version`, and
+#' `data_sha`. WHERE an entry carries a non-NULL, non-empty
+#' `source_lineage` field, it is validated via
+#' `.datom_validate_source_lineage()`. Aborts with a cli error pointing to
+#' the first invalid entry.
+#'
+#' @param x Value to validate.
+#' @return Invisibly TRUE if valid.
+#' @keywords internal
+.datom_validate_parents <- function(x) {
+  if (is.null(x)) return(invisible(TRUE))
+
+  # Parents are meant to come from datom_parent(); every failure points there
+  # as the remedy, so a raw list lacking data_sha gets a friendly message in
+  # the same single validation pass.
+  remedy <- paste0(
+    "Declare parents with {.fn datom_parent} so each carries a ",
+    "resolved {.field data_sha}."
+  )
+
+  if (!is.list(x) || (length(x) > 0L && !is.null(names(x)))) {
+    cli::cli_abort(c(
+      "{.arg parents} must be a list of entry lists, not a named list.",
+      "i" = remedy
+    ))
+  }
+
+  required_fields <- c("source", "table", "version", "data_sha")
+
+  for (i in seq_along(x)) {
+    entry <- x[[i]]
+    if (!is.list(entry)) {
+      cli::cli_abort(c(
+        paste0("Entry {i} of {.arg parents} must be a list, not ",
+               "{.cls {class(entry)}}."),
+        "i" = remedy
+      ))
+    }
+    missing <- setdiff(required_fields, names(entry))
+    if (length(missing) > 0L) {
+      cli::cli_abort(c(
+        paste0("Entry {i} of {.arg parents} is missing ",
+               "required field{?s}: {.val {missing}}."),
+        "i" = remedy
+      ))
+    }
+    for (field in required_fields) {
+      val <- entry[[field]]
+      if (!is.character(val) || length(val) != 1L || !nzchar(val)) {
+        cli::cli_abort(c(
+          paste0("Entry {i} of {.arg parents}: field ",
+                 "{.field {field}} must be a non-empty string."),
+          "i" = remedy
+        ))
+      }
+    }
+    lineage <- entry$source_lineage
+    if (!is.null(lineage) && length(lineage) > 0L) {
+      .datom_validate_source_lineage(lineage)
+    }
+  }
+
+  invisible(TRUE)
+}
+
+
 # Internal helpers for SHA computation and metadata operations
 
 #' Compute SHA-256 of Data

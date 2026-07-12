@@ -10,7 +10,10 @@ reaches a stable release.
 ## Core read/write/version
 
 * `datom_write()` — write a data frame as a versioned parquet table with
-  automatic SHA-based deduplication.
+  automatic SHA-based deduplication. When `parents` is supplied it takes
+  resolved `datom_parent()` records and derives the table's `source_lineage`
+  as the deduplicated union of their lineages; the public `source_lineage`
+  argument has been removed.
 * `datom_read()` — read the current or any historical version of a table.
 * `datom_history()` — view the full version history of a table.
 * `datom_list()` — list tables in a project with optional glob filtering.
@@ -25,9 +28,19 @@ reaches a stable release.
 ## Query & lineage
 
 * `datom_get_lineage()` / `datom_get_parents()` — retrieve parent and source
-  lineage for a table version.
-* `datom_validate_lineage()` — verify that declared lineage is consistent with
-  stored metadata.
+  lineage for a table version; parent entries carry `source`, `table`,
+  `version`, and `data_sha`.
+* `datom_parent()` — resolve a parent table against a connection into a
+  pure-data lineage record, capturing the parent's authoritative `data_sha`
+  and `source_lineage`. Same-project and cross-project parents are declared
+  identically; pass the records to `datom_write(parents = ...)`.
+* `datom_lineage_union()` — deduplicated union of `source_lineage` lists
+  (by `{project, table, version_sha}`); the building block of the composable
+  recipe for recomputing and checking a table's lineage.
+* `datom_validate_lineage()` was removed before release. Lineage consistency
+  is now a composable recipe: `datom_get_parents()`, per-parent
+  `datom_get_lineage(depth = "source")`, and `datom_lineage_union()`, compared
+  against the recorded `source_lineage`.
 * `datom_status()` — show connection, table, git, and input-file status.
 * `datom_summary()` — compact project overview (backend, table count, versions,
 

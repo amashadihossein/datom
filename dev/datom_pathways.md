@@ -71,7 +71,7 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 3. For each parent, use `parents[].version` as metadata_sha and open `{parent_table}/.metadata/{version}.json`.
 4. Repeat only through `parents`.
 
-**Primary functions/files:** `datom_get_lineage(depth = "parents")`, `datom_validate_lineage()`, `parents`.
+**Primary functions/files:** `datom_get_lineage(depth = "parents")`, `datom_get_parents()`, `datom_lineage_union()` (compose the recompute recipe), `parents`.
 
 **Do not:** Use `source_lineage` as a graph edge. It is a flattened source attribution list, not a traversal graph.
 

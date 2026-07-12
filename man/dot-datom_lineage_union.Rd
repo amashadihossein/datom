@@ -2,20 +2,18 @@
 % Please edit documentation in R/lineage.R
 \name{.datom_lineage_union}
 \alias{.datom_lineage_union}
-\title{Union and deduplicate source_lineage lists}
+\title{Union and deduplicate source_lineage lists (internal wrapper)}
 \usage{
 .datom_lineage_union(lineage_lists)
 }
 \arguments{
-\item{lineage_lists}{List of source_lineage lists (each itself a list of entries).}
+\item{lineage_lists}{List of source_lineage lists (each a list of entries).}
 }
 \value{
 Deduplicated list of source_lineage entries.
 }
 \description{
-Takes a list of source_lineage lists and returns a single deduplicated list.
-Dedup key is (project, table, version_sha). In case of project+table
-collision with differing version_sha, all variants are kept (the caller's
-diff logic will flag them).
+Thin wrapper retained for existing internal callers. Delegates to the
+exported \code{\link[=datom_lineage_union]{datom_lineage_union()}}.
 }
 \keyword{internal}
