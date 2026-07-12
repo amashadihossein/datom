@@ -16,13 +16,16 @@ current metadata. If provided, fetches the versioned metadata snapshot
 from S3.}
 }
 \value{
-List of parent entries (each with \code{source}, \code{table}, \code{version}),
-or \code{NULL} if no lineage is recorded.
+List of parent entries (each with \code{source}, \code{table}, \code{version},
+\code{data_sha}), or \code{NULL} if no lineage is recorded. The \code{data_sha} field
+is the parent's authoritative data SHA recorded via \code{\link[=datom_parent]{datom_parent()}},
+and together with \code{source} and \code{version} is sufficient to select the
+parent's project connection and its pinned version.
 }
 \description{
 Reads the \code{parents} field from a table's metadata. Returns the lineage
-entries recorded at write time by dp_dev or other callers. For imported
-tables or derived tables with no recorded lineage, returns \code{NULL}.
+entries recorded at write time by \code{\link[=datom_write]{datom_write()}}. For imported tables or
+derived tables with no recorded lineage, returns \code{NULL}.
 }
 \examples{
 \dontrun{

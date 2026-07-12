@@ -10,8 +10,8 @@
 #   - imported tables (dm, ex) get an auto self-entry in source_lineage
 #   - a derived table written with parents + unioned source_lineage round-trips
 #   - datom_get_lineage(depth = "source" | "parents")
-#   - datom_validate_lineage() == "ok"
-#   - structural mandate: datom_write(parents=...) without source_lineage errors
+#   - recompute recipe: parents' unioned source_lineage == recorded value
+#   - structural mandate: datom_write() rejects a raw parent lacking data_sha
 #
 # Usage (manual) -- works from ANY working directory:
 #   source("~/projects/dev/datom/dev/e2e-solo-lineage.R")
@@ -75,17 +75,16 @@ tryCatch({
       "| table =", dm_lineage[[1]]$table,
       "| version_sha =", substr(dm_lineage[[1]]$version_sha, 1, 8), "...\n")
 
-  # ---- Write a derived table with parents + source_lineage ----
-  # NOTE: a benign warning "Could not resolve data_sha for parent ..." is
-  # expected here -- datom_write() prepends the project name when locating
-  # same-project parent metadata (pre-existing; see issue #52). The write
-  # succeeds and validate_lineage() is unaffected.
-  cat("\n--- Writing derived table with parents + source_lineage ---\n")
-  dm_meta      <- datom_history(conn, "dm")
-  ex_meta      <- datom_history(conn, "ex")
-  dm_data      <- datom_read(conn, "dm")
-  ex_data      <- datom_read(conn, "ex")
-  full_lineage <- c(dm_lineage, ex_lineage)
+  # ---- Write a derived table with resolved parent records ----
+  # Parents are declared with datom_parent(), which reads each parent's
+  # authoritative data_sha and source_lineage from its own snapshot.
+  # datom_write() derives the derived table's source_lineage as the union of
+  # those parents' lineages -- there is no public source_lineage argument.
+  cat("\n--- Writing derived table with datom_parent() records ---\n")
+  dm_meta <- datom_history(conn, "dm")
+  ex_meta <- datom_history(conn, "ex")
+  dm_data <- datom_read(conn, "dm")
+  ex_data <- datom_read(conn, "ex")
 
   derived <- ex_data |>
     dplyr::select(STUDYID, USUBJID, EXTRT) |>
@@ -94,14 +93,13 @@ tryCatch({
     dplyr::summarise(n = dplyr::n(), .groups = "drop")
 
   datom_write(conn,
-    data           = derived,
-    name           = "summary_trt_by_sex",
-    message        = "Derived: treatment by sex",
-    parents        = list(
-      list(source = proj, table = "dm", version = dm_meta$version[1]),
-      list(source = proj, table = "ex", version = ex_meta$version[1])
-    ),
-    source_lineage = full_lineage
+    data    = derived,
+    name    = "summary_trt_by_sex",
+    message = "Derived: treatment by sex",
+    parents = list(
+      datom_parent(conn, "dm", dm_meta$version[1]),
+      datom_parent(conn, "ex", ex_meta$version[1])
+    )
   )
   cat("datom_write() OK\n")
 
@@ -116,24 +114,38 @@ tryCatch({
   stopifnot("ex in source_lineage" = "ex" %in% tables_in_src)
   cat("Tables in source_lineage:", paste(sort(tables_in_src), collapse = ", "), "\n")
 
-  # ---- Verify datom_validate_lineage ----
-  cat("\n--- datom_validate_lineage() ---\n")
-  val <- datom_validate_lineage(conn, "summary_trt_by_sex")
-  cat("status:", val$status, "| missing:", length(val$missing),
-      "| extra:", length(val$extra), "| wrong_version:", length(val$wrong_version), "\n")
-  stopifnot("validate status is ok"    = val$status == "ok")
-  stopifnot("no missing entries"       = length(val$missing) == 0L)
-  stopifnot("no extra entries"         = length(val$extra) == 0L)
-  stopifnot("no wrong_version entries" = length(val$wrong_version) == 0L)
+  # ---- Recompute lineage consistency (composable recipe) ----
+  # Replaces the removed datom_validate_lineage(). Read each recorded parent
+  # through a conn scoped to that parent's project (here the single solo
+  # conn), union their source_lineage with datom_lineage_union(), and compare
+  # to the derived table's recorded source_lineage.
+  cat("\n--- Recompute lineage consistency (recipe) ---\n")
+  parents_rec <- datom_get_parents(conn, "summary_trt_by_sex")
+  parent_sls  <- lapply(parents_rec, function(p) {
+    datom_get_lineage(conn, p$table, version = p$version,
+                      depth = "source")
+  })
+  recomputed <- datom_lineage_union(parent_sls)
+  recorded   <- datom_get_lineage(conn, "summary_trt_by_sex",
+                                  depth = "source")
 
-  # ---- Structural mandate: parents without source_lineage -> error ----
-  cat("\n--- Structural mandate: parents without source_lineage -> error ---\n")
+  key3 <- function(e) paste(e$project, e$table, e$version_sha, sep = "\t")
+  rec_keys  <- sort(vapply(recomputed, key3, character(1)))
+  rded_keys <- sort(vapply(recorded, key3, character(1)))
+  cat("recomputed entries:", length(recomputed),
+      "| recorded entries:", length(recorded), "\n")
+  stopifnot("recomputed union matches recorded source_lineage" =
+              identical(rec_keys, rded_keys))
+
+  # ---- Structural mandate: raw parent lacking data_sha -> error ----
+  cat("\n--- Structural mandate: raw parent without data_sha -> error ---\n")
   caught <- tryCatch(
     datom_write(conn,
       data    = derived,
       name    = "bad_table",
       message = "Should fail",
-      parents = list(list(source = proj, table = "dm", version = dm_meta$version[1]))
+      parents = list(list(source = proj, table = "dm",
+                          version = dm_meta$version[1]))
     ),
     error = function(e) e
   )

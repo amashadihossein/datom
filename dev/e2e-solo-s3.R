@@ -89,12 +89,12 @@ tryCatch({
   stopifnot("dm self-lineage has 1 entry" = length(dm_lineage) == 1L)
   stopifnot("ex self-lineage has 1 entry" = length(ex_lineage) == 1L)
 
-  # ---- WRITE a derived table with parents + source_lineage ----
-  # NOTE: a benign warning "Could not resolve data_sha for parent ..." is
-  # expected here -- datom_write() prepends the project name when locating
-  # same-project parent metadata (pre-existing; see issue #52). The write
-  # succeeds and validate_lineage() is unaffected.
-  cat("\n=== WRITE derived table (parents + source_lineage) ===\n")
+  # ---- WRITE a derived table with resolved parent records ----
+  # Parents are declared with datom_parent(), which reads each parent's
+  # authoritative data_sha and source_lineage from its own snapshot.
+  # datom_write() derives the derived table's source_lineage as the union of
+  # those parents' lineages -- there is no public source_lineage argument.
+  cat("\n=== WRITE derived table (datom_parent records) ===\n")
   dm_meta <- datom_history(conn, "dm")
   ex_meta <- datom_history(conn, "ex")
 
@@ -106,24 +106,35 @@ tryCatch({
 
   datom_write(
     conn,
-    data           = summary_trt_by_sex,
-    name           = "summary_trt_by_sex",
-    message        = "Derived: summary of treatment by sex",
-    parents        = list(
-      list(source = proj, table = "dm", version = dm_meta$version[1]),
-      list(source = proj, table = "ex", version = ex_meta$version[1])
-    ),
-    source_lineage = c(dm_lineage, ex_lineage)
+    data    = summary_trt_by_sex,
+    name    = "summary_trt_by_sex",
+    message = "Derived: summary of treatment by sex",
+    parents = list(
+      datom_parent(conn, "dm", dm_meta$version[1]),
+      datom_parent(conn, "ex", ex_meta$version[1])
+    )
   )
 
-  # ---- VERIFY lineage ----
-  cat("\n=== VERIFY lineage ===\n")
+  # ---- VERIFY lineage (recompute recipe) ----
+  # Replaces the removed datom_validate_lineage(): read each recorded parent
+  # through a conn scoped to that parent's project (here the single solo
+  # conn), union their source_lineage, and compare to the recorded value.
+  cat("\n=== VERIFY lineage (recompute recipe) ===\n")
   src <- datom_get_lineage(conn, "summary_trt_by_sex", depth = "source")
   par <- datom_get_lineage(conn, "summary_trt_by_sex", depth = "parents")
   stopifnot("source has 2 entries"  = length(src) == 2L)
   stopifnot("parents has 2 entries" = length(par) == 2L)
-  stopifnot("validate_lineage ok" =
-              datom_validate_lineage(conn, "summary_trt_by_sex")$status == "ok")
+
+  parents_rec <- datom_get_parents(conn, "summary_trt_by_sex")
+  parent_sls  <- lapply(parents_rec, function(p) {
+    datom_get_lineage(conn, p$table, version = p$version,
+                      depth = "source")
+  })
+  recomputed <- datom_lineage_union(parent_sls)
+  key3 <- function(e) paste(e$project, e$table, e$version_sha, sep = "\t")
+  stopifnot("recomputed union matches recorded source_lineage" =
+              identical(sort(vapply(recomputed, key3, character(1))),
+                        sort(vapply(src, key3, character(1)))))
 
   # ---- VALIDATE / STATUS ----
   cat("\n=== VALIDATE + STATUS ===\n")

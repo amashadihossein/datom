@@ -1,264 +1,154 @@
-# Lineage validation helpers
-
-#' Validate Source Lineage Consistency
-#'
-#' Checks that a table's declared `source_lineage` matches the union of its
-#' parents' `source_lineage` fields. Detects missing entries (in the computed
-#' union but absent from declared), extra entries (declared but not in the
-#' union), and wrong-version entries (matching project+table but different
-#' `version_sha`).
-#'
-#' datom validates schema shape only at write time. This function provides
-#' on-demand semantic checking, suitable for CI runs, audits, or pre-publication
-#' gates.
-#'
-#' Tables without `parents` return `status = "unchecked"` -- there is no union
-#' to compare against. Tables where any parent's metadata is unreachable return
-#' `status = "error"`.
-#'
-#' @param conn A `datom_conn` object from [datom_get_conn()].
-#' @param name Table name.
-#' @param version Optional metadata_sha (datom version). If NULL, checks
-#'   the current version.
-#'
-#' @return A list with:
-#'   \describe{
-#'     \item{status}{One of `"ok"`, `"mismatch"`, `"unchecked"`, `"error"`.}
-#'     \item{missing}{List of entries in the computed union but absent from declared.}
-#'     \item{extra}{List of entries declared but absent from the computed union.}
-#'     \item{wrong_version}{List of entries where project+table match but
-#'       `version_sha` differs. Each element has `declared` and `computed` sub-lists.}
-#'     \item{message}{Human-readable summary string.}
-#'   }
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' tmp <- tempfile("datom_lineage_val_")
-#' store <- datom_store(
-#'   data = datom_store_local(path = file.path(tmp, "storage")),
-#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-#'   data_repo_url = "https://github.com/example/my-project",
-#'   validate = FALSE
-#' )
-#' datom_init_repo(
-#'   path = file.path(tmp, "repo"),
-#'   project_name = "example_project",
-#'   store = store
-#' )
-#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-#' datom_write(conn, data = datom_example_data("dm"), name = "dm")
-#' datom_validate_lineage(conn, "dm")
-#' unlink(tmp, recursive = TRUE)
-#' }
-datom_validate_lineage <- function(conn, name, version = NULL) {
-
-  if (!inherits(conn, "datom_conn")) {
-    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
-  }
-
-  .datom_validate_name(name)
-
-  if (!is.null(version)) {
-    if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
-      cli::cli_abort("{.arg version} must be a single non-empty string or NULL.")
-    }
-  }
-
-  # --- Read subject metadata ---
-  metadata_key <- if (is.null(version)) {
-    paste0(name, "/.metadata/metadata.json")
-  } else {
-    paste0(name, "/.metadata/", version, ".json")
-  }
-
-  metadata <- tryCatch(
-    .datom_storage_read_json(conn, metadata_key),
-    error = function(e) {
-      cli::cli_abort(c(
-        "Could not read metadata for table {.val {name}}.",
-        "i" = "Underlying error: {conditionMessage(e)}"
-      ))
-    }
-  )
-
-  parents <- metadata$parents
-  declared_sl <- metadata$source_lineage %||% list()
-
-  # --- No parents: nothing to check ---
-  if (is.null(parents) || length(parents) == 0L) {
-    cli::cli_alert_info("Table {.val {name}} has no parents -- source_lineage cannot be verified.")
-    return(invisible(.datom_lineage_result("unchecked",
-      msg = paste0("Table '", name, "' has no parents -- source_lineage cannot be verified.")
-    )))
-  }
-
-  # --- Fetch each parent's source_lineage ---
-  parent_lineages <- tryCatch(
-    purrr::map(parents, function(p) {
-      p_name <- p$table %||% ""
-      p_version <- p$version %||% NULL
-      if (!nzchar(p_name)) {
-        cli::cli_abort("A parent entry is missing the {.field table} field.")
-      }
-      p_key <- if (is.null(p_version) || !nzchar(p_version)) {
-        paste0(p_name, "/.metadata/metadata.json")
-      } else {
-        paste0(p_name, "/.metadata/", p_version, ".json")
-      }
-      p_meta <- tryCatch(
-        .datom_storage_read_json(conn, p_key),
-        error = function(e) {
-          cli::cli_abort(c(
-            "Could not read metadata for parent table {.val {p_name}}.",
-            "i" = "Underlying error: {conditionMessage(e)}"
-          ))
-        }
-      )
-      p_meta$source_lineage %||% list()
-    }),
-    error = function(e) {
-      return(structure(list(message = conditionMessage(e)), class = "datom_lineage_fetch_error"))
-    }
-  )
-
-  if (inherits(parent_lineages, "datom_lineage_fetch_error")) {
-    msg <- parent_lineages$message
-    cli::cli_alert_danger("Could not fetch parent metadata: {msg}")
-    return(invisible(.datom_lineage_result("error", msg = msg)))
-  }
-
-  # --- Compute union ---
-  computed_union <- .datom_lineage_union(parent_lineages)
-
-  # --- Compare declared vs computed ---
-  delta <- .datom_lineage_diff(declared_sl, computed_union)
-
-  if (length(delta$missing) == 0L && length(delta$extra) == 0L &&
-      length(delta$wrong_version) == 0L) {
-    cli::cli_alert_success("source_lineage for {.val {name}} is consistent with parents.")
-    return(invisible(.datom_lineage_result("ok",
-      msg = paste0("source_lineage for '", name, "' is consistent with parents.")
-    )))
-  }
-
-  # --- Report mismatches ---
-  cli::cli_alert_warning("source_lineage mismatch for {.val {name}}:")
-
-  if (length(delta$missing) > 0L) {
-    cli::cli_alert_danger(
-      "{length(delta$missing)} missing entr{?y/ies} (in computed union, absent from declared)."
-    )
-  }
-  if (length(delta$extra) > 0L) {
-    cli::cli_alert_danger(
-      "{length(delta$extra)} extra entr{?y/ies} (declared but not in computed union)."
-    )
-  }
-  if (length(delta$wrong_version) > 0L) {
-    cli::cli_alert_danger(
-      "{length(delta$wrong_version)} wrong-version entr{?y/ies} (project+table match, version_sha differs)."
-    )
-  }
-
-  msg <- paste0(
-    "source_lineage mismatch: ",
-    length(delta$missing), " missing, ",
-    length(delta$extra), " extra, ",
-    length(delta$wrong_version), " wrong-version"
-  )
-  invisible(.datom_lineage_result("mismatch", delta = delta, msg = msg))
-}
-
-
-# --- Internal helpers ----------------------------------------------------------
-
-#' Build a lineage validation result list
-#' @noRd
-.datom_lineage_result <- function(status,
-                                  delta = list(missing = list(), extra = list(),
-                                               wrong_version = list()),
-                                  msg = "") {
-  list(
-    status        = status,
-    missing       = delta$missing %||% list(),
-    extra         = delta$extra %||% list(),
-    wrong_version = delta$wrong_version %||% list(),
-    message       = msg
-  )
-}
-
+# Lineage helpers
 
 #' Union and deduplicate source_lineage lists
 #'
-#' Takes a list of source_lineage lists and returns a single deduplicated list.
-#' Dedup key is (project, table, version_sha). In case of project+table
-#' collision with differing version_sha, all variants are kept (the caller's
-#' diff logic will flag them).
+#' Takes a list of zero or more `source_lineage` lists and returns their
+#' deduplicated union. Each entry is a list with `project`, `table`, and
+#' `version_sha`. Deduplication uses the composite key
+#' `paste(project, table, version_sha, sep = "\t")`, so each distinct entry
+#' appears exactly once and retained entries are returned unchanged.
 #'
-#' @param lineage_lists List of source_lineage lists (each itself a list of entries).
-#' @return Deduplicated list of source_lineage entries.
-#' @keywords internal
-.datom_lineage_union <- function(lineage_lists) {
-  all_entries <- purrr::flatten(lineage_lists)
+#' `NULL` members are tolerated (a parent may carry `source_lineage = NULL`)
+#' and treated as an empty contribution. Empty input, or a list containing
+#' only empty lineage lists, returns an empty list.
+#'
+#' This helper is the building block of the composable lineage recompute
+#' recipe. To check that a derived table's recorded `source_lineage` matches
+#' its parents, read each parent through a connection scoped to that parent's
+#' project and union their lineages:
+#'
+#' \preformatted{
+#' # conn_c is scoped to the derived table's project.
+#' parents <- datom_get_parents(conn_c, "c")
+#'
+#' # One connection per project, keyed by each parent's `source`. Never
+#' # reach across project stores with a single connection.
+#' conns <- list(project_a = conn_a, project_b = conn_b)
+#'
+#' # Read each parent's lineage through its own project connection.
+#' parent_sls <- lapply(parents, function(p) {
+#'   datom_get_lineage(conns[[p$source]], p$table, version = p$version,
+#'                     depth = "source")
+#' })
+#'
+#' recomputed <- datom_lineage_union(parent_sls)
+#' recorded   <- datom_get_lineage(conn_c, "c", depth = "source")
+#' identical(recomputed, recorded)
+#' }
+#'
+#' @param lineages A list of `source_lineage` lists (each itself a list of
+#'   entries with `project`, `table`, `version_sha`). `NULL` members are
+#'   treated as empty.
+#' @return A deduplicated list of `source_lineage` entries, or an empty list
+#'   when there is nothing to union.
+#' @export
+#'
+#' @examples
+#' sl1 <- list(list(project = "p", table = "t", version_sha = "a"))
+#' sl2 <- list(list(project = "p", table = "t", version_sha = "a"))
+#' datom_lineage_union(list(sl1, sl2))
+datom_lineage_union <- function(lineages) {
+  lineages <- purrr::compact(lineages)
+  all_entries <- purrr::flatten(lineages)
   if (length(all_entries) == 0L) return(list())
 
   keys <- purrr::map_chr(all_entries, function(e) {
-    paste(e$project %||% "", e$table %||% "", e$version_sha %||% "", sep = "\t")
+    paste(e$project %||% "", e$table %||% "",
+          e$version_sha %||% "", sep = "\t")
   })
 
   all_entries[!duplicated(keys)]
 }
 
 
-#' Compute diff between declared and computed source_lineage
+#' Union and deduplicate source_lineage lists (internal wrapper)
 #'
-#' @param declared List of declared source_lineage entries.
-#' @param computed List of computed (union) source_lineage entries.
-#' @return List with `missing`, `extra`, `wrong_version` elements.
+#' Thin wrapper retained for existing internal callers. Delegates to the
+#' exported [datom_lineage_union()].
+#'
+#' @param lineage_lists List of source_lineage lists (each a list of entries).
+#' @return Deduplicated list of source_lineage entries.
 #' @keywords internal
-.datom_lineage_diff <- function(declared, computed) {
-  key3 <- function(e) paste(e$project %||% "", e$table %||% "", e$version_sha %||% "", sep = "\t")
-  key2 <- function(e) paste(e$project %||% "", e$table %||% "", sep = "\t")
+.datom_lineage_union <- function(lineage_lists) {
+  datom_lineage_union(lineage_lists)
+}
 
-  declared_keys3 <- purrr::map_chr(declared, key3)
-  computed_keys3 <- purrr::map_chr(computed, key3)
-  declared_keys2 <- purrr::map_chr(declared, key2)
-  computed_keys2 <- purrr::map_chr(computed, key2)
 
-  # Wrong-version: project+table in both, but version_sha differs
-  wrong_version_pairs <- purrr::keep(
-    purrr::map(seq_along(declared), function(i) {
-      dk2 <- declared_keys2[[i]]
-      if (dk2 %in% computed_keys2 && !declared_keys3[[i]] %in% computed_keys3) {
-        j <- which(computed_keys2 == dk2)[[1]]
-        list(declared = declared[[i]], computed = computed[[j]])
-      } else {
-        NULL
-      }
-    }),
-    Negate(is.null)
-  )
+# --- Parent constructor --------------------------------------------------
 
-  # Entries in computed that are fully absent from declared (not even a version match)
-  missing <- purrr::keep(
-    seq_along(computed),
-    function(i) {
-      !computed_keys3[[i]] %in% declared_keys3 &&
-        !computed_keys2[[i]] %in% declared_keys2
+#' Declare a parent for lineage
+#'
+#' Resolves a parent table against a single project connection and returns a
+#' pure-data lineage record. The parent's authoritative `data_sha` and its
+#' `source_lineage` are read from the parent's own versioned metadata
+#' snapshot at `{table}/.metadata/{version}.json`; a caller cannot supply or
+#' override `data_sha` (there is no `data_sha` parameter). The returned
+#' record retains no live connection and is serializable as plain data.
+#'
+#' Same-project and cross-project parents are declared identically -- the
+#' only difference is which connection is passed. `source` is always derived
+#' from the connection's `project_name`.
+#'
+#' @param conn A `datom_conn` scoped to the parent's project store, from
+#'   [datom_get_conn()].
+#' @param table Parent table name (single non-empty validated string).
+#' @param version Parent version (metadata_sha; single non-empty string).
+#' @return A list with exactly `source`, `table`, `version`, `data_sha`, and
+#'   `source_lineage`. `source` is the parent connection's `project_name`;
+#'   `source_lineage` is `NULL` when the snapshot carries none.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' conn <- datom_get_conn(path = "path/to/repo", store = store)
+#' p <- datom_parent(conn, "dm", "v_dm_9f3")
+#' }
+datom_parent <- function(conn, table, version) {
+
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort(
+      "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}."
+    )
+  }
+
+  .datom_validate_name(table)
+
+  if (!is.character(version) || length(version) != 1L ||
+      is.na(version) || !nzchar(version)) {
+    cli::cli_abort("{.arg version} must be a single non-empty string.")
+  }
+
+  key <- paste0(table, "/.metadata/", version, ".json")
+
+  snap <- tryCatch(
+    .datom_storage_read_json(conn, key),
+    error = function(e) {
+      cli::cli_abort(c(
+        paste0("Parent {.val {table}@{version}} not found in ",
+               "project {.val {conn$project_name}}."),
+        "i" = "Underlying error: {conditionMessage(e)}"
+      ))
     }
   )
-  missing <- computed[missing]
 
-  # Entries in declared that are fully absent from computed (not even a version match)
-  extra <- purrr::keep(
-    seq_along(declared),
-    function(i) {
-      !declared_keys3[[i]] %in% computed_keys3 &&
-        !declared_keys2[[i]] %in% computed_keys2
-    }
+  data_sha <- snap$data_sha %||% ""
+  if (!is.character(data_sha) || length(data_sha) != 1L ||
+      is.na(data_sha) || !nzchar(data_sha)) {
+    cli::cli_abort(c(
+      paste0("Parent snapshot for {.val {table}@{version}} is ",
+             "missing {.field data_sha}."),
+      "i" = paste0("The snapshot at {.val {key}} in project ",
+                   "{.val {conn$project_name}} has no {.field data_sha}.")
+    ))
+  }
+
+  source_lineage <- snap$source_lineage %||% NULL
+
+  list(
+    source         = conn$project_name,
+    table          = table,
+    version        = version,
+    data_sha       = snap$data_sha,
+    source_lineage = source_lineage
   )
-  extra <- declared[extra]
-
-  list(missing = missing, extra = extra, wrong_version = wrong_version_pairs)
 }

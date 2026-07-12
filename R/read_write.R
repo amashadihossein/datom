@@ -396,6 +396,36 @@ datom_read <- function(conn,
 }
 
 
+#' Check parents carry a resolved data_sha
+#'
+#' Guards the derived write path: a parent lacking a non-empty `data_sha`
+#' means the caller passed a raw list rather than a resolved record. Points
+#' the caller to [datom_parent()] as the remedy. Structural validation of
+#' the remaining fields is left to `.datom_validate_parents()`.
+#'
+#' @param parents The `parents` argument to [datom_write()].
+#' @return Invisibly TRUE when every entry carries a resolved `data_sha`.
+#' @keywords internal
+.datom_check_parents_resolved <- function(parents) {
+  if (!is.list(parents) || !is.null(names(parents))) {
+    return(invisible(TRUE))
+  }
+  for (i in seq_along(parents)) {
+    p <- parents[[i]]
+    sha <- if (is.list(p)) p$data_sha else NULL
+    if (is.null(sha) || !is.character(sha) || length(sha) != 1L ||
+        is.na(sha) || !nzchar(sha)) {
+      cli::cli_abort(c(
+        "Parent entry {i} is missing a resolved {.field data_sha}.",
+        "i" = paste0("Declare parents with {.fn datom_parent} so ",
+                     "{.field data_sha} is resolved from the parent store.")
+      ))
+    }
+  }
+  invisible(TRUE)
+}
+
+
 #' Write a datom Table
 #'
 #' Writes data to a datom repository. Commits to git, pushes, and syncs to S3.
@@ -406,17 +436,23 @@ datom_read <- function(conn,
 #'   sync to storage (manifest + per-table metadata).
 #' @param metadata Optional list of custom metadata.
 #' @param message Optional commit message.
-#' @param parents Optional lineage: list of `list(source, table, version)` entries.
-#'   Used by dp_dev to track dependency versions. NULL if lineage not recorded.
-#'   At write time, `data_sha` is automatically added to each entry from the
-#'   parent's local metadata snapshot (`NULL` if the snapshot is not in the clone).
-#' @param source_lineage Required when `parents` is non-NULL. Pre-computed flat list
-#'   of transitive non-derived source descriptors (each with `project`, `table`,
-#'   `version_sha`). Set by dpbuild via the union of parents' `source_lineage` fields.
-#'   NULL for tables without parents.
-#' @param .table_type Internal. `"derived"` (default) or `"imported"` (set by `datom_sync()`).
-#' @param .original_file_sha Internal. SHA of source file (set by `datom_sync()`); NULL for derived.
-#' @param .original_format Internal. Original file format (set by `datom_sync()`); NULL for derived.
+#' @param parents Optional list of parent records produced by
+#'   [datom_parent()], each carrying `source`, `table`, `version`,
+#'   `data_sha`, and `source_lineage`. When supplied, the table's
+#'   `source_lineage` is derived as the deduplicated union of the parents'
+#'   `source_lineage` and each parent is recorded lean (`source`, `table`,
+#'   `version`, `data_sha`). NULL if no lineage is recorded. There is no
+#'   public `source_lineage` parameter; it is always derived from `parents`.
+#' @param .source_lineage Internal. Flat list of transitive non-derived
+#'   source descriptors (each with `project`, `table`, `version_sha`) for the
+#'   imported self-entry path, set by [datom_sync()]. Unused on the derived
+#'   (parents) path.
+#' @param .table_type Internal. `"derived"` (default) or `"imported"`
+#'   (set by `datom_sync()`).
+#' @param .original_file_sha Internal. SHA of source file
+#'   (set by `datom_sync()`); NULL for derived.
+#' @param .original_format Internal. Original file format
+#'   (set by `datom_sync()`); NULL for derived.
 #'
 #' @return List with deployment details.
 #' @export
@@ -446,7 +482,7 @@ datom_write <- function(conn,
                        metadata = NULL,
                        message = NULL,
                        parents = NULL,
-                       source_lineage = NULL,
+                       .source_lineage = NULL,
                        .table_type = "derived",
                        .original_file_sha = NULL,
                        .original_format = NULL) {
@@ -471,34 +507,23 @@ datom_write <- function(conn,
 
   .datom_validate_name(name)
 
-  # source_lineage: validate schema and enforce structural mandate
-  .datom_validate_source_lineage(source_lineage)
-  if (!is.null(parents) && is.null(source_lineage)) {
-    cli::cli_abort(c(
-      "{.arg source_lineage} is required when {.arg parents} is non-NULL.",
-      "i" = "Provide the flat list of transitive non-derived sources.",
-      "i" = "For raw/imported tables use {.fn datom_sync} (auto-populated)."
-    ))
-  }
-
-  # Enrich parents with data_sha from local metadata snapshots
+  # Parents must be resolved datom_parent() records. Derive the table's
+  # source_lineage from their union and record lean parent edges. When no
+  # parents are given, use the internal .source_lineage (imported path).
   if (!is.null(parents)) {
-    parents <- purrr::map(parents, function(p) {
-      meta_path <- fs::path(
-        conn$path, p$source, p$table, ".metadata",
-        paste0(p$version, ".json")
-      )
-      if (fs::file_exists(meta_path)) {
-        snap <- jsonlite::read_json(meta_path)
-        p$data_sha <- snap$data_sha
-      } else {
-        cli::cli_warn(
-          "Could not resolve {.field data_sha} for parent {.val {p$table}} \
-({p$version}): metadata not in local clone."
-        )
-      }
-      p
-    })
+    .datom_check_parents_resolved(parents)
+    .datom_validate_parents(parents)
+    parent_lineages <- lapply(parents, function(p) p$source_lineage)
+    source_lineage <- datom_lineage_union(parent_lineages)
+    parents <- lapply(parents, function(p) list(
+      source   = p$source,
+      table    = p$table,
+      version  = p$version,
+      data_sha = p$data_sha
+    ))
+  } else {
+    source_lineage <- .source_lineage
+    .datom_validate_source_lineage(source_lineage)
   }
 
   if (conn$role != "developer") {

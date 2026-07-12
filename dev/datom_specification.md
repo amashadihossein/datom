@@ -332,7 +332,7 @@ A derived table's metadata carries two different version identifiers for its par
 | `parents[].version` | metadata_sha | `{table}/.metadata/{sha}.json` | Traversal, versioned retrieval, lineage validation |
 | `source_lineage[].version_sha` | data_sha | `{table}/{sha}.parquet` | Content identity, access policy checks |
 
-**Why metadata_sha in `parents`**: The metadata snapshot file is keyed by metadata_sha. Traversal tools (e.g. `datom_get_lineage`, `datom_validate_lineage`) and versioned reads (`datom_read(version=...)`) need to open that file. Using metadata_sha avoids a secondary lookup -- one GET gives the full provenance record.
+**Why metadata_sha in `parents`**: The metadata snapshot file is keyed by metadata_sha. Traversal tools (e.g. `datom_get_lineage`, `datom_parent`) and versioned reads (`datom_read(version=...)`) need to open that file. Using metadata_sha avoids a secondary lookup -- one GET gives the full provenance record.
 
 **Why data_sha in `source_lineage`**: Access policy registries (in datomanager) index permissions by `{project, table, data_sha}`. The data_sha is stable across metadata rewrites -- if the same raw bytes are re-ingested with a new message, the data_sha is unchanged and existing policy grants continue to apply without manual reauthorization. Using metadata_sha here would require re-granting access every time metadata changes, which is incorrect semantics.
 
@@ -809,27 +809,44 @@ Reads lineage metadata for a table:
 
 Returns: List of lineage entries, or `NULL`.
 
-#### datom_validate_lineage() — Data Developers
+#### Recomputing lineage consistency (composable recipe) — Data Developers
+
+There is no dedicated `datom_validate_lineage()` function. `datom_write()`
+derives a derived table's `source_lineage` from the union of its parents'
+lineages at write time, and lineage is version-pinned, so a recompute equals
+the recorded value in normal operation. To audit consistency, compose the
+existing reads plus `datom_lineage_union()`:
 
 ```r
-datom_validate_lineage(conn, name, version = NULL)
+# conn_c is scoped to the derived table's project.
+parents <- datom_get_parents(conn_c, "c")
+
+# Read each parent through a conn scoped to that parent's project.
+parent_sls <- lapply(parents, function(p) {
+  datom_get_lineage(conn_for(p$source), p$table,
+                    version = p$version, depth = "source")
+})
+
+recomputed <- datom_lineage_union(parent_sls)
+recorded   <- datom_get_lineage(conn_c, "c", depth = "source")
+identical(recomputed, recorded)
 ```
 
-Audits a derived table's `source_lineage` for consistency against its declared parents:
+Steps:
 
-1. Reads the subject table's metadata.
-2. Reads each parent's metadata (using `parent$version` to fetch the versioned snapshot).
-3. Unions the parents' `source_lineage` lists (the "computed" lineage).
-4. Diffs declared vs computed: reports missing entries, extra entries, and wrong-version entries (same project+table, different sha).
-
-Returns a named list:
-- `status`: `"ok"`, `"mismatch"`, `"unchecked"` (no parents), or `"error"` (unreachable parent).
-- `missing`: entries in computed but absent from declared.
-- `extra`: entries declared but absent from computed.
-- `wrong_version`: entries where project+table match but `version_sha` differs.
-- `message`: human-readable summary string.
-
-Does **not** hard-abort on unreachable parents -- returns `status = "error"` so callers can decide whether to warn or stop.
+1. `datom_get_parents(conn, name)` returns each parent's `source`, `table`,
+   `version`, and `data_sha` -- enough to select the parent's project
+   connection and its pinned version.
+2. For each parent, read its `source_lineage` with
+   `datom_get_lineage(parent_conn, parent$table, version = parent$version,
+   depth = "source")`, using a connection scoped to that parent's project
+   (`parent$source`). This honors the one-connection-per-project model; no
+   single connection reaches across project stores.
+3. Union the parents' lineages with `datom_lineage_union()` (dedup by
+   `{project, table, version_sha}`).
+4. Compare the union to the derived table's recorded `source_lineage`
+   (`datom_get_lineage(conn, name, depth = "source")`). Callers decide
+   whether a difference is a warning or a hard stop.
 
 #### datom_sync_dispatch() — RELOCATED to datomanager (gov-seam-liftout, 2026-06-20)
 

@@ -42,7 +42,7 @@ consumers.
 
 ## Tasks
 
-- [ ] 1. Promote the lineage union to an exported helper
+- [x] 1. Promote the lineage union to an exported helper
   - Move the algorithm in `.datom_lineage_union()` (R/lineage.R) into a new
     exported `datom_lineage_union(lineages)` with roxygen (`@param`,
     `@return`, `@export`, and an `@examples` recipe stub).
@@ -54,12 +54,12 @@ consumers.
   - Add `datom_lineage_union` to the `_pkgdown.yml` reference index.
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
 
-- [ ] 1.1 Unit tests for `datom_lineage_union()`
+- [x] 1.1 Unit tests for `datom_lineage_union()`
   - New tests: dedup across lists; empty-in -> empty-out; `NULL` members
     tolerated; fields preserved; single-list identity.
   - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-- [ ] 2. Add `.datom_validate_parents()` internal validator
+- [x] 2. Add `.datom_validate_parents()` internal validator
   - In R/utils-sha.R, mirror `.datom_validate_source_lineage()`: NULL is
     valid; reject a named list ("must be a list of entry lists"); each entry
     must be a list with `source`, `table`, `version`, `data_sha` as single
@@ -68,13 +68,13 @@ consumers.
     it via `.datom_validate_source_lineage()`; treat NULL/empty as valid.
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 2.1 Unit tests for `.datom_validate_parents()`
+- [x] 2.1 Unit tests for `.datom_validate_parents()`
   - Valid list passes; named list rejected; missing/empty field rejected
     with entry index + field; non-list entry rejected; per-entry
     `source_lineage` validated when present, NULL/empty accepted.
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 3. Implement `datom_parent(conn, table, version)` export
+- [x] 3. Implement `datom_parent(conn, table, version)` export
   - Add to R/lineage.R with roxygen (`@param`, `@return`, `@export`, and a
     `\dontrun{}` `@examples` block — it needs a live conn/storage read). No
     `data_sha` parameter.
@@ -91,7 +91,7 @@ consumers.
   - Add `datom_parent` to `_pkgdown.yml` reference index.
   - _Requirements: 1.1-1.14, 2.1-2.5, 3.1-3.6, 6.1, 6.2, 6.4_
 
-- [ ] 3.1 Tests for `datom_parent()` (new tests/testthat/test-parent.R)
+- [x] 3.1 Tests for `datom_parent()` (new tests/testthat/test-parent.R)
   - Success: resolves `data_sha` and `source_lineage` from a mocked
     snapshot; `source == conn$project_name`; return has exactly the five
     fields and no conn; `jsonlite::toJSON` round-trip succeeds
@@ -105,7 +105,7 @@ consumers.
     wrong project's store would trip the network guard.
   - _Requirements: 1, 2, 3, 6, 10.4, 10.5, 10.6_
 
-- [ ] 4. Rework `datom_write()` parent handling (R/read_write.R)
+- [x] 4. Rework `datom_write()` parent handling (R/read_write.R)
   - Remove the parent-enrichment block that reads
     `{p$table}/.metadata/{p$version}.json` to add `data_sha`.
   - Remove the mandate branch that aborts when `parents` is non-NULL and
@@ -127,7 +127,7 @@ consumers.
     records; `source_lineage` is derived from parents (no public parameter).
   - _Requirements: 4.1-4.5, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 6.3_
 
-- [ ] 4.1 Rewrite parent tests in tests/testthat/test-read-write.R
+- [x] 4.1 Rewrite parent tests in tests/testthat/test-read-write.R
   - Replace the old enrichment-based tests: writing with resolved
     `datom_parent()` records produces lean `parents[]` (exactly `source`,
     `table`, `version`, `data_sha`; no `source_lineage`) and a
@@ -144,7 +144,7 @@ consumers.
     full run in task 7 surfaces any missed ones.
   - _Requirements: 4.1, 4.2, 4.3, 5.1, 5.3, 5.4, 5.6, 5.7, 5.8_
 
-- [ ] 5. Remove `datom_validate_lineage()` and update the full reference surface
+- [x] 5. Remove `datom_validate_lineage()` and update the full reference surface
   - Delete `datom_validate_lineage()`, `.datom_lineage_result()`, and
     `.datom_lineage_diff()` from R/lineage.R (keep `datom_lineage_union()`).
   - Regenerate NAMESPACE (roxygen) so the export is gone; remove
@@ -161,7 +161,7 @@ consumers.
     cross-references so R CMD check reports no broken links.
   - _Requirements: 9.1, 9.2, 9.4_
 
-- [ ] 5.1 Rewrite the lineage vignette
+- [x] 5.1 Rewrite the lineage vignette
   - Rewrite the "Validating lineage consistency" section of
     `vignettes/source-lineage.Rmd` (it calls and explains
     `datom_validate_lineage()`) to teach the composable recompute recipe
@@ -169,14 +169,14 @@ consumers.
     `datom_lineage_union()`. Keep `eval = FALSE` chunks consistent.
   - _Requirements: 9.3, 9.8, 9.9_
 
-- [ ] 5.2 Update NEWS.md
+- [x] 5.2 Update NEWS.md
   - Record the removal of `datom_validate_lineage()`, the addition of
     `datom_parent()` and `datom_lineage_union()`, and the `parents` contract
     change (records now require resolved `datom_parent()` records;
     `source_lineage` is derived).
   - _Requirements: 9.5_
 
-- [ ] 6. Update reads and document the recompute recipe
+- [x] 6. Update reads and document the recompute recipe
   - Update `datom_get_parents()` roxygen `@return` (R/query.R) to list
     `source, table, version, data_sha`.
   - Add the recompute recipe as an `@examples` block on
@@ -190,7 +190,7 @@ consumers.
     stores.
   - _Requirements: 9.6, 9.7, 9.8, 9.9_
 
-- [ ] 7. Quality gates and full verification
+- [x] 7. Quality gates and full verification
   - Run `devtools::document()` to sync NAMESPACE and `.Rd`.
   - Run `devtools::test()`; ensure WARN 0 and all pass.
   - Lint: ASCII-only and <= 80 cols on every changed `R/*.R`.

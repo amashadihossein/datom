@@ -530,7 +530,7 @@ datom_sync <- function(conn,
         data = data,
         name = tbl_name,
         message = paste0("Sync ", tbl_name, " (", manifest$status[i], ")"),
-        source_lineage = self_lineage,
+        .source_lineage = self_lineage,
         .table_type = "imported",
         .original_file_sha = tbl_file_sha,
         .original_format = tbl_format

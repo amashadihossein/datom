@@ -230,3 +230,111 @@ test_that("passes through non-character input unchanged", {
 test_that("handles short strings gracefully", {
   expect_equal(.datom_abbreviate_sha("abc"), "abc")
 })
+
+
+# --- .datom_validate_parents() ------------------------------------------------
+
+# Helper: a well-formed parent entry (lean, no source_lineage).
+.valid_parent_entry <- function(...) {
+  utils::modifyList(
+    list(
+      source = "study001",
+      table = "dm",
+      version = "v_dm_9f3",
+      data_sha = "d_dm_aaa"
+    ),
+    list(...)
+  )
+}
+
+test_that("NULL parents is valid", {
+  expect_true(.datom_validate_parents(NULL))
+  expect_invisible(.datom_validate_parents(NULL))
+})
+
+test_that("well-formed list of entries passes (invisible TRUE)", {
+  parents <- list(
+    .valid_parent_entry(),
+    .valid_parent_entry(source = "labdata", table = "ex", version = "v_ex_7c1",
+                        data_sha = "d_ex_bbb")
+  )
+  expect_true(.datom_validate_parents(parents))
+  expect_invisible(.datom_validate_parents(parents))
+})
+
+test_that("empty list is valid", {
+  expect_true(.datom_validate_parents(list()))
+})
+
+test_that("named list is rejected as not a list of entry lists", {
+  named <- list(a = .valid_parent_entry())
+  expect_error(.datom_validate_parents(named), "list of entry lists")
+})
+
+test_that("non-list input is rejected", {
+  expect_error(.datom_validate_parents("nope"), "list of entry lists")
+})
+
+test_that("entry missing a field is rejected naming index and field", {
+  bad <- .valid_parent_entry()
+  bad$data_sha <- NULL
+  expect_error(
+    .datom_validate_parents(list(.valid_parent_entry(), bad)),
+    "Entry 2"
+  )
+  expect_error(
+    .datom_validate_parents(list(.valid_parent_entry(), bad)),
+    "data_sha"
+  )
+})
+
+test_that("entry with an empty-string field is rejected", {
+  bad <- .valid_parent_entry(version = "")
+  expect_error(.datom_validate_parents(list(bad)), "Entry 1")
+  expect_error(.datom_validate_parents(list(bad)), "version")
+})
+
+test_that("entry with a non-string field is rejected", {
+  bad <- .valid_parent_entry(data_sha = 123)
+  expect_error(.datom_validate_parents(list(bad)), "non-empty string")
+})
+
+test_that("entry with a multi-element field is rejected", {
+  bad <- .valid_parent_entry(source = c("a", "b"))
+  expect_error(.datom_validate_parents(list(bad)), "non-empty string")
+})
+
+test_that("non-list entry is rejected naming its index", {
+  expect_error(
+    .datom_validate_parents(list(.valid_parent_entry(), "nope")),
+    "Entry 2"
+  )
+})
+
+test_that("entry with a valid non-empty source_lineage passes", {
+  entry <- .valid_parent_entry(
+    source_lineage = list(
+      list(project = "study001", table = "dm", version_sha = "d_dm_aaa")
+    )
+  )
+  expect_true(.datom_validate_parents(list(entry)))
+})
+
+test_that("NULL source_lineage on an entry is accepted", {
+  entry <- .valid_parent_entry(source_lineage = NULL)
+  expect_true(.datom_validate_parents(list(entry)))
+})
+
+test_that("empty source_lineage on an entry is accepted", {
+  entry <- .valid_parent_entry(source_lineage = list())
+  expect_true(.datom_validate_parents(list(entry)))
+})
+
+test_that("malformed source_lineage on an entry is rejected", {
+  entry <- .valid_parent_entry(
+    source_lineage = list(
+      list(project = "study001", table = "dm")  # missing version_sha
+    )
+  )
+  expect_error(.datom_validate_parents(list(entry)), "source_lineage")
+})
