@@ -14,7 +14,11 @@ until it reaches a stable release.
 
 - [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
   — write a data frame as a versioned parquet table with automatic
-  SHA-based deduplication.
+  SHA-based deduplication. When `parents` is supplied it takes resolved
+  [`datom_parent()`](https://amashadihossein.github.io/datom/reference/datom_parent.md)
+  records and derives the table’s `source_lineage` as the deduplicated
+  union of their lineages; the public `source_lineage` argument has been
+  removed.
 - [`datom_read()`](https://amashadihossein.github.io/datom/reference/datom_read.md)
   — read the current or any historical version of a table.
 - [`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md)
@@ -35,10 +39,26 @@ until it reaches a stable release.
 - [`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
   /
   [`datom_get_parents()`](https://amashadihossein.github.io/datom/reference/datom_get_parents.md)
-  — retrieve parent and source lineage for a table version.
+  — retrieve parent and source lineage for a table version; parent
+  entries carry `source`, `table`, `version`, and `data_sha`.
 
-- [`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
-  — verify that declared lineage is consistent with stored metadata.
+- [`datom_parent()`](https://amashadihossein.github.io/datom/reference/datom_parent.md)
+  — resolve a parent table against a connection into a pure-data lineage
+  record, capturing the parent’s authoritative `data_sha` and
+  `source_lineage`. Same-project and cross-project parents are declared
+  identically; pass the records to `datom_write(parents = ...)`.
+
+- [`datom_lineage_union()`](https://amashadihossein.github.io/datom/reference/datom_lineage_union.md)
+  — deduplicated union of `source_lineage` lists (by
+  `{project, table, version_sha}`); the building block of the composable
+  recipe for recomputing and checking a table’s lineage.
+
+- `datom_validate_lineage()` was removed before release. Lineage
+  consistency is now a composable recipe:
+  [`datom_get_parents()`](https://amashadihossein.github.io/datom/reference/datom_get_parents.md),
+  per-parent `datom_get_lineage(depth = "source")`, and
+  [`datom_lineage_union()`](https://amashadihossein.github.io/datom/reference/datom_lineage_union.md),
+  compared against the recorded `source_lineage`.
 
 - [`datom_status()`](https://amashadihossein.github.io/datom/reference/datom_status.md)
   — show connection, table, git, and input-file status.

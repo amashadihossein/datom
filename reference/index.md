@@ -75,8 +75,10 @@ List tables, view history, check status
   : Get Parent Lineage for a Table
 - [`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
   : Get Lineage for a Table
-- [`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
-  : Validate Source Lineage Consistency
+- [`datom_parent()`](https://amashadihossein.github.io/datom/reference/datom_parent.md)
+  : Declare a parent for lineage
+- [`datom_lineage_union()`](https://amashadihossein.github.io/datom/reference/datom_lineage_union.md)
+  : Union and deduplicate source_lineage lists
 
 ## Sync Operations
 

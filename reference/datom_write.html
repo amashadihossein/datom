@@ -18,7 +18,7 @@
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/first-extract.html">First Extract</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="../articles/index.html">More articles...</a></li>
   </ul></li>
@@ -56,7 +56,7 @@
 <span>  metadata <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  message <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  parents <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  source_lineage <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  .source_lineage <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  .table_type <span class="op">=</span> <span class="st">"derived"</span>,</span>
 <span>  .original_file_sha <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  .original_format <span class="op">=</span> <span class="cn">NULL</span></span>
@@ -89,29 +89,35 @@ sync to storage (manifest + per-table metadata).</p></dd>
 
 
 <dt id="arg-parents">parents<a class="anchor" aria-label="anchor" href="#arg-parents"></a></dt>
-<dd><p>Optional lineage: list of <code>list(source, table, version)</code> entries.
-Used by dp_dev to track dependency versions. NULL if lineage not recorded.
-At write time, <code>data_sha</code> is automatically added to each entry from the
-parent's local metadata snapshot (<code>NULL</code> if the snapshot is not in the clone).</p></dd>
+<dd><p>Optional list of parent records produced by
+<code><a href="datom_parent.html">datom_parent()</a></code>, each carrying <code>source</code>, <code>table</code>, <code>version</code>,
+<code>data_sha</code>, and <code>source_lineage</code>. When supplied, the table's
+<code>source_lineage</code> is derived as the deduplicated union of the parents'
+<code>source_lineage</code> and each parent is recorded lean (<code>source</code>, <code>table</code>,
+<code>version</code>, <code>data_sha</code>). NULL if no lineage is recorded. There is no
+public <code>source_lineage</code> parameter; it is always derived from <code>parents</code>.</p></dd>
 
 
-<dt id="arg-source-lineage">source_lineage<a class="anchor" aria-label="anchor" href="#arg-source-lineage"></a></dt>
-<dd><p>Required when <code>parents</code> is non-NULL. Pre-computed flat list
-of transitive non-derived source descriptors (each with <code>project</code>, <code>table</code>,
-<code>version_sha</code>). Set by dpbuild via the union of parents' <code>source_lineage</code> fields.
-NULL for tables without parents.</p></dd>
+<dt id="arg--source-lineage">.source_lineage<a class="anchor" aria-label="anchor" href="#arg--source-lineage"></a></dt>
+<dd><p>Internal. Flat list of transitive non-derived
+source descriptors (each with <code>project</code>, <code>table</code>, <code>version_sha</code>) for the
+imported self-entry path, set by <code><a href="datom_sync.html">datom_sync()</a></code>. Unused on the derived
+(parents) path.</p></dd>
 
 
 <dt id="arg--table-type">.table_type<a class="anchor" aria-label="anchor" href="#arg--table-type"></a></dt>
-<dd><p>Internal. <code>"derived"</code> (default) or <code>"imported"</code> (set by <code><a href="datom_sync.html">datom_sync()</a></code>).</p></dd>
+<dd><p>Internal. <code>"derived"</code> (default) or <code>"imported"</code>
+(set by <code><a href="datom_sync.html">datom_sync()</a></code>).</p></dd>
 
 
 <dt id="arg--original-file-sha">.original_file_sha<a class="anchor" aria-label="anchor" href="#arg--original-file-sha"></a></dt>
-<dd><p>Internal. SHA of source file (set by <code><a href="datom_sync.html">datom_sync()</a></code>); NULL for derived.</p></dd>
+<dd><p>Internal. SHA of source file
+(set by <code><a href="datom_sync.html">datom_sync()</a></code>); NULL for derived.</p></dd>
 
 
 <dt id="arg--original-format">.original_format<a class="anchor" aria-label="anchor" href="#arg--original-format"></a></dt>
-<dd><p>Internal. Original file format (set by <code><a href="datom_sync.html">datom_sync()</a></code>); NULL for derived.</p></dd>
+<dd><p>Internal. Original file format
+(set by <code><a href="datom_sync.html">datom_sync()</a></code>); NULL for derived.</p></dd>
 
 </dl></div>
     <div class="section level2">
@@ -150,7 +156,7 @@ NULL for tables without parents.</p></dd>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer></div>

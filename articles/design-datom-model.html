@@ -39,7 +39,7 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/first-extract.html">First Extract</a></li>
+<li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="../articles/index.html">More articles...</a></li>
   </ul>
@@ -80,8 +80,8 @@
     
     
 <blockquote>
-<p><strong>Companion to</strong>: <a href="first-extract.html">First
-Extract</a>. Read this when you want to understand <em>why</em> datom
+<p><strong>Companion to</strong>: <a href="getting-started.html">Getting
+Started</a>. Read this when you want to understand <em>why</em> datom
 split storage in two.</p>
 </blockquote>
 <p>The single design decision that shapes everything else in datom is
@@ -160,16 +160,23 @@ you already understand why this matters.</p>
 <p>The split lets datom support two roles cleanly:</p>
 <ul>
 <li>
-<strong>Data developers</strong> push to git and write to the object
-store.</li>
+<strong>Data developers</strong> have a local git clone of the
+project, push to the remote, and write to the data store.</li>
 <li>
-<strong>Data readers</strong> pull from git (or, in many real
-workflows, just read the object store directly through the cached
-manifest) and read from the object store.</li>
+<strong>Data readers</strong> connect to the data store directly –
+no git clone, no write credentials required.
+<code>datom_get_conn(store = ..., project_name = "...")</code> (reader
+form, no <code>path</code>) resolves everything it needs from the
+metadata mirrored to the data store at write time: the manifest,
+per-table <code>metadata.json</code>, and versioned snapshots.</li>
 </ul>
-<p>Readers never need write credentials. A statistician with read-only
-S3 access can reproduce any historical analysis – the metadata they need
-is already on the data side, cached when the developer wrote.</p>
+<p>The data store can be an object store (S3) or a local filesystem
+store (<code><a href="../reference/datom_store_local.html">datom_store_local()</a></code>); the reader path is the same
+either way. What readers never need is access to the git repository (the
+code store) or write credentials for the data store.</p>
+<p>A statistician with read-only access to the data store can read any
+table and reproduce any historical analysis – the metadata they need is
+already there, mirrored when the developer wrote.</p>
 </div>
 <div class="section level2">
 <h2 id="property-4-storage-is-swappable">Property 4: Storage is swappable<a class="anchor" aria-label="anchor" href="#property-4-storage-is-swappable"></a>
@@ -218,8 +225,8 @@ that.</p>
 <div class="section level2">
 <h2 id="where-this-leads">Where this leads<a class="anchor" aria-label="anchor" href="#where-this-leads"></a>
 </h2>
-<p>Once you accept “metadata in git, data in object store,” several
-other datom design choices stop looking arbitrary:</p>
+<p>Once you accept “metadata in git, data in data store,” several other
+datom design choices stop looking arbitrary:</p>
 <ul>
 <li>The two-repo split (governance vs. project) – the organization-scope
 governance repo is managed by the governance companion package.</li>
@@ -242,7 +249,7 @@ problem. None of them stand on their own.</p>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

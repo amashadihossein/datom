@@ -18,8 +18,8 @@ DAG:
 | “What exact versions did my script read?” | `parents` | `datom_get_lineage(depth = "parents")` |
 | “What raw data is ultimately in this table?” | `source_lineage` | `datom_get_lineage(depth = "source")` |
 
-This article shows how lineage is recorded and how to query and validate
-it.
+This article shows how lineage is recorded, how to query it, and how to
+recompute it from existing reads to check consistency.
 
 ------------------------------------------------------------------------
 
@@ -44,12 +44,15 @@ github_pat   <- keyring::key_get("GITHUB_PAT")
 
 Writing derived tables (below) needs a **developer** connection. The
 lineage *queries* –
-[`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
+[`datom_get_parents()`](https://amashadihossein.github.io/datom/reference/datom_get_parents.md)
 and
-[`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
-– are reads, so they work just as well from a **reader** connection
-(build the same store with `github_pat` omitted). This setup assumes the
-project already exists:
+[`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
+– are reads, and the consistency recipe near the end is composed
+entirely of those reads plus
+[`datom_lineage_union()`](https://amashadihossein.github.io/datom/reference/datom_lineage_union.md),
+so it works just as well from a **reader** connection (build the same
+store with `github_pat` omitted). This setup assumes the project already
+exists:
 
 ``` r
 
@@ -80,14 +83,28 @@ raw_dm <- datom_example_data("dm")      # Demographics
 raw_lb <- datom_example_data("lb")      # Lab results
 ```
 
-They are imported via
+They are onboarded via
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md),
+the file-based workflow shown in the [Getting
+Started](https://amashadihossein.github.io/datom/articles/getting-started.md)
+article: stage the raw tables as files in the clone’s gitignored
+`input_files/` inbox, scan them into a manifest with
+[`datom_sync_manifest()`](https://amashadihossein.github.io/datom/reference/datom_sync_manifest.md),
+then
 [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
-datom automatically records each imported table’s own SHA as its
+datom automatically records each imported table’s own content SHA as its
 `source_lineage` – a single self-entry.
 
 ``` r
 
-datom_sync(conn, list(dm = raw_dm, lb = raw_lb))
+# input_files/ lives inside the git clone and is the sync inbox.
+input_dir <- file.path("path/to/my-study-dev", "input_files")
+
+write.csv(raw_dm, file.path(input_dir, "dm.csv"), row.names = FALSE)
+write.csv(raw_lb, file.path(input_dir, "lb.csv"), row.names = FALSE)
+
+manifest <- datom_sync_manifest(conn)   # scans input_files/
+datom_sync(conn, manifest)              # onboards; self-lineage recorded
 ```
 
 After syncing, the imported tables carry their own lineage:
@@ -129,28 +146,25 @@ dm_version  <- datom_history(conn, "dm")[1, "version"]
 lb_version  <- datom_history(conn, "lb")[1, "version"]
 ```
 
-When writing the derived table, supply `parents` (which versions were
-read) and `source_lineage` (the union of all raw sources):
+When writing the derived table, declare each parent with
+[`datom_parent()`](https://amashadihossein.github.io/datom/reference/datom_parent.md).
+Each record reads the parent’s authoritative `data_sha` and its
+`source_lineage` from the parent’s own versioned snapshot.
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+then derives the derived table’s `source_lineage` itself, as the
+deduplicated union of the parents’ lineages – there is no public
+`source_lineage` argument to supply or keep in sync:
 
 ``` r
 
-# datom_get_lineage fetches the source_lineage of each parent
-dm_lineage <- datom_get_lineage(conn, "dm", depth = "source")
-lb_lineage <- datom_get_lineage(conn, "lb", depth = "source")
-
-# Union is a simple c() here because both are single self-entries;
-# dpbuild automates this for complex pipelines.
-full_lineage <- c(dm_lineage, lb_lineage)
-
 datom_write(
   conn,
-  data           = dm_clean,
-  name           = "dm_clean",
-  parents        = list(
-    list(source = "my-study", table = "dm", version = dm_version),
-    list(source = "my-study", table = "lb", version = lb_version)
-  ),
-  source_lineage = full_lineage
+  data    = dm_clean,
+  name    = "dm_clean",
+  parents = list(
+    datom_parent(conn, "dm", dm_version),
+    datom_parent(conn, "lb", lb_version)
+  )
 )
 ```
 
@@ -194,70 +208,79 @@ datom_get_lineage(conn, "dm_clean", depth = "parents")
 
 ## Propagating lineage further downstream
 
-An analysis table derived from `dm_clean` propagates the lineage by
-unioning `dm_clean`’s `source_lineage` with any additional raw inputs.
-Since `dm_clean` already encodes both `dm` and `lb`, the analysis table
-inherits the full picture without re-reading the original files:
+An analysis table derived from `dm_clean` propagates the lineage
+automatically. Because `dm_clean` already encodes both `dm` and `lb`,
+`datom_parent(conn, "dm_clean", clean_version)` captures that transitive
+lineage, and
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+unions it into `analysis_pop` without re-reading the original files:
 
 ``` r
 
-# One hop: fetch dm_clean's source lineage (already transitive)
-clean_lineage <- datom_get_lineage(conn, "dm_clean", depth = "source")
+# Identify the dm_clean version this analysis was derived from.
+clean_version <- datom_history(conn, "dm_clean")[1, "version"]
 
 datom_write(
   conn,
-  data           = analysis_pop,
-  name           = "analysis_pop",
-  parents        = list(
-    list(source = "my-study", table = "dm_clean", version = clean_version)
-  ),
-  source_lineage = clean_lineage  # no new raw inputs; pass through
+  data    = analysis_pop,
+  name    = "analysis_pop",
+  parents = list(
+    datom_parent(conn, "dm_clean", clean_version)
+  )
 )
 ```
 
 ------------------------------------------------------------------------
 
-## Validating lineage consistency
+## Recomputing lineage consistency
 
-[`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
-checks whether a table’s declared `source_lineage` is consistent with
-its parents’ lineages:
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+derives a derived table’s `source_lineage` from the union of its
+parents’ lineages at write time, and lineage is version-pinned. So a
+recompute equals the recorded value in normal operation – a difference
+flags drift or corruption worth investigating. There is no dedicated
+validator; instead you compose the existing reads with
+[`datom_lineage_union()`](https://amashadihossein.github.io/datom/reference/datom_lineage_union.md).
+
+The recipe has four steps:
 
 ``` r
 
-datom_validate_lineage(conn, "dm_clean")
-#> v Lineage OK for "dm_clean" (2 source entries, 2 parents checked).
-#> $status
-#> [1] "ok"
-#> $missing
-#> list()
-#> $extra
-#> list()
-#> $wrong_version
-#> list()
-#> $message
-#> [1] "ok: 2 source entries match computed lineage from 2 parent(s)"
+# 1. Read the derived table's recorded parents. Each entry carries
+#    source, table, version, and data_sha -- enough to pick the parent's
+#    project connection and its pinned version.
+parents <- datom_get_parents(conn, "dm_clean")
+
+# 2. Read each parent's source_lineage through a connection scoped to that
+#    parent's project. For same-project parents this is the same `conn`.
+parent_lineages <- lapply(parents, function(p) {
+  datom_get_lineage(conn, p$table, version = p$version, depth = "source")
+})
+
+# 3. Union the parents' lineages (dedup by {project, table, version_sha}).
+recomputed <- datom_lineage_union(parent_lineages)
+
+# 4. Compare against the derived table's recorded source_lineage.
+recorded <- datom_get_lineage(conn, "dm_clean", depth = "source")
+identical(recomputed, recorded)
+#> [1] TRUE
 ```
 
-To see what a mismatch looks like, imagine `dm_clean` was written with
-an incorrect `version_sha` for the `lb` source. The validator catches
-it:
+Because the recipe reads each parent through its own connection, it
+extends to **cross-project** parents without any change: open a
+connection scoped to each parent’s project (`p$source`) and read that
+parent through it. No single connection is ever expected to reach across
+project stores.
 
 ``` r
 
-datom_validate_lineage(conn, "dm_clean_bad")
-#> ! Lineage mismatch for "dm_clean_bad".
-#> $status
-#> [1] "mismatch"
-#> $missing
-#> list()
-#> $extra
-#> list()
-#> $wrong_version
-#> [[1]]
-#>   project table version_sha_declared version_sha_computed
-#>   <chr>   <chr> <chr>                <chr>
-#> 1 my-study lb   wrong000...          def456...
+# Cross-project variant: resolve a connection per parent project.
+parent_lineages <- lapply(parents, function(p) {
+  parent_conn <- conn_for_project(p$source)   # your connection resolver
+  datom_get_lineage(parent_conn, p$table, version = p$version,
+                    depth = "source")
+})
+recomputed <- datom_lineage_union(parent_lineages)
 ```
 
 ------------------------------------------------------------------------
@@ -268,13 +291,19 @@ datom_validate_lineage(conn, "dm_clean_bad")
   auto-populates `source_lineage` for imported tables (a single
   self-entry using the file’s content SHA).
 - [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
-  requires `source_lineage` whenever `parents` is supplied – structural
-  mandate to prevent silent omissions.
+  derives a derived table’s `source_lineage` from the union of its
+  [`datom_parent()`](https://amashadihossein.github.io/datom/reference/datom_parent.md)
+  records – there is no public `source_lineage` argument to keep in
+  sync.
 - [`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
   is a single-read operation – no DAG traversal, no recursive network
   calls.
-- [`datom_validate_lineage()`](https://amashadihossein.github.io/datom/reference/datom_validate_lineage.md)
-  returns a structured result; it does not hard-abort, so callers can
-  embed it in CI pipelines and decide on action.
+- Lineage consistency is a **composable recipe**:
+  [`datom_get_parents()`](https://amashadihossein.github.io/datom/reference/datom_get_parents.md) +
+  per-parent `datom_get_lineage(depth = "source")` +
+  [`datom_lineage_union()`](https://amashadihossein.github.io/datom/reference/datom_lineage_union.md),
+  compared against the recorded `source_lineage`. It is built from
+  reads, so it runs from a reader connection and honors one connection
+  per project.
 - **Walker invariant**: `source_lineage` entries are terminal leaves.
   Lineage walkers must follow `parents`, never `source_lineage`.

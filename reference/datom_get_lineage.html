@@ -24,7 +24,7 @@ metadata – no walking or cross-project resolution is performed."><meta propert
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/first-extract.html">First Extract</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="../articles/index.html">More articles...</a></li>
   </ul></li>
@@ -84,16 +84,17 @@ current metadata. If provided, fetches the versioned metadata snapshot.</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>For <code>depth = "source"</code>: list of source-table descriptors (each with
-<code>project</code>, <code>table</code>, <code>version_sha</code>), or <code>NULL</code> if the field is absent.
+    <p>For <code>depth = "source"</code>: the table's recorded <code>source_lineage</code> –
+a list of source-table descriptors (each with <code>project</code>, <code>table</code>,
+<code>version_sha</code>), or <code>NULL</code> if the field is absent.
 For <code>depth = "parents"</code>: list of parent entries (each with <code>source</code>,
-<code>table</code>, <code>version</code>), or <code>NULL</code> if no lineage is recorded.</p>
+<code>table</code>, <code>version</code>, <code>data_sha</code>), or <code>NULL</code> if no lineage is recorded.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>The two fields answer different questions:</p><ul><li><p><code>"source"</code>: "what raw datasets does this table ultimately depend on?"
-(audit, regulatory disclosure, reproducibility scope). Pre-computed by
-dpbuild from the union of parents' <code>source_lineage</code> fields.</p></li>
+(audit, regulatory disclosure, reproducibility scope). Derived at write
+time as the deduplicated union of the parents' <code>source_lineage</code> fields.</p></li>
 <li><p><code>"parents"</code>: "what did this table come from one step back?"
 (debugging, diff, replay). Equivalent to <code><a href="datom_get_parents.html">datom_get_parents()</a></code>.</p></li>
 </ul></div>
@@ -133,7 +134,7 @@ dpbuild from the union of parents' <code>source_lineage</code> fields.</p></li>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer></div>

@@ -18,7 +18,7 @@
       <ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/first-extract.html">First Extract</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="../articles/index.html">More articles...</a></li>
   </ul></li>
@@ -49,7 +49,7 @@
 <div class="section level3">
 <h3 id="core-readwriteversion-0-1-0">Core read/write/version<a class="anchor" aria-label="anchor" href="#core-readwriteversion-0-1-0"></a></h3>
 <ul><li>
-<code><a href="../reference/datom_write.html">datom_write()</a></code> — write a data frame as a versioned parquet table with automatic SHA-based deduplication.</li>
+<code><a href="../reference/datom_write.html">datom_write()</a></code> — write a data frame as a versioned parquet table with automatic SHA-based deduplication. When <code>parents</code> is supplied it takes resolved <code><a href="../reference/datom_parent.html">datom_parent()</a></code> records and derives the table’s <code>source_lineage</code> as the deduplicated union of their lineages; the public <code>source_lineage</code> argument has been removed.</li>
 <li>
 <code><a href="../reference/datom_read.html">datom_read()</a></code> — read the current or any historical version of a table.</li>
 <li>
@@ -66,8 +66,10 @@
 </ul></div>
 <div class="section level3">
 <h3 id="query--lineage-0-1-0">Query &amp; lineage<a class="anchor" aria-label="anchor" href="#query--lineage-0-1-0"></a></h3>
-<ul><li><p><code><a href="../reference/datom_get_lineage.html">datom_get_lineage()</a></code> / <code><a href="../reference/datom_get_parents.html">datom_get_parents()</a></code> — retrieve parent and source lineage for a table version.</p></li>
-<li><p><code><a href="../reference/datom_validate_lineage.html">datom_validate_lineage()</a></code> — verify that declared lineage is consistent with stored metadata.</p></li>
+<ul><li><p><code><a href="../reference/datom_get_lineage.html">datom_get_lineage()</a></code> / <code><a href="../reference/datom_get_parents.html">datom_get_parents()</a></code> — retrieve parent and source lineage for a table version; parent entries carry <code>source</code>, <code>table</code>, <code>version</code>, and <code>data_sha</code>.</p></li>
+<li><p><code><a href="../reference/datom_parent.html">datom_parent()</a></code> — resolve a parent table against a connection into a pure-data lineage record, capturing the parent’s authoritative <code>data_sha</code> and <code>source_lineage</code>. Same-project and cross-project parents are declared identically; pass the records to <code>datom_write(parents = ...)</code>.</p></li>
+<li><p><code><a href="../reference/datom_lineage_union.html">datom_lineage_union()</a></code> — deduplicated union of <code>source_lineage</code> lists (by <code>{project, table, version_sha}</code>); the building block of the composable recipe for recomputing and checking a table’s lineage.</p></li>
+<li><p><code>datom_validate_lineage()</code> was removed before release. Lineage consistency is now a composable recipe: <code><a href="../reference/datom_get_parents.html">datom_get_parents()</a></code>, per-parent <code>datom_get_lineage(depth = "source")</code>, and <code><a href="../reference/datom_lineage_union.html">datom_lineage_union()</a></code>, compared against the recorded <code>source_lineage</code>.</p></li>
 <li><p><code><a href="../reference/datom_status.html">datom_status()</a></code> — show connection, table, git, and input-file status.</p></li>
 <li>
 <p><code><a href="../reference/datom_summary.html">datom_summary()</a></code> — compact project overview (backend, table count, versions,</p>
@@ -134,7 +136,7 @@
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer></div>

@@ -1,8 +1,10 @@
 # Get Parent Lineage for a Table
 
 Reads the `parents` field from a table's metadata. Returns the lineage
-entries recorded at write time by dp_dev or other callers. For imported
-tables or derived tables with no recorded lineage, returns `NULL`.
+entries recorded at write time by
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md).
+For imported tables or derived tables with no recorded lineage, returns
+`NULL`.
 
 ## Usage
 
@@ -29,8 +31,12 @@ datom_get_parents(conn, name, version = NULL)
 
 ## Value
 
-List of parent entries (each with `source`, `table`, `version`), or
-`NULL` if no lineage is recorded.
+List of parent entries (each with `source`, `table`, `version`,
+`data_sha`), or `NULL` if no lineage is recorded. The `data_sha` field
+is the parent's authoritative data SHA recorded via
+[`datom_parent()`](https://amashadihossein.github.io/datom/reference/datom_parent.md),
+and together with `source` and `version` is sufficient to select the
+parent's project connection and its pinned version.
 
 ## See also
 

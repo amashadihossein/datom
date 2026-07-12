@@ -3,14 +3,14 @@
 **Goal:** Stand up a versioned datom project whose data lives directly
 in **Amazon S3** and onboard data using
 [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
-The same progressive workflow from [First
-Extract](https://amashadihossein.github.io/datom/articles/first-extract.md)
+The same progressive workflow from [Getting
+Started](https://amashadihossein.github.io/datom/articles/getting-started.md)
 applies here – one file, update, no-op, batch – with the only difference
 being which store you build. This is the “start me in object storage”
 path.
 
-> **Want to dabble locally first?** Start with [First
-> Extract](https://amashadihossein.github.io/datom/articles/first-extract.md)
+> **Want to dabble locally first?** Start with [Getting
+> Started](https://amashadihossein.github.io/datom/articles/getting-started.md)
 > instead – it uses a local filesystem store and needs no AWS account.
 > The two paths use the **same functions**; the only difference is which
 > store you build. You can read either one first.

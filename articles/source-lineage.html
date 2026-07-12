@@ -39,7 +39,7 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/first-extract.html">First Extract</a></li>
+<li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="../articles/index.html">More articles...</a></li>
   </ul>
@@ -119,8 +119,8 @@ DAG:</p>
 </tr>
 </tbody>
 </table>
-<p>This article shows how lineage is recorded and how to query and
-validate it.</p>
+<p>This article shows how lineage is recorded, how to query it, and how
+to recompute it from existing reads to check consistency.</p>
 <hr>
 <div class="section level2">
 <h2 id="setup">Setup<a class="anchor" aria-label="anchor" href="#setup"></a>
@@ -140,9 +140,10 @@ articles, keep machine-specific values up front:</p>
 <span><span class="va">github_pat</span>   <span class="op">&lt;-</span> <span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span></span></code></pre></div>
 <p>Writing derived tables (below) needs a <strong>developer</strong>
 connection. The lineage <em>queries</em> –
-<code><a href="../reference/datom_get_lineage.html">datom_get_lineage()</a></code> and
-<code><a href="../reference/datom_validate_lineage.html">datom_validate_lineage()</a></code> – are reads, so they work just as
-well from a <strong>reader</strong> connection (build the same store
+<code><a href="../reference/datom_get_parents.html">datom_get_parents()</a></code> and <code><a href="../reference/datom_get_lineage.html">datom_get_lineage()</a></code> –
+are reads, and the consistency recipe near the end is composed entirely
+of those reads plus <code><a href="../reference/datom_lineage_union.html">datom_lineage_union()</a></code>, so it works just
+as well from a <strong>reader</strong> connection (build the same store
 with <code>github_pat</code> omitted). This setup assumes the project
 already exists:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
@@ -168,11 +169,22 @@ already exists:</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">raw_dm</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_example_data.html">datom_example_data</a></span><span class="op">(</span><span class="st">"dm"</span><span class="op">)</span>      <span class="co"># Demographics</span></span>
 <span><span class="va">raw_lb</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_example_data.html">datom_example_data</a></span><span class="op">(</span><span class="st">"lb"</span><span class="op">)</span>      <span class="co"># Lab results</span></span></code></pre></div>
-<p>They are imported via <code><a href="../reference/datom_sync.html">datom_sync()</a></code>. datom automatically
-records each imported table’s own SHA as its <code>source_lineage</code>
-– a single self-entry.</p>
+<p>They are onboarded via <code><a href="../reference/datom_sync.html">datom_sync()</a></code>, the file-based
+workflow shown in the <a href="getting-started.html">Getting Started</a>
+article: stage the raw tables as files in the clone’s gitignored
+<code>input_files/</code> inbox, scan them into a manifest with
+<code><a href="../reference/datom_sync_manifest.html">datom_sync_manifest()</a></code>, then <code><a href="../reference/datom_sync.html">datom_sync()</a></code>.
+datom automatically records each imported table’s own content SHA as its
+<code>source_lineage</code> – a single self-entry.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_sync.html">datom_sync</a></span><span class="op">(</span><span class="va">conn</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>dm <span class="op">=</span> <span class="va">raw_dm</span>, lb <span class="op">=</span> <span class="va">raw_lb</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="co"># input_files/ lives inside the git clone and is the sync inbox.</span></span>
+<span><span class="va">input_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="st">"path/to/my-study-dev"</span>, <span class="st">"input_files"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/write.table.html" class="external-link">write.csv</a></span><span class="op">(</span><span class="va">raw_dm</span>, <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">input_dir</span>, <span class="st">"dm.csv"</span><span class="op">)</span>, row.names <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/write.table.html" class="external-link">write.csv</a></span><span class="op">(</span><span class="va">raw_lb</span>, <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">input_dir</span>, <span class="st">"lb.csv"</span><span class="op">)</span>, row.names <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">manifest</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_sync_manifest.html">datom_sync_manifest</a></span><span class="op">(</span><span class="va">conn</span><span class="op">)</span>   <span class="co"># scans input_files/</span></span>
+<span><span class="fu"><a href="../reference/datom_sync.html">datom_sync</a></span><span class="op">(</span><span class="va">conn</span>, <span class="va">manifest</span><span class="op">)</span>              <span class="co"># onboards; self-lineage recorded</span></span></code></pre></div>
 <p>After syncing, the imported tables carry their own lineage:</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_get_lineage.html">datom_get_lineage</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span>, depth <span class="op">=</span> <span class="st">"source"</span><span class="op">)</span></span>
@@ -205,27 +217,22 @@ demographics table:</p>
 <span><span class="co"># Retrieve the metadata shas to identify exactly which versions were read</span></span>
 <span><span class="va">dm_version</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span>, <span class="st">"version"</span><span class="op">]</span></span>
 <span><span class="va">lb_version</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"lb"</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span>, <span class="st">"version"</span><span class="op">]</span></span></code></pre></div>
-<p>When writing the derived table, supply <code>parents</code> (which
-versions were read) and <code>source_lineage</code> (the union of all
-raw sources):</p>
+<p>When writing the derived table, declare each parent with
+<code><a href="../reference/datom_parent.html">datom_parent()</a></code>. Each record reads the parent’s
+authoritative <code>data_sha</code> and its <code>source_lineage</code>
+from the parent’s own versioned snapshot. <code><a href="../reference/datom_write.html">datom_write()</a></code>
+then derives the derived table’s <code>source_lineage</code> itself, as
+the deduplicated union of the parents’ lineages – there is no public
+<code>source_lineage</code> argument to supply or keep in sync:</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># datom_get_lineage fetches the source_lineage of each parent</span></span>
-<span><span class="va">dm_lineage</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_lineage.html">datom_get_lineage</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span>, depth <span class="op">=</span> <span class="st">"source"</span><span class="op">)</span></span>
-<span><span class="va">lb_lineage</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_lineage.html">datom_get_lineage</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"lb"</span>, depth <span class="op">=</span> <span class="st">"source"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Union is a simple c() here because both are single self-entries;</span></span>
-<span><span class="co"># dpbuild automates this for complex pipelines.</span></span>
-<span><span class="va">full_lineage</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">dm_lineage</span>, <span class="va">lb_lineage</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span></span>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span></span>
 <span>  <span class="va">conn</span>,</span>
-<span>  data           <span class="op">=</span> <span class="va">dm_clean</span>,</span>
-<span>  name           <span class="op">=</span> <span class="st">"dm_clean"</span>,</span>
-<span>  parents        <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>source <span class="op">=</span> <span class="st">"my-study"</span>, table <span class="op">=</span> <span class="st">"dm"</span>, version <span class="op">=</span> <span class="va">dm_version</span><span class="op">)</span>,</span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>source <span class="op">=</span> <span class="st">"my-study"</span>, table <span class="op">=</span> <span class="st">"lb"</span>, version <span class="op">=</span> <span class="va">lb_version</span><span class="op">)</span></span>
-<span>  <span class="op">)</span>,</span>
-<span>  source_lineage <span class="op">=</span> <span class="va">full_lineage</span></span>
+<span>  data    <span class="op">=</span> <span class="va">dm_clean</span>,</span>
+<span>  name    <span class="op">=</span> <span class="st">"dm_clean"</span>,</span>
+<span>  parents <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="../reference/datom_parent.html">datom_parent</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm"</span>, <span class="va">dm_version</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="../reference/datom_parent.html">datom_parent</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"lb"</span>, <span class="va">lb_version</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <p>Now <code>dm_clean</code> knows which raw tables it came from:</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
@@ -261,61 +268,68 @@ raw sources):</p>
 <h2 id="propagating-lineage-further-downstream">Propagating lineage further downstream<a class="anchor" aria-label="anchor" href="#propagating-lineage-further-downstream"></a>
 </h2>
 <p>An analysis table derived from <code>dm_clean</code> propagates the
-lineage by unioning <code>dm_clean</code>’s <code>source_lineage</code>
-with any additional raw inputs. Since <code>dm_clean</code> already
-encodes both <code>dm</code> and <code>lb</code>, the analysis table
-inherits the full picture without re-reading the original files:</p>
+lineage automatically. Because <code>dm_clean</code> already encodes
+both <code>dm</code> and <code>lb</code>,
+<code>datom_parent(conn, "dm_clean", clean_version)</code> captures that
+transitive lineage, and <code><a href="../reference/datom_write.html">datom_write()</a></code> unions it into
+<code>analysis_pop</code> without re-reading the original files:</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># One hop: fetch dm_clean's source lineage (already transitive)</span></span>
-<span><span class="va">clean_lineage</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_lineage.html">datom_get_lineage</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm_clean"</span>, depth <span class="op">=</span> <span class="st">"source"</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="co"># Identify the dm_clean version this analysis was derived from.</span></span>
+<span><span class="va">clean_version</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm_clean"</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span>, <span class="st">"version"</span><span class="op">]</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span></span>
 <span>  <span class="va">conn</span>,</span>
-<span>  data           <span class="op">=</span> <span class="va">analysis_pop</span>,</span>
-<span>  name           <span class="op">=</span> <span class="st">"analysis_pop"</span>,</span>
-<span>  parents        <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>source <span class="op">=</span> <span class="st">"my-study"</span>, table <span class="op">=</span> <span class="st">"dm_clean"</span>, version <span class="op">=</span> <span class="va">clean_version</span><span class="op">)</span></span>
-<span>  <span class="op">)</span>,</span>
-<span>  source_lineage <span class="op">=</span> <span class="va">clean_lineage</span>  <span class="co"># no new raw inputs; pass through</span></span>
+<span>  data    <span class="op">=</span> <span class="va">analysis_pop</span>,</span>
+<span>  name    <span class="op">=</span> <span class="st">"analysis_pop"</span>,</span>
+<span>  parents <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="../reference/datom_parent.html">datom_parent</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm_clean"</span>, <span class="va">clean_version</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <hr>
 </div>
 <div class="section level2">
-<h2 id="validating-lineage-consistency">Validating lineage consistency<a class="anchor" aria-label="anchor" href="#validating-lineage-consistency"></a>
+<h2 id="recomputing-lineage-consistency">Recomputing lineage consistency<a class="anchor" aria-label="anchor" href="#recomputing-lineage-consistency"></a>
 </h2>
-<p><code><a href="../reference/datom_validate_lineage.html">datom_validate_lineage()</a></code> checks whether a table’s
-declared <code>source_lineage</code> is consistent with its parents’
-lineages:</p>
+<p><code><a href="../reference/datom_write.html">datom_write()</a></code> derives a derived table’s
+<code>source_lineage</code> from the union of its parents’ lineages at
+write time, and lineage is version-pinned. So a recompute equals the
+recorded value in normal operation – a difference flags drift or
+corruption worth investigating. There is no dedicated validator; instead
+you compose the existing reads with
+<code><a href="../reference/datom_lineage_union.html">datom_lineage_union()</a></code>.</p>
+<p>The recipe has four steps:</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_validate_lineage.html">datom_validate_lineage</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm_clean"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; v Lineage OK for "dm_clean" (2 source entries, 2 parents checked).</span></span>
-<span><span class="co">#&gt; $status</span></span>
-<span><span class="co">#&gt; [1] "ok"</span></span>
-<span><span class="co">#&gt; $missing</span></span>
-<span><span class="co">#&gt; list()</span></span>
-<span><span class="co">#&gt; $extra</span></span>
-<span><span class="co">#&gt; list()</span></span>
-<span><span class="co">#&gt; $wrong_version</span></span>
-<span><span class="co">#&gt; list()</span></span>
-<span><span class="co">#&gt; $message</span></span>
-<span><span class="co">#&gt; [1] "ok: 2 source entries match computed lineage from 2 parent(s)"</span></span></code></pre></div>
-<p>To see what a mismatch looks like, imagine <code>dm_clean</code> was
-written with an incorrect <code>version_sha</code> for the
-<code>lb</code> source. The validator catches it:</p>
+<code class="sourceCode R"><span><span class="co"># 1. Read the derived table's recorded parents. Each entry carries</span></span>
+<span><span class="co">#    source, table, version, and data_sha -- enough to pick the parent's</span></span>
+<span><span class="co">#    project connection and its pinned version.</span></span>
+<span><span class="va">parents</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_parents.html">datom_get_parents</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm_clean"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># 2. Read each parent's source_lineage through a connection scoped to that</span></span>
+<span><span class="co">#    parent's project. For same-project parents this is the same `conn`.</span></span>
+<span><span class="va">parent_lineages</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">parents</span>, <span class="kw">function</span><span class="op">(</span><span class="va">p</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="../reference/datom_get_lineage.html">datom_get_lineage</a></span><span class="op">(</span><span class="va">conn</span>, <span class="va">p</span><span class="op">$</span><span class="va">table</span>, version <span class="op">=</span> <span class="va">p</span><span class="op">$</span><span class="va">version</span>, depth <span class="op">=</span> <span class="st">"source"</span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># 3. Union the parents' lineages (dedup by {project, table, version_sha}).</span></span>
+<span><span class="va">recomputed</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_lineage_union.html">datom_lineage_union</a></span><span class="op">(</span><span class="va">parent_lineages</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># 4. Compare against the derived table's recorded source_lineage.</span></span>
+<span><span class="va">recorded</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_get_lineage.html">datom_get_lineage</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm_clean"</span>, depth <span class="op">=</span> <span class="st">"source"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">recomputed</span>, <span class="va">recorded</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>Because the recipe reads each parent through its own connection, it
+extends to <strong>cross-project</strong> parents without any change:
+open a connection scoped to each parent’s project
+(<code>p$source</code>) and read that parent through it. No single
+connection is ever expected to reach across project stores.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_validate_lineage.html">datom_validate_lineage</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"dm_clean_bad"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; ! Lineage mismatch for "dm_clean_bad".</span></span>
-<span><span class="co">#&gt; $status</span></span>
-<span><span class="co">#&gt; [1] "mismatch"</span></span>
-<span><span class="co">#&gt; $missing</span></span>
-<span><span class="co">#&gt; list()</span></span>
-<span><span class="co">#&gt; $extra</span></span>
-<span><span class="co">#&gt; list()</span></span>
-<span><span class="co">#&gt; $wrong_version</span></span>
-<span><span class="co">#&gt; [[1]]</span></span>
-<span><span class="co">#&gt;   project table version_sha_declared version_sha_computed</span></span>
-<span><span class="co">#&gt;   &lt;chr&gt;   &lt;chr&gt; &lt;chr&gt;                &lt;chr&gt;</span></span>
-<span><span class="co">#&gt; 1 my-study lb   wrong000...          def456...</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="co"># Cross-project variant: resolve a connection per parent project.</span></span>
+<span><span class="va">parent_lineages</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">parents</span>, <span class="kw">function</span><span class="op">(</span><span class="va">p</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">parent_conn</span> <span class="op">&lt;-</span> <span class="fu">conn_for_project</span><span class="op">(</span><span class="va">p</span><span class="op">$</span><span class="va">source</span><span class="op">)</span>   <span class="co"># your connection resolver</span></span>
+<span>  <span class="fu"><a href="../reference/datom_get_lineage.html">datom_get_lineage</a></span><span class="op">(</span><span class="va">parent_conn</span>, <span class="va">p</span><span class="op">$</span><span class="va">table</span>, version <span class="op">=</span> <span class="va">p</span><span class="op">$</span><span class="va">version</span>,</span>
+<span>                    depth <span class="op">=</span> <span class="st">"source"</span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span>
+<span><span class="va">recomputed</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_lineage_union.html">datom_lineage_union</a></span><span class="op">(</span><span class="va">parent_lineages</span><span class="op">)</span></span></code></pre></div>
 <hr>
 </div>
 <div class="section level2">
@@ -327,16 +341,19 @@ written with an incorrect <code>version_sha</code> for the
 for imported tables (a single self-entry using the file’s content
 SHA).</li>
 <li>
-<code><a href="../reference/datom_write.html">datom_write()</a></code> requires <code>source_lineage</code>
-whenever <code>parents</code> is supplied – structural mandate to
-prevent silent omissions.</li>
+<code><a href="../reference/datom_write.html">datom_write()</a></code> derives a derived table’s
+<code>source_lineage</code> from the union of its
+<code><a href="../reference/datom_parent.html">datom_parent()</a></code> records – there is no public
+<code>source_lineage</code> argument to keep in sync.</li>
 <li>
 <code><a href="../reference/datom_get_lineage.html">datom_get_lineage()</a></code> is a single-read operation – no DAG
 traversal, no recursive network calls.</li>
-<li>
-<code><a href="../reference/datom_validate_lineage.html">datom_validate_lineage()</a></code> returns a structured result;
-it does not hard-abort, so callers can embed it in CI pipelines and
-decide on action.</li>
+<li>Lineage consistency is a <strong>composable recipe</strong>:
+<code><a href="../reference/datom_get_parents.html">datom_get_parents()</a></code> + per-parent
+<code>datom_get_lineage(depth = "source")</code> +
+<code><a href="../reference/datom_lineage_union.html">datom_lineage_union()</a></code>, compared against the recorded
+<code>source_lineage</code>. It is built from reads, so it runs from a
+reader connection and honors one connection per project.</li>
 <li>
 <strong>Walker invariant</strong>: <code>source_lineage</code>
 entries are terminal leaves. Lineage walkers must follow
@@ -354,7 +371,7 @@ entries are terminal leaves. Lineage walkers must follow
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

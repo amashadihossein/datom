@@ -33,18 +33,20 @@ datom_get_lineage(conn, name, version = NULL, depth = c("source", "parents"))
 
 ## Value
 
-For `depth = "source"`: list of source-table descriptors (each with
-`project`, `table`, `version_sha`), or `NULL` if the field is absent.
-For `depth = "parents"`: list of parent entries (each with `source`,
-`table`, `version`), or `NULL` if no lineage is recorded.
+For `depth = "source"`: the table's recorded `source_lineage` – a list
+of source-table descriptors (each with `project`, `table`,
+`version_sha`), or `NULL` if the field is absent. For
+`depth = "parents"`: list of parent entries (each with `source`,
+`table`, `version`, `data_sha`), or `NULL` if no lineage is recorded.
 
 ## Details
 
 The two fields answer different questions:
 
 - `"source"`: "what raw datasets does this table ultimately depend on?"
-  (audit, regulatory disclosure, reproducibility scope). Pre-computed by
-  dpbuild from the union of parents' `source_lineage` fields.
+  (audit, regulatory disclosure, reproducibility scope). Derived at
+  write time as the deduplicated union of the parents' `source_lineage`
+  fields.
 
 - `"parents"`: "what did this table come from one step back?"
   (debugging, diff, replay). Equivalent to

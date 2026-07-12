@@ -1,0 +1,518 @@
+# Getting Started
+
+**Goal:** Stand up a versioned datom project using a local filesystem
+store and onboard data using
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+– the primary workflow for bringing files into datom. By the end of this
+article the project holds multiple versioned tables, and you have seen:
+syncing one file, updating it, the idempotent no-op, and syncing a
+batch. No AWS account needed. The same workflow extends unchanged to S3
+(see [Starting on
+S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md)).
+
+> **Already done the two-minute tour in the README?** The tour and this
+> article cover the same ground. If your project initialized cleanly and
+> [`datom_read()`](https://amashadihossein.github.io/datom/reference/datom_read.md)
+> returned `TRUE`, you can jump straight to [Starting on
+> S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md)
+> or [Tracing Data
+> Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md).
+
+You are the data engineer for **STUDY-001**, a Phase II clinical trial.
+EDC extracts land as files in a staging folder; your job is to onboard
+them into a **shared, versioned data space** – multiple engineers
+writing new extracts, multiple analysts reading any version, all
+coordinated through a single git history. Every sync is a git commit;
+every read resolves to an exact version SHA. No one can silently
+overwrite history, and anyone with access to the repo can reproduce any
+past analysis by pinning to a SHA.
+
+This first article walks the local-only path. The same workflow – same
+functions, same commands – works for a shared S3 space: you build an S3
+store instead of a local one (see [Starting on
+S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md)).
+
+**Two locations, two roles:**
+
+- **Input folder** (mutable, disposable) – a landing zone for data not
+  yet onboarded. Files here can be overwritten or deleted freely.
+  Re-syncing already-onboarded content is a no-op. Nothing here is the
+  source of truth.
+- **Storage** (immutable, permanent) – once
+  [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+  onboards a file, storage holds the versioned, content-addressed copy.
+  The original input file is no longer needed; the onboarded data stands
+  on its own.
+
+## Requirements
+
+datom keeps **metadata in git** (diff-able, auditable) and **data
+wherever you tell it to live** (S3 or a local directory). Even when data
+lives on a local filesystem, metadata still goes to a git remote – that
+is how version history stays reproducible across machines.
+
+You need two things, both one-time:
+
+- **A GitHub account** with a personal access token (PAT) scoped to
+  `repo`. Store it in your OS keychain once with
+  `keyring::key_set("GITHUB_PAT")`; every article after this picks it up
+  automatically. Using `keyring` keeps the PAT out of your code and
+  command history.
+- **The `gh` CLI is not required** – datom creates GitHub repos through
+  the GitHub REST API directly using your PAT.
+
+No AWS, no cloud account, no governance repo for this article.
+
+**Verify your keyring setup** before continuing:
+
+``` r
+
+nzchar(keyring::key_get("GITHUB_PAT"))   # should return TRUE
+```
+
+If it errors, set the PAT with `keyring::key_set("GITHUB_PAT")` first.
+
+## Configure your environment
+
+Everything machine-specific lives in one block. Set these values once
+for your environment; every code chunk after this is copy/paste as-is.
+
+``` r
+
+library(datom)
+library(fs)
+
+# --- Settings you control --------------------------------------------------
+project_name <- "STUDY_001"          # logical project name (recorded in metadata)
+repo_name    <- "study-001-data"     # GitHub repo name for the metadata repo
+
+# dev_dir  -- your local clone of the metadata git repo (stays on your machine)
+# data_dir -- where parquet bytes are written; point at a shared location
+#             (network mount, or an S3 store) for a real team space. Temp dirs
+#             are used here so the article leaves nothing behind.
+dev_dir  <- path(tempdir(), "study_001_dev")
+data_dir <- path(tempdir(), "study_001_data")
+
+# Your GitHub personal access token (PAT), scoped to `repo`. Stored once in your
+# OS keychain with keyring::key_set("GITHUB_PAT"); read here by name so the
+# token never appears in your code or command history.
+github_pat <- keyring::key_get("GITHUB_PAT")
+# ---------------------------------------------------------------------------
+
+dir_create(data_dir)
+```
+
+## Build a store
+
+A **store** bundles the addresses datom needs: where parquet bytes go
+and the GitHub PAT that lets datom push metadata. Governance is not
+attached (`governance = NULL`); it is opt-in and added later through the
+governance companion package when sharing across a portfolio matters.
+
+``` r
+
+store <- datom_store(
+  governance = NULL,
+  data       = datom_store_local(path = data_dir),
+  github_pat = github_pat
+)
+```
+
+## Initialize the data repository
+
+``` r
+
+datom_init_repo(
+  path         = dev_dir,
+  project_name = project_name,
+  store        = store,
+  create_repo  = TRUE,
+  repo_name    = repo_name
+)
+```
+
+This creates a GitHub repo, clones it into `dev_dir`, and commits a
+`project.yaml` that records the project’s data store address. The git
+repo is now live on GitHub. No parquet data is pushed to GitHub – only
+the metadata commits travel over the wire; the parquet bytes stay in
+`data_dir`.
+
+[`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
+also creates an `input_files/` directory inside the clone. It is
+gitignored – files placed there are never committed. It is the inbox for
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
+
+Take a moment to inspect the repo structure before moving on:
+
+``` r
+
+# Metadata layout in the git clone (note input_files/ -- your sync inbox)
+fs::dir_tree(dev_dir)
+
+# Storage layout (empty until first sync)
+fs::dir_tree(data_dir)
+```
+
+## Connect
+
+``` r
+
+conn <- datom_get_conn(path = dev_dir, store = store)
+print(conn)
+#> -- datom connection
+#> * Project: "STUDY_001"
+#> * Role: "developer"
+#> * Backend: "local"
+#> * Root: "/tmp/.../study_001_data"
+#> * Path: "/tmp/.../study_001_dev"
+#> * Governance: not attached
+```
+
+## Step 1: Sync one file
+
+The month-1 extract has just landed – a single demographics CSV. Drop it
+in the input folder:
+
+``` r
+
+# The input folder lives inside the git clone but is gitignored.
+# Files placed here are the raw material for datom_sync().
+input_dir <- path(dev_dir, "input_files")
+
+write.csv(
+  datom_example_data("dm", cutoff_date = "2026-01-28"),
+  path(input_dir, "dm.csv"),
+  row.names = FALSE
+)
+```
+
+Scan the folder to build a sync manifest – datom detects what is new,
+changed, or unchanged relative to what has already been onboarded:
+
+``` r
+
+manifest <- datom_sync_manifest(conn)
+#> i Scanned 1 file: 1 new, 0 changed, 0 unchanged.
+manifest
+#>   name  file         format file_sha status
+#> 1   dm  .../dm.csv   csv    7a3b...  new
+```
+
+Now onboard it:
+
+``` r
+
+datom_sync(conn, manifest)
+#> i Syncing 1 table...
+#> v dm synced (new).
+#> i Sync complete: 1 succeeded, 0 failed, 0 skipped.
+```
+
+Three things just happened, in this order:
+
+1.  The CSV was read and serialized to parquet in `data_dir`. **No data
+    was pushed to the GitHub repo** – parquet bytes never leave your
+    local store.
+2.  `metadata.json` and `version_history.json` were updated in the git
+    clone and committed.
+3.  The metadata commit was pushed to GitHub. The version is now
+    auditable from any machine with repo access, but the raw data stays
+    where you put it.
+
+Confirm with
+[`datom_list()`](https://amashadihossein.github.io/datom/reference/datom_list.md),
+[`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md),
+and a round-trip read:
+
+``` r
+
+datom_list(conn)
+#>   name current_version current_data_sha last_updated
+#> 1   dm        a8ee7a31         4b6d0a7e 2026-01-28T...
+
+datom_history(conn, "dm")
+#>    version  data_sha timestamp            message
+#> 1 a8ee7a31 4b6d0a7e 2026-01-28T09:02:11Z dm synced from dm.csv
+
+datom_read(conn, "dm")
+```
+
+**Key point:** the input file is now disposable. Delete it and the data
+is still accessible from storage – storage is the source of truth, not
+the input folder:
+
+``` r
+
+file_delete(path(input_dir, "dm.csv"))
+datom_read(conn, "dm")   # still works -- storage is the permanent record
+```
+
+## Step 2: Update one file
+
+A month passes. The month-2 extract arrives with new subjects. Overwrite
+the input file and sync again:
+
+``` r
+
+write.csv(
+  datom_example_data("dm", cutoff_date = "2026-02-28"),
+  path(input_dir, "dm.csv"),
+  row.names = FALSE
+)
+
+manifest <- datom_sync_manifest(conn)
+#> i Scanned 1 file: 0 new, 1 changed, 0 unchanged.
+
+datom_sync(conn, manifest)
+#> i Syncing 1 table...
+#> v dm synced (changed).
+#> i Sync complete: 1 succeeded, 0 failed, 0 skipped.
+```
+
+The table now has two versions. The previous version is still intact –
+nothing was overwritten:
+
+``` r
+
+datom_history(conn, "dm")
+#>    version  data_sha timestamp            message
+#> 1 5c1a3f7b 9e8f1c2d 2026-02-28T10:14:02Z dm synced from dm.csv
+#> 2 a8ee7a31 4b6d0a7e 2026-01-28T09:02:11Z dm synced from dm.csv
+
+# Read the current version (month 2)
+nrow(datom_read(conn, "dm"))
+#> [1] 16
+
+# Read the prior version (month 1) by its SHA
+hist   <- datom_history(conn, "dm")
+m1_ver <- hist$version[nrow(hist)]   # oldest row is the month-1 version
+nrow(datom_read(conn, "dm", version = m1_ver))
+#> [1] 4
+```
+
+Both versions coexist; any historical snapshot is retrievable by its
+SHA. This is the property that downstream statisticians, regulators, and
+auditors rely on.
+
+## Step 3: No-op repeat
+
+Run
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+again with nothing changed:
+
+``` r
+
+manifest <- datom_sync_manifest(conn)
+#> i Scanned 1 file: 0 new, 0 changed, 1 unchanged.
+
+datom_sync(conn, manifest)
+#> i All files unchanged. Nothing to sync.
+```
+
+Re-syncing identical content is a no-op. This is what makes sync safe to
+run in a scheduled job or pipeline – accidental re-runs cost nothing and
+pollute no history. The same idempotency applies to
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md):
+writing an identical data frame to the same table name detects the
+duplicate and skips.
+
+## Step 4: A batch of files
+
+It is now month 3. The data management team has switched from emailing
+single files to dropping a folder of monthly extracts. Today’s drop
+contains four domains:
+
+``` r
+
+cutoff <- "2026-03-28"
+
+write.csv(datom_example_data("dm", cutoff_date = cutoff),
+          path(input_dir, "dm.csv"), row.names = FALSE)
+write.csv(datom_example_data("ex", cutoff_date = cutoff),
+          path(input_dir, "ex.csv"), row.names = FALSE)
+write.csv(datom_example_data("lb", cutoff_date = cutoff),
+          path(input_dir, "lb.csv"), row.names = FALSE)
+write.csv(datom_example_data("ae", cutoff_date = cutoff),
+          path(input_dir, "ae.csv"), row.names = FALSE)
+```
+
+Scan and sync in one pass:
+
+``` r
+
+manifest <- datom_sync_manifest(conn)
+#> i Scanned 4 files: 3 new, 1 changed, 0 unchanged.
+manifest
+#>   name  file         format file_sha status
+#> 1   dm  .../dm.csv   csv    c41a...  changed
+#> 2   ex  .../ex.csv   csv    9b08...  new
+#> 3   lb  .../lb.csv   csv    72d3...  new
+#> 4   ae  .../ae.csv   csv    1e4a...  new
+
+datom_sync(conn, manifest)
+#> i Syncing 4 tables...
+#> v dm synced (changed).
+#> v ex synced (new).
+#> v lb synced (new).
+#> v ae synced (new).
+#> i Sync complete: 4 succeeded, 0 failed, 0 skipped.
+```
+
+`dm` is `changed` (month-3 update); `ex`, `lb`, `ae` are brand new. All
+four are now versioned:
+
+``` r
+
+datom_list(conn)
+#>   name current_version current_data_sha last_updated
+#> 1   ae        3a17b8e2         e91d04ff 2026-03-28T...
+#> 2   dm        d0922fc7         c2e80a14 2026-03-28T...
+#> 3   ex        f44910b5         88a73e02 2026-03-28T...
+#> 4   lb        718e02ca         4c3812dd 2026-03-28T...
+```
+
+## Project health checks
+
+[`datom_status()`](https://amashadihossein.github.io/datom/reference/datom_status.md)
+summarizes the project state at a glance:
+
+``` r
+
+datom_status(conn)
+#> -- datom status: STUDY_001
+#> v Git: clean, in sync with origin
+#> i Tables on local: 4
+#> i Last commit: <sha> "Update ae"
+```
+
+[`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
+cross-checks that every table in the manifest has its parquet file in
+the data store and its metadata in git history:
+
+``` r
+
+datom_validate(conn)
+#> v 4 tables validated.
+#> v Manifest <-> data store: consistent.
+#> v Manifest <-> git history: consistent.
+```
+
+If you ever see a discrepancy from
+[`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md),
+that is the moment to stop and investigate before doing more work – it
+means the project’s state has drifted from one of git or storage.
+
+## Reading as a reader
+
+Writing is a developer action. Reading is what analysts and downstream
+pipelines do, and they use the **reader role** – a connection built from
+the data store alone, with no GitHub PAT and no local clone. You build a
+reader store by leaving `github_pat` unset, then connect by project
+name:
+
+``` r
+
+reader_store <- datom_store(
+  governance = NULL,
+  data       = datom_store_local(path = data_dir)   # same data location
+)                                                    # no PAT -> reader role
+
+reader_conn <- datom_get_conn(store = reader_store, project_name = project_name)
+print(reader_conn)
+#> -- datom connection
+#> * Project: "STUDY_001"
+#> * Role: "reader"
+#> * Backend: "local"
+```
+
+Read any table through the reader connection:
+
+``` r
+
+datom_read(reader_conn, "lb")   # labs, current version from storage
+```
+
+datom stores data in [Apache Parquet](https://parquet.apache.org/)
+format and reads it back as a `tibble`. The read does **not** go through
+GitHub – the reader resolves the parquet file directly from the data
+store. A teammate on another machine takes the same path: they need
+access to the data store, not to the git repo.
+
+## Writing a computed table with `datom_write()`
+
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+is the primary workflow for onboarding files from a staging folder. For
+tables derived in code – where the data frame is computed rather than
+imported from a file – use
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+directly:
+
+``` r
+
+# Derive a summary table in code
+lb <- datom_read(conn, "lb")
+lb_summary <- dplyr::summarise(
+  dplyr::group_by(lb, LBTESTCD),
+  n = dplyr::n(),
+  .groups = "drop"
+)
+
+# Write it as a versioned table, declaring its parent for lineage
+datom_write(
+  conn,
+  data    = lb_summary,
+  name    = "lb_summary",
+  message = "Lab test counts from month-3 LB",
+  parents = list(
+    list(table = "lb", version = datom_history(conn, "lb")$version[1])
+  )
+)
+#> v Wrote "lb_summary" (full): "b9c4e21a"
+```
+
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+takes the same connection and produces the same versioned,
+content-addressed result. The `parents` argument declares lineage – this
+table was derived from `lb` – making the provenance chain auditable (see
+[Tracing Data
+Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md)).
+
+## Where you are
+
+- A full sync-based onboarding workflow: one file, update, no-op, batch.
+- Four raw tables versioned; one derived table written directly.
+- Input files are disposable; storage is the permanent record.
+- [`datom_status()`](https://amashadihossein.github.io/datom/reference/datom_status.md)
+  and
+  [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
+  provide consistency checks.
+- Readers access data from storage alone – no git, no PAT.
+
+From here, [Starting on
+S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md)
+shows the same workflow with data in object storage, and [Tracing Data
+Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md)
+shows how derived tables record where they came from.
+
+## Teardown
+
+When done, remove the project. Pick the one option that fits, and copy
+only that chunk:
+
+``` r
+
+# Option A -- full scripted teardown (deletes local files AND the GitHub repo).
+# Do this BEFORE any manual unlink().
+datom_repo_delete(conn, confirm = "STUDY_001")
+```
+
+``` r
+
+# Option B -- local only (the GitHub repo stays; delete it from the UI later).
+unlink(c(dev_dir, data_dir), recursive = TRUE)
+```
+
+Do not call [`unlink()`](https://rdrr.io/r/base/unlink.html) before
+[`datom_repo_delete()`](https://amashadihossein.github.io/datom/reference/datom_repo_delete.md)
+– removing the local clone first strips the GitHub remote reference and
+the remote repo will not be deleted.

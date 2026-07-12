@@ -1,7 +1,7 @@
 # The datom Model: Code in Git, Data in Cloud
 
-> **Companion to**: [First
-> Extract](https://amashadihossein.github.io/datom/articles/first-extract.md).
+> **Companion to**: [Getting
+> Started](https://amashadihossein.github.io/datom/articles/getting-started.md).
 > Read this when you want to understand *why* datom split storage in
 > two.
 
@@ -76,14 +76,24 @@ already understand why this matters.
 
 The split lets datom support two roles cleanly:
 
-- **Data developers** push to git and write to the object store.
-- **Data readers** pull from git (or, in many real workflows, just read
-  the object store directly through the cached manifest) and read from
-  the object store.
+- **Data developers** have a local git clone of the project, push to the
+  remote, and write to the data store.
+- **Data readers** connect to the data store directly – no git clone, no
+  write credentials required.
+  `datom_get_conn(store = ..., project_name = "...")` (reader form, no
+  `path`) resolves everything it needs from the metadata mirrored to the
+  data store at write time: the manifest, per-table `metadata.json`, and
+  versioned snapshots.
 
-Readers never need write credentials. A statistician with read-only S3
-access can reproduce any historical analysis – the metadata they need is
-already on the data side, cached when the developer wrote.
+The data store can be an object store (S3) or a local filesystem store
+([`datom_store_local()`](https://amashadihossein.github.io/datom/reference/datom_store_local.md));
+the reader path is the same either way. What readers never need is
+access to the git repository (the code store) or write credentials for
+the data store.
+
+A statistician with read-only access to the data store can read any
+table and reproduce any historical analysis – the metadata they need is
+already there, mirrored when the developer wrote.
 
 ## Property 4: Storage is swappable
 
@@ -127,7 +137,7 @@ of immutable parquet files, and it’s deliberately not more than that.
 
 ## Where this leads
 
-Once you accept “metadata in git, data in object store,” several other
+Once you accept “metadata in git, data in data store,” several other
 datom design choices stop looking arbitrary:
 
 - The two-repo split (governance vs. project) – the organization-scope

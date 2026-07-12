@@ -4,8 +4,8 @@
 
 Your first datom project: sync, version, read.
 
-- [First
-  Extract](https://amashadihossein.github.io/datom/articles/first-extract.md):
+- [Getting
+  Started](https://amashadihossein.github.io/datom/articles/getting-started.md):
 
 ### Start on S3
 

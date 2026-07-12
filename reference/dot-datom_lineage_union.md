@@ -1,9 +1,8 @@
-# Union and deduplicate source_lineage lists
+# Union and deduplicate source_lineage lists (internal wrapper)
 
-Takes a list of source_lineage lists and returns a single deduplicated
-list. Dedup key is (project, table, version_sha). In case of
-project+table collision with differing version_sha, all variants are
-kept (the caller's diff logic will flag them).
+Thin wrapper retained for existing internal callers. Delegates to the
+exported
+[`datom_lineage_union()`](https://amashadihossein.github.io/datom/reference/datom_lineage_union.md).
 
 ## Usage
 
@@ -15,7 +14,7 @@ kept (the caller's diff logic will flag them).
 
 - lineage_lists:
 
-  List of source_lineage lists (each itself a list of entries).
+  List of source_lineage lists (each a list of entries).
 
 ## Value
 
