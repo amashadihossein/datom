@@ -4,9 +4,10 @@ Issue [#74](https://github.com/amashadihossein/datom/issues/74). One item = one 
 commit (code + tests + this file). Run full `devtools::test()` before each commit and record
 the count in the commit message.
 
-- [ ] **A. PAT plumbing** — thread `pat` through `datom_pull()`, `.datom_sync_metadata()`,
-  `.datom_gov_clone_init()` (+ `datom_clone()` caller). Tests capture the credentials arg.
-  Acceptance grep returns only definitions.
+- [x] **A. PAT plumbing** — threaded `pat` through `datom_pull()`, `.datom_sync_metadata()`
+  (pull + push), `.datom_gov_clone_init()` (new `pat` param) + `datom_clone()` caller. Tests
+  capture the credentials/pat arg (gov clone, datom_pull, sync_metadata). Acceptance grep
+  returns only definitions. Tests 1933.
 - [ ] **B. session_token in namespace check** — pass `session_token` (+ `endpoint`) to the
   `.datom_s3_client()` built in `datom_init_repo()`. Mock-assert token passed.
 - [ ] **C. rel_key literal prefix strip** — replace regex `sub()` with `startsWith()` +

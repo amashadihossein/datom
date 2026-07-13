@@ -955,6 +955,29 @@ test_that("datom_pull reports already up to date when nothing to pull", {
   })
 })
 
+test_that("datom_pull forwards conn$github_pat to .datom_git_pull (#74 A)", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "Initial commit")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$github_pat <- "ghp_testtoken123"
+
+    pull_mock <- mockery::mock(TRUE)
+    mockery::stub(datom_pull, ".datom_git_pull", pull_mock)
+
+    suppressMessages(datom_pull(conn))
+
+    args <- mockery::mock_args(pull_mock)[[1]]
+    expect_equal(args$pat, "ghp_testtoken123")
+  })
+})
+
 test_that("datom_pull counts commits pulled from upstream", {
   withr::with_tempdir({
     # Create bare + working repo pair

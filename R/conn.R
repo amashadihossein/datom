@@ -684,7 +684,8 @@ datom_clone <- function(path, store, ...) {
       }
     }
 
-    .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path))
+    .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path),
+                          pat = store$github_pat)
   }
 
   conn <- datom_get_conn(path = path, store = store)

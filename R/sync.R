@@ -65,7 +65,7 @@ datom_pull <- function(conn) {
   branch_name <- .datom_git_branch(repo_path)
 
   # Git pull (fetch + merge)
-  .datom_git_pull(repo_path)
+  .datom_git_pull(repo_path, pat = conn$github_pat)
 
   # Count commits pulled by comparing HEAD before/after
   head_after <- as.character(git2r::revparse_single(repo, "HEAD")$sha)

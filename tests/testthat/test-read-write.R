@@ -1894,6 +1894,45 @@ test_that("commits and pushes after sync", {
   })
 })
 
+test_that(".datom_sync_metadata forwards conn$github_pat to pull and push (#74 A)", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$github_pat <- "ghp_testtoken123"
+
+    fs::dir_create("tbl")
+    meta <- list(data_sha = "sha1", nrow = 5L, ncol = 2L)
+    jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
+
+    pull_pat <- "unset"
+    push_pat <- "unset"
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) "metadata_only",
+      .datom_git_pull = function(path, pat = NULL) {
+        pull_pat <<- pat
+        invisible(TRUE)
+      },
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) {
+        push_pat <<- pat
+        invisible(TRUE)
+      }
+    )
+
+    .datom_sync_metadata(conn, "tbl")
+
+    expect_equal(pull_pat, "ghp_testtoken123")
+    expect_equal(push_pat, "ghp_testtoken123")
+  })
+})
+
 test_that("aborts S3 sync when git commit/push fails", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())

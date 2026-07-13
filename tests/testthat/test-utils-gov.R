@@ -178,6 +178,55 @@ test_that(".datom_gov_clone_init() returns invisible gov_local_path", {
   expect_equal(as.character(result$value), as.character(clone_dir))
 })
 
+test_that(".datom_gov_clone_init() forwards pat to git credentials on clone (#74 A)", {
+  clone_dir <- fs::path(withr::local_tempdir(), "gov-clone")
+  expect_false(fs::dir_exists(clone_dir))
+
+  captured <- "unset"
+  mockery::stub(
+    .datom_gov_clone_init, "git2r::clone",
+    function(url, local_path, credentials = NULL, ...) {
+      captured <<- credentials
+      fs::dir_create(local_path)
+      invisible(TRUE)
+    }
+  )
+  mockery::stub(
+    .datom_gov_clone_init, ".datom_git_ensure_local_identity",
+    function(...) invisible(NULL)
+  )
+
+  suppressMessages(
+    .datom_gov_clone_init("https://github.com/org/gov.git", clone_dir,
+                          pat = "ghp_testtoken123")
+  )
+  expect_s3_class(captured, "cred_user_pass")
+})
+
+test_that(".datom_gov_clone_init() sends NULL credentials when pat is NULL (#74 A)", {
+  clone_dir <- fs::path(withr::local_tempdir(), "gov-clone")
+  expect_false(fs::dir_exists(clone_dir))
+
+  captured <- "unset"
+  mockery::stub(
+    .datom_gov_clone_init, "git2r::clone",
+    function(url, local_path, credentials = NULL, ...) {
+      captured <<- credentials
+      fs::dir_create(local_path)
+      invisible(TRUE)
+    }
+  )
+  mockery::stub(
+    .datom_gov_clone_init, ".datom_git_ensure_local_identity",
+    function(...) invisible(NULL)
+  )
+
+  suppressMessages(
+    .datom_gov_clone_init("https://github.com/org/gov.git", clone_dir, pat = NULL)
+  )
+  expect_null(captured)
+})
+
 
 # =============================================================================
 # .datom_gov_project_path()
