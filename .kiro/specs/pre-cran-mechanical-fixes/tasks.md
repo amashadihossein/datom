@@ -8,8 +8,10 @@ the count in the commit message.
   (pull + push), `.datom_gov_clone_init()` (new `pat` param) + `datom_clone()` caller. Tests
   capture the credentials/pat arg (gov clone, datom_pull, sync_metadata). Acceptance grep
   returns only definitions. Tests 1933.
-- [ ] **B. session_token in namespace check** — pass `session_token` (+ `endpoint`) to the
-  `.datom_s3_client()` built in `datom_init_repo()`. Mock-assert token passed.
+- [x] **B. session_token in namespace check** — pass `session_token = store$data$session_token`
+  to the `.datom_s3_client()` built in `datom_init_repo()`. (No `endpoint` threaded: neither
+  `datom_init_repo()` nor the store carries one at this point.) Mock-asserts token passed.
+  Tests 1935.
 - [ ] **C. rel_key literal prefix strip** — replace regex `sub()` with `startsWith()` +
   `substring()`. Round-trip test with `"my.data+v1"`.
 - [ ] **D. size_bytes overflow** — `as.numeric()` in `.datom_update_manifest_entry()`. Test

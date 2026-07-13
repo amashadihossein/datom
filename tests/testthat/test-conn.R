@@ -1725,6 +1725,46 @@ test_that("datom_init_repo aborts when S3 namespace is occupied", {
   expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
 })
 
+test_that("datom_init_repo passes session_token to the namespace-check client (#74 B)", {
+  bare_dir <- withr::local_tempdir()
+  git2r::init(bare_dir, bare = TRUE)
+  work_dir <- withr::local_tempdir()
+
+  comp <- datom_store_s3(
+    bucket = "test-bucket", prefix = "proj/",
+    access_key = "AKIAEXAMPLE", secret_key = "secretkey",
+    session_token = "FQoGZXIvYXdzToken",
+    validate = FALSE
+  )
+  store <- datom_store(
+    governance = comp, data = comp,
+    github_pat = "ghp_fake", data_repo_url = bare_dir,
+    validate = FALSE
+  )
+
+  captured_token <- "unset"
+  local_mocked_bindings(
+    .datom_s3_client = function(access_key, secret_key, region = "us-east-1",
+                                endpoint = NULL, session_token = NULL) {
+      captured_token <<- session_token
+      list(put_object = function(...) list())
+    },
+    .datom_storage_write_json = function(...) invisible(TRUE),
+    # Report the namespace occupied so init aborts right after the check
+    # client is built -- the STS credentials must reach that client.
+    .datom_storage_exists = function(conn, s3_key) grepl("manifest\\.json", s3_key),
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(project_name = "EXISTING_PROJECT", tables = list())
+    }
+  )
+
+  expect_error(
+    datom_init_repo(path = work_dir, project_name = "testproj", store = store),
+    "already occupied"
+  )
+  expect_equal(captured_token, "FQoGZXIvYXdzToken")
+})
+
 test_that("datom_init_repo proceeds when .force = TRUE despite occupied namespace", {
   env <- setup_init_env()
 

@@ -385,7 +385,8 @@ datom_init_repo <- function(path = ".",
     tryCatch({
       s3_check_client <- .datom_s3_client(
         store$data$access_key, store$data$secret_key,
-        region = data_region
+        region = data_region,
+        session_token = store$data$session_token
       )
       check_conn <- new_datom_conn(
         project_name = project_name,
