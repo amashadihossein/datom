@@ -95,7 +95,13 @@ datom_storage_delete_prefix <- function(conn, prefix_key = NULL) {
   } else {
     "datom/"
   }
-  sub(paste0("^", ns_root), "", full_key)
+  # Literal prefix strip: prefixes may contain regex metacharacters
+  # (".", "+", "(", ...), so never treat ns_root as a pattern.
+  if (startsWith(full_key, ns_root)) {
+    substring(full_key, nchar(ns_root) + 1L)
+  } else {
+    full_key
+  }
 }
 
 

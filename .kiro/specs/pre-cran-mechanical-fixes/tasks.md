@@ -12,8 +12,9 @@ the count in the commit message.
   to the `.datom_s3_client()` built in `datom_init_repo()`. (No `endpoint` threaded: neither
   `datom_init_repo()` nor the store carries one at this point.) Mock-asserts token passed.
   Tests 1935.
-- [ ] **C. rel_key literal prefix strip** — replace regex `sub()` with `startsWith()` +
-  `substring()`. Round-trip test with `"my.data+v1"`.
+- [x] **C. rel_key literal prefix strip** — replaced regex `sub()` with `startsWith()` +
+  `substring()` in `.datom_storage_rel_key()`. Round-trip tests with `"my.data+v1"`,
+  `"org/(alpha)"`, `"a.b.c"`, NULL. Tests 1943.
 - [ ] **D. size_bytes overflow** — `as.numeric()` in `.datom_update_manifest_entry()`. Test
   `size_bytes = 3e9`.
 - [ ] **E. clone git identity** — `.datom_git_ensure_local_identity()` after `git2r::clone()`

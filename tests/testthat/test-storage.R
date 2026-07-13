@@ -682,3 +682,41 @@ test_that("datom_storage_verify() result has correct column types", {
     expect_type(result$issue, "character")
   })
 })
+
+
+# === .datom_storage_rel_key() -- literal prefix strip (#74 C) =================
+
+test_that(".datom_storage_rel_key() strips a plain prefix", {
+  conn <- make_local_storage_conn(root = "/tmp/x", prefix = "proj")
+  full <- "proj/datom/customers/abc123.parquet"
+  expect_equal(.datom_storage_rel_key(full, conn), "customers/abc123.parquet")
+})
+
+test_that(".datom_storage_rel_key() handles a NULL prefix", {
+  conn <- make_local_storage_conn(root = "/tmp/x", prefix = NULL)
+  full <- "datom/orders/def456.parquet"
+  expect_equal(.datom_storage_rel_key(full, conn), "orders/def456.parquet")
+})
+
+test_that(".datom_storage_rel_key() treats a regex-metachar prefix literally (#74 C)", {
+  # "." and "+" are regex metacharacters; the old sub(paste0("^", ns_root), ...)
+  # treated them as a pattern, corrupting the strip.
+  conn <- make_local_storage_conn(root = "/tmp/x", prefix = "my.data+v1")
+  full <- "my.data+v1/datom/tbl/abc.parquet"
+  expect_equal(.datom_storage_rel_key(full, conn), "tbl/abc.parquet")
+})
+
+test_that(".datom_storage_rel_key() round-trips through .datom_build_storage_key() (#74 C)", {
+  for (prefix in list("my.data+v1", "org/(alpha)", "a.b.c", NULL)) {
+    conn <- make_local_storage_conn(root = "/tmp/x", prefix = prefix)
+    rel  <- "customers/xyz789.parquet"
+    full <- .datom_build_storage_key(conn$prefix, rel)
+    expect_equal(.datom_storage_rel_key(full, conn), rel)
+  }
+})
+
+test_that(".datom_storage_rel_key() returns the key unchanged when prefix does not match", {
+  conn <- make_local_storage_conn(root = "/tmp/x", prefix = "proj")
+  full <- "other/datom/tbl/abc.parquet"
+  expect_equal(.datom_storage_rel_key(full, conn), full)
+})
