@@ -645,6 +645,32 @@ test_that(".datom_update_manifest_entry updates existing manifest", {
   })
 })
 
+test_that(".datom_update_manifest_entry handles size_bytes > 2GB without overflow (#74 D)", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    fs::dir_create(".datom")
+    fs::dir_create("bigtbl")
+    # 3e9 bytes exceeds the 2^31 signed-integer limit; as.integer() would NA it.
+    jsonlite::write_json(list(size_bytes = 3e9), "bigtbl/metadata.json",
+                         auto_unbox = TRUE)
+
+    .datom_update_manifest_entry(
+      conn, "bigtbl",
+      metadata_sha = "meta",
+      data_sha = "data"
+    )
+
+    m <- jsonlite::read_json(".datom/manifest.json")
+    expect_false(is.na(m$tables$bigtbl$size_bytes))
+    expect_equal(m$tables$bigtbl$size_bytes, 3e9)
+    # Summary total must stay numeric and non-NA.
+    expect_false(is.na(m$summary$total_size_bytes))
+    expect_equal(m$summary$total_size_bytes, 3e9)
+  })
+})
+
 test_that(".datom_check_rio errors when rio not available", {
   local_mocked_bindings(
     .datom_check_rio = function() {

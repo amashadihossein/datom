@@ -15,8 +15,9 @@ the count in the commit message.
 - [x] **C. rel_key literal prefix strip** — replaced regex `sub()` with `startsWith()` +
   `substring()` in `.datom_storage_rel_key()`. Round-trip tests with `"my.data+v1"`,
   `"org/(alpha)"`, `"a.b.c"`, NULL. Tests 1943.
-- [ ] **D. size_bytes overflow** — `as.numeric()` in `.datom_update_manifest_entry()`. Test
-  `size_bytes = 3e9`.
+- [x] **D. size_bytes overflow** — `as.numeric()` (not `as.integer()`) for `size_bytes` in
+  `.datom_update_manifest_entry()`; `version_count` stays integer. Test with `size_bytes = 3e9`
+  asserts entry + summary total stay numeric/non-NA. Tests 1947.
 - [ ] **E. clone git identity** — `.datom_git_ensure_local_identity()` after `git2r::clone()`
   in `datom_clone()`. Test with temp HOME, no gitconfig.
 - [ ] **F. upstream tracking (verify-first)** — failing test first; fix in `.datom_git_push()`
