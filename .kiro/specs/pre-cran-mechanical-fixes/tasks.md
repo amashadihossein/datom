@@ -38,8 +38,10 @@ the count in the commit message.
   `.datom_normalize_prefix()` so NULL/"" compare equal. Wrong-prefix store (same bucket,
   different prefix) is rejected. Tests: prefix mismatch aborts; NULL/empty treated equal.
   Aligned two pre-existing developer-path tests to the yaml prefix. Tests 1982.
-- [ ] **I. mask AWS secrets fully** — `reveal_prefix` param on `.datom_mask_secret()`; print
-  methods pass FALSE for `secret_key`/`session_token`. Update print tests.
+- [x] **I. mask AWS secrets fully** — added `reveal_prefix = TRUE` param to
+  `.datom_mask_secret()`; the `datom_store_s3` and `datom_store_s3_creds` print methods pass
+  `reveal_prefix = FALSE` for `secret_key` and `session_token` (fully masked). PAT and access
+  key keep their public type prefix. Print + unit tests assert no prefix leak. Tests 1991.
 - [ ] **J. release housekeeping** — `.Rbuildignore` NEWS line, LICENSE year, SECURITY.md
   pointer + plaintext-credentials warning, cran-comments refresh (full `--as-cran` rerun
   contingent on #72).

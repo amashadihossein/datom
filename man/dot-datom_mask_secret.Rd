@@ -4,15 +4,21 @@
 \alias{.datom_mask_secret}
 \title{Mask a Secret for Display}
 \usage{
-.datom_mask_secret(secret)
+.datom_mask_secret(secret, reveal_prefix = TRUE)
 }
 \arguments{
 \item{secret}{A string.}
+
+\item{reveal_prefix}{If \code{TRUE} (default), reveal the first 4 characters. If
+\code{FALSE}, mask the whole secret (no characters revealed).}
 }
 \value{
 Masked string.
 }
 \description{
-Shows first 4 characters followed by \verb{****}.
+By default shows the first 4 characters followed by \verb{****}. That prefix is
+fine for GitHub PATs (the \code{ghp_}/\code{github_pat_} prefix is a public type tag),
+but for AWS secret access keys and session tokens the first characters are
+real entropy -- pass \code{reveal_prefix = FALSE} to mask them fully.
 }
 \keyword{internal}

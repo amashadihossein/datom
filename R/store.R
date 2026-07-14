@@ -725,10 +725,10 @@ print.datom_store_s3 <- function(x, ...) {
 
   cli::cli_li("Region: {.val {x$region}}")
   cli::cli_li("Access key: {.val {(.datom_mask_secret(x$access_key))}}")
-  cli::cli_li("Secret key: {.val {(.datom_mask_secret(x$secret_key))}}")
+  cli::cli_li("Secret key: {.val {(.datom_mask_secret(x$secret_key, reveal_prefix = FALSE))}}")
 
   if (!is.null(x$session_token)) {
-    cli::cli_li("Session token: {.val {(.datom_mask_secret(x$session_token))}}")
+    cli::cli_li("Session token: {.val {(.datom_mask_secret(x$session_token, reveal_prefix = FALSE))}}")
   }
 
   cli::cli_li("Validated: {.val {x$validated}}")
@@ -828,9 +828,9 @@ print.datom_store_s3_creds <- function(x, ...) {
   cli::cli_ul()
   cli::cli_li("Bucket / prefix / region: {.emph <resolved from ref.json>}")
   cli::cli_li("Access key: {.val {(.datom_mask_secret(x$access_key))}}")
-  cli::cli_li("Secret key: {.val {(.datom_mask_secret(x$secret_key))}}")
+  cli::cli_li("Secret key: {.val {(.datom_mask_secret(x$secret_key, reveal_prefix = FALSE))}}")
   if (!is.null(x$session_token)) {
-    cli::cli_li("Session token: {.val {(.datom_mask_secret(x$session_token))}}")
+    cli::cli_li("Session token: {.val {(.datom_mask_secret(x$session_token, reveal_prefix = FALSE))}}")
   }
   cli::cli_end()
   invisible(x)
@@ -958,13 +958,19 @@ print.datom_store_local <- function(x, ...) {
 
 #' Mask a Secret for Display
 #'
-#' Shows first 4 characters followed by `****`.
+#' By default shows the first 4 characters followed by `****`. That prefix is
+#' fine for GitHub PATs (the `ghp_`/`github_pat_` prefix is a public type tag),
+#' but for AWS secret access keys and session tokens the first characters are
+#' real entropy -- pass `reveal_prefix = FALSE` to mask them fully.
 #'
 #' @param secret A string.
+#' @param reveal_prefix If `TRUE` (default), reveal the first 4 characters. If
+#'   `FALSE`, mask the whole secret (no characters revealed).
 #' @return Masked string.
 #' @keywords internal
-.datom_mask_secret <- function(secret) {
+.datom_mask_secret <- function(secret, reveal_prefix = TRUE) {
   if (is.null(secret) || !nzchar(secret)) return("(not set)")
+  if (!isTRUE(reveal_prefix)) return("****")
   n <- nchar(secret)
   if (n <= 4L) return("****")
   paste0(substr(secret, 1L, 4L), "****")
