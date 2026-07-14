@@ -2107,6 +2107,55 @@ test_that("datom_clone clones and returns a datom_conn", {
   })
 })
 
+test_that("datom_clone sets a local git identity on the fresh clone (#74 E)", {
+  withr::with_tempdir({
+    # Point HOME/XDG at empty dirs so there is no global git identity --
+    # mimics a CI runner / fresh box. Without the local-identity fix the
+    # first datom_write() commit would fail in git2r::commit().
+    empty_home <- withr::local_tempdir()
+    withr::local_envvar(
+      HOME = empty_home,
+      XDG_CONFIG_HOME = empty_home
+    )
+
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+
+    work_dir <- withr::local_tempdir()
+    work_repo <- git2r::init(work_dir)
+    git2r::config(work_repo, user.name = "Test", user.email = "test@test.com")
+    fs::dir_create(fs::path(work_dir, ".datom"))
+    yaml::write_yaml(
+      list(
+        project_name = "MYPROJ",
+        storage = list(
+          data = list(type = "s3", root = "test-bucket", region = "us-east-1")
+        )
+      ),
+      fs::path(work_dir, ".datom", "project.yaml")
+    )
+    git2r::add(work_repo, ".datom/project.yaml")
+    git2r::commit(work_repo, "Init datom")
+    git2r::remote_add(work_repo, name = "origin", url = bare_dir)
+    git2r::push(work_repo, name = "origin",
+                refspec = "refs/heads/master", set_upstream = TRUE)
+
+    comp <- datom_store_s3(bucket = "test-bucket", access_key = "fakekey",
+                           secret_key = "fakesecret", validate = FALSE)
+    store <- datom_store(governance = comp, data = comp, github_pat = "fake-pat",
+                         data_repo_url = bare_dir, validate = FALSE)
+
+    local_mocked_bindings(.datom_s3_client = function(...) list(fake = TRUE))
+
+    muffle_conn_warnings(datom_clone(path = "clone_target", store = store))
+
+    cloned_repo <- git2r::repository("clone_target")
+    local_cfg <- git2r::config(cloned_repo)$local
+    expect_true(!is.null(local_cfg$user.name) && nzchar(local_cfg$user.name))
+    expect_true(!is.null(local_cfg$user.email) && nzchar(local_cfg$user.email))
+  })
+})
+
 test_that("datom_clone aborts on clone failure", {
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",

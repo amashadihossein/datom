@@ -656,6 +656,10 @@ datom_clone <- function(path, store, ...) {
     }
   )
 
+  # Ensure the fresh clone has a local git identity so the first datom_write()
+  # commit succeeds even on a host with no global git config (CI, fresh box).
+  .datom_git_ensure_local_identity(git2r::repository(as.character(path)))
+
   # Verify this is actually a datom repo
   yaml_path <- fs::path(path, ".datom", "project.yaml")
   if (!fs::file_exists(yaml_path)) {
