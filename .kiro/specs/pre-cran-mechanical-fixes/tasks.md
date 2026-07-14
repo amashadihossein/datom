@@ -21,8 +21,11 @@ the count in the commit message.
 - [x] **E. clone git identity** — call `.datom_git_ensure_local_identity()` after the data-repo
   `git2r::clone()` in `datom_clone()`. Test clones under an empty HOME/XDG (no gitconfig) and
   asserts local `user.name`/`user.email` are set. Tests 1949.
-- [ ] **F. upstream tracking (verify-first)** — failing test first; fix in `.datom_git_push()`
-  or close as not-a-bug with a note here.
+- [x] **F. upstream tracking** — CONFIRMED REAL BUG (probe: `branch_get_upstream()` was NULL
+  after `.datom_git_push(pull_first = FALSE)`). Fixed: after a successful push, if upstream is
+  NULL, fetch then `branch_set_upstream()`, wrapped in tryCatch -> cli_warn (never fails the
+  push). Tests: upstream set on first push; upstream-set failure warns but push succeeds.
+  Tests 1954.
 - [ ] **G. SHA validator** — add `.datom_validate_sha()`; call in `datom_get_lineage()`,
   `datom_parent()`, `.datom_read_parquet()`. Traversal-string tests. (Coordinates with #72.)
 - [ ] **H. developer conn prefix cross-check** — add prefix comparison in
