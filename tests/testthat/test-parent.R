@@ -3,6 +3,9 @@
 # All storage access is mocked via .datom_storage_read_json; no real network
 # egress occurs (the fail-closed guard in setup.R stays silent). Cross-project
 # cases use two distinct mock stores keyed by conn$project_name.
+#
+# Versions are SHA-like (6-64 lowercase hex) since datom_parent() validates
+# them via .datom_validate_sha() before splicing into a storage key (#74 G).
 
 # --- Fixtures ----------------------------------------------------------------
 
@@ -36,7 +39,7 @@ test_that("resolves data_sha and source_lineage from the snapshot", {
     .datom_storage_read_json = function(conn, key) snap
   )
 
-  p <- datom_parent(conn, "dm", "v_dm_9f3")
+  p <- datom_parent(conn, "dm", "9f3aa1b2c3")
 
   expect_setequal(
     names(p),
@@ -46,7 +49,7 @@ test_that("resolves data_sha and source_lineage from the snapshot", {
   expect_equal(p$source, "study001")
   expect_equal(p$source, conn$project_name)
   expect_equal(p$table, "dm")
-  expect_equal(p$version, "v_dm_9f3")
+  expect_equal(p$version, "9f3aa1b2c3")
   expect_equal(p$data_sha, snap$data_sha)
   expect_equal(p$source_lineage, snap$source_lineage)
 })
@@ -59,7 +62,7 @@ test_that("record retains no connection and is serializable", {
     .datom_storage_read_json = function(conn, key) snap
   )
 
-  p <- datom_parent(conn, "dm", "v_dm_9f3")
+  p <- datom_parent(conn, "dm", "9f3aa1b2c3")
 
   # No live connection leaks into the record.
   expect_false("conn" %in% names(p))
@@ -82,7 +85,7 @@ test_that("source_lineage is NULL when absent from the snapshot", {
     .datom_storage_read_json = function(conn, key) snap
   )
 
-  p <- datom_parent(conn, "dm", "v_dm_9f3")
+  p <- datom_parent(conn, "dm", "9f3aa1b2c3")
 
   expect_null(p$source_lineage)
   expect_true("source_lineage" %in% names(p))
@@ -93,20 +96,28 @@ test_that("source_lineage is NULL when absent from the snapshot", {
 
 test_that("aborts when conn is not a datom_conn", {
   expect_error(
-    datom_parent(list(project_name = "x"), "dm", "v1"),
+    datom_parent(list(project_name = "x"), "dm", "9f3aa1"),
     "datom_conn"
   )
 })
 
 test_that("aborts on an invalid table name", {
   conn <- .parent_conn()
-  expect_error(datom_parent(conn, "", "v1"), "empty")
+  expect_error(datom_parent(conn, "", "9f3aa1"), "empty")
 })
 
 test_that("aborts on an invalid version", {
   conn <- .parent_conn()
   expect_error(datom_parent(conn, "dm", ""), "version")
   expect_error(datom_parent(conn, "dm", 123), "version")
+})
+
+test_that("aborts on a path-traversal version (#74 G)", {
+  conn <- .parent_conn()
+  expect_error(datom_parent(conn, "dm", "../../etc/passwd"), "hex")
+  expect_error(datom_parent(conn, "dm", "not-hex-zzz"), "hex")
+  # Too short (< 6 chars) is rejected too.
+  expect_error(datom_parent(conn, "dm", "abc"), "hex")
 })
 
 test_that("aborts when the snapshot read fails, naming table/version/project", {
@@ -118,10 +129,10 @@ test_that("aborts when the snapshot read fails, naming table/version/project", {
     }
   )
 
-  err <- expect_error(datom_parent(conn, "dm", "v_dm_9f3"))
+  err <- expect_error(datom_parent(conn, "dm", "9f3aa1b2c3"))
   msg <- conditionMessage(err)
   expect_match(msg, "dm")
-  expect_match(msg, "v_dm_9f3")
+  expect_match(msg, "9f3aa1b2c3")
   expect_match(msg, "study001")
 })
 
@@ -133,7 +144,7 @@ test_that("aborts when the snapshot is missing data_sha", {
     .datom_storage_read_json = function(conn, key) snap
   )
 
-  expect_error(datom_parent(conn, "dm", "v_dm_9f3"), "data_sha")
+  expect_error(datom_parent(conn, "dm", "9f3aa1b2c3"), "data_sha")
 })
 
 test_that("aborts when data_sha is an empty string", {
@@ -144,7 +155,7 @@ test_that("aborts when data_sha is an empty string", {
     .datom_storage_read_json = function(conn, key) snap
   )
 
-  expect_error(datom_parent(conn, "dm", "v_dm_9f3"), "data_sha")
+  expect_error(datom_parent(conn, "dm", "9f3aa1b2c3"), "data_sha")
 })
 
 
@@ -162,7 +173,7 @@ test_that("source is derived per-connection across two project stores", {
   conn_b <- .parent_conn("labdata")
 
   store_a <- list(
-    "dm/.metadata/v_dm_9f3.json" = .parent_snapshot(
+    "dm/.metadata/9f3aa1b2c3.json" = .parent_snapshot(
       data_sha = "d_dm_aaa",
       source_lineage = list(
         list(project = "study001", table = "dm", version_sha = "d_dm_aaa")
@@ -170,7 +181,7 @@ test_that("source is derived per-connection across two project stores", {
     )
   )
   store_b <- list(
-    "ex/.metadata/v_ex_7c1.json" = .parent_snapshot(
+    "ex/.metadata/7c1bb2d3e4.json" = .parent_snapshot(
       data_sha = "d_ex_bbb",
       source_lineage = list(
         list(project = "labdata", table = "ex", version_sha = "d_ex_bbb")
@@ -193,8 +204,8 @@ test_that("source is derived per-connection across two project stores", {
     }
   )
 
-  p_a <- datom_parent(conn_a, "dm", "v_dm_9f3")
-  p_b <- datom_parent(conn_b, "ex", "v_ex_7c1")
+  p_a <- datom_parent(conn_a, "dm", "9f3aa1b2c3")
+  p_b <- datom_parent(conn_b, "ex", "7c1bb2d3e4")
 
   expect_equal(p_a$source, "study001")
   expect_equal(p_a$data_sha, "d_dm_aaa")

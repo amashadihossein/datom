@@ -26,8 +26,13 @@ the count in the commit message.
   NULL, fetch then `branch_set_upstream()`, wrapped in tryCatch -> cli_warn (never fails the
   push). Tests: upstream set on first push; upstream-set failure warns but push succeeds.
   Tests 1954.
-- [ ] **G. SHA validator** — add `.datom_validate_sha()`; call in `datom_get_lineage()`,
-  `datom_parent()`, `.datom_read_parquet()`. Traversal-string tests. (Coordinates with #72.)
+- [x] **G. SHA validator** — added `.datom_validate_sha()` (6-64 lowercase hex) in
+  `R/utils-validate.R`; called in `datom_get_lineage()` (version, non-NULL), `datom_parent()`
+  (version), `.datom_read_parquet()` (data_sha). `datom_get_parents()` inherits it via
+  delegation. Traversal-string tests + validator unit tests; updated existing placeholder
+  versions/SHAs to valid hex. `datom_read()`'s `.datom_resolve_version()` prefix matching left
+  untouched (6-char min covers short prefixes). Docs regenerated. Tests 1980. (Coordinates with
+  #72's `.datom_read_parquet()` edits.)
 - [ ] **H. developer conn prefix cross-check** — add prefix comparison in
   `.datom_get_conn_developer()`, normalized. Wrong-prefix store rejected.
 - [ ] **I. mask AWS secrets fully** — `reveal_prefix` param on `.datom_mask_secret()`; print

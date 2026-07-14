@@ -179,6 +179,8 @@ datom_read <- function(conn,
   if (!is.character(data_sha) || length(data_sha) != 1L || !nzchar(data_sha)) {
     cli::cli_abort("{.arg data_sha} must be a single non-empty string.")
   }
+  # data_sha is spliced into a storage key; reject path-traversal / non-hex.
+  .datom_validate_sha(data_sha, arg = "data_sha")
 
   s3_key <- paste0(name, "/", data_sha, ".parquet")
   tmp <- tempfile(fileext = ".parquet")
