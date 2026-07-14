@@ -42,9 +42,15 @@ the count in the commit message.
   `.datom_mask_secret()`; the `datom_store_s3` and `datom_store_s3_creds` print methods pass
   `reveal_prefix = FALSE` for `secret_key` and `session_token` (fully masked). PAT and access
   key keep their public type prefix. Print + unit tests assert no prefix leak. Tests 1991.
-- [ ] **J. release housekeeping** — `.Rbuildignore` NEWS line, LICENSE year, SECURITY.md
-  pointer + plaintext-credentials warning, cran-comments refresh (full `--as-cran` rerun
-  contingent on #72).
+- [x] **J. release housekeeping** — removed `^NEWS\.md$` from `.Rbuildignore` (NEWS now ships;
+  local R CMD check confirms no new problems); `LICENSE` + `LICENSE.md` 2025 -> 2026; rewrote
+  SECURITY.md's dangling `vignette("credentials")` pointer to `vignette("start-on-s3")` + the
+  website, and added a plaintext-credentials warning (no `saveRDS()`/`.RData` of stores).
+  NEWS.md left as the 0.1.0 feature summary (first release; no prior release to contrast
+  pre-release defect fixes against). Local `R CMD check`: 0E/0W/1 benign NOTE (future
+  file timestamp / clock API). **Deferred:** the cran-comments.md refresh + full `--as-cran`
+  rerun on all four environments -- contingent on #72 landing; done together at the combined
+  pre-submission step (not fabricated here).
 
 ## Spec completion
 - [ ] Run full suite + `R CMD check` (as-cran mechanical sanity); harvest learnings; update
