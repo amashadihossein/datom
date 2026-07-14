@@ -895,6 +895,19 @@ datom_get_conn <- function(path = NULL,
         "i" = "Ensure the store matches the project configuration."
       ))
     }
+
+    # Cross-check prefix too: two projects can share a root under different
+    # prefixes, so a matching root is not sufficient. Normalize both sides so
+    # NULL / "" compare equal (a missing prefix round-trips as an empty form).
+    yaml_prefix  <- .datom_normalize_prefix(data_storage$prefix)
+    store_prefix <- .datom_normalize_prefix(prefix)
+    if (!identical(yaml_prefix, store_prefix)) {
+      cli::cli_abort(c(
+        "Store/config mismatch: store data prefix is {.val {store_prefix %||% \"<none>\"}} but {.file project.yaml} says {.val {yaml_prefix %||% \"<none>\"}}.",
+        "i" = "Ensure the store matches the project configuration.",
+        "i" = "Two projects can share a bucket under different prefixes."
+      ))
+    }
   }
 
   role <- store$role

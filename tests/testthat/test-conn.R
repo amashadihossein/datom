@@ -371,7 +371,8 @@ create_test_datom_repo <- function(project_name = "testproj",
 test_that("developer path reads project.yaml and creates connection", {
   dir <- create_test_datom_repo(project_name = "myproj", bucket = "my-bucket")
 
-  comp <- datom_store_s3(bucket = "my-bucket", access_key = "fake_key",
+  comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
+                         access_key = "fake_key",
                          secret_key = "fake_secret", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
                        data_repo_url = "https://github.com/test/repo.git",
@@ -391,7 +392,8 @@ test_that("developer path reads project.yaml and creates connection", {
 test_that("developer path uses reader role when store is reader", {
   dir <- create_test_datom_repo(project_name = "myproj", bucket = "my-bucket")
 
-  comp <- datom_store_s3(bucket = "my-bucket", access_key = "fake_key",
+  comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
+                         access_key = "fake_key",
                          secret_key = "fake_secret", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, validate = FALSE)
 
@@ -466,6 +468,47 @@ test_that("developer path cross-checks root mismatch", {
                        validate = FALSE)
 
   expect_error(datom_get_conn(path = dir, store = store), "mismatch")
+})
+
+test_that("developer path cross-checks prefix mismatch (#74 H)", {
+  # Same bucket, different prefix -- e.g. two projects in one bucket. The
+  # wrong-prefix store must be rejected, not silently operate on the other
+  # project's namespace.
+  dir <- create_test_datom_repo(project_name = "myproj", bucket = "shared-bucket",
+                                prefix = "project-a/")
+  comp <- datom_store_s3(bucket = "shared-bucket", prefix = "project-b/",
+                         access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                       data_repo_url = "https://github.com/test/repo.git",
+                       validate = FALSE)
+
+  expect_error(datom_get_conn(path = dir, store = store), "prefix")
+})
+
+test_that("developer path prefix check treats NULL and empty as equal (#74 H)", {
+  # yaml records an empty prefix (round-trips as empty); the store has no
+  # prefix (NULL). Normalization must make these compare equal. Local backend
+  # keeps the test off the network.
+  store_dir <- as.character(fs::path_norm(withr::local_tempdir()))
+  dir <- withr::local_tempdir()
+  datom_dir <- fs::path(dir, ".datom")
+  fs::dir_create(datom_dir)
+  yaml::write_yaml(
+    list(
+      project_name = "noprefix",
+      storage = list(
+        data = list(type = "local", root = store_dir, prefix = ""),
+        max_file_size_gb = 1000
+      ),
+      repos = list(data = list(remote_url = "https://github.com/test/repo.git"))
+    ),
+    fs::path(datom_dir, "project.yaml")
+  )
+  data_comp <- datom_store_local(path = store_dir, validate = FALSE)
+  store <- datom_store(governance = NULL, data = data_comp,
+                       github_pat = "ghp_x", validate = FALSE)
+
+  expect_no_error(datom_get_conn(path = dir, store = store))
 })
 
 

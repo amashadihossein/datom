@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| pre-cran-mechanical-fixes | 2026-07-12 | Active — items A-G done; next item H | [.kiro/specs/pre-cran-mechanical-fixes/](../.kiro/specs/pre-cran-mechanical-fixes/) |
+| pre-cran-mechanical-fixes | 2026-07-12 | Active — items A-H done; next item I | [.kiro/specs/pre-cran-mechanical-fixes/](../.kiro/specs/pre-cran-mechanical-fixes/) |
 
 ### Drafts (queued, not active)
 

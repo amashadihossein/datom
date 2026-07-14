@@ -33,8 +33,11 @@ the count in the commit message.
   versions/SHAs to valid hex. `datom_read()`'s `.datom_resolve_version()` prefix matching left
   untouched (6-char min covers short prefixes). Docs regenerated. Tests 1980. (Coordinates with
   #72's `.datom_read_parquet()` edits.)
-- [ ] **H. developer conn prefix cross-check** — add prefix comparison in
-  `.datom_get_conn_developer()`, normalized. Wrong-prefix store rejected.
+- [x] **H. developer conn prefix cross-check** — added prefix comparison in
+  `.datom_get_conn_developer()` alongside the root check, normalizing both sides with
+  `.datom_normalize_prefix()` so NULL/"" compare equal. Wrong-prefix store (same bucket,
+  different prefix) is rejected. Tests: prefix mismatch aborts; NULL/empty treated equal.
+  Aligned two pre-existing developer-path tests to the yaml prefix. Tests 1982.
 - [ ] **I. mask AWS secrets fully** — `reveal_prefix` param on `.datom_mask_secret()`; print
   methods pass FALSE for `secret_key`/`session_token`. Update print tests.
 - [ ] **J. release housekeeping** — `.Rbuildignore` NEWS line, LICENSE year, SECURITY.md
