@@ -71,7 +71,7 @@ s3
 #> • Prefix: "project/"
 #> • Region: "us-east-1"
 #> • Access key: "AKIA****"
-#> • Secret key: "wJal****"
+#> • Secret key: "****"
 #> • Validated: FALSE
 is_datom_store_s3(s3)
 #> [1] TRUE

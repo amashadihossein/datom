@@ -50,7 +50,7 @@ creds
 #> ── datom S3 credentials-only store component 
 #> • Bucket / prefix / region: <resolved from ref.json>
 #> • Access key: "AKIA****"
-#> • Secret key: "wJal****"
+#> • Secret key: "****"
 is_datom_store_s3_creds(creds)
 #> [1] TRUE
 ```

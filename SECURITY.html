@@ -54,7 +54,8 @@
 </div>
 <div class="section level2">
 <h2 id="credential-handling">Credential handling<a class="anchor" aria-label="anchor" href="#credential-handling"></a></h2>
-<p>datom never persists credentials to disk. Credentials are passed explicitly at connection time and stored in memory only for the lifetime of the R session. See the credentials vignette (<code>vignette("credentials", package = "datom")</code>) for best practices on supplying credentials safely.</p>
+<p>datom never persists credentials to disk. Credentials are passed explicitly at connection time and stored in memory only for the lifetime of the R session. For best practices on supplying credentials safely (keychain, environment variables, CI secret stores), see the “Start on S3” article (<code><a href="articles/start-on-s3.html">vignette("start-on-s3", package = "datom")</a></code>) and the package website.</p>
+<p>Because <code>datom_store</code> objects hold credentials in memory as plaintext, do not <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> a store or save a workspace (<code>.RData</code>) that contains one – doing so would write your AWS keys and GitHub PAT to disk in the clear. Rebuild the store from your credential source (keychain / environment) in each session instead.</p>
 </div>
 </div>
 

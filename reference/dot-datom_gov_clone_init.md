@@ -5,7 +5,7 @@ Ensures a valid gov clone exists at `gov_local_path`:
 ## Usage
 
 ``` r
-.datom_gov_clone_init(gov_repo_url, gov_local_path)
+.datom_gov_clone_init(gov_repo_url, gov_local_path, pat = NULL)
 ```
 
 ## Arguments
@@ -18,6 +18,13 @@ Ensures a valid gov clone exists at `gov_local_path`:
 - gov_local_path:
 
   Absolute path where the gov clone should live.
+
+- pat:
+
+  GitHub personal access token, threaded to
+  [`.datom_git_credentials()`](https://amashadihossein.github.io/datom/reference/dot-datom_git_credentials.md)
+  so private governance repos can be cloned. `NULL` (default) means
+  unauthenticated / SSH.
 
 ## Value
 
