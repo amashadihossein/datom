@@ -279,6 +279,32 @@
     }
   )
 
+  # git2r::push() does not set upstream tracking. Without it, .datom_git_pull()
+  # and .datom_check_git_current() no-op (their branch_get_upstream() is NULL),
+  # so on the initializing developer's machine datom_pull() silently does
+  # nothing and the stale-state guard always passes. Set upstream after a
+  # successful push. Fetch first so the remote-tracking ref exists. Any failure
+  # here is warn-only -- it must not fail the push that already succeeded.
+  upstream <- tryCatch(
+    git2r::branch_get_upstream(git2r::repository_head(repo)),
+    error = function(e) NULL
+  )
+  if (is.null(upstream)) {
+    tryCatch({
+      git2r::fetch(repo, name = remote_name, credentials = cred)
+      git2r::branch_set_upstream(
+        git2r::repository_head(repo),
+        paste0(remote_name, "/", branch_name)
+      )
+    }, error = function(e) {
+      cli::cli_warn(c(
+        "Pushed to {.val {remote_name}} but could not set upstream tracking.",
+        "i" = "Underlying error: {conditionMessage(e)}",
+        "i" = "Set it manually with {.code git branch --set-upstream-to}."
+      ))
+    })
+  }
+
   invisible(TRUE)
 }
 

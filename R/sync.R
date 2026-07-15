@@ -65,7 +65,7 @@ datom_pull <- function(conn) {
   branch_name <- .datom_git_branch(repo_path)
 
   # Git pull (fetch + merge)
-  .datom_git_pull(repo_path)
+  .datom_git_pull(repo_path, pat = conn$github_pat)
 
   # Count commits pulled by comparing HEAD before/after
   head_after <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
@@ -617,11 +617,13 @@ datom_sync <- function(conn,
 
   # Read size_bytes from local metadata.json (already written at this point)
   meta_path <- fs::path(conn$path, name, "metadata.json")
+  # as.numeric (not as.integer): tables > 2 GB overflow the 2^31 integer
+  # limit, yielding NA that then poisons summary$total_size_bytes.
   size_bytes <- if (fs::file_exists(meta_path)) {
     m <- jsonlite::read_json(meta_path)
-    as.integer(m$size_bytes %||% 0L)
+    as.numeric(m$size_bytes %||% 0)
   } else {
-    0L
+    0
   }
 
   # Count versions from version_history.json

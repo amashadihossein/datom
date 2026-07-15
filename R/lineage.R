@@ -117,6 +117,8 @@ datom_parent <- function(conn, table, version) {
       is.na(version) || !nzchar(version)) {
     cli::cli_abort("{.arg version} must be a single non-empty string.")
   }
+  # version is spliced into a storage key; reject path-traversal / non-hex.
+  .datom_validate_sha(version, arg = "version")
 
   key <- paste0(table, "/.metadata/", version, ".json")
 

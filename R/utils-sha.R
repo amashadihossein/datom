@@ -242,7 +242,7 @@
   table_dir <- fs::path(repo_path, name)
 
   # Pull before write to ensure fresh state
-  .datom_git_pull(repo_path)
+  .datom_git_pull(repo_path, pat = conn$github_pat)
 
   metadata_path <- fs::path(table_dir, "metadata.json")
   if (!fs::file_exists(metadata_path)) {
@@ -283,7 +283,7 @@
   commit_sha <- tryCatch(
     {
       sha <- .datom_git_commit(repo_path, git_files, paste0("Sync metadata for ", name))
-      .datom_git_push(repo_path)
+      .datom_git_push(repo_path, pat = conn$github_pat)
       sha
     },
     error = function(e) {

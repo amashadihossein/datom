@@ -11,7 +11,6 @@
 ^datom\.code-workspace$
 ^CONTRIBUTING\.md$
 ^SECURITY\.md$
-^NEWS\.md$
 ^CODE_OF_CONDUCT\.md$
 ^\.kiro$
 ^cran-comments\.md$

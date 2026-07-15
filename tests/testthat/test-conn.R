@@ -371,7 +371,8 @@ create_test_datom_repo <- function(project_name = "testproj",
 test_that("developer path reads project.yaml and creates connection", {
   dir <- create_test_datom_repo(project_name = "myproj", bucket = "my-bucket")
 
-  comp <- datom_store_s3(bucket = "my-bucket", access_key = "fake_key",
+  comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
+                         access_key = "fake_key",
                          secret_key = "fake_secret", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
                        data_repo_url = "https://github.com/test/repo.git",
@@ -391,7 +392,8 @@ test_that("developer path reads project.yaml and creates connection", {
 test_that("developer path uses reader role when store is reader", {
   dir <- create_test_datom_repo(project_name = "myproj", bucket = "my-bucket")
 
-  comp <- datom_store_s3(bucket = "my-bucket", access_key = "fake_key",
+  comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
+                         access_key = "fake_key",
                          secret_key = "fake_secret", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, validate = FALSE)
 
@@ -466,6 +468,47 @@ test_that("developer path cross-checks root mismatch", {
                        validate = FALSE)
 
   expect_error(datom_get_conn(path = dir, store = store), "mismatch")
+})
+
+test_that("developer path cross-checks prefix mismatch (#74 H)", {
+  # Same bucket, different prefix -- e.g. two projects in one bucket. The
+  # wrong-prefix store must be rejected, not silently operate on the other
+  # project's namespace.
+  dir <- create_test_datom_repo(project_name = "myproj", bucket = "shared-bucket",
+                                prefix = "project-a/")
+  comp <- datom_store_s3(bucket = "shared-bucket", prefix = "project-b/",
+                         access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                       data_repo_url = "https://github.com/test/repo.git",
+                       validate = FALSE)
+
+  expect_error(datom_get_conn(path = dir, store = store), "prefix")
+})
+
+test_that("developer path prefix check treats NULL and empty as equal (#74 H)", {
+  # yaml records an empty prefix (round-trips as empty); the store has no
+  # prefix (NULL). Normalization must make these compare equal. Local backend
+  # keeps the test off the network.
+  store_dir <- as.character(fs::path_norm(withr::local_tempdir()))
+  dir <- withr::local_tempdir()
+  datom_dir <- fs::path(dir, ".datom")
+  fs::dir_create(datom_dir)
+  yaml::write_yaml(
+    list(
+      project_name = "noprefix",
+      storage = list(
+        data = list(type = "local", root = store_dir, prefix = ""),
+        max_file_size_gb = 1000
+      ),
+      repos = list(data = list(remote_url = "https://github.com/test/repo.git"))
+    ),
+    fs::path(datom_dir, "project.yaml")
+  )
+  data_comp <- datom_store_local(path = store_dir, validate = FALSE)
+  store <- datom_store(governance = NULL, data = data_comp,
+                       github_pat = "ghp_x", validate = FALSE)
+
+  expect_no_error(datom_get_conn(path = dir, store = store))
 })
 
 
@@ -1725,6 +1768,46 @@ test_that("datom_init_repo aborts when S3 namespace is occupied", {
   expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
 })
 
+test_that("datom_init_repo passes session_token to the namespace-check client (#74 B)", {
+  bare_dir <- withr::local_tempdir()
+  git2r::init(bare_dir, bare = TRUE)
+  work_dir <- withr::local_tempdir()
+
+  comp <- datom_store_s3(
+    bucket = "test-bucket", prefix = "proj/",
+    access_key = "AKIAEXAMPLE", secret_key = "secretkey",
+    session_token = "FQoGZXIvYXdzToken",
+    validate = FALSE
+  )
+  store <- datom_store(
+    governance = comp, data = comp,
+    github_pat = "ghp_fake", data_repo_url = bare_dir,
+    validate = FALSE
+  )
+
+  captured_token <- "unset"
+  local_mocked_bindings(
+    .datom_s3_client = function(access_key, secret_key, region = "us-east-1",
+                                endpoint = NULL, session_token = NULL) {
+      captured_token <<- session_token
+      list(put_object = function(...) list())
+    },
+    .datom_storage_write_json = function(...) invisible(TRUE),
+    # Report the namespace occupied so init aborts right after the check
+    # client is built -- the STS credentials must reach that client.
+    .datom_storage_exists = function(conn, s3_key) grepl("manifest\\.json", s3_key),
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(project_name = "EXISTING_PROJECT", tables = list())
+    }
+  )
+
+  expect_error(
+    datom_init_repo(path = work_dir, project_name = "testproj", store = store),
+    "already occupied"
+  )
+  expect_equal(captured_token, "FQoGZXIvYXdzToken")
+})
+
 test_that("datom_init_repo proceeds when .force = TRUE despite occupied namespace", {
   env <- setup_init_env()
 
@@ -2064,6 +2147,55 @@ test_that("datom_clone clones and returns a datom_conn", {
     expect_equal(conn$root, "test-bucket")
     expect_true(fs::dir_exists("clone_target/.datom"))
     expect_true(fs::file_exists("clone_target/.datom/project.yaml"))
+  })
+})
+
+test_that("datom_clone sets a local git identity on the fresh clone (#74 E)", {
+  withr::with_tempdir({
+    # Point HOME/XDG at empty dirs so there is no global git identity --
+    # mimics a CI runner / fresh box. Without the local-identity fix the
+    # first datom_write() commit would fail in git2r::commit().
+    empty_home <- withr::local_tempdir()
+    withr::local_envvar(
+      HOME = empty_home,
+      XDG_CONFIG_HOME = empty_home
+    )
+
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+
+    work_dir <- withr::local_tempdir()
+    work_repo <- git2r::init(work_dir)
+    git2r::config(work_repo, user.name = "Test", user.email = "test@test.com")
+    fs::dir_create(fs::path(work_dir, ".datom"))
+    yaml::write_yaml(
+      list(
+        project_name = "MYPROJ",
+        storage = list(
+          data = list(type = "s3", root = "test-bucket", region = "us-east-1")
+        )
+      ),
+      fs::path(work_dir, ".datom", "project.yaml")
+    )
+    git2r::add(work_repo, ".datom/project.yaml")
+    git2r::commit(work_repo, "Init datom")
+    git2r::remote_add(work_repo, name = "origin", url = bare_dir)
+    git2r::push(work_repo, name = "origin",
+                refspec = "refs/heads/master", set_upstream = TRUE)
+
+    comp <- datom_store_s3(bucket = "test-bucket", access_key = "fakekey",
+                           secret_key = "fakesecret", validate = FALSE)
+    store <- datom_store(governance = comp, data = comp, github_pat = "fake-pat",
+                         data_repo_url = bare_dir, validate = FALSE)
+
+    local_mocked_bindings(.datom_s3_client = function(...) list(fake = TRUE))
+
+    muffle_conn_warnings(datom_clone(path = "clone_target", store = store))
+
+    cloned_repo <- git2r::repository("clone_target")
+    local_cfg <- git2r::config(cloned_repo)$local
+    expect_true(!is.null(local_cfg$user.name) && nzchar(local_cfg$user.name))
+    expect_true(!is.null(local_cfg$user.email) && nzchar(local_cfg$user.email))
   })
 })
 

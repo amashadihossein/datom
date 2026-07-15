@@ -7,9 +7,9 @@
 test_that("reads current version end-to-end", {
   test_df <- data.frame(id = 1:5, val = letters[1:5])
 
-  metadata <- list(data_sha = "sha_current", nrow = 5L, ncol = 2L)
+  metadata <- list(data_sha = "c0ffee", nrow = 5L, ncol = 2L)
   history <- list(
-    list(version = "meta_v1", data_sha = "sha_current")
+    list(version = "meta_v1", data_sha = "c0ffee")
   )
 
   local_mocked_bindings(
@@ -34,10 +34,10 @@ test_that("reads specific version end-to-end", {
   df_v1 <- data.frame(x = 1:3)
   df_v2 <- data.frame(x = 10:12)
 
-  metadata <- list(data_sha = "sha_v2")
+  metadata <- list(data_sha = "bbb222")
   history <- list(
-    list(version = "meta_v1", data_sha = "sha_v1"),
-    list(version = "meta_v2", data_sha = "sha_v2")
+    list(version = "meta_v1", data_sha = "aaa111"),
+    list(version = "meta_v2", data_sha = "bbb222")
   )
 
   local_mocked_bindings(
@@ -45,8 +45,8 @@ test_that("reads specific version end-to-end", {
       if (grepl("metadata.json$", s3_key)) metadata else history
     },
     .datom_storage_download = function(conn, s3_key, local_path) {
-      # Should request sha_v1 since we asked for meta_v1
-      if (grepl("sha_v1", s3_key)) {
+      # Should request aaa111 since we asked for meta_v1
+      if (grepl("aaa111", s3_key)) {
         arrow::write_parquet(df_v1, local_path)
       } else {
         arrow::write_parquet(df_v2, local_path)
@@ -100,8 +100,8 @@ test_that("propagates S3 errors from metadata read", {
 })
 
 test_that("propagates S3 errors from parquet download", {
-  metadata <- list(data_sha = "sha1")
-  history <- list(list(version = "v1", data_sha = "sha1"))
+  metadata <- list(data_sha = "aaaa11")
+  history <- list(list(version = "v1", data_sha = "aaaa11"))
 
   local_mocked_bindings(
     .datom_storage_read_json = function(conn, s3_key) {
@@ -461,7 +461,7 @@ test_that("propagates S3 download errors", {
   )
 
   conn <- mock_datom_conn(list())
-  expect_error(.datom_read_parquet(conn, "customers", "abc"), "Failed to download")
+  expect_error(.datom_read_parquet(conn, "customers", "abc123"), "Failed to download")
 })
 
 test_that("constructs correct S3 key for nested table names", {
@@ -477,9 +477,16 @@ test_that("constructs correct S3 key for nested table names", {
   )
 
   conn <- mock_datom_conn(list())
-  .datom_read_parquet(conn, "ADSL", "sha256hash")
+  .datom_read_parquet(conn, "ADSL", "abcdef123456")
 
-  expect_equal(captured_key, "ADSL/sha256hash.parquet")
+  expect_equal(captured_key, "ADSL/abcdef123456.parquet")
+})
+
+test_that(".datom_read_parquet rejects a path-traversal data_sha (#74 G)", {
+  conn <- mock_datom_conn(list())
+  expect_error(.datom_read_parquet(conn, "tbl", "../../etc/passwd"), "hex")
+  expect_error(.datom_read_parquet(conn, "tbl", "not-hex-zzz"), "hex")
+  expect_error(.datom_read_parquet(conn, "tbl", "abc"), "hex")
 })
 
 
@@ -1891,6 +1898,45 @@ test_that("commits and pushes after sync", {
     # Push was called
     expect_true(pushed)
     expect_true(nzchar(result$commit_sha))
+  })
+})
+
+test_that(".datom_sync_metadata forwards conn$github_pat to pull and push (#74 A)", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$github_pat <- "ghp_testtoken123"
+
+    fs::dir_create("tbl")
+    meta <- list(data_sha = "sha1", nrow = 5L, ncol = 2L)
+    jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
+
+    pull_pat <- "unset"
+    push_pat <- "unset"
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) "metadata_only",
+      .datom_git_pull = function(path, pat = NULL) {
+        pull_pat <<- pat
+        invisible(TRUE)
+      },
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) {
+        push_pat <<- pat
+        invisible(TRUE)
+      }
+    )
+
+    .datom_sync_metadata(conn, "tbl")
+
+    expect_equal(pull_pat, "ghp_testtoken123")
+    expect_equal(push_pat, "ghp_testtoken123")
   })
 })
 

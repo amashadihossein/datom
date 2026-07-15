@@ -151,9 +151,12 @@ test_that("print.datom_store_s3() masks secrets and returns invisibly", {
   output <- capture.output(result <- print(store), type = "message")
   output_text <- paste(output, collapse = "\n")
 
-  # Secrets should be masked
+  # Access key: full value hidden, public "AKIA" type prefix still shown
   expect_false(grepl("AKIAIOSFODNN7EXAMPLE", output_text))
   expect_true(grepl("AKIA", output_text))
+
+  # Secret key: fully masked, no prefix leaked (#74 I)
+  expect_false(grepl("wJal", output_text))
 
   # Config should be visible
   expect_true(grepl("my-bucket", output_text))
@@ -161,6 +164,22 @@ test_that("print.datom_store_s3() masks secrets and returns invisibly", {
 
   # Returns invisibly
   expect_s3_class(result, "datom_store_s3")
+})
+
+test_that("print.datom_store_s3() fully masks session_token, no prefix leak (#74 I)", {
+  store <- datom_store_s3(
+    bucket = "my-bucket",
+    access_key = "AKIAIOSFODNN7EXAMPLE",
+    secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    session_token = "FwoGZXIvYXdzEBYaDHsessiontoken",
+    validate = FALSE
+  )
+  output_text <- paste(capture.output(print(store), type = "message"), collapse = "\n")
+
+  expect_true(grepl("Session token", output_text))
+  # None of the token's leading characters should appear.
+  expect_false(grepl("FwoG", output_text))
+  expect_false(grepl("wJal", output_text))
 })
 
 test_that("print.datom_store_s3() omits prefix when NULL", {
@@ -236,6 +255,8 @@ test_that("print.datom_store_s3_creds() masks secrets and shows ref.json note", 
   output_text <- paste(capture.output(print(creds), type = "message"), collapse = "\n")
   expect_false(grepl("AKIAIOSFODNN7EXAMPLE", output_text))
   expect_true(grepl("AKIA", output_text))
+  # Secret key fully masked -- no prefix leak (#74 I)
+  expect_false(grepl("wJal", output_text))
   expect_true(grepl("ref.json", output_text))
   expect_s3_class(creds, "datom_store_s3_creds")
 })
@@ -287,6 +308,14 @@ test_that("datom_store() aborts creds-only data without governance", {
 
 test_that(".datom_mask_secret() shows first 4 chars then ****", {
   expect_equal(.datom_mask_secret("AKIAIOSFODNN7"), "AKIA****")
+})
+
+test_that(".datom_mask_secret() masks fully when reveal_prefix = FALSE (#74 I)", {
+  expect_equal(.datom_mask_secret("wJalrXUtnFEMI", reveal_prefix = FALSE), "****")
+  expect_equal(.datom_mask_secret("FwoGZXIvYXdz", reveal_prefix = FALSE), "****")
+  # Empty / NULL still report not-set regardless of reveal_prefix.
+  expect_equal(.datom_mask_secret(NULL, reveal_prefix = FALSE), "(not set)")
+  expect_equal(.datom_mask_secret("", reveal_prefix = FALSE), "(not set)")
 })
 
 test_that(".datom_mask_secret() masks short secrets entirely", {

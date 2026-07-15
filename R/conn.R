@@ -385,7 +385,8 @@ datom_init_repo <- function(path = ".",
     tryCatch({
       s3_check_client <- .datom_s3_client(
         store$data$access_key, store$data$secret_key,
-        region = data_region
+        region = data_region,
+        session_token = store$data$session_token
       )
       check_conn <- new_datom_conn(
         project_name = project_name,
@@ -655,6 +656,10 @@ datom_clone <- function(path, store, ...) {
     }
   )
 
+  # Ensure the fresh clone has a local git identity so the first datom_write()
+  # commit succeeds even on a host with no global git config (CI, fresh box).
+  .datom_git_ensure_local_identity(git2r::repository(as.character(path)))
+
   # Verify this is actually a datom repo
   yaml_path <- fs::path(path, ".datom", "project.yaml")
   if (!fs::file_exists(yaml_path)) {
@@ -684,7 +689,8 @@ datom_clone <- function(path, store, ...) {
       }
     }
 
-    .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path))
+    .datom_gov_clone_init(store$gov_repo_url, as.character(gov_local_path),
+                          pat = store$github_pat)
   }
 
   conn <- datom_get_conn(path = path, store = store)
@@ -887,6 +893,19 @@ datom_get_conn <- function(path = NULL,
       cli::cli_abort(c(
         "Store/config mismatch: store data root is {.val {data_root}} but {.file project.yaml} says {.val {yaml_root}}.",
         "i" = "Ensure the store matches the project configuration."
+      ))
+    }
+
+    # Cross-check prefix too: two projects can share a root under different
+    # prefixes, so a matching root is not sufficient. Normalize both sides so
+    # NULL / "" compare equal (a missing prefix round-trips as an empty form).
+    yaml_prefix  <- .datom_normalize_prefix(data_storage$prefix)
+    store_prefix <- .datom_normalize_prefix(prefix)
+    if (!identical(yaml_prefix, store_prefix)) {
+      cli::cli_abort(c(
+        "Store/config mismatch: store data prefix is {.val {store_prefix %||% \"<none>\"}} but {.file project.yaml} says {.val {yaml_prefix %||% \"<none>\"}}.",
+        "i" = "Ensure the store matches the project configuration.",
+        "i" = "Two projects can share a bucket under different prefixes."
       ))
     }
   }

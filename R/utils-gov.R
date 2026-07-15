@@ -69,9 +69,12 @@
 #' @param gov_repo_url GitHub URL of the governance repo
 #'   (e.g., `"https://github.com/org/acme-gov.git"`).
 #' @param gov_local_path Absolute path where the gov clone should live.
+#' @param pat GitHub personal access token, threaded to
+#'   `.datom_git_credentials()` so private governance repos can be cloned.
+#'   `NULL` (default) means unauthenticated / SSH.
 #' @return Invisible `gov_local_path` (character).
 #' @keywords internal
-.datom_gov_clone_init <- function(gov_repo_url, gov_local_path) {
+.datom_gov_clone_init <- function(gov_repo_url, gov_local_path, pat = NULL) {
   .datom_check_git2r()
 
   if (!.datom_gov_clone_exists(gov_local_path)) {
@@ -85,7 +88,7 @@
 
     cli::cli_alert_info("Cloning gov repo to {.path {gov_local_path}}...")
 
-    cred <- .datom_git_credentials(gov_repo_url)
+    cred <- .datom_git_credentials(gov_repo_url, pat = pat)
     tryCatch(
       git2r::clone(gov_repo_url, gov_local_path, credentials = cred),
       error = function(e) {

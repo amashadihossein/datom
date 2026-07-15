@@ -638,6 +638,57 @@ test_that(".datom_git_push with pull_first=FALSE succeeds on empty remote", {
   expect_true(length(remote_refs) > 0L)
 })
 
+test_that(".datom_git_push sets upstream tracking on first push (#74 F)", {
+  # Mirrors datom_init_repo: init, add empty remote, first push. git2r::push()
+  # does not set upstream, so without the fix branch_get_upstream() stays NULL
+  # and datom_pull()/.datom_check_git_current() would silently no-op.
+  bare_dir <- withr::local_tempdir()
+  git2r::init(bare_dir, bare = TRUE)
+
+  work_dir <- withr::local_tempdir()
+  work_repo <- git2r::init(work_dir)
+  git2r::config(work_repo, user.name = "Test User", user.email = "test@example.com")
+  git2r::remote_add(work_repo, name = "origin", url = bare_dir)
+
+  writeLines("init", fs::path(work_dir, "README.md"))
+  git2r::add(work_repo, "README.md")
+  git2r::commit(work_repo, "Initial commit")
+
+  # Precondition: no upstream before the datom push
+  before <- tryCatch(
+    git2r::branch_get_upstream(git2r::repository_head(work_repo)),
+    error = function(e) NULL
+  )
+  expect_null(before)
+
+  .datom_git_push(work_dir, pull_first = FALSE)
+
+  # Upstream tracking is now set to origin/<branch>
+  after <- git2r::branch_get_upstream(git2r::repository_head(work_repo))
+  expect_false(is.null(after))
+  branch_name <- git2r::repository_head(work_repo)$name
+  expect_equal(after$name, paste0("origin/", branch_name))
+})
+
+test_that(".datom_git_push upstream failure does not fail the push (#74 F)", {
+  # If setting upstream fails, the push (already succeeded) must still return.
+  info <- create_repo_with_remote()
+  writeLines("more", fs::path(info$work_path, "data.json"))
+  git2r::add(info$work_repo, "data.json")
+  git2r::commit(info$work_repo, "Add data")
+
+  mockery::stub(.datom_git_push, "git2r::branch_get_upstream",
+                function(...) NULL)
+  mockery::stub(.datom_git_push, "git2r::branch_set_upstream",
+                function(...) stop("simulated upstream failure"))
+
+  expect_warning(
+    result <- .datom_git_push(info$work_path),
+    "could not set upstream"
+  )
+  expect_true(result)
+})
+
 test_that(".datom_git_pull aborts on non-git directory", {
   dir <- withr::local_tempdir()
   expect_error(.datom_git_pull(dir), "Not a git repository")

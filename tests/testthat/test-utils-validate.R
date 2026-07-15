@@ -227,3 +227,39 @@ test_that("error message suggests .force = TRUE", {
     "\\.force = TRUE"
   )
 })
+
+
+# --- .datom_validate_sha() (#74 G) ---------------------------------------------
+
+test_that(".datom_validate_sha accepts 6-64 lowercase hex", {
+  expect_invisible(.datom_validate_sha("abc123"))
+  expect_equal(.datom_validate_sha("abc123"), "abc123")
+  expect_equal(.datom_validate_sha(paste(rep("a", 64), collapse = "")),
+               paste(rep("a", 64), collapse = ""))
+  expect_equal(.datom_validate_sha("deadbeef"), "deadbeef")
+})
+
+test_that(".datom_validate_sha rejects path-traversal strings", {
+  expect_error(.datom_validate_sha("../../etc/passwd"), "hex")
+  expect_error(.datom_validate_sha("../secret"), "hex")
+  expect_error(.datom_validate_sha("a/b/c"), "hex")
+})
+
+test_that(".datom_validate_sha rejects non-hex, uppercase, and out-of-range", {
+  expect_error(.datom_validate_sha("not-hex"), "hex")
+  expect_error(.datom_validate_sha("ABC123"), "hex")   # uppercase
+  expect_error(.datom_validate_sha("abc"), "hex")      # too short (< 6)
+  expect_error(.datom_validate_sha(paste(rep("a", 65), collapse = "")), "hex")  # > 64
+})
+
+test_that(".datom_validate_sha rejects non-scalar / NA / non-character", {
+  expect_error(.datom_validate_sha(NA_character_), "hex")
+  expect_error(.datom_validate_sha(123), "hex")
+  expect_error(.datom_validate_sha(c("abc123", "def456")), "hex")
+  expect_error(.datom_validate_sha(character(0)), "hex")
+})
+
+test_that(".datom_validate_sha uses the arg label in the message", {
+  err <- expect_error(.datom_validate_sha("zzz", arg = "data_sha"))
+  expect_match(conditionMessage(err), "data_sha")
+})

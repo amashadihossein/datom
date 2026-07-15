@@ -494,9 +494,9 @@ test_that("reads versioned metadata snapshot when version provided", {
   )
 
   conn <- mock_datom_conn(list())
-  result <- datom_get_parents(conn, "tbl", version = "meta_sha_123")
+  result <- datom_get_parents(conn, "tbl", version = "abc123def456")
 
-  expect_equal(captured_key, "tbl/.metadata/meta_sha_123.json")
+  expect_equal(captured_key, "tbl/.metadata/abc123def456.json")
   expect_length(result, 1)
   expect_equal(result[[1]]$source, "proj_a")
 })
@@ -521,7 +521,7 @@ test_that("errors when versioned snapshot not found", {
 
   conn <- mock_datom_conn(list())
   expect_error(
-    datom_get_parents(conn, "tbl", version = "nonexistent_sha"),
+    datom_get_parents(conn, "tbl", version = "deadbeef"),
     "not found"
   )
 })
@@ -616,9 +616,9 @@ test_that("reads versioned metadata snapshot when version provided", {
     }
   )
   conn <- mock_datom_conn(list())
-  result <- datom_get_lineage(conn, "tbl", version = "meta_sha_123")
+  result <- datom_get_lineage(conn, "tbl", version = "abc123def456")
 
-  expect_true(grepl("meta_sha_123\\.json$", captured_key))
+  expect_true(grepl("abc123def456\\.json$", captured_key))
   expect_equal(result[[1]]$version_sha, "v1")
 })
 
@@ -636,9 +636,16 @@ test_that("errors on missing version snapshot", {
   )
   conn <- mock_datom_conn(list())
   expect_error(
-    datom_get_lineage(conn, "tbl", version = "nonexistent_sha"),
+    datom_get_lineage(conn, "tbl", version = "deadbeef"),
     "not found"
   )
+})
+
+test_that("datom_get_lineage rejects a path-traversal version (#74 G)", {
+  conn <- mock_datom_conn(list())
+  expect_error(datom_get_lineage(conn, "tbl", version = "../../secret"), "hex")
+  expect_error(datom_get_lineage(conn, "tbl", version = "not-hex"), "hex")
+  expect_error(datom_get_lineage(conn, "tbl", version = "abc"), "hex")
 })
 
 

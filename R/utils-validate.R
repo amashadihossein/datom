@@ -53,6 +53,27 @@
 }
 
 
+#' Validate a SHA-Like Input (Version / data_sha)
+#'
+#' Ensures a user-supplied SHA-like string is 6-64 lowercase hex characters.
+#' Used to guard values that get spliced into a storage key (`{table}/{sha}`)
+#' -- on the local backend an unvalidated value like `"../../x"` would escape
+#' the namespace via `fs::path()`. The 6-char minimum still covers the short
+#' prefixes `.datom_resolve_version()` intentionally accepts.
+#'
+#' @param x Value to validate.
+#' @param arg Name of the calling argument, used in the error message.
+#' @return Invisible `x` on success. Aborts otherwise.
+#' @keywords internal
+.datom_validate_sha <- function(x, arg = "version") {
+  if (!is.character(x) || length(x) != 1L || is.na(x) ||
+      !grepl("^[0-9a-f]{6,64}$", x)) {
+    cli::cli_abort("{.arg {arg}} must be 6-64 lowercase hex characters.")
+  }
+  invisible(x)
+}
+
+
 # --- S3 namespace safety -------------------------------------------------------
 
 #' Check Whether an S3 Namespace is Free

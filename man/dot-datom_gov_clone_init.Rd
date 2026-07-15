@@ -4,13 +4,17 @@
 \alias{.datom_gov_clone_init}
 \title{Initialise Gov Clone (Clone If Missing, Reuse If Present)}
 \usage{
-.datom_gov_clone_init(gov_repo_url, gov_local_path)
+.datom_gov_clone_init(gov_repo_url, gov_local_path, pat = NULL)
 }
 \arguments{
 \item{gov_repo_url}{GitHub URL of the governance repo
 (e.g., \code{"https://github.com/org/acme-gov.git"}).}
 
 \item{gov_local_path}{Absolute path where the gov clone should live.}
+
+\item{pat}{GitHub personal access token, threaded to
+\code{.datom_git_credentials()} so private governance repos can be cloned.
+\code{NULL} (default) means unauthenticated / SSH.}
 }
 \value{
 Invisible \code{gov_local_path} (character).

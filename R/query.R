@@ -318,6 +318,8 @@ datom_get_lineage <- function(conn, name, version = NULL,
     if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
       cli::cli_abort("{.arg version} must be a single non-empty string or NULL.")
     }
+    # version is spliced into a storage key; reject path-traversal / non-hex.
+    .datom_validate_sha(version, arg = "version")
     metadata_key <- paste0(name, "/.metadata/", version, ".json")
   }
 
