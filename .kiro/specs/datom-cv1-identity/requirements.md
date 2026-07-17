@@ -1,4 +1,6 @@
-# datom-cv1 Canonical Hash & Three-SHA Identity — Requirements
+# Requirements Document
+
+datom-cv1 Canonical Hash & Three-SHA Identity
 
 ## Introduction
 
@@ -31,10 +33,6 @@ Line numbers in the issue refer to `main` at issue-creation time; always locate 
 function name first since lines drift. The issue's revision note is at **rev 7**
 (2026-07-15): the `sort_columns` / `sort_rows` options are removed entirely — row and
 column order are always significant.
-
-**R is not available in this environment.** All verification criteria describe the
-expected outcome of running the R gates (`devtools::test()`, `R CMD check --as-cran`,
-`Rscript`); those gates are run by the maintainer or CI, not assumed already-run here.
 
 ## Glossary
 
@@ -90,8 +88,9 @@ produce it.
 4. WHERE two inputs hold equal values but differ only in container class (tibble,
    `grouped_df`, plain data.frame) or data-frame-level attributes/row names, THE
    `.datom_canonical_hash` function SHALL return the same hash.
-5. WHEN two inputs differ only in the arrow version that would serialize them, THE
-   resulting `data_sha` SHALL be identical.
+5. THE `data_sha` computation SHALL NOT invoke arrow, so the installed arrow version
+   cannot affect `data_sha` (the stored parquet bytes and `parquet_sha` may differ across
+   arrow versions while `data_sha` is identical).
 6. THE `.datom_canonical_hash` function SHALL abort when `data` does not satisfy
    `is.data.frame(data)`, and SHALL abort when `data` has zero rows or zero columns.
 7. WHEN `.datom_canonical_hash` is run on identical input twice, it SHALL return the same
@@ -139,6 +138,9 @@ same `data_sha` across users, machines, locales, operating systems, and time.
     `sha256( "datom-cv1" || f64le(nrow) || f64le(ncol) || concat(col_digest_hex...) )`.
 12. THE `.datom_canonical_hash` function SHALL NOT round doubles to N significant digits and
     SHALL NOT sort rows or columns.
+13. THE numeric payload encoding of criterion 3 (including NaN canonicalization and
+    −0 → +0) SHALL be a single shared encoder used by the `num`, `date`, `time`, and `drtn`
+    tags.
 
 ### Requirement 3: Order-significant identity, no sort option (rev 7)
 
@@ -188,8 +190,9 @@ identity provenance is auditable.
 1. THE `.datom_build_metadata()` function SHALL add fields `hash_algo = "datom-cv1"`,
    `parquet_sha`, `original_file_sha`, and `column_hashes`.
 2. WHERE the table was produced on the imported (sync) path, THE `original_file_sha` field
-   SHALL be non-NULL; WHERE the table was derived via `datom_write()` from memory, it SHALL
-   be absent/NULL.
+   SHALL be non-NULL; WHERE the table was derived via `datom_write()` from memory, THE
+   `original_file_sha` field SHALL be absent from the metadata (not present with a NULL
+   value).
 3. THE `datom_write()` function SHALL compute `new_parquet_sha` as
    `digest::digest(file = tmp, algo = "sha256")` after writing the temporary parquet.
 4. WHEN `Change_Type` is `full` and no object exists at `<name>/<data_sha>.parquet`, THE
@@ -203,7 +206,10 @@ identity provenance is auditable.
    `new_parquet_sha`, and SHALL skip the upload.
 7. THE `datom_write()` function SHALL set `parquet_sha` before calling
    `.datom_write_metadata_local()` so it persists, and `.datom_write_metadata_local()` SHALL
-   include `parquet_sha` in the `version_history.json` entry.
+   include `parquet_sha` in the `version_history.json` entry, alongside continuing to record
+   `original_file_sha` in that entry as today (so per-entry file provenance is preserved for
+   S3/S4 auditability and the Requirement 5 criterion 5 revert-to-older `parquet_sha`
+   history scan).
 
 ### Requirement 6: Locale-independent metadata field ordering (A-bis)
 
@@ -266,16 +272,19 @@ re-derivations are no-ops.
 
 1. WHEN a pulled manifest records an input's `original_file_sha` as unchanged (S1), THE
    sync path SHALL skip it before any parsing (a no-op).
-2. WHEN an input file's bytes change but its canonical content is identical (S3
+2. WHEN an input file's bytes AND canonical content both change (S2), THE sync path SHALL
+   classify it `full`, upload the new parquet at `<name>/<data_sha>.parquet`, and record a
+   new version.
+3. WHEN an input file's bytes change but its canonical content is identical (S3
    re-export), THE sync path SHALL classify it `metadata_only`, skip the upload, record the
    new `original_file_sha`, and carry `parquet_sha` forward; a subsequent scan SHALL report
    the file `unchanged`.
-3. WHEN a developer syncs an older file whose `data_sha` matches current but whose
+4. WHEN a developer syncs an older file whose `data_sha` matches current but whose
    `original_file_sha` differs (S4), THE sync path SHALL classify it `metadata_only`
    without appending a duplicate `version_history` entry (see Requirement 12).
-4. WHEN a table is derived and written the first time (S5), THE `data_sha` SHALL address it
+5. WHEN a table is derived and written the first time (S5), THE `data_sha` SHALL address it
    with no `original_file_sha` and `Change_Type` SHALL be `full`.
-5. WHEN an identical recipe is re-run producing the same `data_sha` and same parents
+6. WHEN an identical recipe is re-run producing the same `data_sha` and same parents
    matching current (S6), THE `datom_write()` function SHALL report `none` with no commit,
    upload, or history entry.
 
@@ -355,7 +364,9 @@ path and fail late at hash time.
 2. THE `.datom_import_file(file, format)` function SHALL normalize `tolower(format)` and,
    when the format is not in the allowlist, `cli::cli_abort` naming the format and directing
    the user to convert to CSV/parquet or to read it themselves and pass a data frame to
-   `datom_write()`.
+   `datom_write()`. THE exact allowlist abort message text SHALL be treated as canonical and
+   pinned in the design doc (the same single-source-of-truth discipline that applies to the
+   Recourse_Map also covers the allowlist message).
 3. THE `datom_sync_manifest()` function SHALL flag non-allowlisted files up front with
    `status = "unsupported_format"` and the same recourse, and SHALL still process
    allowlisted siblings (one bad file SHALL NOT block the batch).
@@ -479,6 +490,10 @@ guarantees and how to work within the contract.
    path, and record the deliberate narrowings: (a) list/exotic columns are now refused with
    a recourse; (b) `datom_sync` accepts only allowlisted formats (`.json`/`.rds` no longer
    imported directly); (c) the internal `sort_columns`/`sort_rows` options are removed.
+5. THE documentation SHALL state the allowlist escape-hatch provenance tradeoff as a rule:
+   when a user reads an unsupported source (e.g. `.rds`) themselves and passes the resulting
+   data frame to `datom_write()`, the table is derived and has no `original_file_sha`, so
+   input-file change detection (S1/S3 semantics) does not apply to that source.
 
 ---
 
@@ -514,3 +529,6 @@ guarantees and how to work within the contract.
   extends the same function.
 - Downstream: #73 wiring item 11 (`datom_diff`) builds on the `column_hashes` index
   persisted here (Requirement 14).
+- The R verification gates (`devtools::test()`, `R CMD check --as-cran`, `Rscript`) are run
+  by the maintainer or CI, not in this authoring context; the verification criteria describe
+  the expected outcome of those gates rather than assuming they have already run here.
