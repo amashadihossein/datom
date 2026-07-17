@@ -76,7 +76,9 @@ Line numbers drift; locate by function name. The current call chain, as read fro
     correct on disk).
 - `R/query.R` — `datom_get_lineage()` opens `{table}/.metadata/{version}.json` directly; it
   does **not** go through `.datom_resolve_version()` / `.datom_read_parquet()`, so it is
-  untouched by Requirement 8.
+  untouched by Requirement 8. **But** `.datom_status_input_files()` (~line 521) calls
+  `.datom_compute_file_sha()` and assigns a local `file_sha` var (compared to
+  `existing$original_file_sha`), so it **is** in the Requirement 4 rename sweep.
 - `R/utils-validate.R` — `.datom_validate_sha(x, arg)` (6–64 lowercase hex). Do **not** add
   it to `.datom_resolve_version()` (short prefixes are intentional — engineering note).
 - `R/utils-storage.R` — `.datom_storage_exists(conn, key)` dispatches `s3`/`local`; this is
@@ -153,11 +155,21 @@ Contract (Requirements 1, 2, 3):
   or any coercion helper** (a container-class-independent read is the whole point — a tibble,
   `grouped_df`, or plain data.frame with equal values must hash identically). Never invokes
   arrow.
+- **Single classifier `.datom_column_kind(x)`** — the one place the supported-type
+  classification lives. It returns the supported **kind** (the dispatch tag/branch: `"i64"`,
+  `"chr"` for factor/character, `"date"`, `"time"`, `"drtn"`, the labelled fall-through, or
+  `"num"`) or `NULL` when the column is unsupported. Both the gate and the encoder consume it,
+  so the two dispatches can never drift (a column the gate passes but the encoder cannot handle
+  is structurally impossible — the exact one-at-a-time failure Requirement 11.4 forbids). See
+  Section 4 for how `.datom_hash_recourse()` and the encoder both bind to it.
 - **All-offenders pre-scan** (Requirement 11): before encoding, map every column through
-  `.datom_hash_recourse()`. If any are unsupported, abort **once** listing every offender (see
-  Error Handling for the pinned message). This fires during `data_sha` computation — step 1 of
-  `datom_write()` — before git/storage/manifest mutation.
-- **Per-column type dispatch, evaluated in this exact order** (Requirement 2.2):
+  `.datom_hash_recourse()` (which returns non-`NULL` exactly when `.datom_column_kind()` is
+  `NULL`). If any are unsupported, abort **once** listing every offender (see Error Handling for
+  the pinned message). This fires during `data_sha` computation — step 1 of `datom_write()` —
+  before git/storage/manifest mutation.
+- **Per-column type dispatch — `.datom_column_kind(x)` evaluated in this exact order**
+  (Requirement 2.2); the encoder dispatches on the returned kind (and treats a "gate passed but
+  `.datom_column_kind()` is `NULL`" case as an internal error that should be impossible):
   1. `bit64::integer64` → tag `"i64"`: copy the 8-byte bit patterns verbatim
      (`unclass()` to the underlying double storage, `writeBin(size = 8, endian = "little")`),
      **no** NaN/zero canonicalization (Requirement 2.5).
@@ -257,6 +269,11 @@ hard-code; any drift on any CI environment fails a test.
    in `metadata.json` and in the `version_history` entry (Requirement 5.7).
 9. `.datom_write_metadata_local()` (full-history dedup, below); manifest update; git; the
    parquet upload from step 7 (only in the two upload branches); metadata + manifest S3 push.
+   The parquet upload stays **after** the git push deliberately: git push is the serialization
+   point, so a concurrent writer of the same content aborts at push (merge conflict) before it
+   can reach upload, which keeps the `full` + key-exists check (step 7) from being a TOCTOU hole
+   that could silently invalidate another writer's recorded `parquet_sha`. (See Invariants — this
+   ordering is load-bearing.)
 
 **`.datom_has_changes()`** returns `list(change_type = ..., current = ...)`. `current` is the
 already-read current metadata (or `NULL` for a brand-new table → `change_type = "full"`,
@@ -272,6 +289,17 @@ read `$change_type`.
 - `datom_sync()`: `required_cols` and `tbl_file_sha` updated to `original_file_sha`.
 - `.datom_update_manifest_entry(..., file_sha = ...)` param → `original_file_sha`; the
   `datom_write()` call site updated (`original_file_sha = .original_file_sha`).
+- `R/query.R` `.datom_status_input_files()` (verified ~line 521): the `.datom_compute_file_sha()`
+  call becomes `.datom_compute_original_file_sha()`, and the local `file_sha` variable it assigns
+  (compared against `existing$original_file_sha`) → `original_file_sha`. Without this the
+  acceptance gate `grep -rn "file_sha" R/ man/ vignettes/` would fail on this design's own
+  checklist. (`datom_get_lineage()` in the same file is still untouched — it opens
+  `{version}.json` directly and has no `file_sha` token; only Requirement 8 leaves it alone, the
+  rename touches `.datom_status_input_files()` here.)
+- Roxygen regeneration: renaming `.datom_compute_file_sha()` →
+  `.datom_compute_original_file_sha()` means the `man/dot-datom_compute_file_sha.Rd` page
+  regenerates to `man/dot-datom_compute_original_file_sha.Rd` via `roxygen2` (`devtools::document()`),
+  clearing the bare `file_sha` token from `man/` as well.
 - The on-disk field is already `original_file_sha`; no stored-format churn from the rename.
 - `parquet_sha` and `original_file_sha` are the only `*_sha` names that survive the grep;
   `file_sha` (bare) is never introduced (Requirement 4.2).
@@ -325,10 +353,20 @@ New file `R/hashable.R`:
 ```r
 datom_check_hashable(data)      # exported; invisibly returns a data frame
 .datom_hash_recourse(x)         # internal; NULL if supported, else canonical recourse string
+.datom_column_kind(x)           # internal; supported kind (tag/branch) or NULL if unsupported
 ```
 
-- `.datom_hash_recourse(x)` is the **single source of truth**. It inspects one column value and
-  returns `NULL` when the column is hashable (matches a supported dispatch branch) or the
+- `.datom_column_kind(x)` is the **single classifier** underneath everything: it embodies the
+  supported-type classification once (the Section 1 dispatch order) and returns the supported
+  kind or `NULL`. `.datom_hash_recourse(x)` binds to it (`NULL` kind → look up the offender's
+  canonical recourse string; non-`NULL` kind → return `NULL`), and the `.datom_canonical_hash()`
+  per-column encoder binds to it too (dispatch on the returned kind). Because the gate and the
+  encoder read the **same** classifier, they cannot diverge — there is no column the gate accepts
+  that the encoder then cannot encode (the encoder treats a non-`NULL` gate result with a `NULL`
+  kind as an internal error that must be impossible), closing the one-at-a-time failure mode
+  Requirement 11.4 forbids.
+- `.datom_hash_recourse(x)` is the **single source of truth for recourse strings**. It inspects
+  one column value and returns `NULL` when `.datom_column_kind(x)` is non-`NULL` (hashable) or the
   canonical recourse string otherwise. Both `datom_check_hashable()` and the
   `.datom_canonical_hash()` all-offenders pre-scan call this one function — the checker's advice
   and the abort's advice can never drift (Requirement 10.4).
@@ -435,9 +473,17 @@ names lose the bare `file_sha` token.
 - Refusing an unhashable column happens in step 1 of `datom_write()`, before any git/storage/
   manifest write — a refusal leaves no partial state, and it lists **all** offenders at once,
   never one at a time.
+- `.datom_column_kind()` is the **single** supported-type classifier; the hash gate
+  (`.datom_hash_recourse()`) and the per-column encoder both dispatch on it, so no column can be
+  accepted by the gate yet rejected by the encoder (never fail one column at a time).
 - `.datom_hash_recourse()` is the sole producer of recourse strings; the checker and the abort
   both call it.
 - `version_history.json` never contains two entries with the same `version`.
+- The parquet upload happens **after** the git push, never before. Git push is the serialization
+  point: a concurrent writer of the same content aborts at push (merge conflict) before reaching
+  upload, which prevents the `full` + key-exists check from becoming a TOCTOU hole that could
+  silently invalidate another writer's recorded `parquet_sha`. This ordering is load-bearing and
+  must never be refactored to upload-before-push.
 - The `datom_sync()` self-lineage `version_sha` stays `data_sha`, not `metadata_sha` (existing
   bootstrap invariant — engineering notes).
 - `.datom_compute_metadata_sha()` continues to hash the JSON canonical form, never the R object
@@ -450,8 +496,15 @@ names lose the bare `file_sha` token.
 *A property is a characteristic or behavior that should hold true across all valid executions
 of a system — a formal statement about what the system should do. Properties bridge the
 human-readable spec and machine-verifiable correctness. Each is universally quantified and
-implemented by a single property-based test running at least 100 iterations, each tagged with
-its feature name and property number (format: `Feature: {feature}, Property {number}: {text}`).*
+remains the specification of what must hold, mapped to the requirements it validates.*
+
+**Validation approach (0.1.0):** these properties are validated by **deterministic `testthat`
+tests over the named edge-case fixtures** (Requirement 16.1 enumerates the concrete deterministic
+cases), consistent with the golden-constant philosophy and adding no new dependency — **not** by
+a generator-driven property-based-testing harness. There is currently no PBT harness in the
+suite. Each test is tagged with its feature name and property number (format:
+`Feature: {feature}, Property {number}: {text}`). Genuine generator-based PBT is **deferred** as
+a possible future enhancement (candidate for #73). See Testing Strategy for the fixture mapping.
 
 Redundancy reflection was applied to the prework: the numeric-encoder facts (NaN canonicalization,
 −0→+0, NA_real_≠NaN, bit-exactness) are consolidated into one property; column-reorder and
@@ -541,8 +594,10 @@ value labels and attributes) produces the same `data_sha` as the bare underlying
 
 ### Property 11: Reference-implementation parity
 
-*For any* fixture in the shared fixture set, the package `.datom_canonical_hash()` and the
-standalone `dev/datom_cv1_reference.R` `datom_canonical_hash()` produce the identical `data_sha`.
+*For every* fixture in the shared, finite fixture set, the package `.datom_canonical_hash()` and
+the standalone `dev/datom_cv1_reference.R` `datom_canonical_hash()` produce the identical
+`data_sha`. This is a **fixture-based parity test** enumerated over that shared fixture set (no
+random generator, no iteration count).
 
 **Validates: Requirements 15.1, 15.4, 2.1, 2.11**
 
@@ -558,7 +613,8 @@ the stored `data_sha`, and changing exactly one column flips exactly that column
 ### Property 13: metadata_sha locale determinism
 
 *For any* metadata list, `.datom_compute_metadata_sha()` returns the same hash under
-`LC_COLLATE=C` and under `en_US.UTF-8` (radix field-name ordering).
+`LC_COLLATE=C` and under `en_US.UTF-8` (radix field-name ordering). The test **skips if the
+`en_US.UTF-8` locale is unavailable** (e.g. on Windows CI), so it never ships matrix-red.
 
 **Validates: Requirements 6.1, 6.2**
 
@@ -606,19 +662,30 @@ them. All strings are ASCII (`--` not em-dash) per the repo ASCII rule.
 `.datom_hash_recourse(x)` returns `NULL` for any column matching a supported dispatch branch
 (Section 1), else the canonical string for the first matching offender category below. The
 column **name** and **class** are added by the caller (checker row / abort bullet), so the
-recourse strings themselves are type-scoped only.
+recourse strings themselves are type-scoped only. Detection is **`inherits()` / `typeof()` /
+`is.list()` class-string matching only** -- it adds **no new package dependency**. `units`,
+`sf`, `zoo`, and `chron` are matched by their class strings, not by loading those packages; the
+package does **not** Suggest them merely to detect them.
 
 | Offender (detection) | Canonical recourse string |
 |----------------------|---------------------------|
-| list column (`is.list(x)` and not a data frame; includes `POSIXlt`) | `"List and nested columns are not hashable. Flatten to one value per row, or serialize the column to character (for example with jsonlite::toJSON() per element), before writing."` |
-| `POSIXlt` (special-cased before the generic list message) | `"POSIXlt columns are not hashable. Convert to POSIXct with as.POSIXct() before writing."` |
+| `POSIXlt` (`inherits(x, "POSIXlt")`; special-cased before the generic list rows because a `POSIXlt` is a list under the hood) | `"POSIXlt columns are not hashable. Convert to POSIXct with as.POSIXct() before writing."` |
+| nested-tibble / data-frame list column (`is.list(x) && !is.data.frame(x) && all(vapply(x, is.data.frame, logical(1)))`) | `"Nested data-frame (list) columns are not hashable. Model the inner table as its own datom table joined by a key with datom_parent() lineage, or flatten it with tidyr::unnest(), before writing."` |
+| other list / blob columns (`is.list(x)` and not a data frame, after the `POSIXlt` and nested-data-frame rows) | `"List and blob columns are not hashable. Flatten to one value per row with tidyr::unnest(), or serialize each element to character (for example with jsonlite::toJSON() per element), before writing."` |
+| `units` (units pkg) (`inherits(x, "units")`) | `"units columns are not hashable. Drop the unit with units::drop_units() and record the unit in the column name or a companion column (audit-friendly), before writing."` |
+| `sf` geometry (`inherits(x, "sfc")`) | `"sf geometry (sfc) columns are not hashable. Convert to WKT text with sf::st_as_text() before writing."` |
+| `zoo::yearmon` / `yearqtr` and `chron` (`inherits(x, c("yearmon", "yearqtr", "chron"))`) | `"zoo::yearmon / yearqtr and chron columns are not hashable. Convert to Date/POSIXct or ISO-8601 text before writing."` |
 | complex (`typeof(x) == "complex"`) | `"Complex columns are not hashable. Split into separate real and imaginary numeric columns, or convert to character, before writing."` |
 | raw (`typeof(x) == "raw"`) | `"Raw columns are not hashable. Encode the bytes as character (for example base64) before writing."` |
 | any other classed column not in the supported set | `"Columns of this class are not hashable. Convert to a supported type (logical, integer, double, character, factor, Date, POSIXct, difftime/hms, or bit64::integer64) before writing."` |
 
 Detection order matters: `POSIXlt` (a list under the hood) is matched before the generic list
-message; `haven_labelled`/`labelled` are supported (they fall through), so they never reach the
-"other classed" branch.
+rows; the nested-data-frame list row is matched before the generic list row; the class-specific
+rows (`units`, `sfc`, `yearmon`/`yearqtr`/`chron`) are matched before the generic "other classed"
+fallback; and `haven_labelled`/`labelled` are supported (they fall through the dispatch of
+Section 1), so they never reach the "other classed" branch. Requirement 17.1's vignette recourse
+table renders from **this same map** (via `.datom_hash_recourse()` / `datom_check_hashable()`),
+so the vignette, the checker, and the hash abort can never drift.
 
 ### All-offenders abort (`.datom_canonical_hash()`)
 
@@ -666,17 +733,26 @@ i The stored object may be corrupted or tampered with. Do not trust this data.
 
 ## Testing Strategy
 
-Property-based testing **applies** here: `datom-cv1` is a pure, I/O-free function over a large
-structured input space (arbitrary data frames), which is the canonical case for PBT. The
-package already develops with formal correctness properties; this feature adds 17.
+`datom-cv1` is a pure, I/O-free function over structured inputs, and the 17 correctness
+properties above are the specification of what must hold. **For 0.1.0 the project stays on plain
+`testthat` (+ `mockery` + `withr`, the existing stack); there is currently no property-based-testing
+harness in the suite.** Each of the 17 properties is therefore validated by **deterministic
+`testthat` tests over the enumerated edge-case fixtures** — a decision consistent with the
+golden-constant philosophy that adds **no new dependency**. This is well within reach: Requirement
+16.1 lists concrete deterministic cases, all satisfiable in plain `testthat`. There is **no
+`≥100 iterations` / random-generator mandate**; the properties are pinned by fixtures, not by
+randomized sampling.
 
-**Library**: the project's existing property harness (`hedgehog` or `quickcheck` per the current
-test suite) — do not hand-roll generators. Each of the 17 properties above is one
-property-based test at ≥100 iterations, tagged in the `Feature: {feature}, Property {number}`
-format.
-Generators must cover the edge cases named in Requirement 16.1: `0/0`, `NaN`, `-0`, `NA_real_`,
-`NA` vs `""`, NFC/NFD, CJK, all-`NA` columns, unused factor levels, `tzone` variants, `secs`/
-`mins` difftimes, `ITime`/`hms`, and `integer64` NaN-bit-space values.
+Each property test is tagged in the `Feature: {feature}, Property {number}` format and references
+its design property. The fixtures must cover the deterministic cases named in Requirement 16.1:
+`0/0`, `NaN`, `-0`, `NA_real_`, `NA` vs `""`, NFC/NFD, CJK, all-`NA` columns (logical vs
+character), unused factor levels, `tzone` variants, `secs`/`mins` difftimes, `ITime`/`hms`, and
+`integer64` NaN-bit-space values. Property 13's locale test **skips when the `en_US.UTF-8` locale
+is unavailable** (e.g. Windows CI) so it never ships matrix-red.
+
+**Deferred:** genuine generator-based property-based testing (a `hedgehog`/`quickcheck`-style
+harness driving these same properties across randomized inputs) is a possible future enhancement,
+a candidate for #73. It is intentionally out of scope for 0.1.0 to avoid adding a dependency.
 
 **Reference parity + goldens (Requirement 15)** — the drift tripwire, re-run on all four
 CI_Matrix environments:
