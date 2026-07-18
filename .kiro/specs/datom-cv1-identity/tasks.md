@@ -69,7 +69,13 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - Rewrite `.datom_compute_data_sha(data)` as a thin wrapper `= .datom_canonical_hash(data)$data_sha`
       with the rev-7 signature and no `sort_columns`/`sort_rows` params (preserves the scalar
       contract for the `datom_sync()` self-lineage caller).
-    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10, 2.11, 2.12, 3.1, 11.2, 11.3, 11.4_
+    - **In the same commit**, replace the sort-only tests in `test-utils-sha.R`: remove the two
+      existing `sort_columns`/`sort_rows` tests and add positive assertions that a column reorder
+      and a row reorder each change the hash. This is non-optional and must land here — removing
+      the `sort_columns`/`sort_rows` params from `.datom_compute_data_sha()` makes the existing
+      sort-only tests throw "unused argument", reddening the suite unless they are removed in the
+      same commit (green-per-commit).
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10, 2.11, 2.12, 3.1, 3.5, 11.2, 11.3, 11.4_
   - [ ]* 1.7 Write property tests for the canonical hash engine
     - **Property 1: Container-class and attribute independence** — **Validates: Requirements 1.4**
     - **Property 2: Determinism** — **Validates: Requirements 1.7**
@@ -80,27 +86,41 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - **Property 9: Labelled columns strip to base type** — **Validates: Requirements 2.10**
     - **Property 10: Row and column order are significant** — **Validates: Requirements 3.2, 3.3**
     - Plus guard tests: non-frame aborts; zero-row and zero-col abort. _Requirements: 1.6_
-  - [ ]* 1.8 Replace the sort-only tests in `test-utils-sha.R`
-    - Remove the two existing `sort_columns`/`sort_rows` tests; add positive assertions that a
-      column reorder and a row reorder each change the hash.
-    - _Requirements: 3.5_
   - [ ] 1.9 Create the standalone reference implementation `dev/datom_cv1_reference.R`
+    - The reference script already exists verbatim in issue #72's embedded code block — lift it
+      verbatim rather than retyping it (retyping risks byte-layout drift from the pinned spec).
     - Base R + `digest` only, zero I/O, no sort args; identical byte layout to
       `.datom_canonical_hash()`; pure ASCII with all Unicode fixtures built via `intToUtf8()`;
       includes a self-test that exits 0 and prints the portable golden constants.
+    - Run the pure-ASCII check on the lifted file:
+      `all(as.integer(readBin(f, "raw", file.size(f))) < 128L)` must be TRUE.
     - _Requirements: 15.1, 15.2, 15.3_
   - [ ]* 1.10 Write golden-vector, NIST, parity, and metadata_sha golden tests
-    - Hard-code the golden vectors (numeric; int/lgl/dbl parity; character incl. NFC/NFD and CJK;
+    - Write the golden-vector tests (numeric; int/lgl/dbl parity; character incl. NFC/NFD and CJK;
       factor; Date variants; POSIXct tzone equality; difftime secs vs mins; hms vs ITime;
       integer64 incl. NaN-bit-space; one mixed data.frame; one `.datom_compute_metadata_sha()`
-      golden) matching the reference script's printed constants; NIST SHA-256 `"abc"` vector;
-      ASCII assertion on `dev/datom_cv1_reference.R`.
+      golden) with the expected hex constants as clearly-marked `<PENDING-GOLDEN>` placeholders.
+      R is unavailable in the authoring environment, so the golden hex cannot be computed during
+      coding; the placeholders MUST FAIL LOUDLY (e.g. `expect_identical(actual, "<PENDING-GOLDEN>")`
+      or an explicit `stop()` guard) — never `skip()` — until a maintainer fills them in.
+    - The NIST SHA-256 `"abc"` vector
+      (`ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`) is a fixed public
+      constant and IS hard-coded now (not a placeholder). Add the ASCII assertion on
+      `dev/datom_cv1_reference.R`.
+    - **MAINTAINER STEP (requires R):** run `Rscript dev/datom_cv1_reference.R` on the reference
+      platform, paste the printed golden constants into the tests replacing the `<PENDING-GOLDEN>`
+      placeholders, and commit. Do NOT introduce a Python (or any third) implementation to
+      bootstrap the constants — the standalone R reference script is the single golden source.
     - **Property 11: Reference-implementation parity** over the full fixture set (skipped when
       `dev/datom_cv1_reference.R` is absent) — **Validates: Requirements 15.1, 15.4, 2.1, 2.11**
     - _Requirements: 15.5, 15.6, 15.7_
 
 - [ ] 2. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
+  - MAINTAINER STEP (requires R, see task 1.10): run `Rscript dev/datom_cv1_reference.R` on the
+    reference platform and replace the `<PENDING-GOLDEN>` placeholders in the golden-vector tests
+    with the printed constants before this checkpoint can pass — the placeholders fail loudly by
+    design and are not skippable.
 
 - [ ] 3. Three-SHA metadata and write-path wiring
   - [ ] 3.1 Extend `.datom_build_metadata()` (in `R/read_write.R`) with the new fields
@@ -121,7 +141,14 @@ sub-agent verification in this environment is authoring the code and tests, not 
   - [ ] 3.4 Refactor `.datom_has_changes()` to return `list(change_type, current)`
     - Return the already-read `current` metadata (or `NULL` for a brand-new table → `"full"`);
       update the second caller `.datom_sync_metadata()` (in `R/utils-sha.R`) to read `$change_type`.
-    - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.6_
+    - Update any existing tests of `.datom_has_changes()` (and its string-return expectations) in
+      the same commit so the return-shape change lands green.
+    - This is change-detection plumbing (the `.datom_has_changes()` return-shape refactor + caller
+      updates), not the S-scenario behaviors; the S1–S6 acceptance behaviors are delivered by
+      task 3.5 and the 12.x integration tests. What this refactor actually enables is reuse of the
+      already-read `current` for the `metadata_only` `parquet_sha` carry-forward (Requirement 5.6)
+      and the `none` re-derivation detection (Requirement 9.6) — the only clauses tagged here.
+    - _Requirements: 5.6, 9.6_
   - [ ] 3.5 Revise `datom_write()` order and `parquet_sha` determination
     - New order: (1) ref guard, (2) `.datom_canonical_hash(data)` → `data_sha` + `column_hashes`
       (all-offenders abort fires here, before any mutation), (3) write temp parquet + `size_bytes`
@@ -211,17 +238,19 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - **Validates: Requirements 13.1, 13.2, 13.4, 16.3**
 
 - [ ] 10. `file_sha` nomenclature rename sweep
-  - [ ] 10.1 Eliminate the bare `file_sha` token across `R/` and `man/`
+  - [ ] 10.1 Eliminate the bare `file_sha` token across `R/`/`man/`, update tests, and run the grep gate
     - Rename `.datom_compute_file_sha()` → `.datom_compute_original_file_sha()`; update
       `datom_sync_manifest()` (local var + returned column), `datom_sync()` (`required_cols` +
       `tbl_file_sha`), `.datom_update_manifest_entry()` param, and `R/query.R`
       `.datom_status_input_files()` (call + local var). Regenerate `man/` via
       `devtools::document()` so the `.Rd` page renames.
-    - _Requirements: 4.1, 4.2, 4.3, 4.4_
-  - [ ]* 10.2 Update tests and run the nomenclature grep gate
-    - Update tests referencing the old name/column; assert
+    - **In the same commit**, update the tests referencing the old name/column: the rename
+      changes `datom_sync_manifest()`'s returned column and `datom_sync()`'s `required_cols`,
+      and `test-sync.R` builds manifest fixtures with the `file_sha` column that error until
+      those tests are updated — so this must land here (green-per-commit) and is non-optional.
+    - As part of this same commit, run the nomenclature grep gate and assert
       `grep -rn "file_sha" R/ man/ vignettes/` matches only `original_file_sha`/`parquet_sha`.
-    - _Requirements: 4.2, 4.3_
+    - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
 - [ ] 11. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
@@ -260,6 +289,10 @@ sub-agent verification in this environment is authoring the code and tests, not 
       levels/labels/NaN payloads/−0 not identity; NFC≠NFD; order significant, no sorting; doubles
       bit-exact) with rationale; scope the cross-language claim (guaranteed within R + renv);
       state the allowlist escape-hatch provenance tradeoff.
+    - DECISION (recourse table): render it in an `eval = TRUE` chunk (a per-chunk override of the
+      vignettes' global `eval = FALSE` default) that calls `datom_check_hashable()` /
+      `.datom_hash_recourse()` — both pure, no network, no store — so the documented table is
+      generated from the single-source recourse map and the doc and code cannot drift.
     - _Requirements: 17.1, 17.2, 17.3, 17.5_
   - [ ] 13.2 Update `NEWS.md`
     - Note that pre-release `data_sha` values change with no migration path; record the three
@@ -287,9 +320,16 @@ sub-agent verification in this environment is authoring the code and tests, not 
 
 ## Notes
 
-- Tasks marked with `*` are optional test/verification sub-tasks and can be skipped for a faster
-  MVP; core implementation tasks are never optional. Per the repo stack these "property" tests
+- Tasks marked `*` are test/verification sub-tasks that MAY be deferred within the branch during
+  development, but ALL are REQUIRED before the PR merges — several (the 4-environment goldens,
+  reference parity, the S1–S4 regressions, and the recourse test-pairs) are named acceptance
+  criteria in requirements/#72 and an MVP that skips them cannot merge. Tasks 1.8-folded (into
+  1.6) and 10.2-folded (into 10.1) are NOT deferrable (they are required for the suite to compile
+  in their own commit) and are therefore non-optional. Per the repo stack these "property" tests
   are deterministic `testthat` tests over enumerated fixtures — **not** a PBT harness.
+- Any task that changes a function signature, return shape, or a data-frame column name MUST
+  include the updates to existing tests that exercise it in the SAME commit — this is what
+  green-per-commit actually requires.
 - Each task references specific granular requirement clauses for traceability. Every requirement
   (1–17) and every correctness property (1–17) is covered by at least one task.
 - The parquet upload stays after the git push in `datom_write()` (Task 3.5) — this ordering is
@@ -299,6 +339,9 @@ sub-agent verification in this environment is authoring the code and tests, not 
   bind to them so they cannot drift.
 - R is unavailable in the authoring environment; `devtools::test()`, `R CMD check --as-cran`, and
   `Rscript dev/datom_cv1_reference.R` are run by the maintainer/CI.
+- The Task Dependency Graph waves are the safe SEQUENTIAL execution order; tasks within a wave
+  touch adjacent code in `R/utils-sha.R` / `R/hashable.R`, so if execution is fanned out to
+  parallel agents on one branch, honor wave order sequentially to avoid edit collisions.
 
 ## Task Dependency Graph
 
@@ -307,7 +350,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
   "waves": [
     { "id": 0, "tasks": ["1.1", "1.3", "1.9"] },
     { "id": 1, "tasks": ["1.6", "1.2"] },
-    { "id": 2, "tasks": ["1.4", "1.5", "1.7", "1.8", "1.10"] },
+    { "id": 2, "tasks": ["1.4", "1.5", "1.7", "1.10"] },
     { "id": 3, "tasks": ["3.1", "3.2"] },
     { "id": 4, "tasks": ["3.4", "3.3"] },
     { "id": 5, "tasks": ["3.5"] },
@@ -317,7 +360,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     { "id": 9, "tasks": ["6.1", "5.2"] },
     { "id": 10, "tasks": ["9.1", "8.1", "6.2"] },
     { "id": 11, "tasks": ["10.1"] },
-    { "id": 12, "tasks": ["8.2", "9.2", "10.2"] },
+    { "id": 12, "tasks": ["8.2", "9.2"] },
     { "id": 13, "tasks": ["12.1", "12.2", "12.3", "12.4", "12.5"] },
     { "id": 14, "tasks": ["13.1", "13.2"] },
     { "id": 15, "tasks": ["14.1"] }
