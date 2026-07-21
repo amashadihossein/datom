@@ -42,7 +42,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - Each of the 9 offender categories returns its exact canonical string; every supported type
       returns `NULL` kind and `NULL` recourse; `haven_labelled` is treated as supported.
     - _Requirements: 2.2, 10.4, 11.1, 11.5_
-  - [ ] 1.3 Implement the shared numeric encoder and character encoder in `R/utils-sha.R`
+  - [x] 1.3 Implement the shared numeric encoder and character encoder in `R/utils-sha.R`
     - One shared numeric encoder used by `num`/`date`/`time`/`drtn`:
       `writeBin(as.double(x), size = 8, endian = "little")`, canonicalize every `NaN` payload to
       one canonical `NaN`, convert `-0.0` → `+0.0`, preserve `NA_real_` as distinct from `NaN`.

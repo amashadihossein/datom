@@ -120,6 +120,80 @@
 
 # Internal helpers for SHA computation and metadata operations
 
+
+#' Encode a Numeric Payload for Canonical Hashing
+#'
+#' The single shared numeric encoder used by the `num`, `date`, `time`, and
+#' `drtn` column kinds of `datom-cv1`. Produces a fixed, platform-independent
+#' byte sequence: IEEE-754 doubles written little-endian regardless of host
+#' endianness, with three canonicalizations so that logically-equal values
+#' encode identically:
+#'
+#' * Every `NaN` payload (e.g. `0/0`, a signalling NaN, a negative NaN) is
+#'   folded to R's single canonical quiet `NaN` bit pattern.
+#' * `-0.0` is converted to `+0.0`.
+#' * `NA_real_` is preserved as its own distinct bit pattern -- it is a
+#'   specific `NaN` payload in R and is deliberately *not* folded into the
+#'   canonical `NaN`, so `NA_real_` and `NaN` encode differently.
+#'
+#' No rounding is applied: doubles are encoded bit-exact.
+#'
+#' @param x A vector coercible to double (logical, integer, double, or the
+#'   numeric payload of a Date/POSIXct/difftime column).
+#' @return A raw vector of `8 * length(x)` bytes.
+#' @keywords internal
+.datom_encode_numeric <- function(x) {
+  d <- as.double(x)
+
+  # Fold every true NaN (is.nan() is FALSE for NA_real_) to R's canonical
+  # quiet NaN, so distinct NaN payloads hash equal while NA_real_ stays
+  # distinct.
+  nan_idx <- which(is.nan(d))
+  if (length(nan_idx) > 0L) d[nan_idx] <- NaN
+
+  # Normalise negative zero to positive zero. `d == 0` is TRUE for both -0
+  # and +0 and NA for NA/NaN, so which() drops the missing entries.
+  zero_idx <- which(d == 0)
+  if (length(zero_idx) > 0L) d[zero_idx] <- 0
+
+  writeBin(d, raw(), size = 8L, endian = "little")
+}
+
+
+#' Encode a Character Payload for Canonical Hashing
+#'
+#' The character encoder for the `chr` column kind (character and factor
+#' columns). Emits a one-byte-per-row NA mask (`0x01` where `is.na()`,
+#' `0x00` otherwise) followed by each value re-encoded to UTF-8 via
+#' `enc2utf8()` and NUL-terminated. The leading mask makes `NA` and the
+#' empty string `""` distinguishable (both have an empty value section, but
+#' `NA` sets its mask byte). No Unicode normalization is applied, so NFC and
+#' NFD forms of the same text encode differently (a documented, benign
+#' limitation).
+#'
+#' @param x A vector coercible to character (character or factor).
+#' @return A raw vector: `length(x)` mask bytes followed by the
+#'   NUL-terminated UTF-8 value bytes.
+#' @keywords internal
+.datom_encode_character <- function(x) {
+  x <- as.character(x)
+  na <- is.na(x)
+
+  mask <- as.raw(ifelse(na, 1L, 0L))
+
+  # NA values contribute an empty value section (just their NUL terminator);
+  # the mask byte is what distinguishes them from "".
+  vals <- x
+  vals[na] <- ""
+  vals <- enc2utf8(vals)
+
+  # writeBin() on a character vector writes each element as a C string: its
+  # bytes followed by a terminating NUL. Since vals is UTF-8, these are the
+  # UTF-8 bytes.
+  c(mask, writeBin(vals, raw()))
+}
+
+
 #' Compute SHA-256 of Data
 #'
 #' Computes a deterministic SHA-256 hash of a data frame by writing to

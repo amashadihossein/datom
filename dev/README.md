@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| datom-cv1-identity | 2026-07-17 | In progress (Task 1.1: hashable.R classifier + recourse map) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
+| datom-cv1-identity | 2026-07-17 | In progress (Task 1.3: shared numeric + character encoders) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
 
 ### Drafts (queued, not active)
 
