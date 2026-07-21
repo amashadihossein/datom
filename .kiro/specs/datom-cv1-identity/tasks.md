@@ -24,7 +24,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
 ## Tasks
 
 - [ ] 1. Canonical hash engine (`datom-cv1`) and reference implementation
-  - [ ] 1.1 Create `R/hashable.R` classifier and recourse map
+  - [x] 1.1 Create `R/hashable.R` classifier and recourse map
     - Add internal `.datom_column_kind(x)` — the single supported-type classifier implementing
       the exact dispatch order (`bit64::integer64` → factor → `Date`/`IDate` → `POSIXct` →
       `difftime`/`hms` → `data.table::ITime` → `haven_labelled`/`labelled`/`labelled_spss`
