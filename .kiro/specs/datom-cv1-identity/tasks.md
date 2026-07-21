@@ -86,7 +86,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - **Property 9: Labelled columns strip to base type** — **Validates: Requirements 2.10**
     - **Property 10: Row and column order are significant** — **Validates: Requirements 3.2, 3.3**
     - Plus guard tests: non-frame aborts; zero-row and zero-col abort. _Requirements: 1.6_
-  - [ ] 1.9 Create the standalone reference implementation `dev/datom_cv1_reference.R`
+  - [x] 1.9 Create the standalone reference implementation `dev/datom_cv1_reference.R`
     - The reference script already exists verbatim in issue #72's embedded code block — lift it
       verbatim rather than retyping it (retyping risks byte-layout drift from the pinned spec).
     - Base R + `digest` only, zero I/O, no sort args; identical byte layout to
