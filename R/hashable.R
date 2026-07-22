@@ -172,3 +172,23 @@
     "difftime/hms, or bit64::integer64) before writing."
   )
 }
+
+
+#' Human-Readable Class Label for a Column
+#'
+#' Renders the label shown for a column in the all-offenders abort bullets
+#' and in the `datom_check_hashable()` report: the collapsed `class(x)`
+#' string for an explicitly-classed column, or `typeof(x)` for an unclassed
+#' one (so a list column reads `list`, a complex column `complex`, and a
+#' `units` column `units`).
+#'
+#' @param x A single column (vector) from a data frame.
+#' @return A single character string.
+#' @keywords internal
+.datom_class_label <- function(x) {
+  if (is.object(x)) {
+    paste(class(x), collapse = "/")
+  } else {
+    typeof(x)
+  }
+}

@@ -194,46 +194,155 @@
 }
 
 
-#' Compute SHA-256 of Data
+#' Compute a Single Column's datom-cv1 Digest
 #'
-#' Computes a deterministic SHA-256 hash of a data frame by writing to
-#' parquet format. By default, preserves column and row order — reordering
-#' either will produce a different hash.
+#' Encodes one column to its per-column SHA-256 hex digest for `datom-cv1`,
+#' as `sha256( utf8(tag) || utf8(colname) || 0x00 || payload )`. The tag is
+#' the kind returned by [.datom_column_kind()] and the payload is produced by
+#' the shared encoders. Labelled columns strip their class and attributes and
+#' re-dispatch on the bare underlying vector, so value labels never enter
+#' identity.
 #'
-#' @param data Data frame to hash.
-#' @param sort_columns If TRUE, sorts columns alphabetically before hashing.
-#'   Useful when column order shouldn't affect identity.
-#' @param sort_rows If TRUE, sorts rows by all columns before hashing.
-#'   Useful when row order shouldn't affect identity.
-#' @return Character SHA-256 hash.
+#' @param name Column name (used verbatim, UTF-8, in the digest input).
+#' @param x The column vector.
+#' @return A 64-character SHA-256 hex string.
 #' @keywords internal
-.datom_compute_data_sha <- function(data, sort_columns = FALSE, sort_rows = FALSE) {
+.datom_col_digest <- function(name, x) {
+  # Labelled columns strip class + attributes and re-dispatch on the bare
+  # underlying vector (labels are metadata, not identity).
+  if (inherits(x, c("haven_labelled", "labelled", "labelled_spss"))) {
+    stripped <- x
+    attributes(stripped) <- NULL
+    return(.datom_col_digest(name, stripped))
+  }
+
+  kind <- .datom_column_kind(x)
+  if (is.null(kind)) {
+    # Unreachable: the all-offenders pre-scan in .datom_canonical_hash() has
+    # already rejected any column .datom_column_kind() cannot classify.
+    cli::cli_abort(
+      "Column {.field {name}} reached the encoder unclassified.",
+      .internal = TRUE
+    )
+  }
+
+  payload <- switch(
+    kind,
+    i64  = writeBin(unclass(x), raw(), size = 8L, endian = "little"),
+    chr  = .datom_encode_character(x),
+    date = .datom_encode_numeric(unclass(x)),
+    time = .datom_encode_numeric(unclass(x)),
+    drtn = {
+      # difftime carries its units attr; ITime is seconds-of-day, encoded as
+      # difftime-secs so ITime and hms of the same clock times hash equal.
+      units <- if (inherits(x, "ITime")) "secs" else attr(x, "units")
+      c(.datom_encode_numeric(unclass(x)), as.raw(0L),
+        charToRaw(enc2utf8(units)))
+    },
+    num  = .datom_encode_numeric(x)
+  )
+
+  digest::digest(
+    c(charToRaw(kind), charToRaw(enc2utf8(name)), as.raw(0L), payload),
+    algo = "sha256", serialize = FALSE
+  )
+}
+
+
+#' Compute the datom-cv1 Canonical Content Hash
+#'
+#' The I/O-free identity engine for `datom-cv1`. Computes `data_sha` from the
+#' in-memory logical values only -- no parquet write, no CSV, no temp files,
+#' no `as.data.frame()` or coercion, and never invokes arrow. Columns are read
+#' via `data[[i]]` / `names(data)` and dimensions via `nrow()` / `ncol()`, so
+#' two frames with equal values hash identically regardless of container class
+#' (tibble vs data.frame vs grouped_df), row names, or arrow version.
+#'
+#' Before encoding, every column is scanned through [.datom_hash_recourse()];
+#' if any are unsupported the function aborts **once**, listing every offender
+#' with its class and canonical recourse. This fires during `data_sha`
+#' computation (step 1 of [datom_write()]), before any git or storage
+#' mutation, so a refusal leaves no partial state.
+#'
+#' The final hash is
+#' `sha256( "datom-cv1" || f64le(nrow) || f64le(ncol) || concat(col_digest_hex...) )`.
+#'
+#' @param data A data frame with at least one row and one column.
+#' @return A list with `data_sha` (character) and `column_hashes` (an ordered
+#'   list of `list(name, sha)` in column order, computed once and reused for
+#'   both `data_sha` and the persisted column index).
+#' @keywords internal
+.datom_canonical_hash <- function(data) {
   if (!is.data.frame(data)) {
     cli::cli_abort("{.arg data} must be a data frame.")
   }
-
-  if (ncol(data) == 0L || nrow(data) == 0L) {
+  if (nrow(data) == 0L || ncol(data) == 0L) {
     cli::cli_abort("{.arg data} must have at least one row and one column.")
   }
 
-  prepared <- data
+  nms <- names(data)
 
-  if (sort_columns) {
-    col_order <- sort(names(prepared))
-    prepared <- prepared[, col_order, drop = FALSE]
+  # All-offenders pre-scan: identify every unsupported column before encoding
+  # anything, so a refusal names all offenders at once and leaves no state.
+  recourse <- lapply(data, .datom_hash_recourse)
+  offenders <- which(!vapply(recourse, is.null, logical(1)))
+  if (length(offenders) > 0L) {
+    n <- length(offenders)
+    bullets <- vapply(offenders, function(i) {
+      paste0(
+        "Column {.field ", nms[[i]], "} ",
+        "({.cls ", .datom_class_label(data[[i]]), "}): ",
+        recourse[[i]]
+      )
+    }, character(1L))
+    names(bullets) <- rep("x", n)
+    cli::cli_abort(c(
+      "Cannot compute {.field data_sha}: {n} column{?s} {?is/are} not hashable.",
+      bullets,
+      "i" = paste0(
+        "Run {.run datom_check_hashable(data)} or see ",
+        "{.code vignette('design-version-shas')} -- ",
+        "\"The datom table contract\"."
+      )
+    ))
   }
 
-  if (sort_rows) {
-    row_order <- do.call(order, prepared)
-    prepared <- prepared[row_order, , drop = FALSE]
-    rownames(prepared) <- NULL
-  }
+  # Per-column digests -- computed once, reused for data_sha and the index.
+  col_hex <- vapply(
+    seq_along(data),
+    function(i) .datom_col_digest(nms[[i]], data[[i]]),
+    character(1L)
+  )
+  column_hashes <- lapply(seq_along(data), function(i) {
+    list(name = nms[[i]], sha = col_hex[[i]])
+  })
 
-  tmp <- tempfile(fileext = ".parquet")
-  on.exit(unlink(tmp), add = TRUE)
+  header <- c(
+    charToRaw("datom-cv1"),
+    writeBin(as.double(c(nrow(data), ncol(data))), raw(),
+             size = 8L, endian = "little")
+  )
+  data_sha <- digest::digest(
+    c(header, charToRaw(paste(col_hex, collapse = ""))),
+    algo = "sha256", serialize = FALSE
+  )
 
-  arrow::write_parquet(prepared, tmp)
-  digest::digest(file = tmp, algo = "sha256")
+  list(data_sha = data_sha, column_hashes = column_hashes)
+}
+
+
+#' Compute the datom-cv1 Content Hash of a Data Frame
+#'
+#' Thin wrapper over [.datom_canonical_hash()] returning only the scalar
+#' `data_sha`. Preserves the scalar-string contract for callers that need
+#' just the content hash (for example the `datom_sync()` self-lineage entry).
+#' Row and column order are significant; there is no sort option.
+#'
+#' @param data Data frame to hash.
+#' @return Character SHA-256 `data_sha`.
+#' @keywords internal
+.datom_compute_data_sha <- function(data) {
+  .datom_canonical_hash(data)$data_sha
 }
 
 

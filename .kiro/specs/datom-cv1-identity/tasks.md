@@ -57,7 +57,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - **Property 5: Character encoding semantics** (`NA` vs `""` differ; NFC vs NFD differ),
       CJK fixture built via `intToUtf8()`
     - **Validates: Requirements 2.4, 16.1**
-  - [ ] 1.6 Implement `.datom_canonical_hash()` and the `.datom_compute_data_sha()` wrapper
+  - [x] 1.6 Implement `.datom_canonical_hash()` and the `.datom_compute_data_sha()` wrapper
     - `.datom_canonical_hash(data)` in `R/utils-sha.R`: zero I/O, no `as.data.frame()` / no
       coercion, no arrow; guards (`is.data.frame`, non-zero rows/cols); reads via `data[[i]]`,
       `names()`, `nrow()`/`ncol()`. All-offenders pre-scan via `.datom_hash_recourse()` aborting

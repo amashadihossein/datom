@@ -25,7 +25,7 @@ test_that("data SHA is a 64-char hex string (SHA-256)", {
   expect_match(sha, "^[0-9a-f]{64}$")
 })
 
-test_that("column reorder produces different SHA by default", {
+test_that("column reorder produces different SHA (order is significant)", {
   df1 <- data.frame(x = 1:3, y = 4:6)
   df2 <- data.frame(y = 4:6, x = 1:3)
   sha1 <- .datom_compute_data_sha(df1)
@@ -33,28 +33,12 @@ test_that("column reorder produces different SHA by default", {
   expect_false(sha1 == sha2)
 })
 
-test_that("column reorder produces same SHA with sort_columns = TRUE", {
-  df1 <- data.frame(x = 1:3, y = 4:6)
-  df2 <- data.frame(y = 4:6, x = 1:3)
-  sha1 <- .datom_compute_data_sha(df1, sort_columns = TRUE)
-  sha2 <- .datom_compute_data_sha(df2, sort_columns = TRUE)
-  expect_identical(sha1, sha2)
-})
-
-test_that("row reorder produces different SHA by default", {
+test_that("row reorder produces different SHA (order is significant)", {
   df1 <- data.frame(x = c(1, 2, 3), y = c("a", "b", "c"))
   df2 <- data.frame(x = c(3, 1, 2), y = c("c", "a", "b"))
   sha1 <- .datom_compute_data_sha(df1)
   sha2 <- .datom_compute_data_sha(df2)
   expect_false(sha1 == sha2)
-})
-
-test_that("row reorder produces same SHA with sort_rows = TRUE", {
-  df1 <- data.frame(x = c(1, 2, 3), y = c("a", "b", "c"))
-  df2 <- data.frame(x = c(3, 1, 2), y = c("c", "a", "b"))
-  sha1 <- .datom_compute_data_sha(df1, sort_rows = TRUE)
-  sha2 <- .datom_compute_data_sha(df2, sort_rows = TRUE)
-  expect_identical(sha1, sha2)
 })
 
 test_that("data SHA rejects non-data-frame input", {
