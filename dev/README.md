@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| datom-cv1-identity | 2026-07-17 | In progress (Task 1.6: canonical hash engine + wrapper) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
+| datom-cv1-identity | 2026-07-17 | In progress (Wave 1-2 done: engine + tests; next = Task 3 write-path wiring) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
 
 ### Drafts (queued, not active)
 

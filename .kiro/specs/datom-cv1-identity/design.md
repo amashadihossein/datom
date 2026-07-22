@@ -680,12 +680,17 @@ package does **not** Suggest them merely to detect them.
 | any other classed column not in the supported set | `"Columns of this class are not hashable. Convert to a supported type (logical, integer, double, character, factor, Date, POSIXct, difftime/hms, or bit64::integer64) before writing."` |
 
 Detection order matters: `POSIXlt` (a list under the hood) is matched before the generic list
-rows; the nested-data-frame list row is matched before the generic list row; the class-specific
-rows (`units`, `sfc`, `yearmon`/`yearqtr`/`chron`) are matched before the generic "other classed"
-fallback; and `haven_labelled`/`labelled` are supported (they fall through the dispatch of
-Section 1), so they never reach the "other classed" branch. Requirement 17.1's vignette recourse
-table renders from **this same map** (via `.datom_hash_recourse()` / `datom_check_hashable()`),
-so the vignette, the checker, and the hash abort can never drift.
+rows; **`sfc` (also a list under the hood) is likewise matched before the generic list rows** --
+otherwise a real `sf` geometry column (which satisfies `is.list()`) would be shadowed by the
+list/blob rule and never reach its specific WKT recourse; the nested-data-frame list row is
+matched before the generic list row; the remaining class-specific rows (`units`,
+`yearmon`/`yearqtr`/`chron`) are matched before the generic "other classed" fallback; and
+`haven_labelled`/`labelled` are supported (they fall through the dispatch of Section 1), so they
+never reach the "other classed" branch. (The recourse-map *table* above lists `sfc` among the
+class-specific rows for readability, but the implemented probe order hoists the `sfc` check next
+to `POSIXlt` so every recourse category is reachable -- Property 15.) Requirement 17.1's vignette
+recourse table renders from **this same map** (via `.datom_hash_recourse()` /
+`datom_check_hashable()`), so the vignette, the checker, and the hash abort can never drift.
 
 ### All-offenders abort (`.datom_canonical_hash()`)
 

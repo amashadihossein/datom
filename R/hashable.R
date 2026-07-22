@@ -103,6 +103,17 @@
     ))
   }
 
+  # sf geometry. An sfc object is a list of geometries under the hood, so --
+  # like POSIXlt -- it must be matched before the generic list rows or it
+  # would be shadowed by the list/blob rule and never reach this specific
+  # (more useful) recourse.
+  if (inherits(x, "sfc")) {
+    return(paste0(
+      "sf geometry (sfc) columns are not hashable. Convert to WKT text with ",
+      "sf::st_as_text() before writing."
+    ))
+  }
+
   # Nested tibble / data-frame list column -- matched before the generic list
   # row. Require at least one element so an empty list falls to the generic
   # list rule rather than being mislabelled a nested-data-frame column.
@@ -130,14 +141,6 @@
       "units columns are not hashable. Drop the unit with ",
       "units::drop_units() and record the unit in the column name or a ",
       "companion column (audit-friendly), before writing."
-    ))
-  }
-
-  # sf geometry.
-  if (inherits(x, "sfc")) {
-    return(paste0(
-      "sf geometry (sfc) columns are not hashable. Convert to WKT text with ",
-      "sf::st_as_text() before writing."
     ))
   }
 

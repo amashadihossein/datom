@@ -38,7 +38,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       `yearqtr`/`chron` before the other-classed fallback; `complex`; `raw`; other-classed).
       Detection is `inherits()`/`typeof()`/`is.list()` only — add no new package dependency.
     - _Requirements: 2.2, 10.4, 11.1_
-  - [ ]* 1.2 Write unit tests for the classifier and recourse map
+  - [x]* 1.2 Write unit tests for the classifier and recourse map
     - Each of the 9 offender categories returns its exact canonical string; every supported type
       returns `NULL` kind and `NULL` recourse; `haven_labelled` is treated as supported.
     - _Requirements: 2.2, 10.4, 11.1, 11.5_
@@ -49,11 +49,11 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - Character encoder: one-byte-per-row NA mask (`0x01`/`0x00`) then each value `enc2utf8()`-ed
       and NUL-terminated; no Unicode normalization.
     - _Requirements: 2.3, 2.4, 2.13_
-  - [ ]* 1.4 Write property test for the numeric encoder
+  - [x]* 1.4 Write property test for the numeric encoder
     - **Property 4: Numeric encoding semantics** (`0/0` == `NaN`, `-0` == `+0`, `NA_real_` !=
       `NaN`, no rounding / ULP difference differs)
     - **Validates: Requirements 2.3, 2.12, 2.13, 16.1**
-  - [ ]* 1.5 Write property test for the character encoder
+  - [x]* 1.5 Write property test for the character encoder
     - **Property 5: Character encoding semantics** (`NA` vs `""` differ; NFC vs NFD differ),
       CJK fixture built via `intToUtf8()`
     - **Validates: Requirements 2.4, 16.1**
@@ -76,7 +76,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       sort-only tests throw "unused argument", reddening the suite unless they are removed in the
       same commit (green-per-commit).
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10, 2.11, 2.12, 3.1, 3.5, 11.2, 11.3, 11.4_
-  - [ ]* 1.7 Write property tests for the canonical hash engine
+  - [x]* 1.7 Write property tests for the canonical hash engine
     - **Property 1: Container-class and attribute independence** — **Validates: Requirements 1.4**
     - **Property 2: Determinism** — **Validates: Requirements 1.7**
     - **Property 3: Type-tag disambiguation** (`"1"` vs `1`; all-`NA` logical vs character) — **Validates: Requirements 2.2, 16.1**
@@ -95,7 +95,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - Run the pure-ASCII check on the lifted file:
       `all(as.integer(readBin(f, "raw", file.size(f))) < 128L)` must be TRUE.
     - _Requirements: 15.1, 15.2, 15.3_
-  - [ ]* 1.10 Write golden-vector, NIST, parity, and metadata_sha golden tests
+  - [x]* 1.10 Write golden-vector, NIST, parity, and metadata_sha golden tests
     - Write the golden-vector tests (numeric; int/lgl/dbl parity; character incl. NFC/NFD and CJK;
       factor; Date variants; POSIXct tzone equality; difftime secs vs mins; hms vs ITime;
       integer64 incl. NaN-bit-space; one mixed data.frame; one `.datom_compute_metadata_sha()`
