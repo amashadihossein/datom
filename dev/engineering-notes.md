@@ -25,6 +25,68 @@
 > reality. datom keeps all gov **reads** + the data-side helpers (`datom_repo_delete`,
 > `datom_repo_attach_governance`).
 
+## Active work handoff: datom-cv1 (issue #72) -- 2026-07-17
+
+> Transient section for the in-flight `spec/datom-cv1-identity` branch. Delete it at spec
+> completion (its durable content is harvested into the spec docs + the Gotchas below).
+
+**Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (tasks.md Waves 0-2) is
+**complete and committed**: the `datom-cv1` canonical hash engine, the standalone reference,
+and the full Phase-1 test suite. Full suite is green at **2090 passed / 0 failed / 0 warnings
+/ 0 skipped**. Tasks 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.9, 1.10 and checkpoint task 2 are
+checked off in `.kiro/specs/datom-cv1-identity/tasks.md`. **Next task = 3.1** (three-SHA
+metadata + write-path wiring, Waves 3-6). Resume from `tasks.md` in wave order.
+
+**Environment note (this workspace).** A working R toolchain is present here: R 4.5.2 with
+`devtools`, `arrow`, `digest`, `testthat`, `mockery`, `withr`, `git2r`, `rio`, and also
+`tibble` + `bit64`. So the spec/tasks assumption that "R is unavailable in the authoring
+environment, goldens stay as PENDING placeholders" does **not** hold here -- the suite runs
+directly and all golden constants are already filled from a real run. Run the full suite via a
+temp script (the shell mangles multi-line `Rscript -e`; write R to a temp file and `Rscript`
+it):
+
+```r
+options(crayon.enabled = FALSE)
+suppressMessages(devtools::load_all(quiet = TRUE))
+res <- as.data.frame(testthat::test_dir("tests/testthat",
+  reporter = testthat::ListReporter, stop_on_failure = FALSE))
+cat("PASS:", sum(res$passed), " FAIL:", sum(res$failed),
+    " WARN:", sum(res$warning), " SKIP:", sum(res$skipped), "\n")
+```
+
+Other workflow tips: long git commit messages -> write to a temp file and `git commit -F`;
+`gh issue view N` needs `GH_PAGER=cat` or it hangs.
+
+**Technical anchors already implemented (verify, do not reinvent).**
+- Byte-layout single source of truth is `dev/datom_cv1_reference.R` (Rbuildignored). Running
+  it prints the goldens (numeric `48b4c0cb...`, mixed `47c94f30...`) and passes 27/27
+  self-tests. The package `.datom_canonical_hash()` **must** stay byte-identical to it; the
+  parity test (`test-utils-sha.R`, Property 11) enforces this and skips when `dev/` is absent.
+- `R/hashable.R`: `.datom_column_kind()` (single classifier -> kind or NULL),
+  `.datom_hash_recourse()` (single-source recourse strings), `.datom_class_label()`. The
+  `sfc` check is deliberately hoisted **above** the generic list rules (sfc is list-based) so
+  its recourse is reachable -- do not move it back below them.
+- `R/utils-sha.R`: `.datom_encode_numeric()` / `.datom_encode_character()` (raw payloads),
+  `.datom_col_digest()`, `.datom_canonical_hash()` (returns `list(data_sha, column_hashes)`),
+  `.datom_compute_data_sha()` (thin wrapper, no sort params).
+- Test fakes: `hms`/`ITime`/`integer64` are faked via `structure(..., class = ...)` to avoid
+  adding `Suggests`; `one_col(x)` helper builds a single-column frame preserving class.
+- The `metadata_sha` golden `59f1f1d9...` in `test-utils-sha.R` was **verified stable** under
+  task 3.2's upcoming radix-sort + volatile-set change (its fixture has no
+  `parquet_sha`/`column_hashes` and only simple lowercase names). Keep that fixture as-is so
+  the golden does not need re-deriving after 3.2.
+
+**Task 3 must-remembers (from design.md Invariants).**
+- The parquet upload stays **after** the git push in `datom_write()` -- load-bearing (git push
+  is the serialization point). Never refactor to upload-before-push.
+- `metadata_sha` **excludes** `parquet_sha` + `column_hashes` and **includes**
+  `original_file_sha` + `hash_algo`.
+- `original_file_sha` appears in metadata **only when non-NULL** (imported path); the derived
+  path omits it entirely (not present-with-NULL).
+- `.datom_sync()`'s self-lineage `version_sha` stays `data_sha`, not `metadata_sha`.
+- While editing `.datom_sync_metadata()` for task 3.4, clean the one remaining non-ASCII arrow
+  character still in `R/utils-sha.R` (in that function's body).
+
 ## Gotchas
 
 - **cli pluralization**: `{?s}` requires a quantity reference immediately before it (e.g., `{length(x)} variable{?s}`). Without the quantity, cli throws a confusing error.
