@@ -107,6 +107,42 @@ test_that("metadata SHA ignores datom_version (volatile field)", {
   )
 })
 
+test_that("metadata SHA ignores parquet_sha (volatile: arrow-version byte drift)", {
+  meta1 <- list(data_sha = "abc", parquet_sha = "aaa")
+  meta2 <- list(data_sha = "abc", parquet_sha = "bbb")
+  expect_identical(
+    .datom_compute_metadata_sha(meta1),
+    .datom_compute_metadata_sha(meta2)
+  )
+})
+
+test_that("metadata SHA ignores column_hashes (volatile: derived from data_sha inputs)", {
+  meta1 <- list(data_sha = "abc",
+                column_hashes = list(list(name = "x", sha = "aaa")))
+  meta2 <- list(data_sha = "abc",
+                column_hashes = list(list(name = "x", sha = "bbb")))
+  expect_identical(
+    .datom_compute_metadata_sha(meta1),
+    .datom_compute_metadata_sha(meta2)
+  )
+})
+
+test_that("metadata SHA includes hash_algo (semantic: a new algorithm is a new version)", {
+  meta1 <- list(data_sha = "abc", hash_algo = "datom-cv1")
+  meta2 <- list(data_sha = "abc", hash_algo = "datom-cv2")
+  expect_false(
+    .datom_compute_metadata_sha(meta1) == .datom_compute_metadata_sha(meta2)
+  )
+})
+
+test_that("metadata SHA includes original_file_sha (semantic: a new source is a new version)", {
+  meta1 <- list(data_sha = "abc", original_file_sha = "aaa")
+  meta2 <- list(data_sha = "abc", original_file_sha = "bbb")
+  expect_false(
+    .datom_compute_metadata_sha(meta1) == .datom_compute_metadata_sha(meta2)
+  )
+})
+
 test_that("metadata SHA still differs for different semantic content", {
   meta1 <- list(data_sha = "abc", nrow = 10L, created_at = "2025-01-01T00:00:00Z")
   meta2 <- list(data_sha = "abc", nrow = 20L, created_at = "2025-01-01T00:00:00Z")

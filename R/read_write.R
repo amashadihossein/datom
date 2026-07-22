@@ -201,7 +201,7 @@ datom_read <- function(conn,
 #' any user-supplied custom metadata.
 #'
 #' @param data Data frame being written.
-#' @param data_sha SHA-256 of the parquet-formatted data.
+#' @param data_sha datom-cv1 canonical content hash of the data.
 #' @param custom Optional named list of user-supplied custom metadata.
 #' @param table_type `"derived"` (default, from `datom_write`) or `"imported"` (from `datom_sync`).
 #' @param size_bytes Size of the parquet file in bytes. NULL if not yet computed.
@@ -209,25 +209,40 @@ datom_read <- function(conn,
 #'   or NULL if no lineage recorded.
 #' @param source_lineage Pre-computed transitive source list (each entry with
 #'   project, table, version_sha), or NULL.
-#' @return Named list suitable for writing as metadata.json.
+#' @param original_file_sha SHA-256 of the source file, for imported tables.
+#'   Included in the metadata **only when non-NULL**; the derived path omits it
+#'   from the object entirely (not present-with-NULL).
+#' @param column_hashes Ordered list of per-column `list(name, sha)` digests
+#'   from [.datom_canonical_hash()], or NULL. Excluded from `metadata_sha`
+#'   (see [.datom_compute_metadata_sha()]).
+#' @return Named list suitable for writing as metadata.json. Always carries
+#'   `hash_algo = "datom-cv1"` and declares `parquet_sha` (left NULL here and
+#'   populated by [datom_write()] after change detection, since the stored-
+#'   object hash is not knowable until then; it is excluded from `metadata_sha`
+#'   so this deferred assignment is safe).
 #' @keywords internal
 .datom_build_metadata <- function(data, data_sha, custom = NULL,
                                  table_type = "derived", size_bytes = NULL,
-                                 parents = NULL, source_lineage = NULL) {
+                                 parents = NULL, source_lineage = NULL,
+                                 original_file_sha = NULL, column_hashes = NULL) {
   if (!table_type %in% c("imported", "derived")) {
     cli::cli_abort("{.arg table_type} must be {.val imported} or {.val derived}.")
   }
 
   meta <- list(
     data_sha = data_sha,
+    hash_algo = "datom-cv1",
+    parquet_sha = NULL,
     table_type = table_type,
     nrow = nrow(data),
     ncol = ncol(data),
     colnames = names(data),
+    column_hashes = column_hashes,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     datom_version = as.character(utils::packageVersion("datom"))
   )
 
+  if (!is.null(original_file_sha)) meta$original_file_sha <- original_file_sha
   if (!is.null(parents)) meta$parents <- parents
   if (!is.null(source_lineage)) meta$source_lineage <- source_lineage
   if (!is.null(size_bytes)) meta$size_bytes <- size_bytes

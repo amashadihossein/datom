@@ -123,12 +123,12 @@ sub-agent verification in this environment is authoring the code and tests, not 
     design and are not skippable.
 
 - [ ] 3. Three-SHA metadata and write-path wiring
-  - [ ] 3.1 Extend `.datom_build_metadata()` (in `R/read_write.R`) with the new fields
+  - [x] 3.1 Extend `.datom_build_metadata()` (in `R/read_write.R`) with the new fields
     - Add `hash_algo = "datom-cv1"` (always), `parquet_sha = NULL` (declared; set later by
       `datom_write()`), `column_hashes = NULL`, and `original_file_sha` included **only when
       non-NULL** (imported path sets it; derived path omits it entirely, not present-with-NULL).
     - _Requirements: 5.1, 5.2_
-  - [ ] 3.2 Update `.datom_compute_metadata_sha()` (in `R/utils-sha.R`) ordering and volatile set
+  - [x] 3.2 Update `.datom_compute_metadata_sha()` (in `R/utils-sha.R`) ordering and volatile set
     - Change `sort(names(semantic))` to `sort(names(semantic), method = "radix")`; set
       `volatile <- c("created_at", "datom_version", "parquet_sha", "column_hashes")`; keep
       hashing the JSON canonical form (never the R object).

@@ -348,10 +348,20 @@
 
 #' Compute SHA-256 of Metadata
 #'
-#' Sorts fields alphabetically before hashing for deterministic results,
-#' regardless of field insertion order. Volatile fields (`created_at`,
-#' `datom_version`) are excluded so that identical semantic content always
-#' produces the same SHA, regardless of when it was written.
+#' Sorts fields by C-locale byte order (`method = "radix"`) before hashing so
+#' the result is deterministic regardless of field insertion order **and**
+#' regardless of the host's `LC_COLLATE` (default collation sorts differ
+#' between `C` and e.g. `en_US.UTF-8`, which would otherwise make the same
+#' metadata hash differently on different machines).
+#'
+#' Volatile fields are excluded so that identical semantic content always
+#' produces the same SHA regardless of when or how it was serialized:
+#' `created_at` and `datom_version` (write-time provenance), `parquet_sha`
+#' (stored-object integrity -- drifts with the arrow version and must not
+#' re-enter identity), and `column_hashes` (a deterministic function of the
+#' same values that already fix `data_sha`). `original_file_sha` and
+#' `hash_algo` remain in the semantic set -- a new source file or a new hash
+#' algorithm legitimately defines a new version.
 #'
 #' Hashes a JSON canonical form rather than the R object directly. This
 #' ensures that metadata read back from JSON (e.g., from S3) produces the
@@ -368,10 +378,10 @@
   }
 
   # Exclude volatile fields that don't define content identity
-  volatile <- c("created_at", "datom_version")
+  volatile <- c("created_at", "datom_version", "parquet_sha", "column_hashes")
   semantic <- metadata[setdiff(names(metadata), volatile)]
 
-  sorted_names <- sort(names(semantic))
+  sorted_names <- sort(names(semantic), method = "radix")
   sorted_metadata <- semantic[sorted_names]
 
   # JSON canonical form: type-agnostic (integer/double, vector/list all

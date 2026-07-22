@@ -504,6 +504,46 @@ test_that("builds metadata with auto-computed fields", {
   expect_true(nzchar(result$datom_version))
 })
 
+test_that("hash_algo is always present and datom-cv1", {
+  df <- data.frame(x = 1)
+  expect_identical(.datom_build_metadata(df, "sha")$hash_algo, "datom-cv1")
+  expect_identical(
+    .datom_build_metadata(df, "sha", table_type = "imported")$hash_algo,
+    "datom-cv1"
+  )
+})
+
+test_that("parquet_sha is declared (present but NULL) for datom_write() to populate", {
+  df <- data.frame(x = 1)
+  result <- .datom_build_metadata(df, "sha")
+  expect_true("parquet_sha" %in% names(result))
+  expect_null(result$parquet_sha)
+})
+
+test_that("original_file_sha is included only when non-NULL", {
+  df <- data.frame(x = 1)
+  # derived path: omitted entirely, not present-with-NULL
+  derived <- .datom_build_metadata(df, "sha")
+  expect_false("original_file_sha" %in% names(derived))
+  # imported path: present with the supplied value
+  imported <- .datom_build_metadata(
+    df, "sha", table_type = "imported", original_file_sha = "f00dfeed"
+  )
+  expect_equal(imported$original_file_sha, "f00dfeed")
+})
+
+test_that("column_hashes is carried through and defaults to declared NULL", {
+  df <- data.frame(x = 1)
+  # declared (present) even when not supplied
+  bare <- .datom_build_metadata(df, "sha")
+  expect_true("column_hashes" %in% names(bare))
+  expect_null(bare$column_hashes)
+  # passed through verbatim when supplied
+  ch <- list(list(name = "x", sha = "deadbeef"))
+  result <- .datom_build_metadata(df, "sha", column_hashes = ch)
+  expect_identical(result$column_hashes, ch)
+})
+
 test_that("includes custom metadata", {
   df <- data.frame(x = 1)
   result <- .datom_build_metadata(df, "sha", custom = list(desc = "test", tags = list("a")))
