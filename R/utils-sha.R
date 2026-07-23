@@ -451,7 +451,7 @@
   metadata_sha <- .datom_compute_metadata_sha(metadata)
 
   # Check for changes against S3
-  change_type <- .datom_has_changes(conn, name, metadata$data_sha, metadata_sha)
+  change_type <- .datom_has_changes(conn, name, metadata$data_sha, metadata_sha)$change_type
 
   if (change_type == "none") {
     cli::cli_alert_info("No metadata changes for {.val {name}}. Skipping sync.")
@@ -462,7 +462,7 @@
     )))
   }
 
-  # Git commit + push first (local → git → S3 ordering)
+  # Git commit + push first (local -> git -> S3 ordering)
   history_path <- fs::path(table_dir, "version_history.json")
 
   git_files <- character()

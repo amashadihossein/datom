@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| datom-cv1-identity | 2026-07-17 | In progress (Wave 3 done: three-SHA metadata fields + metadata_sha volatile/radix, tasks 3.1-3.2; next = Task 3.4 change-detection refactor) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
+| datom-cv1-identity | 2026-07-17 | In progress (tasks 3.1-3.2, 3.4 done: three-SHA metadata + `.datom_has_changes()` returns `{change_type, current}`; 3.3/3.6 property tests deferred; next = Task 3.5 `datom_write()` reorder) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
 
 ### Drafts (queued, not active)
 

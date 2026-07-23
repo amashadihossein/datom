@@ -138,7 +138,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       locale unavailable) — **Validates: Requirements 6.1, 6.2**
     - **Property 14: metadata_sha volatile-field membership** (`parquet_sha`/`column_hashes`
       invariant; `original_file_sha`/`hash_algo` significant) — **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 14.4**
-  - [ ] 3.4 Refactor `.datom_has_changes()` to return `list(change_type, current)`
+  - [x] 3.4 Refactor `.datom_has_changes()` to return `list(change_type, current)`
     - Return the already-read `current` metadata (or `NULL` for a brand-new table → `"full"`);
       update the second caller `.datom_sync_metadata()` (in `R/utils-sha.R`) to read `$change_type`.
     - Update any existing tests of `.datom_has_changes()` (and its string-return expectations) in

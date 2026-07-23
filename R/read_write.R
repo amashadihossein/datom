@@ -267,30 +267,33 @@ datom_read <- function(conn,
 #' @param name Table name.
 #' @param new_data_sha SHA of the new data.
 #' @param new_metadata_sha SHA of the new metadata (from `.datom_compute_metadata_sha()`).
-#' @return Character string: `"none"` (no change), `"metadata_only"` (data same,
-#'   metadata changed), or `"full"` (data changed).
+#' @return Named list with two elements: `change_type` -- `"none"` (no change),
+#'   `"metadata_only"` (data same, metadata changed), or `"full"` (data
+#'   changed) -- and `current`, the already-read current metadata (or `NULL`
+#'   for a brand-new table). Returning `current` lets [datom_write()] reuse it
+#'   (the `metadata_only` `parquet_sha` carry-forward and the revert-to-older
+#'   history scan) without a second storage read.
 #' @keywords internal
 .datom_has_changes <- function(conn, name, new_data_sha, new_metadata_sha) {
   metadata_key <- paste0(name, "/.metadata/metadata.json")
 
-  # If metadata doesn't exist yet, it's a new table → full write
-
+  # If metadata doesn't exist yet, it's a new table -> full write, no current.
   if (!.datom_storage_exists(conn, metadata_key)) {
-    return("full")
+    return(list(change_type = "full", current = NULL))
   }
 
   current <- .datom_storage_read_json(conn, metadata_key)
   current_metadata_sha <- .datom_compute_metadata_sha(current)
 
-  if (identical(current_metadata_sha, new_metadata_sha)) {
-    return("none")
+  change_type <- if (identical(current_metadata_sha, new_metadata_sha)) {
+    "none"
+  } else if (identical(current$data_sha, new_data_sha)) {
+    "metadata_only"
+  } else {
+    "full"
   }
 
-  if (identical(current$data_sha, new_data_sha)) {
-    return("metadata_only")
-  }
-
-  "full"
+  list(change_type = change_type, current = current)
 }
 
 
@@ -550,7 +553,7 @@ datom_write <- function(conn,
   metadata_sha <- .datom_compute_metadata_sha(meta)
 
   # 4. Change detection
-  change_type <- .datom_has_changes(conn, name, data_sha, metadata_sha)
+  change_type <- .datom_has_changes(conn, name, data_sha, metadata_sha)$change_type
 
   if (change_type == "none") {
     cli::cli_alert_info(
