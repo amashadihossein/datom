@@ -297,6 +297,96 @@ datom_read <- function(conn,
 }
 
 
+#' Resolve the parquet_sha to Record and Whether to Upload
+#'
+#' For a write that is not a no-op, decides which `parquet_sha` the new metadata
+#' should carry and whether the freshly-serialized parquet bytes need uploading.
+#' The caller performs the actual upload AFTER the git push (git push is the
+#' serialization point); this function only decides.
+#'
+#' Cases:
+#' * `metadata_only` -- the `data_sha` is unchanged, so the parquet object
+#'   already exists; carry forward the current metadata's `parquet_sha` (which
+#'   may be NULL for a pre-cv1 table, leaving the integrity check skipped) and
+#'   do not upload.
+#' * `full` where a prior version already recorded a `parquet_sha` for this
+#'   exact `data_sha` -- the stored object exists and is pinned by that version;
+#'   reuse its `parquet_sha` and do NOT re-upload (a fresh serialization can
+#'   differ byte-for-byte and would break that version's integrity pin).
+#' * `full` otherwise (brand-new content, or a legacy object with no recorded
+#'   `parquet_sha`) -- upload these bytes and record their hash.
+#'
+#' This refines the design's literal step 7 (which gated on
+#' `.datom_storage_exists()`): a recorded `parquet_sha` is the precise thing we
+#' must not clobber, and its presence implies the object exists, so the history
+#' lookup subsumes the existence check with identical behavior and one fewer
+#' storage round-trip.
+#'
+#' @param conn A `datom_conn` object.
+#' @param name Table name.
+#' @param data_sha Canonical content hash (the storage address).
+#' @param new_parquet_sha SHA-256 of the freshly-serialized parquet bytes.
+#' @param change_type `"metadata_only"` or `"full"` (never `"none"`).
+#' @param current The current metadata (from [.datom_has_changes()]), or NULL.
+#' @return List with `parquet_sha` (character or NULL) and `upload` (logical).
+#' @keywords internal
+.datom_resolve_parquet_sha <- function(conn, name, data_sha, new_parquet_sha,
+                                       change_type, current) {
+  # metadata_only: data_sha unchanged -> the parquet object already exists;
+  # carry the current object's parquet_sha forward, no upload.
+  if (identical(change_type, "metadata_only")) {
+    return(list(parquet_sha = current$parquet_sha, upload = FALSE))
+  }
+
+  # change_type == "full".
+  # TODO(task 5.1): version_history entries do not persist parquet_sha until
+  # task 5.1, so this lookup returns NULL until then and every "full" write
+  # uploads (unchanged from prior behavior). When 5.1 lands, confirm the reuse
+  # branch activates and enable the end-to-end revert-reuse test (task 12.5).
+  reused <- .datom_lookup_history_parquet_sha(conn, name, data_sha)
+  if (!is.null(reused)) {
+    return(list(parquet_sha = reused, upload = FALSE))
+  }
+
+  list(parquet_sha = new_parquet_sha, upload = TRUE)
+}
+
+
+#' Most-recent version_history parquet_sha for a data_sha
+#'
+#' Scans the developer's local `version_history.json` (newest-first) for the
+#' most recent entry whose `data_sha` matches and that carries a non-empty
+#' `parquet_sha`. Returns NULL when none is found -- including the transitional
+#' period before task 5.1 persists `parquet_sha` into history entries, and for
+#' pre-cv1 histories. Reads the local git clone (offline-friendly); a stale
+#' clone is tolerated because the subsequent git push serializes concurrent
+#' writers (a behind clone fails to push before it can upload).
+#'
+#' @param conn A `datom_conn` object (developer, with local path).
+#' @param name Table name.
+#' @param data_sha Canonical content hash to match.
+#' @return Character `parquet_sha`, or NULL.
+#' @keywords internal
+.datom_lookup_history_parquet_sha <- function(conn, name, data_sha) {
+  history_path <- fs::path(conn$path, name, "version_history.json")
+  if (!fs::file_exists(history_path)) {
+    return(NULL)
+  }
+
+  history <- jsonlite::read_json(history_path)
+  for (entry in history) {
+    if (identical(entry$data_sha %||% "", data_sha)) {
+      parquet_sha <- entry$parquet_sha %||% ""
+      if (nzchar(parquet_sha)) {
+        return(parquet_sha)
+      }
+    }
+  }
+
+  NULL
+}
+
+
 #' Write Metadata Files Locally
 #'
 #' Writes `metadata.json` and appends to `version_history.json` in the local
@@ -532,28 +622,38 @@ datom_write <- function(conn,
   # 0. Write-time ref guard: ensure data location hasn't changed
   .datom_check_ref_current(conn)
 
-  # 1. Compute data SHA
-  data_sha <- .datom_compute_data_sha(data)
+  # 1. Canonical content hash: data_sha (the storage address) + the per-column
+  #    index, in one pass. The all-offenders abort fires here -- before any
+  #    git/storage/manifest mutation -- so a refusal leaves no partial state.
+  hashed <- .datom_canonical_hash(data)
+  data_sha <- hashed$data_sha
 
-  # 2. Write parquet to temp (need size_bytes for complete metadata)
+  # 2. Serialize parquet to a temp file; capture its size and the stored-object
+  #    integrity hash (parquet_sha) of these exact bytes.
   tmp <- tempfile(fileext = ".parquet")
   on.exit(unlink(tmp), add = TRUE)
   arrow::write_parquet(data, tmp)
   size_bytes <- as.numeric(fs::file_size(tmp))
+  new_parquet_sha <- digest::digest(file = tmp, algo = "sha256")
 
-  # 3. Build metadata (complete — includes size_bytes)
+  # 3. Build metadata. parquet_sha is set in step 5 (after change detection);
+  #    it is excluded from metadata_sha, so this deferral does not affect the
+  #    version identity.
   meta <- .datom_build_metadata(
     data, data_sha,
     custom = metadata,
     table_type = .table_type,
     parents = parents,
     source_lineage = source_lineage,
-    size_bytes = size_bytes
+    size_bytes = size_bytes,
+    original_file_sha = .original_file_sha,
+    column_hashes = hashed$column_hashes
   )
   metadata_sha <- .datom_compute_metadata_sha(meta)
 
-  # 4. Change detection
-  change_type <- .datom_has_changes(conn, name, data_sha, metadata_sha)$change_type
+  # 4. Change detection (reuses the already-read current metadata).
+  chg <- .datom_has_changes(conn, name, data_sha, metadata_sha)
+  change_type <- chg$change_type
 
   if (change_type == "none") {
     cli::cli_alert_info(
@@ -567,14 +667,19 @@ datom_write <- function(conn,
     )))
   }
 
-  # 5. Write metadata locally
+  # 5. Decide the parquet_sha to record and whether these bytes need uploading.
+  #    The upload itself stays AFTER the git push (step 8); this only decides.
+  parquet_decision <- .datom_resolve_parquet_sha(
+    conn, name, data_sha, new_parquet_sha, change_type, chg$current
+  )
+  meta$parquet_sha <- parquet_decision$parquet_sha
+
+  # 6. Write metadata + manifest locally
   write_result <- .datom_write_metadata_local(
     conn, name, meta, metadata_sha,
     message = message,
     original_file_sha = .original_file_sha
   )
-
-  # 5b. Update manifest.json locally
   .datom_update_manifest_entry(
     conn, name,
     metadata_sha = metadata_sha,
@@ -583,7 +688,9 @@ datom_write <- function(conn,
     format = .original_format
   )
 
-  # 6. Git commit + push (must succeed before touching S3)
+  # 7. Git commit + push (must succeed before touching storage). Git push is the
+  #    serialization point that makes the reuse decision in step 5 safe against
+  #    concurrent writers.
   git_files <- c(
     fs::path_rel(write_result$git_paths, conn$path),
     ".datom/manifest.json"
@@ -592,16 +699,16 @@ datom_write <- function(conn,
   commit_sha <- .datom_git_commit(conn$path, git_files, commit_msg)
   .datom_git_push(conn$path, pat = conn$github_pat)
 
-  # 7. Upload parquet to S3 (only if data changed — after git succeeds)
-  if (change_type == "full") {
+  # 8. Upload parquet (only when step 5 decided it is needed -- after git).
+  if (isTRUE(parquet_decision$upload)) {
     parquet_key <- paste0(name, "/", data_sha, ".parquet")
     .datom_storage_upload(conn, tmp, parquet_key)
   }
 
-  # 8. Push metadata to S3
+  # 9. Push metadata to S3
   .datom_push_metadata_s3(conn, name, meta, metadata_sha)
 
-  # 9. Push manifest to S3 (completes the round-trip)
+  # 10. Push manifest to S3 (completes the round-trip)
   manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   if (fs::file_exists(manifest_path)) {
     manifest_data <- jsonlite::read_json(manifest_path)

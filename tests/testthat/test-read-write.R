@@ -730,7 +730,7 @@ test_that("table_type and parents participate in metadata_sha", {
   expect_false(sha_derived == sha_imported)
 })
 
-test_that("size_bytes participates in metadata_sha", {
+test_that("size_bytes does NOT participate in metadata_sha (volatile: arrow byte drift)", {
   df <- data.frame(x = 1)
 
   meta_null <- .datom_build_metadata(df, "sha")
@@ -741,7 +741,10 @@ test_that("size_bytes participates in metadata_sha", {
   sha_null <- .datom_compute_metadata_sha(meta_null)
   sha_1k <- .datom_compute_metadata_sha(meta_1k)
 
-  expect_false(sha_null == sha_1k)
+  # size_bytes is the parquet file size, which drifts with the arrow version
+  # for identical logical content -- excluding it keeps arrow upgrades from
+  # minting spurious versions (same rationale as parquet_sha).
+  expect_identical(sha_null, sha_1k)
 })
 
 
@@ -1404,6 +1407,132 @@ test_that("checks correct S3 key for metadata", {
   .datom_has_changes(conn, "customers", "sha1", "meta_sha1")
 
   expect_equal(captured_key, "customers/.metadata/metadata.json")
+})
+
+
+# --- .datom_lookup_history_parquet_sha() --------------------------------------
+
+test_that("history parquet_sha lookup returns NULL when no history file exists", {
+  conn <- mock_datom_conn(list())
+  conn$path <- withr::local_tempdir()
+  expect_null(.datom_lookup_history_parquet_sha(conn, "tbl", "sha_a"))
+})
+
+test_that("history parquet_sha lookup returns NULL when no entry matches the data_sha", {
+  conn <- mock_datom_conn(list())
+  conn$path <- withr::local_tempdir()
+  fs::dir_create(fs::path(conn$path, "tbl"))
+  jsonlite::write_json(
+    list(list(version = "v1", data_sha = "sha_other", parquet_sha = "pq1")),
+    fs::path(conn$path, "tbl", "version_history.json"),
+    auto_unbox = TRUE
+  )
+  expect_null(.datom_lookup_history_parquet_sha(conn, "tbl", "sha_a"))
+})
+
+test_that("history parquet_sha lookup returns NULL when the match carries no parquet_sha", {
+  # The dormant / pre-cv1 state: entries carry data_sha but no parquet_sha.
+  conn <- mock_datom_conn(list())
+  conn$path <- withr::local_tempdir()
+  fs::dir_create(fs::path(conn$path, "tbl"))
+  jsonlite::write_json(
+    list(list(version = "v1", data_sha = "sha_a")),
+    fs::path(conn$path, "tbl", "version_history.json"),
+    auto_unbox = TRUE
+  )
+  expect_null(.datom_lookup_history_parquet_sha(conn, "tbl", "sha_a"))
+})
+
+test_that("history parquet_sha lookup returns the most recent matching parquet_sha", {
+  # History is newest-first; the first match carrying a parquet_sha wins.
+  conn <- mock_datom_conn(list())
+  conn$path <- withr::local_tempdir()
+  fs::dir_create(fs::path(conn$path, "tbl"))
+  jsonlite::write_json(
+    list(
+      list(version = "v3", data_sha = "sha_b", parquet_sha = "pq_b"),
+      list(version = "v2", data_sha = "sha_a", parquet_sha = "pq_a2"),
+      list(version = "v1", data_sha = "sha_a", parquet_sha = "pq_a1")
+    ),
+    fs::path(conn$path, "tbl", "version_history.json"),
+    auto_unbox = TRUE
+  )
+  expect_equal(.datom_lookup_history_parquet_sha(conn, "tbl", "sha_a"), "pq_a2")
+})
+
+
+# --- .datom_resolve_parquet_sha() ---------------------------------------------
+
+test_that("resolve parquet_sha: metadata_only carries current parquet_sha, no upload", {
+  current <- list(data_sha = "sha_a", parquet_sha = "pq_current")
+  res <- .datom_resolve_parquet_sha(
+    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "metadata_only", current
+  )
+  expect_equal(res$parquet_sha, "pq_current")
+  expect_false(res$upload)
+})
+
+test_that("resolve parquet_sha: metadata_only on a pre-cv1 table carries NULL, no upload", {
+  current <- list(data_sha = "sha_a")  # no parquet_sha recorded
+  res <- .datom_resolve_parquet_sha(
+    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "metadata_only", current
+  )
+  expect_null(res$parquet_sha)
+  expect_false(res$upload)
+})
+
+test_that("resolve parquet_sha: full with no recorded parquet_sha uploads the new bytes", {
+  local_mocked_bindings(
+    .datom_lookup_history_parquet_sha = function(conn, name, data_sha) NULL
+  )
+  res <- .datom_resolve_parquet_sha(
+    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "full", NULL
+  )
+  expect_equal(res$parquet_sha, "pq_new")
+  expect_true(res$upload)
+})
+
+test_that("resolve parquet_sha: full reverting to a recorded data_sha reuses its sha, no upload", {
+  # Revert-to-older: a prior version pinned this data_sha's parquet_sha, so we
+  # reuse it and must NOT overwrite the stored object.
+  local_mocked_bindings(
+    .datom_lookup_history_parquet_sha = function(conn, name, data_sha) "pq_reused"
+  )
+  res <- .datom_resolve_parquet_sha(
+    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "full", NULL
+  )
+  expect_equal(res$parquet_sha, "pq_reused")
+  expect_false(res$upload)
+})
+
+test_that("full datom_write records parquet_sha, hash_algo, and column_hashes in metadata.json", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    datom_write(conn, data = data.frame(id = 1:3, v = letters[1:3]), name = "t")
+
+    meta <- jsonlite::read_json("t/metadata.json", simplifyVector = FALSE)
+    expect_equal(meta$hash_algo, "datom-cv1")
+    expect_match(meta$parquet_sha, "^[0-9a-f]{64}$")
+    expect_equal(length(meta$column_hashes), 2)
+    expect_equal(meta$column_hashes[[1]]$name, "id")
+    expect_equal(meta$column_hashes[[2]]$name, "v")
+  })
 })
 
 

@@ -149,7 +149,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       already-read `current` for the `metadata_only` `parquet_sha` carry-forward (Requirement 5.6)
       and the `none` re-derivation detection (Requirement 9.6) — the only clauses tagged here.
     - _Requirements: 5.6, 9.6_
-  - [ ] 3.5 Revise `datom_write()` order and `parquet_sha` determination
+  - [x] 3.5 Revise `datom_write()` order and `parquet_sha` determination
     - New order: (1) ref guard, (2) `.datom_canonical_hash(data)` → `data_sha` + `column_hashes`
       (all-offenders abort fires here, before any mutation), (3) write temp parquet + `size_bytes`
       + `new_parquet_sha = digest(file = tmp)`, (4) build metadata + `metadata_sha`, (5)
@@ -160,7 +160,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       upload `new_parquet_sha`), (8) set `meta$parquet_sha` before `.datom_write_metadata_local()`,
       (9) keep the parquet upload **after** the git push (load-bearing serialization point).
     - _Requirements: 5.3, 5.4, 5.5, 5.6, 5.7, 9.2, 9.3, 9.4, 9.5, 9.6_
-  - [ ]* 3.6 Write unit tests for `datom_write()` `parquet_sha` branches
+  - [x]* 3.6 Write unit tests for `datom_write()` `parquet_sha` branches
     - Cover full+absent (upload, new sha), full+present/revert (reuse history sha, no overwrite),
       metadata_only (carry `current$parquet_sha`, no upload), and `none` no-op.
     - _Requirements: 5.4, 5.5, 5.6, 9.6_

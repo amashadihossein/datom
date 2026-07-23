@@ -30,12 +30,39 @@
 > Transient section for the in-flight `spec/datom-cv1-identity` branch. Delete it at spec
 > completion (its durable content is harvested into the spec docs + the Gotchas below).
 
-**Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (tasks.md Waves 0-2) is
-**complete and committed**: the `datom-cv1` canonical hash engine, the standalone reference,
-and the full Phase-1 test suite. Full suite is green at **2090 passed / 0 failed / 0 warnings
-/ 0 skipped**. Tasks 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.9, 1.10 and checkpoint task 2 are
-checked off in `.kiro/specs/datom-cv1-identity/tasks.md`. **Next task = 3.1** (three-SHA
-metadata + write-path wiring, Waves 3-6). Resume from `tasks.md` in wave order.
+**Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (Waves 0-2) and **Task 3
+(Waves 3-5: three-SHA metadata fields, `metadata_sha` volatile/radix, `.datom_has_changes()`
+return-shape refactor, and the `datom_write()` reorder + `parquet_sha` determination) are
+complete and committed**. Full suite green at **2125 passed / 0 failed / 0 warnings / 0
+skipped**. Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6. **Deferred `*` test:
+3.3** (metadata_sha locale + volatile-membership *property* tests, Properties 13/14 -- the
+behavior is already covered by plain tests; the tagged property versions are pre-PR work).
+**Next task = 4.1** (read-time integrity: `.datom_resolve_version()` returns
+`{data_sha, parquet_sha}`), then Task 4.2/4.3, then Wave 8 (Task 5.1 full-history dedup +
+persist `parquet_sha` into `version_history` entries). Resume from `tasks.md` in wave order.
+
+**Two design decisions made during Task 3 (beyond the written spec -- fold into spec docs at
+completion):**
+- **`size_bytes` is now volatile** (excluded from `metadata_sha`), joining `parquet_sha`.
+  Rationale: `size_bytes` is the parquet file size, which drifts with the arrow version for
+  identical logical content -- exactly the drift we exclude `parquet_sha` for. Leaving it
+  semantic would let an arrow upgrade mint spurious `metadata_only` versions. This amends the
+  Task 3.2 / Requirement 7 volatile set. The `59f1...` golden is unaffected (its fixture has
+  no `size_bytes`).
+- **`parquet_sha` reuse uses a history lookup, not `.datom_storage_exists()`.**
+  `.datom_resolve_parquet_sha()` decides upload-vs-reuse by scanning local `version_history`
+  for a recorded `parquet_sha` on this `data_sha` (`.datom_lookup_history_parquet_sha()`),
+  rather than the design's literal `.datom_storage_exists()` gate. A recorded `parquet_sha` is
+  the precise pin we must not clobber and implies the object exists, so the lookup subsumes the
+  existence check with identical behavior across all three branches and one fewer storage
+  round-trip -- and it avoided threading a new storage mock through ~15 `datom_write` tests.
+
+**DORMANT until Task 5.1 -- TODO marker in `.datom_resolve_parquet_sha()`:** `version_history`
+entries do not persist `parquet_sha` until Task 5.1, so the revert-to-older reuse branch always
+finds nothing and every `"full"` write uploads (unchanged from prior behavior). When 5.1 lands:
+(a) confirm the reuse branch activates, and (b) turn on the end-to-end revert-reuse integration
+test (Task 12.5). The 3.6 unit tests already cover the reuse *logic* via a hand-built history
+fixture / mocked lookup, so they are not dormant.
 
 **Environment note (this workspace).** A working R toolchain is present here: R 4.5.2 with
 `devtools`, `arrow`, `digest`, `testthat`, `mockery`, `withr`, `git2r`, `rio`, and also

@@ -356,11 +356,11 @@
 #'
 #' Volatile fields are excluded so that identical semantic content always
 #' produces the same SHA regardless of when or how it was serialized:
-#' `created_at` and `datom_version` (write-time provenance), `parquet_sha`
-#' (stored-object integrity -- drifts with the arrow version and must not
-#' re-enter identity), and `column_hashes` (a deterministic function of the
-#' same values that already fix `data_sha`). `original_file_sha` and
-#' `hash_algo` remain in the semantic set -- a new source file or a new hash
+#' `created_at` and `datom_version` (write-time provenance), `parquet_sha` and
+#' `size_bytes` (stored-object byte facts -- both drift with the arrow version
+#' and must not re-enter identity), and `column_hashes` (a deterministic
+#' function of the same values that already fix `data_sha`). `original_file_sha`
+#' and `hash_algo` remain in the semantic set -- a new source file or a new hash
 #' algorithm legitimately defines a new version.
 #'
 #' Hashes a JSON canonical form rather than the R object directly. This
@@ -378,7 +378,8 @@
   }
 
   # Exclude volatile fields that don't define content identity
-  volatile <- c("created_at", "datom_version", "parquet_sha", "column_hashes")
+  volatile <- c("created_at", "datom_version", "parquet_sha", "column_hashes",
+                "size_bytes")
   semantic <- metadata[setdiff(names(metadata), volatile)]
 
   sorted_names <- sort(names(semantic), method = "radix")

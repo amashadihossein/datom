@@ -127,6 +127,15 @@ test_that("metadata SHA ignores column_hashes (volatile: derived from data_sha i
   )
 })
 
+test_that("metadata SHA ignores size_bytes (volatile: arrow-version byte drift)", {
+  meta1 <- list(data_sha = "abc", size_bytes = 1024)
+  meta2 <- list(data_sha = "abc", size_bytes = 2048)
+  expect_identical(
+    .datom_compute_metadata_sha(meta1),
+    .datom_compute_metadata_sha(meta2)
+  )
+})
+
 test_that("metadata SHA includes hash_algo (semantic: a new algorithm is a new version)", {
   meta1 <- list(data_sha = "abc", hash_algo = "datom-cv1")
   meta2 <- list(data_sha = "abc", hash_algo = "datom-cv2")
