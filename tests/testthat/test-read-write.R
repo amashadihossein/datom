@@ -957,6 +957,85 @@ test_that("version_history skips duplicate entry when latest version matches", {
   })
 })
 
+test_that("parquet_sha is persisted in the version_history entry", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(
+      data_sha = "sha1", parquet_sha = "pq_abc",
+      nrow = 5L, created_at = "2026-01-01T00:00:00Z"
+    )
+    meta_sha <- .datom_compute_metadata_sha(metadata)
+
+    .datom_write_metadata_local(conn, "tbl", metadata, meta_sha)
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_equal(history[[1]]$parquet_sha, "pq_abc")
+  })
+})
+
+test_that("parquet_sha absent from version_history entry for pre-cv1 metadata", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
+    meta_sha <- .datom_compute_metadata_sha(metadata)
+
+    .datom_write_metadata_local(conn, "tbl", metadata, meta_sha)
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_null(history[[1]]$parquet_sha)
+  })
+})
+
+test_that("Feature: datom-cv1, Property 17: full-history dedup (non-latest match)", {
+  # Validates Requirements 12.1, 12.2, 12.3, 12.4: a new entry whose version
+  # (metadata_sha) matches ANY existing history entry -- not just the latest --
+  # must not grow the history, while metadata.json (the current pointer) is
+  # still written. This is the S4 regression fix.
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    meta_a <- list(data_sha = "sha_a", nrow = 1L, created_at = "2026-01-01T00:00:00Z")
+    meta_b <- list(data_sha = "sha_b", nrow = 2L, created_at = "2026-01-02T00:00:00Z")
+    sha_a <- .datom_compute_metadata_sha(meta_a)
+    sha_b <- .datom_compute_metadata_sha(meta_b)
+
+    # Build a two-entry history: A (older) then B (latest).
+    .datom_write_metadata_local(conn, "tbl", meta_a, sha_a, message = "A")
+    .datom_write_metadata_local(conn, "tbl", meta_b, sha_b, message = "B")
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_length(history, 2L)
+    expect_equal(history[[1]]$version, sha_b) # newest-first
+
+    # Re-write A: its version matches the OLDER (non-latest) entry -> no append.
+    .datom_write_metadata_local(conn, "tbl", meta_a, sha_a, message = "A again")
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_length(history, 2L)
+    versions <- vapply(history, function(e) e$version, character(1))
+    expect_setequal(versions, c(sha_a, sha_b))
+    expect_equal(anyDuplicated(versions), 0L)
+
+    # The current pointer (metadata.json) is still written -- now carries A.
+    current <- jsonlite::read_json("tbl/metadata.json")
+    expect_equal(current$data_sha, "sha_a")
+  })
+})
+
 
 # --- datom_write() — Phase 8 enriched params -----------------------------------
 

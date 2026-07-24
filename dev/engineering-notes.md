@@ -31,19 +31,25 @@
 > completion (its durable content is harvested into the spec docs + the Gotchas below).
 
 **Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (Waves 0-2), **Task 3
-(Waves 3-5)**, and **Task 4 (Waves 6-7: read-time `parquet_sha` integrity)** are complete and
-committed. Full suite green at **2144 passed / 0 failed / 0 warnings / 0 skipped**. Checked off
-in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, **4.1, 4.2, 4.3**. **Deferred `*` test: 3.3**
-(metadata_sha locale + volatile-membership *property* tests, Properties 13/14 -- the behavior
-is already covered by plain tests; the tagged property versions are pre-PR work). **Next task =
-5.1** (Wave 8): full-history `metadata_sha` dedup guard in `.datom_write_metadata_local()` +
-persist `parquet_sha` into `version_history` entries. Resume from `tasks.md` in wave order.
+(Waves 3-5)**, **Task 4 (Waves 6-7: read-time `parquet_sha` integrity)**, and **Task 5 (Wave 8:
+full-history dedup + `parquet_sha` persisted into `version_history`)** are complete and
+committed. Full suite green at **2152 passed / 0 failed / 0 warnings / 0 skipped**. Checked off
+in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, 4.1, 4.2, 4.3, **5.1, 5.2**. **Deferred `*`
+test: 3.3** (metadata_sha locale + volatile-membership *property* tests, Properties 13/14 --
+the behavior is already covered by plain tests; the tagged property versions are pre-PR work).
+**Next task = 6.1** (Wave 9): persist `column_hashes` as an ordered `{name, sha}` array in
+`metadata.json` (the array is already threaded from `.datom_canonical_hash()` through
+`.datom_build_metadata()`/`datom_write()` since Task 1/3 -- 6.1 confirms/asserts the persisted
+shape and no-truncation; 6.2 is Property 12). Resume from `tasks.md` in wave order.
 
-**When Task 5.1 lands, revisit the DORMANT marker in `.datom_resolve_parquet_sha()`** (below):
-once `version_history` entries persist `parquet_sha`, (a) the revert-to-older reuse branch
-activates, and (b) `datom_read(name, version = <old>)` starts verifying integrity (Task 4's
-`.datom_resolve_version()` already threads the history entry's `parquet_sha`, which is
-NULL/skip-verify until 5.1 writes it). Enable the Task 12.5 end-to-end revert-reuse test then.
+**DORMANT marker now RESOLVED (Task 5.1).** `version_history` entries persist `parquet_sha`
+(added in `.datom_write_metadata_local()` when `metadata$parquet_sha` is non-NULL), so:
+(a) the revert-to-older reuse branch in `.datom_resolve_parquet_sha()` is now live (its TODO
+comment was updated to describe the active behavior), and (b) `datom_read(name, version = <old>)`
+verifies integrity once the pinned version was written post-5.1 (pre-5.1 / pre-cv1 entries carry
+no `parquet_sha` and still skip -- the intended grace). **Still TODO: the Task 12.5 end-to-end
+revert-reuse integration test** (write content A -> write B -> re-write A; assert the stored
+object is not re-uploaded and the reused `parquet_sha` matches A's history entry).
 
 **Two design decisions made during Task 3 (beyond the written spec -- fold into spec docs at
 completion):**

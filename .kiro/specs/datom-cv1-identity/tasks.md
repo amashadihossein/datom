@@ -183,13 +183,13 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - _Requirements: 8.3, 8.4_
 
 - [ ] 5. Full-history `metadata_sha` dedup guard
-  - [ ] 5.1 Replace the latest-only guard in `.datom_write_metadata_local()`
+  - [x] 5.1 Replace the latest-only guard in `.datom_write_metadata_local()`
     - Scan the entire history with `purrr::some(history, ~ identical(.x$version %||% "",
       metadata_sha))` (O(history), early exit); append only when absent; always write
       `metadata.json` (current pointer). Persist `parquet_sha` in the appended `version_history`
       entry alongside the existing `original_file_sha`.
     - _Requirements: 5.7, 12.1, 12.2, 12.3, 12.4_
-  - [ ]* 5.2 Write property test for full-history dedup
+  - [x]* 5.2 Write property test for full-history dedup
     - **Property 17: Full-history version dedup** — **Validates: Requirements 12.1, 12.2, 12.3, 12.4**
 
 - [ ] 6. Persisted column index

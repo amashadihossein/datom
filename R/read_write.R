@@ -380,10 +380,12 @@ datom_read <- function(conn,
   }
 
   # change_type == "full".
-  # TODO(task 5.1): version_history entries do not persist parquet_sha until
-  # task 5.1, so this lookup returns NULL until then and every "full" write
-  # uploads (unchanged from prior behavior). When 5.1 lands, confirm the reuse
-  # branch activates and enable the end-to-end revert-reuse test (task 12.5).
+  # Since task 5.1, version_history entries persist parquet_sha, so this lookup
+  # activates the revert-to-older reuse branch: writing content whose data_sha
+  # already appears in history reuses that version's recorded parquet_sha
+  # instead of re-uploading (a fresh serialization can differ byte-for-byte and
+  # would break the older version's integrity pin). The end-to-end revert-reuse
+  # integration test is task 12.5.
   reused <- .datom_lookup_history_parquet_sha(conn, name, data_sha)
   if (!is.null(reused)) {
     return(list(parquet_sha = reused, upload = FALSE))
@@ -474,13 +476,29 @@ datom_read <- function(conn,
     commit_message = message %||% paste0("Update ", name)
   )
 
+  # Persist parquet_sha alongside original_file_sha so the stored-object
+  # integrity hash travels with each version -- it powers the revert-to-older
+  # reuse scan (.datom_lookup_history_parquet_sha) and version-pinned read
+  # integrity (.datom_resolve_version). Added only when non-NULL to keep
+  # pre-cv1 / metadata_only-carrying-NULL entries clean.
+  if (!is.null(metadata$parquet_sha)) {
+    new_entry$parquet_sha <- metadata$parquet_sha
+  }
+
   if (!is.null(original_file_sha)) {
     new_entry$original_file_sha <- original_file_sha
   }
 
-  # Guard: skip append if latest entry already has the same version SHA
-  latest_version <- if (length(history) > 0) history[[1]]$version else NULL
-  if (!identical(latest_version, metadata_sha)) {
+  # Full-history dedup guard (Requirement 12): scan the ENTIRE history for an
+  # entry whose version already equals this metadata_sha, not just the latest.
+  # This is the S4 fix -- re-syncing an older-but-content-matching file must not
+  # append a duplicate version that would later make datom_read(version=)
+  # ambiguous. O(history) with early exit; the current pointer (metadata.json)
+  # is still written above regardless.
+  exists_already <- purrr::some(
+    history, ~ identical(.x$version %||% "", metadata_sha)
+  )
+  if (!exists_already) {
     history <- c(list(new_entry), history)
   }
   jsonlite::write_json(history, history_path, auto_unbox = TRUE, pretty = TRUE)
