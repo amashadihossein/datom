@@ -47,12 +47,15 @@ datom_read <- function(conn,
   # 1. Read metadata + version history from S3
   metadata_list <- .datom_read_metadata(conn, name)
 
-  # 2. Resolve version to data_sha
+  # 2. Resolve version to data_sha (+ the expected parquet_sha for integrity)
 
-  data_sha <- .datom_resolve_version(metadata_list, version = version, name = name)
+  resolved <- .datom_resolve_version(metadata_list, version = version, name = name)
 
-  # 3. Download and read parquet
-  .datom_read_parquet(conn, name, data_sha)
+  # 3. Download and read parquet, verifying its integrity against parquet_sha.
+  .datom_read_parquet(
+    conn, name, resolved$data_sha,
+    parquet_sha = resolved$parquet_sha
+  )
 }
 
 
@@ -81,17 +84,24 @@ datom_read <- function(conn,
 }
 
 
-#' Resolve Version to data_sha
+#' Resolve Version to data_sha and parquet_sha
 #'
 #' Given metadata from [.datom_read_metadata()], resolves a version spec
-#' to the corresponding `data_sha`. If `version` is NULL, returns the
-#' current `data_sha` from `metadata.json`. If a metadata_sha string,
-#' looks it up in `version_history.json`.
+#' to the corresponding `data_sha` (the storage address) and the recorded
+#' `parquet_sha` (the stored-object integrity hash). If `version` is NULL,
+#' resolves from the current `metadata.json`; if a metadata_sha string, looks
+#' it up in `version_history.json`.
+#'
+#' The `parquet_sha` may be `NULL`/`""` for pre-cv1 metadata, and for any
+#' version-pinned read until `version_history` entries persist `parquet_sha`
+#' (task 5.1). A `NULL`/empty `parquet_sha` tells [.datom_read_parquet()] to
+#' skip the integrity check (the intended pre-cv1 grace).
 #'
 #' @param metadata_list Return value of [.datom_read_metadata()].
 #' @param version NULL (current) or a metadata_sha string.
 #' @param name Table name (for error messages).
-#' @return Character string `data_sha`.
+#' @return Named list with `data_sha` (character) and `parquet_sha`
+#'   (character or NULL) for the resolved version.
 #' @keywords internal
 .datom_resolve_version <- function(metadata_list, version = NULL, name = "table") {
   if (is.null(version)) {
@@ -104,7 +114,10 @@ datom_read <- function(conn,
         )
       )
     }
-    return(data_sha)
+    return(list(
+      data_sha = data_sha,
+      parquet_sha = metadata_list$current$parquet_sha
+    ))
   }
 
   if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
@@ -159,21 +172,31 @@ datom_read <- function(conn,
     )
   }
 
-  data_sha
+  list(
+    data_sha = data_sha,
+    parquet_sha = history[[match_idx]]$parquet_sha
+  )
 }
 
 
 #' Download and Read Parquet from S3
 #'
-#' Downloads `{table}/{data_sha}.parquet` from S3 to a temporary file
-#' and reads it via `arrow::read_parquet()`.
+#' Downloads `{table}/{data_sha}.parquet` from S3 to a temporary file and reads
+#' it via `arrow::read_parquet()`. When an expected `parquet_sha` is supplied
+#' (non-empty), the downloaded object's SHA-256 is verified against it BEFORE
+#' parsing, so corruption or tampering aborts rather than being silently read.
 #'
 #' @param conn A `datom_conn` object.
 #' @param name Table name.
 #' @param data_sha SHA identifying the parquet file.
+#' @param parquet_sha Expected SHA-256 of the stored parquet object bytes, from
+#'   the resolved metadata (see [.datom_resolve_version()]). When non-empty, the
+#'   downloaded file is verified against it and a mismatch aborts. When `NULL`
+#'   or empty (pre-cv1 metadata, or a version-pinned read before task 5.1
+#'   persists it), the integrity check is skipped and the read succeeds.
 #' @return Data frame.
 #' @keywords internal
-.datom_read_parquet <- function(conn, name, data_sha) {
+.datom_read_parquet <- function(conn, name, data_sha, parquet_sha = NULL) {
   .datom_validate_name(name)
 
   if (!is.character(data_sha) || length(data_sha) != 1L || !nzchar(data_sha)) {
@@ -187,6 +210,24 @@ datom_read <- function(conn,
   on.exit(unlink(tmp), add = TRUE)
 
   .datom_storage_download(conn, s3_key, tmp)
+
+  # Read-time integrity: verify the stored object bytes against the recorded
+  # parquet_sha before parsing. Skipped when parquet_sha is absent/empty
+  # (pre-cv1 metadata) -- a read-time grace, not a data migration.
+  if (!is.null(parquet_sha) && nzchar(parquet_sha)) {
+    actual <- digest::digest(file = tmp, algo = "sha256")
+    if (!identical(actual, parquet_sha)) {
+      cli::cli_abort(
+        c(
+          "Stored parquet for {.val {name}} failed its integrity check.",
+          "x" = "Key: {.val {s3_key}}",
+          "x" = "Expected {.field parquet_sha}: {.val {parquet_sha}}",
+          "x" = "Actual SHA-256: {.val {actual}}",
+          "i" = "The stored object may be corrupted or tampered with. Do not trust this data."
+        )
+      )
+    }
+  }
 
   arrow::read_parquet(tmp)
 }

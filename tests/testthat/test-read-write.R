@@ -174,7 +174,29 @@ test_that("NULL version returns current data_sha", {
   )
 
   result <- .datom_resolve_version(metadata_list, version = NULL, name = "tbl")
-  expect_equal(result, "sha_current")
+  expect_equal(result$data_sha, "sha_current")
+})
+
+test_that("NULL version returns current parquet_sha alongside data_sha", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_current", parquet_sha = "pq_current"),
+    history = list()
+  )
+
+  result <- .datom_resolve_version(metadata_list, version = NULL, name = "tbl")
+  expect_equal(result$data_sha, "sha_current")
+  expect_equal(result$parquet_sha, "pq_current")
+})
+
+test_that("NULL version parquet_sha is NULL for pre-cv1 metadata", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_current"),
+    history = list()
+  )
+
+  result <- .datom_resolve_version(metadata_list, version = NULL, name = "tbl")
+  expect_equal(result$data_sha, "sha_current")
+  expect_null(result$parquet_sha)
 })
 
 test_that("errors when current metadata has no data_sha", {
@@ -211,7 +233,34 @@ test_that("resolves specific version from history", {
   )
 
   result <- .datom_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
-  expect_equal(result, "sha_v1")
+  expect_equal(result$data_sha, "sha_v1")
+})
+
+test_that("resolves parquet_sha from the matched history entry", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_v2", parquet_sha = "pq_v2"),
+    history = list(
+      list(version = "meta_sha_v1", data_sha = "sha_v1", parquet_sha = "pq_v1"),
+      list(version = "meta_sha_v2", data_sha = "sha_v2", parquet_sha = "pq_v2")
+    )
+  )
+
+  result <- .datom_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
+  expect_equal(result$data_sha, "sha_v1")
+  expect_equal(result$parquet_sha, "pq_v1")
+})
+
+test_that("history entry without parquet_sha resolves parquet_sha NULL", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_v2"),
+    history = list(
+      list(version = "meta_sha_v1", data_sha = "sha_v1")
+    )
+  )
+
+  result <- .datom_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
+  expect_equal(result$data_sha, "sha_v1")
+  expect_null(result$parquet_sha)
 })
 
 test_that("resolves latest version from history", {
@@ -224,7 +273,7 @@ test_that("resolves latest version from history", {
   )
 
   result <- .datom_resolve_version(metadata_list, version = "meta_sha_v2", name = "tbl")
-  expect_equal(result, "sha_v2")
+  expect_equal(result$data_sha, "sha_v2")
 })
 
 test_that("errors when version not found in history", {
@@ -317,11 +366,11 @@ test_that("handles multiple versions with same data_sha", {
 
   # Both should resolve to same data_sha
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "meta_v1", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "meta_v1", name = "tbl")$data_sha,
     "sha_shared"
   )
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "meta_v2", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "meta_v2", name = "tbl")$data_sha,
     "sha_shared"
   )
 })
@@ -338,12 +387,12 @@ test_that("resolves unique prefix (short hash)", {
   # Short prefix that uniquely matches first entry
 
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "abc1", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc1", name = "tbl")$data_sha,
     "sha_v1"
   )
   # Short prefix that uniquely matches second entry
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "xyz", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "xyz", name = "tbl")$data_sha,
     "sha_v2"
   )
 })
@@ -358,7 +407,7 @@ test_that("exact full hash still works with prefix matching", {
   )
 
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "abc123def456", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123def456", name = "tbl")$data_sha,
     "sha_v1"
   )
 })
@@ -389,12 +438,12 @@ test_that("ambiguous prefix resolved by using longer prefix", {
 
   # "abc123d" uniquely matches the first entry
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "abc123d", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123d", name = "tbl")$data_sha,
     "sha_v1"
   )
   # "abc123g" uniquely matches the second entry
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "abc123g", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123g", name = "tbl")$data_sha,
     "sha_v2"
   )
 })
@@ -409,7 +458,7 @@ test_that("single-character prefix works if unique", {
   )
 
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "a", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "a", name = "tbl")$data_sha,
     "sha_v1"
   )
 })
@@ -487,6 +536,102 @@ test_that(".datom_read_parquet rejects a path-traversal data_sha (#74 G)", {
   expect_error(.datom_read_parquet(conn, "tbl", "../../etc/passwd"), "hex")
   expect_error(.datom_read_parquet(conn, "tbl", "not-hex-zzz"), "hex")
   expect_error(.datom_read_parquet(conn, "tbl", "abc"), "hex")
+})
+
+test_that("read-time integrity: matching parquet_sha reads successfully", {
+  test_df <- data.frame(id = 1:3, name = c("a", "b", "c"))
+
+  # Serialize the fixture once so we know its exact stored-object SHA.
+  ref <- tempfile(fileext = ".parquet")
+  on.exit(unlink(ref), add = TRUE)
+  arrow::write_parquet(test_df, ref)
+  expected_sha <- digest::digest(file = ref, algo = "sha256")
+
+  local_mocked_bindings(
+    .datom_storage_download = function(conn, s3_key, local_path) {
+      arrow::write_parquet(test_df, local_path)
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  result <- .datom_read_parquet(conn, "customers", "abc123", parquet_sha = expected_sha)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 3)
+  expect_equal(result$id, 1:3)
+})
+
+test_that("read-time integrity: mismatched parquet_sha aborts before parsing", {
+  # The stored object is deliberately NOT valid parquet. The integrity check
+  # runs on the raw downloaded bytes, so a mismatch must abort with the tamper
+  # message BEFORE arrow::read_parquet() is ever reached; if the check were
+  # skipped, arrow would instead fail parsing these bytes with a different
+  # error and the "integrity check" match below would not hold.
+  local_mocked_bindings(
+    .datom_storage_download = function(conn, s3_key, local_path) {
+      writeBin(charToRaw("not a parquet file"), local_path)
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  # 64-char hex that cannot match the real stored-object SHA.
+  wrong_sha <- paste(rep("0", 64L), collapse = "")
+
+  expect_error(
+    .datom_read_parquet(conn, "customers", "abc123", parquet_sha = wrong_sha),
+    "integrity check"
+  )
+})
+
+test_that("read-time integrity: tamper abort names table, key, and both hashes", {
+  test_df <- data.frame(id = 1:3)
+
+  local_mocked_bindings(
+    .datom_storage_download = function(conn, s3_key, local_path) {
+      arrow::write_parquet(test_df, local_path)
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  wrong_sha <- paste(rep("a", 64L), collapse = "")
+
+  err <- tryCatch(
+    .datom_read_parquet(conn, "customers", "abc123", parquet_sha = wrong_sha),
+    error = function(e) e
+  )
+  msg <- cli::ansi_strip(paste(conditionMessage(err), collapse = "\n"))
+
+  expect_match(msg, "customers")
+  expect_match(msg, "customers/abc123.parquet")
+  expect_match(msg, wrong_sha)
+  expect_match(msg, "corrupted or tampered")
+})
+
+test_that("read-time integrity: absent/empty parquet_sha skips the check (pre-cv1)", {
+  test_df <- data.frame(id = 1:3, name = c("a", "b", "c"))
+
+  local_mocked_bindings(
+    .datom_storage_download = function(conn, s3_key, local_path) {
+      arrow::write_parquet(test_df, local_path)
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+
+  # NULL (default), explicit NULL, and empty string all skip verification.
+  expect_s3_class(.datom_read_parquet(conn, "customers", "abc123"), "data.frame")
+  expect_s3_class(
+    .datom_read_parquet(conn, "customers", "abc123", parquet_sha = NULL),
+    "data.frame"
+  )
+  expect_s3_class(
+    .datom_read_parquet(conn, "customers", "abc123", parquet_sha = ""),
+    "data.frame"
+  )
 })
 
 

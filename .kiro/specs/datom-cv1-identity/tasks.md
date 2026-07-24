@@ -166,18 +166,18 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - _Requirements: 5.4, 5.5, 5.6, 9.6_
 
 - [ ] 4. Read-time integrity verification
-  - [ ] 4.1 Extend `.datom_resolve_version()` to return `list(data_sha, parquet_sha)`
+  - [x] 4.1 Extend `.datom_resolve_version()` to return `list(data_sha, parquet_sha)`
     - Both branches return the list (NULL-version → `current`; history-lookup → resolved entry;
       `parquet_sha` may be `NULL`/`""` for pre-cv1). Update the `datom_read()` call site to thread
       `resolved$data_sha` and `resolved$parquet_sha`.
     - _Requirements: 8.1, 8.2_
-  - [ ] 4.2 Add the integrity check to `.datom_read_parquet()`
+  - [x] 4.2 Add the integrity check to `.datom_read_parquet()`
     - Signature gains `parquet_sha = NULL`; after download and before `arrow::read_parquet()`,
       when `parquet_sha` is non-empty compute `actual = digest(file = tmp)` and abort with the
       verbatim tamper message (naming table, key, expected + actual) on mismatch; when
       absent/empty (pre-cv1) skip silently and read succeeds.
     - _Requirements: 8.1, 8.3, 8.4_
-  - [ ]* 4.3 Write unit tests for read-time integrity
+  - [x]* 4.3 Write unit tests for read-time integrity
     - Corrupt stored byte → tamper abort before parse; legacy metadata without `parquet_sha` →
       read succeeds; expected matches → read succeeds.
     - _Requirements: 8.3, 8.4_

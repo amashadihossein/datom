@@ -30,16 +30,20 @@
 > Transient section for the in-flight `spec/datom-cv1-identity` branch. Delete it at spec
 > completion (its durable content is harvested into the spec docs + the Gotchas below).
 
-**Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (Waves 0-2) and **Task 3
-(Waves 3-5: three-SHA metadata fields, `metadata_sha` volatile/radix, `.datom_has_changes()`
-return-shape refactor, and the `datom_write()` reorder + `parquet_sha` determination) are
-complete and committed**. Full suite green at **2125 passed / 0 failed / 0 warnings / 0
-skipped**. Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6. **Deferred `*` test:
-3.3** (metadata_sha locale + volatile-membership *property* tests, Properties 13/14 -- the
-behavior is already covered by plain tests; the tagged property versions are pre-PR work).
-**Next task = 4.1** (read-time integrity: `.datom_resolve_version()` returns
-`{data_sha, parquet_sha}`), then Task 4.2/4.3, then Wave 8 (Task 5.1 full-history dedup +
-persist `parquet_sha` into `version_history` entries). Resume from `tasks.md` in wave order.
+**Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (Waves 0-2), **Task 3
+(Waves 3-5)**, and **Task 4 (Waves 6-7: read-time `parquet_sha` integrity)** are complete and
+committed. Full suite green at **2144 passed / 0 failed / 0 warnings / 0 skipped**. Checked off
+in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, **4.1, 4.2, 4.3**. **Deferred `*` test: 3.3**
+(metadata_sha locale + volatile-membership *property* tests, Properties 13/14 -- the behavior
+is already covered by plain tests; the tagged property versions are pre-PR work). **Next task =
+5.1** (Wave 8): full-history `metadata_sha` dedup guard in `.datom_write_metadata_local()` +
+persist `parquet_sha` into `version_history` entries. Resume from `tasks.md` in wave order.
+
+**When Task 5.1 lands, revisit the DORMANT marker in `.datom_resolve_parquet_sha()`** (below):
+once `version_history` entries persist `parquet_sha`, (a) the revert-to-older reuse branch
+activates, and (b) `datom_read(name, version = <old>)` starts verifying integrity (Task 4's
+`.datom_resolve_version()` already threads the history entry's `parquet_sha`, which is
+NULL/skip-verify until 5.1 writes it). Enable the Task 12.5 end-to-end revert-reuse test then.
 
 **Two design decisions made during Task 3 (beyond the written spec -- fold into spec docs at
 completion):**
@@ -64,41 +68,38 @@ finds nothing and every `"full"` write uploads (unchanged from prior behavior). 
 test (Task 12.5). The 3.6 unit tests already cover the reuse *logic* via a hand-built history
 fixture / mocked lookup, so they are not dormant.
 
-**Task 4 must-remembers (read-time integrity -- the NEXT task, Waves 6-7).** Read the design's
-"Read-time integrity (Requirement 8)" section and the `R/read_write.R` read chain first
-(`datom_read` -> `.datom_read_metadata` -> `.datom_resolve_version` -> `.datom_read_parquet`).
-Wave order: 4.1 then 4.2, with 4.3 (`*`) tests folded in the same chunk.
-- **4.1 `.datom_resolve_version(metadata_list, version, name)`** currently returns a **bare
-  `data_sha` string** on both branches (NULL-version -> `current`; history-lookup -> matched
-  entry). Change it to return `list(data_sha, parquet_sha)` on **both** branches
-  (`current$parquet_sha`; the matched history entry's `parquet_sha`). `parquet_sha` will be
-  `NULL`/`""` for pre-cv1 entries AND for any version-pinned read until Task 5.1 persists
-  `parquet_sha` into history entries -- so `datom_read(name)` (current pointer, carries
-  `parquet_sha` since Task 3.5) verifies, while `datom_read(name, version = <old>)` skips
-  verification until 5.1. That is the intended pre-cv1 grace, not a bug. Keep the existing guard
-  aborts (missing `data_sha`, ambiguous prefix, etc.). **Do NOT add `.datom_validate_sha()` here**
-  -- short version prefixes are intentional (see the "Validate SHA-like inputs" gotcha below).
-- **4.2 `.datom_read_parquet(conn, name, data_sha, parquet_sha = NULL)`** gains the param. #74
-  already put a validation seam in this function (it `.datom_validate_sha()`-checks `data_sha`,
-  downloads to a temp file, then `arrow::read_parquet()`); Requirement 8 **extends this same
-  function** -- do not add a parallel path. Insert the check AFTER `.datom_storage_download()`
-  and BEFORE `arrow::read_parquet()`: when `parquet_sha` is non-empty, compute
-  `actual <- digest::digest(file = tmp, algo = "sha256")` and, if `!identical(actual, parquet_sha)`,
-  abort with the **verbatim** tamper message (design "Read-time tamper abort"):
-  `Stored parquet for {.val {name}} failed its integrity check.` / `x Key: {.val {key}}` /
-  `x Expected {.field parquet_sha}: {.val {expected}}` / `x Actual SHA-256: {.val {actual}}` /
-  `i The stored object may be corrupted or tampered with. Do not trust this data.` When
-  `parquet_sha` is absent/empty, skip silently and read (Requirement 8.4).
-- **Only ONE caller** of each: both `.datom_resolve_version()` and `.datom_read_parquet()` are
-  called only inside `datom_read()` (`R/read_write.R`). Update that call site:
+**Task 4 DONE (read-time integrity, Waves 6-7) -- as-built anchors (verify, do not reinvent).**
+Implemented against the design's "Read-time integrity (Requirement 8)" section; read chain is
+`datom_read` -> `.datom_read_metadata` -> `.datom_resolve_version` -> `.datom_read_parquet`.
+- **4.1 `.datom_resolve_version(metadata_list, version, name)`** now returns
+  `list(data_sha, parquet_sha)` on **both** branches (NULL-version -> `current$data_sha` /
+  `current$parquet_sha`; history-lookup -> the matched entry's `data_sha` / `parquet_sha`).
+  `parquet_sha` is `NULL`/`""` for pre-cv1 entries AND for any version-pinned read until Task
+  5.1 persists it into history -- so `datom_read(name)` (current pointer, carries `parquet_sha`
+  since Task 3.5) verifies, while `datom_read(name, version = <old>)` skips verification until
+  5.1. Intended pre-cv1 grace, not a bug. All existing guard aborts (missing `data_sha`,
+  ambiguous prefix, non-character version, etc.) are unchanged; `.datom_validate_sha()` was NOT
+  added here (short version prefixes are intentional -- see the "Validate SHA-like inputs"
+  gotcha below).
+- **4.2 `.datom_read_parquet(conn, name, data_sha, parquet_sha = NULL)`** gained the param and
+  extends #74's existing seam (no parallel path). The check sits AFTER
+  `.datom_storage_download()` and BEFORE `arrow::read_parquet()`: when `parquet_sha` is
+  non-empty it computes `actual <- digest::digest(file = tmp, algo = "sha256")` and, on
+  `!identical(actual, parquet_sha)`, aborts with the verbatim design tamper message
+  (`Stored parquet for {.val {name}} failed its integrity check.` / `x Key: {.val {s3_key}}` /
+  `x Expected {.field parquet_sha}: {.val {parquet_sha}}` / `x Actual SHA-256: {.val {actual}}`
+  / `i The stored object may be corrupted or tampered with. Do not trust this data.`). Empty/
+  NULL `parquet_sha` skips silently (Requirement 8.4).
+- **Only ONE caller** of each (both inside `datom_read()`); the call site now does
   `resolved <- .datom_resolve_version(...)` then
   `.datom_read_parquet(conn, name, resolved$data_sha, parquet_sha = resolved$parquet_sha)`.
-  `R/query.R`'s `datom_get_lineage()` opens `{version}.json` directly and is untouched.
-- **Same-commit test updates (return-shape change):** existing direct tests of
-  `.datom_resolve_version()` in `test-read-write.R` assert a bare string -- update them to
-  `$data_sha` (mirror what Task 3.4 did for `.datom_has_changes()`), and add the 4.3 integrity
-  tests (corrupt stored byte -> tamper abort before parse; legacy/absent `parquet_sha` -> read
-  succeeds; matching -> read succeeds).
+  `R/query.R`'s `datom_get_lineage()` opens `{version}.json` directly and was untouched.
+- **Test note (return-shape change):** the direct `.datom_resolve_version()` tests in
+  `test-read-write.R` were updated from bare-string to `$data_sha` (mirroring Task 3.4's
+  `.datom_has_changes()` migration), plus new parquet_sha-resolution cases and the 4.3 integrity
+  tests. The mismatch test proves "abort before parse" by having the download write non-parquet
+  bytes: if the integrity check were skipped, arrow would fail parsing with a different error,
+  so the `"integrity check"` match would not hold.
 
 **Environment note (this workspace).** A working R toolchain is present here: R 4.5.2 with
 `devtools`, `arrow`, `digest`, `testthat`, `mockery`, `withr`, `git2r`, `rio`, and also

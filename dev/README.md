@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| datom-cv1-identity | 2026-07-17 | In progress (Task 3 done: three-SHA metadata + `datom_write()` reorder + `parquet_sha` determination, tasks 3.1-3.2, 3.4-3.6; 3.3 metadata_sha property tests deferred; next = Task 4 read-time integrity) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
+| datom-cv1-identity | 2026-07-17 | In progress (Task 4 done: read-time `parquet_sha` integrity -- `.datom_resolve_version()` returns `{data_sha, parquet_sha}`, `.datom_read_parquet(parquet_sha=)` tamper abort with pre-cv1 skip, tasks 4.1-4.3; suite green 2144/0/0/0; 3.3 metadata_sha property tests still deferred; next = Task 5.1 full-history dedup + persist `parquet_sha` into `version_history`) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
 
 ### Drafts (queued, not active)
 
