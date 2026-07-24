@@ -67,12 +67,44 @@ completion):**
   existence check with identical behavior across all three branches and one fewer storage
   round-trip -- and it avoided threading a new storage mock through ~15 `datom_write` tests.
 
-**DORMANT until Task 5.1 -- TODO marker in `.datom_resolve_parquet_sha()`:** `version_history`
-entries do not persist `parquet_sha` until Task 5.1, so the revert-to-older reuse branch always
-finds nothing and every `"full"` write uploads (unchanged from prior behavior). When 5.1 lands:
-(a) confirm the reuse branch activates, and (b) turn on the end-to-end revert-reuse integration
-test (Task 12.5). The 3.6 unit tests already cover the reuse *logic* via a hand-built history
-fixture / mocked lookup, so they are not dormant.
+**Task 6 must-remembers (persist column index -- the NEXT task, Wave 9).** Read the design's
+"Persisted column index (Group D, Requirement 14)" section and Property 12.
+- **The threading is ALREADY DONE** (landed with Tasks 1.6 / 3.1 / 3.5), so 6.1 is a
+  confirm-and-assert task, NOT new plumbing. `.datom_canonical_hash()` returns
+  `column_hashes` (ordered `list(list(name=, sha=), ...)` in column order, computed once and
+  reused for `data_sha`); `.datom_build_metadata(..., column_hashes = ...)` puts it in the meta
+  list unconditionally; `datom_write()` passes `column_hashes = hashed$column_hashes`; it is
+  excluded from `metadata_sha` (volatile set). Existing coverage already asserts the persisted
+  shape: `test-read-write.R` "full datom_write records ... column_hashes in metadata.json"
+  (presence, length 2, order id->v), `.datom_build_metadata` carry-through
+  (`test-read-write.R:680`), and the return shape + a `data_sha`-recompute
+  (`test-utils-sha.R:506-519`). So **6.1 may only need a no-truncation assertion** (full 64-char
+  hex per entry, all columns present for a wider frame) beyond what exists -- or just verify and
+  check the box.
+- **6.2 is the real remaining work: the tagged `Feature: datom-cv1, Property 12` test.**
+  Consolidate four facts: (a) `column_hashes` order == `names(data)`; (b) each entry's `sha`
+  equals the standalone `datom:::.datom_col_digest(name, data[[name]])`; (c) `data_sha` is
+  recomputable from the stored `column_hashes` + dims; (d) changing exactly one column flips
+  exactly that column's entry (others unchanged). **Exact recompute formula** (from
+  `.datom_canonical_hash()` in `R/utils-sha.R` -- copy it verbatim so the test cannot drift):
+  ```r
+  shas   <- vapply(meta$column_hashes, function(e) e$sha, character(1))
+  header <- c(charToRaw("datom-cv1"),
+              writeBin(as.double(c(nrow, ncol)), raw(), size = 8L, endian = "little"))
+  recompute <- digest::digest(c(header, charToRaw(paste(shas, collapse = ""))),
+                              algo = "sha256", serialize = FALSE)
+  # expect_identical(recompute, meta$data_sha)
+  ```
+  Note `writeBin(as.double(c(nrow, ncol)), ...)` is a single call over a length-2 vector ==
+  `f64le(nrow) || f64le(ncol)`. The `test-utils-sha.R:512-519` block already does exactly this
+  recompute against `.datom_canonical_hash()` output -- lift that pattern, add the per-column
+  `.datom_col_digest()` equality and the single-column-diff assertion, and tag it Property 12.
+- **Do NOT jump to Task 8/9/10 yet** -- follow `tasks.md` wave order (Wave 9 = 6.1 + 6.2; both
+  touch the column index, no collision in a single-agent session).
+
+**Test-run harness reminder** (unchanged): write the runner to a temp `.R` file and `Rscript`
+it (the shell mangles multi-line `Rscript -e`); the full-suite one-liner is in the "Environment
+note" below. Commit code + `tasks.md` + this handoff together; long messages via `git commit -F`.
 
 **Task 4 DONE (read-time integrity, Waves 6-7) -- as-built anchors (verify, do not reinvent).**
 Implemented against the design's "Read-time integrity (Requirement 8)" section; read chain is
