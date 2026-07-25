@@ -46,11 +46,13 @@ local backend) -- Wave 12 (8.2, 9.2) already landed with Tasks 8 and 9. Then Wav
 (docs/NEWS, Tasks 13.1/13.2), Wave 15 (acceptance greps, Task 14.1). Resume from `tasks.md`
 in wave order. **Task 11 is a chunk checkpoint** -- stop there for maintainer go-ahead.
 
-**Commit anchors** (branch head `71e8637`, pushed): `3a5f717` Task 6 column index ->
-`9722e59` man/ regeneration for Tasks 1-5 -> `b359fb9` Task 9 allowlist -> `5b28463` Task 8
-`datom_check_hashable()` -> `71e8637` parent-checkbox correction + this handoff prep
-(docs only: `tasks.md` + this file, **no `R/` or `tests/` change**, so the code inventories
-below that were verified at `5b28463` remain valid at `71e8637`).
+**Commit anchors** (branch head `8082d14`, pushed, clean tree): `3a5f717` Task 6 column index
+-> `9722e59` man/ regeneration for Tasks 1-5 -> `b359fb9` Task 9 allowlist -> `5b28463` Task 8
+`datom_check_hashable()` -> `71e8637` parent-checkbox correction (docs only) -> `c3cf279`
+on-disk context audit, four handoff inaccuracies corrected (docs only) -> `8082d14` **Task 10.1
+`file_sha` -> `original_file_sha` sweep** (the last commit that touched `R/`, `man/`, `tests/`,
+or `vignettes/`). Keep this line current: it went stale twice in three commits, and a stale
+head is the single most misleading thing in this file.
 
 **Outstanding before the PR can merge** (none of these block Wave 13; all are named acceptance
 criteria, so an MVP that skips them cannot merge):
@@ -89,6 +91,7 @@ its code is all done, only the deferred `*` test 3.3 remains. Do NOT redo 3.1-3.
   tick/cross glyphs at runtime -- never type them into `R/`.
 - **Examples are runnable (no `\dontrun{}`)** because the checker is pure: no conn, no store,
   no network. R CMD check executes them, so they must stay side-effect free.
+
 **Wave 11 DONE (Task 10, `file_sha` -> `original_file_sha` sweep) -- as-built anchors.**
 The gate `grep -rn "file_sha" R/ man/ vignettes/` now returns 44 hits, **all** of them
 `original_file_sha`. What the sweep actually touched:
@@ -195,40 +198,27 @@ completion):**
   existence check with identical behavior across all three branches and one fewer storage
   round-trip -- and it avoided threading a new storage mock through ~15 `datom_write` tests.
 
-**Task 6 must-remembers (persist column index -- the NEXT task, Wave 9).** Read the design's
-"Persisted column index (Group D, Requirement 14)" section and Property 12.
-- **The threading is ALREADY DONE** (landed with Tasks 1.6 / 3.1 / 3.5), so 6.1 is a
-  confirm-and-assert task, NOT new plumbing. `.datom_canonical_hash()` returns
-  `column_hashes` (ordered `list(list(name=, sha=), ...)` in column order, computed once and
-  reused for `data_sha`); `.datom_build_metadata(..., column_hashes = ...)` puts it in the meta
-  list unconditionally; `datom_write()` passes `column_hashes = hashed$column_hashes`; it is
-  excluded from `metadata_sha` (volatile set). Existing coverage already asserts the persisted
-  shape: `test-read-write.R` "full datom_write records ... column_hashes in metadata.json"
-  (presence, length 2, order id->v), `.datom_build_metadata` carry-through
-  (`test-read-write.R:680`), and the return shape + a `data_sha`-recompute
-  (`test-utils-sha.R:506-519`). So **6.1 may only need a no-truncation assertion** (full 64-char
-  hex per entry, all columns present for a wider frame) beyond what exists -- or just verify and
-  check the box.
-- **6.2 is the real remaining work: the tagged `Feature: datom-cv1, Property 12` test.**
-  Consolidate four facts: (a) `column_hashes` order == `names(data)`; (b) each entry's `sha`
-  equals the standalone `datom:::.datom_col_digest(name, data[[name]])`; (c) `data_sha` is
-  recomputable from the stored `column_hashes` + dims; (d) changing exactly one column flips
-  exactly that column's entry (others unchanged). **Exact recompute formula** (from
-  `.datom_canonical_hash()` in `R/utils-sha.R` -- copy it verbatim so the test cannot drift):
-  ```r
-  shas   <- vapply(meta$column_hashes, function(e) e$sha, character(1))
-  header <- c(charToRaw("datom-cv1"),
-              writeBin(as.double(c(nrow, ncol)), raw(), size = 8L, endian = "little"))
-  recompute <- digest::digest(c(header, charToRaw(paste(shas, collapse = ""))),
-                              algo = "sha256", serialize = FALSE)
-  # expect_identical(recompute, meta$data_sha)
-  ```
-  Note `writeBin(as.double(c(nrow, ncol)), ...)` is a single call over a length-2 vector ==
-  `f64le(nrow) || f64le(ncol)`. The `test-utils-sha.R:512-519` block already does exactly this
-  recompute against `.datom_canonical_hash()` output -- lift that pattern, add the per-column
-  `.datom_col_digest()` equality and the single-column-diff assertion, and tag it Property 12.
-- **Do NOT jump to Task 8/9/10 yet** -- follow `tasks.md` wave order (Wave 9 = 6.1 + 6.2; both
-  touch the column index, no collision in a single-agent session).
+**`data_sha` recompute formula (durable reference, not pending work).** Task 6 is DONE -- see
+the "Task 6 DONE (Wave 9)" block above. An earlier revision of this file kept a forward-looking
+"Task 6 must-remembers ... the NEXT task" block here, which had gone stale and actively misled
+(it also said "Do NOT jump to Task 8/9/10 yet"; 8, 9, and 10 are all done now). The only durable
+content was this formula, kept because it is the single place the persisted column index and
+`data_sha` are tied together. Lifted verbatim from `.datom_canonical_hash()` in `R/utils-sha.R`
+-- copy it, do not paraphrase, or the assertion drifts from the implementation:
+
+```r
+shas   <- vapply(meta$column_hashes, function(e) e$sha, character(1))
+header <- c(charToRaw("datom-cv1"),
+            writeBin(as.double(c(nrow, ncol)), raw(), size = 8L, endian = "little"))
+recompute <- digest::digest(c(header, charToRaw(paste(shas, collapse = ""))),
+                            algo = "sha256", serialize = FALSE)
+# expect_identical(recompute, meta$data_sha)
+```
+
+`writeBin(as.double(c(nrow, ncol)), ...)` is a single call over a length-2 vector, i.e.
+`f64le(nrow) || f64le(ncol)`. Live in the Property 12 test in `test-utils-sha.R`. If that
+assertion ever reddens, the byte layout in `.datom_canonical_hash()` changed -- fix the code,
+not the test.
 
 **Test-run harness reminder** (unchanged): write the runner to a temp `.R` file and `Rscript`
 it (the shell mangles multi-line `Rscript -e`); the full-suite one-liner is in the "Environment

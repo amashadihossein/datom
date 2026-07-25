@@ -258,6 +258,11 @@ sub-agent verification in this environment is authoring the code and tests, not 
 
 - [ ] 11. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
+  - **STATUS: the suite IS green** -- 2318 passed / 0 failed / 0 warnings / 0 skipped and
+    `R CMD check --as-cran` 0/0/0, both verified at `8082d14`. This box is unchecked only
+    because a chunk checkpoint is the maintainer's sign-off gate, not because work remains.
+    There is nothing to fix here. Confirm with the maintainer, check the box, and proceed to
+    Wave 13 (Task 12.1).
 
 - [ ] 12. Identity-contract integration tests (local backend)
   - [ ]* 12.1 Write the S1 skip-before-parse test
