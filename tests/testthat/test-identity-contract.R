@@ -381,3 +381,104 @@ test_that("Feature: datom-cv1, S3 -- the carried-forward parquet_sha still verif
   older <- datom_read(fx$conn, "dm", version = history[[2]]$version)
   expect_equal(as.data.frame(older), df)
 })
+
+
+# --- S4: no duplicate version on re-syncing an older file (Requirement 9.4) ---
+
+test_that("Feature: datom-cv1, S4 -- re-syncing an older content-matching file appends no duplicate version", {
+  fx <- local_identity_project()
+  csv <- fs::path(fx$input_dir, "dm.csv")
+  df <- data.frame(id = 1:3, grp = c("a", "b", "c"), stringsAsFactors = FALSE)
+
+  # V1: the original export.
+  identity_write_csv(csv, df, quote = TRUE)
+  suppressMessages(datom_sync(fx$conn, suppressMessages(
+    datom_sync_manifest(fx$conn)
+  )))
+  v1 <- identity_history(fx, "dm")[[1]]$version
+  file_sha_v1 <- identity_metadata(fx, "dm")$original_file_sha
+  stored <- identity_stored_parquet(fx, "dm")
+  backdated <- as.POSIXct("2001-01-01 00:00:00", tz = "UTC")
+  fs::file_touch(stored, modification_time = backdated)
+
+  # V2: a re-export -- different bytes, same content.
+  identity_write_csv(csv, df, quote = FALSE)
+  suppressMessages(datom_sync(fx$conn, suppressMessages(
+    datom_sync_manifest(fx$conn)
+  )))
+  v2 <- identity_history(fx, "dm")[[1]]$version
+  expect_false(identical(v1, v2))
+  expect_length(identity_history(fx, "dm"), 2L)
+
+  # Now the developer syncs the OLDER file again (restored from a backup, or a
+  # colleague's copy). Its metadata is byte-for-byte the semantic metadata of
+  # V1, so metadata_sha comes back to V1 -- the case that used to append a
+  # second entry with the same version and make datom_read(version=) ambiguous.
+  identity_write_csv(csv, df, quote = TRUE)
+  manifest <- suppressMessages(datom_sync_manifest(fx$conn))
+  expect_identical(manifest$status, "changed")
+  result <- suppressMessages(datom_sync(fx$conn, manifest))
+  expect_identical(result$result, "success")
+
+  meta3 <- identity_metadata(fx, "dm")
+  expect_identical(.datom_compute_metadata_sha(meta3), v1)
+  expect_identical(meta3$original_file_sha, file_sha_v1)
+
+  # The current pointer moved back to V1; history did NOT grow, and V1 appears
+  # exactly once (Requirement 12.3).
+  history <- identity_history(fx, "dm")
+  expect_length(history, 2L)
+  versions <- vapply(history, function(e) e$version, character(1))
+  expect_identical(sum(versions == v1), 1L)
+  expect_setequal(versions, c(v1, v2))
+
+  # No upload for a metadata-only revisit.
+  expect_identical(identity_stored_parquet(fx, "dm"), stored)
+  expect_equal(
+    as.numeric(fs::file_info(stored)$modification_time),
+    as.numeric(backdated)
+  )
+
+  # The regression symptom: version resolution stays unambiguous, both for the
+  # full sha and for a short prefix.
+  expect_equal(as.data.frame(datom_read(fx$conn, "dm", version = v1)), df)
+  expect_equal(
+    as.data.frame(datom_read(fx$conn, "dm", version = substr(v1, 1, 8))),
+    df
+  )
+  expect_error(datom_read(fx$conn, "dm", version = v1), NA)
+})
+
+test_that("Feature: datom-cv1, S4 -- the dedup guard scans the whole history, not just the latest entry", {
+  fx <- local_identity_project()
+  csv <- fs::path(fx$input_dir, "dm.csv")
+  df_a <- data.frame(id = 1:3, grp = c("a", "b", "c"), stringsAsFactors = FALSE)
+  df_b <- data.frame(id = 1:4, grp = c("a", "b", "c", "d"),
+                     stringsAsFactors = FALSE)
+
+  # A (V1), then a genuinely different content B (V2), then A again. A's version
+  # is now two entries deep, so a latest-only guard would re-append it.
+  identity_write_csv(csv, df_a, quote = TRUE)
+  suppressMessages(datom_sync(fx$conn, suppressMessages(
+    datom_sync_manifest(fx$conn)
+  )))
+  v1 <- identity_history(fx, "dm")[[1]]$version
+
+  identity_write_csv(csv, df_b, quote = TRUE)
+  suppressMessages(datom_sync(fx$conn, suppressMessages(
+    datom_sync_manifest(fx$conn)
+  )))
+
+  identity_write_csv(csv, df_a, quote = TRUE)
+  suppressMessages(datom_sync(fx$conn, suppressMessages(
+    datom_sync_manifest(fx$conn)
+  )))
+
+  history <- identity_history(fx, "dm")
+  versions <- vapply(history, function(e) e$version, character(1))
+  expect_length(history, 2L)
+  expect_identical(sum(versions == v1), 1L)
+  # Two contents, two content-addressed objects, and V1 still resolves to A.
+  expect_length(identity_stored_parquet(fx, "dm"), 2L)
+  expect_equal(as.data.frame(datom_read(fx$conn, "dm", version = v1)), df_a)
+})

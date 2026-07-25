@@ -278,7 +278,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - Bytes change, content identical → `metadata_only`, no upload, `original_file_sha` recorded,
       `parquet_sha` carried forward; a subsequent scan reports `unchanged`.
     - _Requirements: 9.3, 16.5_
-  - [ ]* 12.4 Write the S4 duplicate-version regression test
+  - [x]* 12.4 Write the S4 duplicate-version regression test
     - Syncing an older content-matching file appends no duplicate `version`; `datom_read(version=)`
       resolves without "ambiguous".
     - _Requirements: 9.4, 12.3, 16.5_
