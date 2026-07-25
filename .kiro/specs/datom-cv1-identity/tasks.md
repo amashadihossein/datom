@@ -256,13 +256,13 @@ sub-agent verification in this environment is authoring the code and tests, not 
       `grep -rn "file_sha" R/ man/ vignettes/` matches only `original_file_sha`/`parquet_sha`.
     - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 11. Checkpoint - Ensure all tests pass
+- [x] 11. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
-  - **STATUS: the suite IS green** -- 2318 passed / 0 failed / 0 warnings / 0 skipped and
-    `R CMD check --as-cran` 0/0/0, both verified at `8082d14`. This box is unchecked only
-    because a chunk checkpoint is the maintainer's sign-off gate, not because work remains.
-    There is nothing to fix here. Confirm with the maintainer, check the box, and proceed to
-    Wave 13 (Task 12.1).
+  - **SIGNED OFF 2026-07-25.** Suite re-verified green at branch head (2318 passed / 0 failed /
+    0 warnings / 0 skipped); `R CMD check --as-cran` 0/0/0 measured at `8082d14` and still
+    valid (`git diff --name-only 8082d14..HEAD` returns only `dev/` + `.kiro/` paths, i.e.
+    docs-only since the last code-bearing commit). Nothing was broken; the box was open only
+    for the maintainer's go-ahead. Proceed to Wave 13 (Task 12.1).
 
 - [ ] 12. Identity-contract integration tests (local backend)
   - [ ]* 12.1 Write the S1 skip-before-parse test
