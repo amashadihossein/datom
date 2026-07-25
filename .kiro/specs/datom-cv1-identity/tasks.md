@@ -23,7 +23,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
 
 ## Tasks
 
-- [ ] 1. Canonical hash engine (`datom-cv1`) and reference implementation
+- [x] 1. Canonical hash engine (`datom-cv1`) and reference implementation
   - [x] 1.1 Create `R/hashable.R` classifier and recourse map
     - Add internal `.datom_column_kind(x)` — the single supported-type classifier implementing
       the exact dispatch order (`bit64::integer64` → factor → `Date`/`IDate` → `POSIXct` →
@@ -115,7 +115,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       `dev/datom_cv1_reference.R` is absent) — **Validates: Requirements 15.1, 15.4, 2.1, 2.11**
     - _Requirements: 15.5, 15.6, 15.7_
 
-- [ ] 2. Checkpoint - Ensure all tests pass
+- [x] 2. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
   - MAINTAINER STEP (requires R, see task 1.10): run `Rscript dev/datom_cv1_reference.R` on the
     reference platform and replace the `<PENDING-GOLDEN>` placeholders in the golden-vector tests
@@ -123,6 +123,10 @@ sub-agent verification in this environment is authoring the code and tests, not 
     design and are not skippable.
 
 - [ ] 3. Three-SHA metadata and write-path wiring
+  - **All code sub-tasks are DONE and committed** (3.1, 3.2, 3.4, 3.5, 3.6). This parent stays
+    unchecked solely because the deferrable `*` test 3.3 (Properties 13/14) is outstanding --
+    the *behavior* is already covered by plain tests, but the tagged property versions are
+    required before the PR merges. Do not redo 3.1-3.6.
   - [x] 3.1 Extend `.datom_build_metadata()` (in `R/read_write.R`) with the new fields
     - Add `hash_algo = "datom-cv1"` (always), `parquet_sha = NULL` (declared; set later by
       `datom_write()`), `column_hashes = NULL`, and `original_file_sha` included **only when
@@ -165,7 +169,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       metadata_only (carry `current$parquet_sha`, no upload), and `none` no-op.
     - _Requirements: 5.4, 5.5, 5.6, 9.6_
 
-- [ ] 4. Read-time integrity verification
+- [x] 4. Read-time integrity verification
   - [x] 4.1 Extend `.datom_resolve_version()` to return `list(data_sha, parquet_sha)`
     - Both branches return the list (NULL-version → `current`; history-lookup → resolved entry;
       `parquet_sha` may be `NULL`/`""` for pre-cv1). Update the `datom_read()` call site to thread
@@ -182,7 +186,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       read succeeds; expected matches → read succeeds.
     - _Requirements: 8.3, 8.4_
 
-- [ ] 5. Full-history `metadata_sha` dedup guard
+- [x] 5. Full-history `metadata_sha` dedup guard
   - [x] 5.1 Replace the latest-only guard in `.datom_write_metadata_local()`
     - Scan the entire history with `purrr::some(history, ~ identical(.x$version %||% "",
       metadata_sha))` (O(history), early exit); append only when absent; always write
@@ -203,7 +207,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       standalone per-column digest; `data_sha` recomputable from `column_hashes` + dims;
       single-column change flips exactly that entry) — **Validates: Requirements 14.1, 14.2, 14.3, 14.5**
 
-- [ ] 7. Checkpoint - Ensure all tests pass
+- [x] 7. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 8. Table-contract checker `datom_check_hashable()`
