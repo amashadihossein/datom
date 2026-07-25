@@ -13,12 +13,22 @@
 Character SHA-256 hash.
 }
 \description{
-Sorts fields alphabetically before hashing for deterministic results,
-regardless of field insertion order. Volatile fields (\code{created_at},
-\code{datom_version}) are excluded so that identical semantic content always
-produces the same SHA, regardless of when it was written.
+Sorts fields by C-locale byte order (\code{method = "radix"}) before hashing so
+the result is deterministic regardless of field insertion order \strong{and}
+regardless of the host's \code{LC_COLLATE} (default collation sorts differ
+between \code{C} and e.g. \code{en_US.UTF-8}, which would otherwise make the same
+metadata hash differently on different machines).
 }
 \details{
+Volatile fields are excluded so that identical semantic content always
+produces the same SHA regardless of when or how it was serialized:
+\code{created_at} and \code{datom_version} (write-time provenance), \code{parquet_sha} and
+\code{size_bytes} (stored-object byte facts -- both drift with the arrow version
+and must not re-enter identity), and \code{column_hashes} (a deterministic
+function of the same values that already fix \code{data_sha}). \code{original_file_sha}
+and \code{hash_algo} remain in the semantic set -- a new source file or a new hash
+algorithm legitimately defines a new version.
+
 Hashes a JSON canonical form rather than the R object directly. This
 ensures that metadata read back from JSON (e.g., from S3) produces the
 same SHA as metadata built in-memory, despite R type differences

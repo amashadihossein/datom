@@ -2,25 +2,20 @@
 % Please edit documentation in R/utils-sha.R
 \name{.datom_compute_data_sha}
 \alias{.datom_compute_data_sha}
-\title{Compute SHA-256 of Data}
+\title{Compute the datom-cv1 Content Hash of a Data Frame}
 \usage{
-.datom_compute_data_sha(data, sort_columns = FALSE, sort_rows = FALSE)
+.datom_compute_data_sha(data)
 }
 \arguments{
 \item{data}{Data frame to hash.}
-
-\item{sort_columns}{If TRUE, sorts columns alphabetically before hashing.
-Useful when column order shouldn't affect identity.}
-
-\item{sort_rows}{If TRUE, sorts rows by all columns before hashing.
-Useful when row order shouldn't affect identity.}
 }
 \value{
-Character SHA-256 hash.
+Character SHA-256 \code{data_sha}.
 }
 \description{
-Computes a deterministic SHA-256 hash of a data frame by writing to
-parquet format. By default, preserves column and row order — reordering
-either will produce a different hash.
+Thin wrapper over \code{\link[=.datom_canonical_hash]{.datom_canonical_hash()}} returning only the scalar
+\code{data_sha}. Preserves the scalar-string contract for callers that need
+just the content hash (for example the \code{datom_sync()} self-lineage entry).
+Row and column order are significant; there is no sort option.
 }
 \keyword{internal}

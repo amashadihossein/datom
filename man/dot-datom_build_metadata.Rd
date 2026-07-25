@@ -11,13 +11,15 @@
   table_type = "derived",
   size_bytes = NULL,
   parents = NULL,
-  source_lineage = NULL
+  source_lineage = NULL,
+  original_file_sha = NULL,
+  column_hashes = NULL
 )
 }
 \arguments{
 \item{data}{Data frame being written.}
 
-\item{data_sha}{SHA-256 of the parquet-formatted data.}
+\item{data_sha}{datom-cv1 canonical content hash of the data.}
 
 \item{custom}{Optional named list of user-supplied custom metadata.}
 
@@ -30,9 +32,21 @@ or NULL if no lineage recorded.}
 
 \item{source_lineage}{Pre-computed transitive source list (each entry with
 project, table, version_sha), or NULL.}
+
+\item{original_file_sha}{SHA-256 of the source file, for imported tables.
+Included in the metadata \strong{only when non-NULL}; the derived path omits it
+from the object entirely (not present-with-NULL).}
+
+\item{column_hashes}{Ordered list of per-column \code{list(name, sha)} digests
+from \code{\link[=.datom_canonical_hash]{.datom_canonical_hash()}}, or NULL. Excluded from \code{metadata_sha}
+(see \code{\link[=.datom_compute_metadata_sha]{.datom_compute_metadata_sha()}}).}
 }
 \value{
-Named list suitable for writing as metadata.json.
+Named list suitable for writing as metadata.json. Always carries
+\code{hash_algo = "datom-cv1"} and declares \code{parquet_sha} (left NULL here and
+populated by \code{\link[=datom_write]{datom_write()}} after change detection, since the stored-
+object hash is not knowable until then; it is excluded from \code{metadata_sha}
+so this deferred assignment is safe).
 }
 \description{
 Constructs the metadata list for a table write, including auto-computed
