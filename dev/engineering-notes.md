@@ -46,13 +46,21 @@ local backend) -- Wave 12 (8.2, 9.2) already landed with Tasks 8 and 9. Then Wav
 (docs/NEWS, Tasks 13.1/13.2), Wave 15 (acceptance greps, Task 14.1). Resume from `tasks.md`
 in wave order. **Task 11 is a chunk checkpoint** -- stop there for maintainer go-ahead.
 
-**Commit anchors** (branch head `8082d14`, pushed, clean tree): `3a5f717` Task 6 column index
--> `9722e59` man/ regeneration for Tasks 1-5 -> `b359fb9` Task 9 allowlist -> `5b28463` Task 8
-`datom_check_hashable()` -> `71e8637` parent-checkbox correction (docs only) -> `c3cf279`
-on-disk context audit, four handoff inaccuracies corrected (docs only) -> `8082d14` **Task 10.1
-`file_sha` -> `original_file_sha` sweep** (the last commit that touched `R/`, `man/`, `tests/`,
-or `vignettes/`). Keep this line current: it went stale twice in three commits, and a stale
-head is the single most misleading thing in this file.
+**Commit anchors.** Do **not** trust a hard-coded branch head here -- get it from
+`git log --oneline -1`. Pinning the head in this file failed three times in four commits,
+because the commit that updates this file necessarily changes the head it just recorded. What
+*is* stable and worth pinning:
+
+- **Last code-bearing commit: `8082d14`** (Task 10.1). This is the newest commit touching `R/`,
+  `man/`, `tests/`, or `vignettes/`. The verified gates -- suite **2318 passed / 0 failed /
+  0 warnings / 0 skipped** and `R CMD check --as-cran` **0/0/0** -- were measured at `8082d14`
+  and remain valid for any head that is `8082d14` plus docs-only commits. Confirm with
+  `git diff --name-only 8082d14..HEAD` returning only `dev/` and `.kiro/` paths.
+- Chain: `3a5f717` Task 6 column index -> `9722e59` man/ regeneration for Tasks 1-5 ->
+  `b359fb9` Task 9 allowlist -> `5b28463` Task 8 `datom_check_hashable()` -> `71e8637`
+  parent-checkbox correction (docs) -> `c3cf279` context audit, four handoff inaccuracies
+  corrected (docs) -> `8082d14` **Task 10.1 `file_sha` -> `original_file_sha` sweep** (code)
+  -> docs-only refreshes after that.
 
 **Outstanding before the PR can merge** (none of these block Wave 13; all are named acceptance
 criteria, so an MVP that skips them cannot merge):
