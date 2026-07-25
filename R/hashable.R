@@ -195,3 +195,111 @@
     typeof(x)
   }
 }
+
+
+#' Check Whether a Table Can Be Hashed by datom
+#'
+#' Pre-flight check for the datom table contract. Reports, per column, whether
+#' `datom_write()` can hash it and -- when it cannot -- exactly what to do
+#' about it. Run this before a write to fix a table in one pass instead of
+#' discovering offenders one error at a time.
+#'
+#' datom identifies a table version by a canonical hash of its contents
+#' (`data_sha`), which requires every column to be a supported type: logical,
+#' integer, double, character, factor, `Date`, `POSIXct`, `difftime`/`hms`,
+#' `data.table::ITime`/`IDate`, `bit64::integer64`, or a labelled vector over
+#' one of those. List columns (including nested data frames, blobs, and
+#' `POSIXlt`), `complex`, `raw`, `sf` geometry, `units`, and `zoo`/`chron`
+#' columns are refused with specific advice.
+#'
+#' The advice printed here is the same single-source recourse text
+#' `datom_write()` would abort with, so the two can never disagree.
+#'
+#' @param data A data frame to check.
+#'
+#' @return Invisibly, a data frame with one row per column of `data` and
+#'   columns:
+#'   \describe{
+#'     \item{`column`}{Column name.}
+#'     \item{`class`}{Collapsed class string, or `typeof()` when unclassed.}
+#'     \item{`status`}{`"ok"` or `"unsupported"`.}
+#'     \item{`recourse`}{`NA` when ok, otherwise how to make the column
+#'       hashable.}
+#'   }
+#'
+#' @seealso [datom_write()]
+#'
+#' @examples
+#' # A clean table: every column is a supported type
+#' clean <- data.frame(
+#'   id = 1:3,
+#'   score = c(1.5, 2.5, 3.5),
+#'   label = c("a", "b", "c"),
+#'   grp = factor(c("x", "y", "x")),
+#'   day = as.Date(c("2026-01-01", "2026-01-02", "2026-01-03"))
+#' )
+#' datom_check_hashable(clean)
+#'
+#' # An offending table: a list column and a complex column
+#' messy <- data.frame(id = 1:2)
+#' messy$notes <- list(c("a", "b"), "c")
+#' messy$z <- c(1 + 2i, 3 + 4i)
+#' report <- datom_check_hashable(messy)
+#' report[report$status == "unsupported", c("column", "recourse")]
+#'
+#' @export
+datom_check_hashable <- function(data) {
+
+  if (!is.data.frame(data)) {
+    cli::cli_abort("{.arg data} must be a data frame.")
+  }
+
+  if (ncol(data) == 0L) {
+    cli::cli_abort("{.arg data} must have at least one column.")
+  }
+
+  nms <- names(data)
+
+  report <- data.frame(
+    column = nms,
+    class = vapply(data, .datom_class_label, character(1L), USE.NAMES = FALSE),
+    stringsAsFactors = FALSE
+  )
+  recourse <- lapply(data, .datom_hash_recourse)
+  report$recourse <- vapply(
+    recourse,
+    function(r) if (is.null(r)) NA_character_ else r,
+    character(1L), USE.NAMES = FALSE
+  )
+  ok <- is.na(report$recourse)
+  report$status <- ifelse(ok, "ok", "unsupported")
+  report <- report[, c("column", "class", "status", "recourse")]
+
+  n_bad <- sum(!ok)
+
+  if (n_bad == 0L) {
+    cli::cli_alert_success(
+      "All {ncol(data)} column{?s} {?is/are} hashable. This table is ready for {.fn datom_write}."
+    )
+    return(invisible(report))
+  }
+
+  bullets <- vapply(which(!ok), function(i) {
+    paste0(
+      "Column {.field ", nms[[i]], "} ",
+      "({.cls ", report$class[[i]], "}): ",
+      report$recourse[[i]]
+    )
+  }, character(1L), USE.NAMES = FALSE)
+  names(bullets) <- rep("x", n_bad)
+
+  cli::cli_alert_danger(
+    "{n_bad} of {ncol(data)} column{?s} {?is/are} not hashable."
+  )
+  cli::cli_bullets(bullets)
+  cli::cli_alert_info(
+    "Fix these before {.fn datom_write}, which refuses the whole table until they are resolved."
+  )
+
+  invisible(report)
+}

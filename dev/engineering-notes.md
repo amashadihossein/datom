@@ -32,16 +32,49 @@
 
 **Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (Waves 0-2), **Task 3
 (Waves 3-5)**, **Task 4 (Waves 6-7: read-time `parquet_sha` integrity)**, **Task 5 (Wave 8:
-full-history dedup + `parquet_sha` persisted into `version_history`)**, and **Task 6 (Wave 9:
-persisted column index)** are complete and committed. Full suite green at **2170 passed /
-0 failed / 0 warnings / 0 skipped**. Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5,
-3.6, 4.1, 4.2, 4.3, 5.1, 5.2, **6.1, 6.2**. **Deferred `*` test: 3.3** (metadata_sha locale +
+full-history dedup + `parquet_sha` persisted into `version_history`)**, **Task 6 (Wave 9:
+persisted column index)**, and **Tasks 9 + 8 (Waves 10 + 12: ingestion allowlist and the
+exported `datom_check_hashable()`)** are complete and committed. Full suite green at **2318
+passed / 0 failed / 0 warnings / 0 skipped**; `R CMD check` clean (0 errors / 0 warnings /
+0 notes). Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, 4.1, 4.2, 4.3, 5.1, 5.2,
+6.1, 6.2, **8.1, 8.2, 9.1, 9.2**. **Deferred `*` test: 3.3** (metadata_sha locale +
 volatile-membership *property* tests, Properties 13/14 -- the behavior is already covered by
 plain tests; the tagged property versions are pre-PR work).
-**Next = Wave 10: Tasks 9.1 + 8.1** -- the ingestion allowlist (`.datom_import_formats` in
-`R/sync.R`) and the exported `datom_check_hashable()` table-contract checker (+ `_pkgdown.yml`
-entry). Both are new user-facing surface, unlike Waves 8-9. Resume from `tasks.md` in wave
-order.
+**Next = Wave 11: Task 10.1** -- the `file_sha` nomenclature rename sweep. Then Wave 13
+(Task 12.x integration tests), Wave 14 (docs/NEWS), Wave 15 (acceptance greps). Resume from
+`tasks.md` in wave order.
+
+**Waves 10 + 12 DONE (allowlist + checker) -- as-built anchors.**
+- **`.datom_import_formats` + `.datom_import_format_recourse()` in `R/sync.R`.** The recourse
+  helper renders the two advice lines once via `cli::format_inline()` and returns plain text,
+  which is what lets the identical string land in a cli abort bullet AND in the `error` cell of
+  the manifest data frame with no markup drift. **cli dot-literal gotcha applies**: the formats
+  vector must be spliced as `{.val {(.datom_import_formats)}}` -- without the inner parens cli
+  reads the leading dot as a style name and the message breaks. The design's message block
+  omits those parens; the parens are required, not optional.
+- **Allowlist enforcement is in three places, one source.** `.datom_import_file()` gates on
+  `tolower(format)` *before* touching the file; `datom_sync_manifest()` flags
+  `status = "unsupported_format"` **ahead of** the new/changed/unchanged comparison (a bad
+  format is not actionable regardless of whether its bytes moved); `datom_sync()` turns those
+  rows into `result = "error"` carrying the recourse and keeps processing siblings. The
+  nothing-actionable message became "No new or changed files" -- the old "All files unchanged"
+  was factually wrong once a batch could hold an unsupported file.
+- **`datom_check_hashable()` is the only new export in this spec.** It maps columns through
+  `.datom_hash_recourse()` and returns `column`/`class`/`status`/`recourse` invisibly. Its
+  offender bullets are built with the same `{.field name} ({.cls class}): recourse` shape as
+  the `.datom_canonical_hash()` abort, so the two reports read identically. Keep the report
+  ASCII-only in source: the cli `cli_alert_success` / `cli_alert_danger` calls render the
+  tick/cross glyphs at runtime -- never type them into `R/`.
+- **Examples are runnable (no `\dontrun{}`)** because the checker is pure: no conn, no store,
+  no network. R CMD check executes them, so they must stay side-effect free.
+- **Wave 11 heads-up (Task 10.1 `file_sha` rename):** the new Property 16 test in `test-sync.R`
+  builds a manifest fixture with a `file_sha` column, and `datom_sync_manifest()`'s roxygen
+  `@return` now lists `unsupported_format` alongside the other statuses. The rename sweep must
+  catch both, on top of the fixtures the task description already names.
+- **Doc debt was cleared separately.** Tasks 1-5 had added `@keywords internal` helpers without
+  running `devtools::document()`, so `man/` was stale; that regeneration is its own commit
+  (9722e59) ahead of the two feature commits. If `man/` looks noisy in a future diff, run
+  `devtools::document()` before assuming a real change.
 
 **Task 6 DONE (Wave 9) -- confirm-and-assert, zero `R/` change.** As the prior handoff
 predicted, the `column_hashes` threading already existed (Tasks 1.6 / 3.1 / 3.5), so 6.1 added

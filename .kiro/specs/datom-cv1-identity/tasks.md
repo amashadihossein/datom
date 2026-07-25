@@ -206,15 +206,15 @@ sub-agent verification in this environment is authoring the code and tests, not 
 - [ ] 7. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Table-contract checker `datom_check_hashable()`
-  - [ ] 8.1 Export `datom_check_hashable()` in `R/hashable.R` and list it in `_pkgdown.yml`
+- [x] 8. Table-contract checker `datom_check_hashable()`
+  - [x] 8.1 Export `datom_check_hashable()` in `R/hashable.R` and list it in `_pkgdown.yml`
     - Map every column through `.datom_hash_recourse()`; return (invisibly) a data frame with
       `column`, `class` (collapsed `class(x)` or `typeof(x)`), `status` (`"ok"`/`"unsupported"`),
       `recourse` (`NA` when ok). Print a cli `✓` summary when clean, else one `✗` per offender
       with its recourse. Add runnable roxygen examples requiring no network/store; regenerate docs;
       add to `_pkgdown.yml` reference.
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
-  - [ ]* 8.2 Write recourse test-pairs and table-contract tests
+  - [x]* 8.2 Write recourse test-pairs and table-contract tests
     - **Property 15: Table-contract recourse is single-sourced and complete** — for every
       recourse-map row, `datom_check_hashable()` flags the column AND `.datom_canonical_hash()`
       aborts with the identical string; a multi-offender table aborts exactly once naming all;

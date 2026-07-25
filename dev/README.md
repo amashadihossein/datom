@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| datom-cv1-identity | 2026-07-17 | In progress (Task 6 done: persisted column index verified end-to-end -- no-truncation + wide-frame order assertions on `metadata.json$column_hashes`, plus Property 12 column-index integrity, tasks 6.1-6.2. The threading itself already landed with Tasks 1.6/3.1/3.5, so 6.1 was confirm-and-assert; no `R/` change needed. Tasks 4-5 done before it. Suite green 2170/0/0/0; 3.3 metadata_sha property tests still deferred; next = Wave 10, Task 9.1 ingestion allowlist + Task 8.1 `datom_check_hashable()` export) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
+| datom-cv1-identity | 2026-07-17 | In progress (Tasks 9 + 8 done: `datom_sync` ingestion allowlist `.datom_import_formats` enforced at the importer, the manifest scan, and the sync report with one single-sourced recourse string (Property 16); plus the new export `datom_check_hashable()` -- pre-flight table-contract checker sharing `.datom_hash_recourse()` with the hash abort (Property 15, all 9 recourse rows as offender/fixed pairs). Tasks 4-6 done before them. Suite green 2318/0/0/0, `R CMD check` clean; 3.3 metadata_sha property tests still deferred; next = Wave 11, Task 10.1 `file_sha` rename sweep) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
 
 ### Drafts (queued, not active)
 

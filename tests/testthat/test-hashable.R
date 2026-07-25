@@ -167,3 +167,226 @@ test_that("class label is collapsed class for classed columns, typeof otherwise"
     "POSIXlt/POSIXt"
   )
 })
+
+
+# --- datom_check_hashable() ---------------------------------------------------
+
+test_that("datom_check_hashable rejects non-data-frame and zero-column input", {
+  expect_error(datom_check_hashable("not a frame"), "data frame")
+  expect_error(datom_check_hashable(list(a = 1)), "data frame")
+  expect_error(datom_check_hashable(data.frame()), "at least one column")
+})
+
+test_that("datom_check_hashable reports every column ok for a clean table", {
+  clean <- data.frame(
+    id = 1:3,
+    score = c(1.5, 2.5, 3.5),
+    flag = c(TRUE, FALSE, TRUE),
+    label = c("a", "b", "c"),
+    grp = factor(c("x", "y", "x")),
+    day = as.Date(c("2026-01-01", "2026-01-02", "2026-01-03")),
+    stringsAsFactors = FALSE
+  )
+
+  report <- datom_check_hashable(clean)
+
+  expect_s3_class(report, "data.frame")
+  expect_identical(names(report), c("column", "class", "status", "recourse"))
+  expect_identical(report$column, names(clean))
+  expect_true(all(report$status == "ok"))
+  expect_true(all(is.na(report$recourse)))
+})
+
+test_that("datom_check_hashable returns its report invisibly", {
+  expect_invisible(datom_check_hashable(data.frame(id = 1L)))
+})
+
+test_that("datom_check_hashable reports the class label per column", {
+  df <- data.frame(id = 1:2, stringsAsFactors = FALSE)
+  df$day <- as.Date(c("2026-01-01", "2026-01-02"))
+  df$notes <- list(1, 2)
+
+  report <- datom_check_hashable(df)
+
+  expect_identical(report$class[report$column == "id"], "integer")
+  expect_identical(report$class[report$column == "day"], "Date")
+  expect_identical(report$class[report$column == "notes"], "list")
+})
+
+test_that("datom_check_hashable prints a success summary when clean and offenders otherwise", {
+  withr::local_options(cli.width = 1000)
+
+  expect_message(datom_check_hashable(data.frame(id = 1L)), "hashable")
+
+  messy <- data.frame(id = 1L)
+  messy$z <- complex(real = 1, imaginary = 1)
+  expect_message(datom_check_hashable(messy), "not hashable")
+})
+
+
+# --- Property 15 --------------------------------------------------------------
+# Feature: datom-cv1, Property 15: Table-contract recourse is single-sourced and
+# complete. For every row of the recourse map, datom_check_hashable() flags the
+# column AND .datom_canonical_hash() aborts with the identical canonical string;
+# a multi-offender table aborts exactly once naming every offender; and applying
+# the stated recourse makes the fixture hashable.
+
+# One fixture per recourse-map row, paired with the column the stated recourse
+# produces. `offender` must be flagged; `fixed` must be hashable.
+recourse_fixtures <- list(
+  posixlt = list(
+    offender = as.POSIXlt(c("2026-01-01", "2026-06-15"), tz = "UTC"),
+    # recourse: as.POSIXct()
+    fixed = as.POSIXct(c("2026-01-01", "2026-06-15"), tz = "UTC")
+  ),
+  nested_df = list(
+    offender = list(data.frame(a = 1), data.frame(a = 2)),
+    # recourse: model the inner table separately / unnest -> a flat column
+    fixed = c(1, 2)
+  ),
+  list_blob = list(
+    offender = list(c("a", "b"), "c"),
+    # recourse: serialize each element to character
+    fixed = c("a,b", "c")
+  ),
+  units = list(
+    offender = structure(c(1, 2), class = "units", units = "m"),
+    # recourse: units::drop_units() -> bare numeric
+    fixed = c(1, 2)
+  ),
+  sfc = list(
+    offender = structure(list("g1", "g2"), class = c("sfc_POINT", "sfc")),
+    # recourse: sf::st_as_text() -> WKT character
+    fixed = c("POINT (0 0)", "POINT (1 1)")
+  ),
+  yearmon = list(
+    offender = structure(c(2026.0, 2026.083), class = "yearmon"),
+    # recourse: convert to Date
+    fixed = as.Date(c("2026-01-01", "2026-02-01"))
+  ),
+  complex = list(
+    offender = c(1 + 2i, 3 + 4i),
+    # recourse: split into real/imaginary numerics
+    fixed = c(1, 3)
+  ),
+  raw = list(
+    offender = as.raw(c(1, 2)),
+    # recourse: encode the bytes as character
+    fixed = c("01", "02")
+  ),
+  other_classed = list(
+    offender = structure(c(1, 2), class = "someExoticClass"),
+    # recourse: convert to a supported type
+    fixed = c(1, 2)
+  )
+)
+
+test_that("Feature: datom-cv1, Property 15: checker and hash abort share one recourse string", {
+  withr::local_options(cli.width = 1000)
+
+  for (nm in names(recourse_fixtures)) {
+    offender <- recourse_fixtures[[nm]]$offender
+
+    df <- data.frame(id = 1:2)
+    df$bad <- offender
+
+    expected <- .datom_hash_recourse(offender)
+    expect_false(is.null(expected), info = nm)
+
+    # (a) the checker flags the column and carries the canonical string verbatim
+    report <- datom_check_hashable(df)
+    expect_identical(report$status[report$column == "bad"], "unsupported", info = nm)
+    expect_identical(report$recourse[report$column == "bad"], expected, info = nm)
+    # the clean sibling column is unaffected
+    expect_identical(report$status[report$column == "id"], "ok", info = nm)
+
+    # (b) the hash aborts with the identical string
+    err <- tryCatch(.datom_canonical_hash(df), error = function(e) e)
+    expect_s3_class(err, "error")
+    expect_true(
+      grepl(expected, conditionMessage(err), fixed = TRUE),
+      info = paste0(nm, ": abort message must carry the canonical recourse verbatim")
+    )
+
+    # (c) applying the stated recourse makes the fixture hashable
+    fixed_df <- data.frame(id = 1:2)
+    fixed_df$bad <- recourse_fixtures[[nm]]$fixed
+    expect_null(.datom_hash_recourse(recourse_fixtures[[nm]]$fixed), info = nm)
+    expect_identical(
+      datom_check_hashable(fixed_df)$status,
+      c("ok", "ok"),
+      info = nm
+    )
+    expect_match(.datom_canonical_hash(fixed_df)$data_sha, "^[0-9a-f]{64}$")
+  }
+})
+
+test_that("Feature: datom-cv1, Property 15: a multi-offender table aborts once naming all offenders", {
+  withr::local_options(cli.width = 1000)
+
+  df <- data.frame(id = 1:2)
+  df$blob <- list(1, 2)
+  df$z <- c(1 + 2i, 3 + 4i)
+  df$bytes <- as.raw(c(1, 2))
+
+  err <- tryCatch(.datom_canonical_hash(df), error = function(e) e)
+  expect_s3_class(err, "error")
+  msg <- conditionMessage(err)
+
+  # one abort, naming all three offenders and none of the clean columns
+  expect_match(msg, "3 columns are not hashable")
+  for (col in c("blob", "z", "bytes")) {
+    expect_true(grepl(col, msg, fixed = TRUE), info = col)
+    expect_true(
+      grepl(.datom_hash_recourse(df[[col]]), msg, fixed = TRUE),
+      info = col
+    )
+  }
+
+  # the checker agrees on which columns are at fault
+  report <- datom_check_hashable(df)
+  expect_identical(
+    report$column[report$status == "unsupported"],
+    c("blob", "z", "bytes")
+  )
+})
+
+test_that("Feature: datom-cv1, Property 15: a refused table leaves no git, storage, or manifest state", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+    head_before <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    uploads <- 0L
+    local_mocked_bindings(
+      .datom_storage_upload = function(conn, lp, sk) {
+        uploads <<- uploads + 1L
+        invisible(TRUE)
+      },
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    bad <- data.frame(id = 1:2)
+    bad$blob <- list(1, 2)
+
+    expect_error(datom_write(conn, data = bad, name = "t"), "not hashable")
+
+    # no parquet upload, no table directory, no metadata, no manifest, no commit
+    expect_equal(uploads, 0L)
+    expect_false(fs::dir_exists("t"))
+    expect_false(fs::file_exists(fs::path("t", "metadata.json")))
+    expect_false(fs::file_exists(fs::path(".datom", "manifest.json")))
+    expect_identical(
+      as.character(git2r::revparse_single(repo, "HEAD")$sha),
+      head_before
+    )
+  })
+})
