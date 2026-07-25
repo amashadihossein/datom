@@ -19,8 +19,9 @@ formats only) are flagged \code{"unsupported_format"} up front, without blocking
 their allowlisted siblings.}
 }
 \value{
-Data frame with columns: name, file, format, file_sha, status
-(one of \code{"new"}, \code{"changed"}, \code{"unchanged"}, \code{"unsupported_format"}).
+Data frame with columns: name, file, format, original_file_sha,
+status (one of \code{"new"}, \code{"changed"}, \code{"unchanged"},
+\code{"unsupported_format"}).
 }
 \description{
 Scans a flat \verb{input_files/} directory and computes file SHAs. Compares

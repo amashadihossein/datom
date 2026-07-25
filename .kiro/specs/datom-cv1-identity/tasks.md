@@ -241,8 +241,8 @@ sub-agent verification in this environment is authoring the code and tests, not 
       `.csv`.
     - **Validates: Requirements 13.1, 13.2, 13.4, 16.3**
 
-- [ ] 10. `file_sha` nomenclature rename sweep
-  - [ ] 10.1 Eliminate the bare `file_sha` token across `R/`/`man/`, update tests, and run the grep gate
+- [x] 10. `file_sha` nomenclature rename sweep
+  - [x] 10.1 Eliminate the bare `file_sha` token across `R/`/`man/`, update tests, and run the grep gate
     - Rename `.datom_compute_file_sha()` → `.datom_compute_original_file_sha()`; update
       `datom_sync_manifest()` (local var + returned column), `datom_sync()` (`required_cols` +
       `tbl_file_sha`), `.datom_update_manifest_entry()` param, and `R/query.R`

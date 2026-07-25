@@ -198,8 +198,8 @@ or unchanged relative to what has already been onboarded:
 manifest <- datom_sync_manifest(conn)
 #> i Scanned 1 file: 1 new, 0 changed, 0 unchanged.
 manifest
-#>   name  file         format file_sha status
-#> 1   dm  .../dm.csv   csv    7a3b...  new
+#>   name  file         format original_file_sha status
+#> 1   dm  .../dm.csv   csv    7a3b...           new
 ```
 
 Now onboard it:
@@ -331,11 +331,11 @@ Scan and sync in one pass:
 manifest <- datom_sync_manifest(conn)
 #> i Scanned 4 files: 3 new, 1 changed, 0 unchanged.
 manifest
-#>   name  file         format file_sha status
-#> 1   dm  .../dm.csv   csv    c41a...  changed
-#> 2   ex  .../ex.csv   csv    9b08...  new
-#> 3   lb  .../lb.csv   csv    72d3...  new
-#> 4   ae  .../ae.csv   csv    1e4a...  new
+#>   name  file         format original_file_sha status
+#> 1   dm  .../dm.csv   csv    c41a...           changed
+#> 2   ex  .../ex.csv   csv    9b08...           new
+#> 3   lb  .../lb.csv   csv    72d3...           new
+#> 4   ae  .../ae.csv   csv    1e4a...           new
 
 datom_sync(conn, manifest)
 #> i Syncing 4 tables...

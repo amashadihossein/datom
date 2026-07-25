@@ -193,13 +193,13 @@ test_that("metadata SHA rejects non-list", {
 })
 
 
-# --- .datom_compute_file_sha() ------------------------------------------------
+# --- .datom_compute_original_file_sha() ------------------------------------------------
 
 test_that("file SHA is deterministic", {
   tmp <- withr::local_tempfile(fileext = ".txt")
   writeLines("hello world", tmp)
-  sha1 <- .datom_compute_file_sha(tmp)
-  sha2 <- .datom_compute_file_sha(tmp)
+  sha1 <- .datom_compute_original_file_sha(tmp)
+  sha2 <- .datom_compute_original_file_sha(tmp)
   expect_identical(sha1, sha2)
 })
 
@@ -208,20 +208,20 @@ test_that("file SHA differs for different content", {
   tmp2 <- withr::local_tempfile(fileext = ".txt")
   writeLines("hello", tmp1)
   writeLines("world", tmp2)
-  sha1 <- .datom_compute_file_sha(tmp1)
-  sha2 <- .datom_compute_file_sha(tmp2)
+  sha1 <- .datom_compute_original_file_sha(tmp1)
+  sha2 <- .datom_compute_original_file_sha(tmp2)
   expect_false(sha1 == sha2)
 })
 
 test_that("file SHA is a 64-char hex string", {
   tmp <- withr::local_tempfile(fileext = ".txt")
   writeLines("test", tmp)
-  sha <- .datom_compute_file_sha(tmp)
+  sha <- .datom_compute_original_file_sha(tmp)
   expect_match(sha, "^[0-9a-f]{64}$")
 })
 
 test_that("file SHA errors on missing file", {
-  expect_error(.datom_compute_file_sha("/no/such/file.txt"), "File not found")
+  expect_error(.datom_compute_original_file_sha("/no/such/file.txt"), "File not found")
 })
 
 

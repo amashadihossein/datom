@@ -393,12 +393,16 @@
 }
 
 
-#' Compute SHA-256 of File
+#' Compute SHA-256 of an Input File's Raw Bytes
+#'
+#' Answers "have this input artifact's bytes changed?". This is the
+#' `original_file_sha` of the three-SHA identity model -- distinct from
+#' `data_sha` (canonical logical content) and `parquet_sha` (stored bytes).
 #'
 #' @param path Path to file.
 #' @return Character SHA-256 hash.
 #' @keywords internal
-.datom_compute_file_sha <- function(path) {
+.datom_compute_original_file_sha <- function(path) {
   path <- fs::path_abs(path)
 
   if (!fs::file_exists(path)) {

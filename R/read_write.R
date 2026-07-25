@@ -743,7 +743,7 @@ datom_write <- function(conn,
     conn, name,
     metadata_sha = metadata_sha,
     data_sha = data_sha,
-    file_sha = .original_file_sha,
+    original_file_sha = .original_file_sha,
     format = .original_format
   )
 

@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| datom-cv1-identity | 2026-07-17 | In progress (Tasks 9 + 8 done: `datom_sync` ingestion allowlist `.datom_import_formats` enforced at the importer, the manifest scan, and the sync report with one single-sourced recourse string (Property 16); plus the new export `datom_check_hashable()` -- pre-flight table-contract checker sharing `.datom_hash_recourse()` with the hash abort (Property 15, all 9 recourse rows as offender/fixed pairs). Tasks 4-6 done before them. Suite green 2318/0/0/0, `R CMD check` clean; 3.3 metadata_sha property tests still deferred; next = Wave 11, Task 10.1 `file_sha` rename sweep) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
+| datom-cv1-identity | 2026-07-17 | In progress (Task 10 done: the `file_sha` -> `original_file_sha` nomenclature sweep -- `.datom_compute_original_file_sha()`, the `datom_sync_manifest()` returned column, `datom_sync()`'s `required_cols`, the `.datom_update_manifest_entry()` param, `R/query.R`, two vignette output blocks, and 24 test lines across three test files, all in one commit. The grep gate now returns 44 `file_sha` hits, all `original_file_sha`. No stored-format churn: the on-disk field was already `original_file_sha`. Tasks 4-6, 8, 9 done before it. Suite green 2318/0/0/0, `R CMD check` clean; 3.3 metadata_sha property tests still deferred; next = Wave 13, Tasks 12.1-12.5 S1-S6 integration tests) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
 
 ### Drafts (queued, not active)
 

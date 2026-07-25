@@ -33,16 +33,18 @@
 **Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (Waves 0-2), **Task 3
 (Waves 3-5)**, **Task 4 (Waves 6-7: read-time `parquet_sha` integrity)**, **Task 5 (Wave 8:
 full-history dedup + `parquet_sha` persisted into `version_history`)**, **Task 6 (Wave 9:
-persisted column index)**, and **Tasks 9 + 8 (Waves 10 + 12: ingestion allowlist and the
-exported `datom_check_hashable()`)** are complete and committed. Full suite green at **2318
-passed / 0 failed / 0 warnings / 0 skipped**; `R CMD check` clean (0 errors / 0 warnings /
-0 notes). Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, 4.1, 4.2, 4.3, 5.1, 5.2,
-6.1, 6.2, **8.1, 8.2, 9.1, 9.2**. **Deferred `*` test: 3.3** (metadata_sha locale +
-volatile-membership *property* tests, Properties 13/14 -- the behavior is already covered by
-plain tests; the tagged property versions are pre-PR work).
-**Next = Wave 11: Task 10.1** -- the `file_sha` nomenclature rename sweep. Then Wave 13
-(Task 12.x integration tests), Wave 14 (docs/NEWS), Wave 15 (acceptance greps). Resume from
-`tasks.md` in wave order.
+persisted column index)**, **Tasks 9 + 8 (Waves 10 + 12: ingestion allowlist and the
+exported `datom_check_hashable()`)**, and **Task 10 (Wave 11: the `file_sha` ->
+`original_file_sha` nomenclature sweep)** are complete and committed. Full suite green at
+**2318 passed / 0 failed / 0 warnings / 0 skipped**; `R CMD check` clean (0 errors /
+0 warnings / 0 notes). Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, 4.1, 4.2,
+4.3, 5.1, 5.2, 6.1, 6.2, 8.1, 8.2, 9.1, 9.2, **10, 10.1**. **Deferred `*` test: 3.3**
+(metadata_sha locale + volatile-membership *property* tests, Properties 13/14 -- the behavior
+is already covered by plain tests; the tagged property versions are pre-PR work).
+**Next = Wave 13: Tasks 12.1-12.5** (the S1-S6 identity-contract integration tests on the
+local backend) -- Wave 12 (8.2, 9.2) already landed with Tasks 8 and 9. Then Wave 14
+(docs/NEWS, Tasks 13.1/13.2), Wave 15 (acceptance greps, Task 14.1). Resume from `tasks.md`
+in wave order. **Task 11 is a chunk checkpoint** -- stop there for maintainer go-ahead.
 
 **Commit anchors** (branch head `71e8637`, pushed): `3a5f717` Task 6 column index ->
 `9722e59` man/ regeneration for Tasks 1-5 -> `b359fb9` Task 9 allowlist -> `5b28463` Task 8
@@ -50,15 +52,15 @@ plain tests; the tagged property versions are pre-PR work).
 (docs only: `tasks.md` + this file, **no `R/` or `tests/` change**, so the code inventories
 below that were verified at `5b28463` remain valid at `71e8637`).
 
-**Outstanding before the PR can merge** (none of these block Wave 11; all are named acceptance
+**Outstanding before the PR can merge** (none of these block Wave 13; all are named acceptance
 criteria, so an MVP that skips them cannot merge):
 1. **Task 3.3** -- Properties 13/14 (`metadata_sha` locale determinism + volatile-field
    membership) as tagged property tests.
 2. **Task 12.5's revert-reuse integration test** -- write content A -> write B -> re-write A;
    assert the stored object is not re-uploaded and the reused `parquet_sha` matches A's history
    entry. (The code path went live with Task 5.1; only the E2E assertion is missing.)
-3. **Tasks 10, 12, 13, 14, 16** in full (rename sweep, S1-S6 integration tests, docs/NEWS,
-   acceptance greps, spec completion).
+3. **Tasks 12, 13, 14, 16** in full (S1-S6 integration tests, docs/NEWS, acceptance greps,
+   spec completion). Task 10 is now done.
 
 **Parent-checkbox convention in `tasks.md`:** parent task boxes are checked only when every
 sub-task under them is checked. Task 3's parent is deliberately `[ ]` with an inline note --
@@ -87,42 +89,62 @@ its code is all done, only the deferred `*` test 3.3 remains. Do NOT redo 3.1-3.
   tick/cross glyphs at runtime -- never type them into `R/`.
 - **Examples are runnable (no `\dontrun{}`)** because the checker is pure: no conn, no store,
   no network. R CMD check executes them, so they must stay side-effect free.
-**Task 10.1 must-remembers (the NEXT task, Wave 11 -- `file_sha` rename sweep).** Read the
-design's Requirement 4 clauses first. The gate is
-`grep -rn "file_sha" R/ man/ vignettes/` matching **only** `original_file_sha`/`parquet_sha`.
-Full inventory of bare-`file_sha` sites as of `5b28463` (verified by grep, so the sweep does not
-have to rediscover them):
-- `R/utils-sha.R:401` -- `.datom_compute_file_sha()` definition -> rename to
-  `.datom_compute_original_file_sha()`.
-- `R/sync.R` -- **eight** bare-token lines (re-verified by grep; an earlier revision of this note
-  said "six", which undercounted -- trust the enumeration, and confirm with
-  `grep -n "file_sha" R/sync.R | grep -v "original_file_sha\|parquet_sha"`, which must return 8):
-  the `@return` roxygen (line 266), the empty-frame column (354), the `.datom_compute_file_sha()`
-  call + local var in `datom_sync_manifest()` (373), the row column (393), the `@param manifest`
-  roxygen (432), `required_cols` in `datom_sync()` (497), `tbl_file_sha` (547), and the
-  `.datom_update_manifest_entry()` param (690). Two of the eight (266, 432) are roxygen, so they
-  drive the `man/` regeneration below rather than being code edits.
-- `R/query.R:521` -- call + local var in `.datom_status_input_files()`.
-- `man/` -- **three** pages carry the bare token, and they split into two different actions:
-  `man/dot-datom_compute_file_sha.Rd` (3 hits) must be **deleted** -- `devtools::document()`
-  writes the new `dot-datom_compute_original_file_sha.Rd` but does **not** remove the old page,
-  so the grep gate keeps failing until you `git rm` it. `man/datom_sync_manifest.Rd:22` and
-  `man/datom_sync.Rd:13` are plain regenerations driven by the two `R/sync.R` roxygen lines
-  (266, 432) -- fix the roxygen and re-document, do not hand-edit the `.Rd`.
-- **`vignettes/getting-started.Rmd:201` and `:334`** -- pasted console output showing the
-  manifest's `file_sha` column header. The grep gate covers `vignettes/`, so these two lines
-  must change in this task even though Task 13.1 later rewrites the article.
-- Tests carrying the token (must be updated in the SAME commit -- the returned column name and
-  `required_cols` both change): `test-sync.R` (22 hits, **including the new Property 16 manifest
-  fixture added in `b359fb9`**), `test-read-write.R` (18), `test-utils-sha.R` (10),
-  `test-query.R` (3). Many of those hits are already the legitimate `original_file_sha`; grep
-  with the `-v "original_file_sha\|parquet_sha"` filter to isolate the real work.
-- Also note `datom_sync_manifest()`'s `@return` now lists `unsupported_format` among the
-  statuses (added in `b359fb9`) -- keep that when rewriting the roxygen line.
+**Wave 11 DONE (Task 10, `file_sha` -> `original_file_sha` sweep) -- as-built anchors.**
+The gate `grep -rn "file_sha" R/ man/ vignettes/` now returns 44 hits, **all** of them
+`original_file_sha`. What the sweep actually touched:
+- `.datom_compute_file_sha()` -> `.datom_compute_original_file_sha()` in `R/utils-sha.R`; its
+  roxygen title gained the three-SHA framing so the helper's role is legible at the definition.
+- `R/sync.R` eight sites: two `@return`/`@param` roxygen lines, the empty-frame column, the
+  local var + row column in `datom_sync_manifest()`, `required_cols` in `datom_sync()`,
+  `tbl_file_sha` -> `tbl_original_file_sha`, and the `.datom_update_manifest_entry()` param.
+- `R/query.R` `.datom_status_input_files()` call + local var; `R/read_write.R:742` call site
+  (`file_sha =` -> `original_file_sha =`).
+- **The on-disk format did not change.** Every comparison already read
+  `existing$original_file_sha` and `.datom_update_manifest_entry()` already wrote
+  `entry$original_file_sha` -- the bare token only ever lived in *in-memory* names (the returned
+  data-frame column, locals, one param). So there is no manifest migration and no stored-format
+  churn, exactly as the design predicted. This is why the suite count did not move: 2318/0/0/0
+  before and after.
+- **Correction to an earlier revision of this note:** it claimed `devtools::document()` writes
+  the renamed `.Rd` but does **not** delete the old page, so you must `git rm` it. That is
+  **wrong** -- verified by running it. roxygen2 tracks the pages it generated and deleted
+  `man/dot-datom_compute_file_sha.Rd` itself; `git status` showed the ` D` unprompted. Plain
+  `devtools::document()` is sufficient for renamed internal helpers.
+- **`dev/dev-sandbox.R` needed no change** even though it calls `datom_sync_manifest()`: it only
+  reads `manifest$status` and passes the frame straight to `datom_sync()`. Checked, not assumed.
+- **Detection gotcha for any future `*_sha` sweep.** `grep -v "original_file_sha\|parquet_sha"`
+  filters whole *lines*, so it hides a bare token sitting on a line that also contains a
+  legitimate one (e.g. `customers = list(original_file_sha = file_sha)` in `test-sync.R`). Use a
+  token-precise scan instead -- and note macOS BSD `grep` has no `-P`, so use perl:
+  `perl -ne 'print if /(?<!original_)(?<!parquet_)\bfile_sha\b/'`. `\bfile_sha\b` alone is not
+  enough either: `_` is a word character, so it does **not** match inside
+  `.datom_compute_file_sha` or `tbl_file_sha`. Rename the function first, then sweep bare tokens.
 - **Doc debt was cleared separately.** Tasks 1-5 had added `@keywords internal` helpers without
   running `devtools::document()`, so `man/` was stale; that regeneration is its own commit
   (9722e59) ahead of the two feature commits. If `man/` looks noisy in a future diff, run
   `devtools::document()` before assuming a real change.
+
+**Wave 13 must-remembers (Tasks 12.1-12.5, the NEXT work -- S1-S6 identity-contract
+integration tests).** Read the design's S1-S6 scenario table and Requirement 16.5/16.6 first.
+Verified groundwork so the wave does not rediscover it:
+- **Requirement 16.6 is already satisfied, suite-wide.** `tests/testthat/setup.R` installs the
+  fail-closed network guard: it swaps `.datom_s3_client()` and `httr2::req_perform()` for
+  aborting stubs unless `DATOM_ALLOW_REAL_NETWORK=1`. So "the whole suite runs under the
+  fail-closed guard" needs **no new work** in 12.5 -- just do not add a test that dials out, and
+  do not set that env var. libgit2 sockets are *not* trappable at the R level; the git rule is
+  convention only (local bare repos, never a real URL to an executed clone/fetch).
+- **Fixture pattern.** `tests/testthat/helper-mock.R` provides only `mock_datom_conn()` and
+  `muffle_conn_warnings()`. The prevailing writable-conn idiom in `test-sync.R` is
+  `withr::with_tempdir({ conn <- mock_datom_conn(list()); conn$role <- "developer";
+  conn$path <- getwd(); ... })`, building `.datom/manifest.json` with `jsonlite::write_json(...,
+  auto_unbox = TRUE)`. Real `datom_store_local()` stores appear in `test-conn.R` / `test-repo.R`
+  / `test-store.R` (not in `test-read-write.R`) -- consult those for a genuine local backend.
+- **12.5's revert-reuse assertion is the one with live code behind it.** `.datom_resolve_parquet_sha()`
+  + `.datom_lookup_history_parquet_sha()` went in with Task 5.1; only the E2E assertion is
+  missing (write A -> write B -> re-write A; the stored object must not be re-uploaded and the
+  reused `parquet_sha` must equal A's history entry).
+- **The manifest column is now `original_file_sha`** (Wave 11). Any new manifest fixture must use
+  that name or `datom_sync()`'s `required_cols` check aborts.
 
 **Task 14.1 acceptance-gate gotcha (verified now, so Wave 15 does not stall on it).** Three of
 the four static gates already pass at `71e8637`: `grep -rn "sort_columns\|sort_rows" R/ tests/`

@@ -263,8 +263,9 @@ datom_pull <- function(conn) {
 #' formats only) are flagged `"unsupported_format"` up front, without blocking
 #' their allowlisted siblings.
 #'
-#' @return Data frame with columns: name, file, format, file_sha, status
-#'   (one of `"new"`, `"changed"`, `"unchanged"`, `"unsupported_format"`).
+#' @return Data frame with columns: name, file, format, original_file_sha,
+#'   status (one of `"new"`, `"changed"`, `"unchanged"`,
+#'   `"unsupported_format"`).
 #' @export
 #'
 #' @examples
@@ -351,7 +352,7 @@ datom_sync_manifest <- function(conn,
       name = character(),
       file = character(),
       format = character(),
-      file_sha = character(),
+      original_file_sha = character(),
       status = character(),
       stringsAsFactors = FALSE
     ))
@@ -370,7 +371,7 @@ datom_sync_manifest <- function(conn,
     file_name <- fs::path_file(fp)
     table_name <- fs::path_ext_remove(file_name)
     file_format <- fs::path_ext(fp)
-    file_sha <- .datom_compute_file_sha(fp)
+    original_file_sha <- .datom_compute_original_file_sha(fp)
 
     # Compare against current manifest. A non-allowlisted format is flagged up
     # front and never reaches the new/changed comparison -- it is not
@@ -380,7 +381,7 @@ datom_sync_manifest <- function(conn,
       "unsupported_format"
     } else if (is.null(existing)) {
       "new"
-    } else if (!identical(existing$original_file_sha, file_sha)) {
+    } else if (!identical(existing$original_file_sha, original_file_sha)) {
       "changed"
     } else {
       "unchanged"
@@ -390,7 +391,7 @@ datom_sync_manifest <- function(conn,
       name = table_name,
       file = as.character(fp),
       format = file_format,
-      file_sha = file_sha,
+      original_file_sha = original_file_sha,
       status = status,
       stringsAsFactors = FALSE
     )
@@ -429,7 +430,7 @@ datom_sync_manifest <- function(conn,
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param manifest Data frame from [datom_sync_manifest()], with columns
-#'   `name`, `file`, `format`, `file_sha`, `status`.
+#'   `name`, `file`, `format`, `original_file_sha`, `status`.
 #' @param continue_on_error If `TRUE` (default), continues processing
 #'   remaining tables when one fails. If `FALSE`, stops on first error.
 #'
@@ -494,7 +495,7 @@ datom_sync <- function(conn,
     cli::cli_abort("{.arg manifest} must be a data frame from {.fn datom_sync_manifest}.")
   }
 
-  required_cols <- c("name", "file", "format", "file_sha", "status")
+  required_cols <- c("name", "file", "format", "original_file_sha", "status")
   missing_cols <- setdiff(required_cols, names(manifest))
   if (length(missing_cols) > 0L) {
     cli::cli_abort(c(
@@ -544,7 +545,7 @@ datom_sync <- function(conn,
     tbl_name <- manifest$name[i]
     tbl_file <- manifest$file[i]
     tbl_format <- manifest$format[i]
-    tbl_file_sha <- manifest$file_sha[i]
+    tbl_original_file_sha <- manifest$original_file_sha[i]
 
     tryCatch({
       # Import file -> data frame
@@ -568,7 +569,7 @@ datom_sync <- function(conn,
         message = paste0("Sync ", tbl_name, " (", manifest$status[i], ")"),
         .source_lineage = self_lineage,
         .table_type = "imported",
-        .original_file_sha = tbl_file_sha,
+        .original_file_sha = tbl_original_file_sha,
         .original_format = tbl_format
       )
 
@@ -687,7 +688,8 @@ datom_sync <- function(conn,
 #' Update a single table entry in local .datom/manifest.json
 #' @noRd
 .datom_update_manifest_entry <- function(conn, name, metadata_sha, data_sha,
-                                        file_sha = NULL, format = NULL) {
+                                        original_file_sha = NULL,
+                                        format = NULL) {
   manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   fs::dir_create(fs::path_dir(manifest_path))
 
@@ -725,7 +727,7 @@ datom_sync <- function(conn,
     version_count = as.integer(version_count)
   )
 
-  if (!is.null(file_sha)) entry$original_file_sha <- file_sha
+  if (!is.null(original_file_sha)) entry$original_file_sha <- original_file_sha
   if (!is.null(format)) entry$original_format <- format
 
   manifest$tables[[name]] <- entry
