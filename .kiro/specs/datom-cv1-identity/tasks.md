@@ -264,7 +264,13 @@ sub-agent verification in this environment is authoring the code and tests, not 
     docs-only since the last code-bearing commit). Nothing was broken; the box was open only
     for the maintainer's go-ahead. Proceed to Wave 13 (Task 12.1).
 
-- [ ] 12. Identity-contract integration tests (local backend)
+- [x] 12. Identity-contract integration tests (local backend)
+  - All five sub-tasks landed in `tests/testthat/test-identity-contract.R` (Wave 13). The
+    fixture mocks nothing in the datom stack: real git repo + local bare remote + real
+    `backend = "local"` store, so classification, upload, metadata/history, and read-back all
+    run for real. `.datom_import_file()` is stubbed only where a scenario's assertion IS the
+    call count (S1). Requirement 16.6 needs no new work -- `setup.R`'s fail-closed guard is
+    suite-wide; 12.5 asserts it is in force rather than assuming it.
   - [x]* 12.1 Write the S1 skip-before-parse test
     - Stub `.datom_import_file()`; assert zero calls when the manifest reports the input
       `unchanged`.
@@ -282,7 +288,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - Syncing an older content-matching file appends no duplicate `version`; `datom_read(version=)`
       resolves without "ambiguous".
     - _Requirements: 9.4, 12.3, 16.5_
-  - [ ]* 12.5 Write the parquet_sha integrity, revert-to-older, and provenance integration tests
+  - [x]* 12.5 Write the parquet_sha integrity, revert-to-older, and provenance integration tests
     - Corrupt stored byte → tamper abort; legacy metadata lacking `parquet_sha` → read succeeds;
       revert-to-older content reuses the history `parquet_sha` without overwriting the stored
       object; `hash_algo == "datom-cv1"` and imported-path `original_file_sha` present after

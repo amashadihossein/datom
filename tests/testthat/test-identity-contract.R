@@ -482,3 +482,172 @@ test_that("Feature: datom-cv1, S4 -- the dedup guard scans the whole history, no
   expect_length(identity_stored_parquet(fx, "dm"), 2L)
   expect_equal(as.data.frame(datom_read(fx$conn, "dm", version = v1)), df_a)
 })
+
+
+# --- parquet_sha integrity, revert-to-older, provenance ----------------------
+# Requirements 5.5, 8.3, 8.4, 16.5, 16.6.
+
+test_that("Feature: datom-cv1, read-time integrity -- a corrupted stored object aborts the read", {
+  fx <- local_identity_project()
+  df <- data.frame(id = 1:5, v = letters[1:5], stringsAsFactors = FALSE)
+  suppressMessages(datom_write(fx$conn, data = df, name = "tbl"))
+
+  stored <- identity_stored_parquet(fx, "tbl")
+  expect_length(stored, 1L)
+  expect_equal(as.data.frame(datom_read(fx$conn, "tbl")), df)
+
+  # Flip one byte in the middle of the stored object.
+  bytes <- readBin(stored, "raw", fs::file_size(stored))
+  mid <- floor(length(bytes) / 2)
+  bytes[mid] <- as.raw(xor(as.integer(bytes[mid]), 1L))
+  writeBin(bytes, stored)
+
+  expect_error(datom_read(fx$conn, "tbl"), "integrity check")
+})
+
+test_that("Feature: datom-cv1, read-time integrity -- a swapped-in valid parquet is caught before parsing", {
+  fx <- local_identity_project()
+  df <- data.frame(id = 1:5, v = letters[1:5], stringsAsFactors = FALSE)
+  suppressMessages(datom_write(fx$conn, data = df, name = "tbl"))
+  stored <- identity_stored_parquet(fx, "tbl")
+
+  # Substitute a DIFFERENT but perfectly readable parquet. Nothing downstream
+  # would complain: arrow parses it happily and the caller would silently get
+  # the wrong table. Only the parquet_sha check can catch this, so the abort
+  # proves verification precedes the parse rather than riding on a parse error.
+  imposter <- withr::local_tempfile(fileext = ".parquet")
+  arrow::write_parquet(data.frame(id = 99L, v = "z", stringsAsFactors = FALSE),
+                       imposter)
+  fs::file_copy(imposter, stored, overwrite = TRUE)
+  expect_s3_class(arrow::read_parquet(stored), "data.frame")
+
+  err <- expect_error(datom_read(fx$conn, "tbl"), "integrity check")
+  msg <- conditionMessage(err)
+  expect_match(msg, "tbl", fixed = TRUE)
+  expect_match(msg, "tampered")
+})
+
+test_that("Feature: datom-cv1, read-time integrity -- legacy metadata without parquet_sha still reads", {
+  fx <- local_identity_project()
+  df <- data.frame(id = 1:3, v = c("a", "b", "c"), stringsAsFactors = FALSE)
+  suppressMessages(datom_write(fx$conn, data = df, name = "tbl"))
+
+  # Age the stored metadata into a pre-cv1 shape: drop parquet_sha from the
+  # copy datom_read() actually consults (the storage one, not the git one).
+  meta_key <- "tbl/.metadata/metadata.json"
+  stored_meta <- .datom_storage_read_json(fx$conn, meta_key)
+  expect_true(nzchar(stored_meta$parquet_sha %||% ""))
+  stored_meta$parquet_sha <- NULL
+  .datom_local_write_json(fx$conn, meta_key, stored_meta)
+
+  # No expected hash -> the check is skipped, not failed (Requirement 8.4).
+  expect_equal(as.data.frame(datom_read(fx$conn, "tbl")), df)
+})
+
+test_that("Feature: datom-cv1, revert-to-older content reuses the history parquet_sha without overwriting the object", {
+  fx <- local_identity_project()
+  content_a <- data.frame(id = 1:3, v = c("a", "b", "c"),
+                          stringsAsFactors = FALSE)
+  content_b <- data.frame(id = 1:4, v = c("a", "b", "c", "d"),
+                          stringsAsFactors = FALSE)
+
+  write_a <- suppressMessages(
+    datom_write(fx$conn, data = content_a, name = "tbl")
+  )
+  history_a <- identity_history(fx, "tbl")
+  parquet_sha_a <- history_a[[1]]$parquet_sha
+  expect_true(nzchar(parquet_sha_a %||% ""))
+
+  object_a <- .datom_local_path(
+    fx$conn, paste0("tbl/", write_a$data_sha, ".parquet")
+  )
+  expect_true(fs::file_exists(object_a))
+  backdated <- as.POSIXct("2001-01-01 00:00:00", tz = "UTC")
+  fs::file_touch(object_a, modification_time = backdated)
+
+  suppressMessages(datom_write(fx$conn, data = content_b, name = "tbl"))
+
+  # Back to content A: a full change relative to current (B), but the object is
+  # already stored and pinned by A's version.
+  write_a2 <- suppressMessages(
+    datom_write(fx$conn, data = content_a, name = "tbl")
+  )
+  expect_identical(write_a2$action, "full")
+  expect_identical(write_a2$data_sha, write_a$data_sha)
+
+  meta <- identity_metadata(fx, "tbl")
+  expect_identical(meta$parquet_sha, parquet_sha_a)
+
+  # The stored object was not re-uploaded: backdated mtime intact, and its
+  # bytes still hash to the parquet_sha A's version pinned.
+  expect_equal(
+    as.numeric(fs::file_info(object_a)$modification_time),
+    as.numeric(backdated)
+  )
+  expect_identical(
+    digest::digest(file = object_a, algo = "sha256"),
+    parquet_sha_a
+  )
+  expect_length(identity_stored_parquet(fx, "tbl"), 2L)
+
+  # Both the current pointer and A's pinned version read back as content A.
+  expect_equal(as.data.frame(datom_read(fx$conn, "tbl")), content_a)
+  expect_equal(
+    as.data.frame(datom_read(fx$conn, "tbl", version = history_a[[1]]$version)),
+    content_a
+  )
+})
+
+test_that("Feature: datom-cv1, provenance -- hash_algo and imported-path original_file_sha are recorded", {
+  fx <- local_identity_project()
+  csv <- fs::path(fx$input_dir, "dm.csv")
+  df <- data.frame(id = 1:3, grp = c("a", "b", "c"), stringsAsFactors = FALSE)
+  identity_write_csv(csv, df)
+
+  suppressMessages(datom_sync(fx$conn, suppressMessages(
+    datom_sync_manifest(fx$conn)
+  )))
+  suppressMessages(datom_write(fx$conn, data = df, name = "derived_tbl"))
+
+  imported <- identity_metadata(fx, "dm")
+  derived <- identity_metadata(fx, "derived_tbl")
+
+  # hash_algo is unconditional, on both paths and in the storage copy too.
+  expect_identical(imported$hash_algo, "datom-cv1")
+  expect_identical(derived$hash_algo, "datom-cv1")
+  expect_identical(
+    .datom_storage_read_json(fx$conn, "dm/.metadata/metadata.json")$hash_algo,
+    "datom-cv1"
+  )
+
+  # original_file_sha: recorded on the imported path (metadata AND history
+  # entry AND the repo manifest), absent on the derived path.
+  expect_identical(
+    imported$original_file_sha,
+    .datom_compute_original_file_sha(csv)
+  )
+  expect_identical(
+    identity_history(fx, "dm")[[1]]$original_file_sha,
+    imported$original_file_sha
+  )
+  manifest_json <- jsonlite::read_json(
+    fs::path(fx$repo_dir, ".datom", "manifest.json")
+  )
+  expect_identical(
+    manifest_json$tables$dm$original_file_sha,
+    imported$original_file_sha
+  )
+  expect_identical(imported$table_type, "imported")
+  expect_false("original_file_sha" %in% names(derived))
+})
+
+test_that("Feature: datom-cv1, the suite runs under the fail-closed network guard", {
+  # Requirement 16.6. setup.R replaces both egress chokepoints with aborting
+  # stubs unless DATOM_ALLOW_REAL_NETWORK is set; this asserts the guard is
+  # actually in force for this file rather than assuming it.
+  skip_if(nzchar(Sys.getenv("DATOM_ALLOW_REAL_NETWORK")),
+          "Network guard deliberately disabled via DATOM_ALLOW_REAL_NETWORK.")
+
+  expect_error(.datom_s3_client(), "Real network egress blocked")
+  expect_error(httr2::req_perform(NULL), "Real network egress blocked")
+})
