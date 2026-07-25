@@ -265,7 +265,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     for the maintainer's go-ahead. Proceed to Wave 13 (Task 12.1).
 
 - [ ] 12. Identity-contract integration tests (local backend)
-  - [ ]* 12.1 Write the S1 skip-before-parse test
+  - [x]* 12.1 Write the S1 skip-before-parse test
     - Stub `.datom_import_file()`; assert zero calls when the manifest reports the input
       `unchanged`.
     - _Requirements: 9.1, 16.5_
