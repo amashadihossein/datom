@@ -282,8 +282,16 @@ cat("PASS:", sum(res$passed), " FAIL:", sum(res$failed),
     " WARN:", sum(res$warning), " SKIP:", sum(res$skipped), "\n")
 ```
 
-Other workflow tips: long git commit messages -> write to a temp file and `git commit -F`;
-`gh issue view N` needs `GH_PAGER=cat` or it hangs.
+Other workflow tips: `gh issue view N` needs `GH_PAGER=cat` or it hangs.
+
+**Long commit messages: `git commit -F <tempfile>`, never a multi-line `-m`.** This is not a
+style preference, it silently corrupts history. Demonstrated at commit `1bef5bd`: a multi-line
+`-m` passed through this shell collapsed the entire message into a **742-character subject
+line with an empty body**. `git log --oneline` becomes unreadable and the reasoning is no longer
+separable from the summary. Write the message to a temp file and `git commit -F` it, then
+verify with `git log -1 --pretty=format:"%s"` -- a subject over ~72 chars means it collapsed.
+Every other commit on this branch used `-F`; `1bef5bd` is the one that got it wrong, left in
+place because amending a pushed commit needs a force push.
 
 **Technical anchors already implemented (verify, do not reinvent).**
 - Byte-layout single source of truth is `dev/datom_cv1_reference.R` (Rbuildignored). Running
