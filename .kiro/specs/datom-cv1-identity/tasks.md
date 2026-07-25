@@ -274,7 +274,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       derived first write (`full`, addressed by `data_sha`, no `original_file_sha`); S6 identical
       re-derive (same `data_sha` + parents → `none`, no commit/upload/history).
     - _Requirements: 9.2, 9.5, 9.6, 16.5_
-  - [ ]* 12.3 Write the S3 re-export loop and carry-forward test
+  - [x]* 12.3 Write the S3 re-export loop and carry-forward test
     - Bytes change, content identical → `metadata_only`, no upload, `original_file_sha` recorded,
       `parquet_sha` carried forward; a subsequent scan reports `unchanged`.
     - _Requirements: 9.3, 16.5_

@@ -279,3 +279,105 @@ test_that("Feature: datom-cv1, S6 -- an identical re-derive is a no-op: no commi
     as.numeric(backdated)
   )
 })
+
+
+# --- S3: the re-export loop (Requirement 9.3) ---------------------------------
+
+test_that("Feature: datom-cv1, S3 -- a re-export with identical content is metadata_only, carries parquet_sha forward, and settles", {
+  fx <- local_identity_project()
+  csv <- fs::path(fx$input_dir, "dm.csv")
+  df <- data.frame(
+    id = 1:3,
+    grp = c("a", "b", "c"),
+    score = c(1.5, 2.5, 3.5),
+    stringsAsFactors = FALSE
+  )
+
+  identity_write_csv(csv, df, quote = TRUE)
+  bytes_before <- readBin(csv, "raw", fs::file_size(csv))
+  suppressMessages(datom_sync(fx$conn, suppressMessages(
+    datom_sync_manifest(fx$conn)
+  )))
+
+  meta1 <- identity_metadata(fx, "dm")
+  stored1 <- identity_stored_parquet(fx, "dm")
+  backdated <- as.POSIXct("2001-01-01 00:00:00", tz = "UTC")
+  fs::file_touch(stored1, modification_time = backdated)
+
+  # Re-export the same content with different bytes (quoting only). This is the
+  # loop that used to mint a spurious full write on every export.
+  identity_write_csv(csv, df, quote = FALSE)
+  bytes_after <- readBin(csv, "raw", fs::file_size(csv))
+  expect_false(identical(bytes_before, bytes_after))
+
+  manifest <- suppressMessages(datom_sync_manifest(fx$conn))
+  expect_identical(manifest$status, "changed")
+
+  # The user-visible report names the classification. (Nested so the expected
+  # message is asserted and the remaining sync chatter stays out of the log.)
+  suppressMessages(expect_message(datom_sync(fx$conn, manifest), "metadata_only"))
+
+  meta2 <- identity_metadata(fx, "dm")
+
+  # Content identity is unchanged; the file's identity is not.
+  expect_identical(meta2$data_sha, meta1$data_sha)
+  expect_false(identical(meta2$original_file_sha, meta1$original_file_sha))
+  expect_identical(
+    meta2$original_file_sha,
+    .datom_compute_original_file_sha(csv)
+  )
+
+  # parquet_sha is carried forward from the current metadata, not recomputed
+  # from the fresh serialization -- the stored object is the one it pins.
+  expect_identical(meta2$parquet_sha, meta1$parquet_sha)
+  expect_true(nzchar(meta2$parquet_sha))
+
+  # No upload: same single object, untouched mtime.
+  expect_identical(identity_stored_parquet(fx, "dm"), stored1)
+  expect_equal(
+    as.numeric(fs::file_info(stored1)$modification_time),
+    as.numeric(backdated)
+  )
+  expect_identical(
+    digest::digest(file = stored1, algo = "sha256"),
+    meta2$parquet_sha
+  )
+
+  # A new version was recorded (the file provenance changed) over the same data.
+  history <- identity_history(fx, "dm")
+  expect_length(history, 2L)
+  expect_identical(history[[1]]$data_sha, history[[2]]$data_sha)
+  expect_false(identical(history[[1]]$version, history[[2]]$version))
+  expect_identical(history[[1]]$parquet_sha, meta1$parquet_sha)
+  expect_identical(history[[1]]$original_file_sha, meta2$original_file_sha)
+
+  # And the loop closes: the next scan sees nothing to do.
+  expect_identical(suppressMessages(datom_sync_manifest(fx$conn))$status,
+                   "unchanged")
+})
+
+test_that("Feature: datom-cv1, S3 -- the carried-forward parquet_sha still verifies on read", {
+  fx <- local_identity_project()
+  csv <- fs::path(fx$input_dir, "dm.csv")
+  df <- data.frame(id = 1:3, grp = c("a", "b", "c"), stringsAsFactors = FALSE)
+
+  identity_write_csv(csv, df, quote = TRUE)
+  suppressMessages(datom_sync(fx$conn, suppressMessages(
+    datom_sync_manifest(fx$conn)
+  )))
+  identity_write_csv(csv, df, quote = FALSE)
+  suppressMessages(
+    datom_sync(fx$conn, suppressMessages(datom_sync_manifest(fx$conn)))
+  )
+
+  # The read path resolves the carried-forward parquet_sha and the integrity
+  # check passes against the object that was never re-uploaded.
+  round_trip <- datom_read(fx$conn, "dm")
+  expect_equal(as.data.frame(round_trip), df)
+
+  # Pinning the older version resolves too -- both history entries share the
+  # same data_sha and the same recorded parquet_sha.
+  history <- identity_history(fx, "dm")
+  older <- datom_read(fx$conn, "dm", version = history[[2]]$version)
+  expect_equal(as.data.frame(older), df)
+})
