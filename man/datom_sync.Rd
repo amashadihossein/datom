@@ -13,7 +13,11 @@ datom_sync(conn, manifest, continue_on_error = TRUE)
 \code{name}, \code{file}, \code{format}, \code{file_sha}, \code{status}.}
 
 \item{continue_on_error}{If \code{TRUE} (default), continues processing
-remaining tables when one fails. If \code{FALSE}, stops on first error.}
+remaining tables when one fails. If \code{FALSE}, stops on first error.
+
+Rows flagged \code{"unsupported_format"} by \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} are reported
+as \code{result = "error"} with the recourse in the \code{error} column; the rest of
+the batch still processes.}
 }
 \value{
 The manifest data frame augmented with \code{result} and \code{error} columns.

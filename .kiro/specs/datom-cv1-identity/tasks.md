@@ -222,15 +222,15 @@ sub-agent verification in this environment is authoring the code and tests, not 
       leaves no git/storage/manifest state.
     - **Validates: Requirements 10.4, 11.1, 11.2, 11.4, 11.5**
 
-- [ ] 9. Ingestion allowlist for `datom_sync`
-  - [ ] 9.1 Add `.datom_import_formats` and enforce it across the sync path (`R/sync.R`)
+- [x] 9. Ingestion allowlist for `datom_sync`
+  - [x] 9.1 Add `.datom_import_formats` and enforce it across the sync path (`R/sync.R`)
     - Define the named constant (`csv, tsv, txt, psv, parquet, sas7bdat, xpt, sav, zsav, por,
       dta, xls, xlsx`); gate `.datom_import_file()` on `tolower(format)` with the verbatim
       allowlist abort; make `datom_sync_manifest()` flag non-allowlisted files up front with
       `status = "unsupported_format"` (still processing allowlisted siblings); surface the same
       recourse in the `datom_sync()` `error` column for such rows.
     - _Requirements: 13.1, 13.2, 13.3, 13.4_
-  - [ ]* 9.2 Write ingestion-allowlist tests
+  - [x]* 9.2 Write ingestion-allowlist tests
     - **Property 16: Ingestion allowlist enforcement** — each allowlisted extension dispatches to
       the expected (stubbed) reader; `.json`/`.rds`/`.xml` abort with the recourse;
       `datom_sync_manifest()` marks an `.rds` `unsupported_format` and still processes a sibling

@@ -558,6 +558,117 @@ test_that(".datom_import_file reads parquet via arrow", {
   })
 })
 
+# Feature: datom-cv1, Property 16: Ingestion allowlist enforcement.
+# For any format outside .datom_import_formats, .datom_import_file() aborts with
+# the canonical allowlist recourse; for any allowlisted extension it dispatches
+# to the expected reader.
+test_that("Feature: datom-cv1, Property 16: allowlisted formats dispatch to the expected reader", {
+  seen_rio <- character()
+  seen_arrow <- character()
+
+  mockery::stub(
+    .datom_import_file, "rio::import",
+    function(file, ...) {
+      seen_rio <<- c(seen_rio, file)
+      data.frame(id = 1L)
+    }
+  )
+  mockery::stub(
+    .datom_import_file, "arrow::read_parquet",
+    function(file, ...) {
+      seen_arrow <<- c(seen_arrow, file)
+      data.frame(id = 1L)
+    }
+  )
+
+  for (fmt in .datom_import_formats) {
+    result <- .datom_import_file(paste0("input.", fmt), fmt)
+    expect_s3_class(result, "data.frame")
+  }
+
+  # parquet is the only format that bypasses rio for arrow
+  expect_identical(seen_arrow, "input.parquet")
+  expect_identical(seen_rio, paste0("input.", setdiff(.datom_import_formats, "parquet")))
+
+  # the gate is case-insensitive: an upper-case extension is still allowlisted
+  expect_s3_class(.datom_import_file("input.CSV", "CSV"), "data.frame")
+})
+
+test_that("Feature: datom-cv1, Property 16: non-allowlisted formats abort with the canonical recourse", {
+  withr::local_options(cli.width = 1000)
+
+  # Fails before any file access -- these paths do not exist.
+  for (fmt in c("json", "rds", "xml", "rda", "feather")) {
+    expect_error(
+      .datom_import_file(paste0("input.", fmt), fmt),
+      "not a supported datom ingestion format"
+    )
+    expect_error(
+      .datom_import_file(paste0("input.", fmt), fmt),
+      "flat tabular formats only"
+    )
+    expect_error(
+      .datom_import_file(paste0("input.", fmt), fmt),
+      "datom_write"
+    )
+  }
+})
+
+test_that("Feature: datom-cv1, Property 16: manifest flags unsupported formats without blocking siblings", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id,val\n1,a", "input_files/good.csv")
+    saveRDS(data.frame(id = 1L), "input_files/bad.rds")
+
+    result <- datom_sync_manifest(conn)
+
+    expect_equal(nrow(result), 2)
+    expect_equal(result$status[result$name == "bad"], "unsupported_format")
+    # the allowlisted sibling is still scanned and classified normally
+    expect_equal(result$status[result$name == "good"], "new")
+  })
+})
+
+test_that("Feature: datom-cv1, Property 16: datom_sync reports the allowlist recourse and continues", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    manifest <- data.frame(
+      name = c("bad", "good"),
+      file = c("input_files/bad.rds", "input_files/good.csv"),
+      format = c("rds", "csv"),
+      file_sha = c("sha_bad", "sha_good"),
+      status = c("unsupported_format", "new"),
+      stringsAsFactors = FALSE
+    )
+
+    local_mocked_bindings(
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) data.frame(x = 1),
+      datom_write = function(...) list(version = "v1")
+    )
+
+    result <- datom_sync(conn, manifest)
+
+    # unsupported row is an error carrying the single-sourced recourse
+    expect_equal(result$result[result$name == "bad"], "error")
+    expect_equal(
+      result$error[result$name == "bad"],
+      paste(.datom_import_format_recourse(), collapse = " ")
+    )
+
+    # the allowlisted sibling still syncs
+    expect_equal(result$result[result$name == "good"], "success")
+    expect_true(is.na(result$error[result$name == "good"]))
+  })
+})
+
 test_that(".datom_import_file delegates non-parquet to rio", {
   withr::with_tempdir({
     writeLines("id,val\n1,a\n2,b", "test.csv")
