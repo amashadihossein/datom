@@ -519,6 +519,50 @@ test_that(".datom_canonical_hash returns data_sha and an ordered column index", 
   expect_identical(recompute, res$data_sha)
 })
 
+test_that("Feature: datom-cv1, Property 12: column index integrity", {
+  df <- data.frame(
+    id  = 1:4,
+    age = c(10, 20, 30, 40),
+    grp = factor(c("a", "b", "a", "b")),
+    lab = c("w", "x", "y", "z"),
+    stringsAsFactors = FALSE
+  )
+  res <- .datom_canonical_hash(df)
+
+  # (a) the persisted column_hashes array is ordered to names(data)
+  expect_identical(
+    vapply(res$column_hashes, function(e) e$name, character(1)),
+    names(df)
+  )
+
+  # (b) each entry's sha equals the standalone per-column digest
+  for (e in res$column_hashes) {
+    expect_identical(e$sha, .datom_col_digest(e$name, df[[e$name]]))
+  }
+
+  # (c) data_sha recomputes from the stored column_hashes + dims. Formula
+  #     lifted verbatim from .datom_canonical_hash() so the test cannot drift.
+  shas   <- vapply(res$column_hashes, function(e) e$sha, character(1))
+  header <- c(charToRaw("datom-cv1"),
+              writeBin(as.double(c(nrow(df), ncol(df))), raw(),
+                       size = 8L, endian = "little"))
+  recompute <- digest::digest(c(header, charToRaw(paste(shas, collapse = ""))),
+                              algo = "sha256", serialize = FALSE)
+  expect_identical(recompute, res$data_sha)
+
+  # (d) changing exactly one column flips exactly that column's entry, leaving
+  #     every other entry untouched.
+  df2 <- df
+  df2$age <- c(11, 20, 30, 40)
+  res2 <- .datom_canonical_hash(df2)
+
+  before <- vapply(res$column_hashes,  function(e) e$sha, character(1))
+  after  <- vapply(res2$column_hashes, function(e) e$sha, character(1))
+  changed <- which(before != after)
+  expect_identical(changed, which(names(df) == "age"))
+  expect_identical(before[-changed], after[-changed])
+})
+
 # --- Golden vectors and reference parity (Feature: datom-cv1) -----------------
 # Golden hex constants were computed on the reference platform (R 4.5.2) and are
 # a CI drift tripwire: any platform / endianness / dependency-version change

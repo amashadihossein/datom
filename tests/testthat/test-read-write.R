@@ -1756,6 +1756,50 @@ test_that("full datom_write records parquet_sha, hash_algo, and column_hashes in
     expect_equal(length(meta$column_hashes), 2)
     expect_equal(meta$column_hashes[[1]]$name, "id")
     expect_equal(meta$column_hashes[[2]]$name, "v")
+    # no truncation: every entry carries a full 64-char hex sha
+    for (e in meta$column_hashes) expect_match(e$sha, "^[0-9a-f]{64}$")
+  })
+})
+
+test_that("full datom_write persists all columns of a wide frame, in order, untruncated", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    wide <- data.frame(
+      c1 = 1:3,
+      c2 = c(1.5, 2.5, 3.5),
+      c3 = c(TRUE, FALSE, TRUE),
+      c4 = letters[1:3],
+      c5 = factor(c("x", "y", "x")),
+      c6 = as.Date(c("2026-01-01", "2026-06-15", "2026-12-31")),
+      stringsAsFactors = FALSE
+    )
+    datom_write(conn, data = wide, name = "w")
+
+    meta <- jsonlite::read_json("w/metadata.json", simplifyVector = FALSE)
+    # every column is present, none dropped or truncated away
+    expect_equal(length(meta$column_hashes), ncol(wide))
+    expect_identical(
+      vapply(meta$column_hashes, function(e) e$name, character(1)),
+      names(wide)
+    )
+    # each persisted sha is a full, untruncated 64-char hex digest
+    for (e in meta$column_hashes) expect_match(e$sha, "^[0-9a-f]{64}$")
   })
 })
 

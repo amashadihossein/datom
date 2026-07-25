@@ -31,16 +31,29 @@
 > completion (its durable content is harvested into the spec docs + the Gotchas below).
 
 **Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (Waves 0-2), **Task 3
-(Waves 3-5)**, **Task 4 (Waves 6-7: read-time `parquet_sha` integrity)**, and **Task 5 (Wave 8:
-full-history dedup + `parquet_sha` persisted into `version_history`)** are complete and
-committed. Full suite green at **2152 passed / 0 failed / 0 warnings / 0 skipped**. Checked off
-in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, 4.1, 4.2, 4.3, **5.1, 5.2**. **Deferred `*`
-test: 3.3** (metadata_sha locale + volatile-membership *property* tests, Properties 13/14 --
-the behavior is already covered by plain tests; the tagged property versions are pre-PR work).
-**Next task = 6.1** (Wave 9): persist `column_hashes` as an ordered `{name, sha}` array in
-`metadata.json` (the array is already threaded from `.datom_canonical_hash()` through
-`.datom_build_metadata()`/`datom_write()` since Task 1/3 -- 6.1 confirms/asserts the persisted
-shape and no-truncation; 6.2 is Property 12). Resume from `tasks.md` in wave order.
+(Waves 3-5)**, **Task 4 (Waves 6-7: read-time `parquet_sha` integrity)**, **Task 5 (Wave 8:
+full-history dedup + `parquet_sha` persisted into `version_history`)**, and **Task 6 (Wave 9:
+persisted column index)** are complete and committed. Full suite green at **2170 passed /
+0 failed / 0 warnings / 0 skipped**. Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5,
+3.6, 4.1, 4.2, 4.3, 5.1, 5.2, **6.1, 6.2**. **Deferred `*` test: 3.3** (metadata_sha locale +
+volatile-membership *property* tests, Properties 13/14 -- the behavior is already covered by
+plain tests; the tagged property versions are pre-PR work).
+**Next = Wave 10: Tasks 9.1 + 8.1** -- the ingestion allowlist (`.datom_import_formats` in
+`R/sync.R`) and the exported `datom_check_hashable()` table-contract checker (+ `_pkgdown.yml`
+entry). Both are new user-facing surface, unlike Waves 8-9. Resume from `tasks.md` in wave
+order.
+
+**Task 6 DONE (Wave 9) -- confirm-and-assert, zero `R/` change.** As the prior handoff
+predicted, the `column_hashes` threading already existed (Tasks 1.6 / 3.1 / 3.5), so 6.1 added
+only assertions: a no-truncation check (`^[0-9a-f]{64}$` per entry) on the existing
+`test-read-write.R` metadata test, plus a new wide-frame test (6 columns spanning int / dbl /
+lgl / chr / factor / Date) asserting `length(column_hashes) == ncol(data)` and the persisted
+`name` vector `identical()` to `names(data)`. 6.2 is the tagged `Feature: datom-cv1, Property
+12` test in `test-utils-sha.R`, consolidating all four facts (order == `names(data)`; each
+`sha` == standalone `.datom_col_digest()`; `data_sha` recomputable from `column_hashes` + dims
+using the verbatim-lifted header formula; a one-column edit flips exactly that entry and leaves
+the others `identical()`). If a future change ever reddens the recompute assertion, the
+byte-layout in `.datom_canonical_hash()` changed -- fix the code, not the test.
 
 **DORMANT marker now RESOLVED (Task 5.1).** `version_history` entries persist `parquet_sha`
 (added in `.datom_write_metadata_local()` when `metadata$parquet_sha` is non-NULL), so:

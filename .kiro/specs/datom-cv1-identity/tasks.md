@@ -192,13 +192,13 @@ sub-agent verification in this environment is authoring the code and tests, not 
   - [x]* 5.2 Write property test for full-history dedup
     - **Property 17: Full-history version dedup** — **Validates: Requirements 12.1, 12.2, 12.3, 12.4**
 
-- [ ] 6. Persisted column index
-  - [ ] 6.1 Persist `column_hashes` as an ordered array in `metadata.json`
+- [x] 6. Persisted column index
+  - [x] 6.1 Persist `column_hashes` as an ordered array in `metadata.json`
     - Thread the `column_hashes` from `.datom_canonical_hash()` through `.datom_build_metadata()`
       / `datom_write()` into `metadata.json` as an ordered array of `{name, sha}` in table column
       order, with no truncation (computed once, reused for both `data_sha` and the index).
     - _Requirements: 14.1, 14.2_
-  - [ ]* 6.2 Write property test for the column index
+  - [x]* 6.2 Write property test for the column index
     - **Property 12: Column index integrity** (order matches `names(data)`; each `sha` equals the
       standalone per-column digest; `data_sha` recomputable from `column_hashes` + dims;
       single-column change flips exactly that entry) — **Validates: Requirements 14.1, 14.2, 14.3, 14.5**

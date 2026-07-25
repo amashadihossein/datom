@@ -68,7 +68,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| datom-cv1-identity | 2026-07-17 | In progress (Task 5 done: full-history `metadata_sha` dedup guard in `.datom_write_metadata_local()` + `parquet_sha` persisted into `version_history` entries, tasks 5.1-5.2; this also activates the revert-to-older `parquet_sha` reuse branch + version-pinned read integrity. Task 4 read-time integrity done before it. Suite green 2152/0/0/0; 3.3 metadata_sha property tests still deferred; next = Task 6.1 persist `column_hashes` ordered array) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
+| datom-cv1-identity | 2026-07-17 | In progress (Task 6 done: persisted column index verified end-to-end -- no-truncation + wide-frame order assertions on `metadata.json$column_hashes`, plus Property 12 column-index integrity, tasks 6.1-6.2. The threading itself already landed with Tasks 1.6/3.1/3.5, so 6.1 was confirm-and-assert; no `R/` change needed. Tasks 4-5 done before it. Suite green 2170/0/0/0; 3.3 metadata_sha property tests still deferred; next = Wave 10, Task 9.1 ingestion allowlist + Task 8.1 `datom_check_hashable()` export) | [.kiro/specs/datom-cv1-identity/](../.kiro/specs/datom-cv1-identity/) |
 
 ### Drafts (queued, not active)
 
