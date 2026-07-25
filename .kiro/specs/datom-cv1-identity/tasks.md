@@ -269,7 +269,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - Stub `.datom_import_file()`; assert zero calls when the manifest reports the input
       `unchanged`.
     - _Requirements: 9.1, 16.5_
-  - [ ]* 12.2 Write the S2 / S5 / S6 classification tests
+  - [x]* 12.2 Write the S2 / S5 / S6 classification tests
     - S2 full (byte + content change → upload at `name/{data_sha}.parquet`, new version); S5
       derived first write (`full`, addressed by `data_sha`, no `original_file_sha`); S6 identical
       re-derive (same `data_sha` + parents → `none`, no commit/upload/history).

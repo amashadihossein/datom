@@ -160,3 +160,122 @@ test_that("Feature: datom-cv1, S1 -- an unchanged sibling is skipped while a cha
   expect_identical(result$result[result$name == "keep"], "skipped")
   expect_identical(result$result[result$name == "move"], "success")
 })
+
+
+# --- S2 / S5 / S6: change classification (Requirements 9.2, 9.5, 9.6) --------
+
+test_that("Feature: datom-cv1, S2 -- bytes and content both change: full write at the new data_sha", {
+  fx <- local_identity_project()
+  csv <- fs::path(fx$input_dir, "dm.csv")
+  v1 <- data.frame(id = 1:3, v = c("a", "b", "c"), stringsAsFactors = FALSE)
+  identity_write_csv(csv, v1)
+
+  suppressMessages(datom_sync(fx$conn, suppressMessages(
+    datom_sync_manifest(fx$conn)
+  )))
+  meta1 <- identity_metadata(fx, "dm")
+  stored1 <- identity_stored_parquet(fx, "dm")
+  expect_identical(fs::path_file(stored1), paste0(meta1$data_sha, ".parquet"))
+
+  # A real content change (an extra row) -- bytes and canonical content both move.
+  identity_write_csv(
+    csv,
+    rbind(v1, data.frame(id = 4L, v = "d", stringsAsFactors = FALSE))
+  )
+
+  manifest <- suppressMessages(datom_sync_manifest(fx$conn))
+  expect_identical(manifest$status, "changed")
+  result <- suppressMessages(datom_sync(fx$conn, manifest))
+  expect_identical(result$result, "success")
+
+  meta2 <- identity_metadata(fx, "dm")
+  expect_false(identical(meta2$data_sha, meta1$data_sha))
+  expect_identical(meta2$nrow, 4L)
+
+  # The new content is addressed by its own data_sha, alongside the old object.
+  stored2 <- identity_stored_parquet(fx, "dm")
+  expect_length(stored2, 2L)
+  expect_setequal(
+    fs::path_file(stored2),
+    paste0(c(meta1$data_sha, meta2$data_sha), ".parquet")
+  )
+
+  # A new version was recorded, newest first, keyed by the new metadata_sha.
+  history <- identity_history(fx, "dm")
+  expect_length(history, 2L)
+  expect_identical(history[[1]]$version, .datom_compute_metadata_sha(meta2))
+  expect_identical(history[[1]]$data_sha, meta2$data_sha)
+  expect_identical(history[[2]]$data_sha, meta1$data_sha)
+})
+
+test_that("Feature: datom-cv1, S5 -- a derived first write is full, data_sha-addressed, with no original_file_sha", {
+  fx <- local_identity_project()
+  df <- data.frame(
+    id = 1:4,
+    score = c(1.5, 2.5, 3.5, 4.5),
+    grp = c("a", "a", "b", "b"),
+    stringsAsFactors = FALSE
+  )
+
+  result <- suppressMessages(datom_write(fx$conn, data = df, name = "derived_tbl"))
+
+  expect_identical(result$action, "full")
+  expect_identical(result$data_sha, .datom_canonical_hash(df)$data_sha)
+
+  meta <- identity_metadata(fx, "derived_tbl")
+  expect_identical(meta$table_type, "derived")
+  expect_identical(meta$hash_algo, "datom-cv1")
+  # Absent from the object entirely on the derived path -- not present-with-NULL.
+  expect_false("original_file_sha" %in% names(meta))
+
+  # Addressed by data_sha in storage.
+  stored <- identity_stored_parquet(fx, "derived_tbl")
+  expect_identical(fs::path_file(stored), paste0(result$data_sha, ".parquet"))
+
+  # And the version_history entry carries no original_file_sha either.
+  history <- identity_history(fx, "derived_tbl")
+  expect_length(history, 1L)
+  expect_false("original_file_sha" %in% names(history[[1]]))
+})
+
+test_that("Feature: datom-cv1, S6 -- an identical re-derive is a no-op: no commit, upload, or history entry", {
+  fx <- local_identity_project()
+
+  base <- data.frame(id = 1:3, v = c("a", "b", "c"), stringsAsFactors = FALSE)
+  suppressMessages(datom_write(fx$conn, data = base, name = "base"))
+  base_version <- identity_history(fx, "base")[[1]]$version
+  parent <- datom_parent(fx$conn, "base", base_version)
+
+  agg <- data.frame(grp = c("a", "b"), n = c(2L, 1L), stringsAsFactors = FALSE)
+  first <- suppressMessages(
+    datom_write(fx$conn, data = agg, name = "agg", parents = list(parent))
+  )
+  expect_identical(first$action, "full")
+
+  head_before <- identity_head_sha(fx)
+  history_before <- identity_history(fx, "agg")
+  stored_before <- identity_stored_parquet(fx, "agg")
+  # Backdate the stored object so a re-upload (file_copy overwrite) is visible
+  # as a changed mtime -- proof of "no upload" that needs no storage mock.
+  backdated <- as.POSIXct("2001-01-01 00:00:00", tz = "UTC")
+  fs::file_touch(stored_before, modification_time = backdated)
+
+  # Same data, same parents, current unchanged -> none.
+  second <- suppressMessages(
+    datom_write(fx$conn, data = agg, name = "agg", parents = list(parent))
+  )
+
+  expect_identical(second$action, "none")
+  expect_identical(second$data_sha, first$data_sha)
+  expect_identical(second$metadata_sha, first$metadata_sha)
+  expect_null(second$commit_sha)
+
+  # No commit, no history entry, no re-upload.
+  expect_identical(identity_head_sha(fx), head_before)
+  expect_length(identity_history(fx, "agg"), length(history_before))
+  expect_identical(identity_stored_parquet(fx, "agg"), stored_before)
+  expect_equal(
+    as.numeric(fs::file_info(stored_before)$modification_time),
+    as.numeric(backdated)
+  )
+})
