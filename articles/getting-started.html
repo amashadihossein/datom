@@ -483,14 +483,16 @@ frame is computed rather than imported from a file – use
 <span>  .groups <span class="op">=</span> <span class="st">"drop"</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Write it as a versioned table, declaring its parent for lineage</span></span>
+<span><span class="co"># Write it as a versioned table, declaring its parent for lineage.</span></span>
+<span><span class="co"># datom_parent() resolves the parent's data_sha and source_lineage from</span></span>
+<span><span class="co"># the stored metadata snapshot -- always use it instead of a raw list.</span></span>
 <span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span></span>
 <span>  <span class="va">conn</span>,</span>
 <span>  data    <span class="op">=</span> <span class="va">lb_summary</span>,</span>
 <span>  name    <span class="op">=</span> <span class="st">"lb_summary"</span>,</span>
 <span>  message <span class="op">=</span> <span class="st">"Lab test counts from month-3 LB"</span>,</span>
 <span>  parents <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>table <span class="op">=</span> <span class="st">"lb"</span>, version <span class="op">=</span> <span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"lb"</span><span class="op">)</span><span class="op">$</span><span class="va">version</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span><span class="op">)</span></span>
+<span>    <span class="fu"><a href="../reference/datom_parent.html">datom_parent</a></span><span class="op">(</span><span class="va">conn</span>, table <span class="op">=</span> <span class="st">"lb"</span>, version <span class="op">=</span> <span class="fu"><a href="../reference/datom_history.html">datom_history</a></span><span class="op">(</span><span class="va">conn</span>, <span class="st">"lb"</span><span class="op">)</span><span class="op">$</span><span class="va">version</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span><span class="op">)</span></span>
 <span>  <span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt; v Wrote "lb_summary" (full): "b9c4e21a"</span></span></code></pre></div>
