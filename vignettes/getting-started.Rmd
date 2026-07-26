@@ -446,14 +446,16 @@ lb_summary <- dplyr::summarise(
   .groups = "drop"
 )
 
-# Write it as a versioned table, declaring its parent for lineage
+# Write it as a versioned table, declaring its parent for lineage.
+# datom_parent() resolves the parent's data_sha and source_lineage from
+# the stored metadata snapshot -- always use it instead of a raw list.
 datom_write(
   conn,
   data    = lb_summary,
   name    = "lb_summary",
   message = "Lab test counts from month-3 LB",
   parents = list(
-    list(table = "lb", version = datom_history(conn, "lb")$version[1])
+    datom_parent(conn, table = "lb", version = datom_history(conn, "lb")$version[1])
   )
 )
 #> v Wrote "lb_summary" (full): "b9c4e21a"

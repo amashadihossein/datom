@@ -611,8 +611,43 @@ datom_read <- function(conn,
 #'   store = store
 #' )
 #' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+#'
+#' # --- Basic write (no lineage) ---
 #' dm <- datom_example_data("dm")
 #' datom_write(conn, data = dm, name = "dm")
+#'
+#' # --- Write with a single parent ---
+#' # Use datom_parent() to resolve each parent's data_sha and lineage.
+#' lb <- datom_example_data("lb")
+#' datom_write(conn, data = lb, name = "lb")
+#' lb_summary <- dplyr::summarise(
+#'   dplyr::group_by(lb, LBTESTCD), n = dplyr::n(), .groups = "drop"
+#' )
+#' datom_write(
+#'   conn,
+#'   data    = lb_summary,
+#'   name    = "lb_summary",
+#'   message = "Lab test counts",
+#'   parents = list(
+#'     datom_parent(conn, "lb", datom_history(conn, "lb")$version[1])
+#'   )
+#' )
+#'
+#' # --- Write with multiple parents ---
+#' # Each parent is declared with datom_parent(); datom_write() derives
+#' # the table's source_lineage as the union of the parents' lineages.
+#' dm_lb_merged <- merge(dm, lb, by = "USUBJID")
+#' datom_write(
+#'   conn,
+#'   data    = dm_lb_merged,
+#'   name    = "dm_lb_merged",
+#'   message = "Demographics joined with lab results",
+#'   parents = list(
+#'     datom_parent(conn, "dm", datom_history(conn, "dm")$version[1]),
+#'     datom_parent(conn, "lb", datom_history(conn, "lb")$version[1])
+#'   )
+#' )
+#'
 #' unlink(tmp, recursive = TRUE)
 #' }
 datom_write <- function(conn,
