@@ -150,6 +150,13 @@ commits travel over the wire; the parquet bytes stay in `data_dir`.
 It is gitignored -- files placed there are never committed. It is the inbox for
 `datom_sync()`.
 
+`datom_sync()` onboards flat tabular files: `csv`, `tsv`, `txt`, `psv`,
+`parquet`, `sas7bdat`, `xpt`, `sav`, `zsav`, `por`, `dta`, `xls`, `xlsx`.
+Anything else in the inbox (an `.rds`, a `.json`) is reported as
+`unsupported_format` and skipped without blocking its neighbours -- see
+[the ingestion allowlist](design-version-shas.html) for why, and for the
+one-line escape hatch.
+
 Take a moment to inspect the repo structure before moving on:
 
 ```{r}
@@ -298,13 +305,20 @@ manifest <- datom_sync_manifest(conn)
 #> i Scanned 1 file: 0 new, 0 changed, 1 unchanged.
 
 datom_sync(conn, manifest)
-#> i All files unchanged. Nothing to sync.
+#> i No new or changed files. Nothing to sync.
 ```
 
 Re-syncing identical content is a no-op. This is what makes sync safe to run
 in a scheduled job or pipeline -- accidental re-runs cost nothing and pollute
 no history. The same idempotency applies to `datom_write()`: writing an
 identical data frame to the same table name detects the duplicate and skips.
+
+Idempotency here is stronger than "the file's bytes are unchanged". If a source
+system **re-exports the same data** -- new export timestamp in the header, same
+rows -- the file's bytes change but its content does not. datom records the new
+file provenance as a version and does **not** store the data a second time.
+[Version SHAs](design-version-shas.html) explains the three hashes that make
+that distinction.
 
 ## Step 4: A batch of files
 
@@ -450,6 +464,46 @@ content-addressed result. The `parents` argument declares lineage -- this table
 was derived from `lb` -- making the provenance chain auditable (see
 [Tracing Data Lineage](source-lineage.html)).
 
+## The datom table contract
+
+A table version is identified by a canonical hash of its **values**
+(`data_sha`), which means every column has to be a type datom knows how to
+encode: `logical`, `integer`, `double`, `character`, `factor`, `Date`,
+`POSIXct`, `difftime`/`hms`, `data.table::ITime`/`IDate`,
+`bit64::integer64`, or a labelled vector over one of those.
+
+Files onboarded through `datom_sync()` land inside that set by construction.
+It is derived tables -- the `datom_write()` path above -- where a column can
+fall outside it: a `tidyr::nest()` result carries a list column, `strptime()`
+returns `POSIXlt`, an `sf` table carries geometry, a database round-trip can
+bring back a blob.
+
+`datom_check_hashable()` tells you before you write. It needs no connection and
+no store, so it is safe to run anywhere:
+
+```{r, eval = TRUE}
+library(datom)
+
+lb_summary <- data.frame(LBTESTCD = c("ALT", "AST"), n = c(12L, 12L))
+datom_check_hashable(lb_summary)
+```
+
+When a column is outside the contract, the report names it and says what to do
+about it:
+
+```{r, eval = TRUE}
+messy <- data.frame(id = 1:2)
+messy$measurements <- list(c(1, 2), c(3, 4))
+
+report <- datom_check_hashable(messy)
+report$recourse[report$status == "unsupported"]
+```
+
+`datom_write()` runs the same check itself and refuses the whole table until
+every column is inside the contract, reporting all offenders at once and
+leaving no partial state behind. The full type-by-type recourse table and the
+reasoning live in [Version SHAs](design-version-shas.html).
+
 ## Where you are
 
 - A full sync-based onboarding workflow: one file, update, no-op, batch.
@@ -457,10 +511,13 @@ was derived from `lb` -- making the provenance chain auditable (see
 - Input files are disposable; storage is the permanent record.
 - `datom_status()` and `datom_validate()` provide consistency checks.
 - Readers access data from storage alone -- no git, no PAT.
+- `datom_check_hashable()` is the pre-flight check for the table contract.
 
 From here, [Starting on S3](start-on-s3.html) shows the same workflow with data
-in object storage, and [Tracing Data Lineage](source-lineage.html) shows how
-derived tables record where they came from.
+in object storage, [Tracing Data Lineage](source-lineage.html) shows how derived
+tables record where they came from, and
+[Version SHAs](design-version-shas.html) explains the three hashes behind
+`version`, `data_sha`, and stored-object integrity.
 
 ## Teardown
 

@@ -294,7 +294,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
     - _Requirements: 5.5, 8.3, 8.4, 16.5, 16.6_
 
 - [ ] 13. Documentation, vignettes, and NEWS
-  - [ ] 13.1 Rewrite `design-version-shas.Rmd` and `getting-started.Rmd`
+  - [x] 13.1 Rewrite `design-version-shas.Rmd` and `getting-started.Rmd`
     - Reframe around the three-SHA nomenclature and identity contract, with a "The datom table
       contract" section (framing, where-this-bites, the recourse table rendered from
       `.datom_hash_recourse()`, the ingestion allowlist) using `datom_check_hashable()` as the

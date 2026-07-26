@@ -1,8 +1,8 @@
 ---
-title: "Version SHAs: Data SHA vs. Metadata SHA"
+title: "Version SHAs: The Three-SHA Identity Model"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Version SHAs: Data SHA vs. Metadata SHA}
+  %\VignetteIndexEntry{Version SHAs: The Three-SHA Identity Model}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -17,152 +17,332 @@ knitr::opts_chunk$set(
 
 > **Companion to**: [Getting Started](getting-started.html). Read this when
 > you've noticed that `datom_history()` shows a `version` column and a
-> `data_sha` column, and you want to know why there are two.
+> `data_sha` column and want to know why there is more than one hash -- or
+> when `datom_write()` has told you a column is not hashable.
 
-datom uses **two SHAs** to identify a table version:
+datom identifies a table with **three SHAs**, each answering a different
+question:
 
-- **`data_sha`** -- a hash of the parquet bytes. Identifies the data.
-- **`metadata_sha`** -- a hash of the metadata describing the data.
-  Identifies the version.
+| SHA | Question it answers | Computed over |
+|---|---|---|
+| `data_sha` | *Is this the same table content?* | the table's values, canonically encoded (`datom-cv1`) |
+| `metadata_sha` | *Is this the same version?* | the table's semantic metadata, as canonical JSON |
+| `parquet_sha` | *Are the stored bytes intact?* | the exact parquet object that was uploaded |
 
-This article explains why one SHA isn't enough, and the small set of
-implementation details that keep both stable across machines, sessions,
-and JSON round-trips.
+A fourth hash, `original_file_sha`, is recorded for tables onboarded from a
+file by `datom_sync()`. It is not part of table identity -- it is *file*
+provenance, and it is what lets a re-scan say "this input has not changed"
+without reading the file.
 
-## Why two SHAs
+The rest of this article explains each one, the type contract `data_sha`
+depends on, and the identity decisions baked into it.
 
-Imagine you write the same `dm` data frame on two different days, with
-two different commit messages and two different `parents` lists (because
-you regenerated it from different upstream sources). The bytes are
-identical. Are these "the same version"?
+## `data_sha`: the canonical content hash
 
-datom's answer:
-
-- `data_sha` is the same -- the parquet content is byte-identical.
-- `metadata_sha` is **different** -- the surrounding context (parents,
-  message, table type) is different.
-
-So the same data can appear under multiple versions, but each version is
-unique. This matters because:
-
-- **Deduplication.** Two versions with the same `data_sha` share one
-  parquet file in the store. You don't pay storage cost twice.
-- **Provenance.** A read pinned by `version` (`metadata_sha`) gets you
-  not just the bytes but the lineage that produced them. Two analyses
-  that used the "same data via different upstream paths" can be told
-  apart.
-- **Change detection.** `datom_write()` checks both. If `data_sha` and
-  `metadata_sha` are unchanged, it's a no-op. If only `metadata_sha`
-  changed (e.g., new parents), datom records a new version *without*
-  re-uploading the parquet.
-
-When you call `datom_read(conn, "dm", version = ...)`, the `version`
-argument is the `metadata_sha`. The lookup goes
-`metadata_sha` -> metadata entry -> `data_sha` -> parquet file.
-
-## Computing `data_sha`
-
-The data SHA hashes the parquet representation, not the in-memory data
-frame. Concretely (from [R/utils-sha.R](https://github.com/amashadihossein/datom/blob/main/R/utils-sha.R)):
+`data_sha` is a hash of the table's **values**, computed with the `datom-cv1`
+algorithm. Sketching the layout:
 
 ```r
-arrow::write_parquet(prepared, tmp)
-digest::digest(file = tmp, algo = "sha256")
+# per column, in table column order
+col_digest <- sha256(utf8(type_tag) || utf8(column_name) || 0x00 || payload)
+
+# then the table
+data_sha <- sha256("datom-cv1" || f64le(nrow) || f64le(ncol) ||
+                   concat(col_digest_hex ...))
 ```
 
-A few properties this gives us:
+Two properties matter more than the layout:
 
-- **Cross-language stability.** Any language that produces the same
-  parquet bytes produces the same SHA. This is what makes datom usable
-  from R today and Python tomorrow without coordination.
-- **Column and row order matter by default.** A reordered data frame is
-  a different table. There are `sort_columns` and `sort_rows`
-  arguments for callers who want order-independent identity, but the
-  default is "what you wrote is what you get."
-- **Empty data frames are rejected.** Computing a SHA over zero rows
-  or zero columns is almost always a bug; datom errors instead.
+- **No I/O and no parquet.** `data_sha` is computed from the in-memory data
+  frame. It never writes a file, never calls arrow, and never coerces the
+  container.
+- **The container is not identity.** A `tibble`, a `data.table`, and a
+  `data.frame` holding the same values hash the same. Attributes that are not
+  values (row names, `tbl_df` class, arbitrary `attr()`s) do not participate.
 
-## Computing `metadata_sha`
+### Why not just hash the parquet bytes
 
-The metadata SHA is more careful. It has to satisfy three properties
-that don't fall out automatically:
+An earlier design hashed the serialized parquet file. That is simpler, and
+wrong for a versioning tool: parquet bytes move with the **writer**, not the
+data. An arrow upgrade, a different compression default, or a different
+dictionary-encoding heuristic all produce different bytes for identical
+content -- and every one of those would have minted a spurious new version.
 
-1. **JSON round-trip stability.** A reader pulling metadata from S3
-   gets a JSON-parsed list, not the original R object. R's
-   `serialize()` is type-sensitive (`10L` and `10` serialize
-   differently); JSON-parsed data drops that distinction. If we hashed
-   the R object directly, the same metadata would have different SHAs
-   in-memory vs. round-tripped.
-2. **Field-order independence.** Two writers building metadata in
-   different orders should produce the same SHA.
-3. **Volatile-field exclusion.** Two writes of identical content at
-   different times must hash to the same value, so version dedup works.
+Hashing values instead of bytes decouples identity from the serializer. The
+serializer's bytes are still hashed, but under a different name and for a
+different purpose: that is `parquet_sha`, below.
 
-The implementation handles all three:
+## The datom table contract
 
-```r
-.datom_compute_metadata_sha <- function(metadata) {
-  # 1. Strip volatile fields that don't define content identity
-  volatile <- c("created_at", "datom_version")
-  semantic <- metadata[setdiff(names(metadata), volatile)]
+Hashing values means datom must decide, per column type, *what the bytes of
+that value are*. That decision cannot be guessed, so `datom-cv1` supports a
+defined set of types and refuses everything else with specific advice.
 
-  # 2. Sort field names for order independence
-  sorted_metadata <- semantic[sort(names(semantic))]
+Supported: `logical`, `integer`, `double`, `character`, `factor`, `Date`
+(including `data.table::IDate`), `POSIXct`, `difftime`/`hms`,
+`data.table::ITime`, `bit64::integer64`, and labelled vectors
+(`haven_labelled`, `labelled`, `labelled_spss`) over any of those.
 
-  # 3. Hash the JSON canonical form, not the R object
-  canonical <- jsonlite::toJSON(sorted_metadata, auto_unbox = TRUE)
-  digest::digest(canonical, algo = "sha256", serialize = FALSE)
+### Where this bites
+
+Most clinical and analytical tables are already inside the contract. The
+cases that are not tend to arrive the same handful of ways:
+
+- **A `tidyr::nest()` result** carries a list column of data frames.
+- **`strptime()`** returns `POSIXlt`, not `POSIXct` (which is a list under the
+  hood, and hashing a list of broken-down time parts is not the same question
+  as hashing an instant).
+- **`sf`** geometry columns are `sfc` lists; **`units`** columns wrap a
+  numeric with a unit attribute.
+- **A blob column** from a database round-trip is a list of raw vectors.
+
+None of these are errors in your data. They are values whose canonical byte
+form is a modelling decision, and datom asks you to make it explicitly rather
+than picking one silently.
+
+### Check before you write
+
+`datom_check_hashable()` is the pre-flight entry point. It is pure -- no
+connection, no store, no network -- so you can run it on any data frame:
+
+```{r, eval = TRUE}
+library(datom)
+
+clean <- data.frame(
+  id    = 1:3,
+  score = c(1.5, 2.5, 3.5),
+  grp   = factor(c("x", "y", "x")),
+  day   = as.Date(c("2026-01-01", "2026-01-02", "2026-01-03"))
+)
+datom_check_hashable(clean)
+```
+
+```{r, eval = TRUE}
+messy <- data.frame(id = 1:2)
+messy$notes <- list(c("a", "b"), "c")
+messy$z <- c(1 + 2i, 3 + 4i)
+
+report <- datom_check_hashable(messy)
+report[report$status == "unsupported", c("column", "class")]
+```
+
+The report is returned invisibly as a data frame, so it composes: filter it,
+`kable()` it, or assert on it in a pipeline.
+
+`datom_write()` runs the same check itself, **before** it touches git or
+storage, and reports every offending column in one error rather than one per
+attempt. A refusal leaves no partial state behind.
+
+### The recourse table
+
+Each refused type has one canonical piece of advice. The table below is
+generated by running `datom_check_hashable()` over one fixture per case, so it
+is the same text `datom_write()` aborts with -- the documentation cannot drift
+from the code.
+
+```{r, eval = TRUE, echo = FALSE}
+one_col <- function(value) {
+  d <- data.frame(placeholder = rep(NA, max(1L, length(value))))
+  d$col <- value
+  d["placeholder"] <- NULL
+  d
 }
+
+# One fixture per recourse case. datom dispatches on the class tag, so a bare
+# structure() carrying the class is enough to render the advice for the
+# package-specific cases without taking a dependency on sf / units / zoo.
+fixtures <- list(
+  as.POSIXlt("2026-01-01", tz = "UTC"),
+  structure(list(1, 2), class = "sfc"),
+  list(data.frame(a = 1), data.frame(a = 2)),
+  list(1:2, letters[1:2]),
+  structure(c(1, 2), class = "units"),
+  structure(c(2026.0, 2026.1), class = "yearmon"),
+  c(1 + 2i, 3 + 4i),
+  as.raw(1:2),
+  structure(1:2, class = "myclass")
+)
+
+report <- do.call(rbind, lapply(fixtures, function(v) {
+  suppressMessages(datom_check_hashable(one_col(v)))
+}))
+
+knitr::kable(
+  data.frame(Column_class = report$class, Recourse = report$recourse),
+  col.names = c("Column class", "Recourse")
+)
 ```
 
-The `serialize = FALSE` is the load-bearing detail. It tells `digest()`
-to hash the bytes of the JSON string, not an R-serialized
-representation. That's what makes the SHA portable across the
-git -> S3 -> reader path.
+### The ingestion allowlist
 
-## The volatile-field list
+`datom_sync()` onboards **flat tabular files only**: `csv`, `tsv`, `txt`,
+`psv`, `parquet`, `sas7bdat`, `xpt`, `sav`, `zsav`, `por`, `dta`, `xls`,
+`xlsx`. Anything else -- `.rds`, `.json`, `.xml` -- is refused up front.
+`datom_sync_manifest()` flags it as `unsupported_format` and still processes
+its allowlisted siblings; `datom_sync()` reports the same recourse in the
+`error` column for that row.
 
-Two fields are explicitly excluded from the SHA:
+The reason is the table contract: a container format can deserialize to
+anything, including the list and exotic columns the hash refuses. Refusing at
+the door keeps the failure legible ("this format is not onboarded") instead of
+deferring it to a type error deep in the write.
 
-- `created_at` -- a wall-clock timestamp.
-- `datom_version` -- the version of the datom package that wrote
-  the metadata.
+**The escape hatch, and its tradeoff.** You can always read an unsupported
+source yourself and pass the resulting data frame to `datom_write()`:
 
-If either of these participated in the SHA, every re-write of identical
-data would record a "new" version, and `version_history.json` would
-grow forever. The volatile list is short and tightly scoped on purpose;
-adding a field to it is the kind of change that needs explicit
-justification.
+```{r}
+dm <- readRDS("dm.rds")
+datom_write(conn, data = dm, name = "dm")
+```
 
-## The dedup guard
+The rule to know: that table is **derived**, not imported. It has no
+`original_file_sha`, so input-file change detection does not apply to it. A
+re-run will not report "unchanged" from the file's bytes; it compares the
+data. If you need file-level change detection for that source, convert it to
+CSV or parquet once and let `datom_sync()` onboard it.
 
-Even with the volatile list correct, `.datom_write_metadata_local()`
-adds a belt-and-suspenders check: if the most recent entry in
-`version_history.json` already has the same `metadata_sha`, the new
-entry is **not appended**. This protects against:
+## The identity decisions
 
-- Bugs in metadata construction that accidentally produce identical
-  SHAs.
-- Concurrent writers racing on the same git clone (rare, but the cost
-  of the check is trivial).
-- Re-runs of a partially-failed write where some steps succeeded and
-  others didn't.
+Every entry below is a deliberate choice about what counts as "the same
+table".
 
-The guard relies on `metadata_sha` correctness. If you ever add a new
-field to metadata that affects content identity, make sure it's *not*
-in the volatile list -- otherwise dedup will incorrectly mark new
-versions as duplicates.
+| Decision | Rationale |
+|---|---|
+| `logical`, `integer`, `double` unify (same encoding, same tag) | `1L` and `1` are the same number. Round-tripping a table through CSV, parquet, or a database routinely flips storage type without changing the data. |
+| Factor **levels** and **orderedness** are not identity | A factor's values are hashed as character. Re-leveling for a plot, or dropping unused levels, must not mint a new data version. |
+| Value **labels** are not identity | `haven_labelled` columns strip to their underlying type. A relabelled SAS import carries the same numbers. |
+| `POSIXct` **tzone** is not identity | The value hashed is the instant (epoch seconds). `tzone` is a display attribute; the same instant printed in two zones is one instant. |
+| All `NaN` payloads collapse to one canonical `NaN`; `-0` encodes as `+0` | `0/0` and `NaN` are indistinguishable arithmetically, and IEEE-754 leaves NaN payload bits and signed zero to the platform. Letting them differ would make identity platform-dependent. |
+| `NA_real_` stays distinct from `NaN` | "Missing" and "not a number" are different statements about the data, and R keeps them apart. |
+| Doubles are hashed **bit-exact** -- no rounding, no tolerance | A tolerance would make identity non-transitive (a ~ b and b ~ c but a != c). If a pipeline produces last-bit differences, that is a fact about the pipeline; round explicitly if you want it hidden. |
+| Unicode NFC and NFD forms differ | Normalizing would require an ICU dependency and a normalization-form decision baked into every future version. Byte-identical text is the narrow, stable promise. |
+| Row order and column order are **significant**; nothing is sorted | Sorting to make identity order-independent needs a collation order, which is locale-dependent -- reintroducing the platform dependence the rest of this design removes. A reordered table is a different table; `arrange()` deliberately if order should not matter. |
+
+**On the apparent asymmetry**: `NaN` payloads are canonicalized while NFD text
+is not, and storage types unify while row order does not. The line is drawn at
+**platform non-determinism**, not at "things a human would call equivalent".
+Where the same logical value can have different bytes for reasons outside the
+user's control (NaN payload bits, signed zero, integer-vs-double storage after
+a round-trip), datom canonicalizes -- otherwise identity would depend on the
+machine. Where a difference is a real, visible, user-controlled property of
+the data (row order, NFC vs NFD, secs vs mins), datom preserves it: collapsing
+those would need a policy decision that belongs to the user, and any policy
+datom picked would be wrong for someone.
+
+## `metadata_sha`: the version
+
+`metadata_sha` is what `datom_history()` calls `version` and what you pass to
+`datom_read(version = ...)`. It hashes the table's semantic metadata:
+
+```r
+volatile  <- c("created_at", "datom_version", "parquet_sha",
+               "column_hashes", "size_bytes")
+semantic  <- metadata[setdiff(names(metadata), volatile)]
+sorted    <- semantic[sort(names(semantic), method = "radix")]
+canonical <- jsonlite::toJSON(sorted, auto_unbox = TRUE)
+digest::digest(canonical, algo = "sha256", serialize = FALSE)
+```
+
+Three details are load-bearing:
+
+1. **The JSON canonical form is hashed, not the R object.** R's `serialize()`
+   is type-sensitive (`10L` and `10` differ); JSON-parsed metadata has lost
+   that distinction. A reader pulling metadata from storage must compute the
+   same `metadata_sha` as the writer who built it in memory, so the shared
+   representation is the JSON text. `serialize = FALSE` is what makes
+   `digest()` hash those bytes.
+2. **`method = "radix"` sorts field names by byte value.** Plain `sort()` is
+   locale-collated, so two machines with different `LC_COLLATE` would order
+   fields differently and produce different versions for identical metadata.
+3. **The volatile set is excluded on purpose.** `created_at` and
+   `datom_version` are wall-clock and package facts. `parquet_sha` and
+   `size_bytes` move with the arrow version for identical content -- letting
+   them in would undo the whole point of hashing values. `column_hashes` is a
+   deterministic function of the same values that produce `data_sha`, so it
+   carries no independent information.
+
+Conversely, `original_file_sha` and `hash_algo` **are** semantic: a new source
+file is a new version of the table's provenance, and a new hash algorithm is a
+new identity regime.
+
+### The dedup guard is full-history
+
+When a version's `metadata_sha` already appears **anywhere** in
+`version_history.json`, no entry is appended -- the current pointer in
+`metadata.json` is still updated. This matters when you re-sync an older file
+that content-matches: without a full-history scan, that write would append a
+second entry with a `version` value already present, and a later
+`datom_read(version = ...)` would report the SHA as ambiguous.
+
+## `parquet_sha`: stored-object integrity
+
+`parquet_sha` is the SHA-256 of the exact parquet object in storage. It is not
+identity -- it is a tamper and corruption check:
+
+- On read, the downloaded object is hashed and compared **before** parsing.
+  A mismatch aborts with the key, the expected hash, and the actual one; it
+  never hands you data it cannot vouch for.
+- When a write is `metadata_only` (the content is unchanged), the current
+  `parquet_sha` is **carried forward** and nothing is uploaded.
+- When a write reverts to content already in history, the recorded
+  `parquet_sha` is **reused** and the stored object is left alone. Re-serializing
+  can differ byte-for-byte, which would break the older version's integrity
+  pin for no benefit.
+- Metadata written before this hash existed has no `parquet_sha`, and the check
+  is **skipped** rather than failed -- a read-time grace, not a migration.
+
+## Change classification
+
+Every `datom_write()` (including the one inside `datom_sync()`) lands in
+exactly one of three outcomes:
+
+| Outcome | When | Effect |
+|---|---|---|
+| `none` | `data_sha` and `metadata_sha` both unchanged | no commit, no upload, no history entry |
+| `metadata_only` | same `data_sha`, different `metadata_sha` (e.g. a re-export with new `original_file_sha`, or new parents) | new version, `parquet_sha` carried forward, **no upload** |
+| `full` | `data_sha` changed | new version, parquet stored at `{name}/{data_sha}.parquet` |
+
+The `metadata_only` case is the one that pays for the whole design: an EDC
+system re-exporting the same data with a new timestamp in the header produces
+different file bytes and identical content. datom records the new provenance
+and stores nothing twice.
+
+## The column index
+
+Alongside `data_sha`, metadata carries `column_hashes`: an ordered array of
+`{name, sha}`, one entry per column, in table column order, untruncated. It is
+the same per-column digest that fed `data_sha`, computed once and reused.
+
+Two things follow. `data_sha` can be re-derived from the index plus the
+dimensions without downloading any data, which makes it cheaply self-checkable.
+And two versions that differ in exactly one column differ in exactly one
+entry -- the anchor a future column-level diff builds on.
+
+## How far the cross-language claim goes
+
+- **Within R, pinned with `renv`: guaranteed.** The goldens in the test suite
+  pin the byte layout across the supported platform matrix.
+- **The specification is language-implementable.** `datom-cv1` is defined in
+  terms of bytes -- UTF-8 tags, little-endian IEEE-754 doubles, NUL-terminated
+  strings, SHA-256 -- not R semantics. `dev/datom_cv1_reference.R` is a
+  standalone base-R + `digest` reference implementation that the package is
+  tested byte-for-byte against, and it doubles as the spec any other language
+  would implement. What is **not** claimed is that an arbitrary Python or Julia
+  reader will agree by accident; agreement requires implementing the same
+  encodings, starting with that reference.
+- **Raw-file onboarding identity is language-independent today.**
+  `original_file_sha` is a SHA-256 of the file's bytes, so any tool in any
+  language computes it identically. Change detection on inputs therefore does
+  not depend on the hashing algorithm at all.
 
 ## What you can rely on
 
-- A version is uniquely identified by its `metadata_sha`.
-- The same data under different lineage produces a different
-  `metadata_sha` but the same `data_sha`.
-- Identical writes (same data, same metadata) are no-ops at every
-  layer: same parquet filename in the store, no new history entry,
-  no new git commit.
-- A reader on a different machine pulling metadata from S3 computes
-  the same `metadata_sha` as the writer.
-
-These four properties are the foundation that every reproducibility and
-audit workflow eventually depends on.
+- A version is uniquely identified by its `metadata_sha`, and that SHA never
+  appears twice in a table's history.
+- The same content under different provenance shares one `data_sha` and one
+  stored parquet object, with a distinct `metadata_sha` per version.
+- Identical writes are no-ops at every layer: no commit, no upload, no history
+  entry.
+- A reader on another machine, in another locale, computes the same
+  `metadata_sha` as the writer.
+- Data you read back is the data that was written, or the read fails loudly.
