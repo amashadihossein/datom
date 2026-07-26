@@ -90,7 +90,7 @@ store <- datom_store(
   data_repo_url = "https://github.com/example/my-project",
   validate = FALSE
 )
-#> ℹ Created store directory /tmp/RtmpecJCk2/datom_store_191a5d8d6efb.
+#> ℹ Created store directory /tmp/RtmpDBTKAh/datom_store_19917648db9e.
 store
 #> 
 #> ── datom store 
@@ -103,7 +103,7 @@ store
 #> Data:
 #> 
 #> ── datom local store component 
-#>   • Path: /tmp/RtmpecJCk2/datom_store_191a5d8d6efb
+#>   • Path: /tmp/RtmpDBTKAh/datom_store_19917648db9e
 #>   • Validated: TRUE
 is_datom_store(store)
 #> [1] TRUE
