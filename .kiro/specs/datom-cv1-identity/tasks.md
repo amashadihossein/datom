@@ -293,7 +293,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       `datom_write()`. Whole suite runs under the fail-closed network guard.
     - _Requirements: 5.5, 8.3, 8.4, 16.5, 16.6_
 
-- [ ] 13. Documentation, vignettes, and NEWS
+- [x] 13. Documentation, vignettes, and NEWS
   - [x] 13.1 Rewrite `design-version-shas.Rmd` and `getting-started.Rmd`
     - Reframe around the three-SHA nomenclature and identity contract, with a "The datom table
       contract" section (framing, where-this-bites, the recourse table rendered from
@@ -307,7 +307,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       `.datom_hash_recourse()` — both pure, no network, no store — so the documented table is
       generated from the single-source recourse map and the doc and code cannot drift.
     - _Requirements: 17.1, 17.2, 17.3, 17.5_
-  - [ ] 13.2 Update `NEWS.md`
+  - [x] 13.2 Update `NEWS.md`
     - Note that pre-release `data_sha` values change with no migration path; record the three
       deliberate narrowings (list/exotic columns refused with recourse; `datom_sync` allowlist
       only; internal `sort_columns`/`sort_rows` removed).
