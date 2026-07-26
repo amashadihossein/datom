@@ -15,6 +15,9 @@ permissions: read-all
 jobs:
   pkgdown:
     runs-on: ubuntu-latest
+    # A normal site build takes 3-5 min. Cap the job so a transient stall in
+    # the build step fails fast instead of occupying a runner for hours.
+    timeout-minutes: 30
     # Only restrict concurrency for non-PR jobs
     concurrency:
       group: pkgdown-${{ github.event_name != 'pull_request' || github.run_id }}
