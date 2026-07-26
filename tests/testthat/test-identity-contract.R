@@ -642,12 +642,24 @@ test_that("Feature: datom-cv1, provenance -- hash_algo and imported-path origina
 })
 
 test_that("Feature: datom-cv1, the suite runs under the fail-closed network guard", {
-  # Requirement 16.6. setup.R replaces both egress chokepoints with aborting
-  # stubs unless DATOM_ALLOW_REAL_NETWORK is set; this asserts the guard is
-  # actually in force for this file rather than assuming it.
+  # Requirement 16.6. setup.R swaps both egress chokepoints for aborting stubs
+  # unless DATOM_ALLOW_REAL_NETWORK is set; this asserts the guard is in force
+  # rather than assuming it.
+  #
+  # The lookups go through getFromNamespace() deliberately. `testthat:::test_env()`
+  # is `env_clone(asNamespace(pkg))` and that clone is taken BEFORE setup files
+  # run, so under `R CMD check` a bare `.datom_s3_client()` written here resolves
+  # to the pre-guard copy in the clone and would call the real factory -- while
+  # package internals, whose closures are the live namespace, resolve the stub.
+  # Reading the namespace binding is therefore the only form of this assertion
+  # that is true in both run modes, and it is also the binding that actually
+  # protects a leaking code path.
   skip_if(nzchar(Sys.getenv("DATOM_ALLOW_REAL_NETWORK")),
           "Network guard deliberately disabled via DATOM_ALLOW_REAL_NETWORK.")
 
-  expect_error(.datom_s3_client(), "Real network egress blocked")
-  expect_error(httr2::req_perform(NULL), "Real network egress blocked")
+  s3_chokepoint <- utils::getFromNamespace(".datom_s3_client", "datom")
+  expect_error(s3_chokepoint(), "Real network egress blocked")
+
+  http_chokepoint <- utils::getFromNamespace("req_perform", "httr2")
+  expect_error(http_chokepoint(NULL), "Real network egress blocked")
 })

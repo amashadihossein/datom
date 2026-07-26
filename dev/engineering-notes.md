@@ -34,43 +34,51 @@
 (Waves 3-5)**, **Task 4 (Waves 6-7: read-time `parquet_sha` integrity)**, **Task 5 (Wave 8:
 full-history dedup + `parquet_sha` persisted into `version_history`)**, **Task 6 (Wave 9:
 persisted column index)**, **Tasks 9 + 8 (Waves 10 + 12: ingestion allowlist and the
-exported `datom_check_hashable()`)**, and **Task 10 (Wave 11: the `file_sha` ->
-`original_file_sha` nomenclature sweep)** are complete and committed. Full suite green at
-**2318 passed / 0 failed / 0 warnings / 0 skipped**; `R CMD check` clean (0 errors /
-0 warnings / 0 notes). Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, 4.1, 4.2,
-4.3, 5.1, 5.2, 6.1, 6.2, 8.1, 8.2, 9.1, 9.2, **10, 10.1**. **Deferred `*` test: 3.3**
-(metadata_sha locale + volatile-membership *property* tests, Properties 13/14 -- the behavior
-is already covered by plain tests; the tagged property versions are pre-PR work).
-**Next = Wave 13: Tasks 12.1-12.5** (the S1-S6 identity-contract integration tests on the
-local backend) -- Wave 12 (8.2, 9.2) already landed with Tasks 8 and 9. Then Wave 14
-(docs/NEWS, Tasks 13.1/13.2), Wave 15 (acceptance greps, Task 14.1). Resume from `tasks.md`
-in wave order. **Task 11 is a chunk checkpoint** -- stop there for maintainer go-ahead.
+exported `datom_check_hashable()`)**, **Task 10 (Wave 11: the `file_sha` ->
+`original_file_sha` nomenclature sweep)**, **Task 11 (chunk checkpoint, signed off
+2026-07-25)**, and **Task 12 (Wave 13: the S1-S6 identity-contract integration tests)** are
+complete and committed. Full suite green at **2424 passed / 0 failed / 0 warnings /
+0 skipped**. Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, 4.1, 4.2, 4.3, 5.1,
+5.2, 6.1, 6.2, 7, 8.1, 8.2, 9.1, 9.2, 10, 10.1, **11, 12, 12.1-12.5**. **Deferred `*` test:
+3.3** (metadata_sha locale + volatile-membership *property* tests, Properties 13/14 -- the
+behavior is already covered by plain tests; the tagged property versions are pre-PR work).
+**Next = the deferred 3.3, then Wave 14** (docs/NEWS, Tasks 13.1/13.2) and **Wave 15**
+(acceptance greps, Task 14.1), then Task 15 (final checkpoint) and Task 16 (spec completion).
+Resume from `tasks.md` in wave order. **Task 15 is the next chunk checkpoint** -- stop there
+for maintainer go-ahead.
 
 **Commit anchors.** Do **not** trust a hard-coded branch head here -- get it from
 `git log --oneline -1`. Pinning the head in this file failed three times in four commits,
 because the commit that updates this file necessarily changes the head it just recorded. What
 *is* stable and worth pinning:
 
-- **Last code-bearing commit: `8082d14`** (Task 10.1). This is the newest commit touching `R/`,
-  `man/`, `tests/`, or `vignettes/`. The verified gates -- suite **2318 passed / 0 failed /
-  0 warnings / 0 skipped** and `R CMD check --as-cran` **0/0/0** -- were measured at `8082d14`
-  and remain valid for any head that is `8082d14` plus docs-only commits. Confirm with
-  `git diff --name-only 8082d14..HEAD` returning only `dev/` and `.kiro/` paths.
+- **Find the last code-bearing commit, do not read one from here** (the same staleness trap as
+  the head): `git log --oneline -1 -- R/ man/ tests/ vignettes/`. As of Wave 13 it is the
+  Task 12.5 commit plus its follow-up fix ("hold the 16.6 guard assertion under R CMD check
+  too"), both touching only `tests/testthat/test-identity-contract.R`. The verified suite is
+  **2424 passed / 0 failed / 0 warnings / 0 skipped** at that point.
+- **`R CMD check --as-cran` re-measured after Wave 13: 0 errors / 0 warnings / 1 NOTE**, tests
+  `OK`. The NOTE is the CRAN-incoming-feasibility one (`New submission` + "possibly invalid URL"
+  for the codecov badge in `README.md`, which redirects `codecov.io` -> `app.codecov.io` and
+  answers 200). It is pre-existing, network-dependent, and unrelated to this spec -- the earlier
+  "0/0/0 at `8082d14`" reading was taken without that URL check firing. Fixing the badge URL in
+  `README.Rmd`/`README.md` is a one-line pre-CRAN cleanup, not spec work. Run the check with
+  `_R_CHECK_FORCE_SUGGESTS_=false` unless `covr` is installed, or it ERRORs on the missing
+  suggested package.
 - Chain: `3a5f717` Task 6 column index -> `9722e59` man/ regeneration for Tasks 1-5 ->
   `b359fb9` Task 9 allowlist -> `5b28463` Task 8 `datom_check_hashable()` -> `71e8637`
   parent-checkbox correction (docs) -> `c3cf279` context audit, four handoff inaccuracies
-  corrected (docs) -> `8082d14` **Task 10.1 `file_sha` -> `original_file_sha` sweep** (code)
-  -> docs-only refreshes after that.
+  corrected (docs) -> `8082d14` **Task 10.1 `file_sha` -> `original_file_sha` sweep** (code) ->
+  docs-only refreshes -> `17dff3b` Task 11 checkpoint sign-off (docs) -> **Wave 13: Tasks 12.1,
+  12.2, 12.3, 12.4, 12.5** (one commit each, all in `tests/testthat/test-identity-contract.R`)
+  -> the 16.6 guard-assertion fix.
 
-**Outstanding before the PR can merge** (none of these block Wave 13; all are named acceptance
-criteria, so an MVP that skips them cannot merge):
+**Outstanding before the PR can merge** (all are named acceptance criteria, so an MVP that skips
+them cannot merge):
 1. **Task 3.3** -- Properties 13/14 (`metadata_sha` locale determinism + volatile-field
-   membership) as tagged property tests.
-2. **Task 12.5's revert-reuse integration test** -- write content A -> write B -> re-write A;
-   assert the stored object is not re-uploaded and the reused `parquet_sha` matches A's history
-   entry. (The code path went live with Task 5.1; only the E2E assertion is missing.)
-3. **Tasks 12, 13, 14, 16** in full (S1-S6 integration tests, docs/NEWS, acceptance greps,
-   spec completion). Task 10 is now done.
+   membership) as tagged property tests. This is now the only deferred `*` test left.
+2. **Tasks 13, 14, 16** (docs/NEWS, acceptance greps, spec completion). Tasks 10, 11, and 12 are
+   done; Task 12.5's revert-reuse assertion, previously listed here, landed with Wave 13.
 
 **Parent-checkbox convention in `tasks.md`:** parent task boxes are checked only when every
 sub-task under them is checked. Task 3's parent is deliberately `[ ]` with an inline note --
@@ -135,27 +143,38 @@ The gate `grep -rn "file_sha" R/ man/ vignettes/` now returns 44 hits, **all** o
   (9722e59) ahead of the two feature commits. If `man/` looks noisy in a future diff, run
   `devtools::document()` before assuming a real change.
 
-**Wave 13 must-remembers (Tasks 12.1-12.5, the NEXT work -- S1-S6 identity-contract
-integration tests).** Read the design's S1-S6 scenario table and Requirement 16.5/16.6 first.
-Verified groundwork so the wave does not rediscover it:
-- **Requirement 16.6 is already satisfied, suite-wide.** `tests/testthat/setup.R` installs the
-  fail-closed network guard: it swaps `.datom_s3_client()` and `httr2::req_perform()` for
-  aborting stubs unless `DATOM_ALLOW_REAL_NETWORK=1`. So "the whole suite runs under the
-  fail-closed guard" needs **no new work** in 12.5 -- just do not add a test that dials out, and
-  do not set that env var. libgit2 sockets are *not* trappable at the R level; the git rule is
-  convention only (local bare repos, never a real URL to an executed clone/fetch).
-- **Fixture pattern.** `tests/testthat/helper-mock.R` provides only `mock_datom_conn()` and
-  `muffle_conn_warnings()`. The prevailing writable-conn idiom in `test-sync.R` is
-  `withr::with_tempdir({ conn <- mock_datom_conn(list()); conn$role <- "developer";
-  conn$path <- getwd(); ... })`, building `.datom/manifest.json` with `jsonlite::write_json(...,
-  auto_unbox = TRUE)`. Real `datom_store_local()` stores appear in `test-conn.R` / `test-repo.R`
-  / `test-store.R` (not in `test-read-write.R`) -- consult those for a genuine local backend.
-- **12.5's revert-reuse assertion is the one with live code behind it.** `.datom_resolve_parquet_sha()`
-  + `.datom_lookup_history_parquet_sha()` went in with Task 5.1; only the E2E assertion is
-  missing (write A -> write B -> re-write A; the stored object must not be re-uploaded and the
-  reused `parquet_sha` must equal A's history entry).
-- **The manifest column is now `original_file_sha`** (Wave 11). Any new manifest fixture must use
-  that name or `datom_sync()`'s `required_cols` check aborts.
+**Wave 13 DONE (Task 12, S1-S6 identity-contract integration tests) -- as-built anchors.**
+Everything lives in the new `tests/testthat/test-identity-contract.R` (106 assertions, five
+commits, one per sub-task).
+- **The fixture mocks nothing in the datom stack.** `local_identity_project()` builds a real git
+  repo with a real **local bare remote** (so `.datom_git_commit`/`_push`/`_pull` are genuine --
+  `.datom_git_push()` does `git2r::remotes(repo)[[1L]]`, which subscript-errors without a remote,
+  which is why the earlier suite convention mocked the push) plus a real `backend = "local"`
+  store. The conn is `mock_datom_conn()` + `backend`/`role`/`path` overrides, `gov_root` left
+  NULL so `.datom_check_ref_current()` takes its legacy-conn skip, and `.datom_check_git_current()`
+  needs no mock either (it early-returns when there are no remotes, and works normally when there
+  is one). Net effect: change classification, upload, metadata/history JSON, and read-back all
+  run for real, which is the point -- S1-S6 are properties of the composition. The isolated
+  branch tests in `test-read-write.R` (which DO mock `.datom_has_changes()`) stay as they are.
+- **The byte-vs-content lever is CSV quoting.** `write.csv(quote = TRUE)` vs `quote = FALSE`
+  gives different file bytes and an identical parsed frame, so it drives S3/S4 exactly. The tests
+  assert the raw bytes actually differ before relying on it.
+- **"No upload" is proven by a backdated mtime, not by a mock.** `fs::file_touch(obj,
+  modification_time = <2001>)` before the write, then assert the mtime survived -- a re-upload
+  goes through `.datom_local_upload()` -> `fs::file_copy(overwrite = TRUE)` and would reset it.
+  Byte comparison cannot distinguish "not re-uploaded" from "re-uploaded identical bytes", and
+  stubbing `.datom_storage_upload()` would forfeit the end-to-end property. Used by S6, S3, S4,
+  and the revert-reuse test.
+- **"Integrity check happens before the parse" is proven by swapping in a valid parquet.** A
+  single flipped byte would also make arrow fail, so it cannot separate the two failure modes;
+  substituting a *different but readable* parquet can -- without the `parquet_sha` check the read
+  would succeed and silently return the wrong table.
+- **Requirement 16.6 needed no new machinery** (`setup.R`'s guard is suite-wide) but the
+  assertion of it is subtle: read the chokepoint with `utils::getFromNamespace()`, never call it
+  bare. See the namespace-clone gotcha in Gotchas -- a bare call passes under `devtools::test()`
+  and ERRORs under `R CMD check`. This cost one debugging cycle in Task 12.5; do not undo it.
+- **The manifest column is `original_file_sha`** (Wave 11); a fixture using the old bare
+  `file_sha` trips `datom_sync()`'s `required_cols` check.
 
 **Task 14.1 acceptance-gate gotcha (verified now, so Wave 15 does not stall on it).** Three of
 the four static gates already pass at `71e8637`: `grep -rn "sort_columns\|sort_rows" R/ tests/`
@@ -186,9 +205,12 @@ byte-layout in `.datom_canonical_hash()` changed -- fix the code, not the test.
 (a) the revert-to-older reuse branch in `.datom_resolve_parquet_sha()` is now live (its TODO
 comment was updated to describe the active behavior), and (b) `datom_read(name, version = <old>)`
 verifies integrity once the pinned version was written post-5.1 (pre-5.1 / pre-cv1 entries carry
-no `parquet_sha` and still skip -- the intended grace). **Still TODO: the Task 12.5 end-to-end
-revert-reuse integration test** (write content A -> write B -> re-write A; assert the stored
-object is not re-uploaded and the reused `parquet_sha` matches A's history entry).
+no `parquet_sha` and still skip -- the intended grace). **Fully closed by Wave 13**: the
+end-to-end revert-reuse assertion (write content A -> write B -> re-write A; the stored object is
+not re-uploaded and the reused `parquet_sha` equals A's history entry) now lives in
+`test-identity-contract.R`, together with the pre-cv1 grace case -- drop `parquet_sha` from the
+*storage* copy of `metadata.json` (the copy `datom_read()` consults, not the git one) and the read
+still succeeds.
 
 **Two design decisions made during Task 3 (beyond the written spec -- fold into spec docs at
 completion):**
@@ -394,3 +416,32 @@ place because amending a pushed commit needs a force push.
 - **`sandbox_store_local()` / `sandbox_store()` accept `attach_gov = TRUE` (default)**: when `attach_gov = FALSE`, the gov component is `NULL` and no gov dir is created. `sandbox_up()` branches on `!is.null(store$governance)`. `sandbox_promote_gov(env, gov_store)` mirrors Article 4's flow for testing the no-gov -> gov transition end-to-end.
 
 - **Gov-guard messages intentionally name datomanager — this is NOT a C1 violation**: `.datom_require_gov()` and the `datom_get_conn()` "governance store ignored" warning deliberately point users to `gov_attach()` / `gov_decommission()` "(from the datomanager package)" (design Component 8 / Task 5.2). C1 / R6 mean datom has no **hard runtime dependency** on datomanager — it must load and run without it installed and must not fail mysteriously. A helpful guidance string naming the companion package is the sanctioned UX. Do NOT "fix" these messages to strip datomanager — a solo E2E that asserted the gov error must *not* name datomanager was the bug, not the message. The correct solo assertion: the error mentions `governance` and points to `gov_attach`.
+
+- **A test file cannot see `setup.R`'s namespace swaps by calling them directly (under `R CMD check`)**:
+  `testthat:::test_env(package)` is literally `env_clone(asNamespace(package))`, and that clone is
+  taken **before** setup files are sourced. So `setup.R`'s
+  `assignInNamespace(".datom_s3_client", <blocker>, ns = "datom")` replaces the live namespace
+  binding, but a bare `.datom_s3_client()` written at test-file scope resolves through the *clone*
+  and reaches the **original** function. Under `devtools::load_all()` + `test_dir()` the lookup
+  falls through to the live namespace, so the same line passes locally and fails only in
+  `R CMD check` -- discovered exactly that way in Task 12.5 (check ERROR: `argument "access_key"
+  is missing`, while `getFromNamespace()` in the same run showed the blocker installed). Two
+  consequences: (1) the fail-closed network guard is still **effective** where it matters, because
+  package internals are closures over the live namespace and do resolve the blocker -- the guard
+  protects leaking *package code*, which is its whole purpose; (2) any test that wants to assert on
+  a `setup.R`-installed binding must read it with `utils::getFromNamespace(name, ns)` and call
+  that, never name it bare. Live example: the Requirement 16.6 test at the end of
+  `test-identity-contract.R`. This also explains why nothing else in the suite ever noticed --
+  every other test mocks its own bindings and never calls a chokepoint directly.
+- **Run new test files under BOTH run modes before declaring them green**: `devtools::load_all()` +
+  `testthat::test_dir()` (the fast local loop) and the installed-package path
+  (`R CMD check`, i.e. `test_check()` against `<pkg>.Rcheck/<pkg>`) do not resolve bindings
+  identically -- see the namespace-clone gotcha above. The cheap way to check the second mode
+  without a full re-check is to run, from `<pkg>.Rcheck/tests`:
+  `Rscript -e '.libPaths(c(normalizePath("../../<pkg>.Rcheck"), .libPaths())); library(testthat); library(<pkg>); test_check("<pkg>", filter = "<file>")'`
+  (write it to a temp `.R` file -- the shell mangles multi-line `Rscript -e`). Two other
+  check-only differences to expect: `dev/` is Rbuildignored, so the `dev/datom_cv1_reference.R`
+  parity test (Property 11) legitimately reports SKIP 1 there while the local run reports 0; and
+  a plain `R CMD check --as-cran` ERRORs with "Package suggested but not available: covr" on a
+  box without covr installed -- run it with `_R_CHECK_FORCE_SUGGESTS_=false` (environmental, not
+  a package defect).
