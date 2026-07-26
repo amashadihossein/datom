@@ -338,38 +338,73 @@ entry -- the anchor a future column-level diff builds on.
 ### One caveat that is not ours to fix
 
 `data_sha` is a portable identity of *doubles*. Getting from **text to
-doubles** is a separate step, and it is not guaranteed identical across
-platforms. R's parser accumulates decimal digits in a `long double`, which is
-80-bit extended on x86_64 but only 64-bit on Apple silicon, so the same string
-can yield doubles a few ULP apart on the two. This affects decimal literals,
-`as.numeric()`, and therefore `read.csv()` and `scan()` alike.
+doubles** is a separate step, and in base R it is neither correctly rounded nor
+platform-independent. R does its own decimal parsing (`R_strtod` in
+`src/main/util.c`): it accumulates digits into a `long double` and then scales
+by a power of ten. So the result depends on how wide `long double` is on the
+build -- and `as.numeric()`, decimal literals, `scan()` and `read.csv()` all go
+through it.
 
-The practical consequence: two machines of different architecture reading the
-same CSV can parse *different doubles* from identical text, and will then
-compute different `data_sha` values -- both correctly, for genuinely different
-tables. This sits upstream of datom, and no hash can paper over it.
+This is known, accepted R behaviour rather than a bug: CRAN runs a dedicated
+check flavour with R configured `--disable-long-double` precisely because
+results differ, and package authors are told to tolerate it.
 
-How much exposure you have depends on the values, and **not only on how large
-they are**. Measured on arm64 macOS against a correctly-rounded reference: a
-1-digit mantissa like `1e-23` is the first to drift, but a 15-significant-digit
-mantissa such as `3.14159265358979e-9` already differs by 1 ULP, and
-`1e300` / `1e-300` by 4. Round numbers and short decimals -- `0.1`, `1`,
-`1e15` -- are exact and agree everywhere. Broadly: the more significant digits
-a decimal carries, the smaller the exponent at which the platforms can part
-company, and any difference is confined to the last bits.
+Check your own platform in one line:
 
-Two mitigations, in order of preference:
+```{r, eval = TRUE}
+.Machine$sizeof.longdouble   # 8 means long double == double
+```
 
-- **Onboard high-precision numeric columns as parquet rather than CSV.**
-  Parquet stores the doubles themselves, so no decimal parsing happens and the
-  question disappears.
-- **Keep the ingesting platform fixed** for a given table if you must use CSV
-  and your values carry many significant digits.
+`8` means no extra precision, and decimal parsing on that build deviates from
+the correctly-rounded value. It is **not** an Apple-versus-Intel split:
+
+| Build | `long double` | Decimal parsing |
+|---|---|---|
+| x86_64 (Linux, Windows, Intel mac) | 80-bit extended | agrees with correct rounding on everything tested |
+| aarch64 **Linux**, s390x, riscv64 | 128-bit quad | agrees |
+| **Apple silicon macOS**, 32-bit ARM | same as `double` | **deviates** |
+| any build with `--disable-long-double` (CRAN's noLD flavour) | forced to `double` | **deviates** |
+
+Note that Linux and macOS on the *same* arm64 chip family fall on opposite
+sides -- the variable is the `long double` width, not the architecture.
+
+**When it bites.** Deviation is possible whenever `mantissa * 10^exponent`
+cannot be reached by a single correctly-rounded operation at the platform's
+`long double` precision -- that is, when the accumulated mantissa exceeds the
+significand, or `10^|exponent|` is not itself exactly representable. `10^22` is
+the largest power of ten exactly representable as a double, and `10^23` the
+first that is not, which is why on Apple silicon a bare `1e-23` is the first
+one-digit value to drift. Longer mantissas drift sooner: `3.14159265358979e-9`
+is already 1 ULP off, and `1e300` / `1e-300` are 4. Short decimals -- `0.1`,
+`1`, `1e15`, `3.14159265358979` -- are exact and agree everywhere, because only
+a single rounding occurs.
+
+**The consequence for datom.** Two machines whose builds fall on opposite sides
+of that table can parse *different doubles* from the same CSV text, and will
+then compute different `data_sha` values -- both correct, for genuinely
+different tables. No hash can paper over it; the divergence happens before
+datom sees the data.
+
+Mitigations, in order of preference:
+
+- **Read via `arrow`, or store as parquet.** Arrow's CSV reader uses
+  `fast_float`, which is correctly rounded and platform-independent by design;
+  parquet stores the doubles themselves, so no decimal parsing happens at all.
+  This is the recommendation.
+- **Keep the ingesting platform fixed** for a given table if you must go
+  through base-R CSV reading.
+- **For exact literals in code**, use C99 hex-float notation --
+  `0x1.999999999999ap-4` is exactly `0.1`, and `0x1.fcp+996` a large value with
+  no base-10 rounding anywhere. Documented in `?NumericConstants` and portable.
+
+One warning: `data.table::fread()` is **not** a fix. It has its own parser that
+is also not correctly rounded, and its errors differ from base R's -- the two
+can disagree on the same string.
 
 Worth keeping in perspective: this is a property of the platform's decimal
-parser, not of datom, and it applies equally to any analysis reading that CSV
-with or without datom. What datom adds is that it makes the difference
-*visible* rather than silent.
+parser, not of datom, and it affects any analysis reading that CSV with or
+without datom. What datom adds is that the difference becomes *visible* instead
+of silent.
 
 ## What you can rely on
 

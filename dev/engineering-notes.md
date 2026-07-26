@@ -192,21 +192,50 @@ Harvested from the spec's work-handoff at completion. The *design* lives in
   `.github/workflows/cv1-reference-parity.yaml`, which runs the same file from the source tree
   (where `dev/` exists) on x86_64 AND arm64 and fails if anything skips. If parity ever reddens,
   fix the package, not the reference.
-- **R's decimal parsing on arm64 macOS is measurably NOT correctly rounded, well inside ordinary
-  magnitudes.** Swept 3792 decimal strings (six mantissas x exponents -330..308) and compared R's
-  `as.numeric()` against exact rational arithmetic: **3057 disagreed, and R was the farther-from-
-  true side in every single one** -- never the reverse, never a tie. First drift by mantissa:
-  `1` at `e=-23`, `1.5` at `e=-22`, `2.718281828459045` at `e=-11`, `3.14159265358979` and
-  `9.87654321098765` at `e=-9`. So exposure scales with *significant digits*, not just exponent
-  magnitude, and `3.14159265358979e-9` is already 1 ULP off while `1e300` is 4. Short decimals
-  (`0.1`, `1`, `1e15`, `3.14159265358979e0`) are exact and agree. Cross-*architecture* divergence
-  is directly confirmed only for `1e300`/`1e-300` so far; the rest of that set is
-  arm64-vs-correct-rounding and awaits the same sweep on x86. Reproduce with
-  `/tmp`-style throwaway scripts: R dumps `writeBin()` bits per string, then compare against
-  `struct.pack("<d", float(s))` and adjudicate with `fractions.Fraction`. **This is a measuring
-  instrument, not a second implementation of the hash** -- the Task 1.9 rule (the standalone R
-  reference is the single golden source; never bootstrap goldens from another language) is
-  untouched, because nothing here computes a golden.
+- **Base R's decimal->double conversion is not correctly rounded, and the variable is
+  `long double` WIDTH, not architecture.** `R_strtod5()` (`src/main/util.c`) accumulates digits
+  into an `LDOUBLE` accumulator and scales by a power of ten; `LDOUBLE` is `long double` unless
+  the build lacks it. So: x86_64 (80-bit x87) and aarch64-**Linux**/s390x/riscv64 (128-bit quad)
+  agree with correct rounding on everything tested, while **Apple-silicon macOS**, 32-bit ARM, and
+  any `--disable-long-double` build (**CRAN's noLD check flavour**) deviate. Linux and macOS on
+  the same arm64 chip therefore land on *opposite* sides -- do not reason about this as
+  "ARM vs Intel". Detect the local build with `.Machine$sizeof.longdouble` (`8` = no extra
+  precision; this workspace reports 8). Accepted R behaviour, not a bug: CRAN maintains noLD
+  precisely because results differ, and `?NumericConstants` promises only grammar, never correct
+  rounding.
+  - **The rule for when it deviates**: whenever `mantissa * 10^expn` cannot be produced by a
+    single correctly-rounded operation at the platform's `LDOUBLE` precision -- the accumulated
+    mantissa exceeds the significand, or `10^|expn|` is not exactly representable. `10^22` is the
+    largest exactly-representable power of ten in a double, `10^23` the first that is not (both
+    verified locally), which is exactly why a bare `1e-23` is the first one-digit value to drift
+    here.
+  - **There is NO fast/exact path keyed on digit count.** `strtod_EXACT_CLAUSE` in the R sources
+    is a `> 2^53-1` accuracy-loss guard active only when the caller passes `exact`
+    (`type.convert(numerals=)`), not a rounding shortcut. `0.1` and `1e15` come out exact
+    *emergently* -- one rounding instead of two. An earlier revision of this note implied a fast
+    path; that was a misreading.
+  - **x86_64 is a de facto reference, not a provable one.** Clinger (PLDI 1990) proves no
+    fixed-precision parser can be correctly rounded for all decimals; correctness needs guard bits
+    plus a bignum fallback, which `R_strtod` lacks. Ground truth is a bignum parser -- CPython's
+    `float()` (David Gay) or `fast_float`.
+  - **Measured here** (arm64 macOS, `sizeof.longdouble == 8`): swept 3792 decimal strings (six
+    mantissas x exponents -330..308) against exact rational arithmetic -- 3057 disagreed and R was
+    the farther-from-true side in **every one**, never the reverse, never a tie. First drift by
+    mantissa: `1` at `e=-23`, `1.5` at `e=-22`, `2.718281828459045` at `e=-11`,
+    `3.14159265358979` and `9.87654321098765` at `e=-9`. Reproduce with throwaway scripts: R dumps
+    `writeBin()` bits per string, then compare against `struct.pack("<d", float(s))` and
+    adjudicate with `fractions.Fraction`. **That is a measuring instrument, not a second
+    implementation of the hash** -- Task 1.9's rule (the standalone R reference is the single
+    golden source; never bootstrap goldens from another language) is untouched, because nothing
+    in the measurement computes a golden.
+  - **Reader guidance**: `read.csv`/`scan` share `R_strtod` (same exposure).
+    `data.table::fread` has its own parser that is *also* not correctly rounded and whose errors
+    **differ** from base R's (`data.table` issue #4461) -- it is not a fix. `arrow`'s CSV reader
+    uses `fast_float` (correctly rounded, platform-independent) and parquet stores the doubles
+    themselves, so arrow/parquet is the portable path. `readr`/`vroom` is unverified.
+  - **Exact literals without a dependency**: C99 hex floats, documented in `?NumericConstants`.
+    Verified locally: `0x1.999999999999ap-4` is bit-identical to `0.1`, `0x1.fcp+996` is a large
+    value with no base-10 rounding. Usable in fixtures where a decimal literal would not be safe.
 - **Never put a many-digit or extreme-exponent decimal literal in a golden fixture -- it makes the
   golden architecture-dependent.** `1e300` in the numeric golden fixture passed on arm64 macOS
   and failed on x86_64 Linux + Windows with the same wrong hash, because R's `R_strtod`

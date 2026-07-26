@@ -794,24 +794,37 @@ test_that("golden numeric fixture is parse-exact on every architecture", {
   expect_identical(per_slot, expected_payload)
 })
 
-test_that("text -> double conversion of extreme exponents is not portable (documented)", {
-  # Asserts only what IS portable, and documents the boundary rather than
-  # pretending it does not exist.
+test_that("text -> double conversion is not portable, but the goldens do not depend on it", {
+  # Base R parses decimals with `R_strtod5()` (src/main/util.c), which
+  # accumulates digits into an `LDOUBLE` accumulator and scales by a power of
+  # ten. `LDOUBLE` is `long double` when the build has one, so the result
+  # depends on the platform's long-double WIDTH -- not on its architecture:
+  # x86_64 (80-bit) and aarch64-Linux/s390x (128-bit quad) agree with correct
+  # rounding, while Apple-silicon macOS, 32-bit ARM, and any
+  # --disable-long-double build (CRAN's noLD flavour) deviate. Linux and macOS
+  # on the same arm64 chip land on opposite sides. This is accepted R behaviour;
+  # `?NumericConstants` promises grammar, not correct rounding.
   #
-  # A literal and as.numeric() both go through R_strtod, so they agree with each
-  # other on any host -- that much is portable.
+  # Asserted here: only what is portable, plus the anchors that explain the
+  # mechanism. Nothing asserts a specific parse of a decimal literal, because
+  # that is exactly the thing that varies.
+
+  # A literal and as.numeric() share the same parser, so they agree with each
+  # other on any build -- that much IS portable.
   expect_identical(1e300, as.numeric("1e300"))
   expect_identical(1e-300, as.numeric("1e-300"))
 
-  # What is NOT portable is which double either of them yields. Consequence for
-  # users: two machines of different architecture ingesting the same CSV whose
-  # values carry extreme exponents can parse different doubles, and therefore
-  # produce different (correct) data_sha values. That is a property of the
-  # platform's decimal parser, not of datom -- documented in
-  # vignette("design-version-shas") and dev/datom_specification.md.
-  #
-  # The parse-exact constructions the goldens use have no such exposure, which
-  # this asserts positively: each is bit-identical to its pinned pattern.
+  # The mechanism's boundary: 10^22 is the largest power of ten exactly
+  # representable in a double, 10^23 the first that is not. On a build whose
+  # LDOUBLE is only 53-bit this is where the second rounding enters, which is
+  # why a bare `1e-23` is the first one-digit value to drift there. The
+  # representability itself is an IEEE-754 fact and portable: 10^k is exact iff
+  # 5^k < 2^53.
+  expect_true(5^22 < 2^53)
+  expect_false(5^23 < 2^53)
+
+  # The goldens sidestep the parser entirely. Powers of two and the DBL_MAX /
+  # DBL_MIN constants are bit-exact on every build:
   expect_identical(
     writeBin(2^999, raw(), size = 8L, endian = "little"),
     as.raw(c(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0x7e))
@@ -819,6 +832,15 @@ test_that("text -> double conversion of extreme exponents is not portable (docum
   expect_identical(
     writeBin(.Machine$double.xmax, raw(), size = 8L, endian = "little"),
     as.raw(c(0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xef, 0x7f))
+  )
+
+  # C99 hex-float literals are the dependency-free escape hatch for an exact
+  # decimal-looking constant: base-2 significand and a power-of-two exponent, so
+  # no base-10 rounding happens anywhere. Documented in ?NumericConstants.
+  expect_identical(0x1.999999999999ap-4, 0.1)
+  expect_identical(
+    writeBin(0x1.fcp+996, raw(), size = 8L, endian = "little"),
+    as.raw(c(0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x3f, 0x7e))
   )
 })
 
