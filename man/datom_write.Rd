@@ -81,8 +81,8 @@ datom_write(conn, data = dm, name = "dm")
 # Use datom_parent() to resolve each parent's data_sha and lineage.
 lb <- datom_example_data("lb")
 datom_write(conn, data = lb, name = "lb")
-lb_summary <- dplyr::summarise(
-  dplyr::group_by(lb, LBTESTCD), n = dplyr::n(), .groups = "drop"
+lb_summary <- aggregate(
+  list(n = lb$LBTESTCD), by = list(LBTESTCD = lb$LBTESTCD), FUN = length
 )
 datom_write(
   conn,
