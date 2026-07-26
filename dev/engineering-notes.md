@@ -192,7 +192,22 @@ Harvested from the spec's work-handoff at completion. The *design* lives in
   `.github/workflows/cv1-reference-parity.yaml`, which runs the same file from the source tree
   (where `dev/` exists) on x86_64 AND arm64 and fails if anything skips. If parity ever reddens,
   fix the package, not the reference.
-- **Never put a decimal literal with an extreme exponent in a golden fixture -- it makes the
+- **R's decimal parsing on arm64 macOS is measurably NOT correctly rounded, well inside ordinary
+  magnitudes.** Swept 3792 decimal strings (six mantissas x exponents -330..308) and compared R's
+  `as.numeric()` against exact rational arithmetic: **3057 disagreed, and R was the farther-from-
+  true side in every single one** -- never the reverse, never a tie. First drift by mantissa:
+  `1` at `e=-23`, `1.5` at `e=-22`, `2.718281828459045` at `e=-11`, `3.14159265358979` and
+  `9.87654321098765` at `e=-9`. So exposure scales with *significant digits*, not just exponent
+  magnitude, and `3.14159265358979e-9` is already 1 ULP off while `1e300` is 4. Short decimals
+  (`0.1`, `1`, `1e15`, `3.14159265358979e0`) are exact and agree. Cross-*architecture* divergence
+  is directly confirmed only for `1e300`/`1e-300` so far; the rest of that set is
+  arm64-vs-correct-rounding and awaits the same sweep on x86. Reproduce with
+  `/tmp`-style throwaway scripts: R dumps `writeBin()` bits per string, then compare against
+  `struct.pack("<d", float(s))` and adjudicate with `fractions.Fraction`. **This is a measuring
+  instrument, not a second implementation of the hash** -- the Task 1.9 rule (the standalone R
+  reference is the single golden source; never bootstrap goldens from another language) is
+  untouched, because nothing here computes a golden.
+- **Never put a many-digit or extreme-exponent decimal literal in a golden fixture -- it makes the
   golden architecture-dependent.** `1e300` in the numeric golden fixture passed on arm64 macOS
   and failed on x86_64 Linux + Windows with the same wrong hash, because R's `R_strtod`
   accumulates extreme-exponent decimals in a `long double`: 80-bit extended on x86_64 (correctly

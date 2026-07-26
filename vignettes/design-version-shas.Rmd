@@ -338,23 +338,38 @@ entry -- the anchor a future column-level diff builds on.
 ### One caveat that is not ours to fix
 
 `data_sha` is a portable identity of *doubles*. Getting from **text to
-doubles** is a separate step, and for decimals with extreme exponents it is
-architecture-dependent: R's parser accumulates them in a `long double`, which
-is 80-bit extended on x86_64 but only 64-bit on Apple silicon, so `1e300`
-parses a few ULP apart on the two. The same is true of `as.numeric("1e300")`
-and therefore of `read.csv()`.
+doubles** is a separate step, and it is not guaranteed identical across
+platforms. R's parser accumulates decimal digits in a `long double`, which is
+80-bit extended on x86_64 but only 64-bit on Apple silicon, so the same string
+can yield doubles a few ULP apart on the two. This affects decimal literals,
+`as.numeric()`, and therefore `read.csv()` and `scan()` alike.
 
 The practical consequence: two machines of different architecture reading the
-same CSV containing near-limit values (magnitudes beyond roughly `1e290` or
-below `1e-290`) can
-parse *different doubles* from identical text, and will then compute different
-`data_sha` values -- both correctly, for genuinely different tables. This sits
-upstream of datom and no hash can paper over it.
+same CSV can parse *different doubles* from identical text, and will then
+compute different `data_sha` values -- both correctly, for genuinely different
+tables. This sits upstream of datom, and no hash can paper over it.
 
-If that matters for your data, onboard such columns as parquet rather than
-CSV -- parquet stores the doubles themselves, so no decimal parsing happens.
-For everyday magnitudes there is no exposure: small-exponent decimals like
-`0.1` take the parser's exact path and are byte-identical everywhere.
+How much exposure you have depends on the values, and **not only on how large
+they are**. Measured on arm64 macOS against a correctly-rounded reference: a
+1-digit mantissa like `1e-23` is the first to drift, but a 15-significant-digit
+mantissa such as `3.14159265358979e-9` already differs by 1 ULP, and
+`1e300` / `1e-300` by 4. Round numbers and short decimals -- `0.1`, `1`,
+`1e15` -- are exact and agree everywhere. Broadly: the more significant digits
+a decimal carries, the smaller the exponent at which the platforms can part
+company, and any difference is confined to the last bits.
+
+Two mitigations, in order of preference:
+
+- **Onboard high-precision numeric columns as parquet rather than CSV.**
+  Parquet stores the doubles themselves, so no decimal parsing happens and the
+  question disappears.
+- **Keep the ingesting platform fixed** for a given table if you must use CSV
+  and your values carry many significant digits.
+
+Worth keeping in perspective: this is a property of the platform's decimal
+parser, not of datom, and it applies equally to any analysis reading that CSV
+with or without datom. What datom adds is that it makes the difference
+*visible* rather than silent.
 
 ## What you can rely on
 
