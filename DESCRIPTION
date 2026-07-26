@@ -3,7 +3,7 @@ Title: A Unified Framework for Versioned, Traceable Tabular Data
 Version: 0.1.0
 Authors@R: 
     person("Afshin", "Mashadi-Hossein", , "amashadihossein@gmail.com", 
-           role = c("aut", "cre"))
+           role = c("aut", "cre", "cph"))
 Description: Provides versioned storage for tabular data without a database
     or a server. Each table is written as an immutable, content-addressed
     version -- identical content is detected and stored only once -- while its
