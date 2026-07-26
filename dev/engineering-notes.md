@@ -445,3 +445,16 @@ place because amending a pushed commit needs a force push.
   a plain `R CMD check --as-cran` ERRORs with "Package suggested but not available: covr" on a
   box without covr installed -- run it with `_R_CHECK_FORCE_SUGGESTS_=false` (environmental, not
   a package defect).
+
+- **The ASCII-only rule for `R/` is currently aspirational, not enforced -- 22 pre-existing
+  non-ASCII characters live in 7 files**: `R/read_write.R` (4), `R/store.R` (4),
+  `R/utils-path.R` (9), `R/validate.R` (2), and one each in `R/utils-git.R`,
+  `R/utils-storage.R`, `R/utils-validate.R` -- all em dashes (`e2 80 94`) in comments and
+  roxygen, all predating the datom-cv1 spec. `R CMD check --as-cran` does **not** flag them
+  here (`DESCRIPTION` declares `Encoding: UTF-8`), which is why they survived. Found with
+  `LC_ALL=C grep -c '[^[:print:][:space:]]' R/*.R vignettes/*.Rmd | grep -v ":0"`. Keep
+  writing new code ASCII-only -- the convention is still right, and a stray non-ASCII char in
+  a cli string is a real portability risk -- but do not treat a non-empty result from that
+  grep as a regression introduced by your change: check whether your files are in the list
+  first. Sweeping the 22 is a one-commit pre-CRAN cleanup, deliberately not folded into spec
+  work (`vignettes/*.Rmd` is already clean).

@@ -313,13 +313,34 @@ sub-agent verification in this environment is authoring the code and tests, not 
       only; internal `sort_columns`/`sort_rows` removed).
     - _Requirements: 17.4_
 
-- [ ] 14. Acceptance-gate checks
-  - [ ] 14.1 Run the static acceptance grep/gates
+- [x] 14. Acceptance-gate checks
+  - [x] 14.1 Run the static acceptance grep/gates
     - Confirm `grep -rn "sort_columns\|sort_rows" R/ tests/` is empty;
       `grep -rn "file_sha" R/ man/ vignettes/` matches only `original_file_sha`/`parquet_sha`;
       `grep -rn "as.data.frame" R/utils-sha.R` is empty; `datom_check_hashable` is in
       `_pkgdown.yml`. Note the maintainer/CI-run R gates (`R CMD check --as-cran`,
       `Rscript dev/datom_cv1_reference.R`, four-environment goldens) in the commit message.
+    - **RESULTS (2026-07-25).** All four pass:
+      1. `sort_columns|sort_rows` in `R/ tests/` -- 0 hits.
+      2. `file_sha` in `R/ man/ vignettes/` -- 49 hits, 0 of them the bare token
+         (token-precise scan: `perl -ne 'print if
+         /(?<!original_)(?<!parquet_)\bfile_sha\b/'`), and 0 hits for the function-name
+         forms `compute_file_sha` / `tbl_file_sha` (which `\bfile_sha\b` cannot see because
+         `_` is a word character).
+      3. `as.data.frame` in `R/utils-sha.R` -- **gate scoped to executable code**, which is
+         its intent. One hit remains at `R/utils-sha.R:256` and must NOT be removed: it is
+         the roxygen line documenting the invariant ("no `as.data.frame()` or coercion, and
+         never invokes arrow"). Executable hits after stripping comment lines: 0. Deleting
+         the comment to make a literal grep pass would delete the statement of the invariant
+         the gate protects.
+      4. `datom_check_hashable` -- `_pkgdown.yml:56` and `NAMESPACE:9`.
+    - Also re-run here (R is available in this workspace, contrary to the spec-text
+      assumption): `Rscript dev/datom_cv1_reference.R` exits 0 with 27/27 self-tests and
+      prints goldens `48b4c0cb...` / `47c94f30...`, byte-identical to the hard-coded
+      constants in `test-utils-sha.R:702,717`; the script is pure ASCII; the `_pkgdown.yml`
+      reference index covers every export/S3 method and its `articles:` index matches
+      `vignettes/*.Rmd` exactly (6 == 6). The four-environment golden matrix remains a CI
+      gate.
     - _Requirements: 3.4, 4.3_
 
 - [ ] 15. Final checkpoint - Ensure all tests pass
