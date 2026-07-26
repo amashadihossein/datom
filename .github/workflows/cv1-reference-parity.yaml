@@ -1,0 +1,90 @@
+# datom-cv1 byte-layout parity, run from the SOURCE TREE on both architectures.
+#
+# Why this exists as its own workflow rather than a step in R-CMD-check:
+# `dev/` is Rbuildignored, so inside a built tarball `dev/datom_cv1_reference.R`
+# is absent and the reference-parity test (Property 11) SKIPS. The consequence
+# was real -- a golden fixture whose value parsed differently per architecture
+# landed on the branch, and every `R CMD check` job silently skipped the one test
+# designed to catch exactly that. See the "golden numeric fixture is parse-exact"
+# test in tests/testthat/test-utils-sha.R for the full story.
+#
+# This workflow runs against the checkout (via devtools::load_all), where `dev/`
+# is present, so:
+#   1. the standalone reference implementation self-tests execute, and
+#   2. the package is compared byte-for-byte against it.
+#
+# It runs on x86_64 (ubuntu) AND arm64 (macos-latest) and asserts both produce
+# the SAME goldens -- cross-architecture agreement is the property `datom-cv1`
+# claims, so it needs an assertion that spans architectures, not one per arch.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+name: cv1-reference-parity.yaml
+
+permissions: read-all
+
+jobs:
+  parity:
+    runs-on: ${{ matrix.os }}
+    name: cv1 parity (${{ matrix.os }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]   # x86_64 and arm64
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::devtools, any::testthat
+          needs: check
+
+      - name: Standalone reference self-tests
+        run: Rscript dev/datom_cv1_reference.R
+
+      - name: Package/reference parity + goldens (dev/ present, nothing skipped)
+        shell: Rscript {0}
+        run: |
+          options(crayon.enabled = FALSE)
+          suppressMessages(devtools::load_all(quiet = TRUE))
+          res <- as.data.frame(testthat::test_file(
+            "tests/testthat/test-utils-sha.R",
+            reporter = testthat::ListReporter, stop_on_failure = FALSE
+          ))
+          cat("PASS:", sum(res$passed), " FAIL:", sum(res$failed),
+              " SKIP:", sum(res$skipped), "\n")
+          if (sum(res$skipped) > 0L) {
+            cat("Skipped tests:\n")
+            print(res[res$skipped > 0L, c("file", "test")])
+            stop("No test in this file may skip here -- dev/ IS present, so a ",
+                 "skip means the parity gate is not actually running.")
+          }
+          if (sum(res$failed) > 0L) stop("cv1 parity/golden failures.")
+
+      - name: Print goldens for cross-architecture comparison
+        shell: Rscript {0}
+        run: |
+          options(crayon.enabled = FALSE)
+          suppressMessages(devtools::load_all(quiet = TRUE))
+          # These constants must be IDENTICAL in every job of this matrix. The
+          # per-job assertions above already compare them to the hard-coded
+          # goldens; printing them makes a divergence readable at a glance in the
+          # logs instead of only as a failed expectation.
+          num <- data.frame(x = c(
+            0, -0, 1, -1, 0.1, 1/3, 2^999, -2^-999,
+            .Machine$double.xmax, -.Machine$double.xmin, Inf, -Inf, NA, NaN
+          ))
+          cat("arch          :", R.version$platform, "\n")
+          cat("golden numeric:", .datom_canonical_hash(num)$data_sha, "\n")

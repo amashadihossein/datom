@@ -518,12 +518,12 @@ datom_status <- function(conn) {
 
   statuses <- purrr::map_chr(files, function(fp) {
     table_name <- fs::path_ext_remove(fs::path_file(fp))
-    file_sha <- .datom_compute_file_sha(fp)
+    original_file_sha <- .datom_compute_original_file_sha(fp)
     existing <- manifest$tables[[table_name]]
 
     if (is.null(existing)) {
       "new"
-    } else if (!identical(existing$original_file_sha, file_sha)) {
+    } else if (!identical(existing$original_file_sha, original_file_sha)) {
       "changed"
     } else {
       "unchanged"

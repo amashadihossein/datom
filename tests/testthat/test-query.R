@@ -764,7 +764,7 @@ test_that("datom_status shows input_files sync state", {
     writeLines("id\n2", "input_files/existing.csv")
 
     # Manifest has existing with matching SHA
-    existing_sha <- .datom_compute_file_sha("input_files/existing.csv")
+    existing_sha <- .datom_compute_original_file_sha("input_files/existing.csv")
     fs::dir_create(".datom")
     jsonlite::write_json(list(
       tables = list(

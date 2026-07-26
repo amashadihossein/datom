@@ -12,11 +12,16 @@ datom_sync_manifest(conn, path = NULL, pattern = "*")
 \item{path}{Optional path to input files directory. Defaults to
 \verb{input_files/} inside the repo.}
 
-\item{pattern}{Glob pattern for file matching. Default \code{"*"}.}
+\item{pattern}{Glob pattern for file matching. Default \code{"*"}.
+
+Files whose format is outside datom's ingestion allowlist (flat tabular
+formats only) are flagged \code{"unsupported_format"} up front, without blocking
+their allowlisted siblings.}
 }
 \value{
-Data frame with columns: name, file, format, file_sha, status
-(one of \code{"new"}, \code{"changed"}, \code{"unchanged"}).
+Data frame with columns: name, file, format, original_file_sha,
+status (one of \code{"new"}, \code{"changed"}, \code{"unchanged"},
+\code{"unsupported_format"}).
 }
 \description{
 Scans a flat \verb{input_files/} directory and computes file SHAs. Compares

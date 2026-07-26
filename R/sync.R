@@ -259,8 +259,13 @@ datom_pull <- function(conn) {
 #'   `input_files/` inside the repo.
 #' @param pattern Glob pattern for file matching. Default `"*"`.
 #'
-#' @return Data frame with columns: name, file, format, file_sha, status
-#'   (one of `"new"`, `"changed"`, `"unchanged"`).
+#' Files whose format is outside datom's ingestion allowlist (flat tabular
+#' formats only) are flagged `"unsupported_format"` up front, without blocking
+#' their allowlisted siblings.
+#'
+#' @return Data frame with columns: name, file, format, original_file_sha,
+#'   status (one of `"new"`, `"changed"`, `"unchanged"`,
+#'   `"unsupported_format"`).
 #' @export
 #'
 #' @examples
@@ -347,7 +352,7 @@ datom_sync_manifest <- function(conn,
       name = character(),
       file = character(),
       format = character(),
-      file_sha = character(),
+      original_file_sha = character(),
       status = character(),
       stringsAsFactors = FALSE
     ))
@@ -366,13 +371,17 @@ datom_sync_manifest <- function(conn,
     file_name <- fs::path_file(fp)
     table_name <- fs::path_ext_remove(file_name)
     file_format <- fs::path_ext(fp)
-    file_sha <- .datom_compute_file_sha(fp)
+    original_file_sha <- .datom_compute_original_file_sha(fp)
 
-    # Compare against current manifest
+    # Compare against current manifest. A non-allowlisted format is flagged up
+    # front and never reaches the new/changed comparison -- it is not
+    # actionable regardless of whether its bytes moved.
     existing <- current_manifest$tables[[table_name]]
-    status <- if (is.null(existing)) {
+    status <- if (!tolower(file_format) %in% .datom_import_formats) {
+      "unsupported_format"
+    } else if (is.null(existing)) {
       "new"
-    } else if (!identical(existing$original_file_sha, file_sha)) {
+    } else if (!identical(existing$original_file_sha, original_file_sha)) {
       "changed"
     } else {
       "unchanged"
@@ -382,7 +391,7 @@ datom_sync_manifest <- function(conn,
       name = table_name,
       file = as.character(fp),
       format = file_format,
-      file_sha = file_sha,
+      original_file_sha = original_file_sha,
       status = status,
       stringsAsFactors = FALSE
     )
@@ -394,10 +403,18 @@ datom_sync_manifest <- function(conn,
   n_new <- sum(result$status == "new")
   n_changed <- sum(result$status == "changed")
   n_unchanged <- sum(result$status == "unchanged")
+  n_unsupported <- sum(result$status == "unsupported_format")
 
   cli::cli_alert_info(
     "Scanned {nrow(result)} file{?s}: {n_new} new, {n_changed} changed, {n_unchanged} unchanged."
   )
+
+  if (n_unsupported > 0L) {
+    unsupported_names <- result$name[result$status == "unsupported_format"]
+    cli::cli_alert_warning(
+      "{n_unsupported} file{?s} in an unsupported format: {.val {unsupported_names}}."
+    )
+  }
 
   result
 }
@@ -413,9 +430,13 @@ datom_sync_manifest <- function(conn,
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param manifest Data frame from [datom_sync_manifest()], with columns
-#'   `name`, `file`, `format`, `file_sha`, `status`.
+#'   `name`, `file`, `format`, `original_file_sha`, `status`.
 #' @param continue_on_error If `TRUE` (default), continues processing
 #'   remaining tables when one fails. If `FALSE`, stops on first error.
+#'
+#' Rows flagged `"unsupported_format"` by [datom_sync_manifest()] are reported
+#' as `result = "error"` with the recourse in the `error` column; the rest of
+#' the batch still processes.
 #'
 #' @return The manifest data frame augmented with `result` and `error` columns.
 #'   `result` is `"success"`, `"skipped"`, or `"error"`.
@@ -474,7 +495,7 @@ datom_sync <- function(conn,
     cli::cli_abort("{.arg manifest} must be a data frame from {.fn datom_sync_manifest}.")
   }
 
-  required_cols <- c("name", "file", "format", "file_sha", "status")
+  required_cols <- c("name", "file", "format", "original_file_sha", "status")
   missing_cols <- setdiff(required_cols, names(manifest))
   if (length(missing_cols) > 0L) {
     cli::cli_abort(c(
@@ -493,9 +514,25 @@ datom_sync <- function(conn,
   manifest$result <- ifelse(actionable, NA_character_, "skipped")
   manifest$error <- NA_character_
 
+  # Non-allowlisted formats are reported as errors carrying the same recourse
+  # .datom_import_file() would abort with -- one bad file does not block its
+  # allowlisted siblings.
+  unsupported <- manifest$status == "unsupported_format"
+  if (any(unsupported)) {
+    manifest$result[unsupported] <- "error"
+    manifest$error[unsupported] <- paste(
+      .datom_import_format_recourse(), collapse = " "
+    )
+    n_unsupported <- sum(unsupported)
+    unsupported_names <- manifest$name[unsupported]
+    cli::cli_alert_danger(
+      "{n_unsupported} file{?s} in an unsupported format, not synced: {.val {unsupported_names}}."
+    )
+  }
+
   n_todo <- sum(actionable)
   if (n_todo == 0L) {
-    cli::cli_alert_info("All files unchanged. Nothing to sync.")
+    cli::cli_alert_info("No new or changed files. Nothing to sync.")
     return(manifest)
   }
 
@@ -508,10 +545,10 @@ datom_sync <- function(conn,
     tbl_name <- manifest$name[i]
     tbl_file <- manifest$file[i]
     tbl_format <- manifest$format[i]
-    tbl_file_sha <- manifest$file_sha[i]
+    tbl_original_file_sha <- manifest$original_file_sha[i]
 
     tryCatch({
-      # Import file → data frame
+      # Import file -> data frame
       data <- .datom_import_file(tbl_file, tbl_format)
 
       # Build self-lineage for imported (raw) tables.
@@ -532,7 +569,7 @@ datom_sync <- function(conn,
         message = paste0("Sync ", tbl_name, " (", manifest$status[i], ")"),
         .source_lineage = self_lineage,
         .table_type = "imported",
-        .original_file_sha = tbl_file_sha,
+        .original_file_sha = tbl_original_file_sha,
         .original_format = tbl_format
       )
 
@@ -571,6 +608,40 @@ datom_sync <- function(conn,
 
 # --- Internal helpers for datom_sync -------------------------------------------
 
+# Formats datom_sync will onboard. Flat tabular only: the sync path must produce
+# a data frame whose columns are all hashable, so container formats (.rds,
+# .json, .xml) and anything else outside this list are refused. The escape hatch
+# is explicit -- the user reads the file themselves and calls datom_write().
+.datom_import_formats <- c(
+  "csv", "tsv", "txt", "psv", "parquet",
+  "sas7bdat", "xpt", "sav", "zsav", "por", "dta",
+  "xls", "xlsx"
+)
+
+
+#' Canonical recourse for a non-allowlisted ingestion format
+#'
+#' Single source for the two advice lines shared by the `.datom_import_file()`
+#' abort and the `error` column `datom_sync()` reports on an
+#' `unsupported_format` row, so the two can never drift. Returns already-
+#' rendered plain text (no cli markup left in it), which makes it safe to
+#' splice into a cli bullet or into a data frame cell.
+#' @noRd
+.datom_import_format_recourse <- function() {
+  c(
+    cli::format_inline(
+      "datom_sync onboards flat tabular formats only: {.val {(.datom_import_formats)}}."
+    ),
+    cli::format_inline(
+      paste0(
+        "Convert the file to CSV or parquet, or read it yourself and pass the ",
+        "resulting data frame to {.fn datom_write}."
+      )
+    )
+  )
+}
+
+
 #' Check rio availability
 #' @noRd
 .datom_check_rio <- function() {
@@ -587,8 +658,20 @@ datom_sync <- function(conn,
 #' Import a file to data frame via rio
 #' @noRd
 .datom_import_file <- function(file, format) {
+  fmt <- tolower(format)
+
+  # Allowlist gate: refuse before touching the file at all.
+  if (!fmt %in% .datom_import_formats) {
+    recourse <- .datom_import_format_recourse()
+    cli::cli_abort(c(
+      "Cannot import {.file {file}}: format {.val {format}} is not a supported datom ingestion format.",
+      "i" = recourse[1],
+      "i" = recourse[2]
+    ))
+  }
+
   # Parquet goes through arrow directly (more reliable than rio for parquet)
-  if (tolower(format) == "parquet") {
+  if (fmt == "parquet") {
     return(arrow::read_parquet(file))
   }
 
@@ -605,7 +688,8 @@ datom_sync <- function(conn,
 #' Update a single table entry in local .datom/manifest.json
 #' @noRd
 .datom_update_manifest_entry <- function(conn, name, metadata_sha, data_sha,
-                                        file_sha = NULL, format = NULL) {
+                                        original_file_sha = NULL,
+                                        format = NULL) {
   manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   fs::dir_create(fs::path_dir(manifest_path))
 
@@ -643,7 +727,7 @@ datom_sync <- function(conn,
     version_count = as.integer(version_count)
   )
 
-  if (!is.null(file_sha)) entry$original_file_sha <- file_sha
+  if (!is.null(original_file_sha)) entry$original_file_sha <- original_file_sha
   if (!is.null(format)) entry$original_format <- format
 
   manifest$tables[[name]] <- entry

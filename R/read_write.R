@@ -47,12 +47,15 @@ datom_read <- function(conn,
   # 1. Read metadata + version history from S3
   metadata_list <- .datom_read_metadata(conn, name)
 
-  # 2. Resolve version to data_sha
+  # 2. Resolve version to data_sha (+ the expected parquet_sha for integrity)
 
-  data_sha <- .datom_resolve_version(metadata_list, version = version, name = name)
+  resolved <- .datom_resolve_version(metadata_list, version = version, name = name)
 
-  # 3. Download and read parquet
-  .datom_read_parquet(conn, name, data_sha)
+  # 3. Download and read parquet, verifying its integrity against parquet_sha.
+  .datom_read_parquet(
+    conn, name, resolved$data_sha,
+    parquet_sha = resolved$parquet_sha
+  )
 }
 
 
@@ -81,17 +84,24 @@ datom_read <- function(conn,
 }
 
 
-#' Resolve Version to data_sha
+#' Resolve Version to data_sha and parquet_sha
 #'
 #' Given metadata from [.datom_read_metadata()], resolves a version spec
-#' to the corresponding `data_sha`. If `version` is NULL, returns the
-#' current `data_sha` from `metadata.json`. If a metadata_sha string,
-#' looks it up in `version_history.json`.
+#' to the corresponding `data_sha` (the storage address) and the recorded
+#' `parquet_sha` (the stored-object integrity hash). If `version` is NULL,
+#' resolves from the current `metadata.json`; if a metadata_sha string, looks
+#' it up in `version_history.json`.
+#'
+#' The `parquet_sha` may be `NULL`/`""` for pre-cv1 metadata, and for any
+#' version-pinned read until `version_history` entries persist `parquet_sha`
+#' (task 5.1). A `NULL`/empty `parquet_sha` tells [.datom_read_parquet()] to
+#' skip the integrity check (the intended pre-cv1 grace).
 #'
 #' @param metadata_list Return value of [.datom_read_metadata()].
 #' @param version NULL (current) or a metadata_sha string.
 #' @param name Table name (for error messages).
-#' @return Character string `data_sha`.
+#' @return Named list with `data_sha` (character) and `parquet_sha`
+#'   (character or NULL) for the resolved version.
 #' @keywords internal
 .datom_resolve_version <- function(metadata_list, version = NULL, name = "table") {
   if (is.null(version)) {
@@ -104,7 +114,10 @@ datom_read <- function(conn,
         )
       )
     }
-    return(data_sha)
+    return(list(
+      data_sha = data_sha,
+      parquet_sha = metadata_list$current$parquet_sha
+    ))
   }
 
   if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
@@ -159,21 +172,31 @@ datom_read <- function(conn,
     )
   }
 
-  data_sha
+  list(
+    data_sha = data_sha,
+    parquet_sha = history[[match_idx]]$parquet_sha
+  )
 }
 
 
 #' Download and Read Parquet from S3
 #'
-#' Downloads `{table}/{data_sha}.parquet` from S3 to a temporary file
-#' and reads it via `arrow::read_parquet()`.
+#' Downloads `{table}/{data_sha}.parquet` from S3 to a temporary file and reads
+#' it via `arrow::read_parquet()`. When an expected `parquet_sha` is supplied
+#' (non-empty), the downloaded object's SHA-256 is verified against it BEFORE
+#' parsing, so corruption or tampering aborts rather than being silently read.
 #'
 #' @param conn A `datom_conn` object.
 #' @param name Table name.
 #' @param data_sha SHA identifying the parquet file.
+#' @param parquet_sha Expected SHA-256 of the stored parquet object bytes, from
+#'   the resolved metadata (see [.datom_resolve_version()]). When non-empty, the
+#'   downloaded file is verified against it and a mismatch aborts. When `NULL`
+#'   or empty (pre-cv1 metadata, or a version-pinned read before task 5.1
+#'   persists it), the integrity check is skipped and the read succeeds.
 #' @return Data frame.
 #' @keywords internal
-.datom_read_parquet <- function(conn, name, data_sha) {
+.datom_read_parquet <- function(conn, name, data_sha, parquet_sha = NULL) {
   .datom_validate_name(name)
 
   if (!is.character(data_sha) || length(data_sha) != 1L || !nzchar(data_sha)) {
@@ -188,6 +211,24 @@ datom_read <- function(conn,
 
   .datom_storage_download(conn, s3_key, tmp)
 
+  # Read-time integrity: verify the stored object bytes against the recorded
+  # parquet_sha before parsing. Skipped when parquet_sha is absent/empty
+  # (pre-cv1 metadata) -- a read-time grace, not a data migration.
+  if (!is.null(parquet_sha) && nzchar(parquet_sha)) {
+    actual <- digest::digest(file = tmp, algo = "sha256")
+    if (!identical(actual, parquet_sha)) {
+      cli::cli_abort(
+        c(
+          "Stored parquet for {.val {name}} failed its integrity check.",
+          "x" = "Key: {.val {s3_key}}",
+          "x" = "Expected {.field parquet_sha}: {.val {parquet_sha}}",
+          "x" = "Actual SHA-256: {.val {actual}}",
+          "i" = "The stored object may be corrupted or tampered with. Do not trust this data."
+        )
+      )
+    }
+  }
+
   arrow::read_parquet(tmp)
 }
 
@@ -201,7 +242,7 @@ datom_read <- function(conn,
 #' any user-supplied custom metadata.
 #'
 #' @param data Data frame being written.
-#' @param data_sha SHA-256 of the parquet-formatted data.
+#' @param data_sha datom-cv1 canonical content hash of the data.
 #' @param custom Optional named list of user-supplied custom metadata.
 #' @param table_type `"derived"` (default, from `datom_write`) or `"imported"` (from `datom_sync`).
 #' @param size_bytes Size of the parquet file in bytes. NULL if not yet computed.
@@ -209,25 +250,40 @@ datom_read <- function(conn,
 #'   or NULL if no lineage recorded.
 #' @param source_lineage Pre-computed transitive source list (each entry with
 #'   project, table, version_sha), or NULL.
-#' @return Named list suitable for writing as metadata.json.
+#' @param original_file_sha SHA-256 of the source file, for imported tables.
+#'   Included in the metadata **only when non-NULL**; the derived path omits it
+#'   from the object entirely (not present-with-NULL).
+#' @param column_hashes Ordered list of per-column `list(name, sha)` digests
+#'   from [.datom_canonical_hash()], or NULL. Excluded from `metadata_sha`
+#'   (see [.datom_compute_metadata_sha()]).
+#' @return Named list suitable for writing as metadata.json. Always carries
+#'   `hash_algo = "datom-cv1"` and declares `parquet_sha` (left NULL here and
+#'   populated by [datom_write()] after change detection, since the stored-
+#'   object hash is not knowable until then; it is excluded from `metadata_sha`
+#'   so this deferred assignment is safe).
 #' @keywords internal
 .datom_build_metadata <- function(data, data_sha, custom = NULL,
                                  table_type = "derived", size_bytes = NULL,
-                                 parents = NULL, source_lineage = NULL) {
+                                 parents = NULL, source_lineage = NULL,
+                                 original_file_sha = NULL, column_hashes = NULL) {
   if (!table_type %in% c("imported", "derived")) {
     cli::cli_abort("{.arg table_type} must be {.val imported} or {.val derived}.")
   }
 
   meta <- list(
     data_sha = data_sha,
+    hash_algo = "datom-cv1",
+    parquet_sha = NULL,
     table_type = table_type,
     nrow = nrow(data),
     ncol = ncol(data),
     colnames = names(data),
+    column_hashes = column_hashes,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     datom_version = as.character(utils::packageVersion("datom"))
   )
 
+  if (!is.null(original_file_sha)) meta$original_file_sha <- original_file_sha
   if (!is.null(parents)) meta$parents <- parents
   if (!is.null(source_lineage)) meta$source_lineage <- source_lineage
   if (!is.null(size_bytes)) meta$size_bytes <- size_bytes
@@ -252,30 +308,125 @@ datom_read <- function(conn,
 #' @param name Table name.
 #' @param new_data_sha SHA of the new data.
 #' @param new_metadata_sha SHA of the new metadata (from `.datom_compute_metadata_sha()`).
-#' @return Character string: `"none"` (no change), `"metadata_only"` (data same,
-#'   metadata changed), or `"full"` (data changed).
+#' @return Named list with two elements: `change_type` -- `"none"` (no change),
+#'   `"metadata_only"` (data same, metadata changed), or `"full"` (data
+#'   changed) -- and `current`, the already-read current metadata (or `NULL`
+#'   for a brand-new table). Returning `current` lets [datom_write()] reuse it
+#'   (the `metadata_only` `parquet_sha` carry-forward and the revert-to-older
+#'   history scan) without a second storage read.
 #' @keywords internal
 .datom_has_changes <- function(conn, name, new_data_sha, new_metadata_sha) {
   metadata_key <- paste0(name, "/.metadata/metadata.json")
 
-  # If metadata doesn't exist yet, it's a new table → full write
-
+  # If metadata doesn't exist yet, it's a new table -> full write, no current.
   if (!.datom_storage_exists(conn, metadata_key)) {
-    return("full")
+    return(list(change_type = "full", current = NULL))
   }
 
   current <- .datom_storage_read_json(conn, metadata_key)
   current_metadata_sha <- .datom_compute_metadata_sha(current)
 
-  if (identical(current_metadata_sha, new_metadata_sha)) {
-    return("none")
+  change_type <- if (identical(current_metadata_sha, new_metadata_sha)) {
+    "none"
+  } else if (identical(current$data_sha, new_data_sha)) {
+    "metadata_only"
+  } else {
+    "full"
   }
 
-  if (identical(current$data_sha, new_data_sha)) {
-    return("metadata_only")
+  list(change_type = change_type, current = current)
+}
+
+
+#' Resolve the parquet_sha to Record and Whether to Upload
+#'
+#' For a write that is not a no-op, decides which `parquet_sha` the new metadata
+#' should carry and whether the freshly-serialized parquet bytes need uploading.
+#' The caller performs the actual upload AFTER the git push (git push is the
+#' serialization point); this function only decides.
+#'
+#' Cases:
+#' * `metadata_only` -- the `data_sha` is unchanged, so the parquet object
+#'   already exists; carry forward the current metadata's `parquet_sha` (which
+#'   may be NULL for a pre-cv1 table, leaving the integrity check skipped) and
+#'   do not upload.
+#' * `full` where a prior version already recorded a `parquet_sha` for this
+#'   exact `data_sha` -- the stored object exists and is pinned by that version;
+#'   reuse its `parquet_sha` and do NOT re-upload (a fresh serialization can
+#'   differ byte-for-byte and would break that version's integrity pin).
+#' * `full` otherwise (brand-new content, or a legacy object with no recorded
+#'   `parquet_sha`) -- upload these bytes and record their hash.
+#'
+#' This refines the design's literal step 7 (which gated on
+#' `.datom_storage_exists()`): a recorded `parquet_sha` is the precise thing we
+#' must not clobber, and its presence implies the object exists, so the history
+#' lookup subsumes the existence check with identical behavior and one fewer
+#' storage round-trip.
+#'
+#' @param conn A `datom_conn` object.
+#' @param name Table name.
+#' @param data_sha Canonical content hash (the storage address).
+#' @param new_parquet_sha SHA-256 of the freshly-serialized parquet bytes.
+#' @param change_type `"metadata_only"` or `"full"` (never `"none"`).
+#' @param current The current metadata (from [.datom_has_changes()]), or NULL.
+#' @return List with `parquet_sha` (character or NULL) and `upload` (logical).
+#' @keywords internal
+.datom_resolve_parquet_sha <- function(conn, name, data_sha, new_parquet_sha,
+                                       change_type, current) {
+  # metadata_only: data_sha unchanged -> the parquet object already exists;
+  # carry the current object's parquet_sha forward, no upload.
+  if (identical(change_type, "metadata_only")) {
+    return(list(parquet_sha = current$parquet_sha, upload = FALSE))
   }
 
-  "full"
+  # change_type == "full".
+  # Since task 5.1, version_history entries persist parquet_sha, so this lookup
+  # activates the revert-to-older reuse branch: writing content whose data_sha
+  # already appears in history reuses that version's recorded parquet_sha
+  # instead of re-uploading (a fresh serialization can differ byte-for-byte and
+  # would break the older version's integrity pin). The end-to-end revert-reuse
+  # integration test is task 12.5.
+  reused <- .datom_lookup_history_parquet_sha(conn, name, data_sha)
+  if (!is.null(reused)) {
+    return(list(parquet_sha = reused, upload = FALSE))
+  }
+
+  list(parquet_sha = new_parquet_sha, upload = TRUE)
+}
+
+
+#' Most-recent version_history parquet_sha for a data_sha
+#'
+#' Scans the developer's local `version_history.json` (newest-first) for the
+#' most recent entry whose `data_sha` matches and that carries a non-empty
+#' `parquet_sha`. Returns NULL when none is found -- including the transitional
+#' period before task 5.1 persists `parquet_sha` into history entries, and for
+#' pre-cv1 histories. Reads the local git clone (offline-friendly); a stale
+#' clone is tolerated because the subsequent git push serializes concurrent
+#' writers (a behind clone fails to push before it can upload).
+#'
+#' @param conn A `datom_conn` object (developer, with local path).
+#' @param name Table name.
+#' @param data_sha Canonical content hash to match.
+#' @return Character `parquet_sha`, or NULL.
+#' @keywords internal
+.datom_lookup_history_parquet_sha <- function(conn, name, data_sha) {
+  history_path <- fs::path(conn$path, name, "version_history.json")
+  if (!fs::file_exists(history_path)) {
+    return(NULL)
+  }
+
+  history <- jsonlite::read_json(history_path)
+  for (entry in history) {
+    if (identical(entry$data_sha %||% "", data_sha)) {
+      parquet_sha <- entry$parquet_sha %||% ""
+      if (nzchar(parquet_sha)) {
+        return(parquet_sha)
+      }
+    }
+  }
+
+  NULL
 }
 
 
@@ -325,13 +476,29 @@ datom_read <- function(conn,
     commit_message = message %||% paste0("Update ", name)
   )
 
+  # Persist parquet_sha alongside original_file_sha so the stored-object
+  # integrity hash travels with each version -- it powers the revert-to-older
+  # reuse scan (.datom_lookup_history_parquet_sha) and version-pinned read
+  # integrity (.datom_resolve_version). Added only when non-NULL to keep
+  # pre-cv1 / metadata_only-carrying-NULL entries clean.
+  if (!is.null(metadata$parquet_sha)) {
+    new_entry$parquet_sha <- metadata$parquet_sha
+  }
+
   if (!is.null(original_file_sha)) {
     new_entry$original_file_sha <- original_file_sha
   }
 
-  # Guard: skip append if latest entry already has the same version SHA
-  latest_version <- if (length(history) > 0) history[[1]]$version else NULL
-  if (!identical(latest_version, metadata_sha)) {
+  # Full-history dedup guard (Requirement 12): scan the ENTIRE history for an
+  # entry whose version already equals this metadata_sha, not just the latest.
+  # This is the S4 fix -- re-syncing an older-but-content-matching file must not
+  # append a duplicate version that would later make datom_read(version=)
+  # ambiguous. O(history) with early exit; the current pointer (metadata.json)
+  # is still written above regardless.
+  exists_already <- purrr::some(
+    history, ~ identical(.x$version %||% "", metadata_sha)
+  )
+  if (!exists_already) {
     history <- c(list(new_entry), history)
   }
   jsonlite::write_json(history, history_path, auto_unbox = TRUE, pretty = TRUE)
@@ -514,28 +681,38 @@ datom_write <- function(conn,
   # 0. Write-time ref guard: ensure data location hasn't changed
   .datom_check_ref_current(conn)
 
-  # 1. Compute data SHA
-  data_sha <- .datom_compute_data_sha(data)
+  # 1. Canonical content hash: data_sha (the storage address) + the per-column
+  #    index, in one pass. The all-offenders abort fires here -- before any
+  #    git/storage/manifest mutation -- so a refusal leaves no partial state.
+  hashed <- .datom_canonical_hash(data)
+  data_sha <- hashed$data_sha
 
-  # 2. Write parquet to temp (need size_bytes for complete metadata)
+  # 2. Serialize parquet to a temp file; capture its size and the stored-object
+  #    integrity hash (parquet_sha) of these exact bytes.
   tmp <- tempfile(fileext = ".parquet")
   on.exit(unlink(tmp), add = TRUE)
   arrow::write_parquet(data, tmp)
   size_bytes <- as.numeric(fs::file_size(tmp))
+  new_parquet_sha <- digest::digest(file = tmp, algo = "sha256")
 
-  # 3. Build metadata (complete — includes size_bytes)
+  # 3. Build metadata. parquet_sha is set in step 5 (after change detection);
+  #    it is excluded from metadata_sha, so this deferral does not affect the
+  #    version identity.
   meta <- .datom_build_metadata(
     data, data_sha,
     custom = metadata,
     table_type = .table_type,
     parents = parents,
     source_lineage = source_lineage,
-    size_bytes = size_bytes
+    size_bytes = size_bytes,
+    original_file_sha = .original_file_sha,
+    column_hashes = hashed$column_hashes
   )
   metadata_sha <- .datom_compute_metadata_sha(meta)
 
-  # 4. Change detection
-  change_type <- .datom_has_changes(conn, name, data_sha, metadata_sha)
+  # 4. Change detection (reuses the already-read current metadata).
+  chg <- .datom_has_changes(conn, name, data_sha, metadata_sha)
+  change_type <- chg$change_type
 
   if (change_type == "none") {
     cli::cli_alert_info(
@@ -549,23 +726,30 @@ datom_write <- function(conn,
     )))
   }
 
-  # 5. Write metadata locally
+  # 5. Decide the parquet_sha to record and whether these bytes need uploading.
+  #    The upload itself stays AFTER the git push (step 8); this only decides.
+  parquet_decision <- .datom_resolve_parquet_sha(
+    conn, name, data_sha, new_parquet_sha, change_type, chg$current
+  )
+  meta$parquet_sha <- parquet_decision$parquet_sha
+
+  # 6. Write metadata + manifest locally
   write_result <- .datom_write_metadata_local(
     conn, name, meta, metadata_sha,
     message = message,
     original_file_sha = .original_file_sha
   )
-
-  # 5b. Update manifest.json locally
   .datom_update_manifest_entry(
     conn, name,
     metadata_sha = metadata_sha,
     data_sha = data_sha,
-    file_sha = .original_file_sha,
+    original_file_sha = .original_file_sha,
     format = .original_format
   )
 
-  # 6. Git commit + push (must succeed before touching S3)
+  # 7. Git commit + push (must succeed before touching storage). Git push is the
+  #    serialization point that makes the reuse decision in step 5 safe against
+  #    concurrent writers.
   git_files <- c(
     fs::path_rel(write_result$git_paths, conn$path),
     ".datom/manifest.json"
@@ -574,16 +758,16 @@ datom_write <- function(conn,
   commit_sha <- .datom_git_commit(conn$path, git_files, commit_msg)
   .datom_git_push(conn$path, pat = conn$github_pat)
 
-  # 7. Upload parquet to S3 (only if data changed — after git succeeds)
-  if (change_type == "full") {
+  # 8. Upload parquet (only when step 5 decided it is needed -- after git).
+  if (isTRUE(parquet_decision$upload)) {
     parquet_key <- paste0(name, "/", data_sha, ".parquet")
     .datom_storage_upload(conn, tmp, parquet_key)
   }
 
-  # 8. Push metadata to S3
+  # 9. Push metadata to S3
   .datom_push_metadata_s3(conn, name, meta, metadata_sha)
 
-  # 9. Push manifest to S3 (completes the round-trip)
+  # 10. Push manifest to S3 (completes the round-trip)
   manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   if (fs::file_exists(manifest_path)) {
     manifest_data <- jsonlite::read_json(manifest_path)

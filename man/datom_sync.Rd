@@ -10,10 +10,14 @@ datom_sync(conn, manifest, continue_on_error = TRUE)
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
 \item{manifest}{Data frame from \code{\link[=datom_sync_manifest]{datom_sync_manifest()}}, with columns
-\code{name}, \code{file}, \code{format}, \code{file_sha}, \code{status}.}
+\code{name}, \code{file}, \code{format}, \code{original_file_sha}, \code{status}.}
 
 \item{continue_on_error}{If \code{TRUE} (default), continues processing
-remaining tables when one fails. If \code{FALSE}, stops on first error.}
+remaining tables when one fails. If \code{FALSE}, stops on first error.
+
+Rows flagged \code{"unsupported_format"} by \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} are reported
+as \code{result = "error"} with the recourse in the \code{error} column; the rest of
+the batch still processes.}
 }
 \value{
 The manifest data frame augmented with \code{result} and \code{error} columns.

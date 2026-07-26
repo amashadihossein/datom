@@ -16,8 +16,12 @@
 \item{new_metadata_sha}{SHA of the new metadata (from \code{.datom_compute_metadata_sha()}).}
 }
 \value{
-Character string: \code{"none"} (no change), \code{"metadata_only"} (data same,
-metadata changed), or \code{"full"} (data changed).
+Named list with two elements: \code{change_type} -- \code{"none"} (no change),
+\code{"metadata_only"} (data same, metadata changed), or \code{"full"} (data
+changed) -- and \code{current}, the already-read current metadata (or \code{NULL}
+for a brand-new table). Returning \code{current} lets \code{\link[=datom_write]{datom_write()}} reuse it
+(the \code{metadata_only} \code{parquet_sha} carry-forward and the revert-to-older
+history scan) without a second storage read.
 }
 \description{
 Compares the proposed metadata_sha against the current version in S3.

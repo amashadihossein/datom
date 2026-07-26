@@ -25,6 +25,44 @@
 > reality. datom keeps all gov **reads** + the data-side helpers (`datom_repo_delete`,
 > `datom_repo_attach_governance`).
 
+## Workspace and workflow notes
+
+Standing facts about working in this repo. (The transient `datom-cv1` work-handoff section
+that used to sit here was removed at spec completion, 2026-07-26 -- its durable content is
+now in `dev/datom_specification.md`, `dev/datom_pathways.md`, the
+`.kiro/specs/datom-cv1-identity/` docs, and the Gotchas below.)
+
+**R toolchain is available here.** R 4.5.2 with `devtools`, `arrow`, `digest`, `testthat`,
+`mockery`, `withr`, `git2r`, `rio`, `tibble`, `bit64`. Spec text that assumes "R is unavailable
+in the authoring environment" is stale -- run the gates yourself. Write the runner to a temp
+`.R` file and `Rscript` it; the shell mangles multi-line `Rscript -e`:
+
+```r
+options(crayon.enabled = FALSE)
+suppressMessages(devtools::load_all(quiet = TRUE))
+res <- as.data.frame(testthat::test_dir("tests/testthat",
+  reporter = testthat::ListReporter, stop_on_failure = FALSE))
+cat("PASS:", sum(res$passed), " FAIL:", sum(res$failed),
+    " WARN:", sum(res$warning), " SKIP:", sum(res$skipped), "\n")
+```
+
+Full suite runs in ~13s. `R CMD check --as-cran` needs `_R_CHECK_FORCE_SUGGESTS_=false` unless
+`covr` is installed, or it ERRORs on the missing suggested package. `gh issue view N` needs
+`GH_PAGER=cat` or it hangs.
+
+**Long commit messages: `git commit -F <tempfile>`, never a multi-line `-m`.** This is not a
+style preference, it silently corrupts history. Demonstrated at commit `1bef5bd`: a multi-line
+`-m` passed through this shell collapsed the entire message into a **742-character subject
+line with an empty body**. `git log --oneline` becomes unreadable and the reasoning is no
+longer separable from the summary. Write the message to a temp file and `git commit -F` it,
+then verify with `git log -1 --pretty=format:"%s"` -- a subject over ~72 chars means it
+collapsed.
+
+**Do not pin a branch head in this file.** It went stale three times in four commits on
+`spec/datom-cv1-identity` for a structural reason: the commit that records the head changes
+the head it just recorded. Read it from `git log --oneline -1`, and find the last code-bearing
+commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
+
 ## Gotchas
 
 - **cli pluralization**: `{?s}` requires a quantity reference immediately before it (e.g., `{length(x)} variable{?s}`). Without the quantity, cli throws a confusing error.
@@ -96,3 +134,196 @@
 - **`sandbox_store_local()` / `sandbox_store()` accept `attach_gov = TRUE` (default)**: when `attach_gov = FALSE`, the gov component is `NULL` and no gov dir is created. `sandbox_up()` branches on `!is.null(store$governance)`. `sandbox_promote_gov(env, gov_store)` mirrors Article 4's flow for testing the no-gov -> gov transition end-to-end.
 
 - **Gov-guard messages intentionally name datomanager — this is NOT a C1 violation**: `.datom_require_gov()` and the `datom_get_conn()` "governance store ignored" warning deliberately point users to `gov_attach()` / `gov_decommission()` "(from the datomanager package)" (design Component 8 / Task 5.2). C1 / R6 mean datom has no **hard runtime dependency** on datomanager — it must load and run without it installed and must not fail mysteriously. A helpful guidance string naming the companion package is the sanctioned UX. Do NOT "fix" these messages to strip datomanager — a solo E2E that asserted the gov error must *not* name datomanager was the bug, not the message. The correct solo assertion: the error mentions `governance` and points to `gov_attach`.
+
+- **A test file cannot see `setup.R`'s namespace swaps by calling them directly (under `R CMD check`)**:
+  `testthat:::test_env(package)` is literally `env_clone(asNamespace(package))`, and that clone is
+  taken **before** setup files are sourced. So `setup.R`'s
+  `assignInNamespace(".datom_s3_client", <blocker>, ns = "datom")` replaces the live namespace
+  binding, but a bare `.datom_s3_client()` written at test-file scope resolves through the *clone*
+  and reaches the **original** function. Under `devtools::load_all()` + `test_dir()` the lookup
+  falls through to the live namespace, so the same line passes locally and fails only in
+  `R CMD check` -- discovered exactly that way in Task 12.5 (check ERROR: `argument "access_key"
+  is missing`, while `getFromNamespace()` in the same run showed the blocker installed). Two
+  consequences: (1) the fail-closed network guard is still **effective** where it matters, because
+  package internals are closures over the live namespace and do resolve the blocker -- the guard
+  protects leaking *package code*, which is its whole purpose; (2) any test that wants to assert on
+  a `setup.R`-installed binding must read it with `utils::getFromNamespace(name, ns)` and call
+  that, never name it bare. Live example: the Requirement 16.6 test at the end of
+  `test-identity-contract.R`. This also explains why nothing else in the suite ever noticed --
+  every other test mocks its own bindings and never calls a chokepoint directly.
+- **Run new test files under BOTH run modes before declaring them green**: `devtools::load_all()` +
+  `testthat::test_dir()` (the fast local loop) and the installed-package path
+  (`R CMD check`, i.e. `test_check()` against `<pkg>.Rcheck/<pkg>`) do not resolve bindings
+  identically -- see the namespace-clone gotcha above. The cheap way to check the second mode
+  without a full re-check is to run, from `<pkg>.Rcheck/tests`:
+  `Rscript -e '.libPaths(c(normalizePath("../../<pkg>.Rcheck"), .libPaths())); library(testthat); library(<pkg>); test_check("<pkg>", filter = "<file>")'`
+  (write it to a temp `.R` file -- the shell mangles multi-line `Rscript -e`). Two other
+  check-only differences to expect: `dev/` is Rbuildignored, so the `dev/datom_cv1_reference.R`
+  parity test (Property 11) legitimately reports SKIP 1 there while the local run reports 0; and
+  a plain `R CMD check --as-cran` ERRORs with "Package suggested but not available: covr" on a
+  box without covr installed -- run it with `_R_CHECK_FORCE_SUGGESTS_=false` (environmental, not
+  a package defect).
+
+- **The ASCII-only rule for `R/` is currently aspirational, not enforced -- 22 pre-existing
+  non-ASCII characters live in 7 files**: `R/read_write.R` (4), `R/store.R` (4),
+  `R/utils-path.R` (9), `R/validate.R` (2), and one each in `R/utils-git.R`,
+  `R/utils-storage.R`, `R/utils-validate.R` -- all em dashes (`e2 80 94`) in comments and
+  roxygen, all predating the datom-cv1 spec. `R CMD check --as-cran` does **not** flag them
+  here (`DESCRIPTION` declares `Encoding: UTF-8`), which is why they survived. Found with
+  `LC_ALL=C grep -c '[^[:print:][:space:]]' R/*.R vignettes/*.Rmd | grep -v ":0"`. Keep
+  writing new code ASCII-only -- the convention is still right, and a stray non-ASCII char in
+  a cli string is a real portability risk -- but do not treat a non-empty result from that
+  grep as a regression introduced by your change: check whether your files are in the list
+  first. Sweeping the 22 is a one-commit pre-CRAN cleanup, deliberately not folded into spec
+  work (`vignettes/*.Rmd` is already clean).
+
+### datom-cv1 identity (issue #72, landed pre-0.1.0)
+
+Harvested from the spec's work-handoff at completion. The *design* lives in
+`dev/datom_specification.md` ("The Three SHAs", "Table Identity = data_sha") and
+`vignette("design-version-shas")`; these are the implementation traps.
+
+- **`dev/datom_cv1_reference.R` is the byte-layout single source of truth**, not
+  `.datom_canonical_hash()`. It is standalone base R + `digest`, Rbuildignored, pure ASCII, and
+  running it prints the goldens (numeric `050d620a...`, mixed `47c94f30...`) and passes 30/30
+  self-tests. The package implementation must stay byte-identical to it; the Property 11 parity
+  test in `test-utils-sha.R` enforces that and skips when `dev/` is absent -- which means it
+  skips under `R CMD check`, i.e. in **every** matrix job. That gap is now covered by
+  `.github/workflows/cv1-reference-parity.yaml`, which runs the same file from the source tree
+  (where `dev/` exists) on x86_64 AND arm64 and fails if anything skips. If parity ever reddens,
+  fix the package, not the reference.
+- **Base R's decimal->double conversion is not correctly rounded, and the variable is
+  `long double` WIDTH, not architecture.** `R_strtod5()` (`src/main/util.c`) accumulates digits
+  into an `LDOUBLE` accumulator and scales by a power of ten; `LDOUBLE` is `long double` unless
+  the build lacks it. So: x86_64 (80-bit x87) and aarch64-**Linux**/s390x/riscv64 (128-bit quad)
+  agree with correct rounding on everything tested, while **Apple-silicon macOS**, 32-bit ARM, and
+  any `--disable-long-double` build (**CRAN's noLD check flavour**) deviate. Linux and macOS on
+  the same arm64 chip therefore land on *opposite* sides -- do not reason about this as
+  "ARM vs Intel". Detect the local build with `.Machine$sizeof.longdouble` (`8` = no extra
+  precision; this workspace reports 8). Accepted R behaviour, not a bug: CRAN maintains noLD
+  precisely because results differ, and `?NumericConstants` promises only grammar, never correct
+  rounding.
+  - **The rule for when it deviates**: whenever `mantissa * 10^expn` cannot be produced by a
+    single correctly-rounded operation at the platform's `LDOUBLE` precision -- the accumulated
+    mantissa exceeds the significand, or `10^|expn|` is not exactly representable. `10^22` is the
+    largest exactly-representable power of ten in a double, `10^23` the first that is not (both
+    verified locally), which is exactly why a bare `1e-23` is the first one-digit value to drift
+    here.
+  - **There is NO fast/exact path keyed on digit count.** `strtod_EXACT_CLAUSE` in the R sources
+    is a `> 2^53-1` accuracy-loss guard active only when the caller passes `exact`
+    (`type.convert(numerals=)`), not a rounding shortcut. `0.1` and `1e15` come out exact
+    *emergently* -- one rounding instead of two. An earlier revision of this note implied a fast
+    path; that was a misreading.
+  - **x86_64 is a de facto reference, not a provable one.** Clinger (PLDI 1990) proves no
+    fixed-precision parser can be correctly rounded for all decimals; correctness needs guard bits
+    plus a bignum fallback, which `R_strtod` lacks. Ground truth is a bignum parser -- CPython's
+    `float()` (David Gay) or `fast_float`.
+  - **Measured here** (arm64 macOS, `sizeof.longdouble == 8`): swept 3792 decimal strings (six
+    mantissas x exponents -330..308) against exact rational arithmetic -- 3057 disagreed and R was
+    the farther-from-true side in **every one**, never the reverse, never a tie. First drift by
+    mantissa: `1` at `e=-23`, `1.5` at `e=-22`, `2.718281828459045` at `e=-11`,
+    `3.14159265358979` and `9.87654321098765` at `e=-9`. Reproduce with throwaway scripts: R dumps
+    `writeBin()` bits per string, then compare against `struct.pack("<d", float(s))` and
+    adjudicate with `fractions.Fraction`. **That is a measuring instrument, not a second
+    implementation of the hash** -- Task 1.9's rule (the standalone R reference is the single
+    golden source; never bootstrap goldens from another language) is untouched, because nothing
+    in the measurement computes a golden.
+  - **Reader guidance**: `read.csv`/`scan` share `R_strtod` (same exposure).
+    `data.table::fread` has its own parser that is *also* not correctly rounded and whose errors
+    **differ** from base R's (`data.table` issue #4461) -- it is not a fix. `arrow`'s CSV reader
+    uses `fast_float` (correctly rounded, platform-independent) and parquet stores the doubles
+    themselves, so arrow/parquet is the portable path. `readr`/`vroom` is unverified.
+  - **Exact literals without a dependency**: C99 hex floats, documented in `?NumericConstants`.
+    Verified locally: `0x1.999999999999ap-4` is bit-identical to `0.1`, `0x1.fcp+996` is a large
+    value with no base-10 rounding. Usable in fixtures where a decimal literal would not be safe.
+- **Never put a many-digit or extreme-exponent decimal literal in a golden fixture -- it makes the
+  golden architecture-dependent.** `1e300` in the numeric golden fixture passed on arm64 macOS
+  and failed on x86_64 Linux + Windows with the same wrong hash, because R's `R_strtod`
+  accumulates extreme-exponent decimals in a `long double`: 80-bit extended on x86_64 (correctly
+  rounded) but 64-bit on Apple arm64, which lands `1e300` **4 ULP** off. The encoder was
+  innocent -- the divergence happens in the parser, before any datom code runs. Build extreme
+  magnitudes parse-exactly instead: powers of two (`2^999`, verified zero-mantissa) or
+  `.Machine$double.xmax` / `double.xmin` (IEEE-754 fixed constants). Small-exponent decimals
+  like `0.1` take the exact fast path and are portable, so they can stay. Related trap: on arm64
+  `2^999` does **not** survive `as.numeric(sprintf("%.17g", 2^999))` -- the round-trip goes back
+  through the same broken path -- so never regenerate a fixture value via text.
+- **Debugging a cross-platform hash mismatch: pin the payload bytes, not just the hash.** A
+  golden-hash failure says "something differs"; it took an exhaustive single-byte search
+  (96 x 255), a +/-3 ULP search, and a set of structural hypotheses to *fail* to find the cause
+  locally, because the real difference was 4 ULP across two slots at once. What settled it was
+  running a standalone probe on the other architecture that printed the parser's bit patterns
+  per value, then the payload, then each intermediate digest -- the first diverging line names
+  the stage. The "golden numeric fixture is parse-exact" test now pins those payload bytes
+  permanently, so the next occurrence reports which value moved instead of only that the hash
+  did.
+- **`R/hashable.R` detection order is load-bearing.** `.datom_column_kind()` dispatches in a
+  fixed order and reordering it silently changes hashes. In `.datom_hash_recourse()`, the
+  `POSIXlt`, `sfc`, and nested-data-frame checks are deliberately hoisted **above** the generic
+  list rules -- all three are lists underneath, so below the generic rule their specific (more
+  useful) recourse would be unreachable. Do not "tidy" them back down.
+- **cli dot-literal, concrete instance**: splice the allowlist as
+  `{.val {(.datom_import_formats)}}`. Without the inner parens cli reads the leading dot as a
+  style name and the message breaks. The design doc's message block omits the parens; they are
+  required.
+- **`.datom_import_format_recourse()` returns rendered plain text** (via `cli::format_inline()`),
+  which is what lets the identical string land in a cli abort bullet AND in the `error` cell of
+  the manifest data frame with no markup drift. Keep it markup-free.
+- **`data_sha` recompute formula** -- lifted verbatim from `.datom_canonical_hash()`; copy it,
+  do not paraphrase, or an assertion drifts from the implementation. Lives in the Property 12
+  test in `test-utils-sha.R`:
+
+  ```r
+  shas   <- vapply(meta$column_hashes, function(e) e$sha, character(1))
+  header <- c(charToRaw("datom-cv1"),
+              writeBin(as.double(c(nrow, ncol)), raw(), size = 8L, endian = "little"))
+  recompute <- digest::digest(c(header, charToRaw(paste(shas, collapse = ""))),
+                              algo = "sha256", serialize = FALSE)
+  ```
+
+  `writeBin()` over a length-2 vector is one call, i.e. `f64le(nrow) || f64le(ncol)`. If this
+  assertion ever reddens, the byte layout changed -- fix the code, not the test.
+- **Token-precise scanning for a `*_sha` rename sweep.** `grep -v "original_file_sha"` filters
+  whole *lines*, so it hides a bare token sharing a line with a legitimate one (e.g.
+  `customers = list(original_file_sha = file_sha)`). macOS BSD `grep` has no `-P`, so use perl:
+  `perl -ne 'print if /(?<!original_)(?<!parquet_)\bfile_sha\b/'`. And `\bfile_sha\b` alone is
+  still not enough: `_` is a word character, so it does **not** match inside
+  `.datom_compute_file_sha` or `tbl_file_sha`. Rename functions first, then sweep bare tokens,
+  then scan the function-name forms separately.
+- **`devtools::document()` handles renamed internal helpers by itself.** roxygen2 tracks the
+  pages it generated and deletes the stale `.Rd` on rename -- no `git rm` needed. (An earlier
+  note claimed otherwise; verified false by running it.)
+- **Test fakes avoid new Suggests**: `hms` / `ITime` / `integer64` columns are faked with
+  `structure(..., class = ...)`, and the same trick renders the vignette's `sf`/`units`/`zoo`
+  recourse rows -- dispatch is on the class tag, so a bare structure is enough.
+- **The `metadata_sha` golden `59f1f1d9...`** in `test-utils-sha.R` survives the radix-sort and
+  volatile-set changes because its fixture has no `parquet_sha`/`column_hashes` and only simple
+  lowercase names. Keep that fixture as-is or the golden needs re-deriving.
+- **An acceptance gate can have a legitimate false positive; scope the gate, do not edit the
+  source.** `grep -rn "as.data.frame" R/utils-sha.R` will never be empty: the one hit is the
+  roxygen line documenting the invariant ("no `as.data.frame()` or coercion, and never invokes
+  arrow"). The gate's intent is that no *executable* coercion exists, which the comment asserts.
+  Pipe through `grep -vE ":[0-9]+:[[:space:]]*#"` and record the documented match. Deleting the
+  comment to satisfy a literal grep would delete the statement of the invariant.
+
+### Testing storage side effects without mocking storage
+
+Techniques from the S1-S6 integration suite (`tests/testthat/test-identity-contract.R`). They
+matter whenever a test needs to prove something did *not* happen.
+
+- **A real project needs no mocks at all.** Real git repo + real **local bare remote** (so
+  `.datom_git_push()` works -- it does `git2r::remotes(repo)[[1L]]`, which subscript-errors
+  without a remote, the reason older tests mocked the push) + a real `backend = "local"` store.
+  `.datom_check_git_current()` needs no mock either (early-returns with no remote, works
+  normally with one), and a conn with `gov_root = NULL` makes `.datom_check_ref_current()` take
+  its legacy-conn skip. See `local_identity_project()`, and `dev/e2e-cv1-identity.R` for the
+  same fixture as a runnable walkthrough.
+- **Prove "no upload" with a backdated mtime**: `fs::file_touch(obj, modification_time = <old>)`
+  before the write, then assert the mtime survived. A re-upload goes through
+  `.datom_local_upload()` -> `fs::file_copy(overwrite = TRUE)` and would reset it. Byte
+  comparison cannot distinguish "not re-uploaded" from "re-uploaded identical bytes".
+- **Prove "verified before parsed" with a valid imposter**: swapping in a *different but
+  readable* parquet is the only corruption arrow would happily accept, so the abort can only
+  come from the `parquet_sha` check. A single flipped byte fails either way and proves less.
+- **Locate stored objects through `.datom_local_path()`**, not a hand-written
+  `{prefix}/datom/...` path, so a storage-layout change breaks the code rather than silently
+  passing a test that looks in the wrong place.

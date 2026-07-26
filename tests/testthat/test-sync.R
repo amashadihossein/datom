@@ -56,7 +56,7 @@ test_that("returns empty data frame when no files match", {
 
     expect_s3_class(result, "data.frame")
     expect_equal(nrow(result), 0)
-    expect_true(all(c("name", "file", "format", "file_sha", "status") %in% names(result)))
+    expect_true(all(c("name", "file", "format", "original_file_sha", "status") %in% names(result)))
   })
 })
 
@@ -90,10 +90,10 @@ test_that("detects unchanged files via original_file_sha", {
     writeLines("id,val\n1,a", "input_files/customers.csv")
 
     # Create manifest with matching SHA
-    file_sha <- .datom_compute_file_sha("input_files/customers.csv")
+    original_file_sha <- .datom_compute_original_file_sha("input_files/customers.csv")
     manifest <- list(
       tables = list(
-        customers = list(original_file_sha = file_sha)
+        customers = list(original_file_sha = original_file_sha)
       )
     )
     fs::dir_create(".datom")
@@ -142,7 +142,7 @@ test_that("mixes new, changed, and unchanged statuses", {
     writeLines("id\n2", "input_files/existing_diff.csv")
     writeLines("id\n3", "input_files/brand_new.csv")
 
-    same_sha <- .datom_compute_file_sha("input_files/existing_same.csv")
+    same_sha <- .datom_compute_original_file_sha("input_files/existing_same.csv")
     manifest <- list(
       tables = list(
         existing_same = list(original_file_sha = same_sha),
@@ -196,7 +196,7 @@ test_that("accepts custom input path", {
   })
 })
 
-test_that("file_sha is a valid SHA-256 hex string", {
+test_that("original_file_sha is a valid SHA-256 hex string", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -207,7 +207,7 @@ test_that("file_sha is a valid SHA-256 hex string", {
 
     result <- datom_sync_manifest(conn)
 
-    expect_match(result$file_sha, "^[0-9a-f]{64}$")
+    expect_match(result$original_file_sha, "^[0-9a-f]{64}$")
   })
 })
 
@@ -288,7 +288,7 @@ test_that("datom_sync skips unchanged and returns early when nothing actionable"
       name = c("a", "b"),
       file = c("a.csv", "b.csv"),
       format = c("csv", "csv"),
-      file_sha = c("sha1", "sha2"),
+      original_file_sha = c("sha1", "sha2"),
       status = c("unchanged", "unchanged"),
       stringsAsFactors = FALSE
     )
@@ -319,7 +319,7 @@ test_that("datom_sync processes new files via datom_write", {
       name = "customers",
       file = fs::path(getwd(), "data.csv"),
       format = "csv",
-      file_sha = "abc123",
+      original_file_sha = "abc123",
       status = "new",
       stringsAsFactors = FALSE
     )
@@ -364,7 +364,7 @@ test_that("datom_sync skips unchanged rows and processes changed ones", {
       name = c("unchanged_tbl", "changed_tbl"),
       file = c("a.csv", "b.csv"),
       format = c("csv", "csv"),
-      file_sha = c("sha1", "sha2"),
+      original_file_sha = c("sha1", "sha2"),
       status = c("unchanged", "changed"),
       stringsAsFactors = FALSE
     )
@@ -407,7 +407,7 @@ test_that("datom_sync continues on error when continue_on_error = TRUE", {
       name = c("bad_tbl", "good_tbl"),
       file = c("bad.csv", "good.csv"),
       format = c("csv", "csv"),
-      file_sha = c("sha1", "sha2"),
+      original_file_sha = c("sha1", "sha2"),
       status = c("new", "new"),
       stringsAsFactors = FALSE
     )
@@ -451,7 +451,7 @@ test_that("datom_sync stops on first error when continue_on_error = FALSE", {
       name = c("bad_tbl", "good_tbl"),
       file = c("bad.csv", "good.csv"),
       format = c("csv", "csv"),
-      file_sha = c("sha1", "sha2"),
+      original_file_sha = c("sha1", "sha2"),
       status = c("new", "new"),
       stringsAsFactors = FALSE
     )
@@ -486,7 +486,7 @@ test_that("datom_sync commit message includes status", {
 
     manifest <- data.frame(
       name = "tbl", file = "x.csv", format = "csv",
-      file_sha = "s1", status = "new",
+      original_file_sha = "s1", status = "new",
       stringsAsFactors = FALSE
     )
 
@@ -520,7 +520,7 @@ test_that("datom_sync augments manifest with result and error columns", {
 
     manifest <- data.frame(
       name = "tbl", file = "x.csv", format = "csv",
-      file_sha = "s", status = "new",
+      original_file_sha = "s", status = "new",
       stringsAsFactors = FALSE
     )
 
@@ -558,6 +558,117 @@ test_that(".datom_import_file reads parquet via arrow", {
   })
 })
 
+# Feature: datom-cv1, Property 16: Ingestion allowlist enforcement.
+# For any format outside .datom_import_formats, .datom_import_file() aborts with
+# the canonical allowlist recourse; for any allowlisted extension it dispatches
+# to the expected reader.
+test_that("Feature: datom-cv1, Property 16: allowlisted formats dispatch to the expected reader", {
+  seen_rio <- character()
+  seen_arrow <- character()
+
+  mockery::stub(
+    .datom_import_file, "rio::import",
+    function(file, ...) {
+      seen_rio <<- c(seen_rio, file)
+      data.frame(id = 1L)
+    }
+  )
+  mockery::stub(
+    .datom_import_file, "arrow::read_parquet",
+    function(file, ...) {
+      seen_arrow <<- c(seen_arrow, file)
+      data.frame(id = 1L)
+    }
+  )
+
+  for (fmt in .datom_import_formats) {
+    result <- .datom_import_file(paste0("input.", fmt), fmt)
+    expect_s3_class(result, "data.frame")
+  }
+
+  # parquet is the only format that bypasses rio for arrow
+  expect_identical(seen_arrow, "input.parquet")
+  expect_identical(seen_rio, paste0("input.", setdiff(.datom_import_formats, "parquet")))
+
+  # the gate is case-insensitive: an upper-case extension is still allowlisted
+  expect_s3_class(.datom_import_file("input.CSV", "CSV"), "data.frame")
+})
+
+test_that("Feature: datom-cv1, Property 16: non-allowlisted formats abort with the canonical recourse", {
+  withr::local_options(cli.width = 1000)
+
+  # Fails before any file access -- these paths do not exist.
+  for (fmt in c("json", "rds", "xml", "rda", "feather")) {
+    expect_error(
+      .datom_import_file(paste0("input.", fmt), fmt),
+      "not a supported datom ingestion format"
+    )
+    expect_error(
+      .datom_import_file(paste0("input.", fmt), fmt),
+      "flat tabular formats only"
+    )
+    expect_error(
+      .datom_import_file(paste0("input.", fmt), fmt),
+      "datom_write"
+    )
+  }
+})
+
+test_that("Feature: datom-cv1, Property 16: manifest flags unsupported formats without blocking siblings", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id,val\n1,a", "input_files/good.csv")
+    saveRDS(data.frame(id = 1L), "input_files/bad.rds")
+
+    result <- datom_sync_manifest(conn)
+
+    expect_equal(nrow(result), 2)
+    expect_equal(result$status[result$name == "bad"], "unsupported_format")
+    # the allowlisted sibling is still scanned and classified normally
+    expect_equal(result$status[result$name == "good"], "new")
+  })
+})
+
+test_that("Feature: datom-cv1, Property 16: datom_sync reports the allowlist recourse and continues", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    manifest <- data.frame(
+      name = c("bad", "good"),
+      file = c("input_files/bad.rds", "input_files/good.csv"),
+      format = c("rds", "csv"),
+      original_file_sha = c("sha_bad", "sha_good"),
+      status = c("unsupported_format", "new"),
+      stringsAsFactors = FALSE
+    )
+
+    local_mocked_bindings(
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) data.frame(x = 1),
+      datom_write = function(...) list(version = "v1")
+    )
+
+    result <- datom_sync(conn, manifest)
+
+    # unsupported row is an error carrying the single-sourced recourse
+    expect_equal(result$result[result$name == "bad"], "error")
+    expect_equal(
+      result$error[result$name == "bad"],
+      paste(.datom_import_format_recourse(), collapse = " ")
+    )
+
+    # the allowlisted sibling still syncs
+    expect_equal(result$result[result$name == "good"], "success")
+    expect_true(is.na(result$error[result$name == "good"]))
+  })
+})
+
 test_that(".datom_import_file delegates non-parquet to rio", {
   withr::with_tempdir({
     writeLines("id,val\n1,a\n2,b", "test.csv")
@@ -591,7 +702,7 @@ test_that(".datom_update_manifest_entry creates manifest from scratch", {
       conn, "customers",
       metadata_sha = "meta456",
       data_sha = "data123",
-      file_sha = "file789",
+      original_file_sha = "file789",
       format = "csv"
     )
 
@@ -633,7 +744,7 @@ test_that(".datom_update_manifest_entry updates existing manifest", {
       conn, "customers",
       metadata_sha = "new_m",
       data_sha = "new_d",
-      file_sha = "new_f",
+      original_file_sha = "new_f",
       format = "csv"
     )
 

@@ -174,7 +174,29 @@ test_that("NULL version returns current data_sha", {
   )
 
   result <- .datom_resolve_version(metadata_list, version = NULL, name = "tbl")
-  expect_equal(result, "sha_current")
+  expect_equal(result$data_sha, "sha_current")
+})
+
+test_that("NULL version returns current parquet_sha alongside data_sha", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_current", parquet_sha = "pq_current"),
+    history = list()
+  )
+
+  result <- .datom_resolve_version(metadata_list, version = NULL, name = "tbl")
+  expect_equal(result$data_sha, "sha_current")
+  expect_equal(result$parquet_sha, "pq_current")
+})
+
+test_that("NULL version parquet_sha is NULL for pre-cv1 metadata", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_current"),
+    history = list()
+  )
+
+  result <- .datom_resolve_version(metadata_list, version = NULL, name = "tbl")
+  expect_equal(result$data_sha, "sha_current")
+  expect_null(result$parquet_sha)
 })
 
 test_that("errors when current metadata has no data_sha", {
@@ -211,7 +233,34 @@ test_that("resolves specific version from history", {
   )
 
   result <- .datom_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
-  expect_equal(result, "sha_v1")
+  expect_equal(result$data_sha, "sha_v1")
+})
+
+test_that("resolves parquet_sha from the matched history entry", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_v2", parquet_sha = "pq_v2"),
+    history = list(
+      list(version = "meta_sha_v1", data_sha = "sha_v1", parquet_sha = "pq_v1"),
+      list(version = "meta_sha_v2", data_sha = "sha_v2", parquet_sha = "pq_v2")
+    )
+  )
+
+  result <- .datom_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
+  expect_equal(result$data_sha, "sha_v1")
+  expect_equal(result$parquet_sha, "pq_v1")
+})
+
+test_that("history entry without parquet_sha resolves parquet_sha NULL", {
+  metadata_list <- list(
+    current = list(data_sha = "sha_v2"),
+    history = list(
+      list(version = "meta_sha_v1", data_sha = "sha_v1")
+    )
+  )
+
+  result <- .datom_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
+  expect_equal(result$data_sha, "sha_v1")
+  expect_null(result$parquet_sha)
 })
 
 test_that("resolves latest version from history", {
@@ -224,7 +273,7 @@ test_that("resolves latest version from history", {
   )
 
   result <- .datom_resolve_version(metadata_list, version = "meta_sha_v2", name = "tbl")
-  expect_equal(result, "sha_v2")
+  expect_equal(result$data_sha, "sha_v2")
 })
 
 test_that("errors when version not found in history", {
@@ -317,11 +366,11 @@ test_that("handles multiple versions with same data_sha", {
 
   # Both should resolve to same data_sha
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "meta_v1", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "meta_v1", name = "tbl")$data_sha,
     "sha_shared"
   )
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "meta_v2", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "meta_v2", name = "tbl")$data_sha,
     "sha_shared"
   )
 })
@@ -338,12 +387,12 @@ test_that("resolves unique prefix (short hash)", {
   # Short prefix that uniquely matches first entry
 
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "abc1", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc1", name = "tbl")$data_sha,
     "sha_v1"
   )
   # Short prefix that uniquely matches second entry
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "xyz", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "xyz", name = "tbl")$data_sha,
     "sha_v2"
   )
 })
@@ -358,7 +407,7 @@ test_that("exact full hash still works with prefix matching", {
   )
 
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "abc123def456", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123def456", name = "tbl")$data_sha,
     "sha_v1"
   )
 })
@@ -389,12 +438,12 @@ test_that("ambiguous prefix resolved by using longer prefix", {
 
   # "abc123d" uniquely matches the first entry
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "abc123d", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123d", name = "tbl")$data_sha,
     "sha_v1"
   )
   # "abc123g" uniquely matches the second entry
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "abc123g", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "abc123g", name = "tbl")$data_sha,
     "sha_v2"
   )
 })
@@ -409,7 +458,7 @@ test_that("single-character prefix works if unique", {
   )
 
   expect_equal(
-    .datom_resolve_version(metadata_list, version = "a", name = "tbl"),
+    .datom_resolve_version(metadata_list, version = "a", name = "tbl")$data_sha,
     "sha_v1"
   )
 })
@@ -489,6 +538,102 @@ test_that(".datom_read_parquet rejects a path-traversal data_sha (#74 G)", {
   expect_error(.datom_read_parquet(conn, "tbl", "abc"), "hex")
 })
 
+test_that("read-time integrity: matching parquet_sha reads successfully", {
+  test_df <- data.frame(id = 1:3, name = c("a", "b", "c"))
+
+  # Serialize the fixture once so we know its exact stored-object SHA.
+  ref <- tempfile(fileext = ".parquet")
+  on.exit(unlink(ref), add = TRUE)
+  arrow::write_parquet(test_df, ref)
+  expected_sha <- digest::digest(file = ref, algo = "sha256")
+
+  local_mocked_bindings(
+    .datom_storage_download = function(conn, s3_key, local_path) {
+      arrow::write_parquet(test_df, local_path)
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  result <- .datom_read_parquet(conn, "customers", "abc123", parquet_sha = expected_sha)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 3)
+  expect_equal(result$id, 1:3)
+})
+
+test_that("read-time integrity: mismatched parquet_sha aborts before parsing", {
+  # The stored object is deliberately NOT valid parquet. The integrity check
+  # runs on the raw downloaded bytes, so a mismatch must abort with the tamper
+  # message BEFORE arrow::read_parquet() is ever reached; if the check were
+  # skipped, arrow would instead fail parsing these bytes with a different
+  # error and the "integrity check" match below would not hold.
+  local_mocked_bindings(
+    .datom_storage_download = function(conn, s3_key, local_path) {
+      writeBin(charToRaw("not a parquet file"), local_path)
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  # 64-char hex that cannot match the real stored-object SHA.
+  wrong_sha <- paste(rep("0", 64L), collapse = "")
+
+  expect_error(
+    .datom_read_parquet(conn, "customers", "abc123", parquet_sha = wrong_sha),
+    "integrity check"
+  )
+})
+
+test_that("read-time integrity: tamper abort names table, key, and both hashes", {
+  test_df <- data.frame(id = 1:3)
+
+  local_mocked_bindings(
+    .datom_storage_download = function(conn, s3_key, local_path) {
+      arrow::write_parquet(test_df, local_path)
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  wrong_sha <- paste(rep("a", 64L), collapse = "")
+
+  err <- tryCatch(
+    .datom_read_parquet(conn, "customers", "abc123", parquet_sha = wrong_sha),
+    error = function(e) e
+  )
+  msg <- cli::ansi_strip(paste(conditionMessage(err), collapse = "\n"))
+
+  expect_match(msg, "customers")
+  expect_match(msg, "customers/abc123.parquet")
+  expect_match(msg, wrong_sha)
+  expect_match(msg, "corrupted or tampered")
+})
+
+test_that("read-time integrity: absent/empty parquet_sha skips the check (pre-cv1)", {
+  test_df <- data.frame(id = 1:3, name = c("a", "b", "c"))
+
+  local_mocked_bindings(
+    .datom_storage_download = function(conn, s3_key, local_path) {
+      arrow::write_parquet(test_df, local_path)
+      invisible(TRUE)
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+
+  # NULL (default), explicit NULL, and empty string all skip verification.
+  expect_s3_class(.datom_read_parquet(conn, "customers", "abc123"), "data.frame")
+  expect_s3_class(
+    .datom_read_parquet(conn, "customers", "abc123", parquet_sha = NULL),
+    "data.frame"
+  )
+  expect_s3_class(
+    .datom_read_parquet(conn, "customers", "abc123", parquet_sha = ""),
+    "data.frame"
+  )
+})
+
 
 # --- .datom_build_metadata() ---------------------------------------------------
 
@@ -502,6 +647,46 @@ test_that("builds metadata with auto-computed fields", {
   expect_equal(result$colnames, c("id", "name"))
   expect_true(nzchar(result$created_at))
   expect_true(nzchar(result$datom_version))
+})
+
+test_that("hash_algo is always present and datom-cv1", {
+  df <- data.frame(x = 1)
+  expect_identical(.datom_build_metadata(df, "sha")$hash_algo, "datom-cv1")
+  expect_identical(
+    .datom_build_metadata(df, "sha", table_type = "imported")$hash_algo,
+    "datom-cv1"
+  )
+})
+
+test_that("parquet_sha is declared (present but NULL) for datom_write() to populate", {
+  df <- data.frame(x = 1)
+  result <- .datom_build_metadata(df, "sha")
+  expect_true("parquet_sha" %in% names(result))
+  expect_null(result$parquet_sha)
+})
+
+test_that("original_file_sha is included only when non-NULL", {
+  df <- data.frame(x = 1)
+  # derived path: omitted entirely, not present-with-NULL
+  derived <- .datom_build_metadata(df, "sha")
+  expect_false("original_file_sha" %in% names(derived))
+  # imported path: present with the supplied value
+  imported <- .datom_build_metadata(
+    df, "sha", table_type = "imported", original_file_sha = "f00dfeed"
+  )
+  expect_equal(imported$original_file_sha, "f00dfeed")
+})
+
+test_that("column_hashes is carried through and defaults to declared NULL", {
+  df <- data.frame(x = 1)
+  # declared (present) even when not supplied
+  bare <- .datom_build_metadata(df, "sha")
+  expect_true("column_hashes" %in% names(bare))
+  expect_null(bare$column_hashes)
+  # passed through verbatim when supplied
+  ch <- list(list(name = "x", sha = "deadbeef"))
+  result <- .datom_build_metadata(df, "sha", column_hashes = ch)
+  expect_identical(result$column_hashes, ch)
 })
 
 test_that("includes custom metadata", {
@@ -690,7 +875,7 @@ test_that("table_type and parents participate in metadata_sha", {
   expect_false(sha_derived == sha_imported)
 })
 
-test_that("size_bytes participates in metadata_sha", {
+test_that("size_bytes does NOT participate in metadata_sha (volatile: arrow byte drift)", {
   df <- data.frame(x = 1)
 
   meta_null <- .datom_build_metadata(df, "sha")
@@ -701,7 +886,10 @@ test_that("size_bytes participates in metadata_sha", {
   sha_null <- .datom_compute_metadata_sha(meta_null)
   sha_1k <- .datom_compute_metadata_sha(meta_1k)
 
-  expect_false(sha_null == sha_1k)
+  # size_bytes is the parquet file size, which drifts with the arrow version
+  # for identical logical content -- excluding it keeps arrow upgrades from
+  # minting spurious versions (same rationale as parquet_sha).
+  expect_identical(sha_null, sha_1k)
 })
 
 
@@ -769,6 +957,85 @@ test_that("version_history skips duplicate entry when latest version matches", {
   })
 })
 
+test_that("parquet_sha is persisted in the version_history entry", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(
+      data_sha = "sha1", parquet_sha = "pq_abc",
+      nrow = 5L, created_at = "2026-01-01T00:00:00Z"
+    )
+    meta_sha <- .datom_compute_metadata_sha(metadata)
+
+    .datom_write_metadata_local(conn, "tbl", metadata, meta_sha)
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_equal(history[[1]]$parquet_sha, "pq_abc")
+  })
+})
+
+test_that("parquet_sha absent from version_history entry for pre-cv1 metadata", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    metadata <- list(data_sha = "sha1", nrow = 5L, created_at = "2026-01-01T00:00:00Z")
+    meta_sha <- .datom_compute_metadata_sha(metadata)
+
+    .datom_write_metadata_local(conn, "tbl", metadata, meta_sha)
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_null(history[[1]]$parquet_sha)
+  })
+})
+
+test_that("Feature: datom-cv1, Property 17: full-history dedup (non-latest match)", {
+  # Validates Requirements 12.1, 12.2, 12.3, 12.4: a new entry whose version
+  # (metadata_sha) matches ANY existing history entry -- not just the latest --
+  # must not grow the history, while metadata.json (the current pointer) is
+  # still written. This is the S4 regression fix.
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    meta_a <- list(data_sha = "sha_a", nrow = 1L, created_at = "2026-01-01T00:00:00Z")
+    meta_b <- list(data_sha = "sha_b", nrow = 2L, created_at = "2026-01-02T00:00:00Z")
+    sha_a <- .datom_compute_metadata_sha(meta_a)
+    sha_b <- .datom_compute_metadata_sha(meta_b)
+
+    # Build a two-entry history: A (older) then B (latest).
+    .datom_write_metadata_local(conn, "tbl", meta_a, sha_a, message = "A")
+    .datom_write_metadata_local(conn, "tbl", meta_b, sha_b, message = "B")
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_length(history, 2L)
+    expect_equal(history[[1]]$version, sha_b) # newest-first
+
+    # Re-write A: its version matches the OLDER (non-latest) entry -> no append.
+    .datom_write_metadata_local(conn, "tbl", meta_a, sha_a, message = "A again")
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_length(history, 2L)
+    versions <- vapply(history, function(e) e$version, character(1))
+    expect_setequal(versions, c(sha_a, sha_b))
+    expect_equal(anyDuplicated(versions), 0L)
+
+    # The current pointer (metadata.json) is still written -- now carries A.
+    current <- jsonlite::read_json("tbl/metadata.json")
+    expect_equal(current$data_sha, "sha_a")
+  })
+})
+
 
 # --- datom_write() — Phase 8 enriched params -----------------------------------
 
@@ -786,7 +1053,7 @@ test_that("datom_write records lean parents and derived source_lineage", {
 
     captured_meta <- NULL
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
@@ -869,7 +1136,7 @@ test_that("datom_write does not read parent snapshots (no enrichment)", {
 
     captured_meta <- NULL
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
@@ -915,7 +1182,7 @@ test_that("datom_write computes size_bytes from parquet", {
 
     captured_meta <- NULL
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
@@ -944,7 +1211,7 @@ test_that("datom_write passes original_file_sha to version_history", {
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
@@ -974,7 +1241,7 @@ test_that("datom_write defaults: derived type, no parents, no original_file_sha"
 
     captured_meta <- NULL
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
@@ -1026,7 +1293,7 @@ test_that("datom_write records .source_lineage on the imported path", {
 
     captured_meta <- NULL
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
@@ -1064,7 +1331,7 @@ test_that("datom_write allows NULL source_lineage when parents is also NULL", {
 
     captured_meta <- NULL
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
@@ -1098,7 +1365,7 @@ test_that("datom_write updates manifest.json locally", {
     )
 
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
@@ -1134,7 +1401,7 @@ test_that("datom_write includes manifest.json in git commit", {
 
     committed_files <- NULL
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_commit = function(path, files, message) {
@@ -1170,7 +1437,7 @@ test_that("datom_write pushes manifest.json to S3", {
 
     s3_keys <- character()
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) {
         s3_keys <<- c(s3_keys, sk)
@@ -1204,7 +1471,7 @@ test_that("datom_write stores sync fields in manifest when provided", {
     )
 
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
@@ -1242,7 +1509,7 @@ test_that("datom_write omits sync fields in manifest for derived tables", {
     )
 
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
@@ -1273,7 +1540,7 @@ test_that("datom_write skips manifest update when no changes detected", {
     jsonlite::write_json(empty_manifest, ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "none"
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "none", current = NULL)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "unchanged_tbl")
@@ -1294,7 +1561,8 @@ test_that("returns 'full' when table is new (no metadata in S3)", {
   conn <- mock_datom_conn(list())
   result <- .datom_has_changes(conn, "new_table", "sha1", "meta_sha1")
 
-  expect_equal(result, "full")
+  expect_equal(result$change_type, "full")
+  expect_null(result$current)
 })
 
 test_that("returns 'none' when metadata_sha matches", {
@@ -1309,7 +1577,8 @@ test_that("returns 'none' when metadata_sha matches", {
   conn <- mock_datom_conn(list())
   result <- .datom_has_changes(conn, "tbl", "sha1", current_meta_sha)
 
-  expect_equal(result, "none")
+  expect_equal(result$change_type, "none")
+  expect_equal(result$current, current_meta)
 })
 
 test_that("returns 'metadata_only' when data same but metadata different", {
@@ -1327,7 +1596,8 @@ test_that("returns 'metadata_only' when data same but metadata different", {
   conn <- mock_datom_conn(list())
   result <- .datom_has_changes(conn, "tbl", "sha1", new_meta_sha)
 
-  expect_equal(result, "metadata_only")
+  expect_equal(result$change_type, "metadata_only")
+  expect_equal(result$current, current_meta)
 })
 
 test_that("returns 'full' when data changed", {
@@ -1344,7 +1614,8 @@ test_that("returns 'full' when data changed", {
   conn <- mock_datom_conn(list())
   result <- .datom_has_changes(conn, "tbl", "sha_new", new_meta_sha)
 
-  expect_equal(result, "full")
+  expect_equal(result$change_type, "full")
+  expect_equal(result$current, current_meta)
 })
 
 test_that("checks correct S3 key for metadata", {
@@ -1360,6 +1631,176 @@ test_that("checks correct S3 key for metadata", {
   .datom_has_changes(conn, "customers", "sha1", "meta_sha1")
 
   expect_equal(captured_key, "customers/.metadata/metadata.json")
+})
+
+
+# --- .datom_lookup_history_parquet_sha() --------------------------------------
+
+test_that("history parquet_sha lookup returns NULL when no history file exists", {
+  conn <- mock_datom_conn(list())
+  conn$path <- withr::local_tempdir()
+  expect_null(.datom_lookup_history_parquet_sha(conn, "tbl", "sha_a"))
+})
+
+test_that("history parquet_sha lookup returns NULL when no entry matches the data_sha", {
+  conn <- mock_datom_conn(list())
+  conn$path <- withr::local_tempdir()
+  fs::dir_create(fs::path(conn$path, "tbl"))
+  jsonlite::write_json(
+    list(list(version = "v1", data_sha = "sha_other", parquet_sha = "pq1")),
+    fs::path(conn$path, "tbl", "version_history.json"),
+    auto_unbox = TRUE
+  )
+  expect_null(.datom_lookup_history_parquet_sha(conn, "tbl", "sha_a"))
+})
+
+test_that("history parquet_sha lookup returns NULL when the match carries no parquet_sha", {
+  # The dormant / pre-cv1 state: entries carry data_sha but no parquet_sha.
+  conn <- mock_datom_conn(list())
+  conn$path <- withr::local_tempdir()
+  fs::dir_create(fs::path(conn$path, "tbl"))
+  jsonlite::write_json(
+    list(list(version = "v1", data_sha = "sha_a")),
+    fs::path(conn$path, "tbl", "version_history.json"),
+    auto_unbox = TRUE
+  )
+  expect_null(.datom_lookup_history_parquet_sha(conn, "tbl", "sha_a"))
+})
+
+test_that("history parquet_sha lookup returns the most recent matching parquet_sha", {
+  # History is newest-first; the first match carrying a parquet_sha wins.
+  conn <- mock_datom_conn(list())
+  conn$path <- withr::local_tempdir()
+  fs::dir_create(fs::path(conn$path, "tbl"))
+  jsonlite::write_json(
+    list(
+      list(version = "v3", data_sha = "sha_b", parquet_sha = "pq_b"),
+      list(version = "v2", data_sha = "sha_a", parquet_sha = "pq_a2"),
+      list(version = "v1", data_sha = "sha_a", parquet_sha = "pq_a1")
+    ),
+    fs::path(conn$path, "tbl", "version_history.json"),
+    auto_unbox = TRUE
+  )
+  expect_equal(.datom_lookup_history_parquet_sha(conn, "tbl", "sha_a"), "pq_a2")
+})
+
+
+# --- .datom_resolve_parquet_sha() ---------------------------------------------
+
+test_that("resolve parquet_sha: metadata_only carries current parquet_sha, no upload", {
+  current <- list(data_sha = "sha_a", parquet_sha = "pq_current")
+  res <- .datom_resolve_parquet_sha(
+    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "metadata_only", current
+  )
+  expect_equal(res$parquet_sha, "pq_current")
+  expect_false(res$upload)
+})
+
+test_that("resolve parquet_sha: metadata_only on a pre-cv1 table carries NULL, no upload", {
+  current <- list(data_sha = "sha_a")  # no parquet_sha recorded
+  res <- .datom_resolve_parquet_sha(
+    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "metadata_only", current
+  )
+  expect_null(res$parquet_sha)
+  expect_false(res$upload)
+})
+
+test_that("resolve parquet_sha: full with no recorded parquet_sha uploads the new bytes", {
+  local_mocked_bindings(
+    .datom_lookup_history_parquet_sha = function(conn, name, data_sha) NULL
+  )
+  res <- .datom_resolve_parquet_sha(
+    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "full", NULL
+  )
+  expect_equal(res$parquet_sha, "pq_new")
+  expect_true(res$upload)
+})
+
+test_that("resolve parquet_sha: full reverting to a recorded data_sha reuses its sha, no upload", {
+  # Revert-to-older: a prior version pinned this data_sha's parquet_sha, so we
+  # reuse it and must NOT overwrite the stored object.
+  local_mocked_bindings(
+    .datom_lookup_history_parquet_sha = function(conn, name, data_sha) "pq_reused"
+  )
+  res <- .datom_resolve_parquet_sha(
+    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "full", NULL
+  )
+  expect_equal(res$parquet_sha, "pq_reused")
+  expect_false(res$upload)
+})
+
+test_that("full datom_write records parquet_sha, hash_algo, and column_hashes in metadata.json", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    datom_write(conn, data = data.frame(id = 1:3, v = letters[1:3]), name = "t")
+
+    meta <- jsonlite::read_json("t/metadata.json", simplifyVector = FALSE)
+    expect_equal(meta$hash_algo, "datom-cv1")
+    expect_match(meta$parquet_sha, "^[0-9a-f]{64}$")
+    expect_equal(length(meta$column_hashes), 2)
+    expect_equal(meta$column_hashes[[1]]$name, "id")
+    expect_equal(meta$column_hashes[[2]]$name, "v")
+    # no truncation: every entry carries a full 64-char hex sha
+    for (e in meta$column_hashes) expect_match(e$sha, "^[0-9a-f]{64}$")
+  })
+})
+
+test_that("full datom_write persists all columns of a wide frame, in order, untruncated", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    wide <- data.frame(
+      c1 = 1:3,
+      c2 = c(1.5, 2.5, 3.5),
+      c3 = c(TRUE, FALSE, TRUE),
+      c4 = letters[1:3],
+      c5 = factor(c("x", "y", "x")),
+      c6 = as.Date(c("2026-01-01", "2026-06-15", "2026-12-31")),
+      stringsAsFactors = FALSE
+    )
+    datom_write(conn, data = wide, name = "w")
+
+    meta <- jsonlite::read_json("w/metadata.json", simplifyVector = FALSE)
+    # every column is present, none dropped or truncated away
+    expect_equal(length(meta$column_hashes), ncol(wide))
+    expect_identical(
+      vapply(meta$column_hashes, function(e) e$name, character(1)),
+      names(wide)
+    )
+    # each persisted sha is a full, untruncated 64-char hex digest
+    for (e in meta$column_hashes) expect_match(e$sha, "^[0-9a-f]{64}$")
+  })
 })
 
 
@@ -1587,7 +2028,7 @@ test_that("skips write when no changes detected", {
   conn$path <- "/tmp/fakerepo"
 
   local_mocked_bindings(
-    .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "none"
+    .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) list(change_type = "none", current = NULL)
   )
 
   df <- data.frame(x = 1:3)
@@ -1612,7 +2053,7 @@ test_that("performs full write: parquet + metadata + git", {
 
     uploaded_keys <- character()
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "full",
+      .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, local_path, s3_key) {
         uploaded_keys <<- c(uploaded_keys, s3_key)
         invisible(TRUE)
@@ -1660,7 +2101,7 @@ test_that("metadata-only write skips parquet upload", {
 
     uploaded_keys <- character()
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) "metadata_only",
+      .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) list(change_type = "metadata_only", current = NULL),
       .datom_storage_upload = function(conn, local_path, s3_key) {
         uploaded_keys <<- c(uploaded_keys, s3_key)
         invisible(TRUE)
@@ -1696,7 +2137,7 @@ test_that("uses default commit message when none provided", {
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
@@ -1718,7 +2159,7 @@ test_that("data_sha is deterministic for same data", {
   local_mocked_bindings(
     .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) {
       shas <<- c(shas, new_data_sha)
-      "none"
+      list(change_type = "none", current = NULL)
     }
   )
 
@@ -1779,7 +2220,7 @@ test_that("skips sync when no changes detected", {
     jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "none",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "none", current = NULL),
       .datom_git_pull = function(...) invisible(TRUE)
     )
 
@@ -1808,7 +2249,7 @@ test_that("syncs metadata.json to S3 on change", {
 
     s3_keys <- character()
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "metadata_only",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "metadata_only", current = NULL),
       .datom_git_pull = function(...) invisible(TRUE),
       .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
@@ -1844,7 +2285,7 @@ test_that("syncs version_history.json to S3 when present", {
 
     s3_keys <- character()
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "full",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_git_pull = function(...) invisible(TRUE),
       .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
@@ -1880,7 +2321,7 @@ test_that("commits and pushes after sync", {
 
     pushed <- FALSE
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "metadata_only",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "metadata_only", current = NULL),
       .datom_git_pull = function(...) invisible(TRUE),
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) {
@@ -1921,7 +2362,7 @@ test_that(".datom_sync_metadata forwards conn$github_pat to pull and push (#74 A
     pull_pat <- "unset"
     push_pat <- "unset"
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "metadata_only",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "metadata_only", current = NULL),
       .datom_git_pull = function(path, pat = NULL) {
         pull_pat <<- pat
         invisible(TRUE)
@@ -1952,7 +2393,7 @@ test_that("aborts S3 sync when git commit/push fails", {
 
     s3_called <- FALSE
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) "metadata_only",
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "metadata_only", current = NULL),
       .datom_git_pull = function(...) invisible(TRUE),
       .datom_storage_write_json = function(conn, s3_key, data) {
         s3_called <<- TRUE

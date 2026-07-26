@@ -2,7 +2,7 @@
 % Please edit documentation in R/read_write.R
 \name{.datom_resolve_version}
 \alias{.datom_resolve_version}
-\title{Resolve Version to data_sha}
+\title{Resolve Version to data_sha and parquet_sha}
 \usage{
 .datom_resolve_version(metadata_list, version = NULL, name = "table")
 }
@@ -14,12 +14,20 @@
 \item{name}{Table name (for error messages).}
 }
 \value{
-Character string \code{data_sha}.
+Named list with \code{data_sha} (character) and \code{parquet_sha}
+(character or NULL) for the resolved version.
 }
 \description{
 Given metadata from \code{\link[=.datom_read_metadata]{.datom_read_metadata()}}, resolves a version spec
-to the corresponding \code{data_sha}. If \code{version} is NULL, returns the
-current \code{data_sha} from \code{metadata.json}. If a metadata_sha string,
-looks it up in \code{version_history.json}.
+to the corresponding \code{data_sha} (the storage address) and the recorded
+\code{parquet_sha} (the stored-object integrity hash). If \code{version} is NULL,
+resolves from the current \code{metadata.json}; if a metadata_sha string, looks
+it up in \code{version_history.json}.
+}
+\details{
+The \code{parquet_sha} may be \code{NULL}/\code{""} for pre-cv1 metadata, and for any
+version-pinned read until \code{version_history} entries persist \code{parquet_sha}
+(task 5.1). A \code{NULL}/empty \code{parquet_sha} tells \code{\link[=.datom_read_parquet]{.datom_read_parquet()}} to
+skip the integrity check (the intended pre-cv1 grace).
 }
 \keyword{internal}

@@ -23,12 +23,13 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 1. Treat `version` as metadata_sha.
 2. Open `{table}/.metadata/{version}.json` when the exact version is supplied, or use `{table}/.metadata/version_history.json` when resolving display/history state.
-3. Read `data_sha` from the metadata/history entry.
+3. Read `data_sha` **and `parquet_sha`** from the metadata/history entry.
 4. Fetch `{table}/{data_sha}.parquet` from the data store.
+5. **Integrity gate** (added by `datom-cv1`, issue #72): before parsing, hash the downloaded object and compare to the recorded `parquet_sha`; abort on mismatch. An absent/empty `parquet_sha` (pre-`datom-cv1` entries) skips the check. This is a gate on step 4's result, **not a new lookup** -- the route shape is unchanged.
 
-**Primary functions/files:** `datom_read()`, `.datom_resolve_version()`, `metadata.json`, `{metadata_sha}.json`, `version_history.json`.
+**Primary functions/files:** `datom_read()`, `.datom_resolve_version()` (returns `list(data_sha, parquet_sha)`), `.datom_read_parquet()`, `metadata.json`, `{metadata_sha}.json`, `version_history.json`.
 
-**Do not:** Try to infer metadata_sha from data_sha unless the route explicitly starts from `version_history.json`.
+**Do not:** Try to infer metadata_sha from data_sha unless the route explicitly starts from `version_history.json`. Do not read the parquet before the integrity check -- the point of the gate is that a tampered object is never parsed.
 
 ### Given data_sha, find metadata versions
 
