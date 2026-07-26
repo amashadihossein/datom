@@ -394,6 +394,44 @@ test_that("Property 4: numeric encoding semantics", {
   expect_false(sha(data.frame(x = c(1, NA_real_))) == sha(data.frame(x = c(1, NaN))))
   # no rounding: a one-ULP difference changes the hash
   expect_false(sha(data.frame(x = 1.0)) == sha(data.frame(x = 1.0 + .Machine$double.eps)))
+  # a negative NaN folds to the same encoding as a positive one
+  expect_identical(sha(data.frame(x = c(1, -(0 / 0)))),
+                   sha(data.frame(x = c(1, NaN))))
+})
+
+test_that("Property 4: NaN encodes to a host-independent canonical pattern", {
+  # These are BYTE-level assertions on purpose. The hash-equality checks above
+  # hold on any single machine even when the encoder emits the host's own NaN,
+  # because both sides then emit the same wrong bytes -- so they cannot catch a
+  # platform divergence. Only pinning the bytes can.
+  #
+  # R's `NaN` is 0x7ff8000000000000 on macOS/arm64 and 0xfff8000000000000 on
+  # Linux/x86_64 (it comes from a C-level 0.0/0.0). The encoder therefore
+  # splices the pinned pattern in rather than assigning `NaN`. Before that fix
+  # the numeric golden below passed on macOS and failed on Linux in CI.
+  canonical <- as.raw(c(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x7f))
+  expect_identical(.datom_nan_canonical, canonical)
+
+  # Every flavour of NaN reaching the encoder emits exactly that pattern.
+  expect_identical(
+    .datom_encode_numeric(c(NaN, 0 / 0, -(0 / 0), Inf - Inf)),
+    rep(canonical, 4L)
+  )
+
+  # NA_real_ keeps R's own NA payload (high word 0x7ff00000, low word 1954).
+  # That pattern is fixed by R itself, not by the host FPU, so it is portable
+  # and is deliberately NOT folded into the canonical NaN.
+  expect_identical(
+    .datom_encode_numeric(NA_real_),
+    as.raw(c(0xa2, 0x07, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x7f))
+  )
+
+  # The splice must land in the right 8-byte slot and leave neighbours alone.
+  mixed <- .datom_encode_numeric(c(1, NaN, 2))
+  expect_length(mixed, 24L)
+  expect_identical(mixed[9:16], canonical)
+  expect_identical(mixed[1:8], .datom_encode_numeric(1))
+  expect_identical(mixed[17:24], .datom_encode_numeric(2))
 })
 
 # --- .datom_encode_character(): Feature: datom-cv1, Property 5 ----------------
@@ -693,13 +731,94 @@ test_that("NIST SHA-256 vector pins the digest package", {
   )
 })
 
+# The golden numeric fixture, shared by the golden-hash test and the byte pin
+# below. Extreme magnitudes are built PARSE-EXACTLY -- powers of two and the
+# IEEE-754 DBL_MAX / DBL_MIN constants -- never from decimal literals such as
+# `1e300`. See the byte-pin test for why.
+golden_numeric_values <- c(
+  0, -0, 1, -1, 0.1, 1 / 3,
+  2^999, -2^-999,
+  .Machine$double.xmax, -.Machine$double.xmin,
+  Inf, -Inf, NA, NaN
+)
+
 test_that("golden numeric vector is stable", {
-  golden1 <- data.frame(
-    x = c(0, -0, 1, -1, 0.1, 1/3, 1e300, -1e-300, Inf, -Inf, NA, NaN)
-  )
+  golden1 <- data.frame(x = golden_numeric_values)
   expect_identical(
     sha(golden1),
-    "48b4c0cb79ac1a47d5b2e3bd4811995de2c183e544224027703785d785fa89a1"
+    "050d620ab1e57453b32da5d458994eb25e8c77bba6c0eb58893a7cea3960dec3"
+  )
+})
+
+test_that("golden numeric fixture is parse-exact on every architecture", {
+  # This pin is the diagnostic half of the golden above. A golden hash that
+  # disagrees across platforms says only "something differs"; these bytes say
+  # WHICH value differs, which is the difference between a five-minute fix and a
+  # long bisect.
+  #
+  # History: the fixture used to contain `1e300` and `-1e-300` and the golden
+  # hash disagreed between architectures -- x86_64 Linux and Windows agreed with
+  # each other and disagreed with arm64 macOS. The encoder was not at fault. R's
+  # `R_strtod` accumulates extreme-exponent decimal literals in a `long double`,
+  # which is 80-bit extended on x86_64 (correctly rounded here) but only 64-bit
+  # on Apple arm64, where `1e300` lands 4 ULP away. So the same source text
+  # yields different doubles per architecture -- upstream of datom entirely, and
+  # not fixable inside the hash. The fix is to build extreme magnitudes from
+  # values every parser represents exactly.
+  #
+  # `0.1` stays: small-exponent decimals take R_strtod's exact fast path and are
+  # byte-identical across architectures (verified on both).
+  expected_payload <- c(
+    "0000000000000000",  # 0
+    "0000000000000000",  # -0  -> normalised to +0
+    "000000000000f03f",  # 1
+    "000000000000f0bf",  # -1
+    "9a9999999999b93f",  # 0.1
+    "555555555555d53f",  # 1/3
+    "000000000000607e",  # 2^999
+    "0000000000008081",  # -2^-999
+    "ffffffffffffef7f",  # .Machine$double.xmax
+    "0000000000001080",  # -.Machine$double.xmin
+    "000000000000f07f",  # Inf
+    "000000000000f0ff",  # -Inf
+    "a20700000000f07f",  # NA_real_ (R's own payload: high 0x7ff00000, low 1954)
+    "000000000000f87f"   # NaN -> pinned canonical 0x7ff8000000000000
+  )
+
+  actual <- .datom_encode_numeric(golden_numeric_values)
+  per_slot <- vapply(
+    seq_along(golden_numeric_values),
+    function(i) paste(as.character(actual[((i - 1L) * 8L) + 1:8]), collapse = ""),
+    character(1L)
+  )
+  expect_identical(per_slot, expected_payload)
+})
+
+test_that("text -> double conversion of extreme exponents is not portable (documented)", {
+  # Asserts only what IS portable, and documents the boundary rather than
+  # pretending it does not exist.
+  #
+  # A literal and as.numeric() both go through R_strtod, so they agree with each
+  # other on any host -- that much is portable.
+  expect_identical(1e300, as.numeric("1e300"))
+  expect_identical(1e-300, as.numeric("1e-300"))
+
+  # What is NOT portable is which double either of them yields. Consequence for
+  # users: two machines of different architecture ingesting the same CSV whose
+  # values carry extreme exponents can parse different doubles, and therefore
+  # produce different (correct) data_sha values. That is a property of the
+  # platform's decimal parser, not of datom -- documented in
+  # vignette("design-version-shas") and dev/datom_specification.md.
+  #
+  # The parse-exact constructions the goldens use have no such exposure, which
+  # this asserts positively: each is bit-identical to its pinned pattern.
+  expect_identical(
+    writeBin(2^999, raw(), size = 8L, endian = "little"),
+    as.raw(c(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0x7e))
+  )
+  expect_identical(
+    writeBin(.Machine$double.xmax, raw(), size = 8L, endian = "little"),
+    as.raw(c(0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xef, 0x7f))
   )
 })
 

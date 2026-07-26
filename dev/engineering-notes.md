@@ -185,11 +185,33 @@ Harvested from the spec's work-handoff at completion. The *design* lives in
 
 - **`dev/datom_cv1_reference.R` is the byte-layout single source of truth**, not
   `.datom_canonical_hash()`. It is standalone base R + `digest`, Rbuildignored, pure ASCII, and
-  running it prints the goldens (numeric `48b4c0cb...`, mixed `47c94f30...`) and passes 27/27
+  running it prints the goldens (numeric `050d620a...`, mixed `47c94f30...`) and passes 30/30
   self-tests. The package implementation must stay byte-identical to it; the Property 11 parity
-  test in `test-utils-sha.R` enforces that and skips when `dev/` is absent (so it legitimately
-  reports SKIP 1 under `R CMD check`). If parity ever reddens, fix the package, not the
-  reference.
+  test in `test-utils-sha.R` enforces that and skips when `dev/` is absent -- which means it
+  skips under `R CMD check`, i.e. in **every** matrix job. That gap is now covered by
+  `.github/workflows/cv1-reference-parity.yaml`, which runs the same file from the source tree
+  (where `dev/` exists) on x86_64 AND arm64 and fails if anything skips. If parity ever reddens,
+  fix the package, not the reference.
+- **Never put a decimal literal with an extreme exponent in a golden fixture -- it makes the
+  golden architecture-dependent.** `1e300` in the numeric golden fixture passed on arm64 macOS
+  and failed on x86_64 Linux + Windows with the same wrong hash, because R's `R_strtod`
+  accumulates extreme-exponent decimals in a `long double`: 80-bit extended on x86_64 (correctly
+  rounded) but 64-bit on Apple arm64, which lands `1e300` **4 ULP** off. The encoder was
+  innocent -- the divergence happens in the parser, before any datom code runs. Build extreme
+  magnitudes parse-exactly instead: powers of two (`2^999`, verified zero-mantissa) or
+  `.Machine$double.xmax` / `double.xmin` (IEEE-754 fixed constants). Small-exponent decimals
+  like `0.1` take the exact fast path and are portable, so they can stay. Related trap: on arm64
+  `2^999` does **not** survive `as.numeric(sprintf("%.17g", 2^999))` -- the round-trip goes back
+  through the same broken path -- so never regenerate a fixture value via text.
+- **Debugging a cross-platform hash mismatch: pin the payload bytes, not just the hash.** A
+  golden-hash failure says "something differs"; it took an exhaustive single-byte search
+  (96 x 255), a +/-3 ULP search, and a set of structural hypotheses to *fail* to find the cause
+  locally, because the real difference was 4 ULP across two slots at once. What settled it was
+  running a standalone probe on the other architecture that printed the parser's bit patterns
+  per value, then the payload, then each intermediate digest -- the first diverging line names
+  the stage. The "golden numeric fixture is parse-exact" test now pins those payload bytes
+  permanently, so the next occurrence reports which value moved instead of only that the hash
+  did.
 - **`R/hashable.R` detection order is load-bearing.** `.datom_column_kind()` dispatches in a
   fixed order and reordering it silently changes hashes. In `.datom_hash_recourse()`, the
   `POSIXlt`, `sfc`, and nested-data-frame checks are deliberately hoisted **above** the generic

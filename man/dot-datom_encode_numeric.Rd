@@ -23,13 +23,25 @@ encode identically:
 \details{
 \itemize{
 \item Every \code{NaN} payload (e.g. \code{0/0}, a signalling NaN, a negative NaN) is
-folded to R's single canonical quiet \code{NaN} bit pattern.
+folded to the pinned canonical quiet \code{NaN} bit pattern
+\code{0x7ff8000000000000} (see \code{.datom_nan_canonical}).
 \item \code{-0.0} is converted to \code{+0.0}.
 \item \code{NA_real_} is preserved as its own distinct bit pattern -- it is a
-specific \code{NaN} payload in R and is deliberately \emph{not} folded into the
-canonical \code{NaN}, so \code{NA_real_} and \code{NaN} encode differently.
+specific \code{NaN} payload in R (high word \code{0x7ff00000}, low word \code{1954}),
+fixed by R itself and therefore portable, and is deliberately \emph{not}
+folded into the canonical \code{NaN}, so \code{NA_real_} and \code{NaN} encode
+differently.
 }
 
 No rounding is applied: doubles are encoded bit-exact.
+
+\strong{Why the canonical \code{NaN} is written as bytes, not assigned as a value.}
+Assigning R's \code{NaN} (\code{d[nan_idx] <- NaN}) folds NaN \emph{payloads} but inherits
+the host's NaN \emph{sign bit}: R's \code{NaN} is \verb{0x7ff8...} on macOS/arm64 and
+\verb{0xfff8...} on Linux/x86_64, because it comes from a C-level \code{0.0/0.0}.
+That made \code{data_sha} platform-dependent for any table containing a \code{NaN} --
+caught by the CI golden matrix (the macOS job passed, the Linux job did
+not). Splicing the pinned bytes in directly removes the host from the
+equation, which is the whole premise of a canonical hash.
 }
 \keyword{internal}

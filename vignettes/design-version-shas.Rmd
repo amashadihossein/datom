@@ -335,6 +335,27 @@ entry -- the anchor a future column-level diff builds on.
   language computes it identically. Change detection on inputs therefore does
   not depend on the hashing algorithm at all.
 
+### One caveat that is not ours to fix
+
+`data_sha` is a portable identity of *doubles*. Getting from **text to
+doubles** is a separate step, and for decimals with extreme exponents it is
+architecture-dependent: R's parser accumulates them in a `long double`, which
+is 80-bit extended on x86_64 but only 64-bit on Apple silicon, so `1e300`
+parses a few ULP apart on the two. The same is true of `as.numeric("1e300")`
+and therefore of `read.csv()`.
+
+The practical consequence: two machines of different architecture reading the
+same CSV containing near-limit values (magnitudes beyond roughly `1e290` or
+below `1e-290`) can
+parse *different doubles* from identical text, and will then compute different
+`data_sha` values -- both correctly, for genuinely different tables. This sits
+upstream of datom and no hash can paper over it.
+
+If that matters for your data, onboard such columns as parquet rather than
+CSV -- parquet stores the doubles themselves, so no decimal parsing happens.
+For everyday magnitudes there is no exposure: small-exponent decimals like
+`0.1` take the parser's exact path and are byte-identical everywhere.
+
 ## What you can rely on
 
 - A version is uniquely identified by its `metadata_sha`, and that SHA never

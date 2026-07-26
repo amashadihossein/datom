@@ -130,13 +130,25 @@
 #' encode identically:
 #'
 #' * Every `NaN` payload (e.g. `0/0`, a signalling NaN, a negative NaN) is
-#'   folded to R's single canonical quiet `NaN` bit pattern.
+#'   folded to the pinned canonical quiet `NaN` bit pattern
+#'   `0x7ff8000000000000` (see `.datom_nan_canonical`).
 #' * `-0.0` is converted to `+0.0`.
 #' * `NA_real_` is preserved as its own distinct bit pattern -- it is a
-#'   specific `NaN` payload in R and is deliberately *not* folded into the
-#'   canonical `NaN`, so `NA_real_` and `NaN` encode differently.
+#'   specific `NaN` payload in R (high word `0x7ff00000`, low word `1954`),
+#'   fixed by R itself and therefore portable, and is deliberately *not*
+#'   folded into the canonical `NaN`, so `NA_real_` and `NaN` encode
+#'   differently.
 #'
 #' No rounding is applied: doubles are encoded bit-exact.
+#'
+#' **Why the canonical `NaN` is written as bytes, not assigned as a value.**
+#' Assigning R's `NaN` (`d[nan_idx] <- NaN`) folds NaN *payloads* but inherits
+#' the host's NaN *sign bit*: R's `NaN` is `0x7ff8...` on macOS/arm64 and
+#' `0xfff8...` on Linux/x86_64, because it comes from a C-level `0.0/0.0`.
+#' That made `data_sha` platform-dependent for any table containing a `NaN` --
+#' caught by the CI golden matrix (the macOS job passed, the Linux job did
+#' not). Splicing the pinned bytes in directly removes the host from the
+#' equation, which is the whole premise of a canonical hash.
 #'
 #' @param x A vector coercible to double (logical, integer, double, or the
 #'   numeric payload of a Date/POSIXct/difftime column).
@@ -145,19 +157,38 @@
 .datom_encode_numeric <- function(x) {
   d <- as.double(x)
 
-  # Fold every true NaN (is.nan() is FALSE for NA_real_) to R's canonical
-  # quiet NaN, so distinct NaN payloads hash equal while NA_real_ stays
-  # distinct.
+  # Every true NaN (is.nan() is FALSE for NA_real_) is replaced byte-wise with
+  # the pinned canonical pattern AFTER writeBin, below. Assigning R's NaN here
+  # would leave the host's NaN sign bit in the output -- see the note in this
+  # function's documentation.
   nan_idx <- which(is.nan(d))
-  if (length(nan_idx) > 0L) d[nan_idx] <- NaN
 
   # Normalise negative zero to positive zero. `d == 0` is TRUE for both -0
   # and +0 and NA for NA/NaN, so which() drops the missing entries.
   zero_idx <- which(d == 0)
   if (length(zero_idx) > 0L) d[zero_idx] <- 0
 
-  writeBin(d, raw(), size = 8L, endian = "little")
+  out <- writeBin(d, raw(), size = 8L, endian = "little")
+
+  # Splice the pinned canonical NaN over every NaN slot. Each double occupies
+  # 8 bytes, so element i owns out[(8i - 7):(8i)].
+  if (length(nan_idx) > 0L) {
+    slots <- rep((nan_idx - 1L) * 8L, each = 8L) + seq_len(8L)
+    out[slots] <- .datom_nan_canonical
+  }
+
+  out
 }
+
+
+# The canonical quiet NaN of `datom-cv1`: IEEE-754 0x7ff8000000000000 written
+# little-endian. Pinned as bytes rather than derived from R's `NaN` because
+# R's NaN sign bit is host-dependent (0x7ff8... on macOS/arm64, 0xfff8... on
+# Linux/x86_64), which would make data_sha platform-dependent for any table
+# containing a NaN. The positive quiet NaN is chosen because it is the IEEE-754
+# preferred form -- and because it is what the existing goldens already encode,
+# so pinning it here fixes the divergent platforms without re-deriving them.
+.datom_nan_canonical <- as.raw(c(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x7f))
 
 
 #' Encode a Character Payload for Canonical Hashing

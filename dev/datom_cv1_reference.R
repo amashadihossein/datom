@@ -29,15 +29,28 @@
   digest::digest(bytes, algo = "sha256", serialize = FALSE)
 }
 
+# The canonical quiet NaN: IEEE-754 0x7ff8000000000000, little-endian. Pinned
+# as BYTES, not taken from R's `NaN`, because R's NaN sign bit is host-dependent
+# (0x7ff8... on macOS/arm64, 0xfff8... on Linux/x86_64 -- it comes from a
+# C-level 0.0/0.0). Assigning `NaN` folds NaN payloads but inherits that sign
+# bit, which made data_sha platform-dependent for any table containing a NaN.
+.cv1_nan_canonical <- as.raw(c(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x7f))
+
 # Numeric payload: logical/integer/double unified as IEEE-754 doubles,
-# little-endian. NaN payloads canonicalized; -0 -> +0; NA_real_ preserved
-# (is.nan(NA_real_) is FALSE, so NA survives the NaN line untouched).
+# little-endian. NaN folded to .cv1_nan_canonical; -0 -> +0; NA_real_ preserved
+# (is.nan(NA_real_) is FALSE, so NA survives the NaN handling untouched -- its
+# own bit pattern, high word 0x7ff00000 / low word 1954, is fixed by R and
+# therefore portable).
 .cv1_num_payload <- function(x) {
   x <- as.double(x)
-  x[is.nan(x)] <- NaN
+  nan_idx <- which(is.nan(x))
   z <- which(x == 0)           # which() drops NAs -- do not use x[x == 0]
   x[z] <- 0
-  writeBin(x, raw(), size = 8L, endian = "little")
+  out <- writeBin(x, raw(), size = 8L, endian = "little")
+  if (length(nan_idx) > 0L) {  # element i owns out[(8i - 7):(8i)]
+    out[rep((nan_idx - 1L) * 8L, each = 8L) + seq_len(8L)] <- .cv1_nan_canonical
+  }
+  out
 }
 
 # Character payload: 1-byte-per-row NA mask (disambiguates NA from ""),
@@ -184,6 +197,17 @@ check("NA_real_ vs NaN -> DIFFER",
       h(data.frame(x = c(1, NA))) != h(data.frame(x = c(1, NaN))))
 check("computed NaN (0/0) vs literal NaN -> equal",
       h(data.frame(x = c(1, 0/0))) == h(data.frame(x = c(1, NaN))))
+check("negative NaN vs positive NaN -> equal (sign bit folded)",
+      h(data.frame(x = c(1, -(0/0)))) == h(data.frame(x = c(1, NaN))))
+# The bytes emitted for a NaN must be the pinned canonical pattern on EVERY
+# platform, not whatever R's NaN happens to be here. This is the assertion that
+# makes the numeric golden portable; without it, macOS and Linux disagree.
+check("NaN encodes as the pinned 0x7ff8000000000000, host-independent",
+      identical(.cv1_num_payload(c(NaN, -(0/0), 0/0)),
+                rep(.cv1_nan_canonical, 3L)))
+check("NA_real_ keeps R's portable NA payload (high 0x7ff00000, low 1954)",
+      identical(.cv1_num_payload(NA_real_),
+                as.raw(c(0xa2, 0x07, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x7f))))
 check("-0 vs +0 -> equal",
       h(data.frame(x = c(-0.0, 1))) == h(data.frame(x = c(0.0, 1))))
 check("NA vs empty string -> DIFFER",
@@ -259,7 +283,22 @@ if (requireNamespace("bit64", quietly = TRUE)) {
 
 # --- golden constants: record these, re-run everywhere, they must never change -----
 cat("\n== golden constants (portable across machines / R versions / OSes) ==\n")
-golden1 <- data.frame(x = c(0, -0, 1, -1, 0.1, 1/3, 1e300, -1e-300, Inf, -Inf, NA, NaN))
+# Extreme magnitudes are built PARSE-EXACTLY (powers of two and the DBL_MAX /
+# DBL_MIN constants), never from decimal literals like 1e300. R's R_strtod
+# accumulates extreme-exponent decimals in a long double; that is 80-bit
+# extended on x86_64 (where the result comes out correctly rounded) but only
+# 64-bit on Apple arm64, where `1e300` parses 4 ULP off. The encoder is exact on
+# both -- it is the source text -> double conversion that is not portable, i.e.
+# upstream of datom entirely. A fixture using 1e300 therefore hashed differently
+# per architecture (caught by CI: x86 Linux/Windows agreed with each other and
+# disagreed with arm64 macOS). Small-exponent decimals like 0.1 take the exact
+# fast path and ARE portable, so they stay.
+golden1 <- data.frame(x = c(
+  0, -0, 1, -1, 0.1, 1/3,
+  2^999, -2^-999,                                   # exact powers of two
+  .Machine$double.xmax, -.Machine$double.xmin,      # IEEE-754 fixed constants
+  Inf, -Inf, NA, NaN
+))
 cat("golden numeric :", h(golden1), "\n")
 golden2 <- data.frame(
   n = c(1L, NA, 3L),
