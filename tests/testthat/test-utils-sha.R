@@ -563,6 +563,124 @@ test_that("Feature: datom-cv1, Property 12: column index integrity", {
   expect_identical(before[-changed], after[-changed])
 })
 
+# --- .datom_compute_metadata_sha(): Feature: datom-cv1, Properties 13-14 ------
+
+test_that("Feature: datom-cv1, Property 13: metadata_sha field ordering is locale-independent", {
+  # A fixture whose collation order genuinely MOVES with the locale: the C
+  # locale sorts by byte value ("_" = 0x5f and every uppercase letter precede
+  # the lowercase ones), while en_US.UTF-8 uses dictionary order. Without a
+  # discriminating fixture this property would pass vacuously, so the difference
+  # is asserted before the invariance is.
+  meta <- list(
+    data_sha = "abc",
+    Zeta = 1L,
+    alpha = 2L,
+    `_leading` = 3L,
+    Beta = 4L,
+    beta = 5L
+  )
+
+  locale_ok <- tryCatch(
+    withr::with_collate(
+      "en_US.UTF-8",
+      identical(Sys.getlocale("LC_COLLATE"), "en_US.UTF-8")
+    ),
+    warning = function(w) FALSE,
+    error = function(e) FALSE
+  )
+  skip_if_not(isTRUE(locale_ok),
+              "en_US.UTF-8 collation unavailable on this platform.")
+
+  order_c <- withr::with_collate("C", sort(names(meta)))
+  order_us <- withr::with_collate("en_US.UTF-8", sort(names(meta)))
+  expect_false(identical(order_c, order_us))
+
+  # The hash does not move with the locale (Requirement 6.2).
+  sha_c <- withr::with_collate("C", .datom_compute_metadata_sha(meta))
+  sha_us <- withr::with_collate("en_US.UTF-8", .datom_compute_metadata_sha(meta))
+  expect_identical(sha_c, sha_us)
+
+  # And it is the radix (byte-order) arrangement that is hashed, not either
+  # locale's sort() -- recomputed here from the implementation's own recipe so a
+  # future ordering change cannot pass this test silently.
+  radix <- meta[sort(names(meta), method = "radix")]
+  expect_identical(
+    sha_c,
+    digest::digest(jsonlite::toJSON(radix, auto_unbox = TRUE),
+                   algo = "sha256", serialize = FALSE)
+  )
+  expect_false(identical(
+    sha_c,
+    digest::digest(jsonlite::toJSON(meta[order_us], auto_unbox = TRUE),
+                   algo = "sha256", serialize = FALSE)
+  ))
+})
+
+test_that("Feature: datom-cv1, Property 14: metadata_sha volatile-field membership", {
+  base <- list(
+    data_sha = "abc",
+    hash_algo = "datom-cv1",
+    table_type = "imported",
+    nrow = 3L,
+    ncol = 2L,
+    original_file_sha = "f00"
+  )
+  reference <- .datom_compute_metadata_sha(base)
+
+  # (a) Volatile fields never move the hash, whichever value they carry.
+  #     `size_bytes` is in this set as a deliberate amendment to the written
+  #     Requirement 7.1 list: it is the parquet file size, which drifts with the
+  #     arrow version for identical logical content -- exactly the drift
+  #     parquet_sha is excluded for.
+  volatile_values <- list(
+    created_at = list("2025-01-01T00:00:00Z", "2026-12-31T23:59:59Z"),
+    datom_version = list("0.0.0.9000", "1.0.0"),
+    parquet_sha = list("aaa", "bbb"),
+    size_bytes = list(1024, 2048),
+    column_hashes = list(
+      list(list(name = "x", sha = "aaa")),
+      list(list(name = "x", sha = "bbb"))
+    )
+  )
+  for (field in names(volatile_values)) {
+    for (value in volatile_values[[field]]) {
+      variant <- base
+      variant[[field]] <- value
+      expect_identical(.datom_compute_metadata_sha(variant), reference,
+                       info = field)
+    }
+  }
+
+  # (b) Presence versus absence is also immaterial for a volatile field --
+  #     Requirement 14.4, which is what lets datom_write() set parquet_sha after
+  #     metadata_sha has already been computed.
+  all_volatile <- base
+  all_volatile$created_at <- "2025-01-01T00:00:00Z"
+  all_volatile$datom_version <- "9.9.9"
+  all_volatile$parquet_sha <- "ccc"
+  all_volatile$size_bytes <- 4096
+  all_volatile$column_hashes <- list(
+    list(name = "id", sha = "aaa"),
+    list(name = "v", sha = "bbb")
+  )
+  expect_identical(.datom_compute_metadata_sha(all_volatile), reference)
+
+  # (c) Semantic fields DO move it: a new source file or a new algorithm is
+  #     legitimately a new version (Requirement 7.4).
+  for (field in c("original_file_sha", "hash_algo")) {
+    changed <- base
+    changed[[field]] <- "something-else"
+    expect_false(identical(.datom_compute_metadata_sha(changed), reference),
+                 info = field)
+
+    dropped <- base
+    dropped[[field]] <- NULL
+    expect_false(identical(.datom_compute_metadata_sha(dropped), reference),
+                 info = field)
+  }
+})
+
+
 # --- Golden vectors and reference parity (Feature: datom-cv1) -----------------
 # Golden hex constants were computed on the reference platform (R 4.5.2) and are
 # a CI drift tripwire: any platform / endianness / dependency-version change

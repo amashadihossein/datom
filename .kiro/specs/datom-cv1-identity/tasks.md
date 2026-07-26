@@ -122,11 +122,9 @@ sub-agent verification in this environment is authoring the code and tests, not 
     with the printed constants before this checkpoint can pass — the placeholders fail loudly by
     design and are not skippable.
 
-- [ ] 3. Three-SHA metadata and write-path wiring
-  - **All code sub-tasks are DONE and committed** (3.1, 3.2, 3.4, 3.5, 3.6). This parent stays
-    unchecked solely because the deferrable `*` test 3.3 (Properties 13/14) is outstanding --
-    the *behavior* is already covered by plain tests, but the tagged property versions are
-    required before the PR merges. Do not redo 3.1-3.6.
+- [x] 3. Three-SHA metadata and write-path wiring
+  - All sub-tasks done, including the previously deferred `*` test 3.3 (Properties 13/14), which
+    landed after Wave 13.
   - [x] 3.1 Extend `.datom_build_metadata()` (in `R/read_write.R`) with the new fields
     - Add `hash_algo = "datom-cv1"` (always), `parquet_sha = NULL` (declared; set later by
       `datom_write()`), `column_hashes = NULL`, and `original_file_sha` included **only when
@@ -137,7 +135,7 @@ sub-agent verification in this environment is authoring the code and tests, not 
       `volatile <- c("created_at", "datom_version", "parquet_sha", "column_hashes")`; keep
       hashing the JSON canonical form (never the R object).
     - _Requirements: 6.1, 7.1, 7.2, 7.3, 7.4_
-  - [ ]* 3.3 Write property tests for `metadata_sha`
+  - [x]* 3.3 Write property tests for `metadata_sha`
     - **Property 13: metadata_sha locale determinism** (`LC_COLLATE=C` vs `en_US.UTF-8`; skip if
       locale unavailable) — **Validates: Requirements 6.1, 6.2**
     - **Property 14: metadata_sha volatile-field membership** (`parquet_sha`/`column_hashes`
