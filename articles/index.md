@@ -27,7 +27,7 @@ Why datom is shaped the way it is.
 
 - [The datom Model: Code in Git, Data in
   Cloud](https://amashadihossein.github.io/datom/articles/design-datom-model.md):
-- [Version SHAs: Data SHA vs. Metadata
-  SHA](https://amashadihossein.github.io/datom/articles/design-version-shas.md):
+- [Version SHAs: The Three-SHA Identity
+  Model](https://amashadihossein.github.io/datom/articles/design-version-shas.md):
 - [Serverless and Distributed by
   Design](https://amashadihossein.github.io/datom/articles/design-serverless.md):

@@ -74,12 +74,15 @@ write.</p>
 
 <dt id="arg-manifest">manifest<a class="anchor" aria-label="anchor" href="#arg-manifest"></a></dt>
 <dd><p>Data frame from <code><a href="datom_sync_manifest.html">datom_sync_manifest()</a></code>, with columns
-<code>name</code>, <code>file</code>, <code>format</code>, <code>file_sha</code>, <code>status</code>.</p></dd>
+<code>name</code>, <code>file</code>, <code>format</code>, <code>original_file_sha</code>, <code>status</code>.</p></dd>
 
 
 <dt id="arg-continue-on-error">continue_on_error<a class="anchor" aria-label="anchor" href="#arg-continue-on-error"></a></dt>
 <dd><p>If <code>TRUE</code> (default), continues processing
-remaining tables when one fails. If <code>FALSE</code>, stops on first error.</p></dd>
+remaining tables when one fails. If <code>FALSE</code>, stops on first error.</p>
+<p>Rows flagged <code>"unsupported_format"</code> by <code><a href="datom_sync_manifest.html">datom_sync_manifest()</a></code> are reported
+as <code>result = "error"</code> with the recourse in the <code>error</code> column; the rest of
+the batch still processes.</p></dd>
 
 </dl></div>
     <div class="section level2">

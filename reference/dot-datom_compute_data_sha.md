@@ -1,13 +1,17 @@
-# Compute SHA-256 of Data
+# Compute the datom-cv1 Content Hash of a Data Frame
 
-Computes a deterministic SHA-256 hash of a data frame by writing to
-parquet format. By default, preserves column and row order — reordering
-either will produce a different hash.
+Thin wrapper over
+[`.datom_canonical_hash()`](https://amashadihossein.github.io/datom/reference/dot-datom_canonical_hash.md)
+returning only the scalar `data_sha`. Preserves the scalar-string
+contract for callers that need just the content hash (for example the
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+self-lineage entry). Row and column order are significant; there is no
+sort option.
 
 ## Usage
 
 ``` r
-.datom_compute_data_sha(data, sort_columns = FALSE, sort_rows = FALSE)
+.datom_compute_data_sha(data)
 ```
 
 ## Arguments
@@ -16,16 +20,6 @@ either will produce a different hash.
 
   Data frame to hash.
 
-- sort_columns:
-
-  If TRUE, sorts columns alphabetically before hashing. Useful when
-  column order shouldn't affect identity.
-
-- sort_rows:
-
-  If TRUE, sorts rows by all columns before hashing. Useful when row
-  order shouldn't affect identity.
-
 ## Value
 
-Character SHA-256 hash.
+Character SHA-256 `data_sha`.

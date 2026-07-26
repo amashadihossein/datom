@@ -54,6 +54,8 @@ Read and write versioned tables
   : Read a datom Table
 - [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
   : Write a datom Table
+- [`datom_check_hashable()`](https://amashadihossein.github.io/datom/reference/datom_check_hashable.md)
+  : Check Whether a Table Can Be Hashed by datom
 
 ## Query & Status
 

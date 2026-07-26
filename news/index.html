@@ -47,11 +47,32 @@
 <p>Initial CRAN release. <code>datom</code> provides version-controlled data management for reproducible scientific and clinical workflows — tables are tracked as code in git while actual data lives in cloud storage (S3) or a local filesystem backend.</p>
 <p>datom is experimental: the API may change without a deprecation cycle until it reaches a stable release.</p>
 <div class="section level3">
+<h3 id="table-identity-the-datom-cv1-canonical-hash-0-1-0">Table identity: the <code>datom-cv1</code> canonical hash<a class="anchor" aria-label="anchor" href="#table-identity-the-datom-cv1-canonical-hash-0-1-0"></a></h3>
+<p>Table identity is defined by a canonical hash of a table’s <strong>values</strong> (<code>datom-cv1</code>), not by the bytes of its parquet serialization. Hashing the serialization tied identity to the writer: an <code>arrow</code> upgrade or a different compression default produced different bytes for identical data, and therefore a spurious new version. See <code><a href="../articles/design-version-shas.html">vignette("design-version-shas")</a></code> for the model and the identity decisions.</p>
+<ul><li>
+<strong>Pre-release <code>data_sha</code> values change, and there is no migration path.</strong> Any table written by a pre-release build carries a <code>data_sha</code> computed by the old algorithm. Those values are not recomputed, converted, or reconciled — pilots should re-onboard their data. Reads of pre-existing metadata still work (the new stored-object integrity check is skipped when the older metadata carries no <code>parquet_sha</code>), but content identity is not comparable across the change.</li>
+<li>Three SHAs are now recorded per table: <code>data_sha</code> (content identity), <code>metadata_sha</code> (the version you pass to <code>datom_read(version = )</code>), and <code>parquet_sha</code> (the stored object’s SHA-256, verified on read before parsing). <code>original_file_sha</code> continues to record input-file provenance for tables onboarded by <code><a href="../reference/datom_sync.html">datom_sync()</a></code>.</li>
+<li>
+<code>metadata.json</code> gains <code>hash_algo</code>, <code>parquet_sha</code>, and <code>column_hashes</code> — an ordered per-column digest index from which <code>data_sha</code> can be re-derived without downloading data.</li>
+</ul><div class="section level4">
+<h4 id="deliberate-narrowings-0-1-0">Deliberate narrowings<a class="anchor" aria-label="anchor" href="#deliberate-narrowings-0-1-0"></a></h4>
+<p>Three capabilities were narrowed on purpose. Each has a specific recourse.</p>
+<ul><li>
+<strong>List and exotic columns are refused, with advice.</strong> A column must be <code>logical</code>, <code>integer</code>, <code>double</code>, <code>character</code>, <code>factor</code>, <code>Date</code>, <code>POSIXct</code>, <code>difftime</code>/<code>hms</code>, <code><a href="https://rdrr.io/pkg/data.table/man/IDateTime.html" class="external-link">data.table::ITime</a></code>/<code>IDate</code>, <code><a href="https://bit64.r-lib.org/reference/bit64-package.html" class="external-link">bit64::integer64</a></code>, or a labelled vector over one of those. List columns (including nested data frames, blobs, and <code>POSIXlt</code>), <code>complex</code>, <code>raw</code>, <code>sf</code> geometry, <code>units</code>, and <code>zoo</code>/<code>chron</code> columns now abort the write, naming every offending column at once and stating how to convert each one. A refusal leaves no git, storage, or manifest state behind. New export <code><a href="../reference/datom_check_hashable.html">datom_check_hashable()</a></code> reports the same advice as a pre-flight check.</li>
+<li>
+<strong><code><a href="../reference/datom_sync.html">datom_sync()</a></code> accepts only allowlisted formats.</strong> Flat tabular files only: <code>csv</code>, <code>tsv</code>, <code>txt</code>, <code>psv</code>, <code>parquet</code>, <code>sas7bdat</code>, <code>xpt</code>, <code>sav</code>, <code>zsav</code>, <code>por</code>, <code>dta</code>, <code>xls</code>, <code>xlsx</code>. <code>.rds</code>, <code>.json</code>, and <code>.xml</code> are no longer imported directly; <code><a href="../reference/datom_sync_manifest.html">datom_sync_manifest()</a></code> flags them <code>unsupported_format</code> and still processes their allowlisted siblings. Read such a source yourself and pass the data frame to <code><a href="../reference/datom_write.html">datom_write()</a></code> — note that this makes the table <em>derived</em>, so it has no <code>original_file_sha</code> and input-file change detection does not apply to it.</li>
+<li>
+<strong>The internal <code>sort_columns</code> / <code>sort_rows</code> options are removed.</strong> Row and column order are significant, and nothing is sorted: sorting would need a collation order, which is locale-dependent, reintroducing exactly the platform dependence the canonical hash exists to remove. Sort explicitly before writing if order should not matter.</li>
+</ul></div>
+</div>
+<div class="section level3">
 <h3 id="core-readwriteversion-0-1-0">Core read/write/version<a class="anchor" aria-label="anchor" href="#core-readwriteversion-0-1-0"></a></h3>
 <ul><li>
 <code><a href="../reference/datom_write.html">datom_write()</a></code> — write a data frame as a versioned parquet table with automatic SHA-based deduplication. When <code>parents</code> is supplied it takes resolved <code><a href="../reference/datom_parent.html">datom_parent()</a></code> records and derives the table’s <code>source_lineage</code> as the deduplicated union of their lineages; the public <code>source_lineage</code> argument has been removed.</li>
 <li>
-<code><a href="../reference/datom_read.html">datom_read()</a></code> — read the current or any historical version of a table.</li>
+<code><a href="../reference/datom_read.html">datom_read()</a></code> — read the current or any historical version of a table. The downloaded object is verified against its recorded <code>parquet_sha</code> before parsing, so corruption or tampering aborts rather than returning data.</li>
+<li>
+<code><a href="../reference/datom_check_hashable.html">datom_check_hashable()</a></code> — pre-flight check for the table contract: reports per column whether <code><a href="../reference/datom_write.html">datom_write()</a></code> can hash it and, when it cannot, exactly how to fix it. Pure — no connection, store, or network.</li>
 <li>
 <code><a href="../reference/datom_history.html">datom_history()</a></code> — view the full version history of a table.</li>
 <li>

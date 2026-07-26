@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Version SHAs: Data SHA vs. Metadata SHA • datom</title>
+<title>Version SHAs: The Three-SHA Identity Model • datom</title>
 <!-- favicons --><link rel="icon" type="image/png" sizes="96x96" href="../favicon-96x96.png">
 <link rel="icon" type="”image/svg+xml”" href="../favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
@@ -16,7 +16,7 @@
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
-<meta property="og:title" content="Version SHAs: Data SHA vs. Metadata SHA">
+<meta property="og:title" content="Version SHAs: The Three-SHA Identity Model">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -70,7 +70,7 @@
 
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
-      <img src="../logo.svg" class="logo" alt=""><h1>Version SHAs: Data SHA vs. Metadata SHA</h1>
+      <img src="../logo.svg" class="logo" alt=""><h1>Version SHAs: The Three-SHA Identity Model</h1>
             
       
       <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/vignettes/design-version-shas.Rmd" class="external-link"><code>vignettes/design-version-shas.Rmd</code></a></small>
@@ -83,182 +83,668 @@
 <p><strong>Companion to</strong>: <a href="getting-started.html">Getting
 Started</a>. Read this when you’ve noticed that
 <code><a href="../reference/datom_history.html">datom_history()</a></code> shows a <code>version</code> column and a
-<code>data_sha</code> column, and you want to know why there are
-two.</p>
+<code>data_sha</code> column and want to know why there is more than one
+hash – or when <code><a href="../reference/datom_write.html">datom_write()</a></code> has told you a column is not
+hashable.</p>
 </blockquote>
-<p>datom uses <strong>two SHAs</strong> to identify a table version:</p>
-<ul>
-<li>
-<strong><code>data_sha</code></strong> – a hash of the parquet
-bytes. Identifies the data.</li>
-<li>
-<strong><code>metadata_sha</code></strong> – a hash of the metadata
-describing the data. Identifies the version.</li>
-</ul>
-<p>This article explains why one SHA isn’t enough, and the small set of
-implementation details that keep both stable across machines, sessions,
-and JSON round-trips.</p>
+<p>datom identifies a table with <strong>three SHAs</strong>, each
+answering a different question:</p>
+<table class="table">
+<colgroup>
+<col width="33%">
+<col width="33%">
+<col width="33%">
+</colgroup>
+<thead><tr class="header">
+<th>SHA</th>
+<th>Question it answers</th>
+<th>Computed over</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td><code>data_sha</code></td>
+<td><em>Is this the same table content?</em></td>
+<td>the table’s values, canonically encoded
+(<code>datom-cv1</code>)</td>
+</tr>
+<tr class="even">
+<td><code>metadata_sha</code></td>
+<td><em>Is this the same version?</em></td>
+<td>the table’s semantic metadata, as canonical JSON</td>
+</tr>
+<tr class="odd">
+<td><code>parquet_sha</code></td>
+<td><em>Are the stored bytes intact?</em></td>
+<td>the exact parquet object that was uploaded</td>
+</tr>
+</tbody>
+</table>
+<p>A fourth hash, <code>original_file_sha</code>, is recorded for tables
+onboarded from a file by <code><a href="../reference/datom_sync.html">datom_sync()</a></code>. It is not part of
+table identity – it is <em>file</em> provenance, and it is what lets a
+re-scan say “this input has not changed” without reading the file.</p>
+<p>The rest of this article explains each one, the type contract
+<code>data_sha</code> depends on, and the identity decisions baked into
+it.</p>
 <div class="section level2">
-<h2 id="why-two-shas">Why two SHAs<a class="anchor" aria-label="anchor" href="#why-two-shas"></a>
+<h2 id="data_sha-the-canonical-content-hash">
+<code>data_sha</code>: the canonical content hash<a class="anchor" aria-label="anchor" href="#data_sha-the-canonical-content-hash"></a>
 </h2>
-<p>Imagine you write the same <code>dm</code> data frame on two
-different days, with two different commit messages and two different
-<code>parents</code> lists (because you regenerated it from different
-upstream sources). The bytes are identical. Are these “the same
-version”?</p>
-<p>datom’s answer:</p>
+<p><code>data_sha</code> is a hash of the table’s
+<strong>values</strong>, computed with the <code>datom-cv1</code>
+algorithm. Sketching the layout:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co"># per column, in table column order</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>col_digest <span class="ot">&lt;-</span> <span class="fu">sha256</span>(<span class="fu">utf8</span>(type_tag) <span class="sc">||</span> <span class="fu">utf8</span>(column_name) <span class="sc">||</span> <span class="dv">0x00</span> <span class="sc">||</span> payload)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="co"># then the table</span></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>data_sha <span class="ot">&lt;-</span> <span class="fu">sha256</span>(<span class="st">"datom-cv1"</span> <span class="sc">||</span> <span class="fu">f64le</span>(nrow) <span class="sc">||</span> <span class="fu">f64le</span>(ncol) <span class="sc">||</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>                   <span class="fu">concat</span>(col_digest_hex ...))</span></code></pre></div>
+<p>Two properties matter more than the layout:</p>
 <ul>
 <li>
-<code>data_sha</code> is the same – the parquet content is
-byte-identical.</li>
+<strong>No I/O and no parquet.</strong> <code>data_sha</code> is
+computed from the in-memory data frame. It never writes a file, never
+calls arrow, and never coerces the container.</li>
 <li>
-<code>metadata_sha</code> is <strong>different</strong> – the
-surrounding context (parents, message, table type) is different.</li>
+<strong>The container is not identity.</strong> A
+<code>tibble</code>, a <code>data.table</code>, and a
+<code>data.frame</code> holding the same values hash the same.
+Attributes that are not values (row names, <code>tbl_df</code> class,
+arbitrary <code><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr()</a></code>s) do not participate.</li>
 </ul>
-<p>So the same data can appear under multiple versions, but each version
-is unique. This matters because:</p>
-<ul>
-<li>
-<strong>Deduplication.</strong> Two versions with the same
-<code>data_sha</code> share one parquet file in the store. You don’t pay
-storage cost twice.</li>
-<li>
-<strong>Provenance.</strong> A read pinned by <code>version</code>
-(<code>metadata_sha</code>) gets you not just the bytes but the lineage
-that produced them. Two analyses that used the “same data via different
-upstream paths” can be told apart.</li>
-<li>
-<strong>Change detection.</strong> <code><a href="../reference/datom_write.html">datom_write()</a></code> checks
-both. If <code>data_sha</code> and <code>metadata_sha</code> are
-unchanged, it’s a no-op. If only <code>metadata_sha</code> changed
-(e.g., new parents), datom records a new version <em>without</em>
-re-uploading the parquet.</li>
-</ul>
-<p>When you call <code>datom_read(conn, "dm", version = ...)</code>, the
-<code>version</code> argument is the <code>metadata_sha</code>. The
-lookup goes <code>metadata_sha</code> -&gt; metadata entry -&gt;
-<code>data_sha</code> -&gt; parquet file.</p>
+<div class="section level3">
+<h3 id="why-not-just-hash-the-parquet-bytes">Why not just hash the parquet bytes<a class="anchor" aria-label="anchor" href="#why-not-just-hash-the-parquet-bytes"></a>
+</h3>
+<p>An earlier design hashed the serialized parquet file. That is
+simpler, and wrong for a versioning tool: parquet bytes move with the
+<strong>writer</strong>, not the data. An arrow upgrade, a different
+compression default, or a different dictionary-encoding heuristic all
+produce different bytes for identical content – and every one of those
+would have minted a spurious new version.</p>
+<p>Hashing values instead of bytes decouples identity from the
+serializer. The serializer’s bytes are still hashed, but under a
+different name and for a different purpose: that is
+<code>parquet_sha</code>, below.</p>
+</div>
 </div>
 <div class="section level2">
-<h2 id="computing-data_sha">Computing <code>data_sha</code><a class="anchor" aria-label="anchor" href="#computing-data_sha"></a>
+<h2 id="the-datom-table-contract">The datom table contract<a class="anchor" aria-label="anchor" href="#the-datom-table-contract"></a>
 </h2>
-<p>The data SHA hashes the parquet representation, not the in-memory
-data frame. Concretely (from <a href="https://github.com/amashadihossein/datom/blob/main/R/utils-sha.R" class="external-link">R/utils-sha.R</a>):</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">arrow</span><span class="fu">::</span><span class="fu"><a href="https://arrow.apache.org/docs/r/reference/write_parquet.html" class="external-link">write_parquet</a></span><span class="op">(</span><span class="va">prepared</span>, <span class="va">tmp</span><span class="op">)</span></span>
-<span><span class="fu">digest</span><span class="fu">::</span><span class="fu"><a href="https://eddelbuettel.github.io/digest/man/digest.html" class="external-link">digest</a></span><span class="op">(</span>file <span class="op">=</span> <span class="va">tmp</span>, algo <span class="op">=</span> <span class="st">"sha256"</span><span class="op">)</span></span></code></pre></div>
-<p>A few properties this gives us:</p>
+<p>Hashing values means datom must decide, per column type, <em>what the
+bytes of that value are</em>. That decision cannot be guessed, so
+<code>datom-cv1</code> supports a defined set of types and refuses
+everything else with specific advice.</p>
+<p>Supported: <code>logical</code>, <code>integer</code>,
+<code>double</code>, <code>character</code>, <code>factor</code>,
+<code>Date</code> (including <code><a href="https://rdrr.io/pkg/data.table/man/IDateTime.html" class="external-link">data.table::IDate</a></code>),
+<code>POSIXct</code>, <code>difftime</code>/<code>hms</code>,
+<code><a href="https://rdrr.io/pkg/data.table/man/IDateTime.html" class="external-link">data.table::ITime</a></code>, <code><a href="https://bit64.r-lib.org/reference/bit64-package.html" class="external-link">bit64::integer64</a></code>, and
+labelled vectors (<code>haven_labelled</code>, <code>labelled</code>,
+<code>labelled_spss</code>) over any of those.</p>
+<div class="section level3">
+<h3 id="where-this-bites">Where this bites<a class="anchor" aria-label="anchor" href="#where-this-bites"></a>
+</h3>
+<p>Most clinical and analytical tables are already inside the contract.
+The cases that are not tend to arrive the same handful of ways:</p>
 <ul>
 <li>
-<strong>Cross-language stability.</strong> Any language that
-produces the same parquet bytes produces the same SHA. This is what
-makes datom usable from R today and Python tomorrow without
-coordination.</li>
+<strong>A <code>tidyr::nest()</code> result</strong> carries a list
+column of data frames.</li>
 <li>
-<strong>Column and row order matter by default.</strong> A reordered
-data frame is a different table. There are <code>sort_columns</code> and
-<code>sort_rows</code> arguments for callers who want order-independent
-identity, but the default is “what you wrote is what you get.”</li>
+<strong><code><a href="https://rdrr.io/r/base/strptime.html" class="external-link">strptime()</a></code></strong> returns
+<code>POSIXlt</code>, not <code>POSIXct</code> (which is a list under
+the hood, and hashing a list of broken-down time parts is not the same
+question as hashing an instant).</li>
 <li>
-<strong>Empty data frames are rejected.</strong> Computing a SHA
-over zero rows or zero columns is almost always a bug; datom errors
-instead.</li>
+<strong><code>sf</code></strong> geometry columns are
+<code>sfc</code> lists; <strong><code>units</code></strong> columns wrap
+a numeric with a unit attribute.</li>
+<li>
+<strong>A blob column</strong> from a database round-trip is a list
+of raw vectors.</li>
 </ul>
+<p>None of these are errors in your data. They are values whose
+canonical byte form is a modelling decision, and datom asks you to make
+it explicitly rather than picking one silently.</p>
+</div>
+<div class="section level3">
+<h3 id="check-before-you-write">Check before you write<a class="anchor" aria-label="anchor" href="#check-before-you-write"></a>
+</h3>
+<p><code><a href="../reference/datom_check_hashable.html">datom_check_hashable()</a></code> is the pre-flight entry point. It
+is pure – no connection, no store, no network – so you can run it on any
+data frame:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/amashadihossein/datom" class="external-link">datom</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">clean</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  id    <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">3</span>,</span>
+<span>  score <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1.5</span>, <span class="fl">2.5</span>, <span class="fl">3.5</span><span class="op">)</span>,</span>
+<span>  grp   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"x"</span>, <span class="st">"y"</span>, <span class="st">"x"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  day   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"2026-01-01"</span>, <span class="st">"2026-01-02"</span>, <span class="st">"2026-01-03"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/datom_check_hashable.html">datom_check_hashable</a></span><span class="op">(</span><span class="va">clean</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> All 4 columns are hashable. This table is ready for `datom_write()`.</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">messy</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">2</span><span class="op">)</span></span>
+<span><span class="va">messy</span><span class="op">$</span><span class="va">notes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"a"</span>, <span class="st">"b"</span><span class="op">)</span>, <span class="st">"c"</span><span class="op">)</span></span>
+<span><span class="va">messy</span><span class="op">$</span><span class="va">z</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="fl">2i</span>, <span class="fl">3</span> <span class="op">+</span> <span class="fl">4i</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">report</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_check_hashable.html">datom_check_hashable</a></span><span class="op">(</span><span class="va">messy</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #BB0000;">✖</span> 2 of 3 columns are not hashable.</span></span>
+<span><span class="co">#&gt; <span style="color: #BB0000;">✖</span> Column <span style="color: #00BB00;">notes</span> (<span style="color: #0000BB;">&lt;list&gt;</span>): List and blob columns are not hashable. Flatten to one</span></span>
+<span><span class="co">#&gt;   value per row with tidyr::unnest(), or serialize each element to character</span></span>
+<span><span class="co">#&gt;   (for example with jsonlite::toJSON() per element), before writing.</span></span>
+<span><span class="co">#&gt; <span style="color: #BB0000;">✖</span> Column <span style="color: #00BB00;">z</span> (<span style="color: #0000BB;">&lt;complex&gt;</span>): Complex columns are not hashable. Split into separate</span></span>
+<span><span class="co">#&gt;   real and imaginary numeric columns, or convert to character, before writing.</span></span>
+<span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Fix these before `datom_write()`, which refuses the whole table until they are resolved.</span></span>
+<span><span class="va">report</span><span class="op">[</span><span class="va">report</span><span class="op">$</span><span class="va">status</span> <span class="op">==</span> <span class="st">"unsupported"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"column"</span>, <span class="st">"class"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;   column   class</span></span>
+<span><span class="co">#&gt; 2  notes    list</span></span>
+<span><span class="co">#&gt; 3      z complex</span></span></code></pre></div>
+<p>The report is returned invisibly as a data frame, so it composes:
+filter it, <code>kable()</code> it, or assert on it in a pipeline.</p>
+<p><code><a href="../reference/datom_write.html">datom_write()</a></code> runs the same check itself,
+<strong>before</strong> it touches git or storage, and reports every
+offending column in one error rather than one per attempt. A refusal
+leaves no partial state behind.</p>
+</div>
+<div class="section level3">
+<h3 id="the-recourse-table">The recourse table<a class="anchor" aria-label="anchor" href="#the-recourse-table"></a>
+</h3>
+<p>Each refused type has one canonical piece of advice. The table below
+is generated by running <code><a href="../reference/datom_check_hashable.html">datom_check_hashable()</a></code> over one
+fixture per case, so it is the same text <code><a href="../reference/datom_write.html">datom_write()</a></code>
+aborts with – the documentation cannot drift from the code.</p>
+<table class="table">
+<colgroup>
+<col width="7%">
+<col width="92%">
+</colgroup>
+<thead><tr class="header">
+<th align="left">Column class</th>
+<th align="left">Recourse</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td align="left">POSIXlt/POSIXt</td>
+<td align="left">POSIXlt columns are not hashable. Convert to POSIXct
+with as.POSIXct() before writing.</td>
+</tr>
+<tr class="even">
+<td align="left">sfc</td>
+<td align="left">sf geometry (sfc) columns are not hashable. Convert to
+WKT text with sf::st_as_text() before writing.</td>
+</tr>
+<tr class="odd">
+<td align="left">list</td>
+<td align="left">Nested data-frame (list) columns are not hashable.
+Model the inner table as its own datom table joined by a key with
+datom_parent() lineage, or flatten it with tidyr::unnest(), before
+writing.</td>
+</tr>
+<tr class="even">
+<td align="left">list</td>
+<td align="left">List and blob columns are not hashable. Flatten to one
+value per row with tidyr::unnest(), or serialize each element to
+character (for example with jsonlite::toJSON() per element), before
+writing.</td>
+</tr>
+<tr class="odd">
+<td align="left">units</td>
+<td align="left">units columns are not hashable. Drop the unit with
+units::drop_units() and record the unit in the column name or a
+companion column (audit-friendly), before writing.</td>
+</tr>
+<tr class="even">
+<td align="left">yearmon</td>
+<td align="left">zoo::yearmon / yearqtr and chron columns are not
+hashable. Convert to Date/POSIXct or ISO-8601 text before writing.</td>
+</tr>
+<tr class="odd">
+<td align="left">complex</td>
+<td align="left">Complex columns are not hashable. Split into separate
+real and imaginary numeric columns, or convert to character, before
+writing.</td>
+</tr>
+<tr class="even">
+<td align="left">raw</td>
+<td align="left">Raw columns are not hashable. Encode the bytes as
+character (for example base64) before writing.</td>
+</tr>
+<tr class="odd">
+<td align="left">myclass</td>
+<td align="left">Columns of this class are not hashable. Convert to a
+supported type (logical, integer, double, character, factor, Date,
+POSIXct, difftime/hms, or bit64::integer64) before writing.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section level3">
+<h3 id="the-ingestion-allowlist">The ingestion allowlist<a class="anchor" aria-label="anchor" href="#the-ingestion-allowlist"></a>
+</h3>
+<p><code><a href="../reference/datom_sync.html">datom_sync()</a></code> onboards <strong>flat tabular files
+only</strong>: <code>csv</code>, <code>tsv</code>, <code>txt</code>,
+<code>psv</code>, <code>parquet</code>, <code>sas7bdat</code>,
+<code>xpt</code>, <code>sav</code>, <code>zsav</code>, <code>por</code>,
+<code>dta</code>, <code>xls</code>, <code>xlsx</code>. Anything else –
+<code>.rds</code>, <code>.json</code>, <code>.xml</code> – is refused up
+front. <code><a href="../reference/datom_sync_manifest.html">datom_sync_manifest()</a></code> flags it as
+<code>unsupported_format</code> and still processes its allowlisted
+siblings; <code><a href="../reference/datom_sync.html">datom_sync()</a></code> reports the same recourse in the
+<code>error</code> column for that row.</p>
+<p>The reason is the table contract: a container format can deserialize
+to anything, including the list and exotic columns the hash refuses.
+Refusing at the door keeps the failure legible (“this format is not
+onboarded”) instead of deferring it to a type error deep in the
+write.</p>
+<p><strong>The escape hatch, and its tradeoff.</strong> You can always
+read an unsupported source yourself and pass the resulting data frame to
+<code><a href="../reference/datom_write.html">datom_write()</a></code>:</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">dm</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="st">"dm.rds"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/datom_write.html">datom_write</a></span><span class="op">(</span><span class="va">conn</span>, data <span class="op">=</span> <span class="va">dm</span>, name <span class="op">=</span> <span class="st">"dm"</span><span class="op">)</span></span></code></pre></div>
+<p>The rule to know: that table is <strong>derived</strong>, not
+imported. It has no <code>original_file_sha</code>, so input-file change
+detection does not apply to it. A re-run will not report “unchanged”
+from the file’s bytes; it compares the data. If you need file-level
+change detection for that source, convert it to CSV or parquet once and
+let <code><a href="../reference/datom_sync.html">datom_sync()</a></code> onboard it.</p>
+</div>
 </div>
 <div class="section level2">
-<h2 id="computing-metadata_sha">Computing <code>metadata_sha</code><a class="anchor" aria-label="anchor" href="#computing-metadata_sha"></a>
+<h2 id="the-identity-decisions">The identity decisions<a class="anchor" aria-label="anchor" href="#the-identity-decisions"></a>
 </h2>
-<p>The metadata SHA is more careful. It has to satisfy three properties
-that don’t fall out automatically:</p>
+<p>Every entry below is a deliberate choice about what counts as “the
+same table”.</p>
+<table class="table">
+<colgroup>
+<col width="50%">
+<col width="50%">
+</colgroup>
+<thead><tr class="header">
+<th>Decision</th>
+<th>Rationale</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>
+<code>logical</code>, <code>integer</code>, <code>double</code>
+unify (same encoding, same tag)</td>
+<td>
+<code>1L</code> and <code>1</code> are the same number.
+Round-tripping a table through CSV, parquet, or a database routinely
+flips storage type without changing the data.</td>
+</tr>
+<tr class="even">
+<td>Factor <strong>levels</strong> and <strong>orderedness</strong> are
+not identity</td>
+<td>A factor’s values are hashed as character. Re-leveling for a plot,
+or dropping unused levels, must not mint a new data version.</td>
+</tr>
+<tr class="odd">
+<td>Value <strong>labels</strong> are not identity</td>
+<td>
+<code>haven_labelled</code> columns strip to their underlying type.
+A relabelled SAS import carries the same numbers.</td>
+</tr>
+<tr class="even">
+<td>
+<code>POSIXct</code> <strong>tzone</strong> is not identity</td>
+<td>The value hashed is the instant (epoch seconds). <code>tzone</code>
+is a display attribute; the same instant printed in two zones is one
+instant.</td>
+</tr>
+<tr class="odd">
+<td>All <code>NaN</code> payloads collapse to one canonical
+<code>NaN</code>; <code>-0</code> encodes as <code>+0</code>
+</td>
+<td>
+<code>0/0</code> and <code>NaN</code> are indistinguishable
+arithmetically, and IEEE-754 leaves NaN payload bits and signed zero to
+the platform. Letting them differ would make identity
+platform-dependent.</td>
+</tr>
+<tr class="even">
+<td>
+<code>NA_real_</code> stays distinct from <code>NaN</code>
+</td>
+<td>“Missing” and “not a number” are different statements about the
+data, and R keeps them apart.</td>
+</tr>
+<tr class="odd">
+<td>Doubles are hashed <strong>bit-exact</strong> – no rounding, no
+tolerance</td>
+<td>A tolerance would make identity non-transitive (a ~ b and b ~ c but
+a != c). If a pipeline produces last-bit differences, that is a fact
+about the pipeline; round explicitly if you want it hidden.</td>
+</tr>
+<tr class="even">
+<td>Unicode NFC and NFD forms differ</td>
+<td>Normalizing would require an ICU dependency and a normalization-form
+decision baked into every future version. Byte-identical text is the
+narrow, stable promise.</td>
+</tr>
+<tr class="odd">
+<td>Row order and column order are <strong>significant</strong>; nothing
+is sorted</td>
+<td>Sorting to make identity order-independent needs a collation order,
+which is locale-dependent – reintroducing the platform dependence the
+rest of this design removes. A reordered table is a different table;
+<code>arrange()</code> deliberately if order should not matter.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>On the apparent asymmetry</strong>: <code>NaN</code> payloads
+are canonicalized while NFD text is not, and storage types unify while
+row order does not. The line is drawn at <strong>platform
+non-determinism</strong>, not at “things a human would call equivalent”.
+Where the same logical value can have different bytes for reasons
+outside the user’s control (NaN payload bits, signed zero,
+integer-vs-double storage after a round-trip), datom canonicalizes –
+otherwise identity would depend on the machine. Where a difference is a
+real, visible, user-controlled property of the data (row order, NFC vs
+NFD, secs vs mins), datom preserves it: collapsing those would need a
+policy decision that belongs to the user, and any policy datom picked
+would be wrong for someone.</p>
+</div>
+<div class="section level2">
+<h2 id="metadata_sha-the-version">
+<code>metadata_sha</code>: the version<a class="anchor" aria-label="anchor" href="#metadata_sha-the-version"></a>
+</h2>
+<p><code>metadata_sha</code> is what <code><a href="../reference/datom_history.html">datom_history()</a></code> calls
+<code>version</code> and what you pass to
+<code>datom_read(version = ...)</code>. It hashes the table’s semantic
+metadata:</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">volatile</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"created_at"</span>, <span class="st">"datom_version"</span>, <span class="st">"parquet_sha"</span>,</span>
+<span>               <span class="st">"column_hashes"</span>, <span class="st">"size_bytes"</span><span class="op">)</span></span>
+<span><span class="va">semantic</span>  <span class="op">&lt;-</span> <span class="va">metadata</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">metadata</span><span class="op">)</span>, <span class="va">volatile</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="va">sorted</span>    <span class="op">&lt;-</span> <span class="va">semantic</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sort.html" class="external-link">sort</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">semantic</span><span class="op">)</span>, method <span class="op">=</span> <span class="st">"radix"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="va">canonical</span> <span class="op">&lt;-</span> <span class="fu">jsonlite</span><span class="fu">::</span><span class="fu"><a href="https://jeroen.r-universe.dev/jsonlite/reference/fromJSON.html" class="external-link">toJSON</a></span><span class="op">(</span><span class="va">sorted</span>, auto_unbox <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="fu">digest</span><span class="fu">::</span><span class="fu"><a href="https://eddelbuettel.github.io/digest/man/digest.html" class="external-link">digest</a></span><span class="op">(</span><span class="va">canonical</span>, algo <span class="op">=</span> <span class="st">"sha256"</span>, serialize <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
+<p>Three details are load-bearing:</p>
 <ol style="list-style-type: decimal">
 <li>
-<strong>JSON round-trip stability.</strong> A reader pulling
-metadata from S3 gets a JSON-parsed list, not the original R object. R’s
-<code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> is type-sensitive (<code>10L</code> and
-<code>10</code> serialize differently); JSON-parsed data drops that
-distinction. If we hashed the R object directly, the same metadata would
-have different SHAs in-memory vs. round-tripped.</li>
+<strong>The JSON canonical form is hashed, not the R
+object.</strong> R’s <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> is type-sensitive
+(<code>10L</code> and <code>10</code> differ); JSON-parsed metadata has
+lost that distinction. A reader pulling metadata from storage must
+compute the same <code>metadata_sha</code> as the writer who built it in
+memory, so the shared representation is the JSON text.
+<code>serialize = FALSE</code> is what makes <code>digest()</code> hash
+those bytes.</li>
 <li>
-<strong>Field-order independence.</strong> Two writers building
-metadata in different orders should produce the same SHA.</li>
+<strong><code>method = "radix"</code> sorts field names by byte
+value.</strong> Plain <code><a href="https://rdrr.io/r/base/sort.html" class="external-link">sort()</a></code> is locale-collated, so two
+machines with different <code>LC_COLLATE</code> would order fields
+differently and produce different versions for identical metadata.</li>
 <li>
-<strong>Volatile-field exclusion.</strong> Two writes of identical
-content at different times must hash to the same value, so version dedup
-works.</li>
+<strong>The volatile set is excluded on purpose.</strong>
+<code>created_at</code> and <code>datom_version</code> are wall-clock
+and package facts. <code>parquet_sha</code> and <code>size_bytes</code>
+move with the arrow version for identical content – letting them in
+would undo the whole point of hashing values. <code>column_hashes</code>
+is a deterministic function of the same values that produce
+<code>data_sha</code>, so it carries no independent information.</li>
 </ol>
-<p>The implementation handles all three:</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">.datom_compute_metadata_sha</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">metadata</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="co"># 1. Strip volatile fields that don't define content identity</span></span>
-<span>  <span class="va">volatile</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"created_at"</span>, <span class="st">"datom_version"</span><span class="op">)</span></span>
-<span>  <span class="va">semantic</span> <span class="op">&lt;-</span> <span class="va">metadata</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">metadata</span><span class="op">)</span>, <span class="va">volatile</span><span class="op">)</span><span class="op">]</span></span>
-<span></span>
-<span>  <span class="co"># 2. Sort field names for order independence</span></span>
-<span>  <span class="va">sorted_metadata</span> <span class="op">&lt;-</span> <span class="va">semantic</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sort.html" class="external-link">sort</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">semantic</span><span class="op">)</span><span class="op">)</span><span class="op">]</span></span>
-<span></span>
-<span>  <span class="co"># 3. Hash the JSON canonical form, not the R object</span></span>
-<span>  <span class="va">canonical</span> <span class="op">&lt;-</span> <span class="fu">jsonlite</span><span class="fu">::</span><span class="fu"><a href="https://jeroen.r-universe.dev/jsonlite/reference/fromJSON.html" class="external-link">toJSON</a></span><span class="op">(</span><span class="va">sorted_metadata</span>, auto_unbox <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span>  <span class="fu">digest</span><span class="fu">::</span><span class="fu"><a href="https://eddelbuettel.github.io/digest/man/digest.html" class="external-link">digest</a></span><span class="op">(</span><span class="va">canonical</span>, algo <span class="op">=</span> <span class="st">"sha256"</span>, serialize <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="op">}</span></span></code></pre></div>
-<p>The <code>serialize = FALSE</code> is the load-bearing detail. It
-tells <code>digest()</code> to hash the bytes of the JSON string, not an
-R-serialized representation. That’s what makes the SHA portable across
-the git -&gt; S3 -&gt; reader path.</p>
+<p>Conversely, <code>original_file_sha</code> and <code>hash_algo</code>
+<strong>are</strong> semantic: a new source file is a new version of the
+table’s provenance, and a new hash algorithm is a new identity
+regime.</p>
+<div class="section level3">
+<h3 id="the-dedup-guard-is-full-history">The dedup guard is full-history<a class="anchor" aria-label="anchor" href="#the-dedup-guard-is-full-history"></a>
+</h3>
+<p>When a version’s <code>metadata_sha</code> already appears
+<strong>anywhere</strong> in <code>version_history.json</code>, no entry
+is appended – the current pointer in <code>metadata.json</code> is still
+updated. This matters when you re-sync an older file that
+content-matches: without a full-history scan, that write would append a
+second entry with a <code>version</code> value already present, and a
+later <code>datom_read(version = ...)</code> would report the SHA as
+ambiguous.</p>
+</div>
 </div>
 <div class="section level2">
-<h2 id="the-volatile-field-list">The volatile-field list<a class="anchor" aria-label="anchor" href="#the-volatile-field-list"></a>
+<h2 id="parquet_sha-stored-object-integrity">
+<code>parquet_sha</code>: stored-object integrity<a class="anchor" aria-label="anchor" href="#parquet_sha-stored-object-integrity"></a>
 </h2>
-<p>Two fields are explicitly excluded from the SHA:</p>
+<p><code>parquet_sha</code> is the SHA-256 of the exact parquet object
+in storage. It is not identity – it is a tamper and corruption
+check:</p>
 <ul>
-<li>
-<code>created_at</code> – a wall-clock timestamp.</li>
-<li>
-<code>datom_version</code> – the version of the datom package that
-wrote the metadata.</li>
+<li>On read, the downloaded object is hashed and compared
+<strong>before</strong> parsing. A mismatch aborts with the key, the
+expected hash, and the actual one; it never hands you data it cannot
+vouch for.</li>
+<li>When a write is <code>metadata_only</code> (the content is
+unchanged), the current <code>parquet_sha</code> is <strong>carried
+forward</strong> and nothing is uploaded.</li>
+<li>When a write reverts to content already in history, the recorded
+<code>parquet_sha</code> is <strong>reused</strong> and the stored
+object is left alone. Re-serializing can differ byte-for-byte, which
+would break the older version’s integrity pin for no benefit.</li>
+<li>Metadata written before this hash existed has no
+<code>parquet_sha</code>, and the check is <strong>skipped</strong>
+rather than failed – a read-time grace, not a migration.</li>
 </ul>
-<p>If either of these participated in the SHA, every re-write of
-identical data would record a “new” version, and
-<code>version_history.json</code> would grow forever. The volatile list
-is short and tightly scoped on purpose; adding a field to it is the kind
-of change that needs explicit justification.</p>
 </div>
 <div class="section level2">
-<h2 id="the-dedup-guard">The dedup guard<a class="anchor" aria-label="anchor" href="#the-dedup-guard"></a>
+<h2 id="change-classification">Change classification<a class="anchor" aria-label="anchor" href="#change-classification"></a>
 </h2>
-<p>Even with the volatile list correct,
-<code><a href="../reference/dot-datom_write_metadata_local.html">.datom_write_metadata_local()</a></code> adds a belt-and-suspenders
-check: if the most recent entry in <code>version_history.json</code>
-already has the same <code>metadata_sha</code>, the new entry is
-<strong>not appended</strong>. This protects against:</p>
+<p>Every <code><a href="../reference/datom_write.html">datom_write()</a></code> (including the one inside
+<code><a href="../reference/datom_sync.html">datom_sync()</a></code>) lands in exactly one of three outcomes:</p>
+<table class="table">
+<colgroup>
+<col width="33%">
+<col width="33%">
+<col width="33%">
+</colgroup>
+<thead><tr class="header">
+<th>Outcome</th>
+<th>When</th>
+<th>Effect</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td><code>none</code></td>
+<td>
+<code>data_sha</code> and <code>metadata_sha</code> both
+unchanged</td>
+<td>no commit, no upload, no history entry</td>
+</tr>
+<tr class="even">
+<td><code>metadata_only</code></td>
+<td>same <code>data_sha</code>, different <code>metadata_sha</code>
+(e.g. a re-export with new <code>original_file_sha</code>, or new
+parents)</td>
+<td>new version, <code>parquet_sha</code> carried forward, <strong>no
+upload</strong>
+</td>
+</tr>
+<tr class="odd">
+<td><code>full</code></td>
+<td>
+<code>data_sha</code> changed</td>
+<td>new version, parquet stored at
+<code>{name}/{data_sha}.parquet</code>
+</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>metadata_only</code> case is the one that pays for the
+whole design: an EDC system re-exporting the same data with a new
+timestamp in the header produces different file bytes and identical
+content. datom records the new provenance and stores nothing twice.</p>
+</div>
+<div class="section level2">
+<h2 id="the-column-index">The column index<a class="anchor" aria-label="anchor" href="#the-column-index"></a>
+</h2>
+<p>Alongside <code>data_sha</code>, metadata carries
+<code>column_hashes</code>: an ordered array of
+<code>{name, sha}</code>, one entry per column, in table column order,
+untruncated. It is the same per-column digest that fed
+<code>data_sha</code>, computed once and reused.</p>
+<p>Two things follow. <code>data_sha</code> can be re-derived from the
+index plus the dimensions without downloading any data, which makes it
+cheaply self-checkable. And two versions that differ in exactly one
+column differ in exactly one entry – the anchor a future column-level
+diff builds on.</p>
+</div>
+<div class="section level2">
+<h2 id="how-far-the-cross-language-claim-goes">How far the cross-language claim goes<a class="anchor" aria-label="anchor" href="#how-far-the-cross-language-claim-goes"></a>
+</h2>
 <ul>
-<li>Bugs in metadata construction that accidentally produce identical
-SHAs.</li>
-<li>Concurrent writers racing on the same git clone (rare, but the cost
-of the check is trivial).</li>
-<li>Re-runs of a partially-failed write where some steps succeeded and
-others didn’t.</li>
+<li>
+<strong>Within R, pinned with <code>renv</code>:
+guaranteed.</strong> The goldens in the test suite pin the byte layout
+across the supported platform matrix.</li>
+<li>
+<strong>The specification is language-implementable.</strong>
+<code>datom-cv1</code> is defined in terms of bytes – UTF-8 tags,
+little-endian IEEE-754 doubles, NUL-terminated strings, SHA-256 – not R
+semantics. <code>dev/datom_cv1_reference.R</code> is a standalone base-R
++ <code>digest</code> reference implementation that the package is
+tested byte-for-byte against, and it doubles as the spec any other
+language would implement. What is <strong>not</strong> claimed is that
+an arbitrary Python or Julia reader will agree by accident; agreement
+requires implementing the same encodings, starting with that
+reference.</li>
+<li>
+<strong>Raw-file onboarding identity is language-independent
+today.</strong> <code>original_file_sha</code> is a SHA-256 of the
+file’s bytes, so any tool in any language computes it identically.
+Change detection on inputs therefore does not depend on the hashing
+algorithm at all.</li>
 </ul>
-<p>The guard relies on <code>metadata_sha</code> correctness. If you
-ever add a new field to metadata that affects content identity, make
-sure it’s <em>not</em> in the volatile list – otherwise dedup will
-incorrectly mark new versions as duplicates.</p>
+<div class="section level3">
+<h3 id="one-caveat-that-is-not-ours-to-fix">One caveat that is not ours to fix<a class="anchor" aria-label="anchor" href="#one-caveat-that-is-not-ours-to-fix"></a>
+</h3>
+<p><code>data_sha</code> is a portable identity of <em>doubles</em>.
+Getting from <strong>text to doubles</strong> is a separate step, and in
+base R it is neither correctly rounded nor platform-independent. R does
+its own decimal parsing (<code>R_strtod</code> in
+<code>src/main/util.c</code>): it accumulates digits into a
+<code>long double</code> and then scales by a power of ten. So the
+result depends on how wide <code>long double</code> is on the build –
+and <code><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric()</a></code>, decimal literals, <code><a href="https://rdrr.io/r/base/scan.html" class="external-link">scan()</a></code> and
+<code><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv()</a></code> all go through it.</p>
+<p>This is known, accepted R behaviour rather than a bug: CRAN runs a
+dedicated check flavour with R configured
+<code>--disable-long-double</code> precisely because results differ, and
+package authors are told to tolerate it.</p>
+<p>Check your own platform in one line:</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">.Machine</span><span class="op">$</span><span class="va">sizeof.longdouble</span>   <span class="co"># 8 means long double == double</span></span>
+<span><span class="co">#&gt; [1] 16</span></span></code></pre></div>
+<p><code>8</code> means no extra precision, and decimal parsing on that
+build deviates from the correctly-rounded value. It is
+<strong>not</strong> an Apple-versus-Intel split:</p>
+<table class="table">
+<colgroup>
+<col width="33%">
+<col width="33%">
+<col width="33%">
+</colgroup>
+<thead><tr class="header">
+<th>Build</th>
+<th><code>long double</code></th>
+<th>Decimal parsing</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>x86_64 (Linux, Windows, Intel mac)</td>
+<td>80-bit extended</td>
+<td>agrees with correct rounding on everything tested</td>
+</tr>
+<tr class="even">
+<td>aarch64 <strong>Linux</strong>, s390x, riscv64</td>
+<td>128-bit quad</td>
+<td>agrees</td>
+</tr>
+<tr class="odd">
+<td>
+<strong>Apple silicon macOS</strong>, 32-bit ARM</td>
+<td>same as <code>double</code>
+</td>
+<td><strong>deviates</strong></td>
+</tr>
+<tr class="even">
+<td>any build with <code>--disable-long-double</code> (CRAN’s noLD
+flavour)</td>
+<td>forced to <code>double</code>
+</td>
+<td><strong>deviates</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Note that Linux and macOS on the <em>same</em> arm64 chip family fall
+on opposite sides – the variable is the <code>long double</code> width,
+not the architecture.</p>
+<p><strong>When it bites.</strong> Deviation is possible whenever
+<code>mantissa * 10^exponent</code> cannot be reached by a single
+correctly-rounded operation at the platform’s <code>long double</code>
+precision – that is, when the accumulated mantissa exceeds the
+significand, or <code>10^|exponent|</code> is not itself exactly
+representable. <code>10^22</code> is the largest power of ten exactly
+representable as a double, and <code>10^23</code> the first that is not,
+which is why on Apple silicon a bare <code>1e-23</code> is the first
+one-digit value to drift. Longer mantissas drift sooner:
+<code>3.14159265358979e-9</code> is already 1 ULP off, and
+<code>1e300</code> / <code>1e-300</code> are 4. Short decimals –
+<code>0.1</code>, <code>1</code>, <code>1e15</code>,
+<code>3.14159265358979</code> – are exact and agree everywhere, because
+only a single rounding occurs.</p>
+<p><strong>The consequence for datom.</strong> Two machines whose builds
+fall on opposite sides of that table can parse <em>different
+doubles</em> from the same CSV text, and will then compute different
+<code>data_sha</code> values – both correct, for genuinely different
+tables. No hash can paper over it; the divergence happens before datom
+sees the data.</p>
+<p>Mitigations, in order of preference:</p>
+<ul>
+<li>
+<strong>Read via <code>arrow</code>, or store as parquet.</strong>
+Arrow’s CSV reader uses <code>fast_float</code>, which is correctly
+rounded and platform-independent by design; parquet stores the doubles
+themselves, so no decimal parsing happens at all. This is the
+recommendation.</li>
+<li>
+<strong>Keep the ingesting platform fixed</strong> for a given table
+if you must go through base-R CSV reading.</li>
+<li>
+<strong>For exact literals in code</strong>, use C99 hex-float
+notation – <code>0x1.999999999999ap-4</code> is exactly
+<code>0.1</code>, and <code>0x1.fcp+996</code> a large value with no
+base-10 rounding anywhere. Documented in <code><a href="https://rdrr.io/r/base/NumericConstants.html" class="external-link">?NumericConstants</a></code>
+and portable.</li>
+</ul>
+<p>One warning: <code><a href="https://rdrr.io/pkg/data.table/man/fread.html" class="external-link">data.table::fread()</a></code> is <strong>not</strong>
+a fix. It has its own parser that is also not correctly rounded, and its
+errors differ from base R’s – the two can disagree on the same
+string.</p>
+<p>Worth keeping in perspective: this is a property of the platform’s
+decimal parser, not of datom, and it affects any analysis reading that
+CSV with or without datom. What datom adds is that the difference
+becomes <em>visible</em> instead of silent.</p>
+</div>
 </div>
 <div class="section level2">
 <h2 id="what-you-can-rely-on">What you can rely on<a class="anchor" aria-label="anchor" href="#what-you-can-rely-on"></a>
 </h2>
 <ul>
-<li>A version is uniquely identified by its
-<code>metadata_sha</code>.</li>
-<li>The same data under different lineage produces a different
-<code>metadata_sha</code> but the same <code>data_sha</code>.</li>
-<li>Identical writes (same data, same metadata) are no-ops at every
-layer: same parquet filename in the store, no new history entry, no new
-git commit.</li>
-<li>A reader on a different machine pulling metadata from S3 computes
-the same <code>metadata_sha</code> as the writer.</li>
+<li>A version is uniquely identified by its <code>metadata_sha</code>,
+and that SHA never appears twice in a table’s history.</li>
+<li>The same content under different provenance shares one
+<code>data_sha</code> and one stored parquet object, with a distinct
+<code>metadata_sha</code> per version.</li>
+<li>Identical writes are no-ops at every layer: no commit, no upload, no
+history entry.</li>
+<li>A reader on another machine, in another locale, computes the same
+<code>metadata_sha</code> as the writer.</li>
+<li>Data you read back is the data that was written, or the read fails
+loudly.</li>
 </ul>
-<p>These four properties are the foundation that every reproducibility
-and audit workflow eventually depends on.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

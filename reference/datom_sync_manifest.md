@@ -27,10 +27,14 @@ datom_sync_manifest(conn, path = NULL, pattern = "*")
 
   Glob pattern for file matching. Default `"*"`.
 
+  Files whose format is outside datom's ingestion allowlist (flat
+  tabular formats only) are flagged `"unsupported_format"` up front,
+  without blocking their allowlisted siblings.
+
 ## Value
 
-Data frame with columns: name, file, format, file_sha, status (one of
-`"new"`, `"changed"`, `"unchanged"`).
+Data frame with columns: name, file, format, original_file_sha, status
+(one of `"new"`, `"changed"`, `"unchanged"`, `"unsupported_format"`).
 
 ## Examples
 

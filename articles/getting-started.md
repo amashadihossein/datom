@@ -142,6 +142,15 @@ also creates an `input_files/` directory inside the clone. It is
 gitignored – files placed there are never committed. It is the inbox for
 [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
 
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+onboards flat tabular files: `csv`, `tsv`, `txt`, `psv`, `parquet`,
+`sas7bdat`, `xpt`, `sav`, `zsav`, `por`, `dta`, `xls`, `xlsx`. Anything
+else in the inbox (an `.rds`, a `.json`) is reported as
+`unsupported_format` and skipped without blocking its neighbours – see
+[the ingestion
+allowlist](https://amashadihossein.github.io/datom/articles/design-version-shas.md)
+for why, and for the one-line escape hatch.
+
 Take a moment to inspect the repo structure before moving on:
 
 ``` r
@@ -194,8 +203,8 @@ changed, or unchanged relative to what has already been onboarded:
 manifest <- datom_sync_manifest(conn)
 #> i Scanned 1 file: 1 new, 0 changed, 0 unchanged.
 manifest
-#>   name  file         format file_sha status
-#> 1   dm  .../dm.csv   csv    7a3b...  new
+#>   name  file         format original_file_sha status
+#> 1   dm  .../dm.csv   csv    7a3b...           new
 ```
 
 Now onboard it:
@@ -306,7 +315,7 @@ manifest <- datom_sync_manifest(conn)
 #> i Scanned 1 file: 0 new, 0 changed, 1 unchanged.
 
 datom_sync(conn, manifest)
-#> i All files unchanged. Nothing to sync.
+#> i No new or changed files. Nothing to sync.
 ```
 
 Re-syncing identical content is a no-op. This is what makes sync safe to
@@ -315,6 +324,14 @@ pollute no history. The same idempotency applies to
 [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md):
 writing an identical data frame to the same table name detects the
 duplicate and skips.
+
+Idempotency here is stronger than “the file’s bytes are unchanged”. If a
+source system **re-exports the same data** – new export timestamp in the
+header, same rows – the file’s bytes change but its content does not.
+datom records the new file provenance as a version and does **not**
+store the data a second time. [Version
+SHAs](https://amashadihossein.github.io/datom/articles/design-version-shas.md)
+explains the three hashes that make that distinction.
 
 ## Step 4: A batch of files
 
@@ -343,11 +360,11 @@ Scan and sync in one pass:
 manifest <- datom_sync_manifest(conn)
 #> i Scanned 4 files: 3 new, 1 changed, 0 unchanged.
 manifest
-#>   name  file         format file_sha status
-#> 1   dm  .../dm.csv   csv    c41a...  changed
-#> 2   ex  .../ex.csv   csv    9b08...  new
-#> 3   lb  .../lb.csv   csv    72d3...  new
-#> 4   ae  .../ae.csv   csv    1e4a...  new
+#>   name  file         format original_file_sha status
+#> 1   dm  .../dm.csv   csv    c41a...           changed
+#> 2   ex  .../ex.csv   csv    9b08...           new
+#> 3   lb  .../lb.csv   csv    72d3...           new
+#> 4   ae  .../ae.csv   csv    1e4a...           new
 
 datom_sync(conn, manifest)
 #> i Syncing 4 tables...
@@ -477,6 +494,64 @@ table was derived from `lb` – making the provenance chain auditable (see
 [Tracing Data
 Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md)).
 
+## The datom table contract
+
+A table version is identified by a canonical hash of its **values**
+(`data_sha`), which means every column has to be a type datom knows how
+to encode: `logical`, `integer`, `double`, `character`, `factor`,
+`Date`, `POSIXct`, `difftime`/`hms`,
+[`data.table::ITime`](https://rdrr.io/pkg/data.table/man/IDateTime.html)/`IDate`,
+[`bit64::integer64`](https://bit64.r-lib.org/reference/bit64-package.html),
+or a labelled vector over one of those.
+
+Files onboarded through
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+land inside that set by construction. It is derived tables – the
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+path above – where a column can fall outside it: a `tidyr::nest()`
+result carries a list column,
+[`strptime()`](https://rdrr.io/r/base/strptime.html) returns `POSIXlt`,
+an `sf` table carries geometry, a database round-trip can bring back a
+blob.
+
+[`datom_check_hashable()`](https://amashadihossein.github.io/datom/reference/datom_check_hashable.md)
+tells you before you write. It needs no connection and no store, so it
+is safe to run anywhere:
+
+``` r
+
+library(datom)
+
+lb_summary <- data.frame(LBTESTCD = c("ALT", "AST"), n = c(12L, 12L))
+datom_check_hashable(lb_summary)
+#> ✔ All 2 columns are hashable. This table is ready for `datom_write()`.
+```
+
+When a column is outside the contract, the report names it and says what
+to do about it:
+
+``` r
+
+messy <- data.frame(id = 1:2)
+messy$measurements <- list(c(1, 2), c(3, 4))
+
+report <- datom_check_hashable(messy)
+#> ✖ 1 of 2 columns are not hashable.
+#> ✖ Column measurements (<list>): List and blob columns are not hashable. Flatten
+#>   to one value per row with tidyr::unnest(), or serialize each element to
+#>   character (for example with jsonlite::toJSON() per element), before writing.
+#> ℹ Fix these before `datom_write()`, which refuses the whole table until they are resolved.
+report$recourse[report$status == "unsupported"]
+#> [1] "List and blob columns are not hashable. Flatten to one value per row with tidyr::unnest(), or serialize each element to character (for example with jsonlite::toJSON() per element), before writing."
+```
+
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+runs the same check itself and refuses the whole table until every
+column is inside the contract, reporting all offenders at once and
+leaving no partial state behind. The full type-by-type recourse table
+and the reasoning live in [Version
+SHAs](https://amashadihossein.github.io/datom/articles/design-version-shas.md).
+
 ## Where you are
 
 - A full sync-based onboarding workflow: one file, update, no-op, batch.
@@ -487,12 +562,17 @@ Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md)).
   [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md)
   provide consistency checks.
 - Readers access data from storage alone – no git, no PAT.
+- [`datom_check_hashable()`](https://amashadihossein.github.io/datom/reference/datom_check_hashable.md)
+  is the pre-flight check for the table contract.
 
 From here, [Starting on
 S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md)
-shows the same workflow with data in object storage, and [Tracing Data
+shows the same workflow with data in object storage, [Tracing Data
 Lineage](https://amashadihossein.github.io/datom/articles/source-lineage.md)
-shows how derived tables record where they came from.
+shows how derived tables record where they came from, and [Version
+SHAs](https://amashadihossein.github.io/datom/articles/design-version-shas.md)
+explains the three hashes behind `version`, `data_sha`, and
+stored-object integrity.
 
 ## Teardown
 

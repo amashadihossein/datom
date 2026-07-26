@@ -26,12 +26,17 @@ datom_sync(conn, manifest, continue_on_error = TRUE)
 
   Data frame from
   [`datom_sync_manifest()`](https://amashadihossein.github.io/datom/reference/datom_sync_manifest.md),
-  with columns `name`, `file`, `format`, `file_sha`, `status`.
+  with columns `name`, `file`, `format`, `original_file_sha`, `status`.
 
 - continue_on_error:
 
   If `TRUE` (default), continues processing remaining tables when one
   fails. If `FALSE`, stops on first error.
+
+  Rows flagged `"unsupported_format"` by
+  [`datom_sync_manifest()`](https://amashadihossein.github.io/datom/reference/datom_sync_manifest.md)
+  are reported as `result = "error"` with the recourse in the `error`
+  column; the rest of the batch still processes.
 
 ## Value
 

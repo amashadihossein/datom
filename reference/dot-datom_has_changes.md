@@ -30,5 +30,10 @@ Returns the type of change detected.
 
 ## Value
 
-Character string: `"none"` (no change), `"metadata_only"` (data same,
-metadata changed), or `"full"` (data changed).
+Named list with two elements: `change_type` – `"none"` (no change),
+`"metadata_only"` (data same, metadata changed), or `"full"` (data
+changed) – and `current`, the already-read current metadata (or `NULL`
+for a brand-new table). Returning `current` lets
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+reuse it (the `metadata_only` `parquet_sha` carry-forward and the
+revert-to-older history scan) without a second storage read.

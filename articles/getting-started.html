@@ -215,6 +215,15 @@ parquet bytes stay in <code>data_dir</code>.</p>
 <code>input_files/</code> directory inside the clone. It is gitignored –
 files placed there are never committed. It is the inbox for
 <code><a href="../reference/datom_sync.html">datom_sync()</a></code>.</p>
+<p><code><a href="../reference/datom_sync.html">datom_sync()</a></code> onboards flat tabular files:
+<code>csv</code>, <code>tsv</code>, <code>txt</code>, <code>psv</code>,
+<code>parquet</code>, <code>sas7bdat</code>, <code>xpt</code>,
+<code>sav</code>, <code>zsav</code>, <code>por</code>, <code>dta</code>,
+<code>xls</code>, <code>xlsx</code>. Anything else in the inbox (an
+<code>.rds</code>, a <code>.json</code>) is reported as
+<code>unsupported_format</code> and skipped without blocking its
+neighbours – see <a href="design-version-shas.html">the ingestion
+allowlist</a> for why, and for the one-line escape hatch.</p>
 <p>Take a moment to inspect the repo structure before moving on:</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Metadata layout in the git clone (note input_files/ -- your sync inbox)</span></span>
@@ -258,8 +267,8 @@ changed, or unchanged relative to what has already been onboarded:</p>
 <code class="sourceCode R"><span><span class="va">manifest</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_sync_manifest.html">datom_sync_manifest</a></span><span class="op">(</span><span class="va">conn</span><span class="op">)</span></span>
 <span><span class="co">#&gt; i Scanned 1 file: 1 new, 0 changed, 0 unchanged.</span></span>
 <span><span class="va">manifest</span></span>
-<span><span class="co">#&gt;   name  file         format file_sha status</span></span>
-<span><span class="co">#&gt; 1   dm  .../dm.csv   csv    7a3b...  new</span></span></code></pre></div>
+<span><span class="co">#&gt;   name  file         format original_file_sha status</span></span>
+<span><span class="co">#&gt; 1   dm  .../dm.csv   csv    7a3b...           new</span></span></code></pre></div>
 <p>Now onboard it:</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/datom_sync.html">datom_sync</a></span><span class="op">(</span><span class="va">conn</span>, <span class="va">manifest</span><span class="op">)</span></span>
@@ -346,12 +355,18 @@ auditors rely on.</p>
 <span><span class="co">#&gt; i Scanned 1 file: 0 new, 0 changed, 1 unchanged.</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/datom_sync.html">datom_sync</a></span><span class="op">(</span><span class="va">conn</span>, <span class="va">manifest</span><span class="op">)</span></span>
-<span><span class="co">#&gt; i All files unchanged. Nothing to sync.</span></span></code></pre></div>
+<span><span class="co">#&gt; i No new or changed files. Nothing to sync.</span></span></code></pre></div>
 <p>Re-syncing identical content is a no-op. This is what makes sync safe
 to run in a scheduled job or pipeline – accidental re-runs cost nothing
 and pollute no history. The same idempotency applies to
 <code><a href="../reference/datom_write.html">datom_write()</a></code>: writing an identical data frame to the same
 table name detects the duplicate and skips.</p>
+<p>Idempotency here is stronger than “the file’s bytes are unchanged”.
+If a source system <strong>re-exports the same data</strong> – new
+export timestamp in the header, same rows – the file’s bytes change but
+its content does not. datom records the new file provenance as a version
+and does <strong>not</strong> store the data a second time. <a href="design-version-shas.html">Version SHAs</a> explains the three
+hashes that make that distinction.</p>
 </div>
 <div class="section level2">
 <h2 id="step-4-a-batch-of-files">Step 4: A batch of files<a class="anchor" aria-label="anchor" href="#step-4-a-batch-of-files"></a>
@@ -375,11 +390,11 @@ drop contains four domains:</p>
 <code class="sourceCode R"><span><span class="va">manifest</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_sync_manifest.html">datom_sync_manifest</a></span><span class="op">(</span><span class="va">conn</span><span class="op">)</span></span>
 <span><span class="co">#&gt; i Scanned 4 files: 3 new, 1 changed, 0 unchanged.</span></span>
 <span><span class="va">manifest</span></span>
-<span><span class="co">#&gt;   name  file         format file_sha status</span></span>
-<span><span class="co">#&gt; 1   dm  .../dm.csv   csv    c41a...  changed</span></span>
-<span><span class="co">#&gt; 2   ex  .../ex.csv   csv    9b08...  new</span></span>
-<span><span class="co">#&gt; 3   lb  .../lb.csv   csv    72d3...  new</span></span>
-<span><span class="co">#&gt; 4   ae  .../ae.csv   csv    1e4a...  new</span></span>
+<span><span class="co">#&gt;   name  file         format original_file_sha status</span></span>
+<span><span class="co">#&gt; 1   dm  .../dm.csv   csv    c41a...           changed</span></span>
+<span><span class="co">#&gt; 2   ex  .../ex.csv   csv    9b08...           new</span></span>
+<span><span class="co">#&gt; 3   lb  .../lb.csv   csv    72d3...           new</span></span>
+<span><span class="co">#&gt; 4   ae  .../ae.csv   csv    1e4a...           new</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/datom_sync.html">datom_sync</a></span><span class="op">(</span><span class="va">conn</span>, <span class="va">manifest</span><span class="op">)</span></span>
 <span><span class="co">#&gt; i Syncing 4 tables...</span></span>
@@ -485,6 +500,51 @@ argument declares lineage – this table was derived from <code>lb</code>
 – making the provenance chain auditable (see <a href="source-lineage.html">Tracing Data Lineage</a>).</p>
 </div>
 <div class="section level2">
+<h2 id="the-datom-table-contract">The datom table contract<a class="anchor" aria-label="anchor" href="#the-datom-table-contract"></a>
+</h2>
+<p>A table version is identified by a canonical hash of its
+<strong>values</strong> (<code>data_sha</code>), which means every
+column has to be a type datom knows how to encode: <code>logical</code>,
+<code>integer</code>, <code>double</code>, <code>character</code>,
+<code>factor</code>, <code>Date</code>, <code>POSIXct</code>,
+<code>difftime</code>/<code>hms</code>,
+<code><a href="https://rdrr.io/pkg/data.table/man/IDateTime.html" class="external-link">data.table::ITime</a></code>/<code>IDate</code>,
+<code><a href="https://bit64.r-lib.org/reference/bit64-package.html" class="external-link">bit64::integer64</a></code>, or a labelled vector over one of
+those.</p>
+<p>Files onboarded through <code><a href="../reference/datom_sync.html">datom_sync()</a></code> land inside that
+set by construction. It is derived tables – the
+<code><a href="../reference/datom_write.html">datom_write()</a></code> path above – where a column can fall outside
+it: a <code>tidyr::nest()</code> result carries a list column,
+<code><a href="https://rdrr.io/r/base/strptime.html" class="external-link">strptime()</a></code> returns <code>POSIXlt</code>, an <code>sf</code>
+table carries geometry, a database round-trip can bring back a blob.</p>
+<p><code><a href="../reference/datom_check_hashable.html">datom_check_hashable()</a></code> tells you before you write. It
+needs no connection and no store, so it is safe to run anywhere:</p>
+<div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/amashadihossein/datom" class="external-link">datom</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">lb_summary</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>LBTESTCD <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"ALT"</span>, <span class="st">"AST"</span><span class="op">)</span>, n <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">12L</span>, <span class="fl">12L</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/datom_check_hashable.html">datom_check_hashable</a></span><span class="op">(</span><span class="va">lb_summary</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> All 2 columns are hashable. This table is ready for `datom_write()`.</span></span></code></pre></div>
+<p>When a column is outside the contract, the report names it and says
+what to do about it:</p>
+<div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">messy</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">2</span><span class="op">)</span></span>
+<span><span class="va">messy</span><span class="op">$</span><span class="va">measurements</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">2</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">3</span>, <span class="fl">4</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">report</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/datom_check_hashable.html">datom_check_hashable</a></span><span class="op">(</span><span class="va">messy</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #BB0000;">✖</span> 1 of 2 columns are not hashable.</span></span>
+<span><span class="co">#&gt; <span style="color: #BB0000;">✖</span> Column <span style="color: #00BB00;">measurements</span> (<span style="color: #0000BB;">&lt;list&gt;</span>): List and blob columns are not hashable. Flatten</span></span>
+<span><span class="co">#&gt;   to one value per row with tidyr::unnest(), or serialize each element to</span></span>
+<span><span class="co">#&gt;   character (for example with jsonlite::toJSON() per element), before writing.</span></span>
+<span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Fix these before `datom_write()`, which refuses the whole table until they are resolved.</span></span>
+<span><span class="va">report</span><span class="op">$</span><span class="va">recourse</span><span class="op">[</span><span class="va">report</span><span class="op">$</span><span class="va">status</span> <span class="op">==</span> <span class="st">"unsupported"</span><span class="op">]</span></span>
+<span><span class="co">#&gt; [1] "List and blob columns are not hashable. Flatten to one value per row with tidyr::unnest(), or serialize each element to character (for example with jsonlite::toJSON() per element), before writing."</span></span></code></pre></div>
+<p><code><a href="../reference/datom_write.html">datom_write()</a></code> runs the same check itself and refuses the
+whole table until every column is inside the contract, reporting all
+offenders at once and leaving no partial state behind. The full
+type-by-type recourse table and the reasoning live in <a href="design-version-shas.html">Version SHAs</a>.</p>
+</div>
+<div class="section level2">
 <h2 id="where-you-are">Where you are<a class="anchor" aria-label="anchor" href="#where-you-are"></a>
 </h2>
 <ul>
@@ -496,21 +556,26 @@ batch.</li>
 <code><a href="../reference/datom_status.html">datom_status()</a></code> and <code><a href="../reference/datom_validate.html">datom_validate()</a></code>
 provide consistency checks.</li>
 <li>Readers access data from storage alone – no git, no PAT.</li>
+<li>
+<code><a href="../reference/datom_check_hashable.html">datom_check_hashable()</a></code> is the pre-flight check for the
+table contract.</li>
 </ul>
 <p>From here, <a href="start-on-s3.html">Starting on S3</a> shows the
-same workflow with data in object storage, and <a href="source-lineage.html">Tracing Data Lineage</a> shows how derived
-tables record where they came from.</p>
+same workflow with data in object storage, <a href="source-lineage.html">Tracing Data Lineage</a> shows how derived
+tables record where they came from, and <a href="design-version-shas.html">Version SHAs</a> explains the three
+hashes behind <code>version</code>, <code>data_sha</code>, and
+stored-object integrity.</p>
 </div>
 <div class="section level2">
 <h2 id="teardown">Teardown<a class="anchor" aria-label="anchor" href="#teardown"></a>
 </h2>
 <p>When done, remove the project. Pick the one option that fits, and
 copy only that chunk:</p>
-<div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb25"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Option A -- full scripted teardown (deletes local files AND the GitHub repo).</span></span>
 <span><span class="co"># Do this BEFORE any manual unlink().</span></span>
 <span><span class="fu"><a href="../reference/datom_repo_delete.html">datom_repo_delete</a></span><span class="op">(</span><span class="va">conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span></code></pre></div>
-<div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Option B -- local only (the GitHub repo stays; delete it from the UI later).</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">dev_dir</span>, <span class="va">data_dir</span><span class="op">)</span>, recursive <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
 <p>Do not call <code><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink()</a></code> before

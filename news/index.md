@@ -10,6 +10,68 @@ or a local filesystem backend.
 datom is experimental: the API may change without a deprecation cycle
 until it reaches a stable release.
 
+### Table identity: the `datom-cv1` canonical hash
+
+Table identity is defined by a canonical hash of a table’s **values**
+(`datom-cv1`), not by the bytes of its parquet serialization. Hashing
+the serialization tied identity to the writer: an `arrow` upgrade or a
+different compression default produced different bytes for identical
+data, and therefore a spurious new version. See
+[`vignette("design-version-shas")`](https://amashadihossein.github.io/datom/articles/design-version-shas.md)
+for the model and the identity decisions.
+
+- **Pre-release `data_sha` values change, and there is no migration
+  path.** Any table written by a pre-release build carries a `data_sha`
+  computed by the old algorithm. Those values are not recomputed,
+  converted, or reconciled — pilots should re-onboard their data. Reads
+  of pre-existing metadata still work (the new stored-object integrity
+  check is skipped when the older metadata carries no `parquet_sha`),
+  but content identity is not comparable across the change.
+- Three SHAs are now recorded per table: `data_sha` (content identity),
+  `metadata_sha` (the version you pass to `datom_read(version = )`), and
+  `parquet_sha` (the stored object’s SHA-256, verified on read before
+  parsing). `original_file_sha` continues to record input-file
+  provenance for tables onboarded by
+  [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
+- `metadata.json` gains `hash_algo`, `parquet_sha`, and `column_hashes`
+  — an ordered per-column digest index from which `data_sha` can be
+  re-derived without downloading data.
+
+#### Deliberate narrowings
+
+Three capabilities were narrowed on purpose. Each has a specific
+recourse.
+
+- **List and exotic columns are refused, with advice.** A column must be
+  `logical`, `integer`, `double`, `character`, `factor`, `Date`,
+  `POSIXct`, `difftime`/`hms`,
+  [`data.table::ITime`](https://rdrr.io/pkg/data.table/man/IDateTime.html)/`IDate`,
+  [`bit64::integer64`](https://bit64.r-lib.org/reference/bit64-package.html),
+  or a labelled vector over one of those. List columns (including nested
+  data frames, blobs, and `POSIXlt`), `complex`, `raw`, `sf` geometry,
+  `units`, and `zoo`/`chron` columns now abort the write, naming every
+  offending column at once and stating how to convert each one. A
+  refusal leaves no git, storage, or manifest state behind. New export
+  [`datom_check_hashable()`](https://amashadihossein.github.io/datom/reference/datom_check_hashable.md)
+  reports the same advice as a pre-flight check.
+- **[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+  accepts only allowlisted formats.** Flat tabular files only: `csv`,
+  `tsv`, `txt`, `psv`, `parquet`, `sas7bdat`, `xpt`, `sav`, `zsav`,
+  `por`, `dta`, `xls`, `xlsx`. `.rds`, `.json`, and `.xml` are no longer
+  imported directly;
+  [`datom_sync_manifest()`](https://amashadihossein.github.io/datom/reference/datom_sync_manifest.md)
+  flags them `unsupported_format` and still processes their allowlisted
+  siblings. Read such a source yourself and pass the data frame to
+  [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+  — note that this makes the table *derived*, so it has no
+  `original_file_sha` and input-file change detection does not apply to
+  it.
+- **The internal `sort_columns` / `sort_rows` options are removed.** Row
+  and column order are significant, and nothing is sorted: sorting would
+  need a collation order, which is locale-dependent, reintroducing
+  exactly the platform dependence the canonical hash exists to remove.
+  Sort explicitly before writing if order should not matter.
+
 ### Core read/write/version
 
 - [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
@@ -20,7 +82,15 @@ until it reaches a stable release.
   union of their lineages; the public `source_lineage` argument has been
   removed.
 - [`datom_read()`](https://amashadihossein.github.io/datom/reference/datom_read.md)
-  — read the current or any historical version of a table.
+  — read the current or any historical version of a table. The
+  downloaded object is verified against its recorded `parquet_sha`
+  before parsing, so corruption or tampering aborts rather than
+  returning data.
+- [`datom_check_hashable()`](https://amashadihossein.github.io/datom/reference/datom_check_hashable.md)
+  — pre-flight check for the table contract: reports per column whether
+  [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+  can hash it and, when it cannot, exactly how to fix it. Pure — no
+  connection, store, or network.
 - [`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md)
   — view the full version history of a table.
 - [`datom_list()`](https://amashadihossein.github.io/datom/reference/datom_list.md)

@@ -14,7 +14,9 @@ any user-supplied custom metadata.
   table_type = "derived",
   size_bytes = NULL,
   parents = NULL,
-  source_lineage = NULL
+  source_lineage = NULL,
+  original_file_sha = NULL,
+  column_hashes = NULL
 )
 ```
 
@@ -26,7 +28,7 @@ any user-supplied custom metadata.
 
 - data_sha:
 
-  SHA-256 of the parquet-formatted data.
+  datom-cv1 canonical content hash of the data.
 
 - custom:
 
@@ -51,6 +53,25 @@ any user-supplied custom metadata.
   Pre-computed transitive source list (each entry with project, table,
   version_sha), or NULL.
 
+- original_file_sha:
+
+  SHA-256 of the source file, for imported tables. Included in the
+  metadata **only when non-NULL**; the derived path omits it from the
+  object entirely (not present-with-NULL).
+
+- column_hashes:
+
+  Ordered list of per-column `list(name, sha)` digests from
+  [`.datom_canonical_hash()`](https://amashadihossein.github.io/datom/reference/dot-datom_canonical_hash.md),
+  or NULL. Excluded from `metadata_sha` (see
+  [`.datom_compute_metadata_sha()`](https://amashadihossein.github.io/datom/reference/dot-datom_compute_metadata_sha.md)).
+
 ## Value
 
-Named list suitable for writing as metadata.json.
+Named list suitable for writing as metadata.json. Always carries
+`hash_algo = "datom-cv1"` and declares `parquet_sha` (left NULL here and
+populated by
+[`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+after change detection, since the stored- object hash is not knowable
+until then; it is excluded from `metadata_sha` so this deferred
+assignment is safe).
