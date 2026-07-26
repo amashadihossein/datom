@@ -25,275 +25,17 @@
 > reality. datom keeps all gov **reads** + the data-side helpers (`datom_repo_delete`,
 > `datom_repo_attach_governance`).
 
-## Active work handoff: datom-cv1 (issue #72) -- updated 2026-07-25
+## Workspace and workflow notes
 
-> Transient section for the in-flight `spec/datom-cv1-identity` branch. Delete it at spec
-> completion (its durable content is harvested into the spec docs + the Gotchas below).
+Standing facts about working in this repo. (The transient `datom-cv1` work-handoff section
+that used to sit here was removed at spec completion, 2026-07-26 -- its durable content is
+now in `dev/datom_specification.md`, `dev/datom_pathways.md`, the
+`.kiro/specs/datom-cv1-identity/` docs, and the Gotchas below.)
 
-**Where we are.** Branch `spec/datom-cv1-identity`. Phase 1 (Waves 0-2), **Task 3
-(Waves 3-5)**, **Task 4 (Waves 6-7: read-time `parquet_sha` integrity)**, **Task 5 (Wave 8:
-full-history dedup + `parquet_sha` persisted into `version_history`)**, **Task 6 (Wave 9:
-persisted column index)**, **Tasks 9 + 8 (Waves 10 + 12: ingestion allowlist and the
-exported `datom_check_hashable()`)**, **Task 10 (Wave 11: the `file_sha` ->
-`original_file_sha` nomenclature sweep)**, **Task 11 (chunk checkpoint, signed off
-2026-07-25)**, and **Task 12 (Wave 13: the S1-S6 identity-contract integration tests)** are
-complete and committed. Full suite green at **2424 passed / 0 failed / 0 warnings /
-0 skipped**. Checked off in `tasks.md`: 1.x, 2, 3.1, 3.2, 3.4, 3.5, 3.6, 4.1, 4.2, 4.3, 5.1,
-5.2, 6.1, 6.2, 7, 8.1, 8.2, 9.1, 9.2, 10, 10.1, **11, 12, 12.1-12.5**. **Deferred `*` test:
-3.3** (metadata_sha locale + volatile-membership *property* tests, Properties 13/14 -- the
-behavior is already covered by plain tests; the tagged property versions are pre-PR work).
-**Next = the deferred 3.3, then Wave 14** (docs/NEWS, Tasks 13.1/13.2) and **Wave 15**
-(acceptance greps, Task 14.1), then Task 15 (final checkpoint) and Task 16 (spec completion).
-Resume from `tasks.md` in wave order. **Task 15 is the next chunk checkpoint** -- stop there
-for maintainer go-ahead.
-
-**Commit anchors.** Do **not** trust a hard-coded branch head here -- get it from
-`git log --oneline -1`. Pinning the head in this file failed three times in four commits,
-because the commit that updates this file necessarily changes the head it just recorded. What
-*is* stable and worth pinning:
-
-- **Find the last code-bearing commit, do not read one from here** (the same staleness trap as
-  the head): `git log --oneline -1 -- R/ man/ tests/ vignettes/`. As of Wave 13 it is the
-  Task 12.5 commit plus its follow-up fix ("hold the 16.6 guard assertion under R CMD check
-  too"), both touching only `tests/testthat/test-identity-contract.R`. The verified suite is
-  **2424 passed / 0 failed / 0 warnings / 0 skipped** at that point.
-- **`R CMD check --as-cran` re-measured after Wave 13: 0 errors / 0 warnings / 1 NOTE**, tests
-  `OK`. The NOTE is the CRAN-incoming-feasibility one (`New submission` + "possibly invalid URL"
-  for the codecov badge in `README.md`, which redirects `codecov.io` -> `app.codecov.io` and
-  answers 200). It is pre-existing, network-dependent, and unrelated to this spec -- the earlier
-  "0/0/0 at `8082d14`" reading was taken without that URL check firing. Fixing the badge URL in
-  `README.Rmd`/`README.md` is a one-line pre-CRAN cleanup, not spec work. Run the check with
-  `_R_CHECK_FORCE_SUGGESTS_=false` unless `covr` is installed, or it ERRORs on the missing
-  suggested package.
-- Chain: `3a5f717` Task 6 column index -> `9722e59` man/ regeneration for Tasks 1-5 ->
-  `b359fb9` Task 9 allowlist -> `5b28463` Task 8 `datom_check_hashable()` -> `71e8637`
-  parent-checkbox correction (docs) -> `c3cf279` context audit, four handoff inaccuracies
-  corrected (docs) -> `8082d14` **Task 10.1 `file_sha` -> `original_file_sha` sweep** (code) ->
-  docs-only refreshes -> `17dff3b` Task 11 checkpoint sign-off (docs) -> **Wave 13: Tasks 12.1,
-  12.2, 12.3, 12.4, 12.5** (one commit each, all in `tests/testthat/test-identity-contract.R`)
-  -> the 16.6 guard-assertion fix.
-
-**Outstanding before the PR can merge** (all are named acceptance criteria, so an MVP that skips
-them cannot merge):
-1. **Task 3.3** -- Properties 13/14 (`metadata_sha` locale determinism + volatile-field
-   membership) as tagged property tests. This is now the only deferred `*` test left.
-2. **Tasks 13, 14, 16** (docs/NEWS, acceptance greps, spec completion). Tasks 10, 11, and 12 are
-   done; Task 12.5's revert-reuse assertion, previously listed here, landed with Wave 13.
-
-**Parent-checkbox convention in `tasks.md`:** parent task boxes are checked only when every
-sub-task under them is checked. Task 3's parent is deliberately `[ ]` with an inline note --
-its code is all done, only the deferred `*` test 3.3 remains. Do NOT redo 3.1-3.6.
-
-**Waves 10 + 12 DONE (allowlist + checker) -- as-built anchors.**
-- **`.datom_import_formats` + `.datom_import_format_recourse()` in `R/sync.R`.** The recourse
-  helper renders the two advice lines once via `cli::format_inline()` and returns plain text,
-  which is what lets the identical string land in a cli abort bullet AND in the `error` cell of
-  the manifest data frame with no markup drift. **cli dot-literal gotcha applies**: the formats
-  vector must be spliced as `{.val {(.datom_import_formats)}}` -- without the inner parens cli
-  reads the leading dot as a style name and the message breaks. The design's message block
-  omits those parens; the parens are required, not optional.
-- **Allowlist enforcement is in three places, one source.** `.datom_import_file()` gates on
-  `tolower(format)` *before* touching the file; `datom_sync_manifest()` flags
-  `status = "unsupported_format"` **ahead of** the new/changed/unchanged comparison (a bad
-  format is not actionable regardless of whether its bytes moved); `datom_sync()` turns those
-  rows into `result = "error"` carrying the recourse and keeps processing siblings. The
-  nothing-actionable message became "No new or changed files" -- the old "All files unchanged"
-  was factually wrong once a batch could hold an unsupported file.
-- **`datom_check_hashable()` is the only new export in this spec.** It maps columns through
-  `.datom_hash_recourse()` and returns `column`/`class`/`status`/`recourse` invisibly. Its
-  offender bullets are built with the same `{.field name} ({.cls class}): recourse` shape as
-  the `.datom_canonical_hash()` abort, so the two reports read identically. Keep the report
-  ASCII-only in source: the cli `cli_alert_success` / `cli_alert_danger` calls render the
-  tick/cross glyphs at runtime -- never type them into `R/`.
-- **Examples are runnable (no `\dontrun{}`)** because the checker is pure: no conn, no store,
-  no network. R CMD check executes them, so they must stay side-effect free.
-
-**Wave 11 DONE (Task 10, `file_sha` -> `original_file_sha` sweep) -- as-built anchors.**
-The gate `grep -rn "file_sha" R/ man/ vignettes/` now returns 44 hits, **all** of them
-`original_file_sha`. What the sweep actually touched:
-- `.datom_compute_file_sha()` -> `.datom_compute_original_file_sha()` in `R/utils-sha.R`; its
-  roxygen title gained the three-SHA framing so the helper's role is legible at the definition.
-- `R/sync.R` eight sites: two `@return`/`@param` roxygen lines, the empty-frame column, the
-  local var + row column in `datom_sync_manifest()`, `required_cols` in `datom_sync()`,
-  `tbl_file_sha` -> `tbl_original_file_sha`, and the `.datom_update_manifest_entry()` param.
-- `R/query.R` `.datom_status_input_files()` call + local var; `R/read_write.R:742` call site
-  (`file_sha =` -> `original_file_sha =`).
-- **The on-disk format did not change.** Every comparison already read
-  `existing$original_file_sha` and `.datom_update_manifest_entry()` already wrote
-  `entry$original_file_sha` -- the bare token only ever lived in *in-memory* names (the returned
-  data-frame column, locals, one param). So there is no manifest migration and no stored-format
-  churn, exactly as the design predicted. This is why the suite count did not move: 2318/0/0/0
-  before and after.
-- **Correction to an earlier revision of this note:** it claimed `devtools::document()` writes
-  the renamed `.Rd` but does **not** delete the old page, so you must `git rm` it. That is
-  **wrong** -- verified by running it. roxygen2 tracks the pages it generated and deleted
-  `man/dot-datom_compute_file_sha.Rd` itself; `git status` showed the ` D` unprompted. Plain
-  `devtools::document()` is sufficient for renamed internal helpers.
-- **`dev/dev-sandbox.R` needed no change** even though it calls `datom_sync_manifest()`: it only
-  reads `manifest$status` and passes the frame straight to `datom_sync()`. Checked, not assumed.
-- **Detection gotcha for any future `*_sha` sweep.** `grep -v "original_file_sha\|parquet_sha"`
-  filters whole *lines*, so it hides a bare token sitting on a line that also contains a
-  legitimate one (e.g. `customers = list(original_file_sha = file_sha)` in `test-sync.R`). Use a
-  token-precise scan instead -- and note macOS BSD `grep` has no `-P`, so use perl:
-  `perl -ne 'print if /(?<!original_)(?<!parquet_)\bfile_sha\b/'`. `\bfile_sha\b` alone is not
-  enough either: `_` is a word character, so it does **not** match inside
-  `.datom_compute_file_sha` or `tbl_file_sha`. Rename the function first, then sweep bare tokens.
-- **Doc debt was cleared separately.** Tasks 1-5 had added `@keywords internal` helpers without
-  running `devtools::document()`, so `man/` was stale; that regeneration is its own commit
-  (9722e59) ahead of the two feature commits. If `man/` looks noisy in a future diff, run
-  `devtools::document()` before assuming a real change.
-
-**Wave 13 DONE (Task 12, S1-S6 identity-contract integration tests) -- as-built anchors.**
-Everything lives in the new `tests/testthat/test-identity-contract.R` (106 assertions, five
-commits, one per sub-task).
-- **The fixture mocks nothing in the datom stack.** `local_identity_project()` builds a real git
-  repo with a real **local bare remote** (so `.datom_git_commit`/`_push`/`_pull` are genuine --
-  `.datom_git_push()` does `git2r::remotes(repo)[[1L]]`, which subscript-errors without a remote,
-  which is why the earlier suite convention mocked the push) plus a real `backend = "local"`
-  store. The conn is `mock_datom_conn()` + `backend`/`role`/`path` overrides, `gov_root` left
-  NULL so `.datom_check_ref_current()` takes its legacy-conn skip, and `.datom_check_git_current()`
-  needs no mock either (it early-returns when there are no remotes, and works normally when there
-  is one). Net effect: change classification, upload, metadata/history JSON, and read-back all
-  run for real, which is the point -- S1-S6 are properties of the composition. The isolated
-  branch tests in `test-read-write.R` (which DO mock `.datom_has_changes()`) stay as they are.
-- **The byte-vs-content lever is CSV quoting.** `write.csv(quote = TRUE)` vs `quote = FALSE`
-  gives different file bytes and an identical parsed frame, so it drives S3/S4 exactly. The tests
-  assert the raw bytes actually differ before relying on it.
-- **"No upload" is proven by a backdated mtime, not by a mock.** `fs::file_touch(obj,
-  modification_time = <2001>)` before the write, then assert the mtime survived -- a re-upload
-  goes through `.datom_local_upload()` -> `fs::file_copy(overwrite = TRUE)` and would reset it.
-  Byte comparison cannot distinguish "not re-uploaded" from "re-uploaded identical bytes", and
-  stubbing `.datom_storage_upload()` would forfeit the end-to-end property. Used by S6, S3, S4,
-  and the revert-reuse test.
-- **"Integrity check happens before the parse" is proven by swapping in a valid parquet.** A
-  single flipped byte would also make arrow fail, so it cannot separate the two failure modes;
-  substituting a *different but readable* parquet can -- without the `parquet_sha` check the read
-  would succeed and silently return the wrong table.
-- **Requirement 16.6 needed no new machinery** (`setup.R`'s guard is suite-wide) but the
-  assertion of it is subtle: read the chokepoint with `utils::getFromNamespace()`, never call it
-  bare. See the namespace-clone gotcha in Gotchas -- a bare call passes under `devtools::test()`
-  and ERRORs under `R CMD check`. This cost one debugging cycle in Task 12.5; do not undo it.
-- **The manifest column is `original_file_sha`** (Wave 11); a fixture using the old bare
-  `file_sha` trips `datom_sync()`'s `required_cols` check.
-
-**Task 14.1 acceptance-gate gotcha (verified now, so Wave 15 does not stall on it).** Three of
-the four static gates already pass at `71e8637`: `grep -rn "sort_columns\|sort_rows" R/ tests/`
-is empty, and `datom_check_hashable` is present in both `_pkgdown.yml:56` and `NAMESPACE:9`. But
-the fourth gate as written in `tasks.md` -- "`grep -rn "as.data.frame" R/utils-sha.R` is empty"
--- **will never be empty and must not be "fixed" by deleting the match.** The single hit is
-`R/utils-sha.R:256`, a roxygen line documenting the guarantee: "no `as.data.frame()` or coercion,
-and never invokes arrow." The gate's *intent* is that no executable coercion exists; the doc
-comment asserts exactly that. Wave 15 should either scope the gate to code (e.g. pipe through
-`grep -v "^\s*#"`) or record the one documented false positive in the commit message. Do not
-strip the comment to make a literal grep pass -- that would delete the statement of the invariant
-the gate exists to protect.
-
-**Task 6 DONE (Wave 9) -- confirm-and-assert, zero `R/` change.** As the prior handoff
-predicted, the `column_hashes` threading already existed (Tasks 1.6 / 3.1 / 3.5), so 6.1 added
-only assertions: a no-truncation check (`^[0-9a-f]{64}$` per entry) on the existing
-`test-read-write.R` metadata test, plus a new wide-frame test (6 columns spanning int / dbl /
-lgl / chr / factor / Date) asserting `length(column_hashes) == ncol(data)` and the persisted
-`name` vector `identical()` to `names(data)`. 6.2 is the tagged `Feature: datom-cv1, Property
-12` test in `test-utils-sha.R`, consolidating all four facts (order == `names(data)`; each
-`sha` == standalone `.datom_col_digest()`; `data_sha` recomputable from `column_hashes` + dims
-using the verbatim-lifted header formula; a one-column edit flips exactly that entry and leaves
-the others `identical()`). If a future change ever reddens the recompute assertion, the
-byte-layout in `.datom_canonical_hash()` changed -- fix the code, not the test.
-
-**DORMANT marker now RESOLVED (Task 5.1).** `version_history` entries persist `parquet_sha`
-(added in `.datom_write_metadata_local()` when `metadata$parquet_sha` is non-NULL), so:
-(a) the revert-to-older reuse branch in `.datom_resolve_parquet_sha()` is now live (its TODO
-comment was updated to describe the active behavior), and (b) `datom_read(name, version = <old>)`
-verifies integrity once the pinned version was written post-5.1 (pre-5.1 / pre-cv1 entries carry
-no `parquet_sha` and still skip -- the intended grace). **Fully closed by Wave 13**: the
-end-to-end revert-reuse assertion (write content A -> write B -> re-write A; the stored object is
-not re-uploaded and the reused `parquet_sha` equals A's history entry) now lives in
-`test-identity-contract.R`, together with the pre-cv1 grace case -- drop `parquet_sha` from the
-*storage* copy of `metadata.json` (the copy `datom_read()` consults, not the git one) and the read
-still succeeds.
-
-**Two design decisions made during Task 3 (beyond the written spec -- fold into spec docs at
-completion):**
-- **`size_bytes` is now volatile** (excluded from `metadata_sha`), joining `parquet_sha`.
-  Rationale: `size_bytes` is the parquet file size, which drifts with the arrow version for
-  identical logical content -- exactly the drift we exclude `parquet_sha` for. Leaving it
-  semantic would let an arrow upgrade mint spurious `metadata_only` versions. This amends the
-  Task 3.2 / Requirement 7 volatile set. The `59f1...` golden is unaffected (its fixture has
-  no `size_bytes`).
-- **`parquet_sha` reuse uses a history lookup, not `.datom_storage_exists()`.**
-  `.datom_resolve_parquet_sha()` decides upload-vs-reuse by scanning local `version_history`
-  for a recorded `parquet_sha` on this `data_sha` (`.datom_lookup_history_parquet_sha()`),
-  rather than the design's literal `.datom_storage_exists()` gate. A recorded `parquet_sha` is
-  the precise pin we must not clobber and implies the object exists, so the lookup subsumes the
-  existence check with identical behavior across all three branches and one fewer storage
-  round-trip -- and it avoided threading a new storage mock through ~15 `datom_write` tests.
-
-**`data_sha` recompute formula (durable reference, not pending work).** Task 6 is DONE -- see
-the "Task 6 DONE (Wave 9)" block above. An earlier revision of this file kept a forward-looking
-"Task 6 must-remembers ... the NEXT task" block here, which had gone stale and actively misled
-(it also said "Do NOT jump to Task 8/9/10 yet"; 8, 9, and 10 are all done now). The only durable
-content was this formula, kept because it is the single place the persisted column index and
-`data_sha` are tied together. Lifted verbatim from `.datom_canonical_hash()` in `R/utils-sha.R`
--- copy it, do not paraphrase, or the assertion drifts from the implementation:
-
-```r
-shas   <- vapply(meta$column_hashes, function(e) e$sha, character(1))
-header <- c(charToRaw("datom-cv1"),
-            writeBin(as.double(c(nrow, ncol)), raw(), size = 8L, endian = "little"))
-recompute <- digest::digest(c(header, charToRaw(paste(shas, collapse = ""))),
-                            algo = "sha256", serialize = FALSE)
-# expect_identical(recompute, meta$data_sha)
-```
-
-`writeBin(as.double(c(nrow, ncol)), ...)` is a single call over a length-2 vector, i.e.
-`f64le(nrow) || f64le(ncol)`. Live in the Property 12 test in `test-utils-sha.R`. If that
-assertion ever reddens, the byte layout in `.datom_canonical_hash()` changed -- fix the code,
-not the test.
-
-**Test-run harness reminder** (unchanged): write the runner to a temp `.R` file and `Rscript`
-it (the shell mangles multi-line `Rscript -e`); the full-suite one-liner is in the "Environment
-note" below. Commit code + `tasks.md` + this handoff together; long messages via `git commit -F`.
-
-**Task 4 DONE (read-time integrity, Waves 6-7) -- as-built anchors (verify, do not reinvent).**
-Implemented against the design's "Read-time integrity (Requirement 8)" section; read chain is
-`datom_read` -> `.datom_read_metadata` -> `.datom_resolve_version` -> `.datom_read_parquet`.
-- **4.1 `.datom_resolve_version(metadata_list, version, name)`** now returns
-  `list(data_sha, parquet_sha)` on **both** branches (NULL-version -> `current$data_sha` /
-  `current$parquet_sha`; history-lookup -> the matched entry's `data_sha` / `parquet_sha`).
-  `parquet_sha` is `NULL`/`""` for pre-cv1 entries AND for any version-pinned read until Task
-  5.1 persists it into history -- so `datom_read(name)` (current pointer, carries `parquet_sha`
-  since Task 3.5) verifies, while `datom_read(name, version = <old>)` skips verification until
-  5.1. Intended pre-cv1 grace, not a bug. All existing guard aborts (missing `data_sha`,
-  ambiguous prefix, non-character version, etc.) are unchanged; `.datom_validate_sha()` was NOT
-  added here (short version prefixes are intentional -- see the "Validate SHA-like inputs"
-  gotcha below).
-- **4.2 `.datom_read_parquet(conn, name, data_sha, parquet_sha = NULL)`** gained the param and
-  extends #74's existing seam (no parallel path). The check sits AFTER
-  `.datom_storage_download()` and BEFORE `arrow::read_parquet()`: when `parquet_sha` is
-  non-empty it computes `actual <- digest::digest(file = tmp, algo = "sha256")` and, on
-  `!identical(actual, parquet_sha)`, aborts with the verbatim design tamper message
-  (`Stored parquet for {.val {name}} failed its integrity check.` / `x Key: {.val {s3_key}}` /
-  `x Expected {.field parquet_sha}: {.val {parquet_sha}}` / `x Actual SHA-256: {.val {actual}}`
-  / `i The stored object may be corrupted or tampered with. Do not trust this data.`). Empty/
-  NULL `parquet_sha` skips silently (Requirement 8.4).
-- **Only ONE caller** of each (both inside `datom_read()`); the call site now does
-  `resolved <- .datom_resolve_version(...)` then
-  `.datom_read_parquet(conn, name, resolved$data_sha, parquet_sha = resolved$parquet_sha)`.
-  `R/query.R`'s `datom_get_lineage()` opens `{version}.json` directly and was untouched.
-- **Test note (return-shape change):** the direct `.datom_resolve_version()` tests in
-  `test-read-write.R` were updated from bare-string to `$data_sha` (mirroring Task 3.4's
-  `.datom_has_changes()` migration), plus new parquet_sha-resolution cases and the 4.3 integrity
-  tests. The mismatch test proves "abort before parse" by having the download write non-parquet
-  bytes: if the integrity check were skipped, arrow would fail parsing with a different error,
-  so the `"integrity check"` match would not hold.
-
-**Environment note (this workspace).** A working R toolchain is present here: R 4.5.2 with
-`devtools`, `arrow`, `digest`, `testthat`, `mockery`, `withr`, `git2r`, `rio`, and also
-`tibble` + `bit64`. So the spec/tasks assumption that "R is unavailable in the authoring
-environment, goldens stay as PENDING placeholders" does **not** hold here -- the suite runs
-directly and all golden constants are already filled from a real run. Run the full suite via a
-temp script (the shell mangles multi-line `Rscript -e`; write R to a temp file and `Rscript`
-it):
+**R toolchain is available here.** R 4.5.2 with `devtools`, `arrow`, `digest`, `testthat`,
+`mockery`, `withr`, `git2r`, `rio`, `tibble`, `bit64`. Spec text that assumes "R is unavailable
+in the authoring environment" is stale -- run the gates yourself. Write the runner to a temp
+`.R` file and `Rscript` it; the shell mangles multi-line `Rscript -e`:
 
 ```r
 options(crayon.enabled = FALSE)
@@ -304,46 +46,22 @@ cat("PASS:", sum(res$passed), " FAIL:", sum(res$failed),
     " WARN:", sum(res$warning), " SKIP:", sum(res$skipped), "\n")
 ```
 
-Other workflow tips: `gh issue view N` needs `GH_PAGER=cat` or it hangs.
+Full suite runs in ~13s. `R CMD check --as-cran` needs `_R_CHECK_FORCE_SUGGESTS_=false` unless
+`covr` is installed, or it ERRORs on the missing suggested package. `gh issue view N` needs
+`GH_PAGER=cat` or it hangs.
 
 **Long commit messages: `git commit -F <tempfile>`, never a multi-line `-m`.** This is not a
 style preference, it silently corrupts history. Demonstrated at commit `1bef5bd`: a multi-line
 `-m` passed through this shell collapsed the entire message into a **742-character subject
-line with an empty body**. `git log --oneline` becomes unreadable and the reasoning is no longer
-separable from the summary. Write the message to a temp file and `git commit -F` it, then
-verify with `git log -1 --pretty=format:"%s"` -- a subject over ~72 chars means it collapsed.
-Every other commit on this branch used `-F`; `1bef5bd` is the one that got it wrong, left in
-place because amending a pushed commit needs a force push.
+line with an empty body**. `git log --oneline` becomes unreadable and the reasoning is no
+longer separable from the summary. Write the message to a temp file and `git commit -F` it,
+then verify with `git log -1 --pretty=format:"%s"` -- a subject over ~72 chars means it
+collapsed.
 
-**Technical anchors already implemented (verify, do not reinvent).**
-- Byte-layout single source of truth is `dev/datom_cv1_reference.R` (Rbuildignored). Running
-  it prints the goldens (numeric `48b4c0cb...`, mixed `47c94f30...`) and passes 27/27
-  self-tests. The package `.datom_canonical_hash()` **must** stay byte-identical to it; the
-  parity test (`test-utils-sha.R`, Property 11) enforces this and skips when `dev/` is absent.
-- `R/hashable.R`: `.datom_column_kind()` (single classifier -> kind or NULL),
-  `.datom_hash_recourse()` (single-source recourse strings), `.datom_class_label()`. The
-  `sfc` check is deliberately hoisted **above** the generic list rules (sfc is list-based) so
-  its recourse is reachable -- do not move it back below them.
-- `R/utils-sha.R`: `.datom_encode_numeric()` / `.datom_encode_character()` (raw payloads),
-  `.datom_col_digest()`, `.datom_canonical_hash()` (returns `list(data_sha, column_hashes)`),
-  `.datom_compute_data_sha()` (thin wrapper, no sort params).
-- Test fakes: `hms`/`ITime`/`integer64` are faked via `structure(..., class = ...)` to avoid
-  adding `Suggests`; `one_col(x)` helper builds a single-column frame preserving class.
-- The `metadata_sha` golden `59f1f1d9...` in `test-utils-sha.R` was **verified stable** under
-  task 3.2's upcoming radix-sort + volatile-set change (its fixture has no
-  `parquet_sha`/`column_hashes` and only simple lowercase names). Keep that fixture as-is so
-  the golden does not need re-deriving after 3.2.
-
-**Task 3 must-remembers (from design.md Invariants).**
-- The parquet upload stays **after** the git push in `datom_write()` -- load-bearing (git push
-  is the serialization point). Never refactor to upload-before-push.
-- `metadata_sha` **excludes** `parquet_sha` + `column_hashes` and **includes**
-  `original_file_sha` + `hash_algo`.
-- `original_file_sha` appears in metadata **only when non-NULL** (imported path); the derived
-  path omits it entirely (not present-with-NULL).
-- `.datom_sync()`'s self-lineage `version_sha` stays `data_sha`, not `metadata_sha`.
-- While editing `.datom_sync_metadata()` for task 3.4, clean the one remaining non-ASCII arrow
-  character still in `R/utils-sha.R` (in that function's body).
+**Do not pin a branch head in this file.** It went stale three times in four commits on
+`spec/datom-cv1-identity` for a structural reason: the commit that records the head changes
+the head it just recorded. Read it from `git log --oneline -1`, and find the last code-bearing
+commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
 
 ## Gotchas
 
@@ -458,3 +176,88 @@ place because amending a pushed commit needs a force push.
   grep as a regression introduced by your change: check whether your files are in the list
   first. Sweeping the 22 is a one-commit pre-CRAN cleanup, deliberately not folded into spec
   work (`vignettes/*.Rmd` is already clean).
+
+### datom-cv1 identity (issue #72, landed pre-0.1.0)
+
+Harvested from the spec's work-handoff at completion. The *design* lives in
+`dev/datom_specification.md` ("The Three SHAs", "Table Identity = data_sha") and
+`vignette("design-version-shas")`; these are the implementation traps.
+
+- **`dev/datom_cv1_reference.R` is the byte-layout single source of truth**, not
+  `.datom_canonical_hash()`. It is standalone base R + `digest`, Rbuildignored, pure ASCII, and
+  running it prints the goldens (numeric `48b4c0cb...`, mixed `47c94f30...`) and passes 27/27
+  self-tests. The package implementation must stay byte-identical to it; the Property 11 parity
+  test in `test-utils-sha.R` enforces that and skips when `dev/` is absent (so it legitimately
+  reports SKIP 1 under `R CMD check`). If parity ever reddens, fix the package, not the
+  reference.
+- **`R/hashable.R` detection order is load-bearing.** `.datom_column_kind()` dispatches in a
+  fixed order and reordering it silently changes hashes. In `.datom_hash_recourse()`, the
+  `POSIXlt`, `sfc`, and nested-data-frame checks are deliberately hoisted **above** the generic
+  list rules -- all three are lists underneath, so below the generic rule their specific (more
+  useful) recourse would be unreachable. Do not "tidy" them back down.
+- **cli dot-literal, concrete instance**: splice the allowlist as
+  `{.val {(.datom_import_formats)}}`. Without the inner parens cli reads the leading dot as a
+  style name and the message breaks. The design doc's message block omits the parens; they are
+  required.
+- **`.datom_import_format_recourse()` returns rendered plain text** (via `cli::format_inline()`),
+  which is what lets the identical string land in a cli abort bullet AND in the `error` cell of
+  the manifest data frame with no markup drift. Keep it markup-free.
+- **`data_sha` recompute formula** -- lifted verbatim from `.datom_canonical_hash()`; copy it,
+  do not paraphrase, or an assertion drifts from the implementation. Lives in the Property 12
+  test in `test-utils-sha.R`:
+
+  ```r
+  shas   <- vapply(meta$column_hashes, function(e) e$sha, character(1))
+  header <- c(charToRaw("datom-cv1"),
+              writeBin(as.double(c(nrow, ncol)), raw(), size = 8L, endian = "little"))
+  recompute <- digest::digest(c(header, charToRaw(paste(shas, collapse = ""))),
+                              algo = "sha256", serialize = FALSE)
+  ```
+
+  `writeBin()` over a length-2 vector is one call, i.e. `f64le(nrow) || f64le(ncol)`. If this
+  assertion ever reddens, the byte layout changed -- fix the code, not the test.
+- **Token-precise scanning for a `*_sha` rename sweep.** `grep -v "original_file_sha"` filters
+  whole *lines*, so it hides a bare token sharing a line with a legitimate one (e.g.
+  `customers = list(original_file_sha = file_sha)`). macOS BSD `grep` has no `-P`, so use perl:
+  `perl -ne 'print if /(?<!original_)(?<!parquet_)\bfile_sha\b/'`. And `\bfile_sha\b` alone is
+  still not enough: `_` is a word character, so it does **not** match inside
+  `.datom_compute_file_sha` or `tbl_file_sha`. Rename functions first, then sweep bare tokens,
+  then scan the function-name forms separately.
+- **`devtools::document()` handles renamed internal helpers by itself.** roxygen2 tracks the
+  pages it generated and deletes the stale `.Rd` on rename -- no `git rm` needed. (An earlier
+  note claimed otherwise; verified false by running it.)
+- **Test fakes avoid new Suggests**: `hms` / `ITime` / `integer64` columns are faked with
+  `structure(..., class = ...)`, and the same trick renders the vignette's `sf`/`units`/`zoo`
+  recourse rows -- dispatch is on the class tag, so a bare structure is enough.
+- **The `metadata_sha` golden `59f1f1d9...`** in `test-utils-sha.R` survives the radix-sort and
+  volatile-set changes because its fixture has no `parquet_sha`/`column_hashes` and only simple
+  lowercase names. Keep that fixture as-is or the golden needs re-deriving.
+- **An acceptance gate can have a legitimate false positive; scope the gate, do not edit the
+  source.** `grep -rn "as.data.frame" R/utils-sha.R` will never be empty: the one hit is the
+  roxygen line documenting the invariant ("no `as.data.frame()` or coercion, and never invokes
+  arrow"). The gate's intent is that no *executable* coercion exists, which the comment asserts.
+  Pipe through `grep -vE ":[0-9]+:[[:space:]]*#"` and record the documented match. Deleting the
+  comment to satisfy a literal grep would delete the statement of the invariant.
+
+### Testing storage side effects without mocking storage
+
+Techniques from the S1-S6 integration suite (`tests/testthat/test-identity-contract.R`). They
+matter whenever a test needs to prove something did *not* happen.
+
+- **A real project needs no mocks at all.** Real git repo + real **local bare remote** (so
+  `.datom_git_push()` works -- it does `git2r::remotes(repo)[[1L]]`, which subscript-errors
+  without a remote, the reason older tests mocked the push) + a real `backend = "local"` store.
+  `.datom_check_git_current()` needs no mock either (early-returns with no remote, works
+  normally with one), and a conn with `gov_root = NULL` makes `.datom_check_ref_current()` take
+  its legacy-conn skip. See `local_identity_project()`, and `dev/e2e-cv1-identity.R` for the
+  same fixture as a runnable walkthrough.
+- **Prove "no upload" with a backdated mtime**: `fs::file_touch(obj, modification_time = <old>)`
+  before the write, then assert the mtime survived. A re-upload goes through
+  `.datom_local_upload()` -> `fs::file_copy(overwrite = TRUE)` and would reset it. Byte
+  comparison cannot distinguish "not re-uploaded" from "re-uploaded identical bytes".
+- **Prove "verified before parsed" with a valid imposter**: swapping in a *different but
+  readable* parquet is the only corruption arrow would happily accept, so the abort can only
+  come from the `parquet_sha` check. A single flipped byte fails either way and proves less.
+- **Locate stored objects through `.datom_local_path()`**, not a hand-written
+  `{prefix}/datom/...` path, so a storage-layout change breaks the code rather than silently
+  passing a test that looks in the wrong place.

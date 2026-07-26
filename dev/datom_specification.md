@@ -47,9 +47,55 @@ datom distinguishes between **versioned content** and **tracked configuration**:
 | **Metadata** | `metadata.json`, `{metadata_sha}.json` | Yes | Yes |
 | **Configuration** | `dispatch.json`, `project.yaml`, `manifest.json` | No | No |
 
+### The Three SHAs
+
+Three hashes describe a table version, each answering a different question. A fourth, `original_file_sha`, records *file* provenance for imported tables and is not part of table identity.
+
+| SHA | Question | Computed over |
+|-----|----------|---------------|
+| `data_sha` | Is this the same table content? | the table's values, canonically encoded (`datom-cv1`) |
+| `metadata_sha` | Is this the same version? | the table's semantic metadata, as canonical JSON |
+| `parquet_sha` | Are the stored bytes intact? | the exact parquet object that was uploaded |
+
+Introduced by issue [#72](https://github.com/amashadihossein/datom/issues/72) (spec `.kiro/specs/datom-cv1-identity/`), pre-`0.1.0`. See `vignette("design-version-shas")` for the user-facing treatment.
+
+### Table Identity = data_sha (`datom-cv1`)
+
+`data_sha` is a canonical hash of the table's **values**, not of its parquet serialization:
+
+```
+per column, in table column order:
+  col_digest = sha256(utf8(type_tag) || utf8(column_name) || 0x00 || payload)
+
+then:
+  data_sha   = sha256("datom-cv1" || f64le(nrow) || f64le(ncol) ||
+                      concat(col_digest_hex ...))
+```
+
+Computed by `.datom_canonical_hash()` (`R/utils-sha.R`), which returns `list(data_sha, column_hashes)`. It performs **zero I/O**, never coerces the container, and never invokes arrow.
+
+**Why not the parquet bytes.** Pre-`datom-cv1`, `data_sha` was `digest::digest(file = <parquet>)`. Parquet bytes move with the *writer* -- an arrow upgrade or a different compression default produces different bytes for identical content -- so serialization-based identity minted spurious versions. Hashing values decouples identity from the serializer; the serializer's bytes are still hashed, as `parquet_sha`, for integrity rather than identity.
+
+**Identity decisions** (each deliberate, all covered by tagged property tests):
+
+- `logical` / `integer` / `double` unify: `1L` and `1` are the same number.
+- Factor **levels** and **orderedness**, value **labels** (`haven_labelled`), and `POSIXct` **tzone** are not identity.
+- All `NaN` payloads collapse to one canonical `NaN`; `-0` encodes as `+0`; `NA_real_` stays distinct from `NaN`.
+- Doubles are hashed **bit-exact** -- no rounding, no tolerance (a tolerance makes identity non-transitive).
+- Unicode NFC and NFD differ (no normalization; would require an ICU dependency and a permanent form choice).
+- Row order and column order are **significant**, and nothing is sorted: sorting needs a collation order, which is locale-dependent. `.datom_compute_data_sha()` therefore takes **no** `sort_columns`/`sort_rows` parameters (removed pre-release).
+
+The line is drawn at **platform non-determinism**, not at human-equivalence: differences a user cannot control are canonicalized; real, visible properties of the data are preserved.
+
+**The table contract.** Hashing values requires a per-type encoding decision, so `datom-cv1` supports a defined set -- `logical`, `integer`, `double`, `character`, `factor`, `Date`/`IDate`, `POSIXct`, `difftime`/`hms`, `ITime`, `bit64::integer64`, and labelled vectors over those -- and refuses everything else. `R/hashable.R` holds the single classifier (`.datom_column_kind()`) and the single recourse source (`.datom_hash_recourse()`); the hash gate, the encoder dispatch, the exported checker `datom_check_hashable()`, and the vignette's recourse table all bind to them, so advice cannot drift from behavior. The refusal names every offending column in **one** abort, fires before any git/storage/manifest mutation, and therefore leaves no partial state.
+
+**Column index.** `column_hashes` persists the per-column digests as an ordered array of `{name, sha}` in table column order, untruncated -- computed once and reused for both `data_sha` and the index. `data_sha` is re-derivable from the index plus dimensions without downloading data, and two versions differing in one column differ in exactly one entry (the anchor for a future `datom_diff`, issue #73).
+
+**Cross-language scope.** Guaranteed within R + `renv` (pinned by golden vectors across the CI matrix). The algorithm is specified in bytes and is language-implementable: `dev/datom_cv1_reference.R` is a standalone base-R + `digest` reference the package is tested byte-for-byte against and doubles as that specification. Agreement from another language requires implementing it, not luck. Raw-file onboarding identity (`original_file_sha`) is already language-independent.
+
 ### datom Version = metadata_sha
 
-The datom version is the **metadata_sha**, computed from alphabetically sorted metadata fields (which include `data_sha`). This uniquely identifies a (data, metadata) pair.
+The datom version is the **metadata_sha**, computed from byte-order-sorted metadata fields (which include `data_sha`). This uniquely identifies a (data, metadata) pair.
 
 ```
 metadata fields (sorted, semantic only) → JSON canonical form → SHA-256 → metadata_sha
@@ -57,7 +103,15 @@ metadata fields (sorted, semantic only) → JSON canonical form → SHA-256 → 
    includes data_sha               jsonlite::toJSON(auto_unbox=TRUE)
 ```
 
-**Volatile fields excluded**: `created_at` and `datom_version` are stripped before hashing. These change on every call (timestamp) or with package upgrades but don't represent semantic changes to the data or metadata.
+**Field ordering is byte-wise, not locale-collated**: `sort(names(semantic), method = "radix")`. Plain `sort()` is `LC_COLLATE`-dependent, so two machines in different locales would order fields differently and mint different versions for identical metadata.
+
+**Volatile fields excluded**: `created_at`, `datom_version`, `parquet_sha`, `column_hashes`, and `size_bytes` are stripped before hashing.
+
+- `created_at` / `datom_version` -- wall-clock and package facts.
+- `parquet_sha` / `size_bytes` -- both move with the arrow version for identical logical content; including them would re-import serializer drift into identity, undoing the point of hashing values. Excluding `parquet_sha` is also what lets `datom_write()` assign it *after* `metadata_sha` is computed (its value is unknown until change detection).
+- `column_hashes` -- a deterministic function of the same values that determine `data_sha`, so it carries no independent information.
+
+**Semantic, therefore included**: `original_file_sha` (a new source file is a new version of the table's provenance) and `hash_algo` (a new algorithm is a new identity regime).
 
 **JSON canonical form**: The SHA is computed over `jsonlite::toJSON()` output (with `serialize = FALSE`), not over the R object directly. This ensures that metadata built in-memory and metadata read back from JSON (e.g., from S3) always produce the same SHA, despite R type differences introduced by JSON round-tripping (integer vs double, character vector vs list).
 
@@ -287,7 +341,14 @@ Current state only — no history stored here:
 ```json
 {
   "data_sha": "abc123...",
+  "hash_algo": "datom-cv1",
+  "parquet_sha": "9f10a2...",
   "table_type": "derived",
+  "column_hashes": [
+    {"name": "id",    "sha": "4c1d8e..."},
+    {"name": "name",  "sha": "b70f22..."},
+    {"name": "value", "sha": "e5a913..."}
+  ],
   "parents": [
     {"source": "med-mm-001", "table": "os_data", "version": "a3f8c1..."},
     {"source": "med-mm-002", "table": "os_data", "version": "b9e2d4..."}
@@ -301,6 +362,7 @@ Current state only — no history stored here:
   "nrow": 10000,
   "ncol": 15,
   "colnames": ["id", "name", "value"],
+  "original_file_sha": "def456...",
   "created_at": "2024-01-15T10:30:00Z",
   "datom_version": "0.1.0",
   "custom": {
@@ -312,10 +374,14 @@ Current state only — no history stored here:
 
 | Field | Description |
 |-------|-------------|
-| `data_sha` | SHA of the parquet file stored in S3. Direct S3 key: `{table}/{data_sha}.parquet`. |
+| `data_sha` | Canonical `datom-cv1` hash of the table's **values** (not of the parquet file -- see "Table Identity = data_sha"). Doubles as the content address: `{table}/{data_sha}.parquet`. |
+| `hash_algo` | Identity algorithm that produced `data_sha`. Always `"datom-cv1"` for tables written by this version. **Semantic** (participates in `metadata_sha`): a new algorithm is a new identity regime. |
+| `parquet_sha` | SHA-256 of the stored parquet object's bytes. Integrity, **not** identity: verified on read before parsing; carried forward unchanged on a `metadata_only` write; reused (never overwritten) when a write reverts to content already in history. Excluded from `metadata_sha`, which is what allows `datom_write()` to set it after `metadata_sha` is computed. `null` for pre-`datom-cv1` metadata, in which case the read-time check is skipped rather than failed. |
+| `column_hashes` | Ordered array of `{name, sha}`, one entry per column in table column order, untruncated -- the same per-column digests that produced `data_sha`. Excluded from `metadata_sha`. Enables re-deriving `data_sha` from the index plus dimensions, and single-column diffing without downloading data. |
 | `table_type` | `"imported"` (from source file via `datom_sync`) or `"derived"` (from data frame via `datom_write`) |
+| `original_file_sha` | SHA-256 of the source file's bytes, for imported tables. Present in metadata **only when non-NULL** -- the derived path omits the field entirely rather than writing it as `null`. **Semantic** (participates in `metadata_sha`). Also recorded in the `version_history.json` entry and in `.datom/manifest.json`. |
 | `parents` | Immediate parents only. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version, data_sha}` entries, or `null` if lineage not recorded. Each entry is a record produced by `datom_parent(conn, table, version)`: `source` = `conn$project_name` of the parent, `table` = table name, `version` = **metadata_sha** of the parent version, `data_sha` = authoritative content SHA of the parent's parquet file (resolved from the parent's own store at construction time). The metadata_sha is the direct S3 key for the parent's metadata snapshot: `{table}/.metadata/{version}.json`. Purpose: **traversal and retrieval** -- enables one-hop-at-a-time lineage walking and versioned reads without secondary lookups. See note below on the two-SHA design. |
-| `source_lineage` | Transitive closure of all raw-source tables that contributed data to this table. A flat list of `{project, table, version_sha}` entries where `version_sha` is the **data_sha** (content address of the parquet bytes) of the raw source table. The data_sha is the direct S3 key for the source data: `{table}/{version_sha}.parquet`. Purpose: **content identity and permissioning** -- the data_sha is stable across metadata rewrites, making it the correct key for access policy registries. For `"imported"` tables: a single self-entry. For `"derived"` tables: **derived by `datom_write()` as the deduplicated union of the parents' captured `source_lineage` fields** via `datom_lineage_union()`; callers do not supply it. **Walker invariant**: tools that walk lineage must follow `parents`, never `source_lineage` -- `source_lineage` entries are terminal leaves and following them would infinite-loop on the self-entry. |
+| `source_lineage` | Transitive closure of all raw-source tables that contributed data to this table. A flat list of `{project, table, version_sha}` entries where `version_sha` is the **data_sha** (canonical content hash, which is also the storage address) of the raw source table. The data_sha is the direct S3 key for the source data: `{table}/{version_sha}.parquet`. Purpose: **content identity and permissioning** -- the data_sha is stable across metadata rewrites, making it the correct key for access policy registries. For `"imported"` tables: a single self-entry. For `"derived"` tables: **derived by `datom_write()` as the deduplicated union of the parents' captured `source_lineage` fields** via `datom_lineage_union()`; callers do not supply it. **Walker invariant**: tools that walk lineage must follow `parents`, never `source_lineage` -- `source_lineage` entries are terminal leaves and following them would infinite-loop on the self-entry. |
 | `size_bytes` | Size of the parquet file in bytes |
 | `nrow`, `ncol` | Table dimensions |
 | `colnames` | Column names array |
@@ -347,6 +413,7 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
   {
     "version": "xyz789...",
     "data_sha": "abc123...",
+    "parquet_sha": "9f10a2...",
     "original_file_sha": "def456...",
     "timestamp": "2024-01-15T10:30:00Z",
     "author": "jane.doe@company.com",
@@ -357,14 +424,17 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 
 | Field | Description |
 |-------|-------------|
-| `version` | metadata_sha — the datom version identifier |
-| `data_sha` | SHA of the parquet file |
-| `original_file_sha` | SHA of the source file (CSV, TSV, etc.). **Nullable** — present for imported tables (`datom_sync`); `null` for derived tables (`datom_write`). Enables skip optimization: scan history for matching file SHA to avoid re-importing unchanged source files, even across version rollbacks. |
+| `version` | metadata_sha — the datom version identifier. **Never appears twice** in a table's history (see the dedup guard below). |
+| `data_sha` | Canonical `datom-cv1` content hash, which is also the storage address |
+| `parquet_sha` | SHA-256 of the stored parquet object for this version. **Nullable** — absent for pre-`datom-cv1` entries. Powers version-pinned read integrity and the revert-to-older reuse scan (`.datom_lookup_history_parquet_sha()`), which is why the *history* must carry it and not only the current pointer. |
+| `original_file_sha` | SHA-256 of the source file's bytes (CSV, TSV, etc.). **Nullable** — present for imported tables (`datom_sync`); absent for derived tables (`datom_write`). Enables skip optimization: scan history for matching file SHA to avoid re-importing unchanged source files, even across version rollbacks. Since `datom-cv1` it is also recorded in `metadata.json` (semantic, so a new source file is a new version). |
 | `timestamp` | ISO timestamp of creation |
 | `author` | Git author (name or email) |
 | `commit_message` | Descriptive message for this version |
 
 **Note:** A single data_sha may appear with multiple versions if metadata was updated without data changes.
+
+**Full-history dedup guard.** `.datom_write_metadata_local()` appends an entry only when its `metadata_sha` appears **nowhere** in the existing history (`purrr::some()`, O(history) with early exit); `metadata.json` (the current pointer) is written regardless. A latest-entry-only guard was insufficient: re-syncing an older file whose content matches produces a `metadata_sha` already present but not most-recent, which would append a duplicate `version` and make a later `datom_read(version = ...)` report the SHA as ambiguous. Guarantee: `version_history.json` never contains two entries with the same `version`.
 
 **Note:** `data_sha` in each entry is the only cheap reverse-lookup path from a content address back to its version history (data_sha → all metadata_shas that reference it). Removing this field would make that direction O(n) over all metadata snapshots. Do not drop it.
 
@@ -747,7 +817,9 @@ Unified read function with routing via dispatch.json:
 - Metadata always from S3 for readers
 - Additional parameters in `...` forwarded to routed function
 
-**Resolution:** version → lookup in version_history.json → get data_sha → fetch `{data_sha}.parquet` + `{version}.json`
+**Resolution:** version → lookup in version_history.json → get data_sha (+ the recorded `parquet_sha`) → fetch `{data_sha}.parquet` + `{version}.json`
+
+**Read-time integrity:** after download and **before** `arrow::read_parquet()`, the object's SHA-256 is compared to the resolved `parquet_sha`. A mismatch aborts naming the table, the key, and both hashes — the read never returns data it cannot vouch for. An absent/empty `parquet_sha` (pre-`datom-cv1` metadata) skips the check rather than failing it: a read-time grace, not a data migration.
 
 Returns: Data frame or routed function result
 
@@ -773,8 +845,11 @@ Flexible write operations:
 | NULL | NULL | Data-side metadata resync (internal `.datom_sync_data_metadata()`; was `datom_sync_dispatch()` pre-lift-out) |
 
 For normal writes:
-- Change detection via metadata_sha comparison (alphabetically sorted fields)
-- Handles: no-op, metadata-only update, or full update with S3 upload
+- **Hash gate first**: `.datom_canonical_hash(data)` runs before any mutation, so an unhashable column aborts (naming every offender at once) with nothing written to git, storage, or the manifest.
+- Change detection via metadata_sha comparison (byte-order-sorted fields)
+- Handles: no-op (`none`), metadata-only update, or full update with storage upload
+- **`parquet_sha` decision** (`.datom_resolve_parquet_sha()`): `metadata_only` carries the current `parquet_sha` forward and skips the upload; `full` whose `data_sha` already has a recorded `parquet_sha` in history reuses it and does **not** re-upload (a fresh serialization can differ byte-for-byte and would break that version's integrity pin); `full` otherwise uploads and records the new hash.
+- The parquet upload stays **after** the git push. Git push is the serialization point that makes the reuse decision safe against concurrent writers; this ordering is load-bearing and must not be refactored.
 - `parents`: list of `list(source, table, version, data_sha)` entries recording immediate parent lineage. Records are produced by `datom_parent(conn, table, version)` — one conn per parent project — which resolves `data_sha` and `source_lineage` from the parent's own store. `NULL` if lineage not recorded. `datom_sync()` never passes `parents` — imported tables always have `parents: null`.
 - `source_lineage`: derived by `datom_write()` as the deduplicated union of the parents' captured `source_lineage` fields; there is no `source_lineage` argument to supply. For `datom_sync()`, auto-computed as a single self-entry (project, table, data_sha of the imported file).
 
@@ -884,11 +959,12 @@ datom_sync_manifest(conn, path = NULL, pattern = "*")
 
 Scans flat `input_files/` directory:
 - No subdirectories allowed
-- Computes SHA of files in original format
+- Computes `original_file_sha` of files in original format
 - Checks against manifest (current SHAs) for fast no-op detection
 - Only fetches version_history.json on mismatch
+- Flags files outside the **ingestion allowlist** as `status = "unsupported_format"` up front, before the new/changed/unchanged comparison (a bad format is not actionable regardless of whether its bytes moved), and still processes allowlisted siblings
 
-Returns: Manifest for review
+Returns: Manifest for review (columns `name`, `file`, `format`, `original_file_sha`, `status`)
 
 #### datom_sync()
 
@@ -899,8 +975,25 @@ datom_sync(conn, manifest, continue_on_error = TRUE)
 Processes new/changed files:
 - One commit per table
 - Manual conflict resolution on concurrent writes
+- `unsupported_format` rows are reported as `result = "error"` carrying the allowlist recourse; the rest of the batch still processes
 
 Returns: Updated manifest with results
+
+**Ingestion allowlist.** `.datom_import_formats` (in `R/sync.R`) is the single source: `csv`, `tsv`, `txt`, `psv`, `parquet`, `sas7bdat`, `xpt`, `sav`, `zsav`, `por`, `dta`, `xls`, `xlsx`. Enforced in three places from that one constant -- `.datom_import_file()` gates on `tolower(format)` before touching the file, `datom_sync_manifest()` flags the row, and `datom_sync()` surfaces the recourse -- with the advice text itself single-sourced through `.datom_import_format_recourse()`.
+
+Rationale: flat tabular only. A container format (`.rds`, `.json`, `.xml`) can deserialize to anything, including the list and exotic columns the table contract refuses, so refusing at the door keeps the failure legible instead of deferring it to a type error deep in the write.
+
+**Escape-hatch tradeoff (a rule, not a footnote).** A user may always read an unsupported source themselves and pass the data frame to `datom_write()`. That table is then **derived**: it carries no `original_file_sha`, so input-file change detection does not apply to it. Converting the source to CSV/parquet once and letting `datom_sync()` onboard it is the way to keep file-level change detection.
+
+#### datom_check_hashable() — All Users
+
+```r
+datom_check_hashable(data)
+```
+
+Pre-flight check for the table contract. Maps every column through `.datom_hash_recourse()` and reports, per column, whether `datom_write()` can hash it and -- when it cannot -- exactly how to fix it. Pure: no conn, no store, no network (so its roxygen examples are runnable and R CMD check executes them).
+
+Returns: invisibly, a data frame with `column`, `class`, `status` (`"ok"`/`"unsupported"`), `recourse` (`NA` when ok). Prints a cli success summary when clean, else one bullet per offender in the same `{.field name} ({.cls class}): recourse` shape as the `.datom_canonical_hash()` abort, so the checker and the write error read identically.
 
 ### Query Operations (Data Readers)
 
@@ -1414,10 +1507,10 @@ class DataProduct:
 
 ### Change Detection
 
-- `metadata_sha` computed from alphabetically sorted fields
+- `metadata_sha` computed from byte-order-sorted (`method = "radix"`) semantic fields
 - Single comparison detects any change
 - Enables efficient updates and deduplication
-- `original_file_sha` tracked in version_history.json (not metadata.json) — does not inflate version count when identical data is re-imported from a different source file path
+- `original_file_sha` is recorded in both `version_history.json` and `metadata.json` (since `datom-cv1`). It is semantic, so a re-export of identical content under a new file SHA classifies as `metadata_only`: a new version is recorded, the provenance is updated, and the parquet is **not** re-uploaded.
 - Change detection reads from **S3** (the final destination), so incomplete round-trips are re-detected on re-run
 
 ### Conflict Resolution

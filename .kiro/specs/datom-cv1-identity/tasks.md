@@ -343,14 +343,48 @@ sub-agent verification in this environment is authoring the code and tests, not 
       gate.
     - _Requirements: 3.4, 4.3_
 
-- [ ] 15. Final checkpoint - Ensure all tests pass
+- [x] 15. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
+  - **SIGNED OFF 2026-07-26.** Suite 2443 passed / 0 failed / 0 warnings / 0 skipped;
+    `R CMD check --as-cran` 0 errors / 0 warnings / 1 NOTE with tests `OK` and vignette
+    re-building `OK`. The NOTE is the pre-existing CRAN-incoming one (New submission + the
+    codecov badge URL in `README.md` redirecting to `app.codecov.io`) -- unrelated to this
+    spec; fixing the badge URL is a one-line pre-CRAN cleanup.
 
-- [ ] 16. Spec completion
+- [x] 16. Spec completion
   - Harvest durable learnings (metadata fields + redefined `data_sha`/volatile set →
     `dev/datom_specification.md`; gotchas → `dev/engineering-notes.md`); update the
     `dev/README.md` Active Specs table; run the maintainer R gates and a `dev/dev-sandbox.R`
     E2E; PR with `Closes #72`. Specs persist — do not delete.
+  - **DONE 2026-07-26.** Harvested:
+    - `dev/datom_specification.md` -- new "The Three SHAs" and "Table Identity = data_sha
+      (`datom-cv1`)" sections (byte layout, why not parquet bytes, the identity decisions and
+      the platform-non-determinism rationale, the table contract, the column index, the scoped
+      cross-language claim); the "datom Version = metadata_sha" section corrected from
+      "alphabetically sorted" to radix byte order with the full volatile set and the reason each
+      field is in it; `metadata.json` schema + field table gained `hash_algo`, `parquet_sha`,
+      `column_hashes`, `original_file_sha`; `version_history.json` gained `parquet_sha` and the
+      full-history dedup guarantee; `datom_read()`/`datom_write()` API entries gained the
+      integrity gate, the hash gate, and the `parquet_sha` decision; `datom_sync()` gained the
+      ingestion allowlist and the escape-hatch tradeoff; `datom_check_hashable()` documented.
+    - `dev/datom_pathways.md` -- the read route card now threads `parquet_sha` and names the
+      integrity gate as a gate on the fetched object, explicitly **not** a new lookup (route
+      shape unchanged).
+    - `dev/engineering-notes.md` -- the transient work-handoff section deleted per its own
+      instruction; its durable content harvested into two new Gotchas subsections ("datom-cv1
+      identity" and "Testing storage side effects without mocking storage") plus a standing
+      "Workspace and workflow notes" section (R toolchain + runner, `git commit -F`, do not pin
+      a branch head).
+    - `dev/README.md` -- spec moved from Active Specs (now empty) to Completed with test count
+      2443 and a pathway-impact note.
+  - **Gates run:** full suite 2443/0/0/0; `R CMD check --as-cran` 0E/0W/1 pre-existing NOTE;
+    `Rscript dev/datom_cv1_reference.R` exit 0, 27/27, goldens matching the tests; the four
+    static acceptance greps (Task 14.1); `Rscript dev/e2e-cv1-identity.R` exit 0 with all 22
+    claims holding. **Not run: the `dev/dev-sandbox.R` E2E** -- it requires a real GitHub PAT
+    and creates then deletes a real GitHub repo, so it is the maintainer's call. The offline
+    `dev/e2e-cv1-identity.R` covers the identity surface this spec changed; the sandbox E2E
+    would additionally cover `datom_init_repo()` / `datom_get_conn()` / `project.yaml` / ref
+    resolution, none of which this spec touched.
 
 ## Notes
 
