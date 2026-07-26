@@ -112,6 +112,23 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 ### Developer Tooling
 
+**dev/e2e-cv1-identity.R**: Offline `datom-cv1` identity walkthrough and smoke test
+
+- `Rscript dev/e2e-cv1-identity.R` -- **no GitHub PAT, no AWS, no network**. Builds a real git
+  repo with a local bare remote plus a real `backend = "local"` store in `tempdir()`.
+- Three sections: the table contract (`datom_check_hashable()` on a clean and an offending
+  table), what is and is not identity (container class, storage type, factor levels, tzone,
+  NaN/`-0`, `NA_real_`, row/column order, NFC vs NFD, last-bit doubles -- each line labelled
+  with its expected verdict), and a real project walking full -> metadata_only re-export ->
+  skipped re-scan -> new content -> revert (no duplicate version, no re-upload) -> a flipped
+  byte (read refuses) -> an unhashable table refused with no state left behind.
+- Every claim is asserted (22 of them); the script exits non-zero on any mismatch, so it
+  doubles as a smoke test.
+- **Caveat**: the conn is assembled directly rather than via `datom_init_repo()` /
+  `datom_get_conn()` (that is what removes the PAT requirement), so `project.yaml`, GitHub repo
+  creation, and ref resolution are NOT exercised. Use `dev/e2e-solo-local.R` for those -- it
+  goes through the public entry points and does need a PAT.
+
 **dev/dev-sandbox.R**: Automated setup/teardown for testing workflows
 
 - `sandbox_up()`: Creates GitHub repo + runs `datom_init_repo()` + populates with example data
