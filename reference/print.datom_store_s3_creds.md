@@ -23,3 +23,18 @@ print(x, ...)
 ## Value
 
 Invisible `x`.
+
+## Examples
+
+``` r
+creds <- datom_store_s3_creds(
+  access_key = "AKIAIOSFODNN7EXAMPLE",
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+print(creds)
+#> 
+#> ── datom S3 credentials-only store component 
+#> • Bucket / prefix / region: <resolved from ref.json>
+#> • Access key: "AKIA****"
+#> • Secret key: "****"
+```

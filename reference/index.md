@@ -10,10 +10,6 @@ Create connections, initialize repositories
   : Clone a datom Repository
 - [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)
   : Get a datom Connection
-- [`new_datom_conn()`](https://amashadihossein.github.io/datom/reference/new_datom_conn.md)
-  : Create a datom Connection Object
-- [`is_datom_conn()`](https://amashadihossein.github.io/datom/reference/is_datom_conn.md)
-  : Check if Object is a datom Connection
 - [`print(`*`<datom_conn>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_conn.md)
   : Print a datom Connection
 

@@ -22,3 +22,17 @@ print(x, ...)
 ## Value
 
 Invisible `x`.
+
+## Examples
+
+``` r
+tmp <- tempfile("datom_store_")
+store <- datom_store_local(path = tmp, validate = TRUE)
+#> ℹ Created store directory /tmp/RtmpvobUHh/datom_store_192856721803.
+print(store)
+#> 
+#> ── datom local store component 
+#> • Path: /tmp/RtmpvobUHh/datom_store_192856721803
+#> • Validated: TRUE
+unlink(tmp, recursive = TRUE)
+```
