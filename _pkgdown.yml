@@ -14,7 +14,7 @@ logo:
 
 navbar:
   structure:
-    left: [intro, reference, articles]
+    left: [intro, reference, articles, news]
     right: [search, lightswitch, github]
   components:
     github:
