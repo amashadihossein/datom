@@ -17,3 +17,13 @@ Invisible \code{x}.
 \description{
 Displays store configuration with masked secrets.
 }
+\examples{
+tmp <- tempfile("datom_store_")
+store <- datom_store(
+  data = datom_store_local(path = tmp),
+  data_repo_url = "https://github.com/example/my-project",
+  validate = FALSE
+)
+print(store)
+unlink(tmp, recursive = TRUE)
+}

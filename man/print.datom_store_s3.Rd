@@ -17,3 +17,12 @@ Invisible \code{x}.
 \description{
 Displays store configuration with masked secrets.
 }
+\examples{
+s3 <- datom_store_s3(
+  bucket = "my-datom-bucket",
+  access_key = "AKIAIOSFODNN7EXAMPLE",
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  validate = FALSE
+)
+print(s3)
+}

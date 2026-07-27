@@ -18,3 +18,10 @@ Invisible \code{x}.
 Displays masked credentials and a note that location is resolved from
 ref.json at connection time.
 }
+\examples{
+creds <- datom_store_s3_creds(
+  access_key = "AKIAIOSFODNN7EXAMPLE",
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+print(creds)
+}
