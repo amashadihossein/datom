@@ -172,7 +172,11 @@
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
+<p>Install the released version from CRAN:</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"datom"</span><span class="op">)</span></span></code></pre></div>
+<p>Or install the development version from GitHub:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># install.packages("pak")</span></span>
 <span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"amashadihossein/datom"</span><span class="op">)</span></span></code></pre></div>
 </div>
@@ -183,11 +187,11 @@
 <p><strong>What this tour builds:</strong> a shared, versioned data space with reproducible reads for multiple engineers and analysts – coordinated through a single git history. Every <code><a href="reference/datom_write.html">datom_write()</a></code> is a commit; every <code><a href="reference/datom_read.html">datom_read()</a></code> resolves to an exact content SHA. No one can silently overwrite history.</p>
 </blockquote>
 <p><strong>Before you start:</strong> you need a GitHub personal access token (PAT) scoped to <code>repo</code>. While you don’t need to have this token stored in your OS keychain, use of <code>keyring</code> is recommended for security and ease of use.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_set</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span>          <span class="co"># one-time setup</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/nchar.html" class="external-link">nzchar</a></span><span class="op">(</span><span class="fu">keyring</span><span class="fu">::</span><span class="fu">key_get</span><span class="op">(</span><span class="st">"GITHUB_PAT"</span><span class="op">)</span><span class="op">)</span>  <span class="co"># verify -- should return TRUE</span></span></code></pre></div>
 <p>Using <code>keyring</code> keeps the PAT out of your code and command history; see the <code>keyring</code> package documentation for setup details.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/amashadihossein/datom" class="external-link">datom</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://fs.r-lib.org" class="external-link">fs</a></span><span class="op">)</span></span>
 <span></span>
@@ -224,7 +228,7 @@
 <span><span class="fu">fs</span><span class="fu">::</span><span class="fu"><a href="https://fs.r-lib.org/reference/dir_tree.html" class="external-link">dir_tree</a></span><span class="op">(</span><span class="va">dev_dir</span><span class="op">)</span>   <span class="co"># your local workspace</span></span>
 <span><span class="fu">fs</span><span class="fu">::</span><span class="fu"><a href="https://fs.r-lib.org/reference/dir_tree.html" class="external-link">dir_tree</a></span><span class="op">(</span><span class="va">data_dir</span><span class="op">)</span>  <span class="co"># data storage (empty until first write)</span></span></code></pre></div>
 <p>Now write a table – twice – and watch datom do the right thing:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dm</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/datom_example_data.html">datom_example_data</a></span><span class="op">(</span><span class="st">"dm"</span>, cutoff_date <span class="op">=</span> <span class="st">"2026-01-28"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="reference/datom_write.html">datom_write</a></span><span class="op">(</span><span class="va">conn</span>, data <span class="op">=</span> <span class="va">dm</span>, name <span class="op">=</span> <span class="st">"dm"</span>, message <span class="op">=</span> <span class="st">"Initial DM extract"</span><span class="op">)</span></span>
@@ -256,7 +260,7 @@
 <h2 id="teardown">Teardown<a class="anchor" aria-label="anchor" href="#teardown"></a>
 </h2>
 <p>Pick one:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Option A -- full scripted teardown (deletes local files AND the GitHub repo).</span></span>
 <span><span class="co"># Do this BEFORE unlink().</span></span>
 <span><span class="fu"><a href="reference/datom_repo_delete.html">datom_repo_delete</a></span><span class="op">(</span><span class="va">conn</span>, confirm <span class="op">=</span> <span class="st">"STUDY_001"</span><span class="op">)</span></span>
