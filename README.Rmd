@@ -129,6 +129,14 @@ into the data layer rather than bolted on after the fact.
 
 ## Installation
 
+Install the released version from CRAN:
+
+```r
+install.packages("datom")
+```
+
+Or install the development version from GitHub:
+
 ```r
 # install.packages("pak")
 pak::pak("amashadihossein/datom")
