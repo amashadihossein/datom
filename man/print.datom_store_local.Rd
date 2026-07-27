@@ -17,3 +17,9 @@ Invisible \code{x}.
 \description{
 Displays store configuration.
 }
+\examples{
+tmp <- tempfile("datom_store_")
+store <- datom_store_local(path = tmp, validate = TRUE)
+print(store)
+unlink(tmp, recursive = TRUE)
+}

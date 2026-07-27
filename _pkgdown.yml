@@ -28,8 +28,6 @@ reference:
       - datom_init_repo
       - datom_clone
       - datom_get_conn
-      - new_datom_conn
-      - is_datom_conn
       - print.datom_conn
 
   - title: "Store Objects"

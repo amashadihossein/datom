@@ -211,6 +211,16 @@ is_datom_store <- function(x) {
 #' @param ... Ignored.
 #' @return Invisible `x`.
 #' @export
+#'
+#' @examples
+#' tmp <- tempfile("datom_store_")
+#' store <- datom_store(
+#'   data = datom_store_local(path = tmp),
+#'   data_repo_url = "https://github.com/example/my-project",
+#'   validate = FALSE
+#' )
+#' print(store)
+#' unlink(tmp, recursive = TRUE)
 print.datom_store <- function(x, ...) {
   cli::cli_h3("datom store")
   cli::cli_ul()
@@ -714,6 +724,15 @@ is_datom_store_s3 <- function(x) {
 #' @param ... Ignored.
 #' @return Invisible `x`.
 #' @export
+#'
+#' @examples
+#' s3 <- datom_store_s3(
+#'   bucket = "my-datom-bucket",
+#'   access_key = "AKIAIOSFODNN7EXAMPLE",
+#'   secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+#'   validate = FALSE
+#' )
+#' print(s3)
 print.datom_store_s3 <- function(x, ...) {
   cli::cli_h3("datom S3 store component")
   cli::cli_ul()
@@ -823,6 +842,13 @@ is_datom_store_s3_creds <- function(x) {
 #' @param ... Ignored.
 #' @return Invisible `x`.
 #' @export
+#'
+#' @examples
+#' creds <- datom_store_s3_creds(
+#'   access_key = "AKIAIOSFODNN7EXAMPLE",
+#'   secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+#' )
+#' print(creds)
 print.datom_store_s3_creds <- function(x, ...) {
   cli::cli_h3("datom S3 credentials-only store component")
   cli::cli_ul()
@@ -939,6 +965,12 @@ is_datom_store_local <- function(x) {
 #' @param ... Ignored.
 #' @return Invisible `x`.
 #' @export
+#'
+#' @examples
+#' tmp <- tempfile("datom_store_")
+#' store <- datom_store_local(path = tmp, validate = TRUE)
+#' print(store)
+#' unlink(tmp, recursive = TRUE)
 print.datom_store_local <- function(x, ...) {
   cli::cli_h3("datom local store component")
   cli::cli_ul()
