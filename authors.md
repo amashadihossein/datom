@@ -2,7 +2,7 @@
 
 ## Authors
 
-- **Afshin Mashadi-Hossein**. Author, maintainer.
+- **Afshin Mashadi-Hossein**. Author, maintainer, copyright holder.
 
 ## Citation
 

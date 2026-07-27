@@ -27,3 +27,4 @@ Useful links:
 ## Author
 
 **Maintainer**: Afshin Mashadi-Hossein <amashadihossein@gmail.com>
+\[copyright holder\]
