@@ -123,6 +123,14 @@ fact.
 
 ## Installation
 
+Install the released version from CRAN:
+
+``` r
+install.packages("datom")
+```
+
+Or install the development version from GitHub:
+
 ``` r
 # install.packages("pak")
 pak::pak("amashadihossein/datom")
