@@ -18,7 +18,7 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Afshin Mashadi-Hossein \email{amashadihossein@gmail.com}
+\strong{Maintainer}: Afshin Mashadi-Hossein \email{amashadihossein@gmail.com} [copyright holder]
 
 }
 \keyword{internal}
