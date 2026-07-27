@@ -8,7 +8,6 @@
 ^docs$
 ^_pkgdown\.yml$
 ^pkgdown$
-^datom\.code-workspace$
 ^CONTRIBUTING\.md$
 ^SECURITY\.md$
 ^CODE_OF_CONDUCT\.md$
