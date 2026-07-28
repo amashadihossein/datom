@@ -51,103 +51,25 @@
 <h3 id="table-identity-the-datom-cv1-canonical-hash-0-1-0">Table identity: the <code>datom-cv1</code> canonical hash<a class="anchor" aria-label="anchor" href="#table-identity-the-datom-cv1-canonical-hash-0-1-0"></a></h3>
 <p>Table identity is defined by a canonical hash of a table’s <strong>values</strong> (<code>datom-cv1</code>), not by the bytes of its parquet serialization. Hashing the serialization tied identity to the writer: an <code>arrow</code> upgrade or a different compression default produced different bytes for identical data, and therefore a spurious new version. See <code><a href="../articles/design-version-shas.html">vignette("design-version-shas")</a></code> for the model and the identity decisions.</p>
 <ul><li>
-<strong>Pre-release <code>data_sha</code> values change, and there is no migration path.</strong> Any table written by a pre-release build carries a <code>data_sha</code> computed by the old algorithm. Those values are not recomputed, converted, or reconciled — pilots should re-onboard their data. Reads of pre-existing metadata still work (the new stored-object integrity check is skipped when the older metadata carries no <code>parquet_sha</code>), but content identity is not comparable across the change.</li>
-<li>Three SHAs are now recorded per table: <code>data_sha</code> (content identity), <code>metadata_sha</code> (the version you pass to <code>datom_read(version = )</code>), and <code>parquet_sha</code> (the stored object’s SHA-256, verified on read before parsing). <code>original_file_sha</code> continues to record input-file provenance for tables onboarded by <code><a href="../reference/datom_sync.html">datom_sync()</a></code>.</li>
+<strong>Pre-release <code>data_sha</code> values change, and there is no migration path.</strong> Any table written by a pre-release build carries a <code>data_sha</code> computed by the old algorithm. Those values are not recomputed, converted, or reconciled — pilots should re-onboard their data.</li>
+<li>Three SHAs are now recorded per table: <code>data_sha</code> (content identity), <code>metadata_sha</code> (the version you pass to <code>datom_read(version = )</code>), and <code>parquet_sha</code> (the stored object’s SHA-256, verified on read before parsing).</li>
 <li>
 <code>metadata.json</code> gains <code>hash_algo</code>, <code>parquet_sha</code>, and <code>column_hashes</code> — an ordered per-column digest index from which <code>data_sha</code> can be re-derived without downloading data.</li>
-</ul><div class="section level4">
-<h4 id="deliberate-narrowings-0-1-0">Deliberate narrowings<a class="anchor" aria-label="anchor" href="#deliberate-narrowings-0-1-0"></a></h4>
-<p>Three capabilities were narrowed on purpose. Each has a specific recourse.</p>
-<ul><li>
-<strong>List and exotic columns are refused, with advice.</strong> A column must be <code>logical</code>, <code>integer</code>, <code>double</code>, <code>character</code>, <code>factor</code>, <code>Date</code>, <code>POSIXct</code>, <code>difftime</code>/<code>hms</code>, <code><a href="https://rdrr.io/pkg/data.table/man/IDateTime.html" class="external-link">data.table::ITime</a></code>/<code>IDate</code>, <code><a href="https://bit64.r-lib.org/reference/bit64-package.html" class="external-link">bit64::integer64</a></code>, or a labelled vector over one of those. List columns (including nested data frames, blobs, and <code>POSIXlt</code>), <code>complex</code>, <code>raw</code>, <code>sf</code> geometry, <code>units</code>, and <code>zoo</code>/<code>chron</code> columns now abort the write, naming every offending column at once and stating how to convert each one. A refusal leaves no git, storage, or manifest state behind. New export <code><a href="../reference/datom_check_hashable.html">datom_check_hashable()</a></code> reports the same advice as a pre-flight check.</li>
-<li>
-<strong><code><a href="../reference/datom_sync.html">datom_sync()</a></code> accepts only allowlisted formats.</strong> Flat tabular files only: <code>csv</code>, <code>tsv</code>, <code>txt</code>, <code>psv</code>, <code>parquet</code>, <code>sas7bdat</code>, <code>xpt</code>, <code>sav</code>, <code>zsav</code>, <code>por</code>, <code>dta</code>, <code>xls</code>, <code>xlsx</code>. <code>.rds</code>, <code>.json</code>, and <code>.xml</code> are no longer imported directly; <code><a href="../reference/datom_sync_manifest.html">datom_sync_manifest()</a></code> flags them <code>unsupported_format</code> and still processes their allowlisted siblings. Read such a source yourself and pass the data frame to <code><a href="../reference/datom_write.html">datom_write()</a></code> — note that this makes the table <em>derived</em>, so it has no <code>original_file_sha</code> and input-file change detection does not apply to it.</li>
-<li>
-<strong>The internal <code>sort_columns</code> / <code>sort_rows</code> options are removed.</strong> Row and column order are significant, and nothing is sorted: sorting would need a collation order, which is locale-dependent, reintroducing exactly the platform dependence the canonical hash exists to remove. Sort explicitly before writing if order should not matter.</li>
-</ul></div>
-</div>
-<div class="section level3">
-<h3 id="core-readwriteversion-0-1-0">Core read/write/version<a class="anchor" aria-label="anchor" href="#core-readwriteversion-0-1-0"></a></h3>
-<ul><li>
-<code><a href="../reference/datom_write.html">datom_write()</a></code> — write a data frame as a versioned parquet table with automatic SHA-based deduplication. When <code>parents</code> is supplied it takes resolved <code><a href="../reference/datom_parent.html">datom_parent()</a></code> records and derives the table’s <code>source_lineage</code> as the deduplicated union of their lineages; the public <code>source_lineage</code> argument has been removed.</li>
-<li>
-<code><a href="../reference/datom_read.html">datom_read()</a></code> — read the current or any historical version of a table. The downloaded object is verified against its recorded <code>parquet_sha</code> before parsing, so corruption or tampering aborts rather than returning data.</li>
-<li>
-<code><a href="../reference/datom_check_hashable.html">datom_check_hashable()</a></code> — pre-flight check for the table contract: reports per column whether <code><a href="../reference/datom_write.html">datom_write()</a></code> can hash it and, when it cannot, exactly how to fix it. Pure — no connection, store, or network.</li>
-<li>
-<code><a href="../reference/datom_history.html">datom_history()</a></code> — view the full version history of a table.</li>
-<li>
-<code><a href="../reference/datom_list.html">datom_list()</a></code> — list tables in a project with optional glob filtering.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="sync-0-1-0">Sync<a class="anchor" aria-label="anchor" href="#sync-0-1-0"></a></h3>
+<h3 id="deliberate-narrowings-0-1-0">Deliberate narrowings<a class="anchor" aria-label="anchor" href="#deliberate-narrowings-0-1-0"></a></h3>
+<p>Three capabilities were narrowed on purpose relative to pre-release behaviour.</p>
 <ul><li>
-<code><a href="../reference/datom_sync_manifest.html">datom_sync_manifest()</a></code> — build a sync manifest from a directory of files, detecting new, changed, and unchanged tables.</li>
-<li>
-<code><a href="../reference/datom_sync.html">datom_sync()</a></code> — execute the manifest to write all new/changed tables in one pass.</li>
-</ul></div>
-<div class="section level3">
-<h3 id="query--lineage-0-1-0">Query &amp; lineage<a class="anchor" aria-label="anchor" href="#query--lineage-0-1-0"></a></h3>
-<ul><li><p><code><a href="../reference/datom_get_lineage.html">datom_get_lineage()</a></code> / <code><a href="../reference/datom_get_parents.html">datom_get_parents()</a></code> — retrieve parent and source lineage for a table version; parent entries carry <code>source</code>, <code>table</code>, <code>version</code>, and <code>data_sha</code>.</p></li>
-<li><p><code><a href="../reference/datom_parent.html">datom_parent()</a></code> — resolve a parent table against a connection into a pure-data lineage record, capturing the parent’s authoritative <code>data_sha</code> and <code>source_lineage</code>. Same-project and cross-project parents are declared identically; pass the records to <code>datom_write(parents = ...)</code>.</p></li>
-<li><p><code><a href="../reference/datom_lineage_union.html">datom_lineage_union()</a></code> — deduplicated union of <code>source_lineage</code> lists (by <code>{project, table, version_sha}</code>); the building block of the composable recipe for recomputing and checking a table’s lineage.</p></li>
-<li><p><code>datom_validate_lineage()</code> was removed before release. Lineage consistency is now a composable recipe: <code><a href="../reference/datom_get_parents.html">datom_get_parents()</a></code>, per-parent <code>datom_get_lineage(depth = "source")</code>, and <code><a href="../reference/datom_lineage_union.html">datom_lineage_union()</a></code>, compared against the recorded <code>source_lineage</code>.</p></li>
-<li><p><code><a href="../reference/datom_status.html">datom_status()</a></code> — show connection, table, git, and input-file status.</p></li>
-<li>
-<p><code><a href="../reference/datom_summary.html">datom_summary()</a></code> — compact project overview (backend, table count, versions,</p>
-<p>last write).</p>
+<p><strong>List and exotic columns are refused.</strong> A column must be a supported atomic type; list columns and exotic classes now abort the write with actionable</p>
+<p>advice. See <code><a href="../reference/datom_check_hashable.html">datom_check_hashable()</a></code> for a pre-flight check.</p>
 </li>
-<li><p><code><a href="../reference/datom_projects.html">datom_projects()</a></code> — list all projects registered in a governance repository.</p></li>
+<li><p><strong><code><a href="../reference/datom_sync.html">datom_sync()</a></code> accepts only allowlisted formats.</strong> Flat tabular files only (csv, tsv, parquet, sas7bdat, xpt, sav, dta, xls, xlsx). Read unsupported formats yourself and pass the data frame to <code><a href="../reference/datom_write.html">datom_write()</a></code>.</p></li>
+<li><p><strong>Internal <code>sort_columns</code> / <code>sort_rows</code> removed.</strong> Row and column order are significant; sort explicitly before writing if order should not matter.</p></li>
 </ul></div>
 <div class="section level3">
-<h3 id="storage-management-0-1-0">Storage management<a class="anchor" aria-label="anchor" href="#storage-management-0-1-0"></a></h3>
-<ul><li>
-<code><a href="../reference/datom_storage_list.html">datom_storage_list()</a></code> — enumerate objects in a project namespace.</li>
-<li>
-<code><a href="../reference/datom_storage_copy.html">datom_storage_copy()</a></code> — copy all objects between two storage backends.</li>
-<li>
-<code><a href="../reference/datom_storage_verify.html">datom_storage_verify()</a></code> — verify object integrity after a copy or migration.</li>
-<li>
-<code><a href="../reference/datom_storage_delete_prefix.html">datom_storage_delete_prefix()</a></code> — delete objects under a prefix.</li>
-</ul></div>
-<div class="section level3">
-<h3 id="repository--governance-0-1-0">Repository &amp; governance<a class="anchor" aria-label="anchor" href="#repository--governance-0-1-0"></a></h3>
-<ul><li>
-<code><a href="../reference/datom_init_repo.html">datom_init_repo()</a></code> — one-time project setup (folder structure, git, initial push).</li>
-<li>
-<code><a href="../reference/datom_clone.html">datom_clone()</a></code> — clone an existing project for a new team member.</li>
-<li>
-<code><a href="../reference/datom_pull.html">datom_pull()</a></code> — pull latest commits from the data (and optionally governance) repository.</li>
-<li>
-<code><a href="../reference/datom_get_conn.html">datom_get_conn()</a></code> — establish a connection to an existing project.</li>
-<li>
-<code><a href="../reference/datom_repo_set_data_store.html">datom_repo_set_data_store()</a></code> — update the storage backend for a project.</li>
-<li>
-<code><a href="../reference/datom_repo_delete.html">datom_repo_delete()</a></code> — tear down a project (storage + GitHub repo).</li>
-<li>
-<code><a href="../reference/datom_repo_attach_governance.html">datom_repo_attach_governance()</a></code> — attach a governance layer to a solo project.</li>
-<li>
-<code><a href="../reference/datom_validate.html">datom_validate()</a></code> / <code><a href="../reference/is_valid_datom_repo.html">is_valid_datom_repo()</a></code> — structural validation of the local repository.</li>
-</ul></div>
-<div class="section level3">
-<h3 id="store-constructors-0-1-0">Store constructors<a class="anchor" aria-label="anchor" href="#store-constructors-0-1-0"></a></h3>
-<ul><li>
-<code><a href="../reference/datom_store.html">datom_store()</a></code> — composite store bundling governance + data + git config.</li>
-<li>
-<code><a href="../reference/datom_store_s3.html">datom_store_s3()</a></code> — S3 backend store component.</li>
-<li>
-<code><a href="../reference/datom_store_s3_creds.html">datom_store_s3_creds()</a></code> — credentials-only S3 component (for readers).</li>
-<li>
-<code><a href="../reference/datom_store_local.html">datom_store_local()</a></code> — local filesystem backend store component.</li>
-<li>Predicates: <code><a href="../reference/is_datom_store.html">is_datom_store()</a></code>, <code><a href="../reference/is_datom_store_s3.html">is_datom_store_s3()</a></code>, <code><a href="../reference/is_datom_store_s3_creds.html">is_datom_store_s3_creds()</a></code>, <code><a href="../reference/is_datom_store_local.html">is_datom_store_local()</a></code>.</li>
-</ul></div>
-<div class="section level3">
-<h3 id="example-data-0-1-0">Example data<a class="anchor" aria-label="anchor" href="#example-data-0-1-0"></a></h3>
-<ul><li>
-<code><a href="../reference/datom_example_data.html">datom_example_data()</a></code> — bundled clinical-trial-style data (DM, EX, LB, AE domains) with optional date cutoff filtering.</li>
-<li>
-<code><a href="../reference/datom_example_cutoffs.html">datom_example_cutoffs()</a></code> — six monthly cutoff dates for vignette reproducibility.</li>
-</ul></div>
+<h3 id="full-api-0-1-0">Full API<a class="anchor" aria-label="anchor" href="#full-api-0-1-0"></a></h3>
+<p>See the <a href="https://amashadihossein.github.io/datom/reference/">reference index</a> for the complete exported surface at 0.1.0.</p>
+</div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
