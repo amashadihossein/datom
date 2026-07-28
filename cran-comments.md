@@ -26,6 +26,10 @@ wrapped in `\dontrun{}` since they cannot run without credentials and network
 access. Functions that work offline (store constructors, predicates,
 `datom_example_*`) have runnable examples.
 
+## References
+
+There are no published references describing the methods in this package.
+
 ## Downstream dependencies
 
 None (new package).

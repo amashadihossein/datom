@@ -17,6 +17,9 @@ navbar:
     left: [intro, reference, articles, news]
     right: [search, lightswitch, github]
   components:
+    news:
+      text: News
+      href: news/index.html
     github:
       icon: fa-github
       href: https://github.com/amashadihossein/datom
