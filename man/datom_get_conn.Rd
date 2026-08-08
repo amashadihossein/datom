@@ -51,11 +51,11 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   # Developer: local repo plus store.
   conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-  conn
+  print(conn)
 
   # Reader: store plus project name, no local repo.
   reader_store <- datom_store(data = datom_store_local(file.path(tmp, "storage")))
-  datom_get_conn(store = reader_store, project_name = "example_project")
+  print(datom_get_conn(store = reader_store, project_name = "example_project"))
 
   unlink(tmp, recursive = TRUE)
 }

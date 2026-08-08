@@ -62,8 +62,8 @@ if (requireNamespace("git2r", quietly = TRUE)) {
   to_conn <- datom_get_conn(store = to_store, project_name = "example_project")
 
   copied <- datom_storage_copy(from_conn, to_conn)
-  nrow(copied)      # number of objects copied
-  sum(copied$bytes) # total bytes
+  print(nrow(copied))      # number of objects copied
+  print(sum(copied$bytes)) # total bytes
 
   unlink(tmp, recursive = TRUE)
 }

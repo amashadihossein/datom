@@ -44,7 +44,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
   conn <- datom_get_conn(file.path(tmp, "repo"), store)
   datom_write(conn, data = datom_example_data("dm"), name = "dm")
 
-  datom_storage_list(conn)
+  print(datom_storage_list(conn))
 
   unlink(tmp, recursive = TRUE)
 }

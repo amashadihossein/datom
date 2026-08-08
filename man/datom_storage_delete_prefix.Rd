@@ -53,7 +53,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   # Delete the entire datom namespace (use with care)
   datom_storage_delete_prefix(conn)
-  datom_storage_list(conn)
+  print(datom_storage_list(conn))
 
   unlink(tmp, recursive = TRUE)
 }

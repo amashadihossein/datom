@@ -346,7 +346,10 @@ datom_repo_delete <- function(conn, confirm, force_gov_attached = FALSE) {
 #'     gov_repo_url = "https://github.com/example/acme-gov",
 #'     gov_store    = datom_store_local(file.path(tmp, "gov-storage"))
 #'   )
-#'   jsonlite::read_json(file.path(tmp, "repo", ".datom", "governance.json"))
+#'   gov_json <- jsonlite::read_json(
+#'     file.path(tmp, "repo", ".datom", "governance.json")
+#'   )
+#'   print(gov_json$gov_repo_url)
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }

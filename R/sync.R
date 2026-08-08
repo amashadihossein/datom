@@ -298,7 +298,7 @@ datom_pull <- function(conn) {
 #'   )
 #'
 #'   manifest <- datom_sync_manifest(conn)
-#'   manifest
+#'   print(manifest[, c("name", "format", "status")])
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -477,7 +477,7 @@ datom_sync_manifest <- function(conn,
 #'
 #'   manifest <- datom_sync_manifest(conn)
 #'   result <- datom_sync(conn, manifest)
-#'   result[, c("name", "status", "result")]
+#'   print(result[, c("name", "status", "result")])
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }

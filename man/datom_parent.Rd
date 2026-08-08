@@ -54,7 +54,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   # Resolve a parent declaration to pass to the parents argument of
   # datom_write.
-  datom_parent(conn, "dm", datom_history(conn, "dm")$version[1])
+  print(datom_parent(conn, "dm", datom_history(conn, "dm")$version[1]))
 
   unlink(tmp, recursive = TRUE)
 }

@@ -326,7 +326,7 @@ print.datom_conn <- function(x, ...) {
 #'     project_name = "example_project",
 #'     store = store
 #'   )
-#'   list.files(file.path(tmp, "repo"), all.files = TRUE, no.. = TRUE)
+#'   print(list.files(file.path(tmp, "repo"), all.files = TRUE, no.. = TRUE))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -648,7 +648,7 @@ datom_init_repo <- function(path = ".",
 #'
 #'   # A teammate joins the project from the remote alone.
 #'   conn <- datom_clone(path = file.path(tmp, "teammate"), store = store)
-#'   datom_list(conn)
+#'   print(datom_list(conn))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -790,11 +790,11 @@ datom_clone <- function(path, store, ...) {
 #'
 #'   # Developer: local repo plus store.
 #'   conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-#'   conn
+#'   print(conn)
 #'
 #'   # Reader: store plus project name, no local repo.
 #'   reader_store <- datom_store(data = datom_store_local(file.path(tmp, "storage")))
-#'   datom_get_conn(store = reader_store, project_name = "example_project")
+#'   print(datom_get_conn(store = reader_store, project_name = "example_project"))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }

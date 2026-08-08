@@ -110,6 +110,8 @@ if (requireNamespace("git2r", quietly = TRUE)) {
     )
   )
 
+  print(datom_list(conn))
+
   unlink(tmp, recursive = TRUE)
 }
 }

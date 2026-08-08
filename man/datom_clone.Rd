@@ -46,7 +46,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   # A teammate joins the project from the remote alone.
   conn <- datom_clone(path = file.path(tmp, "teammate"), store = store)
-  datom_list(conn)
+  print(datom_list(conn))
 
   unlink(tmp, recursive = TRUE)
 }

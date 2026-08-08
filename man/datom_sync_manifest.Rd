@@ -53,7 +53,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
   )
 
   manifest <- datom_sync_manifest(conn)
-  manifest
+  print(manifest[, c("name", "format", "status")])
 
   unlink(tmp, recursive = TRUE)
 }

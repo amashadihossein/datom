@@ -34,10 +34,11 @@
 #'
 #'   # Current version
 #'   dm <- datom_read(conn, "dm")
-#'   head(dm)
+#'   print(head(dm))
 #'
-#'   # A specific version, by its identifier
-#'   datom_read(conn, "dm", version = datom_history(conn, "dm")$version[1])
+#'   # A specific version, by its identifier -- byte-for-byte the same table
+#'   v <- datom_history(conn, "dm")$version[1]
+#'   print(identical(datom_read(conn, "dm", version = v), dm))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -657,6 +658,8 @@ datom_read <- function(conn,
 #'       datom_parent(conn, "lb", datom_history(conn, "lb")$version[1])
 #'     )
 #'   )
+#'
+#'   print(datom_list(conn))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }

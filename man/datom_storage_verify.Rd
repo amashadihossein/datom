@@ -72,12 +72,12 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   # Verify all copied objects structurally (default, fast)
   results <- datom_storage_verify(from_conn, to_conn)
-  all(results$ok)
+  print(all(results$ok))
 
   # Verify a subset with full content hash
-  datom_storage_verify(from_conn, to_conn,
-                       keys = copied$key[1],
-                       mode = "content")
+  print(datom_storage_verify(from_conn, to_conn,
+                             keys = copied$key[1],
+                             mode = "content"))
 
   unlink(tmp, recursive = TRUE)
 }

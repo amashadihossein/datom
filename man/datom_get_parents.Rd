@@ -53,7 +53,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
     name    = "dm_female",
     parents = list(datom_parent(conn, "dm", datom_history(conn, "dm")$version[1]))
   )
-  datom_get_parents(conn, "dm_female")
+  print(datom_get_parents(conn, "dm_female"))
 
   unlink(tmp, recursive = TRUE)
 }

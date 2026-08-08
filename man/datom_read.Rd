@@ -46,10 +46,11 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   # Current version
   dm <- datom_read(conn, "dm")
-  head(dm)
+  print(head(dm))
 
-  # A specific version, by its identifier
-  datom_read(conn, "dm", version = datom_history(conn, "dm")$version[1])
+  # A specific version, by its identifier -- byte-for-byte the same table
+  v <- datom_history(conn, "dm")$version[1]
+  print(identical(datom_read(conn, "dm", version = v), dm))
 
   unlink(tmp, recursive = TRUE)
 }

@@ -58,8 +58,8 @@ if (requireNamespace("git2r", quietly = TRUE)) {
   conn <- datom_get_conn(file.path(tmp, "repo"), store)
 
   datom_write(conn, data = datom_example_data("dm"), name = "dm")
-  datom_get_lineage(conn, "dm", depth = "parents")
-  datom_get_lineage(conn, "dm", depth = "source")
+  print(datom_get_lineage(conn, "dm", depth = "parents"))
+  print(datom_get_lineage(conn, "dm", depth = "source"))
 
   unlink(tmp, recursive = TRUE)
 }

@@ -44,7 +44,7 @@
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
 #'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
 #'
-#'   datom_storage_list(conn)
+#'   print(datom_storage_list(conn))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -99,7 +99,7 @@ datom_storage_list <- function(conn) {
 #'
 #'   # Delete the entire datom namespace (use with care)
 #'   datom_storage_delete_prefix(conn)
-#'   datom_storage_list(conn)
+#'   print(datom_storage_list(conn))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -277,8 +277,8 @@ datom_storage_delete_prefix <- function(conn, prefix_key = NULL) {
 #'   to_conn <- datom_get_conn(store = to_store, project_name = "example_project")
 #'
 #'   copied <- datom_storage_copy(from_conn, to_conn)
-#'   nrow(copied)      # number of objects copied
-#'   sum(copied$bytes) # total bytes
+#'   print(nrow(copied))      # number of objects copied
+#'   print(sum(copied$bytes)) # total bytes
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -488,12 +488,12 @@ datom_storage_copy <- function(from_conn, to_conn) {
 #'
 #'   # Verify all copied objects structurally (default, fast)
 #'   results <- datom_storage_verify(from_conn, to_conn)
-#'   all(results$ok)
+#'   print(all(results$ok))
 #'
 #'   # Verify a subset with full content hash
-#'   datom_storage_verify(from_conn, to_conn,
-#'                        keys = copied$key[1],
-#'                        mode = "content")
+#'   print(datom_storage_verify(from_conn, to_conn,
+#'                              keys = copied$key[1],
+#'                              mode = "content"))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }

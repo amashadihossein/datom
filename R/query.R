@@ -31,7 +31,7 @@
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
 #'
 #'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
-#'   datom_list(conn)
+#'   print(datom_list(conn))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -141,7 +141,7 @@ datom_list <- function(conn,
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
 #'
 #'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
-#'   datom_history(conn, "dm")
+#'   print(datom_history(conn, "dm"))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -265,7 +265,7 @@ datom_history <- function(conn,
 #'     name    = "dm_female",
 #'     parents = list(datom_parent(conn, "dm", datom_history(conn, "dm")$version[1]))
 #'   )
-#'   datom_get_parents(conn, "dm_female")
+#'   print(datom_get_parents(conn, "dm_female"))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -321,8 +321,8 @@ datom_get_parents <- function(conn, name, version = NULL) {
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
 #'
 #'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
-#'   datom_get_lineage(conn, "dm", depth = "parents")
-#'   datom_get_lineage(conn, "dm", depth = "source")
+#'   print(datom_get_lineage(conn, "dm", depth = "parents"))
+#'   print(datom_get_lineage(conn, "dm", depth = "source"))
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }

@@ -75,7 +75,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
     project_name = "example_project",
     store = store
   )
-  list.files(file.path(tmp, "repo"), all.files = TRUE, no.. = TRUE)
+  print(list.files(file.path(tmp, "repo"), all.files = TRUE, no.. = TRUE))
 
   unlink(tmp, recursive = TRUE)
 }
