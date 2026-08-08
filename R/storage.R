@@ -26,10 +26,27 @@
 #'   namespace contains no objects.
 #' @export
 #' @examples
-#' \dontrun{
-#' conn <- datom_get_conn(path = ".", store = store)
-#' keys <- datom_storage_list(conn)
-#' length(keys)
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#'
+#'   datom_storage_list(conn)
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_storage_list <- function(conn) {
   if (!inherits(conn, "datom_conn")) {
@@ -59,12 +76,32 @@ datom_storage_list <- function(conn) {
 #'   directory existed and was removed, `0L` otherwise.
 #' @export
 #' @examples
-#' \dontrun{
-#' # Delete a single table's objects
-#' datom_storage_delete_prefix(conn, prefix_key = "demographics")
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
 #'
-#' # Delete the entire datom namespace (use with care)
-#' datom_storage_delete_prefix(conn)
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#'
+#'   # Delete a single table's objects
+#'   datom_storage_delete_prefix(conn, prefix_key = "dm")
+#'
+#'   # Delete the entire datom namespace (use with care)
+#'   datom_storage_delete_prefix(conn)
+#'   datom_storage_list(conn)
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_storage_delete_prefix <- function(conn, prefix_key = NULL) {
   if (!inherits(conn, "datom_conn")) {
@@ -216,12 +253,34 @@ datom_storage_delete_prefix <- function(conn, prefix_key = NULL) {
 #' @seealso [datom_storage_verify()], [datom_storage_list()],
 #'   [datom_storage_delete_prefix()], [datom_repo_set_data_store()]
 #' @examples
-#' \dontrun{
-#' from_conn <- datom_get_conn(path = ".", store = old_store)
-#' to_conn   <- datom_get_conn(path = ".", store = new_store)
-#' copied    <- datom_storage_copy(from_conn, to_conn)
-#' nrow(copied)  # number of objects copied
-#' sum(copied$bytes)  # total bytes
+#' # Offline, self-contained: a bare git repo stands in for GitHub and two
+#' # local directories for the source and destination object stores.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   from_conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'   datom_write(from_conn, data = datom_example_data("dm"), name = "dm")
+#'
+#'   # The destination is addressed with a reader connection: no local repo,
+#'   # just a store plus the project name.
+#'   to_store <- datom_store(data = datom_store_local(file.path(tmp, "storage2")))
+#'   to_conn <- datom_get_conn(store = to_store, project_name = "example_project")
+#'
+#'   copied <- datom_storage_copy(from_conn, to_conn)
+#'   nrow(copied)      # number of objects copied
+#'   sum(copied$bytes) # total bytes
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_storage_copy <- function(from_conn, to_conn) {
   if (!inherits(from_conn, "datom_conn")) {
@@ -405,16 +464,38 @@ datom_storage_copy <- function(from_conn, to_conn) {
 #' @export
 #' @seealso [datom_storage_copy()], [datom_storage_list()]
 #' @examples
-#' \dontrun{
-#' copied <- datom_storage_copy(from_conn, to_conn)
-#' # Verify all copied objects structurally (default, fast)
-#' results <- datom_storage_verify(from_conn, to_conn)
-#' all(results$ok)
+#' # Offline, self-contained: a bare git repo stands in for GitHub and two
+#' # local directories for the source and destination object stores.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
 #'
-#' # Verify a subset with full content hash
-#' results <- datom_storage_verify(from_conn, to_conn,
-#'                                 keys  = copied$key[1:10],
-#'                                 mode  = "content")
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   from_conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'   datom_write(from_conn, data = datom_example_data("dm"), name = "dm")
+#'
+#'   to_store <- datom_store(data = datom_store_local(file.path(tmp, "storage2")))
+#'   to_conn <- datom_get_conn(store = to_store, project_name = "example_project")
+#'   copied <- datom_storage_copy(from_conn, to_conn)
+#'
+#'   # Verify all copied objects structurally (default, fast)
+#'   results <- datom_storage_verify(from_conn, to_conn)
+#'   all(results$ok)
+#'
+#'   # Verify a subset with full content hash
+#'   datom_storage_verify(from_conn, to_conn,
+#'                        keys = copied$key[1],
+#'                        mode = "content")
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_storage_verify <- function(from_conn, to_conn,
                                  keys = NULL,

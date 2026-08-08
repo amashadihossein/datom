@@ -28,11 +28,26 @@ verified if it already exists locally). An existing clone with uncommitted
 changes causes an error to avoid surprising state.
 }
 \examples{
-\dontrun{
-conn <- datom_clone(
-  path = "study_001_data",
-  store = my_store
-)
-datom_pull(conn)
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+
+  # A teammate joins the project from the remote alone.
+  conn <- datom_clone(path = file.path(tmp, "teammate"), store = store)
+  datom_list(conn)
+
+  unlink(tmp, recursive = TRUE)
 }
 }

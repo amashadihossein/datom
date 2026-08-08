@@ -99,9 +99,30 @@ datom_lineage_union <- function(lineages) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' conn <- datom_get_conn(path = "path/to/repo", store = store)
-#' p <- datom_parent(conn, "dm", "v_dm_9f3")
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#'
+#'   # Resolve a parent declaration to pass to the parents argument of
+#'   # datom_write.
+#'   datom_parent(conn, "dm", datom_history(conn, "dm")$version[1])
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_parent <- function(conn, table, version) {
 

@@ -30,11 +30,21 @@
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' # Requires a governance store and registered projects.
-#' # datom_projects(conn)
-#' # datom_projects(store)
-#' }
+#' # A governance store backed by a local directory. Projects are registered
+#' # into it by the companion governance package (datomanager), so a freshly
+#' # created governance store lists an empty portfolio.
+#' tmp <- tempfile("datom-example-")
+#' gov <- datom_store_local(file.path(tmp, "gov-storage"))
+#'
+#' store <- datom_store(
+#'   governance   = gov,
+#'   data         = datom_store_local(file.path(tmp, "storage")),
+#'   gov_repo_url = "https://github.com/example/acme-gov"
+#' )
+#'
+#' datom_projects(store)
+#'
+#' unlink(tmp, recursive = TRUE)
 datom_projects <- function(x) {
   ctx <- .datom_projects_resolve_input(x)
   gov_conn       <- ctx$gov_conn

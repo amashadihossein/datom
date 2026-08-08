@@ -35,16 +35,28 @@
 #' @seealso [datom_storage_copy()], [datom_storage_verify()],
 #'   [datom_repo_delete()]
 #' @examples
-#' \dontrun{
-#' new_store <- datom_store_s3(
-#'   bucket     = "new-bucket",
-#'   prefix     = "study-001",
-#'   region     = "us-east-1",
-#'   access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
-#'   secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY"),
-#'   validate   = FALSE
-#' )
-#' datom_repo_set_data_store(conn, new_store)
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   # Repoint project.yaml at a relocated data store.
+#'   new_store <- datom_store_local(file.path(tmp, "storage-relocated"))
+#'   datom_repo_set_data_store(conn, new_store)
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
   .datom_check_git2r()
@@ -154,10 +166,29 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
 #' @export
 #' @seealso [datom_storage_delete_prefix()], [datom_repo_set_data_store()]
 #' @examples
-#' \dontrun{
-#' # Solo project teardown (no governance)
-#' datom_storage_delete_prefix(conn)
-#' datom_repo_delete(conn, confirm = conn$project_name)
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage. Because the remote is not GitHub,
+#' # the API deletion step is skipped and only the local clone is removed.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   # Solo project teardown (no governance): storage, then repo.
+#'   datom_storage_delete_prefix(conn)
+#'   datom_repo_delete(conn, confirm = conn$project_name)
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_repo_delete <- function(conn, confirm, force_gov_attached = FALSE) {
   if (!inherits(conn, "datom_conn")) {
@@ -291,10 +322,33 @@ datom_repo_delete <- function(conn, confirm, force_gov_attached = FALSE) {
 #' @export
 #' @seealso [datom_repo_delete()], [datom_repo_set_data_store()]
 #' @examples
-#' \dontrun{
-#' # Data-side half of governance attachment (gov-repo registration is
-#' # performed by datomanager::gov_attach()).
-#' datom_repo_attach_governance(conn, gov_repo_url, gov_store)
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   # Data-side half of governance attachment. The gov-repo registration
+#'   # is performed separately by the companion datomanager package.
+#'   datom_repo_attach_governance(
+#'     conn,
+#'     gov_repo_url = "https://github.com/example/acme-gov",
+#'     gov_store    = datom_store_local(file.path(tmp, "gov-storage"))
+#'   )
+#'   jsonlite::read_json(file.path(tmp, "repo", ".datom", "governance.json"))
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
                                          message = NULL) {

@@ -1,3 +1,21 @@
+## Resubmission
+
+This is a resubmission. Thank you for the review.
+
+* Removed the `\examples` sections from the two unexported functions that had
+  them, `.datom_build_storage_key()` and `.datom_parse_s3_uri()`.
+
+* Replaced the commented-out example in `datom_projects.Rd` with an
+  executable one.
+
+* Removed all `\dontrun{}` wrappers. The package now has no `\dontrun{}` and
+  no `\donttest{}` sections; every example runs. Examples that need a data
+  repository build a self-contained project in `tempdir()`, using a bare
+  local git repository as the remote and a local directory as the object
+  store, so no credentials or network access are required. Those examples
+  are conditional on `git2r` (and `rio` for `datom_sync()`), which are in
+  Suggests.
+
 ## R CMD check results
 
 0 errors | 0 warnings | 1 note
@@ -28,14 +46,6 @@ usage in this domain and is used consistently throughout the package.
 
 There are no published references describing this package's methods, so
 the Description field cites none.
-
-## Examples
-
-Examples that require external services (S3, GitHub, or a live git remote)
-are wrapped in `\dontrun{}`, since they cannot run without credentials and
-network access. Functions that work offline (store constructors,
-predicates, `datom_check_hashable()`, `datom_lineage_union()`,
-`datom_example_*`) have runnable examples.
 
 ## Downstream dependencies
 

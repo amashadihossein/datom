@@ -5,30 +5,27 @@
 #' Constructs S3 keys from path components, inserting the `datom/` segment
 #' per the storage structure convention.
 #'
+#' Mapping from arguments to key, for reference:
+#'
+#' ```
+#' ("proj", "customers", "abc123.parquet")
+#'   -> "proj/datom/customers/abc123.parquet"
+#'
+#' ("proj", "customers", ".metadata", "metadata.json")
+#'   -> "proj/datom/customers/.metadata/metadata.json"
+#'
+#' ("proj", ".metadata", "dispatch.json")
+#'   -> "proj/datom/.metadata/dispatch.json"
+#'
+#' (NULL, "customers", "abc123.parquet")
+#'   -> "datom/customers/abc123.parquet"
+#' ```
+#'
 #' @param prefix Optional S3 prefix (e.g., "project-alpha"). NULL if none.
 #' @param ... Path segments after the `datom/` segment (e.g., table name,
 #'   file name, ".metadata").
 #' @return Character string S3 key.
 #' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' # Data file
-#' .datom_build_storage_key("proj", "customers", "abc123.parquet")
-#' # → "proj/datom/customers/abc123.parquet"
-#'
-#' # Table metadata
-#' .datom_build_storage_key("proj", "customers", ".metadata", "metadata.json")
-#' # → "proj/datom/customers/.metadata/metadata.json"
-#'
-#' # Repo-level metadata
-#' .datom_build_storage_key("proj", ".metadata", "dispatch.json")
-#' # → "proj/datom/.metadata/dispatch.json"
-#'
-#' # No prefix
-#' .datom_build_storage_key(NULL, "customers", "abc123.parquet")
-#' # → "datom/customers/abc123.parquet"
-#' }
 .datom_build_storage_key <- function(prefix = NULL, ...) {
   segments <- c(...)
 
@@ -54,18 +51,16 @@
 #'
 #' Extracts bucket and prefix from an `s3://` URI.
 #'
+#' Mapping from URI to components, for reference:
+#'
+#' ```
+#' "s3://my-bucket/data/proj" -> list(bucket = "my-bucket", prefix = "data/proj")
+#' "s3://my-bucket"           -> list(bucket = "my-bucket", prefix = NULL)
+#' ```
+#'
 #' @param uri Character string S3 URI (e.g., "s3://my-bucket/prefix/path").
 #' @return Named list with `bucket` (character) and `prefix` (character or NULL).
 #' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' .datom_parse_s3_uri("s3://my-bucket/data/proj")
-#' # → list(bucket = "my-bucket", prefix = "data/proj")
-#'
-#' .datom_parse_s3_uri("s3://my-bucket")
-#' # → list(bucket = "my-bucket", prefix = NULL)
-#' }
 .datom_parse_s3_uri <- function(uri) {
   if (!is.character(uri) || length(uri) != 1L) {
     cli::cli_abort("{.arg uri} must be a single character string.")

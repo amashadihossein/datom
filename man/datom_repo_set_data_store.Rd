@@ -38,16 +38,28 @@ repo -- this function updates only the local data clone so that
 \code{datomanager::gov_migrate_data()} after the ref switch, never before.
 }
 \examples{
-\dontrun{
-new_store <- datom_store_s3(
-  bucket     = "new-bucket",
-  prefix     = "study-001",
-  region     = "us-east-1",
-  access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
-  secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY"),
-  validate   = FALSE
-)
-datom_repo_set_data_store(conn, new_store)
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+  conn <- datom_get_conn(file.path(tmp, "repo"), store)
+
+  # Repoint project.yaml at a relocated data store.
+  new_store <- datom_store_local(file.path(tmp, "storage-relocated"))
+  datom_repo_set_data_store(conn, new_store)
+
+  unlink(tmp, recursive = TRUE)
 }
 }
 \seealso{

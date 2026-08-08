@@ -15,13 +15,11 @@ Named list with \code{bucket} (character) and \code{prefix} (character or NULL).
 \description{
 Extracts bucket and prefix from an \verb{s3://} URI.
 }
-\examples{
-\dontrun{
-.datom_parse_s3_uri("s3://my-bucket/data/proj")
-# → list(bucket = "my-bucket", prefix = "data/proj")
+\details{
+Mapping from URI to components, for reference:
 
-.datom_parse_s3_uri("s3://my-bucket")
-# → list(bucket = "my-bucket", prefix = NULL)
-}
+\if{html}{\out{<div class="sourceCode">}}\preformatted{"s3://my-bucket/data/proj" -> list(bucket = "my-bucket", prefix = "data/proj")
+"s3://my-bucket"           -> list(bucket = "my-bucket", prefix = NULL)
+}\if{html}{\out{</div>}}
 }
 \keyword{internal}

@@ -58,57 +58,58 @@ List with deployment details.
 Writes data to a datom repository. Commits to git, pushes, and syncs to S3.
 }
 \examples{
-\dontrun{
-tmp <- tempfile("datom_write_")
-store <- datom_store(
-  data = datom_store_local(path = file.path(tmp, "storage")),
-  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-  data_repo_url = "https://github.com/example/my-project",
-  validate = FALSE
-)
-datom_init_repo(
-  path = file.path(tmp, "repo"),
-  project_name = "example_project",
-  store = store
-)
-conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
 
-# --- Basic write (no lineage) ---
-dm <- datom_example_data("dm")
-datom_write(conn, data = dm, name = "dm")
-
-# --- Write with a single parent ---
-# Use datom_parent() to resolve each parent's data_sha and lineage.
-lb <- datom_example_data("lb")
-datom_write(conn, data = lb, name = "lb")
-lb_summary <- aggregate(
-  list(n = lb$LBTESTCD), by = list(LBTESTCD = lb$LBTESTCD), FUN = length
-)
-datom_write(
-  conn,
-  data    = lb_summary,
-  name    = "lb_summary",
-  message = "Lab test counts",
-  parents = list(
-    datom_parent(conn, "lb", datom_history(conn, "lb")$version[1])
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
   )
-)
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+  conn <- datom_get_conn(file.path(tmp, "repo"), store)
 
-# --- Write with multiple parents ---
-# Each parent is declared with datom_parent(); datom_write() derives
-# the table's source_lineage as the union of the parents' lineages.
-dm_lb_merged <- merge(dm, lb, by = "USUBJID")
-datom_write(
-  conn,
-  data    = dm_lb_merged,
-  name    = "dm_lb_merged",
-  message = "Demographics joined with lab results",
-  parents = list(
-    datom_parent(conn, "dm", datom_history(conn, "dm")$version[1]),
-    datom_parent(conn, "lb", datom_history(conn, "lb")$version[1])
+  # --- Basic write (no lineage) ---
+  dm <- datom_example_data("dm")
+  datom_write(conn, data = dm, name = "dm")
+
+  # --- Write with a single parent ---
+  # Each parent's data_sha and lineage are resolved by datom_parent.
+  lb <- datom_example_data("lb")
+  datom_write(conn, data = lb, name = "lb")
+  lb_summary <- aggregate(
+    list(n = lb$LBTESTCD), by = list(LBTESTCD = lb$LBTESTCD), FUN = length
   )
-)
+  datom_write(
+    conn,
+    data    = lb_summary,
+    name    = "lb_summary",
+    message = "Lab test counts",
+    parents = list(
+      datom_parent(conn, "lb", datom_history(conn, "lb")$version[1])
+    )
+  )
 
-unlink(tmp, recursive = TRUE)
+  # --- Write with multiple parents ---
+  # The source lineage is derived as the union of the parents' lineages.
+  dm_lb_merged <- merge(dm, lb, by = "USUBJID")
+  datom_write(
+    conn,
+    data    = dm_lb_merged,
+    name    = "dm_lb_merged",
+    message = "Demographics joined with lab results",
+    parents = list(
+      datom_parent(conn, "dm", datom_history(conn, "dm")$version[1]),
+      datom_parent(conn, "lb", datom_history(conn, "lb")$version[1])
+    )
+  )
+
+  unlink(tmp, recursive = TRUE)
 }
 }

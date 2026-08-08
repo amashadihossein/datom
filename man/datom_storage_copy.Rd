@@ -38,12 +38,34 @@ For solo-project relocation combine this function with
 \code{\link[=datom_repo_set_data_store]{datom_repo_set_data_store()}}.
 }
 \examples{
-\dontrun{
-from_conn <- datom_get_conn(path = ".", store = old_store)
-to_conn   <- datom_get_conn(path = ".", store = new_store)
-copied    <- datom_storage_copy(from_conn, to_conn)
-nrow(copied)  # number of objects copied
-sum(copied$bytes)  # total bytes
+# Offline, self-contained: a bare git repo stands in for GitHub and two
+# local directories for the source and destination object stores.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+  from_conn <- datom_get_conn(file.path(tmp, "repo"), store)
+  datom_write(from_conn, data = datom_example_data("dm"), name = "dm")
+
+  # The destination is addressed with a reader connection: no local repo,
+  # just a store plus the project name.
+  to_store <- datom_store(data = datom_store_local(file.path(tmp, "storage2")))
+  to_conn <- datom_get_conn(store = to_store, project_name = "example_project")
+
+  copied <- datom_storage_copy(from_conn, to_conn)
+  nrow(copied)      # number of objects copied
+  sum(copied$bytes) # total bytes
+
+  unlink(tmp, recursive = TRUE)
 }
 }
 \seealso{
