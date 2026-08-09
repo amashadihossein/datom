@@ -1,6 +1,7 @@
 ## Resubmission
 
-This is a resubmission. Thank you for the review.
+This is a resubmission, version bumped 0.1.0 -> 0.1.1. Thank you for the
+review.
 
 * Removed the `\examples` sections from the two unexported functions that had
   them, `.datom_build_storage_key()` and `.datom_parse_s3_uri()`.
