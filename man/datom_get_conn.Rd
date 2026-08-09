@@ -33,21 +33,30 @@ S3 config. Cross-checks bucket/prefix between yaml and store.
 provides everything.
 }
 \examples{
-\dontrun{
-tmp <- tempfile("datom_conn_")
-store <- datom_store(
-  data = datom_store_local(path = file.path(tmp, "storage")),
-  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-  data_repo_url = "https://github.com/example/my-project",
-  validate = FALSE
-)
-datom_init_repo(
-  path = file.path(tmp, "repo"),
-  project_name = "example_project",
-  store = store
-)
-conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-conn
-unlink(tmp, recursive = TRUE)
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+
+  # Developer: local repo plus store.
+  conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
+  print(conn)
+
+  # Reader: store plus project name, no local repo.
+  reader_store <- datom_store(data = datom_store_local(file.path(tmp, "storage")))
+  print(datom_get_conn(store = reader_store, project_name = "example_project"))
+
+  unlink(tmp, recursive = TRUE)
 }
 }

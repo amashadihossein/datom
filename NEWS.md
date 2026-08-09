@@ -1,4 +1,4 @@
-# datom 0.1.0
+# datom 0.1.1
 
 Initial CRAN release. `datom` provides version-controlled data management for
 reproducible scientific and clinical workflows — tables are tracked as code in

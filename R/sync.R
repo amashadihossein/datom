@@ -19,22 +19,27 @@
 #'   }
 #'
 #' @examples
-#' \dontrun{
-#' tmp <- tempfile("datom_pull_")
-#' store <- datom_store(
-#'   data = datom_store_local(path = file.path(tmp, "storage")),
-#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-#'   data_repo_url = "https://github.com/example/my-project",
-#'   validate = FALSE
-#' )
-#' datom_init_repo(
-#'   path = file.path(tmp, "repo"),
-#'   project_name = "example_project",
-#'   store = store
-#' )
-#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-#' datom_pull(conn)
-#' unlink(tmp, recursive = TRUE)
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   # Nothing new on the remote yet, so this is a no-op.
+#'   datom_pull(conn)
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 #' @export
 datom_pull <- function(conn) {
@@ -269,30 +274,33 @@ datom_pull <- function(conn) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' tmp <- tempfile("datom_sync_")
-#' store <- datom_store(
-#'   data = datom_store_local(path = file.path(tmp, "storage")),
-#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-#'   data_repo_url = "https://github.com/example/my-project",
-#'   validate = FALSE
-#' )
-#' datom_init_repo(
-#'   path = file.path(tmp, "repo"),
-#'   project_name = "example_project",
-#'   store = store
-#' )
-#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-#' # Copy example CSVs into the input_files directory
-#' input_dir <- file.path(tmp, "repo", "input_files")
-#' dir.create(input_dir)
-#' file.copy(
-#'   system.file("extdata/dm.csv", package = "datom"),
-#'   file.path(input_dir, "dm.csv")
-#' )
-#' manifest <- datom_sync_manifest(conn)
-#' manifest
-#' unlink(tmp, recursive = TRUE)
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   # Drop a source file into the repo's input_files/ directory.
+#'   file.copy(
+#'     system.file("extdata", "dm.csv", package = "datom"),
+#'     file.path(tmp, "repo", "input_files", "dm.csv")
+#'   )
+#'
+#'   manifest <- datom_sync_manifest(conn)
+#'   print(manifest[, c("name", "format", "status")])
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_sync_manifest <- function(conn,
                                path = NULL,
@@ -443,30 +451,35 @@ datom_sync_manifest <- function(conn,
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' tmp <- tempfile("datom_sync_")
-#' store <- datom_store(
-#'   data = datom_store_local(path = file.path(tmp, "storage")),
-#'   github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-#'   data_repo_url = "https://github.com/example/my-project",
-#'   validate = FALSE
-#' )
-#' datom_init_repo(
-#'   path = file.path(tmp, "repo"),
-#'   project_name = "example_project",
-#'   store = store
-#' )
-#' conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-#' input_dir <- file.path(tmp, "repo", "input_files")
-#' dir.create(input_dir)
-#' file.copy(
-#'   system.file("extdata/dm.csv", package = "datom"),
-#'   file.path(input_dir, "dm.csv")
-#' )
-#' manifest <- datom_sync_manifest(conn)
-#' result <- datom_sync(conn, manifest)
-#' result[, c("name", "status", "result")]
-#' unlink(tmp, recursive = TRUE)
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage. File import needs the optional
+#' # rio package.
+#' if (requireNamespace("git2r", quietly = TRUE) &&
+#'     requireNamespace("rio", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   file.copy(
+#'     system.file("extdata", "dm.csv", package = "datom"),
+#'     file.path(tmp, "repo", "input_files", "dm.csv")
+#'   )
+#'
+#'   manifest <- datom_sync_manifest(conn)
+#'   result <- datom_sync(conn, manifest)
+#'   print(result[, c("name", "status", "result")])
+#'
+#'   unlink(tmp, recursive = TRUE)
 #' }
 datom_sync <- function(conn,
                       manifest,
