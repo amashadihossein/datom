@@ -22,21 +22,23 @@ below.
 
 0 errors | 0 warnings | 1 note
 
-* This is a new submission, so CRAN's incoming checks report the standard
-  "New submission" / maintainer NOTE.
+The single NOTE is the incoming-checks note and covers two items: the standard
+"New submission" / maintainer flag, and one possibly-misspelled word in the
+Description (see Spelling below).
 
 ## Test environments
 
-* win-builder, R Under development (unstable) (2026-07-26 r90304 ucrt),
-  x86_64-w64-mingw32 -- Status: 1 NOTE (New submission only)
-* macOS (aarch64), R 4.6.1
-* ubuntu-latest (GitHub Actions), R-devel
-* ubuntu-latest (GitHub Actions), R 4.6.1 (release)
-* ubuntu-latest (GitHub Actions), R 4.5.3 (oldrel-1)
-* windows-latest (GitHub Actions), R 4.6.1
+* win-builder, R Under development (unstable) (2026-08-08 r90381 ucrt),
+  x86_64-w64-mingw32 -- Status: 1 NOTE (as above)
+* local macOS (aarch64), R 4.5.2
+* GitHub Actions:
+  * macos-latest, R 4.6.1
+  * windows-latest, R 4.6.1
+  * ubuntu-latest, R 4.6.1 (release)
+  * ubuntu-latest, R 4.5.3 (oldrel-1)
+  * ubuntu-latest, R Under development (unstable) (2026-06-21 r90185)
 
-All environments report 0 errors and 0 warnings. The only NOTE on
-win-builder R-devel is the incoming-checks "New submission" note.
+All environments report 0 errors and 0 warnings.
 
 ## Spelling
 
