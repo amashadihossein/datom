@@ -18,14 +18,9 @@ Extracts bucket and prefix from an `s3://` URI.
 
 Named list with `bucket` (character) and `prefix` (character or NULL).
 
-## Examples
+## Details
 
-``` r
-if (FALSE) { # \dontrun{
-.datom_parse_s3_uri("s3://my-bucket/data/proj")
-# → list(bucket = "my-bucket", prefix = "data/proj")
+Mapping from URI to components, for reference:
 
-.datom_parse_s3_uri("s3://my-bucket")
-# → list(bucket = "my-bucket", prefix = NULL)
-} # }
-```
+    "s3://my-bucket/data/proj" -> list(bucket = "my-bucket", prefix = "data/proj")
+    "s3://my-bucket"           -> list(bucket = "my-bucket", prefix = NULL)

@@ -36,22 +36,31 @@ Data frame with table info (name, current_version, last_updated, etc.).
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-tmp <- tempfile("datom_list_")
-store <- datom_store(
-  data = datom_store_local(path = file.path(tmp, "storage")),
-  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-  data_repo_url = "https://github.com/example/my-project",
-  validate = FALSE
-)
-datom_init_repo(
-  path = file.path(tmp, "repo"),
-  project_name = "example_project",
-  store = store
-)
-conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-datom_write(conn, data = datom_example_data("dm"), name = "dm")
-datom_list(conn)
-unlink(tmp, recursive = TRUE)
-} # }
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+  conn <- datom_get_conn(file.path(tmp, "repo"), store)
+
+  datom_write(conn, data = datom_example_data("dm"), name = "dm")
+  print(datom_list(conn))
+
+  unlink(tmp, recursive = TRUE)
+}
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b3365ec8b7d/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmprkodKH/datom-example-1b3365ec8b7d/repo
+#> ✔ Wrote "dm" (full): "039f0c3f"
+#>   name current_version current_data_sha         last_updated
+#> 1   dm        039f0c3f         71a93ffa 2026-08-09T02:20:36Z
 ```

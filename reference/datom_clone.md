@@ -43,11 +43,32 @@ uncommitted changes causes an error to avoid surprising state.
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-conn <- datom_clone(
-  path = "study_001_data",
-  store = my_store
-)
-datom_pull(conn)
-} # }
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+
+  # A teammate joins the project from the remote alone.
+  conn <- datom_clone(path = file.path(tmp, "teammate"), store = store)
+  print(datom_list(conn))
+
+  unlink(tmp, recursive = TRUE)
+}
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b334b696003/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmprkodKH/datom-example-1b334b696003/repo
+#> cloning into '/tmp/RtmprkodKH/datom-example-1b334b696003/teammate'...
+#> ✔ Cloned "example_project" to /tmp/RtmprkodKH/datom-example-1b334b696003/teammate
+#> [1] name            current_version last_updated   
+#> <0 rows> (or 0-length row.names)
 ```

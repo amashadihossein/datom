@@ -37,22 +37,35 @@ commit_message.
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-tmp <- tempfile("datom_hist_")
-store <- datom_store(
-  data = datom_store_local(path = file.path(tmp, "storage")),
-  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-  data_repo_url = "https://github.com/example/my-project",
-  validate = FALSE
-)
-datom_init_repo(
-  path = file.path(tmp, "repo"),
-  project_name = "example_project",
-  store = store
-)
-conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-datom_write(conn, data = datom_example_data("dm"), name = "dm")
-datom_history(conn, "dm")
-unlink(tmp, recursive = TRUE)
-} # }
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+  conn <- datom_get_conn(file.path(tmp, "repo"), store)
+
+  datom_write(conn, data = datom_example_data("dm"), name = "dm")
+  print(datom_history(conn, "dm"))
+
+  unlink(tmp, recursive = TRUE)
+}
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b3337c35c81/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmprkodKH/datom-example-1b3337c35c81/repo
+#> ✔ Wrote "dm" (full): "039f0c3f"
+#>                                                            version
+#> 1 039f0c3fc4d639b4977f44e83df863da9535e70df737cc758747bda8bd2d89d8
+#>                                                           data_sha
+#> 1 71a93ffaa4cdc59750a5d5fbf49bb4ffcd656f00038cae2849958acae622b538
+#>              timestamp                author commit_message
+#> 1 2026-08-09T02:20:36Z datom <datom@noreply>      Update dm
 ```

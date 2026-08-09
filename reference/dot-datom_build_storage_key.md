@@ -24,24 +24,18 @@ per the storage structure convention.
 
 Character string S3 key.
 
-## Examples
+## Details
 
-``` r
-if (FALSE) { # \dontrun{
-# Data file
-.datom_build_storage_key("proj", "customers", "abc123.parquet")
-# → "proj/datom/customers/abc123.parquet"
+Mapping from arguments to key, for reference:
 
-# Table metadata
-.datom_build_storage_key("proj", "customers", ".metadata", "metadata.json")
-# → "proj/datom/customers/.metadata/metadata.json"
+    ("proj", "customers", "abc123.parquet")
+      -> "proj/datom/customers/abc123.parquet"
 
-# Repo-level metadata
-.datom_build_storage_key("proj", ".metadata", "dispatch.json")
-# → "proj/datom/.metadata/dispatch.json"
+    ("proj", "customers", ".metadata", "metadata.json")
+      -> "proj/datom/customers/.metadata/metadata.json"
 
-# No prefix
-.datom_build_storage_key(NULL, "customers", "abc123.parquet")
-# → "datom/customers/abc123.parquet"
-} # }
-```
+    ("proj", ".metadata", "dispatch.json")
+      -> "proj/datom/.metadata/dispatch.json"
+
+    (NULL, "customers", "abc123.parquet")
+      -> "datom/customers/abc123.parquet"

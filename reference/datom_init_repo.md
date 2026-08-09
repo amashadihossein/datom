@@ -77,19 +77,31 @@ attached later via the governance layer (`gov_attach()`).
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-tmp <- tempfile("datom_init_")
-store <- datom_store(
-  data = datom_store_local(path = file.path(tmp, "storage")),
-  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-  data_repo_url = "https://github.com/example/my-project",
-  validate = FALSE
-)
-datom_init_repo(
-  path = file.path(tmp, "repo"),
-  project_name = "example_project",
-  store = store
-)
-unlink(tmp, recursive = TRUE)
-} # }
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+
+  datom_init_repo(
+    path = file.path(tmp, "repo"),
+    project_name = "example_project",
+    store = store
+  )
+  print(list.files(file.path(tmp, "repo"), all.files = TRUE, no.. = TRUE))
+
+  unlink(tmp, recursive = TRUE)
+}
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b3321439a04/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmprkodKH/datom-example-1b3321439a04/repo
+#> [1] ".datom"      ".git"        ".gitignore"  "README.md"   "input_files"
 ```

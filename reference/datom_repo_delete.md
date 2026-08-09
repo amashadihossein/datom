@@ -62,9 +62,34 @@ Each step is warn-and-continue on failure so the other still runs.
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-# Solo project teardown (no governance)
-datom_storage_delete_prefix(conn)
-datom_repo_delete(conn, confirm = conn$project_name)
-} # }
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage. Because the remote is not GitHub,
+# the API deletion step is skipped and only the local clone is removed.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+  conn <- datom_get_conn(file.path(tmp, "repo"), store)
+
+  # Solo project teardown (no governance): storage, then repo.
+  datom_storage_delete_prefix(conn)
+  datom_repo_delete(conn, confirm = conn$project_name)
+
+  unlink(tmp, recursive = TRUE)
+}
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b3370de950d/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmprkodKH/datom-example-1b3370de950d/repo
+#> ℹ Deleting data repo for "example_project"...
+#> ℹ No GitHub remote found -- skipping repo deletion.
+#> ℹ Removing local clone /tmp/RtmprkodKH/datom-example-1b3370de950d/repo...
+#> ✔ Removed local clone.
 ```

@@ -46,9 +46,23 @@ listing.
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-# Requires a governance store and registered projects.
-# datom_projects(conn)
-# datom_projects(store)
-} # }
+# A governance store backed by a local directory. Projects are registered
+# into it by the companion governance package (datomanager), so a freshly
+# created governance store lists an empty portfolio.
+tmp <- tempfile("datom-example-")
+gov <- datom_store_local(file.path(tmp, "gov-storage"))
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b33655fd357/gov-storage.
+
+store <- datom_store(
+  governance   = gov,
+  data         = datom_store_local(file.path(tmp, "storage")),
+  gov_repo_url = "https://github.com/example/acme-gov"
+)
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b33655fd357/storage.
+
+datom_projects(store)
+#> [1] name          data_backend  data_root     data_prefix   registered_at
+#> <0 rows> (or 0-length row.names)
+
+unlink(tmp, recursive = TRUE)
 ```

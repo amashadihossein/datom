@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -44,11 +44,11 @@
     </div>
 
     <div class="section level2">
-<h2 class="pkg-version" data-toc-text="0.1.0" id="datom-010">datom 0.1.0<a class="anchor" aria-label="anchor" href="#datom-010"></a></h2>
+<h2 class="pkg-version" data-toc-text="0.1.1" id="datom-011">datom 0.1.1<a class="anchor" aria-label="anchor" href="#datom-011"></a></h2>
 <p>Initial CRAN release. <code>datom</code> provides version-controlled data management for reproducible scientific and clinical workflows — tables are tracked as code in git while actual data lives in cloud storage (S3) or a local filesystem backend.</p>
 <p>datom is experimental: the API may change without a deprecation cycle until it reaches a stable release.</p>
 <div class="section level3">
-<h3 id="table-identity-the-datom-cv1-canonical-hash-0-1-0">Table identity: the <code>datom-cv1</code> canonical hash<a class="anchor" aria-label="anchor" href="#table-identity-the-datom-cv1-canonical-hash-0-1-0"></a></h3>
+<h3 id="table-identity-the-datom-cv1-canonical-hash-0-1-1">Table identity: the <code>datom-cv1</code> canonical hash<a class="anchor" aria-label="anchor" href="#table-identity-the-datom-cv1-canonical-hash-0-1-1"></a></h3>
 <p>Table identity is defined by a canonical hash of a table’s <strong>values</strong> (<code>datom-cv1</code>), not by the bytes of its parquet serialization. Hashing the serialization tied identity to the writer: an <code>arrow</code> upgrade or a different compression default produced different bytes for identical data, and therefore a spurious new version. See <code><a href="../articles/design-version-shas.html">vignette("design-version-shas")</a></code> for the model and the identity decisions.</p>
 <ul><li>
 <strong>Pre-release <code>data_sha</code> values change, and there is no migration path.</strong> Any table written by a pre-release build carries a <code>data_sha</code> computed by the old algorithm. Those values are not recomputed, converted, or reconciled — pilots should re-onboard their data.</li>
@@ -57,7 +57,7 @@
 <code>metadata.json</code> gains <code>hash_algo</code>, <code>parquet_sha</code>, and <code>column_hashes</code> — an ordered per-column digest index from which <code>data_sha</code> can be re-derived without downloading data.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="deliberate-narrowings-0-1-0">Deliberate narrowings<a class="anchor" aria-label="anchor" href="#deliberate-narrowings-0-1-0"></a></h3>
+<h3 id="deliberate-narrowings-0-1-1">Deliberate narrowings<a class="anchor" aria-label="anchor" href="#deliberate-narrowings-0-1-1"></a></h3>
 <p>Three capabilities were narrowed on purpose relative to pre-release behaviour.</p>
 <ul><li>
 <p><strong>List and exotic columns are refused.</strong> A column must be a supported atomic type; list columns and exotic classes now abort the write with actionable</p>
@@ -67,7 +67,7 @@
 <li><p><strong>Internal <code>sort_columns</code> / <code>sort_rows</code> removed.</strong> Row and column order are significant; sort explicitly before writing if order should not matter.</p></li>
 </ul></div>
 <div class="section level3">
-<h3 id="full-api-0-1-0">Full API<a class="anchor" aria-label="anchor" href="#full-api-0-1-0"></a></h3>
+<h3 id="full-api-0-1-1">Full API<a class="anchor" aria-label="anchor" href="#full-api-0-1-1"></a></h3>
 <p>See the <a href="https://amashadihossein.github.io/datom/reference/">reference index</a> for the complete exported surface at 0.1.0.</p>
 </div>
 </div>

@@ -65,15 +65,50 @@ A data frame with columns:
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-copied <- datom_storage_copy(from_conn, to_conn)
-# Verify all copied objects structurally (default, fast)
-results <- datom_storage_verify(from_conn, to_conn)
-all(results$ok)
+# Offline, self-contained: a bare git repo stands in for GitHub and two
+# local directories for the source and destination object stores.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
 
-# Verify a subset with full content hash
-results <- datom_storage_verify(from_conn, to_conn,
-                                keys  = copied$key[1:10],
-                                mode  = "content")
-} # }
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+  from_conn <- datom_get_conn(file.path(tmp, "repo"), store)
+  datom_write(from_conn, data = datom_example_data("dm"), name = "dm")
+
+  to_store <- datom_store(data = datom_store_local(file.path(tmp, "storage2")))
+  to_conn <- datom_get_conn(store = to_store, project_name = "example_project")
+  copied <- datom_storage_copy(from_conn, to_conn)
+
+  # Verify all copied objects structurally (default, fast)
+  results <- datom_storage_verify(from_conn, to_conn)
+  print(all(results$ok))
+
+  # Verify a subset with full content hash
+  print(datom_storage_verify(from_conn, to_conn,
+                             keys = copied$key[1],
+                             mode = "content"))
+
+  unlink(tmp, recursive = TRUE)
+}
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b3344168bec/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmprkodKH/datom-example-1b3344168bec/repo
+#> ✔ Wrote "dm" (full): "039f0c3f"
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b3344168bec/storage2.
+#> ℹ Copying 5 objects ("local" -> "local")...
+#> ✔ Copied 5 objects (10,493 bytes total).
+#> ℹ Verifying 5 objects -- "structural (size)" mode...
+#> ✔ All 5 objects verified successfully.
+#> [1] TRUE
+#> ℹ Verifying 1 object -- "content (hash)" mode...
+#> ✔ All 1 object verified successfully.
+#>                       key   ok issue
+#> 1 .metadata/manifest.json TRUE  <NA>
 ```

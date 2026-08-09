@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -65,18 +65,13 @@
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>Named list with <code>bucket</code> (character) and <code>prefix</code> (character or NULL).</p>
     </div>
-
     <div class="section level2">
-    <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="cn">FALSE</span><span class="op">)</span> <span class="op">{</span> <span class="co"># \dontrun{</span></span></span>
-<span class="r-in"><span><span class="fu">.datom_parse_s3_uri</span><span class="op">(</span><span class="st">"s3://my-bucket/data/proj"</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="co"># → list(bucket = "my-bucket", prefix = "data/proj")</span></span></span>
-<span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="fu">.datom_parse_s3_uri</span><span class="op">(</span><span class="st">"s3://my-bucket"</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="co"># → list(bucket = "my-bucket", prefix = NULL)</span></span></span>
-<span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>
-</code></pre></div>
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>Mapping from URI to components, for reference:</p>
+<p></p><div class="sourceCode"><pre><code><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="st">"s3://my-bucket/data/proj"</span> <span class="ot">-&gt;</span> <span class="fu">list</span>(<span class="at">bucket =</span> <span class="st">"my-bucket"</span>, <span class="at">prefix =</span> <span class="st">"data/proj"</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="st">"s3://my-bucket"</span>           <span class="ot">-&gt;</span> <span class="fu">list</span>(<span class="at">bucket =</span> <span class="st">"my-bucket"</span>, <span class="at">prefix =</span> <span class="cn">NULL</span>)</span></code></pre><p></p></div>
     </div>
+
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
 

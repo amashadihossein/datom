@@ -44,21 +44,31 @@ A list with:
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-tmp <- tempfile("datom_validate_")
-store <- datom_store(
-  data = datom_store_local(path = file.path(tmp, "storage")),
-  github_pat = "ghp_examplePATforDemoPurposesOnly1234",
-  data_repo_url = "https://github.com/example/my-project",
-  validate = FALSE
-)
-datom_init_repo(
-  path = file.path(tmp, "repo"),
-  project_name = "example_project",
-  store = store
-)
-conn <- datom_get_conn(path = file.path(tmp, "repo"), store = store)
-datom_validate(conn)
-unlink(tmp, recursive = TRUE)
-} # }
+# Offline, self-contained: a bare git repo stands in for GitHub and a
+# local directory for object storage.
+if (requireNamespace("git2r", quietly = TRUE)) {
+  tmp <- tempfile("datom-example-")
+  remote <- file.path(tmp, "remote.git")
+  dir.create(remote, recursive = TRUE)
+  git2r::init(remote, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(file.path(tmp, "storage")),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+  conn <- datom_get_conn(file.path(tmp, "repo"), store)
+
+  datom_write(conn, data = datom_example_data("dm"), name = "dm")
+  datom_validate(conn)
+
+  unlink(tmp, recursive = TRUE)
+}
+#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b33c5356cf/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmprkodKH/datom-example-1b33c5356cf/repo
+#> ✔ Wrote "dm" (full): "039f0c3f"
+#> ℹ No governance attached -- skipping dispatch/ref/migration_history checks.
+#> ✔ All checks passed. Git and S3 are consistent.
 ```
