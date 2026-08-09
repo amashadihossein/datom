@@ -60,6 +60,60 @@ A unit of work is a **Kiro spec** under `.kiro/specs/{feature}/` (see Workflow m
 | Current work, tasks, decisions | `.kiro/specs/{feature}/` | Persists |
 | Implementation gotchas discovered | `dev/engineering-notes.md` | Persists |
 
+## Branching During CRAN Submission
+
+When a version has been submitted to CRAN and is awaiting acceptance, we freeze
+`main` and develop on a long-lived `dev` branch.
+
+### Why
+
+If CRAN requests a surgical fix, we need `main` to reflect exactly what was
+submitted so the fix can be applied cleanly and resubmitted without dragging in
+unrelated work. Meanwhile, feature development continues on `dev` as the
+single aggregation point.
+
+### Branch roles
+
+| Branch | Purpose | Who merges into it |
+|--------|---------|-------------------|
+| `main` | Frozen at the submitted state. pkgdown deploys from here. `install_github()` installs from here. | Only: (a) CRAN-requested fixes, or (b) `dev` merge after acceptance. |
+| `dev` | Aggregator for ongoing work while submission is in flight. | Feature branches PR into `dev`. |
+| `issue-{N}-*` / `spec/*` | Feature branches, same as before. | PR into **`dev`** (not `main`) during submission freeze. |
+
+### Workflow
+
+1. **Normal development (no pending submission):** feature branches off `main`,
+   PR into `main`. The `dev` branch does not exist or is deleted.
+
+2. **Submission pending:**
+   - `dev` is created off `main` at the submitted commit.
+   - Feature branches branch off `dev` and PR into `dev`.
+   - `main` is not touched unless CRAN requests a fix.
+
+3. **CRAN requests a fix:**
+   - Fix is committed directly on `main` (or via a short-lived branch off
+     `main`).
+   - Rebuild tarball from `main`, resubmit.
+   - Merge the fix into `dev` so they don't diverge:
+     `git checkout dev && git merge main`.
+
+4. **Acceptance:**
+   - Merge `dev` into `main`: `git checkout main && git merge dev`.
+   - Tag the release if desired.
+   - Delete the `dev` branch (local + remote).
+   - Resume normal workflow (feature branches off `main`).
+
+### Constraints
+
+- **pkgdown** always deploys from `main`. Vignette previews during development
+  require a local build (`pkgdown::build_site()`).
+- **GitHub default branch** stays `main` — this is what `install_github()`
+  resolves and what new clones check out.
+- **`CRAN-SUBMISSION`** on `main` records the submitted SHA. `devtools::submit_cran()`
+  regenerates it on each submission.
+
+---
+
 ## Current Development State
 
 ### Active Specs
