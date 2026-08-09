@@ -448,7 +448,7 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 | `version` | metadata_sha — the datom version identifier. **Never appears twice** in a table's history (see the dedup guard below). |
 | `data_sha` | Canonical `datom-cv1` content hash, which is also the storage address |
 | `parquet_sha` | SHA-256 of the stored parquet object for this version. **Nullable** — absent for pre-`datom-cv1` entries. Powers version-pinned read integrity and the revert-to-older reuse scan (`.datom_lookup_history_parquet_sha()`), which is why the *history* must carry it and not only the current pointer. |
-| `original_file_sha` | SHA-256 of the source file's bytes (CSV, TSV, etc.). **Nullable** — present for imported tables (`datom_sync`); absent for derived tables (`datom_write`). Enables skip optimization: scan history for matching file SHA to avoid re-importing unchanged source files, even across version rollbacks. Since `datom-cv1` it is also recorded in `metadata.json` (semantic, so a new source file is a new version). |
+| `original_file_sha` | SHA-256 of the source file's bytes (CSV, TSV, etc.). **Nullable** — present for imported tables (`datom_sync`); absent for derived tables (`datom_write`). Enables ingest-side skip: `datom_sync_manifest()` compares each scanned file's SHA against the current value in `.datom/manifest.json`; a match reports `unchanged` and no parse, hash, upload, or commit occurs. The comparison is latest-only (not a scan of `version_history.json`), so a rollback to a previously-onboarded file re-imports it. Extending to a full-history lookup is proposed in #93. Since `datom-cv1` it is also recorded in `metadata.json` (semantic, so a new source file is a new version). |
 | `timestamp` | ISO timestamp of creation |
 | `author` | Git author (name or email) |
 | `commit_message` | Descriptive message for this version |
@@ -1532,6 +1532,7 @@ class DataProduct:
 - Single comparison detects any change
 - Enables efficient updates and deduplication
 - `original_file_sha` is recorded in both `version_history.json` and `metadata.json` (since `datom-cv1`). It is semantic, so a re-export of identical content under a new file SHA classifies as `metadata_only`: a new version is recorded, the provenance is updated, and the parquet is **not** re-uploaded.
+- Ingest-side skip (file level). `datom_sync_manifest()` compares each scanned file's `original_file_sha` against the single current value for that table in `.datom/manifest.json`; a match reports `unchanged` and `datom_sync()` never calls `.datom_import_file()`, so no parse, no `data_sha`, no upload, no commit. Because the manifest is committed to git, this also covers a second developer who pulls and re-scans the same file — they do not re-parse it. Limit: the comparison is latest-only, not a scan of every `original_file_sha` in `version_history.json`, so a rollback to a previously-onboarded file re-imports it. Extending this to a full-history lookup is tracked in #93.
 - Change detection reads from **S3** (the final destination), so incomplete round-trips are re-detected on re-run
 
 ### Conflict Resolution
