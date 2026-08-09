@@ -406,6 +406,67 @@ parser, not of datom, and it affects any analysis reading that CSV with or
 without datom. What datom adds is that the difference becomes *visible* instead
 of silent.
 
+## Derived columns: when arithmetic breaks cross-platform identity
+
+The parsing caveat above is about *text to doubles*. A separate exposure
+exists for *doubles to doubles*: computing new columns from existing ones.
+
+### The guarantee direction
+
+The key framing for both cases:
+
+| Scenario | Possible? | Consequence |
+|---|---|---|
+| same content → different identity | Yes (wasteful, not harmful) | duplicate storage, never corruption |
+| different content → same identity | **Never** | the property that matters is preserved |
+
+datom is over-strict, never under-strict. When two platforms produce different
+`data_sha` values for the "same" pipeline, both are correct — they genuinely
+hold different doubles. No hash can paper over an arithmetic difference that
+already happened.
+
+### Which operations are stable
+
+Not all floating-point work is equally portable. The dividing line is whether
+the operation's result is **fully specified by IEEE 754** or left to the
+implementation:
+
+| Category | Examples | Cross-platform identity |
+|---|---|---|
+| Data movement | join, filter, reshape, select, bind | **Stable** — no arithmetic, bits unchanged |
+| IEEE basic ops | `+`, `-`, `*`, `/`, `sqrt` | **Stable** — IEEE 754 mandates a unique correctly-rounded result |
+| Reductions | `sum()`, `mean()`, `cumsum()` | **Unstable** — accumulation order and intermediate precision vary |
+| Transcendentals | `exp()`, `log()`, `sin()`, `cos()` | **Unstable** — IEEE 754 does not mandate correct rounding; libm implementations differ |
+| BLAS / linear algebra | `%*%`, `crossprod()`, `solve()` | **Unstable** — tiling, FMA, and parallelism differ across BLAS builds |
+
+A pipeline that only moves data and applies basic arithmetic produces
+identical `data_sha` everywhere. One that calls `sum()` or `log()` on the
+same inputs can produce last-bit differences across platforms — and therefore
+different hashes.
+
+### Cross-language note
+
+Even on a *single* machine, two languages can disagree. R's `sum()` and
+`numpy.sum()` accumulate in different orders and with different intermediate
+widths, so they produce different doubles from the same input vector. An
+implementation of `datom-cv1` in another language therefore reproduces the hash
+of *given doubles* — it does not reproduce the arithmetic that produced them.
+If you derive a column in R and then re-derive it in Python, expect different
+`data_sha` values even on the same hardware, unless the derivation uses only
+IEEE basic ops.
+
+### Practical advice
+
+- **Pure data movement and basic arithmetic are safe.** Joins, filters,
+  reshapes, and simple formulas (`price * quantity`) are portable.
+- **If your pipeline uses reductions or transcendentals**, keep the deriving
+  platform fixed for a given table — same as the parsing advice above.
+- **For cross-platform reproducibility of derived columns**, consider computing
+  them once and storing the result (via `datom_write()`), rather than
+  recomputing on each platform.
+- **Remember the guarantee direction.** A duplicate `data_sha` is wasted
+  storage, not data corruption. The system is safe by design.
+
 ## What you can rely on
 
 - A version is uniquely identified by its `metadata_sha`, and that SHA never
