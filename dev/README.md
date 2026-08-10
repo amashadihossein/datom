@@ -122,7 +122,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| _none_ | | Next unit of work not yet scoped. See the Backlog below. | |
+| datom-sets | 2026-08-09 | **Spec written, awaiting review before Task 1.** Issue [#89](https://github.com/amashadihossein/datom/issues/89): second artifact kind -- versioned, citable **sets** of datoms (a reference layer, not a data layer). Branch `spec/datom-sets` off `dev`, PRs into `dev` (submission freeze). Prerequisite [#95](https://github.com/amashadihossein/datom/issues/95) landed separately via PR #96. 13 tasks; two flagged for **Model Escalation** at plan time: Task 2 (`datom-sv1` canonical set-content hash -- gates the golden vectors) and Task 5 (`manifest$tables` -> `manifest$artifacts` -- 8 call sites across 4 files, silent writer/reader-disagreement failure mode). Test baseline 2460. | [.kiro/specs/datom-sets/](../.kiro/specs/datom-sets/) |
 
 ### Drafts (queued, not active)
 
