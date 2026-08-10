@@ -17,7 +17,7 @@ written (`dev` @ `b57cdba`). **Cite these rather than re-deriving them.**
 | `datom_parent(conn, table, version)` | `R/lineage.R` (end of file) | The pattern `datom_member()` mirrors: validate name, validate version as a SHA, read the versioned snapshot at `{table}/.metadata/{version}.json`, return a pure-data record with no live connection. |
 | `.datom_validate_parents()` | `R/utils-sha.R:59-` | The validator pattern for a reference-record list, including the `remedy` string that points every failure back at the constructor. `datom_member()`'s validator mirrors this. |
 | `parquet_sha` persistence in history | `R/read_write.R`, `.datom_write_metadata_local()` conditional-add block; read back in `.datom_resolve_version()` at `R/read_write.R:177` | **Already implemented.** The `document_sha` requirement (R7.2) mirrors this exact conditional-add pattern. |
-| Stale docstring | `R/read_write.R:95-97` (plus `@param parquet_sha` on `.datom_read_parquet()` and the comment in `.datom_resolve_parquet_sha()`) | Claims history does not yet persist `parquet_sha` "(task 5.1)". False since #72. Fix as part of this work (R13.3). This is what misled an earlier draft of #89. |
+| Stale "task 5.1" docstrings | `R/read_write.R:105-108`, `205-206`, `413` (stale) and `393` (already correct, hence contradicting) | Claims history does not yet persist `parquet_sha`. False since #72. **#89 cited `95-97`, which is the function title, not the stale text** -- corrected here from `grep -n "task 5\.1"`. Four sites; see R13.3 for the table. This is what misled an earlier draft of #89. |
 | Hardcoded parquet-existence check | `R/validate.R:386` in `.datom_validate_one_table()` | `data_key <- paste0(name, "/", meta$data_sha, ".parquet")`. Needs the `kind` branch (R11). |
 | `volatile` exclusion list | `R/utils-sha.R:411-412` | `c("created_at", "datom_version", "parquet_sha", "column_hashes", "size_bytes")`. `schema_version` (R9.3) and `document_sha` (R7.4) join it. |
 | `datom_read()` never touches the manifest | `R/read_write.R:44-58` | Confirmed: `.datom_read_metadata()` -> `.datom_resolve_version()` -> `.datom_read_parquet()`. This is why the schema gate needs **two** sites (R9.2) and why the `artifacts` rename is discovery-only. |
@@ -111,9 +111,14 @@ Tags, descriptions, and view config go **in the payload**, not into a parallel m
 | `nrow`/`ncol`/`colnames` | present | **omitted** | Table-shaped |
 | `column_hashes` | present | **omitted** | Table-shaped; volatile |
 | `parents` / `source_lineage` | conditional | **omitted** | Section 3 |
-| `size_bytes` | present | present | Payload byte size; volatile |
+| `size_bytes` | present | **absent** | Nothing consumes it for a set: `summary$total_size_bytes` is tables-only (R8.3) and the set's manifest entry carries `member_count` instead. See R1.4. |
 | `created_at` / `datom_version` | present | present | Volatile provenance |
-| `custom` | conditional | conditional | Pass-through |
+| `custom` | conditional | **absent** | Redundant: tags / descriptions / view config live in the **payload** (R6.2). Two channels for one thing is two places to look. `datom_write_set()` has no `metadata =` parameter. See R1.4. |
+
+The set column of this matrix is exactly the seven fields of R1.3 -- the two tables are
+reconciled deliberately, because an earlier draft had the matrix granting `size_bytes` and
+`custom` while R1.3 said "exactly seven", which would have made the R1.3 acceptance test and the
+matrix mutually unsatisfiable.
 
 **Omitted, not nulled** throughout -- `jsonlite::write_json(auto_unbox = TRUE)` on a list
 containing `NULL` drops the key anyway, but the *builder* must use the conditional-assign form
@@ -171,13 +176,38 @@ walk is cheap and a runaway is caught fast. Flagged for the escalation review (s
 this is a number that is cheap to pick now and annoying to change later, since it becomes part
 of the observable contract.
 
-**Cross-project nesting caveat**: resolving a member that is itself a set in *another* project
-requires a connection scoped to that project. The write-time walk can only follow members
-reachable through the connection(s) the caller supplies. **Design decision to confirm at
-escalation**: the cycle walk is exhaustive within the current project and best-effort across
-projects (an unresolvable cross-project member is not a cycle failure -- it is reported by
-`datom_validate()` as `members_unresolvable`, R11.3). The alternative -- requiring a conn map at
-write time -- would make the common single-project case pay for the rare case.
+**Cross-project nesting**: resolving a member that is itself a set in *another* project requires a
+connection scoped to that project. The write-time walk can only follow members reachable through
+the connection the caller supplies. So the walk is **exhaustive within the current project and
+best-effort across projects** (an unresolvable cross-project member is not a cycle failure -- it
+is a `datom_validate()` finding, `members_unresolvable`, R11.3). The alternative -- requiring a
+conn map at write time -- would make the common single-project case pay for the rare case.
+
+### The consequence that write-time checks alone cannot cover
+
+Best-effort across projects means **a stored cross-project cycle is reachable**, and no write ever
+saw it coming:
+
+```
+1. Project A writes set A1 with member B1 (project B).        <- legal, B1 has no members yet
+2. Project B writes set B1 with member A1 (project A).        <- legal from B's connection;
+                                                                 A1's own members are not
+                                                                 reachable through conn B
+   => A1 -> B1 -> A1 is now stored, and both writes were correct.
+```
+
+Any recursive resolver then loops forever. **So the read side must guard, and this is a
+requirement, not defence-in-depth** (R4.4): every recursive member resolution carries a **visited
+set** and the **same depth limit**, and aborts on revisit or overrun. Applies to
+`datom_read_set()` member dispatch and `datom_validate()` member resolution. Tested by AC15.
+
+The same argument applies to **depth**: cross-project nesting can exceed the limit without any
+single write observing it, so the depth limit is enforced at read time too, not only at write
+time.
+
+This is why invariant **I10 is scoped to "within a project"** (section 13). An earlier draft
+claimed globally that "a stored set is never a cycle a reader has to defend against," which
+directly contradicted the best-effort decision above -- both could not be true.
 
 ---
 
@@ -267,12 +297,62 @@ The JSON canonicalization already used by `.datom_compute_metadata_sha()` -- rad
 `hash_algo` already exists to declare the regime and is correctly in the semantic set
 (`R/utils-sha.R`: "a new hash algorithm legitimately defines a new version").
 
+### Hard constraint discovered in review: the hash domain is the parsed-JSON model
+
+**This constrains the design below and must be honored, not merely considered.**
+
+The payload is written to git, mirrored to storage, and re-read to verify `document_sha` and to
+resolve members. So `data_sha` is computed at least twice: once from an **in-memory R object** at
+write time, once from a **parsed-JSON object** at verify/read time. Those two are not the same
+data model, and R cannot tell a scalar from a length-1 vector. Demonstrated on the branch:
+
+```r
+x <- list(a = "s", b = list("s"), c = NA_real_, d = NA_character_, e = list(1, 2))
+jsonlite::toJSON(x, auto_unbox = TRUE)
+#> {"a":"s","b":["s"],"c":"NA","d":null,"e":[1,2]}
+str(jsonlite::fromJSON(j, simplifyVector = FALSE))
+#> $ a: chr "s"          <- scalar, unchanged
+#> $ c: chr "NA"         <- NA_real_ became the STRING "NA"
+#> $ d: NULL             <- NA_character_ became null
+#> $ e: int 1, int 2     <- doubles came back as integers
+```
+
+Three type mutations in five fields. A type-tagged encoder run over the in-memory object would tag
+`c` as a **number** at write time and as a **string** at read time, producing two different
+`data_sha` values for one payload -- a **P1 and P2 violation**, and precisely the class of silent
+divergence `datom-sv1` exists to prevent.
+
+Note this is exactly why the existing `.datom_compute_metadata_sha()` basis is deliberately
+type-agnostic. Its comment says so (`R/utils-sha.R:417-419`):
+
+> JSON canonical form: type-agnostic (integer/double, vector/list all serialise identically), so
+> in-memory and S3-round-tripped metadata always produce the same hash.
+
+So type-tagging, added below to close a collision surface, **reopens the ambiguity that comment
+was written to close.** Both concerns are legitimate, which means the resolution has to be
+structural rather than a choice between them:
+
+> **Define the hash domain as the parsed-JSON data model, and normalize into it by construction:
+> serialize -> parse -> encode.** Write time and read time then agree because both hash the same
+> canonical object, and type tags remain safe because the tags are applied to post-round-trip
+> types, which are stable.
+
+The cost is one serialize+parse per hash. The payload is small and this is not a hot path.
+Open question 2 (`NA_character_` vs `""` vs `null`) is a **special case of this**, not an
+independent question.
+
 ### Proposed shape -- FOR ESCALATION REVIEW (section 12)
 
 The following is a *starting proposal*, not a settled design. It is the single most expensive
-thing in this spec to reverse, because the golden vectors freeze it.
+thing in this spec to reverse, because the golden vectors freeze it. It must satisfy the
+round-trip constraint above.
 
 ```
+data_sha = sha256( "datom-sv1" || sv1_value( parse(serialize(payload)) ) )
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                  mandatory normalization -- see the
+                                  hard constraint above
+
 sv1_value(x):
   scalar string   ->  0x01 || utf8(x)   || 0x00
   scalar number   ->  0x02 || f64le(x)              # cv1 numeric encoder, reused
@@ -282,8 +362,6 @@ sv1_value(x):
   object          ->  0x06 || f64le(n_keys) ||
                       concat( utf8(k) || 0x00 || sv1_value(v)
                               for k in sort(keys, method = "radix") )
-
-data_sha = sha256( "datom-sv1" || sv1_value(payload) )
 ```
 
 Design intent behind each choice:
@@ -320,6 +398,21 @@ accident:
 4. Does the payload embed `schema_version`? If yes, a schema bump changes every set's
    `data_sha`. **Proposal: no** -- `schema_version` lives in `metadata.json` only, consistent
    with R9.3 putting it in the `volatile` list precisely to keep it out of identity.
+5. **Which serializer defines the canonical form** that `serialize -> parse -> encode` normalizes
+   through? This is now the load-bearing question, because it decides what the golden vectors mean.
+   Two candidates:
+   - **`jsonlite::toJSON(auto_unbox = TRUE)`**, i.e. the same emitter
+     `.datom_compute_metadata_sha()` uses. Consistent with existing practice, but it makes the
+     goldens depend on a *third-party emitter's* behavior -- the exact dependency #72 removed for
+     parquet, and the concern section 16 files separately for `metadata_sha`.
+   - **An sv1-owned canonical serializer** written for the purpose (a documented, minimal JSON
+     subset emitter in the reference implementation). More code, but the goldens then depend only
+     on the spec, which is what "canonical" is supposed to mean and what
+     `dev/datom_cv1_reference.R`'s `digest`-only dependency surface achieves for cv1.
+
+   The second is more consistent with cv1's stated design properties. It is also more work. This
+   should be a conscious call at escalation, not an inherited one -- and it is coupled to the
+   section 16 concern, so deciding it may resolve that issue's direction too.
 
 ### Reference implementation + parity workflow
 
@@ -467,9 +560,24 @@ whether or not they still seem necessary by then.
 
 **Why**: cross-cutting, expensive to reverse, and it **gates the golden vectors**. Once goldens
 are published, changing the encoding requires a conscious `datom-sv2` bump, exactly as cv1
-documents. Section 7 lists four open questions that should be settled deliberately rather than
-by implementation accident (whole-payload vs member-list-only hashing; `NA_character_` vs `""`
-vs `null`; empty-set legality; whether `schema_version` enters the payload).
+documents.
+
+Section 7 now carries **one hard constraint** and **five open questions**. The constraint is not
+up for debate, only its implementation is:
+
+- **Constraint**: the hash domain is the **parsed-JSON** data model
+  (`serialize -> parse -> encode`), because the in-memory and round-tripped R objects differ in
+  type (`NA_real_` becomes the string `"NA"`; doubles return as integers) and a type-tagged
+  encoder would otherwise produce two different `data_sha` for one payload. Surfaced in review;
+  demonstrated against the branch.
+- **Q1** whole-payload vs member-list-only hashing
+- **Q2** `NA_character_` vs `""` vs `null` (a special case of the constraint)
+- **Q3** empty-set legality (AC5)
+- **Q4** whether `schema_version` enters the payload
+- **Q5** which serializer defines the canonical form -- `jsonlite`, or an sv1-owned minimal
+  emitter. **This is the load-bearing one**: choosing `jsonlite` makes the goldens depend on a
+  third-party emitter, which is the dependency #72 removed for parquet and the exposure section 16
+  files separately. It is coupled to that issue's direction.
 
 **Trigger type**: design spot-check before committing to a large or cross-cutting chunk.
 
@@ -504,7 +612,11 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I7** | Business logic **never** calls `.datom_s3_*()` or `.datom_local_*()` directly -- only `.datom_storage_*()` dispatch. |
 | **I8** | Reading a set requires **no git clone**. Storage-only readers are the primary consumer (AC1). |
 | **I9** | Any caller-influenced value spliced into a storage key passes `.datom_validate_sha()` / `.datom_validate_name()` first. |
-| **I10** | Cycle and depth checks run at **write** time. A stored set is never a cycle that a reader has to defend against. |
+| **I10** | Cycle and depth checks run at write time and are **exhaustive within a project**: a stored *same-project* set is never a cycle. Scoped deliberately -- cross-project cycles are reachable (section 5), so this invariant does **not** claim they are impossible. |
+| **I10a** | Every recursive member resolver carries a **visited set** and the depth limit, and aborts on revisit or overrun. A cross-project cycle must surface as an error, never as a hang. This is what covers the gap I10 deliberately leaves. |
+| **I13** | `data_sha` for a set is computed over the **parsed-JSON** data model, never over the raw in-memory R object. Write-time and read-time hashes agree by construction (R2.5, design section 7). |
+| **I14** | The public `datom_storage_write_json()` cannot write a datom-managed key. No public API may offer a path around git-gates-storage or around integrity verification (R12.4a). |
+| **I15** | `datom_write_set()` refuses unless the repo declares `mode: product` and the set name matches `project.yaml`'s `set:` field. Checked before any hashing or IO (R10.3a). |
 | **I11** | No credentials in the payload, metadata, manifest, or any set-related file. |
 | **I12** | `table_type` remains validated to exactly `"imported"` / `"derived"`. `kind` is a separate axis and must not be smuggled into it. |
 
@@ -530,6 +642,10 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P12** | The in-package sv1 implementation and `dev/datom_sv1_reference.R` agree on every golden, on x86_64 and arm64. |
 | **P13** | Writing a set never mutates any member's metadata, history, or manifest entry. |
 | **P14** | `datom_validate()` reports `ok` for a healthy set and a non-`ok` status naming the specific defect for a missing payload vs an unresolvable member (distinguishable, not merged). |
+| **P15** | **Round-trip agreement**: `data_sha(payload) == data_sha(parse(serialize(payload)))` for every payload, including ones containing length-1 vectors, `NA_real_`, `NA_character_`, and whole-number doubles (R2.5, AC13). |
+| **P16** | Every recursive member resolution terminates, on any stored graph, including a cross-project cycle (R4.4, AC15). |
+| **P17** | A set payload version is reconstructible from the **git clone alone**, with no storage access (R6.1b). |
+| **P18** | No sequence of public API calls, including the newly exported `datom_storage_write_json()`, can place an artifact's storage state ahead of its git state (I5, I14). |
 
 ---
 
@@ -578,3 +694,44 @@ and "we left metadata_sha hashing an emitter" cannot both be right.
 Also update the existing read route to note the `kind` branch and the `schema_version` gate.
 Every chunk records pathway impact or explicitly states "no pathway impact" (README maintenance
 rule 8).
+
+---
+
+## 18. Independent spec review -- findings and resolutions
+
+The spec was independently reviewed against the branch tip before Task 1 started. The reviewer
+audited the spec's factual claims against the code rather than only reading the prose, and
+confirmed: the unexported JSON helpers and their relative-key contract; **Deviation D1**; all
+eight manifest sites at the cited lines; the stale-docstring claim; the volatile list; the
+`datom_parent()` mirror table; the `.datom_validate_parents()` remedy pattern; `parquet_sha`
+history persistence; and that no `schema_version` or `kind` exists in the code yet.
+
+Findings accepted and resolved in the spec **before** implementation. Each was re-verified against
+the code independently rather than accepted on assertion.
+
+| # | Finding | Verified how | Resolution |
+|---|---|---|---|
+| **F1** | **I10 contradicted the cross-project cycle decision.** Section 5 said the write-time walk is best-effort across projects; I10 claimed globally that a stored set is never a cycle. Both cannot be true, and a stored cross-project cycle would make any recursive resolver loop forever. | Logical audit of the spec against itself; the A1->B1->A1 write sequence in section 5 is constructible under the stated rules. | **Accepted.** I10 scoped to "within a project"; new **R4.4** makes the read-side visited-set + depth guard a *requirement*, not defence-in-depth; new **I10a**, **P16**, **AC15**. Section 5 now spells out the two-write sequence that produces the cycle. |
+| **F2** | **sv1's type-tagging reintroduces the ambiguity `toJSON` erased.** R cannot distinguish a scalar from a length-1 vector, and the JSON round trip mutates types, so a type-tagged encoder over the in-memory object disagrees with itself over the parsed payload. | **Reproduced on the branch.** The mutation is worse than reported: `NA_real_` becomes the *string* `"NA"`, `NA_character_` becomes `null`, and doubles return as integers -- three mutations in five fields. Confirmed `R/utils-sha.R:417-419` states type-agnosticism as the deliberate reason for the existing basis. | **Accepted and elevated.** Not a fifth open question but a **hard constraint** (**R2.5**, design section 7, **I13**, **P15**, **AC13**): the hash domain is the parsed-JSON model, normalized by construction. The reviewer's Q2 is recorded as a special case of it. A genuinely new **Q5** was added -- *which* serializer defines the canonical form -- because the constraint forces that choice into the open, and it couples to section 16. |
+| **F3** | **Public `datom_storage_write_json()` could clobber managed keys**, silently bypassing git-gates-storage and integrity for datom-managed artifacts. | Read Task 3's stated hardening (conn check, key validation) and confirmed neither constrains the key namespace. | **Accepted.** **R12.4a**: the write export refuses `.metadata/` segments and payload-shaped keys under existing artifact directories; reads unrestricted. New **I14**, **P18**. Settled as a public-contract decision in the spec, not at implementation time. |
+| **F4** | **Set metadata field list was internally inconsistent** -- R1.3 said "exactly seven fields", the design section 4 matrix granted `size_bytes` and `custom`. A test written to one fails the other. | Diffed the two lists directly. | **Accepted.** Reconciled to R1.3's seven. `size_bytes` dropped because nothing consumes it for a set (`total_size_bytes` is tables-only; the entry carries `member_count`). `custom` dropped because tags/descriptions/view config live in the payload by R6.2, so a second channel means two places to look -- `datom_write_set()` gains no `metadata =` parameter. **R1.4** records both reasons; the matrix now states the reconciliation. Acceptance tightened to `setequal()` so an *added* field also fails. |
+| **F5** | **R10's "one repo = one set" had no stated enforcement**, and section 5's cycle walk assumed the set's name is known before the write -- which only holds if that check exists. | Confirmed no requirement or task specified the check. | **Accepted.** **R10.3a** adds two gates: `datom_write_set()` requires `mode: product`, and the name must equal `project.yaml`'s `set:` field. Both run before any hashing or IO. New **I15**. |
+| **F6** | `datom_read_set()` on a **table** was unspecified -- the converse of AC6. | Read R12.3. | **Accepted.** R12.3 now specifies both directions; **AC14** added. Without it, `datom_read_set()` on a healthy table reports a missing payload. |
+| **F7** | **Git-side payload layout unspecified.** `governance.json` is a singleton current-state file; a set has N immutable content-addressed payloads, so the dual-pointer pattern does not transfer wholesale. | Read `R/governance_json.R` -- confirmed singleton at `.datom/governance.json`. | **Accepted.** **R6.1a** pins the git layout to `{name}/{data_sha}.json`, matching the storage key so the two are trivially comparable. **R6.1b** decides that all historical payloads are retained in git, which is what gives "git-canonical" teeth: **P17**, any version reconstructible from the clone alone. |
+| **F8** | **AC4 mechanism** should read storage metadata, not the manifest (which can lag). | Confirmed `.datom_has_changes()` already reads `{name}/.metadata/metadata.json`. | **Accepted.** AC4 now names the mechanism and notes it costs no extra round-trip. |
+| **F9** | **R8.1's example** omits fields real entries carry, and could be read as the full schema. | Confirmed against `.datom_update_manifest_entry()` (`R/sync.R:738-747`). | **Accepted.** R8.1 marks the example illustrative and enumerates the omitted fields. |
+| **F10** | **AC7 wording** implied testing an installed 0.1.0 reader, which has no gate to fire. | Read AC7. | **Accepted.** AC7 restated to drive `.datom_check_schema_version()` with an above-`SUPPORTED_SCHEMA` fixture: test the gate, not the archaeology. |
+| **F11** | **Set versions counted nowhere**; probably intentional but unrecorded. | Read R8.3. | **Accepted as intentional, now explicit.** **R8.3a** records the omission and its reason (holding the breaking surface to one key rename), so it is not later read as an oversight. |
+| **F12** | **Stale docstring line numbers wrong** -- text is at ~105-108, 205, 413, not 95-97, and `read_write.R:393` contradicts the others. | **Re-verified**: `grep -n "task 5\.1" R/read_write.R` returns exactly `107, 205, 393, 413`. `95-97` is the function title. #89 had it wrong and the spec propagated it. | **Accepted.** R13.3 now carries a four-site table distinguishing the three stale sites from the one already-correct-and-contradicting site. |
+
+**Not adopted**: nothing. Every finding held up on independent verification.
+
+The reviewer noted the 2460 test baseline was unverified on their side; it was verified locally by
+two `devtools::test()` runs on `dev` @ `b57cdba` (`FAIL 0 | WARN 0 | SKIP 0 | PASS 2460`), and
+AC10 now records that.
+
+**Net effect on the plan**: F1, F2 and F5 change what Task 2, 7, 8 and 9 must build; F3 changes
+Task 3's public contract; the rest tighten tests and docs. F2 is the most consequential -- without
+it, Task 2 would likely have shipped goldens for an encoder that disagreed with itself across the
+round trip, and the golden vectors are the one artifact in this spec that is expensive to correct
+after the fact.
