@@ -212,8 +212,17 @@ necessary.
     that reason, not because of the hardcoded exclusion list (design.md section 19.7). So again:
     tests, not new code. `datom_status()` may *report* foreign dirty files as git state; it must
     not classify them as a datom defect, and `datom_validate()` must not surface them at all.
-  - **New export `datom_repo_commit(conn, message, paths = NULL, push = TRUE)`** (R15) -- the
-    sanctioned git-mutation surface for downstream packages, so they never import `git2r` (I17).
+  - **New exports: `datom_repo_commit(conn, message, paths = NULL, push = TRUE)` and
+    `datom_repo_push(conn)`** (R15) -- the sanctioned git-mutation surface, so downstream packages
+    never import `git2r` (I17). **Both verbs are required**: `push = FALSE` without a standalone
+    push verb means "push what I already committed" is only expressible as another commit attempt,
+    and in a product repo `paths = NULL` is add-all -- so a push-only caller would risk committing
+    human WIP (design.md section 19.8, I20).
+  - **Commit is idempotent, push is convergent, neither implies the other.** R15.5's no-op means no
+    *commit*; with `push = TRUE` and the branch ahead, the push still runs -- otherwise one failed
+    push leaves the remote silently behind forever, since every later call finds a clean tree and
+    returns early. The ahead count needs no new machinery: `.datom_check_git_current()` already
+    calls `git2r::ahead_behind()` and reads `[[2]]` (behind); `[[1]]` is ahead (R15.9).
   - **Mind the two delta corrections** (design.md section 19.6), both of which change the
     implementation:
     - `.datom_git_commit()` does **not** abort on empty staging -- it returns HEAD's SHA. It
@@ -227,10 +236,12 @@ necessary.
     sweep in dirty datom files left by a previously failed write -- intentional, and
     `datom_validate(fix = TRUE)` is the repair path (design.md section 19.7).
   - Tests: gitignore-respecting add-all; explicit `paths` stages exactly those; reader conn
-    refused; empty staging is an informational no-op; `push = FALSE` leaves the remote untouched
-    (AC17).
-  - _Requirements: R14, R15. Invariants: I16, I17. Properties: P19, P22. Acceptance: AC16, AC17.
-    No pathway impact._
+    refused; empty staging creates no commit and is not an error; `push = FALSE` leaves the remote
+    untouched; **clean tree + `push = TRUE` + branch ahead advances the remote with no new commit**
+    (AC17). For `datom_repo_push()`: advances the remote, second call is a no-op, reader conn
+    refused, on-a-branch guard inherited (AC21).
+  - _Requirements: R14, R15 (incl. R15.8/R15.9). Invariants: I16, I17, I20. Properties: P19, P22,
+    P23, P24. Acceptance: AC16, AC17, AC21. No pathway impact._
 
 - [ ] **12. `datom_write_set(include_paths = )` -- the joint commit**
   - Follow-on to Task 8 rather than folded into it: Task 8 is already large (two gates, dual-write,
@@ -242,7 +253,8 @@ necessary.
     (I18, AC18).
   - **Validation before any hashing or IO** (matching R10.3a placement): a nonexistent path is an
     **error**, not a skip; a path overlapping `{artifact}/**` or `.datom/**` is **refused**
-    (AC20).
+    (AC20). **Two separate test cases**, not one bundled assertion, so a regression identifies
+    which gate broke.
   - **The sharp edge**: an unchanged set stays a **no-op even when `include_paths` files are
     dirty** -- no commit, no version, informational message pointing at `datom_repo_commit()`
     (R12.5, I19, AC19). AC2's idempotency must not acquire a side channel that commits code; that
@@ -265,7 +277,7 @@ necessary.
   - _Requirements: R11, R4.4. Invariants: I10a. Properties: P14, P16, P17._
 
 - [ ] **14. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
-  - Confirm every **AC1-AC9 and AC13-AC20** has a dedicated test; add what the per-chunk tests
+  - Confirm every **AC1-AC9 and AC13-AC21** has a dedicated test; add what the per-chunk tests
     missed. Two are easiest to skip and both need special fixtures: **AC15** (cross-project cycle
     terminates) needs a two-connection fixture, since it cannot be produced through a single
     connection by construction; **AC16** (machine-commit isolation) needs a foreign dirty file
@@ -275,7 +287,7 @@ necessary.
     Include a `mode: product` repo with foreign `R/`, `dp/`, and `renv.lock` content so the joint
     commit and the machine-commit isolation are exercised end to end, not only in unit tests.
   - Full `devtools::test()` count reported; `R CMD check --as-cran` 0E/0W (AC10, AC11).
-  - _Acceptance: AC1-AC20._
+  - _Acceptance: AC1-AC21._
   - **Escalation rationale**: nine acceptance criteria plus a new hash regime is a lot of surface
     to claim covered on a default model's word.
 
@@ -308,6 +320,7 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 | `datom_write_set()` | 8 (extended with `include_paths` in 12) |
 | `datom_read_set()` | 9 |
 | `datom_repo_commit()` | 11 |
+| `datom_repo_push()` | 11 |
 
 ---
 
@@ -340,3 +353,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-11 | **(delta correction C2)** The on-a-branch guard lives in `.datom_git_branch()`, reached only via `.datom_git_push()`, so it does not fire when `push = FALSE`. Assert it explicitly. | design.md 19.6, R15.7, Task 11 |
 | 2026-08-11 | `datom_repo_commit(paths = NULL)` may sweep in dirty datom files left by a failed write. **Deliberately not special-cased**: it moves git ahead of storage (the safe direction), `datom_validate(fix = TRUE)` is the existing repair path, and excluding them would make the function lie about `git add .` semantics. | design.md 19.7 |
 | 2026-08-11 | Tasks renumbered: two tasks inserted after 10 (foreign-content discipline + `datom_repo_commit()`; `include_paths`). Old 11/12/13 -> 13/14/15. | tasks.md Phase D |
+| 2026-08-11 | **(F13)** Push decoupling had only one half -- `push = FALSE` with no way to push later. **Both proposed fixes adopted**, because they solve different problems. Add **`datom_repo_push()`** (R15.8): routing push intent through `commit()` would force a push-only caller through the `paths = NULL` add-all path, which in a product repo commits whatever human WIP it finds -- the R14 hazard through a third door -- and would leave `message` a silently-ignored required argument. **And** make push **convergent** (R15.5 qualified, R15.8): a no-op means no *commit*, not no push, because otherwise one failed push leaves the remote silently behind forever as every later call returns early on a clean tree. | design.md 19.8, I20, P23, P24 |
+| 2026-08-11 | Supporting the export over the wrapper-only fix: datom **already exports standalone `datom_pull()`** (`R/sync.R:45`) with no push counterpart, and the `datom_repo_*` family already exists -- so this closes an asymmetry rather than inventing a shape. Cost is one thin wrapper plus one array index: `.datom_check_git_current()` already calls `git2r::ahead_behind()` and reads `[[2]]`; `[[1]]` is the ahead count. | design.md 19.8, R15.9 |
+| 2026-08-11 | **(F14)** AC20 stays one criterion but is **tested as two cases** (nonexistent path; datom-owned overlap), so a regression identifies which gate broke. | AC20, Task 12 |

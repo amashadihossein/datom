@@ -621,6 +621,7 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I17** | **datom is the single git-mutating actor** in a datom repo. Downstream packages never import `git2r`; every stage / commit / push / pull goes through a datom export. Writing files on disk is not a git operation and needs no datom API. |
 | **I18** | `include_paths` content is **git-only**. It is never mirrored to storage; the storage namespace contains datom artifacts and nothing else. |
 | **I19** | An idempotent (no-change) artifact write **never** creates a commit, regardless of `include_paths` state. Idempotency has no side channel. |
+| **I20** | **Every git mutation datom offers is expressible without implying another.** Committing does not force a push (`push = FALSE`), and pushing does not require attempting a commit (`datom_repo_push()`). A caller must never have to pass through an add-all path to achieve a push. |
 | **I11** | No credentials in the payload, metadata, manifest, or any set-related file. |
 | **I12** | `table_type` remains validated to exactly `"imported"` / `"derived"`. `kind` is a separate axis and must not be smuggled into it. |
 
@@ -653,6 +654,8 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P20** | A set write with `include_paths` produces **exactly one** commit containing payload + metadata + the listed paths, and storage afterward holds only datom artifacts (I18, AC18). |
 | **P21** | For any `include_paths` state, an unchanged set produces no commit and no new version (I19, AC19). |
 | **P22** | No public datom API stages a path the caller did not either own (datom artifacts) or explicitly enumerate (I16, I17). |
+| **P23** | **Push is convergent**: for any repository state, `datom_repo_push()` leaves the remote containing every local commit on the branch, and is safe to call repeatedly. No sequence of public calls leaves the remote silently behind after a `push = TRUE` request (R15.5, R15.8, AC21). |
+| **P24** | **Intent to push is expressible without risking a commit.** No caller must route through an add-all code path in order to push (I20, R15.8). |
 | **P18** | No sequence of public API calls, including the newly exported `datom_storage_write_json()`, can place an artifact's storage state ahead of its git state (I5, I14). |
 
 ---
@@ -896,3 +899,47 @@ the safe direction, and is exactly the state `datom_validate()` reports and `fix
 Decision: **do not special-case it.** `paths = NULL` means what `git add .` means; silently
 excluding datom paths would make the function lie about its contract, and the recovery path
 already exists. Worth one sentence in the roxygen so callers know the interaction is intentional.
+
+### 19.8 Push decoupling needs a second verb (review finding F13)
+
+The delta gave `datom_repo_commit()` a `push = FALSE` option so downstream could decouple commit
+from push -- the `dpbuild` `dp_commit()` / `dp_push()` pattern -- but supplied no way to push
+afterwards. `commit(push = FALSE)` ... edit ... *now push* had no verb, and R15.5's nothing-to-stage
+path returned early. The decoupling had one half.
+
+Two fixes were on the table. **Both are adopted, because they solve different problems**, and the
+one framed as sufficient on its own is not.
+
+**Why a convergent `commit()` alone is not enough.** The proposal was: let `push = TRUE` push
+whenever the branch is ahead, so `datom_repo_commit(conn, "msg")` on a clean tree becomes "ensure
+the remote has everything" and no new export is needed. Convergence is right, but routing *push
+intent* through `commit()` has two problems:
+
+1. **It reintroduces the R14 hazard through a third door.** In a `mode: product` repo the tree is
+   *expected* to contain human WIP, and `paths = NULL` is add-all. A caller who wants only to push
+   would have to call a function that commits whatever it finds. If the tree turns out dirty --
+   the normal state, not the exceptional one -- they get a commit they did not ask for, containing
+   arbitrary WIP. "I just want to push" must not be spelled "attempt to commit everything".
+2. **The `message` argument becomes dead on that path.** A required argument that is silently
+   ignored is a contract smell, and it makes the call site misleading to read.
+
+**Why convergence is still adopted.** The reviewer's underlying point is sound and independent of
+the above: if a push fails on one call, every later call finds a clean tree, returns early, and the
+remote stays behind **forever, silently**. That is a silent-divergence failure mode, which the
+compatibility posture rejects on its own terms regardless of which verb fixes it. So R15.5 is
+qualified -- no-op means no *commit*, and the push still runs when `push = TRUE` and the branch is
+ahead -- and `datom_repo_push()` is convergent for the same reason (R15.8, P23).
+
+**Supporting evidence for the export rather than against it:**
+
+- datom **already exports a standalone `datom_pull()`** (`R/sync.R:45`) with no push counterpart.
+  `datom_repo_push()` closes an existing asymmetry rather than inventing a shape.
+- The `datom_repo_*` family already exists -- `datom_repo_delete()`,
+  `datom_repo_set_data_store()`, `datom_repo_attach_governance()` -- so the name needs no new
+  convention.
+- The cost is near zero: it is a thin wrapper over `.datom_git_push()`, and the ahead count needed
+  for convergence is **already computed** in the codebase (`.datom_check_git_current()` calls
+  `git2r::ahead_behind()` and reads `[[2]]`; `[[1]]` is ahead). So this is not speculative
+  capability being added on the chance it is wanted -- it is one export and one array index.
+
+Net: commit is **idempotent**, push is **convergent**, and neither implies the other (I20, P24).

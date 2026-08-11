@@ -470,15 +470,29 @@ continuously. So:
 - **R14.3 -- `include_paths` is the sole exception.** The only way a machine-moment commit may
   contain a non-datom path is R12.5, and only because the caller enumerated it explicitly.
 
-### R15 -- New export: `datom_repo_commit()`
+### R15 -- New exports: the sanctioned git-mutation surface
 
 ```r
 datom_repo_commit(conn, message, paths = NULL, push = TRUE)
+datom_repo_push(conn)
 ```
 
 The **sanctioned git-mutation surface** for downstream packages committing non-datom content
 (framework state, code, environment). Without it, a downstream package's only options are to
 import `git2r` (rejected -- R16) or to abuse a datom write.
+
+**Two verbs, not one, and the reason is a hazard rather than a preference.** R15.3 supports
+`push = FALSE` explicitly so downstream can decouple commit from push (the `dpbuild`
+`dp_commit()` / `dp_push()` pattern). That pattern needs a second verb: without one, "push what I
+already committed" is only expressible as *another commit attempt*, and in a `mode: product` repo
+`paths = NULL` is add-all. So a caller who merely wants to push would route through a code path
+that commits any human WIP it happens to find -- **the R14 machine-moment add-all failure arriving
+through a third door.** Intent to push must be spellable without risking a commit.
+
+Supporting symmetry: datom already exports a standalone `datom_pull()` (`R/sync.R:45`) with no
+standalone push counterpart, and the `datom_repo_*` family already exists (`datom_repo_delete()`,
+`datom_repo_set_data_store()`, `datom_repo_attach_governance()`). `datom_repo_push()` closes an
+existing asymmetry rather than inventing a new shape.
 
 - **R15.1** `paths = NULL` (default): stage **all** tracked-and-modified plus untracked changes,
   respecting `.gitignore` -- i.e. what `git add .` would stage. These are **human-invoked**
@@ -487,15 +501,31 @@ import `git2r` (rejected -- R16) or to abuse a datom write.
 - **R15.2** `paths = <character vector>`: stage exactly those repo-relative paths.
 - **R15.3** `push = TRUE` (default): push after commit through the existing path
   (`.datom_git_push()`, inheriting its pull-before-push and upstream-tracking behavior).
-  `push = FALSE` is supported so downstream can decouple commit from push.
+  `push = FALSE` is supported so downstream can decouple commit from push -- see
+  `datom_repo_push()` (R15.8) for the other half.
 - **R15.4** Requires **developer** role; a reader conn gets the standard role error.
 - **R15.5** **Nothing to stage is an informational no-op** (`cli::cli_alert_info()`, return
   `invisible(NULL)`), **not** an error -- a human-moment "commit everything" must be idempotent.
-- **R15.6** Returns the commit SHA invisibly on success.
+  **Qualification: "no-op" means no *commit* is created; it does not suppress the push.** When
+  `push = TRUE` and the branch is ahead of the remote, the push still runs. Otherwise a failed
+  push on a previous call leaves the remote silently behind forever, since every subsequent call
+  finds a clean tree and returns early -- a silent divergence, which the compatibility posture
+  forbids on its own terms.
+- **R15.6** Returns the commit SHA invisibly on success; `invisible(NULL)` when no commit was
+  created (whether or not a push occurred).
 - **R15.7** **The on-a-branch (no detached HEAD) guard must be asserted explicitly**, not
   inherited. It currently lives in `.datom_git_branch()` and is reached only via
   `.datom_git_push()`, so with `push = FALSE` nothing would check it. Call it up front so the
   guard holds for both `push` values. (See design.md section 19 "Corrections to the delta".)
+- **R15.8 -- `datom_repo_push(conn)`.** Pushes the current branch through the same path
+  (`.datom_git_push()`), so it inherits pull-before-push, upstream-tracking, and the on-a-branch
+  guard identically. **Convergent, not imperative**: nothing to push is an informational no-op,
+  not an error, so calling it twice is safe and "ensure the remote has everything" is a legal
+  standalone operation. Requires **developer** role. Returns `invisible(TRUE)`.
+- **R15.9** Push convergence is decided by the **already-available** ahead count.
+  `.datom_check_git_current()` already calls `git2r::ahead_behind()` and reads element `[[2]]`
+  (behind); element `[[1]]` is ahead. So R15.5 and R15.8 need **no new git machinery** -- this is
+  not speculative capability.
 
 ### R16 -- Non-goals (this spec deliberately does not do these)
 
@@ -532,10 +562,11 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC14** | **`datom_read_set()` on a table** aborts pointing at `datom_read()` -- the converse of AC6, not a missing-payload error for a healthy table. |
 | **AC15** | **Cross-project cycle terminates at read time.** A stored cycle that write-time checks could not see (A's set references B's, B's references A's, each written through its own connection) causes `datom_read_set()` and `datom_validate()` to **abort**, not hang. Covers R4.4. |
 | **AC16** | **Machine-commit isolation.** In a `mode: product` repo with an uncommitted edit at `R/foo.R`, a `datom_write()` of a table produces a commit whose tree does **not** contain the `R/foo.R` change, **and** `R/foo.R` is still dirty in the working tree afterward. Both halves matter: the second catches a "helpfully" cleaned working tree (R14.1). |
-| **AC17** | **`datom_repo_commit()` semantics.** `paths = NULL` stages a mixed tracked/untracked change set **minus** gitignored files; explicit `paths` stages exactly those; a reader conn is refused; nothing-to-stage is an informational **no-op, not an error**; `push = FALSE` leaves the remote untouched (R15). |
+| **AC17** | **`datom_repo_commit()` semantics.** `paths = NULL` stages a mixed tracked/untracked change set **minus** gitignored files; explicit `paths` stages exactly those; a reader conn is refused; nothing-to-stage creates **no commit** and is not an error; `push = FALSE` leaves the remote untouched. **Plus the R15.5 qualification**: with a clean tree, `push = TRUE`, and the branch ahead of the remote, no commit is created **but the push still happens** -- assert the remote advanced (R15). |
 | **AC18** | **`include_paths` produces one joint commit.** A set write with `include_paths` creates **exactly one** commit containing payload + metadata + the listed paths, and the storage mirror afterward contains **only** datom artifacts (R12.5). |
 | **AC19** | **Idempotent re-write stays a no-op under dirty `include_paths`.** Re-writing an identical member list while `include_paths` files have changed creates **no commit and no new version**, and emits the informational message pointing at `datom_repo_commit()` (R12.5). This is AC2 defended against a side channel. |
-| **AC20** | **`include_paths` overlap refused early.** A path overlapping a datom-owned path (`{artifact}/**`, `.datom/**`), or a nonexistent path, is refused **before any hashing or IO** (R12.5), consistent with the R10.3a gate placement. |
+| **AC20** | **`include_paths` refused early -- two distinct gates, two separate test cases.** (a) A **nonexistent** path is refused; (b) a path **overlapping** a datom-owned path (`{artifact}/**`, `.datom/**`) is refused. Both **before any hashing or IO** (R12.5), consistent with the R10.3a gate placement. Kept as one criterion but **tested as two cases**, so a regression identifies which gate broke rather than only that one of them did. |
+| **AC21** | **`datom_repo_push()` is convergent.** With unpushed local commits it advances the remote; called again immediately it is an informational **no-op, not an error**; a reader conn is refused; it inherits the on-a-branch guard (R15.8). |
 
 Plus the standing project gates:
 
