@@ -350,6 +350,11 @@ set: study001-adam
   (the `.datom_canonical_hash()` precedent).
 - **R10.4** `mode: "product"` reads better than `mode: "set"` since these repos also hold
   derived tables.
+- **R10.5 -- `mode: product` is also an identity badge.** Beyond gating the import path, the mode
+  declares "this datom repo is also a build-package project". The downstream build package
+  (`dpdev`) checks it at attach time. So the mode carries two meanings that must both hold:
+  *forbid the import path* (R10.1) and *this repo is jointly owned* (R14). datom itself knows
+  nothing about the build package's structure -- see R16 non-goals.
 
 ### R11 -- `datom_validate()` branches on kind
 
@@ -384,6 +389,27 @@ On a set this fails 100% of the time and reports `data_missing_s3`.
 - **R12.4** Export JSON put/get on the Storage Extension API -- harden the existing
   `.datom_storage_read_json()` / `.datom_storage_write_json()` internals. No direct
   `.datom_s3_*()` calls from business logic.
+- **R12.5 -- `datom_write_set(conn, members, ..., include_paths = NULL)`.** Optional character
+  vector of repo-relative paths staged **into the same commit** as the set payload and its
+  metadata files. Purpose: the set version's commit tree contains the code and environment that
+  produced it, so **the joint version is structural, not recorded** (see R14 rationale). The build
+  package passes its own enforced-structure manifest (e.g. `R/`, `dp/`, `renv.lock`, `tests/`);
+  it never passes add-all.
+  - **Ordering unchanged.** git-gates-storage is preserved: local writes -> **one** git commit
+    (payload + metadata + `include_paths`) -> push -> storage mirror.
+  - **The storage mirror contains only datom artifacts.** `include_paths` content is **never**
+    mirrored to storage. It is git-only, by design (R16).
+  - **Validation, both before any hashing or IO** (same gate placement as R10.3a):
+    - A nonexistent path in `include_paths` is an **error**, not a skip. Joint commits must be
+      deterministic, not best-effort.
+    - A path overlapping datom-owned paths (`{artifact}/**`, `.datom/**`) is **refused** -- those
+      are staged automatically and listing them invites double-staging confusion.
+  - **Dedup interaction -- the sharp edge.** If the set content is unchanged (same `data_sha`, so
+    AC2's idempotent no-op applies), the write **remains a no-op even when `include_paths` files
+    have changed**: no commit is created. Emit an informational message directing the caller to
+    `datom_repo_commit()` (R15). Rationale: AC2 must not acquire a side channel that commits code.
+    An idempotent data write that silently commits human WIP would be exactly the
+    machine-moment-add-all failure R14 exists to prevent, arriving through a different door.
 - **R12.4a -- the export must not be able to clobber datom-managed keys.** A public
   `datom_storage_write_json()` that accepts any key lets a downstream package write
   `{name}/.metadata/metadata.json` or `{name}/{data_sha}.json` directly, **silently bypassing
@@ -418,6 +444,73 @@ On a set this fails 100% of the time and reports `data_missing_s3`.
 - **R13.4** NEWS entry noting the `artifacts` rename, its discovery-only exposure, and the
   `schema_version` gate.
 
+### R14 -- Foreign-content discipline in `mode: product` repos
+
+**Context (the decision this encodes).** The `mode: product` repo **is the joint repo**: data
+pointers, derivation code, and environment (`renv.lock`) live together. There is no separate
+code/env repo. All git **mutations** (stage, commit, push, pull) go through datom; downstream
+packages never import `git2r`. Writing files on disk is not a git operation and needs no datom
+API. Rationale in design.md section 19.
+
+Consequence: a datom repo now routinely contains content datom does not own, and datom commits at
+**machine-chosen** moments (inside each write, possibly mid-build) while humans edit code
+continuously. So:
+
+- **R14.1 -- machine-moment commits stage only datom-owned paths.** A commit created inside
+  `datom_write()` / `datom_write_set()` stages **only** the written artifact's files and
+  `.datom/**`. **Never add-all.** This is already true by implementation --
+  `.datom_git_commit()` takes an explicit file list (`R/utils-git.R:182`) -- so the requirement
+  **elevates it from an accident of implementation to a stated guarantee**, with a test, so a
+  future add-all refactor fails CI rather than an audit.
+- **R14.2 -- all datom operations tolerate non-datom paths.** `datom_validate()`,
+  `datom_status()`, `datom_list()`, and the sync/pull paths must never stage foreign paths and
+  never report them as defects. `datom_status()` **may** report foreign dirty files as
+  uncommitted git state (that is honest reporting of the repository, and useful), but must not
+  classify them as a datom problem; `datom_validate()` must not surface them at all.
+- **R14.3 -- `include_paths` is the sole exception.** The only way a machine-moment commit may
+  contain a non-datom path is R12.5, and only because the caller enumerated it explicitly.
+
+### R15 -- New export: `datom_repo_commit()`
+
+```r
+datom_repo_commit(conn, message, paths = NULL, push = TRUE)
+```
+
+The **sanctioned git-mutation surface** for downstream packages committing non-datom content
+(framework state, code, environment). Without it, a downstream package's only options are to
+import `git2r` (rejected -- R16) or to abuse a datom write.
+
+- **R15.1** `paths = NULL` (default): stage **all** tracked-and-modified plus untracked changes,
+  respecting `.gitignore` -- i.e. what `git add .` would stage. These are **human-invoked**
+  moments, where add-all is the correct semantic (this is exactly why R14.1 restricts
+  *machine* moments only).
+- **R15.2** `paths = <character vector>`: stage exactly those repo-relative paths.
+- **R15.3** `push = TRUE` (default): push after commit through the existing path
+  (`.datom_git_push()`, inheriting its pull-before-push and upstream-tracking behavior).
+  `push = FALSE` is supported so downstream can decouple commit from push.
+- **R15.4** Requires **developer** role; a reader conn gets the standard role error.
+- **R15.5** **Nothing to stage is an informational no-op** (`cli::cli_alert_info()`, return
+  `invisible(NULL)`), **not** an error -- a human-moment "commit everything" must be idempotent.
+- **R15.6** Returns the commit SHA invisibly on success.
+- **R15.7** **The on-a-branch (no detached HEAD) guard must be asserted explicitly**, not
+  inherited. It currently lives in `.datom_git_branch()` and is reached only via
+  `.datom_git_push()`, so with `push = FALSE` nothing would check it. Call it up front so the
+  guard holds for both `push` values. (See design.md section 19 "Corrections to the delta".)
+
+### R16 -- Non-goals (this spec deliberately does not do these)
+
+- **Branch create/switch helpers.** Belongs with a future refs / branch-publication design.
+  datom's existing on-a-branch requirement is unchanged.
+- **Storage mirroring of code or environment content.** `include_paths` is git-only by design;
+  the storage namespace holds datom artifacts and nothing else.
+- **Any datom knowledge of the build package's structure.** datom receives paths as **opaque
+  arguments**. The three-tier ownership taxonomy in design.md section 19 is *context for the
+  reader*, not a datom contract -- datom must not validate, assume, or special-case `dp/`, `R/`,
+  `renv.lock`, or any other build-package path.
+- **No `.gitignore` API.** `datom_init_repo()` seeds `.gitignore` (existing behavior) and
+  downstream packages append entries by **editing the file directly** -- a file write, not a git
+  operation. **No `datom_gitignore_*` function is to be added.** Recorded to prevent API creep.
+
 ---
 
 ## 5. Acceptance criteria
@@ -438,6 +531,11 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC13** | **Round-trip hash agreement.** For every golden fixture, `data_sha` computed from the in-memory payload equals `data_sha` recomputed after `serialize -> parse`. Covers R2.5. Include fixtures that specifically exercise the mutating cases: a length-1 vector vs a scalar, `NA_real_`, `NA_character_`, and a whole-number double. |
 | **AC14** | **`datom_read_set()` on a table** aborts pointing at `datom_read()` -- the converse of AC6, not a missing-payload error for a healthy table. |
 | **AC15** | **Cross-project cycle terminates at read time.** A stored cycle that write-time checks could not see (A's set references B's, B's references A's, each written through its own connection) causes `datom_read_set()` and `datom_validate()` to **abort**, not hang. Covers R4.4. |
+| **AC16** | **Machine-commit isolation.** In a `mode: product` repo with an uncommitted edit at `R/foo.R`, a `datom_write()` of a table produces a commit whose tree does **not** contain the `R/foo.R` change, **and** `R/foo.R` is still dirty in the working tree afterward. Both halves matter: the second catches a "helpfully" cleaned working tree (R14.1). |
+| **AC17** | **`datom_repo_commit()` semantics.** `paths = NULL` stages a mixed tracked/untracked change set **minus** gitignored files; explicit `paths` stages exactly those; a reader conn is refused; nothing-to-stage is an informational **no-op, not an error**; `push = FALSE` leaves the remote untouched (R15). |
+| **AC18** | **`include_paths` produces one joint commit.** A set write with `include_paths` creates **exactly one** commit containing payload + metadata + the listed paths, and the storage mirror afterward contains **only** datom artifacts (R12.5). |
+| **AC19** | **Idempotent re-write stays a no-op under dirty `include_paths`.** Re-writing an identical member list while `include_paths` files have changed creates **no commit and no new version**, and emits the informational message pointing at `datom_repo_commit()` (R12.5). This is AC2 defended against a side channel. |
+| **AC20** | **`include_paths` overlap refused early.** A path overlapping a datom-owned path (`{artifact}/**`, `.datom/**`), or a nonexistent path, is refused **before any hashing or IO** (R12.5), consistent with the R10.3a gate placement. |
 
 Plus the standing project gates:
 

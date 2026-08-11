@@ -591,7 +591,7 @@ prevent and which no test will catch unless it is written to.
 
 **Trigger type**: design spot-check + purity audit after the change lands.
 
-A third, softer moment: **test coverage review before spec completion** (Task 12), per the third
+A third, softer moment: **test coverage review before spec completion** (Task 14), per the third
 standing escalation trigger. Nine acceptance criteria plus a new hash regime is a lot of surface
 to claim covered.
 
@@ -617,6 +617,10 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I13** | `data_sha` for a set is computed over the **parsed-JSON** data model, never over the raw in-memory R object. Write-time and read-time hashes agree by construction (R2.5, design section 7). |
 | **I14** | The public `datom_storage_write_json()` cannot write a datom-managed key. No public API may offer a path around git-gates-storage or around integrity verification (R12.4a). |
 | **I15** | `datom_write_set()` refuses unless the repo declares `mode: product` and the set name matches `project.yaml`'s `set:` field. Checked before any hashing or IO (R10.3a). |
+| **I16** | A datom **machine-moment** commit never stages a path outside the written artifact's files and `.datom/**`. Non-datom repo content is invisible to datom's git operations except via `datom_repo_commit()` (R15) and `include_paths` (R12.5). |
+| **I17** | **datom is the single git-mutating actor** in a datom repo. Downstream packages never import `git2r`; every stage / commit / push / pull goes through a datom export. Writing files on disk is not a git operation and needs no datom API. |
+| **I18** | `include_paths` content is **git-only**. It is never mirrored to storage; the storage namespace contains datom artifacts and nothing else. |
+| **I19** | An idempotent (no-change) artifact write **never** creates a commit, regardless of `include_paths` state. Idempotency has no side channel. |
 | **I11** | No credentials in the payload, metadata, manifest, or any set-related file. |
 | **I12** | `table_type` remains validated to exactly `"imported"` / `"derived"`. `kind` is a separate axis and must not be smuggled into it. |
 
@@ -644,7 +648,11 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P14** | `datom_validate()` reports `ok` for a healthy set and a non-`ok` status naming the specific defect for a missing payload vs an unresolvable member (distinguishable, not merged). |
 | **P15** | **Round-trip agreement**: `data_sha(payload) == data_sha(parse(serialize(payload)))` for every payload, including ones containing length-1 vectors, `NA_real_`, `NA_character_`, and whole-number doubles (R2.5, AC13). |
 | **P16** | Every recursive member resolution terminates, on any stored graph, including a cross-project cycle (R4.4, AC15). |
-| **P17** | A set payload version is reconstructible from the **git clone alone**, with no storage access (R6.1b). |
+| **P17** | A set payload version is reconstructible from the **git clone alone**, with no storage access (R6.1b). **Strengthened by `include_paths` (R12.5):** in a `mode: product` repo, checking out a set version's commit yields the data pointers, the derivation logic, **and** the environment that produced them -- one clone, one checkout, full reproduction. Without `include_paths` the guarantee covers pointers only. |
+| **P19** | A machine-moment commit's tree excludes every non-datom path, and the working tree's foreign dirty files are left dirty -- neither committed nor cleaned (I16, AC16). |
+| **P20** | A set write with `include_paths` produces **exactly one** commit containing payload + metadata + the listed paths, and storage afterward holds only datom artifacts (I18, AC18). |
+| **P21** | For any `include_paths` state, an unchanged set produces no commit and no new version (I19, AC19). |
+| **P22** | No public datom API stages a path the caller did not either own (datom artifacts) or explicitly enumerate (I16, I17). |
 | **P18** | No sequence of public API calls, including the newly exported `datom_storage_write_json()`, can place an artifact's storage state ahead of its git state (I5, I14). |
 
 ---
@@ -661,6 +669,9 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **Reuse `datom-cv1` for sets.** | **Rejected.** Table-shaped and binary-framed; `nrow`/`ncol`/per-column digests do not generalize to a tree (section 7). |
 | **Hash the emitted JSON bytes.** | **Rejected.** Reintroduces the #72 failure mode with `jsonlite` playing the role `arrow` played. |
 | **`mode: "set"` instead of `mode: "product"`.** | **Rejected.** These repos also hold derived tables, so "product" describes the repo and "set" describes one artifact in it. |
+| **A separate code/env repo -- a fourth repo per product.** | **Rejected.** Cross-repo pinning is **circular**: the code repo wants to record which set version it produced, and the set payload wants to record which code commit produced it -- one is always stale by one commit. A joint version requires one commit graph. Also doubles per-product repo cost, and P17 would then cover pointers only. See section 19. |
+| **datom machine-moment commits use add-all.** | **Rejected.** Machine-chosen commit moments would snapshot arbitrary WIP state of human code. Add-all is correct **only** at human-chosen moments -- which is exactly what `datom_repo_commit(paths = NULL)` provides (R15.1). |
+| **Downstream packages do their own git via `git2r`.** | **Rejected.** Two independent git actors in one repo eventually violate the git-gates-storage assumptions (competing pushes, unseen pulls, half-staged trees). Single writer: all mutation flows through datom's exposed surface. |
 
 ---
 
@@ -735,3 +746,153 @@ Task 3's public contract; the rest tighten tests and docs. F2 is the most conseq
 it, Task 2 would likely have shipped goldens for an encoder that disagreed with itself across the
 round trip, and the golden vectors are the one artifact in this spec that is expensive to correct
 after the fact.
+
+---
+
+## 19. The `mode: product` repo is the joint repo (code + env + datom artifacts)
+
+Amendment recorded from the spec delta on #89 (2026-08-11), applied as D1-D8. This section holds
+the decision, its rationale, the structural context, and the corrections the delta needs.
+
+### 19.1 Decision
+
+A downstream build package (`dpdev`, successor to the `pins`-based `dpbuild`) produces jointly
+versioned **data + environment (`renv.lock`) + code (derivation logic)**. The open question was
+whether that code and environment live in the datom-created `mode: product` repo or in a separate
+fourth repo.
+
+> **Decision: same repo.** The `mode: product` repo **is** the joint repo. There is no separate
+> code/env repo. All git **mutations** go through datom -- downstream packages never import
+> `git2r`. Writing files on disk is not a git operation and needs no datom API.
+
+### 19.2 Rationale
+
+1. **The joint version requires one commit graph.** In one repo, a single commit's tree contains
+   derivation code, lockfile, table metadata, and set payload -- **the joint version *is* a
+   commit**. Split across two repos, cross-repo pinning is circular: the code repo wants to record
+   which set version it produced; the set payload wants to record which code commit produced it;
+   whichever is written second, one of them is always stale by one commit. There is no ordering
+   that resolves this, only conventions that hide it.
+2. **P17 strengthens to a full reproduction guarantee.** With code and environment in the repo,
+   checking out a set version's commit yields the data pointers, the logic, **and** the
+   environment that produced them -- one clone, one checkout. Without this, P17 covers pointers
+   only, which is a materially weaker claim for an audit-oriented package.
+3. **Repo economics.** Marginal cost per data product is exactly **one** repo, identical to
+   `dpbuild`'s joint repo. Source datom repos and the gov repo are shared org-level
+   infrastructure, not per-product cost.
+4. **Precedent.** `dpbuild`'s joint repo already held code + `renv.lock` + `.daap/` metadata
+   together. What changes is only *who writes the metadata*, not the repo topology.
+
+### 19.3 Structural context -- three ownership tiers
+
+`dpdev` enforces a specific project structure (as `dpbuild` did), so non-datom content in a
+product repo is not arbitrary. It is a known taxonomy:
+
+| Tier | Paths | Written by | Committed at |
+|---|---|---|---|
+| datom artifacts | `{artifact}/**`, `.datom/**` | datom | **machine** moments (each write) |
+| framework state | `dp/*.yaml`, `renv.lock` | build pkg via its API | **human** moments |
+| guarded human code | `R/`, `tests/` | human, within build-pkg guardrails | **human** moments |
+
+**This table is context for the reader, not a datom contract.** datom receives paths as opaque
+arguments and must never validate, assume, or special-case `dp/`, `R/`, or `renv.lock` (R16).
+
+Sketch of a `mode: product` repo, for orientation:
+
+```
+study001-adam/
+  .datom/            project.yaml (mode: product, set: study001-adam), manifest.json
+  .git/
+  adsl/              metadata.json, version_history.json          <- datom artifact (table)
+  adae/              metadata.json, version_history.json          <- datom artifact (table)
+  study001-adam/     metadata.json, version_history.json,
+                     {data_sha}.json                              <- datom artifact (set payload)
+  dp/                *.yaml                                       <- framework state
+  R/                 derivation logic                             <- guarded human code
+  tests/                                                          <- guarded human code
+  renv.lock                                                       <- framework state
+  input_files/                                                    <- gitignored, and refused
+                                                                     anyway by mode: product
+  .gitignore                                                      <- seeded by datom, appended
+                                                                     to by downstream (R16)
+```
+
+### 19.4 Why the commit-moment distinction is load-bearing
+
+`dpbuild`'s add-all commits were safe because **every commit was human-invoked at a deliberate
+moment**. datom commits at **machine-chosen** moments -- inside every write, possibly mid-build.
+Add-all there would snapshot arbitrary work-in-progress states of human code, producing commits no
+human intended and a history in which a "data write" silently carries half-finished logic.
+
+Hence the split that R14 and R15 encode:
+
+| Moment | Who triggers | Staging rule | Mechanism |
+|---|---|---|---|
+| Machine | datom, inside a write | datom-owned paths only, **never** add-all | existing explicit file list |
+| Machine, joint | caller, inside a set write | datom paths + **explicitly enumerated** paths | `include_paths` (R12.5) |
+| Human | downstream package / user | add-all (gitignore-respecting) or explicit paths | `datom_repo_commit()` (R15) |
+
+`include_paths` is the **only** way a machine-moment commit may include a non-datom path, and only
+because the caller listed it (R14.3, I16).
+
+### 19.5 `.gitignore` ownership
+
+`datom_init_repo()` seeds `.gitignore` (existing behavior, `R/conn.R`). Downstream packages append
+their entries by **editing the file directly** -- that is a file write, not a git operation.
+**No `datom_gitignore_*` API is to be added** (R16). Recorded explicitly to prevent API creep: the
+single-git-writer invariant (I17) is about *mutations to the index and refs*, not about who may
+write bytes into the working tree, and conflating the two would grow datom a filesystem API it
+does not need.
+
+### 19.6 Corrections to the delta
+
+Two claims in the delta do not survive checking against the code. Both change implementation, so
+they are recorded rather than quietly worked around.
+
+**C1 -- `.datom_git_commit()` does not abort on empty staging.** The delta says:
+
+> Nothing to stage -> informational no-op ... this deliberately differs from
+> `.datom_git_commit()`, which aborts on empty staging.
+
+It does not. Verified at `R/utils-git.R:182-231`, there are **two distinct conditions**:
+
+| Condition | Actual behavior | Line |
+|---|---|---|
+| `files` argument is empty (`length(files) == 0L`) | **aborts** -- "No files specified to commit." | 184-186 |
+| a listed file does not exist | **aborts** -- "Cannot stage -- files do not exist" | 194-202 |
+| `files` non-empty but nothing staged after `add()` | **already an idempotent no-op** -- returns current HEAD SHA | 214-220 |
+
+So the real obstacle for `datom_repo_commit(paths = NULL)` is the **empty-`files`-argument abort
+and the file-existence pre-check**, not an empty-staging abort. Consequences for R15:
+
+- `paths = NULL` cannot be implemented as `.datom_git_commit(path, files = character(0), ...)`.
+  It needs its own staging call (the `git add .` equivalent) or a parameterization of the helper.
+- The nothing-staged path already returns **HEAD's SHA**, not a sentinel, so the wrapper cannot
+  distinguish "committed" from "nothing to do" by return value alone. It must check status itself
+  (or compare HEAD before/after) to honor R15.5's `invisible(NULL)` no-op contract.
+
+**C2 -- the on-a-branch guard is not inherited when `push = FALSE`.** The delta says "existing
+guards apply unchanged: on-a-branch check (no detached HEAD)". The check lives in
+`.datom_git_branch()` (`R/utils-git.R:154-159`) and is reached from `.datom_git_push()`, **not**
+from `.datom_git_commit()`. So on a detached HEAD, `datom_repo_commit(push = FALSE)` would commit
+successfully with no guard firing. R15.7 therefore requires the guard be asserted **explicitly**
+up front, for both `push` values.
+
+### 19.7 Interactions worth deciding now rather than discovering
+
+**R14.2 tolerance already holds by construction, which is why it needs a test rather than code.**
+`.datom_validate_tables()` discovers artifacts as directories **containing `metadata.json`**
+(`R/validate.R`), so a foreign directory like `dp/` is skipped because it has no `metadata.json` --
+not because of the hardcoded exclusion list (`input_files`, `renv`, `man`, `R`, `tests`,
+`vignettes`, `src`), which is belt-and-braces on top. The residual edge is a foreign directory that
+happens to contain a `metadata.json` written by some other tool; that would be misread as an
+artifact. Low likelihood, and out of scope to defend against, but recorded so it is a known gap
+rather than a surprise.
+
+**`datom_repo_commit(paths = NULL)` can sweep in dirty datom files.** If a prior datom write failed
+after writing local metadata but before committing, those files are dirty, and an add-all human
+commit would stage them. This is not an I5 violation -- it moves git *ahead* of storage, which is
+the safe direction, and is exactly the state `datom_validate()` reports and `fix = TRUE` repairs.
+Decision: **do not special-case it.** `paths = NULL` means what `git add .` means; silently
+excluding datom paths would make the function lie about its contract, and the recovery path
+already exists. Worth one sentence in the roxygen so callers know the interaction is intentional.

@@ -145,8 +145,8 @@ necessary.
     string pointing at `datom_member()`.
   - Write-time cycle detection + depth limit (proposed 8; confirmed at E1 escalation).
     **Exhaustive within the project, best-effort across projects** -- an unresolvable
-    cross-project member is not a cycle failure, it is a `datom_validate()` finding (Task 11).
-  - Provide the shared **visited-set + depth walker** here, so Task 9 and Task 11 consume one
+    cross-project member is not a cycle failure, it is a `datom_validate()` finding (Task 13).
+  - Provide the shared **visited-set + depth walker** here, so Task 9 and Task 13 consume one
     implementation rather than each growing its own (R4.4). Write-time and read-time enforcement
     must agree on the limit.
   - _Requirements: R4 (incl. R4.4). Invariants: I9, I10, I10a. Properties: P16. Acceptance: AC9._
@@ -197,9 +197,62 @@ necessary.
   - `datom_status()` reports mode.
   - The table write path is **not** gated -- product repos legitimately write derived tables.
   - `datom_init_repo()` gains the means to declare `mode`/`set` at init; the Task 8 gates read it.
-  - _Requirements: R10 (incl. R10.3a). Invariants: I15._
+  - `mode: product` is also the **identity badge** the build package checks at attach time
+    (R10.5) -- the mode carries two meanings, both of which must hold.
+  - _Requirements: R10 (incl. R10.3a, R10.5). Invariants: I15._
 
-- [ ] **11. `datom_validate()` branches on `kind`**
+- [ ] **11. Foreign-content discipline + `datom_repo_commit()`**
+  - **Elevate machine-commit isolation from accident to guarantee** (R14.1, I16). Already true by
+    implementation -- `.datom_git_commit()` takes an explicit file list (`R/utils-git.R:182`) --
+    so this is primarily a **test** so a future add-all refactor fails CI rather than an audit:
+    dirty `R/foo.R` + `datom_write()` of a table, assert the commit tree excludes it **and** it is
+    still dirty afterward (AC16). Both halves -- the second catches a helpfully-cleaned tree.
+  - **Assert tolerance of non-datom paths** (R14.2). This already holds by construction --
+    `.datom_validate_tables()` filters on the presence of `metadata.json`, so `dp/` is skipped for
+    that reason, not because of the hardcoded exclusion list (design.md section 19.7). So again:
+    tests, not new code. `datom_status()` may *report* foreign dirty files as git state; it must
+    not classify them as a datom defect, and `datom_validate()` must not surface them at all.
+  - **New export `datom_repo_commit(conn, message, paths = NULL, push = TRUE)`** (R15) -- the
+    sanctioned git-mutation surface for downstream packages, so they never import `git2r` (I17).
+  - **Mind the two delta corrections** (design.md section 19.6), both of which change the
+    implementation:
+    - `.datom_git_commit()` does **not** abort on empty staging -- it returns HEAD's SHA. It
+      aborts on an **empty `files` argument** and on **nonexistent files**. So `paths = NULL`
+      cannot delegate with `files = character(0)`, and the wrapper must determine "nothing to do"
+      itself (status check, or HEAD before/after) to honor R15.5's `invisible(NULL)` no-op.
+    - The on-a-branch guard lives in `.datom_git_branch()` and is only reached via
+      `.datom_git_push()`, so it does **not** fire when `push = FALSE`. Assert it explicitly up
+      front (R15.7).
+  - Roxygen: document that `paths = NULL` means what `git add .` means, including that it may
+    sweep in dirty datom files left by a previously failed write -- intentional, and
+    `datom_validate(fix = TRUE)` is the repair path (design.md section 19.7).
+  - Tests: gitignore-respecting add-all; explicit `paths` stages exactly those; reader conn
+    refused; empty staging is an informational no-op; `push = FALSE` leaves the remote untouched
+    (AC17).
+  - _Requirements: R14, R15. Invariants: I16, I17. Properties: P19, P22. Acceptance: AC16, AC17.
+    No pathway impact._
+
+- [ ] **12. `datom_write_set(include_paths = )` -- the joint commit**
+  - Follow-on to Task 8 rather than folded into it: Task 8 is already large (two gates, dual-write,
+    dedup, name uniqueness, manifest), and the dedup edge below deserves its own commit.
+  - `include_paths`: repo-relative paths staged **into the same commit** as the payload and
+    metadata, so the joint version is **structural, not recorded** (R12.5). Ordering unchanged:
+    local writes -> one commit -> push -> storage mirror.
+  - **Storage mirror stays datom-artifacts-only** -- `include_paths` content is never mirrored
+    (I18, AC18).
+  - **Validation before any hashing or IO** (matching R10.3a placement): a nonexistent path is an
+    **error**, not a skip; a path overlapping `{artifact}/**` or `.datom/**` is **refused**
+    (AC20).
+  - **The sharp edge**: an unchanged set stays a **no-op even when `include_paths` files are
+    dirty** -- no commit, no version, informational message pointing at `datom_repo_commit()`
+    (R12.5, I19, AC19). AC2's idempotency must not acquire a side channel that commits code; that
+    would be the machine-moment add-all failure arriving through a different door.
+  - Update P17's claim in the docs: with `include_paths`, checkout of a set version's commit
+    yields code + environment + data pointers, not pointers alone.
+  - _Requirements: R12.5. Invariants: I18, I19. Properties: P17 (strengthened), P20, P21.
+    Acceptance: AC18, AC19, AC20._
+
+- [ ] **13. `datom_validate()` branches on `kind`**
   - `.datom_validate_one_table()` at `R/validate.R:386` currently hardcodes
     `paste0(name, "/", meta$data_sha, ".parquet")`, which fails 100% of the time on a set.
   - **table**: existing parquet check, unchanged. **set**: payload exists at
@@ -211,18 +264,22 @@ necessary.
     possible; this is a real two-sided check, not a storage self-check.
   - _Requirements: R11, R4.4. Invariants: I10a. Properties: P14, P16, P17._
 
-- [ ] **12. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
-  - Confirm every **AC1-AC9 and AC13-AC15** has a dedicated test; add what the per-chunk tests
-    missed. AC15 (cross-project cycle terminates) needs a two-connection fixture and is the
-    easiest to skip -- it cannot be produced through a single connection by construction.
+- [ ] **14. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
+  - Confirm every **AC1-AC9 and AC13-AC20** has a dedicated test; add what the per-chunk tests
+    missed. Two are easiest to skip and both need special fixtures: **AC15** (cross-project cycle
+    terminates) needs a two-connection fixture, since it cannot be produced through a single
+    connection by construction; **AC16** (machine-commit isolation) needs a foreign dirty file
+    seeded in the fixture repo, which no other test creates.
   - New `dev/e2e-sets.R` in the style of `dev/e2e-cv1-identity.R`: offline, no PAT, no AWS, real
     bare-git remote + real local store, every claim asserted, non-zero exit on mismatch (AC12).
+    Include a `mode: product` repo with foreign `R/`, `dp/`, and `renv.lock` content so the joint
+    commit and the machine-commit isolation are exercised end to end, not only in unit tests.
   - Full `devtools::test()` count reported; `R CMD check --as-cran` 0E/0W (AC10, AC11).
-  - _Acceptance: AC1-AC12._
+  - _Acceptance: AC1-AC20._
   - **Escalation rationale**: nine acceptance criteria plus a new hash regime is a lot of surface
     to claim covered on a default model's word.
 
-- [ ] **13. Docs + Spec Completion Procedure**
+- [ ] **15. Docs + Spec Completion Procedure**
   - `dev/datom_pathways.md`: the set-resolution route card; note the `kind` branch and the
     `schema_version` gate on the read route (R13.1).
   - `dev/datom_specification.md`: set artifact kind, `datom-sv1`, `schema_version` contract,
@@ -248,8 +305,9 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 | `datom_storage_read_json()` | 3 |
 | `datom_storage_write_json()` | 3 |
 | `datom_member()` | 7 |
-| `datom_write_set()` | 8 |
+| `datom_write_set()` | 8 (extended with `include_paths` in 12) |
 | `datom_read_set()` | 9 |
+| `datom_repo_commit()` | 11 |
 
 ---
 
@@ -273,3 +331,12 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-09 | **(F5)** `datom_write_set()` requires `mode: product` **and** a name matching `project.yaml`'s `set:`, both checked before any hashing or IO. This is what makes "one repo = one set" enforced rather than aspirational. | R10.3a, I15 |
 | 2026-08-09 | **(F7)** Set payloads live in git at `{name}/{data_sha}.json` (same relative path as the storage key) and **all historical payloads are retained**, so any version is reconstructible from the clone alone. The `governance.json` *ordering* transfers; its singleton *layout* does not. | R6.1a/b, P17 |
 | 2026-08-09 | **(F12)** The stale "task 5.1" text is at `R/read_write.R:105-108, 205-206, 413`, with `393` already correct and therefore contradicting. #89's `95-97` citation was wrong and the first spec draft propagated it. | R13.3, Task 1 |
+| 2026-08-11 | **Spec delta D1-D8 applied** from #89. **The `mode: product` repo IS the joint repo** (data + code + `renv.lock`); no separate fourth repo. Decisive reason: cross-repo pinning is circular -- the code repo wants to record which set version it produced and the set payload wants to record which code commit produced it, so one is always stale by one commit. A joint version requires one commit graph. | design.md section 19, R14 |
+| 2026-08-11 | **datom is the single git-mutating actor** (I17). Downstream packages never import `git2r`; all stage/commit/push/pull goes through a datom export. Writing files on disk is *not* a git operation and needs no datom API -- hence **no `datom_gitignore_*` API**, ever. | I17, R16, design.md 19.5 |
+| 2026-08-11 | **Machine vs human commit moments is the load-bearing distinction.** `dpbuild`'s add-all was safe only because every commit was human-invoked. datom commits at machine-chosen moments, so add-all there would snapshot arbitrary WIP human code. Machine moments stage datom paths only (R14.1); human moments get add-all via `datom_repo_commit(paths = NULL)` (R15.1). | design.md 19.4 |
+| 2026-08-11 | `include_paths` (R12.5) is the **only** way a machine-moment commit may carry a non-datom path, and only because the caller enumerated it. Never add-all. | R14.3, I16 |
+| 2026-08-11 | An idempotent set re-write stays a no-op **even with dirty `include_paths`** (I19). AC2 must not acquire a side channel that commits code -- that would be the add-all failure through a different door. Caller is directed to `datom_repo_commit()`. | R12.5, AC19 |
+| 2026-08-11 | **(delta correction C1)** `.datom_git_commit()` does **not** abort on empty staging -- it returns HEAD's SHA. It aborts on an empty `files` **argument** and on nonexistent files. So `datom_repo_commit(paths = NULL)` cannot delegate with `files = character(0)`, and must determine "nothing to do" itself to honor the `invisible(NULL)` no-op contract. | design.md 19.6, R15.5, Task 11 |
+| 2026-08-11 | **(delta correction C2)** The on-a-branch guard lives in `.datom_git_branch()`, reached only via `.datom_git_push()`, so it does not fire when `push = FALSE`. Assert it explicitly. | design.md 19.6, R15.7, Task 11 |
+| 2026-08-11 | `datom_repo_commit(paths = NULL)` may sweep in dirty datom files left by a failed write. **Deliberately not special-cased**: it moves git ahead of storage (the safe direction), `datom_validate(fix = TRUE)` is the existing repair path, and excluding them would make the function lie about `git add .` semantics. | design.md 19.7 |
+| 2026-08-11 | Tasks renumbered: two tasks inserted after 10 (foreign-content discipline + `datom_repo_commit()`; `include_paths`). Old 11/12/13 -> 13/14/15. | tasks.md Phase D |
