@@ -80,10 +80,13 @@ necessary.
   - Harden: conn class check, relative-key validation, clear abort on absent key, no direct
     `.datom_s3_*()` reachability (I7).
   - **Refuse datom-managed keys on the write export** (R12.4a): anything under a `.metadata/`
-    segment, and payload-shaped keys (`{name}/{sha}.{json,parquet}`) under an existing artifact
-    directory. Otherwise a downstream package can overwrite `metadata.json` or a payload
-    directly, **bypassing git-gates-storage and integrity** -- a silent-degradation path in a
-    brand-new public API. Reads stay unrestricted.
+    segment, payload-shaped keys (`{name}/{sha}.{json,parquet}`) under an existing artifact
+    directory, **and anything under a `.access/` segment**. The first two stop a downstream package
+    overwriting `metadata.json` or a payload directly, **bypassing git-gates-storage and
+    integrity**. The third protects the namespace reserved for the future access-enforcement
+    package (`dev/datomanager_overview.md`) -- datom is safe there today only *by construction*,
+    and this export is the first general-purpose write path that could break it (AC23). Reads stay
+    unrestricted.
   - `_pkgdown.yml` reference entries; roxygen with runnable offline examples in the established
     bare-git-remote + local-store style.
   - _Requirements: R12.4, R12.4a. Invariants: I7, I14. Properties: P18. No pathway impact._
@@ -174,7 +177,13 @@ necessary.
     parsing** -> return members + payload. A missing `document_sha` is an **error, not a skip**
     (design.md section 8) -- sets have no legacy population, so reproducing the `parquet_sha`
     grace would build a silent-degradation path on purpose.
-  - Works with **no git clone** (AC1) -- storage-only readers are the primary consumer.
+  - Works with **no git clone** (AC1a) -- storage-only readers are the primary consumer.
+  - **Return member pointers; do not resolve them to data.** AC1 distinguishes *resolving the
+    pointers* (always works through this one conn) from *resolving to data* (needs a conn for the
+    member's project). Same-project members work through the same conn; cross-project members are
+    the caller's to resolve (R18.1) -- datom has no name-to-location lookup. Getting this wrong
+    mis-implements a set read as "requires access to everything in it", which would contradict the
+    non-conjunctive access decision (R3.3).
   - **Both kind-mismatch directions abort with a pointer** (R12.3): `datom_read()` on a set ->
     `datom_read_set()` (AC6); `datom_read_set()` on a table -> `datom_read()` (AC14). Without the
     converse, a healthy table gets reported as a missing payload.
@@ -199,7 +208,14 @@ necessary.
   - `datom_init_repo()` gains the means to declare `mode`/`set` at init; the Task 8 gates read it.
   - `mode: product` is also the **identity badge** the build package checks at attach time
     (R10.5) -- the mode carries two meanings, both of which must hold.
-  - _Requirements: R10 (incl. R10.3a, R10.5). Invariants: I15._
+  - **New namespace-separation guard** (R17.3, AC22): initializing a `mode: product` repo refuses a
+    namespace that already holds another project's manifest, naming the occupying project and
+    pointing at using a distinct prefix. Extends the existing `.datom_check_namespace_free()` path
+    rather than adding a parallel check. **Justify it in the message and docs on blast radius**
+    (prefix-delete and teardown operate on a whole namespace, so a shared prefix means deleting the
+    product can delete raw data) -- **not** on access control, which is per-artifact and finer than
+    a namespace anyway (R17.4, R19.1).
+  - _Requirements: R10 (incl. R10.3a, R10.5), R17. Invariants: I15. Acceptance: AC22._
 
 - [ ] **11. Foreign-content discipline + `datom_repo_commit()`**
   - **Elevate machine-commit isolation from accident to guarantee** (R14.1, I16). Already true by
@@ -268,7 +284,11 @@ necessary.
   - `.datom_validate_one_table()` at `R/validate.R:386` currently hardcodes
     `paste0(name, "/", meta$data_sha, ".parquet")`, which fails 100% of the time on a set.
   - **table**: existing parquet check, unchanged. **set**: payload exists at
-    `{name}/{data_sha}.json` **and** every member resolves.
+    `{name}/{data_sha}.json` **and** every member resolves *as far as the connections allow* --
+    same-project members fully checked, cross-project members checked as well-formed pointers
+    unless the caller supplies that project's conn (R11.2). datom does no name-to-location lookup
+    of its own (R18.1), so a validator claiming to fully check cross-project members would either
+    be lying or silently requiring governance.
   - New status code `members_unresolvable`, distinguishable from a missing payload (P14).
   - Member resolution uses the **Task 7 visited-set + depth walker** (R4.4, I10a) -- a validator
     that hangs on a rotten artifact is worse than one that reports it.
@@ -356,3 +376,12 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-11 | **(F13)** Push decoupling had only one half -- `push = FALSE` with no way to push later. **Both proposed fixes adopted**, because they solve different problems. Add **`datom_repo_push()`** (R15.8): routing push intent through `commit()` would force a push-only caller through the `paths = NULL` add-all path, which in a product repo commits whatever human WIP it finds -- the R14 hazard through a third door -- and would leave `message` a silently-ignored required argument. **And** make push **convergent** (R15.5 qualified, R15.8): a no-op means no *commit*, not no push, because otherwise one failed push leaves the remote silently behind forever as every later call returns early on a clean tree. | design.md 19.8, I20, P23, P24 |
 | 2026-08-11 | Supporting the export over the wrapper-only fix: datom **already exports standalone `datom_pull()`** (`R/sync.R:45`) with no push counterpart, and the `datom_repo_*` family already exists -- so this closes an asymmetry rather than inventing a shape. Cost is one thin wrapper plus one array index: `.datom_check_git_current()` already calls `git2r::ahead_behind()` and reads `[[2]]`; `[[1]]` is the ahead count. | design.md 19.8, R15.9 |
 | 2026-08-11 | **(F14)** AC20 stays one criterion but is **tested as two cases** (nonexistent path; datom-owned overlap), so a regression identifies which gate broke. | AC20, Task 12 |
+| 2026-08-11 | **Artifact topology settled**: one repo = one namespace (`{root}/{prefix}/datom/`) = one manifest, 1:1:1. A set lands in the **product repo's** namespace, never with onboarded source data. Two manifests with the same schema, zero shared files. Matches the documented house convention (`buckets-and-prefixes.Rmd`: "prefix per product"). | R17, design.md 20.1-20.5 |
+| 2026-08-11 | **New init guard** (R17.3): a `mode: product` repo refuses a namespace already holding another project's manifest. Justified on **blast radius** -- prefix-delete/teardown operate on a whole namespace, so a shared prefix means deleting the product can delete raw data -- plus one-manifest ownership. Enforced rather than documented because the utility of mixing is ~zero (a second prefix costs nothing) while the failure is destructive. | R17.3/R17.4, AC22, Task 10 |
+| 2026-08-11 | **Correction: datom needs NO governance for cross-project members or parents.** The mechanism is caller-supplies-connection; the project name is a label and datom performs no name-to-location lookup anywhere. An earlier claim that cross-bucket products "effectively expect gov attached" was wrong -- it conflated datom's write-time needs with the access layer's read-time SOURCES lookup. | R18.1, design.md 20.3 |
+| 2026-08-11 | **Location precedence, inherited not invented**: explicit address in the project's own config works standalone; `ref.json` in the gov repo takes priority once governance exists; `governance.json` is the flag for whether it is attached. Member resolution follows this exact precedence. Therefore **member records carry a logical project name and never a location** -- an embedded location would go stale on a bucket move, which is what `ref.json` exists to prevent. | R18.2/R18.3 |
+| 2026-08-11 | **Correction: the access unit is the artifact, not the namespace.** Roles are table-level and a derived table's requirement is the union of its **leaf ancestors'** roles, so two derived tables in one product/bucket/prefix get different requirements automatically. Per-artifact IAM is expressible because every artifact has its own folder. The namespace rule therefore **keeps its conclusion but changes its justification** (blast radius + ownership, not access) -- a rule defended by a wrong argument gets relitigated. | R19.1/R19.2, R17.4, design.md 20.6 |
+| 2026-08-11 | **A set gates on nothing** -- no parents means the lineage walk finds no leaves, so no roles are required unless explicitly overridden. Same conclusion as the non-conjunctive access decision, now confirmed against the access layer's algorithm. Corollaries recorded because they surprise people: **granting a product does not grant its members**, and a **sensitive member list uses the explicit-override path**. | R19.3-R19.5, design.md 20.7 |
+| 2026-08-11 | The JSON write export must also refuse **`.access/`** -- the namespace reserved for the access-enforcement package, where datom is safe today only *by construction*. This export is the first general-purpose write path that could break that reservation. | R12.4a/R19.6, AC23, Task 3 |
+| 2026-08-11 | **`role` terminology collision**: datom's `role` (developer/reader) vs the access layer's "role" (permission set). **datom keeps `role`; the burden is on the future package to pick a different term** -- it does not exist yet so the rename is free there and breaking here. Recorded in `dev/datomanager_overview.md` for whoever builds it. | design.md 20.9 |
+| 2026-08-11 | **AC1 split** into (a) resolve pointers -- always works, no clone -- and (b) resolve to data -- needs that member's project conn. Conflating them mis-implements a set read as "requires access to everything in it". `datom_validate()`'s member check scoped the same way (R11.2), reusing `members_unresolvable`. | AC1, R11.2, Tasks 9 and 13 |

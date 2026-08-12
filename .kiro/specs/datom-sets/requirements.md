@@ -367,8 +367,16 @@ data_key <- paste0(name, "/", meta$data_sha, ".parquet")
 On a set this fails 100% of the time and reports `data_missing_s3`.
 
 - **R11.1** **table** -- existing parquet existence check, unchanged.
-- **R11.2** **set** -- payload exists at `{name}/{data_sha}.json`, **and** every member
-  resolves.
+- **R11.2** **set** -- payload exists at `{name}/{data_sha}.json`, **and** every member resolves
+  as far as the available connections allow. "Resolves" is **scoped, because it has to be**:
+  - **Same-project members** are fully checked (their metadata is in this namespace).
+  - **Cross-project members** are checked as *well-formed pointers* only, unless the caller
+    supplies a connection for that project. datom performs no name-to-location lookup of its own
+    (R18), so a validator that claimed to fully check cross-project members would either be
+    lying or silently requiring governance.
+  This is the read-time twin of the write-time decision that cycle detection is exhaustive within
+  a project and best-effort across projects. Unresolvable members reuse the same status code
+  (R11.3) rather than inventing a second vocabulary.
 - **R11.3** New status code for unresolvable members (e.g. `members_unresolvable`). A citable
   artifact that can silently rot undermines the auditability claim, so this is in scope rather
   than deferred.
@@ -418,6 +426,14 @@ On a set this fails 100% of the time and reports `data_missing_s3`.
   terms. The write export therefore **refuses managed keys**: anything under a `.metadata/`
   segment, and any payload-shaped key (`{name}/{sha}.{json,parquet}`) under an existing artifact
   directory. Reads are unrestricted -- reading a managed key is useful and harmless.
+  **It must also refuse `.access/`.** `{prefix}/datom/.access/` is a **namespace reserved for the
+  future access-enforcement package** (`dev/datomanager_overview.md`, "Reserved Namespace"), under
+  a standing rule that datom never reads, writes, or deletes there -- with an audit confirming
+  datom is currently safe *by construction* (it has no list/delete calls and every key goes
+  through the `datom/`-inserting key builder). This export is the first genuinely general-purpose
+  write surface datom has ever offered, so it is also the first thing that could break that
+  reservation. Adding `.access/` to the refusal list keeps the guarantee structural rather than
+  incidental.
   This is a **public contract decision, settled here rather than at implementation time**.
 
 ### R13 -- Documentation
@@ -541,6 +557,92 @@ existing asymmetry rather than inventing a new shape.
   downstream packages append entries by **editing the file directly** -- a file write, not a git
   operation. **No `datom_gitignore_*` function is to be added.** Recorded to prevent API creep.
 
+### R17 -- Artifact topology: one repo, one namespace, one manifest
+
+- **R17.1** A datom project is one git repo paired with one **storage namespace**
+  (`{root}/{prefix}/datom/`). Repo, namespace, and manifest are 1:1:1. Nothing is shared between
+  two projects -- not artifacts, not the manifest, not a single file.
+- **R17.2** A set therefore lands in **the namespace of the product repo that owns it**, never in
+  a namespace holding onboarded source data. This is already structurally true by composition:
+  a set can only be written to the repo whose config names it (R10.3a), one repo maps to one
+  namespace, and `datom_init_repo()` already refuses an occupied namespace via
+  `.datom_check_namespace_free()`.
+- **R17.3 -- new guard.** Initializing a `mode: product` repo **refuses a namespace that already
+  contains a manifest for a different project**, with a message naming the occupying project and
+  the recourse (use a distinct prefix). This closes the one remaining hole -- a deliberate
+  force-init over an existing source namespace -- and turns a documented convention into a
+  structural one.
+- **R17.4 -- rationale is blast radius and ownership, not access control.** Teardown and
+  prefix-delete operate on a **whole namespace**, so a product sharing a prefix with its source
+  study means deleting the product can delete raw data. Secondarily, one namespace means one
+  manifest, so sharing would make `datom_list()` unable to distinguish "the product" from
+  "everything it was built from", and two git repos would contend for one manifest.
+  **Explicitly not justified by access control** -- see R19.1, access is per-artifact.
+- **R17.5 -- the rule is namespace separation, not bucket count.** One bucket with a prefix per
+  product is the documented house convention (`dev/vignettes-deferred/buckets-and-prefixes.Rmd`,
+  Pattern A: bucket-per-study, empty prefix for raw, *"prefix per product"* for multiple products
+  per study). A dedicated or shared product bucket is equally fine. datom enforces separation and
+  takes no position on bucket topology.
+- **R17.6** A `mode: product` repo is **not a leaf**. Its derived tables are first-class datoms in
+  a real namespace, so another product can take them as members or as parents. This is the
+  composability claim from #89 and it depends on R17.1 holding.
+
+### R18 -- Location resolution: explicit standalone, governance takes priority
+
+- **R18.1 -- datom needs no governance for cross-project membership or lineage.** The mechanism is
+  **caller-supplies-connection**: `datom_member(conn_src, ...)` and `datom_parent(conn_src, ...)`
+  receive the other project's connection explicitly, record its `project_name` as a **label**, and
+  datom performs **no name-to-location lookup anywhere**. A product spanning three studies in
+  three buckets works with three configured connections and no governance attached.
+- **R18.2 -- the precedence that already exists, which sets inherit rather than re-invent.** A
+  project's location is written explicitly in its own config; `ref.json` in the governance repo is
+  the authoritative pointer **once governance exists**, and connection-time resolution prefers it
+  (this is what makes migration possible without rewriting artifacts). `governance.json` --
+  written to both the git repo and the storage mirror -- **is the flag** for whether governance is
+  attached. Member resolution follows exactly this precedence: caller-supplied connection when
+  there is no governance, governance register once attached.
+- **R18.3 -- member records carry a logical project name and never a location.** No backend, root,
+  prefix, or region in a member entry. The payload is immutable and content-addressed, so an
+  embedded location would go stale the day a bucket moves -- which is precisely the indirection
+  `ref.json` exists to provide. Logical name in the artifact; physical location resolved at read
+  time.
+- **R18.4** Automatic name-to-location resolution is the **future access-enforcement package's**
+  concern, not datom's: its registry holds a SOURCES table mapping project name to bucket/prefix,
+  used when its lineage walker crosses buckets (`dev/datomanager_overview.md`). datom must not
+  grow a competing lookup.
+
+### R19 -- Forward compatibility with access enforcement
+
+Recorded so this spec's decisions stay coherent with the planned access layer
+(`dev/datomanager_overview.md`). **Nothing here is built now**; it constrains what we must not
+foreclose.
+
+- **R19.1 -- access is per-artifact, not per-namespace.** Roles are defined at table granularity,
+  and every artifact has its own folder under the namespace, so a policy can grant
+  `.../datom/adsl/*` without granting `.../datom/adae/*`. Per-artifact grants are expressible as
+  prefix patterns. **A set is independently grantable for the same reason** -- it is an artifact
+  with its own folder.
+- **R19.2 -- two derived tables in one product legitimately have different access requirements.**
+  Required permissions for a derived table are the union of the roles required by its **leaf**
+  ancestors, discovered by walking lineage. Two tables in the same product, same bucket, same
+  prefix, with different ancestry get different requirements **automatically** -- nobody configures
+  it. This is a reason R17's namespace rule must not be justified by access control: separation is
+  about blast radius, and granularity is finer than a namespace anyway.
+- **R19.3 -- a set gates on nothing, because it has no lineage.** Members are references, not
+  parents (R3), so a lineage walk from a set terminates immediately and finds no leaves. Under the
+  access algorithm that means a set requires no roles unless explicitly overridden. This is not a
+  special case -- it is the same conclusion the non-conjunctive access decision (R3.3) reached from
+  the other direction, now consistent with the access layer's own algorithm.
+- **R19.4 -- granting a product does not grant its members.** Auto-inheritance runs through
+  `parents`, and sets have none. Counterintuitive enough that it must be documented, not left to
+  be discovered.
+- **R19.5 -- a sensitive member list uses the explicit-override path.** Knowing which studies are
+  pooled can itself be confidential. The access layer already supports adding a specific artifact
+  directly to the roles table to *add* requirements beyond what lineage implies (the embargo
+  case). Sets need no new mechanism for this.
+- **R19.6 -- `.access/` stays reserved.** See R12.4a: the new JSON-write export must refuse it.
+
+
 ---
 
 ## 5. Acceptance criteria
@@ -549,7 +651,7 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 
 | # | Criterion |
 |---|---|
-| **AC1** | **Reader role, no git.** A storage-only connection (no `github_pat`, no clone) can `datom_read_set()` and resolve members. This is the primary use case; the "git-canonical" framing must not lead to requiring a clone. |
+| **AC1** | **Reader role, no git -- and "resolve" means two different things, tested separately.** (a) **Resolve the pointers**: a storage-only connection (no `github_pat`, no clone) can `datom_read_set()` and get back the member records. This always works and is the primary use case -- the "git-canonical" framing must not lead to requiring a clone. (b) **Resolve to data**: reading a member's actual content needs a connection scoped to *that member's* project -- same-project members work through the same connection; cross-project members require the caller's connection (or, later, the governance register). Conflating (a) and (b) is how this gets mis-implemented as "reading a set requires access to everything in it". |
 | **AC2** | **Idempotent re-write.** Writing an identical member list to the same set name is a no-op -- dedup on set `data_sha`, no new version appended. |
 | **AC3** | **Version sensitivity.** A set whose member *names* are unchanged but whose member *versions* advanced **must** produce a new `data_sha` and a new version. Do not "optimize" this away. |
 | **AC4** | **Name uniqueness across kinds.** Writing a set with the name of an existing table (or vice versa) is refused. **Mechanism**: the check reads `{name}/.metadata/metadata.json` from **storage** and compares `kind` -- not the manifest, which can lag behind a partially-completed write. This is the same source `.datom_has_changes()` already consults, so the check costs no extra round-trip. Stated explicitly so it is not decided by accident. |
@@ -567,6 +669,8 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC19** | **Idempotent re-write stays a no-op under dirty `include_paths`.** Re-writing an identical member list while `include_paths` files have changed creates **no commit and no new version**, and emits the informational message pointing at `datom_repo_commit()` (R12.5). This is AC2 defended against a side channel. |
 | **AC20** | **`include_paths` refused early -- two distinct gates, two separate test cases.** (a) A **nonexistent** path is refused; (b) a path **overlapping** a datom-owned path (`{artifact}/**`, `.datom/**`) is refused. Both **before any hashing or IO** (R12.5), consistent with the R10.3a gate placement. Kept as one criterion but **tested as two cases**, so a regression identifies which gate broke rather than only that one of them did. |
 | **AC21** | **`datom_repo_push()` is convergent.** With unpushed local commits it advances the remote; called again immediately it is an informational **no-op, not an error**; a reader conn is refused; it inherits the on-a-branch guard (R15.8). |
+| **AC22** | **Namespace separation is enforced, not merely documented.** Initializing a `mode: product` repo into a namespace that already holds another project's manifest is **refused**, with a message naming the occupying project and pointing at using a distinct prefix (R17.3). |
+| **AC23** | **The JSON-write export refuses the reserved access namespace.** A write to any key under a `.access/` segment is refused, alongside the existing `.metadata/` and payload-key refusals (R12.4a, R19.6). Reads are unaffected. |
 
 Plus the standing project gates:
 

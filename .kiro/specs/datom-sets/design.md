@@ -943,3 +943,166 @@ ahead -- and `datom_repo_push()` is convergent for the same reason (R15.8, P23).
   capability being added on the chance it is wanted -- it is one export and one array index.
 
 Net: commit is **idempotent**, push is **convergent**, and neither implies the other (I20, P24).
+
+---
+
+## 20. Artifact topology across repos, and access-layer line of sight
+
+Worked through in review after the joint-repo decision (section 19) raised the question of where
+artifacts actually land when a product draws on onboarded data. Nothing here changes a prior
+decision; it makes implied things explicit and **corrects one piece of reasoning** that was wrong.
+
+### 20.1 The single mechanic everything follows from
+
+A datom project is **one git repo paired with one storage namespace**, where the namespace is
+`{root}/{prefix}/datom/` -- the `datom/` segment is inserted unconditionally by
+`.datom_build_storage_key()`. Under it: one folder per artifact, plus `.metadata/` holding that
+project's manifest (and the `governance.json` mirror).
+
+**Repo, namespace, and manifest are 1:1:1** (R17.1). A `datom_conn` is scoped to exactly one
+project, so `datom_write()` lands where the conn points and `datom_list()` lists what that one
+namespace holds.
+
+### 20.2 Case A -- single study, one bucket, onboarding plus one product
+
+```
+s3://study001/
+  datom/                        <- prefix "" : onboarding namespace
+    dm/  lb/  ae/                  imported tables
+    .metadata/manifest.json        3 artifacts, all kind "table"
+  adam/datom/                   <- prefix "adam" : product namespace
+    adsl/  adae/                   derived tables
+    study001-adam/                 the SET (payload + metadata)
+    .metadata/manifest.json        2 tables + 1 set
+```
+
+Two projects, two repos, **two manifests, zero shared files**. The set sits beside the product's
+own derived tables -- correct, since they are the same product with the same owner -- and never
+beside the raw source data.
+
+This matches the existing house convention verbatim:
+`dev/vignettes-deferred/buckets-and-prefixes.Rmd` already prescribes *"Multiple data products per
+study (raw + ADaM + TLF) -> Pattern A, prefix per product"*. We are hardening a documented
+pattern, not inventing one.
+
+### 20.3 Case B -- one product pooling three studies across three buckets
+
+```
+s3://study001/datom/...                 source project 1
+s3://study002/datom/...                 source project 2
+s3://study003/datom/...                 source project 3
+s3://products/pooled-safety/datom/      product namespace: set + derived tables
+s3://org-datom-gov/...                  governance register (shared, optional)
+```
+
+Marginal cost of the product is **one repo and one prefix**; study buckets and the gov bucket are
+shared infrastructure. Four git repos (three source, one product), plus the gov repo if attached.
+
+**This works with no governance attached** (R18.1). The three source connections are supplied by
+the caller (dpdev is configured per product), and each member records a project *name* as a label.
+An earlier draft of this analysis claimed cross-bucket products "effectively expect gov attached";
+that was wrong -- it conflated datom's write-time needs with the future access layer's read-time
+name-to-location lookup (R18.4).
+
+### 20.4 Mapping the four-step workflow
+
+| Step | Reads | Writes land in | Commit moment |
+|---|---|---|---|
+| 1. Onboard source data | -- | source repo + namespace A | machine (datom paths only) |
+| 2. Build the set from onboarded data | source snapshots via `conn_src` | **product** repo + namespace B | machine |
+| 3. Derive new tables, add back to the set | source tables; the set payload (tags) | **product** repo + namespace B | machine x2 (table, then set) |
+| 4. Co-commit logic + env + set reference | -- | product repo (**git only**) | machine with `include_paths` |
+
+**No write ever lands in the source repo** (P13). Building or updating a set is read-only on its
+members: `datom_member(conn_src, ...)` reads a version snapshot and returns pure data.
+
+Step 3's members are normally a **mix** -- source tables via `datom_member(conn_src, ...)`
+(cross-project) and the freshly derived table via `datom_member(conn_prod, ...)` (same-project).
+This is the ordinary case, not an edge case.
+
+On commit granularity: the table write and the set write are separate machine-moment commits. The
+**set commit is the joint-version anchor** -- it pins code + environment (`include_paths`) + the
+payload, and the payload pins the table versions, whose own commits sit earlier in the same graph.
+
+### 20.5 Two manifests, same schema
+
+`datom_list(conn_prod)` shows the derived tables **and** the set, typed by `kind`;
+`datom_list(conn_src)` shows only the source tables. Same schema, different files -- one per repo.
+
+This is the payoff of one typed namespace (section 9) over a sibling `manifest$sets` node: the
+product repo genuinely needs to list both kinds in one place, and being one repo, it has one
+manifest to do it in.
+
+### 20.6 Correction: the access unit is the artifact, not the namespace
+
+An earlier draft of this analysis asserted that "the namespace is the access-control unit" and
+pitched one-grant-per-product. **That is wrong**, per `dev/datomanager_overview.md`:
+
+- Roles are defined at **table** granularity -- a role names specific `(project, table)` pairs.
+- A derived table's requirement is the **union of the roles required by its leaf ancestors**,
+  found by walking lineage upward. Rationale in that design: sensitivity lives in the original
+  patient data, not in a summary derived from it, so if you can read every ingredient you can read
+  the output.
+- Consequence (R19.2): two derived tables in the **same** product, bucket and prefix get
+  **different** requirements automatically, because they have different ancestry. Nobody
+  configures it.
+- It is enforceable rather than advisory because every artifact has its own folder, so a policy can
+  grant `.../datom/adsl/*` without granting `.../datom/adae/*`.
+
+**What this costs the namespace-separation rule**: the strongest earlier argument -- that
+co-locating a set with source data would couple the set's readability to that study's access -- is
+weakened, since per-artifact grants could grant the set folder specifically wherever it sits.
+
+**What survives, and is sufficient** (R17.4):
+
+1. **Blast radius** -- teardown and prefix-delete operate on a whole namespace, so a product
+   sharing a prefix with its source study means deleting the product can delete raw data. This is
+   the decisive argument.
+2. **Ownership and listing** -- one namespace, one manifest; sharing makes `datom_list()` unable to
+   separate the product from its inputs, and puts two git repos in contention over one manifest
+   (which the existing init guard already refuses).
+3. **Layer-2 simplicity** -- per-artifact policies work either way, but a clean product prefix
+   makes "grant the whole product" one rule instead of an enumeration.
+
+The rule stands; **the justification changes**. Recorded because a rule defended by the wrong
+argument gets relitigated the first time someone tests the argument.
+
+### 20.7 What a set means to the access layer
+
+A set has **no parents** by design, so a lineage walk from a set terminates immediately with no
+leaves. Under the access algorithm that means **a set requires no roles unless explicitly
+overridden** (R19.3). This is the same conclusion the non-conjunctive access decision (R3.3)
+reached from the opposite direction -- reading the set tells you what exists, and each member is
+gated when you read it -- now confirmed against the access layer's own algorithm rather than
+asserted.
+
+Two consequences that are counterintuitive enough to need writing down:
+
+- **Granting a product does not grant its members** (R19.4). Auto-inheritance flows through
+  `parents`; sets have none.
+- **A sensitive member list uses the explicit-override path** (R19.5). Knowing which studies are
+  pooled may itself be confidential; the access layer already supports adding a specific artifact
+  to the roles table to *add* requirements beyond lineage. Sets need no new mechanism.
+
+### 20.8 The reserved `.access/` namespace
+
+`{prefix}/datom/.access/` is reserved for the access-enforcement package, under a standing rule
+that datom never reads, writes, or deletes there. That doc records an audit confirming datom is
+currently safe **by construction**: no list or delete calls in package code, all storage
+operations are point-access on explicit keys, and the key builder always inserts a `datom/`
+segment.
+
+The newly exported JSON write surface (R12.4) is the **first general-purpose write path datom has
+ever offered**, and therefore the first thing capable of breaking that reservation. Hence R12.4a
+refuses `.access/` alongside `.metadata/` and payload keys (AC23). Reads stay unrestricted.
+
+### 20.9 Terminology collision: `role`
+
+datom uses `role` for the **developer / reader** distinction on a `datom_conn`. The access design
+uses "role" for a **named permission set**. In shared documentation these read as the same word
+meaning two unrelated things.
+
+**Decision: datom keeps `role` as-is; the burden is on the access-enforcement package to choose a
+different term** (it does not exist yet, so the rename costs nothing there and would be a breaking
+change here). Recorded in `dev/datomanager_overview.md` so the constraint is visible to whoever
+builds it, rather than living only in this spec.
