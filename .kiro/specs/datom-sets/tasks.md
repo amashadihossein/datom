@@ -50,14 +50,13 @@ necessary.
     encoder run over the in-memory R object produces a *different* `data_sha` than the same
     encoder over the parsed payload (`NA_real_` becomes the string `"NA"`, doubles return as
     integers), which breaks P1/P2. **This is not optional and not an open question.**
-  - **Settle the six open questions in design.md section 7 before writing the encoder**:
+  - **Settle the five open questions in design.md section 7 before writing the encoder**:
     Q1 whole-payload vs member-list-only; Q2 `NA_character_` vs `""` vs `null` (a special case of
     the constraint); Q3 empty-set legality (AC5); Q4 whether `schema_version` enters the payload;
     **Q5 which serializer defines the canonical form** -- `jsonlite` (consistent, but makes the
     goldens depend on a third-party emitter, the exact dependency #72 removed for parquet) or an
     sv1-owned minimal emitter (more code, goldens depend only on the spec). Q5 is load-bearing and
-    coupled to the section 16 issue; **Q6** is whether a set carries a transitive member closure
-    mirroring `source_lineage` (lean no -- see design.md 20.11).
+    coupled to the section 16 issue.
   - `.datom_sv1_value()` + `.datom_canonical_set_hash()` in a new `R/hashable-set.R` (or extend
     `R/utils-sha.R` -- decide at escalation). Reuse `.datom_encode_numeric()` verbatim; do not
     write a second numeric encoder.
@@ -140,20 +139,23 @@ necessary.
     `parquet_sha` conditional-add in `.datom_write_metadata_local()`.
   - _Requirements: R1, R7.1, R7.2. Invariants: I1, I12. Acceptance: AC8 (metadata half)._
 
-- [ ] **7. `datom_member()` + validator + cycle and depth checks**
+- [ ] **7. `datom_member()` + validator + self-reference check**
   - `datom_member(conn, name, version)` mirroring `datom_parent()` (`R/lineage.R`): validate,
     read `{name}/.metadata/{version}.json`, derive `project` from `conn$project_name` and `kind`
     from the snapshot (defaulting to `"table"` for pre-`kind` metadata). Returns
     `{project, name, kind, version}` as pure data.
   - `.datom_validate_members()` mirroring `.datom_validate_parents()`, including the `remedy`
     string pointing at `datom_member()`.
-  - Write-time cycle detection + depth limit (proposed 8; confirmed at E1 escalation).
-    **Exhaustive within the project, best-effort across projects** -- an unresolvable
-    cross-project member is not a cycle failure, it is a `datom_validate()` finding (Task 13).
-  - Provide the shared **visited-set + depth walker** here, so Task 9 and Task 13 consume one
-    implementation rather than each growing its own (R4.4). Write-time and read-time enforcement
-    must agree on the limit.
-  - _Requirements: R4 (incl. R4.4). Invariants: I9, I10, I10a. Properties: P16. Acceptance: AC9._
+  - **Refuse self-reference** (R4.5, AC9): a set listing itself as a member. One cheap check. The
+    set's own identity is known from `project.yaml` (R10.3a).
+  - **Deliberately NOT built: cycle detection, a visited-set guard, or a depth limit** (R4.3/R4.4,
+    design.md 5 and 20.11). Members pin immutable versions, so the graph is acyclic **by
+    construction** -- a set cannot reference something that contains it, because that thing did not
+    exist when its members were chosen (same property as git history). And datom resolves **one
+    level** and never traverses, so nothing could loop even if a cycle existed. An earlier draft
+    specified all three; they solved a problem that cannot occur. **Do not reintroduce them as
+    defensive code** (I10a).
+  - _Requirements: R4 (incl. R4.3-R4.5). Invariants: I9, I10, I10a. Acceptance: AC9._
 
 - [ ] **8. `datom_write_set()`**
   - **Two gates first, before any hashing or IO** (R10.3a, I15): the repo must declare
@@ -188,10 +190,12 @@ necessary.
   - **Both kind-mismatch directions abort with a pointer** (R12.3): `datom_read()` on a set ->
     `datom_read_set()` (AC6); `datom_read_set()` on a table -> `datom_read()` (AC14). Without the
     converse, a healthy table gets reported as a missing payload.
-  - **Recursive member dispatch carries the visited set + depth limit from Task 7** (R4.4, I10a).
-    A stored cross-project cycle is reachable -- write-time checks cannot see it (design.md
-    section 5) -- so this must abort, not hang (AC15).
-  - _Requirements: R12.3, R7.1, R6.4, R4.4. Invariants: I3, I8, I10a. Properties: P9, P16.
+  - **One level only -- do not traverse** (R4.3, I10, AC15). A member that is itself a set is
+    returned as a **pointer**; its own members are not fetched. Resist "helpfully" flattening the
+    tree: a consumer wanting the full tree composes repeated reads, exactly as
+    `datom_get_parents()` leaves further steps to the caller. Read cost must be a function of this
+    set's direct member count, never of the depth beneath it (P16).
+  - _Requirements: R12.3, R7.1, R6.4, R4.3. Invariants: I3, I8, I10. Properties: P9, P16.
     Acceptance: AC1, AC6, AC14, AC15._
   - _Pathway impact: new route card "Given a set + version, resolve its members"._
 
@@ -291,18 +295,19 @@ necessary.
     of its own (R18.1), so a validator claiming to fully check cross-project members would either
     be lying or silently requiring governance.
   - New status code `members_unresolvable`, distinguishable from a missing payload (P14).
-  - Member resolution uses the **Task 7 visited-set + depth walker** (R4.4, I10a) -- a validator
-    that hangs on a rotten artifact is worse than one that reports it.
+  - **Member checking is one level deep** (R4.3, I10): each member pointer resolves to an existing
+    artifact. The validator does not descend into nested sets -- validating an inner set is a
+    separate `datom_validate()` call against that set's own project.
   - Set branch compares **git payload vs storage payload**, which R6.1b's git retention makes
     possible; this is a real two-sided check, not a storage self-check.
-  - _Requirements: R11, R4.4. Invariants: I10a. Properties: P14, P16, P17._
+  - _Requirements: R11, R4.3. Invariants: I10. Properties: P14, P16, P17._
 
 - [ ] **14. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
   - Confirm every **AC1-AC9 and AC13-AC21** has a dedicated test; add what the per-chunk tests
-    missed. Two are easiest to skip and both need special fixtures: **AC15** (cross-project cycle
-    terminates) needs a two-connection fixture, since it cannot be produced through a single
-    connection by construction; **AC16** (machine-commit isolation) needs a foreign dirty file
-    seeded in the fixture repo, which no other test creates.
+    missed. Two are easiest to skip and both need special fixtures: **AC15** (nesting resolves one
+    level) needs a set-containing-a-set fixture and an assertion that the inner payload is *not*
+    read; **AC16** (machine-commit isolation) needs a foreign dirty file seeded in the fixture repo,
+    which no other test creates.
   - New `dev/e2e-sets.R` in the style of `dev/e2e-cv1-identity.R`: offline, no PAT, no AWS, real
     bare-git remote + real local store, every claim asserted, non-zero exit on mismatch (AC12).
     Include a `mode: product` repo with foreign `R/`, `dp/`, and `renv.lock` content so the joint
@@ -357,7 +362,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-09 | Missing `document_sha` on a set read is an **error**, not a skip. The `parquet_sha` skip branch is a pre-cv1 migration grace; sets have no legacy population. | design.md section 8 |
 | 2026-08-09 | `metadata_sha`'s own emitter-drift exposure is filed as a separate issue, not folded into this spec. | design.md section 16, Task 1 |
 | 2026-08-09 | **Independent spec review.** All 12 findings verified against the code and accepted; none rejected. Full audit trail with per-finding verification method and resolution. | design.md section 18 |
-| 2026-08-09 | **(F1)** Write-time cycle detection is exhaustive *within a project only*. A cross-project cycle is reachable and unpreventable at write time, so read-side visited-set + depth guarding is a **requirement** (R4.4), not defence-in-depth. I10 scoped accordingly. | design.md section 5, I10/I10a |
+| 2026-08-09 | ~~**(F1)** Write-time cycle detection is exhaustive within a project only; read-side visited-set + depth guarding is a requirement.~~ **SUPERSEDED 2026-08-11 -- see the entry below.** The premise was false. | design.md 20.11 |
 | 2026-08-09 | **(F2)** `datom-sv1` hashes the **parsed-JSON** data model, not the in-memory R object -- `serialize -> parse -> encode`. Reproduced on the branch: `NA_real_` -> string `"NA"`, doubles -> integers, `NA_character_` -> `null`. A type-tagged encoder over the in-memory object would disagree with itself across the round trip. Elevated from open question to hard constraint. | R2.5, design.md section 7 |
 | 2026-08-09 | **(F2/Q5)** Which serializer defines sv1's canonical form -- `jsonlite` vs an sv1-owned minimal emitter -- is now the load-bearing open question, because the round-trip constraint forces the choice into the open. Coupled to the section 16 issue. | design.md section 7 Q5, E1 |
 | 2026-08-09 | **(F3)** The public `datom_storage_write_json()` refuses datom-managed keys (`.metadata/` segments, payload-shaped keys under existing artifacts). Reads unrestricted. Public-contract decision settled in the spec. | R12.4a, I14 |
@@ -387,6 +392,8 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-11 | **`role` terminology collision**: datom's `role` (developer/reader) vs the access layer's "role" (permission set). **datom keeps `role`; the burden is on the future package to pick a different term** -- it does not exist yet so the rename is free there and breaking here. Recorded in `dev/datomanager_overview.md` for whoever builds it. | design.md 20.9 |
 | 2026-08-11 | **Clarified: there is no lineage walk.** `source_lineage` is a precomputed transitive union maintained at write time -- imported tables get a self-entry, derived tables get the union of their parents' unions -- so "which raw sources feed X" is **one read, zero hops**, and it cannot drift because parents pin immutable versions. Design section 20.6 initially repeated the access design's "walk upward" framing; corrected. | design.md 20.10 |
 | 2026-08-11 | **`dev/datomanager_overview.md` is stale on this point and now says so.** It predates Phase 20, so it requires only `parents` and builds a walk -> session-cache -> *precomputed leaf map* ladder. `source_lineage` **is** that leaf map, already stored per table. Added item 3a plus stale-markers on the affected sections: delete the walk, do not rebuild `ROLE_LEAVES`, keep the access *semantics*. | dev/datomanager_overview.md |
-| 2026-08-11 | **OPEN -- depth limit likely to be dropped.** The limit was never about lineage; it concerns set-in-set nesting, which does hop per level (sets carry no transitive closure by design). But **cycle detection via a visited set alone guarantees termination** and bounds cost by the number of sets that exist, so a fixed depth adds no correctness -- only an arbitrary observable ceiling. Recommendation: drop the number, keep cycle detection. Awaiting confirmation; R4.3/R4.4/I10a/Task 7 still carry it. | design.md 20.11 |
-| 2026-08-11 | **OPEN -- deferred to E1**: should a set precompute a **transitive member closure**, mirroring `source_lineage`? Safe for the same reason (members pin immutable versions, so a closure cannot drift) and would make nested resolution one read. Against: payload growth, and it enters set identity under whole-payload hashing. Lean **no** -- set-in-set is likely shallow, so the walk removed is 2-3 reads. Belongs with the payload-content decisions since it changes the payload. | design.md 20.11, E1 |
+| 2026-08-11 | **RESOLVED -- all nesting machinery removed** (supersedes F1 and the two OPEN entries that preceded this). Cycle detection, the visited-set guard, and the depth limit are **gone**, for two independent reasons either of which suffices: (1) **datom resolves one level and never traverses** -- a member that is a set comes back as a pointer and the consumer reads it separately, so nothing can loop; (2) **the graph is acyclic by construction** -- members pin immutable versions that must already exist, so a set cannot reference something containing it, exactly as git history cannot cycle. The "cross-project cycle" earlier constructed does not close: the second write creates a new version rather than mutating the referenced one, giving `B1@v2 -> A1@v1 -> B1@v1`, which terminates. | R4.3-R4.5, I10/I10a, P16, AC9/AC15, design.md 5 + 20.11 |
+| 2026-08-11 | Replacements after the removal: **R4.3** one-level resolution, **R4.4** acyclic by construction, **R4.5** refuse self-reference (the one check that stays -- acyclic and harmless, but never meaningful). **I10** no traversal, **I10a** no cycle/depth guard may creep back as defensive code. **P16** restated as "read cost is bounded by direct member count". **AC9** restated as self-reference refusal, **AC15** restated as "nesting resolves one level" -- a test that the tree is *not* flattened. | requirements.md R4, design.md 13-14 |
+| 2026-08-11 | **Retired: the transitive-member-closure question** (formerly E1 Q6). It existed only to replace a traversal with one read; there is no traversal, so it would be payload weight buying nothing and would enter set identity for no benefit. E1 is back to one hard constraint + five open questions. | design.md 7, 20.11 |
+| 2026-08-11 | **Process lesson recorded, not patched over.** The nesting machinery entered via review finding F1, which correctly spotted a contradiction between two spec statements and was resolved by *adding* guards rather than by testing whether either statement was true. Both were false. When a review surfaces a contradiction, **check the premises before building something to reconcile them**. | design.md 18 (F1 row), 20.11 |
 | 2026-08-11 | **AC1 split** into (a) resolve pointers -- always works, no clone -- and (b) resolve to data -- needs that member's project conn. Conflating them mis-implements a set read as "requires access to everything in it". `datom_validate()`'s member check scoped the same way (R11.2), reusing `members_unresolvable`. | AC1, R11.2, Tasks 9 and 13 |

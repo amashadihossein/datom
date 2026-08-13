@@ -162,21 +162,35 @@ produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
   `datom_parent()` is the established pattern for constructing a validated reference record,
   and symmetry keeps validation at construction time rather than deep inside
   `datom_write_set()`.
-- **R4.3** Set-in-set nesting is bounded by two rules enforced **at write time**: a **depth
-  limit** and **cycle detection**. Write-time enforcement is **exhaustive within a project** and
-  **best-effort across projects** -- the walk can only follow members reachable through the
-  connection the caller supplies.
-- **R4.4 -- read-side guard (mandatory, not defence-in-depth).** Because R4.3 is only
-  best-effort across projects, a **stored cross-project cycle is reachable**: project A's set
-  gains B's set, then B's set gains A's -- neither write can observe the other. Therefore **every
-  recursive member resolver carries a visited set and the same depth limit**, and aborts on
-  revisit or overrun. This applies to `datom_read_set()` member dispatch and to
-  `datom_validate()` member resolution. Without this a cross-project cycle is an infinite loop,
-  not an error.
+- **R4.3 -- resolution is one level; datom never traverses.** A set's payload lists its **direct**
+  members only. Reading a set returns those member records; if a member is itself a set, the
+  consumer gets a **pointer** to it and reads that set separately if they want its contents. This
+  mirrors `datom_get_parents()`, which returns one step back and leaves further steps to the
+  caller. **No datom operation walks the member graph** -- not `datom_read_set()`, not
+  `datom_validate()`. A consumer wanting a flattened tree composes repeated reads in their own
+  code.
+- **R4.4 -- the member graph is acyclic by construction, so no cycle detection is specified.**
+  A member pins an **immutable version**, and declaring it requires that version to already exist
+  (`datom_member()` reads its snapshot). So a set cannot reference anything that contains it --
+  that thing did not exist when its members were chosen. This is the same property that makes git
+  history acyclic. Concretely, the sequence that looks like a cross-project cycle is not one:
 
-**Acceptance**: AC9 (write-time, same project) and AC15 (read-time, cross-project) below; plus a
-hand-assembled member list is refused with a message pointing at `datom_member()` (mirroring the
-`remedy` pattern in `.datom_validate_parents()`).
+  ```
+  1. A writes set A1 containing B1@v1        (B1@v1 must already exist)
+  2. B writes set B1@v2 containing A1@v1     (does NOT mutate B1@v1)
+
+  Result: B1@v2 -> A1@v1 -> B1@v1            terminates; v1 and v2 are distinct nodes
+  ```
+
+  Because of this, **no depth limit and no visited-set guard are required**. Nothing can loop,
+  and with R4.3 nothing traverses in the first place.
+- **R4.5 -- self-reference is refused as nonsense, not as a cycle.** A set listing itself (an
+  earlier version of itself) as a member is acyclic and would terminate, but it is never
+  meaningful. Cheap check at write time, clear error.
+
+**Acceptance**: AC9 (self-reference refused) and AC15 (nesting resolves one level, no traversal)
+below; plus a hand-assembled member list is refused with a message pointing at `datom_member()`
+(mirroring the `remedy` pattern in `.datom_validate_parents()`).
 
 ### R5 -- Storage layout
 
@@ -343,8 +357,8 @@ set: study001-adam
      non-product repo would have no declared owner and would defeat both gates below.
   2. **`datom_write_set(name = )` must equal `project.yaml`'s `set:` field.** A mismatch aborts.
      This is what makes "one repo = one set" true rather than aspirational, and it is also the
-     precondition design.md section 5 relies on when it says the cycle walk's root is known
-     before the write.
+     precondition the self-reference check (R4.5) relies on -- it needs to know the set's own
+     identity before the write.
 
   These two checks run **before** any hashing or IO, so a refusal leaves no partial state
   (the `.datom_canonical_hash()` precedent).
@@ -374,9 +388,10 @@ On a set this fails 100% of the time and reports `data_missing_s3`.
     supplies a connection for that project. datom performs no name-to-location lookup of its own
     (R18), so a validator that claimed to fully check cross-project members would either be
     lying or silently requiring governance.
-  This is the read-time twin of the write-time decision that cycle detection is exhaustive within
-  a project and best-effort across projects. Unresolvable members reuse the same status code
-  (R11.3) rather than inventing a second vocabulary.
+  Checking is **one level deep** -- each member pointer resolves to an existing artifact. The
+  validator does not traverse into nested sets (R4.3); validating an inner set is a separate
+  `datom_validate()` call against that set's own project. Unresolvable members reuse the same
+  status code (R11.3) rather than inventing a second vocabulary.
 - **R11.3** New status code for unresolvable members (e.g. `members_unresolvable`). A citable
   artifact that can silently rot undermines the auditability claim, so this is in scope rather
   than deferred.
@@ -659,10 +674,10 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC6** | **`datom_read()` on a set** aborts with a message pointing at `datom_read_set()`, not a cryptic missing-parquet error. |
 | **AC7** | **Schema gate fires, both directions.** *Refuse-newer*: a repo declaring `schema_version: 3` aborts with the upgrade message, at **both** entry points (manifest and per-artifact metadata). *Tolerate-older*: a repo with no `schema_version` field behaves exactly as 0.1.0 did. **Mechanism note**: an actually-installed 0.1.0 reader has no gate to fire, so this is not testable by installing an old version -- the test drives `.datom_check_schema_version()` directly with a fixture declaring a version above `SUPPORTED_SCHEMA`. Test the gate, not the archaeology. |
 | **AC8** | **Lineage isolation.** A set's metadata contains no `parents` and no `source_lineage` (**omitted, not null**), and writing a set does not alter any member's lineage. |
-| **AC9** | **Cycle refusal at write time.** A set that transitively contains itself **within a project** is refused at write time. |
+| **AC9** | **Self-reference refused.** Writing a set that lists itself (any version of itself) as a member is refused at write time with a clear error (R4.5). Note this is a nonsense check, **not** cycle detection -- cycles are structurally impossible (R4.4), so there is deliberately no cycle test and no depth test. |
 | **AC13** | **Round-trip hash agreement.** For every golden fixture, `data_sha` computed from the in-memory payload equals `data_sha` recomputed after `serialize -> parse`. Covers R2.5. Include fixtures that specifically exercise the mutating cases: a length-1 vector vs a scalar, `NA_real_`, `NA_character_`, and a whole-number double. |
 | **AC14** | **`datom_read_set()` on a table** aborts pointing at `datom_read()` -- the converse of AC6, not a missing-payload error for a healthy table. |
-| **AC15** | **Cross-project cycle terminates at read time.** A stored cycle that write-time checks could not see (A's set references B's, B's references A's, each written through its own connection) causes `datom_read_set()` and `datom_validate()` to **abort**, not hang. Covers R4.4. |
+| **AC15** | **Nesting resolves one level -- no traversal.** Reading a set whose members include another set returns a **pointer** to that inner set (`kind = "set"`, name, project, version), and does **not** fetch the inner set's own members. Asserted by observing that no storage read of the inner set's payload occurs. Covers R4.3, and guards against an implementer "helpfully" flattening the tree. |
 | **AC16** | **Machine-commit isolation.** In a `mode: product` repo with an uncommitted edit at `R/foo.R`, a `datom_write()` of a table produces a commit whose tree does **not** contain the `R/foo.R` change, **and** `R/foo.R` is still dirty in the working tree afterward. Both halves matter: the second catches a "helpfully" cleaned working tree (R14.1). |
 | **AC17** | **`datom_repo_commit()` semantics.** `paths = NULL` stages a mixed tracked/untracked change set **minus** gitignored files; explicit `paths` stages exactly those; a reader conn is refused; nothing-to-stage creates **no commit** and is not an error; `push = FALSE` leaves the remote untouched. **Plus the R15.5 qualification**: with a clean tree, `push = TRUE`, and the branch ahead of the remote, no commit is created **but the push still happens** -- assert the remote advanced (R15). |
 | **AC18** | **`include_paths` produces one joint commit.** A set write with `include_paths` creates **exactly one** commit containing payload + metadata + the listed paths, and the storage mirror afterward contains **only** datom artifacts (R12.5). |
