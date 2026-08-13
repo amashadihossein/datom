@@ -562,7 +562,7 @@ whether or not they still seem necessary by then.
 are published, changing the encoding requires a conscious `datom-sv2` bump, exactly as cv1
 documents.
 
-Section 7 now carries **one hard constraint** and **five open questions**. The constraint is not
+Section 7 now carries **one hard constraint** and **six open questions**. The constraint is not
 up for debate, only its implementation is:
 
 - **Constraint**: the hash domain is the **parsed-JSON** data model
@@ -578,6 +578,11 @@ up for debate, only its implementation is:
   emitter. **This is the load-bearing one**: choosing `jsonlite` makes the goldens depend on a
   third-party emitter, which is the dependency #72 removed for parquet and the exposure section 16
   files separately. It is coupled to that issue's direction.
+- **Q6** should a set carry a **transitive member closure**, mirroring how `source_lineage` gives
+  tables their leaf ancestors in one read? Safe for the same reason (members pin immutable
+  versions, so a closure cannot drift) and it would make nested-set resolution a single read.
+  Against: payload growth, and it enters set identity under whole-payload hashing. Lean **no** --
+  set-in-set is likely shallow. Belongs here because it changes payload content (section 20.11).
 
 **Trigger type**: design spot-check before committing to a large or cross-cutting chunk.
 
@@ -1039,10 +1044,12 @@ An earlier draft of this analysis asserted that "the namespace is the access-con
 pitched one-grant-per-product. **That is wrong**, per `dev/datomanager_overview.md`:
 
 - Roles are defined at **table** granularity -- a role names specific `(project, table)` pairs.
-- A derived table's requirement is the **union of the roles required by its leaf ancestors**,
-  found by walking lineage upward. Rationale in that design: sensitivity lives in the original
-  patient data, not in a summary derived from it, so if you can read every ingredient you can read
-  the output.
+- A derived table's requirement is the **union of the roles required by its leaf ancestors**.
+  Rationale in that design: sensitivity lives in the original patient data, not in a summary
+  derived from it, so if you can read every ingredient you can read the output.
+- **The leaf ancestors are a single read, not a walk** -- see section 20.10. That document
+  describes a hop-by-hop lineage walk because it predates `source_lineage`; the framing is stale
+  and is not reproduced as a requirement here.
 - Consequence (R19.2): two derived tables in the **same** product, bucket and prefix get
   **different** requirements automatically, because they have different ancestry. Nobody
   configures it.
@@ -1106,3 +1113,68 @@ meaning two unrelated things.
 different term** (it does not exist yet, so the rename costs nothing there and would be a breaking
 change here). Recorded in `dev/datomanager_overview.md` so the constraint is visible to whoever
 builds it, rather than living only in this spec.
+
+### 20.10 There is no lineage walk -- `source_lineage` is already the transitive closure
+
+Clarified in review, because section 20.6 initially repeated the access design's "walk lineage
+upward to find leaf ancestors" framing. **That framing is stale and must not propagate into this
+spec's implementation.**
+
+`source_lineage` is a **precomputed transitive union maintained at write time**:
+
+| Table kind | `source_lineage` | Where |
+|---|---|---|
+| imported | `[self]` -- one entry, `version_sha = data_sha` | `R/sync.R:570-574` |
+| derived | `union(parents' source_lineage)` | `datom_write()` -> `datom_lineage_union()` |
+
+By induction, any table's `source_lineage` is the **complete set of imported leaf ancestors**, so
+answering "which raw sources feed this table" is **one metadata read, zero hops**. `dev/README.md`
+records this for Phase 20 as *"single-read, no DAG walk"*.
+
+The two lineage fields answer two different questions and **neither requires traversal**:
+
+- `source_lineage` -- transitive leaf ancestors (audit, regulatory scope, access resolution).
+- `parents` -- one step back, with `data_sha` (debugging, diff, replay).
+
+It cannot go stale, because a parent pins an already-existing immutable version, so the union is
+correct forever at the moment it is computed.
+
+**Consequence for `dev/datomanager_overview.md`**: that document predates Phase 20 (May 2026). Its
+its section 1 requires only `parents`, and it then builds an optimization ladder -- naive walk ->
+session cache -> *precomputed leaf map stored in the registry*. `source_lineage` **is** that
+precomputed leaf map: already computed, already stored per table, already maintained at write
+time, and drift-proof. The ladder solves a problem datom removed. Recorded in that file's
+constraints section so it is not rebuilt.
+
+**Consequence for this spec**: the per-member union in R3.5 is one read *per member* with no
+walk *within* a member -- which is what makes the cold-path cost claim (50 members = 50 reads)
+correct rather than optimistic.
+
+### 20.11 What the nesting depth limit is actually for -- and why it is not needed
+
+The proposed depth limit (section 5) was never about lineage. It concerns **set-in-set nesting**,
+which is genuinely different: sets deliberately carry **no transitive member closure** (no member
+index, section 4), so resolving "every table in this product, through nested sets" *does* hop once
+per nesting level.
+
+But **cycle detection via a visited set is what guarantees termination, and it is sufficient on its
+own**: with a visited set each distinct set is entered at most once, so an acyclic graph terminates
+and total cost is bounded by the number of sets that exist. A depth limit adds **no correctness**.
+
+What the fixed number buys is a runaway-cost guard against a shape nobody would build, at the cost
+of an **observable contract** imposing an arbitrary ceiling on legitimate composition -- which is
+exactly the objection recorded against the number when it was first proposed ("cheap to pick now
+and annoying to change later").
+
+**Recommendation: drop the fixed depth limit; keep cycle detection (visited set) as the
+requirement.** Simplicity over cleverness -- a guard that guards nothing the visited set does not
+already guard is complexity for its own sake. R4.3, R4.4, I10a and Task 7 are written with the
+limit still in; removing it is a small, contained edit pending confirmation.
+
+**Deliberately left open for the E1 escalation** (it changes payload content, so it belongs with
+the payload-hashing questions): should a set precompute a **transitive member closure**, by
+symmetry with `source_lineage`? It would be *safe* for the same reason -- a member pins an
+immutable version, so a nested set's members are fixed forever and the closure cannot drift -- and
+it would make nested resolution a single read too. Against: payload growth, and it enters set
+identity under whole-payload hashing. Current lean is **no**: set-in-set is likely shallow
+(product-of-products, perhaps one level more), so the walk it removes is 2-3 reads.

@@ -50,13 +50,14 @@ necessary.
     encoder run over the in-memory R object produces a *different* `data_sha` than the same
     encoder over the parsed payload (`NA_real_` becomes the string `"NA"`, doubles return as
     integers), which breaks P1/P2. **This is not optional and not an open question.**
-  - **Settle the five open questions in design.md section 7 before writing the encoder**:
+  - **Settle the six open questions in design.md section 7 before writing the encoder**:
     Q1 whole-payload vs member-list-only; Q2 `NA_character_` vs `""` vs `null` (a special case of
     the constraint); Q3 empty-set legality (AC5); Q4 whether `schema_version` enters the payload;
     **Q5 which serializer defines the canonical form** -- `jsonlite` (consistent, but makes the
     goldens depend on a third-party emitter, the exact dependency #72 removed for parquet) or an
     sv1-owned minimal emitter (more code, goldens depend only on the spec). Q5 is load-bearing and
-    coupled to the section 16 issue.
+    coupled to the section 16 issue; **Q6** is whether a set carries a transitive member closure
+    mirroring `source_lineage` (lean no -- see design.md 20.11).
   - `.datom_sv1_value()` + `.datom_canonical_set_hash()` in a new `R/hashable-set.R` (or extend
     `R/utils-sha.R` -- decide at escalation). Reuse `.datom_encode_numeric()` verbatim; do not
     write a second numeric encoder.
@@ -384,4 +385,8 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-11 | **A set gates on nothing** -- no parents means the lineage walk finds no leaves, so no roles are required unless explicitly overridden. Same conclusion as the non-conjunctive access decision, now confirmed against the access layer's algorithm. Corollaries recorded because they surprise people: **granting a product does not grant its members**, and a **sensitive member list uses the explicit-override path**. | R19.3-R19.5, design.md 20.7 |
 | 2026-08-11 | The JSON write export must also refuse **`.access/`** -- the namespace reserved for the access-enforcement package, where datom is safe today only *by construction*. This export is the first general-purpose write path that could break that reservation. | R12.4a/R19.6, AC23, Task 3 |
 | 2026-08-11 | **`role` terminology collision**: datom's `role` (developer/reader) vs the access layer's "role" (permission set). **datom keeps `role`; the burden is on the future package to pick a different term** -- it does not exist yet so the rename is free there and breaking here. Recorded in `dev/datomanager_overview.md` for whoever builds it. | design.md 20.9 |
+| 2026-08-11 | **Clarified: there is no lineage walk.** `source_lineage` is a precomputed transitive union maintained at write time -- imported tables get a self-entry, derived tables get the union of their parents' unions -- so "which raw sources feed X" is **one read, zero hops**, and it cannot drift because parents pin immutable versions. Design section 20.6 initially repeated the access design's "walk upward" framing; corrected. | design.md 20.10 |
+| 2026-08-11 | **`dev/datomanager_overview.md` is stale on this point and now says so.** It predates Phase 20, so it requires only `parents` and builds a walk -> session-cache -> *precomputed leaf map* ladder. `source_lineage` **is** that leaf map, already stored per table. Added item 3a plus stale-markers on the affected sections: delete the walk, do not rebuild `ROLE_LEAVES`, keep the access *semantics*. | dev/datomanager_overview.md |
+| 2026-08-11 | **OPEN -- depth limit likely to be dropped.** The limit was never about lineage; it concerns set-in-set nesting, which does hop per level (sets carry no transitive closure by design). But **cycle detection via a visited set alone guarantees termination** and bounds cost by the number of sets that exist, so a fixed depth adds no correctness -- only an arbitrary observable ceiling. Recommendation: drop the number, keep cycle detection. Awaiting confirmation; R4.3/R4.4/I10a/Task 7 still carry it. | design.md 20.11 |
+| 2026-08-11 | **OPEN -- deferred to E1**: should a set precompute a **transitive member closure**, mirroring `source_lineage`? Safe for the same reason (members pin immutable versions, so a closure cannot drift) and would make nested resolution one read. Against: payload growth, and it enters set identity under whole-payload hashing. Lean **no** -- set-in-set is likely shallow, so the walk removed is 2-3 reads. Belongs with the payload-content decisions since it changes the payload. | design.md 20.11, E1 |
 | 2026-08-11 | **AC1 split** into (a) resolve pointers -- always works, no clone -- and (b) resolve to data -- needs that member's project conn. Conflating them mis-implements a set read as "requires access to everything in it". `datom_validate()`'s member check scoped the same way (R11.2), reusing `members_unresolvable`. | AC1, R11.2, Tasks 9 and 13 |

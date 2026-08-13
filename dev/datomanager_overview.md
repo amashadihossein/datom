@@ -87,6 +87,45 @@ different requirements** -- their leaf ancestors differ, so the union differs, w
 configuration. The `datom-sets` spec explicitly does *not* treat a storage namespace as an
 access boundary, to avoid foreclosing this.
 
+### 3a. STALE: there is no lineage walk any more -- `source_lineage` is the leaf map
+
+**This is the largest stale item in this document.** Section 1 below requires only `parents`, and
+the "Access Resolution" sections then build an optimization ladder -- naive per-hop walk ->
+session cache -> **precomputed leaf map stored in the registry**. That ladder was designed before
+datom had transitive lineage.
+
+Since **Phase 20 (May 2026)** every table carries `source_lineage`: a **precomputed transitive
+union of its imported leaf ancestors**, maintained at write time.
+
+| Table kind | `source_lineage` | Built by |
+|---|---|---|
+| imported (`datom_sync`) | `[self]`, with `version_sha = data_sha` | `R/sync.R:570-574` |
+| derived (`datom_write`) | `union(parents' source_lineage)` | `datom_lineage_union()` |
+
+So by induction, **"which imported tables ultimately feed table X" is a single metadata read with
+zero hops** -- read `source_lineage` and you have the leaf set. `dev/README.md` records the Phase
+20 API as *"single-read, no DAG walk"*. It cannot go stale, because a parent pins an
+already-existing immutable version.
+
+**What this means for the access layer:**
+
+- **Delete the walk.** `access_check()` step 1 ("walk lineage upward to find all leaf ancestors")
+  becomes one read of the requested table's `source_lineage`, via
+  `datom_get_lineage(conn, name, version, depth = "source")`.
+- **The `ROLE_LEAVES` precomputed-leaf-map optimization is unnecessary.** datom already maintains
+  that mapping per table, at write time, drift-free. Do not rebuild it in the registry.
+- **Cross-bucket metadata reads during the walk go away too** -- there is no walk, so there is no
+  need to construct temporary parent connections just to traverse. (The SOURCES table may still be
+  wanted for other reasons; see section 4.)
+- **The session cache and full-access fast path remain useful**, but for a much cheaper baseline:
+  they now save one read plus registry queries, not a multi-hop traversal.
+- **The worked examples below are still correct in their conclusions** (which roles are required)
+  but obsolete in their mechanics (how the leaves are found). Read them for the access semantics,
+  not the algorithm.
+
+The two lineage fields answer different questions and **neither requires traversal**:
+`source_lineage` = transitive leaf ancestors; `parents` = one step back, carrying `data_sha`.
+
 ### 4. Name-to-location resolution is the access layer's job, not datom's
 
 datom performs **no** project-name-to-bucket lookup anywhere. Cross-project members and parents
@@ -141,6 +180,12 @@ datomanager depends on datom. datom does **not** depend on datomanager. datom mu
 ---
 
 ## What datom Needs to Accommodate datomanager
+
+> **STALE (see "Constraints Established by the `datom-sets` Spec" -> item 3a above).** This
+> section describes only `parents`. Since Phase 20, datom also writes `source_lineage` -- the
+> precomputed transitive union of imported leaf ancestors -- which makes the lineage *walk*
+> described later in this file unnecessary. Read this section for the `parents` schema; read
+> item 3a for what actually resolves leaves.
 
 ### 1. Lineage (parents) in Metadata — REQUIRED
 
@@ -418,6 +463,13 @@ A domain owner manages the roles for their own study. A governance admin manages
 **Lineage** — Each derived table's metadata records its immediate parents. Only immediate parents — not grandparents or deeper ancestors. The access algorithm walks upward through the lineage to discover the full ancestor tree.
 
 **Leaf tables** — Imported tables (from `datom_sync`) or derived tables with `parents: null`. These are the endpoints of the lineage walk — the original data sources whose access restrictions gate everything derived from them.
+
+> **STALE MECHANICS.** Everything from here to the end of the optimization sections describes
+> discovering leaf ancestors by traversing lineage hop by hop. datom has done this for you since
+> Phase 20: `source_lineage` on each table is already the transitive leaf set, so step 1 collapses
+> to a single read (see item 3a above). The **access semantics** below -- leaf-derived
+> requirements, explicit overrides, role/grant comparison -- remain correct and are worth reading.
+> The **traversal and its optimization ladder** are not.
 
 ### The Naive Walk Algorithm
 
