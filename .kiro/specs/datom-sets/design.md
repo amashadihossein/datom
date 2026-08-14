@@ -597,7 +597,7 @@ prevent and which no test will catch unless it is written to.
 
 **Trigger type**: design spot-check + purity audit after the change lands.
 
-A third, softer moment: **test coverage review before spec completion** (Task 14), per the third
+A third, softer moment: **test coverage review before spec completion** (Task 15), per the third
 standing escalation trigger. Nine acceptance criteria plus a new hash regime is a lot of surface
 to claim covered.
 
@@ -620,6 +620,8 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I9** | Any caller-influenced value spliced into a storage key passes `.datom_validate_sha()` / `.datom_validate_name()` first. |
 | **I10** | **Member resolution is one level deep. No datom operation traverses the member graph** -- not `datom_read_set()`, not `datom_validate()`. A member that is a set is returned as a pointer, never expanded. |
 | **I10a** | The member graph is **acyclic by construction**, because a member pins an already-existing immutable version. No cycle detection, visited set, or depth limit is required or permitted to creep back in as "defensive" code. |
+| **I11** | No credentials in the payload, metadata, manifest, or any set-related file. |
+| **I12** | `table_type` remains validated to exactly `"imported"` / `"derived"`. `kind` is a separate axis and must not be smuggled into it. |
 | **I13** | `data_sha` for a set is computed over the **parsed-JSON** data model, never over the raw in-memory R object. Write-time and read-time hashes agree by construction (R2.5, design section 7). |
 | **I14** | The public `datom_storage_write_json()` cannot write a datom-managed key. No public API may offer a path around git-gates-storage or around integrity verification (R12.4a). |
 | **I15** | `datom_write_set()` refuses unless the repo declares `mode: product` and the set name matches `project.yaml`'s `set:` field. Checked before any hashing or IO (R10.3a). |
@@ -628,8 +630,9 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I18** | `include_paths` content is **git-only**. It is never mirrored to storage; the storage namespace contains datom artifacts and nothing else. |
 | **I19** | An idempotent (no-change) artifact write **never** creates a commit, regardless of `include_paths` state. Idempotency has no side channel. |
 | **I20** | **Every git mutation datom offers is expressible without implying another.** Committing does not force a push (`push = FALSE`), and pushing does not require attempting a commit (`datom_repo_push()`). A caller must never have to pass through an add-all path to achieve a push. |
-| **I11** | No credentials in the payload, metadata, manifest, or any set-related file. |
-| **I12** | `table_type` remains validated to exactly `"imported"` / `"derived"`. `kind` is a separate axis and must not be smuggled into it. |
+| **I21** | **Git is the history mechanism.** Anything history-shaped datom writes is a projection for git-less consumers, always derived from git, never the source of truth. If a consumer holding the repo would use it to answer a history question, it is wrong (R20). |
+| **I22** | **`commit_sha` is derived, never authored.** The write path takes it from the commit it just made; the repair path re-derives it from `git log`. No code path may drop it, and none may treat the stored value as the only copy (R21.7). |
+| **I23** | **A version is content-derived and code-invariant**, identically for tables and sets. Nothing code-derived -- not a commit SHA, not a code or environment hash -- may enter `metadata_sha` or a payload (R21.1, R21.4). |
 
 ---
 
@@ -656,13 +659,16 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P15** | **Round-trip agreement**: `data_sha(payload) == data_sha(parse(serialize(payload)))` for every payload, including ones containing length-1 vectors, `NA_real_`, `NA_character_`, and whole-number doubles (R2.5, AC13). |
 | **P16** | Every set read and every set validation is bounded by **one level**: the number of storage reads is a function of the set's own direct member count and never of the depth or size of the tree beneath it (R4.3, AC15). |
 | **P17** | A set payload version is reconstructible from the **git clone alone**, with no storage access (R6.1b). **Strengthened by `include_paths` (R12.5):** in a `mode: product` repo, checking out a set version's commit yields the data pointers, the derivation logic, **and** the environment that produced them -- one clone, one checkout, full reproduction. Without `include_paths` the guarantee covers pointers only. |
+| **P18** | No sequence of public API calls, including the newly exported `datom_storage_write_json()`, can place an artifact's storage state ahead of its git state (I5, I14). |
 | **P19** | A machine-moment commit's tree excludes every non-datom path, and the working tree's foreign dirty files are left dirty -- neither committed nor cleaned (I16, AC16). |
 | **P20** | A set write with `include_paths` produces **exactly one** commit containing payload + metadata + the listed paths, and storage afterward holds only datom artifacts (I18, AC18). |
 | **P21** | For any `include_paths` state, an unchanged set produces no commit and no new version (I19, AC19). |
 | **P22** | No public datom API stages a path the caller did not either own (datom artifacts) or explicitly enumerate (I16, I17). |
 | **P23** | **Push is convergent**: for any repository state, `datom_repo_push()` leaves the remote containing every local commit on the branch, and is safe to call repeatedly. No sequence of public calls leaves the remote silently behind after a `push = TRUE` request (R15.5, R15.8, AC21). |
 | **P24** | **Intent to push is expressible without risking a commit.** No caller must route through an add-all code path in order to push (I20, R15.8). |
-| **P18** | No sequence of public API calls, including the newly exported `datom_storage_write_json()`, can place an artifact's storage state ahead of its git state (I5, I14). |
+| **P25** | **A set version's change is expressible as a git diff** on a single stable path, at member granularity -- not as a whole-file addition (R6.1a, AC24). |
+| **P26** | **`commit_sha` survives every repair path.** No sequence of `datom_validate(fix = TRUE)` or metadata re-sync leaves the storage copy without it (I22, AC25). |
+| **P27** | **A change that alters no content alters no version**, for tables and sets alike: modifying code or environment while producing identical content yields no new version and no change to any recorded `commit_sha` (I23, R21.2, AC26). |
 
 ---
 
@@ -1187,3 +1193,160 @@ identified a contradiction between two spec statements -- and was resolved by *a
 than by questioning whether either statement was true. Both were false. The lesson is recorded
 rather than quietly patched: when a review surfaces a contradiction, check the premises before
 building something that reconciles them.
+
+---
+
+## 21. History ownership, version semantics, and the commit link
+
+Three connected decisions, settled in review. They share one root question: **what does datom
+write that git already knows, and what does a version actually mean?**
+
+### 21.1 Git owns history; datom writes projections
+
+The rule (R20.1) and the test that applies it (R20.2):
+
+> Would someone **holding the repo** use this file to answer a history question? If yes, it is a
+> smell.
+
+Applied to what exists:
+
+| Artifact | Who needs it | Verdict |
+|---|---|---|
+| `version_history.json` | only a **reader**, to map `version` -> `data_sha` with no clone | keep -- projection |
+| `manifest.json` | only a reader, for discovery | keep -- projection |
+| content-addressed payload filename **in git** | a developer would have to list filenames to read history | **smell -- fixed** |
+
+The sharpest evidence that `version_history.json` is a projection and not a duplicate: it carries
+`author` and `commit_message`, which are **literally git commit fields**. Nobody with a clone
+would read them from there. That is what a projection looks like -- redundant for one audience,
+load-bearing for another.
+
+### 21.2 Correction: the git payload moves to a stable path
+
+An earlier draft (former R6.1a/b) put the payload in git at `{name}/{data_sha}.json` and required
+retaining every historical payload. Both are now reversed.
+
+With a content-addressed filename, each version is a **new file**, so:
+
+```console
+$ git diff v1..v2 -- study001-adam/
++ study001-adam/d4e5f6.json          (entire new file -- tells you nothing)
+```
+
+With one stable path, the change *is* the diff:
+
+```console
+$ git diff v1..v2 -- study001-adam/set.json
+   "members": [
+     {"project": "study001", "name": "dm", "kind": "table", "version": "aaa"},
++    {"project": "study001", "name": "lb", "kind": "table", "version": "bbb"}
+   ]
+```
+
+So: **git side `{name}/set.json`** (stable, mutated, history owned by git, mirroring how
+`metadata.json` already behaves); **storage side `{name}/{data_sha}.json`** (content-addressed and
+immutable, because a reader fetches an exact version by address).
+
+The retention rule disappears as redundant -- git retention is definitional -- and P17 is preserved
+via `git show <commit>:{name}/set.json`, now with readable diffs on top.
+
+### 21.3 Version semantics: option 1 of three
+
+The asymmetry that forces a decision:
+
+- a data change **necessarily** changes the commit
+- a commit change does **not** necessarily change the data
+
+So the commit is a strictly *finer* identifier than content. And this already applies to tables
+today: refactor a script, rerun, get identical values, and neither `data_sha` nor `metadata_sha`
+moves (metadata carries `data_sha`, parents, colnames -- nothing code-derived), so the write is an
+idempotent no-op.
+
+Three options were weighed:
+
+| Option | Mechanism | Verdict |
+|---|---|---|
+| **1. Content-derived version; commit recorded as provenance** | version stays `metadata_sha`; `commit_sha` is a history field | **CHOSEN** |
+| 2. Commit becomes the version | impossible directly (circularity); would need a composite version, breaking `datom_read(version = )` as a single string | rejected |
+| 3. Code/env content hashes in the payload | avoids circularity (file hashes are knowable pre-commit) and *does* make the version a joint pin | rejected -- see below |
+
+**Why option 3 was rejected despite working.** A set exists to be **citable**. Under option 3 a
+comment typo or a lint fix mints a new product version, so versions proliferate for semantically
+null changes and "product v47" stops carrying meaning -- damaging the exact property sets are for.
+Reproduction does not need it: the recorded `commit_sha` provably produces the version.
+
+The partial concession that was considered and not taken: restrict option 3 to `renv.lock` only,
+on the grounds that an environment change can silently alter *future* behavior even when today's
+output matches, whereas code formatting cannot. Recorded because it is the strongest version of
+the counter-argument and may return if env drift proves to be a real problem in practice.
+
+**What this means, stated once so the two kinds do not drift apart** (R21.1, I23): a version
+answers *"is this the same content and declared metadata?"* -- identically for tables and sets, and
+code-invariant in both. One version therefore maps to **one or more** commits, and `commit_sha`
+names the **first** that introduced it. The ambiguity is benign: the caller wanted a way to
+reproduce the version, and got one that provably works.
+
+### 21.4 Where the commit id goes, and the trap
+
+Today it goes nowhere -- `datom_write()` returns `commit_sha` in its result list and it is then
+lost.
+
+It belongs in the **`version_history.json` entry**, beside `author` and `commit_message`. Three
+reasons: they are its siblings (all git facts projected for readers); it is per-version, so the
+mapping exists for all history rather than only the current version; and it has **zero identity
+impact with no special handling**, because `metadata_sha` hashes `metadata.json`, not
+`version_history.json` -- no volatile-list entry is needed.
+
+The write order, and why only storage can carry it:
+
+| # | Step | Is the commit `C` known? |
+|---|---|---|
+| 1 | hash payload content -> `data_sha` | no |
+| 2 | build `metadata.json`, hash it -> version `V` | no |
+| 3 | write local `set.json`, `metadata.json`, append history entry | no |
+| 4 | **`git commit`** those files + `include_paths` | **`C` now exists** |
+| 5 | `git push` | yes |
+| 6 | upload payload -> `{name}/{data_sha}.json` | yes |
+| 7 | upload `metadata.json`, `version_history.json` **+ `commit_sha = C`**, snapshot `V.json` | yes |
+
+Step 3's files are the *inputs* to step 4, so nothing written there can name `C`. Only steps 6-7
+run after `C` exists, and they are storage-only. Hence the git copy never names `C` -- and does not
+need to, because `git log -p {name}/set.json` gives it.
+
+**The trap (R21.7).** `datom_validate(fix = TRUE)` re-uploads metadata from the clone, which would
+**silently strip `commit_sha`**. The resolution keeps the "mirror is derived from git" invariant
+intact by treating the field as **derived, never authored**: the write path derives it from the
+commit it just made, the repair path re-derives it from `git log` on the artifact path. Storage
+therefore holds nothing unrecoverable, and repair *regenerates* rather than drops. Tested by AC25's
+third clause, which is the one a naive implementation fails silently.
+
+### 21.5 Precedent: how dpbuild / dpdeploy / dpi solve the same problem
+
+Checked against the public sources rather than assumed, and it is confirmation rather than
+invention.
+
+| Where | Carries the commit hash? | Why |
+|---|---|---|
+| product repo, `.daap/daap_log.yaml` | **no** | it is inside the commit it would name -- the same circularity |
+| board, `dpboard-log` pin | **yes** | written *after* the commit, by a later step (dpdeploy) |
+
+`dp_commit()` writes `commit_description` into `daap_log.yaml` and commits it; the version label is
+content-derived (`rds_log_{sha1_short}` from the data object's hash). dpdeploy then updates the
+board-level `dpboard-log` pin, and **dpi's `dp_list()` reads it with no git**, returning author,
+commit message and commit hash per version. So a git-less reader path to the commit hash is
+established practice.
+
+Two details worth carrying:
+
+- **`dpboard-log`'s composite key is `(dp_name, pin_version, git_sha)`.** That is an explicit
+  acknowledgement that the same content version can pair with different commits -- independent
+  confirmation of R21.3, arrived at by a different team on a different storage layer.
+- **datom can do it in one step.** dpbuild needs a separate deploy pass because pins offers no
+  post-commit hook; `datom_write_set()` already uploads to storage after the push, so the field is
+  captured in the same call with no window where a version exists without its commit link.
+
+Where datom deliberately differs: `dpboard-log` is a **board-level** mutable index (one row per
+version per product, with an `archived` flag), which exists because pins has no per-product
+history. datom already has per-artifact `version_history.json` in storage carrying the sibling git
+fields, so **no namespace-level per-version index is added** -- a reader holding a conn reads the
+artifact's history directly.

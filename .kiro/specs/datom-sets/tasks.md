@@ -163,10 +163,14 @@ necessary.
     "one repo = one set" real, and the second is the precondition the cycle walk's root depends on.
   - Payload derived from members + tags/descriptions/view config. No `metadata =` parameter --
     user metadata belongs in the payload (R1.4/R6.2).
-  - Written **git-canonical + storage-mirrored**: git at `{name}/{data_sha}.json` in the repo tree
-    (R6.1a -- the dual-pointer *ordering* is borrowed from `governance.json`, the *layout* is not,
-    since that file is a singleton and payloads are N immutable objects), storage at the same
-    relative key via the Task 1 helper. **All historical payloads retained in git** (R6.1b, P17).
+  - Written **git-canonical + storage-mirrored**, with **different paths on each side** (R6.1a):
+    git at the **stable path `{name}/set.json`** (modified in place, so `git diff` shows
+    member-level changes and git owns the history), storage at the **content-addressed**
+    `{name}/{data_sha}.json` via the Task 1 helper (so a reader fetches an exact version by
+    address). **Do not content-address the git path** -- that makes every version a new file and
+    forces history to be read by listing filenames, which is hand-maintaining what git maintains
+    (R6.1b, R20, AC24). No retention rule is needed: git retention is definitional, and P17 holds
+    via `git show <commit>:{name}/set.json`.
   - **Reuse unchanged**: change detection (`.datom_has_changes()`), the git-gates-storage ordering
     (`datom_write()` steps 7-10), and dedup. Git push stays the serialization point (I5).
   - Cross-kind name uniqueness refusal (AC4) -- checked against **storage**
@@ -302,8 +306,30 @@ necessary.
     possible; this is a real two-sided check, not a storage self-check.
   - _Requirements: R11, R4.3. Invariants: I10. Properties: P14, P16, P17._
 
-- [ ] **14. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
-  - Confirm every **AC1-AC9 and AC13-AC21** has a dedicated test; add what the per-chunk tests
+- [ ] **14. Version-to-commit link (`commit_sha`)**
+  - Applies to **all** artifact kinds, not just sets -- `version_history.json` is shared. Placed
+    after Task 13 because the repair-path behavior below needs `datom_validate()` to exist.
+  - Add `commit_sha` to the **storage copy** of the `version_history.json` entry, beside `author`
+    and `commit_message` (R21.5). **No volatile-list entry needed**: `metadata_sha` hashes
+    `metadata.json`, not `version_history.json`, so this has zero identity impact.
+  - Captured in `.datom_push_metadata_s3()` (step 7 of the write order, after the push), because
+    the git copy of the history file is **inside** the commit it would name (R21.6). The git copy
+    therefore never carries it, and does not need to -- `git log -p {name}/set.json` gives it to
+    anyone with the clone (R21.8).
+  - **The trap, and the reason this is its own task** (R21.7, I22, AC25): `datom_validate(fix =
+    TRUE)` re-uploads metadata from the clone and would **silently strip `commit_sha`**. Treat the
+    field as **derived, never authored** -- the repair path must **re-derive** it from `git log` on
+    the artifact path. A naive implementation passes every other test and fails only this one,
+    silently.
+  - Document the version semantics this encodes (R21.1-R21.3): a version is content-derived and
+    **code-invariant**, so a code-only change producing identical content mints **no** new version
+    and leaves the recorded `commit_sha` alone (AC26). Roxygen should say this plainly -- it is the
+    behavior most likely to be reported as a bug.
+  - _Requirements: R20, R21. Invariants: I21, I22, I23. Properties: P26, P27. Acceptance: AC25,
+    AC26. No pathway impact (no new lookup route -- the existing history read gains a field)._
+
+- [ ] **15. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
+  - Confirm every **AC1-AC9 and AC13-AC26** has a dedicated test; add what the per-chunk tests
     missed. Two are easiest to skip and both need special fixtures: **AC15** (nesting resolves one
     level) needs a set-containing-a-set fixture and an assertion that the inner payload is *not*
     read; **AC16** (machine-commit isolation) needs a foreign dirty file seeded in the fixture repo,
@@ -313,11 +339,11 @@ necessary.
     Include a `mode: product` repo with foreign `R/`, `dp/`, and `renv.lock` content so the joint
     commit and the machine-commit isolation are exercised end to end, not only in unit tests.
   - Full `devtools::test()` count reported; `R CMD check --as-cran` 0E/0W (AC10, AC11).
-  - _Acceptance: AC1-AC21._
+  - _Acceptance: AC1-AC26._
   - **Escalation rationale**: nine acceptance criteria plus a new hash regime is a lot of surface
     to claim covered on a default model's word.
 
-- [ ] **15. Docs + Spec Completion Procedure**
+- [ ] **16. Docs + Spec Completion Procedure**
   - `dev/datom_pathways.md`: the set-resolution route card; note the `kind` branch and the
     `schema_version` gate on the read route (R13.1).
   - `dev/datom_specification.md`: set artifact kind, `datom-sv1`, `schema_version` contract,
@@ -395,5 +421,13 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-11 | **RESOLVED -- all nesting machinery removed** (supersedes F1 and the two OPEN entries that preceded this). Cycle detection, the visited-set guard, and the depth limit are **gone**, for two independent reasons either of which suffices: (1) **datom resolves one level and never traverses** -- a member that is a set comes back as a pointer and the consumer reads it separately, so nothing can loop; (2) **the graph is acyclic by construction** -- members pin immutable versions that must already exist, so a set cannot reference something containing it, exactly as git history cannot cycle. The "cross-project cycle" earlier constructed does not close: the second write creates a new version rather than mutating the referenced one, giving `B1@v2 -> A1@v1 -> B1@v1`, which terminates. | R4.3-R4.5, I10/I10a, P16, AC9/AC15, design.md 5 + 20.11 |
 | 2026-08-11 | Replacements after the removal: **R4.3** one-level resolution, **R4.4** acyclic by construction, **R4.5** refuse self-reference (the one check that stays -- acyclic and harmless, but never meaningful). **I10** no traversal, **I10a** no cycle/depth guard may creep back as defensive code. **P16** restated as "read cost is bounded by direct member count". **AC9** restated as self-reference refusal, **AC15** restated as "nesting resolves one level" -- a test that the tree is *not* flattened. | requirements.md R4, design.md 13-14 |
 | 2026-08-11 | **Retired: the transitive-member-closure question** (formerly E1 Q6). It existed only to replace a traversal with one read; there is no traversal, so it would be payload weight buying nothing and would enter set identity for no benefit. E1 is back to one hard constraint + five open questions. | design.md 7, 20.11 |
+| 2026-08-11 | **Git owns history; datom writes projections** (R20). The test: *would someone holding the repo use this file to answer a history question?* `version_history.json` and `manifest.json` pass -- only git-less **readers** need them, and the giveaway that they are projections rather than duplicates is that they carry `author` and `commit_message`, literally git commit fields. | design.md 21.1 |
+| 2026-08-11 | **Correction: the git payload moves to a stable path `{name}/set.json`**; storage stays content-addressed at `{name}/{data_sha}.json`. A content-addressed *git* filename makes every version a new file, so `git diff` reports "file added" instead of which members changed, and history gets read by listing filenames -- hand-maintaining what git maintains. The "retain all historical payloads" rule is dropped as redundant (git retention is definitional); P17 holds via `git show <commit>:{name}/set.json`. | R6.1a/b, P25, AC24, design.md 21.2 |
+| 2026-08-11 | **Version semantics -- option 1 chosen.** A version stays **content-derived and code-invariant**, identically for tables and sets; the commit is recorded **provenance**, not identity. So a code-only change producing identical content mints **no** new version (already true for tables, deliberately kept true for sets), and one version maps to **one or more** commits with `commit_sha` naming the first. | R21.1-R21.3, I23, P27, AC26, design.md 21.3 |
+| 2026-08-11 | **Rejected: commit-as-version** (circular -- the commit contains the metadata that would name it; a composite version would break `datom_read(version = )` as a single string). **Rejected: code/env content hashes in the payload**, which *would* work mechanically, because a set exists to be **citable** and a comment typo or lint fix would then mint a new product version. The strongest counter-argument -- restricting it to `renv.lock`, since env drift can silently change future behavior -- is recorded in case it returns. | R21.4, design.md 21.3 |
+| 2026-08-11 | **`commit_sha` goes in the `version_history.json` entry**, storage copy only (the git copy is inside the commit it would name), captured after the push. Zero identity impact and **no volatile-list entry needed**, because `metadata_sha` hashes `metadata.json`, not `version_history.json`. | R21.5/R21.6, Task 14 |
+| 2026-08-11 | **The trap: `datom_validate(fix = TRUE)` would silently strip `commit_sha`** when it re-uploads metadata from the clone. Resolved by treating the field as **derived, never authored** -- the repair path re-derives it from `git log`, so storage holds nothing unrecoverable and the "mirror is derived from git" invariant survives. AC25's third clause exists to catch this; a naive implementation passes everything else. | R21.7, I22, P26 |
+| 2026-08-11 | **Precedent checked, not assumed** (public sources): dpbuild keeps no commit hash in the product repo -- `.daap/daap_log.yaml` is inside the commit -- and dpdeploy publishes it to a storage-side `dpboard-log` pin that dpi's `dp_list()` reads **with no git**. That log's composite key is `(dp_name, pin_version, git_sha)`, independently confirming that one content version can pair with several commits. datom needs no separate deploy pass (it already uploads after push) and adds no board-level index (per-artifact history already carries the sibling git fields). **Corrects an earlier claim in this conversation that dpbuild had no git-less readers -- dpi is exactly that.** | R21.9, design.md 21.5 |
+| 2026-08-11 | Tasks: **new Task 14** (version-to-commit link) inserted after validate, since its repair-path behavior needs `datom_validate()` to exist. Old 14/15 -> 15/16. | tasks.md Phase D |
 | 2026-08-11 | **Process lesson recorded, not patched over.** The nesting machinery entered via review finding F1, which correctly spotted a contradiction between two spec statements and was resolved by *adding* guards rather than by testing whether either statement was true. Both were false. When a review surfaces a contradiction, **check the premises before building something to reconcile them**. | design.md 18 (F1 row), 20.11 |
 | 2026-08-11 | **AC1 split** into (a) resolve pointers -- always works, no clone -- and (b) resolve to data -- needs that member's project conn. Conflating them mis-implements a set read as "requires access to everything in it". `datom_validate()`'s member check scoped the same way (R11.2), reusing `members_unresolvable`. | AC1, R11.2, Tasks 9 and 13 |

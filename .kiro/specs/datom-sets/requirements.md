@@ -218,18 +218,23 @@ Relative to the artifact prefix:
 - **R6.1** The payload follows the **`governance.json` dual-pointer pattern**
   (`R/governance_json.R`), not the parquet pattern: git is canonical, the storage mirror is
   written in the same step and always derived from git.
-- **R6.1a -- git-side layout (the pattern diverges here).** `governance.json` is a **singleton
-  current-state** file at `.datom/governance.json`; a set has **N immutable, content-addressed
-  payloads**. So the dual-pointer *ordering* is borrowed but the *layout* is not. Set payloads
-  live in the repo tree at **`{name}/{data_sha}.json`** -- the same relative path as the storage
-  key, so the two are trivially comparable -- alongside the existing `{name}/metadata.json` and
-  `{name}/version_history.json`.
-- **R6.1b -- all historical payloads are retained in git.** They are small, immutable, and
-  content-addressed, so retention costs little and buys the thing "git-canonical" is supposed to
-  mean: **any version of any set is fully reconstructible from the git clone alone**, with no
-  storage access. A payload is never rewritten or deleted; a new version adds a new object. This
-  is what makes `datom_validate()`'s set branch (R11.2) a real git-vs-storage comparison rather
-  than a storage self-check.
+- **R6.1a -- git side: one stable path. Storage side: content-addressed.**
+
+  | Side | Path | Why |
+  |---|---|---|
+  | **git** | `{name}/set.json` -- a single stable path, modified in place | git carries the history, and `git diff` shows **member-level** changes |
+  | **storage** | `{name}/{data_sha}.json` -- content-addressed, immutable | a reader must fetch an exact version by address, with no git |
+
+  The git side mirrors how `{name}/metadata.json` already works: stable path, mutated, history
+  owned by git.
+- **R6.1b -- why the git side is NOT content-addressed** (this reverses an earlier draft). With a
+  content-addressed filename, every version is a **new file**, so `git diff` between two product
+  versions reports "file added" and never "these members changed". History would be read by
+  listing filenames -- i.e. hand-maintaining what git already maintains (R20). One stable path
+  gives real diffs, keeps one file in the working tree instead of N, and makes the earlier
+  "retain all historical payloads" rule unnecessary: **git retention is definitional.** Any
+  version is still fully reconstructible from the clone alone via
+  `git show <commit>:{name}/set.json`, so the P17 guarantee is preserved and strengthened.
 - **R6.2** Tags, descriptions, and view config live **in the payload**, not in a parallel
   metadata schema.
 - **R6.3** **No member index.** `column_hashes` exists so you can diff a table without
@@ -657,6 +662,78 @@ foreclose.
   case). Sets need no new mechanism for this.
 - **R19.6 -- `.access/` stays reserved.** See R12.4a: the new JSON-write export must refuse it.
 
+### R20 -- Git is the history mechanism; anything history-shaped datom writes is a projection
+
+- **R20.1 -- the rule.** Git owns history. Anything datom writes that *resembles* history exists
+  **only as a projection for consumers who cannot read git**, is always **derived from git**, and
+  is **never the source of truth**.
+- **R20.2 -- the test.** *Would someone holding the repo use this file to answer a history
+  question?* If yes, it is a smell.
+
+  | Artifact | Test | Verdict |
+  |---|---|---|
+  | `version_history.json` | a developer would run `git log`; only a **reader** needs it, to map `version` -> `data_sha` without a clone | **keep** -- legitimate projection |
+  | `manifest.json` | same: a discovery index for git-less readers | **keep** |
+  | content-addressed payload filenames **in git** | a developer would have had to read history by listing filenames | **smell -- fixed by R6.1a** |
+
+  The clearest illustration that `version_history.json` is a projection rather than a duplicate:
+  it carries `author` and `commit_message`, which are **literally git commit fields**. Nobody with
+  a clone would ever read them from there.
+- **R20.3** Consequently no new hand-maintained history is introduced by this spec. Set payload
+  history is git history (R6.1a/b); set version history is the existing `version_history.json`
+  projection; no payload index and no per-payload log is added.
+
+### R21 -- Version semantics, and the version-to-commit link
+
+**Decision (option 1 of three considered):** a version stays **content-derived** for both artifact
+kinds. The git commit is recorded **provenance**, not identity.
+
+- **R21.1 -- what a version means, identically for tables and sets.** A version
+  (`metadata_sha`) answers *"is this the same content and declared metadata?"* It is
+  **code-invariant**: nothing code-derived enters it.
+- **R21.2 -- the consequence, which is intended, not a gap.** The relationship is asymmetric:
+  a data change necessarily changes the commit, but a commit change does **not** necessarily
+  change the data. So **a code-only change that reproduces identical content mints no new
+  version** -- a refactor, a comment fix, or an added script leaves `data_sha` and `metadata_sha`
+  untouched, and the write is the existing idempotent no-op. This is already true for tables today
+  and is deliberately kept true for sets.
+- **R21.3 -- therefore one version maps to one-or-more commits**, and `commit_sha` records **the
+  commit that first introduced that version**. The ambiguity is benign: the caller asked for a way
+  to reproduce the version, and the recorded commit provably produces it.
+- **R21.4 -- why not make the commit the version.** Considered and rejected. It is not directly
+  possible (the commit contains the metadata that would name it -- the same circularity as a git
+  commit not containing its own SHA), and a composite `(metadata_sha, commit_sha)` version would
+  break `datom_read(version = )` taking a single string. **Also rejected: putting code/env content
+  hashes into the payload** (which *would* avoid the circularity, since file hashes are knowable
+  before committing). Reason: a set exists to be **citable**, and under that scheme a comment typo
+  or a lint fix mints a new product version, so versions proliferate for semantically null changes
+  and "product v47" stops carrying meaning. Reproduction is fully served by R21.3 instead.
+- **R21.5 -- `commit_sha` lives in the `version_history.json` entry**, beside `author` and
+  `commit_message` -- its siblings, also git facts projected for readers (R20.2). Note this has
+  **zero identity impact and needs no volatile-list entry**: `metadata_sha` hashes
+  `metadata.json`, not `version_history.json`.
+- **R21.6 -- storage copy only, because of the write order.** The git copy of
+  `version_history.json` is *inside* the commit it would have to name. So: local files -> commit
+  -> push -> **upload the storage copy with `commit_sha` added**. That is the existing
+  git-gates-storage ordering, one step tighter than dpbuild's (which needs a separate deploy pass
+  because pins gives it no post-commit hook).
+- **R21.7 -- derived, never authored.** This is the trap. `datom_validate(fix = TRUE)` re-uploads
+  metadata from the clone, which would **silently strip `commit_sha`**. So the repair path must
+  **re-derive** it from `git log` on the artifact path rather than dropping it. Both writers derive
+  from git -- the write path from the commit it just made, the repair path from history -- so
+  storage never holds unrecoverable state and the "mirror is always derived from git" invariant
+  survives.
+- **R21.8 -- repo holders need nothing stored.** With the stable-path payload (R6.1a),
+  `git log -p {name}/set.json` gives version, diff, and commit together. The stored field exists
+  purely for the git-less reader.
+- **R21.9 -- precedent, recorded because it is confirmation rather than invention.** dpbuild keeps
+  no commit hash in the product repo (its `.daap/daap_log.yaml` is inside the commit), and
+  dpdeploy publishes it to a storage-side board log (`dpboard-log`) that dpi's `dp_list()` reads
+  **with no git**. That log's composite key is `(dp_name, pin_version, git_sha)` -- an explicit
+  acknowledgement that the same content version can pair with different commits, which is exactly
+  R21.3. datom differs only in granularity: the per-artifact `version_history.json` already exists
+  and already carries the sibling git fields, so no board-wide per-version index is added.
+
 
 ---
 
@@ -686,6 +763,9 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC21** | **`datom_repo_push()` is convergent.** With unpushed local commits it advances the remote; called again immediately it is an informational **no-op, not an error**; a reader conn is refused; it inherits the on-a-branch guard (R15.8). |
 | **AC22** | **Namespace separation is enforced, not merely documented.** Initializing a `mode: product` repo into a namespace that already holds another project's manifest is **refused**, with a message naming the occupying project and pointing at using a distinct prefix (R17.3). |
 | **AC23** | **The JSON-write export refuses the reserved access namespace.** A write to any key under a `.access/` segment is refused, alongside the existing `.metadata/` and payload-key refusals (R12.4a, R19.6). Reads are unaffected. |
+| **AC24** | **The git payload is diffable.** After writing a set twice with one member added, `git diff` on `{name}/set.json` between the two commits shows the **member-level** change (one added entry), not a whole-file add. Guards R6.1a/b -- a content-addressed git filename would make this test impossible to write. |
+| **AC25** | **`commit_sha` is present, git-less, and survives repair.** After a set write: the **storage** copy of `version_history.json` carries `commit_sha` for the new version; the **git** copy does not (it cannot -- it is inside that commit); and after `datom_validate(fix = TRUE)` re-uploads metadata, `commit_sha` is **still there**, re-derived from `git log` rather than stripped (R21.6/R21.7). The third clause is the one that fails silently in a naive implementation. |
+| **AC26** | **A code-only change mints no new version.** With the set's member list unchanged, modifying tracked code and re-running `datom_write_set()` produces **no new version**, and the existing version's recorded `commit_sha` is **unchanged** (still the first producing commit). Encodes the option-1 decision (R21.2/R21.3) so a later "improvement" that makes versions code-sensitive fails a test. |
 
 Plus the standing project gates:
 
