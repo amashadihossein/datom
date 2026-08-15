@@ -86,7 +86,8 @@ per-access.
 
 ## 4. A set is metadata-flavored
 
-Tags, descriptions, and view config go **in the payload**, not into a parallel metadata schema.
+Tags go **in the payload** (a description is just a tag), not into a parallel metadata schema.
+There is no view or navigation config -- see "Tags replace structure" below.
 
 - **The payload is git-canonical with a storage mirror** -- the `governance.json` dual-pointer
   pattern (`R/governance_json.R`), *not* the parquet pattern (which is storage-only, because
@@ -94,6 +95,34 @@ Tags, descriptions, and view config go **in the payload**, not into a parallel m
 - **No member index.** `column_hashes` exists so you can diff a table without downloading
   parquet. The payload is small and cheap to read, so a member index would be
   metadata-for-metadata.
+- **No view or navigation config either** -- and this is the decision that lets the payload be
+  text-only (R2.11). See "Tags replace structure" below.
+
+### Tags replace structure; structure is never stored
+
+The thing tags replace is dpbuild's nested product list -- `dp$input$raw_ae()`,
+`dp$output$derived1`, `dp$metadata$data_def`. A nested list behaves like folders: an item lives in
+exactly one place. Tags remove that limit, so `role`, `domain`, and the like become **per-member
+labels** (R4.6) and an item can carry several at once. Multi-valued tags
+(`domain: ["safety", "efficacy"]`) are therefore the motivating case, not an extension -- they are
+the only reason arrays appear in the grammar.
+
+**Folder structure becomes a projection, computed by the consumer** (R4.7): prioritise one ordering
+of tag keys and you get one hierarchy; prioritise a different set -- at gov level, per
+organisation -- and you get another. That prioritisation is presentation, not content, so datom
+stores tag facts and takes no position on hierarchy. Arbitrarily many structures cost nothing,
+because none of them is stored.
+
+Two consequences worth being explicit about:
+
+- **#89's "view config" is retired.** The issue listed tags, descriptions **and view config** as
+  payload content, and its rejected flat-table alternative was partly rejected because "nested view
+  config does not survive the flattening". With navigation *being* the tags, there is no separate
+  nested structure to preserve -- so the argument no longer applies, and the payload can be
+  text-only.
+- **Closures stay downstream.** dpbuild's inputs are lazy closures; a datom member is a pointer and
+  `datom_read()` is the lazy fetch. Assembling closures is the build package's job, which is the
+  layering #89 asked for.
 - **The set's `metadata.json` collapses** to `kind`, `schema_version`, `data_sha`, `hash_algo`,
   `document_sha`, `created_at`, `datom_version`.
 
@@ -113,7 +142,7 @@ Tags, descriptions, and view config go **in the payload**, not into a parallel m
 | `parents` / `source_lineage` | conditional | **omitted** | Section 3 |
 | `size_bytes` | present | **absent** | Nothing consumes it for a set: `summary$total_size_bytes` is tables-only (R8.3) and the set's manifest entry carries `member_count` instead. See R1.4. |
 | `created_at` / `datom_version` | present | present | Volatile provenance |
-| `custom` | conditional | **absent** | Redundant: tags / descriptions / view config live in the **payload** (R6.2). Two channels for one thing is two places to look. `datom_write_set()` has no `metadata =` parameter. See R1.4. |
+| `custom` | conditional | **absent** | Redundant: tags live in the **payload**, and a description is a tag (R6.2). Two channels for one thing is two places to look. `datom_write_set()` has no `metadata =` parameter. See R1.4. |
 
 The set column of this matrix is exactly the seven fields of R1.3 -- the two tables are
 reconciled deliberately, because an earlier draft had the matrix granting `size_bytes` and
@@ -334,39 +363,51 @@ An earlier draft resolved this by normalizing through `serialize -> parse -> enc
 
 ### 7.2 The walk (settled)
 
+The payload grammar is **text-only and closed** (R2.11), and its shape is **fixed** (R2.12), so the
+walk has three types and bounded depth:
+
 ```
-data_sha = sha256( "datom-sv1" || sv1_value(payload) )      # payload in the parsed-JSON model
+data_sha = sha256( "datom-sv1" || sv1_value(payload) )     # payload in the parsed-JSON model
 
 sv1_value(x):
-  scalar string   ->  0x01 || utf8(x) || 0x00
-  scalar number   ->  0x02 || f64le(x)              # .datom_encode_numeric(), reused verbatim
-  scalar boolean  ->  0x03 || 0x00|0x01
-  array           ->  0x05 || f64le(length) || concat(sv1_value(el) for el in order)
-  object          ->  0x06 || f64le(n_keys) ||
-                      concat( utf8(k) || 0x00 || sv1_value(v)
-                              for k in sort(keys, method = "radix") )
+  string        ->  0x01 || utf8(x) || 0x00
+  string array  ->  0x05 || f64le(length) || concat(sv1_value(el) for el in order)
+  object        ->  0x06 || f64le(n_keys) ||
+                    concat( utf8(k) || 0x00 || sv1_value(v)
+                            for k in sort(keys, method = "radix") )
 ```
 
-Note there is **no `null` tag** (`0x04` in the earlier draft): absence is omission, so `null` is not
-representable (R2.7).
+That is the whole encoder. Compared with the earlier draft it drops the **number**, **boolean** and
+**null** tags -- numbers and booleans because the grammar has none, `null` because absence is
+omission (R2.7).
 
 Design intent, unchanged from the proposal and now fixed:
 
-- **Type-tagged**, so `"1"`, `1` and `TRUE` cannot collide. This is a real collision surface for a
-  tree users compose, and it is exactly what an `auto_unbox` emitter basis loses.
+- **Type-tagged**, so a string cannot collide with a one-element array of that string.
 - **Length-prefixed** arrays and objects, so `["a","b"]` cannot collide with `["ab"]`. Same framing
   property cv1 gets from `f64le(nrow) || f64le(ncol)`.
 - **Array order is identity; object key order is not.** Member order is a curatorial choice the
   user sees and controls (matching cv1's "row order is significant"); key order is an artifact, so
-  it is normalized by radix sort -- locale-independent by design.
-- **Reuses `.datom_encode_numeric()` verbatim**, inheriting the pinned canonical NaN and the
-  `-0 -> +0` fold that #72's CI matrix proved necessary. **Do not write a second numeric encoder.**
-  (Its `NA_real_` branch is unreachable here -- `NA` aborts before encoding, R2.7.)
+  it is radix-normalised -- locale-independent by design.
 - **`f64le` for lengths**, for consistency with cv1's framing so both references share one
-  primitive.
+  primitive. Note this is the *only* remaining use of a numeric encoding, and it encodes a length
+  datom computes -- never caller data.
 
-Exact byte rules, including the domain-separation tag table, are normative in
-`dev/datom_sv1_reference.R`.
+Exact byte rules and the tag table are normative in `dev/datom_sv1_reference.R`.
+
+**What the text-only grammar bought.** Three of the four hazards in 7.1 are no longer handled --
+they are unrepresentable:
+
+| Hazard | Earlier mechanism | Now |
+|---|---|---|
+| int vs double | "numbers are always f64" rule | **no numbers in the grammar** |
+| `NA_real_` -> `"NA"` | abort rule | **no numbers**; `NA` also aborts (R2.7) |
+| `null` | dedicated `0x04` tag | **not representable** -- absence is omission |
+| scalar vs length-1 array | explicit R-type rule | still an explicit rule, but now the *only* one |
+
+`.datom_encode_numeric()` is consequently **no longer reused for payload values** -- only its
+`f64le` length framing is shared. The pinned-NaN and `-0 -> +0` canonicalisations it exists for
+are cv1 concerns and cannot arise in a text-only payload.
 
 ### 7.3 Why agreement now holds without a serializer
 
@@ -379,6 +420,9 @@ construction rather than by round-tripping:
 | `NA_real_` becomes the string `"NA"` | `NA` **aborts** (R2.7); it is not an encoding case |
 | `NA_character_` becomes `null` | same -- and `null` has no tag, because absence is omission |
 | scalar vs length-1 array indistinguishable | **explicit rule on R type**: atomic -> scalar, list -> array, applied identically both sides |
+
+Note the first three rows are now **stronger than stated**: with the text-only grammar (R2.11) they
+are not merely handled, they are unrepresentable. Only the fourth remains an actual rule.
 
 The fourth needs one supporting condition: the read path must parse with
 **`simplifyVector = FALSE`**, or `["a"]` would come back as a bare scalar and disagree. **Both
@@ -406,7 +450,7 @@ specification**, not a debate.
 
 | Q | Question | Decision |
 |---|---|---|
-| **Q1** | whole payload or member list only | **whole payload** -- members *and* tags/descriptions/view config. A set is citable; "same cite, different tags" would lie to the consumer. A tag edit minting a version is **intended** (R2.6, AC2) |
+| **Q1** | whole payload or member list only | **whole payload** -- members *and* their tags. A set is citable; "same cite, different tags" would lie to the consumer. A tag edit minting a version is **intended** (R2.6, AC2) |
 | **Q2** | `NA` / `""` / `null` encoding | **dissolved** -- absence is **omission**; a literal `NA` is an **error**, not an encoding. Goldens carry the refusal case (R2.7) |
 | **Q3** | empty set legal? | **refused**, mirroring cv1's zero-dim abort. Marginal utility, murky semantics; cheap to relax, awkward to retract (R2.8, AC5) |
 | **Q4** | `schema_version` in the payload? | **no** -- it describes the container, not the content. In identity it would re-mint every set on a format bump (R2.9) |
@@ -569,7 +613,7 @@ Section 7 carries **one hard constraint, and all questions are now resolved** (o
   payload. Surfaced in review, demonstrated against the branch. Its *mechanism* changed with Q5:
   each mutation is now eliminated at source rather than normalized away by a serialize/parse cycle
   (section 7.3).
-- **Resolved**: **Q1** whole payload (members *and* tags/descriptions/view config); **Q2** `NA` is
+- **Resolved**: **Q1** whole payload (members *and* their tags); **Q2** `NA` is
   an error and absence is omission; **Q3** empty set refused; **Q4** `schema_version` excluded from
   the payload; **Q5** no serializer in the identity path -- a deterministic walk of the parsed
   payload.
@@ -632,6 +676,8 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I21** | **Git is the history mechanism.** Anything history-shaped datom writes is a projection for git-less consumers, always derived from git, never the source of truth. If a consumer holding the repo would use it to answer a history question, it is wrong (R20). |
 | **I22** | **`commit_sha` is derived, never authored.** The write path takes it from the commit it just made; the repair path re-derives it from `git log`. No code path may drop it, and none may treat the stored value as the only copy (R21.7). |
 | **I23** | **A version is content-derived and code-invariant**, identically for tables and sets. Nothing code-derived -- not a commit SHA, not a code or environment hash -- may enter `metadata_sha` or a payload (R21.1, R21.4). |
+| **I24** | **The payload is text-only** (R2.11): every leaf is a UTF-8 string or an array of them. No numbers, booleans, `null`, or nesting beyond the fixed shape (R2.12) may be admitted -- not as a convenience, not "just for this field". Admitting one reopens an encoder rule and widens the golden matrix. |
+| **I25** | **No navigation or view structure is stored.** Folder-like hierarchy is a projection over tags computed by the consumer (R4.7). datom stores tag facts and takes no position on hierarchy. |
 
 ---
 
@@ -668,6 +714,8 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P25** | **A set version's change is expressible as a git diff** on a single stable path, at member granularity -- not as a whole-file addition (R6.1a, AC24). |
 | **P26** | **`commit_sha` survives every repair path.** No sequence of `datom_validate(fix = TRUE)` or metadata re-sync leaves the storage copy without it (I22, AC25). |
 | **P27** | **A change that alters no content alters no version**, for tables and sets alike: modifying code or environment while producing identical content yields no new version and no change to any recorded `commit_sha` (I23, R21.2, AC26). |
+| **P28** | **Type ambiguity is unrepresentable, not merely handled.** No payload can contain a number, boolean or `null`, so no encoder rule for them can be needed and none can drift (I24, R2.11, AC27). |
+| **P29** | **The same tag facts support arbitrarily many folder projections**, and changing which projection a consumer applies changes no stored bytes and no version (I25, R4.7). |
 
 ---
 
@@ -675,7 +723,7 @@ Tagged so tests can reference them, following the #72 spec's convention.
 
 | Alternative | Verdict |
 |---|---|
-| **Flatten the collection into a long-format table** (`name`, `project`, `version`, `tag_key`, `tag_value`) -- would technically satisfy `datom-cv1`. | **Rejected.** It would become a **data-layer artifact subject to lineage semantics** -- precisely what a set must not be -- and nested view config does not survive the flattening. |
+| **Flatten the collection into a long-format table** (`name`, `project`, `version`, `tag_key`, `tag_value`) -- would technically satisfy `datom-cv1`. | **Rejected**, but only on the first of its two original grounds. It would become a **data-layer artifact subject to lineage semantics** -- precisely what a set must not be. The second ground, "nested view config does not survive the flattening", **no longer applies**: there is no view config (R4.7). Note the shape it proposed was per-member text key-values, which is essentially what the payload now carries -- the objection was always the *layer*, not the shape. |
 | **Build the collection outside datom, in the build package.** | **Rejected.** Duplicates version history, content addressing, dedup, ref resolution and governance, and the result still could not be referenced as a member of another collection. The composability loss is the one that cannot be worked around. |
 | **Sibling `manifest$sets` node.** | **Rejected.** Makes cross-kind name collisions representable, requiring a guard that one typed namespace makes unnecessary. Also bolted-on -- a from-scratch design would have typed one namespace, since `tables` was only ever "the things in this repo." |
 | **Rename `parquet_sha` to a kind-neutral name.** | **Rejected.** Section 11 -- silently disables integrity verification in released 0.1.0 readers. |

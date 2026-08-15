@@ -50,7 +50,7 @@ necessary.
     rules, whether the tag table leaves a collision surface, and whether the goldens cover the
     7.3 agreement cases. The goldens still freeze the encoding -- a later change needs a conscious
     `datom-sv2` bump.
-  - **Q1 whole payload.** `data_sha` covers members **and** tags, descriptions, view config. A tag
+  - **Q1 whole payload.** `data_sha` covers members **and** their tags (a description is a tag). A tag
     or description edit **mints a new version** -- intended, not a bug to engineer away (R2.6).
     This makes AC2 two-sided: identical *payload* is a no-op, identical *members with a changed
     tag* is **not**.
@@ -69,6 +69,17 @@ necessary.
     `sha256("datom-sv1" || encoded-walk)` (R2.10, design.md 7.2). `jsonlite` may format the
     **stored** file however it likes -- stored-byte integrity is `document_sha`'s separate job.
     **Identity and storage integrity never share a dependency.**
+  - **The grammar is text-only and closed (R2.11), so the walk has THREE tags, not five**: string,
+    string-array, object. No number, boolean or `null` tag -- numbers and booleans are not in the
+    grammar, and `null` is unrepresentable because absence is omission. Enforce the grammar at
+    write time and refuse anything else per offending type (AC27); without that test, "just allow
+    numbers here" is a one-line change nobody notices (I24).
+  - Consequence: **`.datom_encode_numeric()` is no longer reused for payload values** -- only its
+    `f64le` framing is shared, for array and object lengths that datom computes itself. The pinned
+    NaN and `-0 -> +0` folds are cv1 concerns that cannot arise in text.
+  - Payload shape is **fixed** (R2.12): optional set-level `tags`, then `members[]` each with
+    `{project, name, kind, version}` and optional per-member `tags`. Depth is bounded by the schema,
+    not by what a caller nests.
   - **The R2.5 hard constraint still governs**, with its mechanism restated: write-time and
     read-time hashes must agree, and they now do **by construction** rather than via a
     serialize/parse cycle. Each mutation is killed at source (design.md 7.3): numbers always f64;
@@ -159,8 +170,14 @@ necessary.
     read `{name}/.metadata/{version}.json`, derive `project` from `conn$project_name` and `kind`
     from the snapshot (defaulting to `"table"` for pre-`kind` metadata). Returns
     `{project, name, kind, version}` as pure data.
+  - **Signature gains tags**: `datom_member(conn, name, version, tags = NULL)` -- an optional named
+    list of text values, validated against the R2.11 grammar at construction time (R4.6). Tags are
+    **per-member** because they replace dpbuild's `dp$input` / `dp$output` / `dp$metadata` nesting,
+    which classifies items rather than the collection. A value may be a string **or** a character
+    vector, because the whole point of tags over folders is that an item can be in several
+    categories at once.
   - `.datom_validate_members()` mirroring `.datom_validate_parents()`, including the `remedy`
-    string pointing at `datom_member()`.
+    string pointing at `datom_member()`. It owns the grammar refusal (AC27).
   - **Refuse self-reference** (R4.5, AC9): a set listing itself as a member. One cheap check. The
     set's own identity is known from `project.yaml` (R10.3a).
   - **Deliberately NOT built: cycle detection, a visited-set guard, or a depth limit** (R4.3/R4.4,
@@ -176,8 +193,10 @@ necessary.
   - **Two gates first, before any hashing or IO** (R10.3a, I15): the repo must declare
     `mode: product`, and `name` must equal `project.yaml`'s `set:` field. These are what make
     "one repo = one set" real, and the second is the precondition the cycle walk's root depends on.
-  - Payload derived from members + tags/descriptions/view config. No `metadata =` parameter --
-    user metadata belongs in the payload (R1.4/R6.2).
+  - Payload derived from members (each with optional per-member tags) plus optional **set-level
+    tags** -- and **nothing else**. No view or navigation config: folder structure is a consumer-side
+    projection over tags, never stored (R4.7, I25). No `metadata =` parameter -- user metadata is
+    tags (R1.4/R6.2).
   - Written **git-canonical + storage-mirrored**, with **different paths on each side** (R6.1a):
     git at the **stable path `{name}/set.json`** (modified in place, so `git diff` shows
     member-level changes and git owns the history), storage at the **content-addressed**
@@ -444,7 +463,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-11 | **The trap: `datom_validate(fix = TRUE)` would silently strip `commit_sha`** when it re-uploads metadata from the clone. Resolved by treating the field as **derived, never authored** -- the repair path re-derives it from `git log`, so storage holds nothing unrecoverable and the "mirror is derived from git" invariant survives. AC25's third clause exists to catch this; a naive implementation passes everything else. | R21.7, I22, P26 |
 | 2026-08-11 | **Precedent checked, not assumed** (public sources): dpbuild keeps no commit hash in the product repo -- `.daap/daap_log.yaml` is inside the commit -- and dpdeploy publishes it to a storage-side `dpboard-log` pin that dpi's `dp_list()` reads **with no git**. That log's composite key is `(dp_name, pin_version, git_sha)`, independently confirming that one content version can pair with several commits. datom needs no separate deploy pass (it already uploads after push) and adds no board-level index (per-artifact history already carries the sibling git fields). **Corrects an earlier claim in this conversation that dpbuild had no git-less readers -- dpi is exactly that.** | R21.9, design.md 21.5 |
 | 2026-08-11 | Tasks: **new Task 14** (version-to-commit link) inserted after validate, since its repair-path behavior needs `datom_validate()` to exist. Old 14/15 -> 15/16. | tasks.md Phase D |
-| 2026-08-15 | **E1 Q1 -- OWNER-DECIDED: whole-payload hashing.** `data_sha` covers members **and** tags, descriptions, view config. A set is citable, and "same cite, different tags" would lie to the consumer. A tag or description edit therefore **mints a new version** -- intended behavior. Consequence applied: **AC2 was wrong** as written ("identical member list is a no-op") and is now two-sided -- identical *payload* is a no-op, identical members with a changed tag is **not**. | R2.6, AC2, design.md 7.5 |
+| 2026-08-15 | **E1 Q1 -- OWNER-DECIDED: whole-payload hashing.** `data_sha` covers members **and** their tags (a description is a tag). A set is citable, and "same cite, different tags" would lie to the consumer. A tag or description edit therefore **mints a new version** -- intended behavior. Consequence applied: **AC2 was wrong** as written ("identical member list is a no-op") and is now two-sided -- identical *payload* is a no-op, identical members with a changed tag is **not**. | R2.6, AC2, design.md 7.5 |
 | 2026-08-15 | **E1 Q2 -- OWNER-DECIDED: dissolved by the omission rule.** A payload has no data cells, so `NA` could only arrive via optional fields. datom's existing "omitted, not nulled" convention (verified `R/read_write.R:296-299`) becomes the canonical form: absence means the field **does not exist**; `null` / `NA` / `""` are never representations of absence. A literal `NA` reaching the encoder is an **error**, not an encoding case, and goldens carry the refusal. Knock-on: the walk has **no `null` tag** (the earlier draft's `0x04` is dropped), and this is where sv1 legitimately diverges from cv1, which needs an NA mask byte because table cells *can* be missing. | R2.7, design.md 7.2/7.5 |
 | 2026-08-15 | **E1 Q3 -- OWNER-DECIDED: empty set refused.** Mirrors cv1's zero-dim abort (verified `R/utils-sha.R:310-312`). Marginal utility -- the build package simply does not write the set until its first output exists -- and an empty citable product is semantically murky. Cheap to relax later, awkward to retract. AC5 updated: refusal is the **tested** behavior, not a documented maybe. | R2.8, AC5 |
 | 2026-08-15 | **E1 Q4 -- OWNER-DECIDED: `schema_version` stays out of the payload and hash.** It describes the container format, not the content; in identity a format bump would re-mint every set with unchanged members -- the same failure the `volatile` list exists to prevent (verified `R/utils-sha.R:411-412`). | R2.9 |
@@ -452,6 +471,12 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-15 | **R2.5's force stands; its mechanism is superseded.** The write/read agreement constraint is unchanged, but it is no longer achieved by normalizing through `serialize -> parse -> encode`. Each mutation is eliminated at source instead: numbers always f64 (kills integer-vs-double), `NA` aborts (kills the `"NA"` string and `null` cases), and scalar-vs-array is decided by an explicit R-type rule. **Verified bonus**: the one supporting condition -- reading with `simplifyVector = FALSE` -- is *already* satisfied deliberately by both backends (`R/utils-local.R:110`, `R/utils-s3.R:209`, the latter documented as "keep lists as lists"). So the decision is supported by existing infrastructure rather than imposing a new read-path requirement. | R2.5, design.md 7.1/7.3 |
 | 2026-08-15 | **sv1 does not inherit the `metadata_sha` emitter exposure** (section 16). The earlier "cannot both be right" tension is resolved one-sidedly: sv1 is clean by construction, which *sharpens* rather than softens the case for the separate `metadata_sha` issue, since it becomes the only hash in datom whose value depends on a third-party formatter. Scope of that issue unchanged; priority arguably rises. | design.md 7.4, 16 |
 | 2026-08-15 | **E1 downgraded from open-question debate to design review.** Gate for Task 2 is now: exact byte rules, whether the tag table leaves a collision surface, and whether the goldens cover the 7.3 agreement cases. Goldens still freeze the encoding -- a later change needs a conscious `datom-sv2` bump. | design.md E1, Task 2 |
+| 2026-08-15 | **The payload is text-only, and that is a closed grammar** (R2.11). Values are UTF-8 strings or arrays of strings; **no numbers, booleans, `null`, or nesting beyond the fixed shape** (R2.12). Rationale: tags replace folder-style organisation and folder labels are text, so numbers and booleans buy nothing datom uses while costing an integer-vs-double rule, a boolean tag, and a wider golden matrix. A numeric tag is written `"500"` and parsed downstream, exactly as a folder name would be. | R2.11, I24, AC27 |
+| 2026-08-15 | **Consequence: the walk collapses from five type tags to three** (string / string-array / object). Three of R2.5's four agreement hazards become **unrepresentable rather than handled** -- int-vs-double and `NA_real_` because there are no numbers, `null` because absence is omission. Only scalar-vs-length-1-array remains an actual rule. `.datom_encode_numeric()` is no longer reused for payload values; only its `f64le` length framing is shared, for lengths datom computes itself. | design.md 7.2/7.3, Task 2 |
+| 2026-08-15 | **Tags are per-member** (R4.6), and `datom_member()` gains `tags = NULL`. What they replace is dpbuild's nested product list (`dp$input$raw_ae()`, `dp$output$derived1`, `dp$metadata$data_def`), whose top-level names classify **items**, not the collection -- confirmed by #89's own rejected alternative, which flattened to `(name, project, version, tag_key, tag_value)`, one row per member per tag. Set-level tags are also allowed, for facts about the collection such as a description. | R4.6, Task 7 |
+| 2026-08-15 | **A tag value may be a string OR an array of strings**, and that is the *only* reason arrays exist in the grammar. The motivating limitation of folders is that an item cannot be in two at once, so multi-valued tags (`domain: ["safety", "efficacy"]`) are the point rather than an extension. | R2.11, R4.6 |
+| 2026-08-15 | **#89's "view config" is retired; no navigation structure is stored at all** (R4.7, I25). Folder-like hierarchy is a **projection**: prioritise one ordering of tag keys at gov level and you get one structure, prioritise another and you get a different one -- so structure is presentation, not content. This retires the "nested view config does not survive the flattening" argument, since navigation *is* the tags, and it is what makes the text-only grammar sufficient. Bonus property: arbitrarily many folder structures cost nothing because none is stored. | R4.7, I25, P29 |
+| 2026-08-15 | Closures stay downstream: dpbuild's inputs are lazy closures, whereas a datom member is a pointer and `datom_read()` is the lazy fetch. Assembling closures is the build package's job -- the layering #89 asked for. No datom change. | design.md s4 |
 | 2026-08-15 | **Git-commit-linkage follow-ups asked and confirmed as-is, no change** (R20/R21): (a) lagging `commit_sha` into the git copy on a subsequent write, (b) moving the linkage into governance, (c) recording *all* producing commits rather than the first. Examined; the existing spec answers hold -- (a) leaves the newest version permanently unlinked, (b) makes a git-less-reader convenience depend on gov being attached, (c) turns an immutable history entry into an append target. Logged so they are not re-litigated. | R20, R21 |
 | 2026-08-11 | **Process lesson recorded, not patched over.** The nesting machinery entered via review finding F1, which correctly spotted a contradiction between two spec statements and was resolved by *adding* guards rather than by testing whether either statement was true. Both were false. When a review surfaces a contradiction, **check the premises before building something to reconcile them**. | design.md 18 (F1 row), 20.11 |
 | 2026-08-11 | **AC1 split** into (a) resolve pointers -- always works, no clone -- and (b) resolve to data -- needs that member's project conn. Conflating them mis-implements a set read as "requires access to everything in it". `datom_validate()`'s member check scoped the same way (R11.2), reusing `members_unresolvable`. | AC1, R11.2, Tasks 9 and 13 |

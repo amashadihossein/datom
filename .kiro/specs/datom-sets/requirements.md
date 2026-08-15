@@ -90,7 +90,7 @@ Additive unless marked **[BREAKING]**.
   - `size_bytes` -- nothing consumes it. `summary$total_size_bytes` is tables-only by R8.3, and
     the manifest set entry carries `member_count` instead. A field no counter reads is a field
     that will silently rot.
-  - `custom` -- redundant by design. Tags, descriptions, and view config live **in the payload**
+  - `custom` -- redundant by design. Tags live **in the payload**
     (R6.2), so a second user-metadata channel on a set would create two places to put the same
     thing and two places to look for it. `datom_write_set()` therefore has no `metadata =`
     parameter.
@@ -134,7 +134,7 @@ the test.
   - the read path parses with **`simplifyVector = FALSE`**, which both storage backends already
     do deliberately (`R/utils-local.R:110`, `R/utils-s3.R:209`)
 - **R2.6 -- Q1: the hash covers the WHOLE payload.** `data_sha` is computed over the entire
-  semantic payload -- members **and** tags, descriptions, and view config -- not the member list
+  semantic payload -- members **and** their tags (including descriptions carried as tags) -- not the member list
   alone. A set exists to be **citable**, and "same citation, different tags" would be a lie to the
   consumer. **A tag or description edit therefore mints a new version. That is intended behavior,
   not an accident to engineer away.**
@@ -158,9 +158,47 @@ the test.
   defines the canonical form, because **no serializer is in the identity path**. sv1 is a
   deterministic walk of the **parsed** payload:
   - fields visited in **radix-sorted key order**, recursively
-  - **fixed per-type leaf encoding** with a **domain-separation tag per type** (string / number /
-    boolean / array / object) -- exact byte rules specified in the sv1 reference document
+  - **fixed per-type leaf encoding** with a **domain-separation tag per type** -- and per R2.11
+    there are only **three** types to tag (string / string-array / object)
   - hash accumulated over the walk: `sha256("datom-sv1" || encoded-walk)`
+- **R2.11 -- the payload is text-only, and that is a closed grammar.** The complete set of things
+  a payload may contain:
+
+  ```
+  payload  ::= object
+  object   ::= { key: value, ... }          keys are non-empty UTF-8 strings, unique
+  value    ::= string | [ string, ... ] | object
+  string   ::= UTF-8 character scalar       no NA (R2.7)
+  ```
+
+  **No numbers, no booleans, no `null`, no nesting beyond the fixed payload shape (R2.12).** A
+  non-conforming value -- a number, a logical, a factor, a list of lists, a function, `NA` --
+  **aborts** with a message naming the offending key and the allowed types. Rationale: tags exist
+  to replace folder-style organisation, and folder labels are text. Admitting numbers and booleans
+  would buy nothing datom uses (nothing in the payload is arithmetic) while costing the encoder an
+  integer-vs-double rule, a boolean tag, and a wider golden matrix. Callers who want a numeric tag
+  write `"500"`; downstream parses it, exactly as it would parse a folder name.
+
+  **What this eliminates outright** rather than handling: integer-vs-double drift, the
+  scalar-versus-length-1-vector ambiguity (a character vector of length 1 *is* a string; arrays are
+  declared by being character vectors of any length inside a list context per R2.12), boolean
+  encoding, and `null`. Three of R2.5's four agreement hazards stop being conditions and become
+  impossibilities.
+- **R2.12 -- the payload shape is fixed, not arbitrary.** Depth is bounded by the schema, not by
+  what a caller nests:
+
+  ```
+  {
+    "tags":    { <key>: <string|string[]>, ... },        # set-level, optional
+    "members": [
+      { "project": "...", "name": "...", "kind": "table|set", "version": "...",
+        "tags": { <key>: <string|string[]>, ... } }      # per-member, optional
+    ]
+  }
+  ```
+
+  Member array order is **significant** (identity -- R2.10's walk preserves it); tag key order is
+  **not** (radix-normalised).
 
   `jsonlite`, or anything else, remains free to format the **stored file** however it likes,
   because stored-byte integrity is `document_sha`'s job -- a separate hash over actual bytes.
@@ -231,6 +269,31 @@ produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
 - **R4.5 -- self-reference is refused as nonsense, not as a cycle.** A set listing itself (an
   earlier version of itself) as a member is acyclic and would terminate, but it is never
   meaningful. Cheap check at write time, clear error.
+- **R4.6 -- tags are per-member, and are what replace folder structure.**
+  `datom_member(conn, name, version, tags = NULL)` -- `tags` is an optional named list of text
+  values (R2.11). Set-level tags are also allowed (R2.12) for facts about the collection itself,
+  such as a description.
+
+  **Why per-member.** The structure being replaced is dpbuild's nested product list
+  (`dp$input$raw_ae()`, `dp$output$derived1`, `dp$metadata$data_def`) -- and those top-level names
+  classify *items*, not the collection. So `role: "output"`, `domain: "safety"` are member
+  properties. #89's own rejected alternative confirms it: it proposed flattening to
+  `(name, project, version, tag_key, tag_value)`, one row per member per tag.
+
+  **Why a value may be an array of strings.** The motivating limitation of folders is that an item
+  cannot be in two at once. Multi-valued tags are therefore the point, not an extension --
+  `domain: ["safety", "efficacy"]` must work. This is the *only* reason arrays exist in the
+  grammar.
+- **R4.7 -- "folder structure" is a projection over tags, computed by the consumer, never stored.**
+  A given ordering of tag keys yields a folder-like hierarchy; prioritising a different key set
+  yields a different one. That prioritisation is a **governance / consumer-side presentation
+  choice**, not payload content. Consequences:
+  - datom stores tag **facts** and takes no position on hierarchy.
+  - **The payload contains no view or navigation config at all**, which is what makes the
+    text-only grammar (R2.11) sufficient. #89 listed "view config" as payload content and cited
+    "nested view config does not survive flattening" as an argument -- that concern is **retired**:
+    the navigation *is* the tags.
+  - Arbitrarily many folder structures cost nothing, because none of them is stored.
 
 **Acceptance**: AC9 (self-reference refused) and AC15 (nesting resolves one level, no traversal)
 below; plus a hand-assembled member list is refused with a message pointing at `datom_member()`
@@ -279,7 +342,7 @@ Relative to the artifact prefix:
   "retain all historical payloads" rule unnecessary: **git retention is definitional.** Any
   version is still fully reconstructible from the clone alone via
   `git show <commit>:{name}/set.json`, so the P17 guarantee is preserved and strengthened.
-- **R6.2** Tags, descriptions, and view config live **in the payload**, not in a parallel
+- **R6.2** Tags live **in the payload** (descriptions are tags), not in a parallel
   metadata schema.
 - **R6.3** **No member index.** `column_hashes` exists so you can diff a table without
   downloading parquet; the payload is small and cheap to read, so a member index would be
@@ -788,7 +851,7 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | # | Criterion |
 |---|---|
 | **AC1** | **Reader role, no git -- and "resolve" means two different things, tested separately.** (a) **Resolve the pointers**: a storage-only connection (no `github_pat`, no clone) can `datom_read_set()` and get back the member records. This always works and is the primary use case -- the "git-canonical" framing must not lead to requiring a clone. (b) **Resolve to data**: reading a member's actual content needs a connection scoped to *that member's* project -- same-project members work through the same connection; cross-project members require the caller's connection (or, later, the governance register). Conflating (a) and (b) is how this gets mis-implemented as "reading a set requires access to everything in it". |
-| **AC2** | **Idempotent re-write -- on the whole payload, not just members.** Writing an identical **payload** (members *and* tags, descriptions, view config) to the same set name is a no-op -- dedup on set `data_sha`, no new version appended. **Converse, tested alongside it**: an identical member list with a *changed tag or description* is **not** a no-op and **does** mint a new version (R2.6/Q1). Both halves are needed -- the original wording said "identical member list", which under whole-payload hashing would have been wrong. |
+| **AC2** | **Idempotent re-write -- on the whole payload, not just members.** Writing an identical **payload** (members *and* their tags) to the same set name is a no-op -- dedup on set `data_sha`, no new version appended. **Converse, tested alongside it**: an identical member list with a *changed tag or description* is **not** a no-op and **does** mint a new version (R2.6/Q1). Both halves are needed -- the original wording said "identical member list", which under whole-payload hashing would have been wrong. |
 | **AC3** | **Version sensitivity.** A set whose member *names* are unchanged but whose member *versions* advanced **must** produce a new `data_sha` and a new version. Do not "optimize" this away. |
 | **AC4** | **Name uniqueness across kinds.** Writing a set with the name of an existing table (or vice versa) is refused. **Mechanism**: the check reads `{name}/.metadata/metadata.json` from **storage** and compares `kind` -- not the manifest, which can lag behind a partially-completed write. This is the same source `.datom_has_changes()` already consults, so the check costs no extra round-trip. Stated explicitly so it is not decided by accident. |
 | **AC5** | **Empty set refused; single-member set legal.** `datom_write_set()` with zero members **aborts** (R2.8/Q3), mirroring `.datom_canonical_hash()`'s refusal of zero-row/zero-column tables. A one-member set is legal and hashes normally. The refusal is the *tested* behavior, not a documented maybe. |
@@ -796,7 +859,7 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC7** | **Schema gate fires, both directions.** *Refuse-newer*: a repo declaring `schema_version: 3` aborts with the upgrade message, at **both** entry points (manifest and per-artifact metadata). *Tolerate-older*: a repo with no `schema_version` field behaves exactly as 0.1.0 did. **Mechanism note**: an actually-installed 0.1.0 reader has no gate to fire, so this is not testable by installing an old version -- the test drives `.datom_check_schema_version()` directly with a fixture declaring a version above `SUPPORTED_SCHEMA`. Test the gate, not the archaeology. |
 | **AC8** | **Lineage isolation.** A set's metadata contains no `parents` and no `source_lineage` (**omitted, not null**), and writing a set does not alter any member's lineage. |
 | **AC9** | **Self-reference refused.** Writing a set that lists itself (any version of itself) as a member is refused at write time with a clear error (R4.5). Note this is a nonsense check, **not** cycle detection -- cycles are structurally impossible (R4.4), so there is deliberately no cycle test and no depth test. |
-| **AC13** | **Write/read hash agreement.** For every golden fixture, `data_sha` computed from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back (parsed with `simplifyVector = FALSE`). Covers R2.5. Fixtures must exercise each mutation the mechanism eliminates: a **length-1 list vs a scalar** (must differ, per the explicit type rule), a **whole-number double** (must agree with its integer round-trip, since numbers are always f64), and a **literal `NA`** -- which is a **refusal** case, not an encoding case (R2.7). Assert the abort message points at omitting the field. |
+| **AC13** | **Write/read hash agreement.** For every golden fixture, `data_sha` computed from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back (parsed with `simplifyVector = FALSE`). Covers R2.5. Fixtures must include the one remaining ambiguity the grammar cannot remove: a **length-1 string array vs a bare string** (must produce **different** hashes, per the explicit type rule). The number and boolean cases are no longer applicable -- see AC27. |
 | **AC14** | **`datom_read_set()` on a table** aborts pointing at `datom_read()` -- the converse of AC6, not a missing-payload error for a healthy table. |
 | **AC15** | **Nesting resolves one level -- no traversal.** Reading a set whose members include another set returns a **pointer** to that inner set (`kind = "set"`, name, project, version), and does **not** fetch the inner set's own members. Asserted by observing that no storage read of the inner set's payload occurs. Covers R4.3, and guards against an implementer "helpfully" flattening the tree. |
 | **AC16** | **Machine-commit isolation.** In a `mode: product` repo with an uncommitted edit at `R/foo.R`, a `datom_write()` of a table produces a commit whose tree does **not** contain the `R/foo.R` change, **and** `R/foo.R` is still dirty in the working tree afterward. Both halves matter: the second catches a "helpfully" cleaned working tree (R14.1). |
@@ -810,6 +873,7 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC24** | **The git payload is diffable.** After writing a set twice with one member added, `git diff` on `{name}/set.json` between the two commits shows the **member-level** change (one added entry), not a whole-file add. Guards R6.1a/b -- a content-addressed git filename would make this test impossible to write. |
 | **AC25** | **`commit_sha` is present, git-less, and survives repair.** After a set write: the **storage** copy of `version_history.json` carries `commit_sha` for the new version; the **git** copy does not (it cannot -- it is inside that commit); and after `datom_validate(fix = TRUE)` re-uploads metadata, `commit_sha` is **still there**, re-derived from `git log` rather than stripped (R21.6/R21.7). The third clause is the one that fails silently in a naive implementation. |
 | **AC26** | **A code-only change mints no new version.** With the set's member list unchanged, modifying tracked code and re-running `datom_write_set()` produces **no new version**, and the existing version's recorded `commit_sha` is **unchanged** (still the first producing commit). Encodes the option-1 decision (R21.2/R21.3) so a later "improvement" that makes versions code-sensitive fails a test. |
+| **AC27** | **The payload grammar is enforced, not assumed.** A tag value that is a number, logical, factor, function, nested list, or `NA` is **refused** at write time, with a message naming the offending key and the allowed types (R2.11). Tested per offending type, not as one lumped case, so a regression names which type leaked through. This is the test that keeps I24 true -- without it, "just allow numbers" is a one-line change nobody notices. |
 
 Plus the standing project gates:
 
