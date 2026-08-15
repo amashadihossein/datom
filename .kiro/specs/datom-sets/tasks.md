@@ -44,35 +44,50 @@ necessary.
     Do **not** implement it here.
   - _Requirements: R5.2, R13.3. Invariants: I9. No pathway impact._
 
-- [ ] **2. `datom-sv1` canonical set-content hash** &nbsp; **[ESCALATION E1]**
-  - **Honor the hard constraint (R2.5, design.md section 7): the hash domain is the parsed-JSON
-    data model.** Normalize by construction -- `serialize -> parse -> encode`. A type-tagged
-    encoder run over the in-memory R object produces a *different* `data_sha` than the same
-    encoder over the parsed payload (`NA_real_` becomes the string `"NA"`, doubles return as
-    integers), which breaks P1/P2. **This is not optional and not an open question.**
-  - **Settle the five open questions in design.md section 7 before writing the encoder**:
-    Q1 whole-payload vs member-list-only; Q2 `NA_character_` vs `""` vs `null` (a special case of
-    the constraint); Q3 empty-set legality (AC5); Q4 whether `schema_version` enters the payload;
-    **Q5 which serializer defines the canonical form** -- `jsonlite` (consistent, but makes the
-    goldens depend on a third-party emitter, the exact dependency #72 removed for parquet) or an
-    sv1-owned minimal emitter (more code, goldens depend only on the spec). Q5 is load-bearing and
-    coupled to the section 16 issue.
+- [ ] **2. `datom-sv1` canonical set-content hash** &nbsp; **[ESCALATION E1 -- design review]**
+  - **All five open questions are settled** (owner-decided 2026-08-15, design.md 7.5). The
+    escalation is now a **design review of the walk specification**, not a debate: exact byte
+    rules, whether the tag table leaves a collision surface, and whether the goldens cover the
+    7.3 agreement cases. The goldens still freeze the encoding -- a later change needs a conscious
+    `datom-sv2` bump.
+  - **Q1 whole payload.** `data_sha` covers members **and** tags, descriptions, view config. A tag
+    or description edit **mints a new version** -- intended, not a bug to engineer away (R2.6).
+    This makes AC2 two-sided: identical *payload* is a no-op, identical *members with a changed
+    tag* is **not**.
+  - **Q2 absence is omission; `NA` is an error.** Adopt datom's existing "omitted, not nulled"
+    convention (`R/read_write.R:296-299`) as the canonical form. A literal `NA` reaching the
+    encoder **aborts** with "not encodable -- omit the field instead". Goldens carry the
+    **refusal**, not an `NA` encoding. Note `null` therefore has **no tag** in the walk (R2.7).
+  - **Q3 empty set refused.** `datom_write_set()` with zero members aborts, mirroring
+    `.datom_canonical_hash()`'s zero-dim abort (`R/utils-sha.R:310-312`). Update AC5: refusal is
+    the tested behavior (R2.8).
+  - **Q4 `schema_version` stays out** of the payload and the hash -- container format, not content;
+    in identity it would re-mint every set on a format bump (R2.9).
+  - **Q5 emitter-free structural hash.** **No serializer in the identity path.** Deterministic walk
+    of the **parsed** payload: radix-sorted keys recursively, fixed per-type leaf encoding with a
+    domain-separation tag per type, accumulated as
+    `sha256("datom-sv1" || encoded-walk)` (R2.10, design.md 7.2). `jsonlite` may format the
+    **stored** file however it likes -- stored-byte integrity is `document_sha`'s separate job.
+    **Identity and storage integrity never share a dependency.**
+  - **The R2.5 hard constraint still governs**, with its mechanism restated: write-time and
+    read-time hashes must agree, and they now do **by construction** rather than via a
+    serialize/parse cycle. Each mutation is killed at source (design.md 7.3): numbers always f64;
+    `NA` aborts; `null` unrepresentable; scalar-vs-array decided by an explicit R-type rule. The
+    one supporting condition -- reading with `simplifyVector = FALSE` -- is **already satisfied** by
+    both backends (`R/utils-local.R:110`, `R/utils-s3.R:209`).
   - `.datom_sv1_value()` + `.datom_canonical_set_hash()` in a new `R/hashable-set.R` (or extend
-    `R/utils-sha.R` -- decide at escalation). Reuse `.datom_encode_numeric()` verbatim; do not
-    write a second numeric encoder.
+    `R/utils-sha.R` -- decide at the review). **Reuse `.datom_encode_numeric()` verbatim**; do not
+    write a second numeric encoder. (Its `NA_real_` branch is unreachable here.)
   - `dev/datom_sv1_reference.R`: standalone, `digest`-only, self-testing, prints goldens --
-    mirroring `dev/datom_cv1_reference.R`.
-  - Extend `.github/workflows/cv1-reference-parity.yaml` (do not add a second workflow) to run
-    the sv1 reference and assert package/reference parity on x86_64 **and** arm64.
-  - Golden vectors hard-coded in tests, cross-architecture asserted. **Goldens must include the
-    round-trip-mutating cases** (length-1 vector vs scalar, `NA_real_`, `NA_character_`,
-    whole-number double) with a write-vs-read agreement assertion, per AC13.
-  - _Requirements: R2 (incl. R2.5). Invariants: I13. Properties: P1, P2, P3, P5, P6, P12, P15.
-    Acceptance: AC13. No pathway impact._
-  - **Escalation rationale**: cross-cutting, expensive to reverse, gates the golden vectors.
-    Once goldens publish, a change requires a conscious `datom-sv2` bump. The round-trip
-    constraint was caught only in review -- without it this task would have shipped goldens for an
-    encoder that disagreed with itself.
+    mirroring `dev/datom_cv1_reference.R`. It is the **normative home of the byte rules and the tag
+    table**, written against the walk spec and **not** against any emitter's output.
+  - Extend `.github/workflows/cv1-reference-parity.yaml` (do not add a second workflow) to run the
+    sv1 reference and assert package/reference parity on x86_64 **and** arm64.
+  - Goldens hard-coded in tests, cross-architecture asserted, and covering: a length-1 list vs a
+    scalar (must differ), a whole-number double (must agree with its integer round-trip), and the
+    `NA` refusal (AC13).
+  - _Requirements: R2 (incl. R2.5-R2.10). Invariants: I13. Properties: P1, P2, P3, P5, P6, P12,
+    P15. Acceptance: AC2, AC5, AC13. No pathway impact._
 
 - [ ] **3. Export and harden storage JSON put/get**
   - `datom_storage_read_json()` / `datom_storage_write_json()` on the Storage Extension API,
@@ -389,7 +404,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-09 | `metadata_sha`'s own emitter-drift exposure is filed as a separate issue, not folded into this spec. | design.md section 16, Task 1 |
 | 2026-08-09 | **Independent spec review.** All 12 findings verified against the code and accepted; none rejected. Full audit trail with per-finding verification method and resolution. | design.md section 18 |
 | 2026-08-09 | ~~**(F1)** Write-time cycle detection is exhaustive within a project only; read-side visited-set + depth guarding is a requirement.~~ **SUPERSEDED 2026-08-11 -- see the entry below.** The premise was false. | design.md 20.11 |
-| 2026-08-09 | **(F2)** `datom-sv1` hashes the **parsed-JSON** data model, not the in-memory R object -- `serialize -> parse -> encode`. Reproduced on the branch: `NA_real_` -> string `"NA"`, doubles -> integers, `NA_character_` -> `null`. A type-tagged encoder over the in-memory object would disagree with itself across the round trip. Elevated from open question to hard constraint. | R2.5, design.md section 7 |
+| 2026-08-09 | **(F2)** `datom-sv1` hashes the **parsed-JSON** data model, not the in-memory R object. Reproduced on the branch: `NA_real_` -> string `"NA"`, doubles -> integers, `NA_character_` -> `null`. A type-tagged encoder over the in-memory object would disagree with itself across the round trip. Elevated from open question to hard constraint. **Mechanism superseded 2026-08-15 by Q5** -- the original `serialize -> parse -> encode` normalization is replaced by eliminating each mutation at source; the constraint itself stands unchanged. | R2.5, design.md 7.1/7.3 |
 | 2026-08-09 | **(F2/Q5)** Which serializer defines sv1's canonical form -- `jsonlite` vs an sv1-owned minimal emitter -- is now the load-bearing open question, because the round-trip constraint forces the choice into the open. Coupled to the section 16 issue. | design.md section 7 Q5, E1 |
 | 2026-08-09 | **(F3)** The public `datom_storage_write_json()` refuses datom-managed keys (`.metadata/` segments, payload-shaped keys under existing artifacts). Reads unrestricted. Public-contract decision settled in the spec. | R12.4a, I14 |
 | 2026-08-09 | **(F4)** A set's metadata is **exactly** R1.3's seven fields. `size_bytes` dropped (no consumer), `custom` dropped (payload already owns user metadata, R6.2) -- so `datom_write_set()` has no `metadata =` parameter. | R1.4, design.md section 4 |
@@ -429,5 +444,14 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-11 | **The trap: `datom_validate(fix = TRUE)` would silently strip `commit_sha`** when it re-uploads metadata from the clone. Resolved by treating the field as **derived, never authored** -- the repair path re-derives it from `git log`, so storage holds nothing unrecoverable and the "mirror is derived from git" invariant survives. AC25's third clause exists to catch this; a naive implementation passes everything else. | R21.7, I22, P26 |
 | 2026-08-11 | **Precedent checked, not assumed** (public sources): dpbuild keeps no commit hash in the product repo -- `.daap/daap_log.yaml` is inside the commit -- and dpdeploy publishes it to a storage-side `dpboard-log` pin that dpi's `dp_list()` reads **with no git**. That log's composite key is `(dp_name, pin_version, git_sha)`, independently confirming that one content version can pair with several commits. datom needs no separate deploy pass (it already uploads after push) and adds no board-level index (per-artifact history already carries the sibling git fields). **Corrects an earlier claim in this conversation that dpbuild had no git-less readers -- dpi is exactly that.** | R21.9, design.md 21.5 |
 | 2026-08-11 | Tasks: **new Task 14** (version-to-commit link) inserted after validate, since its repair-path behavior needs `datom_validate()` to exist. Old 14/15 -> 15/16. | tasks.md Phase D |
+| 2026-08-15 | **E1 Q1 -- OWNER-DECIDED: whole-payload hashing.** `data_sha` covers members **and** tags, descriptions, view config. A set is citable, and "same cite, different tags" would lie to the consumer. A tag or description edit therefore **mints a new version** -- intended behavior. Consequence applied: **AC2 was wrong** as written ("identical member list is a no-op") and is now two-sided -- identical *payload* is a no-op, identical members with a changed tag is **not**. | R2.6, AC2, design.md 7.5 |
+| 2026-08-15 | **E1 Q2 -- OWNER-DECIDED: dissolved by the omission rule.** A payload has no data cells, so `NA` could only arrive via optional fields. datom's existing "omitted, not nulled" convention (verified `R/read_write.R:296-299`) becomes the canonical form: absence means the field **does not exist**; `null` / `NA` / `""` are never representations of absence. A literal `NA` reaching the encoder is an **error**, not an encoding case, and goldens carry the refusal. Knock-on: the walk has **no `null` tag** (the earlier draft's `0x04` is dropped), and this is where sv1 legitimately diverges from cv1, which needs an NA mask byte because table cells *can* be missing. | R2.7, design.md 7.2/7.5 |
+| 2026-08-15 | **E1 Q3 -- OWNER-DECIDED: empty set refused.** Mirrors cv1's zero-dim abort (verified `R/utils-sha.R:310-312`). Marginal utility -- the build package simply does not write the set until its first output exists -- and an empty citable product is semantically murky. Cheap to relax later, awkward to retract. AC5 updated: refusal is the **tested** behavior, not a documented maybe. | R2.8, AC5 |
+| 2026-08-15 | **E1 Q4 -- OWNER-DECIDED: `schema_version` stays out of the payload and hash.** It describes the container format, not the content; in identity a format bump would re-mint every set with unchanged members -- the same failure the `volatile` list exists to prevent (verified `R/utils-sha.R:411-412`). | R2.9 |
+| 2026-08-15 | **E1 Q5 -- OWNER-DECIDED: emitter-free structural hash.** Neither `jsonlite` nor a bespoke sv1 emitter is canonical, because **no serializer is in the identity path**. sv1 is a deterministic walk of the parsed payload: radix-sorted keys recursively, fixed per-type leaf encoding with a domain-separation tag per type, `sha256("datom-sv1" \|\| encoded-walk)`. Stored-file formatting is free, because stored-byte integrity is `document_sha`'s separate job -- **identity and storage integrity never share a dependency**. Goldens and `dev/datom_sv1_reference.R` are written against the walk spec, not any emitter's output. | R2.10, design.md 7.2/7.4 |
+| 2026-08-15 | **R2.5's force stands; its mechanism is superseded.** The write/read agreement constraint is unchanged, but it is no longer achieved by normalizing through `serialize -> parse -> encode`. Each mutation is eliminated at source instead: numbers always f64 (kills integer-vs-double), `NA` aborts (kills the `"NA"` string and `null` cases), and scalar-vs-array is decided by an explicit R-type rule. **Verified bonus**: the one supporting condition -- reading with `simplifyVector = FALSE` -- is *already* satisfied deliberately by both backends (`R/utils-local.R:110`, `R/utils-s3.R:209`, the latter documented as "keep lists as lists"). So the decision is supported by existing infrastructure rather than imposing a new read-path requirement. | R2.5, design.md 7.1/7.3 |
+| 2026-08-15 | **sv1 does not inherit the `metadata_sha` emitter exposure** (section 16). The earlier "cannot both be right" tension is resolved one-sidedly: sv1 is clean by construction, which *sharpens* rather than softens the case for the separate `metadata_sha` issue, since it becomes the only hash in datom whose value depends on a third-party formatter. Scope of that issue unchanged; priority arguably rises. | design.md 7.4, 16 |
+| 2026-08-15 | **E1 downgraded from open-question debate to design review.** Gate for Task 2 is now: exact byte rules, whether the tag table leaves a collision surface, and whether the goldens cover the 7.3 agreement cases. Goldens still freeze the encoding -- a later change needs a conscious `datom-sv2` bump. | design.md E1, Task 2 |
+| 2026-08-15 | **Git-commit-linkage follow-ups asked and confirmed as-is, no change** (R20/R21): (a) lagging `commit_sha` into the git copy on a subsequent write, (b) moving the linkage into governance, (c) recording *all* producing commits rather than the first. Examined; the existing spec answers hold -- (a) leaves the newest version permanently unlinked, (b) makes a git-less-reader convenience depend on gov being attached, (c) turns an immutable history entry into an append target. Logged so they are not re-litigated. | R20, R21 |
 | 2026-08-11 | **Process lesson recorded, not patched over.** The nesting machinery entered via review finding F1, which correctly spotted a contradiction between two spec statements and was resolved by *adding* guards rather than by testing whether either statement was true. Both were false. When a review surfaces a contradiction, **check the premises before building something to reconcile them**. | design.md 18 (F1 row), 20.11 |
 | 2026-08-11 | **AC1 split** into (a) resolve pointers -- always works, no clone -- and (b) resolve to data -- needs that member's project conn. Conflating them mis-implements a set read as "requires access to everything in it". `datom_validate()`'s member check scoped the same way (R11.2), reusing `members_unresolvable`. | AC1, R11.2, Tasks 9 and 13 |

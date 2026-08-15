@@ -290,24 +290,29 @@ Carry the #72 lesson forward. A JSON/YAML emitter drifts across versions (key or
 wrapping) the way `arrow` drifted for parquet. Hashing emitter output would reintroduce exactly
 the failure #72 removed: an emitter upgrade minting spurious versions.
 
-### The basis
+### The basis (settled -- Q5)
 
-The JSON canonicalization already used by `.datom_compute_metadata_sha()` -- radix-sorted keys
-(`sort(names(x), method = "radix")`, locale-independent by design),
-`jsonlite::toJSON(auto_unbox = TRUE)`, sha256 -- **extended for nesting**, under its own
-`hash_algo` identifier `datom-sv1`.
+**No serializer is in the identity path.** sv1 borrows cv1's *approach* -- a deterministic
+structural walk with fixed byte encodings -- and applies it to a tree instead of a table, under
+its own `hash_algo` identifier `datom-sv1`.
 
 `hash_algo` already exists to declare the regime and is correctly in the semantic set
 (`R/utils-sha.R`: "a new hash algorithm legitimately defines a new version").
 
-### Hard constraint discovered in review: the hash domain is the parsed-JSON model
+An earlier draft proposed borrowing `.datom_compute_metadata_sha()`'s basis (radix-sorted keys ->
+`jsonlite::toJSON(auto_unbox = TRUE)` -> sha256). That is superseded: it puts a third-party emitter
+in the identity path, which is the dependency #72 removed for parquet, and it is the same exposure
+section 16 files separately for `metadata_sha` itself. **sv1 does not inherit that exposure** --
+see section 7.4.
 
-**This constrains the design below and must be honored, not merely considered.**
+### 7.1 Hard constraint: the hash domain is the parsed-JSON model
+
+**Force unchanged; mechanism superseded by Q5 (section 7.3).**
 
 The payload is written to git, mirrored to storage, and re-read to verify `document_sha` and to
 resolve members. So `data_sha` is computed at least twice: once from an **in-memory R object** at
-write time, once from a **parsed-JSON object** at verify/read time. Those two are not the same
-data model, and R cannot tell a scalar from a length-1 vector. Demonstrated on the branch:
+write time, once from a **parsed-JSON object** at read time. Those are not the same data model, and
+R cannot tell a scalar from a length-1 vector. Demonstrated on the branch:
 
 ```r
 x <- list(a = "s", b = list("s"), c = NA_real_, d = NA_character_, e = list(1, 2))
@@ -320,102 +325,92 @@ str(jsonlite::fromJSON(j, simplifyVector = FALSE))
 #> $ e: int 1, int 2     <- doubles came back as integers
 ```
 
-Three type mutations in five fields. A type-tagged encoder run over the in-memory object would tag
-`c` as a **number** at write time and as a **string** at read time, producing two different
-`data_sha` values for one payload -- a **P1 and P2 violation**, and precisely the class of silent
-divergence `datom-sv1` exists to prevent.
+Three type mutations in five fields. A type-tagged encoder over the in-memory object would tag `c`
+as a **number** at write time and a **string** at read time: two `data_sha` for one payload, a
+**P1/P2 violation** and exactly the silent divergence sv1 exists to prevent.
 
-Note this is exactly why the existing `.datom_compute_metadata_sha()` basis is deliberately
-type-agnostic. Its comment says so (`R/utils-sha.R:417-419`):
+An earlier draft resolved this by normalizing through `serialize -> parse -> encode`. **Superseded**
+-- see 7.3, which eliminates each mutation at its source instead, and so needs no serializer.
 
-> JSON canonical form: type-agnostic (integer/double, vector/list all serialise identically), so
-> in-memory and S3-round-tripped metadata always produce the same hash.
-
-So type-tagging, added below to close a collision surface, **reopens the ambiguity that comment
-was written to close.** Both concerns are legitimate, which means the resolution has to be
-structural rather than a choice between them:
-
-> **Define the hash domain as the parsed-JSON data model, and normalize into it by construction:
-> serialize -> parse -> encode.** Write time and read time then agree because both hash the same
-> canonical object, and type tags remain safe because the tags are applied to post-round-trip
-> types, which are stable.
-
-The cost is one serialize+parse per hash. The payload is small and this is not a hot path.
-Open question 2 (`NA_character_` vs `""` vs `null`) is a **special case of this**, not an
-independent question.
-
-### Proposed shape -- FOR ESCALATION REVIEW (section 12)
-
-The following is a *starting proposal*, not a settled design. It is the single most expensive
-thing in this spec to reverse, because the golden vectors freeze it. It must satisfy the
-round-trip constraint above.
+### 7.2 The walk (settled)
 
 ```
-data_sha = sha256( "datom-sv1" || sv1_value( parse(serialize(payload)) ) )
-                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                                  mandatory normalization -- see the
-                                  hard constraint above
+data_sha = sha256( "datom-sv1" || sv1_value(payload) )      # payload in the parsed-JSON model
 
 sv1_value(x):
-  scalar string   ->  0x01 || utf8(x)   || 0x00
-  scalar number   ->  0x02 || f64le(x)              # cv1 numeric encoder, reused
+  scalar string   ->  0x01 || utf8(x) || 0x00
+  scalar number   ->  0x02 || f64le(x)              # .datom_encode_numeric(), reused verbatim
   scalar boolean  ->  0x03 || 0x00|0x01
-  null            ->  0x04
   array           ->  0x05 || f64le(length) || concat(sv1_value(el) for el in order)
   object          ->  0x06 || f64le(n_keys) ||
                       concat( utf8(k) || 0x00 || sv1_value(v)
                               for k in sort(keys, method = "radix") )
 ```
 
-Design intent behind each choice:
+Note there is **no `null` tag** (`0x04` in the earlier draft): absence is omission, so `null` is not
+representable (R2.7).
 
-- **Type-tagged**, so `"1"` and `1` and `TRUE` cannot collide. `.datom_compute_metadata_sha()`'s
-  `toJSON` basis loses this (`auto_unbox` makes `1` and `list(1)` identical); for a tree that
-  users compose, type confusion is a real collision surface.
-- **Length-prefixed** arrays and objects, so `["a","b"]` and `["ab"]` cannot collide by
-  concatenation. This is the framing property cv1 gets from `f64le(nrow)||f64le(ncol)`.
-- **Array order significant, object key order not.** Member order in a set is a curatorial
-  choice a user can see and control, so it is identity (matching cv1's "row order is
-  significant"). Object key order is an emitter artifact, so it is normalized by radix sort
-  (matching `.datom_compute_metadata_sha()`).
-- **Reuses `.datom_encode_numeric()`** verbatim, inheriting the pinned canonical NaN, the
-  `-0 -> +0` fold, and the preserved `NA_real_` bit pattern -- the three canonicalizations that
-  #72's CI matrix proved necessary. Do **not** write a second numeric encoder.
-- **`f64le` for lengths**, not an integer encoding, purely for consistency with cv1's framing so
-  the two reference implementations share one primitive.
+Design intent, unchanged from the proposal and now fixed:
 
-Open questions the escalation should settle, listed explicitly so they are not decided by
-accident:
+- **Type-tagged**, so `"1"`, `1` and `TRUE` cannot collide. This is a real collision surface for a
+  tree users compose, and it is exactly what an `auto_unbox` emitter basis loses.
+- **Length-prefixed** arrays and objects, so `["a","b"]` cannot collide with `["ab"]`. Same framing
+  property cv1 gets from `f64le(nrow) || f64le(ncol)`.
+- **Array order is identity; object key order is not.** Member order is a curatorial choice the
+  user sees and controls (matching cv1's "row order is significant"); key order is an artifact, so
+  it is normalized by radix sort -- locale-independent by design.
+- **Reuses `.datom_encode_numeric()` verbatim**, inheriting the pinned canonical NaN and the
+  `-0 -> +0` fold that #72's CI matrix proved necessary. **Do not write a second numeric encoder.**
+  (Its `NA_real_` branch is unreachable here -- `NA` aborts before encoding, R2.7.)
+- **`f64le` for lengths**, for consistency with cv1's framing so both references share one
+  primitive.
 
-1. Is the payload hashed **whole** (including tags, descriptions, view config) or only the
-   **member list**? Whole-payload means editing a description mints a new version. That is
-   probably *correct* for a citable artifact -- a citation should pin what the consumer reads --
-   but it is a contract, not an obvious default, and it interacts with AC2/AC3.
-2. Does `sv1_value` need a canonical form for `NA_character_` distinct from `""` and from
-   `null`? cv1 needed the NA mask byte for exactly this reason
-   (`.datom_encode_character()`); the JSON tree has a third state (`null`) that cv1 does not.
-3. AC5: is an empty set legal? `.datom_canonical_hash()` aborts on zero-dim. **Proposal: an
-   empty set is legal** -- "a product before its first output" is a real state, and the framing
-   above hashes `length = 0` unambiguously, so there is no collision reason to refuse. This
-   inverts cv1's precedent, so it needs a conscious decision rather than an inherited one.
-4. Does the payload embed `schema_version`? If yes, a schema bump changes every set's
-   `data_sha`. **Proposal: no** -- `schema_version` lives in `metadata.json` only, consistent
-   with R9.3 putting it in the `volatile` list precisely to keep it out of identity.
-5. **Which serializer defines the canonical form** that `serialize -> parse -> encode` normalizes
-   through? This is now the load-bearing question, because it decides what the golden vectors mean.
-   Two candidates:
-   - **`jsonlite::toJSON(auto_unbox = TRUE)`**, i.e. the same emitter
-     `.datom_compute_metadata_sha()` uses. Consistent with existing practice, but it makes the
-     goldens depend on a *third-party emitter's* behavior -- the exact dependency #72 removed for
-     parquet, and the concern section 16 files separately for `metadata_sha`.
-   - **An sv1-owned canonical serializer** written for the purpose (a documented, minimal JSON
-     subset emitter in the reference implementation). More code, but the goldens then depend only
-     on the spec, which is what "canonical" is supposed to mean and what
-     `dev/datom_cv1_reference.R`'s `digest`-only dependency surface achieves for cv1.
+Exact byte rules, including the domain-separation tag table, are normative in
+`dev/datom_sv1_reference.R`.
 
-   The second is more consistent with cv1's stated design properties. It is also more work. This
-   should be a conscious call at escalation, not an inherited one -- and it is coupled to the
-   section 16 concern, so deciding it may resolve that issue's direction too.
+### 7.3 Why agreement now holds without a serializer
+
+Each mutation from 7.1 is eliminated at its source, so write time and read time agree by
+construction rather than by round-tripping:
+
+| Mutation | Eliminated by |
+|---|---|
+| doubles return as integers | numbers are **always** f64 -- integer-vs-double is not observable |
+| `NA_real_` becomes the string `"NA"` | `NA` **aborts** (R2.7); it is not an encoding case |
+| `NA_character_` becomes `null` | same -- and `null` has no tag, because absence is omission |
+| scalar vs length-1 array indistinguishable | **explicit rule on R type**: atomic -> scalar, list -> array, applied identically both sides |
+
+The fourth needs one supporting condition: the read path must parse with
+**`simplifyVector = FALSE`**, or `["a"]` would come back as a bare scalar and disagree. **Both
+backends already do this deliberately** -- `R/utils-local.R:110` and `R/utils-s3.R:209`, the latter
+documented as "keep lists as lists (matching S3 behavior)". So the condition is already satisfied by
+existing infrastructure rather than being a new requirement on the read path.
+
+### 7.4 sv1 does not inherit the `metadata_sha` emitter exposure
+
+Section 16 records that `metadata_sha` hashes `jsonlite::toJSON()` output, so a jsonlite formatting
+change could silently re-mint every metadata hash. That concern is filed separately and remains
+open **for `metadata_sha`**.
+
+**It does not apply to sv1**, by construction: no emitter is in sv1's identity path. `jsonlite` --
+or anything else -- may format the **stored** payload file however it likes, because stored-byte
+integrity is `document_sha`'s job, a separate hash over actual bytes. **Identity and storage
+integrity never share a dependency.** That separation is the whole point of Q5's resolution, and it
+is what lets the stored file stay pretty-printed and human-diffable (R6.1a) without touching
+identity.
+
+### 7.5 The five questions, resolved
+
+Owner-decided 2026-08-15. No open questions remain; E1's gate is now a **design review of the walk
+specification**, not a debate.
+
+| Q | Question | Decision |
+|---|---|---|
+| **Q1** | whole payload or member list only | **whole payload** -- members *and* tags/descriptions/view config. A set is citable; "same cite, different tags" would lie to the consumer. A tag edit minting a version is **intended** (R2.6, AC2) |
+| **Q2** | `NA` / `""` / `null` encoding | **dissolved** -- absence is **omission**; a literal `NA` is an **error**, not an encoding. Goldens carry the refusal case (R2.7) |
+| **Q3** | empty set legal? | **refused**, mirroring cv1's zero-dim abort. Marginal utility, murky semantics; cheap to relax, awkward to retract (R2.8, AC5) |
+| **Q4** | `schema_version` in the payload? | **no** -- it describes the container, not the content. In identity it would re-mint every set on a format bump (R2.9) |
+| **Q5** | which serializer is canonical | **neither -- no serializer in the identity path.** Deterministic walk of the parsed payload (R2.10, section 7.2) |
 
 ### Reference implementation + parity workflow
 
@@ -565,22 +560,26 @@ whether or not they still seem necessary by then.
 are published, changing the encoding requires a conscious `datom-sv2` bump, exactly as cv1
 documents.
 
-Section 7 now carries **one hard constraint** and **five open questions**. The constraint is not
-up for debate, only its implementation is:
+Section 7 carries **one hard constraint, and all questions are now resolved** (owner-decided
+2026-08-15; see section 7.5).
 
-- **Constraint**: the hash domain is the **parsed-JSON** data model
-  (`serialize -> parse -> encode`), because the in-memory and round-tripped R objects differ in
-  type (`NA_real_` becomes the string `"NA"`; doubles return as integers) and a type-tagged
-  encoder would otherwise produce two different `data_sha` for one payload. Surfaced in review;
-  demonstrated against the branch.
-- **Q1** whole-payload vs member-list-only hashing
-- **Q2** `NA_character_` vs `""` vs `null` (a special case of the constraint)
-- **Q3** empty-set legality (AC5)
-- **Q4** whether `schema_version` enters the payload
-- **Q5** which serializer defines the canonical form -- `jsonlite`, or an sv1-owned minimal
-  emitter. **This is the load-bearing one**: choosing `jsonlite` makes the goldens depend on a
-  third-party emitter, which is the dependency #72 removed for parquet and the exposure section 16
-  files separately. It is coupled to that issue's direction.
+- **Constraint (stands)**: the hash domain is the **parsed-JSON data model**, because the in-memory
+  and round-tripped R objects differ in type (`NA_real_` becomes the string `"NA"`; doubles return
+  as integers) and a type-tagged encoder would otherwise produce two different `data_sha` for one
+  payload. Surfaced in review, demonstrated against the branch. Its *mechanism* changed with Q5:
+  each mutation is now eliminated at source rather than normalized away by a serialize/parse cycle
+  (section 7.3).
+- **Resolved**: **Q1** whole payload (members *and* tags/descriptions/view config); **Q2** `NA` is
+  an error and absence is omission; **Q3** empty set refused; **Q4** `schema_version` excluded from
+  the payload; **Q5** no serializer in the identity path -- a deterministic walk of the parsed
+  payload.
+
+**The gate for Task 2 is therefore a design review of the walk specification, not an
+open-question debate.** What still warrants the careful second pass: the exact byte rules in
+section 7.2, whether the domain-separation tag table leaves any collision surface, and whether the
+golden vectors actually cover the agreement cases enumerated in 7.3. The goldens still freeze the
+encoding -- changing it afterwards requires a conscious `datom-sv2` bump, exactly as cv1 documents.
+
 *(A sixth question -- whether a set should carry a transitive member closure -- was raised and then
 **retired**. It existed only to avoid a traversal, and per R4.3 datom does not traverse. See
 section 20.11.)*
@@ -705,6 +704,13 @@ bespoke regime for sets is harder to justify.
 **Action**: file a separate issue during Task 1. Do **not** expand this spec to cover it -- but
 do not let the inconsistency go unrecorded either, because "we built sv1 because emitters drift"
 and "we left metadata_sha hashing an emitter" cannot both be right.
+
+**Update (Q5 resolution, 2026-08-15)**: the inconsistency is now one-sided rather than mutual.
+**sv1 has no emitter in its identity path at all** (section 7.4), so it does not inherit this
+exposure. That removes the "cannot both be right" tension -- sv1 is clean by construction -- but it
+*sharpens* the case for the separate issue, because `metadata_sha` is now the only hash in datom
+whose value depends on a third-party formatter. Scope of that issue is unchanged; its priority
+arguably rises.
 
 ---
 

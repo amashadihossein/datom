@@ -106,23 +106,67 @@ the test.
   versions (key order, quoting, wrapping) the way `arrow` drifted for parquet.
 - **R2.2** The basis is **not** `datom-cv1`. cv1 is table-shaped and binary-framed
   (`sha256("datom-cv1" || f64le(nrow) || f64le(ncol) || concat(col_digests))`); `nrow` / `ncol`
-  / per-column digests do not generalize to a tree. The basis is the JSON canonicalization
-  already used by `.datom_compute_metadata_sha()` (radix-sorted keys,
-  `toJSON(auto_unbox = TRUE)`, sha256), **extended for nesting**.
+  / per-column digests do not generalize to a tree. sv1 borrows cv1's *approach* -- a
+  deterministic structural walk with fixed byte encodings and no serializer in the identity path
+  -- applied to a tree instead of a table (**Q5**, R2.10).
 - **R2.3** Declared under its own `hash_algo` identifier: `datom-sv1`. `hash_algo` already
   exists and is correctly in the semantic set (`R/utils-sha.R`: "a new hash algorithm
   legitimately defines a new version").
 - **R2.4** Ships with a standalone reference implementation, golden vectors, and a
   cross-architecture parity workflow mirroring `dev/datom_cv1_reference.R` and
   `.github/workflows/cv1-reference-parity.yaml`.
-- **R2.5 -- round-trip agreement (hard constraint).** The hash **domain is the parsed-JSON data
-  model, not the in-memory R object.** `data_sha` computed at write time from an in-memory
-  payload MUST equal `data_sha` recomputed at verify time from the same payload after it has been
-  serialized to JSON and parsed back. R cannot distinguish a scalar from a length-1 vector, and
-  the round trip mutates types (demonstrated in design.md section 7: `NA_real_` becomes the
-  **string** `"NA"`; doubles return as integers; `NA_character_` becomes `null`). Any encoder that
-  type-tags the in-memory object without normalizing through the round trip violates R2.1 and
-  P1/P2. The encoder therefore normalizes by construction -- serialize, parse, then encode.
+- **R2.5 -- write/read agreement (hard constraint; unchanged in force, restated in mechanism).**
+  The hash **domain is the parsed-JSON data model, not the in-memory R object.** `data_sha`
+  computed at write time from an in-memory payload MUST equal `data_sha` recomputed at read time
+  from the same payload after it has been stored and parsed back. R cannot distinguish a scalar
+  from a length-1 vector, and a JSON round trip mutates types (demonstrated in design.md
+  section 7: `NA_real_` becomes the **string** `"NA"`; doubles return as integers;
+  `NA_character_` becomes `null`).
+  **Mechanism, per Q5 (R2.10):** an earlier draft satisfied this by normalizing through a
+  serialize -> parse cycle. That is superseded -- there is now **no serializer in the identity
+  path at all**. Instead the three mutations are each eliminated at the source, so agreement holds
+  by construction (design.md section 7.3 has the case-by-case derivation):
+  - numbers are **always** encoded as IEEE-754 f64, so integer-vs-double is not observable
+  - `NA` in any form is an **error**, not an encoding (R2.7), so the `"NA"` / `null` mutations
+    cannot arise
+  - scalar-versus-length-1-array is decided by an **explicit rule on R type** (atomic -> scalar,
+    list -> array), applied identically on both sides
+  - the read path parses with **`simplifyVector = FALSE`**, which both storage backends already
+    do deliberately (`R/utils-local.R:110`, `R/utils-s3.R:209`)
+- **R2.6 -- Q1: the hash covers the WHOLE payload.** `data_sha` is computed over the entire
+  semantic payload -- members **and** tags, descriptions, and view config -- not the member list
+  alone. A set exists to be **citable**, and "same citation, different tags" would be a lie to the
+  consumer. **A tag or description edit therefore mints a new version. That is intended behavior,
+  not an accident to engineer away.**
+- **R2.7 -- Q2: absence is omission; `NA` is an error.** A set payload has no data cells, so `NA`
+  could only enter through optional fields. datom's existing **"omitted, not nulled"** convention
+  (`.datom_build_metadata()`, `R/read_write.R:296-299`) is therefore adopted as the canonical
+  form: an absent field **does not exist** in the payload, and `null` / `NA` / `""` are never
+  representations of absence. Consequence for the encoder: a literal `NA` reaching sv1 **aborts**
+  with "not encodable -- omit the field instead". Golden vectors include the **refusal** case, not
+  an `NA` encoding. This is where sv1 legitimately diverges from cv1, which needs an NA mask byte
+  precisely because table cells can be missing.
+- **R2.8 -- Q3: an empty set is refused.** `datom_write_set()` with zero members aborts, mirroring
+  cv1's refusal of zero-row / zero-column tables (`R/utils-sha.R:310-312`). Utility is marginal --
+  the build package simply does not write the set until its first output exists -- and an empty
+  citable product is semantically murky. Cheap to relax later, awkward to retract.
+- **R2.9 -- Q4: `schema_version` does not enter the payload or the hash.** It describes the
+  **container format**, not the content. If it entered identity, a format bump would re-mint every
+  set with unchanged members -- the same failure the `volatile` list exists to prevent
+  (`R/utils-sha.R:411-412`). It stays a metadata field (R1.3) outside the hash domain.
+- **R2.10 -- Q5: emitter-free structural hash.** Neither `jsonlite` nor a bespoke sv1 emitter
+  defines the canonical form, because **no serializer is in the identity path**. sv1 is a
+  deterministic walk of the **parsed** payload:
+  - fields visited in **radix-sorted key order**, recursively
+  - **fixed per-type leaf encoding** with a **domain-separation tag per type** (string / number /
+    boolean / array / object) -- exact byte rules specified in the sv1 reference document
+  - hash accumulated over the walk: `sha256("datom-sv1" || encoded-walk)`
+
+  `jsonlite`, or anything else, remains free to format the **stored file** however it likes,
+  because stored-byte integrity is `document_sha`'s job -- a separate hash over actual bytes.
+  **Identity and storage integrity never share a dependency.** Golden vectors and
+  `dev/datom_sv1_reference.R` are written against the **walk specification**, not against any
+  emitter's output.
 
 **Acceptance**: AC13 below, plus the standalone reference and the in-package implementation
 produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
@@ -744,21 +788,21 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | # | Criterion |
 |---|---|
 | **AC1** | **Reader role, no git -- and "resolve" means two different things, tested separately.** (a) **Resolve the pointers**: a storage-only connection (no `github_pat`, no clone) can `datom_read_set()` and get back the member records. This always works and is the primary use case -- the "git-canonical" framing must not lead to requiring a clone. (b) **Resolve to data**: reading a member's actual content needs a connection scoped to *that member's* project -- same-project members work through the same connection; cross-project members require the caller's connection (or, later, the governance register). Conflating (a) and (b) is how this gets mis-implemented as "reading a set requires access to everything in it". |
-| **AC2** | **Idempotent re-write.** Writing an identical member list to the same set name is a no-op -- dedup on set `data_sha`, no new version appended. |
+| **AC2** | **Idempotent re-write -- on the whole payload, not just members.** Writing an identical **payload** (members *and* tags, descriptions, view config) to the same set name is a no-op -- dedup on set `data_sha`, no new version appended. **Converse, tested alongside it**: an identical member list with a *changed tag or description* is **not** a no-op and **does** mint a new version (R2.6/Q1). Both halves are needed -- the original wording said "identical member list", which under whole-payload hashing would have been wrong. |
 | **AC3** | **Version sensitivity.** A set whose member *names* are unchanged but whose member *versions* advanced **must** produce a new `data_sha` and a new version. Do not "optimize" this away. |
 | **AC4** | **Name uniqueness across kinds.** Writing a set with the name of an existing table (or vice versa) is refused. **Mechanism**: the check reads `{name}/.metadata/metadata.json` from **storage** and compares `kind` -- not the manifest, which can lag behind a partially-completed write. This is the same source `.datom_has_changes()` already consults, so the check costs no extra round-trip. Stated explicitly so it is not decided by accident. |
-| **AC5** | **Empty and single-member sets.** `.datom_canonical_hash()` aborts on zero rows/cols; the set analogue must be decided and tested. An empty set is plausible (a product before its first output) -- legal or refused, but **explicit either way**. |
+| **AC5** | **Empty set refused; single-member set legal.** `datom_write_set()` with zero members **aborts** (R2.8/Q3), mirroring `.datom_canonical_hash()`'s refusal of zero-row/zero-column tables. A one-member set is legal and hashes normally. The refusal is the *tested* behavior, not a documented maybe. |
 | **AC6** | **`datom_read()` on a set** aborts with a message pointing at `datom_read_set()`, not a cryptic missing-parquet error. |
 | **AC7** | **Schema gate fires, both directions.** *Refuse-newer*: a repo declaring `schema_version: 3` aborts with the upgrade message, at **both** entry points (manifest and per-artifact metadata). *Tolerate-older*: a repo with no `schema_version` field behaves exactly as 0.1.0 did. **Mechanism note**: an actually-installed 0.1.0 reader has no gate to fire, so this is not testable by installing an old version -- the test drives `.datom_check_schema_version()` directly with a fixture declaring a version above `SUPPORTED_SCHEMA`. Test the gate, not the archaeology. |
 | **AC8** | **Lineage isolation.** A set's metadata contains no `parents` and no `source_lineage` (**omitted, not null**), and writing a set does not alter any member's lineage. |
 | **AC9** | **Self-reference refused.** Writing a set that lists itself (any version of itself) as a member is refused at write time with a clear error (R4.5). Note this is a nonsense check, **not** cycle detection -- cycles are structurally impossible (R4.4), so there is deliberately no cycle test and no depth test. |
-| **AC13** | **Round-trip hash agreement.** For every golden fixture, `data_sha` computed from the in-memory payload equals `data_sha` recomputed after `serialize -> parse`. Covers R2.5. Include fixtures that specifically exercise the mutating cases: a length-1 vector vs a scalar, `NA_real_`, `NA_character_`, and a whole-number double. |
+| **AC13** | **Write/read hash agreement.** For every golden fixture, `data_sha` computed from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back (parsed with `simplifyVector = FALSE`). Covers R2.5. Fixtures must exercise each mutation the mechanism eliminates: a **length-1 list vs a scalar** (must differ, per the explicit type rule), a **whole-number double** (must agree with its integer round-trip, since numbers are always f64), and a **literal `NA`** -- which is a **refusal** case, not an encoding case (R2.7). Assert the abort message points at omitting the field. |
 | **AC14** | **`datom_read_set()` on a table** aborts pointing at `datom_read()` -- the converse of AC6, not a missing-payload error for a healthy table. |
 | **AC15** | **Nesting resolves one level -- no traversal.** Reading a set whose members include another set returns a **pointer** to that inner set (`kind = "set"`, name, project, version), and does **not** fetch the inner set's own members. Asserted by observing that no storage read of the inner set's payload occurs. Covers R4.3, and guards against an implementer "helpfully" flattening the tree. |
 | **AC16** | **Machine-commit isolation.** In a `mode: product` repo with an uncommitted edit at `R/foo.R`, a `datom_write()` of a table produces a commit whose tree does **not** contain the `R/foo.R` change, **and** `R/foo.R` is still dirty in the working tree afterward. Both halves matter: the second catches a "helpfully" cleaned working tree (R14.1). |
 | **AC17** | **`datom_repo_commit()` semantics.** `paths = NULL` stages a mixed tracked/untracked change set **minus** gitignored files; explicit `paths` stages exactly those; a reader conn is refused; nothing-to-stage creates **no commit** and is not an error; `push = FALSE` leaves the remote untouched. **Plus the R15.5 qualification**: with a clean tree, `push = TRUE`, and the branch ahead of the remote, no commit is created **but the push still happens** -- assert the remote advanced (R15). |
 | **AC18** | **`include_paths` produces one joint commit.** A set write with `include_paths` creates **exactly one** commit containing payload + metadata + the listed paths, and the storage mirror afterward contains **only** datom artifacts (R12.5). |
-| **AC19** | **Idempotent re-write stays a no-op under dirty `include_paths`.** Re-writing an identical member list while `include_paths` files have changed creates **no commit and no new version**, and emits the informational message pointing at `datom_repo_commit()` (R12.5). This is AC2 defended against a side channel. |
+| **AC19** | **Idempotent re-write stays a no-op under dirty `include_paths`.** Re-writing an identical **payload** (members *and* tags -- R2.6) while `include_paths` files have changed creates **no commit and no new version**, and emits the informational message pointing at `datom_repo_commit()` (R12.5). This is AC2 defended against a side channel. Note the payload must be identical for this to apply: a tag edit *does* mint a version, and then the `include_paths` content is committed with it legitimately. |
 | **AC20** | **`include_paths` refused early -- two distinct gates, two separate test cases.** (a) A **nonexistent** path is refused; (b) a path **overlapping** a datom-owned path (`{artifact}/**`, `.datom/**`) is refused. Both **before any hashing or IO** (R12.5), consistent with the R10.3a gate placement. Kept as one criterion but **tested as two cases**, so a regression identifies which gate broke rather than only that one of them did. |
 | **AC21** | **`datom_repo_push()` is convergent.** With unpushed local commits it advances the remote; called again immediately it is an informational **no-op, not an error**; a reader conn is refused; it inherits the on-a-branch guard (R15.8). |
 | **AC22** | **Namespace separation is enforced, not merely documented.** Initializing a `mode: product` repo into a namespace that already holds another project's manifest is **refused**, with a message naming the occupying project and pointing at using a distinct prefix (R17.3). |
