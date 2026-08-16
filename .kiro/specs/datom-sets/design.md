@@ -742,8 +742,8 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P2** | Two sets with equal semantic content have equal `data_sha`, regardless of the order keys were inserted into the payload object. |
 | **P3** | Two sets differing in **member order** have **different** `data_sha` (order is curatorial, hence identity). |
 | **P4** | Two sets differing in any member's `version` have different `data_sha` (AC3). |
-| **P5** | Type confusion is impossible: no string/number/boolean/null value collides with another across the encoding. |
-| **P6** | Concatenation confusion is impossible: no two distinct arrays or objects produce the same byte sequence. |
+| **P5** | **Domain separation holds**: no two encodings from different positions collide -- string, string-set, map, member, set and payload-root each carry a distinct marker (`0x01`-`0x06`, design.md 7.2). Restated after the sv1 delta: the earlier phrasing ("no string/number/boolean/null value collides") is now vacuous, since numbers, booleans and `null` are not in the grammar at all (R2.11, P28). |
+| **P6** | **Concatenation confusion is impossible**: no two distinct sets, maps or member lists produce the same byte sequence. The mechanism changed with the sv1 delta -- from explicit length prefixes to **fixed-width framing**, since every intermediate is a 32-byte hash, so `h("a")||h("b")` (64 bytes) cannot collide with `h("ab")` (32 bytes). |
 | **P7** | Re-writing an identical set is a no-op -- no new version, no new payload object, no storage write (AC2). |
 | **P8** | A set's `data_sha` is independent of `created_at`, `datom_version`, `schema_version`, `document_sha`, and `size_bytes`. |
 | **P9** | A payload whose stored bytes do not match `document_sha` is refused before parsing. |
@@ -752,7 +752,7 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P12** | The in-package sv1 implementation and `dev/datom_sv1_reference.R` agree on every golden, on x86_64 and arm64. |
 | **P13** | Writing a set never mutates any member's metadata, history, or manifest entry. |
 | **P14** | `datom_validate()` reports `ok` for a healthy set and a non-`ok` status naming the specific defect for a missing payload vs an unresolvable member (distinguishable, not merged). |
-| **P15** | **Round-trip agreement**: `data_sha(payload) == data_sha(parse(serialize(payload)))` for every payload, including ones containing length-1 vectors, `NA_real_`, `NA_character_`, and whole-number doubles (R2.5, AC13). |
+| **P15** | **Write/read agreement**: `data_sha` computed from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back, for every payload (R2.5, AC13). The hazards this property once enumerated -- `NA_real_`, `NA_character_`, whole-number doubles, scalar-vs-length-1 -- are **no longer covered here because they are unrepresentable or immaterial**: see P28. The only residual condition is structural, that `members[]` parses as a list of records rather than a data frame (R2.5). |
 | **P16** | Every set read and every set validation is bounded by **one level**: the number of storage reads is a function of the set's own direct member count and never of the depth or size of the tree beneath it (R4.3, AC15). |
 | **P17** | A set payload version is reconstructible from the **git clone alone**, with no storage access (R6.1b). **Strengthened by `include_paths` (R12.5):** in a `mode: product` repo, checking out a set version's commit yields the data pointers, the derivation logic, **and** the environment that produced them -- one clone, one checkout, full reproduction. Without `include_paths` the guarantee covers pointers only. |
 | **P18** | No sequence of public API calls, including the newly exported `datom_storage_write_json()`, can place an artifact's storage state ahead of its git state (I5, I14). |
