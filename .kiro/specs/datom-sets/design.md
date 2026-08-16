@@ -159,7 +159,7 @@ so the in-memory object and the round-tripped object agree (this is exactly why
 ## 5. Member schema and constructor
 
 ```
-{ project, name, kind, version }
+{ id: { project, name, kind, version }, tags: { ... } }
 ```
 
 - `project` -- otherwise cross-project membership cannot resolve, and cross-project is the point.
@@ -361,74 +361,125 @@ as a **number** at write time and a **string** at read time: two `data_sha` for 
 An earlier draft resolved this by normalizing through `serialize -> parse -> encode`. **Superseded**
 -- see 7.3, which eliminates each mutation at its source instead, and so needs no serializer.
 
-### 7.2 The walk (settled)
+### 7.2 The encoding: hash-of-hashes over 3 primitives + 2 shape rules
 
-The payload grammar is **text-only and closed** (R2.11), and its shape is **fixed** (R2.12), so the
-walk has three types and bounded depth:
+Replaces an earlier "walk" formulation that dispatched on runtime type. That version had a
+**structural gap** (see 7.2.1) which would have been frozen into the golden vectors. This
+construction mirrors cv1's -- per-column digests, then hash their concatenation -- so both
+references share one house pattern.
 
 ```
-data_sha = sha256( "datom-sv1" || sv1_value(payload) )     # payload in the parsed-JSON model
+h(x) = sha256(x)
 
-sv1_value(x):
-  string        ->  0x01 || utf8(x) || 0x00
-  string array  ->  0x05 || f64le(length) || concat(sv1_value(el) for el in order)
-  object        ->  0x06 || f64le(n_keys) ||
-                    concat( utf8(k) || 0x00 || sv1_value(v)
-                            for k in sort(keys, method = "radix") )
+str(s)     = h( 0x01 || utf8(s) )
+strset(v)  = h( 0x02 || concat( str(e) for e in sort(unique(v), method = "radix") ) )
+map(m)     = h( 0x03 || concat( str(k) || strset(m[k])
+                                for k in sort(keys(m), method = "radix") ) )
+
+member(x)  = h( 0x04 || map(x.id) || map(x.tags) )
+set(p)     = h( 0x05 || map(p.tags) || concat( member(m) for m in p.members ) )
+
+data_sha   = h( 0x06 || utf8("datom-sv1") || set(payload) )
 ```
 
-That is the whole encoder. Compared with the earlier draft it drops the **number**, **boolean** and
-**null** tags -- numbers and booleans because the grammar has none, `null` because absence is
-omission (R2.7).
+Domain-separation markers:
 
-Design intent, unchanged from the proposal and now fixed:
-
-- **Type-tagged**, so a string cannot collide with a one-element array of that string.
-- **Length-prefixed** arrays and objects, so `["a","b"]` cannot collide with `["ab"]`. Same framing
-  property cv1 gets from `f64le(nrow) || f64le(ncol)`.
-- **Array order is identity; object key order is not.** Member order is a curatorial choice the
-  user sees and controls (matching cv1's "row order is significant"); key order is an artifact, so
-  it is radix-normalised -- locale-independent by design.
-- **`f64le` for lengths**, for consistency with cv1's framing so both references share one
-  primitive. Note this is the *only* remaining use of a numeric encoding, and it encodes a length
-  datom computes -- never caller data.
-
-Exact byte rules and the tag table are normative in `dev/datom_sv1_reference.R`.
-
-**What the text-only grammar bought.** Three of the four hazards in 7.1 are no longer handled --
-they are unrepresentable:
-
-| Hazard | Earlier mechanism | Now |
+| Marker | Encodes | Note |
 |---|---|---|
-| int vs double | "numbers are always f64" rule | **no numbers in the grammar** |
-| `NA_real_` -> `"NA"` | abort rule | **no numbers**; `NA` also aborts (R2.7) |
-| `null` | dedicated `0x04` tag | **not representable** -- absence is omission |
-| scalar vs length-1 array | explicit R-type rule | still an explicit rule, but now the *only* one |
+| `0x01` | string | UTF-8, no `NA` (R2.7) |
+| `0x02` | string set | radix-sorted, deduped -- order and duplication are not identity |
+| `0x03` | map | radix-sorted keys; serves both `id` and `tags` |
+| `0x04` | member | `map(id) || map(tags)` |
+| `0x05` | set | `map(tags) || concat(member...)` -- the only unsorted concat |
+| `0x06` | payload root | prefixed with `utf8("datom-sv1")` |
+| *retired* | **number** | not in the grammar -- nothing in a payload is arithmetic (R2.11) |
+| *retired* | **boolean** | not in the grammar -- a boolean tag is the text `"true"` |
+| *retired* | **null** | not representable -- absence is omission (R2.7) |
+| *retired* | **`f64le` length prefix** | unnecessary: every intermediate is a fixed 32 bytes, so concatenation is already unambiguous |
 
-`.datom_encode_numeric()` is consequently **no longer reused for payload values** -- only its
-`f64le` length framing is shared. The pinned-NaN and `-0 -> +0` canonicalisations it exists for
-are cv1 concerns and cannot arise in a text-only payload.
+Properties worth naming:
 
-### 7.3 Why agreement now holds without a serializer
+- **No runtime type dispatch, therefore no possible gap.** Every position's shape is fixed by
+  *where it sits*, so the encoder never asks "what type is this?" and cannot have an unhandled
+  answer. The old walk asked at runtime and so needed an exhaustive answer -- which it did not have.
+- **`members` is the only `concat` without a `sort`.** Everything else is sorted, and tag values are
+  deduped too, so "is this position ordered?" is never a judgment call.
+- **`id` is encoded with `map`, not positionally.** A fifth id field later is just another key: no
+  positional convention, no absent-versus-empty question, and one encoder serves both `id` and
+  `tags`. Id values are single strings encoded as one-element strsets -- the encoder stays out of
+  validation's job, which separately enforces "id has exactly these four keys, each single-valued".
+- **Framing is free.** `["a","b"]` is `h("a")||h("b")` (64 bytes) and cannot collide with `["ab"]`
+  (32 bytes). So sv1 shares **no numeric primitive with cv1** -- `.datom_encode_numeric()` is not
+  used at all, not even for lengths.
+- **A single string equals a one-element set** (R2.13). `type: "output"` and `type: ["output"]` hash
+  equal, because every map value passes through `strset`.
 
-Each mutation from 7.1 is eliminated at its source, so write time and read time agree by
-construction rather than by round-tripping:
+Pinned edges: absent `tags` and `tags: {}` encode identically (`h(0x03)` over an empty concat), and
+the encoder must not depend on writers never emitting `{}`; duplicate values are not identity;
+`radix` sort throughout for locale independence; a zero-member set is still refused (R2.8); an empty
+tag value is refused by **validation** rather than encoded, so one fact has one spelling (R2.10).
 
-| Mutation | Eliminated by |
+Exact byte rules are normative in `dev/datom_sv1_reference.R`.
+
+#### 7.2.1 What was wrong with the walk (finding F-A)
+
+The superseded formulation stated a closed value grammar:
+
+```
+value ::= string | [ string, ... ] | object
+```
+
+But the payload shape requires `members: [ {id, tags}, ... ]` -- an **array of objects**, which has
+no production in that grammar. R2.10 reinforced the gap by naming exactly three taggable types, and
+the encoder's `0x05` was labelled *string* array.
+
+Mechanically an implementer could have read `0x05` as a generic array and let the element encoder
+dispatch objects to `0x06`. But that contradicts both the tag's name and the stated grammar, and the
+alternative -- inventing a fourth tag -- is an equally arbitrary choice. **Either would have been
+frozen into the golden vectors**, which is precisely what the E1 gate exists to prevent. Same class
+as review finding F4: two requirements that cannot both be true.
+
+#### 7.2.2 Why tag-value order stopped being identity (finding F-B)
+
+The superseded rule was "array order is identity", justified by *"member order is a curatorial
+choice the user sees and controls"*. That is right for `members[]` -- and wrong for tag values,
+which the same rule also caught.
+
+A multi-valued tag models **simultaneous folder membership** (R4.6: "the motivating limitation of
+folders is that an item cannot be in two at once"), which is inherently unordered. So
+`domain: ["safety","efficacy"]` and `domain: ["efficacy","safety"]` would have produced different
+`data_sha` -- a semantically null reorder minting a new **citable product version**.
+
+This does not weaken Q1's whole-payload decision: a tag **edit** minting a version is intended; a
+**reorder** is not an edit, it is the same fact restated. The ordering rule is now stated in three
+explicit parts (R2.12) so nothing falls through to a generic default.
+
+### 7.3 Why agreement holds without a serializer
+
+Every mutation from 7.1 is now **unrepresentable**, not handled. There is no residual rule to get
+wrong:
+
+| Mutation | Status |
 |---|---|
-| doubles return as integers | numbers are **always** f64 -- integer-vs-double is not observable |
-| `NA_real_` becomes the string `"NA"` | `NA` **aborts** (R2.7); it is not an encoding case |
-| `NA_character_` becomes `null` | same -- and `null` has no tag, because absence is omission |
-| scalar vs length-1 array indistinguishable | **explicit rule on R type**: atomic -> scalar, list -> array, applied identically both sides |
+| doubles return as integers | **cannot arise** -- no numbers in the payload (R2.11) |
+| `NA_real_` becomes the string `"NA"` | **cannot arise** -- no numbers, and `NA` aborts (R2.7) |
+| `NA_character_` becomes `null` | **cannot arise** -- `NA` aborts; `null` has no marker, absence is omission |
+| scalar vs length-1 array indistinguishable | **immaterial** -- the two hash **equal** (R2.13), so the question no longer exists |
 
-Note the first three rows are now **stronger than stated**: with the text-only grammar (R2.11) they
-are not merely handled, they are unrepresentable. Only the fourth remains an actual rule.
+The fourth row is the change from the previous draft, which handled it with an explicit atomic-vs-list
+rule. Making a single string and a one-element set hash identically dissolves it instead -- and does
+so for the same reason tag-value order was dropped: both spellings state one fact, so distinguishing
+them would mint a citable version over syntax.
 
-The fourth needs one supporting condition: the read path must parse with
-**`simplifyVector = FALSE`**, or `["a"]` would come back as a bare scalar and disagree. **Both
-backends already do this deliberately** -- `R/utils-local.R:110` and `R/utils-s3.R:209`, the latter
-documented as "keep lists as lists (matching S3 behavior)". So the condition is already satisfied by
-existing infrastructure rather than being a new requirement on the read path.
+**One residual condition remains, and it is about structure rather than leaves.** The read path must
+parse with **`simplifyVector = FALSE`** so `members[]` stays a list of records instead of collapsing
+into a data frame. **Both backends already do this deliberately** -- `R/utils-local.R:110` and
+`R/utils-s3.R:209`, the latter documented as "keep lists as lists (matching S3 behavior)". Leaf-level
+simplification no longer matters at all, because leaves are order-, duplication- and
+shape-insensitive.
+
+So P28's goal is reached **completely**: type ambiguity is not merely handled, it has nowhere left to
+live.
 
 ### 7.4 sv1 does not inherit the `metadata_sha` emitter exposure
 
@@ -445,7 +496,7 @@ identity.
 
 ### 7.5 The five questions, resolved
 
-Owner-decided 2026-08-15. No open questions remain; E1's gate is now a **design review of the walk
+Owner-decided 2026-08-15. No open questions remain; E1's gate is now a **design review of the encoding
 specification**, not a debate.
 
 | Q | Question | Decision |
@@ -618,7 +669,7 @@ Section 7 carries **one hard constraint, and all questions are now resolved** (o
   the payload; **Q5** no serializer in the identity path -- a deterministic walk of the parsed
   payload.
 
-**The gate for Task 2 is therefore a design review of the walk specification, not an
+**The gate for Task 2 is therefore a design review of the encoding specification, not an
 open-question debate.** What still warrants the careful second pass: the exact byte rules in
 section 7.2, whether the domain-separation tag table leaves any collision surface, and whether the
 golden vectors actually cover the agreement cases enumerated in 7.3. The goldens still freeze the
@@ -714,8 +765,10 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P25** | **A set version's change is expressible as a git diff** on a single stable path, at member granularity -- not as a whole-file addition (R6.1a, AC24). |
 | **P26** | **`commit_sha` survives every repair path.** No sequence of `datom_validate(fix = TRUE)` or metadata re-sync leaves the storage copy without it (I22, AC25). |
 | **P27** | **A change that alters no content alters no version**, for tables and sets alike: modifying code or environment while producing identical content yields no new version and no change to any recorded `commit_sha` (I23, R21.2, AC26). |
-| **P28** | **Type ambiguity is unrepresentable, not merely handled.** No payload can contain a number, boolean or `null`, so no encoder rule for them can be needed and none can drift (I24, R2.11, AC27). |
+| **P28** | **Type ambiguity is unrepresentable, not merely handled -- completely.** No payload can contain a number, boolean or `null`; and the last surviving ambiguity, scalar-vs-one-element-array, is dissolved by making the two hash equal (R2.13). No encoder rule for any of them exists, so none can drift (I24, R2.11, AC13, AC27). |
 | **P29** | **The same tag facts support arbitrarily many folder projections**, and changing which projection a consumer applies changes no stored bytes and no version (I25, R4.7). |
+| **P30** | **Tag-value order and duplication are not identity.** Payloads differing only in the order or multiplicity of a tag's values hash **equal**, and a single string hashes equal to a one-element array (R2.12, R2.13, AC13 a/b/d). Member order remains identity (P3, AC13 c). |
+| **P31** | **The encoder has no runtime type dispatch.** Every position's shape is fixed by where it sits, so there is no "what type is this?" question and therefore no unhandled answer -- the structural defect that finding F-A found in the superseded walk (R2.10, design.md 7.2.1). |
 
 ---
 
@@ -1292,8 +1345,8 @@ With one stable path, the change *is* the diff:
 ```console
 $ git diff v1..v2 -- study001-adam/set.json
    "members": [
-     {"project": "study001", "name": "dm", "kind": "table", "version": "aaa"},
-+    {"project": "study001", "name": "lb", "kind": "table", "version": "bbb"}
+     {"id": {"project": "study001", "name": "dm", "kind": "table", "version": "aaa"}},
++    {"id": {"project": "study001", "name": "lb", "kind": "table", "version": "bbb"}}
    ]
 ```
 

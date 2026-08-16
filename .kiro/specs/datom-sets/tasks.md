@@ -46,7 +46,7 @@ necessary.
 
 - [ ] **2. `datom-sv1` canonical set-content hash** &nbsp; **[ESCALATION E1 -- design review]**
   - **All five open questions are settled** (owner-decided 2026-08-15, design.md 7.5). The
-    escalation is now a **design review of the walk specification**, not a debate: exact byte
+    escalation is now a **design review of the encoding specification**, not a debate: exact byte
     rules, whether the tag table leaves a collision surface, and whether the goldens cover the
     7.3 agreement cases. The goldens still freeze the encoding -- a later change needs a conscious
     `datom-sv2` bump.
@@ -57,7 +57,7 @@ necessary.
   - **Q2 absence is omission; `NA` is an error.** Adopt datom's existing "omitted, not nulled"
     convention (`R/read_write.R:296-299`) as the canonical form. A literal `NA` reaching the
     encoder **aborts** with "not encodable -- omit the field instead". Goldens carry the
-    **refusal**, not an `NA` encoding. Note `null` therefore has **no tag** in the walk (R2.7).
+    **refusal**, not an `NA` encoding. Note `null` therefore has **no marker** in the encoding (R2.7).
   - **Q3 empty set refused.** `datom_write_set()` with zero members aborts, mirroring
     `.datom_canonical_hash()`'s zero-dim abort (`R/utils-sha.R:310-312`). Update AC5: refusal is
     the tested behavior (R2.8).
@@ -69,16 +69,33 @@ necessary.
     `sha256("datom-sv1" || encoded-walk)` (R2.10, design.md 7.2). `jsonlite` may format the
     **stored** file however it likes -- stored-byte integrity is `document_sha`'s separate job.
     **Identity and storage integrity never share a dependency.**
-  - **The grammar is text-only and closed (R2.11), so the walk has THREE tags, not five**: string,
-    string-array, object. No number, boolean or `null` tag -- numbers and booleans are not in the
-    grammar, and `null` is unrepresentable because absence is omission. Enforce the grammar at
-    write time and refuse anything else per offending type (AC27); without that test, "just allow
-    numbers here" is a one-line change nobody notices (I24).
-  - Consequence: **`.datom_encode_numeric()` is no longer reused for payload values** -- only its
-    `f64le` framing is shared, for array and object lengths that datom computes itself. The pinned
-    NaN and `-0 -> +0` folds are cv1 concerns that cannot arise in text.
+  - **The encoding is a hash-of-hashes over 3 primitives + 2 shape rules** (R2.10, design.md 7.2),
+    **not** a runtime type-dispatch walk -- that earlier formulation had a structural gap (F-A) and
+    is superseded:
+
+    ```
+    str(s)    = h(0x01 || utf8(s))
+    strset(v) = h(0x02 || concat(str(e) for e in sort(unique(v), radix)))
+    map(m)    = h(0x03 || concat(str(k) || strset(m[k]) for k in sort(keys(m), radix)))
+    member(x) = h(0x04 || map(x.id) || map(x.tags))
+    set(p)    = h(0x05 || map(p.tags) || concat(member(m) for m in p.members))
+    data_sha  = h(0x06 || utf8("datom-sv1") || set(payload))
+    ```
+
+    Mirrors cv1's per-column-digests-then-hash-the-concatenation pattern, so both references share
+    one house construction.
+  - **No length prefixes**: every intermediate is a fixed 32 bytes, so concatenation is already
+    unambiguous. **`f64le` disappears from sv1 entirely** -- `.datom_encode_numeric()` is not used
+    at all, not even for lengths. sv1 shares no numeric primitive with cv1.
+  - **`members` is the only unsorted `concat`.** Tag keys and tag values are sorted; tag values are
+    also deduped. A single string equals a one-element set (R2.13).
+  - **`id` is encoded with `map`, not positionally**, so a fifth id field later is just another key.
+    Validation, not the encoder, enforces "id has exactly these four keys, each single-valued".
+  - Enforce the grammar at write time and refuse per offending type (AC27); without that test,
+    "just allow numbers here" is a one-line change nobody notices (I24). Also refuse an **empty tag
+    value** -- "no labels" is spelled by omitting the key (R2.7).
   - Payload shape is **fixed** (R2.12): optional set-level `tags`, then `members[]` each with
-    `{project, name, kind, version}` and optional per-member `tags`. Depth is bounded by the schema,
+    an `id` record `{project, name, kind, version}` and optional per-member `tags`. Depth is bounded by the schema,
     not by what a caller nests.
   - **The R2.5 hard constraint still governs**, with its mechanism restated: write-time and
     read-time hashes must agree, and they now do **by construction** rather than via a
@@ -91,12 +108,14 @@ necessary.
     write a second numeric encoder. (Its `NA_real_` branch is unreachable here.)
   - `dev/datom_sv1_reference.R`: standalone, `digest`-only, self-testing, prints goldens --
     mirroring `dev/datom_cv1_reference.R`. It is the **normative home of the byte rules and the tag
-    table**, written against the walk spec and **not** against any emitter's output.
+    table**, written against the encoding spec and **not** against any emitter's output.
   - Extend `.github/workflows/cv1-reference-parity.yaml` (do not add a second workflow) to run the
     sv1 reference and assert package/reference parity on x86_64 **and** arm64.
-  - Goldens hard-coded in tests, cross-architecture asserted, and covering: a length-1 list vs a
-    scalar (must differ), a whole-number double (must agree with its integer round-trip), and the
-    `NA` refusal (AC13).
+  - **Goldens are gated on this delta landing** -- post-goldens, any of the above becomes a breaking
+    `datom-sv2` bump rather than a spec edit. Hard-coded in tests, cross-architecture asserted, and
+    covering the four identity-boundary fixtures (AC13): tag-value **order** equal, tag-value
+    **duplication** equal, **member order** different, **single string vs one-element array** equal.
+    Note (d) **reverses** the earlier "must differ" fixture. Plus the AC27 grammar refusals.
   - _Requirements: R2 (incl. R2.5-R2.10). Invariants: I13. Properties: P1, P2, P3, P5, P6, P12,
     P15. Acceptance: AC2, AC5, AC13. No pathway impact._
 
@@ -169,7 +188,7 @@ necessary.
   - `datom_member(conn, name, version)` mirroring `datom_parent()` (`R/lineage.R`): validate,
     read `{name}/.metadata/{version}.json`, derive `project` from `conn$project_name` and `kind`
     from the snapshot (defaulting to `"table"` for pre-`kind` metadata). Returns
-    `{project, name, kind, version}` as pure data.
+    `{id: {project, name, kind, version}, tags: {...}}` as pure data.
   - **Signature gains tags**: `datom_member(conn, name, version, tags = NULL)` -- an optional named
     list of text values, validated against the R2.11 grammar at construction time (R4.6). Tags are
     **per-member** because they replace dpbuild's `dp$input` / `dp$output` / `dp$metadata` nesting,
@@ -471,8 +490,18 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-15 | **R2.5's force stands; its mechanism is superseded.** The write/read agreement constraint is unchanged, but it is no longer achieved by normalizing through `serialize -> parse -> encode`. Each mutation is eliminated at source instead: numbers always f64 (kills integer-vs-double), `NA` aborts (kills the `"NA"` string and `null` cases), and scalar-vs-array is decided by an explicit R-type rule. **Verified bonus**: the one supporting condition -- reading with `simplifyVector = FALSE` -- is *already* satisfied deliberately by both backends (`R/utils-local.R:110`, `R/utils-s3.R:209`, the latter documented as "keep lists as lists"). So the decision is supported by existing infrastructure rather than imposing a new read-path requirement. | R2.5, design.md 7.1/7.3 |
 | 2026-08-15 | **sv1 does not inherit the `metadata_sha` emitter exposure** (section 16). The earlier "cannot both be right" tension is resolved one-sidedly: sv1 is clean by construction, which *sharpens* rather than softens the case for the separate `metadata_sha` issue, since it becomes the only hash in datom whose value depends on a third-party formatter. Scope of that issue unchanged; priority arguably rises. | design.md 7.4, 16 |
 | 2026-08-15 | **E1 downgraded from open-question debate to design review.** Gate for Task 2 is now: exact byte rules, whether the tag table leaves a collision surface, and whether the goldens cover the 7.3 agreement cases. Goldens still freeze the encoding -- a later change needs a conscious `datom-sv2` bump. | design.md E1, Task 2 |
+| 2026-08-16 | **(F-A, BLOCKER -- verified) the closed grammar could not derive the payload shape.** R2.11 said `value ::= string \| [string, ...] \| object`, but R2.12 required `members: [{...}, ...]` -- an **array of objects**, which had no production; R2.10 reinforced it ("only three types to tag") and the encoder's `0x05` was named *string* array. Confirmed by reading both against each other: two requirements that could not both be true, same class as F4. An implementer would have improvised -- read `0x05` as a generic array, or invent a fourth tag -- and **frozen the choice into the golden vectors**, which is what E1 exists to prevent. | design.md 7.2.1 |
+| 2026-08-16 | **(F-B -- verified) tag-value array order was identity, and should not have been.** design.md justified order-as-identity with "member order is a curatorial choice the user sees and controls" -- right for `members[]`, wrong for tag values, which the same rule also caught. Confirmed: R2.12 covered member order and tag *key* order but was **silent on tag value order**, so it fell through to the generic array rule. Since a multi-valued tag models *simultaneous folder membership* (R4.6), which is unordered, `domain: ["safety","efficacy"]` vs reversed would have minted a new **citable version** for a semantically null reorder. Does not weaken Q1: a tag *edit* minting a version is intended, a *reorder* is not an edit. | design.md 7.2.2 |
+| 2026-08-16 | **Resolution 1 -- `id` split from `tags` in the payload** (R2.12). The payload holds exactly two kinds of content: a well-specified reference record with fixed single-string keys, and an open tag map. Made structural rather than four fixed fields sitting loose beside a nested map. Tags stay per-member (R4.6 unchanged). | R2.12, R4.1, R4.6 |
+| 2026-08-16 | **Naming: `id` chosen over `ref` / `pointer` / `datom_id`** -- `ref` collides conceptually with `ref.json`, which means data *location*; `datom_id` is redundant inside datom's own payload; `pointer` is wordy. **Flagged as the one item awaiting owner confirmation**, and it is frozen by the goldens exactly like the encoding, since the key name is hashed. Changing it before Task 2 is a one-token edit. | R2.12 |
+| 2026-08-16 | **Resolution 2 -- the walk is replaced by a hash-of-hashes over 3 primitives + 2 shape rules** (R2.10). `str` / `strset` / `map`, then `member` / `set`. Mirrors cv1's per-column-digests-then-hash-the-concat pattern. **Closes F-A** because there is no generic `value` type left to be incomplete: every position's shape is fixed by where it sits, so the encoder never dispatches on runtime type and cannot have a gap. **Closes F-B** because `members` is the only `concat` without a `sort` -- tag keys and values are always sorted, and values also deduped, so "is this ordered?" is never a judgment call. | R2.10, P30, P31 |
+| 2026-08-16 | **`f64le` disappears from sv1 entirely.** Every intermediate is a fixed 32 bytes, so concatenation is already unambiguous (`h("a")||h("b")` is 64 bytes and cannot collide with `h("ab")` at 32) -- no length prefixes needed. Consequence: `.datom_encode_numeric()` is not used **at all**, not even for lengths, so sv1 shares no numeric primitive with cv1. | design.md 7.2 |
+| 2026-08-16 | **`id` is encoded with `map`, not positionally.** A fifth id field later is then just another key -- no positional convention, no absent-versus-empty question -- and one encoder serves both `id` and `tags`. Id values are single strings encoded as one-element strsets; validation separately enforces "exactly these four keys, each single-valued", keeping the encoder out of validation's job. | R2.10 |
+| 2026-08-16 | **Resolution 3 -- a single string equals a one-element set** (R2.13). `type: "output"` and `type: ["output"]` hash identically, because every map value passes through `strset`. This **reverses** AC13's surviving fixture, which required them to differ: both spellings mean one label named output, so distinguishing them would mint a citable version over a purely syntactic authoring choice -- the same objection that killed tag-value ordering. Net effect: **every AC13 hazard becomes unrepresentable rather than handled**, so P28's goal is reached completely rather than partially. | R2.13, P28, AC13 |
+| 2026-08-16 | **R2.5's residual condition narrows to structure.** With leaves order-, duplication- and shape-insensitive, `simplifyVector = FALSE` matters only so `members[]` stays a list of records instead of collapsing into a data frame -- leaf-level simplification is now immaterial. Both backends already do it deliberately. | R2.5, design.md 7.3 |
+| 2026-08-16 | **AC13 fixtures replaced**: (a) tag-value order equal, (b) tag-value duplication equal, (c) member order different, (d) single string vs one-element array equal. The old "length-1 vs bare string must differ" fixture is **inverted**, and the number/boolean fixtures were already inapplicable. | AC13 |
 | 2026-08-15 | **The payload is text-only, and that is a closed grammar** (R2.11). Values are UTF-8 strings or arrays of strings; **no numbers, booleans, `null`, or nesting beyond the fixed shape** (R2.12). Rationale: tags replace folder-style organisation and folder labels are text, so numbers and booleans buy nothing datom uses while costing an integer-vs-double rule, a boolean tag, and a wider golden matrix. A numeric tag is written `"500"` and parsed downstream, exactly as a folder name would be. | R2.11, I24, AC27 |
-| 2026-08-15 | **Consequence: the walk collapses from five type tags to three** (string / string-array / object). Three of R2.5's four agreement hazards become **unrepresentable rather than handled** -- int-vs-double and `NA_real_` because there are no numbers, `null` because absence is omission. Only scalar-vs-length-1-array remains an actual rule. `.datom_encode_numeric()` is no longer reused for payload values; only its `f64le` length framing is shared, for lengths datom computes itself. | design.md 7.2/7.3, Task 2 |
+| 2026-08-15 | ~~**Consequence: the walk collapses from five type tags to three** (string / string-array / object)~~ **SUPERSEDED 2026-08-16 by F-A** -- the type-dispatch walk is replaced outright by the hash-of-hashes construction, so there is no type-tag list at all. The *reasons* below still hold (numbers/booleans/null are not in the grammar); only the mechanism changed. (string / string-array / object). Three of R2.5's four agreement hazards become **unrepresentable rather than handled** -- int-vs-double and `NA_real_` because there are no numbers, `null` because absence is omission. Only scalar-vs-length-1-array remains an actual rule. `.datom_encode_numeric()` is no longer reused for payload values; only its `f64le` length framing is shared, for lengths datom computes itself. | design.md 7.2/7.3, Task 2 |
 | 2026-08-15 | **Tags are per-member** (R4.6), and `datom_member()` gains `tags = NULL`. What they replace is dpbuild's nested product list (`dp$input$raw_ae()`, `dp$output$derived1`, `dp$metadata$data_def`), whose top-level names classify **items**, not the collection -- confirmed by #89's own rejected alternative, which flattened to `(name, project, version, tag_key, tag_value)`, one row per member per tag. Set-level tags are also allowed, for facts about the collection such as a description. | R4.6, Task 7 |
 | 2026-08-15 | **A tag value may be a string OR an array of strings**, and that is the *only* reason arrays exist in the grammar. The motivating limitation of folders is that an item cannot be in two at once, so multi-valued tags (`domain: ["safety", "efficacy"]`) are the point rather than an extension. | R2.11, R4.6 |
 | 2026-08-15 | **#89's "view config" is retired; no navigation structure is stored at all** (R4.7, I25). Folder-like hierarchy is a **projection**: prioritise one ordering of tag keys at gov level and you get one structure, prioritise another and you get a different one -- so structure is presentation, not content. This retires the "nested view config does not survive the flattening" argument, since navigation *is* the tags, and it is what makes the text-only grammar sufficient. Bonus property: arbitrarily many folder structures cost nothing because none is stored. | R4.7, I25, P29 |

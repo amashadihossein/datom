@@ -124,15 +124,18 @@ the test.
   `NA_character_` becomes `null`).
   **Mechanism, per Q5 (R2.10):** an earlier draft satisfied this by normalizing through a
   serialize -> parse cycle. That is superseded -- there is now **no serializer in the identity
-  path at all**. Instead the three mutations are each eliminated at the source, so agreement holds
-  by construction (design.md section 7.3 has the case-by-case derivation):
-  - numbers are **always** encoded as IEEE-754 f64, so integer-vs-double is not observable
-  - `NA` in any form is an **error**, not an encoding (R2.7), so the `"NA"` / `null` mutations
-    cannot arise
-  - scalar-versus-length-1-array is decided by an **explicit rule on R type** (atomic -> scalar,
-    list -> array), applied identically on both sides
-  - the read path parses with **`simplifyVector = FALSE`**, which both storage backends already
-    do deliberately (`R/utils-local.R:110`, `R/utils-s3.R:209`)
+  path at all**, and every mutation is eliminated at the source rather than handled, so agreement
+  holds by construction (design.md section 7.3):
+  - **numbers and booleans**: not in the payload at all (R2.11), so integer-vs-double and boolean
+    encoding cannot arise
+  - **`NA` / `null`**: `NA` is an error and absence is omission (R2.7), so neither mutation arises
+  - **scalar versus length-1 array**: now **immaterial** -- a single string and a one-element set
+    hash identically (R2.13), so this stopped being a rule and became a non-question
+  - **residual condition, scoped to structure not leaves**: the read path must parse with
+    **`simplifyVector = FALSE`** so `members[]` stays a list of records rather than collapsing to a
+    data frame. Both storage backends already do this deliberately (`R/utils-local.R:110`,
+    `R/utils-s3.R:209`). Leaf-level simplification no longer matters, because leaves are
+    order-and-shape insensitive.
 - **R2.6 -- Q1: the hash covers the WHOLE payload.** `data_sha` is computed over the entire
   semantic payload -- members **and** their tags (including descriptions carried as tags) -- not the member list
   alone. A set exists to be **citable**, and "same citation, different tags" would be a lie to the
@@ -154,57 +157,106 @@ the test.
   **container format**, not the content. If it entered identity, a format bump would re-mint every
   set with unchanged members -- the same failure the `volatile` list exists to prevent
   (`R/utils-sha.R:411-412`). It stays a metadata field (R1.3) outside the hash domain.
-- **R2.10 -- Q5: emitter-free structural hash.** Neither `jsonlite` nor a bespoke sv1 emitter
-  defines the canonical form, because **no serializer is in the identity path**. sv1 is a
-  deterministic walk of the **parsed** payload:
-  - fields visited in **radix-sorted key order**, recursively
-  - **fixed per-type leaf encoding** with a **domain-separation tag per type** -- and per R2.11
-    there are only **three** types to tag (string / string-array / object)
-  - hash accumulated over the walk: `sha256("datom-sv1" || encoded-walk)`
-- **R2.11 -- the payload is text-only, and that is a closed grammar.** The complete set of things
-  a payload may contain:
+- **R2.10 -- Q5: emitter-free structural hash, as a hash-of-hashes.** No serializer is in the
+  identity path. sv1 is **three primitive encoders plus two shape rules**, not a runtime
+  type-dispatch walk. This mirrors cv1's existing construction (per-column digests, then hash their
+  concatenation), so both references share one house pattern.
 
   ```
-  payload  ::= object
-  object   ::= { key: value, ... }          keys are non-empty UTF-8 strings, unique
-  value    ::= string | [ string, ... ] | object
-  string   ::= UTF-8 character scalar       no NA (R2.7)
+  h(x) = sha256(x)
+
+  str(s)     = h( 0x01 || utf8(s) )
+  strset(v)  = h( 0x02 || concat( str(e) for e in sort(unique(v), method = "radix") ) )
+  map(m)     = h( 0x03 || concat( str(k) || strset(m[k])
+                                  for k in sort(keys(m), method = "radix") ) )
+
+  member(x)  = h( 0x04 || map(x.id) || map(x.tags) )
+  set(p)     = h( 0x05 || map(p.tags) || concat( member(m) for m in p.members ) )
+
+  data_sha   = h( 0x06 || utf8("datom-sv1") || set(payload) )
   ```
 
-  **No numbers, no booleans, no `null`, no nesting beyond the fixed payload shape (R2.12).** A
-  non-conforming value -- a number, a logical, a factor, a list of lists, a function, `NA` --
-  **aborts** with a message naming the offending key and the allowed types. Rationale: tags exist
-  to replace folder-style organisation, and folder labels are text. Admitting numbers and booleans
-  would buy nothing datom uses (nothing in the payload is arithmetic) while costing the encoder an
-  integer-vs-double rule, a boolean tag, and a wider golden matrix. Callers who want a numeric tag
-  write `"500"`; downstream parses it, exactly as it would parse a folder name.
-
-  **What this eliminates outright** rather than handling: integer-vs-double drift, the
-  scalar-versus-length-1-vector ambiguity (a character vector of length 1 *is* a string; arrays are
-  declared by being character vectors of any length inside a list context per R2.12), boolean
-  encoding, and `null`. Three of R2.5's four agreement hazards stop being conditions and become
-  impossibilities.
-- **R2.12 -- the payload shape is fixed, not arbitrary.** Depth is bounded by the schema, not by
-  what a caller nests:
-
-  ```
-  {
-    "tags":    { <key>: <string|string[]>, ... },        # set-level, optional
-    "members": [
-      { "project": "...", "name": "...", "kind": "table|set", "version": "...",
-        "tags": { <key>: <string|string[]>, ... } }      # per-member, optional
-    ]
-  }
-  ```
-
-  Member array order is **significant** (identity -- R2.10's walk preserves it); tag key order is
-  **not** (radix-normalised).
+  - **No runtime type dispatch, therefore no possible gap.** Every position's shape is known from
+    *where it sits*, so the encoder never asks "what type is this?" and cannot have an unhandled
+    answer. This is what closes F-A (R2.11).
+  - **`members` is the only `concat` without a `sort`.** Tag keys and tag values are always sorted,
+    and tag values are also **deduped**, so "is this position ordered?" is never a judgment call.
+    This is what closes F-B (R2.12).
+  - **`id` is encoded with `map`, not positionally.** Adding a fifth id field later is then just
+    another key -- no positional convention to maintain and no absent-versus-empty question -- and
+    one encoder serves both `id` and `tags`. Id values are single strings, encoded as one-element
+    strsets; the encoder stays out of validation's job, which separately enforces "id has exactly
+    these four keys, each single-valued".
+  - **Framing is free, so there are no length prefixes.** Every intermediate is a fixed 32 bytes,
+    so concatenation is unambiguous: `["a","b"]` is `h("a")||h("b")` (64 bytes) and cannot collide
+    with `["ab"]` (32 bytes). Consequence: **`f64le` disappears from sv1 entirely** -- sv1 shares no
+    numeric primitive with cv1.
+  - **Pinned edge cases**: absent `tags` and `tags: {}` encode identically (`h(0x03)` over an empty
+    concat) -- writers never emit `{}` per R2.7, but the encoder must not depend on that; duplicate
+    tag values are not identity (`["a","a"]` is `["a"]`); `radix` sort throughout for locale
+    independence, matching `.datom_compute_metadata_sha()`'s existing rationale; a **zero-member set
+    is still refused** (R2.8).
+  - **An empty tag value is refused by validation**, not encoded. `domain: character(0)` means "no
+    labels", which per R2.7 is spelled by **omitting the key**. (The encoder would produce
+    `h(0x02)` for it, so this is a validation rule keeping one spelling per fact, not a
+    correctness fix.)
 
   `jsonlite`, or anything else, remains free to format the **stored file** however it likes,
   because stored-byte integrity is `document_sha`'s job -- a separate hash over actual bytes.
   **Identity and storage integrity never share a dependency.** Golden vectors and
-  `dev/datom_sv1_reference.R` are written against the **walk specification**, not against any
-  emitter's output.
+  `dev/datom_sv1_reference.R` are written against **this specification**, not against any emitter's
+  output.
+- **R2.11 -- the payload is closed by its FIXED SHAPE, not by a value grammar.** An earlier draft
+  stated the closure as a grammar (`value ::= string | [string, ...] | object`), which **could not
+  produce `members[]`** -- an array of objects had no production, while R2.12 required one. Two
+  requirements that could not both be true, and the ambiguity would have been frozen into the
+  golden vectors. The closure is therefore stated as the shape itself (R2.12), with these rules on
+  leaves:
+  - every leaf is a **UTF-8 string**, or an unordered set of them; **no `NA`** (R2.7)
+  - **no numbers, no booleans, no `null`**, and no nesting beyond R2.12's shape
+  - a non-conforming value -- a number, logical, factor, function, nested list, or `NA` -- **aborts**
+    naming the offending key and the allowed types (AC27)
+
+  Rationale unchanged: tags replace folder-style organisation and folder labels are text. Admitting
+  numbers or booleans would buy nothing datom uses while costing encoder rules and a wider golden
+  matrix. A numeric tag is written `"500"` and parsed downstream, exactly as a folder name would be.
+- **R2.12 -- the payload shape, with `id` split from `tags`.** The payload holds exactly two kinds
+  of content: a **well-specified reference record** (fixed keys, all single strings) and an **open
+  tag map**. That split is structural rather than four fixed fields sitting loose beside a nested
+  map:
+
+  ```json
+  {
+    "tags": { "description": "ADaM datasets for STUDY-001" },
+    "members": [
+      { "id":   { "project": "STUDY_001", "name": "dm",   "kind": "table", "version": "d0922fc7" },
+        "tags": { "type": "input" } },
+      { "id":   { "project": "STUDY_001", "name": "adsl", "kind": "table", "version": "7e21b0aa" },
+        "tags": { "type": "output", "domain": ["safety", "efficacy"] } }
+    ]
+  }
+  ```
+
+  Tags stay **per-member** (R4.6): `dp$output$adsl` downstream comes from `type: "output"` on
+  `adsl`'s entry.
+
+  **Ordering and duplication, stated in three parts** so nothing falls through to a generic rule:
+
+  | Position | Order significant? | Duplicates significant? |
+  |---|---|---|
+  | `members` | **yes** -- curatorial, the user sees and controls it | n/a |
+  | tag **keys** | no -- radix-normalised | n/a (keys are unique) |
+  | tag **values** | **no** -- radix-sorted | **no** -- deduped |
+
+  Tag values are unordered because a multi-valued tag models *simultaneous folder membership*
+  (R4.6), which has no order. `domain: ["safety","efficacy"]` and `domain: ["efficacy","safety"]`
+  are the same fact, and must not mint a new citable version. This does not weaken Q1: a tag
+  *edit* minting a version is intended; a *reorder* is not an edit.
+- **R2.13 -- a single string is identical to a one-element set.** `type: "output"` and
+  `type: ["output"]` hash **equal**, because every map value passes through `strset`. Both spellings
+  mean *one label named output*, so making them differ would mint a new citable version over a
+  purely syntactic authoring choice -- the same objection that rules out tag-value ordering.
+  This **reverses** an earlier AC13 fixture that required them to differ.
 
 **Acceptance**: AC13 below, plus the standalone reference and the in-package implementation
 produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
@@ -234,7 +286,7 @@ produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
 
 ### R4 -- Member schema and constructor
 
-- **R4.1** Each member entry carries at minimum `{ project, name, kind, version }`.
+- **R4.1** Each member entry carries an **`id`** record of exactly `{ project, name, kind, version }` -- all single strings -- plus an optional `tags` map (R2.12). The `id`/`tags` split is structural: `id` is a well-specified reference record with fixed keys, `tags` is an open map.
   - `project` -- otherwise cross-project membership cannot resolve, and cross-project is the
     point.
   - `kind` -- because a set may contain a set; without it a resolver cannot know whether to
@@ -859,7 +911,7 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC7** | **Schema gate fires, both directions.** *Refuse-newer*: a repo declaring `schema_version: 3` aborts with the upgrade message, at **both** entry points (manifest and per-artifact metadata). *Tolerate-older*: a repo with no `schema_version` field behaves exactly as 0.1.0 did. **Mechanism note**: an actually-installed 0.1.0 reader has no gate to fire, so this is not testable by installing an old version -- the test drives `.datom_check_schema_version()` directly with a fixture declaring a version above `SUPPORTED_SCHEMA`. Test the gate, not the archaeology. |
 | **AC8** | **Lineage isolation.** A set's metadata contains no `parents` and no `source_lineage` (**omitted, not null**), and writing a set does not alter any member's lineage. |
 | **AC9** | **Self-reference refused.** Writing a set that lists itself (any version of itself) as a member is refused at write time with a clear error (R4.5). Note this is a nonsense check, **not** cycle detection -- cycles are structurally impossible (R4.4), so there is deliberately no cycle test and no depth test. |
-| **AC13** | **Write/read hash agreement.** For every golden fixture, `data_sha` computed from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back (parsed with `simplifyVector = FALSE`). Covers R2.5. Fixtures must include the one remaining ambiguity the grammar cannot remove: a **length-1 string array vs a bare string** (must produce **different** hashes, per the explicit type rule). The number and boolean cases are no longer applicable -- see AC27. |
+| **AC13** | **Write/read hash agreement, plus what is and is not identity.** For every golden fixture, `data_sha` from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back (parsed with `simplifyVector = FALSE`). Covers R2.5. Four fixtures pin the identity boundary, and each is a separate case: (a) payloads differing only in tag-value **order** hash **equal**; (b) differing only in tag-value **duplication** hash **equal**; (c) differing only in **member order** hash **differently**; (d) a **single string vs a one-element array** hash **equal** (R2.13). Note (d) **reverses** an earlier fixture that required them to differ. Number and boolean cases are not applicable -- see AC27. |
 | **AC14** | **`datom_read_set()` on a table** aborts pointing at `datom_read()` -- the converse of AC6, not a missing-payload error for a healthy table. |
 | **AC15** | **Nesting resolves one level -- no traversal.** Reading a set whose members include another set returns a **pointer** to that inner set (`kind = "set"`, name, project, version), and does **not** fetch the inner set's own members. Asserted by observing that no storage read of the inner set's payload occurs. Covers R4.3, and guards against an implementer "helpfully" flattening the tree. |
 | **AC16** | **Machine-commit isolation.** In a `mode: product` repo with an uncommitted edit at `R/foo.R`, a `datom_write()` of a table produces a commit whose tree does **not** contain the `R/foo.R` change, **and** `R/foo.R` is still dirty in the working tree afterward. Both halves matter: the second catches a "helpfully" cleaned working tree (R14.1). |
