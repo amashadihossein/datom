@@ -167,6 +167,35 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 ### Developer Tooling
 
+**dev/check-spec.R**: Mechanical consistency checks for a Kiro spec
+
+- `Rscript dev/check-spec.R [spec-dir]` (defaults to `.kiro/specs/datom-sets`). Base R only, no
+  package dependencies. Exit 0 clean, 1 on any failure, so it works as a gate.
+- Six checks, each one derived from a defect that actually shipped into a spec and had to be
+  caught by a human reader:
+
+  | Check | Catches |
+  |---|---|
+  | dangling references | an `R*`/`I*`/`P*`/`AC*` token that resolves to nothing after renumbering |
+  | orphaned criteria | an AC / invariant / property defined but referenced by no task -- i.e. unimplemented |
+  | task coverage | non-contiguous task numbers, or a task with no `Acceptance:` clause |
+  | code citations | a `R/file.R:NNN` reference pointing outside the file |
+  | superseded wording | retired phrasing surviving as a **live instruction** rather than marked historical |
+  | ascii | non-ASCII that will trip `R CMD check` once the prose is copied into roxygen or NEWS |
+
+- **When to run it**: at each chunk checkpoint, next to reporting the test count. A `PostFileSave`
+  hook would fire constantly mid-draft and train you to ignore it.
+- `SPEC_CHECK_SHOW_CITATIONS=1` prints every cited code line so a reviewer can confirm it says what
+  the spec claims. The script can only assert that a cited line *exists* -- a wrong-but-in-range
+  number needs the eyeball. Blank cited lines are flagged, since those are almost always wrong.
+- **Maintenance rule**: the `retired` denylist is the only part that needs upkeep. When a design
+  decision is reversed, add its old phrasing there -- that is what turns "we removed this" into
+  "and it cannot come back silently".
+- **What it cannot do**: reasoning defects. In the review round that prompted it, these checks would
+  have caught about half the findings; the rest were things like "a required payload field has no
+  public parameter" and "the integrity gate has no acceptance criterion". It reduces review load, it
+  does not replace review. The script says so on every run.
+
 **dev/e2e-cv1-identity.R**: Offline `datom-cv1` identity walkthrough and smoke test
 
 - `Rscript dev/e2e-cv1-identity.R` -- **no GitHub PAT, no AWS, no network**. Builds a real git
@@ -270,6 +299,10 @@ After each chunk is implemented, I deliver **five things in order**:
 1. **Write tests** — full test coverage for the chunk's functions
 2. **Run tests** — execute and fix until all pass (green suite)
 3. **Minimalist walkthrough snippet** — a clean, self-contained R snippet for you to paste into the console and step through interactively (use `debugonce()` to drop into any function)
+3a. **Run `Rscript dev/check-spec.R`** — alongside reporting the test count. Structural
+   consistency of the spec itself: dangling references, orphaned criteria, tasks with no acceptance
+   clause, code citations pointing outside the file, and retired wording surviving as a live
+   instruction. It is a gate (exit 1 on failure), and it is not a substitute for reading.
 4. **Update the spec as part of the same commit** — every chunk, no exceptions:
    - Check off the completed task(s) in `tasks.md`
    - If the chunk changes metadata schema, storage layout, governance refs, lineage, access control, role resolution, migration, or decommissioning, update `dev/datom_pathways.md` or explicitly record "no pathway impact"
