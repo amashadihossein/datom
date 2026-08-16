@@ -106,9 +106,9 @@ the test.
   versions (key order, quoting, wrapping) the way `arrow` drifted for parquet.
 - **R2.2** The basis is **not** `datom-cv1`. cv1 is table-shaped and binary-framed
   (`sha256("datom-cv1" || f64le(nrow) || f64le(ncol) || concat(col_digests))`); `nrow` / `ncol`
-  / per-column digests do not generalize to a tree. sv1 borrows cv1's *approach* -- a
-  deterministic structural walk with fixed byte encodings and no serializer in the identity path
-  -- applied to a tree instead of a table (**Q5**, R2.10).
+  / per-column digests do not generalize to a tree. sv1 borrows cv1's *approach* -- per-element digests
+  hashed together, with fixed byte encodings and no serializer in the identity path -- applied to a
+  tree instead of a table. It is **not** a walk that dispatches on runtime type; see R2.10.
 - **R2.3** Declared under its own `hash_algo` identifier: `datom-sv1`. `hash_algo` already
   exists and is correctly in the semantic set (`R/utils-sha.R`: "a new hash algorithm
   legitimately defines a new version").
@@ -116,9 +116,11 @@ the test.
   cross-architecture parity workflow mirroring `dev/datom_cv1_reference.R` and
   `.github/workflows/cv1-reference-parity.yaml`.
 - **R2.5 -- write/read agreement (hard constraint; unchanged in force, restated in mechanism).**
-  The hash **domain is the parsed-JSON data model, not the in-memory R object.** `data_sha`
-  computed at write time from an in-memory payload MUST equal `data_sha` recomputed at read time
-  from the same payload after it has been stored and parsed back. R cannot distinguish a scalar
+  The hash is **defined on the parsed-JSON data model**, and the write path -- which necessarily
+  starts from an in-memory R object -- MUST agree with it. Concretely: `data_sha` computed at write
+  time from the in-memory payload MUST equal `data_sha` recomputed at read time from the same
+  payload after it has been stored and parsed back. (This does *not* mean the write path serializes
+  first; see the mechanism below.) R cannot distinguish a scalar
   from a length-1 vector, and a JSON round trip mutates types (demonstrated in design.md
   section 7: `NA_real_` becomes the **string** `"NA"`; doubles return as integers;
   `NA_character_` becomes `null`).
@@ -244,7 +246,7 @@ the test.
 
   | Position | Order significant? | Duplicates significant? |
   |---|---|---|
-  | `members` | **yes** -- curatorial, the user sees and controls it | n/a |
+  | `members` | **yes** -- curatorial, the user sees and controls it | **yes** -- but duplicates are refused, see R2.14 |
   | tag **keys** | no -- radix-normalised | n/a (keys are unique) |
   | tag **values** | **no** -- radix-sorted | **no** -- deduped |
 
@@ -252,6 +254,19 @@ the test.
   (R4.6), which has no order. `domain: ["safety","efficacy"]` and `domain: ["efficacy","safety"]`
   are the same fact, and must not mint a new citable version. This does not weaken Q1: a tag
   *edit* minting a version is intended; a *reorder* is not an edit.
+- **R2.14 -- three degenerate spellings are refused by validation, so one fact has one spelling.**
+  None of these is an encoder gap -- the encoder handles all three unambiguously. They are refused
+  because leaving them legal lets two payloads state the same fact with different `data_sha`, and
+  the goldens would freeze that:
+  - **A duplicated member** (same `project`+`name`+`version` twice). `set()` concatenates member
+    digests **without** `sort` or `unique`, so `[m, m]` and `[m]` hash **differently** -- members
+    are the one position where duplication *is* identity (R2.12). A set listing the same datom
+    version twice has no meaning, so it aborts.
+  - **An empty tag value** (`domain = character(0)`). "No labels" is spelled by **omitting the key**
+    (R2.7).
+  - **An empty-string tag value** (`domain = ""`). A label with no name is not a label. Note R2.7
+    already says `""` is never a representation of *absence*; this settles the separate question of
+    whether it is a legal *label*, which the encoder would otherwise decide by accident.
 - **R2.13 -- a single string is identical to a one-element set.** `type: "output"` and
   `type: ["output"]` hash **equal**, because every map value passes through `strset`. Both spellings
   mean *one label named output*, so making them differ would mint a new citable version over a
@@ -536,7 +551,7 @@ set: study001-adam
 
 ### R11 -- `datom_validate()` branches on kind
 
-`R/validate.R:386` hardcodes the data-object check inside `.datom_validate_one_table()`:
+`R/validate.R:391` hardcodes the data-object check inside `.datom_validate_one_table()`:
 
 ```r
 data_key <- paste0(name, "/", meta$data_sha, ".parquet")
@@ -562,11 +577,16 @@ On a set this fails 100% of the time and reports `data_missing_s3`.
 
 ### R12 -- Public write/read surface
 
-- **R12.1** `datom_member(conn, name, version)` -- validated member constructor mirroring
-  `datom_parent()`.
-- **R12.2** `datom_write_set(conn, members, ...)` -- derives the payload from members; **reuses
-  change detection, git-gates-storage ordering, and dedup unchanged** (the step 4-10 sequence in
-  `datom_write()`).
+- **R12.1** `datom_member(conn, name, version, tags = NULL)` -- validated member constructor
+  mirroring `datom_parent()`, with optional per-member tags (R4.6).
+- **R12.2** `datom_write_set(conn, members, tags = NULL, ...)` -- derives the payload from members
+  and optional **set-level tags**; **reuses change detection, git-gates-storage ordering, and dedup
+  unchanged** (the step 4-10 sequence in `datom_write()`).
+  **`tags` is not optional decoration -- it is required payload structure.** R2.12 puts `tags` at the
+  payload root, R2.6 hashes it, and **AC2's converse half cannot be written without it** (a changed
+  description must mint a version, and a description *is* a set-level tag per R6.2). Note this is
+  the only channel: R1.4 deliberately withholds a `metadata =` parameter, so without `tags` the
+  public surface could not express a payload the spec requires.
 - **R12.3** `datom_read_set()` -- resolves and returns the set. **Both directions of the
   kind mismatch abort with a pointer to the right function**: `datom_read()` on a set points at
   `datom_read_set()` (AC6), and `datom_read_set()` on a table points at `datom_read()` (AC14).
@@ -622,7 +642,8 @@ On a set this fails 100% of the time and reports `data_missing_s3`.
 - **R13.3** Fix the stale "task 5.1" claims in `R/read_write.R`. They assert version-pinned reads
   lack `parquet_sha` "until `version_history` entries persist `parquet_sha` (task 5.1)". That is
   **stale**: `.datom_write_metadata_local()` already persists it (the conditional-add block) and
-  `.datom_resolve_version()` reads it back (`R/read_write.R:177`). Only *legacy* entries lack it.
+  `.datom_resolve_version()` reads it back (`R/read_write.R:187` for a version-pinned read, `129`
+  for the current one). Only *legacy* entries lack it.
   **Four sites, verified by `grep -n "task 5\.1" R/read_write.R`** -- note #89 cited `95-97`,
   which is the function title, not the stale text:
 
@@ -925,7 +946,8 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC24** | **The git payload is diffable.** After writing a set twice with one member added, `git diff` on `{name}/set.json` between the two commits shows the **member-level** change (one added entry), not a whole-file add. Guards R6.1a/b -- a content-addressed git filename would make this test impossible to write. |
 | **AC25** | **`commit_sha` is present, git-less, and survives repair.** After a set write: the **storage** copy of `version_history.json` carries `commit_sha` for the new version; the **git** copy does not (it cannot -- it is inside that commit); and after `datom_validate(fix = TRUE)` re-uploads metadata, `commit_sha` is **still there**, re-derived from `git log` rather than stripped (R21.6/R21.7). The third clause is the one that fails silently in a naive implementation. |
 | **AC26** | **A code-only change mints no new version.** With the set's member list unchanged, modifying tracked code and re-running `datom_write_set()` produces **no new version**, and the existing version's recorded `commit_sha` is **unchanged** (still the first producing commit). Encodes the option-1 decision (R21.2/R21.3) so a later "improvement" that makes versions code-sensitive fails a test. |
-| **AC27** | **The payload grammar is enforced, not assumed.** A tag value that is a number, logical, factor, function, nested list, or `NA` is **refused** at write time, with a message naming the offending key and the allowed types (R2.11). Tested per offending type, not as one lumped case, so a regression names which type leaked through. This is the test that keeps I24 true -- without it, "just allow numbers" is a one-line change nobody notices. |
+| **AC27** | **The payload grammar is enforced, not assumed.** A tag value that is a number, logical, factor, function, nested list, or `NA` is **refused** at write time, with a message naming the offending key and the allowed types (R2.11). **Plus the three degenerate spellings of R2.14**: a duplicated member, an empty tag value (`character(0)`), and an empty-string tag value (`""`). Tested **per offending case**, not as one lumped assertion, so a regression names which one leaked through. This is the test that keeps I24 true -- without it, "just allow numbers" is a one-line change nobody notices. |
+| **AC28** | **The `document_sha` integrity gate fires, and never silently skips.** (a) A set whose stored payload bytes do not match the recorded `document_sha` is **refused before parsing** -- assert the abort occurs without the payload being parsed. (b) Metadata with a **missing or empty** `document_sha` is an **error, not a skip** (R7.1, I3): sets have no legacy population, so reproducing `parquet_sha`'s pre-cv1 grace would be building a silent-degradation path on purpose. Both halves matter, and (b) is the one a naive implementation gets wrong by copying `.datom_read_parquet()`'s `if (!is.null(...) && nzchar(...))` guard. |
 
 Plus the standing project gates:
 

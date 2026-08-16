@@ -42,7 +42,10 @@ necessary.
     `R/validate.R` to the helpers. Behavior-identical -- assert with the existing suite.
   - File the separate issue for the `metadata_sha` emitter-drift exposure (design.md section 16).
     Do **not** implement it here.
-  - _Requirements: R5.2, R13.3. Invariants: I9. No pathway impact._
+  - _Requirements: R5.2, R13.3. Invariants: I9. **Acceptance: none by design** -- this chunk is
+    contract-neutral (docstring wording plus behavior-identical key helpers), so the existing
+    suite passing unchanged *is* the assertion. Recorded explicitly so the absence is not read as
+    an omission. No pathway impact._
 
 - [ ] **2. `datom-sv1` canonical set-content hash** &nbsp; **[ESCALATION E1 -- design review]**
   - **All five open questions are settled** (owner-decided 2026-08-15, design.md 7.5). The
@@ -63,12 +66,11 @@ necessary.
     the tested behavior (R2.8).
   - **Q4 `schema_version` stays out** of the payload and the hash -- container format, not content;
     in identity it would re-mint every set on a format bump (R2.9).
-  - **Q5 emitter-free structural hash.** **No serializer in the identity path.** Deterministic walk
-    of the **parsed** payload: radix-sorted keys recursively, fixed per-type leaf encoding with a
-    domain-separation tag per type, accumulated as
-    `sha256("datom-sv1" || encoded-walk)` (R2.10, design.md 7.2). `jsonlite` may format the
-    **stored** file however it likes -- stored-byte integrity is `document_sha`'s separate job.
-    **Identity and storage integrity never share a dependency.**
+  - **Q5 emitter-free hash.** **No serializer in the identity path.** The construction is the
+    hash-of-hashes in the next bullet -- **not** a walk with per-type dispatch, which was the
+    superseded formulation (F-A). `jsonlite` may format the **stored** file however it likes,
+    because stored-byte integrity is `document_sha`'s separate job. **Identity and storage integrity
+    never share a dependency.**
   - **The encoding is a hash-of-hashes over 3 primitives + 2 shape rules** (R2.10, design.md 7.2),
     **not** a runtime type-dispatch walk -- that earlier formulation had a structural gap (F-A) and
     is superseded:
@@ -99,10 +101,13 @@ necessary.
     not by what a caller nests.
   - **The R2.5 hard constraint still governs**, with its mechanism restated: write-time and
     read-time hashes must agree, and they now do **by construction** rather than via a
-    serialize/parse cycle. Each mutation is killed at source (design.md 7.3): numbers always f64;
-    `NA` aborts; `null` unrepresentable; scalar-vs-array decided by an explicit R-type rule. The
-    one supporting condition -- reading with `simplifyVector = FALSE` -- is **already satisfied** by
-    both backends (`R/utils-local.R:110`, `R/utils-s3.R:209`).
+    serialize/parse cycle. Every mutation is **unrepresentable**, not handled (design.md 7.3):
+    numbers and booleans are not in the grammar; `NA` aborts; `null` has no marker; and
+    scalar-vs-one-element-array is **immaterial because the two hash equal** (R2.13). **Do not write
+    an f64 rule and do not write an atomic-vs-list rule** -- both were removed, and an earlier draft
+    of this bullet still instructed them. The one supporting condition is structural: read with
+    `simplifyVector = FALSE` so `members[]` stays a list of records rather than collapsing to a data
+    frame. **Already satisfied** by both backends (`R/utils-local.R:110`, `R/utils-s3.R:209`).
   - `.datom_sv1_str()` / `.datom_sv1_strset()` / `.datom_sv1_map()` +
     `.datom_canonical_set_hash()` in a new `R/hashable-set.R` (or extend `R/utils-sha.R` -- decide
     at the review). **`.datom_encode_numeric()` is NOT used** -- sv1 has no numeric primitive at
@@ -119,8 +124,8 @@ necessary.
     covering the four identity-boundary fixtures (AC13): tag-value **order** equal, tag-value
     **duplication** equal, **member order** different, **single string vs one-element array** equal.
     Note (d) **reverses** the earlier "must differ" fixture. Plus the AC27 grammar refusals.
-  - _Requirements: R2 (incl. R2.5-R2.10). Invariants: I13. Properties: P1, P2, P3, P5, P6, P12,
-    P15. Acceptance: AC2, AC5, AC13. No pathway impact._
+  - _Requirements: R2 (incl. R2.5-R2.14). Invariants: I13, I24. Properties: P1, P2, P3, P4, P5, P6,
+    P8, P12, P15, P28, P30, P31. Acceptance: AC2, AC3, AC5, AC13, AC27. No pathway impact._
 
 - [ ] **3. Export and harden storage JSON put/get**
   - `datom_storage_read_json()` / `datom_storage_write_json()` on the Storage Extension API,
@@ -137,7 +142,8 @@ necessary.
     unrestricted.
   - `_pkgdown.yml` reference entries; roxygen with runnable offline examples in the established
     bare-git-remote + local-store style.
-  - _Requirements: R12.4, R12.4a. Invariants: I7, I14. Properties: P18. No pathway impact._
+  - _Requirements: R12.4, R12.4a. Invariants: I7, I14. Properties: P18. Acceptance: **AC23**
+    (the `.access/` refusal, alongside `.metadata/` and payload keys). No pathway impact._
 
 - [ ] **4. `schema_version` gate (reader side)**
   - `.datom_check_schema_version(meta, source)` -- one implementation, one message.
@@ -156,8 +162,12 @@ necessary.
 ## Phase B -- Manifest namespace **[BREAKING]**
 
 - [ ] **5. `manifest$tables` -> `manifest$artifacts`, typed by `kind`** &nbsp; **[ESCALATION E2]**
-  - Write side (2 sites): `.datom_update_manifest_entry()` (`R/sync.R:746,751-757`),
-    `datom_init_repo()` seed (`R/conn.R:522-527`).
+  - Write side (**3** sites -- an earlier draft said 2 and missed the third):
+    `.datom_update_manifest_entry()` (`R/sync.R:746,751-757`); the **absent-manifest skeleton** at
+    `R/sync.R:712` (`list(project_name = ..., tables = list(), summary = list())`); and
+    `datom_init_repo()`'s seed (`R/conn.R:522-527`). **The skeleton is the dangerous one**: left
+    unrenamed it writes a `tables` key after the rename, and it only fires on a fresh or repaired
+    repo, so tests against an existing fixture pass while the bug ships.
   - Read side (6 sites, 4 files): `datom_list()` (`R/query.R:58,85`), `datom_status()`
     (`R/query.R:439`), `.datom_status_input_files()` (`R/query.R:544,550`), `datom_summary()`
     (`R/summary.R:57`), `datom_sync_manifest()` (`R/sync.R:374,387`).
@@ -166,10 +176,13 @@ necessary.
     only).
   - `datom_list()` and `datom_summary()` surface `kind`.
   - Manifest and per-artifact metadata now write `schema_version: 2`.
-  - **Must land atomically across all eight sites plus tests.** A partial rename presents as
-    "everything looks fine, the list is just empty."
-  - _Requirements: R8, R9 (writer side). Invariants: I2, I4. No new pathway (route shapes
-    unchanged) -- record explicitly._
+  - **Must land atomically across all nine sites (3 write + 6 read) plus tests.** A partial rename
+    presents as "everything looks fine, the list is just empty."
+  - _Requirements: R8, R9 (writer side). Invariants: I2, I4. Acceptance: AC4 (cross-kind name
+    uniqueness), AC7 (the v2 writer half of the schema gate), AC22. Add a test that `datom_list()`
+    and `datom_summary()` surface `kind` and that `total_sets` counts only sets -- the rename's own
+    failure mode is silent, so it needs a positive assertion, not just the absence of errors. No new
+    pathway (route shapes unchanged) -- record explicitly._
   - **Escalation rationale**: touches `datom_list()`, `datom_summary()`, `datom_validate()` and
     the sync manifest updater together; failure mode is silent writer/reader disagreement.
 
@@ -214,7 +227,13 @@ necessary.
 - [ ] **8. `datom_write_set()`**
   - **Two gates first, before any hashing or IO** (R10.3a, I15): the repo must declare
     `mode: product`, and `name` must equal `project.yaml`'s `set:` field. These are what make
-    "one repo = one set" real, and the second is the precondition the cycle walk's root depends on.
+    "one repo = one set" real, and the second is the precondition the **self-reference check** (R4.5)
+    relies on -- it needs the set's own identity before the write. **Not** a cycle walk: there is
+    none, and I10a forbids reintroducing one.
+  - **Signature: `datom_write_set(conn, members, tags = NULL, ...)`** (R12.2). The `tags` argument
+    is **required structure, not decoration** -- R2.12 puts `tags` at the payload root, R2.6 hashes
+    it, and AC2's converse half (a changed description mints a version) cannot be tested without it.
+    R1.4 deliberately withholds `metadata =`, so this is the only channel.
   - Payload derived from members (each with optional per-member tags) plus optional **set-level
     tags** -- and **nothing else**. No view or navigation config: folder structure is a consumer-side
     projection over tags, never stored (R4.7, I25). No `metadata =` parameter -- user metadata is
@@ -233,7 +252,7 @@ necessary.
     `{name}/.metadata/metadata.json`, not the manifest, which can lag.
   - Manifest entry with `kind = "set"` and `member_count`.
   - _Requirements: R5, R6 (incl. R6.1a/b), R10.3a, R12.2, R8 (set entries). Invariants: I2, I5,
-    I6, I11, I15. Properties: P7, P13, P17. Acceptance: AC2, AC3, AC4, AC5._
+    I6, I11, I15, I25. Properties: P7, P13, P17, P25, P29. Acceptance: AC2, AC3, AC4, AC5, AC24._
 
 - [ ] **9. `datom_read_set()` + `datom_read()` refusal**
   - `datom_read_set()`: resolve version -> read payload -> **verify `document_sha` before
@@ -255,8 +274,11 @@ necessary.
     tree: a consumer wanting the full tree composes repeated reads, exactly as
     `datom_get_parents()` leaves further steps to the caller. Read cost must be a function of this
     set's direct member count, never of the depth beneath it (P16).
-  - _Requirements: R12.3, R7.1, R6.4, R4.3. Invariants: I3, I8, I10. Properties: P9, P16.
-    Acceptance: AC1, AC6, AC14, AC15._
+  - _Requirements: R12.3, R7.1, R7.2, R6.4, R4.3. Invariants: I3, I8, I10. Properties: P9, P16.
+    Acceptance: AC1, AC6, AC14, AC15, **AC28**. AC28 is the integrity gate -- both halves: a
+    mismatched payload is refused before parsing, **and** a missing/empty `document_sha` is an error
+    rather than a skip. The second half is what a naive copy of `.datom_read_parquet()`'s
+    `if (!is.null(...) && nzchar(...))` guard gets wrong._
   - _Pathway impact: new route card "Given a set + version, resolve its members"._
 
 ---
@@ -358,9 +380,15 @@ necessary.
   - **Member checking is one level deep** (R4.3, I10): each member pointer resolves to an existing
     artifact. The validator does not descend into nested sets -- validating an inner set is a
     separate `datom_validate()` call against that set's own project.
-  - Set branch compares **git payload vs storage payload**, which R6.1b's git retention makes
-    possible; this is a real two-sided check, not a storage self-check.
-  - _Requirements: R11, R4.3. Invariants: I10. Properties: P14, P16, P17._
+  - Scope note: R11.2 specifies a **storage-side** check (payload exists, members resolve). An
+    earlier draft here promised a git-vs-storage comparison "which R6.1b's git retention makes
+    possible" -- **removed**, because R6.1b reversed per-version payload files in git: git now holds
+    one mutable `{name}/set.json`, so only the *current* version is comparable without `git show`.
+    Do not add unrequested git-side comparison.
+  - _Requirements: R11, R4.3. Invariants: I10. Properties: P14, P16. Acceptance: AC15
+    (one-level member checking). **P14 has no AC of its own** -- add one here asserting `ok` for a
+    healthy set and *distinguishable* statuses for a missing payload versus an unresolvable member;
+    R11.3 calls this in scope rather than deferred, so it must not ship untested._
 
 - [ ] **14. Version-to-commit link (`commit_sha`)**
   - Applies to **all** artifact kinds, not just sets -- `version_history.json` is shared. Placed
@@ -385,7 +413,7 @@ necessary.
     AC26. No pathway impact (no new lookup route -- the existing history read gains a field)._
 
 - [ ] **15. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
-  - Confirm every **AC1-AC9 and AC13-AC26** has a dedicated test; add what the per-chunk tests
+  - Confirm every **AC1-AC9 and AC13-AC28** has a dedicated test; add what the per-chunk tests
     missed. Two are easiest to skip and both need special fixtures: **AC15** (nesting resolves one
     level) needs a set-containing-a-set fixture and an assertion that the inner payload is *not*
     read; **AC16** (machine-commit isolation) needs a foreign dirty file seeded in the fixture repo,
@@ -395,9 +423,9 @@ necessary.
     Include a `mode: product` repo with foreign `R/`, `dp/`, and `renv.lock` content so the joint
     commit and the machine-commit isolation are exercised end to end, not only in unit tests.
   - Full `devtools::test()` count reported; `R CMD check --as-cran` 0E/0W (AC10, AC11).
-  - _Acceptance: AC1-AC26._
-  - **Escalation rationale**: nine acceptance criteria plus a new hash regime is a lot of surface
-    to claim covered on a default model's word.
+  - _Acceptance: AC1-AC28._
+  - **Escalation rationale**: **twenty-eight** acceptance criteria plus a new hash regime is a lot
+    of surface to claim covered on a default model's word.
 
 - [ ] **16. Docs + Spec Completion Procedure**
   - `dev/datom_pathways.md`: the set-resolution route card; note the `kind` branch and the
@@ -450,7 +478,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-09 | **(F3)** The public `datom_storage_write_json()` refuses datom-managed keys (`.metadata/` segments, payload-shaped keys under existing artifacts). Reads unrestricted. Public-contract decision settled in the spec. | R12.4a, I14 |
 | 2026-08-09 | **(F4)** A set's metadata is **exactly** R1.3's seven fields. `size_bytes` dropped (no consumer), `custom` dropped (payload already owns user metadata, R6.2) -- so `datom_write_set()` has no `metadata =` parameter. | R1.4, design.md section 4 |
 | 2026-08-09 | **(F5)** `datom_write_set()` requires `mode: product` **and** a name matching `project.yaml`'s `set:`, both checked before any hashing or IO. This is what makes "one repo = one set" enforced rather than aspirational. | R10.3a, I15 |
-| 2026-08-09 | **(F7)** Set payloads live in git at `{name}/{data_sha}.json` (same relative path as the storage key) and **all historical payloads are retained**, so any version is reconstructible from the clone alone. The `governance.json` *ordering* transfers; its singleton *layout* does not. | R6.1a/b, P17 |
+| 2026-08-09 | ~~**(F7)** Set payloads live in git at `{name}/{data_sha}.json` and all historical payloads are retained.~~ **SUPERSEDED 2026-08-11 -- see the stable-path entry below.** Git now holds one mutable `{name}/set.json`; only storage is content-addressed, and the retention rule is redundant. What still holds from F7: the `governance.json` *ordering* transfers but its singleton *layout* does not, and P17 survives via `git show <commit>:{name}/set.json`. | R6.1a/b, P17 |
 | 2026-08-09 | **(F12)** The stale "task 5.1" text is at `R/read_write.R:105-108, 205-206, 413`, with `393` already correct and therefore contradicting. #89's `95-97` citation was wrong and the first spec draft propagated it. | R13.3, Task 1 |
 | 2026-08-11 | **Spec delta D1-D8 applied** from #89. **The `mode: product` repo IS the joint repo** (data + code + `renv.lock`); no separate fourth repo. Decisive reason: cross-repo pinning is circular -- the code repo wants to record which set version it produced and the set payload wants to record which code commit produced it, so one is always stale by one commit. A joint version requires one commit graph. | design.md section 19, R14 |
 | 2026-08-11 | **datom is the single git-mutating actor** (I17). Downstream packages never import `git2r`; all stage/commit/push/pull goes through a datom export. Writing files on disk is *not* a git operation and needs no datom API -- hence **no `datom_gitignore_*` API**, ever. | I17, R16, design.md 19.5 |
@@ -489,10 +517,19 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-15 | **E1 Q2 -- OWNER-DECIDED: dissolved by the omission rule.** A payload has no data cells, so `NA` could only arrive via optional fields. datom's existing "omitted, not nulled" convention (verified `R/read_write.R:296-299`) becomes the canonical form: absence means the field **does not exist**; `null` / `NA` / `""` are never representations of absence. A literal `NA` reaching the encoder is an **error**, not an encoding case, and goldens carry the refusal. Knock-on: the walk has **no `null` tag** (the earlier draft's `0x04` is dropped), and this is where sv1 legitimately diverges from cv1, which needs an NA mask byte because table cells *can* be missing. | R2.7, design.md 7.2/7.5 |
 | 2026-08-15 | **E1 Q3 -- OWNER-DECIDED: empty set refused.** Mirrors cv1's zero-dim abort (verified `R/utils-sha.R:310-312`). Marginal utility -- the build package simply does not write the set until its first output exists -- and an empty citable product is semantically murky. Cheap to relax later, awkward to retract. AC5 updated: refusal is the **tested** behavior, not a documented maybe. | R2.8, AC5 |
 | 2026-08-15 | **E1 Q4 -- OWNER-DECIDED: `schema_version` stays out of the payload and hash.** It describes the container format, not the content; in identity a format bump would re-mint every set with unchanged members -- the same failure the `volatile` list exists to prevent (verified `R/utils-sha.R:411-412`). | R2.9 |
-| 2026-08-15 | **E1 Q5 -- OWNER-DECIDED: emitter-free structural hash.** Neither `jsonlite` nor a bespoke sv1 emitter is canonical, because **no serializer is in the identity path**. sv1 is a deterministic walk of the parsed payload: radix-sorted keys recursively, fixed per-type leaf encoding with a domain-separation tag per type, `sha256("datom-sv1" \|\| encoded-walk)`. Stored-file formatting is free, because stored-byte integrity is `document_sha`'s separate job -- **identity and storage integrity never share a dependency**. Goldens and `dev/datom_sv1_reference.R` are written against the walk spec, not any emitter's output. | R2.10, design.md 7.2/7.4 |
+| 2026-08-15 | **E1 Q5 -- OWNER-DECIDED: emitter-free structural hash.** Neither `jsonlite` nor a bespoke sv1 emitter is canonical, because **no serializer is in the identity path**. ~~sv1 is a deterministic walk of the parsed payload: radix-sorted keys recursively, fixed per-type leaf encoding with a domain-separation tag per type, `sha256("datom-sv1" \|\| encoded-walk)`.~~ **The walk formulation was SUPERSEDED 2026-08-16 by F-A** -- replaced by the hash-of-hashes construction; the *decision* (no serializer in the identity path) stands unchanged. Stored-file formatting is free, because stored-byte integrity is `document_sha`'s separate job -- **identity and storage integrity never share a dependency**. Goldens and `dev/datom_sv1_reference.R` are written against the walk spec, not any emitter's output. | R2.10, design.md 7.2/7.4 |
 | 2026-08-15 | **R2.5's force stands; its mechanism is superseded.** The write/read agreement constraint is unchanged, but it is no longer achieved by normalizing through `serialize -> parse -> encode`. Each mutation is eliminated at source instead: numbers always f64 (kills integer-vs-double), `NA` aborts (kills the `"NA"` string and `null` cases), and scalar-vs-array is decided by an explicit R-type rule. **Verified bonus**: the one supporting condition -- reading with `simplifyVector = FALSE` -- is *already* satisfied deliberately by both backends (`R/utils-local.R:110`, `R/utils-s3.R:209`, the latter documented as "keep lists as lists"). So the decision is supported by existing infrastructure rather than imposing a new read-path requirement. | R2.5, design.md 7.1/7.3 |
 | 2026-08-15 | **sv1 does not inherit the `metadata_sha` emitter exposure** (section 16). The earlier "cannot both be right" tension is resolved one-sidedly: sv1 is clean by construction, which *sharpens* rather than softens the case for the separate `metadata_sha` issue, since it becomes the only hash in datom whose value depends on a third-party formatter. Scope of that issue unchanged; priority arguably rises. | design.md 7.4, 16 |
 | 2026-08-15 | **E1 downgraded from open-question debate to design review.** Gate for Task 2 is now: exact byte rules, whether the tag table leaves a collision surface, and whether the goldens cover the 7.3 agreement cases. Goldens still freeze the encoding -- a later change needs a conscious `datom-sv2` bump. | design.md E1, Task 2 |
+| 2026-08-17 | **Final pre-implementation review (independent, adversarial). 20 findings, all triaged; the 5 blockers are fixed.** Verified the factual ones against the tree first. **Blockers**: (1) Task 2's R2.5 bullet still instructed "numbers always f64" and "scalar-vs-array decided by an explicit R-type rule" -- both removed mechanisms, in the bullet that governs the goldens; (2) Task 2's Q5 bullet still specified the superseded type-dispatch walk *immediately before* the bullet declaring it superseded, so a top-down reader implements the wrong one; (3) **I13 as worded mandated the removed serialize/parse pass and contradicted AC13**; (4) **no public parameter existed for set-level tags**, which R2.12 requires, R2.6 hashes, and AC2's converse half tests -- while R1.4 withholds `metadata =`, so the surface could not express a required payload; (5) **a third manifest write site exists** at `R/sync.R:712` (the absent-manifest skeleton) that the "two write sites / eight total" enumeration missed. | R2.5, R12.2, I13, design.md 9 |
+| 2026-08-17 | **(review) `R/sync.R:712` is the dangerous manifest site.** It builds `list(project_name = ..., tables = list(), summary = list())` when `.datom/manifest.json` is absent, so left unrenamed it writes a `tables` key *after* the rename -- and it fires only on a fresh or repaired repo, so per-chunk tests against an existing fixture pass while the bug ships. Counts corrected to **3 write + 6 read = 9 sites**. One sub-claim of the review was **wrong**: `R/conn.R:522` *is* the `tables` line (the review said 520); citation left as-is. | design.md 9, Task 5 |
+| 2026-08-17 | **(review) three code citations were wrong when written** (verified `R/` is byte-identical since `b57cdba`, so this is not drift): `R/validate.R:386` -> **391**; the `parquet_sha` verification gate `R/read_write.R:217` -> **227**; `.datom_resolve_version()`'s history read `R/read_write.R:177` -> **187** (with `129` for the current-metadata read). Also `R/utils-git.R:154-159` -> `131-161`, abort at `160`. These matter because design.md section 1 instructs "cite these rather than re-deriving them", so wrong numbers propagate into code comments. | design.md 1 |
+| 2026-08-17 | **(review) duplicate members were undefined -- now refused** (R2.14). `set()` concatenates member digests with **no** `sort` and **no** `unique`, so `[m, m]` and `[m]` hash differently: members are the one position where duplication *is* identity. Nothing said whether that was legal, so the goldens would have frozen an accident. A set listing the same datom version twice has no meaning. | R2.14, AC27 |
+| 2026-08-17 | **(review) the empty-tag-value refusal had no test, and `""` was undefined** -- both settled in R2.14 and AC27. `character(0)` means "no labels", which R2.7 spells by omitting the key; `""` is a label with no name and is likewise refused. R2.7 only said `""` never represents *absence*, which left the separate question of whether it is a legal *label* to be decided by the encoder by accident. | R2.14, AC27 |
+| 2026-08-17 | **(review) the `document_sha` integrity gate had no acceptance criterion** -- the one thing design section 8 calls "building a silent-degradation path on purpose" if got wrong. New **AC28** covers both halves: mismatched bytes refused *before parsing*, and a **missing/empty** `document_sha` an **error rather than a skip**. The second half is what a naive copy of `.datom_read_parquet()`'s `if (!is.null(...) && nzchar(...))` guard gets wrong. Task 9 now claims it. | AC28, I3, P9 |
+| 2026-08-17 | **(review) Tasks 5 and 13 had no `Acceptance:` line at all**, and Task 15's sweep stopped at AC26 (omitting AC27). Both fixed; Task 13 also now owns a test for P14, which had no AC despite R11.3 calling it "in scope rather than deferred". Seven properties were orphaned (defined, referenced by no task) -- P25/P29 attached to Task 8, P4/P8/P28/P30/P31 to Task 2. | Tasks 5, 8, 9, 13, 15 |
+| 2026-08-17 | **(review) three more stale-mechanism references removed**: Task 8 named "the cycle walk's root" as a precondition (there is no cycle walk, and I10a forbids one); Task 13 promised a git-vs-storage payload comparison justified by "R6.1b's git retention", which R6.1b reversed; and the **pathway route card in design section 17 instructed "or recurse"**, contradicting I10 -- that one becomes shipped user documentation in Task 16. Also fixed: the section 19.3 repo sketch still showed `{data_sha}.json` in the git tree, the exact layout AC24 fails. | Tasks 8, 13, design.md 17, 19.3 |
+| 2026-08-17 | **(review) "structural walk" wording survived in R2.2 and three design summary rows**, contradicting R2.10 three paragraphs later. That wording is what seeded F-A, so leaving it in the summaries is how it returns. Restated. Plus cosmetics: P8 asserted independence from `size_bytes`, which R1.4 removed from set metadata (vacuous); the AC count "nine" is now 28; and the one-spelling rule was cross-referenced to R2.10 instead of R2.7. | R2.2, P8, design.md 7 |
 | 2026-08-16 | **(F-A, BLOCKER -- verified) the closed grammar could not derive the payload shape.** R2.11 said `value ::= string \| [string, ...] \| object`, but R2.12 required `members: [{...}, ...]` -- an **array of objects**, which had no production; R2.10 reinforced it ("only three types to tag") and the encoder's `0x05` was named *string* array. Confirmed by reading both against each other: two requirements that could not both be true, same class as F4. An implementer would have improvised -- read `0x05` as a generic array, or invent a fourth tag -- and **frozen the choice into the golden vectors**, which is what E1 exists to prevent. | design.md 7.2.1 |
 | 2026-08-16 | **(F-B -- verified) tag-value array order was identity, and should not have been.** design.md justified order-as-identity with "member order is a curatorial choice the user sees and controls" -- right for `members[]`, wrong for tag values, which the same rule also caught. Confirmed: R2.12 covered member order and tag *key* order but was **silent on tag value order**, so it fell through to the generic array rule. Since a multi-valued tag models *simultaneous folder membership* (R4.6), which is unordered, `domain: ["safety","efficacy"]` vs reversed would have minted a new **citable version** for a semantically null reorder. Does not weaken Q1: a tag *edit* minting a version is intended, a *reorder* is not an edit. | design.md 7.2.2 |
 | 2026-08-16 | **Resolution 1 -- `id` split from `tags` in the payload** (R2.12). The payload holds exactly two kinds of content: a well-specified reference record with fixed single-string keys, and an open tag map. Made structural rather than four fixed fields sitting loose beside a nested map. Tags stay per-member (R4.6 unchanged). | R2.12, R4.1, R4.6 |
