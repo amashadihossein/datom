@@ -122,7 +122,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| datom-sets | 2026-08-09 | **Task 1 of 16 complete; next is Task 2 (`datom-sv1`), which carries the E1 escalation.** Issue [#89](https://github.com/amashadihossein/datom/issues/89): second artifact kind -- versioned, citable **sets** of datoms (a reference layer, not a data layer). Branch `spec/datom-sets` off `dev`, PR [#97](https://github.com/amashadihossein/datom/pull/97) into `dev` (submission freeze). Prerequisite [#95](https://github.com/amashadihossein/datom/issues/95) landed separately via PR #96. **15 tasks**; two flagged for **Model Escalation** at plan time: Task 2 (`datom-sv1` canonical set-content hash -- gates the golden vectors) and Task 5 (`manifest$tables` -> `manifest$artifacts` -- 8 call sites across 4 files, silent writer/reader-disagreement failure mode). Independent review resolved 12 findings (`6954c46`); spec delta D1-D8 applied (`2944a8c`) recording that the **`mode: product` repo is the joint repo** (data + code + `renv.lock`, one commit graph) and adding `datom_repo_commit()` + `datom_write_set(include_paths=)`. A final adversarial review fixed 5 blockers + 15 lesser findings (`71f7d96`), and `dev/check-spec.R` now gates spec structure mechanically (`15f6401`). **Task 1 done** (`2026-08-17`): stale docstrings swept, three relative-key helpers added, 16/17 key sites migrated, [#98](https://github.com/amashadihossein/datom/issues/98) filed. Tests 2460 -> **2482**. | [.kiro/specs/datom-sets/](../.kiro/specs/datom-sets/) |
+| datom-sets | 2026-08-09 | **Tasks 0-1 of 16 done. NEXT: Task 2 (`datom-sv1`), which carries the E1 escalation -- surface it BEFORE implementing (rule 5d). Read `.kiro/specs/datom-sets/tasks.md` first: its "Where things stand" block at the top has the current state, the open item awaiting the owner, and the per-commit gate.** Issue [#89](https://github.com/amashadihossein/datom/issues/89): second artifact kind -- versioned, citable **sets** of datoms (a reference layer, not a data layer). Branch `spec/datom-sets` off `dev`, PR [#97](https://github.com/amashadihossein/datom/pull/97) into `dev` (submission freeze). Prerequisite [#95](https://github.com/amashadihossein/datom/issues/95) landed separately via PR #96. **16 work tasks** (numbered 1-16, plus Task 0 for the spec itself); two flagged for **Model Escalation** at plan time: Task 2 (`datom-sv1` canonical set-content hash -- gates the golden vectors) and Task 5 (`manifest$tables` -> `manifest$artifacts` -- **9 sites across 4 files** (3 write + 6 read), silent writer/reader-disagreement failure mode). Independent review resolved 12 findings (`6954c46`); spec delta D1-D8 applied (`2944a8c`) recording that the **`mode: product` repo is the joint repo** (data + code + `renv.lock`, one commit graph) and adding `datom_repo_commit()` + `datom_write_set(include_paths=)`. A final adversarial review fixed 5 blockers + 15 lesser findings (`71f7d96`), and `dev/check-spec.R` now gates spec structure mechanically (`15f6401`). **Task 1 done** (`2026-08-17`): stale docstrings swept, three relative-key helpers added, 16/17 key sites migrated, [#98](https://github.com/amashadihossein/datom/issues/98) filed. Tests 2460 -> **2482**. | [.kiro/specs/datom-sets/](../.kiro/specs/datom-sets/) |
 
 ### Drafts (queued, not active)
 
@@ -249,8 +249,14 @@ When starting a new development session:
 
 1. Check the **Active Specs** table above
 2. Open the active spec under `.kiro/specs/{feature}/` (requirements, design, tasks)
-3. In `tasks.md`, find the next unchecked task
+3. **Read the state block at the top of `tasks.md`** -- an active spec carries its branch, its PR
+   target, the current test count, the next task, and anything still open with the owner there. Then
+   find the next unchecked task.
 4. Continue from where we left off
+
+If a spec touches `R/`, read `dev/engineering-notes.md` before editing. If it has a
+`check-spec.R`-able structure, run `Rscript dev/check-spec.R` as part of each chunk (step 3a of the
+Chunk Delivery Checklist).
 
 ---
 

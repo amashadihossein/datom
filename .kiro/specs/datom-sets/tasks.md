@@ -1,8 +1,64 @@
 # Tasks -- datom sets (second artifact kind)
 
-**Source issue**: [#89](https://github.com/amashadihossein/datom/issues/89)
-**Branch**: `spec/datom-sets` (cut from `dev`; PRs into `dev`)
-**Test baseline at spec start**: 2460 passing, 0 failures
+**Source issue**: [#89](https://github.com/amashadihossein/datom/issues/89) -- plus **three delta
+comments on that issue** that amend it (joint-repo decision; E1 question resolutions; the sv1
+payload/encoding restructure). All three are already applied here, so this spec -- not the issue
+body alone -- is the current truth.
+**Branch**: `spec/datom-sets`, cut from `dev`. **PRs into `dev`, not `main`** -- 0.1.0 is under CRAN
+review and `main` is frozen (see `dev/README.md` "Branching During CRAN Submission"). Draft PR
+[#97](https://github.com/amashadihossein/datom/pull/97) is open and accumulates the task commits.
+**Test baseline**: 2460 at spec start -> **2482 after Task 1**. Report the count in every commit
+message; it must never drop.
+
+---
+
+## Where things stand
+
+**Done**: Task 0 (spec) and **Task 1** (stale docstring sweep + relative-key helpers), plus two
+things that are not tasks: the prerequisite #89 named
+([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before* this
+branch was cut, deliberately outside this history), and `dev/check-spec.R`.
+
+**Next**: **Task 2 -- `datom-sv1`**. It carries the **E1 escalation**, and per rule 5d that
+recommendation must be surfaced *before* implementing, not after. The gate is now a **design review
+of the encoding specification** -- all five original open questions are settled (design.md 7.5).
+What still warrants the careful pass: the exact byte rules in design.md 7.2, whether the marker
+table leaves any collision surface, and whether the goldens cover the agreement cases in 7.3.
+**Goldens freeze the encoding** -- changing anything afterwards is a `datom-sv2` bump, not a spec
+edit.
+
+**Open with the owner** (do not silently resolve):
+
+1. **Task 1 scope deviation.** Folding `.datom_validate_sha()` into the payload-key helper closed a
+   real gap -- `.datom_validate_one_table()` spliced a file-supplied `data_sha` into a storage key
+   with no validation, a site #74's guard sweep missed -- but the chunk was scoped
+   behavior-identical, and it required updating one test fixture that used an impossible
+   `data_sha = "d1"`. Offered to back the guard out; no answer yet. Recorded in Task 1's notes.
+2. Nothing else. Every other decision in this spec is settled and logged in the Decisions log at the
+   bottom of this file.
+
+**Before each commit** (the chunk gate):
+
+```
+Rscript -e 'devtools::test()'      # report the count; it must not drop
+Rscript dev/check-spec.R           # structural gate on this spec -- see dev/README.md
+```
+
+`check-spec.R` catches dangling `R*/I*/P*/AC*` references, orphaned criteria, tasks missing an
+`Acceptance:` clause, code citations pointing outside the file, and retired wording surviving as a
+live instruction. It is **structural only** -- on the last review round it would have caught about
+half the findings. Reasoning defects still need a reader.
+
+**Read before editing `R/`**: `dev/engineering-notes.md`. The two most relevant entries for the
+remaining tasks are the **two key shapes** (full vs relative -- mixing them double-prefixes
+silently and does not error) and **payload key vs snapshot key** (different directories, both `.json`
+for a set).
+
+**One repeating defect pattern, worth knowing before Task 2.** Four review rounds found the same
+class: an encoding change swept requirements.md and the acceptance criteria but left the
+invariant/property tables in design.md, and Task 2's own bullets, describing the old mechanism. If
+you change the encoding, check those three places explicitly, and add the retired phrasing to the
+`retired` denylist in `dev/check-spec.R`.
 
 One task (or a small related group) = one chunk = one commit. Mark the checkbox in the **same
 commit** as the code, and update the `dev/README.md` Active Specs status line. Per Operational
