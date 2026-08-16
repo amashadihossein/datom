@@ -969,7 +969,8 @@ datom_get_conn <- function(path = NULL,
 
   # --- Governance attachment detection (four-state matrix) -------------------
   # governance.json (in the local clone) is the canonical gov-attachment signal.
-  # project.yaml carries no governance coordinates after Phase 21 Chunk 2.
+  # project.yaml no longer carries governance coordinates, so it cannot be
+  # consulted for attachment state.
   gov_json <- .datom_read_governance_json_local(path)
   has_gov_json  <- !is.null(gov_json)
   has_gov_store <- !is.null(store$governance)

@@ -27,7 +27,7 @@ necessary.
 
 ## Phase A -- Contract-neutral groundwork
 
-- [ ] **1. Housekeeping: stale docstrings + relative-key helpers**
+- [x] **1. Housekeeping: stale docstrings + relative-key helpers**
   - Fix the stale "task 5.1" `parquet_sha` claims at `R/read_write.R:105-108`, `205-206`, `413`,
     and reword the already-correct-but-now-inconsistent comment at `393` (R13.3 has the site
     table). History **has** persisted `parquet_sha` since #72; only pre-#72 legacy entries lack
@@ -42,6 +42,27 @@ necessary.
     `R/validate.R` to the helpers. Behavior-identical -- assert with the existing suite.
   - File the separate issue for the `metadata_sha` emitter-drift exposure (design.md section 16).
     Do **not** implement it here.
+  - **DONE 2026-08-17.** Filed as [#98](https://github.com/amashadihossein/datom/issues/98).
+    Four stale "task 5.1" docstrings reworded (105-108, 205-206, 393, 413) plus **three
+    pre-existing phase/chunk comments** the Don'ts forbid, found while sweeping
+    (`R/conn.R`, `R/governance_json.R`, `R/utils-gov.R` -- the last was doubly stale, pointing at
+    a gov write surface that has since been lifted out). Three relative-key helpers added to
+    `R/utils-path.R` and **16 of 17** hand-rolled key sites migrated across 7 files
+    (`read_write.R`, `query.R`, `lineage.R`, `validate.R`, `sync.R`, `utils-sha.R`).
+    tests: **2482** (+22).
+  - **Deliberate exclusion**: `R/sync.R:250` still builds its key with `paste0`. It splices a
+    *discovered filename* (already `{sha}.json`) rather than a bare sha, so the helper's sha guard
+    does not fit, and adding one would change behavior -- a stray `.json` in `.metadata/` would
+    start aborting instead of being uploaded. Commented in place.
+  - **SCOPE DEVIATION, recorded rather than absorbed.** This chunk was scoped behavior-identical,
+    and folding `.datom_validate_sha()` into the payload-key helper is **not**: it closed a real gap
+    (`.datom_validate_one_table()` spliced `meta$data_sha`, read from a file, into a storage key with
+    **no** validation -- #74's guard sweep missed this site, so a corrupt or hostile `metadata.json`
+    containing `../../x` could probe outside the namespace on the local backend). One test fixture
+    used `data_sha = "d1"`, a value that cannot occur in real data since every sha is 64 hex, and it
+    was updated to a realistic digest. Observable behavior for *valid* data is unchanged, and a new
+    test pins that a corrupt `data_sha` still surfaces as a `data_missing_s3` finding rather than
+    aborting the validation run.
   - _Requirements: R5.2, R13.3. Invariants: I9. **Acceptance: none by design** -- this chunk is
     contract-neutral (docstring wording plus behavior-identical key helpers), so the existing
     suite passing unchanged *is* the assertion. Recorded explicitly so the absence is not read as

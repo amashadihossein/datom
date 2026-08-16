@@ -465,7 +465,10 @@ test_that("datom_validate handles multiple tables with mixed status", {
     # Good table — everything on S3
     fs::dir_create("good_tbl")
     jsonlite::write_json(
-      list(data_sha = "d1"),
+      # A realistic 64-hex digest: the payload-key builder validates data_sha
+      # (6-64 lowercase hex), so a short stub like "d1" is rejected and the
+      # table would report data_missing_s3 instead of ok.
+      list(data_sha = strrep("d1", 32L)),
       "good_tbl/metadata.json", auto_unbox = TRUE
     )
     jsonlite::write_json(list(), "good_tbl/version_history.json",
@@ -474,7 +477,7 @@ test_that("datom_validate handles multiple tables with mixed status", {
     # Bad table — nothing on S3
     fs::dir_create("bad_tbl")
     jsonlite::write_json(
-      list(data_sha = "d2"),
+      list(data_sha = strrep("d2", 32L)),
       "bad_tbl/metadata.json", auto_unbox = TRUE
     )
 
