@@ -94,7 +94,13 @@ There is no view or navigation config -- see "Tags replace structure" below.
   parquet bytes must never enter git).
 - **No member index.** `column_hashes` exists so you can diff a table without downloading
   parquet. The payload is small and cheap to read, so a member index would be
-  metadata-for-metadata.
+  metadata-for-metadata. **This is also the answer to "how does a git-less reader diff two
+  versions?"** -- it reads `version_history.json` (which already carries `data_sha` per entry,
+  `R/read_write.R:480-487`) to map version -> `data_sha`, then fetches the two content-addressed
+  payloads and compares them: three small JSON reads, no git. That yields the **actual changed
+  values**, which per-member digests could not. Diffing `members[]` must key on
+  `id$project` + `id$name` rather than array position, since member order is not identity for
+  tags and a reorder must not read as a change. Two rejected alternatives in section 15.
 - **No view or navigation config either** -- and this is the decision that lets the payload be
   text-only (R2.11). See "Tags replace structure" below.
 
@@ -793,6 +799,8 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **A separate code/env repo -- a fourth repo per product.** | **Rejected.** Cross-repo pinning is **circular**: the code repo wants to record which set version it produced, and the set payload wants to record which code commit produced it -- one is always stale by one commit. A joint version requires one commit graph. Also doubles per-product repo cost, and P17 would then cover pointers only. See section 19. |
 | **datom machine-moment commits use add-all.** | **Rejected.** Machine-chosen commit moments would snapshot arbitrary WIP state of human code. Add-all is correct **only** at human-chosen moments -- which is exactly what `datom_repo_commit(paths = NULL)` provides (R15.1). |
 | **Downstream packages do their own git via `git2r`.** | **Rejected.** Two independent git actors in one repo eventually violate the git-gates-storage assumptions (competing pushes, unseen pulls, half-staged trees). Single writer: all mutation flows through datom's exposed surface. |
+| **Persist per-member digests in metadata**, as a `column_hashes` analogue, so a reader can tell which member changed between versions. | **Rejected -- the need is already met** (section 4). Nearly free to produce, since the hash-of-hashes computes `member()` as an intermediate anyway, and identity-safe (it would be volatile, like `column_hashes`). But it is strictly weaker than the payload diff it would compete with: it reports *that* a member changed, never *what*. `column_hashes` earns its place only because the alternative is downloading parquet -- possibly gigabytes -- and that argument does not transfer to a small text payload the reader can just fetch. There is also **no code to reuse**: `column_hashes` has no consumer in `R/` today and `datom_diff` is unbuilt (#73), so the "parallel with tables" is conceptual, not mechanical. The one case it genuinely wins is a **change timeline across many versions** (one `version_history.json` read instead of two reads per pair), at the cost of `N_members` x `N_versions` hashes in one file. Deferred rather than refused: the field is additive and volatile, so it can be added whenever that need becomes real, with no schema break. |
+| **Move tags out of the payload into `metadata.json`**, hashing payload and tags separately with a pairing key, then a product hash over both. | **Rejected -- costs the most, buys nothing the above does not.** It requires a **stable per-member pairing key**, which is a new identity concept to specify, test and keep from drifting between two files. Every read then fetches both files and reassembles, and the folder-projection consumer (`dp$output$cm`) needs tags at read time regardless, so the split saves no IO. It also **reopens Q1** -- identity currently covers the whole payload including tags -- and would move tags under `metadata_sha`'s domain, i.e. back under the third-party emitter exposure that section 7.4 exists to escape. Directly contradicts the "a set is metadata-flavored, tags live in the payload" decision (section 4, R6.2). |
 
 ---
 

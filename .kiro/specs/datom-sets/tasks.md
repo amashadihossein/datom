@@ -27,15 +27,10 @@ table leaves any collision surface, and whether the goldens cover the agreement 
 **Goldens freeze the encoding** -- changing anything afterwards is a `datom-sv2` bump, not a spec
 edit.
 
-**Open with the owner** (do not silently resolve):
-
-1. **Task 1 scope deviation.** Folding `.datom_validate_sha()` into the payload-key helper closed a
-   real gap -- `.datom_validate_one_table()` spliced a file-supplied `data_sha` into a storage key
-   with no validation, a site #74's guard sweep missed -- but the chunk was scoped
-   behavior-identical, and it required updating one test fixture that used an impossible
-   `data_sha = "d1"`. Offered to back the guard out; no answer yet. Recorded in Task 1's notes.
-2. Nothing else. Every other decision in this spec is settled and logged in the Decisions log at the
-   bottom of this file.
+**Open with the owner**: nothing. Two items opened after Task 1 and both closed on 2026-08-17 --
+the Task 1 scope deviation (**owner-approved, guard stays**) and the reader-side diff question
+(**option 3: no schema change**). Both are in the Decisions log at the bottom of this file, along
+with every other decision in this spec.
 
 **Before each commit** (the chunk gate):
 
@@ -110,7 +105,8 @@ necessary.
     *discovered filename* (already `{sha}.json`) rather than a bare sha, so the helper's sha guard
     does not fit, and adding one would change behavior -- a stray `.json` in `.metadata/` would
     start aborting instead of being uploaded. Commented in place.
-  - **SCOPE DEVIATION, recorded rather than absorbed.** This chunk was scoped behavior-identical,
+  - **SCOPE DEVIATION -- OWNER-APPROVED 2026-08-17, the guard stays.** This chunk was scoped
+    behavior-identical,
     and folding `.datom_validate_sha()` into the payload-key helper is **not**: it closed a real gap
     (`.datom_validate_one_table()` spliced `meta$data_sha`, read from a file, into a storage key with
     **no** validation -- #74's guard sweep missed this site, so a corrupt or hostile `metadata.json`
@@ -626,3 +622,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-15 | **Git-commit-linkage follow-ups asked and confirmed as-is, no change** (R20/R21): (a) lagging `commit_sha` into the git copy on a subsequent write, (b) moving the linkage into governance, (c) recording *all* producing commits rather than the first. Examined; the existing spec answers hold -- (a) leaves the newest version permanently unlinked, (b) makes a git-less-reader convenience depend on gov being attached, (c) turns an immutable history entry into an append target. Logged so they are not re-litigated. | R20, R21 |
 | 2026-08-11 | **Process lesson recorded, not patched over.** The nesting machinery entered via review finding F1, which correctly spotted a contradiction between two spec statements and was resolved by *adding* guards rather than by testing whether either statement was true. Both were false. When a review surfaces a contradiction, **check the premises before building something to reconcile them**. | design.md 18 (F1 row), 20.11 |
 | 2026-08-11 | **AC1 split** into (a) resolve pointers -- always works, no clone -- and (b) resolve to data -- needs that member's project conn. Conflating them mis-implements a set read as "requires access to everything in it". `datom_validate()`'s member check scoped the same way (R11.2), reusing `members_unresolvable`. | AC1, R11.2, Tasks 9 and 13 |
+| 2026-08-17 | **Task 1 scope deviation -- OWNER-APPROVED, the guard stays.** Folding `.datom_validate_sha()` into `.datom_artifact_payload_key()` exceeded the chunk's behavior-identical scope, because it closed a real path-traversal gap at `.datom_validate_one_table()` (`R/validate.R:393`) that #74's sweep missed -- a file-supplied `data_sha` spliced into a storage key unvalidated -- and cost one test fixture using an impossible `data_sha = "d1"`. Kept rather than reverted: the alternative leaves a known gap behind a tracking issue competing with 15 remaining tasks, for a purity cost of one fixture line. Behavior for valid data is unchanged. | Task 1, I9, `R/utils-path.R` |
+| 2026-08-17 | **Reader-side version diff needs no schema change -- option 3 chosen.** A git-less reader can already diff two set versions with three small JSON reads: `version_history.json` (which carries `data_sha` per entry today, `R/read_write.R:480-487`) to map version -> `data_sha`, then the two content-addressed payloads. **Rejected: persisting per-member digests in metadata** as a `column_hashes` analogue (see design.md 15 for both rejected options). The decisive points: the payload diff reports **actual values** where digests report only "something changed"; `column_hashes` earns its place solely because the alternative is downloading parquet, which does not transfer to a small text payload (design.md 4, "a member index would be metadata-for-metadata"); and there is **no code to reuse** -- `column_hashes` has no consumer in `R/` and `datom_diff` is unbuilt (#73). Member digests remain **additive and volatile**, so they can be added later without a schema break or identity change if a cross-version change timeline proves to be a real need. **No impact on Task 2**: sv1's encoding is identical under this decision, since it would only have published intermediates the hash-of-hashes already computes. | design.md 4 + 15, R6, Task 9 |
