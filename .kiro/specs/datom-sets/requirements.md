@@ -181,9 +181,11 @@ the test.
   - **No runtime type dispatch, therefore no possible gap.** Every position's shape is known from
     *where it sits*, so the encoder never asks "what type is this?" and cannot have an unhandled
     answer. This is what closes F-A (R2.11).
-  - **`members` is the only `concat` without a `sort`.** Tag keys and tag values are always sorted,
-    and tag values are also **deduped**, so "is this position ordered?" is never a judgment call.
-    This is what closes F-B (R2.12).
+  - **Every collection is sorted and deduped -- no exceptions, no carve-out.** Tag keys, tag values
+    and `members` are all sorted; tag values and members are also **deduped**. So "is this position
+    ordered?" has one answer everywhere and is never a judgment call. This is what closes F-B
+    (R2.12). An earlier draft made `members` the single unsorted position; **retired by D2** -- see
+    R2.12 for the three arguments.
   - **`id` is encoded with `map`, not positionally.** Adding a fifth id field later is then just
     another key -- no positional convention to maintain and no absent-versus-empty question -- and
     one encoder serves both `id` and `tags`. Id values are single strings, encoded as one-element

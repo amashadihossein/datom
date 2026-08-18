@@ -248,7 +248,9 @@ retired <- c(
   "only unsorted concat",
   "only `concat` without a `sort`",
   "order is curatorial",
-  "duplication *is* identity"
+  "duplication \\*is\\* identity",
+  "member order different",
+  "member order.{0,20}differ"
 )
 # Deliberately NOT listed: "manifest$tables". The phrase is load-bearing in the
 # rename requirement itself ("manifest$tables becomes manifest$artifacts") and in
@@ -257,20 +259,36 @@ retired <- c(
 # which this script does not read.
 
 # An occurrence is allowed when any of these appears within +/- 2 lines. Stems
-# are used on purpose ("remov" covers remove/removed/removes) and negation cues
-# matter as much as historical ones, since the commonest legitimate mention is a
-# sentence saying the thing is NOT done.
+# are used on purpose ("remov" covers remove/removed/removes).
+#
+# MAINTENANCE LESSON, 2026-08-17 -- keep this list NARROW. It previously also
+# carried generic negation and impossibility cues ("never", "cannot",
+# "not needed", "not required", "acyclic", "impossible", "unrepresentable",
+# "immaterial", "dissolve", "collapse"), on the reasoning that the commonest
+# legitimate mention is a sentence saying the thing is NOT done. That reasoning
+# is wrong at scale: those words are ordinary vocabulary in this spec, so nearly
+# every +/- 2 line window contained one and the check was close to vacuous.
+#
+# It was caught when the D2 delta (member order out of identity) left FIVE live
+# or logged occurrences of retired ordering wording and this check passed on all
+# five. The clearest case: requirements.md's "`members` is the only `concat`
+# without a `sort`" ended with "is never a judgment call" -- the retired phrase
+# SELF-SUPPRESSED on the word "never" in its own sentence.
+#
+# The tradeoff is deliberate. A false positive costs one author-added marker
+# word; a false negative ships a retired instruction that reads authoritative.
+# Only explicit supersession and explicit prohibition suppress a hit now.
 MARKER_RE <- paste(
-  # historical / supersession
+  # historical / supersession -- explicit only
   "supersed", "earlier draft", "retire", "remov", "revers", "formerly",
   "no longer", "~~", "SUPERSEDED",
-  # prohibition
+  # prohibition -- explicit only
   "do not", "Do not", "deliberately not", "Deliberately NOT", "forbid",
   "not permitted", "permitted to creep", "must not",
-  # negation / impossibility
+  # the three nesting-machinery negations, kept because the retired phrases they
+  # cover ("cycle walk", "visited set", "depth limit") are only ever mentioned
+  # alongside them
   "\\bno depth", "\\bno visited", "\\bno cycle", "\\bNo cycle",
-  "acyclic", "never", "cannot", "not needed", "not required",
-  "impossible", "unrepresentable", "immaterial", "dissolve", "collapse",
   sep = "|"
 )
 
