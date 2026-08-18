@@ -242,11 +242,12 @@ the test.
   Tags stay **per-member** (R4.6): `dp$output$adsl` downstream comes from `type: "output"` on
   `adsl`'s entry.
 
-  **Ordering and duplication, stated in three parts** so nothing falls through to a generic rule:
+  **Ordering and duplication: nothing in the payload is ordered.** One rule, no exceptions, no
+  per-position judgment call:
 
   | Position | Order significant? | Duplicates significant? |
   |---|---|---|
-  | `members` | **yes** -- curatorial, the user sees and controls it | **yes** -- but duplicates are refused, see R2.14 |
+  | `members` | **no** -- sorted by `member()` digest | **no** -- deduped (and refused by validation, R2.14) |
   | tag **keys** | no -- radix-normalised | n/a (keys are unique) |
   | tag **values** | **no** -- radix-sorted | **no** -- deduped |
 
@@ -254,14 +255,36 @@ the test.
   (R4.6), which has no order. `domain: ["safety","efficacy"]` and `domain: ["efficacy","safety"]`
   are the same fact, and must not mint a new citable version. This does not weaken Q1: a tag
   *edit* minting a version is intended; a *reorder* is not an edit.
+
+  **`members` is unordered for the same reason, and that reverses an earlier draft** which made
+  member order identity on the grounds that it is "curatorial -- the user sees and controls it".
+  Three arguments retired it, any one sufficient:
+
+  1. **It contradicted R4.7.** Arrangement is presentation, not content -- that is precisely why no
+     hierarchy is stored. Member order is arrangement. A consumer wanting a display order uses a
+     tag (`order: "3"`), like any other projection.
+  2. **It contradicted this requirement's own reasoning.** The argument that killed tag-value
+     ordering -- a semantically null rearrangement must not mint a citable version -- applies
+     verbatim to members. Applying it to one collection and not the other was inconsistent.
+  3. **The decisive practical one: the expected producer is a script.** A build package emits
+     `members[]` by iterating a list assembled in code. An insertion-order refactor would then mint
+     a new product version with byte-identical content -- a tool's incidental ordering becoming
+     identity, which is the #72 failure class this spec exists downstream of.
+
+  What order-as-identity was thought to buy does not survive inspection: sorting costs one `sort()`
+  over fixed-width 32-byte digests (deterministic and locale-free), and duplicate members are
+  refused by validation either way (R2.14). The encoding also gets *simpler* -- design.md 7.2 no
+  longer needs its "`members` is the only unsorted `concat`" carve-out.
 - **R2.14 -- three degenerate spellings are refused by validation, so one fact has one spelling.**
   None of these is an encoder gap -- the encoder handles all three unambiguously. They are refused
   because leaving them legal lets two payloads state the same fact with different `data_sha`, and
   the goldens would freeze that:
-  - **A duplicated member** (same `project`+`name`+`version` twice). `set()` concatenates member
-    digests **without** `sort` or `unique`, so `[m, m]` and `[m]` hash **differently** -- members
-    are the one position where duplication *is* identity (R2.12). A set listing the same datom
-    version twice has no meaning, so it aborts.
+  - **A duplicated member** (same `project`+`name`+`version` twice). `set()` sorts and dedupes
+    member digests, so `[m, m]` and `[m]` hash **equal** -- the encoder is unambiguous and needs no
+    help. Validation refuses it anyway because a set listing the same datom version twice has no
+    meaning, and per R2.15 the canonical payload would silently drop the second copy, which is
+    better surfaced as an abort than performed quietly. (This reverses an earlier draft in which
+    members were the one position where duplication *was* identity; see R2.12.)
   - **An empty tag value** (`domain = character(0)`). "No labels" is spelled by **omitting the key**
     (R2.7).
   - **An empty-string tag value** (`domain = ""`). A label with no name is not a label. Note R2.7
@@ -272,6 +295,55 @@ the test.
   mean *one label named output*, so making them differ would mint a new citable version over a
   purely syntactic authoring choice -- the same objection that rules out tag-value ordering.
   This **reverses** an earlier AC13 fixture that required them to differ.
+- **R2.15 -- the payload is canonicalized BEFORE the local write, so one content has exactly one
+  byte spelling.** Hash-level insensitivity (R2.12, R2.13) means several payload spellings share one
+  `data_sha`. Since `data_sha` is also the storage address and `document_sha` hashes the stored
+  *bytes*, two spellings at one address would make `document_sha` unverifiable (R7.5). Canonicalizing
+  at the source removes the ambiguity rather than managing it. `datom_write_set()` MUST normalize
+  before it writes `{name}/set.json`, in this order:
+
+  | Step | Rule |
+  |---|---|
+  | 1 | **map keys** radix-sorted (set-level `tags`, each member's `id` and `tags`) |
+  | 2 | **tag values** radix-sorted, then deduped |
+  | 3 | **single values unboxed** -- a one-element value is written as a bare string, arrays only for 2+ |
+  | 4 | **members** sorted by their `member()` digest, then deduped |
+
+  Step 3's direction is chosen, not arbitrary: `jsonlite::write_json(auto_unbox = TRUE)` is already
+  the house default across datom's metadata writers, so unboxing is the free option while
+  always-array would need explicit boxing; and the unboxed form reads better in the `git diff`
+  R6.1a exists to preserve.
+
+  **The canonical form is what gets hashed, committed, and mirrored** -- there is no path where a
+  non-canonical payload reaches disk. A caller that supplies a reordered payload sees it come back
+  normalized, which is the honest outcome: the edit was not a content change, and silently
+  discarding it (the alternative, if canonicalization happened only at hash time) would leave the
+  author wondering where it went.
+
+  **sv1 stays order- and shape-insensitive even so.** R2.12/R2.13 are not made redundant by this:
+  the hash domain is a *parsed file*, which may have been written by an older build or hand-edited,
+  and insensitivity means those still hash correctly. Canonicalization is belt; insensitivity is
+  braces. Both are cheap.
+- **R2.16 -- no Unicode normalization; tag bytes are hashed exactly as given.** Tag keys and values
+  are hashed as their literal UTF-8 bytes, and radix sorting is byte order. NFC and NFD spellings of
+  visually identical text are therefore **different** tags with different `data_sha`. This is stated
+  normatively because it would otherwise be decided by accident, and a non-R implementation might
+  normalize by default.
+
+  Rejected: normalizing to NFC first. It would make visually identical tags equal, which is the
+  appealing part, but **Unicode normalization tables are versioned data that changes across Unicode
+  releases** -- putting them in the identity path means a Unicode version bump can re-mint hashes.
+  That is structurally the same failure as the parquet-serialization drift of #72, with the Unicode
+  Consortium in `arrow`'s role, and sv1 exists precisely to have nothing versioned in its identity
+  path. It would also add a string-processing dependency (`stringi`) to a deliberately lean
+  `Imports`. Consistent with cv1, which already treats NFC-vs-NFD as identity-relevant for table
+  values (labelled as an expected verdict in `dev/e2e-cv1-identity.R`). Recourse is caller-side:
+  normalize your tags before writing.
+- **R2.17 -- the empty string set is pinned.** `strset(character(0))` is `h(0x02)` over an empty
+  concat, exactly as an absent or empty `tags` map is `h(0x03)`. Validation refuses an empty tag
+  value (R2.14) and R2.15 step 2 cannot produce one, but **the encoder must not depend on that**,
+  for the same reason design.md 7.2 already gives for empty maps: an encoder whose correctness rests
+  on an upstream refusal breaks silently the day the refusal is relaxed. Carried as a golden.
 
 **Acceptance**: AC13 below, plus the standalone reference and the in-package implementation
 produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
@@ -428,6 +500,35 @@ Relative to the artifact prefix:
 - **R7.4** `document_sha` goes in the `volatile` exclusion list of
   `.datom_compute_metadata_sha()` (`R/utils-sha.R:412`), for the same reason `parquet_sha` is
   there -- it is a stored-object byte fact, not content identity.
+- **R7.5 -- one `data_sha`, one byte spelling, in git and in storage.** `document_sha` is only
+  meaningful if the bytes at `{name}/{data_sha}.json` never change once written. Two rules enforce
+  that, and **both** are required:
+
+  1. **Never re-emit a payload for a `data_sha` already in history.** Reuse the stored object and
+     **carry the recorded `document_sha` forward**. This is the exact `parquet_sha` pattern:
+     `.datom_lookup_history_parquet_sha()` scans history newest-first for a matching `data_sha` and
+     returns `upload = FALSE` (`R/read_write.R:399-404`, `422-439`). A set needs the direct
+     analogue. Recomputing `document_sha` from freshly emitted bytes while reusing the stored object
+     records a hash of bytes nobody stored, and the failure surfaces only later, as a **refused read
+     of a valid version**.
+  2. **The repair path must not break it either.** `datom_validate(fix = TRUE)` re-uploads metadata
+     and payloads *from the clone*, so if git ever held a different spelling than storage for one
+     `data_sha`, repair would not merely fail to help -- it would **actively** overwrite the stored
+     object with bytes that do not match the recorded `document_sha`. R2.15 is what makes this safe
+     (git holds the canonical form, so there is only one spelling to hold), and repair must
+     additionally never recompute `document_sha` for an existing version.
+
+  **Why sets need this more than tables do.** For a table, two byte streams for one `data_sha`
+  require an `arrow` upgrade -- rare and externally triggered. For a set, R2.12/R2.13 make it
+  reachable by an **ordinary authoring edit** (reorder a tag value), so the rule moves from
+  occasional safety net to routine correctness. Sets also have a git copy of the payload, which
+  parquet never does, which is what brings rule 2 into scope at all.
+
+  **Ownership note**: this is a write-path and repair-path requirement, not an encoder one. It
+  belongs to `datom_write_set()` (Task 8) and `datom_validate()` (Task 13), **not** Task 2. It is
+  recorded here because it is a *consequence* of the Task 2 encoding decisions, and a Task 8
+  implementer who assumes "new bytes mean a new `document_sha`" ships a defect that every
+  per-chunk test passes.
 
 ### R8 -- One typed namespace in `manifest.json` **[BREAKING]**
 
@@ -932,7 +1033,8 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC7** | **Schema gate fires, both directions.** *Refuse-newer*: a repo declaring `schema_version: 3` aborts with the upgrade message, at **both** entry points (manifest and per-artifact metadata). *Tolerate-older*: a repo with no `schema_version` field behaves exactly as 0.1.0 did. **Mechanism note**: an actually-installed 0.1.0 reader has no gate to fire, so this is not testable by installing an old version -- the test drives `.datom_check_schema_version()` directly with a fixture declaring a version above `SUPPORTED_SCHEMA`. Test the gate, not the archaeology. |
 | **AC8** | **Lineage isolation.** A set's metadata contains no `parents` and no `source_lineage` (**omitted, not null**), and writing a set does not alter any member's lineage. |
 | **AC9** | **Self-reference refused.** Writing a set that lists itself (any version of itself) as a member is refused at write time with a clear error (R4.5). Note this is a nonsense check, **not** cycle detection -- cycles are structurally impossible (R4.4), so there is deliberately no cycle test and no depth test. |
-| **AC13** | **Write/read hash agreement, plus what is and is not identity.** For every golden fixture, `data_sha` from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back (parsed with `simplifyVector = FALSE`). Covers R2.5. Four fixtures pin the identity boundary, and each is a separate case: (a) payloads differing only in tag-value **order** hash **equal**; (b) differing only in tag-value **duplication** hash **equal**; (c) differing only in **member order** hash **differently**; (d) a **single string vs a one-element array** hash **equal** (R2.13). Note (d) **reverses** an earlier fixture that required them to differ. Number and boolean cases are not applicable -- see AC27. |
+| **AC13** | **Write/read hash agreement, plus what is and is not identity.** For every golden fixture, `data_sha` from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back (parsed with `simplifyVector = FALSE`). Covers R2.5. **Seven fixtures** pin the identity boundary, each a separate case. Equal: (a) tag-value **order**; (b) tag-value **duplication**; (c) **member order** (R2.12); (d) **single string vs one-element array** (R2.13); (e) **member duplication** (R2.14). Different: (f) **NFC vs NFD** spellings of visually identical tag text (R2.16). Pinned constant: (g) `strset(character(0)) == h(0x02)` (R2.17). Note (c) and (d) each **reverse** an earlier fixture that required a difference. Number and boolean cases are not applicable -- see AC27. |
+| **AC29** | **Canonicalization happens before the local write, and one `data_sha` keeps one byte spelling.** (a) A payload supplied with unsorted tag values, a duplicated tag value, an array-wrapped single value, and unsorted members is written to `{name}/set.json` in canonical form -- assert on the **file bytes**, not the return value (R2.15). (b) Re-writing a payload whose `data_sha` is already in history does **not** re-upload and does **not** recompute `document_sha`; the recorded value is carried forward and the stored object is untouched (R7.5 rule 1). (c) `datom_validate(fix = TRUE)` on such a repo leaves the stored payload bytes and the recorded `document_sha` unchanged, and a subsequent version-pinned read still verifies (R7.5 rule 2). (c) is the clause a naive implementation fails while passing (a) and (b). |
 | **AC14** | **`datom_read_set()` on a table** aborts pointing at `datom_read()` -- the converse of AC6, not a missing-payload error for a healthy table. |
 | **AC15** | **Nesting resolves one level -- no traversal.** Reading a set whose members include another set returns a **pointer** to that inner set (`kind = "set"`, name, project, version), and does **not** fetch the inner set's own members. Asserted by observing that no storage read of the inner set's payload occurs. Covers R4.3, and guards against an implementer "helpfully" flattening the tree. |
 | **AC16** | **Machine-commit isolation.** In a `mode: product` repo with an uncommitted edit at `R/foo.R`, a `datom_write()` of a table produces a commit whose tree does **not** contain the `R/foo.R` change, **and** `R/foo.R` is still dirty in the working tree afterward. Both halves matter: the second catches a "helpfully" cleaned working tree (R14.1). |
@@ -946,7 +1048,7 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC24** | **The git payload is diffable.** After writing a set twice with one member added, `git diff` on `{name}/set.json` between the two commits shows the **member-level** change (one added entry), not a whole-file add. Guards R6.1a/b -- a content-addressed git filename would make this test impossible to write. |
 | **AC25** | **`commit_sha` is present, git-less, and survives repair.** After a set write: the **storage** copy of `version_history.json` carries `commit_sha` for the new version; the **git** copy does not (it cannot -- it is inside that commit); and after `datom_validate(fix = TRUE)` re-uploads metadata, `commit_sha` is **still there**, re-derived from `git log` rather than stripped (R21.6/R21.7). The third clause is the one that fails silently in a naive implementation. |
 | **AC26** | **A code-only change mints no new version.** With the set's member list unchanged, modifying tracked code and re-running `datom_write_set()` produces **no new version**, and the existing version's recorded `commit_sha` is **unchanged** (still the first producing commit). Encodes the option-1 decision (R21.2/R21.3) so a later "improvement" that makes versions code-sensitive fails a test. |
-| **AC27** | **The payload grammar is enforced, not assumed.** A tag value that is a number, logical, factor, function, nested list, or `NA` is **refused** at write time, with a message naming the offending key and the allowed types (R2.11). **Plus the three degenerate spellings of R2.14**: a duplicated member, an empty tag value (`character(0)`), and an empty-string tag value (`""`). Tested **per offending case**, not as one lumped assertion, so a regression names which one leaked through. This is the test that keeps I24 true -- without it, "just allow numbers" is a one-line change nobody notices. |
+| **AC27** | **The payload grammar is enforced, not assumed.** A tag value that is a number, logical, factor, function, nested list, or `NA` is **refused** at write time, with a message naming the offending key and the allowed types (R2.11). **Plus the three degenerate spellings of R2.14**: a duplicated member (refused because R2.15 would otherwise drop the copy silently, not because the encoder is ambiguous -- it is not), an empty tag value (`character(0)`), and an empty-string tag value (`""`). Tested **per offending case**, not as one lumped assertion, so a regression names which one leaked through. This is the test that keeps I24 true -- without it, "just allow numbers" is a one-line change nobody notices. |
 | **AC28** | **The `document_sha` integrity gate fires, and never silently skips.** (a) A set whose stored payload bytes do not match the recorded `document_sha` is **refused before parsing** -- assert the abort occurs without the payload being parsed. (b) Metadata with a **missing or empty** `document_sha` is an **error, not a skip** (R7.1, I3): sets have no legacy population, so reproducing `parquet_sha`'s pre-cv1 grace would be building a silent-degradation path on purpose. Both halves matter, and (b) is the one a naive implementation gets wrong by copying `.datom_read_parquet()`'s `if (!is.null(...) && nzchar(...))` guard. |
 
 Plus the standing project gates:

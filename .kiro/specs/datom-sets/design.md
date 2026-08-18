@@ -383,7 +383,7 @@ map(m)     = h( 0x03 || concat( str(k) || strset(m[k])
                                 for k in sort(keys(m), method = "radix") ) )
 
 member(x)  = h( 0x04 || map(x.id) || map(x.tags) )
-set(p)     = h( 0x05 || map(p.tags) || concat( member(m) for m in p.members ) )
+set(p)     = h( 0x05 || map(p.tags) || concat( sort(unique( member(m) for m in p.members )) ) )
 
 data_sha   = h( 0x06 || utf8("datom-sv1") || set(payload) )
 ```
@@ -396,7 +396,7 @@ Domain-separation markers:
 | `0x02` | string set | radix-sorted, deduped -- order and duplication are not identity |
 | `0x03` | map | radix-sorted keys; serves both `id` and `tags` |
 | `0x04` | member | `map(id) || map(tags)` |
-| `0x05` | set | `map(tags) || concat(member...)` -- the only unsorted concat |
+| `0x05` | set | `map(tags) || concat(member...)` -- sorted and deduped like every other collection |
 | `0x06` | payload root | prefixed with `utf8("datom-sv1")` |
 | *retired* | **number** | not in the grammar -- nothing in a payload is arithmetic (R2.11) |
 | *retired* | **boolean** | not in the grammar -- a boolean tag is the text `"true"` |
@@ -408,8 +408,10 @@ Properties worth naming:
 - **No runtime type dispatch, therefore no possible gap.** Every position's shape is fixed by
   *where it sits*, so the encoder never asks "what type is this?" and cannot have an unhandled
   answer. The old walk asked at runtime and so needed an exhaustive answer -- which it did not have.
-- **`members` is the only `concat` without a `sort`.** Everything else is sorted, and tag values are
-  deduped too, so "is this position ordered?" is never a judgment call.
+- **Every collection is sorted and deduped. No exceptions.** So "is this position ordered?" is never
+  a judgment call, and there is no carve-out to remember. An earlier draft made `members` the one
+  unsorted `concat`; that is retired (R2.12 carries the three arguments). Sorting members means
+  sorting their fixed-width 32-byte digests, which is deterministic and locale-free.
 - **`id` is encoded with `map`, not positionally.** A fifth id field later is just another key: no
   positional convention, no absent-versus-empty question, and one encoder serves both `id` and
   `tags`. Id values are single strings encoded as one-element strsets -- the encoder stays out of
@@ -421,12 +423,32 @@ Properties worth naming:
   equal, because every map value passes through `strset`.
 
 Pinned edges: absent `tags` and `tags: {}` encode identically (`h(0x03)` over an empty concat), and
-the encoder must not depend on writers never emitting `{}`; duplicate values are not identity;
-`radix` sort throughout for locale independence; a zero-member set is still refused (R2.8); the three degenerate
+the encoder must not depend on writers never emitting `{}`; **`strset(character(0))` is `h(0x02)`**
+by the same argument (R2.17); duplicate values are not identity;
+`radix` sort throughout for locale independence, which is **byte order -- no Unicode normalization is
+applied** (R2.16); a zero-member set is still refused (R2.8); the three degenerate
 spellings of R2.14 (duplicated member, empty tag value, empty-string tag value) are refused by
 **validation** rather than encoded, so one fact has one spelling (R2.7, R2.14).
 
 Exact byte rules are normative in `dev/datom_sv1_reference.R`.
+
+#### 7.2.3 The consequence that lands outside the encoder (R2.15, R7.5)
+
+Order- and shape-insensitivity means **several payload spellings share one `data_sha`**. Since
+`data_sha` is also the storage address while `document_sha` hashes stored *bytes*, that is a
+correctness question for the write path, not the encoder:
+
+- **R2.15 canonicalizes before the local write** -- sort keys, sort and dedupe tag values, unbox
+  singletons, sort and dedupe members -- so one content has exactly one spelling in git and in
+  storage.
+- **R7.5 keeps it true over time**: never re-emit a payload for a `data_sha` already in history
+  (carry the recorded `document_sha` forward, mirroring
+  `.datom_lookup_history_parquet_sha()` at `R/read_write.R:399-404`), and hold
+  `datom_validate(fix = TRUE)` to the same rule, since it re-uploads from the clone.
+
+Without both, the failure is a **refused read of a valid version**, surfacing long after the write
+that caused it. It is called out here because it is a consequence of *this section's* decisions,
+while the code belongs to Tasks 8 and 13.
 
 #### 7.2.1 What was wrong with the walk (finding F-A)
 
@@ -741,6 +763,8 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I23** | **A version is content-derived and code-invariant**, identically for tables and sets. Nothing code-derived -- not a commit SHA, not a code or environment hash -- may enter `metadata_sha` or a payload (R21.1, R21.4). |
 | **I24** | **The payload is text-only** (R2.11): every leaf is a UTF-8 string or an array of them. No numbers, booleans, `null`, or nesting beyond the fixed shape (R2.12) may be admitted -- not as a convenience, not "just for this field". Admitting one reopens an encoder rule and widens the golden matrix. |
 | **I25** | **No navigation or view structure is stored.** Folder-like hierarchy is a projection over tags computed by the consumer (R4.7). datom stores tag facts and takes no position on hierarchy. |
+| **I26** | **No non-canonical payload ever reaches disk.** `datom_write_set()` canonicalizes (R2.15) before hashing, committing, or mirroring, so `{name}/set.json` and `{name}/{data_sha}.json` always hold the canonical form. No code path may write a caller's payload verbatim. |
+| **I27** | **The bytes at `{name}/{data_sha}.json` are written once and never rewritten.** Any path that could re-upload -- a repeat write, a revert to older content, or `datom_validate(fix = TRUE)` -- reuses the stored object and carries the recorded `document_sha` forward rather than recomputing it (R7.5). |
 
 ---
 
@@ -752,7 +776,7 @@ Tagged so tests can reference them, following the #72 spec's convention.
 |---|---|
 | **P1** | For a fixed member list and payload, `data_sha` is identical across R versions, `jsonlite` versions, platforms, and architectures. |
 | **P2** | Two sets with equal semantic content have equal `data_sha`, regardless of the order keys were inserted into the payload object. |
-| **P3** | Two sets differing in **member order** have **different** `data_sha` (order is curatorial, hence identity). |
+| **P3** | Two sets differing only in **member order** have **equal** `data_sha`. Members are sorted by digest, so arrangement is not identity -- the same rule as tag values (R2.12). This **reverses** an earlier property that made member order identity; the three arguments are in R2.12. |
 | **P4** | Two sets differing in any member's `version` have different `data_sha` (AC3). |
 | **P5** | **Domain separation holds**: no two encodings from different positions collide -- string, string-set, map, member, set and payload-root each carry a distinct marker (`0x01`-`0x06`, design.md 7.2). Restated after the sv1 delta: the earlier phrasing ("no string/number/boolean/null value collides") is now vacuous, since numbers, booleans and `null` are not in the grammar at all (R2.11, P28). |
 | **P6** | **Concatenation confusion is impossible**: no two distinct sets, maps or member lists produce the same byte sequence. The mechanism changed with the sv1 delta -- from explicit length prefixes to **fixed-width framing**, since every intermediate is a 32-byte hash, so `h("a")||h("b")` (64 bytes) cannot collide with `h("ab")` (32 bytes). |
@@ -779,7 +803,9 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P27** | **A change that alters no content alters no version**, for tables and sets alike: modifying code or environment while producing identical content yields no new version and no change to any recorded `commit_sha` (I23, R21.2, AC26). |
 | **P28** | **Type ambiguity is unrepresentable, not merely handled -- completely.** No payload can contain a number, boolean or `null`; and the last surviving ambiguity, scalar-vs-one-element-array, is dissolved by making the two hash equal (R2.13). No encoder rule for any of them exists, so none can drift (I24, R2.11, AC13, AC27). |
 | **P29** | **The same tag facts support arbitrarily many folder projections**, and changing which projection a consumer applies changes no stored bytes and no version (I25, R4.7). |
-| **P30** | **Tag-value order and duplication are not identity.** Payloads differing only in the order or multiplicity of a tag's values hash **equal**, and a single string hashes equal to a one-element array (R2.12, R2.13, AC13 a/b/d). Member order remains identity (P3, AC13 c). |
+| **P30** | **Nothing in a payload is ordered, and no collection counts duplicates.** Payloads differing only in the order or multiplicity of tag values, or in member order or member multiplicity, hash **equal**; a single string hashes equal to a one-element array (R2.12, R2.13, AC13 a-e). Member order is **no longer** an exception (P3). |
+| **P32** | **One content has one byte spelling.** For a given `data_sha` there is exactly one canonical payload, in git and in storage, so `document_sha` is a function of `data_sha` and cannot go stale (R2.15, R7.5, AC29). |
+| **P33** | **Tag text is byte-exact.** No Unicode normalization is in the identity path, so no Unicode version bump can re-mint a `data_sha`; NFC and NFD spellings are different tags (R2.16, AC13 f). |
 | **P31** | **The encoder has no runtime type dispatch.** Every position's shape is fixed by where it sits, so there is no "what type is this?" question and therefore no unhandled answer -- the structural defect that finding F-A found in the superseded walk (R2.10, design.md 7.2.1). |
 
 ---
@@ -799,6 +825,9 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **A separate code/env repo -- a fourth repo per product.** | **Rejected.** Cross-repo pinning is **circular**: the code repo wants to record which set version it produced, and the set payload wants to record which code commit produced it -- one is always stale by one commit. A joint version requires one commit graph. Also doubles per-product repo cost, and P17 would then cover pointers only. See section 19. |
 | **datom machine-moment commits use add-all.** | **Rejected.** Machine-chosen commit moments would snapshot arbitrary WIP state of human code. Add-all is correct **only** at human-chosen moments -- which is exactly what `datom_repo_commit(paths = NULL)` provides (R15.1). |
 | **Downstream packages do their own git via `git2r`.** | **Rejected.** Two independent git actors in one repo eventually violate the git-gates-storage assumptions (competing pushes, unseen pulls, half-staged trees). Single writer: all mutation flows through datom's exposed surface. |
+| **Keep member order as identity** (the earlier position), on the grounds that it is curatorial and the user sees it. | **Rejected.** It contradicted R4.7 (arrangement is presentation -- which is why no hierarchy is stored) and contradicted 7.2.2's own reasoning, which killed tag-value ordering for exactly this reason. Decisively: the expected producer is a **script**, so an insertion-order refactor in a build package would mint a new product version with byte-identical content -- a tool's incidental ordering becoming identity, i.e. the #72 failure class. What it was thought to buy does not survive: sorting is one `sort()` over fixed-width digests, and duplicate members are refused either way. Removing it also deletes 7.2's only carve-out. Full argument at R2.12. |
+| **Normalize tag text to NFC before hashing**, so visually identical tags hash equal. | **Rejected** (R2.16). Unicode normalization tables are **versioned data that changes across Unicode releases**, so this puts a versioned third-party artifact in the identity path -- structurally the same failure as the parquet-serialization drift of #72, with the Unicode Consortium in `arrow`'s role. sv1 exists to have nothing versioned in its identity path (7.4). Also adds `stringi` to a deliberately lean `Imports`, and diverges from cv1, which already treats NFC-vs-NFD as identity-relevant. Recourse is caller-side. |
+| **Canonicalize only at hash time, not before the local write** -- i.e. accept several byte spellings per `data_sha`. | **Rejected** (R2.15). `data_sha` is the storage address while `document_sha` hashes stored bytes, so multiple spellings at one address make `document_sha` unverifiable, and the failure surfaces late as a **refused read of a valid version**. It would also silently discard an author's reorder rather than visibly normalizing it. Canonicalizing at the source removes the ambiguity instead of managing it; R7.5 then covers the residual (emitter drift). |
 | **Persist per-member digests in metadata**, as a `column_hashes` analogue, so a reader can tell which member changed between versions. | **Rejected -- the need is already met** (section 4). Nearly free to produce, since the hash-of-hashes computes `member()` as an intermediate anyway, and identity-safe (it would be volatile, like `column_hashes`). But it is strictly weaker than the payload diff it would compete with: it reports *that* a member changed, never *what*. `column_hashes` earns its place only because the alternative is downloading parquet -- possibly gigabytes -- and that argument does not transfer to a small text payload the reader can just fetch. There is also **no code to reuse**: `column_hashes` has no consumer in `R/` today and `datom_diff` is unbuilt (#73), so the "parallel with tables" is conceptual, not mechanical. The one case it genuinely wins is a **change timeline across many versions** (one `version_history.json` read instead of two reads per pair), at the cost of `N_members` x `N_versions` hashes in one file. Deferred rather than refused: the field is additive and volatile, so it can be added whenever that need becomes real, with no schema break. |
 | **Move tags out of the payload into `metadata.json`**, hashing payload and tags separately with a pairing key, then a product hash over both. | **Rejected -- costs the most, buys nothing the above does not.** It requires a **stable per-member pairing key**, which is a new identity concept to specify, test and keep from drifting between two files. Every read then fetches both files and reassembles, and the folder-projection consumer (`dp$output$cm`) needs tags at read time regardless, so the split saves no IO. It also **reopens Q1** -- identity currently covers the whole payload including tags -- and would move tags under `metadata_sha`'s domain, i.e. back under the third-party emitter exposure that section 7.4 exists to escape. Directly contradicts the "a set is metadata-flavored, tags live in the payload" decision (section 4, R6.2). |
 

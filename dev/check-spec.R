@@ -239,7 +239,16 @@ retired <- c(
   "depth limit",
   "or recurse",
   "all historical payloads are retained",
-  "serialize -> parse -> encode"
+  "serialize -> parse -> encode",
+  # Retired by the member-ordering delta: member order is no longer identity, so
+  # every collection in sv1 is sorted and deduped with no carve-out. The old
+  # wording survived in three places at once (requirements table, design
+  # properties, task bullets), which is the exact defect pattern this list exists
+  # for.
+  "only unsorted concat",
+  "only `concat` without a `sort`",
+  "order is curatorial",
+  "duplication *is* identity"
 )
 # Deliberately NOT listed: "manifest$tables". The phrase is load-bearing in the
 # rename requirement itself ("manifest$tables becomes manifest$artifacts") and in

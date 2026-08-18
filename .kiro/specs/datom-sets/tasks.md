@@ -162,8 +162,22 @@ necessary.
   - **No length prefixes**: every intermediate is a fixed 32 bytes, so concatenation is already
     unambiguous. **`f64le` disappears from sv1 entirely** -- `.datom_encode_numeric()` is not used
     at all, not even for lengths. sv1 shares no numeric primitive with cv1.
-  - **`members` is the only unsorted `concat`.** Tag keys and tag values are sorted; tag values are
-    also deduped. A single string equals a one-element set (R2.13).
+  - **Every collection is sorted and deduped -- `members` included, with no carve-out.** An earlier
+    draft made member order identity; **retired** (R2.12 carries the three arguments, chiefly that a
+    script-generated member list would mint spurious versions on an insertion-order refactor).
+    Sorting members means sorting their fixed 32-byte digests. A single string equals a one-element
+    set (R2.13).
+  - **No Unicode normalization** (R2.16). Radix sort is byte order; NFC and NFD are different tags.
+    Golden asserts they differ. Do not add `stringi` -- normalization tables are versioned Unicode
+    data, and putting them in the identity path is #72's failure mode with a different vendor.
+  - **Pin `strset(character(0)) = h(0x02)`** as a golden (R2.17), for the same reason design.md 7.2 already
+    pins the empty map: an encoder whose correctness rests on an upstream validation refusal breaks
+    silently the day that refusal is relaxed.
+  - **Not this task, but caused by it -- flag it forward.** Order- and shape-insensitivity means
+    several spellings share one `data_sha`, which is a write-path correctness problem, not an encoder
+    one: R2.15 (canonicalize before the local write) and R7.5 (never re-emit for a known `data_sha`;
+    bind `validate(fix = TRUE)` too). Owned by Tasks 8 and 13. Design.md 7.2.3 explains why. Left
+    undone, the failure is a **refused read of a valid version**, and every per-chunk test passes.
   - **`id` is encoded with `map`, not positionally**, so a fifth id field later is just another key.
     Validation, not the encoder, enforces "id has exactly these four keys, each single-valued".
   - Enforce the grammar at write time and refuse per offending type (AC27); without that test,
@@ -196,9 +210,11 @@ necessary.
     `datom-sv2` bump rather than a spec edit. Hard-coded in tests, cross-architecture asserted, and
     covering the four identity-boundary fixtures (AC13): tag-value **order** equal, tag-value
     **duplication** equal, **member order** different, **single string vs one-element array** equal.
-    Note (d) **reverses** the earlier "must differ" fixture. Plus the AC27 grammar refusals.
-  - _Requirements: R2 (incl. R2.5-R2.14). Invariants: I13, I24. Properties: P1, P2, P3, P4, P5, P6,
-    P8, P12, P15, P28, P30, P31. Acceptance: AC2, AC3, AC5, AC13, AC27. No pathway impact._
+    Note (c) and (d) each **reverse** an earlier "must differ" fixture. Plus the AC27 grammar
+    refusals, plus (e) member duplication equal, (f) NFC vs NFD differ, (g) the empty-strset
+    constant -- **seven** identity-boundary fixtures in total.
+  - _Requirements: R2 (incl. R2.5-R2.17). Invariants: I13, I24. Properties: P1, P2, P3, P4, P5, P6,
+    P8, P12, P15, P28, P30, P31, P33. Acceptance: AC2, AC3, AC5, AC13, AC27. No pathway impact._
 
 - [ ] **3. Export and harden storage JSON put/get**
   - `datom_storage_read_json()` / `datom_storage_write_json()` on the Storage Extension API,
@@ -319,13 +335,27 @@ necessary.
     forces history to be read by listing filenames, which is hand-maintaining what git maintains
     (R6.1b, R20, AC24). No retention rule is needed: git retention is definitional, and P17 holds
     via `git show <commit>:{name}/set.json`.
+  - **Canonicalize BEFORE the local write** (R2.15, I26): sort map keys, sort + dedupe tag values,
+    **unbox single values**, sort + dedupe members by digest. Assert on the **file bytes** (AC29a),
+    not the return value. Unboxing rather than always-array because `auto_unbox = TRUE` is already
+    the house default in datom's metadata writers, so it is the free direction, and it keeps the
+    `git diff` R6.1a exists for readable.
+  - **Never re-emit a payload for a `data_sha` already in history** (R7.5 rule 1, I27, AC29b): reuse
+    the stored object and **carry the recorded `document_sha` forward**. Mirror
+    `.datom_lookup_history_parquet_sha()` (`R/read_write.R:399-404`, `422-439`) -- it already does
+    exactly this for parquet, including the `upload = FALSE` return. **This is the defect that passes
+    every per-chunk test**: recomputing `document_sha` from fresh bytes while reusing the stored
+    object records a hash of bytes nobody stored, and it surfaces later as a refused read of a valid
+    version. Reachable by an ordinary tag-value reorder, not just a dependency upgrade -- see
+    design.md 7.2.3.
   - **Reuse unchanged**: change detection (`.datom_has_changes()`), the git-gates-storage ordering
     (`datom_write()` steps 7-10), and dedup. Git push stays the serialization point (I5).
   - Cross-kind name uniqueness refusal (AC4) -- checked against **storage**
     `{name}/.metadata/metadata.json`, not the manifest, which can lag.
   - Manifest entry with `kind = "set"` and `member_count`.
-  - _Requirements: R5, R6 (incl. R6.1a/b), R10.3a, R12.2, R8 (set entries). Invariants: I2, I5,
-    I6, I11, I15, I25. Properties: P7, P13, P17, P25, P29. Acceptance: AC2, AC3, AC4, AC5, AC24._
+  - _Requirements: R5, R6 (incl. R6.1a/b), R7.5, R2.15, R10.3a, R12.2, R8 (set entries).
+    Invariants: I2, I5, I6, I11, I15, I25, I26, I27. Properties: P7, P13, P17, P25, P29, P32.
+    Acceptance: AC2, AC3, AC4, AC5, AC24, AC29 (a and b)._
 
 - [ ] **9. `datom_read_set()` + `datom_read()` refusal**
   - `datom_read_set()`: resolve version -> read payload -> **verify `document_sha` before
@@ -458,7 +488,12 @@ necessary.
     possible" -- **removed**, because R6.1b reversed per-version payload files in git: git now holds
     one mutable `{name}/set.json`, so only the *current* version is comparable without `git show`.
     Do not add unrequested git-side comparison.
-  - _Requirements: R11, R4.3. Invariants: I10. Properties: P14, P16. Acceptance: AC15
+  - **`fix = TRUE` must not break `document_sha`** (R7.5 rule 2, I27, AC29c). Repair re-uploads from
+    the clone, so it is a live path to overwriting a stored payload. It must **reuse the recorded
+    `document_sha` and never recompute it** for an existing version. Same trap shape as the
+    `commit_sha` one (R21.7, I22): a repair path silently undoing a write-path guarantee. AC29c is
+    the clause a naive implementation fails while passing everything else.
+  - _Requirements: R11, R4.3, R7.5. Invariants: I10, I27. Properties: P14, P16, P32. Acceptance: AC15
     (one-level member checking). **P14 has no AC of its own** -- add one here asserting `ok` for a
     healthy set and *distinguishable* statuses for a missing payload versus an unresolvable member;
     R11.3 calls this in scope rather than deferred, so it must not ship untested._
@@ -624,3 +659,11 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-11 | **AC1 split** into (a) resolve pointers -- always works, no clone -- and (b) resolve to data -- needs that member's project conn. Conflating them mis-implements a set read as "requires access to everything in it". `datom_validate()`'s member check scoped the same way (R11.2), reusing `members_unresolvable`. | AC1, R11.2, Tasks 9 and 13 |
 | 2026-08-17 | **Task 1 scope deviation -- OWNER-APPROVED, the guard stays.** Folding `.datom_validate_sha()` into `.datom_artifact_payload_key()` exceeded the chunk's behavior-identical scope, because it closed a real path-traversal gap at `.datom_validate_one_table()` (`R/validate.R:393`) that #74's sweep missed -- a file-supplied `data_sha` spliced into a storage key unvalidated -- and cost one test fixture using an impossible `data_sha = "d1"`. Kept rather than reverted: the alternative leaves a known gap behind a tracking issue competing with 15 remaining tasks, for a purity cost of one fixture line. Behavior for valid data is unchanged. | Task 1, I9, `R/utils-path.R` |
 | 2026-08-17 | **Reader-side version diff needs no schema change -- option 3 chosen.** A git-less reader can already diff two set versions with three small JSON reads: `version_history.json` (which carries `data_sha` per entry today, `R/read_write.R:480-487`) to map version -> `data_sha`, then the two content-addressed payloads. **Rejected: persisting per-member digests in metadata** as a `column_hashes` analogue (see design.md 15 for both rejected options). The decisive points: the payload diff reports **actual values** where digests report only "something changed"; `column_hashes` earns its place solely because the alternative is downloading parquet, which does not transfer to a small text payload (design.md 4, "a member index would be metadata-for-metadata"); and there is **no code to reuse** -- `column_hashes` has no consumer in `R/` and `datom_diff` is unbuilt (#73). Member digests remain **additive and volatile**, so they can be added later without a schema break or identity change if a cross-version change timeline proves to be a real need. **No impact on Task 2**: sv1's encoding is identical under this decision, since it would only have published intermediates the hash-of-hashes already computes. | design.md 4 + 15, R6, Task 9 |
+| 2026-08-17 | **E1 design review (Task 2 gate) -- four deltas, all owner-approved before goldens freeze.** The encoding itself reviewed clean: domain separation is sound (distinct marker byte per constructor, so cross-type collisions reduce to sha256 collisions); "framing is free" verified (every entry fixed-width -- `map` entry 64 bytes, `member` 64, `set` 32+32n -- so concatenation parses unambiguously without length prefixes); `sort(method = "radix")` is C-locale byte order as claimed; `id`-vs-`tags` slot swapping cannot collide. The four findings are all **additive**, not a redesign, so no model escalation beyond this review. | design.md 7.2-7.2.3, R2.12-R2.17, R7.5 |
+| 2026-08-17 | **(D2) Member order is NO LONGER identity** -- `set()` sorts and dedupes member digests like every other collection. **Owner-raised**: order buys nothing since nothing consumes a set positionally. Three arguments, any one sufficient: it contradicted R4.7 (arrangement is presentation, which is why no hierarchy is stored); it contradicted 7.2.2's own reasoning, which killed tag-value ordering for the identical reason; and decisively, the expected producer is a **script**, so an insertion-order refactor would mint a new product version with byte-identical content -- the #72 failure class. Costs one `sort()` over fixed-width digests. **Bonus: 7.2's only carve-out disappears** -- every collection is sorted and deduped, one rule with no exceptions. Reverses P3 and AC13(c); R2.14's duplicate-member rationale changes (the encoder was never ambiguous, and now R2.15 would drop the copy silently, which is better surfaced as an abort). | R2.12, R2.14, P3, P30, AC13(c), design.md 7.2 + 15 |
+| 2026-08-17 | **(D1) The payload is canonicalized BEFORE the local write** (R2.15, I26) -- sort map keys, sort + dedupe tag values, **unbox single values**, sort + dedupe members. **Owner-proposed**, and better than the reviewer's original framing, which only guarded the write path: canonicalizing at the source means one content has exactly one byte spelling in git and in storage, so the ambiguity is removed rather than managed. Unboxing (not always-array) because `auto_unbox = TRUE` is already the house default in datom's metadata writers -- the free direction -- and it keeps the `git diff` of R6.1a readable. **Shape unification was a gap in the reviewer's first draft of this delta**, caught by the owner: sorting alone still leaves `"output"` vs `["output"]` as two spellings. sv1 stays order- and shape-insensitive regardless, since the hash domain is a *parsed file* that may predate this rule or have been hand-edited: canonicalization is belt, insensitivity is braces. | R2.15, I26, AC29a, Task 8 |
+| 2026-08-17 | **(D3) One `data_sha`, one byte spelling, enforced over time** (R7.5, I27). Two rules, both required: never re-emit a payload for a `data_sha` already in history (reuse the stored object, **carry the recorded `document_sha` forward** -- the exact `.datom_lookup_history_parquet_sha()` pattern at `R/read_write.R:399-404`), **and** hold `datom_validate(fix = TRUE)` to the same rule, since it re-uploads from the clone and so is a live path to overwriting a stored object with non-matching bytes. Same trap shape as the `commit_sha` one (R21.7/I22): a repair path silently undoing a write-path guarantee. **Sharper for sets than tables**: divergent bytes for one `data_sha` need an `arrow` upgrade for a table but only a tag-value reorder for a set, and only sets keep the payload in git. **Deliberately assigned to Tasks 8 and 13, not 2** -- it is a consequence of Task 2's decisions but not encoder code, and a Task 8 implementer assuming "new bytes mean a new `document_sha`" ships a defect that every per-chunk test passes. | R7.5, I27, P32, AC29, Tasks 8 + 13 |
+| 2026-08-17 | **(D4) No Unicode normalization; tag bytes are hashed as given** (R2.16). NFC and NFD are different tags. Rejected NFC-first because **normalization tables are versioned Unicode data**, so a Unicode release could re-mint hashes -- the #72 failure mode with the Unicode Consortium in `arrow`'s role, and sv1 exists to keep everything versioned out of its identity path (7.4). Also avoids adding `stringi` to a lean `Imports`, and stays consistent with cv1, which already treats NFC-vs-NFD as identity-relevant (`dev/e2e-cv1-identity.R`). Stated normatively because it would otherwise be settled by accident, and a non-R implementation might normalize by default. Golden asserts they differ. | R2.16, P33, AC13(f) |
+| 2026-08-17 | **(D5) `strset(character(0)) = h(0x02)` is pinned** (R2.17). Validation refuses empty tag values and R2.15 cannot produce one, but the encoder must not depend on that -- the argument design.md 7.2 already makes for the empty map: an encoder whose correctness rests on an upstream refusal breaks silently the day the refusal is relaxed. Carried as a golden. | R2.17, AC13(g) |
+| 2026-08-17 | **(D6) AC13 grows from four fixtures to seven**, and AC29 is new. Equal: tag-value order, tag-value duplication, **member order**, single-vs-one-element-array, **member duplication**. Different: **NFC vs NFD**. Constant: **empty strset**. Two fixtures now **reverse** earlier "must differ" versions -- member order (D2) and single-vs-array (the 2026-08-16 delta). AC29 covers canonicalization on the file bytes, no-re-upload on a known `data_sha`, and the `validate(fix = TRUE)` clause that a naive implementation fails while passing the other two. | AC13, AC29 |
+| 2026-08-17 | **Process: D2's sweep hit the four places tasks.md warns about**, confirming the documented defect pattern rather than discovering a new one -- R2.12's ordering table, design.md's P3/P30 properties, Task 2's bullets, and the `retired` denylist in `dev/check-spec.R` (four phrases added: "only unsorted concat", "only `concat` without a `sort`", "order is curatorial", "duplication *is* identity"). Without the denylist entries the old instruction survives as live guidance in prose that reads correct. | dev/check-spec.R, R2.12, design.md 13-14 |
