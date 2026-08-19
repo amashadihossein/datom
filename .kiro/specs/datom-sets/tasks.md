@@ -22,8 +22,9 @@ branch was cut, deliberately outside this history), and `dev/check-spec.R`.
 **Next**: **Task 2 -- `datom-sv1`**. It carries the **E1 escalation**, and per rule 5d that
 recommendation must be surfaced *before* implementing, not after. The gate is now a **design review
 of the encoding specification** -- all five original open questions are settled (design.md 7.5).
-What still warrants the careful pass: the exact byte rules in design.md 7.2, whether the marker
-table leaves any collision surface, and whether the goldens cover the agreement cases in 7.3.
+**That review is DONE (2026-08-17).** The encoding was found sound -- domain separation, "framing is
+free", radix collation, and `id`/`tags` slot separation all verified -- and the four resulting
+deltas plus a 19-finding sweep are applied. Task 2 is cleared to implement.
 **Goldens freeze the encoding** -- changing anything afterwards is a `datom-sv2` bump, not a spec
 edit.
 
@@ -153,9 +154,11 @@ necessary.
     strset(v) = h(0x02 || concat(str(e) for e in sort(unique(v), radix)))
     map(m)    = h(0x03 || concat(str(k) || strset(m[k]) for k in sort(keys(m), radix)))
     member(x) = h(0x04 || map(x.id) || map(x.tags))
-    set(p)    = h(0x05 || map(p.tags) || concat(member(m) for m in p.members))
+    set(p)    = h(0x05 || map(p.tags) || concat(sort(unique(member(m) for m in p.members), radix)))
     data_sha  = h(0x06 || utf8("datom-sv1") || set(payload))
     ```
+
+    Member digests sort as **lowercase hex**, `method = "radix"`, emitted as raw bytes.
 
     Mirrors cv1's per-column-digests-then-hash-the-concatenation pattern, so both references share
     one house construction.
@@ -180,9 +183,12 @@ necessary.
     undone, the failure is a **refused read of a valid version**, and every per-chunk test passes.
   - **`id` is encoded with `map`, not positionally**, so a fifth id field later is just another key.
     Validation, not the encoder, enforces "id has exactly these four keys, each single-valued".
-  - Enforce the grammar at write time and refuse per offending type (AC27); without that test,
-    "just allow numbers here" is a one-line change nobody notices (I24). Also refuse an **empty tag
-    value** -- "no labels" is spelled by omitting the key (R2.7).
+  - **The encoder does NOT validate, and this task does not own AC27.** Grammar enforcement lives in
+    `.datom_validate_members()` (Task 7, per-member) and `datom_write_set()` (Task 8, payload-level),
+    because design.md 7.2 and R2.10 both put the encoder out of validation's job -- and because the
+    payload-level cases are invisible from here: the encoder never sees two members at once in a way
+    that distinguishes "same `id`, different `tags`" from two ordinary members. An earlier draft had
+    Task 2 and Task 7 both claiming AC27; **retired**.
   - Payload shape is **fixed** (R2.12): optional set-level `tags`, then `members[]` each with
     an `id` record `{project, name, kind, version}` and optional per-member `tags`. Depth is bounded by the schema,
     not by what a caller nests.
@@ -213,8 +219,10 @@ necessary.
     one-element array, (e) member duplication. **Different**: (f) NFC vs NFD. **Pinned constant**:
     (g) `strset(character(0)) == h(0x02)`. Note (c) and (d) each **reverse** an earlier fixture that
     required a difference. Plus the AC27 grammar refusals.
-  - _Requirements: R2 (incl. R2.5-R2.17). Invariants: I13, I24. Properties: P1, P2, P3, P4, P5, P6,
-    P8, P12, P15, P28, P30, P31, P33. Acceptance: AC2, AC3, AC5, AC13, AC27. No pathway impact._
+  - _Requirements: R2.1-R2.14, R2.16, R2.17 (**not** R2.15 -- that is Task 8's, per the flag-forward
+    bullet above). Invariants: I13, I24. Properties: P1, P2, P3, P4, P5, P6,
+    P8, P12, P15, P28, P30, P31, P33. Acceptance: **AC13 (both levels)**, AC3, AC5. **Not AC27** --
+    see the encoder-does-not-validate bullet. No pathway impact._
 
 - [ ] **3. Export and harden storage JSON put/get**
   - `datom_storage_read_json()` / `datom_storage_write_json()` on the Storage Extension API,
@@ -301,7 +309,11 @@ necessary.
     vector, because the whole point of tags over folders is that an item can be in several
     categories at once.
   - `.datom_validate_members()` mirroring `.datom_validate_parents()`, including the `remedy`
-    string pointing at `datom_member()`. It owns the grammar refusal (AC27).
+    string pointing at `datom_member()`. It owns the **per-member** half of AC27 -- cases (a) non-text
+    value, (b) `NA`, (c) `""` tag value. It **cannot** own the payload-level half: it sees one member
+    at a time, so "same `id` twice with different `tags`" is invisible from here, and set-level `tags`
+    never pass through it at all. Those are Task 8's (AC27 d/e). An earlier draft assigned all of
+    AC27 here while Task 2 also claimed it; **retired** -- one half each, stated explicitly.
   - **Refuse self-reference** (R4.5, AC9): a set listing itself as a member. One cheap check. The
     set's own identity is known from `project.yaml` (R10.3a).
   - **Deliberately NOT built: cycle detection, a visited-set guard, or a depth limit** (R4.3/R4.4,
@@ -311,7 +323,8 @@ necessary.
     level** and never traverses, so nothing could loop even if a cycle existed. An earlier draft
     specified all three; they solved a problem that cannot occur. **Do not reintroduce them as
     defensive code** (I10a).
-  - _Requirements: R4 (incl. R4.3-R4.5). Invariants: I9, I10, I10a. Acceptance: AC9._
+  - _Requirements: R4 (incl. R4.3-R4.5), R2.11, R2.7. Invariants: I9, I10, I10a, I24.
+    Acceptance: AC9, **AC27 (a, b, c -- the per-member half)**._
 
 - [ ] **8. `datom_write_set()`**
   - **Two gates first, before any hashing or IO** (R10.3a, I15): the repo must declare
@@ -335,11 +348,26 @@ necessary.
     forces history to be read by listing filenames, which is hand-maintaining what git maintains
     (R6.1b, R20, AC24). No retention rule is needed: git retention is definitional, and P17 holds
     via `git show <commit>:{name}/set.json`.
-  - **Canonicalize BEFORE the local write** (R2.15, I26): sort map keys, sort + dedupe tag values,
-    **unbox single values**, sort + dedupe members by digest. Assert on the **file bytes** (AC29a),
-    not the return value. Unboxing rather than always-array because `auto_unbox = TRUE` is already
-    the house default in datom's metadata writers, so it is the free direction, and it keeps the
-    `git diff` R6.1a exists for readable.
+  - **TIDY, then VALIDATE, then hash** -- in that order (R2.14, R2.15, I26; design.md 21.4 steps
+    0a/0b). Tidying first clears the benign spellings so validation only ever sees genuine ambiguity;
+    validating first would make the tidy rules unreachable. Six things are tidied **silently and must
+    not abort**: tag-value order, tag-value duplication, single-vs-array shape, member order, an
+    exact-duplicate member (same `id` *and* `tags`), and `character(0)` dropping its key. Assert on
+    the **file bytes** (AC29a), not the return value.
+  - **Canonical order: map keys radix; tag values radix + dedupe; single values unboxed; members
+    deduped by digest then sorted by `project` || `name` || `version`** (R2.15). Note the file sorts
+    by **name, not digest** -- digest order would relocate a member whenever its tags change, so
+    `git diff` would report a delete plus an insert instead of one changed field, undoing R6.1a's
+    entire purpose. The hash still sorts by digest; two sort keys, each with its own reason.
+    Unboxing rather than always-array because `auto_unbox = TRUE` is already the house default.
+  - **This task owns the payload-level half of AC27** -- the cases only a whole-payload view can see:
+    (d) the same `id` listed twice with **different** `tags` is **refused** (dedup does not catch it,
+    since the digest covers tags, so both entries would survive and a consumer would find one member
+    in two conflicting folders); (e) zero members; plus set-level `tags` grammar, which never passes
+    through `datom_member()`. **And the allow-case (R2.14a)**: the same `project`+`name` at two
+    different `version`s must write successfully with both members present -- its own test, because
+    `project`+`name` looks like the natural duplicate key and tightening to it would silently break a
+    legitimate use (a current table beside a locked baseline).
   - **Never re-emit a payload for a `data_sha` already in history** (R7.5 rule 1, I27, AC29b): reuse
     the stored object and **carry the recorded `document_sha` forward**. Mirror
     `.datom_lookup_history_parquet_sha()` (`R/read_write.R:399-404`, `422-439`) -- it already does
@@ -352,10 +380,14 @@ necessary.
     (`datom_write()` steps 7-10), and dedup. Git push stays the serialization point (I5).
   - Cross-kind name uniqueness refusal (AC4) -- checked against **storage**
     `{name}/.metadata/metadata.json`, not the manifest, which can lag.
-  - Manifest entry with `kind = "set"` and `member_count`.
-  - _Requirements: R5, R6 (incl. R6.1a/b), R7.5, R2.15, R10.3a, R12.2, R8 (set entries).
-    Invariants: I2, I5, I6, I11, I15, I25, I26, I27. Properties: P7, P13, P17, P25, P29, P32.
-    Acceptance: AC2, AC3, AC4, AC5, AC24, AC29 (a and b)._
+  - Manifest entry with `kind = "set"` and `member_count`. **`member_count` is the count AFTER
+    tidying** -- the canonical member count, not what the caller passed. Pinned because tidying can
+    drop an exact duplicate, so the two can differ; today they rarely do, which is exactly why an
+    unstated rule would be settled by accident.
+  - _Requirements: R5, R6 (incl. R6.1a/b), R7.5, R2.14, R2.14a, R2.15, R10.3a, R12.2, R8 (set
+    entries). Invariants: I2, I5, I6, I11, I15, I25, I26, I27. Properties: P7, P13, P17, P25, P29,
+    P32. Acceptance: AC2, AC3, AC4, AC5, AC24, AC29 (a and b),
+    **AC27 (d, e, set-level tags, every tidy assertion, and the R2.14a allow-case)**._
 
 - [ ] **9. `datom_read_set()` + `datom_read()` refusal**
   - `datom_read_set()`: resolve version -> read payload -> **verify `document_sha` before
@@ -493,7 +525,10 @@ necessary.
     `document_sha` and never recompute it** for an existing version. Same trap shape as the
     `commit_sha` one (R21.7, I22): a repair path silently undoing a write-path guarantee. AC29c is
     the clause a naive implementation fails while passing everything else.
-  - _Requirements: R11, R4.3, R7.5. Invariants: I10, I27. Properties: P14, P16, P32. Acceptance: AC15
+  - _Requirements: R11, R4.3, R7.5. Invariants: I10, I27. Properties: P14, P16, P32.
+    Acceptance: **AC29 (c)** -- named here explicitly because an earlier draft discussed it in this
+    task's body while listing it in no acceptance line anywhere, leaving the clause the spec twice
+    calls "the one a naive implementation fails while passing everything else" owned by nobody. AC15
     (one-level member checking). **P14 has no AC of its own** -- add one here asserting `ok` for a
     healthy set and *distinguishable* statuses for a missing payload versus an unresolvable member;
     R11.3 calls this in scope rather than deferred, so it must not ship untested._
@@ -521,7 +556,11 @@ necessary.
     AC26. No pathway impact (no new lookup route -- the existing history read gains a field)._
 
 - [ ] **15. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
-  - Confirm every **AC1-AC9 and AC13-AC28** has a dedicated test; add what the per-chunk tests
+  - Confirm **every AC defined in `requirements.md`** has a dedicated test -- derive the list, do not
+    trust a range written here. A hardcoded range has now gone stale **twice**: it once stopped at
+    AC26 and omitted AC27, and it then stopped at AC28 and omitted AC29. `dev/check-spec.R` now
+    asserts this line names no explicit upper bound, so the defect cannot recur. Then add what the
+    per-chunk tests
     missed. Two are easiest to skip and both need special fixtures: **AC15** (nesting resolves one
     level) needs a set-containing-a-set fixture and an assertion that the inner payload is *not*
     read; **AC16** (machine-commit isolation) needs a foreign dirty file seeded in the fixture repo,
@@ -531,8 +570,8 @@ necessary.
     Include a `mode: product` repo with foreign `R/`, `dp/`, and `renv.lock` content so the joint
     commit and the machine-commit isolation are exercised end to end, not only in unit tests.
   - Full `devtools::test()` count reported; `R CMD check --as-cran` 0E/0W (AC10, AC11).
-  - _Acceptance: AC1-AC28._
-  - **Escalation rationale**: **twenty-eight** acceptance criteria plus a new hash regime is a lot
+  - _Acceptance: every AC defined in `requirements.md` -- derive the list, do not restate a bound._
+  - **Escalation rationale**: the full acceptance-criteria set plus a new hash regime is a lot
     of surface to claim covered on a default model's word.
 
 - [ ] **16. Docs + Spec Completion Procedure**
@@ -670,3 +709,12 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-17 | **`check-spec.R`'s retired-wording check was close to vacuous, and this is the round that proved it.** It passed on all six D2 sites. Cause: `MARKER_RE` -- the suppression list -- carried generic negation and impossibility cues ("never", "cannot", "not needed", "not required", "acyclic", "impossible", "unrepresentable", "immaterial", "dissolve", "collapse") on the reasoning that the commonest legitimate mention is a sentence saying the thing is NOT done. That reasoning fails at scale: those are ordinary vocabulary in this spec, so nearly every +/- 2 line window contained one. **The clearest case is self-suppression** -- "`members` is the only `concat` without a `sort` ... is never a judgment call" was excused by the word `never` in its own sentence. Fixed by narrowing to explicit supersession and explicit prohibition only; the tightened check immediately found the sixth site unaided. Tradeoff stated in the script: a false positive costs one marker word, a false negative ships a retired instruction that reads authoritative. | dev/check-spec.R |
 | 2026-08-17 | **Denylist additions from D2**: "only unsorted concat", "only `concat` without a `sort`", "order is curatorial", "duplication \*is\* identity", "member order different", "member order.{0,20}differ". The last two are the phrasings that actually survived the first sweep, so they are the ones with demonstrated escape history. | dev/check-spec.R |
 | 2026-08-17 | **A recurring trap shape, now named after its second instance: a repair path silently undoing a write-path guarantee.** `datom_validate(fix = TRUE)` re-uploads from the clone, so it is a general-purpose way to overwrite storage with derived content. Instance 1 was `commit_sha`, which repair would have **stripped** (R21.7, I22, AC25's third clause); instance 2 is `document_sha`, which repair would **invalidate** by re-emitting bytes for an existing `data_sha` (R7.5 rule 2, I27, AC29c). Both were caught only because someone asked "what does `fix = TRUE` do to this field?" **Any future spec adding a metadata field should answer that question explicitly**, and the acceptance criterion belongs on the repair path, not only the write path -- in both instances the repair clause is the one a naive implementation fails while passing everything else. | R7.5, R21.7, I22, I27, AC25, AC29 |
+| 2026-08-17 | **Thorough post-delta review: 19 findings, all fixed.** Prompted by two prior sweeps each missing defects. **The decisive one was self-inflicted**: the sv1 pseudocode exists in all three spec files, the D2 fix touched only `design.md`, and `requirements.md` + `tasks.md` were left stating `concat( member(m) ... )` with no sort -- the second of those inside the task that freezes the goldens, eleven lines above prose saying the opposite. Every multi-member golden would have been wrong. Seven blockers total; the rest were ownership gaps and stale counts. | R2.10, design.md 7.2, Task 2 |
+| 2026-08-17 | **TIDY FIRST, THEN VALIDATE -- owner-decided, and it reverses the reviewer's recommendation.** The reviewer proposed validate-then-canonicalize to keep the R2.14 refusals reachable. The owner's principle is better: *handle any trivial error without pestering the user; refuse only what is deliberate or unhandleable*. Six spellings are now **tidied silently** because nobody can reasonably care about them -- tag-value order, tag-value duplication, single-vs-array shape, member order, an exact-duplicate member, and `character(0)` dropping its key. Five are **refused** because each would require guessing intent -- non-text values, `NA`, `""` as a tag value, same-`id`-different-`tags`, and zero members. Tidy-first also composes better than validate-first: it clears the benign cases so validation only ever sees genuine ambiguity. | R2.14, R2.15, AC27, design.md 21.4 |
+| 2026-08-17 | **Working through "which duplicates are benign" exposed a case both sweeps missed: same `id`, DIFFERENT `tags`.** `set()` dedupes by `member()` digest and the digest covers tags, so these have *different* digests and **dedup does not catch them** -- both entries survive, and a consumer projecting tags finds one member in two conflicting folders. That is one fact with two spellings; the intended form is a single entry with a multi-valued tag. **Refused**, because both ways to tidy it guess: merging tags is right if the caller meant both categories and nonsense if two code paths disagreed, and picking one entry is arbitrary. | R2.14, AC27(d) |
+| 2026-08-17 | **Same NAME at different VERSIONS is legal and is NOT a duplicate (R2.14a) -- owner-raised.** `adsl@a1b2` and `adsl@f9e8` are different members with different content; a product carrying a current table beside a locked baseline is atypical but entirely sensible. **The duplicate check keys on the FULL `id`, never on `project`+`name`.** Given its own test precisely because `project`+`name` looks like the natural key, so the first reader to "tighten" it would silently break a legitimate use. Three consequences recorded: the R2.15 file sort key **must** include `version` (or two versions of one name have no defined relative order and canonical form is undefined); consumers disambiguate by tag, datom adds no warning since one firing on legitimate use is noise; and a future reader-side diff cannot key on `project/name` alone -- it should key on `project/name` where unique and fall back to including `version` where not. **The diff demo shown in this conversation had exactly that bug.** | R2.14a, R2.15, AC27 |
+| 2026-08-17 | **(L2) The file's member sort key differs from the hash's, deliberately -- owner-approved.** Hash sorts `member()` digests (self-contained: the encoder never needs to know what an `id` looks like, which is what keeps "a fifth id field is just another key" true). The **file** sorts by `project` \|\| `name` \|\| `version`, because digest order would relocate a member whenever its tags change -- so `git diff` would report a delete plus an insert in a different place, with everything between shifting, instead of one changed field. That undoes R6.1a's entire purpose, which is D1's own justification. Both keys are fully deterministic, so "one content, one byte spelling" holds either way. Cheap now, and **expensive later**: once payloads ship, changing canonical file order is a canonical-form change that I27 forbids. | R2.15, R6.1a, P25, AC24 |
+| 2026-08-17 | **AC27 ownership split; AC29c given an owner.** AC27 was claimed by **both** Task 2 and Task 7 while `design.md` 7.2 says the encoder stays out of validation's job -- and neither owner could enforce two of its clauses: `datom_member()` sees one member at a time so cannot detect a duplicate, and set-level `tags` never pass through it. Resolved: per-member grammar (non-text, `NA`, `""`) to Task 7; payload-level cases (same-`id`-different-`tags`, zero members, set-level tag grammar, every tidy assertion, and the R2.14a allow-case) to Task 8; **Task 2 owns none of it**. Separately, **AC29c had no acceptance line anywhere** -- discussed in Task 13's body, listed nowhere, outside Task 15's sweep range. The clause the spec twice calls "the one a naive implementation fails while passing everything else" was owned by nobody; now Task 13's. | AC27, AC29, Tasks 2/7/8/13 |
+| 2026-08-17 | **AC13 split into payload-level and encoder-level, because its umbrella was unsatisfiable.** The umbrella asserted write/read `data_sha` agreement for every fixture, but (g) `strset(character(0))` is a primitive constant with no payload and no `data_sha`, and (e) member-duplication cannot be built through the public path since R2.14 tidies it. **AC13-P** keeps the umbrella (a, b, c, d, f); **AC13-E** calls the encoder directly (e, g). Also pinned: (f) NFC/NFD fixtures **must use `\u` escapes**, since they ship in `tests/` and AC11 holds `R CMD check --as-cran` at zero warnings. | AC13, AC11 |
+| 2026-08-17 | **`check-spec.R` gains a root-cause check, and it is verified non-vacuous.** The two classes that survived three sweeps were both **duplicated content**, which no prose denylist can reach: the encoder pseudocode is written out in all three files, and the AC count/range was hardcoded in four places and went stale twice (stopped at AC26 omitting AC27; then at AC28 omitting AC29). New check 6 compares the six encoder rules across files after whitespace normalization, and forbids any explicit AC upper bound. **Tested by reintroducing the exact `set(p)` defect that survived three sweeps** -- the check fails, names `set(p)`, and prints the odd file out. Recorded because the previous round's lesson was shipping a check nobody proved worked. | dev/check-spec.R |
+| 2026-08-17 | **Lesser fixes in the same pass**: `design.md` 21.4's write-order table -- the only end-to-end set write order -- had **no canonicalization step and no validation step**, and uploaded the payload unconditionally in contradiction of R7.5/I27/AC29b; now carries steps 0a/0b and a conditional step 6. Member-digest sort collation pinned to lowercase hex + radix (`strset`/`map` spelled it; the member sort did not). R7.5 rule 2 now forbids **re-uploading the bytes** as well as recomputing the hash -- forbidding only the recompute still permitted the worst outcome. `member_count` pinned as the **post-tidy** count. Task 2's `Requirements:` line no longer claims R2.15. Three stale "the E1 review is still pending" blocks updated (`tasks.md`, `design.md` 12, `dev/README.md`). Call-site count corrected 8 -> 9 at `design.md` 12. R2.14/R2.13 numbering left out of reading order deliberately -- the numbers record decision order, and renumbering would churn every reference. | R2.15, R7.5, R8, design.md 12 + 21.4 |

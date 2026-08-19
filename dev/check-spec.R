@@ -318,7 +318,87 @@ if (length(violations) > 0L) {
        sprintf("%d retired phrases, all marked where present", length(retired)))
 }
 
-# --- check 6: ASCII ----------------------------------------------------------
+# --- check 6: duplicated content must agree ----------------------------------
+# ROOT-CAUSE CHECK, added 2026-08-17.
+#
+# The two defect classes that survived three separate review sweeps were both
+# duplicated content, and neither is reachable by a prose denylist:
+#
+#   1. The sv1 encoding pseudocode is written out in all three spec files. A
+#      delta fixed design.md and left requirements.md and tasks.md stating the
+#      opposite -- inside the task that freezes the golden vectors.
+#   2. The acceptance-criteria count/range was hardcoded in four places and went
+#      stale twice (stopped at AC26 omitting AC27; stopped at AC28 omitting AC29).
+#
+# So: compare the pseudocode blocks against each other rather than against a
+# denylist, and forbid an explicit AC upper bound anywhere.
+
+norm_code <- function(x) {
+  x <- gsub("[[:space:]]+", "", x)
+  x <- gsub("method=\"radix\"", "radix", x, fixed = TRUE)
+  x
+}
+
+# One line per encoder rule. Keyed by the constructor being defined.
+CODE_KEYS <- c("str(s)", "strset(v)", "map(m)", "member(x)", "set(p)", "data_sha")
+
+code_lines <- list()
+for (fname in SPEC_FILES) {
+  for (key in CODE_KEYS) {
+    hits <- grep(paste0("^\\s*", gsub("([().])", "\\\\\\1", key), "\\s*="),
+                 spec[[fname]], perl = TRUE)
+    if (length(hits) > 0L) {
+      # a rule may wrap across lines; join until the parens balance
+      collected <- character()
+      for (h in hits) {
+        buf <- spec[[fname]][[h]]
+        j <- h
+        while (nchar(gsub("[^(]", "", buf)) > nchar(gsub("[^)]", "", buf)) &&
+               j < length(spec[[fname]])) {
+          j <- j + 1L
+          buf <- paste(buf, spec[[fname]][[j]])
+        }
+        collected <- c(collected, norm_code(buf))
+      }
+      code_lines[[key]] <- c(code_lines[[key]],
+                             stats::setNames(collected, rep(fname, length(collected))))
+    }
+  }
+}
+
+code_mismatch <- character()
+for (key in names(code_lines)) {
+  vals <- code_lines[[key]]
+  if (length(unique(vals)) > 1L) {
+    code_mismatch <- c(code_mismatch, sprintf("%s disagrees across files:", key),
+                       sprintf("    %-18s %s", names(vals), unname(vals)))
+  }
+}
+
+# No explicit AC upper bound: "AC1-AC28", "AC13-AC28", "twenty-eight acceptance"
+ac_bound <- character()
+for (fname in SPEC_FILES) {
+  hits <- grep("AC[0-9]+\\s*-\\s*AC[0-9]+|(twenty|thirty)-[a-z]+ acceptance",
+               spec[[fname]], perl = TRUE, ignore.case = TRUE)
+  for (h in hits) {
+    ac_bound <- c(ac_bound, sprintf("%s:%d  %s", fname, h,
+                                    substr(trimws(spec[[fname]][[h]]), 1L, 90L)))
+  }
+}
+
+if (length(code_mismatch) > 0L || length(ac_bound) > 0L) {
+  fail("duplicated content agrees",
+       "the same fact is stated twice and the copies disagree:",
+       c(code_mismatch,
+         if (length(ac_bound)) c("hardcoded AC bound (derive it instead):", ac_bound)),
+       "this is the class a prose denylist cannot catch -- it survived three sweeps.")
+} else {
+  pass("duplicated content agrees",
+       sprintf("%d encoder rules consistent across files; no hardcoded AC bounds",
+               length(code_lines)))
+}
+
+# --- check 7: ASCII ----------------------------------------------------------
 # dev/ and .kiro/ are Rbuildignored, but the spec's prose gets copied into
 # roxygen and NEWS, where non-ASCII trips R CMD check.
 

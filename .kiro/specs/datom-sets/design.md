@@ -383,7 +383,8 @@ map(m)     = h( 0x03 || concat( str(k) || strset(m[k])
                                 for k in sort(keys(m), method = "radix") ) )
 
 member(x)  = h( 0x04 || map(x.id) || map(x.tags) )
-set(p)     = h( 0x05 || map(p.tags) || concat( sort(unique( member(m) for m in p.members )) ) )
+set(p)     = h( 0x05 || map(p.tags) || concat( sort(unique( member(m) for m in p.members ),
+                                               method = "radix") ) )
 
 data_sha   = h( 0x06 || utf8("datom-sv1") || set(payload) )
 ```
@@ -703,11 +704,19 @@ Section 7 carries **one hard constraint, and all questions are now resolved** (o
   the payload; **Q5** no serializer in the identity path -- a deterministic walk of the parsed
   payload.
 
-**The gate for Task 2 is therefore a design review of the encoding specification, not an
-open-question debate.** What still warrants the careful second pass: the exact byte rules in
-section 7.2, whether the domain-separation tag table leaves any collision surface, and whether the
-golden vectors actually cover the agreement cases enumerated in 7.3. The goldens still freeze the
-encoding -- changing it afterwards requires a conscious `datom-sv2` bump, exactly as cv1 documents.
+**The gate for Task 2 was a design review of the encoding specification, not an open-question
+debate -- and that review is COMPLETE (2026-08-17).** It covered the three things named: the exact
+byte rules in 7.2, whether the domain-separation marker table leaves a collision surface, and
+whether the goldens cover the agreement cases in 7.3.
+
+**Outcome: the encoding is sound; four additive deltas were needed, none a redesign.** Verified
+clean -- domain separation (one marker byte per constructor, so cross-type collisions reduce to
+sha256 collisions), "framing is free" (fixed-width entries make every concatenation unambiguous
+without length prefixes), radix collation as byte order, and `id`-vs-`tags` slot separation.
+Applied: member order removed from identity, canonicalization before the local write, the
+`document_sha` byte-identity rule, no Unicode normalization, the empty-`strset` pin, and a
+19-finding consistency sweep. The goldens still freeze the encoding -- changing it afterwards
+requires a conscious `datom-sv2` bump, exactly as cv1 documents. **Task 2 is cleared to implement.**
 
 *(A sixth question -- whether a set should carry a transitive member closure -- was raised and then
 **retired**. It existed only to avoid a traversal, and per R4.3 datom does not traverse. See
@@ -718,7 +727,7 @@ section 20.11.)*
 ### E2 -- Manifest namespace change (`tables` -> `artifacts`) -- Task 5
 
 **Why**: touches `datom_list()`, `datom_summary()`, `datom_validate()`, and the sync manifest
-updater **together** -- eight verified call sites across four files (section 9), plus their
+updater **together** -- **nine** verified call sites (3 write + 6 read) across four files (section 9), plus their
 tests. A partial rename yields a writer/reader disagreement that presents as "everything looks
 fine, the list is just empty," which is the failure class the `schema_version` gate exists to
 prevent and which no test will catch unless it is written to.
@@ -726,7 +735,7 @@ prevent and which no test will catch unless it is written to.
 **Trigger type**: design spot-check + purity audit after the change lands.
 
 A third, softer moment: **test coverage review before spec completion** (Task 15), per the third
-standing escalation trigger. **Twenty-eight** acceptance criteria plus a new hash regime is a lot of
+standing escalation trigger. The full acceptance-criteria set plus a new hash regime is a lot of
 surface to claim covered.
 
 ---
@@ -1455,13 +1464,25 @@ The write order, and why only storage can carry it:
 
 | # | Step | Is the commit `C` known? |
 |---|---|---|
+| 0a | **tidy** the payload -- canonicalize (R2.15, I26) | no |
+| 0b | **validate what remains** (R2.14) -- refuse only the unhandleable | no |
 | 1 | hash payload content -> `data_sha` | no |
 | 2 | build `metadata.json`, hash it -> version `V` | no |
 | 3 | write local `set.json`, `metadata.json`, append history entry | no |
 | 4 | **`git commit`** those files + `include_paths` | **`C` now exists** |
 | 5 | `git push` | yes |
-| 6 | upload payload -> `{name}/{data_sha}.json` | yes |
+| 6 | upload payload -> `{name}/{data_sha}.json` -- **only if `data_sha` is not already in history**; otherwise reuse the stored object untouched and **carry its recorded `document_sha` forward** (R7.5 rule 1, I27) | yes |
 | 7 | upload `metadata.json`, `version_history.json` **+ `commit_sha = C`**, snapshot `V.json` | yes |
+
+Steps 0a/0b are listed because this is the **only** end-to-end write order in the spec, and an
+earlier draft omitted them -- leaving the procedure that implements R2.15 and R2.14 with no step for
+either. Their order matters in both directions: tidy first so validation sees only genuine ambiguity,
+and never validate first or the tidy rules become unreachable (R2.14).
+
+Step 6's condition is likewise not optional. Order- and shape-insensitivity means several payload
+spellings share one `data_sha` (7.2.3), so an unconditional upload can overwrite a stored object with
+different bytes and strand the recorded `document_sha` -- surfacing later as a refused read of a
+valid version.
 
 Step 3's files are the *inputs* to step 4, so nothing written there can name `C`. Only steps 6-7
 run after `C` exists, and they are storage-only. Hence the git copy never names `C` -- and does not
