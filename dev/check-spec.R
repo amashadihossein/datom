@@ -367,8 +367,32 @@ for (fname in SPEC_FILES) {
 }
 
 code_mismatch <- character()
-for (key in names(code_lines)) {
+
+# ABSENCE, not only disagreement. Comparing present copies is not enough: delete a
+# rule from one file and the remaining two still agree, so the check passed and --
+# worse -- still reported "6 encoder rules consistent", because the key survived via
+# the other files. Verified by deleting `str(s)` from requirements.md before this
+# clause existed: PASS, exit 0.
+#
+# Two holes, both closed here:
+#   one copy deleted  -> survivors agree      -> was PASS, now FAIL
+#   all copies deleted -> key absent entirely -> was NOT EVEN CHECKED, now FAIL
+#
+# The second matters most for requirements.md, where R2.10 *defines* the encoding.
+# If the formula vanishes there the requirement stops stating what it requires, and
+# the next person to edit the encoder updates the two files that still carry it
+# without ever learning a third did.
+for (key in CODE_KEYS) {
   vals <- code_lines[[key]]
+  missing <- setdiff(SPEC_FILES, names(vals))
+  if (length(missing) > 0L) {
+    code_mismatch <- c(
+      code_mismatch,
+      sprintf("%s is missing from: %s", key, paste(missing, collapse = ", ")),
+      sprintf("    every encoder rule must appear in all %d spec files", length(SPEC_FILES))
+    )
+    next
+  }
   if (length(unique(vals)) > 1L) {
     code_mismatch <- c(code_mismatch, sprintf("%s disagrees across files:", key),
                        sprintf("    %-18s %s", names(vals), unname(vals)))
@@ -394,8 +418,8 @@ if (length(code_mismatch) > 0L || length(ac_bound) > 0L) {
        "this is the class a prose denylist cannot catch -- it survived three sweeps.")
 } else {
   pass("duplicated content agrees",
-       sprintf("%d encoder rules consistent across files; no hardcoded AC bounds",
-               length(code_lines)))
+       sprintf("%d encoder rules present in all %d files and agreeing; no hardcoded AC bounds",
+               length(CODE_KEYS), length(SPEC_FILES)))
 }
 
 # --- check 7: ASCII ----------------------------------------------------------

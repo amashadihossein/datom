@@ -385,6 +385,23 @@ the test.
   the entry where it is, so the diff shows the edit. `version` is in the key because two versions of
   one name are legal (R2.14a) and would otherwise have no defined relative order.
 
+  **No tiebreaker is required, and none may be added.** Two members can share
+  `project` || `name` || `version` in exactly one situation: the **same `id` with different `tags`**,
+  which survives step 4's dedup because the `member()` digest covers tags. Since tidy (step 0a of
+  design.md 21.4) runs *before* validation (0b), the sort can meet that tie -- and R's radix sort is
+  stable, so it resolves to caller input order. That is harmless because **R2.14 refuses that payload
+  one step later, so no tie can reach a written payload.** An implementer reaching step 4 will ask
+  what to do about ties; the answer is nothing, and a defensive tiebreaker would be dead code.
+
+  **Do not resolve this by hoisting the refusal before the tidy step.** The tidy-then-validate phase
+  separation is worth more than removing an unreachable edge, and inverting it would make the tidy
+  rules unreachable instead (R2.14).
+
+  Note the key omits **`kind`**, which is safe rather than an oversight: a set and a table cannot
+  share a name, because storage keys are `{name}/...` regardless of kind and AC4 refuses the
+  collision. So `kind` could never break a tie that `project` || `name` || `version` did not already
+  decide.
+
   This split is cheap now and **expensive later**: once payloads ship, changing the canonical file
   order is a change to canonical form, which I27 forbids.
 
