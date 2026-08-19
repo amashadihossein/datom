@@ -19,14 +19,23 @@ things that are not tasks: the prerequisite #89 named
 ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before* this
 branch was cut, deliberately outside this history), and `dev/check-spec.R`.
 
-**Next**: **Task 2 -- `datom-sv1`**. It carries the **E1 escalation**, and per rule 5d that
-recommendation must be surfaced *before* implementing, not after. The gate is now a **design review
-of the encoding specification** -- all five original open questions are settled (design.md 7.5).
-**That review is DONE (2026-08-17).** The encoding was found sound -- domain separation, "framing is
-free", radix collation, and `id`/`tags` slot separation all verified -- and the four resulting
-deltas plus a 19-finding sweep are applied. Task 2 is cleared to implement.
+**Next**: **Task 2 -- `datom-sv1`. Implement it. Do NOT re-run the E1 escalation.**
+
+Task 2 is tagged `[ESCALATION E1 -- design review]` and rule 5d says a flagged task must surface its
+recommendation before implementing. **That obligation is already discharged (2026-08-17)** -- the
+review happened, and re-running it would relitigate settled decisions and re-freeze goldens that are
+already specified. Read this paragraph as the discharge record and go straight to the task:
+
+- Five original open questions: settled 2026-08-15 (design.md 7.5).
+- Encoding reviewed and found **sound** -- domain separation (one marker byte per constructor),
+  "framing is free" (fixed-width entries, no length prefixes needed), radix collation as byte order,
+  `id`-vs-`tags` slot separation. All four verified, none changed.
+- Four additive deltas applied (D1-D6 in the Decisions log), then a **19-finding** consistency sweep.
+- Everything is in this file's Decisions log and in R2.10-R2.17 / R7.5. No open questions remain.
+
 **Goldens freeze the encoding** -- changing anything afterwards is a `datom-sv2` bump, not a spec
-edit.
+edit. That is the reason the review preceded implementation, and the reason it does not need
+repeating.
 
 **Open with the owner**: nothing. Two items opened after Task 1 and both closed on 2026-08-17 --
 the Task 1 scope deviation (**owner-approved, guard stays**) and the reader-side diff question
@@ -40,21 +49,45 @@ Rscript -e 'devtools::test()'      # report the count; it must not drop
 Rscript dev/check-spec.R           # structural gate on this spec -- see dev/README.md
 ```
 
-`check-spec.R` catches dangling `R*/I*/P*/AC*` references, orphaned criteria, tasks missing an
-`Acceptance:` clause, code citations pointing outside the file, and retired wording surviving as a
-live instruction. It is **structural only** -- on the last review round it would have caught about
-half the findings. Reasoning defects still need a reader.
+`check-spec.R` runs **eight** checks: dangling `R*/I*/P*/AC*` references, orphaned criteria, task
+numbering, tasks missing an `Acceptance:` clause, code citations pointing outside the file, retired
+wording surviving as a live instruction, **duplicated content agreeing** (check 6), and ASCII.
+
+**Check 6 is the one that matters most for Task 2.** The sv1 encoding pseudocode is written out in
+all three spec files, and check 6 asserts all six encoder rules are present in every file and
+byte-identical modulo whitespace. That exists because a delta once fixed the formula in `design.md`
+only, leaving `requirements.md` and `tasks.md` stating the opposite *inside the task that freezes the
+goldens*. If you touch the encoding, edit all three copies and let check 6 confirm it.
+
+It is **structural only**, and do not over-trust it: on the round that added check 6 it passed on all
+six sites of the defect it was supposed to catch, because its retired-wording suppression list was
+too permissive. Both it and check 6 have since been **verified by deliberately reintroducing the
+defect** and confirming a FAIL. Do that for any new check you add -- a green run is not evidence.
+Reasoning defects still need a reader.
 
 **Read before editing `R/`**: `dev/engineering-notes.md`. The two most relevant entries for the
 remaining tasks are the **two key shapes** (full vs relative -- mixing them double-prefixes
 silently and does not error) and **payload key vs snapshot key** (different directories, both `.json`
 for a set).
 
-**One repeating defect pattern, worth knowing before Task 2.** Four review rounds found the same
-class: an encoding change swept requirements.md and the acceptance criteria but left the
-invariant/property tables in design.md, and Task 2's own bullets, describing the old mechanism. If
-you change the encoding, check those three places explicitly, and add the retired phrasing to the
-`retired` denylist in `dev/check-spec.R`.
+**One repeating defect pattern, worth knowing before Task 2.** Five review rounds found the same
+class: an encoding change swept some places and left others stating the old mechanism -- the
+invariant/property tables in design.md, Task 2's own bullets, the pseudocode copies. The last round
+left **six** such sites and the gate passed on all six.
+
+What to do if you change the encoding:
+
+1. **Pseudocode: edit all three copies** (`requirements.md` R2.10, `design.md` 7.2, `tasks.md` Task
+   2). Mechanically guarded now -- check 6 will catch you.
+2. **Prose: sweep requirements, the design invariant/property tables, and the task bullets**, then add
+   the retired phrasing to the `retired` denylist in `dev/check-spec.R`. Not mechanically guarded
+   until you add the phrase.
+3. **Counts and ranges: never restate one.** A spelled-out criteria count and a literal
+   first-to-last AC range both went stale here; check 6 now forbids an explicit AC bound anywhere in
+   the spec. Derive the list, don't restate its edges. (Check 6 is strict enough that even *quoting*
+   a stale range as an example trips it -- which is why this bullet describes the shape in words.)
+4. **Prove any new gate fails before trusting it.** Two consecutive rounds shipped a check that
+   passed on the defect it existed to catch.
 
 One task (or a small related group) = one chunk = one commit. Mark the checkbox in the **same
 commit** as the code, and update the `dev/README.md` Active Specs status line. Per Operational
@@ -121,7 +154,7 @@ necessary.
     suite passing unchanged *is* the assertion. Recorded explicitly so the absence is not read as
     an omission. No pathway impact._
 
-- [ ] **2. `datom-sv1` canonical set-content hash** &nbsp; **[ESCALATION E1 -- design review]**
+- [ ] **2. `datom-sv1` canonical set-content hash** &nbsp; **[ESCALATION E1 -- design review DONE 2026-08-17; implement, do not re-review]**
   - **All five open questions are settled** (owner-decided 2026-08-15, design.md 7.5). The
     escalation is now a **design review of the encoding specification**, not a debate: exact byte
     rules, whether the tag table leaves a collision surface, and whether the goldens cover the
@@ -202,8 +235,14 @@ necessary.
     `simplifyVector = FALSE` so `members[]` stays a list of records rather than collapsing to a data
     frame. **Already satisfied** by both backends (`R/utils-local.R:110`, `R/utils-s3.R:209`).
   - `.datom_sv1_str()` / `.datom_sv1_strset()` / `.datom_sv1_map()` +
-    `.datom_canonical_set_hash()` in a new `R/hashable-set.R` (or extend `R/utils-sha.R` -- decide
-    at the review). **`.datom_encode_numeric()` is NOT used** -- sv1 has no numeric primitive at
+    `.datom_canonical_set_hash()` go in a **new `R/hashable-set.R`**. *(Decided at the E1 review,
+    2026-08-17 -- an earlier draft left this as "decide at the review", which would have dangled once
+    the review closed.)* Rationale: cv1's equivalents sit in `R/utils-sha.R`, already 565 lines and
+    holding three unrelated concerns (`.datom_encode_numeric`, `.datom_canonical_hash`,
+    `.datom_compute_metadata_sha`); sv1 shares **no** primitive with any of them, so co-locating buys
+    nothing and worsens the biggest file. A sibling file also mirrors the existing
+    `R/hashable.R` naming, which is where #72 put the cv1-adjacent surface.
+    **`.datom_encode_numeric()` is NOT used** -- sv1 has no numeric primitive at
     all now that length prefixes are gone, so there is nothing to share with cv1 beyond
     `digest::digest(..., algo = "sha256", serialize = FALSE)`. (Superseded instruction: an earlier
     draft said to reuse it verbatim for `f64le` framing.)
@@ -664,7 +703,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-15 | **E1 Q2 -- OWNER-DECIDED: dissolved by the omission rule.** A payload has no data cells, so `NA` could only arrive via optional fields. datom's existing "omitted, not nulled" convention (verified `R/read_write.R:296-299`) becomes the canonical form: absence means the field **does not exist**; `null` / `NA` / `""` are never representations of absence. A literal `NA` reaching the encoder is an **error**, not an encoding case, and goldens carry the refusal. Knock-on: the walk has **no `null` tag** (the earlier draft's `0x04` is dropped), and this is where sv1 legitimately diverges from cv1, which needs an NA mask byte because table cells *can* be missing. | R2.7, design.md 7.2/7.5 |
 | 2026-08-15 | **E1 Q3 -- OWNER-DECIDED: empty set refused.** Mirrors cv1's zero-dim abort (verified `R/utils-sha.R:310-312`). Marginal utility -- the build package simply does not write the set until its first output exists -- and an empty citable product is semantically murky. Cheap to relax later, awkward to retract. AC5 updated: refusal is the **tested** behavior, not a documented maybe. | R2.8, AC5 |
 | 2026-08-15 | **E1 Q4 -- OWNER-DECIDED: `schema_version` stays out of the payload and hash.** It describes the container format, not the content; in identity a format bump would re-mint every set with unchanged members -- the same failure the `volatile` list exists to prevent (verified `R/utils-sha.R:411-412`). | R2.9 |
-| 2026-08-15 | **E1 Q5 -- OWNER-DECIDED: emitter-free structural hash.** Neither `jsonlite` nor a bespoke sv1 emitter is canonical, because **no serializer is in the identity path**. ~~sv1 is a deterministic walk of the parsed payload: radix-sorted keys recursively, fixed per-type leaf encoding with a domain-separation tag per type, `sha256("datom-sv1" \|\| encoded-walk)`.~~ **The walk formulation was SUPERSEDED 2026-08-16 by F-A** -- replaced by the hash-of-hashes construction; the *decision* (no serializer in the identity path) stands unchanged. Stored-file formatting is free, because stored-byte integrity is `document_sha`'s separate job -- **identity and storage integrity never share a dependency**. Goldens and `dev/datom_sv1_reference.R` are written against the walk spec, not any emitter's output. | R2.10, design.md 7.2/7.4 |
+| 2026-08-15 | **E1 Q5 -- OWNER-DECIDED: emitter-free structural hash.** Neither `jsonlite` nor a bespoke sv1 emitter is canonical, because **no serializer is in the identity path**. ~~sv1 is a deterministic walk of the parsed payload: radix-sorted keys recursively, fixed per-type leaf encoding with a domain-separation tag per type, `sha256("datom-sv1" \|\| encoded-walk)`.~~ **The walk formulation was SUPERSEDED 2026-08-16 by F-A** -- replaced by the hash-of-hashes construction; the *decision* (no serializer in the identity path) stands unchanged. Stored-file formatting is free, because stored-byte integrity is `document_sha`'s separate job -- **identity and storage integrity never share a dependency**. Goldens and `dev/datom_sv1_reference.R` are written against ~~the walk spec~~ **the encoding specification as it now stands (superseded wording: "the walk spec")**, not any emitter's output. | R2.10, design.md 7.2/7.4 |
 | 2026-08-15 | **R2.5's force stands; its mechanism is superseded.** The write/read agreement constraint is unchanged, but it is no longer achieved by normalizing through `serialize -> parse -> encode`. Each mutation is eliminated at source instead: numbers always f64 (kills integer-vs-double), `NA` aborts (kills the `"NA"` string and `null` cases), and scalar-vs-array is decided by an explicit R-type rule. **Verified bonus**: the one supporting condition -- reading with `simplifyVector = FALSE` -- is *already* satisfied deliberately by both backends (`R/utils-local.R:110`, `R/utils-s3.R:209`, the latter documented as "keep lists as lists"). So the decision is supported by existing infrastructure rather than imposing a new read-path requirement. | R2.5, design.md 7.1/7.3 |
 | 2026-08-15 | **sv1 does not inherit the `metadata_sha` emitter exposure** (section 16). The earlier "cannot both be right" tension is resolved one-sidedly: sv1 is clean by construction, which *sharpens* rather than softens the case for the separate `metadata_sha` issue, since it becomes the only hash in datom whose value depends on a third-party formatter. Scope of that issue unchanged; priority arguably rises. | design.md 7.4, 16 |
 | 2026-08-15 | **E1 downgraded from open-question debate to design review.** Gate for Task 2 is now: exact byte rules, whether the tag table leaves a collision surface, and whether the goldens cover the 7.3 agreement cases. Goldens still freeze the encoding -- a later change needs a conscious `datom-sv2` bump. | design.md E1, Task 2 |
@@ -720,3 +759,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-17 | **Lesser fixes in the same pass**: `design.md` 21.4's write-order table -- the only end-to-end set write order -- had **no canonicalization step and no validation step**, and uploaded the payload unconditionally in contradiction of R7.5/I27/AC29b; now carries steps 0a/0b and a conditional step 6. Member-digest sort collation pinned to lowercase hex + radix (`strset`/`map` spelled it; the member sort did not). R7.5 rule 2 now forbids **re-uploading the bytes** as well as recomputing the hash -- forbidding only the recompute still permitted the worst outcome. `member_count` pinned as the **post-tidy** count. Task 2's `Requirements:` line no longer claims R2.15. Three stale "the E1 review is still pending" blocks updated (`tasks.md`, `design.md` 12, `dev/README.md`). Call-site count corrected 8 -> 9 at `design.md` 12. R2.14/R2.13 numbering left out of reading order deliberately -- the numbers record decision order, and renumbering would churn every reference. | R2.15, R7.5, R8, design.md 12 + 21.4 |
 | 2026-08-17 | **(review hardening 1) R2.15 step 4's sort tie is unreachable, and that is now stated.** Two members can share `project` \|\| `name` \|\| `version` in exactly one situation -- the **same `id` with different `tags`**, which survives dedup because the `member()` digest covers tags. Because tidy runs before validation, the sort can meet that tie and R's stable radix sort resolves it to caller input order; harmless, since R2.14 refuses that payload one step later so no tie reaches a written payload. Recorded because an implementer reaching step 4 will ask what to do about ties and might add a **dead-code tiebreaker** or escalate. Explicitly **not** fixed by hoisting the refusal before tidy: the phase separation is worth more than removing an unreachable edge, and inverting it would make the tidy rules unreachable instead. Also noted that the key omits `kind` safely -- AC4 refuses cross-kind name collisions, so `kind` could never break a tie the rest of the key did not already decide. | R2.15, R2.14, AC4 |
 | 2026-08-17 | **(review hardening 2) `check-spec.R` check 6 detected disagreement but not ABSENCE -- fixed, and the reviewer found one hole while there were two.** Comparing present copies is insufficient: delete a rule from one file and the survivors still agree. **Demonstrated before fixing** -- deleting `str(s)` from `requirements.md` gave `ok  duplicated content agrees -- 6 encoder rules consistent`, exit 0, the count still reading 6 because the key survived via the other two files. The second hole, unreported: with a rule deleted from **all three** files the key vanished from the loop's index and was **not checked at all**. Both closed by iterating `CODE_KEYS` rather than observed keys and asserting presence in every spec file. Matters most for `requirements.md`, where R2.10 *defines* the encoding -- if the formula vanishes there the requirement stops stating what it requires, and the next editor updates the two files that still carry it without learning a third did. Verified non-vacuously in both directions: one-file deletion and all-file deletion each FAIL naming the missing file(s), and restore returns to pass. | dev/check-spec.R |
+| 2026-08-17 | **Cold-start audit: five things would have tripped a fresh session; all fixed.** Asked whether Task 2 could be started in a new session, the documented cold-start path (`dev/README.md` Active Specs -> this file's state block -> the task) was walked as a cold reader. **(1) The state block contradicted itself** -- "it carries the E1 escalation, and per rule 5d that recommendation must be surfaced *before* implementing" followed two sentences later by "that review is DONE". A fresh session obeying rule 5d would have re-run the review, relitigating settled decisions and re-freezing specified goldens. Rewritten as an explicit **discharge record**, and Task 2's heading now reads "design review DONE 2026-08-17; implement, do not re-review". **(2) The `check-spec.R` description listed five checks when there are eight**, omitting check 6 -- the one that guards the pseudocode Task 2 is about to implement from. **(3) The "repeating defect pattern" advice was stale**: it said to add retired phrasing to the denylist, which is now known to be the weaker half; the pseudocode is guarded mechanically and prose is not, so the advice is split into four numbered steps. **(4) `R/hashable-set.R` vs extending `R/utils-sha.R` said "decide at the review"** -- a dangling instruction once the review closed. Decided: new `R/hashable-set.R`, because sv1 shares no primitive with `utils-sha.R`'s three unrelated concerns and that file is already 565 lines. **(5) One Q5 log row still said goldens are "written against the walk spec"**, retired wording outside its strikethrough. | tasks.md state block, Task 2 |
+| 2026-08-17 | **Check 6 is strict enough to flag a spec author *quoting* a stale AC range as a bad example.** Hit while writing the anti-pattern guidance itself. Resolved by describing the shape in words rather than exempting the check -- same call as the `manifest$tables` note in the `retired` denylist, where a phrase is load-bearing in the instruction forbidding it. Recorded because the tempting fix is to loosen the check, and loosening is exactly what made the retired-wording check vacuous for six sites. | dev/check-spec.R |
