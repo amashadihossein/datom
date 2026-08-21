@@ -65,10 +65,10 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b334b696003/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmprkodKH/datom-example-1b334b696003/repo
-#> cloning into '/tmp/RtmprkodKH/datom-example-1b334b696003/teammate'...
-#> ✔ Cloned "example_project" to /tmp/RtmprkodKH/datom-example-1b334b696003/teammate
+#> ℹ Created store directory /tmp/Rtmp0YCcPh/datom-example-1a314e6c8b2b/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/Rtmp0YCcPh/datom-example-1a314e6c8b2b/repo
+#> cloning into '/tmp/Rtmp0YCcPh/datom-example-1a314e6c8b2b/teammate'...
+#> ✔ Cloned "example_project" to /tmp/Rtmp0YCcPh/datom-example-1a314e6c8b2b/teammate
 #> [1] name            current_version last_updated   
 #> <0 rows> (or 0-length row.names)
 ```

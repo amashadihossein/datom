@@ -95,14 +95,14 @@ warning and are skipped – one bad project does not take down the listing.</p>
 <span class="r-in"><span><span class="co"># created governance store lists an empty portfolio.</span></span></span>
 <span class="r-in"><span><span class="va">tmp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="st">"datom-example-"</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">gov</span> <span class="op">&lt;-</span> <span class="fu"><a href="datom_store_local.html">datom_store_local</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">tmp</span>, <span class="st">"gov-storage"</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Created store directory <span style="color: #0000BB;">/tmp/RtmprkodKH/datom-example-1b33655fd357/gov-storage</span>.</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Created store directory <span style="color: #0000BB;">/tmp/Rtmp0YCcPh/datom-example-1a31656f8362/gov-storage</span>.</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="va">store</span> <span class="op">&lt;-</span> <span class="fu"><a href="datom_store.html">datom_store</a></span><span class="op">(</span></span></span>
 <span class="r-in"><span>  governance   <span class="op">=</span> <span class="va">gov</span>,</span></span>
 <span class="r-in"><span>  data         <span class="op">=</span> <span class="fu"><a href="datom_store_local.html">datom_store_local</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">tmp</span>, <span class="st">"storage"</span><span class="op">)</span><span class="op">)</span>,</span></span>
 <span class="r-in"><span>  gov_repo_url <span class="op">=</span> <span class="st">"https://github.com/example/acme-gov"</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Created store directory <span style="color: #0000BB;">/tmp/RtmprkodKH/datom-example-1b33655fd357/storage</span>.</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Created store directory <span style="color: #0000BB;">/tmp/Rtmp0YCcPh/datom-example-1a31656f8362/storage</span>.</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu">datom_projects</span><span class="op">(</span><span class="va">store</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] name          data_backend  data_root     data_prefix   registered_at</span>

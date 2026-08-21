@@ -47,6 +47,7 @@
 <h2 class="pkg-version" data-toc-text="0.1.1" id="datom-011">datom 0.1.1<a class="anchor" aria-label="anchor" href="#datom-011"></a></h2>
 <p>Initial CRAN release. <code>datom</code> provides version-controlled data management for reproducible scientific and clinical workflows — tables are tracked as code in git while actual data lives in cloud storage (S3) or a local filesystem backend.</p>
 <p>datom is experimental: the API may change without a deprecation cycle until it reaches a stable release.</p>
+<p>datom requires R &gt;= 4.1.0.</p>
 <div class="section level3">
 <h3 id="table-identity-the-datom-cv1-canonical-hash-0-1-1">Table identity: the <code>datom-cv1</code> canonical hash<a class="anchor" aria-label="anchor" href="#table-identity-the-datom-cv1-canonical-hash-0-1-1"></a></h3>
 <p>Table identity is defined by a canonical hash of a table’s <strong>values</strong> (<code>datom-cv1</code>), not by the bytes of its parquet serialization. Hashing the serialization tied identity to the writer: an <code>arrow</code> upgrade or a different compression default produced different bytes for identical data, and therefore a spurious new version. See <code><a href="../articles/design-version-shas.html">vignette("design-version-shas")</a></code> for the model and the identity decisions.</p>

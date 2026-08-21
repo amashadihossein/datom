@@ -97,9 +97,9 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b3351a641a8/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmprkodKH/datom-example-1b3351a641a8/repo
-#> ℹ Created store directory /tmp/RtmprkodKH/datom-example-1b3351a641a8/gov-storage.
+#> ℹ Created store directory /tmp/Rtmp0YCcPh/datom-example-1a31164dfec1/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/Rtmp0YCcPh/datom-example-1a31164dfec1/repo
+#> ℹ Created store directory /tmp/Rtmp0YCcPh/datom-example-1a31164dfec1/gov-storage.
 #> ✔ Wrote data-side governance record for "example_project".
 #> [1] "https://github.com/example/acme-gov"
 ```

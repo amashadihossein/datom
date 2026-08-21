@@ -10,6 +10,8 @@ or a local filesystem backend.
 datom is experimental: the API may change without a deprecation cycle
 until it reaches a stable release.
 
+datom requires R \>= 4.1.0.
+
 ### Table identity: the `datom-cv1` canonical hash
 
 Table identity is defined by a canonical hash of a table’s **values**
