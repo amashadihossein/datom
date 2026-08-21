@@ -20,6 +20,8 @@ License: MIT + file LICENSE
 URL: https://github.com/amashadihossein/datom,
     https://amashadihossein.github.io/datom/
 BugReports: https://github.com/amashadihossein/datom/issues
+Depends:
+    R (>= 4.1.0)
 Imports:
     arrow,
     cli,
