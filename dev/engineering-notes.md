@@ -307,6 +307,57 @@ Harvested from the spec's work-handoff at completion. The *design* lives in
   Pipe through `grep -vE ":[0-9]+:[[:space:]]*#"` and record the documented match. Deleting the
   comment to satisfy a literal grep would delete the statement of the invariant.
 
+### datom-sv1 set identity (issue #89, spec `.kiro/specs/datom-sets/`)
+
+The set-content hash. Design lives in the spec (`requirements.md` R2, `design.md` 7); these are the
+implementation traps.
+
+- **`dev/datom_sv1_reference.R` is the normative byte layout**, exactly as
+  `dev/datom_cv1_reference.R` is for tables: standalone (base R + `digest`), Rbuildignored, ASCII,
+  self-testing, and it prints the goldens. `R/hashable-set.R` must stay byte-identical to it. The
+  parity test in `test-hashable-set.R` skips when `dev/` is absent -- i.e. under **every**
+  `R CMD check` job -- so `.github/workflows/cv1-reference-parity.yaml` (which covers cv1 **and**
+  sv1 despite its name) is what actually enforces parity, from the source tree, on x86_64 and arm64.
+  **The goldens are published, so the encoding is frozen**: a failing golden means the code drifted,
+  and a deliberate change is a `datom-sv2` bump with a new `hash_algo`, not an edit.
+- **sv1 shares NO primitive with cv1 -- do not reach for `.datom_encode_numeric()`.** There are no
+  numbers in a set payload and no length prefixes anywhere (every intermediate is a fixed 32 bytes,
+  so `h("a")||h("b")` at 64 bytes cannot collide with `h("ab")` at 32). The only common ground is
+  `digest::digest(..., algo = "sha256", serialize = FALSE)`.
+- **A NAMED list in a value position must be refused, and this is the trap worth remembering.**
+  Element-wise, `list(b = "c")` and `list("c")` are indistinguishable -- both are a one-element list
+  holding one string -- so an encoder that checks only elements hashes `{"a": {"b": "c"}}`
+  *identically* to `{"a": ["c"]}`. The inner key then sits outside identity, and two different
+  payloads share one `data_sha` and therefore one storage address. The guard is
+  `is.list(v) && !is.null(names(v))` in `.datom_sv1_as_strings()`. Same reasoning drives the other
+  two refusals: an unexpected field at the payload root or in a member record aborts rather than
+  being ignored, because an ignored field is content that never enters identity.
+- **Intermediates are raw 32-byte vectors, not hex.** Hex appears in exactly two places, both named
+  by the spec: the member-digest collation key and the final `data_sha`. Byte order and lowercase-hex
+  C-locale order agree, so `order(hex, method = "radix")` and sorting the raw bytes give the same
+  result -- but keep the hex spelling, since that is what the specification pins.
+- **`is.na()` on a closure warns instead of answering**, so the `NA` refusal sits *after* the
+  type gate, with one exception hoisted above it: an all-`NA` **logical** (a bare `NA`) is caught
+  first so it gets the "omit the field instead" advice rather than a type error. A
+  `tags = list(t = mean)` fixture is what surfaced this, against a suite held at WARN 0.
+- **Both empty spellings must agree**: `strset(list())` == `strset(character(0))` == `h(0x02)`, and
+  `map(list())` == `map(NULL)` == `h(0x03)`. `[]` and `{}` are the parsed-JSON forms, and write/read
+  agreement depends on the R and parsed spellings hashing equal. The encoder must not lean on
+  "validation refuses empty tag values upstream" -- that is exactly how an encoder breaks silently
+  the day the refusal is relaxed.
+- **Where the encoder stops.** It refuses only what it cannot encode without losing content. Grammar
+  enforcement with user-facing recourse -- which key is wrong, what types are allowed, whether two
+  members share an `id` with conflicting tags -- belongs to `.datom_validate_members()` and
+  `datom_write_set()`, the only places that see a whole payload and the caller's intent.
+- **Sorting is `method = "radix"` everywhere**, i.e. C-locale byte order, for the same
+  locale-independence reason `.datom_compute_metadata_sha()` uses it. No Unicode normalization is
+  applied anywhere in the identity path: NFC and NFD are different tags, deliberately, because
+  normalization tables are versioned Unicode data. Note the sort runs *before* `enc2utf8()` (which
+  happens inside `str()`), which looks like an encoding hazard and is not: checked on a
+  latin1-marked string against its UTF-8 twin, radix sort produces the same order and the digests
+  agree, because R translates for the comparison. In practice the hash domain is a parsed JSON
+  payload, so it is UTF-8 anyway.
+
 ### Testing storage side effects without mocking storage
 
 Techniques from the S1-S6 integration suite (`tests/testthat/test-identity-contract.R`). They

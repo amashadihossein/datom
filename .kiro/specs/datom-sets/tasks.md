@@ -7,40 +7,34 @@ body alone -- is the current truth.
 **Branch**: `spec/datom-sets`, cut from `dev`. **PRs into `dev`, not `main`** -- 0.1.0 is under CRAN
 review and `main` is frozen (see `dev/README.md` "Branching During CRAN Submission"). Draft PR
 [#97](https://github.com/amashadihossein/datom/pull/97) is open and accumulates the task commits.
-**Test baseline**: 2460 at spec start -> **2482 after Task 1**. Report the count in every commit
-message; it must never drop.
+**Test baseline**: 2460 at spec start -> 2482 after Task 1 -> **2572 after Task 2**. Report the count
+in every commit message; it must never drop.
 
 ---
 
 ## Where things stand
 
-**Done**: Task 0 (spec) and **Task 1** (stale docstring sweep + relative-key helpers), plus two
-things that are not tasks: the prerequisite #89 named
+**Done**: Task 0 (spec), **Task 1** (stale docstring sweep + relative-key helpers) and **Task 2**
+(`datom-sv1`), plus two things that are not tasks: the prerequisite #89 named
 ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before* this
 branch was cut, deliberately outside this history), and `dev/check-spec.R`.
 
-**Next**: **Task 2 -- `datom-sv1`. Implement it. Do NOT re-run the E1 escalation.**
+**Next**: **Task 3 -- export and harden storage JSON put/get.** No escalation flag; the next flagged
+task is **Task 5** (E2, the `manifest$tables` -> `manifest$artifacts` rename), which must surface its
+recommendation before implementing per rule 5d.
 
-Task 2 is tagged `[ESCALATION E1 -- design review]` and rule 5d says a flagged task must surface its
-recommendation before implementing. **That obligation is already discharged (2026-08-17)** -- the
-review happened, and re-running it would relitigate settled decisions and re-freeze goldens that are
-already specified. Read this paragraph as the discharge record and go straight to the task:
+**THE GOLDENS ARE PUBLISHED AS OF TASK 2, SO THE ENCODING IS FROZEN.** Changing any sv1 byte rule
+from here is a conscious `datom-sv2` bump with a new `hash_algo` identifier -- not a spec edit, not a
+code fix. The three places that hold it: `R/hashable-set.R` (implementation),
+`dev/datom_sv1_reference.R` (normative byte rules + marker table), and the hard-coded constants in
+`tests/testthat/test-hashable-set.R`. If a golden ever fails, the code drifted; do not update the
+constant. E1's discharge record and the four deltas it produced are in the Decisions log
+(2026-08-17); nothing about it is open.
 
-- Five original open questions: settled 2026-08-15 (design.md 7.5).
-- Encoding reviewed and found **sound** -- domain separation (one marker byte per constructor),
-  "framing is free" (fixed-width entries, no length prefixes needed), radix collation as byte order,
-  `id`-vs-`tags` slot separation. All four verified, none changed.
-- Four additive deltas applied (D1-D6 in the Decisions log), then a **19-finding** consistency sweep.
-- Everything is in this file's Decisions log and in R2.10-R2.17 / R7.5. No open questions remain.
-
-**Goldens freeze the encoding** -- changing anything afterwards is a `datom-sv2` bump, not a spec
-edit. That is the reason the review preceded implementation, and the reason it does not need
-repeating.
-
-**Open with the owner**: nothing. Two items opened after Task 1 and both closed on 2026-08-17 --
-the Task 1 scope deviation (**owner-approved, guard stays**) and the reader-side diff question
-(**option 3: no schema change**). Both are in the Decisions log at the bottom of this file, along
-with every other decision in this spec.
+**Open with the owner**: nothing. Task 2 added three encoder refusals the spec did not spell out
+(named list in a value position; unexpected field at the payload root or in a member record) -- all
+three prevent content sitting outside identity, none changes a golden, and all are logged below
+(2026-08-18) rather than left to be rediscovered.
 
 **Before each commit** (the chunk gate):
 
@@ -53,11 +47,13 @@ Rscript dev/check-spec.R           # structural gate on this spec -- see dev/REA
 numbering, tasks missing an `Acceptance:` clause, code citations pointing outside the file, retired
 wording surviving as a live instruction, **duplicated content agreeing** (check 6), and ASCII.
 
-**Check 6 is the one that matters most for Task 2.** The sv1 encoding pseudocode is written out in
-all three spec files, and check 6 asserts all six encoder rules are present in every file and
-byte-identical modulo whitespace. That exists because a delta once fixed the formula in `design.md`
-only, leaving `requirements.md` and `tasks.md` stating the opposite *inside the task that freezes the
-goldens*. If you touch the encoding, edit all three copies and let check 6 confirm it.
+**Check 6 guards the encoding pseudocode**, which is written out in all three spec files: it asserts
+all six encoder rules are present in every file and byte-identical modulo whitespace. That exists
+because a delta once fixed the formula in `design.md` only, leaving `requirements.md` and `tasks.md`
+stating the opposite *inside the task that froze the goldens*. Now that the goldens are published the
+pseudocode is a **record of what shipped**, so a disagreement between the three copies is a
+documentation defect rather than an implementation risk -- and the copy that matters most is the one
+the next reader trusts.
 
 It is **structural only**, and do not over-trust it: on the round that added check 6 it passed on all
 six sites of the defect it was supposed to catch, because its retired-wording suppression list was
@@ -65,17 +61,19 @@ too permissive. Both it and check 6 have since been **verified by deliberately r
 defect** and confirming a FAIL. Do that for any new check you add -- a green run is not evidence.
 Reasoning defects still need a reader.
 
-**Read before editing `R/`**: `dev/engineering-notes.md`. The two most relevant entries for the
+**Read before editing `R/`**: `dev/engineering-notes.md`. The three most relevant entries for the
 remaining tasks are the **two key shapes** (full vs relative -- mixing them double-prefixes
-silently and does not error) and **payload key vs snapshot key** (different directories, both `.json`
-for a set).
+silently and does not error), **payload key vs snapshot key** (different directories, both `.json`
+for a set), and the new **`datom-sv1` set identity** section (what the encoder refuses and why, and
+the one trap that a test caught during Task 2).
 
-**One repeating defect pattern, worth knowing before Task 2.** Five review rounds found the same
-class: an encoding change swept some places and left others stating the old mechanism -- the
-invariant/property tables in design.md, Task 2's own bullets, the pseudocode copies. The last round
-left **six** such sites and the gate passed on all six.
+**One repeating defect pattern, worth knowing.** Five review rounds found the same class: an encoding
+change swept some places and left others stating the old mechanism -- the invariant/property tables in
+design.md, Task 2's own bullets, the pseudocode copies. The last round left **six** such sites and the
+gate passed on all six.
 
-What to do if you change the encoding:
+What to do if you change the encoding -- which now means shipping `datom-sv2`, so all of this applies
+to the *new* regime's documentation, and the sv1 copies become historical rather than edited:
 
 1. **Pseudocode: edit all three copies** (`requirements.md` R2.10, `design.md` 7.2, `tasks.md` Task
    2). Mechanically guarded now -- check 6 will catch you.
@@ -154,7 +152,7 @@ necessary.
     suite passing unchanged *is* the assertion. Recorded explicitly so the absence is not read as
     an omission. No pathway impact._
 
-- [ ] **2. `datom-sv1` canonical set-content hash** &nbsp; **[ESCALATION E1 -- design review DONE 2026-08-17; implement, do not re-review]**
+- [x] **2. `datom-sv1` canonical set-content hash** &nbsp; **[ESCALATION E1 -- design review DONE 2026-08-17; implemented 2026-08-18. The goldens below are PUBLISHED: the encoding is frozen.]**
   - **All five open questions are settled** (owner-decided 2026-08-15, design.md 7.5). The
     escalation is now a **design review of the encoding specification**, not a debate: exact byte
     rules, whether the tag table leaves a collision surface, and whether the goldens cover the
@@ -258,6 +256,60 @@ necessary.
     one-element array, (e) member duplication. **Different**: (f) NFC vs NFD. **Pinned constant**:
     (g) `strset(character(0)) == h(0x02)`. Note (c) and (d) each **reverse** an earlier fixture that
     required a difference. Plus the AC27 grammar refusals.
+  - **DONE 2026-08-18.** New `R/hashable-set.R` (the encoder: `.datom_sv1_str/_strset/_map/_member/_set`
+    plus `.datom_canonical_set_hash()` and two byte helpers), new `dev/datom_sv1_reference.R`
+    (standalone, `digest`-only, **44** self-tests, prints the goldens), new
+    `tests/testthat/test-hashable-set.R`, and `.github/workflows/cv1-reference-parity.yaml` extended
+    in place to run the sv1 reference and both parity test files on x86_64 and arm64 with the
+    existing nothing-may-skip assertion. No new export, so NAMESPACE and `_pkgdown.yml` are
+    untouched; nine internal `man/dot-datom_sv1_*.Rd` pages generated. tests: **2572** (+90),
+    FAIL 0 / WARN 0 / SKIP 0.
+  - **The published goldens** (recorded here so a reader need not run anything to know what is
+    frozen):
+
+    | Constant | Value |
+    |---|---|
+    | `strset(character(0))` = `h(0x02)` | `dbc1b4c900ffe48d575b5da5c638040125f65db0fe3e24494b76ea986457d986` |
+    | `map(NULL)` = `h(0x03)` | `084fed08b978af4d7d196a7446a86b58009e636b611db16211b65a9aadff29c5` |
+    | `str("a")` | `e3254ea61c09ead5a01d3bf07e946a561c6c2cd1c46b8ca1bfa8729d26a7d09f` |
+    | golden payload `data_sha` | `e87c6e7be35a0198356e19a77d1acdd57e8f17f3f425320f3297206583d36c7a` |
+    | minimal payload `data_sha` | `f434fcd31c1393721087859182cbdd9fad0372b65dc1dfd6b36d2cfe14c3e782` |
+
+    The three primitive pins were **cross-checked against an independent SHA-256 implementation**
+    (`printf '\x02' | shasum -a 256` and friends), so they assert that the marker bytes really are
+    what the specification says rather than only that datom agrees with itself. Intermediates are
+    pinned as well as the final values, carrying forward the cv1 lesson that a golden mismatch which
+    names the *stage* is a quick fix while one that names only the total is a bisect.
+  - **THREE ENCODER REFUSALS THE SPEC DID NOT SPELL OUT.** All three exist for one reason -- an
+    ignored field is payload content that never enters identity, so two different payloads would
+    share one `data_sha` **and one storage address**. That is the failure the whole regime exists to
+    prevent, so silence was not an option; and none of them changes a golden.
+    1. **A named list in a value position is refused.** This is the sharp one, and a test caught it
+       while being written. Element-wise, `list(b = "c")` and `list("c")` are indistinguishable: both
+       are a one-element list holding one string. An encoder that checked only elements would
+       therefore hash `{"a": {"b": "c"}}` exactly as `{"a": ["c"]}`, silently dropping the inner key
+       out of identity. The check is `is.list(v) && !is.null(names(v))` -> abort.
+    2. **An unexpected field at the payload root is refused** -- which is also how R2.9 becomes
+       structural rather than aspirational: a payload carrying `schema_version` aborts instead of
+       being quietly hashed without it.
+    3. **An unexpected field in a member record is refused** (anything besides `id` and `tags`).
+  - **Two implementation notes for anyone touching the encoder.** Intermediates are **raw 32-byte
+    vectors, not hex** -- hex appears in exactly two places, the member collation key and the final
+    `data_sha`, which is what the spec names. And the `NA` refusal sits **after** the type gate,
+    except for an all-`NA` logical which is caught before it: `is.na()` on a closure warns rather
+    than answering, so a `tags = list(t = mean)` fixture emitted a warning against a suite that holds
+    at WARN 0. A bare `NA` is a logical, so it still reports "omit the field" rather than a type
+    error, which is the advice R2.7 wants.
+  - **`strset(list())` equals `strset(character(0))`.** `[]` is the parsed spelling of an empty
+    string set, and write/read agreement requires the two to hash equal -- so the R2.17 pin covers
+    both spellings, not just the R one.
+  - **AC13-P is asserted through the real local-backend store** (`.datom_storage_write_json()` ->
+    `.datom_storage_read_json()`), not a hand-rolled `jsonlite` round trip, so it also proves the
+    backends preserve `members[]` as a list of records. That structural condition is additionally
+    asserted on the parsed object directly rather than inferred from the hashes matching.
+  - **Deliberately not done here** (flagged forward, unchanged): R2.15 canonicalization and R7.5
+    byte-identity are Tasks 8 and 13; AC27 grammar enforcement with user-facing recourse is Tasks 7
+    and 8. The encoder refuses what it cannot encode; it does not name offending keys with remedies.
   - _Requirements: R2.1-R2.14, R2.16, R2.17 (**not** R2.15 -- that is Task 8's, per the flag-forward
     bullet above). Invariants: I13, I24. Properties: P1, P2, P3, P4, P5, P6,
     P8, P12, P15, P28, P30, P31, P33. Acceptance: **AC13 (both levels)**, AC3, AC5. **Not AC27** --
@@ -761,3 +813,10 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-17 | **(review hardening 2) `check-spec.R` check 6 detected disagreement but not ABSENCE -- fixed, and the reviewer found one hole while there were two.** Comparing present copies is insufficient: delete a rule from one file and the survivors still agree. **Demonstrated before fixing** -- deleting `str(s)` from `requirements.md` gave `ok  duplicated content agrees -- 6 encoder rules consistent`, exit 0, the count still reading 6 because the key survived via the other two files. The second hole, unreported: with a rule deleted from **all three** files the key vanished from the loop's index and was **not checked at all**. Both closed by iterating `CODE_KEYS` rather than observed keys and asserting presence in every spec file. Matters most for `requirements.md`, where R2.10 *defines* the encoding -- if the formula vanishes there the requirement stops stating what it requires, and the next editor updates the two files that still carry it without learning a third did. Verified non-vacuously in both directions: one-file deletion and all-file deletion each FAIL naming the missing file(s), and restore returns to pass. | dev/check-spec.R |
 | 2026-08-17 | **Cold-start audit: five things would have tripped a fresh session; all fixed.** Asked whether Task 2 could be started in a new session, the documented cold-start path (`dev/README.md` Active Specs -> this file's state block -> the task) was walked as a cold reader. **(1) The state block contradicted itself** -- "it carries the E1 escalation, and per rule 5d that recommendation must be surfaced *before* implementing" followed two sentences later by "that review is DONE". A fresh session obeying rule 5d would have re-run the review, relitigating settled decisions and re-freezing specified goldens. Rewritten as an explicit **discharge record**, and Task 2's heading now reads "design review DONE 2026-08-17; implement, do not re-review". **(2) The `check-spec.R` description listed five checks when there are eight**, omitting check 6 -- the one that guards the pseudocode Task 2 is about to implement from. **(3) The "repeating defect pattern" advice was stale**: it said to add retired phrasing to the denylist, which is now known to be the weaker half; the pseudocode is guarded mechanically and prose is not, so the advice is split into four numbered steps. **(4) `R/hashable-set.R` vs extending `R/utils-sha.R` said "decide at the review"** -- a dangling instruction once the review closed. Decided: new `R/hashable-set.R`, because sv1 shares no primitive with `utils-sha.R`'s three unrelated concerns and that file is already 565 lines. **(5) One Q5 log row still said goldens are "written against the walk spec"**, retired wording outside its strikethrough. | tasks.md state block, Task 2 |
 | 2026-08-17 | **Check 6 is strict enough to flag a spec author *quoting* a stale AC range as a bad example.** Hit while writing the anti-pattern guidance itself. Resolved by describing the shape in words rather than exempting the check -- same call as the `manifest$tables` note in the `retired` denylist, where a phrase is load-bearing in the instruction forbidding it. Recorded because the tempting fix is to loosen the check, and loosening is exactly what made the retired-wording check vacuous for six sites. | dev/check-spec.R |
+| 2026-08-18 | **THE SV1 GOLDENS ARE PUBLISHED; THE ENCODING IS FROZEN.** Task 2 shipped the encoder, the standalone reference, and hard-coded goldens, with reference/package parity asserted on both architectures. Any byte-rule change from here is a conscious `datom-sv2` bump with a new `hash_algo`, not a spec edit and not a code fix -- so a failing golden means the code drifted. The values are tabulated in Task 2's DONE block. Nothing about the encoding as reviewed changed during implementation: all four E1 deltas (member order out of identity, canonicalize-before-write, `document_sha` byte identity, no Unicode normalization) plus the empty-`strset` pin landed as specified. | Task 2, R2.10, `R/hashable-set.R` |
+| 2026-08-18 | **(implementation, and the one real find) a NAMED list in a value position must be refused, and the spec never said so.** Element-wise, `list(b = "c")` and `list("c")` are indistinguishable -- both are a one-element list holding one string -- so an encoder that validated only elements would hash `{"a": {"b": "c"}}` **identically to** `{"a": ["c"]}`. The inner key would sit outside identity, giving two different payloads one `data_sha` and therefore one storage address, which is the exact class of failure sv1 exists to prevent. Caught by a test written for P31 ("there is no object-valued position"), which is worth noting: the property was in the spec, the consequence was not, and it took writing the assertion to find the gap. Fixed in both the package and the reference (they must stay byte-identical), and it changes no golden -- it only converts a silent mis-encoding into an abort. | R2.11, P31, `R/hashable-set.R` |
+| 2026-08-18 | **(implementation) the encoder also refuses an unexpected field at the payload root or inside a member record.** Same reasoning as the row above: an ignored field is content outside identity. Two useful consequences. It makes R2.9 **structural** rather than aspirational -- a payload carrying `schema_version` aborts instead of being quietly hashed without it -- and it means "a fifth `id` field is just another key" stays true at the `id` level (where `map` encodes whatever it is given) without also making the *member record* silently extensible. Not a contradiction of "the encoder does not validate": grammar enforcement with recourse (which key, what types are allowed) is still Tasks 7 and 8; these three refusals are the narrower "this cannot be encoded without losing content" class. | R2.9, R2.12, Tasks 2/7/8 |
+| 2026-08-18 | **(implementation) `strset(list())` must equal `strset(character(0))`.** `[]` is the parsed-JSON spelling of an empty string set, and R2.5 write/read agreement requires both spellings to hash equal, so the R2.17 pin covers the parsed form too. Same shape of reasoning as R2.13 one level down. | R2.17, R2.5 |
+| 2026-08-18 | **(implementation) two mechanical details, recorded because both are easy to get wrong on a re-read.** (1) Intermediates are **raw 32-byte vectors, not hex**: hex appears in exactly the two places the spec names it -- the member collation key and the final `data_sha`. Byte order and lowercase-hex C-locale order agree, so the collation claim holds either way. (2) The `NA` refusal sits **after** the type gate, with an all-`NA` logical caught ahead of it, because `is.na()` on a closure warns rather than answering -- a `tags = list(t = mean)` fixture otherwise emitted a warning against a suite held at WARN 0. A bare `NA` is logical, so it still gets R2.7's "omit the field" advice rather than a type error. | R2.7, `R/hashable-set.R` |
+| 2026-08-18 | **(implementation) AC13-P is asserted through the real local-backend store**, not a hand-rolled `jsonlite` round trip, so the fixtures also prove the production write/read path preserves `members[]` as a list of records. That structural condition (the one residual of R2.5) is additionally asserted **on the parsed object** rather than inferred from the hashes matching, since a hash match cannot distinguish "structure preserved" from "two different structures that happen to hash the same". | R2.5, AC13, Task 2 |
+| 2026-08-18 | **The parity workflow was extended in place, as instructed, and its file name deliberately still says cv1.** It now runs both reference scripts and both parity test files across the x86_64 + arm64 matrix, keeping one matrix for a property that spans architectures, and it prints the sv1 goldens beside the cv1 ones so a divergence between jobs is readable in the logs rather than only as a failed expectation. The file keeps its name so existing links and any branch protection stay valid; the header comment now says it covers both regimes. | `.github/workflows/cv1-reference-parity.yaml`, R2.4, P12 |
