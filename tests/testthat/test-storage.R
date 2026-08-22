@@ -720,3 +720,122 @@ test_that(".datom_storage_rel_key() returns the key unchanged when prefix does n
   full <- "other/datom/tbl/abc.parquet"
   expect_equal(.datom_storage_rel_key(full, conn), full)
 })
+
+
+# === datom_storage_read_json() ================================================
+
+test_that("datom_storage_read_json() errors on non-conn", {
+  expect_error(datom_storage_read_json("not-a-conn", "a.json"), "datom_conn")
+  expect_error(datom_storage_read_json(list(), "a.json"), "datom_conn")
+  expect_error(datom_storage_read_json(NULL, "a.json"), "datom_conn")
+})
+
+test_that("datom_storage_read_json() round-trips a document on the local backend", {
+  withr::with_tempdir({
+    conn <- make_local_storage_conn(getwd(), prefix = "proj")
+
+    doc <- list(
+      name = "dm",
+      kind = "table",
+      members = list(
+        list(id = list(name = "a"), tags = list(domain = list("safety")))
+      )
+    )
+    .datom_storage_write_json(conn, "dm/.metadata/metadata.json", doc)
+
+    result <- datom_storage_read_json(conn, "dm/.metadata/metadata.json")
+
+    expect_equal(result$name, "dm")
+    expect_equal(result$kind, "table")
+    # simplifyVector = FALSE is preserved: an array of objects stays a list of
+    # records rather than collapsing into a data frame.
+    expect_true(is.list(result$members))
+    expect_false(is.data.frame(result$members))
+    expect_equal(result$members[[1]]$id$name, "a")
+  })
+})
+
+test_that("datom_storage_read_json() aborts clearly on an absent key", {
+  withr::with_tempdir({
+    conn <- make_local_storage_conn(getwd(), prefix = "proj")
+
+    err <- expect_error(
+      datom_storage_read_json(conn, "dm/.metadata/metadata.json"),
+      "No object found"
+    )
+    # The message names the relative key the caller passed, not a full key.
+    expect_match(conditionMessage(err), "dm/.metadata/metadata.json", fixed = TRUE)
+  })
+})
+
+test_that("datom_storage_read_json() refuses a traversal key before touching storage", {
+  withr::with_tempdir({
+    conn <- make_local_storage_conn(getwd(), prefix = "proj")
+
+    # Seed a file outside the datom namespace that a traversal key would reach.
+    writeLines('{"secret": true}', "outside.json")
+
+    expect_error(
+      datom_storage_read_json(conn, "../../outside.json"),
+      "path segment"
+    )
+    expect_error(
+      datom_storage_read_json(conn, "/outside.json"),
+      "not an absolute path"
+    )
+  })
+})
+
+test_that("datom_storage_read_json() refuses a full key passed as relative", {
+  withr::with_tempdir({
+    conn <- make_local_storage_conn(getwd(), prefix = "proj")
+    doc  <- list(project_name = "test-project")
+    .datom_storage_write_json(conn, ".metadata/manifest.json", doc)
+
+    # The relative form works...
+    expect_equal(
+      datom_storage_read_json(conn, ".metadata/manifest.json")$project_name,
+      "test-project"
+    )
+
+    # ...and the full form is refused rather than double-prefixed into a
+    # confusing "no object found".
+    expect_error(
+      datom_storage_read_json(conn, "proj/datom/.metadata/manifest.json"),
+      "full storage key"
+    )
+  })
+})
+
+test_that("datom_storage_read_json() dispatches to the S3 backend", {
+  doc_json <- '{"project_name":"test-project","schema_version":1}'
+  mock_head <- mockery::mock(list(ContentLength = nchar(doc_json)))
+  mock_get  <- mockery::mock(list(Body = charToRaw(doc_json)))
+
+  conn <- mock_datom_conn(
+    list(head_object = mock_head, get_object = mock_get),
+    root   = "my-bucket",
+    prefix = "proj"
+  )
+
+  result <- datom_storage_read_json(conn, ".metadata/manifest.json")
+
+  expect_equal(result$project_name, "test-project")
+  # The call addresses the full key; the caller only ever sees the relative one.
+  get_args <- mockery::mock_args(mock_get)[[1]]
+  expect_equal(get_args$Bucket, "my-bucket")
+  expect_equal(get_args$Key, "proj/datom/.metadata/manifest.json")
+})
+
+test_that("datom_storage_read_json() does not check conn$role", {
+  # The datom_storage_* family is deliberately policy-free -- even the
+  # destructive delete does not gate on role. Role gating lives on the
+  # git-mutating verbs. This pins the symmetry so it is not broken silently.
+  withr::with_tempdir({
+    conn <- make_local_storage_conn(getwd(), prefix = "proj")
+    conn$role <- "reader"
+    .datom_storage_write_json(conn, ".metadata/manifest.json", list(a = 1))
+
+    expect_equal(datom_storage_read_json(conn, ".metadata/manifest.json")$a, 1)
+  })
+})

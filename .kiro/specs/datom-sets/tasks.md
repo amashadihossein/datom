@@ -7,31 +7,33 @@ body alone -- is the current truth.
 **Branch**: `spec/datom-sets`, cut from `dev`. **PRs into `dev`, not `main`** -- 0.1.0 is under CRAN
 review and `main` is frozen (see `dev/README.md` "Branching During CRAN Submission"). Draft PR
 [#97](https://github.com/amashadihossein/datom/pull/97) is open and accumulates the task commits.
-**Test baseline**: 2460 at spec start -> 2482 after Task 1 -> **2572 after Task 2**. Report the count
-in every commit message; it must never drop.
+**Test baseline**: 2460 at spec start -> 2482 after Task 1 -> 2572 after Task 2 -> **2612 after
+Task 3**. Report the count in every commit message; it must never drop.
 
 ---
 
 ## Where things stand
 
-**Done**: Task 0 (spec), **Task 1** (stale docstring sweep + relative-key helpers) and **Task 2**
-(`datom-sv1`), plus two things that are not tasks: the prerequisite #89 named
+**Done**: Task 0 (spec), **Task 1** (stale docstring sweep + relative-key helpers), **Task 2**
+(`datom-sv1`) and **Task 3** (`datom_storage_read_json()` + the relative-key validator), plus two
+things that are not tasks: the prerequisite #89 named
 ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before* this
 branch was cut, deliberately outside this history), and `dev/check-spec.R`.
 
-**Next**: **Task 3 -- export and harden storage JSON GET.** No escalation flag; the next flagged task
-is **Task 5** (E2, the `manifest$tables` -> `manifest$artifacts` rename), which must surface its
-recommendation before implementing per rule 5d.
+**Next**: **Task 4 -- the reader-side `schema_version` gate.** No escalation flag; the next flagged
+task is **Task 5** (E2, the `manifest$tables` -> `manifest$artifacts` rename), which must surface its
+recommendation before implementing per rule 5d. Task 4 lands **tested-but-inert** on purpose --
+nothing writes `schema_version: 2` until Task 5, so the writer bump is not the first exercise of
+untested gate code. It is the first task in this spec with a **pathway impact**
+(`dev/datom_pathways.md`: the read route gains a version gate), so the chunk is not done without
+that edit.
 
-**Task 3 was scope-reduced on 2026-08-18: the JSON *write* export is dropped**, so R12.4 is narrowed
-to GET and R12.4a / I14 / AC23 are retired (P18 restated). One export, no policy, no open decisions --
-the two that were pending both belonged to the write half and dissolved with it. Reasoning is in
-Task 3's body and the Decisions log; the Backlog in `dev/README.md` carries the revival trigger.
-
-Task 3 is otherwise **cold-start ready**: its body has a verified landing-zone table (file, roxygen
-exemplar, pkgdown section, test fixture, the no-role-check precedent) and the note that **no
-relative-key validator exists to reuse** -- which is now the substance of the task rather than a
-detail of it.
+**Task 3's validator is now the thing to reuse, not to rewrite.**
+`.datom_validate_rel_key()` (`R/utils-validate.R`) guards any *caller-supplied* whole key. The
+Task 1 key builders in `R/utils-path.R` deliberately do **not** call it -- they compose keys from
+parts already validated by `.datom_validate_name()` / `.datom_validate_sha()`, so their output
+cannot contain a `..` segment or a `datom` segment and the check would be dead code. Reach for the
+validator when a key arrives from outside datom; reach for the builders when datom composes one.
 
 **THE GOLDENS ARE PUBLISHED AS OF TASK 2, SO THE ENCODING IS FROZEN.** Changing any sv1 byte rule
 from here is a conscious `datom-sv2` bump with a new `hash_algo` identifier -- not a spec edit, not a
@@ -325,7 +327,7 @@ necessary.
     P8, P12, P15, P28, P30, P31, P33. Acceptance: **AC13 (both levels)**, AC3, AC5. **Not AC27** --
     see the encoder-does-not-validate bullet. No pathway impact._
 
-- [ ] **3. Export and harden storage JSON GET** &nbsp; **[SCOPE REDUCED 2026-08-18: the write export is dropped]**
+- [x] **3. Export and harden storage JSON GET** &nbsp; **[SCOPE REDUCED 2026-08-18: the write export is dropped; DONE 2026-08-21]**
   - **Deliverable: `datom_storage_read_json()` only.** Wraps `.datom_storage_read_json()`
     (`R/utils-storage.R:66`). Harden: conn class check, relative-key validation, clear abort on an
     absent key, no direct `.datom_s3_*()` reachability (I7).
@@ -374,6 +376,32 @@ necessary.
     a read cannot violate it at all. Do not add a git gate to a byte-level primitive.
   - Roxygen with a runnable offline example in the established bare-git-remote + local-store style
     (exemplar cited above); `_pkgdown.yml` entry.
+  - **DONE 2026-08-21.** New `.datom_validate_rel_key()` in `R/utils-validate.R` (the validator that
+    did not exist), new export `datom_storage_read_json()` appended to `R/storage.R`, `_pkgdown.yml`
+    entry in the existing Storage Extension API section, two `man/` pages, NAMESPACE. Tests split by
+    subject: validator units in `tests/testthat/test-utils-validate.R`, export behavior in
+    `tests/testthat/test-storage.R` reusing `make_local_storage_conn()` for local and `mockery` for
+    S3. tests: **2612** (+40), FAIL 0 / WARN 0 / SKIP 0. `Rscript dev/check-spec.R` all eight checks
+    pass. Landing zone was accurate as recorded -- nothing in the verified table had drifted.
+  - **The absent-key abort probes `.datom_storage_exists()` up front**, costing one extra round trip
+    per read. Bought deliberately: the local backend already aborts clearly, but S3 surfaces the
+    provider's error naming the **full** key, which is precisely the wrong thing to show a caller
+    whose bug is key-shape confusion. One message, both backends, and it names the relative key that
+    was passed.
+  - **The full-key refusal keys on a `datom` path segment**, and that is sound rather than heuristic:
+    `datom` is in `.datom_reserved_names` (`R/utils-validate.R:2-6`), so no legitimate relative key
+    can contain it as a segment. Verified in the same pass that the guard is on a whole `..` segment
+    and not on the dot character -- `.metadata/manifest.json`, `my.data/abc.json` and
+    `dm/..hidden.json` all still pass, each with a test.
+  - **No role check, as specified**, and now pinned by a test rather than left as an absence: a
+    `role = "reader"` conn reads successfully. The family symmetry (no `datom_storage_*` export gates
+    on role, including the destructive delete) cannot now be broken silently.
+  - **Deliberately NOT retrofitted into the Task 1 key helpers.** They compose keys from parts already
+    validated -- `.datom_validate_name()` admits only `[a-zA-Z0-9_ ()-]` and must start with a letter,
+    `.datom_validate_sha()` only hex -- so their output cannot contain a `..` or `datom` segment and
+    the check would be dead code. Recorded because the two guards look like duplicates and the
+    obvious "cleanup" is to merge them; the distinction is *composed from validated parts* versus
+    *supplied whole by a caller*.
   - _Requirements: R12.4 (narrowed to GET; R12.4a retired with the write export). Invariants: I7
     (I14 retired). Properties: P18 (satisfied without new code -- a read cannot violate it).
     Acceptance: **none of the set-specific ACs** -- AC23 was the only one this task carried and it is
@@ -737,7 +765,7 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 
 | Export | Task |
 |---|---|
-| `datom_storage_read_json()` | 3 |
+| `datom_storage_read_json()` | 3 -- **shipped 2026-08-21** |
 | ~~`datom_storage_write_json()`~~ | **dropped 2026-08-18** -- deferred to the Backlog; see Task 3 |
 | `datom_member()` | 7 |
 | `datom_write_set()` | 8 (extended with `include_paths` in 12) |
@@ -876,3 +904,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-18 | **The one argument that survived for the write export, recorded as the Backlog trigger.** datomanager will need s3/local dispatch to write JSON into its **own gov namespace**, and reimplementing that duplicates platform code. That is a **different export** -- gov-scoped, with no managed-key refusal list -- for a package that does not exist yet, so it is speculative capability today. If the trigger fires, scope it to the caller's own namespace and **re-derive** the refusal list rather than assuming R12.4a's still fits. | R12.4a, `dev/README.md` Backlog |
 | 2026-08-18 | **Process note: a review can be right about a hazard and still miss that the capability is unnecessary.** Review finding F3 correctly identified that a public JSON write could clobber managed keys, and its resolution (R12.4a's refusal list, I14, AC23) was sound *given* the export. What no round asked was **who still needs this export** -- a question that only had a new answer because `datom_write_set()` had since been specified. Recorded because the failure mode is invisible from inside a hardening exercise: every subsequent review inherits the premise that the capability is wanted. | design.md 18 (F3 row), R12.4a |
 | 2026-08-18 | **The parity workflow was extended in place, as instructed, and its file name deliberately still says cv1.** It now runs both reference scripts and both parity test files across the x86_64 + arm64 matrix, keeping one matrix for a property that spans architectures, and it prints the sv1 goldens beside the cv1 ones so a divergence between jobs is readable in the logs rather than only as a failed expectation. The file keeps its name so existing links and any branch protection stay valid; the header comment now says it covers both regimes. | `.github/workflows/cv1-reference-parity.yaml`, R2.4, P12 |
+| 2026-08-21 | **(implementation) the absent-key abort costs one extra storage round trip, on purpose.** `datom_storage_read_json()` probes `.datom_storage_exists()` before reading so the "not found" message is identical on both backends and names **the relative key the caller passed**. Without it the two backends diverge in the worst place: the local backend aborts clearly, while S3 surfaces the provider's own error naming the **full** key -- so a caller whose actual bug is key-shape confusion gets shown the very transformation they got wrong. Recorded because the probe looks like a redundant call to anyone optimizing reads later. | Task 3, `R/storage.R` |
+| 2026-08-21 | **(implementation) the full-key refusal keys on a `datom` path segment, and that is exact rather than heuristic.** `datom` is in `.datom_reserved_names` (`R/utils-validate.R:2-6`), so it can never appear as a segment of a legitimate relative key -- which is what makes a cheap segment test a complete one for the double-prefix hazard. Also pinned in tests: the traversal guard fires on a whole `..` **segment**, not on the dot character, so `.metadata/manifest.json`, `my.data/abc.json` and `dm/..hidden.json` all remain valid keys. Worth stating because the tempting implementation is `grepl("\\.\\.", key)`, which would refuse datom's own metadata directory convention. | Task 3, `R/utils-validate.R` |
+| 2026-08-21 | **(implementation) `.datom_validate_rel_key()` is deliberately NOT folded into the Task 1 key builders**, and the reasoning is the inverse of Task 1's own approved scope deviation. There, folding `.datom_validate_sha()` into a builder closed a real gap because a **file-supplied** sha reached a key unvalidated. Here there is no gap to close: the builders compose keys from parts already validated (`.datom_validate_name()` admits only `[a-zA-Z0-9_ ()-]` and must start with a letter; `.datom_validate_sha()` only hex), so their output cannot contain a `..` or `datom` segment and the check would be dead code. The distinction to carry forward is **composed from validated parts** versus **supplied whole by a caller** -- only the second needs a key validator, which is why the new export is its only call site. | Task 3, Task 1, I9 |
+| 2026-08-21 | **(implementation) the no-role-check decision is now pinned by a positive test**, not left as an absence. A `role = "reader"` conn reads successfully, so the `datom_storage_*` family's policy-free symmetry (not even the destructive `datom_storage_delete_prefix()` gates on role) fails loudly if a future change breaks it. Same reasoning as Task 5's note that a silent failure mode needs a positive assertion rather than the absence of errors. | Task 3, Task 11 |
