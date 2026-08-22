@@ -18,6 +18,11 @@ below.
   are conditional on `git2r` (and `rio` for `datom_sync()`), which are in
   Suggests.
 
+One further change, not requested in the review: DESCRIPTION now declares
+`Depends: R (>= 4.1.0)` explicitly. `R CMD build` had been adding that
+dependency itself, since the package uses the native pipe, and declaring it in
+the sources makes the requirement explicit rather than build-time.
+
 ## R CMD check results
 
 0 errors | 0 warnings | 1 note
