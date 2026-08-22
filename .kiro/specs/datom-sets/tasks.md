@@ -23,6 +23,13 @@ branch was cut, deliberately outside this history), and `dev/check-spec.R`.
 task is **Task 5** (E2, the `manifest$tables` -> `manifest$artifacts` rename), which must surface its
 recommendation before implementing per rule 5d.
 
+Task 3 is **cold-start ready**: its body carries a verified landing-zone table (which file, which
+roxygen example to copy, which pkgdown section, which test fixture, and the no-role-check precedent),
+plus the note that **no relative-key validator exists to reuse**. It also carries **two decisions to
+settle at DESIGN before coding** -- whether the payload-key refusal is existence-dependent or
+shape-only, and how strictly "payload-shaped" is defined. Both are public-contract choices, so raise
+them in the DESIGN message rather than deciding them in code.
+
 **THE GOLDENS ARE PUBLISHED AS OF TASK 2, SO THE ENCODING IS FROZEN.** Changing any sv1 byte rule
 from here is a conscious `datom-sv2` bump with a new `hash_algo` identifier -- not a spec edit, not a
 code fix. The three places that hold it: `R/hashable-set.R` (implementation),
@@ -320,6 +327,49 @@ necessary.
     wrapping the existing `.datom_storage_*_json()` internals (`R/utils-storage.R:66,83`).
   - Harden: conn class check, relative-key validation, clear abort on absent key, no direct
     `.datom_s3_*()` reachability (I7).
+  - **Landing zone, verified against the tree 2026-08-18** (so a fresh session does not have to
+    re-derive any of it):
+
+    | What | Where | Note |
+    |---|---|---|
+    | file for the two exports | **`R/storage.R`** | its header states the family contract ("exported wrappers over the internal storage dispatch layer") and the naming split `datom_storage_*` vs `datom_repo_*`. Not a new file. |
+    | roxygen example to copy | `datom_storage_list()` (`R/storage.R:51`, example block just above it) | this **is** "the established bare-git-remote + local-store style": `requireNamespace("git2r")` guard, `tempfile()`, `git2r::init(bare = TRUE)`, `datom_store(validate = FALSE)`, `datom_init_repo()`, `datom_get_conn()`, `datom_write()`, `unlink()`. All four existing storage exports use it verbatim. |
+    | pkgdown entry | `_pkgdown.yml`, the package-developer storage section (currently lists the four `datom_storage_*` plus two `datom_repo_*`) | add both new exports there; the index must match exports exactly or `pkgdown::build_site()` errors. |
+    | tests | `tests/testthat/test-storage.R` | reuse its `make_local_storage_conn()` fixture for the local backend and its `mockery` pattern for S3. |
+    | role check | **none** -- no existing `datom_storage_*` export checks `conn$role`, including the destructive `datom_storage_delete_prefix()` | the family is deliberately policy-free; role gating lives on the git-mutating verbs (Task 11). Do not add one here without deciding to break that symmetry. |
+    | `.access/` today | **appears nowhere in `R/`** (verified by grep) | so R19.6's "safe by construction" claim holds as stated, and this task is what keeps it true once a general-purpose write path exists. |
+  - **There is no relative-key validator to reuse** -- `R/utils-validate.R` has only
+    `.datom_validate_name()` (`R/utils-validate.R:18`) and `.datom_validate_sha()` (`R/utils-validate.R:68`), and nothing validates a
+    key. So "relative-key validation" means writing it. Two things it must catch, and they are
+    different in kind:
+    1. **Traversal / shape** (`..` segments, leading `/`, empty, non-scalar) -- an I9 concern, and it
+       applies to **both** exports. Reads are unrestricted with respect to *managed keys*, not with
+       respect to escaping the namespace: on the local backend an unvalidated `../../x` walks out via
+       `fs::path()`, which is what #74's guard sweep existed for.
+    2. **A full key passed where a relative one belongs** -- the double-prefix hazard in
+       `dev/engineering-notes.md`. This one is worth catching precisely because it does **not**
+       error today: the write lands at `{prefix}/datom/{prefix}/datom/...` and everything looks
+       fine. A key already containing a `datom/` segment is the detectable form.
+  - **P18 is satisfied by the managed-key refusal, not by any git interaction.** The write export
+    writes storage directly and always will; what keeps it from putting storage ahead of git is that
+    every key datom manages is refused. Do not try to add a git gate to a byte-level primitive.
+  - **Two decisions to settle at DESIGN, before writing code** (both are public-contract choices,
+    the same class as the F3 review finding that produced R12.4a in the first place):
+    1. **Is the payload-key refusal existence-dependent or shape-only?** R12.4a says "any
+       payload-shaped key (`{name}/{sha}.{json,parquet}`) **under an existing artifact directory**",
+       which implies a storage probe per write. Shape-only is simpler, stricter, cheaper, and cannot
+       be defeated by writing the payload *before* the artifact exists; existence-checking is more
+       permissive and matches the requirement's literal wording. **Recommendation: shape-only**, on
+       the grounds that a refusal is cheap to relax and a hole is expensive to discover -- but it
+       narrows a stated requirement, so it needs an explicit decision rather than a quiet
+       reinterpretation.
+    2. **How strict is "payload-shaped"?** `{name}/{64-hex}.json` is unambiguous; `{name}/{6-64
+       hex}.json` matches `.datom_validate_sha()`'s accepted range and so also catches an abbreviated
+       form. Pick one and pin it in a test, because the answer decides whether a downstream package
+       can write `myset/abc123.json` as its own scratch file.
+  - **Trap in the examples**: the roxygen example for the write export must use an **unmanaged** key.
+    The obvious-looking `"dm/abc.json"` after a `datom_write(name = "dm")` is exactly what the new
+    guard refuses, so a copy-pasted example would abort at `R CMD check`.
   - **Refuse datom-managed keys on the write export** (R12.4a): anything under a `.metadata/`
     segment, payload-shaped keys (`{name}/{sha}.{json,parquet}`) under an existing artifact
     directory, **and anything under a `.access/` segment**. The first two stop a downstream package
@@ -819,4 +869,8 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-18 | **(implementation) `strset(list())` must equal `strset(character(0))`.** `[]` is the parsed-JSON spelling of an empty string set, and R2.5 write/read agreement requires both spellings to hash equal, so the R2.17 pin covers the parsed form too. Same shape of reasoning as R2.13 one level down. | R2.17, R2.5 |
 | 2026-08-18 | **(implementation) two mechanical details, recorded because both are easy to get wrong on a re-read.** (1) Intermediates are **raw 32-byte vectors, not hex**: hex appears in exactly the two places the spec names it -- the member collation key and the final `data_sha`. Byte order and lowercase-hex C-locale order agree, so the collation claim holds either way. (2) The `NA` refusal sits **after** the type gate, with an all-`NA` logical caught ahead of it, because `is.na()` on a closure warns rather than answering -- a `tags = list(t = mean)` fixture otherwise emitted a warning against a suite held at WARN 0. A bare `NA` is logical, so it still gets R2.7's "omit the field" advice rather than a type error. | R2.7, `R/hashable-set.R` |
 | 2026-08-18 | **(implementation) AC13-P is asserted through the real local-backend store**, not a hand-rolled `jsonlite` round trip, so the fixtures also prove the production write/read path preserves `members[]` as a list of records. That structural condition (the one residual of R2.5) is additionally asserted **on the parsed object** rather than inferred from the hashes matching, since a hash match cannot distinguish "structure preserved" from "two different structures that happen to hash the same". | R2.5, AC13, Task 2 |
+| 2026-08-18 | **Cold-start audit for Task 3: enough context to start, after four additions.** The documented path (`dev/README.md` -> this state block -> the task -> `dev/engineering-notes.md`) was walked as a fresh reader and every claim checked against the tree. What was missing: **(1)** no file was named for the two exports -- decided **`R/storage.R`**, whose header already states the family contract, rather than a new file; **(2)** "the established bare-git-remote + local-store style" was a description with no citation, so it is now a pointer to a concrete exemplar (the example block above `R/storage.R:51`, used verbatim by all four existing storage exports); **(3)** "relative-key validation" implied a helper that **does not exist** -- `R/utils-validate.R` has only `.datom_validate_name()` (`R/utils-validate.R:18`) and `.datom_validate_sha()` (`R/utils-validate.R:68`) -- and the two things it must catch are different in kind, a traversal/shape concern that applies to **both** exports (reads are unrestricted as to *managed keys*, not as to escaping the namespace) and the full-key-where-relative-belongs case that silently double-prefixes rather than erroring; **(4)** no fixture or pkgdown location was named. Also recorded: **no `datom_storage_*` export checks `conn$role`**, including the destructive delete, so adding one here would break a family symmetry deliberately; `.access` appears nowhere in `R/`, so R19.6's by-construction claim verifies today; and P18 is satisfied by the managed-key refusal, not by any git interaction, so nobody should try to git-gate a byte-level primitive. | Task 3, R12.4a, I7, P18 |
+| 2026-08-18 | **Two Task 3 decisions deliberately left for DESIGN rather than settled here.** (a) Whether the payload-key refusal is **existence-dependent** (R12.4a's literal wording, one storage probe per write) or **shape-only** (simpler, stricter, cheaper, and not defeatable by writing a payload before its artifact exists). Recommendation is shape-only -- a refusal is cheap to relax and a hole is expensive to find -- but it narrows a stated requirement, so it gets an explicit decision instead of a quiet reinterpretation. (b) How strict "payload-shaped" is: `{name}/{64-hex}` versus `.datom_validate_sha()`'s 6-64 hex range, which decides whether a downstream package may write `myset/abc123.json` as scratch. Both are public-contract choices of the same class as review finding F3, which is what produced R12.4a. | R12.4a, AC23, Task 3 |
+| 2026-08-18 | **A trap noted for Task 3's docs**: the write export's roxygen example must use an **unmanaged** key. The natural-looking `"dm/abc.json"` after a `datom_write(name = "dm")` is precisely what the new guard refuses, so an example copied from a sibling export would abort under `R CMD check` -- a self-inflicted AC11 failure. | AC23, AC11, Task 3 |
+| 2026-08-18 | **`CRAN-SUBMISSION` is not a tracked record and never was.** Verified with `git log --all -- CRAN-SUBMISSION` (empty) and its absence from `origin/main` and `origin/dev`, correcting the assumption that `main` held a submission record to protect. Per usethis, the file is a handoff artifact from `submit_cran()` that `use_github_release()` consumes and **deletes**, and **in its absence usethis assumes HEAD is the submitted state** -- so with the old acceptance order (merge `dev` into `main`, then tag) a missing artifact would silently name the merge commit rather than the submitted one. Resolved on this branch: `/CRAN-SUBMISSION` added to `.gitignore` (it sat untracked *and* un-ignored, so `git add .` could have carried it to `main` by merge -- newly relevant with Task 11 adding an add-all verb), `dev/README.md` gained a `CRAN-SUBMISSION` section plus a submitted-SHA table, and acceptance step 4 now publishes the release **before** merging. The artifact itself was left untouched. | dev/README.md, `.gitignore` |
 | 2026-08-18 | **The parity workflow was extended in place, as instructed, and its file name deliberately still says cv1.** It now runs both reference scripts and both parity test files across the x86_64 + arm64 matrix, keeping one matrix for a property that spans architectures, and it prints the sv1 goldens beside the cv1 ones so a divergence between jobs is readable in the logs rather than only as a failed expectation. The file keeps its name so existing links and any branch protection stay valid; the header comment now says it covers both regimes. | `.github/workflows/cv1-reference-parity.yaml`, R2.4, P12 |
