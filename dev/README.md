@@ -98,8 +98,11 @@ single aggregation point.
      `git checkout dev && git merge main`.
 
 4. **Acceptance:**
+   - **Publish the release FIRST, before merging** -- `usethis::use_github_release()` from a
+     `main` checkout that still has the `CRAN-SUBMISSION` artifact beside it. Order matters:
+     see "CRAN-SUBMISSION" below for why doing it after the merge can silently tag the wrong
+     commit.
    - Merge `dev` into `main`: `git checkout main && git merge dev`.
-   - Tag the release if desired.
    - Delete the `dev` branch (local + remote).
    - Resume normal workflow (feature branches off `main`).
 
@@ -109,8 +112,50 @@ single aggregation point.
   require a local build (`pkgdown::build_site()`).
 - **GitHub default branch** stays `main` — this is what `install_github()`
   resolves and what new clones check out.
-- **`CRAN-SUBMISSION`** on `main` records the submitted SHA. `devtools::submit_cran()`
-  regenerates it on each submission.
+- **`CRAN-SUBMISSION`** is an untracked, transient artifact -- see the next section. (An earlier
+  version of this line said it "on `main` records the submitted SHA", which was never true: the
+  file has never been committed on any branch.)
+
+### `CRAN-SUBMISSION`
+
+**What it is.** `devtools::submit_cran()` writes it next to `DESCRIPTION`, recording the version,
+the submission timestamp, and the SHA of the commit that was submitted. It is a **handoff
+artifact**, not a record meant to live in the repo: `usethis::use_github_release()` reads it to
+populate the release notes and **deletes it on success**. The durable record of a submission is
+therefore the **GitHub release and its tag**, which point at the submitted commit.
+
+**Rules.**
+
+- **Never committed.** It is in `.gitignore` (and `.Rbuildignore`), so no branch can sweep it into
+  a commit via `git add .`. Nothing is lost by that, because it was never tracked in the first
+  place and the release is the real record. Deliberate exception if one is ever wanted:
+  `git add -f`.
+- **Written only by `devtools::submit_cran()` run from `main`**, which is the only branch whose
+  tree matches what CRAN received. Never hand-edited, never regenerated from a feature branch.
+- **Never deleted by hand** while a submission is pending -- `use_github_release()` removes it as
+  part of publishing.
+
+**Two hazards, both silent.**
+
+1. **Absent file means "HEAD is the submitted state".** usethis says so explicitly: with no
+   `CRAN-SUBMISSION` present it assumes the current SHA, version, and NEWS *are* the submitted
+   ones. Run `use_github_release()` after merging `dev` into `main` and the release names the
+   **merge commit** rather than the commit CRAN actually received. Hence the ordering in
+   Acceptance step 4: publish, then merge.
+2. **The artifact lives in whichever working directory `submit_cran()` ran in**, and that is not
+   necessarily where `main` is checked out later. If it is missing at release time, check other
+   worktrees (`git worktree list`) before assuming it was never created -- and cross-check the SHA
+   against the record below.
+
+**Record for the pending 0.1.1 submission** (belt to the artifact's braces, since the artifact
+is untracked by design and this file is not):
+
+| Version | Submitted (UTC) | SHA | Artifact location |
+|---|---|---|---|
+| 0.1.1 | 2026-08-21 23:39:19 | `1eaee2660f9d4d19d0d5fec979bba4617a1bc776` (`main` head, "Declare Depends: R (>= 4.1.0) explicitly (#99)") | the `spec/datom-sets` worktree, uncommitted |
+
+Add a row here at each submission. It costs one line and it is the thing that makes the release
+verifiable if the artifact goes missing.
 
 ---
 
