@@ -19,16 +19,19 @@ in every commit message; it must never drop.
 ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before* this
 branch was cut, deliberately outside this history), and `dev/check-spec.R`.
 
-**Next**: **Task 3 -- export and harden storage JSON put/get.** No escalation flag; the next flagged
-task is **Task 5** (E2, the `manifest$tables` -> `manifest$artifacts` rename), which must surface its
+**Next**: **Task 3 -- export and harden storage JSON GET.** No escalation flag; the next flagged task
+is **Task 5** (E2, the `manifest$tables` -> `manifest$artifacts` rename), which must surface its
 recommendation before implementing per rule 5d.
 
-Task 3 is **cold-start ready**: its body carries a verified landing-zone table (which file, which
-roxygen example to copy, which pkgdown section, which test fixture, and the no-role-check precedent),
-plus the note that **no relative-key validator exists to reuse**. It also carries **two decisions to
-settle at DESIGN before coding** -- whether the payload-key refusal is existence-dependent or
-shape-only, and how strictly "payload-shaped" is defined. Both are public-contract choices, so raise
-them in the DESIGN message rather than deciding them in code.
+**Task 3 was scope-reduced on 2026-08-18: the JSON *write* export is dropped**, so R12.4 is narrowed
+to GET and R12.4a / I14 / AC23 are retired (P18 restated). One export, no policy, no open decisions --
+the two that were pending both belonged to the write half and dissolved with it. Reasoning is in
+Task 3's body and the Decisions log; the Backlog in `dev/README.md` carries the revival trigger.
+
+Task 3 is otherwise **cold-start ready**: its body has a verified landing-zone table (file, roxygen
+exemplar, pkgdown section, test fixture, the no-role-check precedent) and the note that **no
+relative-key validator exists to reuse** -- which is now the substance of the task rather than a
+detail of it.
 
 **THE GOLDENS ARE PUBLISHED AS OF TASK 2, SO THE ENCODING IS FROZEN.** Changing any sv1 byte rule
 from here is a conscious `datom-sv2` bump with a new `hash_algo` identifier -- not a spec edit, not a
@@ -322,66 +325,62 @@ necessary.
     P8, P12, P15, P28, P30, P31, P33. Acceptance: **AC13 (both levels)**, AC3, AC5. **Not AC27** --
     see the encoder-does-not-validate bullet. No pathway impact._
 
-- [ ] **3. Export and harden storage JSON put/get**
-  - `datom_storage_read_json()` / `datom_storage_write_json()` on the Storage Extension API,
-    wrapping the existing `.datom_storage_*_json()` internals (`R/utils-storage.R:66,83`).
-  - Harden: conn class check, relative-key validation, clear abort on absent key, no direct
-    `.datom_s3_*()` reachability (I7).
+- [ ] **3. Export and harden storage JSON GET** &nbsp; **[SCOPE REDUCED 2026-08-18: the write export is dropped]**
+  - **Deliverable: `datom_storage_read_json()` only.** Wraps `.datom_storage_read_json()`
+    (`R/utils-storage.R:66`). Harden: conn class check, relative-key validation, clear abort on an
+    absent key, no direct `.datom_s3_*()` reachability (I7).
+  - **`datom_storage_write_json()` is NOT built.** Owner-decided; R12.4a, I14 and AC23 are retired
+    with it and P18 is restated. The short form: the export's stated purpose was to let a downstream
+    package write *its own document* into datom's namespace, that document was a set, and
+    `datom_write_set()` (Task 8) now writes it as a first-class artifact -- so no consumer remains.
+    It also cuts against the Authority Principle in `dev/datomanager_scope.md` ("data-repo mutations
+    always route through datom ... datomanager never touches the data repo directly"), whose
+    expression is a **purpose-built verb per need**, not a generic byte channel; the
+    `governance.json` data-side mirror is the precedent, where datom gave datomanager
+    `datom_repo_attach_governance()` rather than a generic write. Deferral is the cheap direction:
+    adding an export later is additive, removing one after release is breaking. Backlog trigger is
+    recorded in `dev/README.md` -- **datomanager needing to write JSON into its own gov namespace**,
+    which is a *different* export (gov-scoped, no managed-key rules) and must re-derive its refusal
+    list rather than inherit R12.4a's.
+  - **Do not add a role check.** Reads are policy-free and no `datom_storage_*` export checks
+    `conn$role` (see the landing-zone table).
   - **Landing zone, verified against the tree 2026-08-18** (so a fresh session does not have to
     re-derive any of it):
 
     | What | Where | Note |
     |---|---|---|
-    | file for the two exports | **`R/storage.R`** | its header states the family contract ("exported wrappers over the internal storage dispatch layer") and the naming split `datom_storage_*` vs `datom_repo_*`. Not a new file. |
+    | file for the export | **`R/storage.R`** | its header states the family contract ("exported wrappers over the internal storage dispatch layer") and the naming split `datom_storage_*` vs `datom_repo_*`. Not a new file. |
     | roxygen example to copy | `datom_storage_list()` (`R/storage.R:51`, example block just above it) | this **is** "the established bare-git-remote + local-store style": `requireNamespace("git2r")` guard, `tempfile()`, `git2r::init(bare = TRUE)`, `datom_store(validate = FALSE)`, `datom_init_repo()`, `datom_get_conn()`, `datom_write()`, `unlink()`. All four existing storage exports use it verbatim. |
-    | pkgdown entry | `_pkgdown.yml`, the package-developer storage section (currently lists the four `datom_storage_*` plus two `datom_repo_*`) | add both new exports there; the index must match exports exactly or `pkgdown::build_site()` errors. |
+    | pkgdown entry | `_pkgdown.yml`, the package-developer storage section (currently lists the four `datom_storage_*` plus two `datom_repo_*`) | add the new export there; the index must match exports exactly or `pkgdown::build_site()` errors. |
     | tests | `tests/testthat/test-storage.R` | reuse its `make_local_storage_conn()` fixture for the local backend and its `mockery` pattern for S3. |
     | role check | **none** -- no existing `datom_storage_*` export checks `conn$role`, including the destructive `datom_storage_delete_prefix()` | the family is deliberately policy-free; role gating lives on the git-mutating verbs (Task 11). Do not add one here without deciding to break that symmetry. |
-    | `.access/` today | **appears nowhere in `R/`** (verified by grep) | so R19.6's "safe by construction" claim holds as stated, and this task is what keeps it true once a general-purpose write path exists. |
+    | `.access/` today | **appears nowhere in `R/`** (verified by grep) | R19.6's "safe by construction" claim therefore holds as stated -- and with the write export dropped, datom still offers no general-purpose write path, so nothing in this task can break it. |
   - **There is no relative-key validator to reuse** -- `R/utils-validate.R` has only
-    `.datom_validate_name()` (`R/utils-validate.R:18`) and `.datom_validate_sha()` (`R/utils-validate.R:68`), and nothing validates a
-    key. So "relative-key validation" means writing it. Two things it must catch, and they are
-    different in kind:
+    `.datom_validate_name()` (`R/utils-validate.R:18`) and `.datom_validate_sha()`
+    (`R/utils-validate.R:68`), and nothing validates a key. So "relative-key validation" means
+    writing it. Two things it must catch, and they are different in kind:
     1. **Traversal / shape** (`..` segments, leading `/`, empty, non-scalar) -- an I9 concern, and it
-       applies to **both** exports. Reads are unrestricted with respect to *managed keys*, not with
-       respect to escaping the namespace: on the local backend an unvalidated `../../x` walks out via
-       `fs::path()`, which is what #74's guard sweep existed for.
+       applies to a **read** as much as to a write. "Reads are unrestricted" was always about
+       *managed keys*, never about escaping the namespace: on the local backend an unvalidated
+       `../../x` walks out via `fs::path()`, which is what #74's guard sweep existed for. This is
+       the load-bearing half of the task now that the write export is dropped.
     2. **A full key passed where a relative one belongs** -- the double-prefix hazard in
-       `dev/engineering-notes.md`. This one is worth catching precisely because it does **not**
-       error today: the write lands at `{prefix}/datom/{prefix}/datom/...` and everything looks
-       fine. A key already containing a `datom/` segment is the detectable form.
-  - **P18 is satisfied by the managed-key refusal, not by any git interaction.** The write export
-    writes storage directly and always will; what keeps it from putting storage ahead of git is that
-    every key datom manages is refused. Do not try to add a git gate to a byte-level primitive.
-  - **Two decisions to settle at DESIGN, before writing code** (both are public-contract choices,
-    the same class as the F3 review finding that produced R12.4a in the first place):
-    1. **Is the payload-key refusal existence-dependent or shape-only?** R12.4a says "any
-       payload-shaped key (`{name}/{sha}.{json,parquet}`) **under an existing artifact directory**",
-       which implies a storage probe per write. Shape-only is simpler, stricter, cheaper, and cannot
-       be defeated by writing the payload *before* the artifact exists; existence-checking is more
-       permissive and matches the requirement's literal wording. **Recommendation: shape-only**, on
-       the grounds that a refusal is cheap to relax and a hole is expensive to discover -- but it
-       narrows a stated requirement, so it needs an explicit decision rather than a quiet
-       reinterpretation.
-    2. **How strict is "payload-shaped"?** `{name}/{64-hex}.json` is unambiguous; `{name}/{6-64
-       hex}.json` matches `.datom_validate_sha()`'s accepted range and so also catches an abbreviated
-       form. Pick one and pin it in a test, because the answer decides whether a downstream package
-       can write `myset/abc123.json` as its own scratch file.
-  - **Trap in the examples**: the roxygen example for the write export must use an **unmanaged** key.
-    The obvious-looking `"dm/abc.json"` after a `datom_write(name = "dm")` is exactly what the new
-    guard refuses, so a copy-pasted example would abort at `R CMD check`.
-  - **Refuse datom-managed keys on the write export** (R12.4a): anything under a `.metadata/`
-    segment, payload-shaped keys (`{name}/{sha}.{json,parquet}`) under an existing artifact
-    directory, **and anything under a `.access/` segment**. The first two stop a downstream package
-    overwriting `metadata.json` or a payload directly, **bypassing git-gates-storage and
-    integrity**. The third protects the namespace reserved for the future access-enforcement
-    package (`dev/datomanager_overview.md`) -- datom is safe there today only *by construction*,
-    and this export is the first general-purpose write path that could break it (AC23). Reads stay
-    unrestricted.
-  - `_pkgdown.yml` reference entries; roxygen with runnable offline examples in the established
-    bare-git-remote + local-store style.
-  - _Requirements: R12.4, R12.4a. Invariants: I7, I14. Properties: P18. Acceptance: **AC23**
-    (the `.access/` refusal, alongside `.metadata/` and payload keys). No pathway impact._
+       `dev/engineering-notes.md`. Worth catching because it does **not** error today: the call
+       resolves under `{prefix}/datom/{prefix}/datom/...` and simply finds nothing, which reads as
+       "the object is missing" rather than "the key was wrong". A key already containing a `datom/`
+       segment is the detectable form.
+  - **P18 needs nothing from this task.** Restated with the write export's removal: no public API can
+    put storage ahead of git because every public write is a purpose-built verb that commits first --
+    a read cannot violate it at all. Do not add a git gate to a byte-level primitive.
+  - Roxygen with a runnable offline example in the established bare-git-remote + local-store style
+    (exemplar cited above); `_pkgdown.yml` entry.
+  - _Requirements: R12.4 (narrowed to GET; R12.4a retired with the write export). Invariants: I7
+    (I14 retired). Properties: P18 (satisfied without new code -- a read cannot violate it).
+    Acceptance: **none of the set-specific ACs** -- AC23 was the only one this task carried and it is
+    retired with the export it tested. The assertions are the hardening tests themselves: non-conn
+    refused, traversal refused, full key refused, absent key aborts clearly, and a round trip through
+    the local backend returns the parsed object. Recorded explicitly so the absence is not read as an
+    omission. No pathway impact._
 
 - [ ] **4. `schema_version` gate (reader side)**
   - `.datom_check_schema_version(meta, source)` -- one implementation, one message.
@@ -739,7 +738,7 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 | Export | Task |
 |---|---|
 | `datom_storage_read_json()` | 3 |
-| `datom_storage_write_json()` | 3 |
+| ~~`datom_storage_write_json()`~~ | **dropped 2026-08-18** -- deferred to the Backlog; see Task 3 |
 | `datom_member()` | 7 |
 | `datom_write_set()` | 8 (extended with `include_paths` in 12) |
 | `datom_read_set()` | 9 |
@@ -786,7 +785,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-11 | **Location precedence, inherited not invented**: explicit address in the project's own config works standalone; `ref.json` in the gov repo takes priority once governance exists; `governance.json` is the flag for whether it is attached. Member resolution follows this exact precedence. Therefore **member records carry a logical project name and never a location** -- an embedded location would go stale on a bucket move, which is what `ref.json` exists to prevent. | R18.2/R18.3 |
 | 2026-08-11 | **Correction: the access unit is the artifact, not the namespace.** Roles are table-level and a derived table's requirement is the union of its **leaf ancestors'** roles, so two derived tables in one product/bucket/prefix get different requirements automatically. Per-artifact IAM is expressible because every artifact has its own folder. The namespace rule therefore **keeps its conclusion but changes its justification** (blast radius + ownership, not access) -- a rule defended by a wrong argument gets relitigated. | R19.1/R19.2, R17.4, design.md 20.6 |
 | 2026-08-11 | **A set gates on nothing** -- no parents means the lineage walk finds no leaves, so no roles are required unless explicitly overridden. Same conclusion as the non-conjunctive access decision, now confirmed against the access layer's algorithm. Corollaries recorded because they surprise people: **granting a product does not grant its members**, and a **sensitive member list uses the explicit-override path**. | R19.3-R19.5, design.md 20.7 |
-| 2026-08-11 | The JSON write export must also refuse **`.access/`** -- the namespace reserved for the access-enforcement package, where datom is safe today only *by construction*. This export is the first general-purpose write path that could break that reservation. | R12.4a/R19.6, AC23, Task 3 |
+| 2026-08-11 | **SUPERSEDED 2026-08-18 -- the write export is retired, so this refusal has nothing to attach to; do not implement it.** ~~The JSON write export must also refuse **`.access/`** -- the namespace reserved for the access-enforcement package, where datom is safe today only *by construction*. This export is the first general-purpose write path that could break that reservation.~~ | R12.4a/R19.6, AC23, Task 3 |
 | 2026-08-11 | **`role` terminology collision**: datom's `role` (developer/reader) vs the access layer's "role" (permission set). **datom keeps `role`; the burden is on the future package to pick a different term** -- it does not exist yet so the rename is free there and breaking here. Recorded in `dev/datomanager_overview.md` for whoever builds it. | design.md 20.9 |
 | 2026-08-11 | **Clarified: there is no lineage walk.** `source_lineage` is a precomputed transitive union maintained at write time -- imported tables get a self-entry, derived tables get the union of their parents' unions -- so "which raw sources feed X" is **one read, zero hops**, and it cannot drift because parents pin immutable versions. Design section 20.6 initially repeated the access design's "walk upward" framing; corrected. | design.md 20.10 |
 | 2026-08-11 | **`dev/datomanager_overview.md` is stale on this point and now says so.** It predates Phase 20, so it requires only `parents` and builds a walk -> session-cache -> *precomputed leaf map* ladder. `source_lineage` **is** that leaf map, already stored per table. Added item 3a plus stale-markers on the affected sections: delete the walk, do not rebuild `ROLE_LEAVES`, keep the access *semantics*. | dev/datomanager_overview.md |
@@ -873,4 +872,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-18 | **Two Task 3 decisions deliberately left for DESIGN rather than settled here.** (a) Whether the payload-key refusal is **existence-dependent** (R12.4a's literal wording, one storage probe per write) or **shape-only** (simpler, stricter, cheaper, and not defeatable by writing a payload before its artifact exists). Recommendation is shape-only -- a refusal is cheap to relax and a hole is expensive to find -- but it narrows a stated requirement, so it gets an explicit decision instead of a quiet reinterpretation. (b) How strict "payload-shaped" is: `{name}/{64-hex}` versus `.datom_validate_sha()`'s 6-64 hex range, which decides whether a downstream package may write `myset/abc123.json` as scratch. Both are public-contract choices of the same class as review finding F3, which is what produced R12.4a. | R12.4a, AC23, Task 3 |
 | 2026-08-18 | **A trap noted for Task 3's docs**: the write export's roxygen example must use an **unmanaged** key. The natural-looking `"dm/abc.json"` after a `datom_write(name = "dm")` is precisely what the new guard refuses, so an example copied from a sibling export would abort under `R CMD check` -- a self-inflicted AC11 failure. | AC23, AC11, Task 3 |
 | 2026-08-18 | **`CRAN-SUBMISSION` is not a tracked record and never was.** Verified with `git log --all -- CRAN-SUBMISSION` (empty) and its absence from `origin/main` and `origin/dev`, correcting the assumption that `main` held a submission record to protect. Per usethis, the file is a handoff artifact from `submit_cran()` that `use_github_release()` consumes and **deletes**, and **in its absence usethis assumes HEAD is the submitted state** -- so with the old acceptance order (merge `dev` into `main`, then tag) a missing artifact would silently name the merge commit rather than the submitted one. Resolved on this branch: `/CRAN-SUBMISSION` added to `.gitignore` (it sat untracked *and* un-ignored, so `git add .` could have carried it to `main` by merge -- newly relevant with Task 11 adding an add-all verb), `dev/README.md` gained a `CRAN-SUBMISSION` section plus a submitted-SHA table, and acceptance step 4 now publishes the release **before** merging. The artifact itself was left untouched. | dev/README.md, `.gitignore` |
+| 2026-08-18 | **THE JSON WRITE EXPORT IS DROPPED -- owner-decided, and it dissolves both pending Task 3 decisions.** `datom_storage_write_json()` will not be built; Task 3 ships `datom_storage_read_json()` alone. **Owner-raised, and the challenge was the right one**: writing should be spelled `datom_write_set()`, and JSON is datom's internal design choice rather than a public surface. Verified before agreeing: the export's stated motivation in #89 was "a downstream package cannot write its own document into datom's namespace", the document was a set, and Task 8 now writes sets as first-class artifacts -- so **no consumer remains**. `datomanager` does not need it either: the Authority Principle in `dev/datomanager_scope.md` says "data-repo mutations always route through datom ... datomanager never touches the data repo directly", and its expression is a **purpose-built verb per need** (`datom_repo_set_data_store()`, `datom_repo_delete()`, `datom_repo_attach_governance()`), with the `governance.json` data-side mirror as the precedent for choosing a named export over a generic write. **A claim of mine was wrong and the owner caught it**: I said "datomanager does its own storage IO", which is true only of the **gov** namespace -- the `dev/README.md` backlog line I was paraphrasing has been corrected to say so. Retired with the export: R12.4a, I14, AC23. Restated: P18 (now satisfied because no general-purpose write exists, not because one is fenced) and R19.6 (`.access/` stays safe **by construction**, since datom adds no write path at all). Retained verbatim for revival: R12.4a's refusal analysis. **Deferral is the cheap direction** -- additive to add later, breaking to remove after release. | R12.4, R12.4a, I14, AC23, P18, R19.6, Task 3 |
+| 2026-08-18 | **The one argument that survived for the write export, recorded as the Backlog trigger.** datomanager will need s3/local dispatch to write JSON into its **own gov namespace**, and reimplementing that duplicates platform code. That is a **different export** -- gov-scoped, with no managed-key refusal list -- for a package that does not exist yet, so it is speculative capability today. If the trigger fires, scope it to the caller's own namespace and **re-derive** the refusal list rather than assuming R12.4a's still fits. | R12.4a, `dev/README.md` Backlog |
+| 2026-08-18 | **Process note: a review can be right about a hazard and still miss that the capability is unnecessary.** Review finding F3 correctly identified that a public JSON write could clobber managed keys, and its resolution (R12.4a's refusal list, I14, AC23) was sound *given* the export. What no round asked was **who still needs this export** -- a question that only had a new answer because `datom_write_set()` had since been specified. Recorded because the failure mode is invisible from inside a hardening exercise: every subsequent review inherits the premise that the capability is wanted. | design.md 18 (F3 row), R12.4a |
 | 2026-08-18 | **The parity workflow was extended in place, as instructed, and its file name deliberately still says cv1.** It now runs both reference scripts and both parity test files across the x86_64 + arm64 matrix, keeping one matrix for a property that spans architectures, and it prints the sv1 goldens beside the cv1 ones so a divergence between jobs is readable in the logs rather than only as a failed expectation. The file keeps its name so existing links and any branch protection stay valid; the header comment now says it covers both regimes. | `.github/workflows/cv1-reference-parity.yaml`, R2.4, P12 |

@@ -247,6 +247,13 @@ retired <- c(
   # for.
   "only unsorted concat",
   "only `concat` without a `sort`",
+  # Retired 2026-08-18 with the JSON write export (R12.4a, I14, AC23 retired;
+  # P18 restated). The phrases below were live instructions for a capability
+  # that is no longer being built, and each one reads authoritative on its own.
+  "refuses managed keys",
+  "refuses datom-managed keys",
+  "payload-shaped key",
+  "first general-purpose write path",
   "order is curatorial",
   "duplication \\*is\\* identity",
   "member order different",

@@ -32,10 +32,16 @@ Three things block that today:
    refuses list and exotic columns by design (`R/hashable.R`, `.datom_canonical_hash()`).
 2. **No byte/JSON put-get on the public storage surface.** The Storage Extension API exports
    `datom_storage_list()` / `datom_storage_copy()` / `datom_storage_verify()` /
-   `datom_storage_delete_prefix()` (`R/storage.R`) but no JSON read/write, so a downstream
-   package cannot write its own document into datom's namespace. The internals already exist
-   (`.datom_storage_read_json()` / `.datom_storage_write_json()`, `R/utils-storage.R:66,83`) --
-   they are simply unexported.
+   `datom_storage_delete_prefix()` (`R/storage.R`) but no JSON read/write. The internals already
+   exist (`.datom_storage_read_json()` / `.datom_storage_write_json()`,
+   `R/utils-storage.R:66,83`) -- they are simply unexported.
+   **Note, 2026-08-18: the write half of this motivation is retired.** As #89 stated it, the gap
+   was "a downstream package cannot write its own document into datom's namespace" -- and the
+   document in question was a set, which `datom_write_set()` now writes as a first-class artifact.
+   A general-purpose JSON write is therefore no longer needed by anything, and exporting one would
+   contradict the Authority Principle in `dev/datomanager_scope.md` (data-side writes route
+   through purpose-built datom verbs). Only the **read** export survives this motivation; see
+   R12.4 and the retirement of R12.4a.
 3. **Building it outside datom duplicates** version history, content addressing, dedup, ref
    resolution, and governance in a second package.
 
@@ -787,9 +793,12 @@ On a set this fails 100% of the time and reports `data_missing_s3`.
   The converse matters as much as the original -- without it, `datom_read_set()` on a table
   fetches `{name}/{data_sha}.json`, gets a not-found, and reports a missing payload for an
   artifact that is perfectly healthy.
-- **R12.4** Export JSON put/get on the Storage Extension API -- harden the existing
-  `.datom_storage_read_json()` / `.datom_storage_write_json()` internals. No direct
-  `.datom_s3_*()` calls from business logic.
+- **R12.4 -- export JSON GET only** (narrowed 2026-08-18; the put is deferred, see R12.4a).
+  `datom_storage_read_json()` on the Storage Extension API, hardening the existing
+  `.datom_storage_read_json()` internal (`R/utils-storage.R:66`): conn class check, relative-key
+  validation, clear abort on an absent key. No direct `.datom_s3_*()` calls from business logic
+  (I7). Reads carry no policy -- there is nothing to bypass, which is why R12.4a's refusal list
+  never applied to them.
 - **R12.5 -- `datom_write_set(conn, members, ..., include_paths = NULL)`.** Optional character
   vector of repo-relative paths staged **into the same commit** as the set payload and its
   metadata files. Purpose: the set version's commit tree contains the code and environment that
@@ -811,7 +820,28 @@ On a set this fails 100% of the time and reports `data_missing_s3`.
     `datom_repo_commit()` (R15). Rationale: AC2 must not acquire a side channel that commits code.
     An idempotent data write that silently commits human WIP would be exactly the
     machine-moment-add-all failure R14 exists to prevent, arriving through a different door.
-- **R12.4a -- the export must not be able to clobber datom-managed keys.** A public
+- **R12.4a -- RETIRED 2026-08-18, together with the write export it governed.** The whole
+  requirement existed to make a public JSON **write** safe. That export is **deferred, not
+  implemented** (Backlog in `dev/README.md`, trigger: datomanager needs to write JSON into its own
+  gov namespace), so there is nothing to constrain and nothing to test -- AC23 is retired with it,
+  and so is I14.
+
+  **Why deferred rather than built.** The capability had no remaining consumer once
+  `datom_write_set()` existed: #89 asked for it so a downstream package could write *its own
+  document* into datom's namespace, and that document was a set. Separately, it cuts against the
+  Authority Principle in `dev/datomanager_scope.md` -- "data-repo mutations always route through
+  datom ... datomanager never touches the data repo directly" -- whose expression is a **purpose-built
+  verb per need** (`datom_repo_set_data_store()`, `datom_repo_delete()`,
+  `datom_repo_attach_governance()`), not a generic byte channel. The `governance.json` data-side
+  mirror is the precedent: datom gave datomanager a named export instead of a generic write.
+  Deferring is also the cheap direction -- adding an export later is additive, removing one after
+  release is breaking.
+
+  **The analysis below is preserved as-is**, because if the trigger fires it is the starting point:
+  scope the export to the caller's own namespace, and re-derive the refusal list rather than
+  assuming this one still fits.
+
+  Original requirement, retained for reference: a public
   `datom_storage_write_json()` that accepts any key lets a downstream package write
   `{name}/.metadata/metadata.json` or `{name}/{data_sha}.json` directly, **silently bypassing
   git-gates-storage (I5/I6) and integrity for artifacts datom manages**. That is a
@@ -1034,7 +1064,11 @@ foreclose.
   pooled can itself be confidential. The access layer already supports adding a specific artifact
   directly to the roles table to *add* requirements beyond what lineage implies (the embargo
   case). Sets need no new mechanism for this.
-- **R19.6 -- `.access/` stays reserved.** See R12.4a: the new JSON-write export must refuse it.
+- **R19.6 -- `.access/` stays reserved, and stays safe by construction.** datom never reads,
+  writes, or deletes there. The reservation was going to need an explicit refusal in the JSON-write
+  export (R12.4a); with that export deferred, **datom adds no general-purpose write path at all**,
+  so the guarantee remains structural rather than enforced -- verified 2026-08-18: `.access` appears
+  nowhere in `R/`. Whoever revives the write export owns re-establishing the refusal.
 
 ### R20 -- Git is the history mechanism; anything history-shaped datom writes is a projection
 
@@ -1137,7 +1171,7 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC20** | **`include_paths` refused early -- two distinct gates, two separate test cases.** (a) A **nonexistent** path is refused; (b) a path **overlapping** a datom-owned path (`{artifact}/**`, `.datom/**`) is refused. Both **before any hashing or IO** (R12.5), consistent with the R10.3a gate placement. Kept as one criterion but **tested as two cases**, so a regression identifies which gate broke rather than only that one of them did. |
 | **AC21** | **`datom_repo_push()` is convergent.** With unpushed local commits it advances the remote; called again immediately it is an informational **no-op, not an error**; a reader conn is refused; it inherits the on-a-branch guard (R15.8). |
 | **AC22** | **Namespace separation is enforced, not merely documented.** Initializing a `mode: product` repo into a namespace that already holds another project's manifest is **refused**, with a message naming the occupying project and pointing at using a distinct prefix (R17.3). |
-| **AC23** | **The JSON-write export refuses the reserved access namespace.** A write to any key under a `.access/` segment is refused, alongside the existing `.metadata/` and payload-key refusals (R12.4a, R19.6). Reads are unaffected. |
+| **AC23** | **RETIRED 2026-08-18 -- no test required.** It asserted that the JSON-**write** export refuses a `.access/` key; that export is deferred (R12.4a), so the behaviour has no implementation to test. Reads were never in its scope. Revive it with the export. |
 | **AC24** | **The git payload is diffable.** After writing a set twice with one member added, `git diff` on `{name}/set.json` between the two commits shows the **member-level** change (one added entry), not a whole-file add. Guards R6.1a/b -- a content-addressed git filename would make this test impossible to write. |
 | **AC25** | **`commit_sha` is present, git-less, and survives repair.** After a set write: the **storage** copy of `version_history.json` carries `commit_sha` for the new version; the **git** copy does not (it cannot -- it is inside that commit); and after `datom_validate(fix = TRUE)` re-uploads metadata, `commit_sha` is **still there**, re-derived from `git log` rather than stripped (R21.6/R21.7). The third clause is the one that fails silently in a naive implementation. |
 | **AC26** | **A code-only change mints no new version.** With the set's member list unchanged, modifying tracked code and re-running `datom_write_set()` produces **no new version**, and the existing version's recorded `commit_sha` is **unchanged** (still the first producing commit). Encodes the option-1 decision (R21.2/R21.3) so a later "improvement" that makes versions code-sensitive fails a test. |
