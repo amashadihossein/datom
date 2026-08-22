@@ -263,3 +263,63 @@ test_that(".datom_validate_sha uses the arg label in the message", {
   err <- expect_error(.datom_validate_sha("zzz", arg = "data_sha"))
   expect_match(conditionMessage(err), "data_sha")
 })
+
+
+# === .datom_validate_rel_key() ================================================
+
+test_that(".datom_validate_rel_key accepts ordinary relative keys", {
+  expect_invisible(.datom_validate_rel_key("dm/.metadata/metadata.json"))
+  expect_equal(
+    .datom_validate_rel_key("dm/abc123.parquet"),
+    "dm/abc123.parquet"
+  )
+  expect_invisible(.datom_validate_rel_key(".metadata/manifest.json"))
+  expect_invisible(.datom_validate_rel_key("single-segment.json"))
+})
+
+test_that(".datom_validate_rel_key refuses non-string and empty input", {
+  expect_error(.datom_validate_rel_key(NULL), "single non-NA character")
+  expect_error(.datom_validate_rel_key(NA_character_), "single non-NA character")
+  expect_error(.datom_validate_rel_key(c("a.json", "b.json")), "single non-NA character")
+  expect_error(.datom_validate_rel_key(42), "single non-NA character")
+  expect_error(.datom_validate_rel_key(""), "must not be empty")
+})
+
+test_that(".datom_validate_rel_key refuses traversal segments", {
+  # On the local backend the key is pasted into a path and resolved by the
+  # filesystem, so a `..` segment escapes the datom namespace entirely.
+  expect_error(.datom_validate_rel_key("../../secrets.json"), "path segment")
+  expect_error(.datom_validate_rel_key("dm/../../secrets.json"), "path segment")
+  expect_error(.datom_validate_rel_key("dm/.."), "path segment")
+})
+
+test_that(".datom_validate_rel_key allows dots that are not a traversal segment", {
+  # Only a whole `..` segment is a traversal; these are legitimate keys and
+  # the guard must not become a blanket ban on the dot character.
+  expect_invisible(.datom_validate_rel_key("dm/.metadata/metadata.json"))
+  expect_invisible(.datom_validate_rel_key("my.data/abc.json"))
+  expect_invisible(.datom_validate_rel_key("dm/..hidden.json"))
+})
+
+test_that(".datom_validate_rel_key refuses an absolute path", {
+  expect_error(.datom_validate_rel_key("/dm/abc.json"), "not an absolute path")
+  expect_error(.datom_validate_rel_key("//dm/abc.json"), "not an absolute path")
+})
+
+test_that(".datom_validate_rel_key refuses a full key passed as relative", {
+  # The double-prefix hazard: this resolves under
+  # `{prefix}/datom/{prefix}/datom/...` and silently finds nothing, so it
+  # reads to the caller as a missing object rather than a malformed key.
+  err <- expect_error(
+    .datom_validate_rel_key("proj/datom/dm/.metadata/metadata.json"),
+    "full storage key"
+  )
+  expect_match(conditionMessage(err), "relative")
+
+  expect_error(.datom_validate_rel_key("datom/dm/abc.json"), "full storage key")
+})
+
+test_that(".datom_validate_rel_key uses the arg label in the message", {
+  err <- expect_error(.datom_validate_rel_key("", arg = "prefix_key"))
+  expect_match(conditionMessage(err), "prefix_key")
+})

@@ -222,7 +222,7 @@ datom_pull <- function(conn) {
   metadata_path <- fs::path(table_dir, "metadata.json")
   if (fs::file_exists(metadata_path)) {
     data <- jsonlite::read_json(metadata_path)
-    s3_key <- paste0(name, "/.metadata/metadata.json")
+    s3_key <- .datom_artifact_meta_key(name, "metadata")
     .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
@@ -231,7 +231,7 @@ datom_pull <- function(conn) {
   history_path <- fs::path(table_dir, "version_history.json")
   if (fs::file_exists(history_path)) {
     data <- jsonlite::read_json(history_path)
-    s3_key <- paste0(name, "/.metadata/version_history.json")
+    s3_key <- .datom_artifact_meta_key(name, "version_history")
     .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
@@ -243,6 +243,10 @@ datom_pull <- function(conn) {
     for (snap in snapshot_files) {
       snap_name <- fs::path_file(snap)
       data <- jsonlite::read_json(snap)
+      # Not the snapshot-key helper: `snap_name` is a discovered FILENAME
+      # (already `{sha}.json`), not a bare sha, so the helper's sha guard does
+      # not apply. Guarding here would also change behavior -- a stray .json in
+      # .metadata/ would start aborting instead of being uploaded.
       s3_key <- paste0(name, "/.metadata/", snap_name)
       .datom_storage_write_json(conn, s3_key, data)
       s3_keys <- c(s3_keys, s3_key)

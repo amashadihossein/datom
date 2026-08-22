@@ -84,8 +84,8 @@ datom_read <- function(conn,
 .datom_read_metadata <- function(conn, name) {
   .datom_validate_name(name)
 
-  metadata_key <- paste0(name, "/.metadata/metadata.json")
-  history_key <- paste0(name, "/.metadata/version_history.json")
+  metadata_key <- .datom_artifact_meta_key(name, "metadata")
+  history_key <- .datom_artifact_meta_key(name, "version_history")
 
   current <- .datom_storage_read_json(conn, metadata_key)
   history <- .datom_storage_read_json(conn, history_key)
@@ -102,10 +102,11 @@ datom_read <- function(conn,
 #' resolves from the current `metadata.json`; if a metadata_sha string, looks
 #' it up in `version_history.json`.
 #'
-#' The `parquet_sha` may be `NULL`/`""` for pre-cv1 metadata, and for any
-#' version-pinned read until `version_history` entries persist `parquet_sha`
-#' (task 5.1). A `NULL`/empty `parquet_sha` tells [.datom_read_parquet()] to
-#' skip the integrity check (the intended pre-cv1 grace).
+#' The `parquet_sha` may be `NULL`/`""` only for **pre-cv1 metadata**: current
+#' writes persist it both in `metadata.json` and in every `version_history`
+#' entry, so version-pinned reads resolve it too. A `NULL`/empty `parquet_sha`
+#' tells [.datom_read_parquet()] to skip the integrity check -- a grace for
+#' legacy metadata, not a gap in the current writer.
 #'
 #' @param metadata_list Return value of [.datom_read_metadata()].
 #' @param version NULL (current) or a metadata_sha string.
@@ -202,8 +203,8 @@ datom_read <- function(conn,
 #' @param parquet_sha Expected SHA-256 of the stored parquet object bytes, from
 #'   the resolved metadata (see [.datom_resolve_version()]). When non-empty, the
 #'   downloaded file is verified against it and a mismatch aborts. When `NULL`
-#'   or empty (pre-cv1 metadata, or a version-pinned read before task 5.1
-#'   persists it), the integrity check is skipped and the read succeeds.
+#'   or empty -- which now happens only for pre-cv1 metadata -- the integrity
+#'   check is skipped and the read succeeds.
 #' @return Data frame.
 #' @keywords internal
 .datom_read_parquet <- function(conn, name, data_sha, parquet_sha = NULL) {
@@ -215,7 +216,7 @@ datom_read <- function(conn,
   # data_sha is spliced into a storage key; reject path-traversal / non-hex.
   .datom_validate_sha(data_sha, arg = "data_sha")
 
-  s3_key <- paste0(name, "/", data_sha, ".parquet")
+  s3_key <- .datom_artifact_payload_key(name, data_sha, "table")
   tmp <- tempfile(fileext = ".parquet")
   on.exit(unlink(tmp), add = TRUE)
 
@@ -326,7 +327,7 @@ datom_read <- function(conn,
 #'   history scan) without a second storage read.
 #' @keywords internal
 .datom_has_changes <- function(conn, name, new_data_sha, new_metadata_sha) {
-  metadata_key <- paste0(name, "/.metadata/metadata.json")
+  metadata_key <- .datom_artifact_meta_key(name, "metadata")
 
   # If metadata doesn't exist yet, it's a new table -> full write, no current.
   if (!.datom_storage_exists(conn, metadata_key)) {
@@ -390,12 +391,11 @@ datom_read <- function(conn,
   }
 
   # change_type == "full".
-  # Since task 5.1, version_history entries persist parquet_sha, so this lookup
-  # activates the revert-to-older reuse branch: writing content whose data_sha
-  # already appears in history reuses that version's recorded parquet_sha
-  # instead of re-uploading (a fresh serialization can differ byte-for-byte and
-  # would break the older version's integrity pin). The end-to-end revert-reuse
-  # integration test is task 12.5.
+  # version_history entries persist parquet_sha, so this lookup activates the
+  # revert-to-older reuse branch: writing content whose data_sha already appears
+  # in history reuses that version's recorded parquet_sha instead of
+  # re-uploading (a fresh serialization can differ byte-for-byte and would break
+  # the older version's integrity pin).
   reused <- .datom_lookup_history_parquet_sha(conn, name, data_sha)
   if (!is.null(reused)) {
     return(list(parquet_sha = reused, upload = FALSE))
@@ -409,9 +409,8 @@ datom_read <- function(conn,
 #'
 #' Scans the developer's local `version_history.json` (newest-first) for the
 #' most recent entry whose `data_sha` matches and that carries a non-empty
-#' `parquet_sha`. Returns NULL when none is found -- including the transitional
-#' period before task 5.1 persists `parquet_sha` into history entries, and for
-#' pre-cv1 histories. Reads the local git clone (offline-friendly); a stale
+#' `parquet_sha`. Returns NULL when none is found -- which happens for pre-cv1
+#' histories, whose entries predate `parquet_sha` being recorded. Reads the local git clone (offline-friendly); a stale
 #' clone is tolerated because the subsequent git push serializes concurrent
 #' writers (a behind clone fails to push before it can upload).
 #'
@@ -541,9 +540,9 @@ datom_read <- function(conn,
     list()
   }
 
-  s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
-  s3_history_key <- paste0(name, "/.metadata/version_history.json")
-  s3_versioned_key <- paste0(name, "/.metadata/", metadata_sha, ".json")
+  s3_metadata_key <- .datom_artifact_meta_key(name, "metadata")
+  s3_history_key <- .datom_artifact_meta_key(name, "version_history")
+  s3_versioned_key <- .datom_artifact_snapshot_key(name, metadata_sha)
 
   .datom_storage_write_json(conn, s3_metadata_key, metadata)
   .datom_storage_write_json(conn, s3_history_key, history)
@@ -808,7 +807,7 @@ datom_write <- function(conn,
 
   # 8. Upload parquet (only when step 5 decided it is needed -- after git).
   if (isTRUE(parquet_decision$upload)) {
-    parquet_key <- paste0(name, "/", data_sha, ".parquet")
+    parquet_key <- .datom_artifact_payload_key(name, data_sha, "table")
     .datom_storage_upload(conn, tmp, parquet_key)
   }
 

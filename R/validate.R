@@ -376,8 +376,10 @@ datom_validate <- function(conn, fix = FALSE) {
   history_local <- fs::file_exists(fs::path(repo_path, name, "version_history.json"))
 
   # S3 checks
-  metadata_s3 <- .datom_storage_exists(conn, paste0(name, "/.metadata/metadata.json"))
-  history_s3 <- .datom_storage_exists(conn, paste0(name, "/.metadata/version_history.json"))
+  metadata_s3 <- .datom_storage_exists(conn, .datom_artifact_meta_key(name, "metadata"))
+  history_s3 <- .datom_storage_exists(
+    conn, .datom_artifact_meta_key(name, "version_history")
+  )
 
   # Check that data parquet exists (read data_sha from local metadata)
   data_s3 <- FALSE
@@ -388,7 +390,7 @@ datom_validate <- function(conn, fix = FALSE) {
         simplifyVector = TRUE
       )
       if (!is.null(meta$data_sha) && nzchar(meta$data_sha)) {
-        data_key <- paste0(name, "/", meta$data_sha, ".parquet")
+        data_key <- .datom_artifact_payload_key(name, meta$data_sha, "table")
         data_s3 <- .datom_storage_exists(conn, data_key)
       }
     }, error = function(e) {

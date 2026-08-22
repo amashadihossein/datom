@@ -90,6 +90,7 @@ reference:
       datom_repo_delete instead.
     contents:
       - datom_storage_list
+      - datom_storage_read_json
       - datom_storage_delete_prefix
       - datom_storage_copy
       - datom_storage_verify

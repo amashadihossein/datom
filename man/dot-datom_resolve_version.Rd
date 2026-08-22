@@ -25,9 +25,10 @@ resolves from the current \code{metadata.json}; if a metadata_sha string, looks
 it up in \code{version_history.json}.
 }
 \details{
-The \code{parquet_sha} may be \code{NULL}/\code{""} for pre-cv1 metadata, and for any
-version-pinned read until \code{version_history} entries persist \code{parquet_sha}
-(task 5.1). A \code{NULL}/empty \code{parquet_sha} tells \code{\link[=.datom_read_parquet]{.datom_read_parquet()}} to
-skip the integrity check (the intended pre-cv1 grace).
+The \code{parquet_sha} may be \code{NULL}/\code{""} only for \strong{pre-cv1 metadata}: current
+writes persist it both in \code{metadata.json} and in every \code{version_history}
+entry, so version-pinned reads resolve it too. A \code{NULL}/empty \code{parquet_sha}
+tells \code{\link[=.datom_read_parquet]{.datom_read_parquet()}} to skip the integrity check -- a grace for
+legacy metadata, not a gap in the current writer.
 }
 \keyword{internal}

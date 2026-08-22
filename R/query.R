@@ -162,7 +162,7 @@ datom_history <- function(conn,
 
   n <- as.integer(n)
 
-  history_key <- paste0(name, "/.metadata/version_history.json")
+  history_key <- .datom_artifact_meta_key(name, "version_history")
 
   history <- tryCatch(
     .datom_storage_read_json(conn, history_key),
@@ -337,14 +337,14 @@ datom_get_lineage <- function(conn, name, version = NULL,
   depth <- match.arg(depth)
 
   if (is.null(version)) {
-    metadata_key <- paste0(name, "/.metadata/metadata.json")
+    metadata_key <- .datom_artifact_meta_key(name, "metadata")
   } else {
     if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
       cli::cli_abort("{.arg version} must be a single non-empty string or NULL.")
     }
     # version is spliced into a storage key; reject path-traversal / non-hex.
     .datom_validate_sha(version, arg = "version")
-    metadata_key <- paste0(name, "/.metadata/", version, ".json")
+    metadata_key <- .datom_artifact_snapshot_key(name, version)
   }
 
   metadata <- tryCatch(

@@ -98,8 +98,11 @@ single aggregation point.
      `git checkout dev && git merge main`.
 
 4. **Acceptance:**
+   - **Publish the release FIRST, before merging** -- `usethis::use_github_release()` from a
+     `main` checkout that still has the `CRAN-SUBMISSION` artifact beside it. Order matters:
+     see "CRAN-SUBMISSION" below for why doing it after the merge can silently tag the wrong
+     commit.
    - Merge `dev` into `main`: `git checkout main && git merge dev`.
-   - Tag the release if desired.
    - Delete the `dev` branch (local + remote).
    - Resume normal workflow (feature branches off `main`).
 
@@ -109,8 +112,50 @@ single aggregation point.
   require a local build (`pkgdown::build_site()`).
 - **GitHub default branch** stays `main` — this is what `install_github()`
   resolves and what new clones check out.
-- **`CRAN-SUBMISSION`** on `main` records the submitted SHA. `devtools::submit_cran()`
-  regenerates it on each submission.
+- **`CRAN-SUBMISSION`** is an untracked, transient artifact -- see the next section. (An earlier
+  version of this line said it "on `main` records the submitted SHA", which was never true: the
+  file has never been committed on any branch.)
+
+### `CRAN-SUBMISSION`
+
+**What it is.** `devtools::submit_cran()` writes it next to `DESCRIPTION`, recording the version,
+the submission timestamp, and the SHA of the commit that was submitted. It is a **handoff
+artifact**, not a record meant to live in the repo: `usethis::use_github_release()` reads it to
+populate the release notes and **deletes it on success**. The durable record of a submission is
+therefore the **GitHub release and its tag**, which point at the submitted commit.
+
+**Rules.**
+
+- **Never committed.** It is in `.gitignore` (and `.Rbuildignore`), so no branch can sweep it into
+  a commit via `git add .`. Nothing is lost by that, because it was never tracked in the first
+  place and the release is the real record. Deliberate exception if one is ever wanted:
+  `git add -f`.
+- **Written only by `devtools::submit_cran()` run from `main`**, which is the only branch whose
+  tree matches what CRAN received. Never hand-edited, never regenerated from a feature branch.
+- **Never deleted by hand** while a submission is pending -- `use_github_release()` removes it as
+  part of publishing.
+
+**Two hazards, both silent.**
+
+1. **Absent file means "HEAD is the submitted state".** usethis says so explicitly: with no
+   `CRAN-SUBMISSION` present it assumes the current SHA, version, and NEWS *are* the submitted
+   ones. Run `use_github_release()` after merging `dev` into `main` and the release names the
+   **merge commit** rather than the commit CRAN actually received. Hence the ordering in
+   Acceptance step 4: publish, then merge.
+2. **The artifact lives in whichever working directory `submit_cran()` ran in**, and that is not
+   necessarily where `main` is checked out later. If it is missing at release time, check other
+   worktrees (`git worktree list`) before assuming it was never created -- and cross-check the SHA
+   against the record below.
+
+**Record for the pending 0.1.1 submission** (belt to the artifact's braces, since the artifact
+is untracked by design and this file is not):
+
+| Version | Submitted (UTC) | SHA | Artifact location |
+|---|---|---|---|
+| 0.1.1 | 2026-08-21 23:39:19 | `1eaee2660f9d4d19d0d5fec979bba4617a1bc776` (`main` head, "Declare Depends: R (>= 4.1.0) explicitly (#99)") | the `spec/datom-sets` worktree, uncommitted |
+
+Add a row here at each submission. It costs one line and it is the thing that makes the release
+verifiable if the artifact goes missing.
 
 ---
 
@@ -122,7 +167,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Started | Status | Location |
 |------|---------|--------|----------|
-| _none_ | | Next unit of work not yet scoped. See the Backlog below. | |
+| datom-sets | 2026-08-09 | **Tasks 0-3 of 16 done. NEXT: Task 4 (reader-side `schema_version` gate) -- no escalation flag; the next flagged task is Task 5 (E2, the manifest rename). Task 4 is the first task in this spec with a pathway impact, so `dev/datom_pathways.md` must be updated in the same commit. Read `.kiro/specs/datom-sets/tasks.md` first: its "Where things stand" block at the top has the current state and the per-commit gate. Nothing is awaiting the owner.** **The `datom-sv1` goldens are published as of Task 2, so the set encoding is FROZEN** -- a failing golden means the code drifted, and a deliberate change is a `datom-sv2` bump with a new `hash_algo`, not an edit. Issue [#89](https://github.com/amashadihossein/datom/issues/89): second artifact kind -- versioned, citable **sets** of datoms (a reference layer, not a data layer). Branch `spec/datom-sets` off `dev`, PR [#97](https://github.com/amashadihossein/datom/pull/97) into `dev` (submission freeze). Prerequisite [#95](https://github.com/amashadihossein/datom/issues/95) landed separately via PR #96. **16 work tasks** (numbered 1-16, plus Task 0 for the spec itself); two flagged for **Model Escalation** at plan time: Task 2 (`datom-sv1` canonical set-content hash -- gates the golden vectors) and Task 5 (`manifest$tables` -> `manifest$artifacts` -- **9 sites across 4 files** (3 write + 6 read), silent writer/reader-disagreement failure mode). Independent review resolved 12 findings (`6954c46`); spec delta D1-D8 applied (`2944a8c`) recording that the **`mode: product` repo is the joint repo** (data + code + `renv.lock`, one commit graph) and adding `datom_repo_commit()` + `datom_write_set(include_paths=)`. A final adversarial review fixed 5 blockers + 15 lesser findings (`71f7d96`), and `dev/check-spec.R` now gates spec structure mechanically (`15f6401`). **Task 1 done** (`2026-08-17`): stale docstrings swept, three relative-key helpers added, 16/17 key sites migrated, [#98](https://github.com/amashadihossein/datom/issues/98) filed. Tests 2460 -> **2482**. Two decisions logged the same day: the Task 1 path-traversal guard **stays** (scope deviation approved), and **reader-side version diff needs no schema change** -- `version_history.json` already carries `data_sha`, so a git-less reader diffs two versions with three small JSON reads; per-member digests and moving tags into metadata are both rejected in design.md 15, the former deferred as additive-and-volatile. **E1 design review COMPLETE (2026-08-17)** -- the encoding is sound (domain separation, framing, radix collation, `id`/`tags` separation all verified) and Task 2 is cleared. Four deltas applied: member order out of identity, canonicalize-before-write, the `document_sha` byte-identity rule, no Unicode normalization, plus the empty-`strset` pin. Then a 19-finding sweep, whose decisive item was the sv1 pseudocode existing in **three** files with only one fixed. Owner decisions: **tidy-then-validate** (handle trivial errors silently; refuse only what needs intent guessed), the file sorting members by name while the hash sorts by digest, and **same name at different versions is legal** (the duplicate check keys on the full `id`). `dev/check-spec.R` gained a duplicated-content check, verified non-vacuous by reintroducing the defect. **Task 2 done** (`2026-08-18`): `datom-sv1` shipped -- new `R/hashable-set.R` (hash-of-hashes over three primitives, no serializer in the identity path, every collection sorted and deduped), new standalone `dev/datom_sv1_reference.R` (44 self-tests, prints the goldens, normative byte rules), `tests/testthat/test-hashable-set.R`, and `cv1-reference-parity.yaml` extended in place to cover both regimes on x86_64 + arm64. Goldens hard-coded and cross-checked against an independent SHA-256 tool; intermediates pinned too, so a divergence names the stage. No new export. One genuine find, caught by a test being written: **a named list in a value position had to be refused**, because element-wise `list(b = "c")` and `list("c")` are indistinguishable, so `{"a": {"b": "c"}}` would have hashed identically to `{"a": ["c"]}` -- one `data_sha` and one storage address for two different payloads. Tests 2482 -> **2572**; `R CMD check --as-cran` 0E/0W (3 environmental NOTEs: new submission, unverifiable clock, old HTML Tidy). **Task 3 done** (`2026-08-21`): the JSON **write** export was dropped before implementation (owner-decided -- `datom_write_set()` is how writing is spelled, so no consumer remained; revival trigger is in the Backlog below), leaving one export, `datom_storage_read_json()`. The substance turned out to be the guard rather than the wrapper: **no relative-key validator existed**, so `.datom_validate_rel_key()` is new. It catches two failures that differ in kind -- a `..` segment or leading `/`, which escapes the namespace on the local backend where the key is pasted into a path, and a **full key passed where a relative one belongs**, which does not error today but resolves under `{prefix}/datom/{prefix}/datom/` and reads to the caller as a missing object rather than a malformed key. The full-key test keys on a `datom` path segment, exact rather than heuristic because `datom` is a reserved name. Deliberately **not** folded into the Task 1 key builders: those compose keys from already-validated parts, so the check would be dead code -- the distinction is composed-from-parts versus supplied-whole-by-a-caller. Absent keys abort with one message on both backends (an upfront existence probe, since S3 would otherwise name the full key -- the exact transformation a confused caller got wrong). No role check, now pinned by a positive test so the family's policy-free symmetry cannot break silently. Tests 2572 -> **2612**. | [.kiro/specs/datom-sets/](../.kiro/specs/datom-sets/) |
 
 ### Drafts (queued, not active)
 
@@ -167,6 +212,35 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 ### Developer Tooling
 
+**dev/check-spec.R**: Mechanical consistency checks for a Kiro spec
+
+- `Rscript dev/check-spec.R [spec-dir]` (defaults to `.kiro/specs/datom-sets`). Base R only, no
+  package dependencies. Exit 0 clean, 1 on any failure, so it works as a gate.
+- Six checks, each one derived from a defect that actually shipped into a spec and had to be
+  caught by a human reader:
+
+  | Check | Catches |
+  |---|---|
+  | dangling references | an `R*`/`I*`/`P*`/`AC*` token that resolves to nothing after renumbering |
+  | orphaned criteria | an AC / invariant / property defined but referenced by no task -- i.e. unimplemented |
+  | task coverage | non-contiguous task numbers, or a task with no `Acceptance:` clause |
+  | code citations | a `R/file.R:NNN` reference pointing outside the file |
+  | superseded wording | retired phrasing surviving as a **live instruction** rather than marked historical |
+  | ascii | non-ASCII that will trip `R CMD check` once the prose is copied into roxygen or NEWS |
+
+- **When to run it**: at each chunk checkpoint, next to reporting the test count. A `PostFileSave`
+  hook would fire constantly mid-draft and train you to ignore it.
+- `SPEC_CHECK_SHOW_CITATIONS=1` prints every cited code line so a reviewer can confirm it says what
+  the spec claims. The script can only assert that a cited line *exists* -- a wrong-but-in-range
+  number needs the eyeball. Blank cited lines are flagged, since those are almost always wrong.
+- **Maintenance rule**: the `retired` denylist is the only part that needs upkeep. When a design
+  decision is reversed, add its old phrasing there -- that is what turns "we removed this" into
+  "and it cannot come back silently".
+- **What it cannot do**: reasoning defects. In the review round that prompted it, these checks would
+  have caught about half the findings; the rest were things like "a required payload field has no
+  public parameter" and "the integrity gate has no acceptance criterion". It reduces review load, it
+  does not replace review. The script says so on every run.
+
 **dev/e2e-cv1-identity.R**: Offline `datom-cv1` identity walkthrough and smoke test
 
 - `Rscript dev/e2e-cv1-identity.R` -- **no GitHub PAT, no AWS, no network**. Builds a real git
@@ -201,7 +275,8 @@ Items discovered during development but intentionally deferred. Review periodica
 | `datom_write()` parent `data_sha` enrichment fails for same-project parents (issue #52) | gov-seam-liftout (E2E) | Pre-existing path bug: the lookup prepends `p$source` (project name) but same-project tables have no project segment. Benign (write succeeds, `validate_lineage()` unaffected). Fix tracked in [#52](https://github.com/amashadihossein/datom/issues/52). | Medium |
 | renv::init() in datom_init_repo | Phase 4 | Adds complexity, tangential to core data versioning | Low |
 | Manifest manipulation APIs (descriptions, staging, QA tagging) | Phase 7 | Two-step scan+sync is sufficient; richer manifest APIs belong in a sister package or future datom release | Medium |
-| datomanager package creation | Phase 15 | Companion governance package (settled name: `datomanager`). Scope doc: `dev/datomanager_scope.md`. Owns GOV_SEAM write surface (renamed `gov_*` on lift-out) + `gov_migrate_data()` (Phase 19). datom Phase 22 (storage extension API) complete 2026-06-10; datomanager scaffold is the remaining gate. Effort: ~2 days for lift-out, then Phase 19. **Starter code for the gov-write reimplementation:** the tried-and-tested helper bodies + their tests are preserved in datom git history at the commit just before the `gov-seam-liftout` merge -- retrieve with `git show <sha>:R/utils-gov.R`, `git show <sha>:R/decommission.R`, `git show <sha>:tests/testthat/test-utils-gov.R` (find `<sha>` via `git log --oneline -- R/utils-gov.R`). Reimplement behavior-equivalent with git2r + own storage IO (contract C3/D2 forbid calling datom internals); contract C5 (commit strings) + C8 (storage layout) pin the observable behavior. | High (next major) |
+| datomanager package creation | Phase 15 | Companion governance package (settled name: `datomanager`). Scope doc: `dev/datomanager_scope.md`. Owns GOV_SEAM write surface (renamed `gov_*` on lift-out) + `gov_migrate_data()` (Phase 19). datom Phase 22 (storage extension API) complete 2026-06-10; datomanager scaffold is the remaining gate. Effort: ~2 days for lift-out, then Phase 19. **Starter code for the gov-write reimplementation:** the tried-and-tested helper bodies + their tests are preserved in datom git history at the commit just before the `gov-seam-liftout` merge -- retrieve with `git show <sha>:R/utils-gov.R`, `git show <sha>:R/decommission.R`, `git show <sha>:tests/testthat/test-utils-gov.R` (find `<sha>` via `git log --oneline -- R/utils-gov.R`). Reimplement behavior-equivalent with git2r + **its own storage IO for the gov namespace only** (corrected 2026-08-18: an earlier wording said "own storage IO" without qualification, which contradicts the **Authority Principle** in `dev/datomanager_scope.md` -- "data-repo mutations always route through datom ... datomanager never touches the data repo directly". datomanager owns the gov repo and gov storage; every **data-side** write goes through a purpose-built datom export: `datom_storage_copy/verify/list/delete_prefix`, `datom_repo_set_data_store`, `datom_repo_delete`, `datom_repo_attach_governance`); contract C5 (commit strings) + C8 (storage layout) pin the observable behavior. | High (next major) |
+| Public `datom_storage_write_json()` (JSON write on the Storage Extension API) | datom-sets spec, Task 3 (2026-08-18) | **Dropped from the spec, not merely postponed.** It was requested in [#89](https://github.com/amashadihossein/datom/issues/89) so a downstream package could write *its own document* into datom's namespace -- that document was a set, and `datom_write_set()` now writes sets as first-class artifacts, so no consumer remains. Exporting it anyway would cut against the Authority Principle above, whose expression is a purpose-built verb per need rather than a generic byte channel (`datom_repo_attach_governance()` is the precedent: datom gave datomanager a named export instead of a generic write for the `governance.json` data-side mirror). Retired with it: R12.4a's managed-key refusal list, I14, AC23. **Revival trigger**: datomanager needs to write JSON into **its own gov namespace** and would otherwise reimplement s3/local dispatch. That is a *different* export -- gov-scoped, no managed-key rules -- so **re-derive the refusal list rather than inheriting R12.4a's**; the analysis is preserved verbatim in `requirements.md` R12.4a as the starting point. Adding an export later is additive; removing one after release is breaking, which is why the default was to not ship it. | Low (trigger-driven) |
 | Backend rename: `local` -> `filesystem` | Phase 18 | "Local" implies laptop disk, but the backend supports network mounts and cloud-mounted FS too. Atomic schema bump touching store constructor, predicate, dispatch arms, `project.yaml`, `ref.json`. Defer until there's a second compelling reason to touch the schema. | Low |
 | `gov_migrate_data()` (managed migration) | Phase 15 | Today migration is manual (`aws s3 sync` + `datom_sync_dispatch()`). Atomic data-copy + ref.json update + `.datom_gov_record_migration()` deferred. Lives in datomanager (Phase 19); calls datom `datom_storage_*` / `datom_repo_*` helpers (all six now exported in Phase 22). | Medium |
 | Restore `ubuntu-latest (devel)` in `.github/workflows/R-CMD-check.yaml` | Phase 17 | Disabled 2026-05-02 because Posit PPM has no R-devel Linux binaries; every PR paid a 15-25 min source-compile tax for arrow / paws.storage / friends. Restore as part of the pre-CRAN checklist (CRAN expects devel to pass). | Pre-CRAN |
@@ -220,8 +295,14 @@ When starting a new development session:
 
 1. Check the **Active Specs** table above
 2. Open the active spec under `.kiro/specs/{feature}/` (requirements, design, tasks)
-3. In `tasks.md`, find the next unchecked task
+3. **Read the state block at the top of `tasks.md`** -- an active spec carries its branch, its PR
+   target, the current test count, the next task, and anything still open with the owner there. Then
+   find the next unchecked task.
 4. Continue from where we left off
+
+If a spec touches `R/`, read `dev/engineering-notes.md` before editing. If it has a
+`check-spec.R`-able structure, run `Rscript dev/check-spec.R` as part of each chunk (step 3a of the
+Chunk Delivery Checklist).
 
 ---
 
@@ -270,6 +351,10 @@ After each chunk is implemented, I deliver **five things in order**:
 1. **Write tests** — full test coverage for the chunk's functions
 2. **Run tests** — execute and fix until all pass (green suite)
 3. **Minimalist walkthrough snippet** — a clean, self-contained R snippet for you to paste into the console and step through interactively (use `debugonce()` to drop into any function)
+3a. **Run `Rscript dev/check-spec.R`** — alongside reporting the test count. Structural
+   consistency of the spec itself: dangling references, orphaned criteria, tasks with no acceptance
+   clause, code citations pointing outside the file, and retired wording surviving as a live
+   instruction. It is a gate (exit 1 on failure), and it is not a substitute for reading.
 4. **Update the spec as part of the same commit** — every chunk, no exceptions:
    - Check off the completed task(s) in `tasks.md`
    - If the chunk changes metadata schema, storage layout, governance refs, lineage, access control, role resolution, migration, or decommissioning, update `dev/datom_pathways.md` or explicitly record "no pathway impact"

@@ -525,7 +525,7 @@
   )
 
   # Sync metadata files to S3 (only after git succeeds)
-  s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
+  s3_metadata_key <- .datom_artifact_meta_key(name, "metadata")
   .datom_storage_write_json(conn, s3_metadata_key, metadata)
 
   s3_keys <- s3_metadata_key
@@ -533,7 +533,7 @@
   # Sync version_history.json if it exists locally
   if (fs::file_exists(history_path)) {
     history <- jsonlite::read_json(history_path)
-    s3_history_key <- paste0(name, "/.metadata/version_history.json")
+    s3_history_key <- .datom_artifact_meta_key(name, "version_history")
     .datom_storage_write_json(conn, s3_history_key, history)
     s3_keys <- c(s3_keys, s3_history_key)
   }
