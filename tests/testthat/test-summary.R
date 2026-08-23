@@ -140,3 +140,33 @@ test_that("print uses 'local' backend label and shows root/prefix joined", {
   expect_true(any(grepl("local", out)))
   expect_true(any(grepl("/tmp/store/myproj", out)))
 })
+
+
+# --- schema_version gate -------------------------------------------------------
+
+test_that("datom_summary refuses a manifest declaring a newer schema", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(schema_version = 3L, artifacts = list())
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  err <- expect_error(datom_summary(conn), class = "datom_schema_unsupported")
+
+  # Outside the read handler: inside it, the upgrade instruction would be
+  # reworded as "Could not read manifest".
+  expect_match(conditionMessage(err), "install_github")
+  expect_false(grepl("Could not read manifest", conditionMessage(err)))
+})
+
+test_that("datom_summary tolerates a manifest with no schema_version", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(tables = list(a = list(version_count = 1L)))
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  expect_equal(datom_summary(conn)$table_count, 1L)
+})

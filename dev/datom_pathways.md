@@ -23,13 +23,34 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 1. Treat `version` as metadata_sha.
 2. Open `{table}/.metadata/{version}.json` when the exact version is supplied, or use `{table}/.metadata/version_history.json` when resolving display/history state.
+2a. **Schema version gate** (added by the `datom-sets` spec, issue #89): on reading any metadata or manifest document, check its declared `schema_version` before using it. Newer than `.datom_supported_schema` aborts with the upgrade message (`datom_schema_unsupported`); absent means v1 and is tolerated. Like the integrity gate below, this is a **gate on a document already fetched, not a new lookup** -- the route shape is unchanged.
 3. Read `data_sha` **and `parquet_sha`** from the metadata/history entry.
 4. Fetch `{table}/{data_sha}.parquet` from the data store.
 5. **Integrity gate** (added by `datom-cv1`, issue #72): before parsing, hash the downloaded object and compare to the recorded `parquet_sha`; abort on mismatch. An absent/empty `parquet_sha` (pre-`datom-cv1` entries) skips the check. This is a gate on step 4's result, **not a new lookup** -- the route shape is unchanged.
 
-**Primary functions/files:** `datom_read()`, `.datom_resolve_version()` (returns `list(data_sha, parquet_sha)`), `.datom_read_parquet()`, `metadata.json`, `{metadata_sha}.json`, `version_history.json`.
+**Primary functions/files:** `datom_read()`, `.datom_read_metadata()`, `.datom_check_schema_version()`, `.datom_resolve_version()` (returns `list(data_sha, parquet_sha)`), `.datom_read_parquet()`, `metadata.json`, `{metadata_sha}.json`, `version_history.json`.
 
-**Do not:** Try to infer metadata_sha from data_sha unless the route explicitly starts from `version_history.json`. Do not read the parquet before the integrity check -- the point of the gate is that a tampered object is never parsed.
+**Do not:** Try to infer metadata_sha from data_sha unless the route explicitly starts from `version_history.json`. Do not read the parquet before the integrity check -- the point of the gate is that a tampered object is never parsed. Do not add a second schema check inside the machinery of a route: the check belongs at the point a document enters datom, so a refusal happens before any work is done rather than partway through it.
+
+### Given a repo, decide whether this build can read it
+
+**Question:** A metadata or manifest document just arrived from storage or from the local clone. Can this build of datom interpret it?
+
+**Canonical route:**
+
+1. Read `schema_version` from the parsed document. Absent means **v1** -- every repo written before the field existed.
+2. Compare against `.datom_supported_schema` (`R/utils-validate.R`).
+3. Greater than supported -> abort (`datom_schema_unsupported`), naming the document and the upgrade command. Equal or less -> proceed. Present but not a whole number >= 1 -> abort as corrupt (`datom_schema_invalid`).
+
+**Where it is called (reader side):** `.datom_read_metadata()` (the `datom_read()` data path, which never touches the manifest), `datom_list()`, `datom_summary()`, `datom_status()` (both the stored manifest and the clone's copy), `datom_sync_manifest()`.
+
+**Primary functions/files:** `.datom_check_schema_version()`, `.datom_supported_schema`, `.metadata/manifest.json`, `{artifact}/.metadata/metadata.json`.
+
+**Why this matters:** it makes the artifact-namespace change the **last** transition that can degrade silently. Before it, an older reader against a newer repo found none of the fields it expected and reported an empty repo.
+
+**Do not:** Put the check inside a `tryCatch` that softens read failures -- the upgrade message gets reworded as "could not read manifest", or worse, downgraded to a warning. Read the document inside the handler, check it outside. Do not gate on `datom_version`: that records the writing package version (provenance), so gating on it would fire on harmless upgrades.
+
+**Write side:** not covered by these call sites. An older build writing into a newer repo is the more damaging direction and is owned by the `manifest$artifacts` rename task in the `datom-sets` spec.
 
 ### Given data_sha, find metadata versions
 

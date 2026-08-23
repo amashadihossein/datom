@@ -24,10 +24,14 @@ Volatile fields are excluded so that identical semantic content always
 produces the same SHA regardless of when or how it was serialized:
 \code{created_at} and \code{datom_version} (write-time provenance), \code{parquet_sha} and
 \code{size_bytes} (stored-object byte facts -- both drift with the arrow version
-and must not re-enter identity), and \code{column_hashes} (a deterministic
-function of the same values that already fix \code{data_sha}). \code{original_file_sha}
-and \code{hash_algo} remain in the semantic set -- a new source file or a new hash
-algorithm legitimately defines a new version.
+and must not re-enter identity), \code{document_sha} (the same kind of fact for a
+stored JSON payload), \code{column_hashes} (a deterministic function of the same
+values that already fix \code{data_sha}), and \code{schema_version} (a property of the
+container format, not of the content -- in identity, a format bump would
+re-mint a new version for every artifact in every repo while its content
+stood still). \code{original_file_sha} and \code{hash_algo} remain in the semantic set
+-- a new source file or a new hash algorithm legitimately defines a new
+version.
 
 Hashes a JSON canonical form rather than the R object directly. This
 ensures that metadata read back from JSON (e.g., from S3) produces the

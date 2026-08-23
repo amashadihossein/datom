@@ -934,3 +934,40 @@ test_that("Property 11: package hash matches the standalone reference", {
     expect_identical(.datom_compute_data_sha(fx), ref(fx))
   }
 })
+
+
+test_that("metadata SHA ignores schema_version and document_sha (volatile)", {
+  # Both are container facts, not content. If schema_version entered identity,
+  # the v1 -> v2 bump would mint a new version for every artifact in every repo
+  # while its content stood still -- the failure the volatile list exists for.
+  # document_sha is the stored-bytes hash of a JSON payload, i.e. the set-side
+  # analogue of parquet_sha, and drifts for the same reasons.
+  base <- list(
+    data_sha = "abc",
+    hash_algo = "datom-cv1",
+    table_type = "imported",
+    nrow = 3L,
+    ncol = 2L
+  )
+  reference <- .datom_compute_metadata_sha(base)
+
+  variants <- list(
+    schema_version = list(1L, 2L, 3L),
+    document_sha = list("aaa", "bbb")
+  )
+  for (field in names(variants)) {
+    for (value in variants[[field]]) {
+      variant <- base
+      variant[[field]] <- value
+      expect_identical(.datom_compute_metadata_sha(variant), reference,
+                       info = field)
+    }
+  }
+
+  # Presence versus absence is immaterial too, which is what makes this task's
+  # change inert for every metadata document already written.
+  both <- base
+  both$schema_version <- 2L
+  both$document_sha <- "ccc"
+  expect_identical(.datom_compute_metadata_sha(both), reference)
+})

@@ -870,3 +870,91 @@ test_that("datom_status handles empty input_files dir", {
     expect_equal(result$input_files$n_total, 0)
   })
 })
+
+
+# --- schema_version gate: reader entry points ----------------------------------
+
+test_that("datom_list refuses a manifest declaring a newer schema", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(schema_version = 3L, artifacts = list(dm = list()))
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  err <- expect_error(datom_list(conn), class = "datom_schema_unsupported")
+
+  # The check sits outside datom_list()'s read handler on purpose. Inside it,
+  # the upgrade instruction would be reworded as "Could not read manifest",
+  # burying the one thing the user can act on.
+  expect_match(conditionMessage(err), "install_github")
+  expect_false(grepl("Could not read manifest", conditionMessage(err)))
+})
+
+test_that("datom_list tolerates a manifest with no schema_version", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(tables = list(dm = list(current_version = "v1")))
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  expect_equal(nrow(datom_list(conn)), 1)
+})
+
+test_that("datom_status aborts on a newer schema rather than reporting it", {
+  # datom_status() deliberately tolerates an unreadable manifest so it can
+  # still describe the connection when storage is down. A too-new repo must
+  # NOT ride that tolerance: reporting "could not read" here is precisely the
+  # silent degradation the check exists to remove.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) list(schema_version = 3L)
+  )
+
+  conn <- mock_datom_conn(list())
+  expect_error(datom_status(conn), class = "datom_schema_unsupported")
+})
+
+test_that("datom_status still reports an unreadable manifest as unavailable", {
+  # Guard for the restructure above: making the schema check fatal must not
+  # make an ordinary storage failure fatal too.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) stop("S3 error")
+  )
+
+  conn <- mock_datom_conn(list())
+  result <- datom_status(conn)
+
+  expect_false(result$tables$available)
+  expect_equal(result$tables$count, 0)
+  expect_match(result$tables$error, "S3 error")
+})
+
+test_that("datom_status refuses a local clone declaring a newer schema", {
+  # The clone can be ahead of this build: a collaborator on a newer datom
+  # writes, this developer pulls. Storage here is fine, so the abort can only
+  # come from the local manifest.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id\n1", "input_files/dm.csv")
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(schema_version = 3L, artifacts = list()),
+      ".datom/manifest.json",
+      auto_unbox = TRUE
+    )
+
+    local_mocked_bindings(
+      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_status_git = function(path) {
+        list(uncommitted = character(), branch = "main")
+      }
+    )
+
+    expect_error(datom_status(conn), class = "datom_schema_unsupported")
+  })
+})

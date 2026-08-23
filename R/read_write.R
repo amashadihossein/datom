@@ -88,6 +88,11 @@ datom_read <- function(conn,
   history_key <- .datom_artifact_meta_key(name, "version_history")
 
   current <- .datom_storage_read_json(conn, metadata_key)
+
+  # Compatibility check before the second read: datom_read() never touches the
+  # manifest, so this is the only place the data path sees a schema version.
+  .datom_check_schema_version(current, metadata_key)
+
   history <- .datom_storage_read_json(conn, history_key)
 
   list(current = current, history = history)

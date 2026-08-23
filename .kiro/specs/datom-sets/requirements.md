@@ -151,7 +151,7 @@ the test.
   not an accident to engineer away.**
 - **R2.7 -- Q2: absence is omission; `NA` is an error.** A set payload has no data cells, so `NA`
   could only enter through optional fields. datom's existing **"omitted, not nulled"** convention
-  (`.datom_build_metadata()`, `R/read_write.R:296-299`) is therefore adopted as the canonical
+  (`.datom_build_metadata()`, `R/read_write.R:302-305`) is therefore adopted as the canonical
   form: an absent field **does not exist** in the payload, and `null` / `NA` / `""` are never
   representations of absence. Consequence for the encoder: a literal `NA` reaching sv1 **aborts**
   with "not encodable -- omit the field instead". Golden vectors include the **refusal** case, not
@@ -164,7 +164,7 @@ the test.
 - **R2.9 -- Q4: `schema_version` does not enter the payload or the hash.** It describes the
   **container format**, not the content. If it entered identity, a format bump would re-mint every
   set with unchanged members -- the same failure the `volatile` list exists to prevent
-  (`R/utils-sha.R:411-412`). It stays a metadata field (R1.3) outside the hash domain.
+  (`R/utils-sha.R:415-416`). It stays a metadata field (R1.3) outside the hash domain.
 - **R2.10 -- Q5: emitter-free structural hash, as a hash-of-hashes.** No serializer is in the
   identity path. sv1 is **three primitive encoders plus two shape rules**, not a runtime
   type-dispatch walk. This mirrors cv1's existing construction (per-column digests, then hash their
@@ -187,7 +187,7 @@ the test.
 
   Member digests sort as **lowercase hex**, `method = "radix"`, and are emitted as raw bytes.
   Stating the collation is not pedantry -- it is the same locale-independence requirement `strset`
-  and `map` carry, and `.datom_compute_metadata_sha()` (`R/utils-sha.R:416`) sets the house
+  and `map` carry, and `.datom_compute_metadata_sha()` (`R/utils-sha.R:420`) sets the house
   precedent.
 
   - **No runtime type dispatch, therefore no possible gap.** Every position's shape is known from
@@ -595,7 +595,7 @@ Relative to the artifact prefix:
 - **R7.3** `parquet_sha` is **not** renamed to a kind-neutral name. It is the correct name for a
   parquet object's byte hash. Rationale: design.md "Compatibility analysis".
 - **R7.4** `document_sha` goes in the `volatile` exclusion list of
-  `.datom_compute_metadata_sha()` (`R/utils-sha.R:412`), for the same reason `parquet_sha` is
+  `.datom_compute_metadata_sha()` (`R/utils-sha.R:416`), for the same reason `parquet_sha` is
   there -- it is a stored-object byte fact, not content identity.
 - **R7.5 -- one `data_sha`, one byte spelling, in git and in storage.** `document_sha` is only
   meaningful if the bytes at `{name}/{data_sha}.json` never change once written. Two rules enforce
@@ -604,7 +604,7 @@ Relative to the artifact prefix:
   1. **Never re-emit a payload for a `data_sha` already in history.** Reuse the stored object and
      **carry the recorded `document_sha` forward**. This is the exact `parquet_sha` pattern:
      `.datom_lookup_history_parquet_sha()` scans history newest-first for a matching `data_sha` and
-     returns `upload = FALSE` (`R/read_write.R:399-404`, `422-439`). A set needs the direct
+     returns `upload = FALSE` (`R/read_write.R:404-409`, `422-439`). A set needs the direct
      analogue. Recomputing `document_sha` from freshly emitted bytes while reusing the stored object
      records a hash of bytes nobody stored, and the failure surfaces only later, as a **refused read
      of a valid version**.
@@ -634,7 +634,7 @@ Relative to the artifact prefix:
 - **R8.1** `manifest$tables` becomes **`manifest$artifacts`**, keyed by name, each entry typed
   by `kind`. **The example below is illustrative, not the full entry schema** -- real table
   entries also carry `current_data_sha`, `last_updated`, and conditionally `original_file_sha` /
-  `original_format` (see `.datom_update_manifest_entry()`, `R/sync.R:738-747`). Existing entry
+  `original_format` (see `.datom_update_manifest_entry()`, `R/sync.R:744-756`). Existing entry
   fields are preserved verbatim; `kind` is added, and set entries substitute `member_count` for
   `size_bytes`:
 
@@ -705,7 +705,7 @@ datom_read()                    --> {name}/.metadata/metadata.json   <- and here
   `.datom_read_metadata()` -> `.datom_resolve_version()` -> `.datom_read_parquet()`). So
   `schema_version` must live in **both** the manifest and per-table `metadata.json`.
 - **R9.3** `schema_version` goes in the `volatile` exclusion list of
-  `.datom_compute_metadata_sha()` (`R/utils-sha.R:412`), alongside `datom_version`. Otherwise a
+  `.datom_compute_metadata_sha()` (`R/utils-sha.R:416`), alongside `datom_version`. Otherwise a
   schema bump silently rewrites every table's version identity.
 - **R9.4** **Do not overload `datom_version`.** It records the *writing package version* --
   provenance, not contract. Most releases will not change the schema, so gating on it would

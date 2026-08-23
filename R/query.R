@@ -55,6 +55,10 @@ datom_list <- function(conn,
     }
   )
 
+  # Outside the handler above on purpose: a too-new repo must surface the
+  # upgrade message, not be reworded as an unreadable manifest.
+  .datom_check_schema_version(manifest, ".metadata/manifest.json")
+
   tables <- manifest$tables
   if (is.null(tables) || length(tables) == 0L) {
     return(data.frame(
@@ -434,13 +438,27 @@ datom_status <- function(conn) {
   cli::cli_alert_info("Role: {.val {conn$role}}")
 
   # --- Table count from S3 manifest ---
-  table_info <- tryCatch({
-    manifest <- .datom_storage_read_json(conn, ".metadata/manifest.json")
-    n <- length(manifest$tables %||% list())
-    list(count = n, available = TRUE)
-  }, error = function(e) {
-    list(count = 0L, available = FALSE, error = conditionMessage(e))
-  })
+  # An unreadable manifest is reported, not fatal -- status is a diagnostic and
+  # must still describe the connection when storage is unreachable. The schema
+  # check therefore runs on the parsed manifest OUTSIDE that tolerance: a repo
+  # written by a newer datom is a hard stop, and reporting it as "could not
+  # read" is exactly the silent degradation the check exists to remove.
+  # `read_ok` is an explicit flag rather than a NULL check on the manifest: a
+  # document that legitimately parses to NULL must still count as read.
+  manifest_read <- tryCatch(
+    list(read_ok = TRUE, manifest = .datom_storage_read_json(conn, ".metadata/manifest.json")),
+    error = function(e) list(read_ok = FALSE, error = conditionMessage(e))
+  )
+
+  table_info <- if (!manifest_read$read_ok) {
+    list(count = 0L, available = FALSE, error = manifest_read$error)
+  } else {
+    .datom_check_schema_version(manifest_read$manifest, ".metadata/manifest.json")
+    list(
+      count = length(manifest_read$manifest$tables %||% list()),
+      available = TRUE
+    )
+  }
 
   status$tables <- table_info
 
@@ -543,6 +561,11 @@ datom_status <- function(conn) {
   } else {
     list(tables = list())
   }
+
+  # The clone can be ahead of this build: a collaborator on a newer datom
+  # writes, this developer pulls, and their local manifest declares a format
+  # this build does not know.
+  .datom_check_schema_version(manifest, ".datom/manifest.json")
 
   statuses <- purrr::map_chr(files, function(fp) {
     table_name <- fs::path_ext_remove(fs::path_file(fp))

@@ -1251,3 +1251,50 @@ test_that("datom_pull is data-repo-only and does not touch the gov repo", {
 })
 
 
+
+
+# --- schema_version gate -------------------------------------------------------
+
+test_that("datom_sync_manifest refuses a local manifest declaring a newer schema", {
+  # Developer-side entry point reading the git clone's copy. Same reachable
+  # scenario as datom_status(): a collaborator writes with a newer datom and
+  # this developer pulls.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id\n1", "input_files/dm.csv")
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(schema_version = 3L, artifacts = list()),
+      ".datom/manifest.json",
+      auto_unbox = TRUE
+    )
+
+    expect_error(
+      datom_sync_manifest(conn),
+      class = "datom_schema_unsupported"
+    )
+  })
+})
+
+test_that("datom_sync_manifest tolerates a local manifest with no schema_version", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id\n1", "input_files/dm.csv")
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE
+    )
+
+    result <- datom_sync_manifest(conn)
+    expect_equal(nrow(result), 1)
+    expect_equal(result$status, "new")
+  })
+})

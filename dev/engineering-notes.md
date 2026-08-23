@@ -125,6 +125,21 @@ commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
 - **Manifest `size_bytes` uses `as.numeric()`, not `as.integer()`**: `.datom_update_manifest_entry()` reads `size_bytes` as numeric; `as.integer()` returns NA above 2^31 (2 GB) and poisons `summary$total_size_bytes`. `version_count` stays integer.
 - **`.datom_mask_secret(secret, reveal_prefix = TRUE)`**: default reveals the first 4 chars (fine for GitHub PATs — `ghp_`/`github_pat_` is a public type tag, and AWS access-key `AKIA` prefix is an identifier, not entropy). The `datom_store_s3`/`datom_store_s3_creds` print methods pass `reveal_prefix = FALSE` for `secret_key` and `session_token` so those are masked fully. `datom_store` objects hold plaintext credentials in memory — SECURITY.md warns against `saveRDS()`/`.RData` of stores.
 
+- **A compatibility check must sit OUTSIDE any handler that softens read errors.** Three of the
+  manifest readers wrap their read in `tryCatch`, and `.datom_check_schema_version()` placed inside
+  one produces a different outcome at each site: `datom_list()` / `datom_summary()` reword the
+  abort as "Could not read manifest ... Underlying error: <the real message>", demoting the only
+  actionable line to a footnote, and `datom_status()` is worse -- its handler turns errors into
+  `available = FALSE` and **continues**, so that command alone would stay silent while the others
+  stopped. The shape that works: read the document inside the handler, run the check on the
+  returned object outside it. `datom_status()` needed restructuring to hold both properties at once
+  (an unreachable bucket is still reported, not fatal; a too-new repo is fatal), so if you touch
+  that block keep both its tests. Same rule for any future document-level contract check.
+- **`{.datom_supported_schema}` is cli markup, not a value** -- a concrete instance of the
+  dot-literal gotcha above, and easy to miss because the message still renders (the ceiling just
+  vanishes, so "supports up to v" reads as truncated). Splice it as
+  `{(.datom_supported_schema)}`. A test asserts the rendered message contains `supports up to v2`
+  precisely so this cannot regress into a silently incomplete abort.
 - **`_pkgdown.yml` index must be kept in sync**: Adding a new exported symbol requires a matching entry in `_pkgdown.yml`. `pkgdown::build_site()` errors with "N topics missing from index" otherwise. Check after every phase that adds exports.
 - **Non-ASCII characters in R source and vignettes**: R CMD check warns on any non-ASCII character in `R/*.R` files (even in comments), and pkgdown/knitr can silently mangle them in `.Rmd` vignettes too. Use only ASCII everywhere -- `--` instead of em-dash, `->` instead of `->`, `...` instead of ellipsis (`\u2026`), straight quotes. Bulk-check with `LC_ALL=C grep -lr '[^[:print:][:space:]]' vignettes/*.Rmd R/*.R`. **Scope note:** the ASCII rule covers `R/*.R` and `vignettes/*.Rmd` *source* only. The generated `README.md` legitimately contains non-ASCII smart-typography (en-dashes, curly quotes) because `output: github_document` applies pandoc smart punctuation to the ASCII `README.Rmd` source. This is normal, pre-existing, present on `main`, and does **not** trip R CMD check -- do NOT "fix" it. Exclude `README.md` from ASCII sweeps.
 - **pkgdown renders every `vignettes/*.Rmd`, regardless of the `_pkgdown.yml` index**: to *exclude* an article from the built site you must physically relocate the `.Rmd` out of `vignettes/` (e.g. into build-ignored `dev/`), not just drop it from the `articles:` index. Conversely, every `.Rmd` left in `vignettes/` MUST appear in exactly one `articles:` group or `pkgdown::build_site()` is noisy/incomplete. Verify the index matches disk: parse `_pkgdown.yml`, `setdiff()` the indexed basenames against `basename(Sys.glob("vignettes/*.Rmd"))` both ways -- both must be empty. (The earlier index gotcha below is the `reference:`/exports analogue of this.)

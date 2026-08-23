@@ -323,3 +323,81 @@ test_that(".datom_validate_rel_key uses the arg label in the message", {
   err <- expect_error(.datom_validate_rel_key("", arg = "prefix_key"))
   expect_match(conditionMessage(err), "prefix_key")
 })
+
+
+# --- .datom_check_schema_version() ---------------------------------------------
+
+test_that(".datom_check_schema_version tolerates an absent field as v1", {
+  # Every repo written before the field existed carries no schema_version, so
+  # absence must behave exactly as it did then.
+  expect_equal(
+    .datom_check_schema_version(list(data_sha = "abc"), "dm/.metadata/metadata.json"),
+    1L
+  )
+  expect_equal(.datom_check_schema_version(list(), "manifest.json"), 1L)
+  expect_equal(.datom_check_schema_version(NULL, "manifest.json"), 1L)
+})
+
+test_that(".datom_check_schema_version accepts the supported version and older", {
+  expect_equal(
+    .datom_check_schema_version(list(schema_version = 2L), "manifest.json"),
+    2L
+  )
+  expect_equal(
+    .datom_check_schema_version(list(schema_version = 1L), "manifest.json"),
+    1L
+  )
+  # JSON round-trips small integers as doubles; both spellings must pass.
+  expect_equal(
+    .datom_check_schema_version(list(schema_version = 2), "manifest.json"),
+    2L
+  )
+})
+
+test_that(".datom_check_schema_version refuses a newer version with recourse", {
+  err <- expect_error(
+    .datom_check_schema_version(list(schema_version = 3L), "manifest.json"),
+    class = "datom_schema_unsupported"
+  )
+  msg <- conditionMessage(err)
+  expect_match(msg, "v3")
+  expect_match(msg, "manifest.json")
+  expect_match(msg, "install_github")
+  # The supported ceiling must render as a number, not as cli markup: the
+  # constant's leading dot makes `{.datom_supported_schema}` a cli style.
+  expect_match(msg, "supports up to v2")
+})
+
+test_that(".datom_check_schema_version boundary is strictly greater-than", {
+  # The writer bump lands in the next task; if the check were >= the whole
+  # read path would break the moment anything writes v2.
+  expect_silent(.datom_check_schema_version(list(schema_version = 2L), "m.json"))
+})
+
+test_that(".datom_check_schema_version refuses an unusable value", {
+  unusable <- list(
+    "two",           # hand-edited to a string
+    NA,              # NA would otherwise propagate into if() as an opaque error
+    NA_integer_,
+    2.5,             # fractional
+    0L,              # below the first real version
+    -1L,
+    c(1L, 2L),       # not a scalar
+    TRUE,
+    list(2L)
+  )
+  purrr::walk(unusable, function(v) {
+    expect_error(
+      .datom_check_schema_version(list(schema_version = v), "manifest.json"),
+      class = "datom_schema_invalid"
+    )
+  })
+})
+
+test_that(".datom_check_schema_version names the offending document", {
+  err <- expect_error(
+    .datom_check_schema_version(list(schema_version = 9L), "dm/.metadata/metadata.json"),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(err), "dm/.metadata/metadata.json", fixed = TRUE)
+})

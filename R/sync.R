@@ -378,6 +378,11 @@ datom_sync_manifest <- function(conn,
     list(tables = list())
   }
 
+  # The clone can be ahead of this build (a collaborator wrote with a newer
+  # datom and this developer pulled), so check before comparing input files
+  # against a manifest whose shape this build may not understand.
+  .datom_check_schema_version(current_manifest, ".datom/manifest.json")
+
   # Build manifest rows
   rows <- purrr::map(all_files, function(fp) {
     file_name <- fs::path_file(fp)

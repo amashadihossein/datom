@@ -192,3 +192,81 @@
     "i" = "Use a different {.arg prefix} or {.arg bucket}, or pass {.code .force = TRUE} to override."
   ))
 }
+
+# --- Repo schema version contract ---------------------------------------------
+
+# Highest repo schema version this build of datom can read.
+#
+# v1 is every repo written before the artifact namespace existed: those files
+# carry no `schema_version` field at all, and an absent field means v1.
+.datom_supported_schema <- 2L
+
+#' Check a Document's Declared Schema Version
+#'
+#' Reader-side compatibility check for one metadata or manifest document.
+#' Called wherever such a document enters datom from storage or from the local
+#' clone, so that a repo written by a *newer* datom fails with an actionable
+#' message instead of degrading silently -- an older reader would otherwise
+#' find none of the fields it expects and report an empty repo.
+#'
+#' The check is deliberately asymmetric:
+#'
+#' * **Newer than this build** -- abort, pointing at the upgrade. Continuing
+#'   would mean interpreting a format this build does not know.
+#' * **Absent** -- treated as v1 and tolerated, so every repo written before
+#'   `schema_version` existed keeps working unchanged.
+#' * **Equal or older** -- proceed.
+#'
+#' A present-but-unusable value (a string, a fraction, `NA`, a vector) aborts
+#' as a corrupt document rather than being coerced. Coercion here would compare
+#' garbage against the supported version and could silently read as
+#' "supported"; and in R a comparison against `NA` propagates into `if()` as an
+#' opaque "missing value where TRUE/FALSE needed" error rather than anything a
+#' user can act on.
+#'
+#' Both aborts carry a condition class so every call site is provably the same
+#' failure: `datom_schema_unsupported` for a too-new document,
+#' `datom_schema_invalid` for an unusable value.
+#'
+#' @param meta Parsed document (a named list). A non-list or `NULL` is treated
+#'   as carrying no `schema_version`, i.e. v1.
+#' @param source Path or key of the document, used in the message so the user
+#'   knows which file is too new.
+#' @return Invisible resolved schema version as an integer. Aborts otherwise.
+#' @keywords internal
+.datom_check_schema_version <- function(meta, source) {
+  declared <- if (is.list(meta)) meta[["schema_version"]] else NULL
+
+  if (is.null(declared)) return(invisible(1L))
+
+  usable <- length(declared) == 1L && is.numeric(declared) &&
+    !is.na(declared) && declared >= 1 && declared == trunc(declared)
+
+  if (!usable) {
+    cli::cli_abort(
+      c(
+        "{.field schema_version} in {.val {source}} is not a usable schema version.",
+        "x" = "Got: {.val {declared}}",
+        "i" = "Expected a single whole number, e.g. {.val {2L}}.",
+        "i" = "The document may be corrupt or hand-edited."
+      ),
+      class = "datom_schema_invalid"
+    )
+  }
+
+  declared <- as.integer(declared)
+
+  if (declared > .datom_supported_schema) {
+    cli::cli_abort(
+      c(
+        "This repo uses datom schema v{declared}, which this build cannot read.",
+        "x" = "Declared by {.val {source}}.",
+        "x" = "Installed datom {utils::packageVersion('datom')} supports up to v{(.datom_supported_schema)}.",
+        "i" = "Upgrade with {.code remotes::install_github('amashadihossein/datom')}."
+      ),
+      class = "datom_schema_unsupported"
+    )
+  }
+
+  invisible(declared)
+}

@@ -389,10 +389,14 @@
 #' produces the same SHA regardless of when or how it was serialized:
 #' `created_at` and `datom_version` (write-time provenance), `parquet_sha` and
 #' `size_bytes` (stored-object byte facts -- both drift with the arrow version
-#' and must not re-enter identity), and `column_hashes` (a deterministic
-#' function of the same values that already fix `data_sha`). `original_file_sha`
-#' and `hash_algo` remain in the semantic set -- a new source file or a new hash
-#' algorithm legitimately defines a new version.
+#' and must not re-enter identity), `document_sha` (the same kind of fact for a
+#' stored JSON payload), `column_hashes` (a deterministic function of the same
+#' values that already fix `data_sha`), and `schema_version` (a property of the
+#' container format, not of the content -- in identity, a format bump would
+#' re-mint a new version for every artifact in every repo while its content
+#' stood still). `original_file_sha` and `hash_algo` remain in the semantic set
+#' -- a new source file or a new hash algorithm legitimately defines a new
+#' version.
 #'
 #' Hashes a JSON canonical form rather than the R object directly. This
 #' ensures that metadata read back from JSON (e.g., from S3) produces the
@@ -410,7 +414,7 @@
 
   # Exclude volatile fields that don't define content identity
   volatile <- c("created_at", "datom_version", "parquet_sha", "column_hashes",
-                "size_bytes")
+                "size_bytes", "schema_version", "document_sha")
   semantic <- metadata[setdiff(names(metadata), volatile)]
 
   sorted_names <- sort(names(semantic), method = "radix")

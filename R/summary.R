@@ -54,6 +54,10 @@ datom_summary <- function(conn) {
     }
   )
 
+  # Outside the handler above on purpose: a too-new repo must surface the
+  # upgrade message, not be reworded as an unreadable manifest.
+  .datom_check_schema_version(manifest, ".metadata/manifest.json")
+
   table_count <- length(manifest$tables %||% list())
   total_versions <- manifest$summary$total_versions %||% 0L
   last_updated <- manifest$updated_at %||% NA_character_
