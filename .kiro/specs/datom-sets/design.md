@@ -726,11 +726,20 @@ section 20.11.)*
 
 ### E2 -- Manifest namespace change (`tables` -> `artifacts`) -- Task 5
 
-**Why**: touches `datom_list()`, `datom_summary()`, `datom_validate()`, and the sync manifest
+**Why**: touches `datom_list()`, `datom_summary()`, `datom_status()`, and the sync manifest
 updater **together** -- **nine** verified call sites (3 write + 6 read) across four files (section 9), plus their
 tests. A partial rename yields a writer/reader disagreement that presents as "everything looks
 fine, the list is just empty," which is the failure class the `schema_version` gate exists to
 prevent and which no test will catch unless it is written to.
+**Scope grew after Task 4** (2026-08-21): the task also inherited the **write-side**
+`schema_version` check -- an older build writing into a newer repo, which is the more damaging
+direction and the one this rename makes concrete -- and the consolidation of the duplicated
+manifest read across the three reader sites. Both are in Task 5's bullets.
+**Two corrections from Task 5's cold-start audit**, recorded here because this section is the
+escalation brief: `datom_validate()` does **not** read the artifact key (its only manifest read is
+`project_name`; artifact enumeration comes from a storage listing), and three **decoy** sites are
+return-value fields also named `tables` (`datom_sync()`, `datom_validate()`, `datom_status()`
+results) which a `grep` sweep hits and which R8 does not rename.
 
 **Trigger type**: design spot-check + purity audit after the change lands.
 
