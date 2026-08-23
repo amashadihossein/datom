@@ -561,6 +561,142 @@ necessary.
        a fixture left on `tables` against a reader expecting `artifacts` presents as an empty
        list, not an error.
 
+  - **DESIGN AUDIT, 2026-08-23** -- the Task 5 design was read against the tree before
+    implementing, per the E2 escalation. **Finding: the nine-site enumeration, the three decoys and
+    the `datom_validate()` correction all hold exactly as recorded.** Seven things are open, and
+    **F1 is a design gap that needs an owner decision before this task starts.**
+
+    1. **F1 -- THERE IS NO v1 -> v2 TRANSITION, AND THE SCHEMA CHECK CANNOT SUPPLY ONE.** The
+       check refuses *newer* and tolerates *older*, so an existing repo -- no `schema_version`
+       field, artifacts under `tables` -- passes it and then meets a reader looking for
+       `artifacts`. `datom_list()` returns an empty frame, `datom_summary()` reports zero, and
+       nothing errors. That is the exact "everything looks fine, the list is just empty" failure
+       E2 exists to prevent, arriving through the front door rather than through a partial rename,
+       and it hits **every repo written before this task**. The compatibility analysis in
+       design.md 11 covers the opposite direction (an old reader meeting a new repo) and its
+       argument does not transfer: there the recourse is "upgrade", here the upgrade *is* the
+       cause. Two consequences make it worse rather than self-healing:
+       - `.datom_update_manifest_entry()` (`R/sync.R:715`) writes no `schema_version` on either
+         branch today. Adding it to the absent-manifest skeleton alone leaves an upgraded repo
+         holding v2-shaped entries that still declare v1, so the check stays silent on the very
+         first repo it was built for.
+       - A no-change write returns before the manifest is touched (`R/read_write.R:773`), so no
+         repair happens on an idempotent re-run. An upgraded repo can sit indefinitely with a
+         stale `tables` block that no reader will ever see again.
+
+       **Options, in the order they were considered.** (a) Read-side fallback -- read `artifacts`,
+       fall back to `tables`, treat an entry with no `kind` as a table. Cheap, keeps a v1 repo
+       working, and self-limiting because a v1 repo has no sets. (b) Migrate on write -- move the
+       block and stamp `schema_version: 2` on the next write, so the key converges. Permanent, but
+       a read-only consumer sees nothing until someone writes. (c) Refuse with recourse -- stop and
+       name a repair verb. Loudest, and it matches the posture table's "breaks loudly" row, but it
+       breaks read-only users who cannot run the repair. **Recommendation: (a) plus (b).** Nothing
+       breaks on upgrade, the stale key has a defined end, and both halves are testable now.
+       Whichever is chosen, it needs a Decisions log entry -- this is precisely the kind of thing
+       that otherwise gets settled by accident.
+
+    2. **F2 -- THE ONLY TWO TESTS THAT PIN P10 ARE ON THE FIXTURE-SWEEP LIST.**
+       `test-query.R` ("datom_list tolerates a manifest with no schema_version") and
+       `test-summary.R` ("datom_summary tolerates a manifest with no schema_version") each build a
+       manifest with **no `schema_version` and a `tables` block** and assert a **non-empty** result.
+       They are v1-repo compatibility tests, not gate fixtures, and they are the only mechanical
+       evidence for F1. They go red the moment the rename lands. Item 3 above names two fixture
+       categories -- sweep to `artifacts`, or leave as a decoy -- and neither fits: swept, they turn
+       green while asserting nothing, and the regression ships with a clean suite. **A third
+       category is required: v1-compatibility fixtures that must stay on `tables` and keep
+       asserting a non-empty result.**
+
+    3. **F3 -- NEITHER STANDING GATE COVERS THIS TASK.** `dev/check-spec.R` says so itself, in the
+       comment explaining why `manifest$tables` is not on the retired denylist: the risk it would
+       have guarded lives in `R/`, which that script does not read. And the test suite only catches
+       what the fixtures assert, which is what F2 is about. Task 5 therefore has the least
+       mechanical protection and the most silent failure mode of any chunk in this spec.
+       **Suggested: a check that no `tables` key is read from or written to a manifest anywhere in
+       `R/`, with the three decoys and `.datom_validate_tables()` allowlisted by name.** Per the
+       state block's rule, prove it fails by reintroducing the defect before trusting it.
+
+    4. **F4 -- THREE COUNTERS SILENTLY CHANGE MEANING, AND NO TEST CAN CATCH IT IN THIS CHUNK.**
+       Every counter is computed over the whole namespace today, so a plain rename makes each one
+       include sets: `total_tables`, `total_size_bytes` and `total_versions`
+       (`R/sync.R:760,762,765`), `datom_summary()`'s `table_count` (`R/summary.R:61`, computed by
+       counting entries rather than read from `summary`), and `datom_status()`'s table count
+       (`R/query.R:458`, which prints "Tables on S3"). R8.3 says all of them keep tables-only
+       meaning; the task bullet names the first three and **not** the last two. Each needs a
+       `kind` filter that treats a missing `kind` as `"table"`, because entries written before this
+       task have none. There are no sets until Task 8, so **every test passes either way** unless
+       the tests are driven by a hand-built manifest fixture containing a `kind: "set"` entry.
+       Note also that `datom_summary()` counts entries while `total_versions` is read from the
+       stored `summary` block -- two independent paths to a tables-only number, which is worth one
+       test asserting they agree.
+
+    5. **F5 -- "SURFACE `kind`" IS UNDEFINED FOR `datom_summary()`, AND UNDER-SPECIFIED FOR
+       `datom_list()`.** `datom_summary()` returns aggregate counts in a fixed-field S3 object with
+       a print method; it has no per-artifact axis for a `kind` column. The intended reading is
+       presumably a set count alongside `table_count`, which is a different change from what the
+       bullet asks for and also touches `print.datom_summary`. For `datom_list()`, the `kind`
+       column has to be added to the **two early-return empty frames** as well
+       (`R/query.R:64,78`), not only to the populated path -- those two already omit
+       `current_data_sha` that the populated rows carry, so the column set has drifted here once
+       already.
+
+    6. **F6 -- THE WRITE-SIDE CHECK NEEDS A DOCUMENT IT DOES NOT CURRENTLY HOLD, AND A PLACEMENT
+       ABOVE THE ROUTER.** Two corrections to the bullet above:
+       - The damage it describes happens in the **manifest**, but `datom_write()` never reads the
+         manifest before step 6. Gating only the artifact metadata leaves the manifest unprotected.
+         Reading `.datom/manifest.json` early enough to abort cleanly is a **new read**, not a
+         relocated one -- and the four in-pipeline local reads stay excluded by the 2026-08-21
+         decision, so either the entry read is threaded through to
+         `.datom_update_manifest_entry()` or the same file is read twice on every write. Decide
+         which, deliberately.
+       - `datom_write()` routes to `.datom_sync_data_metadata()` and `.datom_sync_metadata()` in
+         its first two branches (`R/read_write.R:687,691`), before any validation. The first of
+         those mirrors the whole local manifest to storage verbatim (`R/sync.R:177`). A check
+         placed after the router -- the natural spot, next to `.datom_validate_name()` -- misses
+         both, and the sync route is the one that pushes a whole stale manifest. **The check goes
+         directly after the `datom_conn` class check, above both returns.**
+       - Reusing `.datom_check_schema_version()` is right, but its message reads "which this build
+         cannot read". On a refused write that sentence is wrong. Either give it an operation word
+         or accept the wording knowingly -- rewording a check's message by placement is the defect
+         Task 4 already caught once.
+
+    7. **F7 -- SMALLER ITEMS, none blocking.**
+       - **The `Acceptance:` line names two criteria this task cannot exercise.** AC4 needs
+         `datom_write_set()`, which is Task 8. AC22 is the namespace guard, which is Task 9 and is
+         already largely implemented by `.datom_check_namespace_free()` (`R/utils-validate.R:168`).
+         Both are also claimed by those tasks. The writer half of the schema gate is the one this
+         task genuinely owns. The clause was added in the 2026-08-17 sweep that found Task 5 had
+         none, which is the same pattern the state block warns about: the check confirmed a clause
+         was present, not that it was true.
+       - **Task 5 should list P10 under `Properties:`.** It currently lists none, and P10 is the
+         property this task breaks (see F1).
+       - **There are two duplicated manifest reads, not one.** The bullet's three storage-read
+         sites are correct. A second triple reads the **local** copy and rebuilds the same default
+         skeleton by hand -- `R/query.R:562`, `R/sync.R:378` and `R/sync.R:721`. The write-side one
+         is already flagged as the dangerous site; the two read-side copies mean a repo with no
+         local manifest reports every input file as `new`. Consolidating one triple and leaving the
+         other is a half job, and the untouched half is where the dangerous site lives.
+       - **A fourth site reads the storage manifest and is deliberately ungated**:
+         `.datom_check_namespace_free()` (`R/utils-validate.R:176`) reads another project's
+         manifest inside a handler that softens any failure to `"<unreadable>"`. That softening is
+         correct there. A mechanical sweep onto a consolidated helper would push a check inside an
+         error-softening handler at exactly the moment the task warns against it, so **exclude it
+         by name**.
+       - **The empty-namespace spelling differs between the two write skeletons.**
+         `R/conn.R:522` uses `structure(list(), names = character(0))` so the key serializes as an
+         object; `R/sync.R:721` uses a bare `list()`, which serializes as an array. Keep the
+         former when renaming both.
+       - **The test-file tail count is off by one category.** `test-conn.R` has 4 hits and
+         `test-utils-validate.R` has 3, so it is those two plus **three** files with one each, not
+         four. Ten files total, as recorded.
+       - Task 4's gate fixtures already spell the key `artifacts`, so they need no sweep.
+       - `dev/datom_specification.md` carries the manifest example with a `tables` key and is
+         owned by Task 16, so the reference doc lags the code between here and there. Expected,
+         recorded so it is not read as a miss.
+
+    **Not verifiable in this environment**: R is not installed here, so neither `devtools::test()`
+    nor `dev/check-spec.R` was run for this audit. Every finding above was derived by reading the
+    tree; the structural rules were hand-checked against `dev/check-spec.R` rather than executed.
+
 ---
 
 ## Phase C -- The set artifact
