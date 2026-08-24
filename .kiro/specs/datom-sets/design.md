@@ -449,7 +449,7 @@ correctness question for the write path, not the encoder:
 
 Without both, the failure is a **refused read of a valid version**, surfacing long after the write
 that caused it. It is called out here because it is a consequence of *this section's* decisions,
-while the code belongs to Tasks 8 and 13.
+while the code belongs to Tasks 9 and 14.
 
 #### 7.2.1 What was wrong with the walk (finding F-A)
 
@@ -610,6 +610,14 @@ by R11 (kind branch), which is why #89 groups them into one escalation moment.
 **nine** sites (3 write + 6 read) plus their tests. A partial rename yields a manifest whose writer and reader
 disagree, which presents as "everything looks fine, `datom_list()` is empty."
 
+**The enumeration above is the state before Task 5** and is kept because it is the verified survey
+the split was planned from. Task 5 collapses the read half to **one** site -- the shared reader
+(R22.4) -- and the three hand-built empty-manifest defaults to **one** skeleton builder, leaving
+Task 6 with the key rename, the field accesses on the returned document, the counters, and the
+writer. Note the six read sites listed here are *reads*; the field accesses that follow them
+(`R/query.R:62,89`, `R/query.R:458`, `R/query.R:573`, `R/summary.R:61`, `R/sync.R:396`) are what the
+rename actually edits, and they remain.
+
 ---
 
 ## 10. `schema_version` gate
@@ -630,6 +638,85 @@ See requirements R9 for the code shape and the four requirements. Design notes:
 - **Do not overload `datom_version`.** It records the writing package version -- provenance, not
   contract. Most releases will not change the schema, so gating on it would fire on harmless
   upgrades.
+
+### 10.1 The gate is only half the contract (found 2026-08-23)
+
+The gate answers "is this document too new for me?". It does not answer "do I understand the shape
+this document actually has?", and after the R8.1 rename those stop being the same question.
+
+Every repo written so far declares no `schema_version` at all. The gate tolerates that as v1 --
+correctly, that is R9.1 -- so the document passes, and the reader then looks for `artifacts` in a
+file whose list is under `tables`. Nothing errors. `datom_list()` returns an empty frame,
+`datom_summary()` and `datom_status()` report zero. It is the same observable failure E2 was raised
+to prevent, reached through the front door rather than through a partial rename, and it would hit
+every existing repo at once.
+
+**Section 11's argument does not transfer.** There, a released 0.1.0 reader meets a v2 repo and its
+list reads empty; that is accepted because a released binary has no check to fire and the recourse
+is "upgrade". Here the upgrade **is** the cause, so there is no recourse to point at. The direction
+section 11 analysed is outside our control; this one is entirely inside it.
+
+Nothing self-heals it either. `.datom_update_manifest_entry()` (`R/sync.R:715`) writes no
+`schema_version` on either branch, so stamping the version only in the absent-manifest skeleton
+would leave upgraded repos v2-shaped while still declaring v1 -- the gate then stays silent on
+exactly the repos it was built for. And a no-change write returns at `R/read_write.R:773`, before
+the manifest is touched, so an idempotent re-run repairs nothing.
+
+Two properties were recorded as satisfied by Task 4 while the rename was queued to falsify them:
+**P10** and AC7's tolerate-older half. Both are restated, and R22 is what makes them true.
+
+### 10.2 The upgrade: two shapes, one chain
+
+Requirements R22 states the rule; the reasoning is here.
+
+```
+READING   read file -> upgrade IN MEMORY -> use          (disk untouched)
+WRITING   read file -> upgrade IN MEMORY -> edit
+                    -> stamp schema_version -> write to disk
+```
+
+**Reads tolerate old by upgrading in memory. Writes never tolerate old -- they upgrade on disk.**
+Reusing the read-side rule on the write side is precisely how a file ends up half in each format: a
+v2-shaped entry added to a document still declaring v1.
+
+**Why not a scattered fallback.** `manifest$artifacts %||% manifest$tables` at each site duplicates
+the same logic five times, and each copy also has to default `kind`. The next schema change then
+edits five places, and the one it misses fails silently -- the same shape as the defect being
+fixed.
+
+**Why not a loud refusal plus a repair verb.** This is the option the compatibility posture would
+normally favour, and it is unavailable for a specific reason: **readers cannot repair.** A reader
+holds storage credentials and no git clone. Refuse a v1 manifest and a read-only analyst is stuck
+until some developer happens to write, which converts a silent degradation into a hard stop for the
+population least able to act on it. Upgrading in memory is the only shape that keeps them working.
+
+**Why not a clean break with no migration.** There is a precedent for that -- the `datom-cv1`
+identity spec changed the on-disk contract with no migration path, on pre-release grounds -- but it
+does not carry here. That break was in *content identity*, where a re-export regenerates everything;
+the manifest has no rebuild verb. And a break still has to be **loud** to be acceptable, which costs
+a detection step; the transform beyond the detection is a few lines. So the cheap option and the
+correct one are nearly the same code.
+
+**One step per adjacent version pair.** `.datom_manifest_upgrade_v1_to_v2()` moves the key and
+stamps `kind = "table"`; `.datom_manifest_upgrade()` reads the declared version and applies every
+step up to current, in order. A v1 file reaching a v3 build runs v1-to-v2 then v2-to-v3. No direct
+v1-to-v3 function is ever written: that shape needs one function per *pair* and grows with the
+square of the version count, and each pair is a place for the two paths to disagree. Each step knows
+only its immediate neighbour.
+
+**A shipped step is frozen** (I30). It is written against files that exist unchanged in the world,
+so re-tuning it to a later shape converts them wrongly -- and the conversion is silent, because the
+output is well-formed for the wrong version. Same discipline as the frozen sv1 goldens, for the same
+reason: the inputs are already out of our hands.
+
+**The failure-kind split is the load-bearing part** (R22.4). Task 4 found three readers wrapping
+their manifest read in a handler that softens failures, and a check placed inside one reworded the
+upgrade instruction as "could not read manifest" -- `datom_status()` went further and downgraded it
+to a warning while continuing. Task 4 held the line with a comment at each site. One shared reader
+that **returns** IO failures as data and **throws** schema refusals holds it structurally instead:
+there is no handler for a caller to place the check inside, and callers keep their differing IO
+policies because the IO outcome is a value they inspect. AC32 tests both halves together, because
+the regression is a trade between them.
 
 ---
 
@@ -668,6 +755,14 @@ Verified at `R/read_write.R:44-58`: `datom_read()` reads per-table metadata -> r
 
 Data access is untouched, and `schema_version` ensures this is the **last** transition that can
 degrade quietly rather than abort. Note in NEWS (R13.4).
+
+**The mirror-image direction is not acceptable, and was missed here until 2026-08-23.** The table
+above reads a released 0.1.0 reader against a v2 repo. Reverse it -- a current build against a v1
+repo -- and the observable outcome is identical, an empty list and a zero count, but the excuse is
+not: nothing about that case is outside our control, and the user's own upgrade is what caused it.
+See 10.1 for the analysis and 10.2 for the remedy (R22). Reading this section as blanket permission
+for a quietly-empty list is the mistake to avoid; the permission is specific to readers we cannot
+change.
 
 ### Sets themselves create no compatibility problem
 
@@ -724,7 +819,7 @@ section 20.11.)*
 
 **Trigger type**: design spot-check before committing to a large or cross-cutting chunk.
 
-### E2 -- Manifest namespace change (`tables` -> `artifacts`) -- Task 5
+### E2 -- Manifest namespace change (`tables` -> `artifacts`) -- Task 6
 
 **Why**: touches `datom_list()`, `datom_summary()`, `datom_status()`, and the sync manifest
 updater **together** -- **nine** verified call sites (3 write + 6 read) across four files (section 9), plus their
@@ -734,16 +829,42 @@ prevent and which no test will catch unless it is written to.
 **Scope grew after Task 4** (2026-08-21): the task also inherited the **write-side**
 `schema_version` check -- an older build writing into a newer repo, which is the more damaging
 direction and the one this rename makes concrete -- and the consolidation of the duplicated
-manifest read across the three reader sites. Both are in Task 5's bullets.
-**Two corrections from Task 5's cold-start audit**, recorded here because this section is the
-escalation brief: `datom_validate()` does **not** read the artifact key (its only manifest read is
-`project_name`; artifact enumeration comes from a storage listing), and three **decoy** sites are
+manifest read across the three reader sites. Both are in Task 6's bullets.
+**Two corrections from the cold-start audit** (2026-08-21), recorded here because this section is
+the escalation brief: `datom_validate()` does **not** read the artifact key (its only manifest read
+is `project_name`; artifact enumeration comes from a storage listing), and three **decoy** sites are
 return-value fields also named `tables` (`datom_sync()`, `datom_validate()`, `datom_status()`
 results) which a `grep` sweep hits and which R8 does not rename.
 
 **Trigger type**: design spot-check + purity audit after the change lands.
 
-A third, softer moment: **test coverage review before spec completion** (Task 15), per the third
+**DISCHARGE, 2026-08-23.** The design spot-check was performed before implementation and its
+findings are recorded in three places: this section, section 10.1 / 10.2 (the transition it
+uncovered), and Task 6's `DESIGN AUDIT, 2026-08-23` bullet. It changed the plan in four ways.
+
+1. **One blocking gap**: no v1-to-v2 transition existed, so the rename would have blanked discovery
+   on every existing repo through the front door (10.1). New requirement R22, new invariants
+   I28-I30, restated P10, new P34, P35, AC30, AC31, AC32.
+2. **The phase is now two tasks.** Task 5 lands the single reader and the single skeleton builder
+   and changes nothing observable; Task 6 renames the key in that one place. Reason: as one task it
+   carried a nine-site rename, a write-side refusal, five counter filters, two read consolidations,
+   the transition, and a fixture sweep across ten test files -- and its failure mode is silent, so a
+   green suite would not have distinguished a working implementation from a broken one.
+3. **Three corrections of substance**: five counters widen to include sets rather than three; the
+   `kind` column has to reach `datom_list()`'s two empty-result returns, not only its populated
+   path; and the write-side refusal must sit above the two routing returns in `datom_write()`,
+   because one of them mirrors the whole manifest to storage without reaching the manifest-writing
+   step.
+4. **Two acceptance criteria removed from the task**: AC4 needs `datom_write_set()` (Task 9) and
+   AC22 belongs to Task 11, where both are already claimed. The writer half of the schema gate is
+   what this task genuinely owns.
+
+**Trigger type on the model dimension is discharged differently from E1.** The working model is
+already the most capable one available to the owner, so there is no escalation step to take; the
+flag is answered by an independent close review of the spec before implementation, which the owner
+owns. Recorded so the flag does not read as unaddressed.
+
+A third, softer moment: **test coverage review before spec completion** (Task 16), per the third
 standing escalation trigger. The full acceptance-criteria set plus a new hash regime is a lot of
 surface to claim covered.
 
@@ -782,6 +903,9 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I24** | **The payload is text-only** (R2.11): every leaf is a UTF-8 string or an array of them. No numbers, booleans, `null`, or nesting beyond the fixed shape (R2.12) may be admitted -- not as a convenience, not "just for this field". Admitting one reopens an encoder rule and widens the golden matrix. |
 | **I25** | **No navigation or view structure is stored.** Folder-like hierarchy is a projection over tags computed by the consumer (R4.7). datom stores tag facts and takes no position on hierarchy. |
 | **I26** | **No non-canonical payload ever reaches disk.** `datom_write_set()` canonicalizes (R2.15) before hashing, committing, or mirroring, so `{name}/set.json` and `{name}/{data_sha}.json` always hold the canonical form. No code path may write a caller's payload verbatim. |
+| **I28** | **No code reads a manifest field off a raw document.** Every manifest read goes through the one internal reader, which applies the upgrade chain first, so no caller can observe a pre-current shape (R22.2, R22.4). The two named exclusions in R22.6 do not read the artifact key at all. |
+| **I29** | **`schema_version` on disk always describes the shape the file actually has.** A write upgrades before it stamps, and never stamps a version onto a document it did not upgrade (R22.3). A file half in one format and half in another is the state this forbids. |
+| **I30** | **A released upgrade step is frozen.** `.datom_manifest_upgrade_v1_to_v2()` and every later step are never edited once shipped, not even to tidy them -- they are written against documents that exist unchanged in the world, and mis-converting one produces a well-formed file for the wrong version, i.e. a silent corruption (R22.5). |
 | **I27** | **The bytes at `{name}/{data_sha}.json` are written once and never rewritten.** Any path that could re-upload -- a repeat write, a revert to older content, or `datom_validate(fix = TRUE)` -- reuses the stored object and carries the recorded `document_sha` forward rather than recomputing it (R7.5). |
 
 ---
@@ -801,7 +925,9 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P7** | Re-writing an identical set is a no-op -- no new version, no new payload object, no storage write (AC2). |
 | **P8** | A set's `data_sha` is independent of every volatile and container field: `created_at`, `datom_version`, `schema_version` and `document_sha`. (`size_bytes` was listed here before R1.4 removed it from set metadata entirely, so the claim was vacuous.) |
 | **P9** | A payload whose stored bytes do not match `document_sha` is refused before parsing. |
-| **P10** | A v2 reader against a v1 repo behaves exactly as 0.1.0 did (absent `schema_version` defaults to 1, tolerated). |
+| **P10** | A v2 reader against a v1 repo returns the same artifacts 0.1.0 did -- same names, same versions, plus the additive `kind` column. **Restated 2026-08-23**: the earlier wording credited this to the gate's toleration of an absent `schema_version` alone, which the R8.1 rename falsifies. Toleration lets the document through; the in-memory upgrade (R22.2) is what makes what comes through intelligible. The property is defended in Task 6 and tested by AC30. |
+| **P34** | **The upgrade chain is order-preserving and idempotent.** Applied to a document already at the current version it is the identity; applied to an older one it runs every step from the declared version upward, in sequence, and applying it twice equals applying it once (R22.5). |
+| **P35** | **A schema refusal cannot be softened by a caller's error handling.** For every manifest reader, an unsupported version aborts with the upgrade message while an ordinary IO failure keeps that caller's existing policy -- because the shared reader returns the second and throws the first (R22.4, AC32). No arrangement of caller-side handlers can convert the abort into a warning or reword it. |
 | **P11** | A v1 reader against a v2 repo aborts with the upgrade message at **both** entry points. |
 | **P12** | The in-package sv1 implementation and `dev/datom_sv1_reference.R` agree on every golden, on x86_64 and arm64. |
 | **P13** | Writing a set never mutates any member's metadata, history, or manifest entry. |
@@ -836,7 +962,11 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **Build the collection outside datom, in the build package.** | **Rejected.** Duplicates version history, content addressing, dedup, ref resolution and governance, and the result still could not be referenced as a member of another collection. The composability loss is the one that cannot be worked around. |
 | **Sibling `manifest$sets` node.** | **Rejected.** Makes cross-kind name collisions representable, requiring a guard that one typed namespace makes unnecessary. Also bolted-on -- a from-scratch design would have typed one namespace, since `tables` was only ever "the things in this repo." |
 | **Rename `parquet_sha` to a kind-neutral name.** | **Rejected.** Section 11 -- silently disables integrity verification in released 0.1.0 readers. |
-| **Dual-write `tables` alongside `artifacts` for one release.** | **Rejected.** `datom_read()` does not touch the manifest, so exposure is discovery-only; carrying a legacy mirror to protect a likely-empty user population is not worth the permanent schema clutter. |
+| **Dual-write `tables` alongside `artifacts` for one release.** | **Rejected.** `datom_read()` does not touch the manifest, so exposure is discovery-only; carrying a legacy mirror to protect a likely-empty user population is not worth the permanent schema clutter. Note this is about *forward* exposure (an old reader meeting a new repo) and says nothing about the reverse, which R22 handles by upgrading rather than by mirroring -- one shape on disk, converted on the way in. |
+| **Read the old key inline where needed** -- `manifest$artifacts %||% manifest$tables` at each site. | **Rejected** (R22, section 10.2). Five copies of the same logic, each also needing to default `kind`; the next schema change edits five places and the one it misses fails silently. That is the shape of the defect being fixed, reintroduced as the fix. |
+| **Refuse a v1 manifest loudly and ship a repair verb.** | **Rejected on who can act.** It is the option the compatibility posture normally favours, but **readers cannot repair**: a reader holds storage credentials and no clone, so a refusal strands the population least able to resolve it until some developer happens to write. Upgrading in memory is the only shape that keeps a storage-only reader working (R22.2, AC1). |
+| **Declare a clean break -- no migration, pre-release grounds**, as the `datom-cv1` identity spec did. | **Rejected.** The precedent does not carry: cv1 broke *content identity*, where a re-export regenerates everything, whereas the manifest has no rebuild verb. A break also has to be **loud** to be acceptable at all, which costs the detection step; the transform beyond detection is a few lines, so the cheaper option and the correct one are nearly the same code. |
+| **Treat a missing `kind` as `"table"`** in the counters, as a safety net. | **Rejected** (R22.8, owner-decided 2026-08-23). Every entry has a `kind` by the time a counter runs, because the upgrade stamps it. The net would therefore only ever fire when a read path skipped the upgrade -- and it would make that mistake produce roughly-correct numbers instead of visibly wrong ones, hiding the class of failure this spec exists to make loud. One line, reversible if a real case for tolerance appears. |
 | **Reuse `datom-cv1` for sets.** | **Rejected.** Table-shaped and binary-framed; `nrow`/`ncol`/per-column digests do not generalize to a tree (section 7). |
 | **Hash the emitted JSON bytes.** | **Rejected.** Reintroduces the #72 failure mode with `jsonlite` playing the role `arrow` played. |
 | **`mode: "set"` instead of `mode: "product"`.** | **Rejected.** These repos also hold derived tables, so "product" describes the repo and "set" describes one artifact in it. |
@@ -925,7 +1055,7 @@ The reviewer noted the 2460 test baseline was unverified on their side; it was v
 two `devtools::test()` runs on `dev` @ `b57cdba` (`FAIL 0 | WARN 0 | SKIP 0 | PASS 2460`), and
 AC10 now records that.
 
-**Net effect on the plan**: F1, F2 and F5 change what Task 2, 7, 8 and 9 must build; F3 changes
+**Net effect on the plan**: F1, F2 and F5 change what Task 2, 8, 9 and 10 must build; F3 changes
 Task 3's public contract; the rest tighten tests and docs. F2 is the most consequential -- without
 it, Task 2 would likely have shipped goldens for an encoder that disagreed with itself across the
 round trip, and the golden vectors are the one artifact in this spec that is expensive to correct
@@ -1353,7 +1483,7 @@ the result is `B1@v2 -> A1@v1 -> B1@v1`, which terminates (section 5 has the wor
 
 What this removes: R4.4's read-side guard, I10a's visited set, P16's termination property as
 originally phrased, AC15 as originally phrased, the depth constant, and the shared walker that
-Tasks 7, 9 and 13 were to share. What replaces them: R4.3 / I10 (one-level resolution),
+Tasks 8, 10 and 14 were to share. What replaces them: R4.3 / I10 (one-level resolution),
 I10a (acyclic by construction), a restated P16 (read cost is bounded by direct member count) and a
 restated AC15 (nesting resolves one level -- a test that the tree is *not* flattened).
 

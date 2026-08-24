@@ -624,8 +624,8 @@ Relative to the artifact prefix:
   parquet never does, which is what brings rule 2 into scope at all.
 
   **Ownership note**: this is a write-path and repair-path requirement, not an encoder one. It
-  belongs to `datom_write_set()` (Task 8) and `datom_validate()` (Task 13), **not** Task 2. It is
-  recorded here because it is a *consequence* of the Task 2 encoding decisions, and a Task 8
+  belongs to `datom_write_set()` (Task 9) and `datom_validate()` (Task 14), **not** Task 2. It is
+  recorded here because it is a *consequence* of the Task 2 encoding decisions, and a Task 9
   implementer who assumes "new bytes mean a new `document_sha`" ships a defect that every
   per-chunk test passes.
 
@@ -672,7 +672,13 @@ summary:
   counter whose only consumer would be a future feature is speculative. Per-set version counts
   remain available on the entry (`version_count`) and via `datom_history()`. Recorded here so a
   later reader does not read the omission as an oversight.
-- **R8.4** `datom_list()` and `datom_summary()` read `artifacts` and surface `kind`.
+- **R8.4** `datom_list()` and `datom_summary()` read `artifacts` and surface `kind`. They surface it
+  differently, because their shapes differ: `datom_list()` gains a `kind` column on every row
+  **including its empty-result returns**, while `datom_summary()` has no per-artifact axis and gains
+  a `set_count` aggregate beside `table_count` (owner-decided 2026-08-23).
+- **R8.5** No existing repo has this shape, and R9's toleration of an absent `schema_version` is not
+  enough on its own to keep one working. **R22 is a prerequisite of this rename**, not a companion
+  to it.
 
 ### R9 -- `schema_version` gate
 
@@ -692,7 +698,10 @@ if ((meta$schema_version %||% 1L) > SUPPORTED_SCHEMA) {
 ```
 
 - **R9.1** **Asymmetric**: refuse *newer*, tolerate *older*. An absent field defaults to `1`, so
-  v1 repos keep working.
+  v1 repos keep working. **Toleration alone stops being sufficient once R8.1 lands** -- a tolerated
+  v1 manifest still holds its list under `tables`, so "keeps working" requires the upgrade in R22.
+  Tolerating a version and understanding the shape it implies are two different obligations, and
+  before R22 only the first was met.
 - **R9.2** **Both reader entry points.** Readers take two independent paths, and a
   manifest-only gate leaves one open:
 
@@ -1142,6 +1151,56 @@ kinds. The git commit is recorded **provenance**, not identity.
   R21.3. datom differs only in granularity: the per-artifact `version_history.json` already exists
   and already carries the sibling git fields, so no board-wide per-version index is added.
 
+### R22 -- The v1 to v2 transition for existing repos
+
+Added 2026-08-23 after the E2 design audit. R9's gate refuses a repo written by a **newer** datom.
+This requirement covers the other direction -- a **current build meeting an older repo** -- which
+the gate deliberately tolerates and which the R8.1 rename therefore breaks.
+
+- **R22.1 -- the failure being prevented.** Every repo written before this spec keeps its artifact
+  list under `tables` and carries no `schema_version` field. R9.1 tolerates an absent field as v1,
+  so such a repo passes the check and then meets a reader looking for `artifacts`: `datom_list()`
+  returns an empty frame, `datom_summary()` and `datom_status()` report zero, and nothing errors.
+  Discovery goes blank while data access keeps working (`datom_read()` never touches the manifest,
+  R9.2). Under the compatibility posture the disqualifier is the silence, not the severity.
+- **R22.2 -- reads upgrade in memory.** `read file -> upgrade in memory -> use`. The file on disk is
+  not modified by a read. This is what keeps **readers** working, and it is the reason a loud
+  refusal is not an acceptable alternative: a reader has storage access and no git, so it cannot
+  repair a repo it is refused from.
+- **R22.3 -- writes upgrade on disk.** `read file -> upgrade in memory -> edit -> stamp
+  schema_version -> write`. A write never tolerates an old shape and never stamps a version onto a
+  document it did not upgrade first. Reusing the read-side toleration on the write side is how a
+  file ends up with a v2-shaped entry under a v1 declaration: half in each format.
+- **R22.4 -- one reader, and the two failure kinds are structurally different.** All manifest reads
+  go through one internal helper. An **IO failure is returned** to the caller as data, so each
+  caller keeps its own policy (abort with its own wording, or tolerate and report unavailable); a
+  **schema refusal is thrown**. Task 4 established that a schema check placed inside an
+  error-softening handler gets reworded or downgraded; returning one failure and throwing the other
+  removes the handler the check could be placed inside, so the property holds by construction
+  rather than by comment.
+- **R22.5 -- one step per adjacent version pair, and a shipped step is frozen.** The upgrade is an
+  ordered chain: `.datom_manifest_upgrade_v1_to_v2()` and, later, one function per subsequent pair,
+  applied in sequence by a dispatcher that reads the declared version and runs every step up to
+  current. No direct v1-to-v3 step is ever written: that shape needs one function per *pair* and
+  grows with the square of the version count. **A step, once released, is never edited** -- it is
+  written against files that exist unchanged in the world, so re-tuning it to a later shape
+  converts them wrongly. Same discipline as the frozen sv1 goldens.
+- **R22.6 -- two deliberate exclusions.** (a) `.datom_check_namespace_free()` keeps its own read and
+  its own softening: it reads *another project's* manifest purely to name it in a refusal that has
+  already been decided, so degrading to `<unreadable>` is correct there and a throwing check is not.
+  (b) The four in-pipeline local reads stay excluded, on Task 4's principle that the check belongs
+  where a document enters datom, so a refusal happens before work starts rather than partway
+  through a write.
+- **R22.7 -- one frozen fixture per historical schema version.** `tests/testthat/fixtures/`
+  carries a preserved manifest per past version (`manifest-v1.json` first), plus a test that each
+  upgrades cleanly to current. A file, not an inline fixture, so "do not sweep this to the new
+  shape" is structural rather than a comment a sweeping author has to notice.
+- **R22.8 -- the missing-`kind` question, decided.** Counters filter on `kind == "table"` and add
+  **no** fallback for an entry with no `kind`, because R22.2 guarantees every entry has one by the
+  time any counter runs. The alternative (treat absent as `"table"`) was rejected: it would make a
+  read path that forgot the upgrade produce roughly-correct numbers instead of visibly wrong ones,
+  which hides exactly the class of mistake this spec is trying to make loud. Owner-decided
+  2026-08-23; reversible in one line if a real case for tolerance appears.
 
 ---
 
@@ -1157,7 +1216,7 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC4** | **Name uniqueness across kinds.** Writing a set with the name of an existing table (or vice versa) is refused. **Mechanism**: the check reads `{name}/.metadata/metadata.json` from **storage** and compares `kind` -- not the manifest, which can lag behind a partially-completed write. This is the same source `.datom_has_changes()` already consults, so the check costs no extra round-trip. Stated explicitly so it is not decided by accident. |
 | **AC5** | **Empty set refused; single-member set legal.** `datom_write_set()` with zero members **aborts** (R2.8/Q3), mirroring `.datom_canonical_hash()`'s refusal of zero-row/zero-column tables. A one-member set is legal and hashes normally. The refusal is the *tested* behavior, not a documented maybe. |
 | **AC6** | **`datom_read()` on a set** aborts with a message pointing at `datom_read_set()`, not a cryptic missing-parquet error. |
-| **AC7** | **Schema gate fires, both directions.** *Refuse-newer*: a repo declaring `schema_version: 3` aborts with the upgrade message, at **both** entry points (manifest and per-artifact metadata). *Tolerate-older*: a repo with no `schema_version` field behaves exactly as 0.1.0 did. **Mechanism note**: an actually-installed 0.1.0 reader has no gate to fire, so this is not testable by installing an old version -- the test drives `.datom_check_schema_version()` directly with a fixture declaring a version above `SUPPORTED_SCHEMA`. Test the gate, not the archaeology. |
+| **AC7** | **Schema gate fires, both directions.** *Refuse-newer*: a repo declaring `schema_version: 3` aborts with the upgrade message, at **both** entry points (manifest and per-artifact metadata). *Tolerate-older*: a repo with no `schema_version` field behaves exactly as 0.1.0 did. **Mechanism note**: an actually-installed 0.1.0 reader has no gate to fire, so this is not testable by installing an old version -- the test drives `.datom_check_schema_version()` directly with a fixture declaring a version above `SUPPORTED_SCHEMA`. Test the gate, not the archaeology. **Second mechanism note, added 2026-08-23**: the *tolerate-older* half is not satisfied by the gate alone once R8.1 lands, because a tolerated v1 manifest still holds its list under the old key. What makes this clause true is the upgrade in R22, and what tests it is AC30. Before that was noticed, this criterion and P10 were both recorded as met by Task 4 while the rename was queued to falsify them. |
 | **AC8** | **Lineage isolation.** A set's metadata contains no `parents` and no `source_lineage` (**omitted, not null**), and writing a set does not alter any member's lineage. |
 | **AC9** | **Self-reference refused.** Writing a set that lists itself (any version of itself) as a member is refused at write time with a clear error (R4.5). Note this is a nonsense check, **not** cycle detection -- cycles are structurally impossible (R4.4), so there is deliberately no cycle test and no depth test. |
 | **AC13** | **Write/read hash agreement, plus what is and is not identity.** Split into two levels, because the earlier single-umbrella wording was unsatisfiable for some fixtures -- (g) has no payload and no `data_sha` at all, and (e) cannot be built through the public path since R2.14 refuses it. **AC13-P, payload level** (the umbrella applies: `data_sha` from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back with `simplifyVector = FALSE` -- covers R2.5): **equal** for (a) tag-value **order**, (b) tag-value **duplication**, (c) **member order**, (d) **single string vs one-element array**; **different** for (f) **NFC vs NFD** spellings of visually identical tag text (R2.16). **AC13-E, encoder level** -- called against the encoder directly, *not* through `datom_write_set()`, since the write path tidies or refuses these before the encoder sees them: (e) a member listed twice with identical `id` **and** `tags` hashes **equal** to one entry (R2.14), (g) `strset(character(0)) == h(0x02)` as a pinned constant (R2.17). Note (c) and (d) each **reverse** an earlier fixture that required a difference. (f) **must use `\u` escapes**, not literal non-ASCII bytes -- these fixtures ship in `tests/`, and `R CMD check --as-cran` must stay at zero warnings (AC11). Number and boolean cases are not applicable -- see AC27. |
@@ -1176,6 +1235,9 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC25** | **`commit_sha` is present, git-less, and survives repair.** After a set write: the **storage** copy of `version_history.json` carries `commit_sha` for the new version; the **git** copy does not (it cannot -- it is inside that commit); and after `datom_validate(fix = TRUE)` re-uploads metadata, `commit_sha` is **still there**, re-derived from `git log` rather than stripped (R21.6/R21.7). The third clause is the one that fails silently in a naive implementation. |
 | **AC26** | **A code-only change mints no new version.** With the set's member list unchanged, modifying tracked code and re-running `datom_write_set()` produces **no new version**, and the existing version's recorded `commit_sha` is **unchanged** (still the first producing commit). Encodes the option-1 decision (R21.2/R21.3) so a later "improvement" that makes versions code-sensitive fails a test. |
 | **AC27** | **The payload grammar is enforced, not assumed -- and only where refusal is warranted.** Tested **per case**, never as one lumped assertion, so a regression names which one leaked. **Refusals**: (a) a tag value that is a number, logical, factor, function, or nested list, message naming the offending key and the allowed types (R2.11); (b) `NA` (R2.7); (c) an empty-string tag value `""`; (d) **the same `id` listed twice with different `tags`**, message naming the member and pointing at the multi-valued form; (e) zero members (R2.8). **Tidy assertions, not refusals** -- each of these must be silently normalized and must NOT abort (R2.14, and see AC29a for the byte-level assertion): tag-value order, tag-value duplication, single-vs-array shape, member order, an exact-duplicate member, and `character(0)` dropping its key. **Plus the case that must be ALLOWED** (R2.14a): the same `project`+`name` at two different `version`s writes successfully with both members present. That last one has its own test because `project`+`name` looks like the natural duplicate key, and the first reader to tighten the check to it would break a legitimate use silently. **Ownership**: per-member grammar (a, b, c) belongs to `.datom_validate_members()`; the payload-level cases (d, e), set-level `tags` grammar, and every tidy assertion belong to `datom_write_set()`, which is the only place that sees the whole payload. This is the test that keeps I24 true -- without it, "just allow numbers" is a one-line change nobody notices. |
+| **AC30** | **An existing repo still reads after the rename.** A **frozen fixture** at `tests/testthat/fixtures/manifest-v1.json` -- no `schema_version`, artifact list under `tables`, one real table entry -- yields a **non-empty** result from every manifest reader, with the entry reported as `kind = "table"` (R22.2, R22.7). Asserted before the rename and again after it, from the same file. **Mechanism note**: the fixture is a file precisely so that a sweep of `tables` to `artifacts` across the test suite cannot quietly rewrite the evidence. Two existing tests do the same job inline and must **not** be swept (`datom_list` / `datom_summary` "tolerates a manifest with no schema_version"); a third of the same name asserts on an *empty* block, so it passes either way and needs a non-empty counterpart for the clone-copy readers. |
+| **AC31** | **A write into an existing repo upgrades the file, and the counters do not collapse.** After one table write into a v1 repo: the manifest carries `artifacts`, carries **no** `tables` key, declares `schema_version: 2`, and `summary$total_tables` counts **every** pre-existing artifact rather than only the one just written (R22.3). The counter clause is the one a naive implementation fails: adding an entry under the new key while the old key sits untouched leaves a twelve-table repo reporting `1`, in a file that is now half in each format. |
+| **AC32** | **An unreadable manifest and a too-new manifest are different failures, at every reader.** Through the single reader (R22.4): an IO failure preserves each caller's current behaviour -- `datom_list()` and `datom_summary()` abort with their own wording, `datom_status()` tolerates it and reports the manifest unavailable -- while a manifest declaring an unsupported version aborts with the upgrade message at **all** of them, including `datom_status()`. Both halves in one criterion because the regression is a trade between them: making the schema refusal reach every caller must not make an ordinary storage failure fatal, and vice versa. |
 | **AC28** | **The `document_sha` integrity gate fires, and never silently skips.** (a) A set whose stored payload bytes do not match the recorded `document_sha` is **refused before parsing** -- assert the abort occurs without the payload being parsed. (b) Metadata with a **missing or empty** `document_sha` is an **error, not a skip** (R7.1, I3): sets have no legacy population, so reproducing `parquet_sha`'s pre-cv1 grace would be building a silent-degradation path on purpose. Both halves matter, and (b) is the one a naive implementation gets wrong by copying `.datom_read_parquet()`'s `if (!is.null(...) && nzchar(...))` guard. |
 
 Plus the standing project gates:

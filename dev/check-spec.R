@@ -448,6 +448,37 @@ if (length(non_ascii) > 0L) {
   pass("ascii", "all three files are ASCII-clean")
 }
 
+# --- check 8: task cross-references resolve ----------------------------------
+# Added 2026-08-23, when splitting Phase B shifted ten task numbers.
+#
+# Check 3 already asserts the task numbers themselves are contiguous. Nothing
+# asserted that a `Task N` mention resolves to a task that exists -- and there
+# were 68 such mentions pointing at Task 5 or later, across all three files plus
+# historical Decisions rows. A stale one is worse than a stale code citation: it
+# reads authoritative and sends the reader to the wrong chunk.
+#
+# LIMITATION, stated because a green run here is not proof: this catches a number
+# with no task, not a number pointing at the WRONG task. "Task 6" where "Task 9"
+# was meant resolves fine. It also only sees numbers directly after `Task`/`Tasks`,
+# so the trailing items of a list ("Tasks 4 + 6", "Task 2, 8 and 9") are invisible.
+# Those need the eyeball, same as check 4's citations.
+
+task_refs_raw <- all_matches(all_lines, "\\bTasks? \\d+")
+ref_nums <- unique(as.integer(sub("^Tasks? ", "", task_refs_raw)))
+unresolved <- sort(setdiff(ref_nums, task_nums))
+
+if (length(unresolved) > 0L) {
+  fail("task cross-references",
+       sprintf("referenced but no such task: %s",
+               paste(sprintf("Task %d", unresolved), collapse = ", ")),
+       sprintf("defined tasks: 0..%d", max(task_nums)),
+       "renumbering is the usual cause -- sweep every file, including the",
+       "Decisions log, and re-run.")
+} else {
+  pass("task cross-references",
+       sprintf("%d distinct task numbers referenced, all defined", length(ref_nums)))
+}
+
 # --- summary ------------------------------------------------------------------
 
 cat("\n")
