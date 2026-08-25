@@ -709,6 +709,62 @@ so re-tuning it to a later shape converts them wrongly -- and the conversion is 
 output is well-formed for the wrong version. Same discipline as the frozen sv1 goldens, for the same
 reason: the inputs are already out of our hands.
 
+### 10.3 Stamp always, increment only on a break
+
+Two questions were run together in review and separate cleanly (owner-decided 2026-08-23, R9.5).
+
+**Stamping** the number costs nothing. It is excluded from identity (R9.3), so a stamped file mints
+no version, and it lets any build say what shape it is holding. Do it on every manifest and every
+per-artifact metadata document.
+
+**Incrementing** costs every pinned build its access to everything written afterwards, because the
+check is a refusal. So increment only when a change would actually break a reader. R9.5 carries the
+test as a table; the short form is that renames, removals, meaning changes and restructures break,
+and added fields do not.
+
+The failure this prevents is specific: **incrementing on an additive change refuses a reader that
+could have read the file perfectly well.** R's list access means an unknown field is simply never
+asked for, so an added field is invisible to an older build -- unless a number tells it to stop.
+
+**The number is a contract; `datom_version` is provenance.** One schema version spans many releases,
+which is why the two fields stay distinct (R9.4) and why the mapping has to be published rather than
+inferred (R9.6). A user holding a repo that refuses them has exactly one question -- *which datom do
+I need?* -- and neither field answers it alone.
+
+### 10.4 Where escape hatches are allowed, and where they are not
+
+The manifest and per-artifact metadata look similar and behave completely differently under a
+breaking change (R22.9).
+
+**The manifest is derived, so it can be reconstructed.** Two hatches are available there, and both
+are deferred to their own issues rather than built here:
+
+- **Self-healing read**: when the artifact key a build expects is **absent**, rebuild the index from
+  a storage listing instead of concluding the repo is empty. The trigger must be *absent*, not
+  *empty* -- an empty list is what a new repo looks like and what a truncated file looks like, so
+  rebuilding on empty would cost a listing per call on healthy repos and would hide corruption. A
+  post-rename repo is distinguishable precisely because the expected key is missing entirely.
+  Two constraints: a storage-only reader can only rebuild **in memory for that session** (it has no
+  git and must not write to storage), and the rebuild must **say so, once**, pointing at the upgrade
+  -- a rebuild that succeeds silently is itself a silent-degradation path, which is what section 10
+  exists to remove.
+- **Dual-write**: emit the old shape alongside the new for a declared window. The only hatch that
+  helps builds **already released**, since it asks nothing of them. The failure mode to design
+  against is a **stale** legacy copy rather than a leftover one: an old reader consuming an
+  out-of-date list looks like it worked. Hence repo-level policy rather than a per-call argument,
+  removal as a verb that deletes the copies in the same operation, and the sunset recorded inside the
+  legacy file.
+
+**Per-artifact metadata has neither hatch.** It is the source of truth, so there is nothing to
+rebuild it from; and a legacy-shaped copy hashes differently from the recorded version, so change
+detection (`R/read_write.R:343`) disagrees and an older build mints a version on every run --
+dual-write would help old readers by breaking old writers. So for that file the rules are absolute:
+additive only, forever.
+
+**Git is a developer-side fallback only.** The manifest is committed, so a developer can always
+recover a prior shape from history. A reader reads it from storage and holds no clone, so git is not
+their recourse -- which is why the reader-side hatch has to exist independently.
+
 **The failure-kind split is the load-bearing part** (R22.4). Task 4 found three readers wrapping
 their manifest read in a handler that softens failures, and a check placed inside one reworded the
 upgrade instruction as "could not read manifest" -- `datom_status()` went further and downgraded it
@@ -966,6 +1022,8 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **Read the old key inline where needed** -- `manifest$artifacts %||% manifest$tables` at each site. | **Rejected** (R22, section 10.2). Five copies of the same logic, each also needing to default `kind`; the next schema change edits five places and the one it misses fails silently. That is the shape of the defect being fixed, reintroduced as the fix. |
 | **Refuse a v1 manifest loudly and ship a repair verb.** | **Rejected on who can act.** It is the option the compatibility posture normally favours, but **readers cannot repair**: a reader holds storage credentials and no clone, so a refusal strands the population least able to resolve it until some developer happens to write. Upgrading in memory is the only shape that keeps a storage-only reader working (R22.2, AC1). |
 | **Declare a clean break -- no migration, pre-release grounds**, as the `datom-cv1` identity spec did. | **Rejected.** The precedent does not carry: cv1 broke *content identity*, where a re-export regenerates everything, whereas the manifest has no rebuild verb. A break also has to be **loud** to be acceptable at all, which costs the detection step; the transform beyond detection is a few lines, so the cheaper option and the correct one are nearly the same code. |
+| **A declarative transform file that travels with the repo**, so an older build can translate a newer manifest back to the shape it knows -- data rather than code, one mapping per release hop, walked downward. | **Rejected, and it was the strongest alternative considered** (owner-proposed 2026-08-23). Three real merits: it is data, so it avoids executing code fetched from a data store; it composes exactly as the forward chain does; and it can hide a new concept entirely, so an old build never learns sets exist. Rejected on four grounds. (1) **The interpreter must ship in the old build**, so it cannot help anything already released -- the same wall it was meant to remove. (2) **The mapping format is frozen the day it ships**, so the first change it cannot express puts us exactly where we are today, now with a language to maintain as well: the wall moves up a level rather than away. (3) A rename map covers renames, moves and defaults; a meaning change, a container restructure or a concept split needs a transform, and supporting transforms means designing a small language. (4) **The cost is testing, not building** -- it is worth nothing unless CI installs historical releases and reads current repos through them, a matrix that grows with every release and is the first thing dropped under deadline. Decisive: its own simplest case, dual-write, delivers most of the value with no language, no interpreter, no frozen format, and it works for released builds. |
+| **Do not stamp `schema_version` on per-artifact metadata**, to avoid future lockouts of pinned builds. | **Superseded by a better split, not rejected on the merits** (R9.5). The concern was correct -- a stamp on an additively-changed file refuses a reader that could have read it -- but the cause is *incrementing*, not *stamping*. Separating the two keeps the housekeeping benefit of always knowing a file's shape while removing the lockout, so both files are stamped and the number moves only on a genuine break. |
 | **Treat a missing `kind` as `"table"`** in the counters, as a safety net. | **Rejected** (R22.8, owner-decided 2026-08-23). Every entry has a `kind` by the time a counter runs, because the upgrade stamps it. The net would therefore only ever fire when a read path skipped the upgrade -- and it would make that mistake produce roughly-correct numbers instead of visibly wrong ones, hiding the class of failure this spec exists to make loud. One line, reversible if a real case for tolerance appears. |
 | **Reuse `datom-cv1` for sets.** | **Rejected.** Table-shaped and binary-framed; `nrow`/`ncol`/per-column digests do not generalize to a tree (section 7). |
 | **Hash the emitted JSON bytes.** | **Rejected.** Reintroduces the #72 failure mode with `jsonlite` playing the role `arrow` played. |

@@ -125,6 +125,72 @@ datom receives secrets explicitly at runtime; it never discovers, persists, or t
 - Runtime objects may carry secrets only in memory and must mask them in `print()` methods.
 - Downstream helpers (e.g. git credential helpers) must use the explicit value passed from `conn` / `store`. **No env-var fallback inside datom** -- if no explicit value is available, the helper returns NULL / unauthenticated. Callers who rely on env vars must read them themselves and pass the value to the store constructor.
 
+## Schema Evolution and Forward Compatibility
+
+Added 2026-08-23, from the datom-sets spec. The goal this serves: **code that worked once keeps
+working.** A pinned analysis should not stop reading a repo because someone else upgraded datom.
+
+**Forward compatibility is a writer-side problem.** A new build can always read old files, because
+it knows both shapes. An old build can only read new files if the writer left it something it
+already understands. Nothing can be retrofitted into a package that is already installed and locked
+in an `renv.lock`, so a "converter for old readers" is not buildable -- the converter would have to
+ship inside the build that predates the change.
+
+### The four rules, in decreasing order of what they buy
+
+1. **Additive only, by default.** Add fields; never rename, move, or remove one. R's list access
+   means an unknown field is simply never asked for, so an addition is invisible to an older build.
+2. **A field's name and meaning are fixed forever.** Never repurpose. Renaming is the loud version
+   of the same violation.
+3. **If a break is genuinely unavoidable, dual-write** the old shape alongside the new for a
+   declared window. This is the only mechanism that helps builds **already released**, because it
+   asks nothing of them. The danger is a **stale** legacy copy, not a leftover one -- an old reader
+   consuming an out-of-date file looks like it worked. So: repo-level policy rather than a per-call
+   argument, removal as a verb that deletes the copies in the same operation, and the sunset
+   recorded inside the legacy file.
+4. **`schema_version` is the alarm, not the mechanism.** It exists for when rules 1-3 could not be
+   followed. Leaning on it means the guarantee is already gone.
+
+### Stamped always, incremented only on a break
+
+Two separate decisions, routinely confused:
+
+- **Stamp** every manifest and every per-artifact metadata document. It costs nothing (the field is
+  in the identity exclusion set, so a stamped file mints no version) and any build can then say what
+  shape it holds.
+- **Increment** only when a change would break a reader. Breaking: renaming a field or moving it to
+  a different parent, removing one, changing what one means or its type, restructuring a container.
+  **Not** breaking: adding a field.
+
+Incrementing on an additive change refuses a reader that could have read the file perfectly well.
+The call is made at design time, alongside model-escalation flags -- not at implementation time.
+
+`schema_version` is the **contract**; `datom_version` is **provenance**. One schema version spans
+many releases, so the schema-to-release mapping must be published in the docs -- it is not inferable
+from either field, and it is the only question a refusal message raises.
+
+### Which files may break, and which may never
+
+| File | May break? | Why |
+|---|---|---|
+| `.metadata/manifest.json` | **yes**, with a hatch | **Derived.** Every fact in it also lives in per-artifact metadata or the storage listing, so a build that cannot read it can rebuild one. |
+| `{name}/.metadata/metadata.json` | **never** | **Source of truth.** Nothing can rebuild it, and a legacy-shaped copy hashes differently from the recorded version -- change detection recomputes identity from the stored file, so dual-write there helps old readers by making older writers mint a version on every run. |
+
+For per-artifact metadata the four rules are **absolute**: additive only, forever.
+
+### Two pitfalls worth knowing before you touch either file
+
+- **Identity hashing over a denylist is not forward-compatible.** `.datom_compute_metadata_sha()`
+  hashes everything except a fixed exclusion list. A build that has never heard of a field cannot
+  know to exclude it, so it folds the field into the hash and reports a change on content that did
+  not move -- on every run. An allowlist (hash exactly these named fields, ignore the rest) removes
+  the whole class. Until that lands, treat **any** new metadata field as a change that costs older
+  builds a spurious version on every write.
+- **A silent repair is a silent degradation.** If a read path recovers from an unreadable document
+  -- by rebuilding a derived file, for instance -- it must say so and point at the upgrade. A
+  recovery nobody is told about becomes a permanent invisible fallback, which is the failure the
+  schema check exists to remove.
+
 ## Engineering Notes (gotchas & pitfalls)
 
 Implementation gotchas, edge cases, and hard-won pitfalls live in **`dev/engineering-notes.md`**.

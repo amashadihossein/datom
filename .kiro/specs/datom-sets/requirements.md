@@ -719,6 +719,31 @@ datom_read()                    --> {name}/.metadata/metadata.json   <- and here
 - **R9.4** **Do not overload `datom_version`.** It records the *writing package version* --
   provenance, not contract. Most releases will not change the schema, so gating on it would
   fire on harmless upgrades. Keep the two fields distinct.
+- **R9.5** **Stamped always, incremented only on a break** (owner-decided 2026-08-23). Every
+  manifest and every per-artifact metadata document carries `schema_version`, so a reader can
+  always tell what shape it is holding. The number **increments only when a change would break a
+  reader**; a release that merely adds a field leaves it where it is. The test, written down so it
+  is not a judgment made under release pressure:
+
+  | Change | Breaking? |
+  |---|---|
+  | rename a field or move it to a different parent | **yes** |
+  | remove a field a reader may rely on | **yes** |
+  | change what an existing field means, or its type | **yes** |
+  | restructure a container (keyed object to array of records, etc.) | **yes** |
+  | add a new field | **no** |
+
+  The call is made at design time, alongside the escalation flags -- not at implementation time.
+  Rationale for the split: stamping costs nothing (R9.3 keeps the field out of identity, and under
+  an allowlist-based hash it stays out by construction), while incrementing costs every pinned
+  build its access. Incrementing on an additive change therefore fires a refusal for a change the
+  reader could have tolerated, which is the failure this rule exists to prevent. The v1 to v2 bump
+  in this spec qualifies as breaking on row one: the artifact list is renamed.
+- **R9.6** **Publish the schema-to-package mapping.** The number changes rarely and the package
+  version changes often, so "which datom reads schema v2" is not inferable from either field: one
+  schema version spans many releases. A table in the package documentation maps each schema
+  version to the release range that reads it. Without it a user holding a repo has no way to
+  answer the only question the refusal message raises.
 
 ### R10 -- Project mode: set repos forbid the import path, not the table path
 
@@ -1195,6 +1220,19 @@ the gate deliberately tolerates and which the R8.1 rename therefore breaks.
   carries a preserved manifest per past version (`manifest-v1.json` first), plus a test that each
   upgrades cleanly to current. A file, not an inline fixture, so "do not sweep this to the new
   shape" is structural rather than a comment a sweeping author has to notice.
+- **R22.9 -- which files may break, and which may never.** The two documents are not equivalent and
+  future changes must not treat them as such.
+  - **The manifest may break.** It is **derived**: every fact in it also exists in the per-artifact
+    metadata and the storage listing, so a build that cannot read it can rebuild one. That is what
+    makes an escape hatch possible there.
+  - **Per-artifact metadata may never break.** It **is** the source of truth, so there is nothing to
+    rebuild it from, and a legacy-shaped second copy backfires: change detection recomputes identity
+    from the stored file (`R/read_write.R:343`), so a copy in a different shape hashes differently
+    from the recorded version and an older build mints a version on every run. For that file the
+    forward-compatibility rules are absolute -- additive only, forever.
+  - Recorded because **this spec has the division the right way round by accident**: it breaks the
+    file with an escape hatch (the manifest key rename) and only adds to the file without one
+    (`kind`). The next change should have that shape on purpose.
 - **R22.8 -- the missing-`kind` question, decided.** Counters filter on `kind == "table"` and add
   **no** fallback for an entry with no `kind`, because R22.2 guarantees every entry has one by the
   time any counter runs. The alternative (treat absent as `"table"`) was rejected: it would make a
