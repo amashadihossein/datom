@@ -136,10 +136,20 @@ already understands. Nothing can be retrofitted into a package that is already i
 in an `renv.lock`, so a "converter for old readers" is not buildable -- the converter would have to
 ship inside the build that predates the change.
 
+**Reader compatibility and writer compatibility are separate guarantees.** Only the reader one
+survives an addition. An older **reader** never asks for a key it does not know, so an added field is
+invisible to it. An older **writer** recomputes identity before writing, so any added field makes it
+disagree with the recorded version -- which is why datom **refuses** such a writer outright (see "The
+writer refusals" below). Do not reason from "additive changes are free" without saying free *for
+whom*.
+
 ### The four rules, in decreasing order of what they buy
 
-1. **Additive only, by default.** Add fields; never rename, move, or remove one. R's list access
-   means an unknown field is simply never asked for, so an addition is invisible to an older build.
+1. **Additive only, by default.** Add fields; never rename, move, or remove one. This keeps **readers**
+   working, which is the guarantee that can be kept. It does **not** keep older writers working -- a
+   release that adds any field to a datom-owned document forces a fleet-wide writer upgrade, cosmetic
+   additions included. Accepted deliberately: writes are infrequent and done by few people, and a
+   false refusal costs one person an install while a miss costs corrupted data.
 2. **A field's name and meaning are fixed forever.** Never repurpose. Renaming is the loud version
    of the same violation.
 3. **If a break is genuinely unavoidable, dual-write** the old shape alongside the new for a
@@ -165,6 +175,55 @@ Two separate decisions, routinely confused:
 Incrementing on an additive change refuses a reader that could have read the file perfectly well.
 The call is made at design time, alongside model-escalation flags -- not at implementation time.
 
+**Classify by effect on a reader, not by the shape of the edit.** A content-bearing addition is
+reader-safe and writer-breaking: the number must not move, and the writer-side stop comes from the
+vocabulary check instead.
+
+**Per-file response.** The number moves for both documents on a break and always describes the shape
+the file actually has. What differs is the reader's response, because only one file is rebuildable:
+a too-new **manifest** makes a reader warn and rebuild; a too-new **per-artifact metadata** document
+makes a reader refuse. Writers refuse in both cases. Do not "simplify" this by freezing the manifest's
+number -- a frozen number cannot distinguish a truncated manifest from a future-shaped one, since both
+present with the expected key missing.
+
+### The writer refusals
+
+Two mechanisms, **complementary, neither sufficient alone.** Document them together or you oversell
+whichever you name.
+
+| Change | Caught by |
+|---|---|
+| field added | **vocabulary check** -- the number does not move |
+| field renamed | vocabulary check, and the number too |
+| field removed | **the number** -- the old name is still in an append-only vocabulary, so nothing looks unrecognised |
+| type or meaning change | **the number** -- no new name appears |
+| container restructured | **the number** -- no new name appears |
+| policy block for a non-format reason | **the writer floor** only |
+
+**The vocabulary check**: before writing, a build inspects the top-level keys of each datom-owned
+document and refuses if it meets one it cannot classify -- neither in its identity list nor on its
+documented excluded list. Evidence-based, so no configuration and no network. `custom` is opaque and
+classified as a whole. Chosen over a declared floor as the primary mechanism because **it cannot be
+forgotten**: a floor protects a repo only if somebody remembers to raise it.
+
+**The vocabulary list is append-only, and this is the discipline the rest depends on.** Never stop
+recognising a name that has ever existed, including names you no longer write; retire by marking, never
+by deleting. A build that forgets a name meets an *older* file, fails to classify a key it should know,
+and refuses it -- blocking the **upgrade** direction, the one direction that must always work.
+
+**Do not add directional logic to it.** A newer build's vocabulary is a superset of every older one's,
+so the check cannot fire on the upgrade path. A guard for that case would be dead code protecting an
+unreachable state.
+
+**All write-side refusals bind from 0.1.1 forward only.** 0.1.0 has no schema check, no vocabulary
+check and no floor read, and none can be added to a released build. When describing these refusals,
+separate the population that can be stopped from the one that cannot -- "an older build writing into a
+newer repo" hides that distinction.
+
+**A refusal must leave no partial state.** Every forward-compatibility check runs before any hashing,
+any local file write, and any commit. Aborting mid-pipeline leaves a half-finished write, which is
+worse than the disagreement being prevented.
+
 `schema_version` is the **contract**; `datom_version` is **provenance**. One schema version spans
 many releases, so the schema-to-release mapping must be published in the docs -- it is not inferable
 from either field, and it is the only question a refusal message raises.
@@ -180,12 +239,16 @@ For per-artifact metadata the four rules are **absolute**: additive only, foreve
 
 ### Two pitfalls worth knowing before you touch either file
 
-- **Identity hashing over a denylist is not forward-compatible.** `.datom_compute_metadata_sha()`
-  hashes everything except a fixed exclusion list. A build that has never heard of a field cannot
-  know to exclude it, so it folds the field into the hash and reports a change on content that did
-  not move -- on every run. An allowlist (hash exactly these named fields, ignore the rest) removes
-  the whole class. Until that lands, treat **any** new metadata field as a change that costs older
-  builds a spurious version on every write.
+- **Identity hashing must select fields by allowlist, never by exclusion.** Hashing
+  everything-except-a-list means a build that has never heard of a field folds it into the hash and
+  reports a change on content that did not move. An allowlist fails the **opposite** way, and it is
+  the more dangerous way if untested: it silently *excludes* a new field, so identity quietly stops
+  responding to real content. Whenever you add a field to a metadata builder, classify it -- in the
+  hash list or on the documented excluded list -- and there is a test that fails if you do not.
+- **A field added to any datom-owned document is never destroyed by a build that does not understand
+  it.** Preserve unrecognised top-level keys rather than rebuilding the document from scratch, at all
+  three levels: per-artifact metadata, manifest entries, manifest top level. The reason is information
+  loss, not version churn -- churn settles either way.
 - **A silent repair is a silent degradation.** If a read path recovers from an unreadable document
   -- by rebuilding a derived file, for instance -- it must say so and point at the upgrade. A
   recovery nobody is told about becomes a permanent invisible fallback, which is the failure the

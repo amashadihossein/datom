@@ -479,6 +479,21 @@ if (length(unresolved) > 0L) {
        sprintf("%d distinct task numbers referenced, all defined", length(ref_nums)))
 }
 
+# Dated Decisions rows are FROZEN by policy (2026-08-23). A renumber adds one
+# shift record and touches nothing else. This is a NOTE, not a failure: the rows
+# legitimately contain task numbers, and no mechanical check can tell an
+# as-of-date number from a swept one. It exists to fire at the one moment it
+# matters -- when somebody is renumbering and is about to run a sweep.
+frozen_rows <- grep("^\\| 20\\d\\d-\\d\\d-\\d\\d \\|", spec$tasks.md, perl = TRUE)
+frozen_refs <- sum(grepl("\\bTasks? \\d+", spec$tasks.md[frozen_rows], perl = TRUE))
+if (frozen_refs > 0L) {
+  note("frozen decisions rows",
+       sprintf("%d dated Decisions row(s) contain a `Task N` reference.", frozen_refs),
+       "These are FROZEN. If you are renumbering, do NOT sweep them -- add one",
+       "shift record instead (see the 2026-08-23 row). Three sweeps produced three",
+       "crops of stale references, the last one half-done.")
+}
+
 # --- summary ------------------------------------------------------------------
 
 cat("\n")

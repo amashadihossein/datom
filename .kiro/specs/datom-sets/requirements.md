@@ -725,13 +725,38 @@ datom_read()                    --> {name}/.metadata/metadata.json   <- and here
   reader**; a release that merely adds a field leaves it where it is. The test, written down so it
   is not a judgment made under release pressure:
 
-  | Change | Breaking? |
-  |---|---|
-  | rename a field or move it to a different parent | **yes** |
-  | remove a field a reader may rely on | **yes** |
-  | change what an existing field means, or its type | **yes** |
-  | restructure a container (keyed object to array of records, etc.) | **yes** |
-  | add a new field | **no** |
+  Classified by **effect on a reader**, not by the shape of the edit -- an earlier version of this
+  table classified by shape, so a content-bearing addition fell through as "added, not breaking":
+
+  | Change | Reader | Schema number | Also required |
+  |---|---|---|---|
+  | rename a field, or move it to a different parent | breaks | **bump** | |
+  | remove a field a reader may rely on | breaks | **bump** | |
+  | change what an existing field means, or its type | breaks | **bump** | |
+  | restructure a container (keyed object to array of records, etc.) | breaks | **bump** | |
+  | add a field that does **not** enter identity | safe | no bump | NEWS entry |
+  | **add a field that enters identity** (content-bearing) | **safe** | **no bump** | **NEWS entry + writer floor raise if one is set (R23.3)** |
+
+  The last row is the one that has no shape-based answer. A content-bearing addition is
+  **reader-safe and writer-breaking**: readers never recompute identity, writers do
+  (`R/read_write.R:343`), so an older writer disagrees with the recorded version and mints a version
+  on unchanged content. The format did not change, so the number must not move -- and the writer-side
+  stop therefore comes from R23's vocabulary check rather than from the number.
+
+  **Per-file rule** (Design A, owner-decided 2026-08-23). The number moves for **both** documents on
+  a breaking change, and it always describes the shape the file actually has. What differs is the
+  **reader's response**, because only one of the two files is rebuildable:
+
+  | Document | Too-new number, reader | Too-new number, writer |
+  |---|---|---|
+  | `.metadata/manifest.json` | **warn and rebuild** from storage (R22.11) | **refuse** |
+  | `{name}/.metadata/metadata.json` | **refuse** -- no hatch exists (R22.9) | **refuse** |
+
+  Rejected alternative: freeze the manifest's number and dispatch on shape instead. It would leave a
+  file stamped v2 while carrying a v5 shape, leave the upgrade chain with one step forever, and --
+  decisively -- make a **truncated** manifest indistinguishable from a **future-shaped** one, since
+  both present with the expected key missing. The number is what separates corruption from the
+  future.
 
   The call is made at design time, alongside the escalation flags -- not at implementation time.
   Rationale for the split: stamping costs nothing (R9.3 keeps the field out of identity, and under
@@ -739,11 +764,20 @@ datom_read()                    --> {name}/.metadata/metadata.json   <- and here
   build its access. Incrementing on an additive change therefore fires a refusal for a change the
   reader could have tolerated, which is the failure this rule exists to prevent. The v1 to v2 bump
   in this spec qualifies as breaking on row one: the artifact list is renamed.
-- **R9.6** **Publish the schema-to-package mapping.** The number changes rarely and the package
-  version changes often, so "which datom reads schema v2" is not inferable from either field: one
-  schema version spans many releases. A table in the package documentation maps each schema
-  version to the release range that reads it. Without it a user holding a repo has no way to
-  answer the only question the refusal message raises.
+- **R9.6** **Publish one schema history table.** The number changes rarely and the package version
+  changes often, so "which datom reads schema v2" is not inferable from either field: one schema
+  version spans many releases. One table in the package documentation, with a row per change:
+  **schema version, minimum writer version, released in, what changed, why it moved (or why it did
+  not)**. That is #103's table plus two columns, and it makes "when did this move and why" a single
+  lookup. Every refusal message points at it -- a refusal raises exactly one question, *which datom
+  do I need*, and nothing in the repo answers it.
+- **R9.7** **A release that adds any field to a datom-owned document requires a writer upgrade.**
+  Follows from R23.1 and is stated here because it is counter-intuitive next to R9.5's "add a field
+  -> no bump": the *number* does not move, and older **writers** are nonetheless refused. Reader
+  compatibility and writer compatibility are separate guarantees, and only the reader one survives an
+  addition. Consequence accepted deliberately (R23.6): even a cosmetic addition forces a fleet-wide
+  writer upgrade. The population is small, writes are infrequent, and the alternative is a writer
+  that disagrees about identity.
 
 ### R10 -- Project mode: set repos forbid the import path, not the table path
 
@@ -1220,6 +1254,34 @@ the gate deliberately tolerates and which the R8.1 rename therefore breaks.
   carries a preserved manifest per past version (`manifest-v1.json` first), plus a test that each
   upgrades cleanly to current. A file, not an inline fixture, so "do not sweep this to the new
   shape" is structural rather than a comment a sweeping author has to notice.
+- **R22.10 -- the schema check runs BEFORE the upgrade chain.** Pinned because nothing in this
+  requirement, design 10.2, I28 or P34 fixed the order, and only one order is correct: a v3 document
+  on a v2 build has no v2-to-v3 step, so the dispatcher must never see it. Check first, then upgrade.
+  Two implementation notes that belong with it, both about the dispatcher and neither about the spec:
+  the loop must be guarded (`if (declared < supported)`) because R's `seq()` **counts down** when
+  `from > to`, so an unguarded `seq(declared, supported - 1L)` runs the steps backwards on a
+  current-version document; and a test must assert a current-version document runs **zero** steps,
+  which is P34's identity clause made mechanical.
+- **R22.11 -- the manifest's too-new response is asymmetric between roles.** A manifest declaring a
+  version above what this build supports is **not** a dead end, because the manifest is derived:
+  - **Reader**: warn once and **rebuild** from storage (R22.12). Survivable beats loud when the file
+    is reconstructible.
+  - **Writer**: **refuse.** Writes never limp.
+  This self-selects correctly without extra logic: the rebuild reads per-artifact metadata, which is
+  stamped and **not** rebuildable, so if the too-new release also changed metadata the rebuild aborts
+  there anyway. Survivability is available exactly when the break was manifest-only.
+- **R22.12 -- rebuild triggers, and what a rebuild must not do.** Rebuild when either (a) the expected
+  artifact key is **absent** -- never when it is merely *empty*, which is what a new repo and a
+  truncated file both look like -- or (b) the declared version is above `.datom_supported_schema`
+  (R22.11). A storage-only reader rebuilds **in memory for that session** and writes nothing. It
+  **warns once**, pointing at the upgrade: a silent repair is a silent degradation, which is the
+  failure this whole section exists to remove.
+  **The rebuild reads the recorded version id; it never recomputes one.** `version_history.json`
+  entries already carry `version` (`R/read_write.R:485`). Recomputing through
+  `.datom_compute_metadata_sha()` walks straight into the denylist defect (#100) in precisely the
+  scenario the rebuild exists for -- an older build reading a repo a newer one wrote -- and would
+  publish a `current_version` matching no version in the history, which is worse than the empty list
+  it replaced.
 - **R22.9 -- which files may break, and which may never.** The two documents are not equivalent and
   future changes must not treat them as such.
   - **The manifest may break.** It is **derived**: every fact in it also exists in the per-artifact
@@ -1239,6 +1301,99 @@ the gate deliberately tolerates and which the R8.1 rename therefore breaks.
   read path that forgot the upgrade produce roughly-correct numbers instead of visibly wrong ones,
   which hides exactly the class of mistake this spec is trying to make loud. Owner-decided
   2026-08-23; reversible in one line if a real case for tolerance appears.
+
+### R23 -- Writer-side forward-compatibility controls
+
+Owner-decided 2026-08-23. R22 keeps **readers** working across a format change. This requirement
+stops **writers** that would corrupt a repo they do not fully understand. The asymmetry is deliberate
+and already in the design: reads limp, writes stop.
+
+- **R23.1 -- an unrecognised field refuses the write.** Before writing, a build inspects the
+  top-level keys of each datom-owned document it is about to modify. A key it cannot classify --
+  neither in its identity list nor on its documented excluded list -- means a newer build wrote this
+  document. **Refuse.** No version comparison, no configuration, no network: the evidence is in the
+  file.
+  Scope, so it neither over- nor under-fires: **top-level keys only**, on documents datom owns
+  (per-artifact `metadata.json`, manifest entries, manifest top level). `custom` is **opaque** -- it
+  holds arbitrary user keys by design and is classified as a whole.
+- **R23.2 -- the vocabulary list is APPEND-ONLY, and this is the discipline everything else rests
+  on.** A build must never stop recognising a field name that has ever existed in a datom document,
+  **including names it no longer writes**. Retire a name by marking it retired, never by removing it.
+  A build that forgets a name meets an older file, fails to classify a key it should know, and
+  refuses it -- **blocking the upgrade direction**, which is the one direction that must always work.
+  Same freeze rule as a released upgrade step (I30), and it carries the same weight.
+- **R23.2a -- why the good direction is structurally safe.** A newer build's vocabulary is a superset
+  of every older one's, so it can never meet a name it does not know. The check is therefore
+  incapable of firing on the upgrade path, and **no directional logic is required** -- do not write a
+  special case for it, and do not add one later "for safety": it would be dead code guarding an
+  unreachable state.
+- **R23.3 -- a repo may declare a minimum writer version, and every build from 0.1.1 reads it.**
+  Optional field in `project.yaml`; **absent means no floor**, so no existing repo changes behaviour.
+  A writer below the declared version is refused. Expressed as a **package** version, not a schema
+  number: the number does not move for a writer-breaking-but-reader-safe change (R9.5), so it cannot
+  carry this, and a package version directly answers the question a refusal raises.
+  **The reading half ships now even though it may never be set**, because it cannot be retrofitted --
+  a build that does not look for the field can never be bound by it, which is exactly why nothing can
+  stop a 0.1.0 writer. Deferred with the rest of the mechanism: a purpose-built verb for raising it
+  (a normal commit cannot validate that the raiser satisfies the new value, and the R15 precedent is
+  named verbs over generic writes), plus tooling and docs.
+- **R23.3a -- one home, no mirror.** `project.yaml` only, git-tracked. **Not** the manifest: the
+  manifest is derived, and a rebuild could not recover a policy field that exists in no other file
+  (R22.9). Repo level is the right granularity -- per-artifact would leave a repo half-writable, and
+  per-namespace is the same thing, since repo, namespace and manifest are 1:1:1 (R17.1). It rides on
+  the connection, since `datom_get_conn()` already parses that file, so the check costs no extra read.
+  One guard: whoever sets it must already satisfy it.
+- **R23.4 -- a writer refuses when the expected key is still absent AFTER the upgrade chain has
+  run.** The discriminator is not the key, it is whether the chain can **reach** the shape:
+
+  | Situation | Chain | Writer |
+  |---|---|---|
+  | v1 repo, current build | runs, key appears | **write** (forward) |
+  | future-shaped repo, older build | runs, key still absent | **refuse** (backward) |
+
+  Stated this way because "refuse when the expected key is absent" would deadlock the v1-to-v2
+  upgrade itself -- a 0.1.1 writer meeting a v1 repo finds `artifacts` absent and would refuse
+  forever, so no repo could ever be upgraded. Without the refusal half, two builds flip the manifest's
+  shape back and forth in git history, each seeing a rebuild warning on the other's turn.
+  Note the deliberate asymmetry: **the same condition, opposite responses.** Key absent after the
+  chain means *rebuild* for a reader (R22.12) and *refuse* for a writer. That is the reads-limp /
+  writes-stop split, and it is not an inconsistency.
+- **R23.5 -- the two mechanisms cover complementary sets, and neither is sufficient alone.** Say so
+  wherever either is documented, so neither is oversold:
+
+  | Change | Caught by |
+  |---|---|
+  | field added | **vocabulary** (R23.1) -- the number does not move |
+  | field renamed | **vocabulary**, and the number too |
+  | field removed | **number** (R9.5) -- the old name is still in an append-only vocabulary, so nothing looks unrecognised |
+  | type or meaning change | **number** -- no new name appears |
+  | container restructured | **number** -- no new name appears |
+  | policy block for a non-format reason | **floor** (R23.3) only |
+
+- **R23.6 -- the accepted cost.** Every release that adds any field to a datom-owned document forces
+  a fleet-wide **writer** upgrade, including a purely cosmetic addition. Accepted knowingly: writes
+  are infrequent, done by few people, and they change content. **A false refusal costs one person an
+  install; a miss costs corrupted data**, so refusing too often is the right direction to err.
+  Recorded because it inverts the intuition that additive changes are free -- they are free for
+  readers only, and R9.7 says so next to the rule that generates the intuition.
+- **R23.7 -- enforcement begins at 0.1.1; 0.1.0 writers cannot be stopped.** 0.1.0 has no schema
+  check, no vocabulary check, and no floor read (verified: zero occurrences on `main`), and none can
+  be added to a released build. Every write-side refusal in this requirement protects against builds
+  **from 0.1.1 forward only**. State it plainly wherever the refusals are described -- the spec
+  currently writes "an older build writing into a newer repo" without separating the population that
+  can be stopped from the one that cannot. For 0.1.0 the remedy is a NEWS entry, not engineering: it
+  cannot be made to fail loudly from inside, and the only lever that would -- relocating the manifest
+  so 0.1.0's existing "could not read manifest" abort fires -- costs a storage-layout change, a
+  `datom_validate()` change (`R/validate.R:236-238`) and two filenames carried forever. 0.1.0 is under
+  CRAN review with no reverse dependencies; the exposed population is the team.
+- **R23.8 -- unrecognised fields are carried forward, not dropped.** Where a write is permitted at
+  all, a build must preserve top-level keys it does not recognise rather than rebuilding the document
+  from scratch and silently deleting them. Applies at **three** levels: per-artifact metadata
+  documents, manifest **entries**, and manifest **top-level** keys. The reason is **information
+  loss**, not churn -- churn settles after one version per handoff either way, because a build that
+  deletes the field agrees with itself on its next run. Today most such fields are recomputable; the
+  rule exists for the ones that will not be. Test by asserting a field **survives a round trip**
+  through a write, not by counting versions.
 
 ---
 
@@ -1277,6 +1432,13 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC31** | **A write into an existing repo upgrades the file, and the counters do not collapse.** After one table write into a v1 repo: the manifest carries `artifacts`, carries **no** `tables` key, declares `schema_version: 2`, and `summary$total_tables` counts **every** pre-existing artifact rather than only the one just written (R22.3). The counter clause is the one a naive implementation fails: adding an entry under the new key while the old key sits untouched leaves a twelve-table repo reporting `1`, in a file that is now half in each format. |
 | **AC32** | **An unreadable manifest and a too-new manifest are different failures, at every reader.** Through the single reader (R22.4): an IO failure preserves each caller's current behaviour -- `datom_list()` and `datom_summary()` abort with their own wording, `datom_status()` tolerates it and reports the manifest unavailable -- while a manifest declaring an unsupported version aborts with the upgrade message at **all** of them, including `datom_status()`. Both halves in one criterion because the regression is a trade between them: making the schema refusal reach every caller must not make an ordinary storage failure fatal, and vice versa. |
 | **AC28** | **The `document_sha` integrity gate fires, and never silently skips.** (a) A set whose stored payload bytes do not match the recorded `document_sha` is **refused before parsing** -- assert the abort occurs without the payload being parsed. (b) Metadata with a **missing or empty** `document_sha` is an **error, not a skip** (R7.1, I3): sets have no legacy population, so reproducing `parquet_sha`'s pre-cv1 grace would be building a silent-degradation path on purpose. Both halves matter, and (b) is the one a naive implementation gets wrong by copying `.datom_read_parquet()`'s `if (!is.null(...) && nzchar(...))` guard. |
+
+| **AC33** | **Identity hashing is an allowlist, and it is behaviour-preserving.** (a) Every existing `metadata_sha` is unchanged -- asserted against **pinned values**, not merely a green suite. (b) A metadata document carrying an **unknown extra field** hashes identically to one without it. (c) A document **missing** an optional field (`parents`, `source_lineage`, `original_file_sha`, `custom`) hashes to today's value for that document. (d) **The classification test**: every field any metadata builder can emit -- table **and** set -- is classified, in the hash list or on the documented excluded list. An allowlist fails the **opposite** way from a denylist (a denylist silently *includes* an unknown field; an allowlist silently *excludes* a new one, so identity stops responding to real content changes), and (d) is the only clause that catches that direction. |
+| **AC34** | **Unrecognised fields survive a write.** A document carrying a top-level key the build does not recognise still carries it after that build writes the artifact -- at all three levels (per-artifact metadata, manifest entry, manifest top level). Asserted as a **round trip**, not as a version count: churn settles either way, and the property at stake is that information is not destroyed (R23.8). |
+| **AC35** | **The writer refuses what it cannot classify, and never on the upgrade path.** (a) A document with an unrecognised top-level key refuses the write, naming the field. (b) `custom` contents are **not** treated as unrecognised, however exotic. (c) A **retired** name still classifies, so an older document does not refuse -- the append-only rule (R23.2) made mechanical. (d) The forward path never refuses: a current build writing a v1-shaped repo proceeds, which is R23.4's first row and the case a naive "refuse when the key is absent" rule would have deadlocked. |
+| **AC36** | **The floor is read and enforced, and absent means absent.** (a) A repo whose `project.yaml` declares a minimum writer version above the running build refuses the write, naming the required version. (b) A repo with **no** floor field behaves exactly as before -- no warning, no refusal, no change of any kind. (c) Setting a floor above the setting build's own version is refused. |
+| **AC37** | **The rebuild fires on absent and on too-new, never on empty, and never recomputes identity.** (a) A manifest with the expected artifact key **absent** yields a correct non-empty listing plus exactly **one** warning naming the upgrade. (b) A manifest declaring a version **above** what the build supports yields the same for a **reader**, and a **refusal** for a **writer** (R22.11). (c) A **genuinely empty** repo triggers no rebuild and performs **no storage listing** -- asserted on the absence of the listing call, not on the result. (d) A **corrupt** manifest still fails visibly. (e) The rebuilt `current_version` for every artifact equals the `version` **recorded** in `version_history.json`, never a recomputed hash (R22.12). (f) A rebuilt index matches the on-disk one field for field on a healthy repo, `original_format` included. |
+| **AC38** | **The upgrade chain runs after the check, and runs zero steps when there is nothing to do.** (a) A document declaring a version above `.datom_supported_schema` never reaches the dispatcher -- asserted by observing the abort's condition class, not by inspecting the document. (b) A **current-version** document runs **zero** upgrade steps, which catches the `seq()` counts-down defect (R22.10). (c) Applying the chain twice equals applying it once. |
 
 Plus the standing project gates:
 

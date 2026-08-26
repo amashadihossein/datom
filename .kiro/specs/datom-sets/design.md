@@ -765,6 +765,100 @@ additive only, forever.
 recover a prior shape from history. A reader reads it from storage and holds no clone, so git is not
 their recourse -- which is why the reader-side hatch has to exist independently.
 
+### 10.5 Why the manifest keeps a truthful number (Design A)
+
+Two self-consistent designs were on the table. **A**: the manifest's number keeps bumping and always
+describes its shape, and what changes is the *reader's response* -- warn and rebuild instead of abort.
+**B**: the manifest carries no number at all and dispatch is purely by shape.
+
+**A chosen** (owner-decided 2026-08-23). Three reasons, in increasing weight:
+
+1. Under B the number would be stamped and then frozen, so a file would read v2 while carrying a v5
+   shape. A number that no longer describes the shape is worse than no number.
+2. Under B the upgrade chain has exactly one step forever, and R22.5's one-step-per-pair generality is
+   never used -- so the concept is paid for and not exercised.
+3. **Decisive: B cannot distinguish corruption from the future.** A truncated manifest and a
+   future-shaped manifest both present with the expected key missing, so both would trigger a rebuild.
+   That directly contradicts the requirement that a corrupt manifest still fails visibly (AC37d). The
+   number is the only thing that separates the two.
+
+What A costs is nothing: the response change is local to one reader, and the reads-limp / writes-stop
+split then falls out of a single rule instead of two.
+
+### 10.6 The writer side: a vocabulary check, not a version comparison
+
+R22 keeps readers working. It does nothing about a **writer** that does not understand a document,
+and the schema number cannot fill the gap: adding a content-bearing field is reader-safe and
+writer-breaking (writers recompute identity at `R/read_write.R:343`), the format has not changed, so
+the number must not move and there is nothing to refuse on. One number cannot encode "newer but still
+readable."
+
+**The evidence is in the file.** A build inspects the top-level keys it is about to write and refuses
+if it meets one it cannot classify. No version comparison, no configuration, no network.
+
+Chosen over a declared minimum writer version as the *primary* mechanism for one reason:
+**it cannot be forgotten.** A floor only protects a repo if somebody remembers to raise it; the
+vocabulary check fires on the evidence whether or not anyone did anything. The floor is kept as the
+escape hatch for the two cases the vocabulary check structurally cannot see -- a **meaning** change
+that adds no field, and a policy block for a non-format reason ("0.1.4 wrote bad hashes").
+
+**Coverage is complementary and neither mechanism is sufficient** (R23.5): the vocabulary check
+catches additions and renames; the number catches removals, type and meaning changes, and container
+restructures, none of which introduce a new name. Documenting either alone oversells it.
+
+**Append-only is the whole discipline** (R23.2). A build must never stop recognising a name that has
+ever existed, including names it no longer writes. A build that forgets a name meets an *older* file,
+fails to classify a key it should know, and refuses it -- blocking the **upgrade** direction, the one
+direction that must always work. Retire by marking, never by deleting.
+
+**And the upgrade direction is structurally safe**, which is worth stating once so nobody adds a
+guard for it: a newer build's vocabulary is a superset of every older one's, so it cannot meet an
+unknown name. The check is incapable of firing on the upgrade path, and directional logic would be
+dead code guarding an unreachable state.
+
+**The accepted cost** (R23.6): every release that adds any field forces a fleet-wide writer upgrade,
+cosmetic additions included. Writes are infrequent, done by few people, and they change content. A
+false refusal costs one person an install; a miss costs corrupted data.
+
+**This changes #100's justification.** The allowlist was filed as "older writers keep working". After
+this decision they do not, by design. What it now buys is that **readers compute correct identities
+and a repo does not accumulate spurious versions** -- both still true, and the earlier framing must
+not survive into the implementation.
+
+### 10.7 The write-path entry sequence
+
+Stated once, so the pieces compose. All of it sits directly after the `datom_conn` class check and
+**above** the two routing returns at `R/read_write.R:687` and `R/read_write.R:691` --
+`.datom_sync_data_metadata()` mirrors the whole manifest to storage (`R/sync.R:177`) without ever
+reaching the manifest-writing step, so anything placed after the router misses it.
+
+```
+1. fetch (cheap, no merge) to refresh upstream refs
+2. floor check against project.yaml on the conn      -> refuse if below (R23.3)
+3. read the manifest through the one reader
+     -> schema check, refuse newer                    (R22.10, before the chain)
+     -> run the upgrade chain in memory
+4. expected key still absent after the chain?         -> refuse (R23.4)
+5. vocabulary check on the documents to be written    -> refuse if unclassifiable (R23.1)
+6. proceed
+```
+
+All six happen **before any hashing, any local file write, and any commit**, so a refusal leaves no
+partial state. That placement is the point: the spec's own argument is that aborting mid-pipeline
+leaves a half-finished write, which is worse than the disagreement being prevented.
+
+**Two notes on the mechanics.** The step-7 pull inside `.datom_git_push()` stays as the backstop for
+the genuine race -- a floor raised between the entry check and the push -- and abort-after-commit is
+acceptable for a rare race while unacceptable as the primary mechanism. And a write cannot reach
+storage without a successful push (`.datom_git_push()` aborts on failure, `R/utils-git.R:267-277`,
+and the storage steps are 8-10), so an unverifiable floor at the door is caught there; the residual is
+narrow -- fetch fails, push succeeds.
+
+**Prerequisite defect.** `.datom_check_git_current()` returns from its fetch-failure *handler* rather
+than from the function (`R/utils-git.R:422-429`), so after a failed fetch it continues and compares
+HEAD against stale cached refs -- an offline user with stale-ahead refs gets a hard abort where the
+comment intends a warning. Fixed as its own change before anything sits on that function.
+
 **The failure-kind split is the load-bearing part** (R22.4). Task 4 found three readers wrapping
 their manifest read in a handler that softens failures, and a check placed inside one reworded the
 upgrade instruction as "could not read manifest" -- `datom_status()` went further and downgraded it
@@ -962,6 +1056,10 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I28** | **No code reads a manifest field off a raw document.** Every manifest read goes through the one internal reader, which applies the upgrade chain first, so no caller can observe a pre-current shape (R22.2, R22.4). The two named exclusions in R22.6 do not read the artifact key at all. |
 | **I29** | **`schema_version` on disk always describes the shape the file actually has.** A write upgrades before it stamps, and never stamps a version onto a document it did not upgrade (R22.3). A file half in one format and half in another is the state this forbids. |
 | **I30** | **A released upgrade step is frozen.** `.datom_manifest_upgrade_v1_to_v2()` and every later step are never edited once shipped, not even to tidy them -- they are written against documents that exist unchanged in the world, and mis-converting one produces a well-formed file for the wrong version, i.e. a silent corruption (R22.5). |
+| **I31** | **The field vocabulary is append-only.** No build may stop recognising a field name that has ever existed in a datom-owned document, including names it no longer writes; retirement is a marking, never a deletion. A build that forgets a name refuses an **older** file and blocks the upgrade direction (R23.2). Same freeze rule as I30, and it carries the same weight. |
+| **I32** | **The schema check runs before the upgrade chain, always.** A document declaring an unsupported version must never reach the dispatcher -- there is no step for a version this build does not know (R22.10). |
+| **I33** | **A writer never overwrites a document whose shape it cannot reach.** If the expected key is still absent after the upgrade chain has run, the document belongs to a lineage this build cannot produce; refuse rather than rewrite it in an older shape (R23.4). The reader's response to the same condition is the opposite -- rebuild -- and that asymmetry is the reads-limp / writes-stop rule, not an inconsistency. |
+| **I34** | **A write refusal leaves no partial state.** Every forward-compatibility refusal -- floor, schema, unreachable shape, unclassifiable field -- happens before any hashing, any local file write, and any commit (design 10.7). Aborting mid-pipeline leaves a half-finished write, which is worse than the disagreement being prevented. |
 | **I27** | **The bytes at `{name}/{data_sha}.json` are written once and never rewritten.** Any path that could re-upload -- a repeat write, a revert to older content, or `datom_validate(fix = TRUE)` -- reuses the stored object and carries the recorded `document_sha` forward rather than recomputing it (R7.5). |
 
 ---
@@ -983,6 +1081,9 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P9** | A payload whose stored bytes do not match `document_sha` is refused before parsing. |
 | **P10** | A v2 reader against a v1 repo returns the same artifacts 0.1.0 did -- same names, same versions, plus the additive `kind` column. **Restated 2026-08-23**: the earlier wording credited this to the gate's toleration of an absent `schema_version` alone, which the R8.1 rename falsifies. Toleration lets the document through; the in-memory upgrade (R22.2) is what makes what comes through intelligible. The property is defended in Task 6 and tested by AC30. |
 | **P34** | **The upgrade chain is order-preserving and idempotent.** Applied to a document already at the current version it is the identity; applied to an older one it runs every step from the declared version upward, in sequence, and applying it twice equals applying it once (R22.5). |
+| **P36** | **Identity ignores what it does not name.** Adding any field to a metadata document leaves every existing `metadata_sha` unchanged, and two documents differing only in fields outside the identity list hash equal (AC33). The converse is what the classification test defends: no field a builder can emit is left unclassified, so identity cannot silently stop responding to real content. |
+| **P37** | **The upgrade direction always works.** For any document written by an older build, a newer build reads it, upgrades it, and writes it without refusing -- because a newer build's vocabulary is a superset of every older one's and the chain can reach the current shape (R23.2a, R23.4). No sequence of releases can produce a repo that the current build can read but not write, unless a floor deliberately says so. |
+| **P38** | **Information is never destroyed by a build that does not understand it.** A field a build cannot classify survives that build's write unchanged, at every level it can appear (R23.8, AC34). |
 | **P35** | **A schema refusal cannot be softened by a caller's error handling.** For every manifest reader, an unsupported version aborts with the upgrade message while an ordinary IO failure keeps that caller's existing policy -- because the shared reader returns the second and throws the first (R22.4, AC32). No arrangement of caller-side handlers can convert the abort into a warning or reword it. |
 | **P11** | A v1 reader against a v2 repo aborts with the upgrade message at **both** entry points. |
 | **P12** | The in-package sv1 implementation and `dev/datom_sv1_reference.R` agree on every golden, on x86_64 and arm64. |
