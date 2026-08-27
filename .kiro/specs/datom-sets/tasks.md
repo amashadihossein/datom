@@ -591,9 +591,12 @@ own; landing it first is what makes Task 6's failure loud.
   - **No new export. No on-disk change. No schema bump.** The key is still `tables` when this task
     ends; `git diff` on any repo must be empty after running the suite.
   - _Requirements: R22 (R22.4, R22.6, R22.7). Invariants: I28. Properties: P35. Acceptance: AC30
-    (the frozen fixture reads non-empty), AC32 (an unreadable manifest and a too-new manifest are
-    different failures, at every reader). No pathway impact -- route shapes unchanged; record
-    explicitly._
+    (the frozen fixture reads non-empty), **AC32 in its Task 5 form** -- an unreadable manifest and a
+    too-new manifest are different failures at every reader, and here the too-new one **aborts**.
+    That is correct for this task and **changes at Task 22**, which replaces the manifest reader's
+    abort with warn-and-rebuild (R22.11). Write the test so the abort assertion is easy to find and
+    amend -- do not bury it in a loop over the five readers, because one of the five stops aborting
+    later. No pathway impact -- route shapes unchanged; record explicitly._
 
 - [ ] **6. `manifest$tables` -> `manifest$artifacts`, typed by `kind`** &nbsp; **[ESCALATION E2]**
   - Write side (**3** sites -- an earlier draft said 2 and missed the third):
@@ -1102,6 +1105,15 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - **Vocabulary check** (R23.1): refuse a write when a datom-owned document carries a **top-level**
     key this build cannot classify. Evidence-based -- no version comparison, no config, no network.
     `custom` is **opaque** and classified as a whole.
+  - **Read the CLONE's copies, not storage** (R23.1a). This is the detail that makes the check
+    possible at entry at all: the sequence has the manifest by then but **not** per-artifact
+    metadata, which `datom_write()` does not touch until pipeline step 4 inside
+    `.datom_has_changes()` (`R/read_write.R:334-343`). All three documents exist as local files
+    (`{conn$path}/.datom/manifest.json`, `{conn$path}/{name}/metadata.json`), so this is a file read,
+    it costs no round trip, and it works on the mirror-everything route where there is no single
+    artifact name. **Do not implement the manifest half and skip the artifact half** -- that is the
+    likely silent outcome if nothing is at hand, and it would remove the check from the one document
+    that is never rebuildable and is where identity lives.
   - **The vocabulary list is append-only** (R23.2, I31). Never stop recognising a name that has ever
     existed, including names no longer written; retire by marking. A build that forgets a name refuses
     an **older** file and blocks the upgrade direction, which must always work. Give this the same
@@ -1129,8 +1141,10 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - **Say plainly that this binds 0.1.1 forward only** (R23.7). 0.1.0 has none of these checks and
     cannot be given them.
   - _Requirements: R23 (R23.1, R23.2, R23.2a, R23.3, R23.3a, R23.4, R23.5, R23.6, R23.7), R22.10.
-    Invariants: I31, I32, I33, I34. Properties: P37. Acceptance: AC35, AC36, AC38 (a). **Pathway
-    impact: yes** -- the write route gains an entry gate; update `dev/datom_pathways.md`._
+    R23.1a. Invariants: I31, I32, I33, I34. Properties: P37. Acceptance: AC35, AC36, AC38 (a). Add a
+    case asserting the check covers **per-artifact metadata**, not only the manifest -- an
+    implementation that checks the manifest alone passes every other clause. **Pathway impact: yes**
+    -- the write route gains an entry gate; update `dev/datom_pathways.md`._
 
 - [ ] **22. Self-healing manifest rebuild (#101) + persist `original_format`**
   - Rebuild when the expected artifact key is **absent**, or when the declared version is **above**
@@ -1152,9 +1166,17 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - **Guard the dispatcher loop and test the no-op** (R22.10): R's `seq()` counts **down** when
     `from > to`, so guard with `if (declared < supported)` and assert a current-version document runs
     **zero** steps.
-  - _Requirements: R22.11, R22.12, R22.10, R9.5 (per-file rule). Invariants: I32. Properties: P34,
-    P36. Acceptance: AC37 (all six clauses), AC38 (b and c). **Pathway impact: yes** -- the manifest
-    read route gains a reconstruction branch; update `dev/datom_pathways.md`._
+  - **This task RESTATES AC32 and P35, and amends the test Task 5 wrote** -- the way Task 6 restates
+    P10. Task 5 shipped "a too-new manifest aborts at all five readers"; from here the manifest
+    **reader** warns and rebuilds while the **writer** refuses. What survives unchanged is the
+    structural half: a schema outcome is never reported as an unreadable manifest. Per-artifact
+    metadata still aborts at any role. Leaving Task 5's assertion in place would leave the suite
+    asserting the opposite of the design, which is the one place this spec's recurring
+    swept-some-places defect must not reach.
+  - _Requirements: R22.11, R22.12, R22.10, R22.4 (the Design A qualification), R9.5 (per-file rule).
+    Invariants: I32. Properties: P34, P36, **P35 and P11 as restated**. Acceptance: AC37 (all six
+    clauses), AC38 (b and c), **AC32 in its post-Task-22 form**. **Pathway impact: yes** -- the
+    manifest read route gains a reconstruction branch; update `dev/datom_pathways.md`._
 
 ---
 
@@ -1355,3 +1377,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-23 | **Scope filter for 0.1.1, and the five items it selects.** The filter: *does deferring it postpone the cost, or permanently exclude every install shipped meanwhile?* Five items only ever help builds that already contain them -- allowlist hashing, carry-unknown-fields, the writer refusals, the floor's reading half, and the rebuild -- so deferring any one strands every 0.1.1 install forever. Everything else from this review round (bump rules, the schema history table, policy prose, the floor's tooling) lands later without stranding anyone. **If 0.1.1 gets crowded, those slip; these five do not.** #101 pulled into 0.1.1 on exactly this basis. Appended as Phase E rather than inserted, to avoid a third renumber; execution order is stated in the phase preamble and in the state block, because appended does **not** mean last. | tasks.md Phase E |
 | 2026-08-23 | **The write-path entry sequence is fixed in one place** (design 10.7): fetch, floor check, read-and-schema-check-then-chain, unreachable-shape check, vocabulary check, proceed. All of it directly after the `datom_conn` class check and **above** the two routing returns at `R/read_write.R:687` and `R/read_write.R:691`, because `.datom_sync_data_metadata()` mirrors the whole manifest to storage without ever reaching the manifest-writing step. All six steps precede any hashing, any local file write, and any commit, so a refusal leaves no partial state -- the spec's own argument being that aborting mid-pipeline leaves a half-finished write, which is worse than the disagreement prevented. The step-7 pull inside `.datom_git_push()` stays as the backstop for the genuine race (a floor raised between entry check and push). | I34, R22.10, R23.4, design.md 10.7, Task 21 |
 | 2026-08-23 | **Enforcement begins at 0.1.1; 0.1.0 writers cannot be stopped, and the spec now says so.** 0.1.0 has no schema check, no vocabulary check and no floor read, and none can be added to a released build. Previous wording ("an older build writing into a newer repo") did not separate the population that can be stopped from the one that cannot. For 0.1.0 the remedy is a **NEWS entry, not engineering**: the only lever that would make it fail loudly -- relocating the manifest so its existing "could not read manifest" abort fires -- costs a storage-layout change, a `datom_validate()` change (`R/validate.R:236-238`) and two filenames carried forever, against an exposed population that is the team. | R23.7 |
+| 2026-08-23 | **(review) Design A had not been swept into the criteria, and it reached FIVE sites, not the three the review named.** Design A changed the manifest **reader's** response to a too-new version from abort to warn-and-rebuild. R22.11 and AC37b said so; **AC32** still asserted the abort "at all of them", **R22.4** still said a schema refusal is "thrown" unqualified, and -- found while checking those two -- **P35** stated that no handler may convert the abort into a warning, which forbade the exact remedy Design A adopts, while **P11** claimed a below-current reader aborts at both entry points. Two of the five are a **property** and an **acceptance criterion**, which is the worst place for a stale mechanism: the suite would have asserted the opposite of the design. **The fix is a scoping, not a reversal** -- refuse-newer still holds absolutely for per-artifact metadata at any role and for the manifest on the writer path. What P35 and R22.4 were really protecting is restated as the thing that survives: **a schema outcome is never reported as an unreadable manifest**, whether it aborts or takes its own deliberate path. This is the spec's recurring swept-some-places defect, on its sixth appearance, and the count went up again on inspection -- the review found three, a re-derivation found five. | AC32, R22.4, P35, P11, Tasks 5 + 22 |
+| 2026-08-23 | **AC32 is deliberately recorded as true in two forms rather than reworded once.** Task 5 ships the abort at all five readers and claims AC32; Task 22 replaces the manifest reader's half with warn-and-rebuild. Rather than back-date the criterion, both forms are stated with the task boundary that separates them, Task 5's citation says "in its Task 5 form", and Task 22 explicitly **restates** AC32 and P35 the way Task 6 restates P10. Task 5 also carries an instruction not to bury the abort assertion in a loop over the five readers, because one of the five stops aborting later -- a loop is exactly what makes that amendment easy to miss. | AC32, P35, Task 5, Task 22 |
+| 2026-08-23 | **(review) the vocabulary check had no per-artifact document in hand where it was placed, and the resolution is a third option neither side had proposed.** Verified: `datom_write()` does not touch stored artifact metadata until pipeline step 4, inside `.datom_has_changes()` (`R/read_write.R:334-343`), while the check sits at entry step 5 -- so as written it could only ever cover the manifest, and the likely silent outcome was an implementer skipping the artifact half because nothing was at hand. That would remove the check from the document that is **never rebuildable** and where identity lives. The two options offered were an extra storage GET at entry (a second read of an object `.datom_has_changes()` reads anyway, and N reads on the mirror-everything route) or moving the artifact half down to pipeline step 4 (still pre-mutation, but it makes "before any hashing" false for one check). **Chosen instead: read the CLONE's copies** -- all three documents exist as local files (`{conn$path}/.datom/manifest.json`, `{conn$path}/{name}/metadata.json`, `R/read_write.R:463-469`), so it is a file read with no round trip, it works on every route including the one with no single artifact name, and it targets the copy a pull from a newer collaborator actually lands in. Sound because git is written before storage (I5), so storage cannot legitimately hold a newer document than the clone; if it does, that is drift and `datom_validate()` owns it. AC35 gains clause (e) because an implementation checking only the manifest passes every other clause. | R23.1a, AC35 (e), design.md 10.7, Task 21 |

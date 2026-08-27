@@ -839,9 +839,18 @@ reaching the manifest-writing step, so anything placed after the router misses i
      -> schema check, refuse newer                    (R22.10, before the chain)
      -> run the upgrade chain in memory
 4. expected key still absent after the chain?         -> refuse (R23.4)
-5. vocabulary check on the documents to be written    -> refuse if unclassifiable (R23.1)
+5. vocabulary check on the CLONE's copies of those      -> refuse if unclassifiable (R23.1, R23.1a)
+   documents (local file reads, no network)
 6. proceed
 ```
+
+**Step 5 reads the clone, not storage, and that is load-bearing.** The sequence has the manifest in
+hand by step 3, but it does **not** have per-artifact metadata: `datom_write()` does not touch the
+stored copy until pipeline step 4, inside `.datom_has_changes()`. Reading the clone's
+`{name}/metadata.json` closes that gap with a local file read instead of a storage round trip, works
+for the mirror-everything route where there is no single artifact name, and targets the copy a pull
+from a newer collaborator actually lands in. Full argument and the two rejected alternatives are in
+R23.1a.
 
 All six happen **before any hashing, any local file write, and any commit**, so a refusal leaves no
 partial state. That placement is the point: the spec's own argument is that aborting mid-pipeline
@@ -1084,8 +1093,8 @@ Tagged so tests can reference them, following the #72 spec's convention.
 | **P36** | **Identity ignores what it does not name.** Adding any field to a metadata document leaves every existing `metadata_sha` unchanged, and two documents differing only in fields outside the identity list hash equal (AC33). The converse is what the classification test defends: no field a builder can emit is left unclassified, so identity cannot silently stop responding to real content. |
 | **P37** | **The upgrade direction always works.** For any document written by an older build, a newer build reads it, upgrades it, and writes it without refusing -- because a newer build's vocabulary is a superset of every older one's and the chain can reach the current shape (R23.2a, R23.4). No sequence of releases can produce a repo that the current build can read but not write, unless a floor deliberately says so. |
 | **P38** | **Information is never destroyed by a build that does not understand it.** A field a build cannot classify survives that build's write unchanged, at every level it can appear (R23.8, AC34). |
-| **P35** | **A schema refusal cannot be softened by a caller's error handling.** For every manifest reader, an unsupported version aborts with the upgrade message while an ordinary IO failure keeps that caller's existing policy -- because the shared reader returns the second and throws the first (R22.4, AC32). No arrangement of caller-side handlers can convert the abort into a warning or reword it. |
-| **P11** | A v1 reader against a v2 repo aborts with the upgrade message at **both** entry points. |
+| **P35** | **A schema outcome is never absorbed into a caller's IO handling.** For every manifest reader, an unsupported version produces its own deliberate outcome while an ordinary IO failure keeps that caller's existing policy -- because the shared reader **returns** the second and does not route the first through it (R22.4, AC32). No arrangement of caller-side handlers can reword it as "could not read manifest". **Restated 2026-08-23 by Design A; the earlier wording is superseded**: it said the reader *aborts* and that no handler may convert the abort into a warning, which forbade the very remedy Design A adopts -- for a **manifest reader** the outcome is now warn-and-rebuild (R22.11). The invariant was never the abort; it was that the schema outcome is not disguised as an IO failure. The abort itself still holds for per-artifact metadata at any role, and for the manifest on the writer path. |
+| **P11** | A reader whose supported schema is below a document's declared version is **stopped, not degraded**, at both entry points -- with the manifest's stop being warn-and-rebuild once Task 22 exists (R22.11) and the per-artifact metadata stop being an abort, always. **Scoped 2026-08-23**: the earlier wording said a v1 reader aborts at both entry points, which is vacuous for the only real v1 reader (0.1.0 has no check to fire -- AC7's mechanism note already says so) and wrong for any future build pinned below current, which warns and rebuilds on the manifest. The per-artifact half is the half that is testable and absolute. |
 | **P12** | The in-package sv1 implementation and `dev/datom_sv1_reference.R` agree on every golden, on x86_64 and arm64. |
 | **P13** | Writing a set never mutates any member's metadata, history, or manifest entry. |
 | **P14** | `datom_validate()` reports `ok` for a healthy set and a non-`ok` status naming the specific defect for a missing payload vs an unresolvable member (distinguishable, not merged). |

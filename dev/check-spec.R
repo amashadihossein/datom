@@ -257,7 +257,15 @@ retired <- c(
   "order is curatorial",
   "duplication \\*is\\* identity",
   "member order different",
-  "member order.{0,20}differ"
+  "member order.{0,20}differ",
+  # Retired 2026-08-23 by Design A: a too-new MANIFEST makes a reader warn and
+  # rebuild (R22.11), it does not abort. The old wording survived in AC32, R22.4,
+  # P35 and P11 -- two of them a criterion and a property, i.e. the suite would
+  # have asserted the opposite of the design. Phrases kept narrow on purpose:
+  # "aborts at all five readers" is a LIVE statement of Task 5's form and must
+  # not be caught.
+  "aborts with the upgrade message at \\*\\*all\\*\\*",
+  "convert the abort into a warning"
 )
 # Deliberately NOT listed: "manifest$tables". The phrase is load-bearing in the
 # rename requirement itself ("manifest$tables becomes manifest$artifacts") and in
