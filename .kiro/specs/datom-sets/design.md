@@ -835,8 +835,9 @@ reaching the manifest-writing step, so anything placed after the router misses i
 ```
 1. fetch (cheap, no merge) to refresh upstream refs
 2. floor check against project.yaml on the conn      -> refuse if below (R23.3)
-3. read the manifest through the one reader
-     -> schema check, refuse newer                    (R22.10, before the chain)
+3. read the CLONE's manifest through the one reader     (R23.1a -- scope is the
+     -> schema check, refuse newer                       clone, not storage)
+        (R22.10, before the chain)
      -> run the upgrade chain in memory
 4. expected key still absent after the chain?         -> refuse (R23.4)
 5. vocabulary check on the CLONE's copies of those      -> refuse if unclassifiable (R23.1, R23.1a)
@@ -844,13 +845,18 @@ reaching the manifest-writing step, so anything placed after the router misses i
 6. proceed
 ```
 
-**Step 5 reads the clone, not storage, and that is load-bearing.** The sequence has the manifest in
-hand by step 3, but it does **not** have per-artifact metadata: `datom_write()` does not touch the
-stored copy until pipeline step 4, inside `.datom_has_changes()`. Reading the clone's
-`{name}/metadata.json` closes that gap with a local file read instead of a storage round trip, works
-for the mirror-everything route where there is no single artifact name, and targets the copy a pull
-from a newer collaborator actually lands in. Full argument and the two rejected alternatives are in
-R23.1a.
+**Every read in this sequence is the clone's copy, at step 3 and at step 5, and both need saying for
+opposite reasons** (R23.1a). At step 5 the sequence does not otherwise hold the per-artifact document
+at all -- `datom_write()` does not touch the stored copy until pipeline step 4, inside
+`.datom_has_changes()` -- so an unstated scope means only the manifest gets checked. At step 3 the
+unstated default pulls the other way: the too-new-repo framing reads as storage-flavoured and every
+check Task 4 wired was, so silence there lands on storage, which adds a network read to every write and
+inspects the wrong copy.
+
+The clone is correct at both for the same four reasons: it is the document the write mutates
+(`R/sync.R:715`), it is a file read rather than a round trip, it is where a pull from a newer
+collaborator lands, and storage cannot legitimately be ahead of git (I5). Full argument and the two
+rejected alternatives for step 5 are in R23.1a.
 
 All six happen **before any hashing, any local file write, and any commit**, so a refusal leaves no
 partial state. That placement is the point: the spec's own argument is that aborting mid-pipeline
