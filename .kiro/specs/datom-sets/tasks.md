@@ -1063,6 +1063,31 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - Filed as [#104](https://github.com/amashadihossein/datom/issues/104); it is a bug fix, not spec
     work, and it is reachable in ordinary use (fetch once on a good connection, go offline, run the
     sync route).
+  - **The fix**, restated here so this task does not depend on the issue being reachable: capture the
+    fetch outcome and return from the function proper.
+
+    ```r
+    fetched <- tryCatch({
+      git2r::fetch(repo, name = remote_name, credentials = cred)
+      TRUE
+    }, error = function(e) {
+      cli::cli_alert_warning("Could not fetch from remote: {conditionMessage(e)}")
+      FALSE
+    })
+    if (!fetched) return(invisible(TRUE))
+    ```
+
+  - **How to test it -- no git2r mocking required.** Tests go in `tests/testthat/test-utils-git.R`,
+    in the existing `.datom_check_git_current()` block. `create_repo_with_remote()` gives
+    `info$work_path` and `info$bare_path`, and the neighbouring "aborts when behind remote" test
+    already builds most of the scenario. Sequence for the failing case: build the repo, have a second
+    clone push a commit, fetch once so the remote-tracking ref is **cached ahead**, then break the
+    remote (point its URL at a nonexistent path, or remove `info$bare_path`), then call the function.
+    Today it warns and then **aborts** on the stale-but-ahead refs; after the fix it warns and
+    returns. Add the companion case too -- fetch fails with cached refs **level** -- since that one
+    passes today by accident and must keep passing for the right reason.
+  - Keep the healthy-connection tests in that block green unchanged: they are what proves the fix did
+    not turn the guard off.
   - _Requirements: none (defect fix). Acceptance: a repo whose fetch fails **warns and proceeds**,
     including when cached upstream refs are ahead of local -- the case that aborts today. Assert both
     the warning and the absence of an abort. No pathway impact -- record explicitly._
