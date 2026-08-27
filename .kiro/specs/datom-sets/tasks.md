@@ -8,21 +8,24 @@ body alone -- is the current truth.
 review and `main` is frozen (see `dev/README.md` "Branching During CRAN Submission"). Draft PR
 [#97](https://github.com/amashadihossein/datom/pull/97) is open and accumulates the task commits.
 **Test baseline**: 2460 at spec start -> 2482 after Task 1 -> 2572 after Task 2 -> 2612 after
-Task 3 -> **2660 after Task 4**. Report the count in every commit message; it must never drop.
+Task 3 -> 2660 after Task 4 -> **2664 after Task 18**. Report the count in every commit message; it
+must never drop.
 
 ---
 
 ## Where things stand
 
 **Done**: Task 0 (spec), **Task 1** (stale docstring sweep + relative-key helpers), **Task 2**
-(`datom-sv1`), **Task 3** (`datom_storage_read_json()` + the relative-key validator) and **Task 4**
-(the reader-side `schema_version` gate), plus three things that are not tasks: the prerequisite #89
+(`datom-sv1`), **Task 3** (`datom_storage_read_json()` + the relative-key validator), **Task 4**
+(the reader-side `schema_version` gate) and **Task 18** (the `.datom_check_git_current()`
+fetch-failure defect, #104), plus three things that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
 this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 `.kiro/steering/communication.md`.
 
-**Next**: **Task 18, then Task 19** (Phase E, appended but running early -- read Phase E's preamble
-for the order). Then **Task 5 -- one manifest reader and one skeleton builder**, contract-neutral: no
+**Next**: **Task 19** (allowlist identity hashing, #100 -- Phase E, appended but running early; read
+Phase E's preamble for the order). Then **Task 5 -- one manifest reader and one skeleton builder**,
+contract-neutral: no
 on-disk change, no schema bump, the key is still `tables` when it ends. It exists so that Task 6 --
 the `manifest$tables` -> `manifest$artifacts` rename -- has **one** place to put the old-format
 upgrade instead of five.
@@ -1053,11 +1056,12 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
 
 **The aim, stated so it can be checked**: 0.1.1 is the **last** release that needs a transition plan.
 
-- [ ] **18. Fix `.datom_check_git_current()`'s fetch-failure return**
-  - `return(invisible(TRUE))` sits inside the `tryCatch` error handler (`R/utils-git.R:422-429`), so
-    it returns from the **handler**, not from the function. After a failed fetch, execution continues
-    and compares `HEAD` against **stale cached** upstream refs. An offline user whose cached upstream
-    is ahead gets a hard abort where the comment says "network errors should not block offline work".
+- [x] **18. Fix `.datom_check_git_current()`'s fetch-failure return** &nbsp; **[DONE 2026-08-26]**
+  - `return(invisible(TRUE))` sat inside the `tryCatch` error handler (`R/utils-git.R:435-448`
+    post-fix; it was `422-429` when the defect was recorded), so
+    it returned from the **handler**, not from the function. After a failed fetch, execution continued
+    and compared `HEAD` against **stale cached** upstream refs. An offline user whose cached upstream
+    is ahead got a hard abort where the comment says "network errors should not block offline work".
   - A live defect independent of this spec, and Task 21's entry sequence is proposed to sit on this
     function -- so it is fixed first and on its own.
   - Filed as [#104](https://github.com/amashadihossein/datom/issues/104); it is a bug fix, not spec
@@ -1091,6 +1095,32 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - _Requirements: none (defect fix). Acceptance: a repo whose fetch fails **warns and proceeds**,
     including when cached upstream refs are ahead of local -- the case that aborts today. Assert both
     the warning and the absence of an abort. No pathway impact -- record explicitly._
+  - **DONE 2026-08-26.** The fix is the captured-outcome form above, with the reason it is written
+    that way in a comment at the site so the next reader does not "tidy" the `return()` back inside
+    the handler. Two tests added to the existing `.datom_check_git_current()` block in
+    `tests/testthat/test-utils-git.R`, both no-mock as specified. tests: **2664** (+4),
+    FAIL 0 / WARN 0 / SKIP 0. `Rscript dev/check-spec.R` all nine checks pass. No pathway impact --
+    the write route is unchanged; this restores the offline tolerance the route already claimed.
+  - **The ahead-case test was proven non-vacuous before being trusted**, per the rule this spec
+    applies to its own gates: stashing the `R/` change and re-running the file makes it **error** on
+    the stale-ahead abort, and restoring the change makes it pass. The level-case test passes either
+    way by design -- it exists because that case passes today for the wrong reason (nothing
+    unfavourable to compare against, rather than the failure being handled), so it pins the accident
+    as deliberate.
+  - **No git2r mocking, and the mechanism is worth knowing**: `git2r::remote_set_url()` pointed at a
+    nonexistent path makes `fetch()` raise for real ("unsupported URL protocol"), so the offline
+    condition is genuine rather than stubbed. The neighbouring "tolerates network errors gracefully"
+    test still stubs `git2r::fetch` and still has **no upstream branch**, which is why it never
+    caught this: with no upstream the function returns before the comparison, so it passed on the
+    defect. Left as-is -- it covers the no-upstream path.
+  - **The warning is a cli alert, so it is a MESSAGE, not a condition of class `warning`.** Assert it
+    with `expect_message()`; `expect_warning()` fails and reads as the fix not warning at all.
+  - **This narrows a live safety check, deliberately.** An offline write now proceeds without knowing
+    it is behind. The backstop is `.datom_git_push()`, which pulls and aborts if the push is rejected
+    (`R/utils-git.R:267-277`, with the storage steps after it), so a write cannot land on storage from
+    a stale base -- the same argument design.md 10.7 already makes for warn-and-proceed at the door.
+    Recorded in the function's roxygen too, since "warns and returns TRUE" looks like a swallowed
+    error to anyone reading the guard cold.
 
 - [ ] **19. Allowlist identity hashing (#100) + the classification test**
   - `.datom_compute_metadata_sha()` (`R/utils-sha.R:410-420`) selects fields by **exclusion**, which
@@ -1409,4 +1439,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-23 | **(review) the vocabulary check had no per-artifact document in hand where it was placed, and the resolution is a third option neither side had proposed.** Verified: `datom_write()` does not touch stored artifact metadata until pipeline step 4, inside `.datom_has_changes()` (`R/read_write.R:334-343`), while the check sits at entry step 5 -- so as written it could only ever cover the manifest, and the likely silent outcome was an implementer skipping the artifact half because nothing was at hand. That would remove the check from the document that is **never rebuildable** and where identity lives. The two options offered were an extra storage GET at entry (a second read of an object `.datom_has_changes()` reads anyway, and N reads on the mirror-everything route) or moving the artifact half down to pipeline step 4 (still pre-mutation, but it makes "before any hashing" false for one check). **Chosen instead: read the CLONE's copies** -- all three documents exist as local files (`{conn$path}/.datom/manifest.json`, `{conn$path}/{name}/metadata.json`, `R/read_write.R:463-469`), so it is a file read with no round trip, it works on every route including the one with no single artifact name, and it targets the copy a pull from a newer collaborator actually lands in. Sound because git is written before storage (I5), so storage cannot legitimately hold a newer document than the clone; if it does, that is drift and `datom_validate()` owns it. AC35 gains clause (e) because an implementation checking only the manifest passes every other clause. | R23.1a, AC35 (e), design.md 10.7, Task 21 |
 | 2026-08-23 | **(review) the write-entry sequence read the manifest without naming WHICH manifest -- the sibling of the gap closed one round earlier.** `.datom_read_manifest()` takes a scope, and step 3 of design 10.7 did not supply one. **It is the clone**, and R23.1a now governs the whole sequence rather than only its vocabulary step: the manifest at step 3 and all three documents at step 5. The two steps needed saying for **opposite** reasons, which is why one sentence would not have covered both. At step 5 the sequence does not hold the per-artifact document at all (`datom_write()` reaches stored artifact metadata only at pipeline step 4, `R/read_write.R:334-343`), so silence means an implementer checks the manifest alone. At step 3 the unstated default pulls the other way -- the too-new-repo framing reads as storage-flavoured and every check Task 4 wired was, so silence lands on **storage**, adding a network read to every write and inspecting the wrong copy. The clone is right at both for the same four reasons: it is the document the write mutates (`R/sync.R:715`), it is a file read rather than a round trip, it is where a pull from a newer collaborator lands, and storage cannot legitimately be ahead of git (I5). | R23.1a, design.md 10.7, Task 21 |
 | 2026-08-23 | **(review) AC32 collapsed to ONE invariant form; accepted, with one part of the proposal declined.** The insight had been applied to P35 and not to the criterion: the invariant was never the abort, it was that a schema outcome is not disguised as an IO failure. AC32 now asserts only that the outcome is **its own** -- not reworded as "could not read manifest", not downgraded to a storage warning -- and says nothing about *which* outcome, which is AC37b's job and differs by role and by task. So it holds unchanged across the Task 5 / Task 22 boundary. Removed with it: the two-forms record, Task 5's "in its Task 5 form" citation, and Task 22's restatement of AC32. **Declined**: dropping the don't-bury-it-in-a-loop instruction. Its justification never depended on AC32's wording -- the **behaviour** still changes at Task 22, so the assertion in `test-query.R` still has to be found and amended, and a loop over the five readers is exactly what makes that easy to miss. Recast as an instruction about test shape rather than about the criterion, and Task 22 now says it amends the test rather than restating the criterion. | AC32, Task 5, Task 22 |
+| 2026-08-26 | **(implementation) Task 18 narrows a live safety check, and that is the accepted trade rather than an oversight.** With the fetch-failure return fixed, an offline write proceeds **without knowing whether it is behind** -- the cached upstream refs are deliberately not compared, because they can be arbitrarily stale and acting on them is what produced the abort. Accepted because the backstop is real: `.datom_git_push()` pulls and aborts if the push is rejected (`R/utils-git.R:267-277`) and the storage steps come after it, so a write cannot land on storage from a stale base. Recorded in the function's roxygen as well as here, since a guard that warns and returns `TRUE` reads as a swallowed error to anyone meeting it cold. Same argument design.md 10.7 already makes for warn-and-proceed at the write entry. | Task 18, #104, design.md 10.7 |
+| 2026-08-26 | **(implementation) the defect was invisible to the test that existed for exactly this path.** `.datom_check_git_current tolerates network errors gracefully` stubs `git2r::fetch` to raise -- but its fixture has **no upstream branch**, so the function returns before reaching the comparison and the test passed on the defect. Both new tests therefore establish an upstream first, and the ahead-case one was **proven to fail** against the unfixed function before being trusted (stash the `R/` change, re-run, it errors on the stale-ahead abort). The level-case test passes either way by design: it pins an accident (nothing unfavourable to compare against) as deliberate. Also recorded in `dev/engineering-notes.md`: the handler-`return()` trap is a general R gotcha, and a `cli_alert_warning()` needs `expect_message()`, not `expect_warning()`. | Task 18, `dev/engineering-notes.md` |
 | 2026-08-23 | **(review footnote, pre-existing) a retired phrase was suppressing on an incidental word, and it is now pinned to an intentional one.** The `tasks.md` occurrence of "convert the abort into a warning" sat inside a record whose nearest marker was **"reversal"**, matching via the `revers` stem -- the right outcome by accident, and fragile, because `revers` is ordinary vocabulary in this spec and could mask a genuine hit later. The record now carries an explicit "superseded". Verified by re-running the gate's window test with `revers` removed from `MARKER_RE`: still suppressed. `MARKER_RE` itself is left alone -- the maintenance lesson already in `dev/check-spec.R` is that broadening it toward ordinary vocabulary is what made the check nearly vacuous once, and `revers` is close to that line. Worth revisiting the next time that list is touched. | dev/check-spec.R |

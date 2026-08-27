@@ -22,5 +22,12 @@ telling the developer to pull first.
 }
 \details{
 Does NOT auto-pull - lets the developer decide how to resolve.
+
+If the fetch fails (offline, unreachable remote), this warns and returns
+\code{TRUE} without comparing anything: the cached remote-tracking refs may be
+arbitrarily stale, so acting on them would abort an offline developer for
+being behind a remote they cannot reach. The backstop is
+\code{.datom_git_push()}, which pulls and aborts if the push is rejected, so a
+write cannot land on storage from a stale base.
 }
 \keyword{internal}

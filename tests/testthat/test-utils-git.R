@@ -798,6 +798,51 @@ test_that(".datom_check_git_current tolerates network errors gracefully", {
   expect_no_error(.datom_check_git_current(info$path))
 })
 
+test_that(".datom_check_git_current proceeds when fetch fails and cached refs are ahead", {
+  info <- create_repo_with_remote()
+
+  # Another user pushes, so the remote genuinely moves ahead
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(info$bare_path, other_dir, progress = FALSE)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+  writeLines("upstream", fs::path(other_dir, "upstream.txt"))
+  git2r::add(other_repo, "upstream.txt")
+  git2r::commit(other_repo, "Upstream commit")
+  git2r::push(other_repo, name = "origin",
+              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
+
+  # Fetch once while the remote is reachable, so the remote-tracking ref is
+  # CACHED AHEAD of local HEAD
+  git2r::fetch(info$work_repo, name = "origin")
+
+  # Now the remote becomes unreachable (offline). No mocking: the URL points at
+  # a path that does not exist, so git2r::fetch() raises for real.
+  git2r::remote_set_url(info$work_repo, "origin",
+                        fs::path(withr::local_tempdir(), "unreachable"))
+
+  # Warns about the fetch, then returns -- it must NOT abort on the stale
+  # cached refs, which is what an offline developer would otherwise hit
+  expect_message(
+    expect_true(.datom_check_git_current(info$work_path)),
+    "Could not fetch from remote"
+  )
+})
+
+test_that(".datom_check_git_current proceeds when fetch fails and cached refs are level", {
+  info <- create_repo_with_remote()
+
+  # Upstream exists and is level with local; only the fetch is broken
+  git2r::remote_set_url(info$work_repo, "origin",
+                        fs::path(withr::local_tempdir(), "unreachable"))
+
+  # Passes today for the wrong reason (nothing unfavourable to compare against);
+  # this pins it as deliberate rather than accidental
+  expect_message(
+    expect_true(.datom_check_git_current(info$work_path)),
+    "Could not fetch from remote"
+  )
+})
+
 test_that(".datom_check_git_current aborts on non-git directory", {
   dir <- withr::local_tempdir()
   expect_error(.datom_check_git_current(dir), "Not a git repository")

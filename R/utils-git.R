@@ -396,6 +396,13 @@
 #'
 #' Does NOT auto-pull - lets the developer decide how to resolve.
 #'
+#' If the fetch fails (offline, unreachable remote), this warns and returns
+#' `TRUE` without comparing anything: the cached remote-tracking refs may be
+#' arbitrarily stale, so acting on them would abort an offline developer for
+#' being behind a remote they cannot reach. The backstop is
+#' `.datom_git_push()`, which pulls and aborts if the push is rejected, so a
+#' write cannot land on storage from a stale base.
+#'
 #' @param path Repository path.
 #' @param pat GitHub personal access token. Passed to
 #'   `.datom_git_credentials()`. NULL means unauthenticated.
@@ -419,14 +426,26 @@
   cred <- .datom_git_credentials(remote_url, pat = pat)
 
   # Fetch to update remote refs (cheap -- no merge)
-  tryCatch(
-    git2r::fetch(repo, name = remote_name, credentials = cred),
+  #
+  # The fetch outcome is captured and acted on OUTSIDE the handler. A bare
+  # `return()` inside the error function returns from the handler, not from
+  # this function, so execution would continue and compare HEAD against
+  # whatever the last successful fetch cached -- aborting an offline user for
+  # being "behind" a remote they cannot reach.
+  fetched <- tryCatch(
+    {
+      git2r::fetch(repo, name = remote_name, credentials = cred)
+      TRUE
+    },
     error = function(e) {
       # Network errors should not block offline work
       cli::cli_alert_warning("Could not fetch from remote: {conditionMessage(e)}")
-      return(invisible(TRUE))
+      FALSE
     }
   )
+
+  # Cached upstream refs may be arbitrarily stale, so they are not compared
+  if (!fetched) return(invisible(TRUE))
 
   # Check if upstream branch exists
   upstream_ref <- tryCatch(

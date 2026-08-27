@@ -65,6 +65,20 @@ commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
 
 ## Gotchas
 
+- **`return()` inside a `tryCatch` handler returns from the HANDLER, not the enclosing function --
+  and the code after the `tryCatch` still runs.** This shipped as a live defect in
+  `.datom_check_git_current()` (#104, fixed 2026-08-26): the fetch-failure handler warned and
+  `return(invisible(TRUE))`d, which looked like "give up and pass" but only ended the handler, so
+  execution continued and compared `HEAD` against **stale cached** upstream refs -- aborting an
+  offline developer for being behind a remote they could not reach. It is silent because the warning
+  still prints, so the log looks exactly as intended. The shape that works: have the handler
+  **return a value**, then branch on it outside the `tryCatch`
+  (`fetched <- tryCatch({...; TRUE}, error = function(e) {...; FALSE}); if (!fetched) return(...)`).
+  Worth grepping for whenever a handler's body ends in `return()`.
+- **A `cli::cli_alert_warning()` is a MESSAGE, not a condition of class `warning`.** Test it with
+  `expect_message()`; `expect_warning()` fails and reads as "the code did not warn at all", sending
+  you after a nonexistent bug. Applies to every `cli_alert_*` -- only `cli::cli_warn()` signals a
+  real warning.
 - **cli pluralization**: `{?s}` requires a quantity reference immediately before it (e.g., `{length(x)} variable{?s}`). Without the quantity, cli throws a confusing error.
 - **git2r::default_signature()**: Fails on freshly `git2r::init()`'d repos that lack local config. Always call `git2r::config(repo, user.name = ..., user.email = ...)` after init.
 - **git2r::merge()**: Expects a string (branch name), not a branch object. Use `upstream_ref$name`.

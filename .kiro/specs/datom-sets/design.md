@@ -869,10 +869,11 @@ storage without a successful push (`.datom_git_push()` aborts on failure, `R/uti
 and the storage steps are 8-10), so an unverifiable floor at the door is caught there; the residual is
 narrow -- fetch fails, push succeeds.
 
-**Prerequisite defect.** `.datom_check_git_current()` returns from its fetch-failure *handler* rather
-than from the function (`R/utils-git.R:422-429`), so after a failed fetch it continues and compares
-HEAD against stale cached refs -- an offline user with stale-ahead refs gets a hard abort where the
-comment intends a warning. Fixed as its own change before anything sits on that function.
+**Prerequisite defect -- FIXED 2026-08-26 (Task 18).** `.datom_check_git_current()` returned from its
+fetch-failure *handler* rather than from the function, so after a failed fetch it continued and
+compared HEAD against stale cached refs -- an offline user with stale-ahead refs got a hard abort
+where the comment intends a warning. Fixed as its own change before anything sat on that function:
+the fetch outcome is now captured and acted on outside the handler (`R/utils-git.R:435-448`).
 
 **The failure-kind split is the load-bearing part** (R22.4). Task 4 found three readers wrapping
 their manifest read in a handler that softens failures, and a check placed inside one reworded the
