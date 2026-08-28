@@ -376,10 +376,22 @@
     )
 
     if (isTRUE(merge_result$conflicts)) {
+      # Do NOT tell the caller to pull -- the pull is what produced this.
+      # Conflicts here are almost always in datom's own generated JSON
+      # (`version_history.json`, `.datom/manifest.json`), which a re-run
+      # rebuilds from the data, so keeping the remote side is the safe
+      # resolution rather than a hand-merge of hashes.
       cli::cli_abort(c(
         "Merge conflict detected \u2014 manual resolution required.",
-        "i" = "Pull latest changes, resolve conflicts, and re-run.",
-        "i" = "Use {.code git status} to see conflicting files."
+        "i" = "See the conflicting files with {.code git status}.",
+        "i" = paste(
+          "For datom's own files ({.file version_history.json},",
+          "{.file .datom/manifest.json}), keep the remote version",
+          "({.code git checkout --theirs <file>}) and re-run your write --",
+          "it rebuilds your side from the data."
+        ),
+        "i" = "For your own files, resolve by hand, then commit and re-run.",
+        "i" = "Nothing has been written to storage, so no version is half-published."
       ))
     }
   }

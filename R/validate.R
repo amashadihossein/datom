@@ -80,7 +80,11 @@ datom_repository_check <- function(path) {
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param fix If `TRUE`, attempts to fix inconsistencies by syncing data-side
-#'   metadata (manifest + per-table metadata) to storage.
+#'   metadata (manifest + per-table metadata) to storage. This repairs metadata
+#'   documents only: a missing data payload (`data_missing_s3`) cannot be
+#'   restored from the clone, because the parquet bytes are never stored there.
+#'   Those tables are named in a warning and need [datom_write()] re-run with
+#'   the source data.
 #'
 #' @return A list with:
 #'   \describe{
@@ -168,11 +172,28 @@ datom_validate <- function(conn, fix = FALSE) {
   fixed <- FALSE
 
   if (!is_valid && isTRUE(fix)) {
+    # The repair syncs metadata documents only. A missing payload cannot be
+    # reconstructed from the clone -- the parquet bytes never existed there --
+    # so those findings survive the fix and must be named rather than implied
+    # by a second validate run.
+    unfixable <- .datom_validate_unfixable_tables(table_checks)
+
     cli::cli_alert_info("Attempting to fix by syncing metadata to S3...")
     tryCatch({
       .datom_sync_data_metadata(conn, .confirm = FALSE)
       fixed <- TRUE
-      cli::cli_alert_success("Fix applied. Re-run {.fn datom_validate} to verify.")
+      cli::cli_alert_success(
+        "Metadata synced. Re-run {.fn datom_validate} to verify."
+      )
+      if (length(unfixable) > 0L) {
+        cli::cli_alert_warning(
+          "Data still missing from storage for {length(unfixable)} table{?s}: {.val {unfixable}}."
+        )
+        cli::cli_bullets(c(
+          "i" = "Syncing metadata does not fix this -- the parquet bytes are not in the git clone.",
+          "i" = "Re-run {.fn datom_write} with the source data to upload them."
+        ))
+      }
     }, error = function(e) {
       cli::cli_alert_danger("Fix failed: {conditionMessage(e)}")
     })
@@ -184,6 +205,36 @@ datom_validate <- function(conn, fix = FALSE) {
     tables = table_checks,
     fixed = fixed
   ))
+}
+
+
+#' Findings the Metadata Sync Cannot Repair
+#'
+#' `fix = TRUE` syncs metadata documents from the git clone to storage. A
+#' missing payload (`data_missing_s3`) is outside that reach: the parquet bytes
+#' live only in storage and in whatever session serialized them, never in the
+#' clone. Naming those tables is what stops the fix from reading as complete.
+#'
+#' @param table_checks The per-table check data frame from
+#'   `.datom_validate_tables()`. Its name column is `table`, not `name`.
+#' @return Character vector of table names whose payload is missing from
+#'   storage. Empty when there are none.
+#' @noRd
+.datom_validate_unfixable_tables <- function(table_checks) {
+  if (is.null(table_checks) || nrow(table_checks) == 0L) return(character())
+
+  # Deliberately no is-the-column-there guard: a renamed column should error
+  # here rather than return an empty vector, which would silently reinstate the
+  # overclaiming "fix applied" this helper exists to prevent.
+  #
+  # Match whole tokens, never a substring: "metadata_missing_s3" CONTAINS
+  # "data_missing_s3", so a grepl() would report every metadata-only finding as
+  # unrepairable -- the opposite of true, since those are exactly what the sync
+  # does fix.
+  has_missing_data <- purrr::map_lgl(table_checks$status, function(status) {
+    "data_missing_s3" %in% trimws(strsplit(status, ",", fixed = TRUE)[[1L]])
+  })
+  as.character(table_checks$table[has_missing_data])
 }
 
 

@@ -608,6 +608,35 @@ test_that(".datom_git_pull aborts on merge conflict", {
   expect_error(.datom_git_pull(info$work_path), "conflict|merge", ignore.case = TRUE)
 })
 
+test_that(".datom_git_pull conflict message gives an actionable recourse", {
+  info <- create_repo_with_remote()
+
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(info$bare_path, other_dir, progress = FALSE)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+  writeLines("their version", fs::path(other_dir, "README.md"))
+  git2r::add(other_repo, "README.md")
+  git2r::commit(other_repo, "Their edit")
+  git2r::push(other_repo, name = "origin",
+              refspec = glue::glue("refs/heads/{git2r::repository_head(other_repo)$name}"))
+
+  writeLines("my conflicting version", fs::path(info$work_path, "README.md"))
+  git2r::add(info$work_repo, "README.md")
+  git2r::commit(info$work_repo, "My conflicting edit")
+
+  err <- tryCatch(.datom_git_pull(info$work_path), error = function(e) e)
+  msg <- paste(cli::ansi_strip(conditionMessage(err)), collapse = " ")
+
+  # Names the tool that shows the damage and the resolution for datom's own
+  # generated files, which is the case an operator actually hits
+  expect_match(msg, "git status")
+  expect_match(msg, "--theirs")
+  expect_match(msg, "version_history.json")
+
+  # Must NOT tell the caller to pull -- the pull is what produced this
+  expect_no_match(msg, "Pull latest changes")
+})
+
 test_that(".datom_git_pull aborts when no remote configured", {
   info <- create_test_repo()
 
