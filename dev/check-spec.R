@@ -254,6 +254,12 @@ retired <- c(
   "refuses datom-managed keys",
   "payload-shaped key",
   "first general-purpose write path",
+  # Task 19's AC33(a) anchoring was decided 2026-08-26. The old phrasing left the
+  # implementer to settle it, which is the "hanging recommendation" failure this
+  # spec's process notes keep flagging -- a decided item must not revert to
+  # advisory wording.
+  "Recommendation, not a decision",
+  "recommendation, not a decision",
   "order is curatorial",
   "duplication \\*is\\* identity",
   "member order different",
