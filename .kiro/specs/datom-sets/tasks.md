@@ -25,7 +25,11 @@ this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 `.kiro/steering/communication.md`.
 
 **Next**: **Task 19** (allowlist identity hashing, #100 -- Phase E, appended but running early; read
-Phase E's preamble for the order). Then **Task 5 -- one manifest reader and one skeleton builder**,
+Phase E's preamble for the order). **Its cold-start audit is done (2026-08-26) and it is startable,
+with one thing to settle first**: the pinned `metadata_sha` golden's fixture carries a `name` field
+that no builder emits, so a correct allowlist changes that hash even though no real identity moves.
+Task 19's body has the verification and a recommendation; settle it before editing
+`.datom_compute_metadata_sha()`, because the reflex fix destroys the evidence AC33(a) depends on. Then **Task 5 -- one manifest reader and one skeleton builder**,
 contract-neutral: no
 on-disk change, no schema bump, the key is still `tables` when it ends. It exists so that Task 6 --
 the `manifest$tables` -> `manifest$artifacts` rename -- has **one** place to put the old-format
@@ -84,7 +88,17 @@ code fix. The three places that hold it: `R/hashable-set.R` (implementation),
 constant. E1's discharge record and the four deltas it produced are in the Decisions log
 (2026-08-17); nothing about it is open.
 
-**Open with the owner**: nothing. Task 2 added three encoder refusals the spec did not spell out
+**Open with the owner**: one item, and it belongs to Task 19 -- how AC33(a) is anchored, given that
+the existing pinned golden's fixture is not a document any builder can produce (see the Next
+paragraph above and Task 19's body). Nothing else.
+
+**Also on this branch, outside the task list**: two operator-facing fixes that followed Task 18 (the
+merge-conflict message, and `datom_validate(fix = TRUE)` no longer claiming to repair a missing
+payload), plus [#105](https://github.com/amashadihossein/datom/issues/105) and a `dev/README.md`
+Backlog row capturing five deferred ideas for making a push-rejected write rarer and recoverable
+without git skill. Nothing there blocks Task 19.
+
+**Superseded note**: this slot previously read "nothing". Task 2 added three encoder refusals the spec did not spell out
 (named list in a value position; unexpected field at the payload root or in a member record) -- all
 three prevent content sitting outside identity, none changes a golden, and all are logged below
 (2026-08-18) rather than left to be rediscovered.
@@ -729,7 +743,20 @@ own; landing it first is what makes Task 6's failure loud.
     are omitted, not nulled.
   - `document_sha` persisted in `version_history.json` entries from day one, mirroring the
     `parquet_sha` conditional-add in `.datom_write_metadata_local()`.
-  - _Requirements: R1, R7.1, R7.2. Invariants: I1, I12. Acceptance: AC8 (metadata half)._
+  - **CLASSIFY EVERY FIELD THIS TASK ADDS -- Task 19 landed the allowlist, so an unclassified field
+    is silently outside identity.** `kind` is **semantic** and goes in the **hash list**; every field
+    `.datom_build_set_metadata()` emits needs the same decision, one by one, against design.md
+    section 4's matrix. Left unclassified, `kind` stops affecting `metadata_sha` and a table and a
+    set can share a version identity -- which the 2026-08-23 decision closed off deliberately, and
+    which no other test in this task would catch. Task 19's classification test is written to
+    enumerate what the builders emit rather than hardcode names, so it **fails** until each new field
+    is classified; extend it to cover the set builder. `document_sha` needs no entry here -- it lands
+    in `version_history.json`, which `metadata_sha` does not hash -- but it is already on the
+    excluded list from Task 4, so leave it there.
+  - _Requirements: R1, R7.1, R7.2, R9.5 (classify each added field). Invariants: I1, I12.
+    Properties: P36 (the classification half -- this is the first task to add a field after the
+    allowlist exists). Acceptance: AC8 (metadata half), AC33 (d) **extended to the set builder** --
+    Task 19 could only exercise the table half, since this task is what creates the set builder._
 
 - [ ] **8. `datom_member()` + validator + self-reference check**
   - `datom_member(conn, name, version)` mirroring `datom_parent()` (`R/lineage.R`): validate,
@@ -1139,6 +1166,43 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     as "older writers keep working"; after the vocabulary decision (Task 21) they do not, by design.
     What it buys now: **readers compute correct identities, and a repo does not accumulate spurious
     versions**.
+  - **THE CLASSIFICATION TEST MUST DERIVE THE FIELD SET FROM THE BUILDERS, NOT HARDCODE IT.** This is
+    the difference between a forcing function and a decoration. AC33(d) names table **and** set
+    fields, but the set builder does not exist yet -- Task 19 runs before Task 7 by design -- so at
+    this point only the table half is exercisable. A hardcoded list of today's field names would
+    therefore pass forever and never notice Task 7 adding `kind`. Instead enumerate what a builder
+    actually emits (call `.datom_build_metadata()` with every optional argument supplied and take
+    `names()`), then assert each name is in the hash list or on the documented excluded list. Written
+    that way the test **fails the moment Task 7 touches the builder**, which is what makes the
+    forward obligation self-enforcing rather than remembered.
+  - **The field inventory is fully discoverable from one function, verified 2026-08-26.** Every
+    top-level key of a metadata document is assigned inside `.datom_build_metadata()`
+    (`R/read_write.R:302-311` for the five conditional ones) with exactly one exception,
+    `meta$parquet_sha` at `R/read_write.R:786`, which is volatile. Nothing else in `R/` writes a
+    top-level metadata key. So seeding the allowlist does not require a hunt: the semantic set today
+    is `data_sha`, `hash_algo`, `table_type`, `nrow`, `ncol`, `colnames` always, plus
+    `original_file_sha`, `parents`, `source_lineage`, `custom` when present. Recorded because an
+    allowlist seeded from an incomplete inventory silently drops content out of identity, and the
+    grep that proves the inventory complete is cheaper to record than to redo.
+  - **AC33(a)'s pinned value exists but its fixture is NOT a realistic document -- decide this before
+    writing code.** The golden `59f1f1d936c5d65472733a924493ce2362255d442ebea6d41f7c3c9e7069d326`
+    (`tests/testthat/test-utils-sha.R:899-904`) hashes
+    `list(data_sha, name, nrow, ncol, table_type, hash_algo)` -- and **`name` is a field no builder
+    emits.** Verified: `metadata.json` is written as exactly the object `.datom_build_metadata()`
+    produced (`R/read_write.R`, `write_json(metadata, ...)` inside
+    `.datom_write_metadata_local()`), and that object has no `name` key; the `name` at
+    `R/read_write.R:774` and `R/read_write.R:834` is `datom_write()`'s **return value**, not the
+    document.
+    So a builder-derived allowlist will not contain `name`, this fixture's hash **will** change, and
+    the golden test fails -- while **no real identity moves at all**, because no stored document ever
+    carried the field. Hitting that on day one and reflexively re-pinning the constant would destroy
+    the only pinned evidence AC33(a) rests on, so the resolution is a decision, not a fix.
+    **Recommendation**: before touching `.datom_compute_metadata_sha()`, add a **realistic** pinned
+    fixture -- a document built by `.datom_build_metadata()` itself -- and record its hash under
+    *today's* code. That gives a genuine before/after anchor that a correct allowlist preserves
+    byte-for-byte. The `name`-bearing golden then changes for a defensible reason (it exercises a
+    shape that cannot occur) rather than an unexamined one, and the new pin is what AC33(a) actually
+    wanted. **Do not skip straight to editing the constant.**
   - _Requirements: R9.5, R23.1 (the excluded list is the vocabulary's other half). Properties: P36.
     Acceptance: AC33 (all four clauses). The cv1 identity-contract suite
     (`tests/testthat/test-identity-contract.R`) must stay green, and the pinned-value assertion in
@@ -1443,5 +1507,8 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-26 | **(implementation) Task 18 narrows a live safety check, and that is the accepted trade rather than an oversight.** With the fetch-failure return fixed, an offline write proceeds **without knowing whether it is behind** -- the cached upstream refs are deliberately not compared, because they can be arbitrarily stale and acting on them is what produced the abort. Accepted because the backstop is real: `.datom_git_push()` pulls and aborts if the push is rejected (`R/utils-git.R:267-277`) and the storage steps come after it, so a write cannot land on storage from a stale base. Recorded in the function's roxygen as well as here, since a guard that warns and returns `TRUE` reads as a swallowed error to anyone meeting it cold. Same argument design.md 10.7 already makes for warn-and-proceed at the write entry. | Task 18, #104, design.md 10.7 |
 | 2026-08-26 | **(implementation) the defect was invisible to the test that existed for exactly this path.** `.datom_check_git_current tolerates network errors gracefully` stubs `git2r::fetch` to raise -- but its fixture has **no upstream branch**, so the function returns before reaching the comparison and the test passed on the defect. Both new tests therefore establish an upstream first, and the ahead-case one was **proven to fail** against the unfixed function before being trusted (stash the `R/` change, re-run, it errors on the stale-ahead abort). The level-case test passes either way by design: it pins an accident (nothing unfavourable to compare against) as deliberate. Also recorded in `dev/engineering-notes.md`: the handler-`return()` trap is a general R gotcha, and a `cli_alert_warning()` needs `expect_message()`, not `expect_warning()`. | Task 18, `dev/engineering-notes.md` |
 | 2026-08-26 | **Two operator-facing fixes landed with Task 18, not as tasks -- both are recourse quality for the state a rejected push leaves behind.** Task 18 makes an offline write *proceed*, so it also makes "rejected at push" more reachable, and the recourse was examined in the same session. (1) The merge-conflict abort told the caller to "pull latest changes" -- but the pull is what produced the conflict, so the first line a confused operator read was wrong. Replaced with the resolution that actually works for datom's own generated JSON: keep the remote copy (`git checkout --theirs`) and re-run the write, because step 6 rebuilds `metadata.json` outright, appends to history behind a dedup guard, and rewrites only this artifact's manifest entry. Also states that storage is untouched, since "conflict" reads as "half-published" to anyone who does not know git gates storage. (2) `datom_validate(fix = TRUE)` printed "Fix applied" for findings it cannot fix: the repair calls `.datom_sync_data_metadata()`, which uploads manifest and per-artifact metadata **only** -- a missing parquet is not in the clone and never was. It now names those artifacts and points at re-running `datom_write()` with the source data. Same trap shape the log already names twice (a repair path quietly not delivering what it claims), and the third instance, so the pattern is now: **any repair path must state what it does NOT repair.** tests 2664 -> **2675**. | `R/utils-git.R`, `R/validate.R`, Task 18 |
+| 2026-08-26 | **Cold-start audit for Task 19: startable, after closing one gap that spanned two tasks.** The documented path was walked as a fresh reader and every claim checked against the tree. What held: the citation `R/utils-sha.R:410-420` is accurate, the `volatile` denylist is the seven fields described, AC33's four clauses and P36 are complete and unambiguous, and AC33(a)'s pinned value already exists (`test-utils-sha.R:899-904`). **The gap: Task 7 adds `kind` plus an entire set metadata builder and said nothing about classifying either.** After Task 19 an unclassified field is silently *outside* identity, so `kind` would stop affecting `metadata_sha` and a table and a set could share a version identity -- exactly what the 2026-08-23 decision closed off, and invisible to every other test in Task 7. **The fix is a forcing function, not a reminder**: Task 19's classification test must **derive** the field set from what the builders emit rather than hardcode today's names, so it fails the moment Task 7 touches a builder. A hardcoded list would have passed forever, which is the same swept-some-places shape this log records six times -- caught here before implementation rather than after. Task 7 now carries the obligation explicitly, with R9.5, P36 and AC33(d) added to its criteria line. | Tasks 19 + 7, AC33, P36 |
+| 2026-08-26 | **(audit) OPEN FOR THE OWNER AT TASK 19 START: the pinned `metadata_sha` golden's fixture carries a field no builder emits, so a correct allowlist changes that hash.** The fixture is `list(data_sha, name, nrow, ncol, table_type, hash_algo)` and **`name` is not a metadata field** -- verified that `metadata.json` is written as exactly `.datom_build_metadata()`'s object, which has no `name` key (the `name` at `R/read_write.R:774` / `R/read_write.R:834` is `datom_write()`'s return value). So under a builder-derived allowlist the golden fails while **no stored identity moves**, because no real document ever had the field. The hazard is the reflex: re-pin the constant and AC33(a) loses the only pinned evidence it rests on, in the task whose entire claim is behaviour preservation. **Recommendation, not a decision**: pin a *realistic* fixture under today's code first, so there is a true before/after anchor, and let the `name`-bearing golden change for a stated reason. Flagged rather than settled because AC33(a) is the clause that proves this task was safe, and how it is anchored is a public-contract-shaped choice. | Task 19, AC33 (a) |
+| 2026-08-26 | **(audit) the metadata field inventory is provably complete from one function, and that is what makes the allowlist safe to seed.** Every top-level key of a metadata document is assigned inside `.datom_build_metadata()`, with exactly one exception -- `meta$parquet_sha` (`R/read_write.R:786`), which is volatile. Verified by grepping every `meta$<key> <-` and `metadata$<key> <-` in `R/`. This matters because an allowlist seeded from an incomplete inventory drops content out of identity **silently**, which is the failure direction an allowlist has and a denylist does not; recording the result means the next session does not repeat the grep or, worse, skip it. The semantic set today: `data_sha`, `hash_algo`, `table_type`, `nrow`, `ncol`, `colnames`, plus `original_file_sha`, `parents`, `source_lineage`, `custom` when present. | Task 19, R9.5 |
 | 2026-08-26 | **(implementation) the new helper's own test caught a substring bug in it, which is worth the row because the same shape will recur.** `.datom_validate_unfixable_tables()` selects the artifacts whose payload is missing, and status codes are comma-joined -- so `grepl("data_missing_s3", ...)` matches **`metadata_missing_s3`**, which contains it. That reported every metadata-only finding as unrepairable: exactly backwards, since those are the ones the sync does fix. Now split on `,` and compared as whole tokens. Second correction in the same helper: it originally guarded `all(c("name","status") %in% names(...))` and the real column is **`table`**, so the guard converted a wrong column name into a silent `character()` -- reinstating the overclaiming message the helper exists to remove. Guard deleted deliberately: a renamed column must error here. Same reasoning as the no-missing-`kind`-fallback decision -- a safety net that fires only when something upstream is already broken hides the breakage. | `R/validate.R` |
 | 2026-08-23 | **(review footnote, pre-existing) a retired phrase was suppressing on an incidental word, and it is now pinned to an intentional one.** The `tasks.md` occurrence of "convert the abort into a warning" sat inside a record whose nearest marker was **"reversal"**, matching via the `revers` stem -- the right outcome by accident, and fragile, because `revers` is ordinary vocabulary in this spec and could mask a genuine hit later. The record now carries an explicit "superseded". Verified by re-running the gate's window test with `revers` removed from `MARKER_RE`: still suppressed. `MARKER_RE` itself is left alone -- the maintenance lesson already in `dev/check-spec.R` is that broadening it toward ordinary vocabulary is what made the check nearly vacuous once, and `revers` is close to that line. Worth revisiting the next time that list is touched. | dev/check-spec.R |
