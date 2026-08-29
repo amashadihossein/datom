@@ -476,7 +476,9 @@ necessary.
     never touches the manifest -- verified `R/read_write.R:44-58`) and the manifest readers
     (`datom_list()`, `datom_summary()`, `datom_status()`).
   - `SUPPORTED_SCHEMA <- 2L`. Asymmetric: refuse newer, tolerate older; absent defaults to `1`.
-  - Add `schema_version` **and** `document_sha` to the `volatile` list at `R/utils-sha.R:416`.
+  - Add `schema_version` **and** `document_sha` to the `volatile` list (that list is now
+    `.datom_metadata_excluded_fields`, `R/utils-sha.R:444-447`, promoted from a local variable by
+    Task 19; both names are still on it).
   - Nothing writes `schema_version: 2` yet -- the gate lands tested-but-inert, so the writer bump
     in Task 6 cannot be the first exercise of untested gate code.
   - _Requirements: R9, R7.4. Invariants: I4. Properties: P10, P11. Acceptance: AC7._
@@ -494,8 +496,8 @@ necessary.
     clone by `datom_sync_manifest()` and `.datom_status_input_files()`, and that copy can be ahead
     of the installed build by an ordinary route: a collaborator upgrades datom and writes, this
     developer pulls. Left ungated, those two commands read a manifest shape this build does not
-    know. The four in-pipeline local reads (`R/sync.R:179`, `R/read_write.R:818`,
-    `.datom_update_manifest_entry()`, `R/validate.R:201`) are **deliberately excluded**: the check
+    know. The four in-pipeline local reads (`R/sync.R:179`, `R/read_write.R:825`,
+    `.datom_update_manifest_entry()`, `R/validate.R:257`) are **deliberately excluded**: the check
     belongs where a document enters datom, so a refusal happens before work starts rather than
     partway through a write.
   - **THE WIRING IS NOT SIX IDENTICAL ONE-LINERS, and that is the whole difficulty of this task.**
@@ -700,7 +702,7 @@ own; landing it first is what makes Task 6's failure loud.
     insertions. Two things needed fixing and one is worth budgeting for:
     1. **`datom_validate()` does NOT read `manifest$tables`** -- verified by grepping every
        reference to the key in `R/`. Its only manifest read is `.datom_validate_project_name()`
-       (`R/validate.R:201`), which looks at `project_name` and nothing else, and
+       (`R/validate.R:257`), which looks at `project_name` and nothing else, and
        `.datom_validate_tables()` enumerates artifacts from a **storage listing**, not the
        manifest. So the rename does not touch it, and the escalation rationale above previously
        sent a reader hunting in a file with nothing in it.
@@ -1154,9 +1156,11 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     error to anyone reading the guard cold.
 
 - [x] **19. Allowlist identity hashing (#100) + the classification test** &nbsp; **[DONE 2026-08-28]**
-  - `.datom_compute_metadata_sha()` (`R/utils-sha.R:410-420`) selects fields by **exclusion**, which
+  - `.datom_compute_metadata_sha()` selected fields by **exclusion**, which
     cannot be forward-compatible: a build that has never heard of a field cannot know to ignore it, so
-    it folds the field into the hash and reports a change on content that did not move.
+    it folds the field into the hash and reports a change on content that did not move. (Line numbers
+    in this task's body describe the **pre-change** file; after the change the two constants are at
+    `R/utils-sha.R:422-447` and the two functions at `R/utils-sha.R:469` and `R/utils-sha.R:501`.)
   - Hash a **named list** of fields; ignore everything else. **Seed it with exactly the fields hashed
     today so every existing identity is byte-identical.** Optional fields need marking optional --
     `parents`, `source_lineage`, `original_file_sha`, `custom` are conditionally present.
@@ -1190,7 +1194,8 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - **AC33(a)'s pinned value exists but its fixture is NOT a realistic document. DECIDED
     2026-08-26 -- implement the two steps below; do not re-deliberate.** The golden
     `59f1f1d936c5d65472733a924493ce2362255d442ebea6d41f7c3c9e7069d326`
-    (`tests/testthat/test-utils-sha.R:899-904`) hashes
+    (then at `tests/testthat/test-utils-sha.R:899-904`; the repurposed test is now at
+    `tests/testthat/test-utils-sha.R:921`) hashes
     `list(data_sha, name, nrow, ncol, table_type, hash_algo)` -- and **`name` is a field no builder
     emits.** Verified: `metadata.json` is written as exactly the object `.datom_build_metadata()`
     produced (`R/read_write.R`, `write_json(metadata, ...)` inside

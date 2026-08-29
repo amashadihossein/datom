@@ -15,11 +15,11 @@ written (`dev` @ `b57cdba`). **Cite these rather than re-deriving them.**
 | `.datom_storage_read_json()` / `.datom_storage_write_json()` | `R/utils-storage.R:66,83` | Backend-neutral JSON IO already exists internally and is **unexported**. Exporting + hardening the **read** is in scope (R12.4); the **write** export is deferred (R12.4a). Both take a **relative** key (after `prefix/datom/`). |
 | `.datom_build_storage_key(prefix, ...)` | `R/utils-path.R:29` | The key builder. **Returns a FULL key** (`{prefix}/datom/{segments...}`). Called only from the backend layer (`R/utils-s3.R:69,108,146,186,235`; `R/utils-local.R:19`) and from `R/storage.R`. See **Deviation D1**. |
 | `datom_parent(conn, table, version)` | `R/lineage.R` (end of file) | The pattern `datom_member()` mirrors: validate name, validate version as a SHA, read the versioned snapshot at `{table}/.metadata/{version}.json`, return a pure-data record with no live connection. |
-| `.datom_validate_parents()` | `R/utils-sha.R:59-` | The validator pattern for a reference-record list, including the `remedy` string that points every failure back at the constructor. `datom_member()`'s validator mirrors this. |
+| `.datom_validate_parents()` | `R/utils-sha.R:64` | The validator pattern for a reference-record list, including the `remedy` string that points every failure back at the constructor. `datom_member()`'s validator mirrors this. |
 | `parquet_sha` persistence in history | `R/read_write.R`, `.datom_write_metadata_local()` conditional-add block; read back in `.datom_resolve_version()` at `R/read_write.R:187` (version-pinned) and `129` (current) | **Already implemented.** The `document_sha` requirement (R7.2) mirrors this exact conditional-add pattern. |
 | Stale "task 5.1" docstrings | `R/read_write.R:110-113`, `205-206`, `413` (stale) and `393` (already correct, hence contradicting) | Claims history does not yet persist `parquet_sha`. False since #72. **#89 cited `95-97`, which is the function title, not the stale text** -- corrected here from `grep -n "task 5\.1"`. Four sites; see R13.3 for the table. This is what misled an earlier draft of #89. |
 | Hardcoded parquet-existence check | `R/validate.R:391` in `.datom_validate_one_table()` | `data_key <- paste0(name, "/", meta$data_sha, ".parquet")`. Needs the `kind` branch (R11). |
-| `volatile` exclusion list | `R/utils-sha.R:415-416` | `c("created_at", "datom_version", "parquet_sha", "column_hashes", "size_bytes")`. `schema_version` (R9.3) and `document_sha` (R7.4) join it. |
+| `volatile` exclusion list | `R/utils-sha.R:444-447` | `c("created_at", "datom_version", "parquet_sha", "column_hashes", "size_bytes")`. `schema_version` (R9.3) and `document_sha` (R7.4) join it. |
 | `datom_read()` never touches the manifest | `R/read_write.R:44-58` | Confirmed: `.datom_read_metadata()` -> `.datom_resolve_version()` -> `.datom_read_parquet()`. This is why the schema gate needs **two** sites (R9.2) and why the `artifacts` rename is discovery-only. |
 | `governance.json` dual-pointer pattern | `R/governance_json.R` | The model for the payload (R6.1): builder -> `.datom_write_*_local()` (git canonical) + `.datom_storage_write_*()` (mirror) + a `.datom_sync_*()` repair helper. Note the reader path (`.datom_storage_read_governance_json()`) works with **no clone** -- the precedent that makes AC1 achievable. |
 | Manifest producer | `.datom_update_manifest_entry()`, `R/sync.R:710-769` | Single writer of `manifest$tables[[name]]` and of `manifest$summary`. The `artifacts` rename's write side is here and nowhere else. |
@@ -632,7 +632,7 @@ See requirements R9 for the code shape and the four requirements. Design notes:
   path open -- which is the more important of the two.
 - Implement as one internal `.datom_check_schema_version(meta, source)` called from
   `.datom_read_metadata()` and from the manifest readers, so the message is written once.
-- **`schema_version` must go in the `volatile` list** (`R/utils-sha.R:416`). Otherwise the v1->v2
+- **`schema_version` must go in the `volatile` list** (`R/utils-sha.R:444-447`). Otherwise the v1->v2
   bump rewrites every existing table's `metadata_sha`, i.e. mints a spurious version for every
   table in every repo -- the exact failure #72 was fought over.
 - **Do not overload `datom_version`.** It records the writing package version -- provenance, not
@@ -902,7 +902,7 @@ package that is worse than an error -- and it is not hypothetical: the reader/de
 deliberately supports different install cadences, so an unupgraded analyst reading data written
 by an upgraded data manager is a **supported configuration**.
 
-Note `parquet_sha` is in the `volatile` exclusion list (`R/utils-sha.R:416`), so a rename would
+Note `parquet_sha` is in the `volatile` exclusion list (`R/utils-sha.R:444-447`), so a rename would
 be *identity-neutral* -- no version SHA would change. The objection is purely about silent
 degradation in released readers. This is the canonical worked example of the compatibility
 posture: identity-neutral and mechanically trivial, and still refused, because the failure mode
