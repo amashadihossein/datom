@@ -905,6 +905,90 @@ test_that("metadata_sha golden is stable", {
   )
 })
 
+# A metadata document built the way datom actually builds one: every top-level
+# key comes from `.datom_build_metadata()`, plus `parquet_sha`, which
+# `datom_write()` assigns after change detection rather than at build time. The
+# `optional` switch selects the two shapes that matter -- every conditionally
+# present field supplied, and none of them.
+#
+# WHY IT IS BUILDER-DERIVED RATHER THAN HAND-WRITTEN. The goldens below are the
+# before/after anchor for a change to how `.datom_compute_metadata_sha()`
+# SELECTS fields, so the fixture has to be a document datom can actually
+# produce. The older `metadata_sha golden is stable` fixture above is not: it
+# carries a `name` key that no builder emits and omits `colnames`, which every
+# builder emits.
+#
+# `data_sha` and `column_hashes` are literals rather than a live
+# `.datom_canonical_hash()` call, deliberately: a cv1 encoding drift would then
+# redden the cv1 goldens only, so a failure here names one regime instead of two.
+builder_metadata_fixture <- function(optional = TRUE) {
+  df <- data.frame(id = 1:3, val = c("a", "b", "c"), stringsAsFactors = FALSE)
+
+  args <- list(
+    data = df,
+    data_sha = "2eb1fa3e668dc15f6e5c2b384d2dbf39b216f12573c07c95543fa208dba4fef8",
+    column_hashes = list(
+      list(name = "id", sha = strrep("a", 64L)),
+      list(name = "val", sha = strrep("b", 64L))
+    )
+  )
+
+  if (optional) {
+    args <- c(args, list(
+      table_type = "imported",
+      size_bytes = 4096,
+      original_file_sha = "f00dcafe",
+      parents = list(list(source = "STUDY_001", table = "dm",
+                          version = "a1b2c3d4", data_sha = "e5f6a7b8")),
+      source_lineage = list(list(project = "STUDY_001", table = "dm",
+                                 version_sha = "e5f6a7b8")),
+      custom = list(owner = "biostat", study = "STUDY_001")
+    ))
+  }
+
+  meta <- do.call(.datom_build_metadata, args)
+  meta$parquet_sha <- "deadbeef"
+  meta
+}
+
+test_that("builder-derived metadata_sha goldens are stable", {
+  # These two values are the evidence that a later change to field SELECTION is
+  # behaviour-preserving: they are computed from documents datom writes, so if
+  # either moves, some real artifact's recorded version moved with it.
+  #
+  # Both are reproducible run to run. The only fields that vary between two
+  # builds of the same table are `created_at` and `datom_version`, and neither
+  # participates in `metadata_sha`.
+  expect_identical(
+    .datom_compute_metadata_sha(builder_metadata_fixture(optional = TRUE)),
+    "f4d88543b11b4918fe96e8ec319ae6d664693735a545508095aa4c4b44da9a02"
+  )
+
+  # The no-optional-fields shape is pinned separately because "a document
+  # missing an optional field still hashes to its own established value" is a
+  # distinct property from "a fully populated document does".
+  expect_identical(
+    .datom_compute_metadata_sha(builder_metadata_fixture(optional = FALSE)),
+    "d0c1ea7510fe9da7361de62e21886f45dbca7b556e00765c3160222f24393fd7"
+  )
+})
+
+test_that("the pinned fixtures carry exactly the keys datom's writers emit", {
+  # Guards the goldens above against quietly ceasing to be realistic. Listed
+  # explicitly rather than derived, because the point is to notice when the set
+  # changes: a builder gaining a semantic field legitimately moves the pins, and
+  # that must surface as a decision rather than as a mystery.
+  always <- c("data_sha", "hash_algo", "parquet_sha", "table_type", "nrow",
+              "ncol", "colnames", "column_hashes", "created_at",
+              "datom_version")
+  conditional <- c("original_file_sha", "parents", "source_lineage",
+                   "size_bytes", "custom")
+
+  expect_setequal(names(builder_metadata_fixture(optional = TRUE)),
+                  c(always, conditional))
+  expect_setequal(names(builder_metadata_fixture(optional = FALSE)), always)
+})
+
 test_that("Property 11: package hash matches the standalone reference", {
   candidates <- c(
     file.path("dev", "datom_cv1_reference.R"),
