@@ -8,9 +8,9 @@ body alone -- is the current truth.
 review and `main` is frozen (see `dev/README.md` "Branching During CRAN Submission"). Draft PR
 [#97](https://github.com/amashadihossein/datom/pull/97) is open and accumulates the task commits.
 **Test baseline**: 2460 at spec start -> 2482 after Task 1 -> 2572 after Task 2 -> 2612 after
-Task 3 -> 2660 after Task 4 -> 2664 after Task 18 -> **2675 after the two operator-facing fixes
-that followed it** (see the 2026-08-26 rows in the Decisions log). Report the count in every commit
-message; it must never drop.
+Task 3 -> 2660 after Task 4 -> 2664 after Task 18 -> 2675 after the two operator-facing fixes
+that followed it (see the 2026-08-26 rows in the Decisions log) -> **2686 after Task 19**. Report the
+count in every commit message; it must never drop.
 
 ---
 
@@ -18,23 +18,25 @@ message; it must never drop.
 
 **Done**: Task 0 (spec), **Task 1** (stale docstring sweep + relative-key helpers), **Task 2**
 (`datom-sv1`), **Task 3** (`datom_storage_read_json()` + the relative-key validator), **Task 4**
-(the reader-side `schema_version` gate) and **Task 18** (the `.datom_check_git_current()`
-fetch-failure defect, #104), plus three things that are not tasks: the prerequisite #89
+(the reader-side `schema_version` gate), **Task 18** (the `.datom_check_git_current()`
+fetch-failure defect, #104) and **Task 19** (allowlist identity hashing, #100), plus three things
+that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
 this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 `.kiro/steering/communication.md`.
 
-**Next**: **Task 19** (allowlist identity hashing, #100 -- Phase E, appended but running early; read
-Phase E's preamble for the order). **Its cold-start audit is done (2026-08-26), nothing about it is
-open, and its one hazard is already decided**: the pinned `metadata_sha` golden's fixture carries a
-`name` field that no builder emits, so a correct allowlist changes that hash even though no real
-identity moves. Task 19's body carries the verification and the two ordered steps that resolve it --
-pin a realistic builder-derived fixture **before** editing `.datom_compute_metadata_sha()`, then
-repurpose the `name`-bearing golden as AC33(b)'s test. **Implement those; do not re-deliberate.** Then **Task 5 -- one manifest reader and one skeleton builder**,
-contract-neutral: no
+**Next**: **Task 5 -- one manifest reader and one skeleton builder**, contract-neutral: no
 on-disk change, no schema bump, the key is still `tables` when it ends. It exists so that Task 6 --
 the `manifest$tables` -> `manifest$artifacts` rename -- has **one** place to put the old-format
 upgrade instead of five.
+
+**Two things Task 19 leaves for whoever adds a metadata field next.** (1) `metadata_sha` now selects
+fields by **allowlist**: `.datom_metadata_identity_fields` is identity,
+`.datom_metadata_excluded_fields` is the documented not-identity list, and a field in **neither** is
+silently outside identity. The classification test in `test-utils-sha.R` derives its inventory from
+the builders, so it fails until the new field is classified -- that is the forcing function, and
+**Task 7 will trip it deliberately** when it adds `kind` and the set metadata builder. (2) The union
+of those two constants is the vocabulary Task 21's writer check reads; it is append-only from here.
 
 **EXECUTION ORDER IS NOT TASK ORDER.** Phase E was appended rather than inserted so that nothing
 renumbered a third time. The order is `18 -> 19 -> 5 -> 6 -> 20 -> 21 -> 22 -> 7 onward`, and Phase
@@ -89,15 +91,15 @@ code fix. The three places that hold it: `R/hashable-set.R` (implementation),
 constant. E1's discharge record and the four deltas it produced are in the Decisions log
 (2026-08-17); nothing about it is open.
 
-**Open with the owner**: nothing. The one item that sat here on 2026-08-26 -- how AC33(a) is anchored,
-given that the existing pinned golden's fixture is not a document any builder can produce -- was
-decided the same day and is written into Task 19 as two ordered steps.
+**Open with the owner**: nothing. The AC33(a) anchoring item that sat here on 2026-08-26 was decided
+the same day and **implemented as decided on 2026-08-28** -- the realistic fixture was pinned in its
+own commit under the pre-change code, and the `name`-bearing golden became AC33(b)'s test.
 
 **Also on this branch, outside the task list**: two operator-facing fixes that followed Task 18 (the
 merge-conflict message, and `datom_validate(fix = TRUE)` no longer claiming to repair a missing
 payload), plus [#105](https://github.com/amashadihossein/datom/issues/105) and a `dev/README.md`
 Backlog row capturing five deferred ideas for making a push-rejected write rarer and recoverable
-without git skill. Nothing there blocks Task 19.
+without git skill. Nothing there blocks Task 5.
 
 **Superseded note**: this slot previously read "nothing". Task 2 added three encoder refusals the spec did not spell out
 (named list in a value position; unexpected field at the payload root or in a member record) -- all
@@ -1151,7 +1153,7 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     Recorded in the function's roxygen too, since "warns and returns TRUE" looks like a swallowed
     error to anyone reading the guard cold.
 
-- [ ] **19. Allowlist identity hashing (#100) + the classification test**
+- [x] **19. Allowlist identity hashing (#100) + the classification test** &nbsp; **[DONE 2026-08-28]**
   - `.datom_compute_metadata_sha()` (`R/utils-sha.R:410-420`) selects fields by **exclusion**, which
     cannot be forward-compatible: a build that has never heard of a field cannot know to ignore it, so
     it folds the field into the hash and reports a change on content that did not move.
@@ -1222,6 +1224,74 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     (`tests/testthat/test-identity-contract.R`) must stay green, and the pinned-value assertion in
     AC33a is the one that proves this was behaviour-preserving. No pathway impact -- record
     explicitly._
+  - **DONE 2026-08-28, in two commits, the ordering being the point.** Commit 1 (`fb84a72`) added the
+    pins under the **unchanged** denylist code; commit 2 changed the selection. Two namespace-level
+    constants in `R/utils-sha.R` -- `.datom_metadata_identity_fields` (ten fields, seeded to exactly
+    what was hashed before) and `.datom_metadata_excluded_fields` (the seven-name `volatile` vector,
+    promoted from a local variable so Task 21 can read the union as its vocabulary). Selection is
+    `intersect(names(metadata), .datom_metadata_identity_fields)`. tests: 2675 -> **2686** (+11),
+    FAIL 0 / WARN 0 / SKIP 0. `Rscript dev/check-spec.R` all nine checks pass. No pathway impact --
+    route shapes and gate positions are unchanged.
+  - **Behaviour preservation is asserted, not inferred from a green suite.** Both pins from commit 1
+    hold unchanged after the change: `f4d88543...` (every optional field supplied) and
+    `d0c1ea75...` (none), which is AC33(a) and AC33(c). Before implementing, the two selections were
+    also run side by side over six document shapes -- builder output with and without optionals, both
+    again after a JSON round trip, and two hand-built fixtures -- byte-identical on all six.
+  - **The whole suite showed exactly TWO failures under the change, both anticipated**, which is
+    worth recording because it bounds the blast radius: the `metadata_sha` golden and Property 13.
+    Everything in `test-read-write.R` and `test-identity-contract.R` survived untouched, because
+    every one of those call sites computes-then-compares over real field names rather than pinning a
+    value.
+  - **THE FUNCTION IS NOW TWO FUNCTIONS, and Property 13 is why.** `.datom_compute_metadata_sha()`
+    selects; the new `.datom_metadata_sha_from_fields()` sorts, serialises and digests. Property 13
+    proves field ordering does not move with `LC_COLLATE`, using a fixture of names that genuinely
+    collate differently (`Zeta`, `_leading`, `beta`). An allowlist drops all of them, leaving one
+    field and nothing to order -- the test would have passed while asserting nothing. And it cannot
+    be rebuilt from real names: **all ten identity field names sort identically under `C` and
+    `en_US.UTF-8`** (checked), so no fixture made of them can discriminate. The split gives the
+    ordering property something honest to bind to.
+  - **Rejected: declare the list in radix order and drop the sort.** Locale independence would become
+    structural, since nothing would be sorted at runtime. Rejected because hash stability would then
+    depend on how somebody *types a constant* -- reordering it for readability would silently change
+    every recorded version. Sorting keeps the order derived. The reasoning is in
+    `.datom_metadata_sha_from_fields()`'s roxygen so the next reader does not "simplify" it back.
+  - **The classification test derives its inventory from the builder and was proven to fail before
+    being trusted**, per this spec's own rule. Adding a junk field to `.datom_build_metadata()` makes
+    it go red naming the field -- **while every pinned hash stays green**, which is precisely the
+    failure direction an allowlist has and a denylist does not. It carries a converse arm too:
+    nothing in the identity list may be a field datom never writes, which is what mechanically blocks
+    the rejected shortcut of allowlisting `name`. Adding `"name"` to the list turns that arm red, plus
+    AC33(b). Both probes were reverted; the workspace carries neither.
+  - **Three tests were quietly going vacuous and are re-fixtured**: `metadata SHA is deterministic`,
+    `is order-independent` and `is a 64-char hex string` were built from `name` / `author` / `x`, all
+    of which the allowlist drops -- leaving `data_sha` alone to carry assertions about several fields.
+    They now use real field names, and the order-independence one gained a positive check that the
+    shared fields really do reach the hash.
+  - **The `name`-bearing golden was reused rather than retired, as decided.** It now asserts AC33(b)
+    with its constant re-pinned to the no-`name` value
+    `cce751b3f74d9f45c79ec96e4a19529580fec36b6ea37b39800b3a8a58e94ac8` -- which is what today's code
+    already produced for that fixture minus the field, so it is not a fresh pin off the new
+    implementation. A second unknown key (`some_future_field`) was added beside it: `name` is a
+    historical accident, whereas a field arriving from a newer datom is the case the allowlist exists
+    for, and only the second one reads as forward-looking.
+  - **Two documentation sites were going to contradict the code, and one was ALREADY stale.**
+    `dev/engineering-notes.md` said new non-versioning fields must be added to the `volatile` vector
+    -- exactly inverted now -- and told the reader to keep the `59f1f1d9` fixture as-is; both entries
+    are rewritten, the second carrying the transferable lesson that a pinned identity fixture must be
+    a document the package can actually write. `vignettes/design-version-shas.Rmd` prints the
+    algorithm as runnable-looking code and **listed five excluded fields when Task 4 had made it
+    seven**, so it was wrong before this task touched it; it now shows the allowlist form and
+    explains the forward-compatibility reason in plain terms.
+  - **Deliberately NOT done here: [#98](https://github.com/amashadihossein/datom/issues/98).** The
+    `dev/README.md` backlog row suggests pairing it with #100 so there is one identity-affecting
+    change to verify. They cannot ship together: removing `jsonlite` from the identity path changes
+    the hashed **bytes**, so every recorded identity moves -- the direct negation of AC33(a). #98
+    stays a separate, deliberately breaking change.
+  - **One gap left open, named rather than closed quietly.** A document with **no** identity fields at
+    all now hashes an empty object instead of hashing its junk, so two unrelated corrupt documents
+    hash equal. Reachable only from a corrupt file, and adding a refusal is an unrequested behaviour
+    change, so no guard was added (I10a's spirit: no defensive code for a state nothing produces).
+    Recorded so a later reader knows it was seen.
 
 - [ ] **20. Carry unrecognised fields forward on write (#100's missing half)**
   - Today the write path rebuilds metadata from scratch (`.datom_build_metadata()`), so an older build

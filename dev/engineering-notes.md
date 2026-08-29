@@ -90,7 +90,23 @@ commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
 - **Lineage consistency is a composable recipe, not a dedicated function**: `datom_validate_lineage()` was removed. `datom_write()` derives a derived table's `source_lineage` from its parents' union at write time and lineage is version-pinned, so a recompute equals the recorded value in normal operation. To check consistency, compose existing reads: `datom_get_parents(conn, name)` -> for each parent read `datom_get_lineage(parent_conn, parent$table, version = parent$version, depth = "source")` through a conn scoped to that parent's project -> `datom_lineage_union(...)` -> compare to `datom_get_lineage(conn, name, depth = "source")`. This honors the one-connection-per-project model (each parent is read through its own conn) and keeps semantic checks in the caller's workflow, orthogonal to `datom_validate()`'s git/S3 storage-consistency pass.
 - **`.datom_git_commit()` is idempotent**: Returns HEAD SHA (instead of erroring) when staged files are unchanged. This is by design — enables safe re-runs after partial failures in the local → git → S3 pipeline.
 - **metadata SHA uses JSON canonical form**: `.datom_compute_metadata_sha()` hashes `jsonlite::toJSON()` output with `serialize = FALSE`, not the R object. This is critical — R's `serialize()` is type-sensitive (`10L` ≠ `10`), so metadata round-tripped through JSON would produce a different SHA. Always test SHA stability with a JSON round-trip.
-- **metadata SHA excludes volatile fields**: `created_at` and `datom_version` are stripped before hashing. Adding new metadata fields that should NOT affect versioning must be added to the `volatile` vector in `.datom_compute_metadata_sha()`.
+- **metadata SHA selects fields by ALLOWLIST, and the obligation runs the other way from what you
+  would guess.** `.datom_compute_metadata_sha()` hashes exactly the fields named in
+  `.datom_metadata_identity_fields` and ignores every other key. So **adding a field to a metadata
+  builder without classifying it silently removes it from identity** -- the opposite of the old
+  exclusion-list behaviour, where an unclassified field silently *entered* identity. (Superseded
+  wording, retained because it inverts: "adding new metadata fields that should NOT affect
+  versioning must be added to the `volatile` vector".) Every new field goes in one of two places:
+  `.datom_metadata_identity_fields` if it is content, `.datom_metadata_excluded_fields` if it is
+  not. The test `every field a metadata builder emits is classified` derives its inventory from the
+  builder rather than hardcoding names, so it **fails** until you choose -- and it is the only test
+  that catches this direction, because an ignored field leaves every pinned hash untouched
+  (verified by adding a junk builder field: the goldens stayed green, that test went red).
+- **The exclusion list is not the same idea as "volatile".** `parquet_sha`, `size_bytes`,
+  `column_hashes`, `created_at` and `datom_version` are volatile in the drift sense;
+  `schema_version` and `document_sha` are on the list for their own reasons (container format, and
+  stored-bytes integrity). Read the comment block above each constant rather than assuming the
+  rationale.
 - **version_history dedup guard**: `.datom_write_metadata_local()` skips appending when the latest entry has the same version SHA. This prevents duplicates but means the guard relies on metadata_sha correctness.
 - **`datom_pull()` is git-only**: No S3 manifest refresh — git is the source of truth for all metadata. The manifest is committed to git and pulled with everything else.
 - **`governance.json` mirror -- git canonical, storage derived**: The git copy at `.datom/governance.json` is written and committed first; the storage mirror at `{prefix}/datom/.metadata/governance.json` is pushed in the same step. Never write only one. If the mirror is missing, `.datom_sync_governance_json(conn)` regenerates it from the git copy. The file is write-once -- do not update it after creation.
@@ -326,9 +342,17 @@ Harvested from the spec's work-handoff at completion. The *design* lives in
 - **Test fakes avoid new Suggests**: `hms` / `ITime` / `integer64` columns are faked with
   `structure(..., class = ...)`, and the same trick renders the vignette's `sf`/`units`/`zoo`
   recourse rows -- dispatch is on the class tag, so a bare structure is enough.
-- **The `metadata_sha` golden `59f1f1d9...`** in `test-utils-sha.R` survives the radix-sort and
-  volatile-set changes because its fixture has no `parquet_sha`/`column_hashes` and only simple
-  lowercase names. Keep that fixture as-is or the golden needs re-deriving.
+- **The `metadata_sha` goldens are now builder-derived, and the old hand-written one carried a field
+  datom never writes.** `59f1f1d9...` pinned a fixture containing a `name` key -- which no builder
+  emits, since `metadata.json` is written as exactly the object `.datom_build_metadata()` produced
+  (the `name` in `datom_write()` is its return value) -- and lacking `colnames`, which every builder
+  emits. Under allowlist selection that hash changed while **no stored identity moved**, so the
+  fixture was reused for the property that changed it: an unknown extra field is ignored, pinned at
+  the no-`name` value `cce751b3...`. The load-bearing goldens are now
+  `builder-derived metadata_sha goldens are stable`, built through the real builder with and without
+  its conditional fields. Lesson worth carrying: **a pinned identity fixture must be a document the
+  package can actually write**, or it pins the behaviour of a shape that does not exist. (Superseded
+  instruction: "keep that fixture as-is or the golden needs re-deriving".)
 - **An acceptance gate can have a legitimate false positive; scope the gate, do not edit the
   source.** `grep -rn "as.data.frame" R/utils-sha.R` will never be empty: the one hit is the
   roxygen line documenting the invariant ("no `as.data.frame()` or coercion, and never invokes

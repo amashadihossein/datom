@@ -2,37 +2,26 @@
 % Please edit documentation in R/utils-sha.R
 \name{.datom_compute_metadata_sha}
 \alias{.datom_compute_metadata_sha}
-\title{Compute SHA-256 of Metadata}
+\title{Compute SHA-256 of Metadata (the datom Version)}
 \usage{
 .datom_compute_metadata_sha(metadata)
 }
 \arguments{
-\item{metadata}{Named list of metadata fields.}
+\item{metadata}{Named list of metadata fields. An unrecognised field is
+\strong{ignored, not refused} -- that is what lets this build read a document
+written by a newer datom without reporting a change on content that did not
+move. Refusing such a document is a separate, write-side concern.}
 }
 \value{
 Character SHA-256 hash.
 }
 \description{
-Sorts fields by C-locale byte order (\code{method = "radix"}) before hashing so
-the result is deterministic regardless of field insertion order \strong{and}
-regardless of the host's \code{LC_COLLATE} (default collation sorts differ
-between \code{C} and e.g. \code{en_US.UTF-8}, which would otherwise make the same
-metadata hash differently on different machines).
+Hashes the fields named in \code{.datom_metadata_identity_fields} and ignores
+every other key in the document. See that constant for the field-by-field
+classification, for why selection is an allowlist rather than an exclusion
+list, and for the obligation that comes with adding a field to a builder.
 }
 \details{
-Volatile fields are excluded so that identical semantic content always
-produces the same SHA regardless of when or how it was serialized:
-\code{created_at} and \code{datom_version} (write-time provenance), \code{parquet_sha} and
-\code{size_bytes} (stored-object byte facts -- both drift with the arrow version
-and must not re-enter identity), \code{document_sha} (the same kind of fact for a
-stored JSON payload), \code{column_hashes} (a deterministic function of the same
-values that already fix \code{data_sha}), and \code{schema_version} (a property of the
-container format, not of the content -- in identity, a format bump would
-re-mint a new version for every artifact in every repo while its content
-stood still). \code{original_file_sha} and \code{hash_algo} remain in the semantic set
--- a new source file or a new hash algorithm legitimately defines a new
-version.
-
 Hashes a JSON canonical form rather than the R object directly. This
 ensures that metadata read back from JSON (e.g., from S3) produces the
 same SHA as metadata built in-memory, despite R type differences
