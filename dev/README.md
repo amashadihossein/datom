@@ -226,7 +226,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
   | orphaned criteria | an AC / invariant / property defined but referenced by no task -- i.e. unimplemented |
   | task numbering | task numbers not contiguous from 0 |
   | task acceptance coverage | a task with no `Acceptance:` clause |
-  | code citations | a `R/file.R:NNN` reference pointing outside the file |
+  | code citations | a `R/file.R:NNN` reference pointing outside the file, or resolving to nothing (every line in the cited range blank) |
   | superseded wording | retired phrasing surviving as a **live instruction** rather than marked historical |
   | duplicated content agrees | the same fact stated in several files with the copies disagreeing, or one copy deleted; plus any hardcoded AC upper bound |
   | ascii | non-ASCII that will trip `R CMD check` once the prose is copied into roxygen or NEWS |
@@ -235,8 +235,16 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 - **When to run it**: at each chunk checkpoint, next to reporting the test count. A `PostFileSave`
   hook would fire constantly mid-draft and train you to ignore it.
 - `SPEC_CHECK_SHOW_CITATIONS=1` prints every cited code line so a reviewer can confirm it says what
-  the spec claims. The script can only assert that a cited line *exists* -- a wrong-but-in-range
-  number needs the eyeball. Blank cited lines are flagged, since those are almost always wrong.
+  the spec claims. **The citation check catches the blatant half only, and the split is worth
+  knowing**: a citation whose whole range is blank now **fails** the run (added 2026-08-28, after an
+  insertion into `R/utils-sha.R` staled five citations while all nine checks passed -- two had drifted
+  onto blank lines and were reported only in the verbose output, without failing). A citation that
+  drifted onto a **real but unrelated** line still passes, because no mechanical check can tell that a
+  comment is not the constant the spec claims. So after any insertion into `R/`, re-derive by content
+  with the verbose flag; a green run is not evidence. Two exemptions, both deliberate: a range whose
+  *first* line is blank but which spans real content is fine, and a citation appearing only inside a
+  dated Decisions row is exempt, since those are frozen and some exist to record a number that was
+  already wrong.
 - **Maintenance rule**: the `retired` denylist is the only part that needs upkeep. When a design
   decision is reversed, add its old phrasing there -- that is what turns "we removed this" into
   "and it cannot come back silently".

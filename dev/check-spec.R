@@ -184,7 +184,16 @@ if (length(no_acceptance) > 0L) {
 cite_re <- "R/[A-Za-z0-9_.-]+\\.R:\\d+(?:[,-]\\d+)*"
 citations <- all_matches(all_lines, cite_re)
 
+# Citations a reader is expected to follow: everything except those appearing
+# only inside dated Decisions rows, which are frozen by policy and may record a
+# number that was already known wrong.
+dated_row_re <- "^\\| 20\\d\\d-\\d\\d-\\d\\d \\|"
+live_lines <- c(spec$requirements.md, spec$design.md,
+                spec$tasks.md[!grepl(dated_row_re, spec$tasks.md, perl = TRUE)])
+live_citations <- all_matches(live_lines, cite_re)
+
 out_of_range <- character()
+blank_target <- character()
 cite_report <- character()
 
 for (cite in sort(citations)) {
@@ -203,15 +212,44 @@ for (cite in sort(citations)) {
                       sprintf("%s (file has %d lines)", cite, length(src)))
     next
   }
-  shown <- trimws(src[[nums[[1]]]])
-  if (!nzchar(shown)) shown <- "<blank line -- likely a wrong number>"
-  cite_report <- c(cite_report, sprintf("%-28s %s", cite, shown))
+  # Show the first NON-BLANK line of the range, since a range's first line is
+  # often the blank one above the thing being cited.
+  cited <- trimws(src[nums[nums >= 1L & nums <= length(src)]])
+  shown <- if (any(nzchar(cited))) cited[nzchar(cited)][[1L]] else ""
+
+  # A citation whose ENTIRE range is blank is wrong by construction -- there is
+  # nothing there to say what the spec claims. Added 2026-08-28 after an
+  # insertion into R/utils-sha.R staled five citations while all nine checks
+  # passed: two of the five had drifted onto blank lines, and this check reported
+  # them only under SPEC_CHECK_SHOW_CITATIONS=1, without failing.
+  #
+  # SCOPE, both halves deliberate. Only an all-blank range fails: a range whose
+  # first line is blank but which spans real content is cited correctly enough.
+  # And a citation appearing ONLY inside a dated Decisions row is exempt, because
+  # those rows are frozen by policy and some exist precisely to record a number
+  # that was wrong (the 2026-08-17 row recording `R/read_write.R:217 -> 227`).
+  #
+  # LIMITATION: this catches the blatant half only. Three of those five drifted
+  # onto real-but-unrelated lines -- a comment, a different constant -- and no
+  # mechanical check can see that. The cited-lines report still needs an eyeball
+  # after any insertion into R/.
+  if (!any(nzchar(cited)) && cite %in% live_citations) {
+    blank_target <- c(blank_target, sprintf("%s (every cited line is blank)", cite))
+  }
+
+  cite_report <- c(cite_report, sprintf("%-28s %s", cite,
+                                        if (nzchar(shown)) shown else "<blank>"))
 }
 
-if (length(out_of_range) > 0L) {
-  fail("code citations", "citations pointing outside the file:", out_of_range)
+if (length(out_of_range) > 0L || length(blank_target) > 0L) {
+  fail("code citations",
+       c(if (length(out_of_range)) c("citations pointing outside the file:", out_of_range),
+         if (length(blank_target)) c("citations resolving to nothing:", blank_target)),
+       "re-derive by content, not by arithmetic: an insertion into R/ shifts every",
+       "line below it, and SPEC_CHECK_SHOW_CITATIONS=1 prints each cited line.")
 } else {
-  pass("code citations", sprintf("%d citations, all in range", length(citations)))
+  pass("code citations",
+       sprintf("%d citations, all in range and none blank", length(citations)))
 }
 
 if (nzchar(Sys.getenv("SPEC_CHECK_SHOW_CITATIONS")) && length(cite_report) > 0L) {

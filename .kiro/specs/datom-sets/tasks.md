@@ -538,9 +538,12 @@ necessary.
     files (`R/query.R`, `R/read_write.R`, `R/summary.R`, `R/sync.R`, `R/utils-sha.R`) -- including
     every site in Task 6's checklist, which would otherwise have sent the next session hunting.
     Verified by content with `SPEC_CHECK_SHOW_CITATIONS=1`, not by arithmetic: two were already off
-    by one before the shift. **Bare numbers inside historical log rows were left as-is** (e.g. the
-    2026-08-17 row recording `R/read_write.R:217 -> 227`), since they record what was true on that
-    date; only live `path:line` citations were updated.
+    by one before the shift. **Bare numbers inside historical log rows were left as-is** -- the
+    2026-08-17 row that records one citation being corrected to another still names the old number,
+    because it documents what was true on that date; only live `path:line` citations were updated.
+    (The literal pair is not repeated here: check 4 now fails on a citation resolving to a blank
+    line, and quoting a deliberately-wrong number would trip it -- the same call as the check 6 note
+    below about quoting a stale AC range.)
 
 ---
 
