@@ -22,9 +22,11 @@ written (`dev` @ `b57cdba`). **Cite these rather than re-deriving them.**
 | `volatile` exclusion list | `R/utils-sha.R:444-447` | `c("created_at", "datom_version", "parquet_sha", "column_hashes", "size_bytes")`. `schema_version` (R9.3) and `document_sha` (R7.4) join it. |
 | `datom_read()` never touches the manifest | `R/read_write.R:44-58` | Confirmed: `.datom_read_metadata()` -> `.datom_resolve_version()` -> `.datom_read_parquet()`. This is why the schema gate needs **two** sites (R9.2) and why the `artifacts` rename is discovery-only. |
 | `governance.json` dual-pointer pattern | `R/governance_json.R` | The model for the payload (R6.1): builder -> `.datom_write_*_local()` (git canonical) + `.datom_storage_write_*()` (mirror) + a `.datom_sync_*()` repair helper. Note the reader path (`.datom_storage_read_governance_json()`) works with **no clone** -- the precedent that makes AC1 achievable. |
-| Manifest producer | `.datom_update_manifest_entry()`, `R/sync.R:710-769` | Single writer of `manifest$tables[[name]]` and of `manifest$summary`. The `artifacts` rename's write side is here and nowhere else. |
+| Manifest producer | `.datom_update_manifest_entry()`, `R/sync.R:815-877` | Single writer of `manifest$tables[[name]]` and of `manifest$summary`. The `artifacts` rename's write side is here and in the two places below. |
 | Manifest initializer | `R/conn.R:520-528` | `datom_init_repo()` seeds `tables = structure(list(), names = character(0))` and `summary$total_tables`. Second write site for R8. |
-| Manifest consumers | `R/query.R:62,89` (`datom_list()`), `R/query.R:458` (`datom_status()`), `R/query.R:562,573` (`.datom_status_input_files()`), `R/summary.R:61` (`datom_summary()`), `R/sync.R:378,396` (`datom_sync_manifest()`) | The complete **read** side of R8: six call sites across three files. Write side is three more (section 9), nine total. |
+| Empty-manifest shape | `.datom_manifest_skeleton()`, `R/sync.R:650` | The one empty manifest, added by Task 5. Called when `.datom/manifest.json` is absent (`R/sync.R:827`) and by the two clone readers as their fallback. Third write site for R8. |
+| Manifest reader | `.datom_read_manifest()`, `R/sync.R:695` | The one read, added by Task 5: `scope` picks the storage copy or the clone copy, IO failures come back as data, a schema refusal is thrown. R8's old-format upgrade attaches here. |
+| Manifest consumers | `R/query.R:61,88` (`datom_list()`), `R/query.R:452` (`datom_status()`), `R/query.R:567` (`.datom_status_input_files()`), `R/summary.R:60` (`datom_summary()`), `R/sync.R:397` (`datom_sync_manifest()`) | The field accesses on the document the reader returns. These are what R8's rename edits; the read itself is one place. |
 | cv1 reference + parity workflow | `dev/datom_cv1_reference.R`, `.github/workflows/cv1-reference-parity.yaml` | The template for the `datom-sv1` reference + goldens (R2.4). Note the workflow exists because `dev/` is `.Rbuildignore`d, so the parity test *skips* inside a built tarball -- the sv1 goldens inherit that hazard and must be wired into the same workflow. |
 | `.datom_canonical_hash()` zero-dim abort | `R/utils-sha.R`, `.datom_canonical_hash()` | `nrow == 0 || ncol == 0` aborts. AC5 asks for the deliberate set analogue. |
 
@@ -587,20 +589,21 @@ impossible, no guard needed.** AC4 tests the resulting refusal.
 ### Blast radius (verified)
 
 Write side -- **three** sites (an earlier draft said two and missed the third):
-- `.datom_update_manifest_entry()`, `R/sync.R:755,759-766` (entry + summary)
-- `.datom_update_manifest_entry()`, `R/sync.R:721` -- the **skeleton built when `.datom/manifest.json`
-  is absent**: `list(project_name = ..., tables = list(), summary = list())`. Verified in the tree.
-  Left unrenamed, a repo with no local manifest writes a `tables` key *after* the rename -- the exact
-  writer/reader disagreement E2 exists to prevent, and it reproduces only on a fresh or repaired
-  repo, so per-chunk tests on an existing fixture pass.
+- `.datom_update_manifest_entry()`, `R/sync.R:861,865-872` (entry + summary)
+- the **skeleton written when `.datom/manifest.json` is absent** -- one place since Task 5,
+  `.datom_manifest_skeleton()` at `R/sync.R:650`, called from `R/sync.R:827`. Left unrenamed, a repo
+  with no local manifest writes a `tables` key *after* the rename -- the exact writer/reader
+  disagreement E2 exists to prevent, and it reproduces only on a fresh or repaired repo, so
+  per-chunk tests on an existing fixture pass.
 - `datom_init_repo()`, `R/conn.R:522-527` (seed)
 
-Read side -- six sites across four files:
-- `datom_list()`, `R/query.R:62,89`
-- `datom_status()`, `R/query.R:458`
-- `.datom_status_input_files()`, `R/query.R:562,573`
-- `datom_summary()`, `R/summary.R:61`
-- `datom_sync_manifest()`, `R/sync.R:378,396`
+Read side -- **one** site since Task 5: `.datom_read_manifest()`, `R/sync.R:695`. The field accesses
+that consume the document it returns, which are what the rename actually edits:
+- `datom_list()`, `R/query.R:61,88`
+- `datom_status()`, `R/query.R:452`
+- `.datom_status_input_files()`, `R/query.R:567`
+- `datom_summary()`, `R/summary.R:60`
+- `datom_sync_manifest()`, `R/sync.R:397`
 
 `datom_validate()` reads the manifest only for `project_name` (`R/validate.R`,
 `.datom_validate_project_name()`) so it is unaffected by the rename itself -- but it is affected
@@ -610,13 +613,12 @@ by R11 (kind branch), which is why #89 groups them into one escalation moment.
 **nine** sites (3 write + 6 read) plus their tests. A partial rename yields a manifest whose writer and reader
 disagree, which presents as "everything looks fine, `datom_list()` is empty."
 
-**The enumeration above is the state before Task 5** and is kept because it is the verified survey
-the split was planned from. Task 5 collapses the read half to **one** site -- the shared reader
-(R22.4) -- and the three hand-built empty-manifest defaults to **one** skeleton builder, leaving
-Task 6 with the key rename, the field accesses on the returned document, the counters, and the
-writer. Note the six read sites listed here are *reads*; the field accesses that follow them
-(`R/query.R:62,89`, `R/query.R:458`, `R/query.R:573`, `R/summary.R:61`, `R/sync.R:396`) are what the
-rename actually edits, and they remain.
+**The enumeration above was six read sites until Task 5 landed** (2026-08-29), which is the survey
+the split was planned from: five readers each with their own absent-file default plus the
+namespace-occupied check, and three hand-built empty manifests. Task 5 collapsed the read half to
+the shared reader (R22.4) and the empty shapes to one builder, leaving Task 6 with the key rename,
+the field accesses listed above, the counters, and the writer. The field accesses are what the
+rename edits; the read itself is now a single place.
 
 ---
 
@@ -656,7 +658,7 @@ list reads empty; that is accepted because a released binary has no check to fir
 is "upgrade". Here the upgrade **is** the cause, so there is no recourse to point at. The direction
 section 11 analysed is outside our control; this one is entirely inside it.
 
-Nothing self-heals it either. `.datom_update_manifest_entry()` (`R/sync.R:715`) writes no
+Nothing self-heals it either. `.datom_update_manifest_entry()` (`R/sync.R:815`) writes no
 `schema_version` on either branch, so stamping the version only in the absent-manifest skeleton
 would leave upgraded repos v2-shaped while still declaring v1 -- the gate then stays silent on
 exactly the repos it was built for. And a no-change write returns at `R/read_write.R:773`, before
@@ -854,7 +856,7 @@ check Task 4 wired was, so silence there lands on storage, which adds a network 
 inspects the wrong copy.
 
 The clone is correct at both for the same four reasons: it is the document the write mutates
-(`R/sync.R:715`), it is a file read rather than a round trip, it is where a pull from a newer
+(`R/sync.R:818`), it is a file read rather than a round trip, it is where a pull from a newer
 collaborator lands, and storage cannot legitimately be ahead of git (I5). Full argument and the two
 rejected alternatives for step 5 are in R23.1a.
 

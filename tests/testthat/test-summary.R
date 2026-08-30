@@ -170,3 +170,31 @@ test_that("datom_summary tolerates a manifest with no schema_version", {
   conn <- mock_datom_conn(list())
   expect_equal(datom_summary(conn)$table_count, 1L)
 })
+
+test_that("datom_summary reads the frozen old-format manifest as non-empty", {
+  # Frozen fixture -- see the note in test-query.R. Do not update it to a newer
+  # manifest shape; rewritten, it would go green while asserting nothing.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      jsonlite::read_json(testthat::test_path("fixtures", "manifest-v1.json"))
+    }
+  )
+
+  s <- datom_summary(mock_datom_conn(list()))
+
+  expect_equal(s$table_count, 1L)
+  expect_equal(s$total_versions, 2L)
+})
+
+test_that("datom_summary reports an unreadable manifest with the underlying cause", {
+  # The read failure now travels back as a value rather than through a handler,
+  # so pin that its message still reaches the user.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) stop("bucket unreachable")
+  )
+
+  err <- expect_error(datom_summary(mock_datom_conn(list())))
+
+  expect_match(conditionMessage(err), "Could not read manifest")
+  expect_match(conditionMessage(err), "bucket unreachable")
+})

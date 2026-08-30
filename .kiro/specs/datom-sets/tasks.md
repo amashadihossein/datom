@@ -9,8 +9,8 @@ review and `main` is frozen (see `dev/README.md` "Branching During CRAN Submissi
 [#97](https://github.com/amashadihossein/datom/pull/97) is open and accumulates the task commits.
 **Test baseline**: 2460 at spec start -> 2482 after Task 1 -> 2572 after Task 2 -> 2612 after
 Task 3 -> 2660 after Task 4 -> 2664 after Task 18 -> 2675 after the two operator-facing fixes
-that followed it (see the 2026-08-26 rows in the Decisions log) -> **2686 after Task 19**. Report the
-count in every commit message; it must never drop.
+that followed it (see the 2026-08-26 rows in the Decisions log) -> 2686 after Task 19 -> **2740
+after Task 5**. Report the count in every commit message; it must never drop.
 
 ---
 
@@ -19,16 +19,19 @@ count in every commit message; it must never drop.
 **Done**: Task 0 (spec), **Task 1** (stale docstring sweep + relative-key helpers), **Task 2**
 (`datom-sv1`), **Task 3** (`datom_storage_read_json()` + the relative-key validator), **Task 4**
 (the reader-side `schema_version` gate), **Task 18** (the `.datom_check_git_current()`
-fetch-failure defect, #104) and **Task 19** (allowlist identity hashing, #100), plus three things
+fetch-failure defect, #104), **Task 19** (allowlist identity hashing, #100) and **Task 5** (one
+manifest reader + one skeleton builder), plus three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
 this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 `.kiro/steering/communication.md`.
 
-**Next**: **Task 5 -- one manifest reader and one skeleton builder**, contract-neutral: no
-on-disk change, no schema bump, the key is still `tables` when it ends. It exists so that Task 6 --
-the `manifest$tables` -> `manifest$artifacts` rename -- has **one** place to put the old-format
-upgrade instead of five.
+**Next**: **Task 6 -- the `manifest$tables` -> `manifest$artifacts` rename**, which carries
+escalation E2, so per rule 5d surface its recommendation in that chunk's checkpoint message before
+implementing. Task 5 landed the ground it stands on: manifest reads go through one function
+(`.datom_read_manifest()`, `R/sync.R:695`) and empty manifests through one builder
+(`.datom_manifest_skeleton()`, `R/sync.R:650`), so the old-format upgrade has **one** place to live
+instead of five. Nothing on disk changed and the key is still `tables`.
 
 **Two things Task 19 leaves for whoever adds a metadata field next.** (1) `metadata_sha` now selects
 fields by **allowlist**: `.datom_metadata_identity_fields` is identity,
@@ -557,13 +560,13 @@ old-format transition and a fixture sweep across ten test files -- and its failu
 a green suite is not evidence that any of it worked. Task 5 is the part that can be verified on its
 own; landing it first is what makes Task 6's failure loud.
 
-- [ ] **5. One manifest reader, one skeleton builder** &nbsp; **[contract-neutral]**
+- [x] **5. One manifest reader, one skeleton builder** &nbsp; **[contract-neutral; DONE 2026-08-29]**
   - **The problem this exists to make fixable.** After the rename a reader looks for `artifacts`
     while every repo written so far says `tables` and carries no `schema_version` field at all. The
     reader-side check does not stop it: it tolerates an absent version as v1
     (`R/utils-validate.R:237`), so the repo passes and the reader then finds nothing where the list
     should be. `datom_list()` returns an empty frame (`R/query.R:63`), `datom_summary()` reports
-    zero (`R/summary.R:61`), `datom_status()` reports zero (`R/query.R:458`), and **nothing errors**
+    zero (`R/summary.R:60`), `datom_status()` reports zero (`R/query.R:452`), and **nothing errors**
     -- the failure E2 exists to prevent, arriving through the front door instead of through a
     partial rename. `datom_read()` is unaffected (it never touches the manifest,
     `R/read_write.R:93`), so this is a discovery blackout rather than data loss. Silence is what
@@ -579,18 +582,21 @@ own; landing it first is what makes Task 6's failure loud.
     impossible to soften the upgrade message by accident. Task 4 found three readers wrapping their
     read in a handler that softens failures, and a check placed inside one reworded the upgrade
     instruction as "could not read manifest" -- `datom_status()` went further and downgraded it to a
-    warning while continuing. Today that placement is preserved by a comment at each site
-    (`R/query.R:58-60`, `R/summary.R:57-59`); after this task it is preserved by the shape of the
-    helper, because there is no handler for the caller to put the check inside.
-  - Route the five read sites through it, each keeping its **current** failure behaviour verbatim:
-    `datom_list()` (`R/query.R:47-60`) and `datom_summary()` (`R/summary.R:47-59`) abort with their
-    own wording on an unreadable manifest; `datom_status()` (`R/query.R:449-456`) still tolerates
-    one and reports it unavailable; `.datom_status_input_files()` (`R/query.R:558-568`) and
-    `datom_sync_manifest()` (`R/sync.R:374-384`) still fall back to an empty manifest when the
-    clone has no file.
-  - **New: `.datom_manifest_skeleton(project_name = NULL)`** -- the one empty-manifest shape. It
-    replaces three hand-built copies: `R/query.R:562`, `R/sync.R:378`, and the dangerous one at
-    `R/sync.R:721` (see Task 6). Use `datom_init_repo()`'s spelling,
+    warning while continuing. Until this task, that placement was preserved by a comment at each of
+    those three sites; now it is preserved by the shape of the helper, because there is no handler
+    left for a caller to put the check inside. (Those comments are gone, so the line citations they
+    carried are not reproduced here.)
+  - Route the five read sites through it, each keeping its **current** failure behaviour verbatim
+    (call sites as shipped): `datom_list()` (`R/query.R:49`) and `datom_summary()`
+    (`R/summary.R:48`) abort with their own wording on an unreadable manifest; `datom_status()`
+    (`R/query.R:446`) still tolerates one and reports it unavailable;
+    `.datom_status_input_files()` (`R/query.R:555`) and `datom_sync_manifest()` (`R/sync.R:378`)
+    still fall back to an empty manifest when the clone has no file.
+  - **New: `.datom_manifest_skeleton(project_name = NULL)`** (`R/sync.R:650`) -- the one
+    empty-manifest shape. It replaced three hand-built copies, now three calls to it:
+    `R/query.R:562`, `R/sync.R:385`, and the one inside the entry updater at `R/sync.R:827`, which
+    is the copy that would have written the old key after the rename (see Task 6). Use
+    `datom_init_repo()`'s spelling,
     `structure(list(), names = character(0))` (`R/conn.R:522`), not a bare `list()`: an empty bare
     list serializes as a JSON **array**, an empty named list as an **object**. Inert today (the
     skeleton is never written empty) and correct for the one case where it would be.
@@ -624,25 +630,68 @@ own; landing it first is what makes Task 6's failure loud.
     amend -- **do not bury it in a loop over the five readers**, because one of the five stops
     aborting later. AC32's wording is invariant across that boundary; the test is not. No pathway
     impact -- route shapes unchanged; record explicitly._
+  - **DONE 2026-08-29.** `.datom_read_manifest()` and `.datom_manifest_skeleton()` added to
+    `R/sync.R` in a new "Shared manifest access" section; five read sites routed through the first;
+    three hand-built empty manifests replaced by the second; `tests/testthat/fixtures/manifest-v1.json`
+    frozen, with a `fixtures/README.md` saying these files are never edited. tests: 2686 ->
+    **2740** (+54), FAIL 0 / WARN 0 / SKIP 0. `Rscript dev/check-spec.R` all nine checks pass. No
+    pathway impact -- the route shapes and gate positions are unchanged; only the number of places
+    the manifest is read moved, from five to one.
+  - **Both new guards were proven to fail before being trusted**, per this spec's own rule. (1)
+    Pointing `datom_list()` at `manifest$artifacts` -- what Task 6 will do -- turns the frozen-fixture
+    test red, so it really is evidence that old-format repos still list their contents rather than a
+    test that would pass either way. (2) Wrapping the schema check in a handler inside
+    `.datom_read_manifest()` turns three tests red, including `datom_sync_manifest`'s existing
+    refusal test, so the returned-versus-thrown split is pinned rather than assumed. Both probes were
+    reverted; the workspace carries neither.
+  - **The `error` field holds the whole condition, not its message text.** Two callers need different
+    things from it: `datom_list()` and `datom_summary()` splice `conditionMessage()` into their own
+    abort, and the two clone readers re-signal the original failure with `stop()` so a corrupt local
+    manifest still fails with the parser's own error and no datom wrapper. Keeping only the text would
+    force the second case to manufacture a look-alike error, which loses the condition class -- and
+    class is what the suite asserts on elsewhere.
+  - **`absent = TRUE` is a positive claim and storage never makes it.** For the clone copy it is a
+    free `fs::file_exists()`. For storage, separating a missing object from an unreachable store
+    needs an extra request on every `datom_list()`, `datom_summary()` and `datom_status()` call, and
+    no caller treats the two differently, so the field is left `FALSE` there, meaning "not known to
+    be absent". Pinned by a test, since the tempting later optimisation is to infer absence from the
+    error message. If a caller ever needs the distinction, probe `.datom_storage_exists()`; do not
+    parse the message.
+  - **A corrupt clone manifest is a failure, not an absence, and that distinction is now tested.**
+    Both clone readers fall back to an empty manifest when the file does not exist. A present but
+    unparseable file must not take that branch: it would report every input file as new, which is a
+    wrong answer delivered confidently. The helper separates the two, and each clone reader
+    re-signals the parse failure.
+  - **`datom_status()` lost its `read_ok` flag.** It had one because a manifest that legitimately
+    parses to `NULL` must still count as read, and a `NULL` check could not tell those apart. The
+    helper's `ok` field carries that distinction now, so the flag was redundant rather than dropped.
+  - **The entry updater keeps its own direct read, deliberately.** `.datom_update_manifest_entry()`
+    (`R/sync.R:818`) reads `.datom/manifest.json` mid-write, and a compatibility refusal there would
+    stop a write partway through instead of at the door. Only its empty shape moved to the shared
+    builder. A comment at the site says so, because the obvious tidy-up is to route the read through
+    the shared reader as well.
+  - **The two clone readers' fallback is now `.datom_manifest_skeleton()` rather than
+    `list(tables = list())`.** Behaviour-identical for lookups -- both answer `NULL` for any name --
+    and it removes the last two places that spelled an empty manifest by hand.
 
 - [ ] **6. `manifest$tables` -> `manifest$artifacts`, typed by `kind`** &nbsp; **[ESCALATION E2]**
   - Write side (**3** sites -- an earlier draft said 2 and missed the third):
-    `.datom_update_manifest_entry()` (`R/sync.R:755,759-766`); the **absent-manifest skeleton** at
-    `R/sync.R:721` (`list(project_name = ..., tables = list(), summary = list())`, replaced by
-    `.datom_manifest_skeleton()` in Task 5); and `datom_init_repo()`'s seed (`R/conn.R:522-527`).
+    `.datom_update_manifest_entry()` (`R/sync.R:861,865-872`); the **absent-manifest skeleton**,
+    which Task 5 collapsed into `.datom_manifest_skeleton()` (`R/sync.R:650`, called at
+    `R/sync.R:827`); and `datom_init_repo()`'s seed (`R/conn.R:522-527`).
     **The skeleton was the dangerous one**: left unrenamed it writes a `tables` key after the
     rename, and it only fires on a fresh or repaired repo, so tests against an existing fixture pass
     while the bug ships. Task 5 reduced it to one place, which is the point of the split.
-  - Read side: **one** site now -- `.datom_read_manifest()` -- plus the six field accesses that read
-    the artifact key off the returned document (`R/query.R:62,89`, `R/query.R:458`,
-    `R/query.R:573`, `R/summary.R:61`, `R/sync.R:396`).
+  - Read side: **one** site now -- `.datom_read_manifest()` (`R/sync.R:695`) -- plus the six field
+    accesses that read the artifact key off the returned document (`R/query.R:61,88`,
+    `R/query.R:452`, `R/query.R:567`, `R/summary.R:60`, `R/sync.R:397`).
   - Each entry gains `kind` (`"table"` for everything existing). `summary` gains `total_sets`;
     `total_tables` / `total_size_bytes` / `total_versions` keep **current** semantics (tables
     only).
   - **FIVE counters silently widen to include sets, not three.** The three in the summary block
-    (`R/sync.R:760,762,765`) plus two computed independently of it: `datom_summary()`'s
-    `table_count` counts entries rather than reading the summary block (`R/summary.R:61`), and
-    `datom_status()`'s count does the same and prints as "Tables on S3" (`R/query.R:458`). Each
+    (`R/sync.R:866,868,871`) plus two computed independently of it: `datom_summary()`'s
+    `table_count` counts entries rather than reading the summary block (`R/summary.R:60`), and
+    `datom_status()`'s count does the same and prints as "Tables on S3" (`R/query.R:452`). Each
     needs a `kind == "table"` filter. There are no sets until Task 9, so **every test passes either
     way** unless it is driven by a hand-built manifest containing a `kind: "set"` entry -- so write
     that fixture, and assert `datom_summary()`'s counted number and the stored `summary` block
@@ -1348,7 +1397,7 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     returns at `R/read_write.R:687` and `R/read_write.R:691`, because `.datom_sync_data_metadata()`
     mirrors the whole manifest to storage (`R/sync.R:177`) without reaching the manifest-writing step.
     All of it before any hashing, local write, or commit (I34).
-  - **Decide the double read deliberately**: `.datom_update_manifest_entry()` (`R/sync.R:715`) reads
+  - **Decide the double read deliberately**: `.datom_update_manifest_entry()` (`R/sync.R:816`) reads
     the same file again at pipeline step 6. Either thread the entry read down, or accept two reads of
     a small local file and say why in the commit.
   - **Say plainly that this binds 0.1.1 forward only** (R23.7). 0.1.0 has none of these checks and
@@ -1605,3 +1654,11 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-26 | **(audit) the metadata field inventory is provably complete from one function, and that is what makes the allowlist safe to seed.** Every top-level key of a metadata document is assigned inside `.datom_build_metadata()`, with exactly one exception -- `meta$parquet_sha` (`R/read_write.R:786`), which is volatile. Verified by grepping every `meta$<key> <-` and `metadata$<key> <-` in `R/`. This matters because an allowlist seeded from an incomplete inventory drops content out of identity **silently**, which is the failure direction an allowlist has and a denylist does not; recording the result means the next session does not repeat the grep or, worse, skip it. The semantic set today: `data_sha`, `hash_algo`, `table_type`, `nrow`, `ncol`, `colnames`, plus `original_file_sha`, `parents`, `source_lineage`, `custom` when present. | Task 19, R9.5 |
 | 2026-08-26 | **(implementation) the new helper's own test caught a substring bug in it, which is worth the row because the same shape will recur.** `.datom_validate_unfixable_tables()` selects the artifacts whose payload is missing, and status codes are comma-joined -- so `grepl("data_missing_s3", ...)` matches **`metadata_missing_s3`**, which contains it. That reported every metadata-only finding as unrepairable: exactly backwards, since those are the ones the sync does fix. Now split on `,` and compared as whole tokens. Second correction in the same helper: it originally guarded `all(c("name","status") %in% names(...))` and the real column is **`table`**, so the guard converted a wrong column name into a silent `character()` -- reinstating the overclaiming message the helper exists to remove. Guard deleted deliberately: a renamed column must error here. Same reasoning as the no-missing-`kind`-fallback decision -- a safety net that fires only when something upstream is already broken hides the breakage. | `R/validate.R` |
 | 2026-08-23 | **(review footnote, pre-existing) a retired phrase was suppressing on an incidental word, and it is now pinned to an intentional one.** The `tasks.md` occurrence of "convert the abort into a warning" sat inside a record whose nearest marker was **"reversal"**, matching via the `revers` stem -- the right outcome by accident, and fragile, because `revers` is ordinary vocabulary in this spec and could mask a genuine hit later. The record now carries an explicit "superseded". Verified by re-running the gate's window test with `revers` removed from `MARKER_RE`: still suppressed. `MARKER_RE` itself is left alone -- the maintenance lesson already in `dev/check-spec.R` is that broadening it toward ordinary vocabulary is what made the check nearly vacuous once, and `revers` is close to that line. Worth revisiting the next time that list is touched. | dev/check-spec.R |
+| 2026-08-29 | **`.kiro/steering/communication.md` extended (not a task).** Three additions, each from a message the owner could not act on. (1) **Every section is labelled by purpose** -- TLDR, What changes, Why, FYI, Need from you -- because a reader cannot otherwise tell background from a decision request from the agent's own justification, and the cost of guessing wrong is either an unanswered question or an unwanted implementation. (2) **No homework**: a sentence that needs a file opened, a task re-read or a decision recalled is not written yet; name a thing and gloss it in the same breath, and never signal that something is significant instead of saying what happens. (3) **Questions must be answerable without having read the rest of the message**, with no type names inside them, naming the two outcomes being chosen between. Two real messages from this session are recorded in the file as the worked counter-examples. | `.kiro/steering/communication.md` |
+| 2026-08-29 | **(implementation) the failure record carries the whole condition, not its message text.** Two callers want different things from it: `datom_list()` / `datom_summary()` splice `conditionMessage()` into their own abort, while the two clone readers re-signal the original with `stop()` so a corrupt local manifest still fails with the parser's own error and no datom wrapper around it. Text alone would force the second case to build a look-alike error, losing the condition class -- and class, not wording, is what the suite asserts on at every other schema site. | Task 5, R22.4 |
+| 2026-08-29 | **(implementation) `absent = TRUE` is a positive claim, and the storage scope never makes it.** For the clone copy it is a free `fs::file_exists()`. For storage it would need an extra request on every `datom_list()`, `datom_summary()` and `datom_status()` call to separate a missing object from an unreachable store, and no caller treats those differently -- so the field stays `FALSE` there, meaning "not known to be absent". Pinned by a test, because the tempting later shortcut is to infer absence from the error message; the right move if a caller ever needs it is `.datom_storage_exists()`. Contrast Task 3, which bought exactly that probe on purpose -- there it improved a user-facing message, here there is no message to improve. | Task 5, Task 3 |
+| 2026-08-29 | **(implementation) a corrupt manifest in the clone is a failure, not an absence.** Both clone readers fall back to an empty manifest when the file does not exist. A present-but-unparseable file must not take that branch: it would report every input file as new -- a confident wrong answer, which is the failure class this whole phase exists to remove. The record separates the two states and each reader re-signals the parse failure, with a test at both readers. | Task 5, R22.6 |
+| 2026-08-29 | **(implementation) both new guards were proven to fail before being trusted.** Pointing `datom_list()` at `manifest$artifacts` -- what Task 6 does -- turns the frozen-fixture test red, so it is real evidence that old-format repos still list their contents. Wrapping the schema check in a handler inside `.datom_read_manifest()` turns three tests red, including `datom_sync_manifest`'s pre-existing refusal test, so the returned-versus-thrown split is pinned rather than assumed. Both probes reverted. This is the rule the spec already applies to `check-spec.R` gates, applied to `R/` guards. | Task 5, AC30, AC32 |
+| 2026-08-29 | **(implementation) `datom_status()` lost its `read_ok` flag, and it was not dropped -- it moved.** The flag existed because a manifest that legitimately parses to `NULL` must still count as read, which a `NULL` check on the document cannot express. The shared reader's `ok` field carries that distinction for every caller now. | Task 5 |
+| 2026-08-29 | **(implementation) the entry updater keeps its own direct read; only its empty shape moved.** `.datom_update_manifest_entry()` (`R/sync.R:818`) reads the clone's manifest mid-write, and a compatibility refusal there would stop a write partway through rather than at the door -- Task 4's stated principle. So the read stays out of the shared reader while the hand-built empty manifest becomes a call to `.datom_manifest_skeleton()`. A comment at the site says why, because routing the read through the shared reader is the obvious tidy-up and it is wrong. | Task 5, Task 4 |
+| 2026-08-29 | **Spec code citations re-derived by content after Task 5's insertions**, in all three spec files plus the two `design.md` survey tables. Three had drifted onto blank lines and were caught by the gate; the rest were checked with `SPEC_CHECK_SHOW_CITATIONS=1` rather than by arithmetic. Two citations were **removed** rather than repointed: the comments at `datom_list()` and `datom_summary()` that held the check outside their read handlers no longer exist, because the helper's shape holds that line now. Dated Decisions rows left frozen, per the 2026-08-23 policy. | dev/check-spec.R, Task 5 |

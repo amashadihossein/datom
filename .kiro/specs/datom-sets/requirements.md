@@ -1338,7 +1338,7 @@ and already in the design: reads limp, writes stop.
   adding a network read to every write and checking the wrong copy.
   **The clone is right at both steps for the same four reasons.** It is the document the write
   actually mutates (`.datom_update_manifest_entry()` edits `{conn$path}/.datom/manifest.json`,
-  `R/sync.R:715`); it is a local file read rather than a round trip on every write; it is where a newer
+  `R/sync.R:818`); it is a local file read rather than a round trip on every write; it is where a newer
   collaborator's work lands after a pull; and storage cannot legitimately be ahead of git (I5).
   All three documents exist as local files in the clone: `{conn$path}/.datom/manifest.json` and
   `{conn$path}/{name}/metadata.json` (`R/read_write.R:463-469`, committed via `git_paths`). So the

@@ -44,20 +44,19 @@ datom_list <- function(conn,
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
-  manifest <- tryCatch(
-    .datom_storage_read_json(conn, ".metadata/manifest.json"),
-    error = function(e) {
-      cli::cli_abort(c(
-        "Could not read manifest from S3.",
-        "i" = "The repository may not be initialized or manifest is missing.",
-        "i" = "Underlying error: {conditionMessage(e)}"
-      ))
-    }
-  )
+  # .datom_read_manifest() returns IO failures and throws schema refusals, so an
+  # unreadable manifest is this function's decision while a too-new one is not.
+  read <- .datom_read_manifest(conn, "storage")
 
-  # Outside the handler above on purpose: a too-new repo must surface the
-  # upgrade message, not be reworded as an unreadable manifest.
-  .datom_check_schema_version(manifest, ".metadata/manifest.json")
+  if (!read$ok) {
+    cli::cli_abort(c(
+      "Could not read manifest from S3.",
+      "i" = "The repository may not be initialized or manifest is missing.",
+      "i" = "Underlying error: {conditionMessage(read$error)}"
+    ))
+  }
+
+  manifest <- read$manifest
 
   tables <- manifest$tables
   if (is.null(tables) || length(tables) == 0L) {
@@ -439,21 +438,16 @@ datom_status <- function(conn) {
 
   # --- Table count from S3 manifest ---
   # An unreadable manifest is reported, not fatal -- status is a diagnostic and
-  # must still describe the connection when storage is unreachable. The schema
-  # check therefore runs on the parsed manifest OUTSIDE that tolerance: a repo
-  # written by a newer datom is a hard stop, and reporting it as "could not
-  # read" is exactly the silent degradation the check exists to remove.
-  # `read_ok` is an explicit flag rather than a NULL check on the manifest: a
-  # document that legitimately parses to NULL must still count as read.
-  manifest_read <- tryCatch(
-    list(read_ok = TRUE, manifest = .datom_storage_read_json(conn, ".metadata/manifest.json")),
-    error = function(e) list(read_ok = FALSE, error = conditionMessage(e))
-  )
+  # must still describe the connection when storage is unreachable. That
+  # tolerance covers IO only: .datom_read_manifest() throws a schema refusal
+  # rather than returning it, so a repo written by a newer datom stops here
+  # instead of being reported as "could not read", which is exactly the silent
+  # degradation the check exists to remove.
+  manifest_read <- .datom_read_manifest(conn, "storage")
 
-  table_info <- if (!manifest_read$read_ok) {
-    list(count = 0L, available = FALSE, error = manifest_read$error)
+  table_info <- if (!manifest_read$ok) {
+    list(count = 0L, available = FALSE, error = conditionMessage(manifest_read$error))
   } else {
-    .datom_check_schema_version(manifest_read$manifest, ".metadata/manifest.json")
     list(
       count = length(manifest_read$manifest$tables %||% list()),
       available = TRUE
@@ -554,18 +548,18 @@ datom_status <- function(conn) {
     return(list(n_total = 0L, n_new = 0L, n_changed = 0L, n_unchanged = 0L))
   }
 
-  # Read local manifest
-  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
-  manifest <- if (fs::file_exists(manifest_path)) {
-    jsonlite::read_json(manifest_path)
-  } else {
-    list(tables = list())
-  }
+  # Read local manifest. .datom_read_manifest() also checks the declared schema
+  # version, because the clone can be ahead of this build: a collaborator on a
+  # newer datom writes, this developer pulls, and their local manifest declares
+  # a format this build does not know.
+  read <- .datom_read_manifest(conn, "clone")
 
-  # The clone can be ahead of this build: a collaborator on a newer datom
-  # writes, this developer pulls, and their local manifest declares a format
-  # this build does not know.
-  .datom_check_schema_version(manifest, ".datom/manifest.json")
+  # A clone with no manifest yet compares every input file against nothing. A
+  # manifest that exists but will not parse keeps failing exactly as before --
+  # re-signalled unchanged rather than reworded.
+  if (!read$ok && !read$absent) stop(read$error)
+
+  manifest <- if (read$ok) read$manifest else .datom_manifest_skeleton()
 
   statuses <- purrr::map_chr(files, function(fp) {
     table_name <- fs::path_ext_remove(fs::path_file(fp))
