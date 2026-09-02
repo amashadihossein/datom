@@ -710,7 +710,7 @@ datom_list() / datom_summary()  --> .metadata/manifest.json          <- gate her
 datom_read()                    --> {name}/.metadata/metadata.json   <- and here
 ```
 
-  `datom_read()` never touches the manifest (verified: `R/read_write.R:44-58` -- it calls
+  `datom_read()` never touches the manifest (verified: `R/read_write.R:58-65` -- it calls
   `.datom_read_metadata()` -> `.datom_resolve_version()` -> `.datom_read_parquet()`). So
   `schema_version` must live in **both** the manifest and per-table `metadata.json`.
 - **R9.3** `schema_version` goes in the `volatile` exclusion list of
@@ -819,7 +819,7 @@ set: study001-adam
 
 ### R11 -- `datom_validate()` branches on kind
 
-`R/validate.R:391` hardcodes the data-object check inside `.datom_validate_one_table()`:
+`R/validate.R:392` hardcodes the data-object check inside `.datom_validate_one_table()`:
 
 ```r
 data_key <- paste0(name, "/", meta$data_sha, ".parquet")

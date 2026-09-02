@@ -18,15 +18,15 @@ written (`dev` @ `b57cdba`). **Cite these rather than re-deriving them.**
 | `.datom_validate_parents()` | `R/utils-sha.R:64` | The validator pattern for a reference-record list, including the `remedy` string that points every failure back at the constructor. `datom_member()`'s validator mirrors this. |
 | `parquet_sha` persistence in history | `R/read_write.R`, `.datom_write_metadata_local()` conditional-add block; read back in `.datom_resolve_version()` at `R/read_write.R:187` (version-pinned) and `129` (current) | **Already implemented.** The `document_sha` requirement (R7.2) mirrors this exact conditional-add pattern. |
 | Stale "task 5.1" docstrings | `R/read_write.R:110-113`, `205-206`, `413` (stale) and `393` (already correct, hence contradicting) | Claims history does not yet persist `parquet_sha`. False since #72. **#89 cited `95-97`, which is the function title, not the stale text** -- corrected here from `grep -n "task 5\.1"`. Four sites; see R13.3 for the table. This is what misled an earlier draft of #89. |
-| Hardcoded parquet-existence check | `R/validate.R:391` in `.datom_validate_one_table()` | `data_key <- paste0(name, "/", meta$data_sha, ".parquet")`. Needs the `kind` branch (R11). |
+| Hardcoded parquet-existence check | `R/validate.R:444` in `.datom_validate_one_table()` | `data_key <- .datom_artifact_payload_key(name, meta$data_sha, "table")` -- the kind is **hardcoded**, so it resolves to `.parquet` for every artifact. Needs the `kind` branch (R11). (Task 1 replaced the original `paste0()` here; the helper already accepts `kind = "set"`, so the branch is a call-site change rather than new key logic.) |
 | `volatile` exclusion list | `R/utils-sha.R:444-447` | `c("created_at", "datom_version", "parquet_sha", "column_hashes", "size_bytes")`. `schema_version` (R9.3) and `document_sha` (R7.4) join it. |
-| `datom_read()` never touches the manifest | `R/read_write.R:44-58` | Confirmed: `.datom_read_metadata()` -> `.datom_resolve_version()` -> `.datom_read_parquet()`. This is why the schema gate needs **two** sites (R9.2) and why the `artifacts` rename is discovery-only. |
+| `datom_read()` never touches the manifest | `R/read_write.R:58-65` | Confirmed: `.datom_read_metadata()` -> `.datom_resolve_version()` -> `.datom_read_parquet()`. This is why the schema gate needs **two** sites (R9.2) and why the `artifacts` rename is discovery-only. |
 | `governance.json` dual-pointer pattern | `R/governance_json.R` | The model for the payload (R6.1): builder -> `.datom_write_*_local()` (git canonical) + `.datom_storage_write_*()` (mirror) + a `.datom_sync_*()` repair helper. Note the reader path (`.datom_storage_read_governance_json()`) works with **no clone** -- the precedent that makes AC1 achievable. |
 | Manifest producer | `.datom_update_manifest_entry()`, `R/sync.R:818-881` | Single writer of `manifest$tables[[name]]` and of `manifest$summary`. The `artifacts` rename's write side is here and in the two places below. |
 | Manifest initializer | `R/conn.R:520-528` | `datom_init_repo()` seeds `tables = structure(list(), names = character(0))` and `summary$total_tables`. Second write site for R8. |
 | Empty-manifest shape | `.datom_manifest_skeleton()`, `R/sync.R:653` | The one empty manifest, added by Task 5. Called when `.datom/manifest.json` is absent (`R/sync.R:830`) and by the two clone readers as their fallback. Third write site for R8. |
 | Manifest reader | `.datom_read_manifest()`, `R/sync.R:698` | The one read, added by Task 5: `scope` picks the storage copy or the clone copy, IO failures come back as data, a schema refusal is thrown. R8's old-format upgrade attaches here. |
-| Manifest consumers | `R/query.R:61,88` (`datom_list()`), `R/query.R:452` (`datom_status()`), `R/query.R:567` (`.datom_status_input_files()`), `R/summary.R:60` (`datom_summary()`), `R/sync.R:398` (`datom_sync_manifest()`) | The field accesses on the document the reader returns. These are what R8's rename edits; the read itself is one place. |
+| Manifest consumers | `R/query.R:61,88` (`datom_list()`), `R/query.R:460` (`datom_status()`), `R/query.R:575` (`.datom_status_input_files()`), `R/summary.R:60` (`datom_summary()`), `R/sync.R:398` (`datom_sync_manifest()`) | The field accesses on the document the reader returns. These are what R8's rename edits; the read itself is one place. |
 | cv1 reference + parity workflow | `dev/datom_cv1_reference.R`, `.github/workflows/cv1-reference-parity.yaml` | The template for the `datom-sv1` reference + goldens (R2.4). Note the workflow exists because `dev/` is `.Rbuildignore`d, so the parity test *skips* inside a built tarball -- the sv1 goldens inherit that hazard and must be wired into the same workflow. |
 | `.datom_canonical_hash()` zero-dim abort | `R/utils-sha.R`, `.datom_canonical_hash()` | `nrow == 0 || ncol == 0` aborts. AC5 asks for the deliberate set analogue. |
 
@@ -600,8 +600,8 @@ Write side -- **three** sites (an earlier draft said two and missed the third):
 Read side -- **one** site since Task 5: `.datom_read_manifest()`, `R/sync.R:698`. The field accesses
 that consume the document it returns, which are what the rename actually edits:
 - `datom_list()`, `R/query.R:61,88`
-- `datom_status()`, `R/query.R:452`
-- `.datom_status_input_files()`, `R/query.R:567`
+- `datom_status()`, `R/query.R:460`
+- `.datom_status_input_files()`, `R/query.R:575`
 - `datom_summary()`, `R/summary.R:60`
 - `datom_sync_manifest()`, `R/sync.R:398`
 
@@ -630,7 +630,7 @@ See requirements R9 for the code shape and the four requirements. Design notes:
   that can degrade silently. Every subsequent schema change gets an abort instead of an empty
   list.
 - **Two sites, not one**, because readers take two independent paths and `datom_read()` never
-  touches the manifest (verified, `R/read_write.R:44-58`). A manifest-only gate leaves the data
+  touches the manifest (verified, `R/read_write.R:58-65`). A manifest-only gate leaves the data
   path open -- which is the more important of the two.
 - Implement as one internal `.datom_check_schema_version(meta, source)` called from
   `.datom_read_metadata()` and from the manifest readers, so the message is written once.
@@ -912,7 +912,7 @@ is silent.
 
 ### Why the `artifacts` rename is acceptable anyway
 
-Verified at `R/read_write.R:44-58`: `datom_read()` reads per-table metadata -> resolves version
+Verified at `R/read_write.R:58-65`: `datom_read()` reads per-table metadata -> resolves version
 -> fetches parquet. It never touches the manifest. So the rename affects only discovery:
 
 | Function | Effect on a 0.1.0 reader |
@@ -1221,7 +1221,7 @@ the code independently rather than accepted on assertion.
 | **F6** | `datom_read_set()` on a **table** was unspecified -- the converse of AC6. | Read R12.3. | **Accepted.** R12.3 now specifies both directions; **AC14** added. Without it, `datom_read_set()` on a healthy table reports a missing payload. |
 | **F7** | **Git-side payload layout unspecified.** `governance.json` is a singleton current-state file; a set has N immutable content-addressed payloads, so the dual-pointer pattern does not transfer wholesale. | Read `R/governance_json.R` -- confirmed singleton at `.datom/governance.json`. | **Accepted, then SUPERSEDED -- see section 21.2.** The finding was right that the pattern does not transfer wholesale. Its original resolution -- git layout at `{name}/{data_sha}.json` with all historical payloads retained -- was **reversed**: git now holds one stable `{name}/set.json` so history is git's and diffs are member-level, and the retention rule is redundant because git retention is definitional. **P17** still holds, via `git show <commit>:{name}/set.json`. |
 | **F8** | **AC4 mechanism** should read storage metadata, not the manifest (which can lag). | Confirmed `.datom_has_changes()` already reads `{name}/.metadata/metadata.json`. | **Accepted.** AC4 now names the mechanism and notes it costs no extra round-trip. |
-| **F9** | **R8.1's example** omits fields real entries carry, and could be read as the full schema. | Confirmed against `.datom_update_manifest_entry()` (`R/sync.R:744-756`). | **Accepted.** R8.1 marks the example illustrative and enumerates the omitted fields. |
+| **F9** | **R8.1's example** omits fields real entries carry, and could be read as the full schema. | Confirmed against `.datom_update_manifest_entry()` (`R/sync.R:853-862`). | **Accepted.** R8.1 marks the example illustrative and enumerates the omitted fields. |
 | **F10** | **AC7 wording** implied testing an installed 0.1.0 reader, which has no gate to fire. | Read AC7. | **Accepted.** AC7 restated to drive `.datom_check_schema_version()` with an above-`SUPPORTED_SCHEMA` fixture: test the gate, not the archaeology. |
 | **F11** | **Set versions counted nowhere**; probably intentional but unrecorded. | Read R8.3. | **Accepted as intentional, now explicit.** **R8.3a** records the omission and its reason (holding the breaking surface to one key rename), so it is not later read as an oversight. |
 | **F12** | **Stale docstring line numbers wrong** -- text is at ~105-108, 205, 413, not 95-97, and `read_write.R:393` contradicts the others. | **Re-verified**: `grep -n "task 5\.1" R/read_write.R` returns exactly `107, 205, 393, 413`. `95-97` is the function title. #89 had it wrong and the spec propagated it. | **Accepted.** R13.3 now carries a four-site table distinguishing the three stale sites from the one already-correct-and-contradicting site. |

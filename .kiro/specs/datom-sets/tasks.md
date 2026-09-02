@@ -478,7 +478,7 @@ necessary.
 - [x] **4. `schema_version` gate (reader side)** &nbsp; **[DONE 2026-08-21]**
   - `.datom_check_schema_version(meta, source)` -- one implementation, one message.
   - Wire into **both** entry points: `.datom_read_metadata()` (the `datom_read()` path, which
-    never touches the manifest -- verified `R/read_write.R:44-58`) and the manifest readers
+    never touches the manifest -- verified `R/read_write.R:58-65`) and the manifest readers
     (`datom_list()`, `datom_summary()`, `datom_status()`).
   - `SUPPORTED_SCHEMA <- 2L`. Asymmetric: refuse newer, tolerate older; absent defaults to `1`.
   - Add `schema_version` **and** `document_sha` to the `volatile` list (that list is now
@@ -568,7 +568,7 @@ own; landing it first is what makes Task 6's failure loud.
     reader-side check does not stop it: it tolerates an absent version as v1
     (`R/utils-validate.R:237`), so the repo passes and the reader then finds nothing where the list
     should be. `datom_list()` returns an empty frame (`R/query.R:63`), `datom_summary()` reports
-    zero (`R/summary.R:60`), `datom_status()` reports zero (`R/query.R:452`), and **nothing errors**
+    zero (`R/summary.R:60`), `datom_status()` reports zero (`R/query.R:460`), and **nothing errors**
     -- the failure E2 exists to prevent, arriving through the front door instead of through a
     partial rename. `datom_read()` is unaffected (it never touches the manifest,
     `R/read_write.R:93`), so this is a discovery blackout rather than data loss. Silence is what
@@ -592,11 +592,11 @@ own; landing it first is what makes Task 6's failure loud.
     (call sites as shipped): `datom_list()` (`R/query.R:49`) and `datom_summary()`
     (`R/summary.R:48`) abort with their own wording on an unreadable manifest; `datom_status()`
     (`R/query.R:446`) still tolerates one and reports it unavailable;
-    `.datom_status_input_files()` (`R/query.R:555`) and `datom_sync_manifest()` (`R/sync.R:379`)
+    `.datom_status_input_files()` (`R/query.R:563`) and `datom_sync_manifest()` (`R/sync.R:379`)
     still fall back to an empty manifest when the clone has no file.
   - **New: `.datom_manifest_skeleton(project_name = NULL)`** (`R/sync.R:653`) -- the one
     empty-manifest shape. It replaced three hand-built copies, now three calls to it:
-    `R/query.R:562`, `R/sync.R:386`, and the one inside the entry updater at `R/sync.R:830`, which
+    `R/query.R:570`, `R/sync.R:386`, and the one inside the entry updater at `R/sync.R:830`, which
     is the copy that would have written the old key after the rename (see Task 6). Use
     `datom_init_repo()`'s spelling,
     `structure(list(), names = character(0))` (`R/conn.R:522`), not a bare `list()`: an empty bare
@@ -686,14 +686,14 @@ own; landing it first is what makes Task 6's failure loud.
     while the bug ships. Task 5 reduced it to one place, which is the point of the split.
   - Read side: **one** site now -- `.datom_read_manifest()` (`R/sync.R:698`) -- plus the six field
     accesses that read the artifact key off the returned document (`R/query.R:61,88`,
-    `R/query.R:452`, `R/query.R:567`, `R/summary.R:60`, `R/sync.R:398`).
+    `R/query.R:460`, `R/query.R:575`, `R/summary.R:60`, `R/sync.R:398`).
   - Each entry gains `kind` (`"table"` for everything existing). `summary` gains `total_sets`;
     `total_tables` / `total_size_bytes` / `total_versions` keep **current** semantics (tables
     only).
   - **FIVE counters silently widen to include sets, not three.** The three in the summary block
     (`R/sync.R:869,871,874`) plus two computed independently of it: `datom_summary()`'s
     `table_count` counts entries rather than reading the summary block (`R/summary.R:60`), and
-    `datom_status()`'s count does the same and prints as "Tables on S3" (`R/query.R:452`). Each
+    `datom_status()`'s count does the same and prints as "Tables on S3" (`R/query.R:460`). Each
     needs a `kind == "table"` filter. There are no sets until Task 9, so **every test passes either
     way** unless it is driven by a hand-built manifest containing a `kind: "set"` entry -- so write
     that fixture, and assert `datom_summary()`'s counted number and the stored `summary` block
@@ -712,8 +712,13 @@ own; landing it first is what makes Task 6's failure loud.
   - **The old-format upgrade, which is what makes the rename safe** (R22): add
     `.datom_manifest_upgrade_v1_to_v2()` (move `tables` to `artifacts`, stamp `kind = "table"` on
     every entry) and the dispatcher `.datom_manifest_upgrade()`. Apply it in the **one** place Task
-    5 created. Read upgrades in memory and leaves the file alone; write upgrades the file, then
-    stamps the version. Never stamp a version onto a document that was not upgraded first, and never
+    5 created. Concretely, inside `.datom_read_manifest()` (`R/sync.R:698`) the order is: read,
+    then `.datom_check_schema_version()` -- which throws on a document too new to touch at all --
+    then the upgrade chain on what survives, then return. The record's four fields
+    (`ok` / `absent` / `manifest` / `error`) do not change shape; `manifest` simply comes back
+    upgraded. Task 22 later adds a rebuild branch at the same point, so keep the step separable
+    rather than inlined into the return. Read upgrades in memory and leaves the file alone; write
+    upgrades the file, then stamps the version. Never stamp a version onto a document that was not upgraded first, and never
     write a v2-shaped entry into a file still declaring v1 -- that is how a file ends up half in
     each format. Concretely, without this: a repo with twelve tables gets one entry added under the
     new key while the old key sits untouched, and `total_tables` reads **1**.
@@ -763,17 +768,34 @@ own; landing it first is what makes Task 6's failure loud.
     2. **THREE DECOY SITES that look like the rename and must not be renamed.** Each is a
        user-facing **return-value** field named `tables`, not the manifest key:
        `datom_sync()`'s result (`R/sync.R:171`, `R/sync.R:209`), `datom_validate()`'s result
-       (`R/validate.R:184`), and `datom_status()`'s result (`R/query.R:463`). A `grep tables`
+       (`R/validate.R:205`), and `datom_status()`'s result (`R/query.R:465`). A `grep tables`
        sweep hits all three. Renaming them is a **separate** breaking change to three return
        shapes that R8 does not ask for -- R8.1 renames the manifest key only. If it ever looks
        desirable, it needs its own decision and its own NEWS entry.
-    3. **Test surface is wide**: ten test files mention `tables`
-       (`test-query.R` ~31 hits, `test-sync.R` ~28, `test-read-write.R` ~17, `test-validate.R`
-       ~15, `test-summary.R` ~9, plus `test-conn.R` and four with one each). Many are manifest
-       fixtures that must move to `artifacts`; some are decoys per item 2. Budget for the fixture
-       sweep being the bulk of the chunk, and remember the rename's own failure mode is silent --
-       a fixture left on `tables` against a reader expecting `artifacts` presents as an empty
-       list, not an error.
+    3. **Test surface is wide**: ten test files mention `tables`, re-counted 2026-08-29 after
+       Tasks 18/19/5 added to them (`test-sync.R` 45 hits, `test-query.R` 39, `test-validate.R` 24,
+       `test-read-write.R` 17, `test-summary.R` 9, `test-conn.R` 4, plus four with one each). Many
+       are manifest fixtures that must move to `artifacts`; some are decoys per item 2. Budget for
+       the fixture sweep being the bulk of the chunk, and remember the rename's own failure mode is
+       silent -- a fixture left on `tables` against a reader expecting `artifacts` presents as an
+       empty list, not an error.
+    4. **SIX TESTS AND ONE FILE MUST STAY ON THE OLD KEY.** They are the only evidence that repos
+       written before this rename still read, so sweeping them to `artifacts` leaves them green
+       while asserting nothing -- and the regression then ships clean. Verified present
+       2026-08-29:
+       `tests/testthat/fixtures/manifest-v1.json` (frozen; `fixtures/README.md` says so) and its
+       readers `datom_list reads the frozen old-format manifest as non-empty`
+       (`tests/testthat/test-query.R:905`), `datom_status input file scan sees entries in an
+       old-format manifest` (`tests/testthat/test-query.R:992`), `datom_summary reads the frozen
+       old-format manifest as non-empty` (`tests/testthat/test-summary.R:174`) and
+       `datom_sync_manifest sees entries in an old-format manifest in the clone`
+       (`tests/testthat/test-sync.R:1302`); plus the two older tolerance tests
+       `datom_list tolerates a manifest with no schema_version`
+       (`tests/testthat/test-query.R:894`) and `datom_summary tolerates a manifest with no
+       schema_version` (`tests/testthat/test-summary.R:163`). Note the same-named
+       `datom_sync_manifest` tolerance test (`tests/testthat/test-sync.R:1283`) has an **empty**
+       `tables` block, so it proves nothing either way -- Task 5 added the non-empty clone-copy
+       test above precisely because of that.
   - **DESIGN AUDIT, 2026-08-23** -- run before implementation per the E2 flag, and the reason this
     phase is now two tasks. It found the old-format transition described above (nothing upgraded a
     v1 manifest, and neither of the two things that might have self-healed it does: the entry
@@ -1023,8 +1045,11 @@ own; landing it first is what makes Task 6's failure loud.
     Acceptance: AC18, AC19, AC20._
 
 - [ ] **14. `datom_validate()` branches on `kind`**
-  - `.datom_validate_one_table()` at `R/validate.R:386` currently hardcodes
-    `paste0(name, "/", meta$data_sha, ".parquet")`, which fails 100% of the time on a set.
+  - `.datom_validate_one_table()` at `R/validate.R:444` builds the payload key with the kind
+    **hardcoded** to `"table"`: `.datom_artifact_payload_key(name, meta$data_sha, "table")`, which
+    resolves to `.parquet` and so fails 100% of the time on a set. (Task 1 replaced the original
+    `paste0()` here, and the helper already accepts `kind = "set"` -- so this is a call-site change,
+    not new key logic. Earlier drafts of this task described the `paste0()` form.)
   - **table**: existing parquet check, unchanged. **set**: payload exists at
     `{name}/{data_sha}.json` **and** every member resolves *as far as the connections allow* --
     same-project members fully checked, cross-project members checked as well-formed pointers
