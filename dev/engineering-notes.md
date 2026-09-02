@@ -433,3 +433,32 @@ matter whenever a test needs to prove something did *not* happen.
 - **Locate stored objects through `.datom_local_path()`**, not a hand-written
   `{prefix}/datom/...` path, so a storage-layout change breaks the code rather than silently
   passing a test that looks in the wrong place.
+
+### `conditionMessage()` on a cli error carries terminal escape codes
+
+`cli::cli_abort()` formats its message for the terminal, so the string carries ANSI colour codes
+and OSC-8 hyperlinks: `\033[31m` to start red, `\033]8;;file://...` to make a path clickable.
+`conditionMessage()` returns that formatted string, escapes included.
+
+- **Printing it is fine.** The terminal consumes the codes, which is the whole point of them, so
+  every `cli_abort(..., "i" = "Underlying error: {conditionMessage(e)}")` site reads correctly and
+  needs no change.
+- **Storing it is not.** Any field datom *returns* holding that text will show the codes as
+  literal `\033[31m` noise the moment a caller prints the string itself, writes it to a log, or
+  puts it in a report. Wrap those in **`cli::ansi_strip()`**. Three fields needed it (fixed
+  2026-08-29): `datom_status()`'s `$tables$error`, `datom_sync()`'s `error` column, and the
+  per-table `error` in the metadata sync result. `datom_sync()`'s was the worst, being a data
+  frame cell.
+- **The distinction to apply to a new field**: is this text going into a message, or into a value
+  the caller keeps? Only the second needs stripping. A local copy used for pattern matching --
+  `grepl("403|Forbidden", conditionMessage(e))` -- is fine, though be aware the codes surround
+  the segments, so a pattern spanning styled and unstyled text will not match.
+- **A TEST FOR THIS IS VACUOUS UNLESS IT FORCES COLOUR ON.** `Rscript`, `devtools::test()` and CI
+  all run without a colour-capable terminal, so cli emits no escapes at all and the assertion
+  passes whatever the code does -- which is exactly why the defect survived to 0.1.1. Use
+  `withr::local_options(cli.num_colors = 256, cli.hyperlink = TRUE)`, then assert with
+  `expect_false(grepl("\033", x, fixed = TRUE))`. Confirm the test reddens when the fix is
+  removed; without forced colour it will not.
+- **Reproducing what a user reports**: an interactive console has colour on, so a string that
+  looks clean in your test run can look mangled in their paste. To see what they see, force the
+  same two options.

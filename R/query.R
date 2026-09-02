@@ -446,7 +446,15 @@ datom_status <- function(conn) {
   manifest_read <- .datom_read_manifest(conn, "storage")
 
   table_info <- if (!manifest_read$ok) {
-    list(count = 0L, available = FALSE, error = conditionMessage(manifest_read$error))
+    # ansi_strip: cli formats abort messages with colour and hyperlink escape
+    # codes, and conditionMessage() returns them. Fine when the message is
+    # printed, noise when the text is stored in a returned field and then
+    # printed as data or written to a log.
+    list(
+      count = 0L,
+      available = FALSE,
+      error = cli::ansi_strip(conditionMessage(manifest_read$error))
+    )
   } else {
     list(
       count = length(manifest_read$manifest$tables %||% list()),

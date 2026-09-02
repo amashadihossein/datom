@@ -634,7 +634,7 @@ Relative to the artifact prefix:
 - **R8.1** `manifest$tables` becomes **`manifest$artifacts`**, keyed by name, each entry typed
   by `kind`. **The example below is illustrative, not the full entry schema** -- real table
   entries also carry `current_data_sha`, `last_updated`, and conditionally `original_file_sha` /
-  `original_format` (see `.datom_update_manifest_entry()`, `R/sync.R:744-756`). Existing entry
+  `original_format` (see `.datom_update_manifest_entry()`, `R/sync.R:853-862`). Existing entry
   fields are preserved verbatim; `kind` is added, and set entries substitute `member_count` for
   `size_bytes`:
 
@@ -1338,7 +1338,7 @@ and already in the design: reads limp, writes stop.
   adding a network read to every write and checking the wrong copy.
   **The clone is right at both steps for the same four reasons.** It is the document the write
   actually mutates (`.datom_update_manifest_entry()` edits `{conn$path}/.datom/manifest.json`,
-  `R/sync.R:818`); it is a local file read rather than a round trip on every write; it is where a newer
+  `R/sync.R:821`); it is a local file read rather than a round trip on every write; it is where a newer
   collaborator's work lands after a pull; and storage cannot legitimately be ahead of git (I5).
   All three documents exist as local files in the clone: `{conn$path}/.datom/manifest.json` and
   `{conn$path}/{name}/metadata.json` (`R/read_write.R:463-469`, committed via `git_paths`). So the

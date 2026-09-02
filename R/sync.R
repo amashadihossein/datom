@@ -191,7 +191,8 @@ datom_pull <- function(conn) {
       .datom_sync_table_metadata(conn, tbl)
     }, error = function(e) {
       cli::cli_alert_danger("Failed to sync {.val {tbl}}: {conditionMessage(e)}")
-      list(name = tbl, action = "error", error = conditionMessage(e))
+      # ansi_strip on the stored copy only -- the alert above keeps its colour.
+      list(name = tbl, action = "error", error = cli::ansi_strip(conditionMessage(e)))
     })
   })
   names(table_results) <- table_names
@@ -602,7 +603,9 @@ datom_sync <- function(conn,
 
     }, error = function(e) {
       manifest$result[i] <<- "error"
-      manifest$error[i] <<- conditionMessage(e)
+      # ansi_strip: this is a data frame column the caller prints, so cli's
+      # colour and hyperlink escape codes would show up as literal text.
+      manifest$error[i] <<- cli::ansi_strip(conditionMessage(e))
 
       if (continue_on_error) {
         cli::cli_alert_danger("Failed to sync {.val {tbl_name}}: {conditionMessage(e)}")

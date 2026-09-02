@@ -1044,3 +1044,26 @@ test_that("datom_status input file scan re-signals a corrupt local manifest", {
     expect_error(datom_status(conn))
   })
 })
+
+test_that("datom_status's stored error has no escape codes when colour is on", {
+  # $tables$error is a returned field, so a user prints or logs the string
+  # itself. cli's colour and hyperlink escapes would appear as literal text.
+  # Colour is forced ON here: with it off, cli emits no escapes and the
+  # assertion would pass no matter what the code did.
+  withr::local_options(cli.num_colors = 256, cli.hyperlink = TRUE)
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      cli::cli_abort(c(
+        "JSON file not found in local store.",
+        "x" = "Key: {.val {s3_key}}"
+      ))
+    }
+  )
+
+  result <- datom_status(mock_datom_conn(list()))
+
+  expect_false(result$tables$available)
+  expect_match(result$tables$error, "JSON file not found")
+  expect_false(grepl("\033", result$tables$error, fixed = TRUE))
+})

@@ -9,8 +9,8 @@ review and `main` is frozen (see `dev/README.md` "Branching During CRAN Submissi
 [#97](https://github.com/amashadihossein/datom/pull/97) is open and accumulates the task commits.
 **Test baseline**: 2460 at spec start -> 2482 after Task 1 -> 2572 after Task 2 -> 2612 after
 Task 3 -> 2660 after Task 4 -> 2664 after Task 18 -> 2675 after the two operator-facing fixes
-that followed it (see the 2026-08-26 rows in the Decisions log) -> 2686 after Task 19 -> **2740
-after Task 5**. Report the count in every commit message; it must never drop.
+that followed it (see the 2026-08-26 rows in the Decisions log) -> 2686 after Task 19 -> 2740
+after Task 5 -> **2748 after the escape-code fix that followed it**. Report the count in every commit message; it must never drop.
 
 ---
 
@@ -29,8 +29,8 @@ this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 **Next**: **Task 6 -- the `manifest$tables` -> `manifest$artifacts` rename**, which carries
 escalation E2, so per rule 5d surface its recommendation in that chunk's checkpoint message before
 implementing. Task 5 landed the ground it stands on: manifest reads go through one function
-(`.datom_read_manifest()`, `R/sync.R:695`) and empty manifests through one builder
-(`.datom_manifest_skeleton()`, `R/sync.R:650`), so the old-format upgrade has **one** place to live
+(`.datom_read_manifest()`, `R/sync.R:698`) and empty manifests through one builder
+(`.datom_manifest_skeleton()`, `R/sync.R:653`), so the old-format upgrade has **one** place to live
 instead of five. Nothing on disk changed and the key is still `tables`.
 
 **Two things Task 19 leaves for whoever adds a metadata field next.** (1) `metadata_sha` now selects
@@ -98,11 +98,13 @@ constant. E1's discharge record and the four deltas it produced are in the Decis
 the same day and **implemented as decided on 2026-08-28** -- the realistic fixture was pinned in its
 own commit under the pre-change code, and the `name`-bearing golden became AC33(b)'s test.
 
-**Also on this branch, outside the task list**: two operator-facing fixes that followed Task 18 (the
-merge-conflict message, and `datom_validate(fix = TRUE)` no longer claiming to repair a missing
-payload), plus [#105](https://github.com/amashadihossein/datom/issues/105) and a `dev/README.md`
+**Also on this branch, outside the task list**: three operator-facing fixes -- two that followed
+Task 18 (the merge-conflict message, and `datom_validate(fix = TRUE)` no longer claiming to repair a
+missing payload) and one that followed Task 5 (terminal escape codes stripped from the three error
+strings datom *returns*, rather than prints) -- plus
+[#105](https://github.com/amashadihossein/datom/issues/105) and a `dev/README.md`
 Backlog row capturing five deferred ideas for making a push-rejected write rarer and recoverable
-without git skill. Nothing there blocks Task 5.
+without git skill. Nothing there blocks Task 6.
 
 **Superseded note**: this slot previously read "nothing". Task 2 added three encoder refusals the spec did not spell out
 (named list in a value position; unexpected field at the payload root or in a member record) -- all
@@ -590,11 +592,11 @@ own; landing it first is what makes Task 6's failure loud.
     (call sites as shipped): `datom_list()` (`R/query.R:49`) and `datom_summary()`
     (`R/summary.R:48`) abort with their own wording on an unreadable manifest; `datom_status()`
     (`R/query.R:446`) still tolerates one and reports it unavailable;
-    `.datom_status_input_files()` (`R/query.R:555`) and `datom_sync_manifest()` (`R/sync.R:378`)
+    `.datom_status_input_files()` (`R/query.R:555`) and `datom_sync_manifest()` (`R/sync.R:379`)
     still fall back to an empty manifest when the clone has no file.
-  - **New: `.datom_manifest_skeleton(project_name = NULL)`** (`R/sync.R:650`) -- the one
+  - **New: `.datom_manifest_skeleton(project_name = NULL)`** (`R/sync.R:653`) -- the one
     empty-manifest shape. It replaced three hand-built copies, now three calls to it:
-    `R/query.R:562`, `R/sync.R:385`, and the one inside the entry updater at `R/sync.R:827`, which
+    `R/query.R:562`, `R/sync.R:386`, and the one inside the entry updater at `R/sync.R:830`, which
     is the copy that would have written the old key after the rename (see Task 6). Use
     `datom_init_repo()`'s spelling,
     `structure(list(), names = character(0))` (`R/conn.R:522`), not a bare `list()`: an empty bare
@@ -666,7 +668,7 @@ own; landing it first is what makes Task 6's failure loud.
     parses to `NULL` must still count as read, and a `NULL` check could not tell those apart. The
     helper's `ok` field carries that distinction now, so the flag was redundant rather than dropped.
   - **The entry updater keeps its own direct read, deliberately.** `.datom_update_manifest_entry()`
-    (`R/sync.R:818`) reads `.datom/manifest.json` mid-write, and a compatibility refusal there would
+    (`R/sync.R:821`) reads `.datom/manifest.json` mid-write, and a compatibility refusal there would
     stop a write partway through instead of at the door. Only its empty shape moved to the shared
     builder. A comment at the site says so, because the obvious tidy-up is to route the read through
     the shared reader as well.
@@ -676,20 +678,20 @@ own; landing it first is what makes Task 6's failure loud.
 
 - [ ] **6. `manifest$tables` -> `manifest$artifacts`, typed by `kind`** &nbsp; **[ESCALATION E2]**
   - Write side (**3** sites -- an earlier draft said 2 and missed the third):
-    `.datom_update_manifest_entry()` (`R/sync.R:861,865-872`); the **absent-manifest skeleton**,
-    which Task 5 collapsed into `.datom_manifest_skeleton()` (`R/sync.R:650`, called at
-    `R/sync.R:827`); and `datom_init_repo()`'s seed (`R/conn.R:522-527`).
+    `.datom_update_manifest_entry()` (`R/sync.R:864,868-875`); the **absent-manifest skeleton**,
+    which Task 5 collapsed into `.datom_manifest_skeleton()` (`R/sync.R:653`, called at
+    `R/sync.R:830`); and `datom_init_repo()`'s seed (`R/conn.R:522-527`).
     **The skeleton was the dangerous one**: left unrenamed it writes a `tables` key after the
     rename, and it only fires on a fresh or repaired repo, so tests against an existing fixture pass
     while the bug ships. Task 5 reduced it to one place, which is the point of the split.
-  - Read side: **one** site now -- `.datom_read_manifest()` (`R/sync.R:695`) -- plus the six field
+  - Read side: **one** site now -- `.datom_read_manifest()` (`R/sync.R:698`) -- plus the six field
     accesses that read the artifact key off the returned document (`R/query.R:61,88`,
-    `R/query.R:452`, `R/query.R:567`, `R/summary.R:60`, `R/sync.R:397`).
+    `R/query.R:452`, `R/query.R:567`, `R/summary.R:60`, `R/sync.R:398`).
   - Each entry gains `kind` (`"table"` for everything existing). `summary` gains `total_sets`;
     `total_tables` / `total_size_bytes` / `total_versions` keep **current** semantics (tables
     only).
   - **FIVE counters silently widen to include sets, not three.** The three in the summary block
-    (`R/sync.R:866,868,871`) plus two computed independently of it: `datom_summary()`'s
+    (`R/sync.R:869,871,874`) plus two computed independently of it: `datom_summary()`'s
     `table_count` counts entries rather than reading the summary block (`R/summary.R:60`), and
     `datom_status()`'s count does the same and prints as "Tables on S3" (`R/query.R:452`). Each
     needs a `kind == "table"` filter. There are no sets until Task 9, so **every test passes either
@@ -760,7 +762,7 @@ own; landing it first is what makes Task 6's failure loud.
        sent a reader hunting in a file with nothing in it.
     2. **THREE DECOY SITES that look like the rename and must not be renamed.** Each is a
        user-facing **return-value** field named `tables`, not the manifest key:
-       `datom_sync()`'s result (`R/sync.R:171`, `R/sync.R:208`), `datom_validate()`'s result
+       `datom_sync()`'s result (`R/sync.R:171`, `R/sync.R:209`), `datom_validate()`'s result
        (`R/validate.R:184`), and `datom_status()`'s result (`R/query.R:463`). A `grep tables`
        sweep hits all three. Renaming them is a **separate** breaking change to three return
        shapes that R8 does not ask for -- R8.1 renames the manifest key only. If it ever looks
@@ -1397,7 +1399,7 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     returns at `R/read_write.R:687` and `R/read_write.R:691`, because `.datom_sync_data_metadata()`
     mirrors the whole manifest to storage (`R/sync.R:177`) without reaching the manifest-writing step.
     All of it before any hashing, local write, or commit (I34).
-  - **Decide the double read deliberately**: `.datom_update_manifest_entry()` (`R/sync.R:816`) reads
+  - **Decide the double read deliberately**: `.datom_update_manifest_entry()` (`R/sync.R:821`) reads
     the same file again at pipeline step 6. Either thread the entry read down, or accept two reads of
     a small local file and say why in the commit.
   - **Say plainly that this binds 0.1.1 forward only** (R23.7). 0.1.0 has none of these checks and
@@ -1422,7 +1424,7 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     worse than the empty list it replaced. (Task 19 removes that defect, but the rebuild must not
     depend on having been run by a build that has the fix.)
   - **Persist `original_format` into per-artifact metadata.** It is written into the manifest entry
-    (`R/sync.R:753`) and never into metadata, so it is the one manifest field a rebuild cannot recover.
+    (`R/sync.R:862`) and never into metadata, so it is the one manifest field a rebuild cannot recover.
     Additive, and free now that Task 19 has landed -- **which is why it is sequenced here and not
     earlier**.
   - **Guard the dispatcher loop and test the no-op** (R22.10): R's `seq()` counts **down** when
@@ -1662,3 +1664,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-29 | **(implementation) `datom_status()` lost its `read_ok` flag, and it was not dropped -- it moved.** The flag existed because a manifest that legitimately parses to `NULL` must still count as read, which a `NULL` check on the document cannot express. The shared reader's `ok` field carries that distinction for every caller now. | Task 5 |
 | 2026-08-29 | **(implementation) the entry updater keeps its own direct read; only its empty shape moved.** `.datom_update_manifest_entry()` (`R/sync.R:818`) reads the clone's manifest mid-write, and a compatibility refusal there would stop a write partway through rather than at the door -- Task 4's stated principle. So the read stays out of the shared reader while the hand-built empty manifest becomes a call to `.datom_manifest_skeleton()`. A comment at the site says why, because routing the read through the shared reader is the obvious tidy-up and it is wrong. | Task 5, Task 4 |
 | 2026-08-29 | **Spec code citations re-derived by content after Task 5's insertions**, in all three spec files plus the two `design.md` survey tables. Three had drifted onto blank lines and were caught by the gate; the rest were checked with `SPEC_CHECK_SHOW_CITATIONS=1` rather than by arithmetic. Two citations were **removed** rather than repointed: the comments at `datom_list()` and `datom_summary()` that held the check outside their read handlers no longer exist, because the helper's shape holds that line now. Dated Decisions rows left frozen, per the 2026-08-23 policy. | dev/check-spec.R, Task 5 |
+| 2026-08-29 | **One operator-facing fix landed after Task 5, not as a task: terminal escape codes stripped from stored error text.** `cli` formats abort messages with colour and hyperlink escapes, and `conditionMessage()` returns them, so any field that **stores** the text stores `\033[31m` with it. Invisible when the message is printed and ugly when the string is, which is why no test caught it -- plain `Rscript` and CI have colour off, so cli emits none. Three returned fields carried it, and the worst was not the one that surfaced: `datom_sync()`'s `error` column is a data frame cell, so a failed sync prints escape codes inline in a table. Fixed with `cli::ansi_strip()` at the three stored copies only; every printed message keeps its colour. **Verified pre-existing before being fixed** -- the previous commit was checked out into a throwaway worktree and run with colour forced on, giving a byte-identical 305-character string, so Task 5 neither caused nor worsened it. Scope was checked rather than assumed: the five other places that capture `conditionMessage()` into a local use it for pattern matching or splice it into a message, so three sites is the whole of it. Each test forces colour **on**, because with it off the assertion passes no matter what the code does; all three were confirmed to redden when the fix is reverted. tests 2740 -> **2748**. | `R/query.R`, `R/sync.R`, `dev/engineering-notes.md` |
+| 2026-08-29 | **Spec citations re-derived twice in one session, and the second round found the class the gate cannot see.** The escape-code fix added three comment lines to `R/sync.R`, which shifted every citation below them. Three resolved to blank lines and the gate caught those; **four others had drifted onto unrelated code and passed** -- `R/sync.R:744-756`, cited as the manifest entry builder's field list, was pointing at the import-format vector, and `R/sync.R:570-574`, cited as the imported self-lineage entry, was pointing at the sync loop. Two of the four were already wrong before this session. The lesson is the one `dev/README.md` already states and this is now the second consecutive session to prove it: check 4 asserts only that a cited line is **not blank**, so after any insertion into `R/` the citations must be re-read with `SPEC_CHECK_SHOW_CITATIONS=1` and compared against what they claim. A green gate is not evidence. | dev/check-spec.R |

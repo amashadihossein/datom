@@ -1520,3 +1520,74 @@ test_that(".datom_read_manifest reads the frozen v1 fixture as a v1 document", {
   expect_null(read$manifest$schema_version)
   expect_length(read$manifest$tables, 1L)
 })
+
+
+# --- stored error text carries no terminal escape codes ------------------------
+# cli formats abort messages with colour and hyperlink escape codes, and
+# conditionMessage() hands them back. Printed as a message that is invisible;
+# stored in a returned field and printed as data it shows up as literal
+# "\033[31m" noise. Every test below forces colour ON, because with colour off
+# (plain Rscript, CI) cli emits none and the assertion would be vacuous.
+
+test_that("datom_sync's error column has no escape codes when colour is on", {
+  withr::local_options(cli.num_colors = 256, cli.hyperlink = TRUE)
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".datom")
+
+    manifest <- data.frame(
+      name = "bad_tbl", file = "bad.csv", format = "csv",
+      original_file_sha = "sha1", status = "new",
+      stringsAsFactors = FALSE
+    )
+
+    local_mocked_bindings(
+      .datom_check_rio = function() invisible(TRUE),
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) {
+        cli::cli_abort(c(
+          "Import failed.",
+          "x" = "File: {.path {file}}",
+          "i" = "Format: {.val {format}}"
+        ))
+      }
+    )
+
+    result <- datom_sync(conn, manifest, continue_on_error = TRUE)
+
+    expect_match(result$error, "Import failed")
+    expect_false(grepl("\033", result$error, fixed = TRUE))
+  })
+})
+
+test_that("per-table metadata sync's stored error has no escape codes", {
+  withr::local_options(cli.num_colors = 256, cli.hyperlink = TRUE)
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(fs::path("dm"))
+    writeLines("{}", "dm/metadata.json")
+
+    local_mocked_bindings(
+      .datom_sync_table_metadata = function(conn, name) {
+        cli::cli_abort(c(
+          "Upload failed.",
+          "x" = "Key: {.val {name}}"
+        ))
+      }
+    )
+
+    result <- .datom_sync_data_metadata(conn, .confirm = FALSE)
+
+    expect_equal(result$tables$dm$action, "error")
+    expect_match(result$tables$dm$error, "Upload failed")
+    expect_false(grepl("\033", result$tables$dm$error, fixed = TRUE))
+  })
+})
