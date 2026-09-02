@@ -44,16 +44,19 @@ datom_list <- function(conn,
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
-  manifest <- tryCatch(
-    .datom_storage_read_json(conn, ".metadata/manifest.json"),
-    error = function(e) {
-      cli::cli_abort(c(
-        "Could not read manifest from S3.",
-        "i" = "The repository may not be initialized or manifest is missing.",
-        "i" = "Underlying error: {conditionMessage(e)}"
-      ))
-    }
-  )
+  # .datom_read_manifest() returns IO failures and throws schema refusals, so an
+  # unreadable manifest is this function's decision while a too-new one is not.
+  read <- .datom_read_manifest(conn, "storage")
+
+  if (!read$ok) {
+    cli::cli_abort(c(
+      "Could not read manifest from S3.",
+      "i" = "The repository may not be initialized or manifest is missing.",
+      "i" = "Underlying error: {conditionMessage(read$error)}"
+    ))
+  }
+
+  manifest <- read$manifest
 
   tables <- manifest$tables
   if (is.null(tables) || length(tables) == 0L) {
@@ -162,7 +165,7 @@ datom_history <- function(conn,
 
   n <- as.integer(n)
 
-  history_key <- paste0(name, "/.metadata/version_history.json")
+  history_key <- .datom_artifact_meta_key(name, "version_history")
 
   history <- tryCatch(
     .datom_storage_read_json(conn, history_key),
@@ -337,14 +340,14 @@ datom_get_lineage <- function(conn, name, version = NULL,
   depth <- match.arg(depth)
 
   if (is.null(version)) {
-    metadata_key <- paste0(name, "/.metadata/metadata.json")
+    metadata_key <- .datom_artifact_meta_key(name, "metadata")
   } else {
     if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
       cli::cli_abort("{.arg version} must be a single non-empty string or NULL.")
     }
     # version is spliced into a storage key; reject path-traversal / non-hex.
     .datom_validate_sha(version, arg = "version")
-    metadata_key <- paste0(name, "/.metadata/", version, ".json")
+    metadata_key <- .datom_artifact_snapshot_key(name, version)
   }
 
   metadata <- tryCatch(
@@ -434,13 +437,30 @@ datom_status <- function(conn) {
   cli::cli_alert_info("Role: {.val {conn$role}}")
 
   # --- Table count from S3 manifest ---
-  table_info <- tryCatch({
-    manifest <- .datom_storage_read_json(conn, ".metadata/manifest.json")
-    n <- length(manifest$tables %||% list())
-    list(count = n, available = TRUE)
-  }, error = function(e) {
-    list(count = 0L, available = FALSE, error = conditionMessage(e))
-  })
+  # An unreadable manifest is reported, not fatal -- status is a diagnostic and
+  # must still describe the connection when storage is unreachable. That
+  # tolerance covers IO only: .datom_read_manifest() throws a schema refusal
+  # rather than returning it, so a repo written by a newer datom stops here
+  # instead of being reported as "could not read", which is exactly the silent
+  # degradation the check exists to remove.
+  manifest_read <- .datom_read_manifest(conn, "storage")
+
+  table_info <- if (!manifest_read$ok) {
+    # ansi_strip: cli formats abort messages with colour and hyperlink escape
+    # codes, and conditionMessage() returns them. Fine when the message is
+    # printed, noise when the text is stored in a returned field and then
+    # printed as data or written to a log.
+    list(
+      count = 0L,
+      available = FALSE,
+      error = cli::ansi_strip(conditionMessage(manifest_read$error))
+    )
+  } else {
+    list(
+      count = length(manifest_read$manifest$tables %||% list()),
+      available = TRUE
+    )
+  }
 
   status$tables <- table_info
 
@@ -536,13 +556,18 @@ datom_status <- function(conn) {
     return(list(n_total = 0L, n_new = 0L, n_changed = 0L, n_unchanged = 0L))
   }
 
-  # Read local manifest
-  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
-  manifest <- if (fs::file_exists(manifest_path)) {
-    jsonlite::read_json(manifest_path)
-  } else {
-    list(tables = list())
-  }
+  # Read local manifest. .datom_read_manifest() also checks the declared schema
+  # version, because the clone can be ahead of this build: a collaborator on a
+  # newer datom writes, this developer pulls, and their local manifest declares
+  # a format this build does not know.
+  read <- .datom_read_manifest(conn, "clone")
+
+  # A clone with no manifest yet compares every input file against nothing. A
+  # manifest that exists but will not parse keeps failing exactly as before --
+  # re-signalled unchanged rather than reworded.
+  if (!read$ok && !read$absent) stop(read$error)
+
+  manifest <- if (read$ok) read$manifest else .datom_manifest_skeleton()
 
   statuses <- purrr::map_chr(files, function(fp) {
     table_name <- fs::path_ext_remove(fs::path_file(fp))

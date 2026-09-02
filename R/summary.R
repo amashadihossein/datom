@@ -43,16 +43,19 @@ datom_summary <- function(conn) {
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
-  manifest <- tryCatch(
-    .datom_storage_read_json(conn, ".metadata/manifest.json"),
-    error = function(e) {
-      cli::cli_abort(c(
-        "Could not read manifest from data store.",
-        "i" = "The repository may not be initialized or manifest is missing.",
-        "i" = "Underlying error: {conditionMessage(e)}"
-      ))
-    }
-  )
+  # .datom_read_manifest() returns IO failures and throws schema refusals, so an
+  # unreadable manifest is this function's decision while a too-new one is not.
+  read <- .datom_read_manifest(conn, "storage")
+
+  if (!read$ok) {
+    cli::cli_abort(c(
+      "Could not read manifest from data store.",
+      "i" = "The repository may not be initialized or manifest is missing.",
+      "i" = "Underlying error: {conditionMessage(read$error)}"
+    ))
+  }
+
+  manifest <- read$manifest
 
   table_count <- length(manifest$tables %||% list())
   total_versions <- manifest$summary$total_versions %||% 0L

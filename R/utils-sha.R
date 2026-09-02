@@ -377,22 +377,82 @@
 }
 
 
-#' Compute SHA-256 of Metadata
+# --- Metadata identity: which fields define a version -------------------------
+
+# The fields hashed into `metadata_sha`. Selection is by ALLOWLIST: a field named
+# here is identity, and any other key in the document is ignored. Seeded with
+# exactly the fields the previous exclusion-based selection hashed, so every
+# version identity ever recorded is byte-identical under it.
+#
+# WHY AN ALLOWLIST. Hashing everything-except-a-list cannot be
+# forward-compatible: a build that has never heard of a field cannot know it was
+# meant to ignore it, so it folds the field into the hash, disagrees with the
+# recorded version, and reports a change on content that did not move -- on every
+# run, not once. Adding any bookkeeping field to a metadata document would
+# therefore cost every older build a spurious version forever. Two things this
+# buys, stated precisely because a looser claim was made when it was first
+# proposed: readers compute correct identities, and a repo does not accumulate
+# spurious versions. It does NOT keep older writers working -- a writer
+# recomputes identity, so a content-bearing addition still disagrees with it, and
+# that is refused on separate grounds.
+#
+# THE FAILURE DIRECTION TO WATCH. An allowlist fails the OPPOSITE way from an
+# exclusion list, and it is the more dangerous way if untested: a new field left
+# unclassified is silently EXCLUDED, so identity quietly stops responding to real
+# content. Whenever a metadata builder gains a field, classify it -- here if it is
+# content, in `.datom_metadata_excluded_fields` if it is not. The classification
+# test in `test-utils-sha.R` derives the field inventory from the builders
+# themselves, so it fails until you do.
+#
+# Conditionally present fields are marked below. Absence is spelled by omitting
+# the key (never by a NULL or an empty value), so an absent field simply
+# contributes nothing to the hash. The vector itself is in byte order for
+# readability; ordering is immaterial, since the fields are sorted before hashing.
+#
+#   data_sha          always       the content identity itself
+#   hash_algo         always       a new algorithm is a new identity regime
+#   table_type        always       imported vs derived
+#   nrow, ncol        always       declared dimensions
+#   colnames          always       declared column names, in order
+#   original_file_sha conditional  imported tables only -- a new source file is a
+#                                  new version of the table's provenance
+#   parents           conditional  declared lineage edges
+#   source_lineage    conditional  the transitive source union
+#   custom            conditional  user metadata, opaque and hashed as a whole
+.datom_metadata_identity_fields <- c(
+  "colnames", "custom", "data_sha", "hash_algo", "ncol", "nrow",
+  "original_file_sha", "parents", "source_lineage", "table_type"
+)
+
+# Fields datom knows about and deliberately does NOT hash, so that identical
+# semantic content produces the same SHA regardless of when or how it was
+# serialized. Being listed here is a classification, not an oversight -- which is
+# what lets the classification test tell "decided against" apart from "nobody
+# looked".
+#
+#   created_at, datom_version    write-time provenance
+#   parquet_sha, size_bytes      stored-object byte facts: both drift with the
+#                                arrow version for identical logical content
+#   document_sha                 the same kind of fact for a stored JSON payload
+#   column_hashes                a deterministic function of the same values that
+#                                already fix `data_sha`, so it carries no
+#                                independent information
+#   schema_version               a property of the container format, not of the
+#                                content -- in identity, a format bump would
+#                                re-mint a new version for every artifact in every
+#                                repo while its content stood still
+.datom_metadata_excluded_fields <- c(
+  "column_hashes", "created_at", "datom_version", "document_sha",
+  "parquet_sha", "schema_version", "size_bytes"
+)
+
+
+#' Compute SHA-256 of Metadata (the datom Version)
 #'
-#' Sorts fields by C-locale byte order (`method = "radix"`) before hashing so
-#' the result is deterministic regardless of field insertion order **and**
-#' regardless of the host's `LC_COLLATE` (default collation sorts differ
-#' between `C` and e.g. `en_US.UTF-8`, which would otherwise make the same
-#' metadata hash differently on different machines).
-#'
-#' Volatile fields are excluded so that identical semantic content always
-#' produces the same SHA regardless of when or how it was serialized:
-#' `created_at` and `datom_version` (write-time provenance), `parquet_sha` and
-#' `size_bytes` (stored-object byte facts -- both drift with the arrow version
-#' and must not re-enter identity), and `column_hashes` (a deterministic
-#' function of the same values that already fix `data_sha`). `original_file_sha`
-#' and `hash_algo` remain in the semantic set -- a new source file or a new hash
-#' algorithm legitimately defines a new version.
+#' Hashes the fields named in `.datom_metadata_identity_fields` and ignores
+#' every other key in the document. See that constant for the field-by-field
+#' classification, for why selection is an allowlist rather than an exclusion
+#' list, and for the obligation that comes with adding a field to a builder.
 #'
 #' Hashes a JSON canonical form rather than the R object directly. This
 #' ensures that metadata read back from JSON (e.g., from S3) produces the
@@ -400,7 +460,10 @@
 #' (integer vs double, character vector vs list) introduced by JSON
 #' round-tripping.
 #'
-#' @param metadata Named list of metadata fields.
+#' @param metadata Named list of metadata fields. An unrecognised field is
+#'   **ignored, not refused** -- that is what lets this build read a document
+#'   written by a newer datom without reporting a change on content that did not
+#'   move. Refusing such a document is a separate, write-side concern.
 #' @return Character SHA-256 hash.
 #' @keywords internal
 .datom_compute_metadata_sha <- function(metadata) {
@@ -408,18 +471,40 @@
     cli::cli_abort("{.arg metadata} must be a named list.")
   }
 
-  # Exclude volatile fields that don't define content identity
-  volatile <- c("created_at", "datom_version", "parquet_sha", "column_hashes",
-                "size_bytes")
-  semantic <- metadata[setdiff(names(metadata), volatile)]
+  identity_fields <- intersect(
+    names(metadata), .datom_metadata_identity_fields
+  )
 
-  sorted_names <- sort(names(semantic), method = "radix")
-  sorted_metadata <- semantic[sorted_names]
+  .datom_metadata_sha_from_fields(metadata[identity_fields])
+}
+
+
+#' Hash an Already-Selected Set of Metadata Fields
+#'
+#' The canonical-form half of `metadata_sha`, split from field selection so that
+#' each half is testable on its own: this function decides how a chosen set of
+#' fields becomes bytes and knows nothing about which fields are identity.
+#'
+#' Sorts field names by C-locale byte order (`method = "radix"`) before hashing
+#' so the result is deterministic regardless of field insertion order **and**
+#' regardless of the host's `LC_COLLATE` (default collation sorts differ between
+#' `C` and e.g. `en_US.UTF-8`, which would otherwise make the same metadata hash
+#' differently on different machines). Sorting here rather than relying on the
+#' declared order of `.datom_metadata_identity_fields` is deliberate: it means
+#' hash stability does not depend on how that constant happens to be written, so
+#' re-ordering it for readability cannot silently change every recorded version.
+#'
+#' @param fields Named list of fields to hash, already filtered to the identity
+#'   set by [.datom_compute_metadata_sha()].
+#' @return Character SHA-256 hash.
+#' @keywords internal
+.datom_metadata_sha_from_fields <- function(fields) {
+  sorted_fields <- fields[sort(names(fields), method = "radix")]
 
   # JSON canonical form: type-agnostic (integer/double, vector/list all
   # serialise identically), so in-memory and S3-round-tripped metadata
   # always produce the same hash.
-  canonical <- jsonlite::toJSON(sorted_metadata, auto_unbox = TRUE)
+  canonical <- jsonlite::toJSON(sorted_fields, auto_unbox = TRUE)
   digest::digest(canonical, algo = "sha256", serialize = FALSE)
 }
 
@@ -525,7 +610,7 @@
   )
 
   # Sync metadata files to S3 (only after git succeeds)
-  s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
+  s3_metadata_key <- .datom_artifact_meta_key(name, "metadata")
   .datom_storage_write_json(conn, s3_metadata_key, metadata)
 
   s3_keys <- s3_metadata_key
@@ -533,7 +618,7 @@
   # Sync version_history.json if it exists locally
   if (fs::file_exists(history_path)) {
     history <- jsonlite::read_json(history_path)
-    s3_history_key <- paste0(name, "/.metadata/version_history.json")
+    s3_history_key <- .datom_artifact_meta_key(name, "version_history")
     .datom_storage_write_json(conn, s3_history_key, history)
     s3_keys <- c(s3_keys, s3_history_key)
   }

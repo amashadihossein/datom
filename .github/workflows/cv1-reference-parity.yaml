@@ -1,12 +1,22 @@
-# datom-cv1 byte-layout parity, run from the SOURCE TREE on both architectures.
+# Canonical-hash byte-layout parity, run from the SOURCE TREE on both
+# architectures. Covers BOTH identity regimes:
+#
+#   datom-cv1  tables  -- dev/datom_cv1_reference.R  + test-utils-sha.R
+#   datom-sv1  sets    -- dev/datom_sv1_reference.R  + test-hashable-set.R
+#
+# The file keeps its cv1 name so existing branch protections and links stay
+# valid; sv1 was added here deliberately rather than as a second workflow,
+# because the property being asserted (identical goldens across architectures)
+# needs one matrix, not two.
 #
 # Why this exists as its own workflow rather than a step in R-CMD-check:
-# `dev/` is Rbuildignored, so inside a built tarball `dev/datom_cv1_reference.R`
-# is absent and the reference-parity test (Property 11) SKIPS. The consequence
-# was real -- a golden fixture whose value parsed differently per architecture
-# landed on the branch, and every `R CMD check` job silently skipped the one test
-# designed to catch exactly that. See the "golden numeric fixture is parse-exact"
-# test in tests/testthat/test-utils-sha.R for the full story.
+# `dev/` is Rbuildignored, so inside a built tarball the reference scripts are
+# absent and the reference-parity tests (Property 11 for cv1, Property 12 for
+# sv1) SKIP. The consequence was real -- a golden fixture whose value parsed
+# differently per architecture landed on the branch, and every `R CMD check` job
+# silently skipped the one test designed to catch exactly that. See the "golden
+# numeric fixture is parse-exact" test in tests/testthat/test-utils-sha.R for the
+# full story.
 #
 # This workflow runs against the checkout (via devtools::load_all), where `dev/`
 # is present, so:
@@ -28,7 +38,7 @@ permissions: read-all
 jobs:
   parity:
     runs-on: ${{ matrix.os }}
-    name: cv1 parity (${{ matrix.os }})
+    name: cv1 + sv1 parity (${{ matrix.os }})
 
     strategy:
       fail-fast: false
@@ -51,27 +61,33 @@ jobs:
           extra-packages: any::devtools, any::testthat
           needs: check
 
-      - name: Standalone reference self-tests
+      - name: Standalone cv1 reference self-tests
         run: Rscript dev/datom_cv1_reference.R
+
+      - name: Standalone sv1 reference self-tests
+        run: Rscript dev/datom_sv1_reference.R
 
       - name: Package/reference parity + goldens (dev/ present, nothing skipped)
         shell: Rscript {0}
         run: |
           options(crayon.enabled = FALSE)
           suppressMessages(devtools::load_all(quiet = TRUE))
-          res <- as.data.frame(testthat::test_file(
-            "tests/testthat/test-utils-sha.R",
-            reporter = testthat::ListReporter, stop_on_failure = FALSE
-          ))
-          cat("PASS:", sum(res$passed), " FAIL:", sum(res$failed),
-              " SKIP:", sum(res$skipped), "\n")
-          if (sum(res$skipped) > 0L) {
-            cat("Skipped tests:\n")
-            print(res[res$skipped > 0L, c("file", "test")])
-            stop("No test in this file may skip here -- dev/ IS present, so a ",
-                 "skip means the parity gate is not actually running.")
+          files <- c("tests/testthat/test-utils-sha.R",
+                     "tests/testthat/test-hashable-set.R")
+          for (f in files) {
+            res <- as.data.frame(testthat::test_file(
+              f, reporter = testthat::ListReporter, stop_on_failure = FALSE
+            ))
+            cat(f, "-- PASS:", sum(res$passed), " FAIL:", sum(res$failed),
+                " SKIP:", sum(res$skipped), "\n")
+            if (sum(res$skipped) > 0L) {
+              cat("Skipped tests:\n")
+              print(res[res$skipped > 0L, c("file", "test")])
+              stop("No test in this file may skip here -- dev/ IS present, so a ",
+                   "skip means the parity gate is not actually running.")
+            }
+            if (sum(res$failed) > 0L) stop("parity/golden failures in ", f)
           }
-          if (sum(res$failed) > 0L) stop("cv1 parity/golden failures.")
 
       - name: Print goldens for cross-architecture comparison
         shell: Rscript {0}
@@ -88,3 +104,21 @@ jobs:
           ))
           cat("arch          :", R.version$platform, "\n")
           cat("golden numeric:", .datom_canonical_hash(num)$data_sha, "\n")
+          # sv1: a set payload exercising set-level tags, two members, a
+          # multi-valued tag and a single-valued tag, plus the empty-string-set
+          # primitive pin -- the intermediate that names the diverging stage if
+          # the payload golden ever disagrees between jobs.
+          mid <- function(name, version) list(
+            project = "STUDY_001", name = name, kind = "table", version = version
+          )
+          payload <- list(
+            tags = list(description = "ADaM datasets for STUDY-001"),
+            members = list(
+              list(id = mid("dm", "d0922fc7"), tags = list(type = "input")),
+              list(id = mid("adsl", "7e21b0aa"),
+                   tags = list(type = "output",
+                               domain = c("safety", "efficacy")))
+            )
+          )
+          cat("golden strset0:", .datom_sv1_hex(.datom_sv1_strset(character(0))), "\n")
+          cat("golden set    :", .datom_canonical_set_hash(payload), "\n")

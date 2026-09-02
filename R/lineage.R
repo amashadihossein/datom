@@ -141,7 +141,7 @@ datom_parent <- function(conn, table, version) {
   # version is spliced into a storage key; reject path-traversal / non-hex.
   .datom_validate_sha(version, arg = "version")
 
-  key <- paste0(table, "/.metadata/", version, ".json")
+  key <- .datom_artifact_snapshot_key(table, version)
 
   snap <- tryCatch(
     .datom_storage_read_json(conn, key),

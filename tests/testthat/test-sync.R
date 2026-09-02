@@ -1251,3 +1251,343 @@ test_that("datom_pull is data-repo-only and does not touch the gov repo", {
 })
 
 
+
+
+# --- schema_version gate -------------------------------------------------------
+
+test_that("datom_sync_manifest refuses a local manifest declaring a newer schema", {
+  # Developer-side entry point reading the git clone's copy. Same reachable
+  # scenario as datom_status(): a collaborator writes with a newer datom and
+  # this developer pulls.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id\n1", "input_files/dm.csv")
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(schema_version = 3L, artifacts = list()),
+      ".datom/manifest.json",
+      auto_unbox = TRUE
+    )
+
+    expect_error(
+      datom_sync_manifest(conn),
+      class = "datom_schema_unsupported"
+    )
+  })
+})
+
+test_that("datom_sync_manifest tolerates a local manifest with no schema_version", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id\n1", "input_files/dm.csv")
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(tables = list()), ".datom/manifest.json", auto_unbox = TRUE
+    )
+
+    result <- datom_sync_manifest(conn)
+    expect_equal(nrow(result), 1)
+    expect_equal(result$status, "new")
+  })
+})
+
+test_that("datom_sync_manifest sees entries in an old-format manifest in the clone", {
+  # The same-named tolerance test above has an EMPTY tables block, so it passes
+  # whether or not the reader found the block at all. This one carries a real
+  # entry, so a reader that looked in the wrong place reports "new" instead of
+  # "changed" and fails here.
+  # Absolute path resolved before with_tempdir() changes the working directory.
+  fixture <- fs::path_abs(testthat::test_path("fixtures", "manifest-v1.json"))
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create("input_files")
+    writeLines("id\n1", "input_files/dm.csv")
+    fs::dir_create(".datom")
+    fs::file_copy(fixture, ".datom/manifest.json")
+
+    result <- datom_sync_manifest(conn)
+
+    expect_equal(nrow(result), 1)
+    expect_equal(result$name, "dm")
+    expect_equal(result$status, "changed")
+  })
+})
+
+
+# --- .datom_manifest_skeleton() ------------------------------------------------
+
+test_that(".datom_manifest_skeleton carries project_name only when supplied", {
+  named <- .datom_manifest_skeleton("my_project")
+  expect_equal(named$project_name, "my_project")
+  expect_equal(names(named), c("project_name", "tables", "summary"))
+
+  anon <- .datom_manifest_skeleton()
+  expect_false("project_name" %in% names(anon))
+  expect_equal(names(anon), c("tables", "summary"))
+})
+
+test_that(".datom_manifest_skeleton has an empty artifact block that looks up as NULL", {
+  skeleton <- .datom_manifest_skeleton()
+
+  expect_length(skeleton$tables, 0L)
+  expect_null(skeleton$tables[["dm"]])
+})
+
+test_that(".datom_manifest_skeleton empty artifact block serializes as an object", {
+  # A bare list() serializes to `[]` and a named empty list to `{}`. A manifest
+  # whose artifact block is a JSON array would be read back as an unnamed list,
+  # so no entry could ever be looked up by name.
+  withr::with_tempdir({
+    jsonlite::write_json(
+      .datom_manifest_skeleton("p"), "m.json",
+      auto_unbox = TRUE
+    )
+    txt <- paste(readLines("m.json", warn = FALSE), collapse = "")
+
+    expect_match(txt, '"tables":\\{\\}')
+    expect_false(grepl('"tables":\\[\\]', txt))
+  })
+})
+
+
+# --- .datom_read_manifest() ---------------------------------------------------
+
+test_that(".datom_read_manifest returns the parsed document from storage", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(project_name = "p", tables = list(dm = list(current_version = "abc")))
+    }
+  )
+
+  read <- .datom_read_manifest(mock_datom_conn(list()), "storage")
+
+  expect_true(read$ok)
+  expect_false(read$absent)
+  expect_null(read$error)
+  expect_equal(read$manifest$tables$dm$current_version, "abc")
+})
+
+test_that(".datom_read_manifest returns a storage failure instead of throwing it", {
+  # Each caller has its own policy for an unreadable manifest -- two abort, one
+  # reports it and carries on -- so the failure has to come back as a value.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) stop("bucket unreachable")
+  )
+
+  read <- .datom_read_manifest(mock_datom_conn(list()), "storage")
+
+  expect_false(read$ok)
+  expect_null(read$manifest)
+  expect_match(conditionMessage(read$error), "bucket unreachable")
+})
+
+test_that(".datom_read_manifest keeps the whole failure, not just its text", {
+  # Held so a caller can re-signal the original failure unchanged rather than
+  # building a look-alike; the class is what a look-alike would lose.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      rlang::abort("gone", class = "some_backend_error")
+    }
+  )
+
+  read <- .datom_read_manifest(mock_datom_conn(list()), "storage")
+
+  expect_s3_class(read$error, "some_backend_error")
+  expect_error(stop(read$error), class = "some_backend_error")
+})
+
+test_that(".datom_read_manifest does not claim a missing storage object is absent", {
+  # `absent = TRUE` is a positive claim, and for storage datom does not ask:
+  # separating a missing object from an unreachable store would cost an extra
+  # request on every read and no caller treats them differently.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) stop("NoSuchKey")
+  )
+
+  read <- .datom_read_manifest(mock_datom_conn(list()), "storage")
+
+  expect_false(read$ok)
+  expect_false(read$absent)
+})
+
+test_that(".datom_read_manifest throws a too-new document rather than returning it", {
+  # The whole point of the split: a caller cannot soften what it never receives.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) list(schema_version = 99L)
+  )
+
+  expect_error(
+    .datom_read_manifest(mock_datom_conn(list()), "storage"),
+    class = "datom_schema_unsupported"
+  )
+})
+
+test_that(".datom_read_manifest reads the clone copy and flags an absent file", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    missing <- .datom_read_manifest(conn, "clone")
+    expect_false(missing$ok)
+    expect_true(missing$absent)
+    expect_null(missing$manifest)
+    expect_null(missing$error)
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(tables = list(dm = list(current_version = "abc"))),
+      ".datom/manifest.json",
+      auto_unbox = TRUE
+    )
+
+    present <- .datom_read_manifest(conn, "clone")
+    expect_true(present$ok)
+    expect_false(present$absent)
+    expect_equal(present$manifest$tables$dm$current_version, "abc")
+  })
+})
+
+test_that(".datom_read_manifest returns a corrupt clone file as a failure, not as absent", {
+  # A hand-edited or truncated file is present, so the empty-manifest fallback
+  # must not swallow it: that would turn a corrupt manifest into "no tables".
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    fs::dir_create(".datom")
+    writeLines('{"tables": {', ".datom/manifest.json")
+
+    read <- .datom_read_manifest(conn, "clone")
+
+    expect_false(read$ok)
+    expect_false(read$absent)
+    expect_false(is.null(read$error))
+  })
+})
+
+test_that(".datom_read_manifest names the copy it refused", {
+  # A refusal on the clone must not blame storage, and vice versa -- the
+  # difference decides whether the user pulls or upgrades.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(schema_version = 99L), ".datom/manifest.json",
+      auto_unbox = TRUE
+    )
+
+    clone_err <- expect_error(
+      .datom_read_manifest(conn, "clone"),
+      class = "datom_schema_unsupported"
+    )
+    expect_match(conditionMessage(clone_err), "\\.datom/manifest\\.json")
+  })
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) list(schema_version = 99L)
+  )
+  storage_err <- expect_error(
+    .datom_read_manifest(mock_datom_conn(list()), "storage"),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(storage_err), "\\.metadata/manifest\\.json")
+})
+
+test_that(".datom_read_manifest reads the frozen v1 fixture as a v1 document", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      jsonlite::read_json(testthat::test_path("fixtures", "manifest-v1.json"))
+    }
+  )
+
+  read <- .datom_read_manifest(mock_datom_conn(list()), "storage")
+
+  expect_true(read$ok)
+  expect_null(read$manifest$schema_version)
+  expect_length(read$manifest$tables, 1L)
+})
+
+
+# --- stored error text carries no terminal escape codes ------------------------
+# cli formats abort messages with colour and hyperlink escape codes, and
+# conditionMessage() hands them back. Printed as a message that is invisible;
+# stored in a returned field and printed as data it shows up as literal
+# "\033[31m" noise. Every test below forces colour ON, because with colour off
+# (plain Rscript, CI) cli emits none and the assertion would be vacuous.
+
+test_that("datom_sync's error column has no escape codes when colour is on", {
+  withr::local_options(cli.num_colors = 256, cli.hyperlink = TRUE)
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(".datom")
+
+    manifest <- data.frame(
+      name = "bad_tbl", file = "bad.csv", format = "csv",
+      original_file_sha = "sha1", status = "new",
+      stringsAsFactors = FALSE
+    )
+
+    local_mocked_bindings(
+      .datom_check_rio = function() invisible(TRUE),
+      .datom_check_git_current = function(...) invisible(TRUE),
+      .datom_import_file = function(file, format) {
+        cli::cli_abort(c(
+          "Import failed.",
+          "x" = "File: {.path {file}}",
+          "i" = "Format: {.val {format}}"
+        ))
+      }
+    )
+
+    result <- datom_sync(conn, manifest, continue_on_error = TRUE)
+
+    expect_match(result$error, "Import failed")
+    expect_false(grepl("\033", result$error, fixed = TRUE))
+  })
+})
+
+test_that("per-table metadata sync's stored error has no escape codes", {
+  withr::local_options(cli.num_colors = 256, cli.hyperlink = TRUE)
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    fs::dir_create(fs::path("dm"))
+    writeLines("{}", "dm/metadata.json")
+
+    local_mocked_bindings(
+      .datom_sync_table_metadata = function(conn, name) {
+        cli::cli_abort(c(
+          "Upload failed.",
+          "x" = "Key: {.val {name}}"
+        ))
+      }
+    )
+
+    result <- .datom_sync_data_metadata(conn, .confirm = FALSE)
+
+    expect_equal(result$tables$dm$action, "error")
+    expect_match(result$tables$dm$error, "Upload failed")
+    expect_false(grepl("\033", result$tables$dm$error, fixed = TRUE))
+  })
+})

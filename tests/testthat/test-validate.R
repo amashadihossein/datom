@@ -429,6 +429,67 @@ test_that("datom_validate with fix = TRUE calls metadata sync on failure", {
   })
 })
 
+test_that("datom_validate with fix = TRUE names tables it cannot repair", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+
+    # A table whose metadata is in the clone but whose payload is not in
+    # storage -- the state a write aborted at push leaves behind
+    fs::dir_create(".datom")
+    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
+                         auto_unbox = TRUE)
+    fs::dir_create("dm")
+    jsonlite::write_json(
+      list(name = "dm", data_sha = strrep("a", 64)),
+      "dm/metadata.json",
+      auto_unbox = TRUE
+    )
+
+    local_mocked_bindings(
+      .datom_storage_exists = function(conn, s3_key) FALSE,
+      .datom_sync_data_metadata = function(conn, .confirm = TRUE) {
+        invisible(list(repo_files = character(), tables = list()))
+      }
+    )
+
+    messages <- capture.output(
+      datom_validate(conn, fix = TRUE),
+      type = "message"
+    )
+    combined <- paste(messages, collapse = " ")
+
+    # The sync must not read as having repaired the missing payload
+    expect_match(combined, "dm")
+    expect_match(combined, "still missing from storage")
+    expect_match(combined, "datom_write")
+  })
+})
+
+test_that(".datom_validate_unfixable_tables selects only missing-payload rows", {
+  # Column is `table`, matching .datom_validate_tables() output
+  checks <- data.frame(
+    table = c("ok_tbl", "meta_only", "no_data", "both"),
+    status = c("ok", "metadata_missing_s3", "data_missing_s3",
+               "metadata_missing_s3,data_missing_s3"),
+    stringsAsFactors = FALSE
+  )
+
+  expect_equal(.datom_validate_unfixable_tables(checks), c("no_data", "both"))
+
+  # "metadata_missing_s3" CONTAINS "data_missing_s3" as a substring, and that
+  # finding IS repairable by the sync -- so it must not be named here
+  expect_equal(
+    .datom_validate_unfixable_tables(checks[checks$status == "metadata_missing_s3", ]),
+    character()
+  )
+
+  # Nothing to check is not a failure
+  expect_equal(.datom_validate_unfixable_tables(NULL), character())
+  expect_equal(.datom_validate_unfixable_tables(checks[0, ]), character())
+})
+
 test_that("datom_validate with fix = TRUE does not call sync when valid", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
@@ -465,7 +526,10 @@ test_that("datom_validate handles multiple tables with mixed status", {
     # Good table — everything on S3
     fs::dir_create("good_tbl")
     jsonlite::write_json(
-      list(data_sha = "d1"),
+      # A realistic 64-hex digest: the payload-key builder validates data_sha
+      # (6-64 lowercase hex), so a short stub like "d1" is rejected and the
+      # table would report data_missing_s3 instead of ok.
+      list(data_sha = strrep("d1", 32L)),
       "good_tbl/metadata.json", auto_unbox = TRUE
     )
     jsonlite::write_json(list(), "good_tbl/version_history.json",
@@ -474,7 +538,7 @@ test_that("datom_validate handles multiple tables with mixed status", {
     # Bad table — nothing on S3
     fs::dir_create("bad_tbl")
     jsonlite::write_json(
-      list(data_sha = "d2"),
+      list(data_sha = strrep("d2", 32L)),
       "bad_tbl/metadata.json", auto_unbox = TRUE
     )
 

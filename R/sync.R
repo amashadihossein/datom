@@ -191,7 +191,8 @@ datom_pull <- function(conn) {
       .datom_sync_table_metadata(conn, tbl)
     }, error = function(e) {
       cli::cli_alert_danger("Failed to sync {.val {tbl}}: {conditionMessage(e)}")
-      list(name = tbl, action = "error", error = conditionMessage(e))
+      # ansi_strip on the stored copy only -- the alert above keeps its colour.
+      list(name = tbl, action = "error", error = cli::ansi_strip(conditionMessage(e)))
     })
   })
   names(table_results) <- table_names
@@ -222,7 +223,7 @@ datom_pull <- function(conn) {
   metadata_path <- fs::path(table_dir, "metadata.json")
   if (fs::file_exists(metadata_path)) {
     data <- jsonlite::read_json(metadata_path)
-    s3_key <- paste0(name, "/.metadata/metadata.json")
+    s3_key <- .datom_artifact_meta_key(name, "metadata")
     .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
@@ -231,7 +232,7 @@ datom_pull <- function(conn) {
   history_path <- fs::path(table_dir, "version_history.json")
   if (fs::file_exists(history_path)) {
     data <- jsonlite::read_json(history_path)
-    s3_key <- paste0(name, "/.metadata/version_history.json")
+    s3_key <- .datom_artifact_meta_key(name, "version_history")
     .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
@@ -243,6 +244,10 @@ datom_pull <- function(conn) {
     for (snap in snapshot_files) {
       snap_name <- fs::path_file(snap)
       data <- jsonlite::read_json(snap)
+      # Not the snapshot-key helper: `snap_name` is a discovered FILENAME
+      # (already `{sha}.json`), not a bare sha, so the helper's sha guard does
+      # not apply. Guarding here would also change behavior -- a stray .json in
+      # .metadata/ would start aborting instead of being uploaded.
       s3_key <- paste0(name, "/.metadata/", snap_name)
       .datom_storage_write_json(conn, s3_key, data)
       s3_keys <- c(s3_keys, s3_key)
@@ -366,13 +371,19 @@ datom_sync_manifest <- function(conn,
     ))
   }
 
-  # Read current manifest (local git copy)
-  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
-  current_manifest <- if (fs::file_exists(manifest_path)) {
-    jsonlite::read_json(manifest_path)
-  } else {
-    list(tables = list())
-  }
+  # Read current manifest (local git copy). .datom_read_manifest() also checks
+  # the declared schema version, because the clone can be ahead of this build (a
+  # collaborator wrote with a newer datom and this developer pulled) and the
+  # comparison below would otherwise run against a shape this build does not
+  # understand.
+  read <- .datom_read_manifest(conn, "clone")
+
+  # No manifest yet means every input file is new. A manifest that exists but
+  # will not parse keeps failing exactly as before -- re-signalled unchanged
+  # rather than reworded.
+  if (!read$ok && !read$absent) stop(read$error)
+
+  current_manifest <- if (read$ok) read$manifest else .datom_manifest_skeleton()
 
   # Build manifest rows
   rows <- purrr::map(all_files, function(fp) {
@@ -592,7 +603,9 @@ datom_sync <- function(conn,
 
     }, error = function(e) {
       manifest$result[i] <<- "error"
-      manifest$error[i] <<- conditionMessage(e)
+      # ansi_strip: this is a data frame column the caller prints, so cli's
+      # colour and hyperlink escape codes would show up as literal text.
+      manifest$error[i] <<- cli::ansi_strip(conditionMessage(e))
 
       if (continue_on_error) {
         cli::cli_alert_danger("Failed to sync {.val {tbl_name}}: {conditionMessage(e)}")
@@ -616,6 +629,108 @@ datom_sync <- function(conn,
   )
 
   manifest
+}
+
+
+# --- Shared manifest access ----------------------------------------------------
+
+#' Empty Manifest Skeleton
+#'
+#' The one shape of an empty manifest. Callers that need a manifest when none
+#' exists yet build it here rather than inline, so a later change to the
+#' manifest's shape has a single place to land.
+#'
+#' `tables` is a **named** empty list on purpose: `jsonlite` serializes an empty
+#' bare list as a JSON array (`[]`) and an empty named list as an object (`{}`),
+#' and a manifest's artifact block must be an object. Inert today, since nothing
+#' writes a manifest that still has zero entries, and correct for the one case
+#' where it would.
+#'
+#' @param project_name Project name, or `NULL` to omit the field (callers that
+#'   only need somewhere to look up entries have no project name to hand).
+#' @return A list with `project_name` (when supplied), `tables` and `summary`.
+#' @keywords internal
+.datom_manifest_skeleton <- function(project_name = NULL) {
+  skeleton <- list()
+  if (!is.null(project_name)) skeleton$project_name <- project_name
+  skeleton$tables <- structure(list(), names = character(0))
+  skeleton$summary <- list()
+  skeleton
+}
+
+
+#' Read a Manifest and Check Its Schema Version
+#'
+#' The single manifest read. Every reader that takes a manifest *into* datom
+#' goes through this, so the compatibility check happens once and cannot be
+#' softened by a caller's error handling.
+#'
+#' Two kinds of failure, handled deliberately differently:
+#'
+#' * **An IO failure is returned as data** (`ok = FALSE`), because each caller
+#'   has its own policy: `datom_list()` and `datom_summary()` abort,
+#'   `datom_status()` reports the manifest unavailable and carries on, and the
+#'   clone readers fall back to an empty manifest when the file does not exist
+#'   yet.
+#' * **A schema refusal is thrown**, so the "upgrade datom" message reaches the
+#'   user intact. Placed inside a caller's `tryCatch` it would be reworded as
+#'   "could not read manifest" at two sites and downgraded to a warning at a
+#'   third -- see `dev/engineering-notes.md`. Throwing from in here means there
+#'   is no handler for a caller to put it inside.
+#'
+#' @param conn A `datom_conn` object.
+#' @param scope `"storage"` for the copy in data storage
+#'   (`.metadata/manifest.json`), `"clone"` for the git-tracked copy
+#'   (`.datom/manifest.json`). Both exist; they can differ, and which one a
+#'   caller wants is a real choice rather than a default.
+#' @return A list with:
+#'   * `ok` -- `TRUE` when the manifest was read and parsed.
+#'   * `absent` -- `TRUE` only when the document is *known* not to exist. That
+#'     is decided for `scope = "clone"`, where testing a local path is free.
+#'     For `scope = "storage"` it is always `FALSE`, meaning "not known to be
+#'     absent": separating a missing object from an unreachable store would
+#'     cost an extra request on every read and no caller distinguishes them.
+#'   * `manifest` -- the parsed document, or `NULL` when `ok` is `FALSE`.
+#'   * `error` -- the condition that stopped the read, or `NULL`. The whole
+#'     condition rather than its text, so a caller can re-signal the original
+#'     failure unchanged instead of manufacturing a look-alike.
+#' @keywords internal
+.datom_read_manifest <- function(conn, scope = c("storage", "clone")) {
+  scope <- match.arg(scope)
+
+  source <- if (scope == "storage") ".metadata/manifest.json" else ".datom/manifest.json"
+
+  if (scope == "clone") {
+    manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
+    if (!fs::file_exists(manifest_path)) {
+      return(list(ok = FALSE, absent = TRUE, manifest = NULL, error = NULL))
+    }
+  }
+
+  # The handler covers the read ONLY. The schema check below must stay outside
+  # it: inside, a refusal would come back as an IO failure and every caller's
+  # tolerance would apply to it.
+  read <- tryCatch(
+    list(
+      ok = TRUE,
+      absent = FALSE,
+      manifest = if (scope == "storage") {
+        .datom_storage_read_json(conn, ".metadata/manifest.json")
+      } else {
+        jsonlite::read_json(fs::path(conn$path, ".datom", "manifest.json"))
+      },
+      error = NULL
+    ),
+    error = function(e) {
+      list(ok = FALSE, absent = FALSE, manifest = NULL, error = e)
+    }
+  )
+
+  if (!read$ok) return(read)
+
+  .datom_check_schema_version(read$manifest, source)
+
+  read
 }
 
 
@@ -706,10 +821,13 @@ datom_sync <- function(conn,
   manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   fs::dir_create(fs::path_dir(manifest_path))
 
+  # Read stays direct rather than going through .datom_read_manifest(): this is
+  # mid-write, and a compatibility refusal belongs at the front door, before any
+  # work starts, not partway through. Only the empty shape is shared.
   manifest <- if (fs::file_exists(manifest_path)) {
     jsonlite::read_json(manifest_path)
   } else {
-    list(project_name = conn$project_name, tables = list(), summary = list())
+    .datom_manifest_skeleton(conn$project_name)
   }
 
   # Read size_bytes from local metadata.json (already written at this point)

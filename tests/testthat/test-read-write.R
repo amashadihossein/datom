@@ -164,6 +164,37 @@ test_that("propagates S3 errors", {
   expect_error(.datom_read_metadata(conn, "customers"), "Failed to read JSON")
 })
 
+test_that("refuses metadata declaring a newer schema, before reading history", {
+  # datom_read() never touches the manifest, so this is the only schema check
+  # on the data path. It fires before the history read: nothing is gained by
+  # fetching a second document in a format this build cannot interpret.
+  call_keys <- character()
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      call_keys <<- c(call_keys, s3_key)
+      list(schema_version = 3L, data_sha = "abc123")
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  expect_error(
+    .datom_read_metadata(conn, "customers"),
+    class = "datom_schema_unsupported"
+  )
+  expect_equal(call_keys, "customers/.metadata/metadata.json")
+})
+
+test_that("tolerates metadata with no schema_version", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      if (grepl("metadata.json$", s3_key)) list(data_sha = "abc123") else list()
+    }
+  )
+
+  conn <- mock_datom_conn(list())
+  expect_equal(.datom_read_metadata(conn, "customers")$current$data_sha, "abc123")
+})
+
 
 # --- .datom_resolve_version() --------------------------------------------------
 
