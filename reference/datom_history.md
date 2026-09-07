@@ -59,13 +59,13 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/Rtmp0YCcPh/datom-example-1a315a3c1432/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/Rtmp0YCcPh/datom-example-1a315a3c1432/repo
+#> ℹ Created store directory /tmp/RtmpzL9ZoV/datom-example-1a5958209c6c/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmpzL9ZoV/datom-example-1a5958209c6c/repo
 #> ✔ Wrote "dm" (full): "039f0c3f"
 #>                                                            version
 #> 1 039f0c3fc4d639b4977f44e83df863da9535e70df737cc758747bda8bd2d89d8
 #>                                                           data_sha
 #> 1 71a93ffaa4cdc59750a5d5fbf49bb4ffcd656f00038cae2849958acae622b538
 #>              timestamp                author commit_message
-#> 1 2026-08-21T01:18:31Z datom <datom@noreply>      Update dm
+#> 1 2026-09-07T21:13:42Z datom <datom@noreply>      Update dm
 ```

@@ -27,7 +27,7 @@ store <- datom_store(
   data_repo_url = "https://github.com/example/my-project",
   validate = FALSE
 )
-#> ℹ Created store directory /tmp/Rtmp0YCcPh/datom_store_1a315b86c39e.
+#> ℹ Created store directory /tmp/RtmpzL9ZoV/datom_store_1a591515bb0c.
 is_datom_store(store)
 #> [1] TRUE
 is_datom_store("not a store")

@@ -1,5 +1,22 @@
 # Changelog
 
+## datom 0.1.2
+
+Test-only fix for the CRAN check failures reported against 0.1.1. No
+package code changed and no user-facing behaviour changed.
+
+- Test fixtures no longer assume the machine’s default git branch is
+  named `master`. Fixtures that build a throwaway repository and push it
+  to a local stand-in remote spelled the branch out as
+  `refs/heads/master`, but
+  [`git2r::init()`](https://docs.ropensci.org/git2r/reference/init.html)
+  honours git’s `init.defaultBranch` setting – so on a machine
+  configured for any other name the push named a branch that had never
+  been created, and 26 tests failed during setup. Branch names are now
+  read from the fixture repository. datom’s own
+  [`.datom_git_push()`](https://amashadihossein.github.io/datom/reference/dot-datom_git_push.md)
+  already derived the branch that way and was unaffected.
+
 ## datom 0.1.1
 
 Initial CRAN release. `datom` provides version-controlled data

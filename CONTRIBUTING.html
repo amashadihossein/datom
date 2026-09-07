@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -118,6 +118,11 @@
 </ul><p>Before a second attempt at any remote-mutating action (<code>git push</code>, <code>gh pr create</code>, etc.), verify remote state first (<code>gh pr list</code>, <code>git log --remotes</code>) to avoid duplicates.</p>
 </li>
 </ol></div>
+<div class="section level2">
+<h2 id="verifying-against-the-tarball-not-the-source-tree">Verifying against the tarball, not the source tree<a class="anchor" aria-label="anchor" href="#verifying-against-the-tarball-not-the-source-tree"></a></h2>
+<p>Before a release, run the suite against the <strong>built tarball</strong> (<code>R CMD build</code> then <code>R CMD check</code>), not only against the source tree with <code>devtools::test()</code>. Anything listed in <code>.Rbuildignore</code> is absent from the tarball, so the suite CRAN runs is not the suite you ran locally – silently, and with a different test count.</p>
+<p>Concretely: <code>dev/</code> is <code>.Rbuildignore</code>d, and one golden-vector parity check reads a reference script from there. On the source tree it runs and its expectations pass; in the tarball it skips. That is a 9-expectation difference with no warning anywhere. When a local count and a CRAN count disagree, reconcile them before assuming either is wrong (see <a href="https://github.com/amashadihossein/datom/issues/106" class="external-link">#106</a>).</p>
+</div>
 <div class="section level2">
 <h2 id="questions">Questions<a class="anchor" aria-label="anchor" href="#questions"></a></h2>
 <p>Open an issue or email the maintainer at <a href="mailto:amashadihossein@gmail.com" class="email">amashadihossein@gmail.com</a>.</p>
