@@ -47,15 +47,15 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpzL9ZoV/datom-example-1a5914cd9114/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpzL9ZoV/datom-example-1a5914cd9114/repo
+#> ℹ Created store directory /tmp/Rtmpeon3tF/datom-example-1957883b502/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/Rtmpeon3tF/datom-example-1957883b502/repo
 #> 
 #> ── datom connection 
 #> • Project: "example_project"
 #> • Backend: "local"
 #> • Role: "developer"
-#> • Data root: "/tmp/RtmpzL9ZoV/datom-example-1a5914cd9114/storage"
+#> • Data root: "/tmp/Rtmpeon3tF/datom-example-1957883b502/storage"
 #> • Governance: not attached
-#> • Path: /tmp/RtmpzL9ZoV/datom-example-1a5914cd9114/repo
-#> • Data repo: </tmp/RtmpzL9ZoV/datom-example-1a5914cd9114/remote.git>
+#> • Path: /tmp/Rtmpeon3tF/datom-example-1957883b502/repo
+#> • Data repo: </tmp/Rtmpeon3tF/datom-example-1957883b502/remote.git>
 ```
