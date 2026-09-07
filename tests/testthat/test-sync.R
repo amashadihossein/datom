@@ -1079,7 +1079,7 @@ test_that("datom_pull reports already up to date when nothing to pull", {
     git2r::commit(repo, "Initial commit")
     git2r::remote_add(repo, name = "origin", url = bare_dir)
     git2r::push(repo, name = "origin",
-                refspec = "refs/heads/master", set_upstream = TRUE)
+                refspec = test_head_refspec(repo), set_upstream = TRUE)
 
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -1088,7 +1088,7 @@ test_that("datom_pull reports already up to date when nothing to pull", {
     result <- datom_pull(conn)
 
     expect_equal(result$commits_pulled, 0L)
-    expect_equal(result$branch, "master")
+    expect_equal(result$branch, test_head_branch(repo))
   })
 })
 
@@ -1128,7 +1128,7 @@ test_that("datom_pull counts commits pulled from upstream", {
     git2r::commit(repo, "Initial commit")
     git2r::remote_add(repo, name = "origin", url = bare_dir)
     git2r::push(repo, name = "origin",
-                refspec = "refs/heads/master", set_upstream = TRUE)
+                refspec = test_head_refspec(repo), set_upstream = TRUE)
 
     # Simulate another user pushing 2 commits via a clone
     other_dir <- withr::local_tempdir()
@@ -1144,7 +1144,7 @@ test_that("datom_pull counts commits pulled from upstream", {
     git2r::commit(other_repo, "Commit B")
 
     git2r::push(other_repo, name = "origin",
-                refspec = "refs/heads/master")
+                refspec = test_head_refspec(other_repo))
 
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -1153,7 +1153,7 @@ test_that("datom_pull counts commits pulled from upstream", {
     result <- datom_pull(conn)
 
     expect_equal(result$commits_pulled, 2L)
-    expect_equal(result$branch, "master")
+    expect_equal(result$branch, test_head_branch(repo))
 
     # Files should now exist locally
     expect_true(fs::file_exists("a.txt"))
@@ -1173,7 +1173,7 @@ test_that("datom_pull aborts on merge conflict", {
     git2r::commit(repo, "Initial commit")
     git2r::remote_add(repo, name = "origin", url = bare_dir)
     git2r::push(repo, name = "origin",
-                refspec = "refs/heads/master", set_upstream = TRUE)
+                refspec = test_head_refspec(repo), set_upstream = TRUE)
 
     # Another user pushes a conflicting change
     other_dir <- withr::local_tempdir()
@@ -1183,7 +1183,7 @@ test_that("datom_pull aborts on merge conflict", {
     git2r::add(other_repo, "README.md")
     git2r::commit(other_repo, "Other edit")
     git2r::push(other_repo, name = "origin",
-                refspec = "refs/heads/master")
+                refspec = test_head_refspec(other_repo))
 
     # Local conflicting edit
     writeLines("my version", "README.md")
@@ -1210,7 +1210,7 @@ test_that("datom_pull returns invisible result", {
     git2r::commit(repo, "Initial commit")
     git2r::remote_add(repo, name = "origin", url = bare_dir)
     git2r::push(repo, name = "origin",
-                refspec = "refs/heads/master", set_upstream = TRUE)
+                refspec = test_head_refspec(repo), set_upstream = TRUE)
 
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -1232,7 +1232,7 @@ test_that("datom_pull is data-repo-only and does not touch the gov repo", {
     git2r::add(repo, "README.md")
     git2r::commit(repo, "Init")
     git2r::remote_add(repo, "origin", bare_dir)
-    git2r::push(repo, "origin", "refs/heads/master", set_upstream = TRUE)
+    git2r::push(repo, "origin", test_head_refspec(repo), set_upstream = TRUE)
 
     conn <- mock_datom_conn(list())
     conn$role <- "developer"

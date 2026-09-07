@@ -92,6 +92,18 @@ jobs:
           extra-packages: any::rcmdcheck
           needs: check
 
+      # Test fixtures build throwaway git repos, and git2r honours
+      # init.defaultBranch when naming the first branch. A fixture that
+      # hardcodes a branch name passes wherever the runner default matches and
+      # fails everywhere else -- which is how #106 reached CRAN, failing on four
+      # Linux flavors while every other flavor was OK. Runners default to
+      # `master`, so pinning `main` on this one leg (a required status check)
+      # exercises the other value at no extra CI cost; the remaining legs keep
+      # the default, so both names stay covered.
+      - name: Pin a non-default git branch name (regression guard for #106)
+        if: needs.changes.outputs.code == 'true' && matrix.config.os == 'ubuntu-latest' && matrix.config.r == 'release'
+        run: git config --global init.defaultBranch main
+
       - uses: r-lib/actions/check-r-package@v2
         if: needs.changes.outputs.code == 'true'
         with:

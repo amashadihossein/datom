@@ -40,7 +40,7 @@ local_identity_project <- function(env = parent.frame()) {
   git2r::add(repo, "README.md")
   git2r::commit(repo, "Initial commit")
   git2r::remote_add(repo, name = "origin", url = as.character(bare_dir))
-  git2r::push(repo, name = "origin", refspec = "refs/heads/master",
+  git2r::push(repo, name = "origin", refspec = test_head_refspec(repo),
               set_upstream = TRUE)
 
   conn <- mock_datom_conn(list(), root = as.character(store_dir),

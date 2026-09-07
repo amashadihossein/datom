@@ -2083,7 +2083,7 @@ test_that("datom_clone aborts if cloned repo is not a datom repo", {
     git2r::commit(work_repo, "Initial commit")
     git2r::remote_add(work_repo, name = "origin", url = bare_dir)
     git2r::push(work_repo, name = "origin",
-                refspec = "refs/heads/master", set_upstream = TRUE)
+                refspec = test_head_refspec(work_repo), set_upstream = TRUE)
 
     comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
     store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
@@ -2129,7 +2129,7 @@ test_that("datom_clone clones and returns a datom_conn", {
     git2r::commit(work_repo, "Init datom")
     git2r::remote_add(work_repo, name = "origin", url = bare_dir)
     git2r::push(work_repo, name = "origin",
-                refspec = "refs/heads/master", set_upstream = TRUE)
+                refspec = test_head_refspec(work_repo), set_upstream = TRUE)
 
     comp <- datom_store_s3(bucket = "test-bucket", access_key = "fakekey",
                            secret_key = "fakesecret", validate = FALSE)
@@ -2181,7 +2181,7 @@ test_that("datom_clone sets a local git identity on the fresh clone (#74 E)", {
     git2r::commit(work_repo, "Init datom")
     git2r::remote_add(work_repo, name = "origin", url = bare_dir)
     git2r::push(work_repo, name = "origin",
-                refspec = "refs/heads/master", set_upstream = TRUE)
+                refspec = test_head_refspec(work_repo), set_upstream = TRUE)
 
     comp <- datom_store_s3(bucket = "test-bucket", access_key = "fakekey",
                            secret_key = "fakesecret", validate = FALSE)
@@ -2237,7 +2237,7 @@ test_that("datom_clone aborts on clone failure", {
   git2r::add(work_repo, ".datom/project.yaml")
   git2r::commit(work_repo, "Init")
   git2r::remote_add(work_repo, "origin", bare_dir)
-  git2r::push(work_repo, "origin", "refs/heads/master", set_upstream = TRUE)
+  git2r::push(work_repo, "origin", test_head_refspec(work_repo), set_upstream = TRUE)
   list(bare = bare_dir, work = work_dir)
 }
 

@@ -91,6 +91,21 @@ self-assigned, follow these steps:
    `gh pr create`, etc.), verify remote state first (`gh pr list`,
    `git log --remotes`) to avoid duplicates.
 
+## Verifying against the tarball, not the source tree
+
+Before a release, run the suite against the **built tarball**
+(`R CMD build` then `R CMD check`), not only against the source tree with
+`devtools::test()`. Anything listed in `.Rbuildignore` is absent from the
+tarball, so the suite CRAN runs is not the suite you ran locally -- silently, and
+with a different test count.
+
+Concretely: `dev/` is `.Rbuildignore`d, and one golden-vector parity check reads
+a reference script from there. On the source tree it runs and its expectations
+pass; in the tarball it skips. That is a 9-expectation difference with no warning
+anywhere. When a local count and a CRAN count disagree, reconcile them before
+assuming either is wrong (see
+[#106](https://github.com/amashadihossein/datom/issues/106)).
+
 ## Questions
 
 Open an issue or email the maintainer at <amashadihossein@gmail.com>.
