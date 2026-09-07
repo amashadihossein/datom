@@ -26,9 +26,23 @@ named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, lande
 this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 `.kiro/steering/communication.md`.
 
-**Next**: **Task 6 -- the `manifest$tables` -> `manifest$artifacts` rename**, which carries
-escalation E2, so per rule 5d surface its recommendation in that chunk's checkpoint message before
-implementing. Task 5 landed the ground it stands on: manifest reads go through one function
+**THIS SPEC IS PARKED AS OF 2026-09-01, MID-DESIGN ON TASK 6. NOTHING IS HALF-IMPLEMENTED.** CRAN
+accepted 0.1.1 and then reported a failure in its automated check runs, so the whole branch is frozen
+to clear that first. The state to resume from: branch `spec/datom-sets` level with origin at
+`dbae253`, working tree clean, **2748** tests, `dev/check-spec.R` 9/9. Task 6's design was proposed
+and the session stopped for go-ahead per rule 5b; **no `R/` or `tests/` file was touched.** The plan,
+the test plan, and **five open calls each carrying the default to take on silence** are in the
+**PAUSE block at the end of Task 6** -- read that before anything else in this file. Two hazards for
+whoever picks this up: the CRAN fix lands on `main` and will merge in, which stales code line
+citations that `dev/check-spec.R` catches only when they go fully blank; and the release/merge
+bookkeeping for the acceptance may have moved `main` and `dev` under this branch, so re-check
+`dev/README.md` "Branching During CRAN Submission" rather than assuming the freeze is still on.
+
+**Next when work resumes**: **Task 6 -- the `manifest$tables` -> `manifest$artifacts` rename**, which
+carries escalation E2. Its design spot-check is discharged (the proposal in the PAUSE block); the
+**purity audit is still owed and comes due after the task lands**, so per rule 5d it must still be
+surfaced in that chunk's checkpoint message. Task 5 landed the ground it stands on: manifest reads go
+through one function
 (`.datom_read_manifest()`, `R/sync.R:698`) and empty manifests through one builder
 (`.datom_manifest_skeleton()`, `R/sync.R:653`), so the old-format upgrade has **one** place to live
 instead of five. Nothing on disk changed and the key is still `tables`.
@@ -94,9 +108,12 @@ code fix. The three places that hold it: `R/hashable-set.R` (implementation),
 constant. E1's discharge record and the four deltas it produced are in the Decisions log
 (2026-08-17); nothing about it is open.
 
-**Open with the owner**: nothing. The AC33(a) anchoring item that sat here on 2026-08-26 was decided
-the same day and **implemented as decided on 2026-08-28** -- the realistic fixture was pinned in its
-own commit under the pre-change code, and the `name`-bearing golden became AC33(b)'s test.
+**Open with the owner**: **six items, all Task 6's and all defaulted, so silence is safe** -- the five
+design calls plus where the purity audit runs. They are stated with their defaults in the PAUSE block
+at the end of Task 6, not repeated here, so there is one copy to keep true. Nothing else is open: the
+AC33(a) anchoring item that sat here on 2026-08-26 was decided the same day and **implemented as
+decided on 2026-08-28** -- the realistic fixture was pinned in its own commit under the pre-change
+code, and the `name`-bearing golden became AC33(b)'s test.
 
 **Also on this branch, outside the task list**: three operator-facing fixes -- two that followed
 Task 18 (the merge-conflict message, and `datom_validate(fix = TRUE)` no longer claiming to repair a
@@ -677,6 +694,8 @@ own; landing it first is what makes Task 6's failure loud.
     and it removes the last two places that spelled an empty manifest by hand.
 
 - [ ] **6. `manifest$tables` -> `manifest$artifacts`, typed by `kind`** &nbsp; **[ESCALATION E2]**
+  &nbsp; **[DESIGN PROPOSED 2026-09-01, PAUSED -- read the PAUSE block at the end of this task
+  first: it holds the implementation plan and the five open calls]**
   - Write side (**3** sites -- an earlier draft said 2 and missed the third):
     `.datom_update_manifest_entry()` (`R/sync.R:864,868-875`); the **absent-manifest skeleton**,
     which Task 5 collapsed into `.datom_manifest_skeleton()` (`R/sync.R:653`, called at
@@ -821,6 +840,93 @@ own; landing it first is what makes Task 6's failure loud.
     of this** and says so itself, in the comment explaining why the manifest key is not on the
     retired-wording list: the risk lives in `R/`, which that script does not read. This phase has
     the least mechanical protection and the most silent failure mode of any work in this spec.
+  - **PAUSED 2026-09-01, mid-design, nothing implemented.** The design below was proposed and the
+    session stopped for owner go-ahead per rule 5b; then CRAN accepted 0.1.1 and asked for a fix, so
+    this task is frozen and the branch parked. **The workspace carries no `R/` or `tests/` change from
+    this task** -- `git status` was clean at the pause and the branch was level with
+    `origin/spec/datom-sets` at `dbae253`. Test baseline unchanged at **2748**. Everything below is a
+    plan, not a record; the five items under "open calls" have not been answered.
+    - **E2 status at the pause.** The design spot-check half is discharged by the proposal below,
+      which was produced after reading the audits and re-reading every cited site in `R/`. **The
+      purity-audit half is still owed and comes due when this task lands**, not before: 5 files
+      edited, 1 added, ~30 fixtures swept across 6 test files, and a silent failure mode. Whether it
+      runs in-line or in a fresh session is open (see below). No model switch was proposed; the
+      2026-08-23 discharge reasoning still holds.
+    - **Plan, by file.** New **`R/manifest-upgrade.R`**: `.datom_manifest_upgrade_v1_to_v2()` renames
+      the artifact key **in place** (`names(m)[names(m) == "tables"] <- "artifacts"`, so position and
+      any unrecognised sibling keys survive -- which is also what Task 20 wants) and stamps
+      `kind = "table"` first in each entry; `.datom_manifest_upgrade()` derives the declared version,
+      applies each step in order via `purrr::reduce`, guarded by `if (declared < supported)` because
+      R's `seq()` counts down (R22.10), then records the version it reached.
+      `R/sync.R`: the skeleton (`R/sync.R:653`) renames its key and stamps `schema_version: 2`; the
+      shared reader (`R/sync.R:698`) gains one line -- chain **after** `.datom_check_schema_version()`
+      and before the return, kept separable for Task 22's rebuild branch; the entry updater
+      (`R/sync.R:818`) chains what it read from disk, writes `kind` on the entry, stamps the version,
+      and filters its three summary counters; `datom_sync_manifest()`'s lookup moves to the new key.
+      `R/query.R`: `kind` column in `datom_list()`'s populated path **and** both empty returns;
+      `datom_status()`'s count filtered; the input-file scan's lookup moved. `R/summary.R`:
+      `table_count` filtered, new `set_count`, new print line. `R/conn.R`: the seed is built from the
+      skeleton plus `updated_at` and a zeroed summary, so the stamp is not spelled a third time.
+      `R/read_write.R`: `schema_version` into `.datom_build_metadata()` (already classified excluded
+      in `.datom_metadata_excluded_fields`, so identity does not move and the classification test
+      stays green), plus the write-entry check above both routing returns. `R/utils-validate.R`: an
+      operation word in the refusal message.
+    - **Two stamping sites, restated because the plan depends on it.** Created-from-nothing gets the
+      number from the skeleton; converted-from-old gets it from the dispatcher, which sets it only
+      after the steps ran (I29). The seed is routed through the skeleton rather than stamping itself,
+      which is the only reason there are two sites and not three.
+    - **Docs that ship in the same commit.** `dev/datom_specification.md`'s `.datom/manifest.json`
+      example still shows `tables` and no `schema_version`; a NEWS entry for a breaking rename; the
+      `tasks.md` checkbox and the `dev/README.md` status line; and "no pathway impact" recorded
+      explicitly.
+    - **Test plan.** The load-bearing new fixture is a **hand-built manifest carrying a `kind: "set"`
+      entry beside table entries** -- without it every counter change passes whether or not it was
+      made, since nothing writes a set until Task 9. It asserts the two counted numbers
+      (`datom_summary()`), the two stored numbers (the `summary` block), and that counted and stored
+      **agree**. Then: unit tests for the step and the dispatcher (converts; identity on a
+      current-version document; **zero** steps run there; twice equals once); a write into an
+      old-shape repo leaves the new key, no old key, the number stamped and every pre-existing table
+      still counted (AC31); the write-entry refusal on **all three** write routes including the
+      mirror-everything one; stamping mints no new version for unchanged content; `kind` present in
+      both empty returns.
+      **The sweep rule, and how it goes quietly wrong**: a swept fixture must declare
+      `schema_version: 2` **and** carry `kind` on its entries. Declaring the number without `kind`
+      makes the counters read zero, because R22.8 deliberately has no missing-`kind` fallback -- the
+      counter tests above are what catch that. The six tests and the frozen file named in item 4 stay
+      on the old key; the two frozen-fixture readers gain AC30's `kind = "table"` assertion, which
+      touches the assertions and not the fixture.
+    - **FIVE OPEN CALLS, each with the default the next session takes if the owner says nothing.**
+      These are proposals, unlike the two decisions settled 2026-08-29, which are frozen.
+      1. **The mirror-to-storage route converts before mirroring and leaves the clone file alone.**
+         `datom_write(NULL, NULL)` and `datom_validate(fix = TRUE)` reach
+         `.datom_sync_data_metadata()`, which today copies the clone's manifest to storage byte for
+         byte -- so a build that knows the new shape would push the old one. Plan: read it through the
+         shared reader, mirror the converted form, do **not** rewrite the local file, because this
+         route does not commit and rewriting it would leave the repo dirty. Accepted cost: for a
+         window the clone is old-shape and storage is new-shape; both are internally consistent and
+         both read correctly. Side benefit: `datom_validate(fix = TRUE)` bypasses `datom_write()`'s
+         door, and routing its read through the shared reader is what stops it mirroring a manifest it
+         cannot understand. *Default: as described.*
+      2. **An operation word in `.datom_check_schema_version()`'s message.** It says the format is one
+         "this build cannot read", which is wrong on a refused write. Plan: an optional argument, so
+         every existing call site and its asserted text are unchanged. *Default: add it.*
+      3. **The clone manifest is read twice on a write** -- once by the entry check, once by the
+         updater that edits it. Task 21 asks for this to be decided rather than drifted into. Plan:
+         accept two reads of a small local file, and say why in the commit -- the door's copy cannot be
+         threaded down, because the sync route pulls from the remote in between, so a document read at
+         the door can be stale by the time the file is edited. *Default: accept two reads.*
+      4. **The entry check is skipped when there is no clone path.** A reader-role conn has no clone
+         to inspect and already fails a few lines later with a clearer message about developer role.
+         *Default: skip, and let the existing error stand.*
+      5. **`datom_list()`'s two empty returns gain `kind` but not `current_data_sha`.** Those returns
+         omit a column the populated rows carry -- pre-existing drift this task's body already notes.
+         Fixing it changes a public shape nobody asked to change. *Default: leave the drift, recorded.*
+    - **Also open**: whether the post-landing purity audit runs in-line at the checkpoint or in a
+      fresh session. *Default: in-line, reported before Task 20 starts.*
+    - **To resume**: re-read this block, answer the five calls (or accept the defaults), then
+      implement in one commit. Re-derive the line citations first if `R/` moved in the meantime --
+      a CRAN fix landing on `main` and merging in is exactly the kind of insertion that stales them,
+      and `dev/check-spec.R` catches only the citations that go fully blank.
 
 ---
 
@@ -1703,3 +1809,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-29 | **Spec citations re-derived twice in one session, and the second round found the class the gate cannot see.** The escape-code fix added three comment lines to `R/sync.R`, which shifted every citation below them. Three resolved to blank lines and the gate caught those; **four others had drifted onto unrelated code and passed** -- `R/sync.R:744-756`, cited as the manifest entry builder's field list, was pointing at the import-format vector, and `R/sync.R:570-574`, cited as the imported self-lineage entry, was pointing at the sync loop. Two of the four were already wrong before this session. The lesson is the one `dev/README.md` already states and this is now the second consecutive session to prove it: check 4 asserts only that a cited line is **not blank**, so after any insertion into `R/` the citations must be re-read with `SPEC_CHECK_SHOW_CITATIONS=1` and compared against what they claim. A green gate is not evidence. | dev/check-spec.R |
 | 2026-08-29 | **OWNER-DECIDED: the frozen upgrade steps get their own file, `R/manifest-upgrade.R`.** `.datom_manifest_upgrade_v1_to_v2()` and the dispatcher live there rather than beside the reader in `R/sync.R`. Reason: a released step is never edited -- it is written against files that exist unchanged in the world -- and one more step arrives with every future format change, so they accumulate. A file whose entire contents are "never edit these" is easier to protect than a section of a file that is already 881 lines and holds sync, import and manifest concerns. Same reasoning that split `R/hashable-set.R` out of `R/utils-sha.R`. Recorded because Task 6 named the functions and no file, which is the dangling-instruction class the Task 2 audit flagged. | Task 6, I30, R22.5 |
 | 2026-08-29 | **OWNER-DECIDED: `.datom_manifest_skeleton()` stamps `schema_version: 2` itself.** A manifest built from scratch declares its format immediately, so no repo exists in a state that declares nothing -- not even between being created and receiving its first artifact. **The consequence that needs saying**: this covers only the no-file path, since the skeleton is unreachable when a manifest exists. A document read from disk in the old shape still gets its number from the upgrade step, so stamping lives in two places by design -- one for a document being created, one for a document being converted -- and an implementer who stamps only in the builder leaves every existing repo unstamped. | Task 6, R9.5, R22.3 |
+| 2026-09-01 | **PARKED MID-DESIGN ON TASK 6 for a CRAN interrupt.** 0.1.1 was accepted and CRAN then reported a failure in its automated check runs, which takes priority and is worked on `main`, not here. Task 6's design was proposed and the session stopped for go-ahead per rule 5b, so **nothing was implemented**: clean tree at `dbae253`, 2748 tests, `check-spec.R` 9/9. The plan, the test plan and **five open calls each carrying the default to take on silence** are recorded in Task 6's PAUSE block rather than in this row, so there is one copy to keep true. Two things the interrupt does to this branch, recorded because neither is visible from inside it: the fix will land on `main` and merge in, staling `R/` line citations in a way check 4 catches only when they go fully blank; and the acceptance bookkeeping (publish the release, then merge `dev` into `main`, then delete `dev`) may end the submission freeze that governs this branch's PR target, so `dev/README.md` "Branching During CRAN Submission" must be re-read on resume rather than assumed. | Task 6, dev/README.md |
