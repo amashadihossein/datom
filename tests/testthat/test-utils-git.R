@@ -242,8 +242,11 @@ test_that(".datom_git_branch returns branch name", {
 
   expect_type(result, "character")
   expect_length(result, 1)
-  # Default branch is "main" or "master" depending on git config
-  expect_true(result %in% c("main", "master"))
+  # The default branch name comes from git's init.defaultBranch, so it varies by
+  # machine. Compare against the repo's own HEAD, never a literal -- and this
+  # way the assertion checks the branch is the *right* one, not merely a
+  # plausible name.
+  expect_equal(result, test_head_branch(info$repo))
 })
 
 test_that(".datom_git_branch aborts on non-git directory", {
