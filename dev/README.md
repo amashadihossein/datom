@@ -78,6 +78,18 @@ A unit of work is a **Kiro spec** under `.kiro/specs/{feature}/` (see Workflow m
 > rebuild, resubmit the same version) does **not** describe it: a released version cannot be
 > resubmitted, so it needs a patch version bump. Sequencing that against the release-then-merge steps
 > is an open decision, not a documented one -- do not read the steps below as covering it.
+>
+> **OWNER INTENT, stated 2026-09-01: `dev` becomes PERMANENT.** The target pattern is
+> `feature -> dev -> main`, with `dev` as the testing ground / alpha source rather than a
+> submission-freeze device. So **"delete the `dev` branch" in Acceptance step 4 is ON HOLD** -- do not
+> run it. The rest of this section still describes how things work today and stays until the new
+> pattern is designed and written down (release cadence, what `main` means when it is no longer the
+> only long-lived branch, and where pkgdown deploys from are the parts that need deciding, not just
+> the branch names). **Currently on `dev` and not on `main`**: three commits, documentation only --
+> a new derived-columns section in `vignettes/design-version-shas.Rmd` (the only one that ships in the
+> package), this branching section itself, a 3-line specification correction, and a 1-line
+> conventions edit. All three are already contained in `spec/datom-sets`, so nothing is at risk of
+> being lost while the decision waits.
 
 When a version has been submitted to CRAN and is awaiting acceptance, we freeze
 `main` and develop on a long-lived `dev` branch.
@@ -120,8 +132,10 @@ single aggregation point.
      see "CRAN-SUBMISSION" below for why doing it after the merge can silently tag the wrong
      commit.
    - Merge `dev` into `main`: `git checkout main && git merge dev`.
-   - Delete the `dev` branch (local + remote).
-   - Resume normal workflow (feature branches off `main`).
+   - ~~Delete the `dev` branch (local + remote).~~ **ON HOLD as of 2026-09-01 -- do not run this.**
+     See the STATUS block at the top of this section: `dev` is becoming permanent.
+   - ~~Resume normal workflow (feature branches off `main`).~~ Same hold: the target is
+     `feature -> dev -> main`.
 
 ### Constraints
 
