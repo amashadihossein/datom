@@ -1,5 +1,9 @@
 ^datom\.Rproj$
 ^\.Rproj\.user$
+# R CMD build excludes a .git *directory* on its own, but in a git worktree
+# .git is a small file pointing at the real repository, which slips through and
+# lands in the tarball. Ignore it by name so a build is clean from any checkout.
+^\.git$
 ^LICENSE\.md$
 ^README\.Rmd$
 ^\.github$
