@@ -62,7 +62,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/Rtmpeon3tF/datom-example-195751a54356/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/Rtmpeon3tF/datom-example-195751a54356/repo
+#> ℹ Created store directory /tmp/RtmpWbqD0Z/datom-example-198f7b72a0d/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmpWbqD0Z/datom-example-198f7b72a0d/repo
 #> ℹ Already up to date on "master" (data repo).
 ```

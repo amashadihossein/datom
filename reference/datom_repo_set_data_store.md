@@ -79,8 +79,8 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/Rtmpeon3tF/datom-example-195772fd5d5d/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/Rtmpeon3tF/datom-example-195772fd5d5d/repo
-#> ℹ Created store directory /tmp/Rtmpeon3tF/datom-example-195772fd5d5d/storage-relocated.
+#> ℹ Created store directory /tmp/RtmpWbqD0Z/datom-example-198f28c41f8e/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmpWbqD0Z/datom-example-198f28c41f8e/repo
+#> ℹ Created store directory /tmp/RtmpWbqD0Z/datom-example-198f28c41f8e/storage-relocated.
 #> ✔ Updated .datom/project.yaml data store pointer for "example_project".
 ```
