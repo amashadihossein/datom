@@ -63,6 +63,23 @@ collapsed.
 the head it just recorded. Read it from `git log --oneline -1`, and find the last code-bearing
 commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
 
+**In a git worktree, `.git` is a FILE, and three tools silently misbehave because of it.** Any
+tool that decides "is this a git repo?" with a *directory* test gets the wrong answer in a
+worktree, and none of the three says so. All bit during the 0.1.2 CRAN fix, worked from
+`../datom-cran-fix`:
+
+| Tool | What happens | Status |
+|---|---|---|
+| `R CMD build` | its built-in exclusion covers a `.git` *directory*, so the pointer file lands in the tarball as `datom/.git`, and `--as-cran` raises "hidden files ... most likely included in error" | fixed -- `^\.git$` added to `.Rbuildignore`, which covers any checkout shape |
+| `devtools::submit_cran()` | `devtools:::flag_release()` opens with `if (!uses_git(pkg$path)) return(invisible())` and `uses_git()` is `dir_exists(path(path, ".git"))`, so **no `CRAN-SUBMISSION` is written** -- and the "don't forget to tag this release" reminder, one line above the write, never prints either | not fixable here; **verify the artifact exists after every submission from a worktree**, or submit from a normal clone |
+| `.gitignore` for `CRAN-SUBMISSION` | the rule was added on `spec/datom-sets` only (`9600db0`), so on a `main` checkout the artifact is untracked **and unignored** | never `git add .` in the submitting worktree; stage by name |
+
+The common shape: a green run is not evidence, because each failure is a step that quietly did
+not happen. The submission itself is unaffected in every case -- only local bookkeeping is
+skipped, which is exactly why it goes unnoticed. Recovery for the middle one is mechanical:
+rebuild the record from `main`'s head (confirm it has not moved) plus the built tarball's mtime
+in the R temp directory, then check `usethis:::get_release_data()` parses it.
+
 ## Gotchas
 
 - **`return()` inside a `tryCatch` handler returns from the HANDLER, not the enclosing function --
