@@ -143,15 +143,15 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpWbqD0Z/datom-example-198f235f7b4b/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpWbqD0Z/datom-example-198f235f7b4b/repo
+#> ℹ Created store directory /tmp/RtmpO5fc63/datom-example-1924668143ac/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmpO5fc63/datom-example-1924668143ac/repo
 #> ✔ Wrote "dm" (full): "039f0c3f"
 #> ✔ Wrote "lb" (full): "6c9b32e4"
 #> ✔ Wrote "lb_summary" (full): "8b43b1b7"
 #> ✔ Wrote "dm_lb_merged" (full): "052274e4"
 #>           name current_version current_data_sha         last_updated
-#> 1           dm        039f0c3f         71a93ffa 2026-09-07T23:36:38Z
-#> 2           lb        6c9b32e4         87f206ab 2026-09-07T23:36:38Z
-#> 3   lb_summary        8b43b1b7         b081ff1a 2026-09-07T23:36:38Z
-#> 4 dm_lb_merged        052274e4         03b9889f 2026-09-07T23:36:38Z
+#> 1           dm        039f0c3f         71a93ffa 2026-09-08T04:05:26Z
+#> 2           lb        6c9b32e4         87f206ab 2026-09-08T04:05:26Z
+#> 3   lb_summary        8b43b1b7         b081ff1a 2026-09-08T04:05:26Z
+#> 4 dm_lb_merged        052274e4         03b9889f 2026-09-08T04:05:26Z
 ```

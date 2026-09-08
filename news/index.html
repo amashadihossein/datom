@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -40,9 +40,14 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Changelog</h1>
-      <small>Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.1/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
+      <small>Source: <a href="https://github.com/amashadihossein/datom/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.1.2" id="datom-012">datom 0.1.2<a class="anchor" aria-label="anchor" href="#datom-012"></a></h2>
+<p>Test-only fix for the CRAN check failures reported against 0.1.1. No package code changed and no user-facing behaviour changed.</p>
+<ul><li>Test fixtures no longer assume the machine’s default git branch is named <code>master</code>. Fixtures that build a throwaway repository and push it to a local stand-in remote spelled the branch out as <code>refs/heads/master</code>, but <code><a href="https://docs.ropensci.org/git2r/reference/init.html" class="external-link">git2r::init()</a></code> honours git’s <code>init.defaultBranch</code> setting – so on a machine configured for any other name the push named a branch that had never been created, and 26 tests failed during setup. Branch names are now read from the fixture repository. datom’s own <code><a href="../reference/dot-datom_git_push.html">.datom_git_push()</a></code> already derived the branch that way and was unaffected.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.1.1" id="datom-011">datom 0.1.1<a class="anchor" aria-label="anchor" href="#datom-011"></a></h2>
 <p>Initial CRAN release. <code>datom</code> provides version-controlled data management for reproducible scientific and clinical workflows — tables are tracked as code in git while actual data lives in cloud storage (S3) or a local filesystem backend.</p>

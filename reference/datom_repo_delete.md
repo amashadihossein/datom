@@ -86,10 +86,10 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpWbqD0Z/datom-example-198f31123f60/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpWbqD0Z/datom-example-198f31123f60/repo
+#> ℹ Created store directory /tmp/RtmpO5fc63/datom-example-19241bc71fa0/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmpO5fc63/datom-example-19241bc71fa0/repo
 #> ℹ Deleting data repo for "example_project"...
 #> ℹ No GitHub remote found -- skipping repo deletion.
-#> ℹ Removing local clone /tmp/RtmpWbqD0Z/datom-example-198f31123f60/repo...
+#> ℹ Removing local clone /tmp/RtmpO5fc63/datom-example-19241bc71fa0/repo...
 #> ✔ Removed local clone.
 ```
