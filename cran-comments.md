@@ -27,26 +27,42 @@ changes.
 
 ## R CMD check results
 
-0 errors | 0 warnings | 1 note
+win-builder, R-devel: `Status: OK` -- 0 errors, 0 warnings, 0 notes.
 
-Test suite: 2451 passing, 1 skipped, 0 failures. The skip is a golden-vector
-parity check whose reference script lives in `dev/`, which is `.Rbuildignore`d
-and therefore absent from the tarball; the check skips cleanly when it is not
-present.
+Local `--as-cran`: 0 errors, 0 warnings, 1 note. The note is from the
+incoming-checks step, verbatim:
 
-The single NOTE is the incoming-checks maintainer note.
+```
+* checking CRAN incoming feasibility ... NOTE
+Maintainer: 'Afshin Mashadi-Hossein <amashadihossein@gmail.com>'
+
+Days since last update: 6
+```
+
+The day count is as of the check run above and will be a day or two higher at
+submission; the reason for the short interval is given in the Submission section.
+
+Test suite, identical on both: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 2451 ]`. The
+skip is a golden-vector parity check whose reference script lives in `dev/`,
+which is `.Rbuildignore`d and therefore absent from the tarball; the check skips
+cleanly when it is not present.
 
 ## Test environments
 
-* local macOS (aarch64), R 4.5.2 -- with `init.defaultBranch` set to `main`,
-  i.e. the configuration under which 0.1.1 failed, and again with the default
-  setting
+* win-builder, R-devel, x86_64-w64-mingw32 -- Status: OK
+* local macOS, aarch64-apple-darwin24.4.0, R 4.5.2 (2025-10-31) -- with
+  `init.defaultBranch` set to `main`, i.e. the configuration under which 0.1.1
+  failed, and again with the default setting
 * GitHub Actions:
   * macos-latest, R release
   * windows-latest, R release
   * ubuntu-latest, R release
   * ubuntu-latest, R oldrel-1
   * ubuntu-latest, R devel
+
+The `ubuntu-latest` release job sets `init.defaultBranch` to `main` before
+running the suite, so this class of failure is now exercised on Linux in CI
+rather than discovered downstream.
 
 ## Spelling
 
