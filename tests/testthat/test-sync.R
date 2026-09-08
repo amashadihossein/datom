@@ -1739,3 +1739,125 @@ test_that(".datom_sync_data_metadata mirrors an old-shape clone in current shape
     )
   })
 })
+
+
+test_that(".datom_update_manifest_entry counts around a malformed pre-existing entry", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(
+        schema_version = 2L,
+        artifacts = list(dm = list(kind = "table"), oops = "not a record")
+      ),
+      ".datom/manifest.json", auto_unbox = TRUE
+    )
+
+    .datom_update_manifest_entry(
+      conn, "lb", metadata_sha = "meta", data_sha = "data"
+    )
+
+    m <- jsonlite::read_json(".datom/manifest.json")
+    expect_equal(m$summary$total_tables, 2)
+    # Preserved rather than dropped: this build does not understand the entry, so
+    # it is not this build's to delete.
+    expect_equal(m$artifacts$oops, "not a record")
+  })
+})
+
+
+test_that("a write that moves the manifest's format forward says so", {
+  # Conversion is one-way for collaborators: after it, an older datom lists this
+  # repo as empty without erroring. An unannounced flip is a silent degradation.
+  fixture <- fs::path_abs(testthat::test_path("fixtures", "manifest-v1.json"))
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    fs::file_copy(fixture, ".datom/manifest.json")
+
+    expect_message(
+      .datom_update_manifest_entry(
+        conn, "lb", metadata_sha = "meta", data_sha = "data"
+      ),
+      "older datom"
+    )
+  })
+})
+
+
+test_that("an ordinary write says nothing about the format", {
+  # The no-op half. This path is every write into an already-current repo, so a
+  # line here would be noise on each one.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(schema_version = 2L, artifacts = list()),
+      ".datom/manifest.json", auto_unbox = TRUE
+    )
+
+    expect_no_message(
+      .datom_update_manifest_entry(
+        conn, "lb", metadata_sha = "meta", data_sha = "data"
+      )
+    )
+  })
+})
+
+
+test_that(".datom_sync_data_metadata says so when it mirrors a converted manifest", {
+  # This route is reachable from datom_validate(fix = TRUE), which reads as a
+  # repair rather than as a format change, so it is the one most in need of
+  # saying what it did.
+  fixture <- fs::path_abs(testthat::test_path("fixtures", "manifest-v1.json"))
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    fs::file_copy(fixture, ".datom/manifest.json")
+    local_mocked_bindings(
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE)
+    )
+
+    expect_message(
+      .datom_sync_data_metadata(conn, .confirm = FALSE),
+      "older datom"
+    )
+  })
+})
+
+
+test_that(".datom_sync_data_metadata treats a manifest that vanished as absent, not as a failure", {
+  # The file is checked and then read, so it can disappear in between. The reader
+  # reports that as an absence with no condition attached, and stop(NULL) would
+  # abort with an empty message.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(schema_version = 2L, artifacts = list()),
+      ".datom/manifest.json", auto_unbox = TRUE
+    )
+    local_mocked_bindings(
+      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
+      .datom_read_manifest = function(conn, scope = c("storage", "clone")) {
+        list(
+          ok = FALSE, absent = TRUE, manifest = NULL, error = NULL,
+          declared = NA_integer_
+        )
+      }
+    )
+
+    result <- .datom_sync_data_metadata(conn, .confirm = FALSE)
+
+    expect_equal(result$repo_files, character())
+  })
+})

@@ -161,3 +161,74 @@ test_that("the check supplies the version the dispatcher converts from", {
   expect_equal(declared, 1L)
   expect_equal(.datom_manifest_upgrade(old, declared)$schema_version, 2L)
 })
+
+
+# --- .datom_artifacts_of_kind() -----------------------------------------------
+
+test_that("selecting by kind skips an entry that is not a named list", {
+  # The v1 step passes such an entry through untouched -- it has no shape to
+  # convert -- so the counters have to expect one. Dereferencing it aborts with
+  # "$ operator is invalid for atomic vectors".
+  artifacts <- list(
+    dm = list(kind = "table"),
+    oops = "not a record",
+    adam = list(kind = "set")
+  )
+
+  expect_equal(names(.datom_artifacts_of_kind(artifacts, "table")), "dm")
+  expect_equal(names(.datom_artifacts_of_kind(artifacts, "set")), "adam")
+})
+
+
+test_that("selecting by kind does not count an entry with no kind", {
+  # Distinct from the case above: an untyped entry means the conversion was
+  # skipped, and a visibly wrong count is the intended signal for that. No
+  # fallback to "table".
+  artifacts <- list(dm = list(current_version = "v1"))
+
+  expect_length(.datom_artifacts_of_kind(artifacts, "table"), 0L)
+})
+
+
+test_that("selecting by kind accepts an absent artifact list", {
+  expect_length(.datom_artifacts_of_kind(NULL, "table"), 0L)
+})
+
+
+test_that("an upgraded empty artifact block still serializes as an object", {
+  # A bare list() becomes `[]` and a named empty list becomes `{}`. If the
+  # conversion dropped the zero-length names, the mirror route would turn a v1
+  # `"tables": {}` into `"artifacts": []` in storage, and no entry could ever be
+  # looked up by name in it.
+  upgraded <- .datom_manifest_upgrade(
+    list(tables = structure(list(), names = character(0))), 1L
+  )
+
+  expect_named(upgraded$artifacts, character(0))
+  txt <- as.character(jsonlite::toJSON(upgraded, auto_unbox = TRUE))
+  expect_match(txt, '"artifacts":\\{\\}', fixed = FALSE)
+  expect_false(grepl('"artifacts":[]', txt, fixed = TRUE))
+})
+
+
+# --- .datom_notify_manifest_upgraded() ----------------------------------------
+
+test_that("moving a manifest's format forward is announced, with the consequence", {
+  # Conversion is one-way for everyone else: once the file declares the newer
+  # format, a collaborator on an older datom lists the repo as empty without an
+  # error. Saying nothing makes that a silent degradation.
+  msg <- cli::cli_format_method(
+    .datom_notify_manifest_upgraded(1L, "this repo's manifest")
+  )
+
+  expect_true(any(grepl("v1", msg, fixed = TRUE)))
+  expect_true(any(grepl("v2", msg, fixed = TRUE)))
+  expect_true(any(grepl("older datom", msg)))
+})
+
+
+test_that("nothing is said when the document was already current", {
+  # Every ordinary write takes this path, so a line here would be noise on each
+  # one.
+  expect_silent(.datom_notify_manifest_upgraded(2L, "this repo's manifest"))
+})

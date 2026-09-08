@@ -7,6 +7,22 @@
 # Add a new step for a new adjacent pair; never edit a shipped one, not even to
 # tidy it.
 #
+# TWO CONSEQUENCES OF THE STEP TABLE HOLDING THE FUNCTIONS THEMSELVES rather
+# than their names. `.datom_manifest_upgrade_steps` is built when the namespace
+# is built, so each entry is the function object as it stood at that moment.
+#
+#   1. A step must be DEFINED IN THIS FILE, above the table. DESCRIPTION has no
+#      Collate field, so R sources `R/` alphabetically -- a step defined in a
+#      file that sorts after this one does not exist yet when the table is
+#      built, and the package fails to install. Keeping every step here is the
+#      rule anyway; this is what enforces it.
+#   2. Mocking a step function in a test DOES NOT REACH THE DISPATCHER, because
+#      the dispatcher never looks the name up again. Mock the table instead --
+#      `local_mocked_bindings(.datom_manifest_upgrade_steps = list("1" = ...))`
+#      -- which is what the zero-steps-on-a-current-document test does. Worth
+#      knowing because this spec requires proving a guard fails before trusting
+#      it, and a probe that mocks the step passes while proving nothing.
+#
 # The shape of the chain: one function per adjacent version pair, applied in
 # order by the dispatcher. A v1 document reaching a v3 build runs v1-to-v2 and
 # then v2-to-v3. No direct v1-to-v3 function is ever written -- that needs one

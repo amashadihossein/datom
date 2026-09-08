@@ -1,14 +1,22 @@
 # The zero-row shape datom_list() returns when there is nothing to list, in one
-# place so its columns cannot drift from each other. It deliberately does NOT
-# match the populated shape: populated rows also carry current_data_sha, which
-# these returns have always omitted. Adding it would change a public shape
-# nobody asked to change, so the difference is left as it is and recorded here
-# rather than being rediscovered.
+# place so its columns cannot drift from each other -- and matching the columns
+# a populated result carries, so binding two results together works when either
+# one is empty.
+#
+# It did not always match: these returns omitted current_data_sha, which
+# populated rows have always had, so rbind() of an empty result and a non-empty
+# one failed outright. Adding it was held back once as "a public shape nobody
+# asked to change", which stopped being a reason the moment the same release
+# added the kind column to that shape anyway.
+#
+# The `include_versions = TRUE` column is deliberately not here: it is opt-in on
+# a populated result and no caller can ask for a zero-row frame to carry it.
 .datom_empty_artifact_frame <- function() {
   data.frame(
     name = character(),
     kind = character(),
     current_version = character(),
+    current_data_sha = character(),
     last_updated = character(),
     stringsAsFactors = FALSE
   )
@@ -466,13 +474,15 @@ datom_status <- function(conn) {
       error = cli::ansi_strip(conditionMessage(manifest_read$error))
     )
   } else {
-    # Counted, not read off the summary block, and filtered on kind so the
+    # Counted, not read off the summary block, and selected by kind so the
     # number keeps meaning what its label says now that a manifest can hold
-    # more than one kind of artifact.
+    # more than one kind of artifact. Selection goes through the shared helper,
+    # which skips an entry that is not a named list -- this count sits outside
+    # the tolerance above, so dereferencing one would abort the whole diagnostic
+    # over a hand-edited manifest.
     list(
-      count = length(purrr::keep(
-        manifest_read$manifest$artifacts %||% list(),
-        ~ identical(.x$kind, "table")
+      count = length(.datom_artifacts_of_kind(
+        manifest_read$manifest$artifacts, "table"
       )),
       available = TRUE
     )

@@ -189,9 +189,18 @@ datom_pull <- function(conn) {
     # the clone is older-shaped and storage is current-shaped; both are
     # internally consistent and both read correctly.
     read <- .datom_read_manifest(conn, "clone")
-    if (!read$ok) stop(read$error)
-    .datom_storage_write_json(conn, ".metadata/manifest.json", read$manifest)
-    repo_files_synced <- c(repo_files_synced, ".metadata/manifest.json")
+
+    # A file that disappeared between the check above and the read is an
+    # absence, not a failure: the reader reports it with no condition attached,
+    # and stop(NULL) would abort with an empty message. Same split as the
+    # clone reader in .datom_status_input_files().
+    if (!read$ok && !read$absent) stop(read$error)
+
+    if (read$ok) {
+      .datom_notify_manifest_upgraded(read$declared, "data storage")
+      .datom_storage_write_json(conn, ".metadata/manifest.json", read$manifest)
+      repo_files_synced <- c(repo_files_synced, ".metadata/manifest.json")
+    }
   }
 
   cli::cli_alert_success(
@@ -647,6 +656,82 @@ datom_sync <- function(conn,
 
 # --- Shared manifest access ----------------------------------------------------
 
+#' Select the Artifacts of One Kind
+#'
+#' The one place the artifact list is filtered by `kind`. Four counters need it
+#' -- two in the manifest's stored `summary` block, plus the numbers
+#' [datom_summary()] and [datom_status()] count for themselves -- and a
+#' predicate written out at each of them is a predicate that can differ at one
+#' of them.
+#'
+#' **An entry that is not a named list is skipped rather than dereferenced.**
+#' The upgrade step deliberately passes such an entry through untouched, because
+#' it has no shape to convert; without the check here, that preserved entry
+#' reaches `entry$kind` and aborts with "$ operator is invalid for atomic
+#' vectors". [datom_status()] is the one that must not do that: it exists to
+#' describe a connection when the manifest cannot be trusted, and this count
+#' sits outside the error handling that gives it that tolerance. A hand-edited
+#' manifest is exactly the document most likely to reach it.
+#'
+#' Skipping is not the same as tolerating a **missing** `kind`, which stays
+#' deliberately uncounted: a typed entry with no type means the conversion was
+#' skipped, and a visibly wrong count is the intended signal for that.
+#'
+#' @param artifacts The manifest's `artifacts` list, or `NULL`.
+#' @param kind `"table"` or `"set"`.
+#' @return The entries of that kind, names preserved.
+#' @keywords internal
+.datom_artifacts_of_kind <- function(artifacts, kind) {
+  purrr::keep(artifacts %||% list(), function(entry) {
+    is.list(entry) && identical(entry$kind, kind)
+  })
+}
+
+
+#' Say That a Manifest's Format Was Moved Forward
+#'
+#' Called from the two places that **persist** a converted manifest: the entry
+#' updater, which rewrites the git-tracked file, and the data-side metadata sync,
+#' which mirrors the converted document to storage. Reads convert too and stay
+#' silent, deliberately -- a read changes nothing, and a line on every
+#' [datom_list()] call would be noise nobody can act on.
+#'
+#' Why say anything: conversion is one-way for everybody else. Once this repo's
+#' manifest declares the newer format, a collaborator on an older datom no longer
+#' finds the artifact list where their build looks for it, and their
+#' `datom_list()` reports an empty repo **without erroring**. Their
+#' [datom_read()] keeps working, because the data path never touches the
+#' manifest. That is a real consequence of a command whose stated job was
+#' something else -- `datom_validate(fix = TRUE)` in particular reads as a
+#' repair -- and an unannounced one is the silent degradation the whole schema
+#' contract exists to remove.
+#'
+#' No-op when the document was already current, which is every ordinary write.
+#'
+#' @param declared The version the document declared before conversion, as
+#'   returned by [.datom_check_schema_version()].
+#' @param where Human-readable name of the copy being written.
+#' @return Invisibly `NULL`.
+#' @keywords internal
+.datom_notify_manifest_upgraded <- function(declared, where) {
+  if (as.integer(declared) >= .datom_supported_schema) return(invisible(NULL))
+
+  cli::cli_alert_info(c(
+    "Manifest format moved from v{as.integer(declared)} to ",
+    "v{(.datom_supported_schema)} in {where}."
+  ))
+  cli::cli_bullets(c(
+    "i" = paste0(
+      "Collaborators on an older datom will list this repo as empty until they ",
+      "upgrade; reading a known table still works. See {.field NEWS} for which ",
+      "release supports which format."
+    )
+  ))
+
+  invisible(NULL)
+}
+
+
 #' Empty Manifest Skeleton
 #'
 #' The one shape of an empty manifest. Callers that need a manifest when none
@@ -719,6 +804,10 @@ datom_sync <- function(conn,
 #'   * `error` -- the condition that stopped the read, or `NULL`. The whole
 #'     condition rather than its text, so a caller can re-signal the original
 #'     failure unchanged instead of manufacturing a look-alike.
+#'   * `declared` -- the version the document declared **before** conversion, or
+#'     `NA_integer_` when nothing was read. Held so a caller that goes on to
+#'     write the converted document can say the format moved, without
+#'     re-deriving the comparison or reading the file twice.
 #' @keywords internal
 .datom_read_manifest <- function(conn, scope = c("storage", "clone")) {
   scope <- match.arg(scope)
@@ -728,7 +817,10 @@ datom_sync <- function(conn,
   if (scope == "clone") {
     manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
     if (!fs::file_exists(manifest_path)) {
-      return(list(ok = FALSE, absent = TRUE, manifest = NULL, error = NULL))
+      return(list(
+        ok = FALSE, absent = TRUE, manifest = NULL, error = NULL,
+        declared = NA_integer_
+      ))
     }
   }
 
@@ -744,10 +836,14 @@ datom_sync <- function(conn,
       } else {
         jsonlite::read_json(fs::path(conn$path, ".datom", "manifest.json"))
       },
-      error = NULL
+      error = NULL,
+      declared = NA_integer_
     ),
     error = function(e) {
-      list(ok = FALSE, absent = FALSE, manifest = NULL, error = e)
+      list(
+        ok = FALSE, absent = FALSE, manifest = NULL, error = e,
+        declared = NA_integer_
+      )
     }
   )
 
@@ -760,6 +856,7 @@ datom_sync <- function(conn,
   # see one. Kept as its own statement rather than folded into the return,
   # because a rebuild branch lands at this same point later.
   read$manifest <- .datom_manifest_upgrade(read$manifest, declared)
+  read$declared <- declared
 
   read
 }
@@ -863,6 +960,7 @@ datom_sync <- function(conn,
   # reader uses: it is the only thing that knows how to read the number, and it
   # cannot fire here for a write that came through datom_write(), which refuses
   # a too-new manifest at the door before any hashing.
+  declared <- .datom_supported_schema
   manifest <- if (fs::file_exists(manifest_path)) {
     from_disk <- jsonlite::read_json(manifest_path)
     declared <- .datom_check_schema_version(from_disk, manifest_path, operation = "write")
@@ -906,12 +1004,12 @@ datom_sync <- function(conn,
   manifest$artifacts[[name]] <- entry
 
   # Update summary. Every existing counter keeps its current meaning, which is
-  # tables only, so each one filters on kind; total_sets is the new counter for
+  # tables only, so each one selects by kind; total_sets is the new counter for
   # the other kind. No fallback for an entry with no kind: by here the document
   # has been through the upgrade, which types every entry, so an untyped entry
   # means the conversion was skipped and a visibly wrong count is the point.
-  tables <- purrr::keep(manifest$artifacts, ~ identical(.x$kind, "table"))
-  sets <- purrr::keep(manifest$artifacts, ~ identical(.x$kind, "set"))
+  tables <- .datom_artifacts_of_kind(manifest$artifacts, "table")
+  sets <- .datom_artifacts_of_kind(manifest$artifacts, "set")
 
   manifest$updated_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   manifest$summary <- list(
@@ -924,6 +1022,8 @@ datom_sync <- function(conn,
     )),
     total_sets = length(sets)
   )
+
+  .datom_notify_manifest_upgraded(declared, "this repo's manifest")
 
   jsonlite::write_json(manifest, manifest_path, auto_unbox = TRUE, pretty = TRUE)
 

@@ -60,14 +60,14 @@ datom_summary <- function(conn) {
   manifest <- read$manifest
 
   # Counted from the artifact list rather than read off the summary block, and
-  # filtered on kind: table_count keeps its current tables-only meaning and
+  # selected by kind: table_count keeps its current tables-only meaning and
   # set_count is the new number beside it. No fallback for an entry with no
   # kind -- the reader has already converted an older document, which types
   # every entry, so an untyped entry should show up as a visibly wrong count
   # rather than a roughly-right one.
-  artifacts <- manifest$artifacts %||% list()
-  table_count <- length(purrr::keep(artifacts, ~ identical(.x$kind, "table")))
-  set_count <- length(purrr::keep(artifacts, ~ identical(.x$kind, "set")))
+  artifacts <- manifest$artifacts
+  table_count <- length(.datom_artifacts_of_kind(artifacts, "table"))
+  set_count <- length(.datom_artifacts_of_kind(artifacts, "set"))
   total_versions <- manifest$summary$total_versions %||% 0L
   last_updated <- manifest$updated_at %||% NA_character_
 

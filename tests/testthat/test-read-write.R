@@ -2605,10 +2605,11 @@ test_that("datom_write refuses a too-new repo on the table-write route", {
 test_that("datom_write refuses a too-new repo on the metadata-only route", {
   withr::with_tempdir({
     conn <- .setup_too_new_clone()
-    expect_error(
+    err <- expect_error(
       datom_write(conn, name = "dm"),
       class = "datom_schema_unsupported"
     )
+    expect_match(conditionMessage(err), "cannot write")
   })
 })
 
@@ -2625,10 +2626,11 @@ test_that("datom_write refuses a too-new repo on the mirror-everything route", {
         invisible(TRUE)
       }
     )
-    expect_error(
+    err <- expect_error(
       datom_write(conn),
       class = "datom_schema_unsupported"
     )
+    expect_match(conditionMessage(err), "cannot write")
     expect_equal(wrote, 0L)
   })
 })

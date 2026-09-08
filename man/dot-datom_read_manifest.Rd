@@ -31,6 +31,10 @@ pre-current shape and none needs a fallback for one.
 \item \code{error} -- the condition that stopped the read, or \code{NULL}. The whole
 condition rather than its text, so a caller can re-signal the original
 failure unchanged instead of manufacturing a look-alike.
+\item \code{declared} -- the version the document declared \strong{before} conversion, or
+\code{NA_integer_} when nothing was read. Held so a caller that goes on to
+write the converted document can say the format moved, without
+re-deriving the comparison or reading the file twice.
 }
 }
 \description{

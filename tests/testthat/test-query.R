@@ -1147,6 +1147,53 @@ test_that("datom_list carries the kind column in both of its empty returns", {
 })
 
 
+test_that("datom_list's empty result has the same columns as a populated one", {
+  # Not cosmetic: rbind() of frames with different columns errors outright, so a
+  # caller collecting results from several projects breaks as soon as one of them
+  # has nothing in it.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(
+        schema_version = 2L,
+        artifacts = list(
+          dm = list(
+            kind = "table", current_version = "v1",
+            current_data_sha = "d1", last_updated = "2026-01-01"
+          )
+        )
+      )
+    }
+  )
+  populated <- datom_list(mock_datom_conn(list()))
+  empty <- datom_list(mock_datom_conn(list()), pattern = "zzz_*")
+
+  expect_equal(names(empty), names(populated))
+  expect_equal(nrow(rbind(populated, empty)), 1)
+})
+
+
+test_that("datom_status survives a malformed manifest entry", {
+  # datom_status exists to describe a connection when the manifest cannot be
+  # trusted, and the artifact count sits OUTSIDE the handler that gives it that
+  # tolerance -- so an entry that is not a record would abort the whole
+  # diagnostic rather than being skipped. A hand-edited manifest is exactly the
+  # document most likely to reach it.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(
+        schema_version = 2L,
+        artifacts = list(dm = list(kind = "table"), oops = "not a record")
+      )
+    }
+  )
+
+  result <- datom_status(mock_datom_conn(list()))
+
+  expect_true(result$tables$available)
+  expect_equal(result$tables$count, 1)
+})
+
+
 test_that("datom_status counts tables only, not every artifact", {
   # The line it prints says "Tables", so a set must not be counted into it.
   local_mocked_bindings(

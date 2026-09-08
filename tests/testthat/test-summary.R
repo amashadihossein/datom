@@ -287,3 +287,26 @@ test_that("print.datom_summary shows the set count", {
 
   expect_true(any(grepl("Sets:", out)))
 })
+
+
+test_that("datom_summary survives a malformed manifest entry", {
+  # The conversion passes an entry with no shape through untouched, so the
+  # counters have to expect one rather than dereference it.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(
+        schema_version = 2L,
+        artifacts = list(
+          dm = list(kind = "table"),
+          oops = "not a record",
+          adam = list(kind = "set")
+        )
+      )
+    }
+  )
+
+  s <- datom_summary(mock_datom_conn(list()))
+
+  expect_equal(s$table_count, 1L)
+  expect_equal(s$set_count, 1L)
+})
