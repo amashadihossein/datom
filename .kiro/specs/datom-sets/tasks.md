@@ -4,9 +4,12 @@
 comments on that issue** that amend it (joint-repo decision; E1 question resolutions; the sv1
 payload/encoding restructure). All three are already applied here, so this spec -- not the issue
 body alone -- is the current truth.
-**Branch**: `spec/datom-sets`, cut from `dev`. **PRs into `dev`, not `main`** -- 0.1.0 is under CRAN
-review and `main` is frozen (see `dev/README.md` "Branching During CRAN Submission"). Draft PR
-[#97](https://github.com/amashadihossein/datom/pull/97) is open and accumulates the task commits.
+**Branch**: `spec/datom-sets`, cut from `dev`. **PRs into `dev`, not `main`** -- **0.1.2 is submitted
+and awaiting CRAN**, so `main` stays frozen for the same reason it always did: if CRAN asks for
+another fix, `main` must keep matching what they received (see `dev/README.md` "Branching During CRAN
+Submission" for current heads). `main` is also protected and takes only PRs, enforced for admins.
+Draft PR [#97](https://github.com/amashadihossein/datom/pull/97) is open and accumulates the task
+commits.
 **Test baseline**: 2460 at spec start -> 2482 after Task 1 -> 2572 after Task 2 -> 2612 after
 Task 3 -> 2660 after Task 4 -> 2664 after Task 18 -> 2675 after the two operator-facing fixes
 that followed it (see the 2026-08-26 rows in the Decisions log) -> 2686 after Task 19 -> 2740
@@ -26,17 +29,30 @@ named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, lande
 this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 `.kiro/steering/communication.md`.
 
-**THIS SPEC IS PARKED AS OF 2026-09-01, MID-DESIGN ON TASK 6. NOTHING IS HALF-IMPLEMENTED.** CRAN
-accepted 0.1.1 and then reported a failure in its automated check runs, so the whole branch is frozen
-to clear that first. The state to resume from: branch `spec/datom-sets` level with origin at
-`dbae253`, working tree clean, **2748** tests, `dev/check-spec.R` 9/9. Task 6's design was proposed
-and the session stopped for go-ahead per rule 5b; **no `R/` or `tests/` file was touched.** The plan,
-the test plan, and **five open calls each carrying the default to take on silence** are in the
-**PAUSE block at the end of Task 6** -- read that before anything else in this file. Two hazards for
-whoever picks this up: the CRAN fix lands on `main` and will merge in, which stales code line
-citations that `dev/check-spec.R` catches only when they go fully blank; and the release/merge
-bookkeeping for the acceptance may have moved `main` and `dev` under this branch, so re-check
-`dev/README.md` "Branching During CRAN Submission" rather than assuming the freeze is still on.
+**RESUMED 2026-09-08. STILL MID-DESIGN ON TASK 6; NOTHING IS HALF-IMPLEMENTED.** The CRAN interrupt
+is closed out: 0.1.1 is released and tagged `v0.1.1` at `1eaee26`, and the fix for the failure CRAN
+reported afterwards shipped as **0.1.2**, submitted and awaiting them. **That work changes nothing
+here** -- it was test-only (fixtures hardcoded `refs/heads/master` when pushing to a throwaway
+remote, which fails wherever git's `init.defaultBranch` is not `master`; issues
+[#106](https://github.com/amashadihossein/datom/issues/106) /
+[#108](https://github.com/amashadihossein/datom/issues/108), PRs #107/#109/#110) and touched **no
+`R/` file**, so Task 6's design stands untouched.
+
+**Start here.** Branch `spec/datom-sets` at `7dc3d78`, level with origin and with `main`, working
+tree clean, **2748** tests (verified after the merge under both `init.defaultBranch=master` and
+`=main`), `dev/check-spec.R` 9/9. Task 6's design was proposed and the session stopped for go-ahead
+per rule 5b; **no `R/` or `tests/` file was touched.** The plan, the test plan, and **five open calls
+each carrying the default to take on silence** are in the **PAUSE block at the end of Task 6** --
+read that before anything else in this file.
+
+**Both hazards the parked version of this block warned about are now discharged, so do not re-derive
+them.** The CRAN fix has merged in via `main -> dev -> spec/datom-sets` and it did **not** stale any
+code citations, because it touched only `tests/` -- re-verified, `check-spec.R` reports 107 citations
+all in range and none blank. Branch heads were re-checked after the acceptance bookkeeping and are
+recorded above and in `dev/README.md`. One thing that *is* new and worth knowing before touching
+anything git-adjacent: three tools misbehave silently in a git worktree because `.git` is a file
+there rather than a directory, and one of them cost us the 0.1.2 submission record -- see
+`dev/engineering-notes.md`, "In a git worktree, `.git` is a FILE".
 
 **Next when work resumes**: **Task 6 -- the `manifest$tables` -> `manifest$artifacts` rename**, which
 carries escalation E2. Its design spot-check is discharged (the proposal in the PAUSE block); the
@@ -842,10 +858,12 @@ own; landing it first is what makes Task 6's failure loud.
     the least mechanical protection and the most silent failure mode of any work in this spec.
   - **PAUSED 2026-09-01, mid-design, nothing implemented.** The design below was proposed and the
     session stopped for owner go-ahead per rule 5b; then CRAN accepted 0.1.1 and asked for a fix, so
-    this task is frozen and the branch parked. **The workspace carries no `R/` or `tests/` change from
-    this task** -- `git status` was clean at the pause and the branch was level with
-    `origin/spec/datom-sets` at `dbae253`. Test baseline unchanged at **2748**. Everything below is a
-    plan, not a record; the five items under "open calls" have not been answered.
+    this task was frozen and the branch parked. **The CRAN interrupt is closed as of 2026-09-08** --
+    it shipped as 0.1.2, was test-only, touched no `R/` file, and so left this plan untouched; the
+    branch is now at `7dc3d78`, level with origin and with `main`. **The workspace carries no `R/` or
+    `tests/` change from this task** -- `git status` was clean at the pause and remains clean. Test
+    baseline unchanged at **2748**. Everything below is a plan, not a record; the five items under
+    "open calls" have not been answered.
     - **E2 status at the pause.** The design spot-check half is discharged by the proposal below,
       which was produced after reading the audits and re-reading every cited site in `R/`. **The
       purity-audit half is still owed and comes due when this task lands**, not before: 5 files
@@ -1810,3 +1828,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-29 | **OWNER-DECIDED: the frozen upgrade steps get their own file, `R/manifest-upgrade.R`.** `.datom_manifest_upgrade_v1_to_v2()` and the dispatcher live there rather than beside the reader in `R/sync.R`. Reason: a released step is never edited -- it is written against files that exist unchanged in the world -- and one more step arrives with every future format change, so they accumulate. A file whose entire contents are "never edit these" is easier to protect than a section of a file that is already 881 lines and holds sync, import and manifest concerns. Same reasoning that split `R/hashable-set.R` out of `R/utils-sha.R`. Recorded because Task 6 named the functions and no file, which is the dangling-instruction class the Task 2 audit flagged. | Task 6, I30, R22.5 |
 | 2026-08-29 | **OWNER-DECIDED: `.datom_manifest_skeleton()` stamps `schema_version: 2` itself.** A manifest built from scratch declares its format immediately, so no repo exists in a state that declares nothing -- not even between being created and receiving its first artifact. **The consequence that needs saying**: this covers only the no-file path, since the skeleton is unreachable when a manifest exists. A document read from disk in the old shape still gets its number from the upgrade step, so stamping lives in two places by design -- one for a document being created, one for a document being converted -- and an implementer who stamps only in the builder leaves every existing repo unstamped. | Task 6, R9.5, R22.3 |
 | 2026-09-01 | **PARKED MID-DESIGN ON TASK 6 for a CRAN interrupt.** 0.1.1 was accepted and CRAN then reported a failure in its automated check runs, which takes priority and is worked on `main`, not here. Task 6's design was proposed and the session stopped for go-ahead per rule 5b, so **nothing was implemented**: clean tree at `dbae253`, 2748 tests, `check-spec.R` 9/9. The plan, the test plan and **five open calls each carrying the default to take on silence** are recorded in Task 6's PAUSE block rather than in this row, so there is one copy to keep true. Two things the interrupt does to this branch, recorded because neither is visible from inside it: the fix will land on `main` and merge in, staling `R/` line citations in a way check 4 catches only when they go fully blank; and the acceptance bookkeeping (publish the release, then merge `dev` into `main`, then delete `dev`) may end the submission freeze that governs this branch's PR target, so `dev/README.md` "Branching During CRAN Submission" must be re-read on resume rather than assumed. | Task 6, dev/README.md |
+| 2026-09-08 | **RESUMED. The CRAN interrupt is closed and it changed nothing in this spec.** The failure CRAN reported after accepting 0.1.1 was in test fixtures, not package code: they hardcoded `refs/heads/master` when pushing to a throwaway remote, and `git2r::init()` honours git's `init.defaultBranch`, so on a machine configured for any other name the push named a branch that had never been created -- 26 failures on four Linux flavors, all the same error, all during setup. Shipped as **0.1.2** ([#106](https://github.com/amashadihossein/datom/issues/106) / [#108](https://github.com/amashadihossein/datom/issues/108), PRs #107/#109/#110), **no `R/` file touched**, so Task 6's design stands as proposed and its five open calls are still unanswered. **Both hazards the 2026-09-01 row flagged are discharged, and the answers differ from what that row expected**: the fix merged in via `main -> dev -> spec/datom-sets` and staled **no** citations, because it touched only `tests/` (re-verified: 107 citations, all in range, none blank); and the submission freeze **did not end** -- 0.1.2 is now in flight, so `main` must still match what CRAN received and this branch still PRs into `dev`. Branch at `7dc3d78`, level with origin and with `main`, clean tree, **2748** tests verified after the merge under both `init.defaultBranch=master` and `=main`, `check-spec.R` 9/9. **One durable lesson came out of it, and it is git-adjacent rather than datom-adjacent**: in a git worktree `.git` is a FILE, so any tool testing for a `.git` *directory* silently gets the wrong answer -- `R CMD build` swept the pointer file into the tarball, `devtools::submit_cran()` skipped writing `CRAN-SUBMISSION` altogether (`devtools:::uses_git()` is `dir_exists()`), and the `.gitignore` rule for that artifact turned out to exist only on this branch. All three fail without saying anything and leave the submission intact, which is why they went unnoticed. Recorded in `dev/engineering-notes.md`. | Task 6, dev/README.md, dev/engineering-notes.md |
