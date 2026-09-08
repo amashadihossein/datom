@@ -409,8 +409,8 @@ test_that("datom_validate with fix = TRUE calls metadata sync on failure", {
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
-                         auto_unbox = TRUE)
+    jsonlite::write_json(list(schema_version = 2L, artifacts = list()),
+                         ".datom/manifest.json", auto_unbox = TRUE)
 
     sync_called <- FALSE
 
@@ -438,8 +438,8 @@ test_that("datom_validate with fix = TRUE names tables it cannot repair", {
     # A table whose metadata is in the clone but whose payload is not in
     # storage -- the state a write aborted at push leaves behind
     fs::dir_create(".datom")
-    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
-                         auto_unbox = TRUE)
+    jsonlite::write_json(list(schema_version = 2L, artifacts = list()),
+                         ".datom/manifest.json", auto_unbox = TRUE)
     fs::dir_create("dm")
     jsonlite::write_json(
       list(name = "dm", data_sha = strrep("a", 64)),
@@ -563,8 +563,8 @@ test_that("datom_validate handles fix failure gracefully", {
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
-                         auto_unbox = TRUE)
+    jsonlite::write_json(list(schema_version = 2L, artifacts = list()),
+                         ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
       .datom_storage_exists = function(conn, s3_key) FALSE,
@@ -659,7 +659,7 @@ test_that("datom_validate tolerates pre-Phase-7 manifest without project_name", 
 
     fs::dir_create(".datom")
     jsonlite::write_json(
-      list(tables = list()),
+      list(schema_version = 2L, artifacts = list()),
       ".datom/manifest.json", auto_unbox = TRUE
     )
     jsonlite::write_json(list(), ".datom/dispatch.json", auto_unbox = TRUE)
@@ -699,8 +699,8 @@ test_that("datom_validate skips dispatch/ref/migration_history checks when gov a
     # mock_datom_conn defaults gov_root = NULL, so this is a no-gov conn.
 
     fs::dir_create(".datom")
-    jsonlite::write_json(list(tables = list()), ".datom/manifest.json",
-                         auto_unbox = TRUE)
+    jsonlite::write_json(list(schema_version = 2L, artifacts = list()),
+                         ".datom/manifest.json", auto_unbox = TRUE)
 
     # Set up storage mock that would FAIL for any gov path -- if the
     # validator wrongly checks gov files, this surfaces as a missing-S3

@@ -92,8 +92,9 @@ test_that("detects unchanged files via original_file_sha", {
     # Create manifest with matching SHA
     original_file_sha <- .datom_compute_original_file_sha("input_files/customers.csv")
     manifest <- list(
-      tables = list(
-        customers = list(original_file_sha = original_file_sha)
+      schema_version = 2L,
+      artifacts = list(
+        customers = list(kind = "table", original_file_sha = original_file_sha)
       )
     )
     fs::dir_create(".datom")
@@ -117,8 +118,9 @@ test_that("detects changed files when SHA differs", {
 
     # Manifest has old SHA
     manifest <- list(
-      tables = list(
-        customers = list(original_file_sha = "old_sha_that_differs")
+      schema_version = 2L,
+      artifacts = list(
+        customers = list(kind = "table", original_file_sha = "old_sha_that_differs")
       )
     )
     fs::dir_create(".datom")
@@ -144,9 +146,10 @@ test_that("mixes new, changed, and unchanged statuses", {
 
     same_sha <- .datom_compute_original_file_sha("input_files/existing_same.csv")
     manifest <- list(
-      tables = list(
-        existing_same = list(original_file_sha = same_sha),
-        existing_diff = list(original_file_sha = "old_sha")
+      schema_version = 2L,
+      artifacts = list(
+        existing_same = list(kind = "table", original_file_sha = same_sha),
+        existing_diff = list(kind = "table", original_file_sha = "old_sha")
       )
     )
     fs::dir_create(".datom")
@@ -709,11 +712,14 @@ test_that(".datom_update_manifest_entry creates manifest from scratch", {
     expect_true(fs::file_exists(".datom/manifest.json"))
 
     m <- jsonlite::read_json(".datom/manifest.json")
-    expect_equal(m$tables$customers$current_version, "meta456")
-    expect_equal(m$tables$customers$current_data_sha, "data123")
-    expect_equal(m$tables$customers$original_file_sha, "file789")
-    expect_equal(m$tables$customers$original_format, "csv")
+    expect_equal(m$artifacts$customers$current_version, "meta456")
+    expect_equal(m$artifacts$customers$current_data_sha, "data123")
+    expect_equal(m$artifacts$customers$original_file_sha, "file789")
+    expect_equal(m$artifacts$customers$original_format, "csv")
+    expect_equal(m$artifacts$customers$kind, "table")
+    expect_equal(m$schema_version, 2L)
     expect_equal(m$summary$total_tables, 1)
+    expect_equal(m$summary$total_sets, 0)
   })
 })
 
@@ -726,8 +732,10 @@ test_that(".datom_update_manifest_entry updates existing manifest", {
 
     # Pre-existing manifest with one table
     existing <- list(
-      tables = list(
+      schema_version = 2L,
+      artifacts = list(
         orders = list(
+          kind = "table",
           current_version = "old_ver",
           current_data_sha = "old_sha",
           original_file_sha = "old_file_sha",
@@ -749,9 +757,9 @@ test_that(".datom_update_manifest_entry updates existing manifest", {
     )
 
     m <- jsonlite::read_json(".datom/manifest.json")
-    expect_equal(length(m$tables), 2)
-    expect_equal(m$tables$customers$current_version, "new_m")
-    expect_equal(m$tables$orders$current_version, "old_ver")
+    expect_equal(length(m$artifacts), 2)
+    expect_equal(m$artifacts$customers$current_version, "new_m")
+    expect_equal(m$artifacts$orders$current_version, "old_ver")
     expect_equal(m$summary$total_tables, 2)
   })
 })
@@ -774,8 +782,8 @@ test_that(".datom_update_manifest_entry handles size_bytes > 2GB without overflo
     )
 
     m <- jsonlite::read_json(".datom/manifest.json")
-    expect_false(is.na(m$tables$bigtbl$size_bytes))
-    expect_equal(m$tables$bigtbl$size_bytes, 3e9)
+    expect_false(is.na(m$artifacts$bigtbl$size_bytes))
+    expect_equal(m$artifacts$bigtbl$size_bytes, 3e9)
     # Summary total must stay numeric and non-NA.
     expect_false(is.na(m$summary$total_size_bytes))
     expect_equal(m$summary$total_size_bytes, 3e9)
@@ -828,7 +836,7 @@ test_that(".datom_sync_data_metadata requires interactive confirmation by defaul
 # Helper: build a developer conn for data-only metadata sync (no gov needed)
 .setup_sync_metadata_conn <- function(project_name = "myproj") {
   fs::dir_create(".datom")
-  jsonlite::write_json(list(tables = list()),
+  jsonlite::write_json(list(schema_version = 2L, artifacts = list()),
                        ".datom/manifest.json", auto_unbox = TRUE)
 
   conn <- mock_datom_conn(list())
@@ -1331,18 +1339,18 @@ test_that("datom_sync_manifest sees entries in an old-format manifest in the clo
 test_that(".datom_manifest_skeleton carries project_name only when supplied", {
   named <- .datom_manifest_skeleton("my_project")
   expect_equal(named$project_name, "my_project")
-  expect_equal(names(named), c("project_name", "tables", "summary"))
+  expect_equal(names(named), c("schema_version", "project_name", "artifacts", "summary"))
 
   anon <- .datom_manifest_skeleton()
   expect_false("project_name" %in% names(anon))
-  expect_equal(names(anon), c("tables", "summary"))
+  expect_equal(names(anon), c("schema_version", "artifacts", "summary"))
 })
 
 test_that(".datom_manifest_skeleton has an empty artifact block that looks up as NULL", {
   skeleton <- .datom_manifest_skeleton()
 
-  expect_length(skeleton$tables, 0L)
-  expect_null(skeleton$tables[["dm"]])
+  expect_length(skeleton$artifacts, 0L)
+  expect_null(skeleton$artifacts[["dm"]])
 })
 
 test_that(".datom_manifest_skeleton empty artifact block serializes as an object", {
@@ -1356,8 +1364,8 @@ test_that(".datom_manifest_skeleton empty artifact block serializes as an object
     )
     txt <- paste(readLines("m.json", warn = FALSE), collapse = "")
 
-    expect_match(txt, '"tables":\\{\\}')
-    expect_false(grepl('"tables":\\[\\]', txt))
+    expect_match(txt, '"artifacts":\\{\\}')
+    expect_false(grepl('"artifacts":\\[\\]', txt))
   })
 })
 
@@ -1367,7 +1375,10 @@ test_that(".datom_manifest_skeleton empty artifact block serializes as an object
 test_that(".datom_read_manifest returns the parsed document from storage", {
   local_mocked_bindings(
     .datom_storage_read_json = function(conn, s3_key) {
-      list(project_name = "p", tables = list(dm = list(current_version = "abc")))
+      list(
+        schema_version = 2L, project_name = "p",
+        artifacts = list(dm = list(kind = "table", current_version = "abc"))
+      )
     }
   )
 
@@ -1376,7 +1387,7 @@ test_that(".datom_read_manifest returns the parsed document from storage", {
   expect_true(read$ok)
   expect_false(read$absent)
   expect_null(read$error)
-  expect_equal(read$manifest$tables$dm$current_version, "abc")
+  expect_equal(read$manifest$artifacts$dm$current_version, "abc")
 })
 
 test_that(".datom_read_manifest returns a storage failure instead of throwing it", {
@@ -1447,7 +1458,10 @@ test_that(".datom_read_manifest reads the clone copy and flags an absent file", 
 
     fs::dir_create(".datom")
     jsonlite::write_json(
-      list(tables = list(dm = list(current_version = "abc"))),
+      list(
+        schema_version = 2L,
+        artifacts = list(dm = list(kind = "table", current_version = "abc"))
+      ),
       ".datom/manifest.json",
       auto_unbox = TRUE
     )
@@ -1455,7 +1469,7 @@ test_that(".datom_read_manifest reads the clone copy and flags an absent file", 
     present <- .datom_read_manifest(conn, "clone")
     expect_true(present$ok)
     expect_false(present$absent)
-    expect_equal(present$manifest$tables$dm$current_version, "abc")
+    expect_equal(present$manifest$artifacts$dm$current_version, "abc")
   })
 })
 
@@ -1507,7 +1521,9 @@ test_that(".datom_read_manifest names the copy it refused", {
   expect_match(conditionMessage(storage_err), "\\.metadata/manifest\\.json")
 })
 
-test_that(".datom_read_manifest reads the frozen v1 fixture as a v1 document", {
+test_that(".datom_read_manifest hands back the frozen v1 fixture in current shape", {
+  # The reader converts an older document on the way through, so no caller ever
+  # sees the old key and none needs a fallback for it.
   local_mocked_bindings(
     .datom_storage_read_json = function(conn, s3_key) {
       jsonlite::read_json(testthat::test_path("fixtures", "manifest-v1.json"))
@@ -1517,8 +1533,35 @@ test_that(".datom_read_manifest reads the frozen v1 fixture as a v1 document", {
   read <- .datom_read_manifest(mock_datom_conn(list()), "storage")
 
   expect_true(read$ok)
-  expect_null(read$manifest$schema_version)
-  expect_length(read$manifest$tables, 1L)
+  expect_equal(read$manifest$schema_version, 2L)
+  expect_length(read$manifest$artifacts, 1L)
+  expect_equal(read$manifest$artifacts$dm$kind, "table")
+  expect_null(read$manifest$tables)
+})
+
+
+test_that(".datom_read_manifest leaves the clone file alone when it upgrades it", {
+  # Reads convert in memory only. A read that rewrote the tracked file would
+  # leave the repo dirty with a change nobody asked for, on every list, summary
+  # or status call.
+  fixture <- fs::path_abs(testthat::test_path("fixtures", "manifest-v1.json"))
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    fs::file_copy(fixture, ".datom/manifest.json")
+    before <- digest::digest(file = ".datom/manifest.json", algo = "sha256")
+
+    read <- .datom_read_manifest(conn, "clone")
+
+    expect_equal(read$manifest$schema_version, 2L)
+    expect_length(read$manifest$artifacts, 1L)
+    expect_equal(
+      digest::digest(file = ".datom/manifest.json", algo = "sha256"),
+      before
+    )
+  })
 })
 
 
@@ -1589,5 +1632,110 @@ test_that("per-table metadata sync's stored error has no escape codes", {
     expect_equal(result$tables$dm$action, "error")
     expect_match(result$tables$dm$error, "Upload failed")
     expect_false(grepl("\033", result$tables$dm$error, fixed = TRUE))
+  })
+})
+
+
+# --- typed artifacts: the summary block the write side stores -------------------
+
+test_that(".datom_update_manifest_entry counts each kind separately and leaves the set out of the table totals", {
+  # The set entry is hand-built because nothing writes one yet. Without it every
+  # counter filter added in this task would pass whether or not it was applied.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(
+        schema_version = 2L,
+        artifacts = list(
+          dm = list(kind = "table", size_bytes = 100, version_count = 2L),
+          adam = list(kind = "set", member_count = 3L, version_count = 9L)
+        ),
+        summary = list(
+          total_tables = 1L, total_size_bytes = 100L,
+          total_versions = 2L, total_sets = 1L
+        )
+      ),
+      ".datom/manifest.json", auto_unbox = TRUE
+    )
+
+    .datom_update_manifest_entry(
+      conn, "lb", metadata_sha = "meta", data_sha = "data"
+    )
+
+    m <- jsonlite::read_json(".datom/manifest.json")
+    expect_equal(m$summary$total_tables, 2)
+    expect_equal(m$summary$total_sets, 1)
+    # The set's own numbers stay out of the tables-only totals: 100 + 0 bytes
+    # and 2 + 1 versions, with the set's 9 versions and its member_count
+    # contributing to neither.
+    expect_equal(m$summary$total_size_bytes, 100)
+    expect_equal(m$summary$total_versions, 3)
+    # The set entry itself is untouched by a table write.
+    expect_equal(m$artifacts$adam$kind, "set")
+    expect_equal(m$artifacts$adam$member_count, 3)
+  })
+})
+
+
+test_that(".datom_update_manifest_entry converts an old-shape manifest before editing it", {
+  # The counter clause is the one a naive implementation fails: an entry added
+  # under the current key while the old key sits untouched beside it leaves a
+  # repo of many tables reporting one, in a file half in each format.
+  fixture <- fs::path_abs(testthat::test_path("fixtures", "manifest-v1.json"))
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    fs::file_copy(fixture, ".datom/manifest.json")
+
+    .datom_update_manifest_entry(
+      conn, "lb", metadata_sha = "meta", data_sha = "data"
+    )
+
+    m <- jsonlite::read_json(".datom/manifest.json")
+    expect_null(m$tables)
+    expect_equal(m$schema_version, 2L)
+    expect_setequal(names(m$artifacts), c("dm", "lb"))
+    expect_equal(m$artifacts$dm$kind, "table")
+    expect_equal(m$summary$total_tables, 2)
+  })
+})
+
+
+test_that(".datom_sync_data_metadata mirrors an old-shape clone in current shape and leaves the clone alone", {
+  # This route copies the local manifest to storage without going through
+  # datom_write(), so without a conversion here a build that knows the current
+  # shape would push the old one. The clone file is not rewritten: the route
+  # makes no commit, so a rewrite would leave the repo dirty.
+  fixture <- fs::path_abs(testthat::test_path("fixtures", "manifest-v1.json"))
+
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    fs::file_copy(fixture, ".datom/manifest.json")
+    before <- digest::digest(file = ".datom/manifest.json", algo = "sha256")
+
+    mirrored <- NULL
+    local_mocked_bindings(
+      .datom_storage_write_json = function(conn, s3_key, data) {
+        if (identical(s3_key, ".metadata/manifest.json")) mirrored <<- data
+        invisible(TRUE)
+      }
+    )
+
+    .datom_sync_data_metadata(conn, .confirm = FALSE)
+
+    expect_equal(mirrored$schema_version, 2L)
+    expect_equal(mirrored$artifacts$dm$kind, "table")
+    expect_null(mirrored$tables)
+    expect_equal(
+      digest::digest(file = ".datom/manifest.json", algo = "sha256"),
+      before
+    )
   })
 })

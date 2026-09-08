@@ -10,7 +10,9 @@
 #'
 #' @return A `datom_summary` S3 object (a list with class `"datom_summary"`)
 #'   containing: `project_name`, `role`, `backend`, `root`, `prefix`,
-#'   `table_count`, `total_versions`, `last_updated`, `remote_url`.
+#'   `table_count`, `set_count`, `total_versions`, `last_updated`, `remote_url`.
+#'   `table_count` counts tables only and `set_count` counts sets;
+#'   `total_versions` stays tables-only, so no counter changed meaning.
 #'   `remote_url` is `NULL` for readers (no local data clone).
 #'
 #' @export
@@ -57,7 +59,15 @@ datom_summary <- function(conn) {
 
   manifest <- read$manifest
 
-  table_count <- length(manifest$tables %||% list())
+  # Counted from the artifact list rather than read off the summary block, and
+  # filtered on kind: table_count keeps its current tables-only meaning and
+  # set_count is the new number beside it. No fallback for an entry with no
+  # kind -- the reader has already converted an older document, which types
+  # every entry, so an untyped entry should show up as a visibly wrong count
+  # rather than a roughly-right one.
+  artifacts <- manifest$artifacts %||% list()
+  table_count <- length(purrr::keep(artifacts, ~ identical(.x$kind, "table")))
+  set_count <- length(purrr::keep(artifacts, ~ identical(.x$kind, "set")))
   total_versions <- manifest$summary$total_versions %||% 0L
   last_updated <- manifest$updated_at %||% NA_character_
 
@@ -71,6 +81,7 @@ datom_summary <- function(conn) {
       root           = conn$root,
       prefix         = conn$prefix,
       table_count    = as.integer(table_count),
+      set_count      = as.integer(set_count),
       total_versions = as.integer(total_versions),
       last_updated   = last_updated,
       remote_url     = remote_url
@@ -122,6 +133,7 @@ print.datom_summary <- function(x, ...) {
   cli::cli_li("Role:       {.val {x$role}}")
   cli::cli_li("Backend:    {backend_label} -- {.val {location}}")
   cli::cli_li("Tables:     {.val {x$table_count}} ({x$total_versions} version{?s} total)")
+  cli::cli_li("Sets:       {.val {x$set_count %||% 0L}}")
   cli::cli_li("Last write: {.val {x$last_updated}}")
 
   if (!is.null(x$remote_url)) {

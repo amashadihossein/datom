@@ -479,3 +479,36 @@ and OSC-8 hyperlinks: `\033[31m` to start red, `\033]8;;file://...` to make a pa
 - **Reproducing what a user reports**: an interactive console has colour on, so a string that
   looks clean in your test run can look mangled in their paste. To see what they see, force the
   same two options.
+
+### The manifest's artifact list, and the two ways a fixture goes quietly wrong
+
+Landed 2026-09-08 with the `manifest$tables` -> `manifest$artifacts` rename. Three things to know
+before touching a manifest or a manifest fixture.
+
+- **Never write a fallback for the old key.** `.datom_read_manifest()` returns the document in
+  **current shape** -- a document written in an older shape is converted on the way through, in
+  memory, and the file is left alone. So `manifest$artifacts %||% manifest$tables` at a call site is
+  not defensive, it is a second implementation of the conversion: the next format change then has to
+  edit every copy, and the one it misses fails silently. The conversion has exactly one home,
+  `R/manifest-upgrade.R`, reached from exactly two places (the shared reader, and the entry updater
+  before it edits the file).
+
+- **A fixture in the current shape needs BOTH the version and the kind.** A hand-built manifest that
+  declares `schema_version = 2` but leaves `kind` off its entries reads as a manifest with **zero
+  tables**, because the counters filter on `kind == "table"` and there is deliberately no
+  missing-`kind` fallback. Nothing errors. A fixture that declares **no** version is a valid v1
+  document and gets converted, `kind` included, so it works -- which is the trap: the two failing
+  spellings look more alike than the two working ones. If a count comes back zero for no visible
+  reason, check the fixture's entries for `kind` first.
+
+- **A test that needs a set has to hand-build one.** Nothing writes a `kind = "set"` entry until
+  `datom_write_set()` exists, so every counter filter passes against a tables-only manifest whether
+  or not the filter is there. Any change to a counter needs a fixture holding a set entry beside
+  table entries, and the assertion worth making is that the **counted** numbers
+  (`datom_summary()`) and the **stored** `summary` block agree -- a filter applied to one and not the
+  other is invisible until they are compared.
+
+- **`tables` still exists as a return-value field in three places** and must not be swept:
+  `datom_status()$tables`, `datom_validate()$tables`, and the per-table results in `datom_sync()`'s
+  result. A `grep tables` across `R/` hits all three. Renaming them is a separate breaking change to
+  three public shapes.

@@ -634,7 +634,7 @@ Relative to the artifact prefix:
 - **R8.1** `manifest$tables` becomes **`manifest$artifacts`**, keyed by name, each entry typed
   by `kind`. **The example below is illustrative, not the full entry schema** -- real table
   entries also carry `current_data_sha`, `last_updated`, and conditionally `original_file_sha` /
-  `original_format` (see `.datom_update_manifest_entry()`, `R/sync.R:853-862`). Existing entry
+  `original_format` (see `.datom_update_manifest_entry()`, `R/sync.R:894-904`). Existing entry
   fields are preserved verbatim; `kind` is added, and set entries substitute `member_count` for
   `size_bytes`:
 
@@ -739,7 +739,7 @@ datom_read()                    --> {name}/.metadata/metadata.json   <- and here
 
   The last row is the one that has no shape-based answer. A content-bearing addition is
   **reader-safe and writer-breaking**: readers never recompute identity, writers do
-  (`R/read_write.R:343`), so an older writer disagrees with the recorded version and mints a version
+  (`R/read_write.R:342`), so an older writer disagrees with the recorded version and mints a version
   on unchanged content. The format did not change, so the number must not move -- and the writer-side
   stop therefore comes from R23's vocabulary check rather than from the number.
 
@@ -1297,7 +1297,7 @@ the gate deliberately tolerates and which the R8.1 rename therefore breaks.
     makes an escape hatch possible there.
   - **Per-artifact metadata may never break.** It **is** the source of truth, so there is nothing to
     rebuild it from, and a legacy-shaped second copy backfires: change detection recomputes identity
-    from the stored file (`R/read_write.R:343`), so a copy in a different shape hashes differently
+    from the stored file (`R/read_write.R:342`), so a copy in a different shape hashes differently
     from the recorded version and an older build mints a version on every run. For that file the
     forward-compatibility rules are absolute -- additive only, forever.
   - Recorded because **this spec has the division the right way round by accident**: it breaks the
@@ -1338,7 +1338,7 @@ and already in the design: reads limp, writes stop.
   adding a network read to every write and checking the wrong copy.
   **The clone is right at both steps for the same four reasons.** It is the document the write
   actually mutates (`.datom_update_manifest_entry()` edits `{conn$path}/.datom/manifest.json`,
-  `R/sync.R:821`); it is a local file read rather than a round trip on every write; it is where a newer
+  `R/sync.R:866`); it is a local file read rather than a round trip on every write; it is where a newer
   collaborator's work lands after a pull; and storage cannot legitimately be ahead of git (I5).
   All three documents exist as local files in the clone: `{conn$path}/.datom/manifest.json` and
   `{conn$path}/{name}/metadata.json` (`R/read_write.R:463-469`, committed via `git_paths`). So the

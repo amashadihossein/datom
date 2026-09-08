@@ -1391,7 +1391,10 @@ test_that("datom_write updates manifest.json locally", {
 
     fs::dir_create(".datom")
     jsonlite::write_json(
-      list(tables = list(), summary = list(total_tables = 0L)),
+      list(
+        schema_version = 2L, artifacts = list(),
+        summary = list(total_tables = 0L)
+      ),
       ".datom/manifest.json", auto_unbox = TRUE
     )
 
@@ -1405,10 +1408,10 @@ test_that("datom_write updates manifest.json locally", {
     datom_write(conn, data = data.frame(x = 1:5), name = "my_tbl")
 
     m <- jsonlite::read_json(".datom/manifest.json")
-    expect_true("my_tbl" %in% names(m$tables))
+    expect_true("my_tbl" %in% names(m$artifacts))
     expect_equal(m$summary$total_tables, 1)
-    expect_false(is.null(m$tables$my_tbl$current_version))
-    expect_false(is.null(m$tables$my_tbl$current_data_sha))
+    expect_false(is.null(m$artifacts$my_tbl$current_version))
+    expect_false(is.null(m$artifacts$my_tbl$current_data_sha))
   })
 })
 
@@ -1426,7 +1429,10 @@ test_that("datom_write includes manifest.json in git commit", {
 
     fs::dir_create(".datom")
     jsonlite::write_json(
-      list(tables = list(), summary = list(total_tables = 0L)),
+      list(
+        schema_version = 2L, artifacts = list(),
+        summary = list(total_tables = 0L)
+      ),
       ".datom/manifest.json", auto_unbox = TRUE
     )
 
@@ -1462,7 +1468,10 @@ test_that("datom_write pushes manifest.json to S3", {
 
     fs::dir_create(".datom")
     jsonlite::write_json(
-      list(tables = list(), summary = list(total_tables = 0L)),
+      list(
+        schema_version = 2L, artifacts = list(),
+        summary = list(total_tables = 0L)
+      ),
       ".datom/manifest.json", auto_unbox = TRUE
     )
 
@@ -1497,7 +1506,10 @@ test_that("datom_write stores sync fields in manifest when provided", {
 
     fs::dir_create(".datom")
     jsonlite::write_json(
-      list(tables = list(), summary = list(total_tables = 0L)),
+      list(
+        schema_version = 2L, artifacts = list(),
+        summary = list(total_tables = 0L)
+      ),
       ".datom/manifest.json", auto_unbox = TRUE
     )
 
@@ -1516,8 +1528,8 @@ test_that("datom_write stores sync fields in manifest when provided", {
     )
 
     m <- jsonlite::read_json(".datom/manifest.json")
-    expect_equal(m$tables$synced_tbl$original_file_sha, "file_sha_123")
-    expect_equal(m$tables$synced_tbl$original_format, "csv")
+    expect_equal(m$artifacts$synced_tbl$original_file_sha, "file_sha_123")
+    expect_equal(m$artifacts$synced_tbl$original_format, "csv")
   })
 })
 
@@ -1535,7 +1547,10 @@ test_that("datom_write omits sync fields in manifest for derived tables", {
 
     fs::dir_create(".datom")
     jsonlite::write_json(
-      list(tables = list(), summary = list(total_tables = 0L)),
+      list(
+        schema_version = 2L, artifacts = list(),
+        summary = list(total_tables = 0L)
+      ),
       ".datom/manifest.json", auto_unbox = TRUE
     )
 
@@ -1549,8 +1564,8 @@ test_that("datom_write omits sync fields in manifest for derived tables", {
     datom_write(conn, data = data.frame(x = 1), name = "derived_tbl")
 
     m <- jsonlite::read_json(".datom/manifest.json")
-    expect_null(m$tables$derived_tbl$original_file_sha)
-    expect_null(m$tables$derived_tbl$original_format)
+    expect_null(m$artifacts$derived_tbl$original_file_sha)
+    expect_null(m$artifacts$derived_tbl$original_format)
   })
 })
 
@@ -1567,7 +1582,10 @@ test_that("datom_write skips manifest update when no changes detected", {
     conn$path <- getwd()
 
     fs::dir_create(".datom")
-    empty_manifest <- list(tables = list(), summary = list(total_tables = 0L))
+    empty_manifest <- list(
+      schema_version = 2L, artifacts = list(),
+      summary = list(total_tables = 0L)
+    )
     jsonlite::write_json(empty_manifest, ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
@@ -1577,7 +1595,7 @@ test_that("datom_write skips manifest update when no changes detected", {
     datom_write(conn, data = data.frame(x = 1), name = "unchanged_tbl")
 
     m <- jsonlite::read_json(".datom/manifest.json")
-    expect_equal(length(m$tables), 0)
+    expect_equal(length(m$artifacts), 0)
   })
 })
 
@@ -2437,5 +2455,211 @@ test_that("aborts S3 sync when git commit/push fails", {
     # Git failure aborts the operation — S3 is never touched
     expect_error(.datom_sync_metadata(conn, "tbl"), "Git commit/push failed")
     expect_false(s3_called)
+  })
+})
+
+
+# --- writing into a repo whose manifest is in an older shape --------------------
+
+test_that("datom_write converts an old-shape manifest and keeps counting the tables that were already there", {
+  # The failing shape this guards against is not an error: an entry added under
+  # the current key while the old key sits untouched leaves the repo reporting
+  # one table when it holds two, in a file that is now half in each format.
+  fixture <- fs::path_abs(testthat::test_path("fixtures", "manifest-v1.json"))
+
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    fs::file_copy(fixture, ".datom/manifest.json")
+
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) {
+        list(change_type = "full", current = NULL)
+      },
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    datom_write(conn, data = data.frame(x = 1:5), name = "lb")
+
+    m <- jsonlite::read_json(".datom/manifest.json")
+    expect_null(m$tables)
+    expect_equal(m$schema_version, 2L)
+    expect_setequal(names(m$artifacts), c("dm", "lb"))
+    expect_equal(m$artifacts$dm$kind, "table")
+    expect_equal(m$artifacts$lb$kind, "table")
+    # The pre-existing table is still counted, not replaced by the new one.
+    expect_equal(m$summary$total_tables, 2)
+    expect_equal(m$summary$total_sets, 0)
+  })
+})
+
+
+test_that("datom_write stamps the format on the metadata document it writes", {
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(schema_version = 2L, artifacts = list(), summary = list()),
+      ".datom/manifest.json", auto_unbox = TRUE
+    )
+
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) {
+        list(change_type = "full", current = NULL)
+      },
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    datom_write(conn, data = data.frame(x = 1:5), name = "dm")
+
+    meta <- jsonlite::read_json("dm/metadata.json")
+    expect_equal(meta$schema_version, 2L)
+  })
+})
+
+
+test_that("stamping the format does not turn an unchanged table into a new version", {
+  # Every metadata document datom writes now declares its format. A document
+  # stored before that must still compare equal, or the first write after
+  # upgrading would mint a version for every table while its content stood
+  # still.
+  df <- data.frame(x = 1:5, y = c("a", "b", "c", "d", "e"),
+                   stringsAsFactors = FALSE)
+  hashed <- .datom_canonical_hash(df)
+
+  stored <- .datom_build_metadata(
+    df, hashed$data_sha, column_hashes = hashed$column_hashes, size_bytes = 128
+  )
+  stored$schema_version <- NULL
+  stored$parquet_sha <- "deadbeef"
+
+  fresh <- .datom_build_metadata(
+    df, hashed$data_sha, column_hashes = hashed$column_hashes, size_bytes = 128
+  )
+  expect_equal(fresh$schema_version, 2L)
+
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) stored
+  )
+
+  chg <- .datom_has_changes(
+    mock_datom_conn(list()), "dm",
+    hashed$data_sha, .datom_compute_metadata_sha(fresh)
+  )
+
+  expect_equal(chg$change_type, "none")
+})
+
+
+# --- the write-side schema door -------------------------------------------------
+
+# A clone whose manifest declares a format this build does not know. Every write
+# route has to stop at the door: an older build writing into a newer repo
+# produces a file that is well-formed for a shape nobody agreed on, and no
+# reader-side check can catch it, because the older build is the one writing.
+.setup_too_new_clone <- function() {
+  fs::dir_create(".datom")
+  jsonlite::write_json(
+    list(schema_version = 99L, artifacts = list()),
+    ".datom/manifest.json", auto_unbox = TRUE
+  )
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$path <- getwd()
+  conn
+}
+
+test_that("datom_write refuses a too-new repo on the table-write route", {
+  withr::with_tempdir({
+    conn <- .setup_too_new_clone()
+    err <- expect_error(
+      datom_write(conn, data = data.frame(x = 1), name = "dm"),
+      class = "datom_schema_unsupported"
+    )
+    # The verb matters: this build can read the file, it just must not write it.
+    expect_match(conditionMessage(err), "cannot write")
+    # Nothing was written on the way to the refusal.
+    expect_false(fs::dir_exists("dm"))
+  })
+})
+
+test_that("datom_write refuses a too-new repo on the metadata-only route", {
+  withr::with_tempdir({
+    conn <- .setup_too_new_clone()
+    expect_error(
+      datom_write(conn, name = "dm"),
+      class = "datom_schema_unsupported"
+    )
+  })
+})
+
+test_that("datom_write refuses a too-new repo on the mirror-everything route", {
+  # The route that never reaches the manifest-writing step: it copies the whole
+  # local manifest to storage, so a check placed after the routing decision
+  # would miss it entirely.
+  withr::with_tempdir({
+    conn <- .setup_too_new_clone()
+    wrote <- 0L
+    local_mocked_bindings(
+      .datom_storage_write_json = function(conn, sk, d) {
+        wrote <<- wrote + 1L
+        invisible(TRUE)
+      }
+    )
+    expect_error(
+      datom_write(conn),
+      class = "datom_schema_unsupported"
+    )
+    expect_equal(wrote, 0L)
+  })
+})
+
+test_that("the write door passes a repo with no manifest and one with no clone", {
+  # A brand-new repo has nothing to disagree with, and a reader-role connection
+  # has no clone to inspect -- it fails a few lines later with a clearer message
+  # about needing the developer role, and that message should stand.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    expect_silent(.datom_check_write_schema(conn))
+  })
+
+  reader <- mock_datom_conn(list())
+  expect_silent(.datom_check_write_schema(reader))
+  err <- expect_error(datom_write(reader, data = data.frame(x = 1), name = "dm"))
+  expect_match(conditionMessage(err), "developer")
+})
+
+test_that("the write door leaves an unparseable manifest to the parser", {
+  # A corrupt file is not a schema disagreement, and reporting it as one would
+  # send the user to upgrade datom over a truncated write.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    writeLines('{"artifacts": {', ".datom/manifest.json")
+
+    expect_silent(.datom_check_write_schema(conn))
   })
 })

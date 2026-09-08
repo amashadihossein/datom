@@ -1025,9 +1025,9 @@ test_that("the pinned fixtures carry exactly the keys datom's writers emit", {
   # explicitly rather than derived, because the point is to notice when the set
   # changes: a builder gaining a semantic field legitimately moves the pins, and
   # that must surface as a decision rather than as a mystery.
-  always <- c("data_sha", "hash_algo", "parquet_sha", "table_type", "nrow",
-              "ncol", "colnames", "column_hashes", "created_at",
-              "datom_version")
+  always <- c("schema_version", "data_sha", "hash_algo", "parquet_sha",
+              "table_type", "nrow", "ncol", "colnames", "column_hashes",
+              "created_at", "datom_version")
   conditional <- c("original_file_sha", "parents", "source_lineage",
                    "size_bytes", "custom")
 

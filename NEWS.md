@@ -1,3 +1,55 @@
+# datom (development version)
+
+## The manifest's artifact list is renamed **[breaking]**
+
+`.metadata/manifest.json` and `.datom/manifest.json` now list artifacts under
+**`artifacts`** rather than `tables`, and every entry carries a `kind` field
+(`"table"` for everything datom writes today). One namespace typed by `kind`,
+rather than a second node beside the first: storage keys are `{name}/...`
+whatever the artifact is, so two artifacts sharing a name would write the same
+objects, and a single keyed list makes that a collision instead of a state
+something has to police.
+
+* **Existing repos keep working, and no manual migration is needed.** A manifest
+  written before this change carries no format number, which datom reads as
+  version 1 and converts as it goes. A **read** converts in memory and leaves
+  the file untouched, so a reader with storage access and no git clone is never
+  stuck. A **write** converts the file itself, then records the format it
+  reached -- so a repo is never half in one shape and half in the other, and the
+  counters cover every artifact that was already there rather than only the one
+  just written.
+
+* **`datom_list()` gains a `kind` column**, on populated rows and on both of its
+  empty results.
+
+* **`datom_summary()` gains `set_count`** beside `table_count`, and prints it.
+  `table_count`, `total_versions` and `total_size_bytes` keep the meanings they
+  had: tables only. No existing counter changed what it counts.
+
+* **`datom_status()`'s table count now counts tables**, not every artifact, so
+  the number keeps matching the label it prints.
+
+* Three return-value fields still named `tables` are **unchanged**:
+  `datom_status()$tables`, `datom_validate()$tables` and the per-table results
+  from `datom_sync()`. Only the manifest key moved.
+
+## Format numbers, and the write that gets refused
+
+* **Every manifest and every per-artifact metadata document now declares a
+  `schema_version`.** Stamping it costs nothing: it takes no part in version
+  identity, so no artifact gains a version for being stamped. A manifest created
+  from scratch declares the format immediately, before it holds anything.
+
+* **A write into a repo whose format this build does not know is refused at the
+  door** -- before any hashing, any local file write and any commit, so a
+  refusal leaves nothing half-written. This is the damaging direction and no
+  reader-side check can cover it, because the older build is the one writing.
+  The refusal covers every write route, including the one that mirrors the
+  whole manifest to storage without touching a single artifact.
+
+* The refusal message now says whether the build cannot *read* or cannot *write*
+  the format it met.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

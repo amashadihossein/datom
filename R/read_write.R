@@ -273,7 +273,8 @@ datom_read <- function(conn,
 #'   from [.datom_canonical_hash()], or NULL. Excluded from `metadata_sha`
 #'   (see [.datom_compute_metadata_sha()]).
 #' @return Named list suitable for writing as metadata.json. Always carries
-#'   `hash_algo = "datom-cv1"` and declares `parquet_sha` (left NULL here and
+#'   `schema_version` (the format the document is written in) and
+#'   `hash_algo = "datom-cv1"`, and declares `parquet_sha` (left NULL here and
 #'   populated by [datom_write()] after change detection, since the stored-
 #'   object hash is not knowable until then; it is excluded from `metadata_sha`
 #'   so this deferred assignment is safe).
@@ -287,6 +288,12 @@ datom_read <- function(conn,
   }
 
   meta <- list(
+    # The format this document is written in, declared first because every other
+    # field's meaning depends on it. The value is what this build supports,
+    # since a build writes the only shape it knows. It is on the documented
+    # not-identity list, so stamping it mints no new version for content that
+    # did not move.
+    schema_version = .datom_supported_schema,
     data_sha = data_sha,
     hash_algo = "datom-cv1",
     parquet_sha = NULL,
@@ -681,6 +688,13 @@ datom_write <- function(conn,
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort("conn must be a datom_conn object from datom_get_conn()")
   }
+
+  # Forward-compatibility door. Above the routing returns on purpose: one of the
+  # routes mirrors the whole local manifest to storage and never reaches the
+  # manifest-writing step, so a check placed after the router would not cover
+  # it. Above the hashing and the local writes too, so a refusal leaves nothing
+  # half-written.
+  .datom_check_write_schema(conn)
 
   # Route based on arguments
 

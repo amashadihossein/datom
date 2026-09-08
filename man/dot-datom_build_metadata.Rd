@@ -43,7 +43,8 @@ from \code{\link[=.datom_canonical_hash]{.datom_canonical_hash()}}, or NULL. Exc
 }
 \value{
 Named list suitable for writing as metadata.json. Always carries
-\code{hash_algo = "datom-cv1"} and declares \code{parquet_sha} (left NULL here and
+\code{schema_version} (the format the document is written in) and
+\code{hash_algo = "datom-cv1"}, and declares \code{parquet_sha} (left NULL here and
 populated by \code{\link[=datom_write]{datom_write()}} after change detection, since the stored-
 object hash is not knowable until then; it is excluded from \code{metadata_sha}
 so this deferred assignment is safe).

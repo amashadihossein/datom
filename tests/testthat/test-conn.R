@@ -1099,6 +1099,12 @@ test_that("datom_init_repo creates manifest.json", {
   expect_equal(manifest$summary$total_tables, 0)
   expect_equal(manifest$summary$total_size_bytes, 0)
   expect_equal(manifest$summary$total_versions, 0)
+  expect_equal(manifest$summary$total_sets, 0)
+  # A repo declares its format from the moment it is created, so none exists in
+  # a state that declares nothing -- not even before its first artifact.
+  expect_equal(manifest$schema_version, 2L)
+  expect_true("artifacts" %in% names(manifest))
+  expect_null(manifest$tables)
 })
 
 test_that("datom_init_repo creates .gitignore with input_files/", {

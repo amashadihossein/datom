@@ -23,7 +23,11 @@ is decided for \code{scope = "clone"}, where testing a local path is free.
 For \code{scope = "storage"} it is always \code{FALSE}, meaning "not known to be
 absent": separating a missing object from an unreachable store would
 cost an extra request on every read and no caller distinguishes them.
-\item \code{manifest} -- the parsed document, or \code{NULL} when \code{ok} is \code{FALSE}.
+\item \code{manifest} -- the parsed document \strong{in current shape}, or \code{NULL} when
+\code{ok} is \code{FALSE}. A document written in an older shape is converted in
+memory on the way through (\code{\link[=.datom_manifest_upgrade]{.datom_manifest_upgrade()}}); the file on disk
+or in storage is not modified by a read. So no caller ever sees a
+pre-current shape and none needs a fallback for one.
 \item \code{error} -- the condition that stopped the read, or \code{NULL}. The whole
 condition rather than its text, so a caller can re-signal the original
 failure unchanged instead of manufacturing a look-alike.

@@ -1,7 +1,25 @@
-#' List Available Tables
+# The zero-row shape datom_list() returns when there is nothing to list, in one
+# place so its columns cannot drift from each other. It deliberately does NOT
+# match the populated shape: populated rows also carry current_data_sha, which
+# these returns have always omitted. Adding it would change a public shape
+# nobody asked to change, so the difference is left as it is and recorded here
+# rather than being rediscovered.
+.datom_empty_artifact_frame <- function() {
+  data.frame(
+    name = character(),
+    kind = character(),
+    current_version = character(),
+    last_updated = character(),
+    stringsAsFactors = FALSE
+  )
+}
+
+
+#' List Available Artifacts
 #'
-#' Lists tables from S3 manifest. Reads `.metadata/manifest.json` from S3
-#' and returns a data frame with one row per table.
+#' Lists artifacts from the data store's manifest. Reads
+#' `.metadata/manifest.json` and returns a data frame with one row per
+#' artifact, typed by `kind`.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param pattern Optional glob pattern for filtering table names.
@@ -9,7 +27,8 @@
 #' @param short_hash If TRUE (default), truncates version and data SHA
 #'   columns to 8 characters for readability. Set to FALSE for full hashes.
 #'
-#' @return Data frame with table info (name, current_version, last_updated, etc.).
+#' @return Data frame with artifact info (name, kind, current_version,
+#'   last_updated, etc.).
 #' @export
 #'
 #' @examples
@@ -58,36 +77,27 @@ datom_list <- function(conn,
 
   manifest <- read$manifest
 
-  tables <- manifest$tables
-  if (is.null(tables) || length(tables) == 0L) {
-    return(data.frame(
-      name = character(),
-      current_version = character(),
-      last_updated = character(),
-      stringsAsFactors = FALSE
-    ))
+  artifacts <- manifest$artifacts
+  if (is.null(artifacts) || length(artifacts) == 0L) {
+    return(.datom_empty_artifact_frame())
   }
 
-  table_names <- names(tables)
+  table_names <- names(artifacts)
 
   # Apply glob pattern filter
   if (!is.null(pattern)) {
     table_names <- table_names[grepl(utils::glob2rx(pattern), table_names)]
     if (length(table_names) == 0L) {
-      return(data.frame(
-        name = character(),
-        current_version = character(),
-        last_updated = character(),
-        stringsAsFactors = FALSE
-      ))
+      return(.datom_empty_artifact_frame())
     }
   }
 
   # Build data frame
   rows <- purrr::map(table_names, function(tbl_name) {
-    entry <- tables[[tbl_name]]
+    entry <- artifacts[[tbl_name]]
     row <- data.frame(
       name = tbl_name,
+      kind = entry$kind %||% NA_character_,
       current_version = entry$current_version %||% NA_character_,
       current_data_sha = entry$current_data_sha %||% NA_character_,
       last_updated = entry$last_updated %||% NA_character_,
@@ -456,8 +466,14 @@ datom_status <- function(conn) {
       error = cli::ansi_strip(conditionMessage(manifest_read$error))
     )
   } else {
+    # Counted, not read off the summary block, and filtered on kind so the
+    # number keeps meaning what its label says now that a manifest can hold
+    # more than one kind of artifact.
     list(
-      count = length(manifest_read$manifest$tables %||% list()),
+      count = length(purrr::keep(
+        manifest_read$manifest$artifacts %||% list(),
+        ~ identical(.x$kind, "table")
+      )),
       available = TRUE
     )
   }
@@ -572,7 +588,7 @@ datom_status <- function(conn) {
   statuses <- purrr::map_chr(files, function(fp) {
     table_name <- fs::path_ext_remove(fs::path_file(fp))
     original_file_sha <- .datom_compute_original_file_sha(fp)
-    existing <- manifest$tables[[table_name]]
+    existing <- manifest$artifacts[[table_name]]
 
     if (is.null(existing)) {
       "new"

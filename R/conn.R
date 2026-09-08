@@ -516,15 +516,16 @@ datom_init_repo <- function(path = ".",
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
 
   # --- Create manifest.json (data repo only) ----------------------------------
-  manifest <- list(
-    project_name = project_name,
-    updated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
-    tables = structure(list(), names = character(0)),
-    summary = list(
-      total_tables = 0L,
-      total_size_bytes = 0L,
-      total_versions = 0L
-    )
+  # Built from the shared skeleton so the schema version is declared in one
+  # place rather than spelled out again here: a repo declares its format from
+  # the moment it is created, before it holds a single artifact.
+  manifest <- .datom_manifest_skeleton(project_name)
+  manifest$updated_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  manifest$summary <- list(
+    total_tables = 0L,
+    total_size_bytes = 0L,
+    total_versions = 0L,
+    total_sets = 0L
   )
 
   jsonlite::write_json(manifest, fs::path(path, ".datom", "manifest.json"),

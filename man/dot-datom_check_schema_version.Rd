@@ -4,7 +4,7 @@
 \alias{.datom_check_schema_version}
 \title{Check a Document's Declared Schema Version}
 \usage{
-.datom_check_schema_version(meta, source)
+.datom_check_schema_version(meta, source, operation = c("read", "write"))
 }
 \arguments{
 \item{meta}{Parsed document (a named list). A non-list or \code{NULL} is treated
@@ -12,6 +12,13 @@ as carrying no \code{schema_version}, i.e. v1.}
 
 \item{source}{Path or key of the document, used in the message so the user
 knows which file is too new.}
+
+\item{operation}{What the caller was about to do -- \code{"read"} (default) or
+\code{"write"}. It only selects a word in the refusal message. An argument with
+a default rather than a required one, so that every existing call site and
+the message text they assert on are unchanged: without it a refused write
+said the format was one "this build cannot read", which is the wrong verb
+for a write that was stopped at the door.}
 }
 \value{
 Invisible resolved schema version as an integer. Aborts otherwise.

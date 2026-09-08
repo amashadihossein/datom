@@ -10,7 +10,10 @@ test_that("rejects non-datom_conn", {
 test_that("returns empty data frame when manifest has no tables", {
   local_mocked_bindings(
     .datom_storage_read_json = function(conn, s3_key) {
-      list(updated_at = "2026-01-01", tables = list(), summary = list())
+      list(
+        schema_version = 2L, updated_at = "2026-01-01",
+        artifacts = list(), summary = list()
+      )
     }
   )
 
@@ -24,13 +27,16 @@ test_that("returns empty data frame when manifest has no tables", {
 
 test_that("returns data frame with one row per table", {
   manifest <- list(
-    tables = list(
+    schema_version = 2L,
+    artifacts = list(
       customers = list(
+        kind = "table",
         current_version = "v1",
         current_data_sha = "sha1",
         last_updated = "2026-01-01"
       ),
       orders = list(
+        kind = "table",
         current_version = "v2",
         current_data_sha = "sha2",
         last_updated = "2026-01-02"
@@ -53,10 +59,11 @@ test_that("returns data frame with one row per table", {
 
 test_that("filters tables by glob pattern", {
   manifest <- list(
-    tables = list(
-      customer_us = list(current_version = "v1", last_updated = "2026-01-01"),
-      customer_eu = list(current_version = "v2", last_updated = "2026-01-02"),
-      orders = list(current_version = "v3", last_updated = "2026-01-03")
+    schema_version = 2L,
+    artifacts = list(
+      customer_us = list(kind = "table", current_version = "v1", last_updated = "2026-01-01"),
+      customer_eu = list(kind = "table", current_version = "v2", last_updated = "2026-01-02"),
+      orders = list(kind = "table", current_version = "v3", last_updated = "2026-01-03")
     )
   )
 
@@ -73,8 +80,9 @@ test_that("filters tables by glob pattern", {
 
 test_that("returns empty data frame when pattern matches nothing", {
   manifest <- list(
-    tables = list(
-      customers = list(current_version = "v1", last_updated = "2026-01-01")
+    schema_version = 2L,
+    artifacts = list(
+      customers = list(kind = "table", current_version = "v1", last_updated = "2026-01-01")
     )
   )
 
@@ -90,8 +98,10 @@ test_that("returns empty data frame when pattern matches nothing", {
 
 test_that("includes version_count when include_versions = TRUE", {
   manifest <- list(
-    tables = list(
+    schema_version = 2L,
+    artifacts = list(
       customers = list(
+        kind = "table",
         current_version = "v1",
         last_updated = "2026-01-01",
         version_count = 15L
@@ -118,7 +128,7 @@ test_that("reads correct S3 key for manifest", {
   local_mocked_bindings(
     .datom_storage_read_json = function(conn, s3_key) {
       captured_key <<- s3_key
-      list(tables = list())
+      list(schema_version = 2L, artifacts = list())
     }
   )
 
@@ -139,8 +149,9 @@ test_that("errors when manifest cannot be read from S3", {
 
 test_that("handles missing fields gracefully with NA", {
   manifest <- list(
-    tables = list(
-      sparse = list()
+    schema_version = 2L,
+    artifacts = list(
+      sparse = list(kind = "table")
     )
   )
 
@@ -160,8 +171,10 @@ test_that("handles missing fields gracefully with NA", {
 test_that("truncates hashes by default (short_hash = TRUE)", {
   full_sha <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
   manifest <- list(
-    tables = list(
+    schema_version = 2L,
+    artifacts = list(
       dm = list(
+        kind = "table",
         current_version = full_sha,
         current_data_sha = full_sha,
         last_updated = "2026-01-01"
@@ -184,8 +197,10 @@ test_that("truncates hashes by default (short_hash = TRUE)", {
 test_that("returns full hashes with short_hash = FALSE", {
   full_sha <- "a793e733037c6d3152f22063a5e7f7be0fb27cfc0e9bf5b0c841a05997774e0f"
   manifest <- list(
-    tables = list(
+    schema_version = 2L,
+    artifacts = list(
       dm = list(
+        kind = "table",
         current_version = full_sha,
         current_data_sha = full_sha,
         last_updated = "2026-01-01"
@@ -688,7 +703,10 @@ test_that("datom_status returns connection info for reader", {
 
   local_mocked_bindings(
     .datom_storage_read_json = function(conn, s3_key) {
-      list(tables = list(a = list(), b = list()))
+      list(
+        schema_version = 2L,
+        artifacts = list(a = list(kind = "table"), b = list(kind = "table"))
+      )
     }
   )
 
@@ -721,7 +739,7 @@ test_that("datom_status shows git info for developer", {
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = c("R/foo.R"), branch = "main")
       }
@@ -741,7 +759,7 @@ test_that("datom_status shows clean git when no changes", {
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -767,13 +785,14 @@ test_that("datom_status shows input_files sync state", {
     existing_sha <- .datom_compute_original_file_sha("input_files/existing.csv")
     fs::dir_create(".datom")
     jsonlite::write_json(list(
-      tables = list(
-        existing = list(original_file_sha = existing_sha)
+      schema_version = 2L,
+      artifacts = list(
+        existing = list(kind = "table", original_file_sha = existing_sha)
       )
     ), ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -795,7 +814,7 @@ test_that("datom_status omits input_files when dir missing", {
     conn$path <- getwd()
 
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -818,11 +837,12 @@ test_that("datom_status detects changed input files", {
 
     fs::dir_create(".datom")
     jsonlite::write_json(list(
-      tables = list(orders = list(original_file_sha = "old_sha"))
+      schema_version = 2L,
+      artifacts = list(orders = list(kind = "table", original_file_sha = "old_sha"))
     ), ".datom/manifest.json", auto_unbox = TRUE)
 
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -839,7 +859,7 @@ test_that("datom_status returns correct structure", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
-    .datom_storage_read_json = function(conn, s3_key) list(tables = list())
+    .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list())
   )
 
   result <- datom_status(conn)
@@ -859,7 +879,7 @@ test_that("datom_status handles empty input_files dir", {
     fs::dir_create("input_files")
 
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -917,6 +937,9 @@ test_that("datom_list reads the frozen old-format manifest as non-empty", {
 
   expect_equal(nrow(result), 1)
   expect_equal(result$name, "dm")
+  # The fixture's entry declares no kind -- nothing did, before sets existed --
+  # so this row is typed only because the conversion typed it on the way in.
+  expect_equal(result$kind, "table")
 })
 
 test_that("datom_status aborts on a newer schema rather than reporting it", {
@@ -966,7 +989,7 @@ test_that("datom_status refuses a local clone declaring a newer schema", {
     )
 
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -1007,7 +1030,7 @@ test_that("datom_status input file scan sees entries in an old-format manifest",
     fs::file_copy(fixture, ".datom/manifest.json")
 
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -1035,7 +1058,7 @@ test_that("datom_status input file scan re-signals a corrupt local manifest", {
     writeLines('{"tables": {', ".datom/manifest.json")
 
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(tables = list()),
+      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
@@ -1066,4 +1089,80 @@ test_that("datom_status's stored error has no escape codes when colour is on", {
   expect_false(result$tables$available)
   expect_match(result$tables$error, "JSON file not found")
   expect_false(grepl("\033", result$tables$error, fixed = TRUE))
+})
+
+
+# --- typed artifacts: kind on every row and in the counters --------------------
+# The fixture carrying a `kind = "set"` entry is what makes these assertions
+# mean anything: nothing writes a set yet, so a filter left out would pass
+# against a tables-only manifest.
+
+test_that("datom_list surfaces kind on every row, for both kinds", {
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(
+        schema_version = 2L,
+        artifacts = list(
+          dm = list(kind = "table", current_version = "v1"),
+          adam = list(kind = "set", current_version = "v2")
+        )
+      )
+    }
+  )
+
+  result <- datom_list(mock_datom_conn(list()))
+
+  expect_true("kind" %in% names(result))
+  expect_equal(result$kind[result$name == "dm"], "table")
+  expect_equal(result$kind[result$name == "adam"], "set")
+})
+
+
+test_that("datom_list carries the kind column in both of its empty returns", {
+  # Two different early returns build the zero-row frame, and a caller binding
+  # results together needs the same columns from each. The pattern-matched-
+  # nothing path is the one an addition gets left out of.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(schema_version = 2L, artifacts = list())
+    }
+  )
+  empty_manifest <- datom_list(mock_datom_conn(list()))
+  expect_equal(nrow(empty_manifest), 0)
+  expect_true("kind" %in% names(empty_manifest))
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(
+        schema_version = 2L,
+        artifacts = list(dm = list(kind = "table", current_version = "v1"))
+      )
+    }
+  )
+  no_match <- datom_list(mock_datom_conn(list()), pattern = "zzz_*")
+  expect_equal(nrow(no_match), 0)
+  expect_true("kind" %in% names(no_match))
+
+  expect_equal(names(empty_manifest), names(no_match))
+})
+
+
+test_that("datom_status counts tables only, not every artifact", {
+  # The line it prints says "Tables", so a set must not be counted into it.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(
+        schema_version = 2L,
+        artifacts = list(
+          dm = list(kind = "table"),
+          lb = list(kind = "table"),
+          adam = list(kind = "set")
+        )
+      )
+    }
+  )
+
+  result <- datom_status(mock_datom_conn(list()))
+
+  expect_equal(result$tables$count, 2)
 })

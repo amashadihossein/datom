@@ -361,6 +361,7 @@ Current state only — no history stored here:
 
 ```json
 {
+  "schema_version": 2,
   "data_sha": "abc123...",
   "hash_algo": "datom-cv1",
   "parquet_sha": "9f10a2...",
@@ -395,6 +396,7 @@ Current state only — no history stored here:
 
 | Field | Description |
 |-------|-------------|
+| `schema_version` | Format of this document, so any build can say what shape it is holding. Absent means version 1, i.e. a document written before the field existed, which is tolerated and read as normal. A build meeting a **higher** number than it knows refuses the document and points at the upgrade, rather than reading a shape it does not understand and reporting the artifact as empty. Excluded from `metadata_sha`: a format bump must not re-mint a version for every artifact whose content stood still. Distinct from `datom_version`, which is provenance -- one format spans many releases, so neither field answers "which datom do I need?" on its own. |
 | `data_sha` | Canonical `datom-cv1` hash of the table's **values** (not of the parquet file -- see "Table Identity = data_sha"). Doubles as the content address: `{table}/{data_sha}.parquet`. |
 | `hash_algo` | Identity algorithm that produced `data_sha`. Always `"datom-cv1"` for tables written by this version. **Semantic** (participates in `metadata_sha`): a new algorithm is a new identity regime. |
 | `parquet_sha` | SHA-256 of the stored parquet object's bytes. Integrity, **not** identity: verified on read before parsing; carried forward unchanged on a `metadata_only` write; reused (never overwritten) when a write reverts to content already in history. Excluded from `metadata_sha`, which is what allows `datom_write()` to set it after `metadata_sha` is computed. `null` for pre-`datom-cv1` metadata, in which case the read-time check is skipped rather than failed. |
@@ -1632,10 +1634,12 @@ Lives in the **governance repository** at `projects/{project_name}/dispatch.json
 
 ```json
 {
+  "schema_version": 2,
   "project_name": "STUDY_001",
   "updated_at": "2024-01-15T10:30:00Z",
-  "tables": {
+  "artifacts": {
     "customers": {
+      "kind": "table",
       "current_version": "xyz789...",
       "current_data_sha": "abc123...",
       "original_file_sha": "def456...",
@@ -1648,10 +1652,29 @@ Lives in the **governance repository** at `projects/{project_name}/dispatch.json
   "summary": {
     "total_tables": 2,
     "total_size_bytes": 3145728,
-    "total_versions": 23
+    "total_versions": 23,
+    "total_sets": 0
   }
 }
 ```
+
+**One namespace, typed by `kind`.** Every artifact lives under `artifacts`, keyed by
+name, and each entry says what kind of artifact it is. Not two sibling nodes: storage
+keys are `{name}/...` regardless of kind, so a set and a table sharing a name would
+write the same objects and clobber each other. One namespace makes that a key
+collision in a single list rather than an illegal state something has to guard.
+
+The `summary` counters keep the meanings they have always had -- `total_tables`,
+`total_size_bytes` and `total_versions` all cover tables only -- and `total_sets` is
+the new counter beside them.
+
+**`schema_version` is the format of the file, and a manifest written before it
+existed carries none.** An absent field means version 1: the artifact list under
+`tables` and no `kind` on any entry. datom converts such a document to the current
+shape as it reads it, in memory, and leaves the file alone; a write converts the file
+itself and then stamps the version it reached. So a repo is never half in one shape
+and half in the other, and a pinned analysis keeps reading a repo somebody else
+upgraded.
 
 **Design rationale**: The "current" fields per table enable sync optimization. When `datom_sync_manifest()` runs, it compares local file SHAs against manifest. Only on mismatch does it fetch the full `version_history.json`. For repos with 100-300 tables, this avoids hundreds of S3 GETs on unchanged re-runs.
 

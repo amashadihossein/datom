@@ -176,8 +176,21 @@ datom_pull <- function(conn) {
   repo_files_synced <- character()
   manifest_local <- fs::path(repo_path, ".datom", "manifest.json")
   if (fs::file_exists(manifest_local)) {
-    data <- jsonlite::read_json(manifest_local)
-    .datom_storage_write_json(conn, ".metadata/manifest.json", data)
+    # Read through the shared reader rather than copying the file's bytes, for
+    # two reasons. A clone still in an older shape would otherwise be pushed to
+    # storage in that shape by a build that knows the current one; and this
+    # route is reachable from datom_validate(fix = TRUE), which does not pass
+    # through datom_write()'s door, so this read is what stops it mirroring a
+    # manifest it cannot understand.
+    #
+    # The converted document goes to storage and the clone's file is left
+    # alone: this route makes no commit, so rewriting the tracked file here
+    # would leave the repo dirty with a change nobody asked for. For a window
+    # the clone is older-shaped and storage is current-shaped; both are
+    # internally consistent and both read correctly.
+    read <- .datom_read_manifest(conn, "clone")
+    if (!read$ok) stop(read$error)
+    .datom_storage_write_json(conn, ".metadata/manifest.json", read$manifest)
     repo_files_synced <- c(repo_files_synced, ".metadata/manifest.json")
   }
 
@@ -395,7 +408,7 @@ datom_sync_manifest <- function(conn,
     # Compare against current manifest. A non-allowlisted format is flagged up
     # front and never reaches the new/changed comparison -- it is not
     # actionable regardless of whether its bytes moved.
-    existing <- current_manifest$tables[[table_name]]
+    existing <- current_manifest$artifacts[[table_name]]
     status <- if (!tolower(file_format) %in% .datom_import_formats) {
       "unsupported_format"
     } else if (is.null(existing)) {
@@ -640,20 +653,28 @@ datom_sync <- function(conn,
 #' exists yet build it here rather than inline, so a later change to the
 #' manifest's shape has a single place to land.
 #'
-#' `tables` is a **named** empty list on purpose: `jsonlite` serializes an empty
-#' bare list as a JSON array (`[]`) and an empty named list as an object (`{}`),
-#' and a manifest's artifact block must be an object. Inert today, since nothing
-#' writes a manifest that still has zero entries, and correct for the one case
-#' where it would.
+#' `artifacts` is a **named** empty list on purpose: `jsonlite` serializes an
+#' empty bare list as a JSON array (`[]`) and an empty named list as an object
+#' (`{}`), and a manifest's artifact block must be an object. Inert today, since
+#' nothing writes a manifest that still has zero entries, and correct for the one
+#' case where it would.
+#'
+#' The skeleton declares `schema_version` itself, so no repo ever exists in a
+#' state that declares no format at all -- not even between being created and
+#' receiving its first artifact. This covers only the built-from-nothing path:
+#' a document read from disk in an older shape gets its version from
+#' [.datom_manifest_upgrade()] instead, because the skeleton is unreachable
+#' whenever a manifest file exists.
 #'
 #' @param project_name Project name, or `NULL` to omit the field (callers that
 #'   only need somewhere to look up entries have no project name to hand).
-#' @return A list with `project_name` (when supplied), `tables` and `summary`.
+#' @return A list with `schema_version`, `project_name` (when supplied),
+#'   `artifacts` and `summary`.
 #' @keywords internal
 .datom_manifest_skeleton <- function(project_name = NULL) {
-  skeleton <- list()
+  skeleton <- list(schema_version = .datom_supported_schema)
   if (!is.null(project_name)) skeleton$project_name <- project_name
-  skeleton$tables <- structure(list(), names = character(0))
+  skeleton$artifacts <- structure(list(), names = character(0))
   skeleton$summary <- list()
   skeleton
 }
@@ -690,7 +711,11 @@ datom_sync <- function(conn,
 #'     For `scope = "storage"` it is always `FALSE`, meaning "not known to be
 #'     absent": separating a missing object from an unreachable store would
 #'     cost an extra request on every read and no caller distinguishes them.
-#'   * `manifest` -- the parsed document, or `NULL` when `ok` is `FALSE`.
+#'   * `manifest` -- the parsed document **in current shape**, or `NULL` when
+#'     `ok` is `FALSE`. A document written in an older shape is converted in
+#'     memory on the way through ([.datom_manifest_upgrade()]); the file on disk
+#'     or in storage is not modified by a read. So no caller ever sees a
+#'     pre-current shape and none needs a fallback for one.
 #'   * `error` -- the condition that stopped the read, or `NULL`. The whole
 #'     condition rather than its text, so a caller can re-signal the original
 #'     failure unchanged instead of manufacturing a look-alike.
@@ -728,7 +753,13 @@ datom_sync <- function(conn,
 
   if (!read$ok) return(read)
 
-  .datom_check_schema_version(read$manifest, source)
+  declared <- .datom_check_schema_version(read$manifest, source)
+
+  # The check runs first and the upgrade only on what survives it: there is no
+  # step for a version this build does not know, so the dispatcher must never
+  # see one. Kept as its own statement rather than folded into the return,
+  # because a rebuild branch lands at this same point later.
+  read$manifest <- .datom_manifest_upgrade(read$manifest, declared)
 
   read
 }
@@ -824,8 +855,18 @@ datom_sync <- function(conn,
   # Read stays direct rather than going through .datom_read_manifest(): this is
   # mid-write, and a compatibility refusal belongs at the front door, before any
   # work starts, not partway through. Only the empty shape is shared.
+  #
+  # A document read from disk is converted before it is edited, so a new entry
+  # is never added under the current key while an older key sits untouched
+  # beside it -- that leaves a repo of twelve tables reporting one, in a file
+  # half in each format. The declared version comes from the same check every
+  # reader uses: it is the only thing that knows how to read the number, and it
+  # cannot fire here for a write that came through datom_write(), which refuses
+  # a too-new manifest at the door before any hashing.
   manifest <- if (fs::file_exists(manifest_path)) {
-    jsonlite::read_json(manifest_path)
+    from_disk <- jsonlite::read_json(manifest_path)
+    declared <- .datom_check_schema_version(from_disk, manifest_path, operation = "write")
+    .datom_manifest_upgrade(from_disk, declared)
   } else {
     .datom_manifest_skeleton(conn$project_name)
   }
@@ -851,6 +892,7 @@ datom_sync <- function(conn,
   }
 
   entry <- list(
+    kind = "table",
     current_version = metadata_sha,
     current_data_sha = data_sha,
     last_updated = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
@@ -861,18 +903,26 @@ datom_sync <- function(conn,
   if (!is.null(original_file_sha)) entry$original_file_sha <- original_file_sha
   if (!is.null(format)) entry$original_format <- format
 
-  manifest$tables[[name]] <- entry
+  manifest$artifacts[[name]] <- entry
 
-  # Update summary
+  # Update summary. Every existing counter keeps its current meaning, which is
+  # tables only, so each one filters on kind; total_sets is the new counter for
+  # the other kind. No fallback for an entry with no kind: by here the document
+  # has been through the upgrade, which types every entry, so an untyped entry
+  # means the conversion was skipped and a visibly wrong count is the point.
+  tables <- purrr::keep(manifest$artifacts, ~ identical(.x$kind, "table"))
+  sets <- purrr::keep(manifest$artifacts, ~ identical(.x$kind, "set"))
+
   manifest$updated_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   manifest$summary <- list(
-    total_tables = length(manifest$tables),
+    total_tables = length(tables),
     total_size_bytes = sum(purrr::map_dbl(
-      manifest$tables, ~ as.numeric(.x$size_bytes %||% 0L)
+      tables, ~ as.numeric(.x$size_bytes %||% 0L)
     )),
     total_versions = sum(purrr::map_int(
-      manifest$tables, ~ as.integer(.x$version_count %||% 0L)
-    ))
+      tables, ~ as.integer(.x$version_count %||% 0L)
+    )),
+    total_sets = length(sets)
   )
 
   jsonlite::write_json(manifest, manifest_path, auto_unbox = TRUE, pretty = TRUE)

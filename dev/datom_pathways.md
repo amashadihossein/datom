@@ -41,16 +41,17 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 1. Read `schema_version` from the parsed document. Absent means **v1** -- every repo written before the field existed.
 2. Compare against `.datom_supported_schema` (`R/utils-validate.R`).
 3. Greater than supported -> abort (`datom_schema_unsupported`), naming the document and the upgrade command. Equal or less -> proceed. Present but not a whole number >= 1 -> abort as corrupt (`datom_schema_invalid`).
+4. **Manifest only: convert whatever survived step 3 to the current shape**, using the version step 3 resolved (`.datom_manifest_upgrade()`, `R/manifest-upgrade.R`). The order is fixed and only one order works: there is no step for a version this build does not know, so a too-new document must never reach the converter. A **read** converts in memory and leaves the file alone; a **write** converts the file and then stamps the version reached. This is a transform on a document already fetched, **not a new lookup** -- the route shape is unchanged.
 
 **Where it is called (reader side):** `.datom_read_metadata()` (the `datom_read()` data path, which never touches the manifest), `datom_list()`, `datom_summary()`, `datom_status()` (both the stored manifest and the clone's copy), `datom_sync_manifest()`.
 
-**Primary functions/files:** `.datom_check_schema_version()`, `.datom_supported_schema`, `.metadata/manifest.json`, `{artifact}/.metadata/metadata.json`.
+**Primary functions/files:** `.datom_check_schema_version()`, `.datom_supported_schema`, `.datom_manifest_upgrade()` and `.datom_manifest_upgrade_v1_to_v2()` (`R/manifest-upgrade.R`), `.metadata/manifest.json`, `{artifact}/.metadata/metadata.json`.
 
 **Why this matters:** it makes the artifact-namespace change the **last** transition that can degrade silently. Before it, an older reader against a newer repo found none of the fields it expected and reported an empty repo.
 
 **Do not:** Put the check inside a `tryCatch` that softens read failures -- the upgrade message gets reworded as "could not read manifest", or worse, downgraded to a warning. Read the document inside the handler, check it outside. Do not gate on `datom_version`: that records the writing package version (provenance), so gating on it would fire on harmless upgrades.
 
-**Write side:** not covered by these call sites. An older build writing into a newer repo is the more damaging direction and is owned by the `manifest$artifacts` rename task in the `datom-sets` spec.
+**Write side:** `.datom_check_write_schema(conn)`, called at the top of `datom_write()` for **every** write route -- above the routing decision, because one route mirrors the whole manifest to storage without touching a single artifact, and above any hashing, local write or commit, so a refusal leaves nothing half-written. It inspects the **clone's** manifest: git-tracked, so it arrives with every pull, and free to read. Three cases pass through untouched -- no clone (a reader-role connection fails later with a clearer message), no manifest file yet, and a manifest that will not parse (not a schema disagreement; the write fails on it moments later with the parser's own error). The refusal message says "cannot write" rather than "cannot read".
 
 ### Given data_sha, find metadata versions
 
