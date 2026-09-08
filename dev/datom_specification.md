@@ -1673,8 +1673,23 @@ existed carries none.** An absent field means version 1: the artifact list under
 `tables` and no `kind` on any entry. datom converts such a document to the current
 shape as it reads it, in memory, and leaves the file alone; a write converts the file
 itself and then stamps the version it reached. So a repo is never half in one shape
-and half in the other, and a pinned analysis keeps reading a repo somebody else
-upgraded.
+and half in the other.
+
+**The guarantee runs one way only, and it is worth being exact about which.** A
+**newer** build reads an **older** repo -- that is what the conversion buys, and it is
+why no manual migration exists. The reverse does not hold across this rename: once
+anyone writes, the manifest declares v2, and a build predating the change looks for the
+artifact list under a key that is no longer there. It reports an empty repo and does
+**not** error. Reading a known table still works, because the data path never touches
+the manifest, so what is lost is discovery rather than access. That asymmetry is the
+whole reason the format number was introduced first: from here on a build that meets a
+document too new for it says so instead of reporting nothing, and the write side refuses
+outright rather than producing a file for a shape nobody agreed on.
+
+**A write that converts a manifest says so**, naming what collaborators on an older
+datom will see until they upgrade. Conversion is one-way for everyone sharing the repo,
+and `datom_validate(fix = TRUE)` reaches it while reading as a repair, so an
+unannounced flip would be a silent degradation of somebody else's install.
 
 **Design rationale**: The "current" fields per table enable sync optimization. When `datom_sync_manifest()` runs, it compares local file SHAs against manifest. Only on mismatch does it fetch the full `version_history.json`. For repos with 100-300 tables, this avoids hundreds of S3 GETs on unchanged re-runs.
 

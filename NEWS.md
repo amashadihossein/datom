@@ -19,8 +19,26 @@ something has to police.
   counters cover every artifact that was already there rather than only the one
   just written.
 
+* **UPGRADE EVERYONE WHO SHARES A REPO BEFORE YOU WRITE TO IT.** The compatibility
+  above runs one way: a new build reads an old repo. The reverse does not hold.
+  After a single write from this version, the manifest declares the new format,
+  and an older datom looks for the artifact list under a key that is no longer
+  there -- so `datom_list()` returns an empty frame and `datom_summary()` and
+  `datom_status()` report zero, **without an error**. `datom_read()` is
+  unaffected: the data path never reads the manifest, so a collaborator who
+  knows a table name and version can still read it. What they lose is the
+  ability to discover what the repo holds.
+
+  A write that converts a repo now says so and names that consequence.
+  `datom_validate(fix = TRUE)` converts the copy in storage too, which is worth
+  knowing because it reads as a repair rather than as a format change.
+
 * **`datom_list()` gains a `kind` column**, on populated rows and on both of its
-  empty results.
+  empty results. Its empty results also gain **`current_data_sha`**, which
+  populated rows have always carried and they had always omitted -- so
+  `rbind()` of two listings no longer fails when one of them is empty. Both
+  columns arrive together, in this one release, rather than the second one
+  costing a later break of its own.
 
 * **`datom_summary()` gains `set_count`** beside `table_count`, and prints it.
   `table_count`, `total_versions` and `total_size_bytes` keep the meanings they
