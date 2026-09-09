@@ -22,7 +22,7 @@ written (`dev` @ `b57cdba`). **Cite these rather than re-deriving them.**
 | `volatile` exclusion list | `R/utils-sha.R:444-447` | `c("created_at", "datom_version", "parquet_sha", "column_hashes", "size_bytes")`. `schema_version` (R9.3) and `document_sha` (R7.4) join it. |
 | `datom_read()` never touches the manifest | `R/read_write.R:58-65` | Confirmed: `.datom_read_metadata()` -> `.datom_resolve_version()` -> `.datom_read_parquet()`. This is why the schema gate needs **two** sites (R9.2) and why the `artifacts` rename is discovery-only. |
 | `governance.json` dual-pointer pattern | `R/governance_json.R` | The model for the payload (R6.1): builder -> `.datom_write_*_local()` (git canonical) + `.datom_storage_write_*()` (mirror) + a `.datom_sync_*()` repair helper. Note the reader path (`.datom_storage_read_governance_json()`) works with **no clone** -- the precedent that makes AC1 achievable. |
-| Manifest producer | `.datom_update_manifest_entry()`, `R/sync.R:946-1031` | Single writer of `manifest$artifacts[[name]]` and of `manifest$summary`. The `artifacts` rename's write side is here and in the two places below. |
+| Manifest producer | `.datom_update_manifest_entry()`, `R/sync.R:946-1047` | Single writer of `manifest$artifacts[[name]]` and of `manifest$summary`. The `artifacts` rename's write side is here and in the two places below. |
 | Manifest initializer | `R/conn.R:520-528` | `datom_init_repo()` seeds `tables = structure(list(), names = character(0))` and `summary$total_tables`. Second write site for R8. |
 | Empty-manifest shape | `.datom_manifest_skeleton()`, `R/sync.R:759` | The one empty manifest, added by Task 5. Called when `.datom/manifest.json` is absent (`R/sync.R:969`) and by the two clone readers as their fallback. Third write site for R8. |
 | Manifest reader | `.datom_read_manifest()`, `R/sync.R:812` | The one read, added by Task 5: `scope` picks the storage copy or the clone copy, IO failures come back as data, a schema refusal is thrown. R8's old-format upgrade attaches here. |
@@ -589,7 +589,7 @@ impossible, no guard needed.** AC4 tests the resulting refusal.
 ### Blast radius (verified)
 
 Write side -- **three** sites (an earlier draft said two and missed the third):
-- `.datom_update_manifest_entry()`, `R/sync.R:1004,1014-1024` (entry + summary)
+- `.datom_update_manifest_entry()`, `R/sync.R:1020,1030-1040` (entry + summary)
 - the **skeleton written when `.datom/manifest.json` is absent** -- one place since Task 5,
   `.datom_manifest_skeleton()` at `R/sync.R:759`, called from `R/sync.R:969`. Left unrenamed, a repo
   with no local manifest writes a `tables` key *after* the rename -- the exact writer/reader

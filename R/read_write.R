@@ -799,6 +799,21 @@ datom_write <- function(conn,
   )
   meta$parquet_sha <- parquet_decision$parquet_sha
 
+  # 5a. Keep any top-level field the existing metadata document holds that this
+  #     build cannot place -- step 3 rebuilt the document from scratch, which
+  #     would otherwise delete it.
+  #
+  #     Placed here rather than in step 3 for the same reason parquet_sha is:
+  #     metadata_sha has already been computed. Identity ignores fields it does
+  #     not name, so either position gives the same hash today, but attaching
+  #     after the fact means a carried field cannot reach a hash at all -- no
+  #     later change to the identity field list can pull one in.
+  meta <- .datom_carry_unknown_fields(
+    meta,
+    .datom_prior_metadata(conn, name),
+    .datom_metadata_known_fields()
+  )
+
   # 6. Write metadata + manifest locally
   write_result <- .datom_write_metadata_local(
     conn, name, meta, metadata_sha,

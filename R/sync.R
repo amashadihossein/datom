@@ -1001,6 +1001,22 @@ datom_sync <- function(conn,
   if (!is.null(original_file_sha)) entry$original_file_sha <- original_file_sha
   if (!is.null(format)) entry$original_format <- format
 
+  # The row above was rebuilt from scratch, so a field this build cannot place
+  # would be deleted from it. Carry those forward. The existing row is taken from
+  # the already-converted document, so an upgrade step that moved or typed it has
+  # run first.
+  #
+  # The document's TOP level needs nothing equivalent, and that is worth knowing
+  # before restructuring this function: it is read from disk, three keys are
+  # edited, and it is written back, so an unfamiliar key beside `artifacts`
+  # survives because it is never touched. Rebuilding the document here instead of
+  # editing it would silently end that.
+  entry <- .datom_carry_unknown_fields(
+    entry,
+    manifest$artifacts[[name]],
+    .datom_manifest_entry_known_fields
+  )
+
   manifest$artifacts[[name]] <- entry
 
   # Update summary. Every existing counter keeps its current meaning, which is

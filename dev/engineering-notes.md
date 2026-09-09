@@ -92,6 +92,16 @@ in the R temp directory, then check `usethis:::get_release_data()` parses it.
   **return a value**, then branch on it outside the `tryCatch`
   (`fetched <- tryCatch({...; TRUE}, error = function(e) {...; FALSE}); if (!fetched) return(...)`).
   Worth grepping for whenever a handler's body ends in `return()`.
+- **`R/` is sourced ALPHABETICALLY, so a namespace-level constant may not be built from values
+  defined in a file that sorts later.** DESCRIPTION declares no `Collate`, so the order is filename
+  order and nothing else. Hit while adding `R/forward-compat.R`, which needs the union of two
+  vectors that live in `R/utils-sha.R`: `f` sorts before `u`, so a constant joining them would be
+  evaluated before either existed and the package would fail to **install** -- not at call time,
+  where it would be obvious. The fix is to make it a **function**, which looks them up when called;
+  it also cannot then fall out of step with either half. `R/manifest-upgrade.R`'s header records the
+  same hazard from the other side, where a lookup table holds function objects and so every entry
+  must be defined above it in that same file. Two rules, one cause: **anything evaluated while the
+  namespace is being built can only see what has already been sourced.**
 - **A `cli::cli_alert_warning()` is a MESSAGE, not a condition of class `warning`.** Test it with
   `expect_message()`; `expect_warning()` fails and reads as "the code did not warn at all", sending
   you after a nonexistent bug. Applies to every `cli_alert_*` -- only `cli::cli_warn()` signals a

@@ -15,7 +15,8 @@ Task 3 -> 2660 after Task 4 -> 2664 after Task 18 -> 2675 after the two operator
 that followed it (see the 2026-08-26 rows in the Decisions log) -> 2686 after Task 19 -> 2740
 after Task 5 -> 2748 after the escape-code fix that followed it -> 2836 after Task 6 -> 2861 after the
 four review findings that followed it -> 2863 after its purity audit -> **2867 after the two loose
-ends the second review pass found**. Report the count in every commit message; it must never drop.
+ends the second review pass found** -> **2898 after Task 20**. Report the count in every commit
+message; it must never drop.
 
 ---
 
@@ -25,14 +26,14 @@ ends the second review pass found**. Report the count in every commit message; i
 (`datom-sv1`), **Task 3** (`datom_storage_read_json()` + the relative-key validator), **Task 4**
 (the reader-side `schema_version` gate), **Task 18** (the `.datom_check_git_current()`
 fetch-failure defect, #104), **Task 19** (allowlist identity hashing, #100) **Task 5** (one
-manifest reader + one skeleton builder) and **Task 6** (the artifact-namespace rename plus the
-old-format conversion), plus three things
+manifest reader + one skeleton builder), **Task 6** (the artifact-namespace rename plus the
+old-format conversion) and **Task 20** (unfamiliar fields survive a write), plus three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
 this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 `.kiro/steering/communication.md`.
 
-**TASK 6 IS CLOSED, INCLUDING ITS ESCALATION. NOTHING IS OWED BEFORE TASK 20.** The rename shipped
+**TASKS 6 AND 20 ARE BOTH CLOSED. NOTHING IS OWED BEFORE TASK 21.** Task 6's rename shipped
 2026-09-08 -- `manifest$tables` is now `manifest$artifacts`, entries carry `kind`, both manifests and
 every per-artifact metadata document declare `schema_version: 2`, and a write into a repo whose format
 this build does not know is refused before any hashing or file write. The conversion that keeps
@@ -40,6 +41,18 @@ existing repos readable lives in the new `R/manifest-upgrade.R`: reads convert i
 file alone, writes convert the file and then stamp the version reached. All five of Task 6's open
 calls were taken at their stated defaults, each recorded with what shipped in the DONE record at the
 end of that task.
+
+**Task 20 shipped the same day**: a top-level field this build cannot place now survives a write
+instead of being deleted by the rebuild. It lives in a new `R/forward-compat.R` and is called from two
+places, `datom_write()` and the manifest entry updater. **Three things about it that a later change
+must not undo.** (1) The manifest's **top level** needed no code -- it survives because that document
+is read, edited and written back rather than rebuilt, so a refactor to rebuilding it would end the
+guarantee without failing anything except the one test written for exactly that. (2) **Only
+unplaceable fields are carried.** A field datom knows still disappears when the write does not set it,
+which is what stops a stale "this came from a CSV" claim outliving the version it described. (3)
+`.datom_metadata_known_fields()` is a **function** because `R/` is sourced alphabetically and that
+file sorts before the one holding the two halves it joins -- as a stored vector the package would not
+install.
 
 **It took four commits, not one, and two things the follow-ups changed will bite whoever edits this
 code next.** A review found four defects in the first commit, a purity audit followed, and a second
@@ -59,9 +72,9 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **2867** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **2898** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
-code/documentation agreement (tests and examples run separately). Next is **Task 20**.
+code/documentation agreement (tests and examples run separately). Next is **Task 21**.
 
 **The submission freeze still holds**: 0.1.2 is in flight, so `main` must keep matching what CRAN
 received, and this branch PRs into `dev`. Branch heads live in `dev/README.md` "Branching During CRAN
@@ -70,11 +83,15 @@ touching anything git-adjacent: three tools misbehave silently in a git worktree
 there rather than a directory, and one of them cost us the 0.1.2 submission record -- see
 `dev/engineering-notes.md`, "In a git worktree, `.git` is a FILE".
 
-**Next when work resumes**: **Task 20 -- carry unknown fields through a rewrite.** Task 6's purity
-audit is discharged, so nothing is owed before it. Task 20 has one dependency worth knowing before starting it: Task 6's conversion
-step renames the artifact key **in place**, so any sibling key it does not recognise already survives
-the conversion with its position intact. That is the half of Task 20's requirement the manifest's top
-level needs; per-artifact metadata and manifest entries are still to do.
+**Next when work resumes**: **Task 21 -- the writer refusals.** Nothing is owed before it. Three
+things Task 20 leaves sitting under it, so they are not re-derived. (1) The **vocabulary** the refusal
+reads already exists as `.datom_metadata_known_fields()`, the union of the identity list and the
+documented not-identity list -- append-only from here, and Task 20's carry-forward reads the same
+union, so the two cannot disagree about what "unrecognised" means. (2) Task 20 settled **which copy**
+to read: the clone's, not storage's, for all of it. (3) The refusal will make two of Task 20's three
+levels unreachable through `datom_write()`, which is expected and not a reason to remove them -- the
+refusal looks at top-level keys only, so an unfamiliar field **inside a manifest row** never trips it,
+and `datom_validate(fix = TRUE)` mirrors to storage without passing the door at all.
 
 **Two things Task 19 leaves for whoever adds a metadata field next.** (1) `metadata_sha` now selects
 fields by **allowlist**: `.datom_metadata_identity_fields` is identity,
@@ -552,7 +569,7 @@ necessary.
     clone by `datom_sync_manifest()` and `.datom_status_input_files()`, and that copy can be ahead
     of the installed build by an ordinary route: a collaborator upgrades datom and writes, this
     developer pulls. Left ungated, those two commands read a manifest shape this build does not
-    know. The four in-pipeline local reads (`R/sync.R:179`, `R/read_write.R:825`,
+    know. The four in-pipeline local reads (`R/sync.R:179`, `R/read_write.R:854`,
     `.datom_update_manifest_entry()`, `R/validate.R:257`) are **deliberately excluded**: the check
     belongs where a document enters datom, so a refusal happens before work starts rather than
     partway through a write.
@@ -729,8 +746,8 @@ own; landing it first is what makes Task 6's failure loud.
     and it removes the last two places that spelled an empty manifest by hand.
 
 - [x] **6. `manifest$tables` -> `manifest$artifacts`, typed by `kind`** &nbsp; **[ESCALATION E2 --
-  design spot-check DONE 2026-09-01; implemented 2026-09-08. THE PURITY AUDIT IS STILL OWED and
-  comes due now, before Task 20 -- see the DONE record at the end of this task]**
+  FULLY DISCHARGED: design spot-check 2026-09-01, implemented 2026-09-08, purity audit run and
+  discharged the same day. Nothing owed -- see the DONE record at the end of this task]**
   - Write side (**3** sites -- an earlier draft said 2 and missed the third):
     `.datom_update_manifest_entry()` (`R/sync.R:1004,1014-1024`); the **absent-manifest skeleton**,
     which Task 5 collapsed into `.datom_manifest_skeleton()` (`R/sync.R:759`, called at
@@ -750,7 +767,7 @@ own; landing it first is what makes Task 6's failure loud.
     `total_tables` / `total_size_bytes` / `total_versions` keep **current** semantics (tables
     only).
   - **FIVE counters silently widen to include sets, not three.** The three in the summary block
-    (`R/sync.R:1016,1017,1020`) plus two computed independently of it: `datom_summary()`'s
+    (`R/sync.R:1032,1033,1036`) plus two computed independently of it: `datom_summary()`'s
     `table_count` counts entries rather than reading the summary block (`R/summary.R:69`), and
     `datom_status()`'s count does the same and prints as "Tables on S3" (`R/query.R:488`). Each
     needs a `kind == "table"` filter. There are no sets until Task 9, so **every test passes either
@@ -1527,7 +1544,7 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - **The field inventory is fully discoverable from one function, verified 2026-08-26.** Every
     top-level key of a metadata document is assigned inside `.datom_build_metadata()`
     (`R/read_write.R:302-311` for the five conditional ones) with exactly one exception,
-    `meta$parquet_sha` at `R/read_write.R:786`, which is volatile. Nothing else in `R/` writes a
+    `meta$parquet_sha` at `R/read_write.R:800`, which is volatile. Nothing else in `R/` writes a
     top-level metadata key. So seeding the allowlist does not require a hunt: the semantic set today
     is `data_sha`, `hash_algo`, `table_type`, `nrow`, `ncol`, `colnames` always, plus
     `original_file_sha`, `parents`, `source_lineage`, `custom` when present. Recorded because an
@@ -1542,7 +1559,7 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     emits.** Verified: `metadata.json` is written as exactly the object `.datom_build_metadata()`
     produced (`R/read_write.R`, `write_json(metadata, ...)` inside
     `.datom_write_metadata_local()`), and that object has no `name` key; the `name` at
-    `R/read_write.R:774` and `R/read_write.R:834` is `datom_write()`'s **return value**, not the
+    `R/read_write.R:788` and `R/read_write.R:863` is `datom_write()`'s **return value**, not the
     document.
     So a builder-derived allowlist will not contain `name`, this fixture's hash **will** change, and
     the golden test fails -- while **no real identity moves at all**, because no stored document ever
@@ -1640,7 +1657,7 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     change, so no guard was added (I10a's spirit: no defensive code for a state nothing produces).
     Recorded so a later reader knows it was seen.
 
-- [ ] **20. Carry unrecognised fields forward on write (#100's missing half)**
+- [x] **20. Carry unrecognised fields forward on write (#100's missing half)** &nbsp; **[DONE 2026-09-08]**
   - Today the write path rebuilds metadata from scratch (`.datom_build_metadata()`), so an older build
     does not merely miscompute -- it **deletes** the field it did not understand.
   - Preserve unrecognised **top-level** keys at **three** levels: per-artifact metadata documents,
@@ -1652,6 +1669,76 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - Note this now only bites where a write is permitted at all (Task 21 refuses most such writes), and
     it is kept because the manifest-level and cross-role cases still exercise it.
   - _Requirements: R23.8. Properties: P38. Acceptance: AC34. No pathway impact -- record explicitly._
+  - **DONE 2026-09-08.** New `R/forward-compat.R` holds the whole of it:
+    `.datom_carry_unknown_fields()` (copy onto a rebuilt document every top-level field of the prior
+    document whose name this build cannot place), `.datom_metadata_known_fields()`,
+    `.datom_manifest_entry_known_fields` and `.datom_prior_metadata()`. Two call sites:
+    `datom_write()` step 5a (`R/read_write.R:802-815`) for the per-artifact document, and
+    `.datom_update_manifest_entry()` (`R/sync.R:1004-1018`) for the artifact's manifest row. New
+    `tests/testthat/test-forward-compat.R`, three internal `man/` pages, no new export, NAMESPACE and
+    `_pkgdown.yml` untouched. tests 2867 -> **2898** (+31), FAIL 0 / WARN 0 / SKIP 0;
+    `Rscript dev/check-spec.R` 9/9. **No pathway impact** -- no new lookup and no new traversal; two
+    documents gain fields on the way out of a step that was already there.
+  - **THE THIRD LEVEL NEEDED NO CODE, AND THAT IS THE ONE WORTH KNOWING BEFORE TOUCHING THIS AREA.**
+    The manifest's **top level** already survives, because `.datom_update_manifest_entry()` reads the
+    document, edits three keys and writes it back -- an unfamiliar key beside `artifacts` is never
+    touched. It is tested anyway: the guarantee is a property of *editing rather than rebuilding*, so a
+    later refactor that assembled a fresh document would take it away without failing anything else.
+    Proven by probe: making that function build from the skeleton instead of reading the file reddens
+    the top-level test. A comment at the site says so.
+  - **ONLY UNPLACEABLE FIELDS ARE CARRIED, and the alternative is worse rather than merely different.**
+    A field datom knows keeps exactly today's behaviour, including disappearing when the write does not
+    set it. The deciding case is `original_format` on a manifest row: a table imported from a CSV and
+    later written straight from a data frame has no format to declare, and the row must stop claiming
+    one. A blanket "keep whatever the new document does not mention" would leave that claim standing
+    against a version it does not describe -- a wrong statement, where the thing being avoided is only
+    a missing one. Two tests pin it (`custom` on the metadata document, `original_format` on the row)
+    plus a unit test, and all three redden under a blanket merge.
+  - **The merge happens after the version identity is computed**, next to the `parquet_sha`
+    assignment, not inside the builder. Identity already ignores fields it cannot place, so both
+    positions give the same hash today; attaching afterwards means a carried field cannot reach a hash
+    **at all**, so no later change to the identity field list can pull one in. A test asserts the
+    other half of the same point from outside: planting an unfamiliar field in both copies of a
+    document leaves the next write a no-op, so such a field mints no version by itself.
+  - **The prior document is read from the CLONE, not from storage** (`.datom_prior_metadata()`). It is
+    the file being overwritten, it is a local read rather than a round trip, and it is where a pull
+    from a collaborator on a newer datom lands. Storage cannot legitimately hold a newer document than
+    the clone, because git is written first and gates the mirror; if it does, that is drift and
+    `datom_validate()` owns drift. Same copy Task 21's checks read (R23.1a), so the door and this
+    merge cannot disagree about which document they are talking about.
+  - **`.datom_metadata_known_fields()` is a function, not a stored vector, and it has to be.** `R/` is
+    sourced alphabetically (DESCRIPTION declares no `Collate`), and `forward-compat.R` sorts **before**
+    `utils-sha.R` where both halves of the classification live -- so a constant built from them here
+    would be built from values that do not exist yet and the package would fail to install. Same trap
+    the `R/manifest-upgrade.R` header records for its step table, reached from the opposite direction.
+  - **The manifest row gets its own vocabulary and its own forcing function.** Eight names today,
+    listed by hand rather than derived from the row builder -- a vocabulary read off the builder's own
+    output could never disagree with it. The test writes a real artifact with both optional row fields
+    supplied and asserts every field on the resulting row is classified, so adding one without
+    classifying it fails rather than making that field look unplaceable and get carried forward stale
+    on every later write. **Task 9 will trip it** when it adds `member_count`, deliberately: the field
+    is not pre-listed.
+  - **EVERY GUARD WAS PROVEN TO FAIL BEFORE BEING TRUSTED, and each probe was reverted.** (a) Removing
+    the metadata merge reddens both halves of the metadata round trip, git and storage. (b) Removing
+    the row merge reddens both halves of the row round trip. (c) Rebuilding the manifest instead of
+    editing it reddens the top-level test **and** the row test. (d) Widening the merge to keep every
+    absent field reddens all three narrowness tests. (e) Adding an unclassified field to the metadata
+    builder reddens the metadata forcing function **while every pinned identity hash stays green** --
+    which is the allowlist's failure direction, visible only to that test. (f) Adding one to the row
+    builder reddens the row forcing function. Each of (e) and (f) names the offending field.
+  - **What Task 21 will make hard to reach, kept anyway.** Once the vocabulary refusal lands, a write
+    through `datom_write()`'s door will be refused when a **top-level** key cannot be placed -- so the
+    metadata and manifest-top-level cases become unreachable by that route. Two things keep them
+    earning their place: the refusal inspects top-level keys only, so an unplaceable field **inside a
+    manifest row** never triggers it and the row merge is the live case; and
+    `datom_validate(fix = TRUE)` reaches storage through `.datom_sync_data_metadata()` without passing
+    that door at all.
+  - **Three code citations elsewhere in this spec were ALREADY WRONG before this change**, found while
+    re-deriving the ones this change shifted, and fixed: two lines cited as `datom_write()`'s return
+    value and one cited as its in-pipeline manifest read all pointed at unrelated statements, as did
+    the `meta$parquet_sha` citation in Task 19's body. Check 5 cannot see this class -- it asserts a
+    cited line is not blank, nothing more -- so re-read citations by content after any insertion into
+    `R/`. This is the third consecutive session to find some.
 
 - [ ] **21. Writer refusals: vocabulary check, floor read, unreachable-shape check, entry sequence**
   - **Vocabulary check** (R23.1): refuse a write when a datom-owned document carries a **top-level**
@@ -1980,3 +2067,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-08 | **The counters' kind filter is one helper, because a predicate written out four times is a predicate that can differ once.** The post-landing review found the three counting sites aborting on an entry that is not a named list -- with "$ operator is invalid for atomic vectors" -- which the v1 conversion step **deliberately preserves**, since an entry with no shape has nothing to convert. `datom_status()` was the damaging one: it exists to describe a connection when the manifest cannot be trusted, and the count sits outside the error handling that gives it that tolerance, so a hand-edited manifest took the whole diagnostic down. Fixed by routing all four selections through `.datom_artifacts_of_kind()` rather than adding the same guard in four places. **What deliberately did not change**: an entry with no `kind` is still uncounted, no fallback to `"table"` -- skipping a shapeless entry and tolerating a missing type are different, and the second would let a read path that skipped the conversion produce roughly-right numbers instead of visibly wrong ones (R22.8). | R22.8, I28, Task 6 |
 | 2026-09-08 | **PURITY AUDIT DISCHARGED for Task 6 -- run LAST, after the review fixes, on owner's call.** The sequencing decision is worth keeping: an audit of a state about to change produces findings that go stale, and two of the four review fixes landed squarely in what an audit inspects (three fresh copies of one predicate, and a public return shape). So the audit went last. **Both questions it existed to answer were settled mechanically, not by reading.** (1) Is the suite blind to the silent blackout? No -- deleting the artifact key from the shared reader's returned document reddens **64 assertions across 36 tests**, covering all five readers and five `datom-cv1` end-to-end scenarios, so the ~40-fixture sweep did not cost the suite its teeth. (2) Did any swept fixture declare the version but omit `kind`, which counts as zero artifacts? No -- making an untyped entry abort inside the selection helper reddens exactly **one** test, the one that deliberately passes an untyped entry to prove it is not counted. That probe replaced a regex over the fixtures, which cannot see an entry spread across lines and fails silently when it misses one. **Two tests were passing whatever the code did and were tightened**: a print test asserting that a `Sets:` line exists (true with a count of zero -- now asserts the number) and a pattern-filter test asserting an empty result from a non-empty fixture (equally true if the manifest was never read -- now asserts the unfiltered call returns a row first). Nothing else changed: each of the five concerns has one home, stamping is still the two sites I29 requires, no read of the old key survives in `R/`, and `R CMD check` is 0/0/0. **One gap named rather than fixed**: the write door inspects the manifest only, and `.datom_sync_metadata()` (`R/utils-sha.R:538`) copies a per-artifact document from the clone to storage unchecked -- pre-existing, narrowed rather than introduced by Task 6, and it belongs with Task 21's entry sequence, which already reads all three documents at the door. | Task 6, Task 21, E2, I29, R22.8, R23.1a |
 | 2026-09-08 | **Two loose ends from a second review pass, both closed the same day.** (1) **The zero-row frame was still one column short**, in the case the first fix did not reach: `version_count` is opt-in, so `datom_list(include_versions = TRUE)` on an empty repo returned five columns where the same call on a populated repo returns six -- and a comment asserted no caller could ask for that. Fixed by having the frame take the flag rather than by rewording the comment, because it is the same defect the `current_data_sha` reversal was about and the same argument settles it. Proven non-vacuous: dropping the column reddens the new test. (2) **The metadata-only write route makes the door's check stale.** `datom_write(conn, name = )` reaches `.datom_sync_metadata()`, which pulls from the remote as its first act (`R/utils-sha.R:559`) -- after the door has read and checked the clone's manifest -- so a collaborator's newer-format manifest can arrive in that pull and the route carries on. Harmless in shipped code, because the route writes per-artifact metadata and never the manifest, so nothing can end up half in each format. Not harmless for Task 21, whose entry sequence begins with a fetch and then checks: if a route pulls again afterwards, the checks describe a state the route has already replaced. Written into Task 21's bullets as a decision it must make -- own the fetch, or re-check after it, not both. Also tightened: Task 6's record said "the only pull is inside the push", which is true of the table-write route and not of this one. | Task 6, Task 21, R8.4, I34, R23.4 |
+| 2026-09-08 | **TASK 20 IMPLEMENTED: a field this build cannot place now survives a write instead of being deleted by the rebuild.** New `R/forward-compat.R` with one merge helper and two vocabularies, called from `datom_write()` and from the manifest entry updater. **The finding that shaped it: only two of the three levels needed code.** The manifest's **top level** already survives, because that document is read, edited and written back rather than rebuilt -- so the guarantee there is a property of *editing*, and a later refactor to assembling a fresh document would remove it without failing anything else. Tested for exactly that, and proven by probe: building from the skeleton instead of reading the file reddens the top-level test. **The narrowness is the other decision, and the alternative is wrong rather than merely different**: only unplaceable fields are carried, so a field datom knows still disappears when the write does not set it. `original_format` decides it -- a table imported from a CSV and later written straight from a data frame has no format to declare, and a blanket keep-what-the-new-document-omits would leave that claim standing against a version it does not describe. A wrong statement is worse than a missing one, and three tests redden under the blanket form. **Placed after the version identity is computed**, beside the `parquet_sha` assignment: identity already ignores what it cannot place, so both positions hash the same today, but attaching afterwards means a carried field cannot reach a hash at all and no later change to the identity list can pull one in. **Six probes, each reverted**: removing either merge reddens both halves of its round trip (git and storage); rebuilding the manifest reddens the top-level test and the row test; widening the merge reddens all three narrowness tests; and an unclassified field added to either builder reddens that builder's forcing function, naming the field -- the metadata one while every pinned identity hash stays green, which is the allowlist's failure direction and visible only there. Tests 2867 -> **2898**, FAIL 0 / WARN 0 / SKIP 0; `check-spec.R` 9/9. No pathway impact. | Task 20, R23.8, P38, AC34 |
+| 2026-09-08 | **`.datom_metadata_known_fields()` is a function and not a stored vector, because `R/` is sourced alphabetically.** DESCRIPTION declares no `Collate`, so `forward-compat.R` is sourced **before** `utils-sha.R`, where the identity list and the not-identity list both live. A constant joining them here would be built from values that do not exist yet and the package would fail to install. Same trap `R/manifest-upgrade.R`'s header records for its step table, arrived at from the opposite direction -- there the rule is that a step must be defined *above* the table in the same file, here it is that a derived constant must not reach across files that sort later. Deriving at call time also means the union cannot fall out of step with either half. Worth a row because the obvious tidy-up is to make it a constant "for symmetry" with the two it joins. | Task 20, `R/forward-compat.R` |
+| 2026-09-08 | **The manifest row's vocabulary is hand-listed, not derived, and that is what makes its test a forcing function.** Eight names today. A vocabulary read off the row builder's own output could never disagree with the builder, so it would assert nothing; listing it by hand and then asserting every field of a real written row appears in it is what fails when someone adds a field without classifying it. The failure matters more than it looks: an unclassified row field would be treated as unplaceable and carried forward from the previous row on every later write, so it would go stale rather than being recomputed. **Task 9 will trip this deliberately** when it adds the set row's member count -- the name is not pre-listed. The metadata document needs no equivalent new list, since Task 19's classification test already polices that builder and this task only joins its two halves. | Task 20, Task 9, Task 19 |
+| 2026-09-08 | **Three live code citations were already wrong before this change, found while re-deriving the ones it shifted.** Two lines cited as `datom_write()`'s return-value `name` and one cited as its in-pipeline manifest read all pointed at unrelated statements, as did Task 19's citation of where `parquet_sha` is assigned. None was caused by this session: verified against the previous commit before repointing. Check 5 cannot see this class -- it asserts only that a cited line is not blank -- so the standing instruction holds and is now proven for a third consecutive session: after any insertion into `R/`, re-read citations **by content** with `SPEC_CHECK_SHOW_CITATIONS=1`. One imprecise citation was deliberately left: `R/sync.R:179` lands on the comment above the mirror route's manifest read rather than on the read itself, and the surrounding claim in Task 4's record -- that this site is an excluded raw local read -- was overtaken by Task 6 routing it through the shared reader. Left as a historical record rather than rewritten. | dev/check-spec.R, Task 20, Task 19 |

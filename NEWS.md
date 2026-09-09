@@ -70,6 +70,27 @@ something has to police.
 * The refusal message now says whether the build cannot *read* or cannot *write*
   the format it met.
 
+## A field this version does not recognise is no longer deleted
+
+Writing a table rebuilds its metadata document and its row in the manifest from
+scratch. Until now that quietly discarded any field the running version had
+never heard of -- which is what a document written by a newer datom looks like
+after you pull it. Those fields are now carried across the rewrite, at each of
+the three places one can sit: a table's own metadata document, its row in the
+manifest, and the fields beside the manifest's artifact list.
+
+* **Only unrecognised fields are carried.** A field datom does know still
+  behaves as before, including going away when the write does not set it. So a
+  table that was imported from a file and is later written straight from a data
+  frame stops claiming a source format, rather than keeping a stale one.
+
+* **Version identity is unaffected.** A carried field is attached after the
+  version has been computed, so a document holding one mints no new version by
+  itself and no existing version moves.
+
+* Nothing changes for a repo whose documents this version fully understands,
+  which is every repo it wrote itself.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package
