@@ -13,9 +13,9 @@ commits.
 **Test baseline**: 2460 at spec start -> 2482 after Task 1 -> 2572 after Task 2 -> 2612 after
 Task 3 -> 2660 after Task 4 -> 2664 after Task 18 -> 2675 after the two operator-facing fixes
 that followed it (see the 2026-08-26 rows in the Decisions log) -> 2686 after Task 19 -> 2740
-after Task 5 -> 2748 after the escape-code fix that followed it -> 2836 after Task 6 -> **2861 after the
-four review findings that followed it**. Report the count in every commit message; it must never
-drop.
+after Task 5 -> 2748 after the escape-code fix that followed it -> 2836 after Task 6 -> 2861 after the
+four review findings that followed it -> 2863 after its purity audit -> **2867 after the two loose
+ends the second review pass found**. Report the count in every commit message; it must never drop.
 
 ---
 
@@ -32,32 +32,36 @@ named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, lande
 this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 `.kiro/steering/communication.md`.
 
-**TASK 6 LANDED 2026-09-08 AND ONE THING IS OWED BEFORE TASK 20: the purity audit.** The rename
-shipped in one commit -- `manifest$tables` is now `manifest$artifacts`, entries carry `kind`, both
-manifests and every per-artifact metadata document declare `schema_version: 2`, and a write into a
-repo whose format this build does not know is refused before any hashing or file write. The
-conversion that makes existing repos keep working lives in the new `R/manifest-upgrade.R`: reads
-convert in memory and leave the file alone, writes convert the file and then stamp the version
-reached. All five of Task 6's open calls were taken at their stated defaults, and each is recorded
-with what shipped in the DONE record at the end of that task.
+**TASK 6 IS CLOSED, INCLUDING ITS ESCALATION. NOTHING IS OWED BEFORE TASK 20.** The rename shipped
+2026-09-08 -- `manifest$tables` is now `manifest$artifacts`, entries carry `kind`, both manifests and
+every per-artifact metadata document declare `schema_version: 2`, and a write into a repo whose format
+this build does not know is refused before any hashing or file write. The conversion that keeps
+existing repos readable lives in the new `R/manifest-upgrade.R`: reads convert in memory and leave the
+file alone, writes convert the file and then stamp the version reached. All five of Task 6's open
+calls were taken at their stated defaults, each recorded with what shipped in the DONE record at the
+end of that task.
 
-**THE PURITY AUDIT E2 REQUIRED IS DISCHARGED (2026-09-08).** Result and method are in the Decisions
-log and in the DONE record at the end of Task 6. Two tests were tightened; nothing else needed
-changing, and the two questions it existed to answer -- did the sweep leave the suite blind, and did
-any fixture end up typed-but-uncounted -- were both answered mechanically rather than by reading.
+**It took four commits, not one, and two things the follow-ups changed will bite whoever edits this
+code next.** A review found four defects in the first commit, a purity audit followed, and a second
+review pass found two loose ends; all of it is in the Decisions log (2026-09-08) and in Task 6's DONE
+record. The two worth knowing before you touch anything:
 
-**Task 6 was reviewed after it landed and four findings were fixed in a follow-up commit** -- three
-counters that aborted on a manifest entry the conversion step deliberately preserves, a conversion
-that flipped a shared repo's format without saying so, a `stop()` that could fire with an empty
-message, and `datom_list()`'s empty result missing a column its populated rows carry. The last one
-**reversed** one of Task 6's five defaulted calls. All four are in the Decisions log (2026-09-08) and
-in the DONE record at the end of Task 6.
+* **Selecting artifacts by `kind` goes through `.datom_artifacts_of_kind()` and nowhere else.** The
+  predicate had been written out at four sites and one copy lost a tolerance, which aborted
+  `datom_status()` on a manifest entry the conversion step deliberately preserves. Do not re-inline it.
+* **`datom_list()`'s zero-row frame is built by `.datom_empty_artifact_frame()`** and must carry the
+  same columns a populated result would, `version_count` included when `include_versions = TRUE`. Two
+  commits fixed two halves of that one defect; a third would be embarrassing.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **2861** tests
-(FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9. **Task 6 carried escalation E2 and its
-purity-audit half is now due**: 6 `R/` files edited, 1 added, ~40 fixtures swept across 8 test
-files, and a failure mode that presents as an empty list rather than an error. Per the default
-taken, it runs in-line and is reported before Task 20 starts.
+**The purity audit E2 required is DISCHARGED, and its method is the reusable part.** Both of its
+questions were answered by breaking the code on purpose and counting what reddened, not by reading:
+deleting the artifact key from the shared reader reddens 64 assertions across 36 tests, and making an
+untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
+were passing whatever the code did.
+
+**Start here.** Branch `spec/datom-sets`, working tree clean, **2867** tests
+(FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
+code/documentation agreement (tests and examples run separately). Next is **Task 20**.
 
 **The submission freeze still holds**: 0.1.2 is in flight, so `main` must keep matching what CRAN
 received, and this branch PRs into `dev`. Branch heads live in `dev/README.md` "Branching During CRAN
@@ -93,30 +97,32 @@ builds that already contain them. Everything else from the same review round -- 
 schema history table, the policy prose, the floor's tooling -- lands later without stranding anyone.
 The aim is that **0.1.1 is the last release needing a transition plan.**
 
-**Phase B was one task until 2026-08-23 and is now two** (owner-decided, after the E2 design audit).
-Read Phase B's own preamble before starting: it says which half is which and why the order matters.
-Task 6 still **carries escalation E2**, so per rule 5d its recommendation must be surfaced in that
-chunk's checkpoint message whether or not it still looks necessary.
+**Phase B is DONE, both halves** -- Task 5 the shared reader, Task 6 the rename itself. It was one task
+until 2026-08-23 and became two (owner-decided, after the E2 design audit) because the rename's failure
+mode is silent, so landing the reader first is what made the rename's own failure loud. Task 6's
+escalation E2 is fully discharged: the design spot-check before it, the purity audit after.
 
-**The audit found one blocking gap and it is the reason for the split.** Nothing upgraded an existing
-repo's manifest. Every repo written so far keeps its artifact list under `tables` and declares no
-schema version at all; the reader-side check tolerates that as v1, so such a repo passes the check
-and then meets a reader looking for `artifacts`, and every discovery command reports an empty repo
-without erroring. Two things that might have healed it do not: the entry updater stamps no schema
-version, and a no-change write returns at `R/read_write.R:787` before the manifest is touched. The
-remedy is R22 -- **read upgrades in memory, write upgrades on disk** -- and its full reasoning,
-including why refusing loudly is not an option, is in design.md 10.1 and 10.2.
+**The gap that caused the split, and what closed it.** Nothing upgraded an existing repo's manifest:
+every repo written before Task 6 keeps its artifact list under `tables` and declares no schema version,
+the reader-side check tolerates that as v1, so such a repo would have passed the check and then met a
+reader looking for `artifacts` -- every discovery command reporting an empty repo without erroring.
+Neither thing that might have healed it did: the entry updater stamped no schema version, and a
+no-change write returns at `R/read_write.R:787` before the manifest is touched. Closed by R22 --
+**reads upgrade in memory, writes upgrade on disk** -- shipped in Task 6 as `R/manifest-upgrade.R`. The
+full reasoning, including why refusing loudly was not an option, is in design.md 10.1 and 10.2, and it
+is worth reading before any later format change rather than re-deriving it.
 
-**Task 4's gate is live but inert, and Task 6 is what makes it fire.** Nothing writes
-`schema_version: 2` yet; Task 6's writer bump is the first thing that will, which is why the gate
-shipped first and fully tested. Two things about it that constrain Phase B:
-`.datom_check_schema_version()` already exists and must be **reused, not reimplemented**; and its
-**placement relative to error handling is load-bearing** -- three reader sites wrap their read in a
+**Task 4's gate now fires, because Task 6 is what writes the number.** Three things about it that a
+later change must preserve. `.datom_check_schema_version()` is the **one** implementation and gets
+reused rather than reimplemented -- Task 6 gave it an `operation` word and nothing else. Its
+**placement relative to error handling is load-bearing**: three reader sites wrap their read in a
 handler that softens failures, and a check placed inside one reworded the upgrade instruction as
 "could not read manifest" (`datom_status()` went further and downgraded it to a warning while
-continuing). Task 4 held that line with a comment at each site; Task 5 replaces the comment with
-structure, by having the shared reader **return** IO failures as data and **throw** schema refusals,
-so there is no handler left for a caller to put the check inside.
+continuing). Task 4 held that line with a comment at each site; Task 5 replaced the comment with
+structure, by having the shared reader **return** IO failures as data and **throw** schema refusals, so
+there is no handler left for a caller to put the check inside. And the **check runs before the
+conversion chain**, never after: there is no upgrade step for a version this build does not know, so the
+dispatcher must never see one (I32).
 
 **Task 3's validator is now the thing to reuse, not to rewrite.**
 `.datom_validate_rel_key()` (`R/utils-validate.R`) guards any *caller-supplied* whole key. The
@@ -133,9 +139,11 @@ code fix. The three places that hold it: `R/hashable-set.R` (implementation),
 constant. E1's discharge record and the four deltas it produced are in the Decisions log
 (2026-08-17); nothing about it is open.
 
-**Open with the owner**: **six items, all Task 6's and all defaulted, so silence is safe** -- the five
-design calls plus where the purity audit runs. They are stated with their defaults in the PAUSE block
-at the end of Task 6, not repeated here, so there is one copy to keep true. Nothing else is open: the
+**Open with the owner**: **nothing.** Task 6's six defaulted items were all taken at their defaults on
+2026-09-08 and each is recorded with what shipped in that task's DONE record; its purity audit is
+discharged. **One of the six was later reversed** by review and is logged as a reversal:
+`datom_list()`'s empty result now carries the columns a populated one does, where the recorded default
+had been to leave that difference alone. Nothing else is open either: the
 AC33(a) anchoring item that sat here on 2026-08-26 was decided the same day and **implemented as
 decided on 2026-08-28** -- the realistic fixture was pinned in its own commit under the pre-change
 code, and the `name`-bearing golden became AC33(b)'s test.
@@ -526,8 +534,9 @@ necessary.
   - Add `schema_version` **and** `document_sha` to the `volatile` list (that list is now
     `.datom_metadata_excluded_fields`, `R/utils-sha.R:444-447`, promoted from a local variable by
     Task 19; both names are still on it).
-  - Nothing writes `schema_version: 2` yet -- the gate lands tested-but-inert, so the writer bump
-    in Task 6 cannot be the first exercise of untested gate code.
+  - Nothing wrote `schema_version: 2` at the time this task shipped -- the gate landed
+    tested-but-inert on purpose, so that Task 6's writer bump could not be the first exercise of
+    untested gate code. Task 6 has since landed and the gate now fires.
   - _Requirements: R9, R7.4. Invariants: I4. Properties: P10, P11. Acceptance: AC7._
   - _Pathway impact: read route gains a version gate -- update `dev/datom_pathways.md`._
   - **DONE 2026-08-21.** New `.datom_check_schema_version()` + `.datom_supported_schema` in
@@ -973,12 +982,16 @@ own; landing it first is what makes Task 6's failure loud.
       5. **`datom_list()`'s two empty returns gain `kind` but not `current_data_sha`.** Those returns
          omit a column the populated rows carry -- pre-existing drift this task's body already notes.
          Fixing it changes a public shape nobody asked to change. *Default: leave the drift,
-         recorded.* **Drift left in place**, and now spelled out at the one function that builds the
-         zero-row frame -- both empty returns come from `.datom_empty_artifact_frame()`, so their
-         columns cannot drift from each other even though they differ from the populated rows. A test
-         asserts the two empty returns have identical column sets.
-    - **Also open, also defaulted**: the post-landing purity audit runs **in-line**, reported before
-      Task 20 starts. **Sequenced after the review fixes, owner-decided 2026-09-08**: an audit of a
+         recorded.* **REVERSED by review, 2026-09-08 -- the drift is gone.** Both empty returns come
+         from `.datom_empty_artifact_frame()`, which now carries every column a populated result
+         carries, `version_count` included when `include_versions = TRUE`. The default's reason was
+         already spent when it was written: the same commit added a `kind` column to that very shape.
+         And the difference was a defect, not a cosmetic one -- `rbind()` of frames with different
+         columns errors, so a caller collecting listings across projects broke as soon as one was
+         empty. Fixed in two goes, one column each; see the Decisions rows.
+    - **Also open, also defaulted -- and now DONE**: the post-landing purity audit ran in-line and is
+      discharged (2026-09-08); its method and result are in the bullet below and in the Decisions log.
+      **Sequenced after the review fixes, owner-decided 2026-09-08**: an audit of a
       state that is about to change produces findings that go stale, and two of the fixes land
       squarely in what the audit inspects (three fresh copies of one predicate, and a public shape).
       So the audit is the last check, not the first.
