@@ -91,6 +91,12 @@ test_that("returns empty data frame when pattern matches nothing", {
   )
 
   conn <- mock_datom_conn(list())
+
+  # The fixture has to be non-empty for the pattern to be what makes the result
+  # empty. Without this line the test passes just as well against a manifest
+  # nothing was read from at all -- the same green either way.
+  expect_equal(nrow(datom_list(conn)), 1)
+
   result <- datom_list(conn, pattern = "zzz_*")
 
   expect_equal(nrow(result), 0)

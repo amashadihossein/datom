@@ -41,6 +41,11 @@ convert in memory and leave the file alone, writes convert the file and then sta
 reached. All five of Task 6's open calls were taken at their stated defaults, and each is recorded
 with what shipped in the DONE record at the end of that task.
 
+**THE PURITY AUDIT E2 REQUIRED IS DISCHARGED (2026-09-08).** Result and method are in the Decisions
+log and in the DONE record at the end of Task 6. Two tests were tightened; nothing else needed
+changing, and the two questions it existed to answer -- did the sweep leave the suite blind, and did
+any fixture end up typed-but-uncounted -- were both answered mechanically rather than by reading.
+
 **Task 6 was reviewed after it landed and four findings were fixed in a follow-up commit** -- three
 counters that aborted on a manifest entry the conversion step deliberately preserves, a conversion
 that flipped a shared repo's format without saying so, a `stop()` that could fire with an empty
@@ -61,8 +66,8 @@ touching anything git-adjacent: three tools misbehave silently in a git worktree
 there rather than a directory, and one of them cost us the 0.1.2 submission record -- see
 `dev/engineering-notes.md`, "In a git worktree, `.git` is a FILE".
 
-**Next when work resumes**: **the purity audit Task 6 owes**, then **Task 20 -- carry unknown fields
-through a rewrite**. Task 20 has one dependency worth knowing before starting it: Task 6's conversion
+**Next when work resumes**: **Task 20 -- carry unknown fields through a rewrite.** Task 6's purity
+audit is discharged, so nothing is owed before it. Task 20 has one dependency worth knowing before starting it: Task 6's conversion
 step renames the artifact key **in place**, so any sibling key it does not recognise already survives
 the conversion with its position intact. That is the half of Task 20's requirement the manifest's top
 level needs; per-artifact metadata and manifest entries are still to do.
@@ -764,9 +769,11 @@ own; landing it first is what makes Task 6's failure loud.
     `R/hashable-set.R`. Apply it in the **one** place Task
     5 created. Concretely, inside `.datom_read_manifest()` (`R/sync.R:812`) the order is: read,
     then `.datom_check_schema_version()` -- which throws on a document too new to touch at all --
-    then the upgrade chain on what survives, then return. The record's four fields
-    (`ok` / `absent` / `manifest` / `error`) do not change shape; `manifest` simply comes back
-    upgraded. Task 22 later adds a rebuild branch at the same point, so keep the step separable
+    then the upgrade chain on what survives, then return. `manifest` simply comes back upgraded.
+    **The record gained a fifth field on 2026-09-08**, `declared` -- the version a document announced
+    before conversion -- so a caller that goes on to write the converted document can say the format
+    moved without re-deriving the comparison or reading the file twice. An earlier version of this
+    line said the four fields (`ok` / `absent` / `manifest` / `error`) do not change shape. Task 22 later adds a rebuild branch at the same point, so keep the step separable
     rather than inlined into the return. Read upgrades in memory and leaves the file alone; write
     upgrades the file, then stamps the version. Never stamp a version onto a document that was not upgraded first, and never
     write a v2-shaped entry into a file still declaring v1 -- that is how a file ends up half in
@@ -886,7 +893,9 @@ own; landing it first is what makes Task 6's failure loud.
       shared reader (`R/sync.R:812`) gains one line -- chain **after** `.datom_check_schema_version()`
       and before the return, kept separable for Task 22's rebuild branch; the entry updater
       (`R/sync.R:946`) chains what it read from disk, writes `kind` on the entry, stamps the version,
-      and filters its three summary counters; `datom_sync_manifest()`'s lookup moves to the new key.
+      and filters its three summary counters (**all four kind selections went through one helper,
+      `.datom_artifacts_of_kind()`, on 2026-09-08** -- the predicate was spelled out at each site and
+      one of those copies had lost a tolerance); `datom_sync_manifest()`'s lookup moves to the new key.
       `R/query.R`: `kind` column in `datom_list()`'s populated path **and** both empty returns;
       `datom_status()`'s count filtered; the input-file scan's lookup moved. `R/summary.R`:
       `table_count` filtered, new `set_count`, new print line. `R/conn.R`: the seed is built from the
@@ -1007,6 +1016,39 @@ own; landing it first is what makes Task 6's failure loud.
       reversed open call 5. Two claims in this record were also wrong and are corrected in place: only
       one of the three door tests asserted the message word (the other two were tightened), and the
       double read was justified by a pull that does not happen where it was said to.
+    - **PURITY AUDIT, 2026-09-08 -- discharged, two tests tightened, no code changed.** Run last
+      rather than first, so that it audited the state that actually shipped. Method and result, so
+      neither is re-derived:
+      1. **Is the suite blind to the failure this task exists to prevent?** No. Dropping the artifact
+         key from the shared reader's returned document -- the silent blackout itself -- reddens **64
+         assertions across 36 tests**, spanning all five readers plus five `datom-cv1` end-to-end
+         scenarios. The fixture sweep did not cost the suite its teeth.
+      2. **Did any swept fixture end up declaring the version but carrying no `kind`, which reads as
+         zero artifacts?** No. Making an untyped entry abort inside the selection helper reddens
+         exactly **one** test -- the one that deliberately passes an untyped entry to assert it is not
+         counted. Checked this way rather than by grepping the fixtures, because an entry spread over
+         several lines defeats the pattern and a false negative here is invisible.
+      3. **Two tests were passing whatever the code did.** `print.datom_summary shows the set count`
+         asserted that a `Sets:` line exists, which holds against a count that is always zero; it now
+         asserts the number. `returns empty data frame when pattern matches nothing` asserted an empty
+         result from a non-empty fixture, which holds equally if the manifest was never read; it now
+         asserts the unfiltered call returns a row first.
+      4. **Duplicated logic**: after the follow-up commit each of the five concerns has exactly one
+         home -- the reader, the skeleton, the conversion, the kind selection, and the zero-row frame.
+         Stamping is still the two sites I29 requires (the skeleton for a document being created, the
+         dispatcher for one being converted) and a third has not appeared.
+      5. **No surviving read of the old key in `R/`**, and every remaining `tables` in the tests is one
+         of: a v1 document handed to the conversion, one of the six preserved old-key tests, a
+         deliberately malformed JSON string, a namespace fixture that only reads `project_name`, or one
+         of the three documented return-value decoys.
+      6. **`R CMD check`** (docs, Rd, code/doc agreement; tests and examples skipped as they run
+         separately): 0 errors, 0 warnings, 0 notes.
+      **One gap it did not close, named rather than fixed**: the write door inspects the manifest only.
+      `.datom_sync_metadata()` (`R/utils-sha.R:538`) copies a per-artifact metadata document from the
+      clone straight to storage, and a document pulled from a collaborator on a newer datom would go
+      through unchecked. Pre-existing -- before Task 6 there was no write-side check at all -- so this
+      narrows the hole rather than leaving it where it was. Closing it belongs with Task 21, which is
+      already writing the entry sequence that reads all three documents at the door.
 
 ---
 
@@ -1900,3 +1942,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-08 | **REVERSED, one sitting later: `datom_list()`'s empty results now carry `current_data_sha`.** Task 6 recorded the opposite default with the reason "fixing it changes a public shape nobody asked to change." That reason was already spent when it was written -- the same commit added a `kind` column to that very shape and announced it in NEWS -- and the drift is a real defect, not a cosmetic one: `rbind()` of two frames with different columns errors outright, so a caller collecting listings across projects breaks the moment one of them is empty. Spending the break once, inside a window that is already breaking, beats owing it a release of its own. Recorded as a reversal rather than edited into the original call, because the useful lesson is the shape of the mistake: a "do not change a public shape" argument is worth much less in a release that is already changing that shape, and it should be re-tested against the rest of the commit rather than carried over from the plan. | R8.4, Task 6, AC30 |
 | 2026-09-08 | **A write that converts a manifest now announces it; reads stay silent.** From the post-landing review. Conversion is one-way for everybody else sharing the repo: after it, a build predating the rename lists the repo as empty **without erroring**, though `datom_read()` still works because the data path never touches the manifest -- a discovery blackout, not lost access. The flip was silent, and `datom_validate(fix = TRUE)` reaches it while reading as a repair, so a colleague's install could degrade because someone else ran a verification command. One line now fires from the two places that **persist** a conversion (the entry updater, which rewrites the tracked file, and the metadata sync, which mirrors to storage), naming the consequence and pointing at NEWS for the format-to-release mapping. **Reads deliberately say nothing**: a read changes nothing on disk, and a line on every `datom_list()` call is noise nobody can act on. The reader's record gained `declared` so the persisting caller does not re-derive the comparison or read the file twice. | R22.2, R22.3, R9.6, Task 6 |
 | 2026-09-08 | **The counters' kind filter is one helper, because a predicate written out four times is a predicate that can differ once.** The post-landing review found the three counting sites aborting on an entry that is not a named list -- with "$ operator is invalid for atomic vectors" -- which the v1 conversion step **deliberately preserves**, since an entry with no shape has nothing to convert. `datom_status()` was the damaging one: it exists to describe a connection when the manifest cannot be trusted, and the count sits outside the error handling that gives it that tolerance, so a hand-edited manifest took the whole diagnostic down. Fixed by routing all four selections through `.datom_artifacts_of_kind()` rather than adding the same guard in four places. **What deliberately did not change**: an entry with no `kind` is still uncounted, no fallback to `"table"` -- skipping a shapeless entry and tolerating a missing type are different, and the second would let a read path that skipped the conversion produce roughly-right numbers instead of visibly wrong ones (R22.8). | R22.8, I28, Task 6 |
+| 2026-09-08 | **PURITY AUDIT DISCHARGED for Task 6 -- run LAST, after the review fixes, on owner's call.** The sequencing decision is worth keeping: an audit of a state about to change produces findings that go stale, and two of the four review fixes landed squarely in what an audit inspects (three fresh copies of one predicate, and a public return shape). So the audit went last. **Both questions it existed to answer were settled mechanically, not by reading.** (1) Is the suite blind to the silent blackout? No -- deleting the artifact key from the shared reader's returned document reddens **64 assertions across 36 tests**, covering all five readers and five `datom-cv1` end-to-end scenarios, so the ~40-fixture sweep did not cost the suite its teeth. (2) Did any swept fixture declare the version but omit `kind`, which counts as zero artifacts? No -- making an untyped entry abort inside the selection helper reddens exactly **one** test, the one that deliberately passes an untyped entry to prove it is not counted. That probe replaced a regex over the fixtures, which cannot see an entry spread across lines and fails silently when it misses one. **Two tests were passing whatever the code did and were tightened**: a print test asserting that a `Sets:` line exists (true with a count of zero -- now asserts the number) and a pattern-filter test asserting an empty result from a non-empty fixture (equally true if the manifest was never read -- now asserts the unfiltered call returns a row first). Nothing else changed: each of the five concerns has one home, stamping is still the two sites I29 requires, no read of the old key survives in `R/`, and `R CMD check` is 0/0/0. **One gap named rather than fixed**: the write door inspects the manifest only, and `.datom_sync_metadata()` (`R/utils-sha.R:538`) copies a per-artifact document from the clone to storage unchecked -- pre-existing, narrowed rather than introduced by Task 6, and it belongs with Task 21's entry sequence, which already reads all three documents at the door. | Task 6, Task 21, E2, I29, R22.8, R23.1a |

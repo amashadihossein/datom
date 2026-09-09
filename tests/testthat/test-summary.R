@@ -285,7 +285,12 @@ test_that("print.datom_summary shows the set count", {
 
   out <- cli::cli_format_method(print(s))
 
-  expect_true(any(grepl("Sets:", out)))
+  # The NUMBER, not just the label: asserting that a "Sets:" line exists passes
+  # against a set count that is always zero, which is the failure this whole
+  # task's tests exist to notice.
+  sets_line <- out[grepl("Sets:", out)]
+  expect_length(sets_line, 1L)
+  expect_match(sets_line, "1")
 })
 
 
