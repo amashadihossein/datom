@@ -1153,6 +1153,39 @@ test_that("datom_list carries the kind column in both of its empty returns", {
 })
 
 
+test_that("datom_list's empty result matches a populated one with include_versions too", {
+  # The narrower case of the same defect: version_count is opt-in, and a caller
+  # can ask for it and get an empty repo, so the zero-row frame has to carry it
+  # whenever the same call would have carried it on a populated repo.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, s3_key) {
+      list(
+        schema_version = 2L,
+        artifacts = list(
+          dm = list(
+            kind = "table", current_version = "v1", current_data_sha = "d1",
+            last_updated = "2026-01-01", version_count = 3L
+          )
+        )
+      )
+    }
+  )
+  populated <- datom_list(mock_datom_conn(list()), include_versions = TRUE)
+  empty <- datom_list(
+    mock_datom_conn(list()), pattern = "zzz_*", include_versions = TRUE
+  )
+
+  expect_true("version_count" %in% names(populated))
+  expect_equal(names(empty), names(populated))
+  expect_equal(nrow(rbind(populated, empty)), 1)
+
+  # And it stays absent when it was not asked for.
+  expect_false("version_count" %in% names(
+    datom_list(mock_datom_conn(list()), pattern = "zzz_*")
+  ))
+})
+
+
 test_that("datom_list's empty result has the same columns as a populated one", {
   # Not cosmetic: rbind() of frames with different columns errors outright, so a
   # caller collecting results from several projects breaks as soon as one of them

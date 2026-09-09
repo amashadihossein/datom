@@ -9,10 +9,12 @@
 # asked to change", which stopped being a reason the moment the same release
 # added the kind column to that shape anyway.
 #
-# The `include_versions = TRUE` column is deliberately not here: it is opt-in on
-# a populated result and no caller can ask for a zero-row frame to carry it.
-.datom_empty_artifact_frame <- function() {
-  data.frame(
+# The opt-in version_count column has to be here too, for the same reason: a
+# caller CAN ask for it and get an empty repo, and then the frame they get back
+# is one column short of the frame the same call returns for a repo with
+# something in it.
+.datom_empty_artifact_frame <- function(include_versions = FALSE) {
+  frame <- data.frame(
     name = character(),
     kind = character(),
     current_version = character(),
@@ -20,6 +22,8 @@
     last_updated = character(),
     stringsAsFactors = FALSE
   )
+  if (isTRUE(include_versions)) frame$version_count <- integer()
+  frame
 }
 
 
@@ -87,7 +91,7 @@ datom_list <- function(conn,
 
   artifacts <- manifest$artifacts
   if (is.null(artifacts) || length(artifacts) == 0L) {
-    return(.datom_empty_artifact_frame())
+    return(.datom_empty_artifact_frame(include_versions))
   }
 
   table_names <- names(artifacts)
@@ -96,7 +100,7 @@ datom_list <- function(conn,
   if (!is.null(pattern)) {
     table_names <- table_names[grepl(utils::glob2rx(pattern), table_names)]
     if (length(table_names) == 0L) {
-      return(.datom_empty_artifact_frame())
+      return(.datom_empty_artifact_frame(include_versions))
     }
   }
 

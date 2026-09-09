@@ -38,7 +38,9 @@ something has to police.
   populated rows have always carried and they had always omitted -- so
   `rbind()` of two listings no longer fails when one of them is empty. Both
   columns arrive together, in this one release, rather than the second one
-  costing a later break of its own.
+  costing a later break of its own. With `include_versions = TRUE` the empty
+  result carries `version_count` as well, so the two forms of the call each
+  agree with themselves.
 
 * **`datom_summary()` gains `set_count`** beside `table_count`, and prints it.
   `table_count`, `total_versions` and `total_size_bytes` keep the meanings they
