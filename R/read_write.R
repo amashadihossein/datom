@@ -519,6 +519,12 @@ datom_read <- function(conn,
   exists_already <- purrr::some(
     history, ~ identical(.x$version %||% "", metadata_sha)
   )
+  # The new entry is PREPENDED and the existing ones are carried through
+  # untouched, which is also what keeps a field this build cannot place alive on
+  # an older entry -- there is no rebuild here to lose it. Do not "normalise"
+  # these entries on the way past: they describe versions this build may know
+  # nothing about, and an entry rewritten to today's field set would silently
+  # drop whatever a newer datom recorded on it.
   if (!exists_already) {
     history <- c(list(new_entry), history)
   }

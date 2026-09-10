@@ -71,6 +71,16 @@ fc_stored_manifest <- function(fx) {
   .datom_storage_read_json(fx$conn, ".metadata/manifest.json")
 }
 
+fc_clone_history <- function(fx, name) {
+  jsonlite::read_json(fs::path(fx$repo_dir, name, "version_history.json"))
+}
+
+fc_stored_history <- function(fx, name) {
+  .datom_storage_read_json(
+    fx$conn, .datom_artifact_meta_key(name, "version_history")
+  )
+}
+
 # Edit a JSON document in place, in the clone or in storage.
 fc_edit_clone_json <- function(path, edit) {
   doc <- jsonlite::read_json(path)
@@ -337,4 +347,39 @@ test_that("an unplaceable field beside the manifest's artifact list survives a w
 
   expect_identical(fc_clone_manifest(fx)$future_top_field, "keep me")
   expect_identical(fc_stored_manifest(fx)$future_top_field, "keep me")
+})
+
+
+# === round trip 4: an entry in the version history ============================
+
+test_that("an unplaceable field on a version-history entry survives a later write", {
+  # The fourth surface, and safe for the same reason as the manifest's top level:
+  # the history list is read and the new version is prepended, so an entry
+  # already in it is never rebuilt. Pinned rather than argued, because the
+  # property is invisible from the code that relies on it -- and two later tasks
+  # add fields to these entries (a payload integrity hash, and the commit a
+  # version was first published from), at which point a rebuild here would start
+  # destroying them.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, "dm", "version_history.json"),
+    function(history) {
+      history[[1]]$future_history_field <- "keep me"
+      history
+    }
+  )
+  first_version <- fc_clone_history(fx, "dm")[[1]]$version
+
+  fc_write(fx, fc_data(5))
+
+  history <- fc_clone_history(fx, "dm")
+  expect_length(history, 2L)
+  # Newest first, so the edited entry is now second -- and still carries it.
+  expect_identical(history[[2]]$version, first_version)
+  expect_identical(history[[2]]$future_history_field, "keep me")
+  expect_identical(
+    fc_stored_history(fx, "dm")[[2]]$future_history_field, "keep me"
+  )
 })

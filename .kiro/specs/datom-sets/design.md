@@ -661,7 +661,7 @@ section 11 analysed is outside our control; this one is entirely inside it.
 Nothing self-heals it either. `.datom_update_manifest_entry()` (`R/sync.R:946`) writes no
 `schema_version` on either branch, so stamping the version only in the absent-manifest skeleton
 would leave upgraded repos v2-shaped while still declaring v1 -- the gate then stays silent on
-exactly the repos it was built for. And a no-change write returns at `R/read_write.R:787`, before
+exactly the repos it was built for. And a no-change write returns at `R/read_write.R:793`, before
 the manifest is touched, so an idempotent re-run repairs nothing.
 
 Two properties were recorded as satisfied by Task 4 while the rename was queued to falsify them:
@@ -830,7 +830,7 @@ not survive into the implementation.
 ### 10.7 The write-path entry sequence
 
 Stated once, so the pieces compose. All of it sits directly after the `datom_conn` class check and
-**above** the two routing returns at `R/read_write.R:702` and `R/read_write.R:706` --
+**above** the two routing returns at `R/read_write.R:708` and `R/read_write.R:712` --
 `.datom_sync_data_metadata()` mirrors the whole manifest to storage (`R/sync.R:177`) without ever
 reaching the manifest-writing step, so anything placed after the router misses it.
 

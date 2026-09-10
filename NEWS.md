@@ -75,9 +75,9 @@ something has to police.
 Writing a table rebuilds its metadata document and its row in the manifest from
 scratch. Until now that quietly discarded any field the running version had
 never heard of -- which is what a document written by a newer datom looks like
-after you pull it. Those fields are now carried across the rewrite, at each of
-the three places one can sit: a table's own metadata document, its row in the
-manifest, and the fields beside the manifest's artifact list.
+after you pull it. Such a field now survives the rewrite, wherever it sits: a
+table's own metadata document, its row in the manifest, the fields beside the
+manifest's artifact list, and an entry in its version history.
 
 * **Only unrecognised fields are carried.** A field datom does know still
   behaves as before, including going away when the write does not set it. So a
