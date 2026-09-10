@@ -90,11 +90,16 @@ there rather than a directory, and one of them cost us the 0.1.2 submission reco
 things Task 20 leaves sitting under it, so they are not re-derived. (1) The **vocabulary** the refusal
 reads already exists as `.datom_metadata_known_fields()`, the union of the identity list and the
 documented not-identity list -- append-only from here, and Task 20's carry-forward reads the same
-union, so the two cannot disagree about what "unrecognised" means. (2) Task 20 settled **which copy**
-to read: the clone's, not storage's, for all of it. (3) The refusal will make two of Task 20's three
-levels unreachable through `datom_write()`, which is expected and not a reason to remove them -- the
-refusal looks at top-level keys only, so an unfamiliar field **inside a manifest row** never trips it,
-and `datom_validate(fix = TRUE)` mirrors to storage without passing the door at all.
+union, so the two cannot disagree about what "unrecognised" means -- and Task 20 also happens to have
+built **two of the three lists** the check needs, leaving one to write. (2) Task 20 settled **which
+copy** to read: the clone's, not storage's, for all of it. (3) The refusal will make **all three** of
+Task 20's coded levels unreachable through `datom_write()`, which is expected and not a reason to
+remove them: what stays live is the **version-history entry**, which R23.1's scope list does not
+include, and `datom_validate(fix = TRUE)`, which mirrors to storage without passing the door at all.
+**Corrected 2026-09-08** -- an earlier version of this sentence said "two of three", on the reading
+that a manifest **entry** is not a top-level key. R23.1 scopes the check to three documents and names
+manifest entries as one of them, so "top-level keys only" means *do not descend into a value*, not
+*ignore entries*.
 
 **Two things Task 19 leaves for whoever adds a metadata field next.** (1) `metadata_sha` now selects
 fields by **allowlist**: `.datom_metadata_identity_fields` is identity,
@@ -1776,13 +1781,18 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     builder reddens the metadata forcing function **while every pinned identity hash stays green** --
     which is the allowlist's failure direction, visible only to that test. (f) Adding one to the row
     builder reddens the row forcing function. Each of (e) and (f) names the offending field.
-  - **What Task 21 will make hard to reach, kept anyway.** Once the vocabulary refusal lands, a write
-    through `datom_write()`'s door will be refused when a **top-level** key cannot be placed -- so the
-    metadata and manifest-top-level cases become unreachable by that route. Two things keep them
-    earning their place: the refusal inspects top-level keys only, so an unplaceable field **inside a
-    manifest row** never triggers it and the row merge is the live case; and
-    `datom_validate(fix = TRUE)` reaches storage through `.datom_sync_data_metadata()` without passing
-    that door at all.
+  - **What Task 21 will make hard to reach, kept anyway -- and the first version of this bullet had
+    the scope wrong.** It said the refusal inspects top-level keys only, so an unplaceable field
+    **inside a manifest row** would never trigger it, which made the row merge the live case.
+    **Wrong**: R23.1 scopes the check to three documents and names manifest **entries** as one of them,
+    so "top-level keys only" means *do not descend into a value* -- not *ignore entries*. Corrected
+    2026-09-08 by the Task 21 cold-start audit, and swept in all four places it had reached.
+    The accurate position: once the refusal lands, **all three** of the levels this task coded become
+    unreachable through `datom_write()`'s door. Two things keep them earning their place, and the first
+    is stronger than what the wrong version claimed: the **version-history entry** is not in R23.1's
+    scope list at all, so its survival rests on nothing but this task's property -- which is why the
+    test for it matters rather than being belt-and-braces; and `datom_validate(fix = TRUE)` reaches
+    storage through `.datom_sync_data_metadata()` without passing that door.
   - **Three code citations elsewhere in this spec were ALREADY WRONG before this change**, found while
     re-deriving the ones this change shifted, and fixed: two lines cited as `datom_write()`'s return
     value and one cited as its in-pipeline manifest read all pointed at unrelated statements, as did
@@ -1794,10 +1804,25 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - **Vocabulary check** (R23.1): refuse a write when a datom-owned document carries a **top-level**
     key this build cannot classify. Evidence-based -- no version comparison, no config, no network.
     `custom` is **opaque** and classified as a whole.
+  - **THREE SCOPES, THREE LISTS -- and Task 20 already built two of them.** R23.1's scope is three
+    documents (per-artifact `metadata.json`, manifest **entries**, manifest **top level**), and
+    "top-level keys only" means *do not descend into a value*, not *skip the entries*. So there are
+    three vocabularies to check against, and as of 2026-09-08 the state is:
+    | Scope | List | Status |
+    |---|---|---|
+    | per-artifact `metadata.json` | `.datom_metadata_known_fields()` (`R/forward-compat.R`) | exists -- the union of the identity list and the documented not-identity list |
+    | a manifest **entry** | `.datom_manifest_entry_known_fields` (`R/forward-compat.R`) | exists -- eight names, with a test asserting every field a written row carries is on it |
+    | the manifest's **top level** | none | **write it.** Five names today: `schema_version`, `project_name`, `artifacts`, `summary`, `updated_at` -- verified by grepping every top-level assignment (`R/sync.R:761-763`, `R/sync.R:1030-1031`, `R/manifest-upgrade.R:134`, `R/conn.R:523-524`) |
+    Both existing lists are **append-only** and are read by the carry-forward rule as well, so the
+    check and the carry-forward cannot disagree about what "unrecognised" means -- keep the new one on
+    the same footing. **One decoy while grepping**: `datom_sync()` has a local data frame also called
+    `manifest` and assigns `manifest$result` / `manifest$error` to it (`R/sync.R:560-561`); those are
+    result columns, not manifest keys.
   - **Read the CLONE's copies, not storage** (R23.1a). This is the detail that makes the check
     possible at entry at all: the sequence has the manifest by then but **not** per-artifact
     metadata, which `datom_write()` does not touch until pipeline step 4 inside
-    `.datom_has_changes()` (`R/read_write.R:334-343`). All three documents exist as local files
+    `.datom_has_changes()` (`R/read_write.R:341-349`, the storage read being the last of those lines).
+    All three documents exist as local files
     (`{conn$path}/.datom/manifest.json`, `{conn$path}/{name}/metadata.json`), so this is a file read,
     it costs no round trip, and it works on the mirror-everything route where there is no single
     artifact name. **Do not implement the manifest half and skip the artifact half** -- that is the
@@ -1842,6 +1867,14 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     is a fetch, and if the checks at steps 2-5 run before a route's own pull, they are checking a state
     the route then replaces. Either the sequence owns the pull -- one fetch at step 1, no route pulling
     again afterwards -- or the checks that matter re-run after it. Decide which; do not leave both.
+  - **THE ONE HOLE TASK 6'S PURITY AUDIT LEFT FOR THIS TASK, so it is not met by surprise.** The write
+    door added by Task 6 inspects the **manifest** only. `.datom_sync_metadata()` (`R/utils-sha.R:538`)
+    copies a per-artifact metadata document from the clone straight to storage, so a document pulled
+    from a collaborator on a newer datom goes through unchecked. Pre-existing -- before Task 6 there was
+    no write-side check at all, so that task narrowed the hole rather than opening it -- and this
+    sequence is where it closes, because step 5 already reads all three documents at the door. Note
+    this is the **same route** as the staleness item below: it pulls after the door has read, so
+    whichever way that is settled has to cover this too.
   - **Say plainly that this binds 0.1.1 forward only** (R23.7). 0.1.0 has none of these checks and
     cannot be given them.
   - _Requirements: R23 (R23.1, R23.2, R23.2a, R23.3, R23.3a, R23.4, R23.5, R23.6, R23.7), R22.10.
@@ -2125,3 +2158,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-08 | **`document_sha` is the one name this build classifies and never writes, which makes it invisible to carry-forward -- Task 7 owns the consequence.** Verified mechanically rather than by reading: the vocabulary holds 17 names, the metadata builder emits 16, and the difference is `document_sha`, classified as not-identity by Task 4 before anything wrote it. Carry-forward only rescues names a build **cannot** place, so a metadata document arriving with `document_sha` on it loses the field on rewrite -- and silently, because the field takes no part in identity, so no version moves to signal the loss. **Unreachable today and still unreachable under Task 7 as specified**, which puts the field in `version_history.json`, where the fourth-surface property protects it. Recorded because the tempting later tidy-up is to move it into `metadata.json` beside the other hashes, and that is a decision with a consequence rather than a relocation. The reusable shape: **classifying a field ahead of writing it is not free** -- it buys identity-stability early and costs carry-forward protection until a builder emits it. | Task 20, Task 7, Task 4, R23.8 |
 | 2026-09-08 | **Process, from review of Task 20's own checkpoint message: a summary asserted five open calls "taken as defaulted" when the task's record contained none, and asserted the commit was unpushed without checking.** Both are the same failure in different clothes -- reporting a state from memory of what was planned rather than from what is written down or true. Fixed by recording the five calls in Task 6's shape, with the correction that they were **explicitly approved** rather than defaulted on silence, which is a stronger claim and the accurate one. The countermeasure for the second is procedural: verify remote state before describing it, exactly as the operational rule already requires before *retrying* a remote-mutating action. Recorded because Task 6's open-call discipline is what made the last two rounds checkable, and a summary that invokes that discipline without the record behind it spends its credibility for nothing. | Task 20, Task 6 |
 | 2026-09-08 | **CLASSIFY A FIELD WHEN YOU START WRITING IT, NEVER EARLIER -- now guidance plus a guard, owner-approved.** The `document_sha` finding generalises into a rule for whoever edits this package: classifying a name ahead of the code that produces it looks like preparation and quietly costs the field its protection, because carry-forward rescues only names a build **cannot** place. **The asymmetry that let it through, found by asking whether any guard existed**: the identity list has always carried a converse arm (nothing on it may be a field datom never writes -- added to block the rejected `name` shortcut), and neither the **not-identity** list nor the **manifest-row** list had one. `document_sha` sits on the first of those two. Both now do, with an explicit exception vector holding exactly one name and its reason; the row list needs no exception, since its eight names are precisely what a row carries with both optional fields supplied. **Three probes, each reverted**: a junk name on either list reddens that list's arm naming the field, and emptying the exception vector reddens it naming `document_sha` -- so the vector is load-bearing rather than decorative. The prose half is in `.github/copilot-instructions.md` (always loaded) and `dev/engineering-notes.md` (the mechanism, read before editing `R/`); the same edit fixed two stale claims there -- the carry-forward bullet said three levels where there are four, and the section heading said "two pitfalls" while carrying three, which is the restate-a-count defect these documents keep catching elsewhere. **Deliberately not user-facing**: this is a test and two developer documents, nothing in a user's session. tests 2902 -> **2905**. | Task 20, Task 7, R23.8, `dev/engineering-notes.md` |
+| 2026-09-08 | **COLD-START AUDIT FOR TASK 21: startable, after one correction and three additions. No escalation flag on it** (design.md 12 carries E1 and E2 only), so nothing is owed under rule 5d. The documented path was walked as a fresh reader and every claim in the task's body checked against the tree. **What held**: `R/utils-sha.R:559` really is the pull that makes the metadata-only route's door read stale; `R/sync.R:177` is the mirror route; the routing-return citations are right after this session's repointing; `datom_get_conn()` does parse `project.yaml` (`R/conn.R:930`), so the floor can ride on the conn as specified; and `custom` is on the identity list and hashed whole, so "opaque and classified as a whole" is true in code. **THE CORRECTION, and it is one I introduced yesterday**: Task 20's record claimed the refusal "inspects top-level keys only, so an unplaceable field inside a manifest row never trips it". R23.1 scopes the check to **three** documents and names manifest **entries** as one of them -- "top-level keys only" means *do not descend into a value*, not *ignore entries*. So all three of Task 20's coded levels become unreachable through the write door, and the case that stays live is the **version-history entry**, which R23.1's scope list does not include: the test written for it in the review round is load-bearing rather than belt-and-braces. The wrong claim had reached four places and is swept in all of them -- the classic defect this log records seven times, this time self-inflicted within one day of writing the rule against it. **THREE ADDITIONS to Task 21's body.** (1) **Three scopes means three lists, and Task 20 built two of them** -- `.datom_metadata_known_fields()` and `.datom_manifest_entry_known_fields` -- leaving only the manifest's **top level**, whose five names (`schema_version`, `project_name`, `artifacts`, `summary`, `updated_at`) were derived by grepping every top-level assignment rather than guessed, with the `datom_sync()` result-frame columns of the same name flagged as a decoy. Without this a reader would have reached for the metadata lists, which name `data_sha` and `colnames`. (2) **The hole Task 6's purity audit handed forward is now in the task's own body** -- `.datom_sync_metadata()` copies a per-artifact document to storage unchecked -- rather than only in Task 6's record, and it is noted as the same route as the staleness item, so one decision covers both. (3) One citation repointed: `R/read_write.R:334-343` landed on roxygen, and the storage read it was pointing at is at `349`. | Task 21, Task 20, R23.1, R23.1a |
