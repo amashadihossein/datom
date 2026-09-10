@@ -92,6 +92,21 @@ in the R temp directory, then check `usethis:::get_release_data()` parses it.
   **return a value**, then branch on it outside the `tryCatch`
   (`fetched <- tryCatch({...; TRUE}, error = function(e) {...; FALSE}); if (!fetched) return(...)`).
   Worth grepping for whenever a handler's body ends in `return()`.
+- **A metadata field name that is CLASSIFIED but not yet WRITTEN is invisible to carry-forward, so
+  classifying one early is not free.** The keep-unfamiliar-fields rule
+  (`.datom_carry_unknown_fields()`) rescues exactly the names a build **cannot** place -- so the
+  moment a name appears in `.datom_metadata_identity_fields` or
+  `.datom_metadata_excluded_fields`, the rule stops seeing it. If a document then arrives from a
+  newer datom carrying that field, this build rewrites the document without it. On the *not-identity*
+  list the loss is **silent**: the field takes no part in `metadata_sha`, so no version moves and
+  nothing in the output says anything happened. `document_sha` is the live example and the reason this
+  entry exists -- classified by the reader-side schema work before any code produced it, and now the
+  one name in the vocabulary that no builder emits. It is safe only because the task that starts
+  writing it puts it in `version_history.json`, whose entries are appended to rather than rebuilt.
+  **So: classify a field in the same change that starts writing it.** If you genuinely must classify
+  earlier, add the name to the exception vector in the classification test
+  (`test-utils-sha.R`) with the reason, which is what makes the next person meet the decision instead
+  of inheriting it.
 - **`R/` is sourced ALPHABETICALLY, so a namespace-level constant may not be built from values
   defined in a file that sorts later.** DESCRIPTION declares no `Collate`, so the order is filename
   order and nothing else. Hit while adding `R/forward-compat.R`, which needs the union of two

@@ -213,6 +213,14 @@ test_that("every field written onto a manifest row is in the row vocabulary", {
 
   expect_identical(setdiff(names(row), .datom_manifest_entry_known_fields),
                    character())
+
+  # The converse, for the same reason the metadata lists have one: a name on this
+  # list that nothing writes is invisible to the carry-forward rule, so a row
+  # arriving from a newer datom with that field on it would lose it. No exception
+  # is needed here today -- the list is exactly what a row carries when both of
+  # its optional fields are supplied, which is what this fixture does.
+  expect_identical(setdiff(.datom_manifest_entry_known_fields, names(row)),
+                   character())
 })
 
 

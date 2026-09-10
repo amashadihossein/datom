@@ -237,7 +237,11 @@ from either field, and it is the only question a refusal message raises.
 
 For per-artifact metadata the four rules are **absolute**: additive only, forever.
 
-### Two pitfalls worth knowing before you touch either file
+### Pitfalls worth knowing before you touch either file
+
+<!-- Deliberately not counted in the heading. It read "Two pitfalls" while carrying three, which is
+     the same restate-a-count defect these documents keep finding elsewhere. Derive the list. -->
+
 
 - **Identity hashing must select fields by allowlist, never by exclusion.** Hashing
   everything-except-a-list means a build that has never heard of a field folds it into the hash and
@@ -245,10 +249,19 @@ For per-artifact metadata the four rules are **absolute**: additive only, foreve
   the more dangerous way if untested: it silently *excludes* a new field, so identity quietly stops
   responding to real content. Whenever you add a field to a metadata builder, classify it -- in the
   hash list or on the documented excluded list -- and there is a test that fails if you do not.
+- **Classify a field WHEN you start writing it, never earlier.** Classifying a name ahead of the code
+  that produces it looks like tidy preparation and quietly costs the field its protection: the
+  carry-forward rule below rescues only names a build cannot place, so a name that is already on a
+  list is invisible to it. A document arriving from a newer datom with that field on it therefore
+  loses it on rewrite -- silently, if the field is on the not-identity list, because no version moves
+  to signal the loss. If you must classify early, say why at the site and add the name to the
+  exception list in the classification test, which is what forces the decision into the open.
 - **A field added to any datom-owned document is never destroyed by a build that does not understand
-  it.** Preserve unrecognised top-level keys rather than rebuilding the document from scratch, at all
-  three levels: per-artifact metadata, manifest entries, manifest top level. The reason is information
-  loss, not version churn -- churn settles either way.
+  it.** Preserve unrecognised top-level keys rather than rebuilding the document from scratch, at
+  **four** levels: per-artifact metadata, manifest entries, manifest top level, and version-history
+  entries. The reason is information loss, not version churn -- churn settles either way. Two of the
+  four need no code, because those documents are read-edited-written rather than rebuilt; they are
+  tested anyway, since a refactor to rebuilding removes the guarantee without failing anything else.
 - **A silent repair is a silent degradation.** If a read path recovers from an unreadable document
   -- by rebuilding a derived file, for instance -- it must say so and point at the upgrade. A
   recovery nobody is told about becomes a permanent invisible fallback, which is the failure the

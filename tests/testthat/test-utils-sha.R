@@ -1064,6 +1064,41 @@ test_that("every field a metadata builder emits is classified", {
                    character(0))
 })
 
+# Names classified before anything writes them. Each entry is a decision that
+# needs a reason, which is why the list is here rather than derived.
+#
+#   document_sha  the byte checksum of a stored JSON payload. Classified by the
+#                 reader-side schema work, before the set artifact that produces
+#                 it existed. Kept out of identity deliberately: it is a fact
+#                 about stored bytes, not about content.
+#
+# Adding a name here is the point at which to read the classify-late note in
+# `dev/engineering-notes.md`, because the cost is not obvious: a classified name
+# is invisible to `.datom_carry_unknown_fields()`, which rescues only names a
+# build cannot place. So a document arriving from a newer datom with that field
+# on it loses it on rewrite -- silently, for a not-identity field, since no
+# version moves to signal it.
+metadata_classified_before_written <- c("document_sha")
+
+test_that("nothing is classified before something writes it, except by decision", {
+  # The converse arm the identity list has always had, extended to the
+  # not-identity list -- which is where it was missing, and where `document_sha`
+  # slipped through. The value is not in today's result: it is that the next
+  # early classification cannot happen without editing the vector above and
+  # meeting the reason for it.
+  emitted <- names(builder_metadata_fixture(optional = TRUE))
+
+  unwritten <- setdiff(.datom_metadata_excluded_fields, emitted)
+
+  expect_identical(setdiff(unwritten, metadata_classified_before_written),
+                   character(0))
+
+  # And the exception list does not outlive its exceptions: once a builder starts
+  # emitting one of these, its name comes off the list.
+  expect_identical(intersect(metadata_classified_before_written, emitted),
+                   character(0))
+})
+
 test_that("a field is classified exactly once", {
   # A name in both lists would make its treatment depend on which list a reader
   # consulted, and both lists are documentation as much as code.
