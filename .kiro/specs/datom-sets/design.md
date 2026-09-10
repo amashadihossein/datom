@@ -26,7 +26,7 @@ written (`dev` @ `b57cdba`). **Cite these rather than re-deriving them.**
 | Manifest initializer | `R/conn.R:520-528` | `datom_init_repo()` seeds `tables = structure(list(), names = character(0))` and `summary$total_tables`. Second write site for R8. |
 | Empty-manifest shape | `.datom_manifest_skeleton()`, `R/sync.R:759` | The one empty manifest, added by Task 5. Called when `.datom/manifest.json` is absent (`R/sync.R:969`) and by the two clone readers as their fallback. Third write site for R8. |
 | Manifest reader | `.datom_read_manifest()`, `R/sync.R:812` | The one read, added by Task 5: `scope` picks the storage copy or the clone copy, IO failures come back as data, a schema refusal is thrown. R8's old-format upgrade attaches here. |
-| Manifest consumers | `R/query.R:92,109` (`datom_list()`), `R/query.R:488` (`datom_status()`), `R/query.R:605` (`.datom_status_input_files()`), `R/summary.R:68` (`datom_summary()`), `R/sync.R:420` (`datom_sync_manifest()`) | The field accesses on the document the reader returns. These are what R8's rename edits; the read itself is one place. |
+| Manifest consumers | `R/query.R:92,109` (`datom_list()`), `R/query.R:488` (`datom_status()`), `R/query.R:605` (`.datom_status_input_files()`), `R/summary.R:68` (`datom_summary()`), `R/sync.R:411` (`datom_sync_manifest()`) | The field accesses on the document the reader returns. These are what R8's rename edits; the read itself is one place. |
 | cv1 reference + parity workflow | `dev/datom_cv1_reference.R`, `.github/workflows/cv1-reference-parity.yaml` | The template for the `datom-sv1` reference + goldens (R2.4). Note the workflow exists because `dev/` is `.Rbuildignore`d, so the parity test *skips* inside a built tarball -- the sv1 goldens inherit that hazard and must be wired into the same workflow. |
 | `.datom_canonical_hash()` zero-dim abort | `R/utils-sha.R`, `.datom_canonical_hash()` | `nrow == 0 || ncol == 0` aborts. AC5 asks for the deliberate set analogue. |
 
@@ -603,7 +603,7 @@ that consume the document it returns, which are what the rename actually edits:
 - `datom_status()`, `R/query.R:488`
 - `.datom_status_input_files()`, `R/query.R:605`
 - `datom_summary()`, `R/summary.R:68`
-- `datom_sync_manifest()`, `R/sync.R:420`
+- `datom_sync_manifest()`, `R/sync.R:411`
 
 `datom_validate()` reads the manifest only for `project_name` (`R/validate.R`,
 `.datom_validate_project_name()`) so it is unaffected by the rename itself -- but it is affected
@@ -830,8 +830,8 @@ not survive into the implementation.
 ### 10.7 The write-path entry sequence
 
 Stated once, so the pieces compose. All of it sits directly after the `datom_conn` class check and
-**above** the two routing returns at `R/read_write.R:708` and `R/read_write.R:712` --
-`.datom_sync_data_metadata()` mirrors the whole manifest to storage (`R/sync.R:177`) without ever
+**above** the two routing returns at `R/read_write.R:711` and `R/read_write.R:715` --
+`.datom_sync_data_metadata()` mirrors the whole manifest to storage (`R/sync.R:182`) without ever
 reaching the manifest-writing step, so anything placed after the router misses it.
 
 ```
@@ -856,7 +856,7 @@ check Task 4 wired was, so silence there lands on storage, which adds a network 
 inspects the wrong copy.
 
 The clone is correct at both for the same four reasons: it is the document the write mutates
-(`R/sync.R:964`), it is a file read rather than a round trip, it is where a pull from a newer
+(`R/sync.R:984`), it is a file read rather than a round trip, it is where a pull from a newer
 collaborator lands, and storage cannot legitimately be ahead of git (I5). Full argument and the two
 rejected alternatives for step 5 are in R23.1a.
 

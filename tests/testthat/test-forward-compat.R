@@ -95,6 +95,33 @@ fc_write <- function(fx, data, name = "dm", ...) {
   suppressMessages(datom_write(fx$conn, data = data, name = name, ...))
 }
 
+# HOLDING THE DOOR OPEN, and why four round trips below need it.
+#
+# The write entry now REFUSES a document carrying a field it cannot place, on
+# exactly the three documents the carry-forward rule covers -- so the two levels
+# that need code to survive a rewrite can no longer be reached through
+# `datom_write()` at all. That is the intended interaction, not a conflict: a
+# build that meets an unfamiliar field should stop rather than rewrite the
+# document, and carrying the field is what makes the write harmless if it ever
+# does proceed.
+#
+# The merge is still worth pinning, for two reasons. The version-history entry
+# below is genuinely live -- the refusal's scope does not include that document.
+# And the day a release widens what the door accepts, the merge behind it has to
+# already work; a merge that quietly broke while unreachable would ship as a
+# silent field deletion on the first write that got through.
+#
+# So these four suppress the refusal and assert the merge. They do NOT suppress
+# the schema check or the shape check, which are separate steps.
+fc_hold_door_open <- function() {
+  local_mocked_bindings(
+    .datom_check_document_vocabulary = function(doc, known, source) {
+      invisible(NULL)
+    },
+    .env = parent.frame()
+  )
+}
+
 fc_data <- function(n) {
   data.frame(id = seq_len(n), grp = rep("a", n), stringsAsFactors = FALSE)
 }
@@ -249,6 +276,7 @@ test_that("an unparseable prior metadata document reads as absent, not as an err
 # === round trip 1: a table's own metadata document ============================
 
 test_that("an unplaceable field in a table's metadata survives a write, in git and in storage", {
+  fc_hold_door_open()
   fx <- local_fc_project()
   fc_write(fx, fc_data(3))
 
@@ -283,6 +311,7 @@ test_that("a KNOWN metadata field the write did not set is still dropped", {
 test_that("an unplaceable metadata field does not mint a version on its own", {
   # Identity ignores fields it cannot place, so planting one in both copies
   # leaves the write a no-op -- and the field is still there afterwards.
+  fc_hold_door_open()
   fx <- local_fc_project()
   fc_write(fx, fc_data(3))
 
@@ -301,6 +330,7 @@ test_that("an unplaceable metadata field does not mint a version on its own", {
 # === round trip 2: one row of the manifest ====================================
 
 test_that("an unplaceable field on a manifest row survives a write, in git and in storage", {
+  fc_hold_door_open()
   fx <- local_fc_project()
   fc_write(fx, fc_data(3))
   first_version <- fc_clone_manifest(fx)$artifacts$dm$current_version
@@ -343,6 +373,7 @@ test_that("an unplaceable field beside the manifest's artifact list survives a w
   # This one holds because the manifest is read, edited and written back rather
   # than rebuilt. Tested anyway: a refactor to rebuilding it would take the
   # guarantee away without failing anything else.
+  fc_hold_door_open()
   fx <- local_fc_project()
   fc_write(fx, fc_data(3))
 
@@ -390,4 +421,395 @@ test_that("an unplaceable field on a version-history entry survives a later writ
   expect_identical(
     fc_stored_history(fx, "dm")[[2]]$future_history_field, "keep me"
   )
+})
+
+
+# =============================================================================
+# The write entry: floor, schema, reachable shape, vocabulary
+# =============================================================================
+#
+# What these defend. A build that meets a document it cannot fully account for
+# must stop rather than rewrite it, because the rewrite recomputes the version
+# identity from the fields this build knows -- reaching a different answer from
+# the build that wrote it, on content that never moved. Reads limp, writes stop.
+#
+# The refusals must never fire on the UPGRADE direction, which is the direction
+# that always has to work, so each section carries the corresponding
+# proceeds-normally case beside the refusal.
+
+
+# --- the vocabulary check -----------------------------------------------------
+
+test_that("a top-level field the build cannot place refuses the write, naming it", {
+  err <- expect_error(
+    .datom_check_document_vocabulary(
+      list(data_sha = "abc", future_field = 1),
+      .datom_metadata_known_fields(),
+      "dm/metadata.json"
+    ),
+    class = "datom_vocabulary_unknown"
+  )
+  # Naming the field is the whole recourse: without it the user cannot tell
+  # which document changed under them, or by how much.
+  expect_match(conditionMessage(err), "future_field")
+  expect_match(conditionMessage(err), "dm/metadata.json")
+})
+
+test_that("a document whose every field classifies passes silently", {
+  expect_silent(
+    .datom_check_document_vocabulary(
+      list(data_sha = "abc", hash_algo = "datom-cv1", nrow = 3L),
+      .datom_metadata_known_fields(),
+      "dm/metadata.json"
+    )
+  )
+})
+
+test_that("custom is opaque -- its contents are never treated as unrecognised", {
+  # `custom` holds arbitrary user keys by design, so it is classified as one
+  # field and never descended into. Without this the check would refuse any
+  # document whose user metadata datom has not seen before, which is all of it.
+  expect_silent(
+    .datom_check_document_vocabulary(
+      list(
+        data_sha = "abc",
+        custom = list(anything = 1, at_all = list(deeply = "nested"))
+      ),
+      .datom_metadata_known_fields(),
+      "dm/metadata.json"
+    )
+  )
+})
+
+test_that("a retired field name still classifies", {
+  # `tables` is what the manifest's artifact list was called before schema v2.
+  # Documents carrying it exist unchanged in the world, so the name stays in the
+  # vocabulary forever. A build that pruned it would meet an OLDER file, fail to
+  # place a key it should know, and refuse -- blocking the upgrade direction.
+  expect_true("tables" %in% .datom_manifest_known_fields)
+
+  expect_silent(
+    .datom_check_document_vocabulary(
+      list(project_name = "p", tables = list()),
+      .datom_manifest_known_fields,
+      ".datom/manifest.json"
+    )
+  )
+})
+
+test_that("a document with no top-level names is left to fail on its own terms", {
+  # Not this check's job to report a malformed document, and reporting it here
+  # would send the user to upgrade datom over a truncated file.
+  expect_silent(.datom_check_document_vocabulary(
+    "not a document", .datom_manifest_known_fields, "m.json"
+  ))
+  expect_silent(.datom_check_document_vocabulary(
+    list("unnamed"), .datom_manifest_known_fields, "m.json"
+  ))
+})
+
+test_that("the manifest top-level vocabulary covers what a real write produces", {
+  # The forcing function for that list. It is hand-written rather than derived
+  # from the writer, because a vocabulary read off the writer's own output could
+  # never disagree with it -- and then adding a field without classifying it
+  # would pass here and refuse every subsequent write on a real repo.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  expect_setequal(
+    setdiff(names(fc_clone_manifest(fx)), .datom_manifest_known_fields),
+    character()
+  )
+})
+
+
+# --- the writer floor ---------------------------------------------------------
+
+test_that("a repo declaring a newer writer than this build refuses the write", {
+  conn <- mock_datom_conn(list())
+  conn$min_writer_version <- "999.0.0"
+
+  err <- expect_error(
+    .datom_check_writer_floor(conn),
+    class = "datom_writer_floor"
+  )
+  expect_match(conditionMessage(err), "999.0.0")
+  expect_match(conditionMessage(err), as.character(utils::packageVersion("datom")))
+})
+
+test_that("no declared floor means no floor -- nothing changes at all", {
+  # Every repo written so far is in this state, so this is the clause that keeps
+  # the mechanism from being a breaking change on the day it ships.
+  conn <- mock_datom_conn(list())
+  expect_null(conn$min_writer_version)
+  expect_silent(.datom_check_writer_floor(conn))
+})
+
+test_that("a floor at or below this build passes", {
+  conn <- mock_datom_conn(list())
+
+  conn$min_writer_version <- as.character(utils::packageVersion("datom"))
+  expect_silent(.datom_check_writer_floor(conn))
+
+  conn$min_writer_version <- "0.0.1"
+  expect_silent(.datom_check_writer_floor(conn))
+})
+
+test_that("an unusable floor value aborts rather than being ignored", {
+  # Treating a malformed policy field as an absent one turns a typo into a
+  # silently disabled policy -- the failure this whole section exists to avoid,
+  # arriving through the mechanism meant to prevent it.
+  conn <- mock_datom_conn(list())
+
+  for (bad in list("not a version", "", NA_character_, list("0.1.0"))) {
+    conn$min_writer_version <- bad
+    expect_error(
+      .datom_check_writer_floor(conn),
+      class = "datom_writer_floor_invalid"
+    )
+  }
+})
+
+test_that("the floor stops a write before anything is hashed or written", {
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+  fx$conn$min_writer_version <- "999.0.0"
+
+  before <- .datom_compute_metadata_sha(fc_clone_metadata(fx, "dm"))
+  expect_error(
+    datom_write(fx$conn, data = fc_data(5), name = "dm"),
+    class = "datom_writer_floor"
+  )
+  expect_identical(.datom_compute_metadata_sha(fc_clone_metadata(fx, "dm")),
+                   before)
+})
+
+
+# --- the entry sequence, through the real write path --------------------------
+
+test_that("an unrecognised field in a table's metadata refuses the write", {
+  # The clause an implementation that checks only the manifest would pass while
+  # leaving the document that matters most unchecked: per-artifact metadata is
+  # never rebuildable, and it is where version identity lives.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, "dm", "metadata.json"),
+    function(doc) c(doc, list(future_field = "from a newer datom"))
+  )
+
+  err <- expect_error(
+    datom_write(fx$conn, data = fc_data(5), name = "dm"),
+    class = "datom_vocabulary_unknown"
+  )
+  expect_match(conditionMessage(err), "future_field")
+  expect_match(conditionMessage(err), "dm/metadata.json")
+})
+
+test_that("the per-artifact check needs no storage read", {
+  # It reads the clone's copy. That is not a compromise: git is written before
+  # storage, so a newer build's document reaches this repo by a pull, which lands
+  # in the clone. Making storage the source would add a network read to every
+  # write and inspect the copy that cannot legitimately be ahead.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, "dm", "metadata.json"),
+    function(doc) c(doc, list(future_field = "x"))
+  )
+
+  reads <- 0L
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      reads <<- reads + 1L
+      cli::cli_abort("storage must not be read at the door")
+    }
+  )
+
+  expect_error(
+    datom_write(fx$conn, data = fc_data(5), name = "dm"),
+    class = "datom_vocabulary_unknown"
+  )
+  expect_identical(reads, 0L)
+})
+
+test_that("an unrecognised field on the manifest, top level or row, refuses the write", {
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, ".datom", "manifest.json"),
+    function(doc) c(doc, list(future_top_field = "x"))
+  )
+  err <- expect_error(
+    datom_write(fx$conn, data = fc_data(5), name = "dm"),
+    class = "datom_vocabulary_unknown"
+  )
+  expect_match(conditionMessage(err), "future_top_field")
+
+  # An entry is its own document for this purpose. "Top-level keys only" means
+  # do not descend into a value -- it does not mean skip the entries, which is
+  # the reading that would leave every per-artifact row unchecked.
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, ".datom", "manifest.json"),
+    function(doc) {
+      doc$future_top_field <- NULL
+      doc$artifacts$dm$future_row_field <- "x"
+      doc
+    }
+  )
+  err <- expect_error(
+    datom_write(fx$conn, data = fc_data(5), name = "dm"),
+    class = "datom_vocabulary_unknown"
+  )
+  expect_match(conditionMessage(err), "future_row_field")
+  expect_match(conditionMessage(err), "artifact dm")
+})
+
+test_that("the mirror-everything route checks every artifact in the clone", {
+  # The route with no artifact name in its arguments. Checking only the manifest
+  # here would leave the per-artifact documents it is about to mirror unexamined,
+  # and this is the route datom_validate(fix = TRUE) reaches.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3), name = "dm")
+  fc_write(fx, fc_data(3), name = "ae")
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, "ae", "metadata.json"),
+    function(doc) c(doc, list(future_field = "x"))
+  )
+
+  # No `.confirm = FALSE` needed: the entry refuses above the routing decision,
+  # so the interactive confirmation this route would otherwise ask for is never
+  # reached. That placement is the point -- a refusal must land before the write
+  # starts, not partway through it.
+  err <- expect_error(
+    suppressMessages(datom_write(fx$conn)),
+    class = "datom_vocabulary_unknown"
+  )
+  expect_match(conditionMessage(err), "ae/metadata.json")
+})
+
+test_that("a per-artifact document from a newer schema refuses the write", {
+  # The gap the manifest-only door left open: the metadata-only route copies this
+  # document from the clone straight to storage, so before the entry sequence
+  # read it, a document pulled from a collaborator on a newer datom went through
+  # unexamined.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, "dm", "metadata.json"),
+    function(doc) {
+      doc$schema_version <- 99L
+      doc
+    }
+  )
+
+  err <- expect_error(
+    datom_write(fx$conn, name = "dm"),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(err), "cannot write")
+})
+
+test_that("the forward path never refuses -- a pre-rename repo writes normally", {
+  # R23.4's first row, and the case a naive "refuse when the artifact list is
+  # absent" rule would have deadlocked: a current build meeting a pre-rename repo
+  # finds no `artifacts` key either, so refusing on that would mean no repo could
+  # ever be moved forward.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, ".datom", "manifest.json"),
+    function(doc) {
+      names(doc)[names(doc) == "artifacts"] <- "tables"
+      doc$schema_version <- NULL
+      doc$artifacts <- NULL
+      doc$tables$dm$kind <- NULL
+      doc
+    }
+  )
+
+  # Assert the pre-state, so this cannot pass by the fixture edit silently not
+  # having taken: without it, a manifest that stayed current-shaped would write
+  # fine and prove nothing about the forward path.
+  before <- fc_clone_manifest(fx)
+  expect_true("tables" %in% names(before))
+  expect_false("artifacts" %in% names(before))
+  expect_null(before$schema_version)
+
+  expect_no_error(fc_write(fx, fc_data(5)))
+
+  manifest <- fc_clone_manifest(fx)
+  expect_true("artifacts" %in% names(manifest))
+  expect_false("tables" %in% names(manifest))
+  expect_identical(manifest$schema_version, 2L)
+})
+
+test_that("a manifest with no reachable artifact list refuses the write", {
+  # Same evidence the reader will one day rebuild from, opposite response. The
+  # writer must not overwrite a document whose shape it cannot reach: the file
+  # may belong to a lineage this build cannot produce, and replacing it with a
+  # shape this build invented is worse than stopping.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+  before <- fc_clone_manifest(fx)
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, ".datom", "manifest.json"),
+    function(doc) {
+      doc$artifacts <- NULL
+      doc
+    }
+  )
+
+  expect_error(
+    datom_write(fx$conn, data = fc_data(5), name = "dm"),
+    class = "datom_shape_unreachable"
+  )
+  # And it really did not write: the artifact list is still missing rather than
+  # replaced by a one-entry list naming only this write.
+  expect_false("artifacts" %in% names(fc_clone_manifest(fx)))
+  expect_identical(fc_stored_manifest(fx)$artifacts$dm$current_version,
+                   before$artifacts$dm$current_version)
+})
+
+test_that("a brand-new repo and a reader connection both pass the entry", {
+  # Nothing has been written, so nothing can disagree; and a reader-role
+  # connection has no clone to inspect and should keep failing on the clearer
+  # developer-role message a few lines later.
+  fx <- local_fc_project()
+  expect_silent(.datom_check_write_entry(fx$conn, "dm"))
+  expect_silent(.datom_check_write_entry(fx$conn, NULL))
+
+  reader <- mock_datom_conn(list())
+  expect_silent(.datom_check_write_entry(reader, "dm"))
+})
+
+test_that("the metadata-only route re-checks after its pull", {
+  # The door read the clone; then this route pulls from the remote as its first
+  # act, which can land a collaborator's newer document on top of what was just
+  # checked. The check therefore runs again, against what the pull left on disk.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  local_mocked_bindings(
+    .datom_git_pull = function(path, pat = NULL) {
+      fc_edit_clone_json(
+        fs::path(path, "dm", "metadata.json"),
+        function(doc) c(doc, list(arrived_in_the_pull = "x"))
+      )
+      invisible(TRUE)
+    }
+  )
+
+  err <- expect_error(
+    datom_write(fx$conn, name = "dm"),
+    class = "datom_vocabulary_unknown"
+  )
+  expect_match(conditionMessage(err), "arrived_in_the_pull")
 })

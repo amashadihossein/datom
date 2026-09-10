@@ -91,6 +91,57 @@ manifest's artifact list, and an entry in its version history.
 * Nothing changes for a repo whose documents this version fully understands,
   which is every repo it wrote itself.
 
+## A write stops when this version cannot account for the repo
+
+Carrying an unfamiliar field forward keeps a write from destroying information.
+It does not make the write correct: this version would still recompute the
+document's version identity from the fields it knows, reaching a different
+answer from the version that wrote it, on content that never moved. So the write
+now stops instead. Reads still degrade gracefully where they can -- **reads limp,
+writes stop.**
+
+Everything below runs before any hashing, any local file write and any commit, on
+every write route, so a refusal leaves nothing half-written. Nothing changes for
+a repo whose documents this version fully understands, which is every repo it
+wrote itself.
+
+* **A top-level field this version cannot classify refuses the write**, naming
+  the field. Checked on the manifest, on each of its artifact entries, and on
+  each artifact's own `metadata.json` -- always the copy in your git checkout,
+  which is where a colleague's newer document arrives when you pull. `custom` is
+  classified as a whole, so your own metadata keys are never affected however
+  exotic.
+
+  This is the check that catches an **added or renamed** field, where the format
+  number deliberately does not move. It is the reason a release that adds any
+  field to a datom document asks everyone who writes to that repo to upgrade,
+  cosmetic additions included -- a false refusal costs one person an install, a
+  miss costs corrupted data.
+
+* **A repo may declare the oldest datom it accepts writes from.** Set
+  `min_writer_version` in `.datom/project.yaml` and an older writer is refused,
+  naming the version needed. The field is optional and **absent means no limit**,
+  so no existing repo changes behaviour. It covers the two cases the field check
+  structurally cannot see, because neither introduces a new name: a change in
+  what an existing field *means*, and a block for a reason that is not about
+  format at all.
+
+  Reading the field ships now even though nothing sets it yet, because the
+  looking has to be inside the version being stopped. A purpose-built way to
+  raise it comes later; a hand-edited value works in the meantime.
+
+* **A manifest whose artifact list this version cannot reach is not
+  overwritten.** If the list is still missing after the format conversion has
+  run, the file belongs to a lineage this version cannot produce, and replacing
+  it with a shape this version invented would be worse than stopping. A repo
+  written before the rename is not affected: the conversion reaches its list, so
+  the forward path proceeds as it always did.
+
+* **All of these bind from this version forward only.** 0.1.0, 0.1.1 and 0.1.2
+  have none of them and none can be added to a version already released. If you
+  share a repo with an older install, upgrading it is the only protection there
+  is.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

@@ -140,17 +140,8 @@ datom_pull <- function(conn) {
     ))
   }
 
-  # Discover tables from git repo (directories with metadata.json)
   repo_path <- conn$path
-  table_dirs <- fs::dir_ls(repo_path, type = "directory")
-  table_dirs <- table_dirs[!grepl("^\\.", fs::path_file(table_dirs))]
-  table_dirs <- table_dirs[!fs::path_file(table_dirs) %in%
-    c("input_files", "renv", "man", "R", "tests", "vignettes", "src")]
-
-  table_names <- fs::path_file(table_dirs)
-  table_names <- table_names[purrr::map_lgl(table_dirs, function(d) {
-    fs::file_exists(fs::path(d, "metadata.json"))
-  })]
+  table_names <- .datom_clone_artifact_names(conn)
 
   # Interactive confirmation
   if (isTRUE(.confirm)) {
@@ -656,6 +647,45 @@ datom_sync <- function(conn,
 
 # --- Shared manifest access ----------------------------------------------------
 
+#' The Artifacts Present in the Local Clone
+#'
+#' Enumerates the artifact directories in the git checkout by the one signal
+#' that identifies them: a directory holding a `metadata.json`. Deliberately
+#' independent of the manifest, so it still answers correctly when the manifest
+#' is the document under suspicion.
+#'
+#' Two callers, and they must agree. The data-side metadata sync mirrors exactly
+#' these artifacts to storage, and the write-entry check inspects exactly the
+#' documents that route is about to write -- so discovering them twice, in two
+#' spellings, is how the door ends up checking a different set than the one that
+#' gets written.
+#'
+#' The directory filter is the pre-existing one: dotfiles out, plus the fixed
+#' list of non-artifact directories a joint repo carries (`R/`, `tests/`,
+#' `renv/`, and so on). It is a convenience rather than the discriminator --
+#' `metadata.json` is what actually decides -- which is why a foreign directory
+#' not on the list is tolerated rather than misread (R14.2).
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @return Character vector of artifact names, possibly empty.
+#' @keywords internal
+.datom_clone_artifact_names <- function(conn) {
+  if (is.null(conn$path) || !nzchar(conn$path)) return(character())
+  if (!fs::dir_exists(conn$path)) return(character())
+
+  dirs <- fs::dir_ls(conn$path, type = "directory")
+  dirs <- dirs[!grepl("^\\.", fs::path_file(dirs))]
+  dirs <- dirs[!fs::path_file(dirs) %in%
+    c("input_files", "renv", "man", "R", "tests", "vignettes", "src")]
+
+  dirs <- dirs[purrr::map_lgl(dirs, function(d) {
+    fs::file_exists(fs::path(d, "metadata.json"))
+  })]
+
+  as.character(fs::path_file(dirs))
+}
+
+
 #' Select the Artifacts of One Kind
 #'
 #' The one place the artifact list is filtered by `kind`. Four counters need it
@@ -789,6 +819,11 @@ datom_sync <- function(conn,
 #'   (`.metadata/manifest.json`), `"clone"` for the git-tracked copy
 #'   (`.datom/manifest.json`). Both exist; they can differ, and which one a
 #'   caller wants is a real choice rather than a default.
+#' @param operation What the caller is about to do with the document --
+#'   `"read"` (default) or `"write"`. Passed through to
+#'   [.datom_check_schema_version()], where it only selects a word in the
+#'   refusal message, so that a write stopped at the door does not report the
+#'   format as one this build "cannot read".
 #' @return A list with:
 #'   * `ok` -- `TRUE` when the manifest was read and parsed.
 #'   * `absent` -- `TRUE` only when the document is *known* not to exist. That
@@ -809,8 +844,11 @@ datom_sync <- function(conn,
 #'     write the converted document can say the format moved, without
 #'     re-deriving the comparison or reading the file twice.
 #' @keywords internal
-.datom_read_manifest <- function(conn, scope = c("storage", "clone")) {
+.datom_read_manifest <- function(conn,
+                                 scope = c("storage", "clone"),
+                                 operation = c("read", "write")) {
   scope <- match.arg(scope)
+  operation <- match.arg(operation)
 
   source <- if (scope == "storage") ".metadata/manifest.json" else ".datom/manifest.json"
 
@@ -849,7 +887,7 @@ datom_sync <- function(conn,
 
   if (!read$ok) return(read)
 
-  declared <- .datom_check_schema_version(read$manifest, source)
+  declared <- .datom_check_schema_version(read$manifest, source, operation = operation)
 
   # The check runs first and the upgrade only on what survives it: there is no
   # step for a version this build does not know, so the dispatcher must never

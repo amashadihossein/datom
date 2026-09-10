@@ -2643,11 +2643,11 @@ test_that("the write door passes a repo with no manifest and one with no clone",
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
     conn$path <- getwd()
-    expect_silent(.datom_check_write_schema(conn))
+    expect_silent(.datom_check_write_entry(conn, "dm"))
   })
 
   reader <- mock_datom_conn(list())
-  expect_silent(.datom_check_write_schema(reader))
+  expect_silent(.datom_check_write_entry(reader, "dm"))
   err <- expect_error(datom_write(reader, data = data.frame(x = 1), name = "dm"))
   expect_match(conditionMessage(err), "developer")
 })
@@ -2662,6 +2662,6 @@ test_that("the write door leaves an unparseable manifest to the parser", {
     fs::dir_create(".datom")
     writeLines('{"artifacts": {', ".datom/manifest.json")
 
-    expect_silent(.datom_check_write_schema(conn))
+    expect_silent(.datom_check_write_entry(conn, "dm"))
   })
 })

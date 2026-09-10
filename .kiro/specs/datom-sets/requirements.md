@@ -1330,7 +1330,7 @@ and already in the design: reads limp, writes stop.
   scope, so the entry sequence must name one, and it names the clone.
   Named explicitly for two different reasons at the two steps. At **step 5** the sequence does not
   otherwise have the per-artifact document in hand at all: `datom_write()` does not touch stored
-  artifact metadata until pipeline step 4, inside `.datom_has_changes()` (`R/read_write.R:334-343`), so
+  artifact metadata until pipeline step 4, inside `.datom_has_changes()` (`R/read_write.R:341-349`), so
   an unspecified scope means an implementer checks only the manifest -- dropping the check from the
   document that matters most, since per-artifact metadata is never rebuildable and is where identity
   lives. At **step 3** the default pull is the opposite one: the too-new-repo framing reads as
@@ -1338,10 +1338,10 @@ and already in the design: reads limp, writes stop.
   adding a network read to every write and checking the wrong copy.
   **The clone is right at both steps for the same four reasons.** It is the document the write
   actually mutates (`.datom_update_manifest_entry()` edits `{conn$path}/.datom/manifest.json`,
-  `R/sync.R:964`); it is a local file read rather than a round trip on every write; it is where a newer
+  `R/sync.R:984`); it is a local file read rather than a round trip on every write; it is where a newer
   collaborator's work lands after a pull; and storage cannot legitimately be ahead of git (I5).
   All three documents exist as local files in the clone: `{conn$path}/.datom/manifest.json` and
-  `{conn$path}/{name}/metadata.json` (`R/read_write.R:463-469`, committed via `git_paths`). So the
+  `{conn$path}/{name}/metadata.json` (`R/read_write.R:527-535`, committed via `git_paths`). So the
   check is a **local file read, no network**, and it works for every write route including the
   mirror-everything one, where the set of artifacts is not a single name.
   **Why the local copy is the right target, not a compromise.** A newer build writes git first and

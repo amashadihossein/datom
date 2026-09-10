@@ -558,6 +558,19 @@
   # Pull before write to ensure fresh state
   .datom_git_pull(repo_path, pat = conn$github_pat)
 
+  # The forward-compatibility checks ran at datom_write()'s door -- and the pull
+  # above has just replaced the documents they read. A collaborator on a newer
+  # datom can land their manifest or their metadata.json in that pull, so the
+  # answer from the door describes a state this route no longer has. Re-run them
+  # here, against what the pull actually left on disk.
+  #
+  # Cheap and safe to repeat: every step is a local file read and none of them
+  # mutates anything. The alternative considered was for the door to own the
+  # freshness instead -- one fetch there and no route pulling afterwards -- but a
+  # fetch does not update the working tree, so it would not make these reads any
+  # fresher, and dropping this pull would leave the commit below on a stale base.
+  .datom_check_write_entry(conn, name)
+
   metadata_path <- fs::path(table_dir, "metadata.json")
   if (!fs::file_exists(metadata_path)) {
     cli::cli_abort(c(

@@ -35,6 +35,11 @@
 #' @param github_api_url GitHub API base URL. Sourced from
 #'   `store$github_api_url` at conn-construction time. Defaults to
 #'   `"https://api.github.com"` when not set.
+#' @param min_writer_version The lowest version of datom this repo accepts
+#'   writes from, read from `project.yaml` at conn-construction time. `NULL`
+#'   means the repo declares no such limit, which is every repo written so far.
+#'   Held on the connection because the file it comes from is already parsed
+#'   there, so the write-entry check costs no extra read.
 #'
 #' @return A `datom_conn` object.
 #' @keywords internal
@@ -55,7 +60,8 @@ new_datom_conn <- function(project_name,
                           backend = "s3",
                           data_repo_url = NULL,
                           github_pat = NULL,
-                          github_api_url = NULL) {
+                          github_api_url = NULL,
+                          min_writer_version = NULL) {
   role <- match.arg(role)
   backend <- match.arg(backend, c("s3", "local"))
 
@@ -119,7 +125,8 @@ new_datom_conn <- function(project_name,
       gov_local_path = gov_local_path,
       data_repo_url = data_repo_url,
       github_pat    = github_pat,
-      github_api_url = github_api_url
+      github_api_url = github_api_url,
+      min_writer_version = min_writer_version
     ),
     class = "datom_conn"
   )
@@ -1066,6 +1073,12 @@ datom_get_conn <- function(path = NULL,
   # Populate identity fields from store and git remote
   conn$github_pat <- store$github_pat
   conn$github_api_url <- store$github_api_url
+
+  # The repo's declared minimum writer version, if it declares one. Read here
+  # because project.yaml is already parsed on this path; the write entry then
+  # costs no extra read. Absent in every repo written so far, and absent must
+  # stay indistinguishable from "no limit" -- see .datom_check_writer_floor().
+  conn$min_writer_version <- cfg$min_writer_version
   conn$data_repo_url <- tryCatch({
     repo <- git2r::repository(as.character(path))
     remotes <- git2r::remotes(repo)

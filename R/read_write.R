@@ -700,7 +700,10 @@ datom_write <- function(conn,
   # manifest-writing step, so a check placed after the router would not cover
   # it. Above the hashing and the local writes too, so a refusal leaves nothing
   # half-written.
-  .datom_check_write_schema(conn)
+  #
+  # `name` is NULL on the mirror-everything route, which is what tells the check
+  # to inspect every artifact in the clone rather than one.
+  .datom_check_write_entry(conn, name)
 
   # Route based on arguments
 

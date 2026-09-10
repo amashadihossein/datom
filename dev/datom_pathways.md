@@ -51,7 +51,32 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 **Do not:** Put the check inside a `tryCatch` that softens read failures -- the upgrade message gets reworded as "could not read manifest", or worse, downgraded to a warning. Read the document inside the handler, check it outside. Do not gate on `datom_version`: that records the writing package version (provenance), so gating on it would fire on harmless upgrades.
 
-**Write side:** `.datom_check_write_schema(conn)`, called at the top of `datom_write()` for **every** write route -- above the routing decision, because one route mirrors the whole manifest to storage without touching a single artifact, and above any hashing, local write or commit, so a refusal leaves nothing half-written. It inspects the **clone's** manifest: git-tracked, so it arrives with every pull, and free to read. Three cases pass through untouched -- no clone (a reader-role connection fails later with a clearer message), no manifest file yet, and a manifest that will not parse (not a schema disagreement; the write fails on it moments later with the parser's own error). The refusal message says "cannot write" rather than "cannot read".
+**Write side:** the schema comparison above is one step of the write entry, described in its own card below.
+
+### Given a write request, decide whether this build may write here
+
+**Question:** `datom_write()` was just called. Is this build entitled to rewrite this repo's documents at all?
+
+**Why a separate card:** the read side asks "can I interpret this document?" and answers by degrading gracefully where it can. The write side asks a stricter question, because a reader that guesses wrong gives one wrong answer to one person while a writer that guesses wrong leaves the repo wrong for everybody. **Reads limp, writes stop.**
+
+**Canonical route** -- `.datom_check_write_entry(conn, artifact)` (`R/forward-compat.R`), called immediately after `datom_write()`'s `datom_conn` class check:
+
+1. **The floor.** If `project.yaml` declares a `min_writer_version` above the running build, refuse (`datom_writer_floor`). Absent means no floor. Read off the connection, which parsed that file already.
+2. **The manifest**, through `.datom_read_manifest(conn, "clone", operation = "write")` -- the schema check and then the conversion chain, exactly as the read card describes, with the refusal worded for a write.
+3. **The shape the chain reached.** No artifact list after the chain has run -> refuse (`datom_shape_unreachable`). Worded as *still* absent, not absent: a current build meeting a pre-rename repo finds no `artifacts` key either, and refusing on that would deadlock every upgrade.
+4. **The vocabulary**, on the manifest's top level, on each artifact entry, and on each per-artifact `metadata.json` this write will touch. A top-level key this build cannot classify -> refuse (`datom_vocabulary_unknown`), naming the field. Per-artifact documents also get the step-2 schema comparison here, since this is the only place a write sees them.
+
+**Scope of the documents inspected:** all three are the **clone's** copies -- local file reads, no network. `artifact` is the single artifact name a table write or metadata-only sync touches; `NULL` means every artifact in the clone, which is the mirror-everything route, enumerated by `.datom_clone_artifact_names()` (the same helper that route uses, so the door cannot inspect a different set than the one that gets written).
+
+**Placement:** above the two routing returns, because one route mirrors the whole manifest to storage without touching a single artifact. Above any hashing, local write or commit, so a refusal leaves no partial state. **Re-run after a route's own pull** -- `.datom_sync_metadata()` pulls as its first act, which replaces the documents the entry just read.
+
+**Cases that pass through untouched:** no clone (a reader-role connection fails later with a clearer message about role), no manifest file yet (nothing written, nothing to disagree with), and a manifest that will not parse (not a compatibility failure; the write fails on it moments later with the parser's own error).
+
+**Primary functions/files:** `.datom_check_write_entry()`, `.datom_check_writer_floor()`, `.datom_check_document_vocabulary()`, `.datom_manifest_known_fields`, `.datom_manifest_entry_known_fields`, `.datom_metadata_known_fields()` (all `R/forward-compat.R`); `.datom_clone_artifact_names()` (`R/sync.R`).
+
+**Why this matters:** a build that rewrites a document it cannot fully account for recomputes that document's version identity from the fields it knows, reaching a different answer from the build that wrote it -- on content that never moved. All of it binds **0.1.1 forward only**: 0.1.0 has none of these checks and none can be added to a released build.
+
+**Do not:** Add directional logic. A newer build's vocabulary is a superset of every older one's, so the vocabulary check cannot fire on the upgrade path, and a guard for it would be dead code. Do not prune a name from a vocabulary list: a build that forgets a name meets an **older** document, fails to place a key it should know, and refuses it -- blocking the one direction that must always work. Do not put the per-artifact half of the check on storage's copy: git is written first and gates the mirror, so the newer document arrives in the clone.
 
 ### Given data_sha, find metadata versions
 

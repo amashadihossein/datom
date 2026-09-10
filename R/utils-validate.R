@@ -278,60 +278,10 @@
   invisible(declared)
 }
 
-#' Refuse a Write Into a Repo This Build Does Not Understand
-#'
-#' The write-side half of the schema contract, and the more damaging direction
-#' of the two: an **older** build writing into a **newer** repo produces a file
-#' that is well-formed for a shape nobody agreed on. The reader-side checks
-#' cannot help there, because the older build is the one doing the writing.
-#'
-#' Three things about where this sits, each load-bearing:
-#'
-#' * **It inspects the manifest**, not per-artifact metadata. `datom_write()`
-#'   never reads the manifest on its own account, so gating only the metadata
-#'   document would leave the manifest unprotected.
-#' * **It runs before every write route, including the ones that never reach
-#'   the manifest-writing step.** The mirror route copies the whole local
-#'   manifest to storage without touching the per-artifact path, so a check
-#'   placed after the routing decision misses it entirely.
-#' * **It runs before any hashing, any local file write and any commit.** A
-#'   write is several steps -- local files, one commit, then the storage mirror
-#'   -- and stopping halfway leaves a half-finished write, which is worse than
-#'   the disagreement being prevented.
-#'
-#' The clone copy is the one inspected, because it is git-tracked and therefore
-#' arrives with every pull, and reading it costs nothing. Checking the storage
-#' copy would add a network read to every write for the same answer.
-#'
-#' Three cases pass straight through:
-#'
-#' * **No local clone.** A reader-role connection has no manifest to inspect and
-#'   fails a few lines later with a clearer message about needing the developer
-#'   role. Letting that message stand beats replacing it with a vaguer one.
-#' * **No manifest file yet.** Nothing has been written, so nothing can
-#'   disagree.
-#' * **A manifest that will not parse.** That is not a schema disagreement, and
-#'   this is not the check that owns it -- the write fails on the same file
-#'   moments later with the parser's own error.
-#'
-#' @param conn A `datom_conn` object.
-#' @return Invisibly `NULL`. Aborts when the clone's manifest declares a schema
-#'   version above what this build supports.
-#' @keywords internal
-.datom_check_write_schema <- function(conn) {
-  if (is.null(conn$path)) return(invisible(NULL))
-  if (!nzchar(conn$path)) return(invisible(NULL))
-
-  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
-  if (!fs::file_exists(manifest_path)) return(invisible(NULL))
-
-  manifest <- tryCatch(
-    jsonlite::read_json(manifest_path),
-    error = function(e) NULL
-  )
-  if (is.null(manifest)) return(invisible(NULL))
-
-  .datom_check_schema_version(manifest, manifest_path, operation = "write")
-
-  invisible(NULL)
-}
+# The write-side half of the schema contract used to live here as
+# `.datom_check_write_schema()`, which read the clone's manifest itself and
+# checked nothing else. It is now one step of `.datom_check_write_entry()` in
+# `R/forward-compat.R`, alongside the floor, the reachable-shape refusal and the
+# vocabulary check -- one sequence rather than four doors, because they all have
+# to happen at the same moment: before any hashing, any local file write and any
+# commit.

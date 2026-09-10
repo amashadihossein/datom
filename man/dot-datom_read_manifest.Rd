@@ -4,7 +4,11 @@
 \alias{.datom_read_manifest}
 \title{Read a Manifest and Check Its Schema Version}
 \usage{
-.datom_read_manifest(conn, scope = c("storage", "clone"))
+.datom_read_manifest(
+  conn,
+  scope = c("storage", "clone"),
+  operation = c("read", "write")
+)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object.}
@@ -13,6 +17,12 @@
 (\code{.metadata/manifest.json}), \code{"clone"} for the git-tracked copy
 (\code{.datom/manifest.json}). Both exist; they can differ, and which one a
 caller wants is a real choice rather than a default.}
+
+\item{operation}{What the caller is about to do with the document --
+\code{"read"} (default) or \code{"write"}. Passed through to
+\code{\link[=.datom_check_schema_version]{.datom_check_schema_version()}}, where it only selects a word in the
+refusal message, so that a write stopped at the door does not report the
+format as one this build "cannot read".}
 }
 \value{
 A list with:
