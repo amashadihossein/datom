@@ -164,6 +164,12 @@ not re-derived.**
    Any assertion about set counts needs a hand-built manifest holding a set entry beside table entries;
    `dev/engineering-notes.md` has the two spellings that go quietly wrong.
 
+**One task was added after Task 22 and is NOT next: Task 23, `project.yaml` declares its format.** It
+sits at the end of the list but **executes immediately before Task 11**, because Task 11 is what starts
+writing `mode: product` into that file and Task 23 is what lets an older build notice. Recorded now
+because the reading half cannot be added to a build that has already shipped -- the same filter Phase E
+used. Nothing about it blocks Task 7 through Task 10.
+
 **Two things Task 19 leaves for whoever adds a metadata field next.** (1) `metadata_sha` now selects
 fields by **allowlist**: `.datom_metadata_identity_fields` is identity,
 `.datom_metadata_excluded_fields` is the documented not-identity list, and a field in **neither** is
@@ -173,10 +179,16 @@ the builders, so it fails until the new field is classified -- that is the forci
 of those two constants is the vocabulary Task 21's writer check reads; it is append-only from here.
 
 **EXECUTION ORDER IS NOT TASK ORDER.** Phase E was appended rather than inserted so that nothing
-renumbered a third time. The order is `18 -> 19 -> 5 -> 6 -> 20 -> 21 -> 22 -> 7 onward`, and Phase
+renumbered a third time. The order is `18 -> 19 -> 5 -> 6 -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 ->
+23 -> 11 onward`, and Phase
 E's preamble says why each edge exists. Task 19 before Task 7 is the one that matters most: an
 identity allowlist seeded from *table* metadata and landed after the set metadata builder would
-silently drop set-specific fields from identity.
+silently drop set-specific fields from identity. **Task 23 before Task 11** is the other edge that is
+not cosmetic: Task 11 starts writing `mode: product` into `project.yaml`, and Task 23 is what gives an
+older build a way to notice -- a reading half cannot be added to a build that has already shipped, so
+writing the field first would leave a permanent population treating a product repo as an ordinary data
+repo. Task 11's body states the dependency, so the constraint holds from both ends rather than
+depending on somebody checking the order at release time.
 
 **Phase E exists because five things cannot be retrofitted.** The filter: does deferring it postpone
 the cost, or permanently exclude every install shipped meanwhile? Allowlist hashing,
@@ -1331,8 +1343,20 @@ own; landing it first is what makes Task 6's failure loud.
 ## Phase D -- Project mode, validation, docs
 
 - [ ] **11. Project mode gating the import path**
+  - **BLOCKED ON TASK 23, which must land first.** Not a preference: this task is what starts writing
+    `mode: product`, and Task 23 is what gives an older build a way to notice. The reading half cannot
+    be added to a build that has already shipped, so any release that writes `mode` without a release
+    that reads the number leaves a permanent population that treats a product repo as an ordinary
+    data repo. Landing Task 23 immediately before this one is what makes "same release" structural
+    instead of something to remember at release time. See Task 23 for the reasoning and the scope
+    limit.
   - `project.yaml` gains `mode: product` + `set: {name}` (R10.2). One repo = one set = one
     product.
+  - **Decide whether this bump moves `project.yaml`'s format number, using R9.5's table rather than
+    instinct.** Adding `mode` is an addition, so the default answer is **no bump** -- and the default
+    is probably right, because an older build that ignores `mode` gets a silent no-op from
+    `datom_sync()` rather than a wrong write. Record the call either way; a bump here costs every
+    pinned build its access to the repo.
   - `datom_sync_manifest()` / `datom_sync()` refuse on a product repo with a clear message
     instead of silently no-op'ing.
   - `datom_status()` reports mode.
@@ -2263,6 +2287,64 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     memoises the rebuild, so it repeats per call while the repo stays broken -- see the Decisions row
     and the note now in the `R/manifest-rebuild.R` file header. Both fixes were probed by reversion.
 
+- [ ] **23. `project.yaml` declares its format** &nbsp; **[EXECUTES IMMEDIATELY BEFORE TASK 11 -- see the scheduling bullet]**
+  - **The gap.** `project.yaml` carries fields a writer must **obey**, and has no way to say "this repo
+    needs a newer datom". A build that does not recognise such a field walks past it and acts as
+    though the repo had not asked for anything. `min_writer_version` is already in that position
+    today: a build older than Task 21 does not read it, so a repo that raises the floor is not
+    protected against exactly the builds the floor exists to stop. Task 11 adds `mode: product` and
+    `set: {name}` to the same file, which is the second instance of the same shape and the reason this
+    is worth doing now rather than later.
+  - **Reading half -- CANNOT BE RETROFITTED.** `.datom_get_conn_developer()` parses the file at
+    `R/conn.R:937`. One call to the existing `.datom_check_schema_version()` after it, with `cfg` and
+    the yaml path. Absent already means v1, so no existing repo changes behaviour. **Reader-role
+    connections never see this file** (a reader has no clone), which is the right scope -- the harm is
+    a *write* into a repo whose policy this build cannot read -- but say so, because "one gate covers
+    every role" would be wrong.
+  - **THERE IS A SECOND READ SITE, AND ONE GATE DOES NOT COVER IT.** Verified, not assumed:
+    `.datom_resolve_data_location()` re-reads `project.yaml` **after a git pull** (`R/ref.R:327`), and
+    it is called from `R/conn.R:1030` -- *after* the parse at 937. So a config arriving in that pull is
+    never checked. The same parse is also what `conn$min_writer_version` is read from
+    (`R/conn.R:1081`), so a pulled floor raise is missed in that session too -- pre-existing, and named
+    here rather than left to be found later. Either gate the post-pull re-read as well, or record the
+    residual explicitly the way the table-write pull staleness was recorded. Do not leave it
+    unmentioned.
+  - **Writing half -- retrofittable at any time.** Stamp the field in `datom_init_repo()`'s config
+    block (`R/conn.R:509-521`, beside the existing `datom_version`). Increment it by R9.5's table like
+    any other document, which means **Task 11's addition of `mode` does not move it** unless that task
+    argues otherwise.
+  - **DO NOT extend the vocabulary check to this file.** It was the first idea and it is the wrong
+    tool. That check's power comes from the document being machine-written: an unrecognised key there
+    **is** evidence a newer datom wrote it. `project.yaml` is hand-edited -- storage migrations,
+    prefixes, descriptions, and whatever else a team keeps there -- so an unrecognised key is as likely
+    a typo or a private note, and a refusal would block every write in the repo until somebody found
+    it. R9.8 carries the general rule as a table, and AC39(d) is a test that a stray key is still
+    tolerated, which is what stops the extension being made later as a tidy-up.
+  - **SCHEDULING, and it is the whole reason this is a task rather than a note.** The reading half must
+    ship **no later than** the release that starts writing `mode`. Order inside one release does not
+    matter, so the constraint is only visible if datom-sets is ever split across releases with Task 11
+    in the earlier one. Rather than leave that as something to remember at release time, this task
+    **executes immediately before Task 11** and Task 11 states the dependency. That makes the
+    guarantee structural.
+  - **Correcting three things said while proposing this, so they are not inherited as fact.**
+    (1) `project.yaml` is **not** the only datom-owned document without a format number --
+    `version_history.json`, `governance.json`, `ref.json` and `dispatch.json` have none either.
+    Verified: only the manifest and per-artifact metadata carry one. It is the only **hand-edited**
+    one, and the only one carrying writer policy, which is the argument that actually supports a
+    number here. (2) The harm is **not** "running `datom_sync()` on a set". Task 11's own body says
+    today's behaviour on a product repo is a silent no-op, and that is what an older build gets -- an
+    unhelpful answer, not a corrupting one. (3) Once a repo actually contains a set, an older
+    **writer** is already stopped by Task 21's vocabulary check, because Task 7 adds `kind` to
+    per-artifact metadata. Per R9.5 that addition does **not** bump any number, so the number would
+    never have caught it -- the vocabulary check does. **So the window this task protects is narrower
+    than it first looks: a product repo that does not yet hold a set** -- which is precisely the state
+    a repo is in immediately after init, and the state in which somebody reaches for `datom_sync()`.
+  - _Requirements: R9.8, R9.4 (why not `datom_version`), R9.5 (the bump rule), R10.2 (the fields that
+    make it matter), R23.1 (the mechanism this deliberately does not use). Acceptance: AC39 (all four
+    clauses), with (d) as the one a later tidy-up would break. **Pathway impact: yes** -- the
+    "decide whether this build can read it" card gains `project.yaml` as a third document, with its
+    own row in that card's "where it is called" list._
+
 ---
 
 ## New exports introduced by this spec
@@ -2533,3 +2615,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-10 | **REVIEW OF TASK 22, finding 1: the hardcoded `kind = "table"` on a rebuilt row now has a forcing function instead of a comment.** The review said "nothing fails" when Task 7 adds `kind` to the metadata builder, which is not quite right -- `test-utils-sha.R`'s pinned fixture list reddens, because it asserts the builder emits exactly a named set. But it reddens in a test about identity hashing and says nothing about the rebuild, so the revisit still depended on somebody remembering. A test in the rebuild's own file now asserts the metadata builder emits **no** `kind`, next to the line that hardcodes it, with instructions for what to do when it fails. **The failure it prevents is the one Task 6 exists to prevent**: once Task 9 writes a set, a rebuilt repo would type it as a table, so the set counters read zero while the artifact still appears in `datom_list()`, and nothing errors. Probed: adding `kind` to the builder reddens that test and no other. | R22.8, Task 22, Task 7, Task 9 |
 | 2026-09-10 | **REVIEW OF TASK 22, finding 3: no history entry matching the current content now returns NO version, where it had fallen back to the newest entry.** The fallback and the test two lines from it disagreed. `.datom_recorded_current_version()` narrows candidates by `data_sha`; when nothing matched it took the newest entry, which is a version of **different content** -- while the neighbouring test pins that three other unusable histories yield no version at all, on the stated grounds that a manufactured version is worse than a missing one. Fixed in favour of the test, because it is the same trade the carry-forward rule already makes: a claim that outlives what it described is worse than an absent one. No match means the history does not record the state `metadata.json` describes -- a truncated or partly-synced history, which `datom_validate()` owns. The remaining ambiguous case still takes the newest **candidate**, and that is different in kind: both candidates describe the current content, so the worst case is naming the wrong one of two versions of the same bytes. Probed: restoring the fallback reddens the new test. | AC37(e), Task 22 |
 | 2026-09-10 | **ACCEPTED RESIDUAL from the Task 22 review: the rebuild repeats on every call, and nothing memoises it.** One listing plus two reads per artifact means a 300-artifact repo spends ~601 storage requests **per command** for as long as the index stays broken, and `datom_status()` reads two copies of the manifest, so a repo broken on both sides pays twice in one call. The user experiences it as datom hanging, because the warning only arrives once the work is finished. That is precisely the cost the manifest exists to avoid (`dev/datom_specification.md:1694`). Not fixed, and the reason is not effort: a session cache is already deferred package-wide pending its invalidation design (`dev/datom_specification.md:2031`), so memoising here would put session state into a library that has none, in order to speed up a state the next ordinary write removes. Recorded in the `R/manifest-rebuild.R` file header as well as here, the way the table-write staleness residual was, so it is met as a known trade rather than as a surprise. | R22.12, Task 22, dev/datom_specification.md |
+| 2026-09-10 | **NEW TASK 23 -- `project.yaml` gets a format number, and the general rule for which mechanism a document gets.** Accepted from a proposal, with three of its premises corrected. **The rule is the durable part**: a **machine-written** document (manifest, per-artifact metadata) gets a **vocabulary check**, because an unrecognised key there *is* evidence a newer datom wrote it; a **hand-edited config** (`project.yaml`) gets a **version number**, because an unrecognised key there is as likely a typo or a private note, and refusing on one would block every write in the repo until somebody found it. AC39(d) tests that a stray key is still tolerated, which is what stops the vocabulary check being extended to that file later as a tidy-up. **Three corrections to the proposal, recorded so they are not inherited as fact.** (1) `project.yaml` is **not** the only datom-owned document without a format number -- `version_history.json`, `governance.json`, `ref.json` and `dispatch.json` have none either; only the manifest and per-artifact metadata carry one. It is the only **hand-edited** one and the only one carrying writer policy, which is the argument that actually supports a number. (2) The harm is not "running `datom_sync()` on a set": Task 11's own body says today's behaviour on a product repo is a silent **no-op**, so an older build gets an unhelpful answer rather than a corrupting one. (3) Once a repo holds a set, an older **writer** is already stopped by Task 21's vocabulary check, because Task 7 adds `kind` to metadata -- and per R9.5 that addition moves **no** number, so a number would never have caught it. **The window this protects is therefore narrower than proposed: a product repo that does not yet hold a set**, which is exactly the state right after init and the state in which somebody reaches for `datom_sync()`. The stronger motivation the proposal did not make is that **`min_writer_version` already lives in that file** (Task 21), so it already carries policy an older build silently ignores; the number is the general mechanism that makes the *next* policy field enforceable rather than advisory. **One verified finding the proposal left as "confirm this": one gate does NOT cover every read.** `.datom_resolve_data_location()` re-reads `project.yaml` after a git pull (`R/ref.R:327`) and is called from `R/conn.R:1030`, *after* the parse at `R/conn.R:937` -- so a config arriving in that pull is unchecked, and `conn$min_writer_version` is read from the same pre-pull parse (`R/conn.R:1081`), meaning a pulled floor raise is missed in that session too. Pre-existing; the task must either gate the re-read or record the residual, not omit it. | R9.8, AC39, Task 23, Task 11, Task 21, R23.1 |
+| 2026-09-10 | **Task 23 executes immediately before Task 11 rather than last, and Task 11 states the dependency.** The proposal put it at the end of the list with a note that it "must ship in the same release as Task 11". Same guarantee, but enforced by memory at release time -- and the failure it insures against is precisely a release split with Task 11 in the earlier half. Making it the task immediately before Task 11, with the dependency written into Task 11's body, makes the constraint structural and removes the cross-reference that would otherwise have to be kept true in two places. Phase E's own filter argues for this: an irretrofittable half belongs early relative to the thing it protects, not at the end of a list where it can be deferred while the thing it protects ships. | Task 23, Task 11, Phase E |

@@ -778,6 +778,29 @@ datom_read()                    --> {name}/.metadata/metadata.json   <- and here
   addition. Consequence accepted deliberately (R23.6): even a cosmetic addition forces a fleet-wide
   writer upgrade. The population is small, writes are infrequent, and the alternative is a writer
   that disagrees about identity.
+- **R9.8 -- `project.yaml` declares its format too, and by a number rather than a vocabulary check.**
+  The config file carries fields a writer must **obey**, not merely fields it may read:
+  `min_writer_version` already, and `mode` / `set` from R10.2. A build that does not recognise such a
+  field walks past it and acts as though the repo had not asked for anything -- so the file needs a way
+  to say "this repo needs a newer datom", and it has none.
+  - **Reader half**: the same check every other document gets (`.datom_check_schema_version()`),
+    applied once where the file is parsed into a connection. Absent means v1, so no existing repo
+    changes behaviour.
+  - **Writer half**: stamped by `datom_init_repo()`, and incremented by R9.5's table like any other
+    document -- so adding `mode` alone does **not** move it, while a field whose *absence* an older
+    build would misread does.
+  - **Not `datom_version`.** R9.4 already forbids overloading it: it records the writing package
+    version, so gating on it fires on harmless upgrades.
+  **Why a number here and a vocabulary check there** (R23.1), stated as the general rule because it
+  says which tool to reach for:
+  | Document kind | Mechanism | Why |
+  |---|---|---|
+  | machine-written (manifest, per-artifact metadata) | vocabulary check | an unrecognised key **is** evidence a newer datom wrote it |
+  | hand-edited config (`project.yaml`) | version number | unrecognised keys are noise -- a typo, a private note, a field from a tool that is not datom -- so refusing on one would block every write in the repo until somebody found it. The writer declares intent instead |
+  **Scope limit, stated so it is not mistaken for a guarantee.** Like the floor and the vocabulary
+  check, this binds **from the release that reads it forward only**: 0.1.2 and every build before it
+  never looks, so a product repo is unprotected against them. The looking has to be inside the build
+  being stopped.
 
 ### R10 -- Project mode: set repos forbid the import path, not the table path
 
@@ -1474,6 +1497,7 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC35** | **The writer refuses what it cannot classify, and never on the upgrade path.** (a) A document with an unrecognised top-level key refuses the write, naming the field. (b) `custom` contents are **not** treated as unrecognised, however exotic. (c) A **retired** name still classifies, so an older document does not refuse -- the append-only rule (R23.2) made mechanical. (d) The forward path never refuses: a current build writing a v1-shaped repo proceeds, which is R23.4's first row and the case a naive "refuse when the key is absent" rule would have deadlocked. (e) **The check covers per-artifact metadata, not only the manifest** -- an unrecognised key in the clone's `{name}/metadata.json` refuses the write, with no storage read required (R23.1a). This clause exists because an implementation that checks only the manifest passes (a) through (d), and the per-artifact document is the one that is never rebuildable. |
 | **AC36** | **The floor is read and enforced, and absent means absent.** (a) A repo whose `project.yaml` declares a minimum writer version above the running build refuses the write, naming the required version. (b) A repo with **no** floor field behaves exactly as before -- no warning, no refusal, no change of any kind. (c) Setting a floor above the setting build's own version is refused. |
 | **AC37** | **The rebuild fires on absent and on too-new, never on empty, and never recomputes identity.** (a) A manifest with the expected artifact key **absent** yields a correct non-empty listing plus exactly **one** warning naming the upgrade. (b) A manifest declaring a version **above** what the build supports yields the same for a **reader**, and a **refusal** for a **writer** (R22.11). (c) A **genuinely empty** repo triggers no rebuild and performs **no storage listing** -- asserted on the absence of the listing call, not on the result. (d) A **corrupt** manifest still fails visibly. (e) The rebuilt `current_version` for every artifact equals the `version` **recorded** in `version_history.json`, never a recomputed hash (R22.12). (f) A rebuilt index matches the on-disk one field for field on a healthy repo, `original_format` included. |
+| **AC39** | **`project.yaml`'s format is declared and checked, and absent still means absent.** (a) A repo whose `project.yaml` declares a format above what the build supports is refused when a connection is opened, naming the file. (b) A repo whose `project.yaml` carries **no** format field behaves exactly as before -- no warning, no refusal, no change of any kind, which is every repo written so far. (c) `datom_init_repo()` stamps the field, asserted on the written file rather than on the in-memory config. (d) An **unrecognised key** in `project.yaml` is still tolerated -- no refusal, no warning. This clause is the one that keeps the mechanism honest: the file is hand-edited, so the vocabulary check that guards machine-written documents must never be extended to it, and a test is what stops that being done as a tidy-up (R9.8). |
 | **AC38** | **The upgrade chain runs after the check, and runs zero steps when there is nothing to do.** (a) A document declaring a version above `.datom_supported_schema` never reaches the dispatcher -- asserted by observing the abort's condition class, not by inspecting the document. (b) A **current-version** document runs **zero** upgrade steps, which catches the `seq()` counts-down defect (R22.10). (c) Applying the chain twice equals applying it once. |
 
 Plus the standing project gates:
