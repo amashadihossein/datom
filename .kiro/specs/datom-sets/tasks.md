@@ -37,7 +37,7 @@ named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, lande
 this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
 `.kiro/steering/communication.md`.
 
-**TASK 22 IS CLOSED, AND PHASE E WITH IT. NOTHING IS OWED BEFORE TASK 7.** A reader that meets a
+**TASK 22 IS CLOSED. EVERY PHASE E TASK THAT HAD TO RUN EARLY IS DONE; ITS SIXTH (TASK 23, ADDED LATER) RUNS IMMEDIATELY BEFORE TASK 11. NOTHING IS OWED BEFORE TASK 7.** A reader that meets a
 manifest whose artifact list it cannot use no longer reports an empty repo. It lists storage instead,
 reconstructs the index from the per-artifact documents that hold the same facts, and **warns once**
 naming the upgrade. Two conditions bring it there -- the artifact key is absent after the conversion,
@@ -136,9 +136,10 @@ there rather than a directory, and one of them cost us the 0.1.2 submission reco
 `dev/engineering-notes.md`, "In a git worktree, `.git` is a FILE".
 
 **Next when work resumes**: **Task 7 -- `kind` in per-artifact metadata, the set metadata builder, and
-`document_sha` in the history entries.** Phase E is finished, so this is the first task of the set work
-proper. Nothing is owed before it. **Five things the finished tasks leave sitting under it, so they are
-not re-derived.**
+`document_sha` in the history entries.** This is the first task of the set work proper: the five Phase E
+tasks that had to run early are all done, and Phase E's sixth (Task 23) runs later, immediately before
+the task it protects. Nothing is owed before Task 7. **Five things the finished tasks leave sitting
+under it, so they are not re-derived.**
 
 1. **Two forcing functions will go red the moment you touch a builder, and that is the design.** The
    classification test in `test-utils-sha.R` derives its field inventory from the builders themselves,
@@ -190,12 +191,15 @@ writing the field first would leave a permanent population treating a product re
 repo. Task 11's body states the dependency, so the constraint holds from both ends rather than
 depending on somebody checking the order at release time.
 
-**Phase E exists because five things cannot be retrofitted.** The filter: does deferring it postpone
+**Phase E exists because six things cannot be retrofitted.** The filter: does deferring it postpone
 the cost, or permanently exclude every install shipped meanwhile? Allowlist hashing,
-carry-unknown-fields, the writer refusals, the floor's reading half, and the rebuild only ever help
+carry-unknown-fields, the writer refusals, the floor's reading half, the rebuild, and
+`project.yaml`'s format check only ever help
 builds that already contain them. Everything else from the same review round -- the bump rules, the
 schema history table, the policy prose, the floor's tooling -- lands later without stranding anyone.
 The aim is that **0.1.1 is the last release needing a transition plan.**
+**Five of the six are done; the sixth is Task 23**, added later and the only one that does not run
+early -- it runs immediately before the task it protects (Task 11). Phase E's preamble has the edge.
 
 **Phase B is DONE, both halves** -- Task 5 the shared reader, Task 6 the rename itself. It was one task
 until 2026-08-23 and became two (owner-decided, after the E2 design audit) because the rename's failure
@@ -281,6 +285,16 @@ stating the opposite *inside the task that froze the goldens*. Now that the gold
 pseudocode is a **record of what shipped**, so a disagreement between the three copies is a
 documentation defect rather than an implementation risk -- and the copy that matters most is the one
 the next reader trusts.
+
+**Check 6 also guards the execution order**, added 2026-09-10 for the same reason: the
+`18 -> 19 -> ...` sequence is written out three times -- the state block at the top of this file,
+Phase E's preamble further down, and the status cell in `dev/README.md` -- and adding Task 23 swept
+one and left two saying the order ended at Task 7. Caught by a reader, which is what a gate is for.
+The copies are compared **against each other**, never against an expected sequence, because the order
+changes legitimately and a check holding today's answer would need editing every time it moved.
+`dev/README.md` is read for this one clause even though it is not a spec file, since that is where the
+third copy lives and the one a person meets first. Verified by reintroducing the exact defect: both a
+stale preamble and a stale README FAIL, and the output names which copy is behind.
 
 It is **structural only**, and do not over-trust it: on the round that added check 6 it passed on all
 six sites of the defect it was supposed to catch, because its retired-wording suppression list was
@@ -1537,13 +1551,13 @@ own; landing it first is what makes Task 6's failure loud.
 
 ---
 
-## Phase E -- Forward-compatibility controls for 0.1.1 **[appended, runs EARLY]**
+## Phase E -- Forward-compatibility controls for 0.1.1 **[appended; five run EARLY, one does not]**
 
 **These are appended but they do NOT run last.** Appending avoids a third renumber (see the
 2026-08-23 shift record in the Decisions log); the execution order is stated here instead.
 
 ```
-18 -> 19 -> [Task 5] -> [Task 6] -> 20 -> 21 -> 22 -> Task 7 onward
+18 -> 19 -> [Task 5] -> [Task 6] -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 23 -> 11 onward
 ```
 
 - **18** is a prerequisite defect fix; the write-entry sequence sits on that function.
@@ -1551,12 +1565,23 @@ own; landing it first is what makes Task 6's failure loud.
   set metadata builder would silently drop set-specific semantic fields from identity -- the
   classification failure, on the first artifact of a brand-new kind.
 - **20**, **21**, **22** need Phase B's single reader (Task 5) and the upgrade chain (Task 6).
+- **23 must land before Task 11, and that is the one edge in this phase that does not point early.**
+  Task 11 is what starts writing `mode: product` into `project.yaml`; Task 23 is what lets an older
+  build notice. Writing the field first would leave a permanent population treating a product repo as
+  an ordinary data repo. It sits immediately before Task 11 rather than at the front, because that is
+  exactly sufficient -- nothing between here and Task 10 writes to `project.yaml` -- and rather than
+  last, because a note saying "ship these together" is checked by memory at release time while a task
+  order is not.
 
-**Why these five and not others.** The filter is **does deferring it postpone the cost, or permanently
-exclude every install shipped meanwhile?** These five only ever help builds that already contain them,
+**Why these six and not others.** The filter is **does deferring it postpone the cost, or permanently
+exclude every install shipped meanwhile?** All six only ever help builds that already contain them,
 so deferring any one strands every 0.1.1 install forever. Everything else from the same review round
 -- the bump rules, the schema history table, the policy prose, the floor's tooling -- lands later
 without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
+
+**Task 23 was added on 2026-09-10, after Task 22 shipped**, so it is the one item here that did not
+come out of the 2026-08-23 review round. It meets the same filter, which is why it lives in this phase
+rather than in Phase D beside the task it blocks.
 
 **The aim, stated so it can be checked**: 0.1.1 is the **last** release that needs a transition plan.
 
@@ -2617,3 +2642,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-10 | **ACCEPTED RESIDUAL from the Task 22 review: the rebuild repeats on every call, and nothing memoises it.** One listing plus two reads per artifact means a 300-artifact repo spends ~601 storage requests **per command** for as long as the index stays broken, and `datom_status()` reads two copies of the manifest, so a repo broken on both sides pays twice in one call. The user experiences it as datom hanging, because the warning only arrives once the work is finished. That is precisely the cost the manifest exists to avoid (`dev/datom_specification.md:1694`). Not fixed, and the reason is not effort: a session cache is already deferred package-wide pending its invalidation design (`dev/datom_specification.md:2031`), so memoising here would put session state into a library that has none, in order to speed up a state the next ordinary write removes. Recorded in the `R/manifest-rebuild.R` file header as well as here, the way the table-write staleness residual was, so it is met as a known trade rather than as a surprise. | R22.12, Task 22, dev/datom_specification.md |
 | 2026-09-10 | **NEW TASK 23 -- `project.yaml` gets a format number, and the general rule for which mechanism a document gets.** Accepted from a proposal, with three of its premises corrected. **The rule is the durable part**: a **machine-written** document (manifest, per-artifact metadata) gets a **vocabulary check**, because an unrecognised key there *is* evidence a newer datom wrote it; a **hand-edited config** (`project.yaml`) gets a **version number**, because an unrecognised key there is as likely a typo or a private note, and refusing on one would block every write in the repo until somebody found it. AC39(d) tests that a stray key is still tolerated, which is what stops the vocabulary check being extended to that file later as a tidy-up. **Three corrections to the proposal, recorded so they are not inherited as fact.** (1) `project.yaml` is **not** the only datom-owned document without a format number -- `version_history.json`, `governance.json`, `ref.json` and `dispatch.json` have none either; only the manifest and per-artifact metadata carry one. It is the only **hand-edited** one and the only one carrying writer policy, which is the argument that actually supports a number. (2) The harm is not "running `datom_sync()` on a set": Task 11's own body says today's behaviour on a product repo is a silent **no-op**, so an older build gets an unhelpful answer rather than a corrupting one. (3) Once a repo holds a set, an older **writer** is already stopped by Task 21's vocabulary check, because Task 7 adds `kind` to metadata -- and per R9.5 that addition moves **no** number, so a number would never have caught it. **The window this protects is therefore narrower than proposed: a product repo that does not yet hold a set**, which is exactly the state right after init and the state in which somebody reaches for `datom_sync()`. The stronger motivation the proposal did not make is that **`min_writer_version` already lives in that file** (Task 21), so it already carries policy an older build silently ignores; the number is the general mechanism that makes the *next* policy field enforceable rather than advisory. **One verified finding the proposal left as "confirm this": one gate does NOT cover every read.** `.datom_resolve_data_location()` re-reads `project.yaml` after a git pull (`R/ref.R:327`) and is called from `R/conn.R:1030`, *after* the parse at `R/conn.R:937` -- so a config arriving in that pull is unchecked, and `conn$min_writer_version` is read from the same pre-pull parse (`R/conn.R:1081`), meaning a pulled floor raise is missed in that session too. Pre-existing; the task must either gate the re-read or record the residual, not omit it. | R9.8, AC39, Task 23, Task 11, Task 21, R23.1 |
 | 2026-09-10 | **Task 23 executes immediately before Task 11 rather than last, and Task 11 states the dependency.** The proposal put it at the end of the list with a note that it "must ship in the same release as Task 11". Same guarantee, but enforced by memory at release time -- and the failure it insures against is precisely a release split with Task 11 in the earlier half. Making it the task immediately before Task 11, with the dependency written into Task 11's body, makes the constraint structural and removes the cross-reference that would otherwise have to be kept true in two places. Phase E's own filter argues for this: an irretrofittable half belongs early relative to the thing it protects, not at the end of a list where it can be deferred while the thing it protects ships. | Task 23, Task 11, Phase E |
+| 2026-09-10 | **The execution order was swept in one copy of three, and `check-spec.R` check 6 now guards it.** Adding Task 23 updated the state block's order and left Phase E's preamble and the `dev/README.md` status cell both saying the sequence ended at Task 7. **Found by the owner reading the file, not by the gate** -- which is the same defect class check 6 was built for, arriving in a third kind of content after the encoder pseudocode and the AC bounds. Check 6 now extracts every arrow chain beginning `18 -> 19` from all three spec files **and** from `dev/README.md`, and fails when two copies disagree, naming which one is behind. Two design points worth keeping: the copies are compared **against each other** rather than against an expected sequence, because the order changes legitimately and a gate holding today's answer would need editing every time it moved -- which is how a gate stops being trusted; and the text is collapsed to one string before matching, because the state block's copy **wraps across two lines**, so a line-by-line scan sees two short chains and the disagreement hides in the split. Verified by reintroducing the exact defect the owner found, and separately by staling only the README: both FAIL. `dev/README.md` is read for this one clause only, since that is where the third copy lives and the copy a person meets first. | dev/check-spec.R, Task 23, Phase E |

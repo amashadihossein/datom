@@ -464,6 +464,64 @@ for (key in CODE_KEYS) {
   }
 }
 
+# THE EXECUTION ORDER, added 2026-09-10 after the same defect class hit a third
+# kind of content.
+#
+# `18 -> 19 -> 5 -> ...` is written out in three places: the state block at the top
+# of tasks.md, Phase E's preamble further down, and the status cell in
+# dev/README.md. Adding Task 23 swept the first and left the other two stating an
+# order that ended at Task 7 -- caught by a reader, not by this script, which is
+# the definition of a gap here.
+#
+# Compared against each other, never against an expected value: the order changes
+# legitimately, and a check that hardcoded today's sequence would have to be edited
+# every time it changed, which is how a gate stops being trusted.
+#
+# dev/README.md is included even though it is not a spec file, because that is
+# where the third copy lives -- and it is the copy a person reads first.
+#
+# NOT required to be present in all three. The README's copy is optional; what is
+# forbidden is two copies that disagree.
+order_chain_re <- "(?:\\[?(?:Task )?[0-9]+\\]?[[:space:]]*->[[:space:]]*){2,}\\[?(?:Task )?[0-9]+\\]?"
+
+order_seq <- function(chain) {
+  parts <- strsplit(chain, "->", fixed = TRUE)[[1L]]
+  nums <- regmatches(parts, regexpr("[0-9]+", parts))
+  paste(nums, collapse = ">")
+}
+
+ORDER_SOURCES <- c(
+  stats::setNames(spec_paths, SPEC_FILES),
+  stats::setNames(file.path(repo_root, "dev", "README.md"), "dev/README.md")
+)
+
+order_found <- character()
+for (nm in names(ORDER_SOURCES)) {
+  txt <- read_lines_safe(ORDER_SOURCES[[nm]])
+  if (is.null(txt)) next
+  # Collapsed to one string first: the state block's copy WRAPS across two lines,
+  # so a line-by-line scan sees two short chains instead of one long one and the
+  # disagreement hides in the split.
+  flat <- paste(txt, collapse = " ")
+  hits <- regmatches(flat, gregexpr(order_chain_re, flat, perl = TRUE))[[1L]]
+  for (h in hits) {
+    order_found <- c(order_found, stats::setNames(order_seq(h), nm))
+  }
+}
+
+# Only chains that start at the first Phase E task are the execution order. Other
+# arrow chains exist (a version-to-version upgrade path, for one) and are not this.
+order_found <- order_found[startsWith(unname(order_found), "18>19>")]
+
+order_mismatch <- character()
+if (length(unique(unname(order_found))) > 1L) {
+  order_mismatch <- c(
+    "the execution order disagrees across its copies:",
+    sprintf("    %-18s %s", names(order_found), unname(order_found)),
+    "    all copies state one sequence -- sweep every one, or none"
+  )
+}
+
 # No explicit AC upper bound: "AC1-AC28", "AC13-AC28", "twenty-eight acceptance"
 ac_bound <- character()
 for (fname in SPEC_FILES) {
@@ -475,16 +533,18 @@ for (fname in SPEC_FILES) {
   }
 }
 
-if (length(code_mismatch) > 0L || length(ac_bound) > 0L) {
+if (length(code_mismatch) > 0L || length(ac_bound) > 0L ||
+    length(order_mismatch) > 0L) {
   fail("duplicated content agrees",
        "the same fact is stated twice and the copies disagree:",
        c(code_mismatch,
-         if (length(ac_bound)) c("hardcoded AC bound (derive it instead):", ac_bound)),
+         if (length(ac_bound)) c("hardcoded AC bound (derive it instead):", ac_bound),
+         order_mismatch),
        "this is the class a prose denylist cannot catch -- it survived three sweeps.")
 } else {
   pass("duplicated content agrees",
-       sprintf("%d encoder rules present in all %d files and agreeing; no hardcoded AC bounds",
-               length(CODE_KEYS), length(SPEC_FILES)))
+       sprintf("%d encoder rules present in all %d files and agreeing; no hardcoded AC bounds; %d execution-order copies agree",
+               length(CODE_KEYS), length(SPEC_FILES), length(order_found)))
 }
 
 # --- check 7: ASCII ----------------------------------------------------------
