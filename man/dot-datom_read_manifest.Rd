@@ -35,9 +35,11 @@ absent": separating a missing object from an unreachable store would
 cost an extra request on every read and no caller distinguishes them.
 \item \code{manifest} -- the parsed document \strong{in current shape}, or \code{NULL} when
 \code{ok} is \code{FALSE}. A document written in an older shape is converted in
-memory on the way through (\code{\link[=.datom_manifest_upgrade]{.datom_manifest_upgrade()}}); the file on disk
-or in storage is not modified by a read. So no caller ever sees a
-pre-current shape and none needs a fallback for one.
+memory on the way through (\code{\link[=.datom_manifest_upgrade]{.datom_manifest_upgrade()}}); one whose artifact
+list this build cannot reach is reconstructed from storage
+(\code{\link[=.datom_rebuild_manifest]{.datom_rebuild_manifest()}}). Neither modifies the file on disk or in
+storage. So no caller ever sees a pre-current shape and none needs a
+fallback for one.
 \item \code{error} -- the condition that stopped the read, or \code{NULL}. The whole
 condition rather than its text, so a caller can re-signal the original
 failure unchanged instead of manufacturing a look-alike.
@@ -66,5 +68,14 @@ user intact. Placed inside a caller's \code{tryCatch} it would be reworded as
 third -- see \code{dev/engineering-notes.md}. Throwing from in here means there
 is no handler for a caller to put it inside.
 }
+
+\strong{And one document that is not a failure at all.} When the artifact list is
+missing from where this build looks for it -- either because the format is
+newer than this build knows, or because the key is simply not there after the
+conversion has run -- the index is \strong{reconstructed from storage} and a warning
+says so. The manifest summarises documents that each hold the same facts, so it
+is the one datom-owned file with something to rebuild it from. A \strong{writer}
+meeting either condition is refused instead
+(\code{\link[=.datom_check_write_entry]{.datom_check_write_entry()}}): reads limp, writes stop.
 }
 \keyword{internal}

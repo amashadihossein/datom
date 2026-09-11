@@ -834,6 +834,15 @@ datom_sync <- function(conn,
 #'   third -- see `dev/engineering-notes.md`. Throwing from in here means there
 #'   is no handler for a caller to put it inside.
 #'
+#' **And one document that is not a failure at all.** When the artifact list is
+#' missing from where this build looks for it -- either because the format is
+#' newer than this build knows, or because the key is simply not there after the
+#' conversion has run -- the index is **reconstructed from storage** and a warning
+#' says so. The manifest summarises documents that each hold the same facts, so it
+#' is the one datom-owned file with something to rebuild it from. A **writer**
+#' meeting either condition is refused instead
+#' ([.datom_check_write_entry()]): reads limp, writes stop.
+#'
 #' @param conn A `datom_conn` object.
 #' @param scope `"storage"` for the copy in data storage
 #'   (`.metadata/manifest.json`), `"clone"` for the git-tracked copy
@@ -853,9 +862,11 @@ datom_sync <- function(conn,
 #'     cost an extra request on every read and no caller distinguishes them.
 #'   * `manifest` -- the parsed document **in current shape**, or `NULL` when
 #'     `ok` is `FALSE`. A document written in an older shape is converted in
-#'     memory on the way through ([.datom_manifest_upgrade()]); the file on disk
-#'     or in storage is not modified by a read. So no caller ever sees a
-#'     pre-current shape and none needs a fallback for one.
+#'     memory on the way through ([.datom_manifest_upgrade()]); one whose artifact
+#'     list this build cannot reach is reconstructed from storage
+#'     ([.datom_rebuild_manifest()]). Neither modifies the file on disk or in
+#'     storage. So no caller ever sees a pre-current shape and none needs a
+#'     fallback for one.
 #'   * `error` -- the condition that stopped the read, or `NULL`. The whole
 #'     condition rather than its text, so a caller can re-signal the original
 #'     failure unchanged instead of manufacturing a look-alike.
@@ -907,14 +918,103 @@ datom_sync <- function(conn,
 
   if (!read$ok) return(read)
 
-  declared <- .datom_check_schema_version(read$manifest, source, operation = operation)
+  # A format above what this build supports is a refusal for a writer and a
+  # rebuild for a reader -- same evidence, opposite responses, because reads limp
+  # and writes stop. The refusal is caught here ONLY on the read path, and the
+  # condition is kept: if the rebuild then turns out to be impossible, the
+  # original refusal is what the user gets, never an IO failure wearing its
+  # clothes.
+  too_new <- NULL
+  declared <- if (operation == "read") {
+    tryCatch(
+      .datom_check_schema_version(read$manifest, source, operation = operation),
+      datom_schema_unsupported = function(cnd) {
+        too_new <<- cnd
+        NA_integer_
+      }
+    )
+  } else {
+    .datom_check_schema_version(read$manifest, source, operation = operation)
+  }
 
-  # The check runs first and the upgrade only on what survives it: there is no
-  # step for a version this build does not know, so the dispatcher must never
-  # see one. Kept as its own statement rather than folded into the return,
-  # because a rebuild branch lands at this same point later.
-  read$manifest <- .datom_manifest_upgrade(read$manifest, declared)
-  read$declared <- declared
+  # `datom_schema_invalid` is deliberately NOT caught above: a value that is not
+  # a schema version at all means a corrupt or hand-edited document, and a
+  # corrupt manifest has to keep failing visibly rather than being quietly
+  # reconstructed.
+
+  if (is.null(too_new)) {
+    # The check runs first and the upgrade only on what survives it: there is no
+    # step for a version this build does not know, so the dispatcher must never
+    # see one.
+    read$manifest <- .datom_manifest_upgrade(read$manifest, declared)
+    read$declared <- declared
+  } else {
+    # Held for callers that report which format the document was in. The number
+    # is taken off the raw document because the check threw instead of returning
+    # it.
+    read$declared <- suppressWarnings(as.integer(read$manifest$schema_version))
+  }
+
+  # Writers never reach a rebuild, on either trigger. A writer meeting a manifest
+  # whose artifact list it cannot reach is refused at the door instead
+  # (`.datom_check_write_entry()`), because overwriting an index this build cannot
+  # account for leaves the repo wrong for everybody, where a reader's guess costs
+  # one person one session.
+  if (operation != "read") return(read)
+
+  reason <- if (!is.null(too_new)) {
+    "schema"
+  } else if (is.list(read$manifest) && !("artifacts" %in% names(read$manifest))) {
+    # Absent, never merely empty. An empty artifact list is what a brand-new repo
+    # looks like, so rebuilding on empty would cost a storage listing on every
+    # call against every healthy repo and would hide a truncated document behind
+    # a plausible answer.
+    "shape"
+  } else {
+    NULL
+  }
+
+  if (is.null(reason)) return(read)
+
+  attempt <- tryCatch(
+    list(ok = TRUE, manifest = .datom_rebuild_manifest(conn, read$manifest)),
+    error = function(e) list(ok = FALSE, manifest = NULL, error = e)
+  )
+
+  # A per-artifact document this build cannot read stops the rebuild rather than
+  # being softened into a missing row: that document is stamped and not
+  # reconstructible, so there is nothing to salvage. Survivability is available
+  # exactly when the break was manifest-only.
+  #
+  # Re-signalled from OUT HERE, not from a handler beside the one above. A
+  # `stop(cnd)` inside one `tryCatch()` handler is caught by that same
+  # `tryCatch()`'s `error` handler -- verified, and the opposite of what the
+  # syntax suggests -- so the two-handler spelling of this silently turned every
+  # refusal below into an IO failure.
+  if (!isTRUE(attempt$ok) &&
+      inherits(attempt$error,
+               c("datom_schema_unsupported", "datom_schema_invalid"))) {
+    stop(attempt$error)
+  }
+
+  if (isTRUE(attempt$ok)) {
+    .datom_warn_manifest_rebuilt(
+      source, reason, read$declared, length(attempt$manifest$artifacts)
+    )
+    read$manifest <- attempt$manifest
+    return(read)
+  }
+
+  # The rebuild could not be done. For a too-new document the original refusal
+  # stands -- reporting it as an unreadable manifest is the one thing the schema
+  # contract forbids at every reader. For an unreachable shape the document was
+  # readable, so the failure is the storage one and each caller keeps its own
+  # policy for that.
+  if (!is.null(too_new)) stop(too_new)
+
+  read$ok <- FALSE
+  read$manifest <- NULL
+  read$error <- attempt$error
 
   read
 }

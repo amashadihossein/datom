@@ -437,13 +437,24 @@
 #   column_hashes                a deterministic function of the same values that
 #                                already fix `data_sha`, so it carries no
 #                                independent information
+#   original_format              which file extension an imported table came from.
+#                                Its sibling `original_file_sha` IS identity, so
+#                                the symmetric-looking choice here is identity
+#                                too -- and it is the wrong one. This field is
+#                                being persisted into metadata for the first time
+#                                by a build that already wrote it onto the
+#                                manifest row, so in identity it would re-mint a
+#                                version for every imported table in every repo,
+#                                on content that did not move. The extension also
+#                                says nothing about the data that `data_sha` does
+#                                not already fix.
 #   schema_version               a property of the container format, not of the
 #                                content -- in identity, a format bump would
 #                                re-mint a new version for every artifact in every
 #                                repo while its content stood still
 .datom_metadata_excluded_fields <- c(
   "column_hashes", "created_at", "datom_version", "document_sha",
-  "parquet_sha", "schema_version", "size_bytes"
+  "original_format", "parquet_sha", "schema_version", "size_bytes"
 )
 
 

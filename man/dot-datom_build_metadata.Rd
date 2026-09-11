@@ -13,6 +13,7 @@
   parents = NULL,
   source_lineage = NULL,
   original_file_sha = NULL,
+  original_format = NULL,
   column_hashes = NULL
 )
 }
@@ -36,6 +37,13 @@ project, table, version_sha), or NULL.}
 \item{original_file_sha}{SHA-256 of the source file, for imported tables.
 Included in the metadata \strong{only when non-NULL}; the derived path omits it
 from the object entirely (not present-with-NULL).}
+
+\item{original_format}{Extension of the source file (\code{"csv"}, \code{"parquet"},
+...), for imported tables. Recorded on the same only-when-non-NULL terms as
+\code{original_file_sha}, and for one reason: it was previously written onto the
+manifest row and nowhere else, which made it the single field a
+reconstructed index had to drop. It is \strong{not} part of the version identity
+-- see \code{.datom_metadata_excluded_fields}.}
 
 \item{column_hashes}{Ordered list of per-column \code{list(name, sha)} digests
 from \code{\link[=.datom_canonical_hash]{.datom_canonical_hash()}}, or NULL. Excluded from \code{metadata_sha}

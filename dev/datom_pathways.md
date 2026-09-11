@@ -40,8 +40,9 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 1. Read `schema_version` from the parsed document. Absent means **v1** -- every repo written before the field existed.
 2. Compare against `.datom_supported_schema` (`R/utils-validate.R`).
-3. Greater than supported -> abort (`datom_schema_unsupported`), naming the document and the upgrade command. Equal or less -> proceed. Present but not a whole number >= 1 -> abort as corrupt (`datom_schema_invalid`).
+3. Greater than supported -> abort (`datom_schema_unsupported`), naming the document and the upgrade command. Equal or less -> proceed. Present but not a whole number >= 1 -> abort as corrupt (`datom_schema_invalid`). **One exception, and only one: a MANIFEST being READ.** That document is reconstructible, so instead of aborting it goes to the reconstruction card below. Per-artifact metadata aborts at any role, and the manifest still aborts on the write path.
 4. **Manifest only: convert whatever survived step 3 to the current shape**, using the version step 3 resolved (`.datom_manifest_upgrade()`, `R/manifest-upgrade.R`). The order is fixed and only one order works: there is no step for a version this build does not know, so a too-new document must never reach the converter. A **read** converts in memory and leaves the file alone; a **write** converts the file and then stamps the version reached. This is a transform on a document already fetched, **not a new lookup** -- the route shape is unchanged.
+5. **Manifest only: is there an artifact list after the conversion?** Absent on a read -> the reconstruction card below. Absent on a write -> refuse. Present but empty is **not** this condition: that is what a brand-new repo looks like.
 
 **Where it is called (reader side):** `.datom_read_metadata()` (the `datom_read()` data path, which never touches the manifest), `datom_list()`, `datom_summary()`, `datom_status()` (both the stored manifest and the clone's copy), `datom_sync_manifest()`.
 
@@ -52,6 +53,28 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 **Do not:** Put the check inside a `tryCatch` that softens read failures -- the upgrade message gets reworded as "could not read manifest", or worse, downgraded to a warning. Read the document inside the handler, check it outside. Do not gate on `datom_version`: that records the writing package version (provenance), so gating on it would fire on harmless upgrades.
 
 **Write side:** the schema comparison above is one step of the write entry, described in its own card below.
+
+### Given a manifest whose artifact list this build cannot reach, still list the repo
+
+**Question:** The manifest read above got as far as a parsed document and then found no artifact list this build can use -- either the key is not there after the conversion, or the document declares a format this build has never heard of. What does a reader do?
+
+**Why there is a route at all:** without one, the answer is "report an empty repo, and do not error". Every discovery command agrees, confidently, and nothing looks wrong. The manifest is the one datom-owned document with a way out, because it is a **projection**: every fact in it is also recorded in the per-artifact documents it summarises.
+
+**Canonical route** -- `.datom_rebuild_manifest(conn, prior)` (`R/manifest-rebuild.R`), reached from inside `.datom_read_manifest()` and only when `operation = "read"`:
+
+1. **One recursive storage listing**, `.datom_storage_list_objects(conn, "")`. Artifact names are the first segment of every key shaped `{name}/.metadata/metadata.json`. The listing returns **full** keys (`{prefix}/datom/...`), so the namespace root is stripped before matching -- this is the two-key-shapes trap, and mixing them fails silently rather than erroring.
+2. **Two reads per artifact**: `metadata.json` and `version_history.json`. The metadata document gets the schema check from the card above, and its refusal **escapes the rebuild** rather than becoming a missing row: metadata is stamped and not reconstructible, so if the release that moved the manifest ahead also moved metadata there is nothing to salvage.
+3. **Copy the row's fields from those two documents.** `current_version` is the `version` **recorded** in the history, never a recomputed hash -- recomputing reaches for the identity code in exactly the situation a rebuild is for and can publish a version matching nothing in the history. Which entry describes the current state is not always the newest: a write that reverts to content already in the history appends nothing, so selection narrows by `data_sha` first and by the copied `created_at` second (`.datom_recorded_current_version()`).
+4. **Recompute the summary counters** from the rebuilt rows, declare the current schema version, and carry `project_name` and `updated_at` from the document being replaced.
+5. **Warn once** (`datom_manifest_rebuilt`), naming the copy, the reason and the upgrade.
+
+**In memory, for this session, always.** Neither copy of the manifest is written. A reader holds storage credentials and no clone, so persisting is not available to the population this route exists for; the recorded copy is repaired by the next ordinary write.
+
+**When the rebuild itself cannot be done**, the fork matters and is not symmetric. A **too-new** document falls back to the original schema refusal -- reporting it as an unreadable manifest is the one thing forbidden at every reader, because "could not read manifest" sends the user to check credentials when the instruction is to upgrade. An **unreachable-shape** document was perfectly readable, so the failure is the storage one and comes back as data for each caller's own policy.
+
+**Primary functions/files:** `.datom_rebuild_manifest()`, `.datom_rebuild_manifest_entry()`, `.datom_storage_artifact_names()`, `.datom_recorded_current_version()`, `.datom_warn_manifest_rebuilt()` (all `R/manifest-rebuild.R`); `.datom_read_manifest()` (`R/sync.R`).
+
+**Do not:** Trigger on an **empty** artifact list. Empty is what a new repo looks like and what a truncated file looks like, so it would put one storage listing on every read of every healthy repo and hide corruption behind a plausible answer. Do not give the writer the same response -- a writer meeting either condition refuses, and that asymmetry is the reads-limp / writes-stop rule rather than an inconsistency. Do not let a rebuilt row go untyped: `kind` is not in per-artifact metadata yet, so the rebuild stamps `"table"`, and an untyped row is silently uncounted by `.datom_artifacts_of_kind()` -- a rebuilt repo would then list its artifacts while reporting zero of them.
 
 ### Given a write request, decide whether this build may write here
 

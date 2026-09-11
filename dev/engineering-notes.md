@@ -537,3 +537,39 @@ before touching a manifest or a manifest fixture.
   `datom_status()$tables`, `datom_validate()$tables`, and the per-table results in `datom_sync()`'s
   result. A `grep tables` across `R/` hits all three. Renaming them is a separate breaking change to
   three public shapes.
+
+### Two ways a condition's class silently disappears on its way to a handler
+
+Both were found while building the reader-side manifest rebuild (2026-09-10), where the whole
+decision is made *by* the class of the condition that came back: a compatibility refusal has to keep
+travelling, while a storage failure has to be turned into a return value. Both defects go green in a
+suite that only checks that *something* failed.
+
+- **`stop(cnd)` inside one `tryCatch()` handler is caught by that same `tryCatch()`'s `error`
+  handler.** The spelling below reads as "re-raise this class, catch everything else", and it does
+  the opposite -- the re-raised condition lands in the sibling handler and comes back as a returned
+  value:
+
+  ```r
+  # WRONG. `stop(cnd)` is caught by the error handler two lines down.
+  tryCatch(
+    risky(),
+    my_class = function(cnd) stop(cnd),
+    error    = function(e) list(ok = FALSE, error = e)
+  )
+  ```
+
+  Catch once, decide afterwards, re-signal from outside every handler:
+
+  ```r
+  out <- tryCatch(list(ok = TRUE, value = risky()),
+                  error = function(e) list(ok = FALSE, error = e))
+  if (!isTRUE(out$ok) && inherits(out$error, "my_class")) stop(out$error)
+  ```
+
+- **`purrr::map()` and friends re-signal whatever the mapped function threw as their own error.**
+  The result carries `purrr_error_indexed` / `rlang_error` and the original condition is demoted to
+  its `parent`, so `inherits(e, "my_class")` is `FALSE` and a class-specific `tryCatch` handler never
+  fires. Where a mapped function is expected to raise a condition the caller dispatches on, use
+  `lapply()` / `vapply()` and say why in a comment -- otherwise the next tidy-up puts `purrr::map()`
+  back.

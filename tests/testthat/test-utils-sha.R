@@ -985,6 +985,7 @@ builder_metadata_fixture <- function(optional = TRUE) {
       table_type = "imported",
       size_bytes = 4096,
       original_file_sha = "f00dcafe",
+      original_format = "csv",
       parents = list(list(source = "STUDY_001", table = "dm",
                           version = "a1b2c3d4", data_sha = "e5f6a7b8")),
       source_lineage = list(list(project = "STUDY_001", table = "dm",
@@ -1028,8 +1029,8 @@ test_that("the pinned fixtures carry exactly the keys datom's writers emit", {
   always <- c("schema_version", "data_sha", "hash_algo", "parquet_sha",
               "table_type", "nrow", "ncol", "colnames", "column_hashes",
               "created_at", "datom_version")
-  conditional <- c("original_file_sha", "parents", "source_lineage",
-                   "size_bytes", "custom")
+  conditional <- c("original_file_sha", "original_format", "parents",
+                   "source_lineage", "size_bytes", "custom")
 
   expect_setequal(names(builder_metadata_fixture(optional = TRUE)),
                   c(always, conditional))

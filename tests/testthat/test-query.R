@@ -900,21 +900,31 @@ test_that("datom_status handles empty input_files dir", {
 
 # --- schema_version gate: reader entry points ----------------------------------
 
-test_that("datom_list refuses a manifest declaring a newer schema", {
-  local_mocked_bindings(
-    .datom_storage_read_json = function(conn, s3_key) {
-      list(schema_version = 3L, artifacts = list(dm = list()))
-    }
+test_that("datom_list rebuilds a manifest declaring a newer schema", {
+  # AMENDED. This test used to assert an abort, which was correct until the
+  # manifest gained something to rebuild it from: every fact in it is also
+  # recorded in the per-artifact documents it summarises. A READER now
+  # reconstructs and warns; a WRITER meeting this same document is still refused
+  # (test-forward-compat.R). Same evidence, opposite responses.
+  mock_rebuildable_store(
+    manifest = list(schema_version = 99L, artifacts = list(dm = list())),
+    artifacts = list(dm = mock_stored_artifact())
   )
 
   conn <- mock_datom_conn(list())
-  err <- expect_error(datom_list(conn), class = "datom_schema_unsupported")
+  warnings <- capture_warnings(result <- datom_list(conn))
 
-  # The check sits outside datom_list()'s read handler on purpose. Inside it,
-  # the upgrade instruction would be reworded as "Could not read manifest",
-  # burying the one thing the user can act on.
-  expect_match(conditionMessage(err), "install_github")
-  expect_false(grepl("Could not read manifest", conditionMessage(err)))
+  # Exactly one, not one per artifact and not one per read.
+  expect_length(warnings, 1L)
+  # Still the one thing the user can act on. Reported as its own outcome, never
+  # reworded into datom_list()'s "Could not read manifest" -- which is what the
+  # abort this replaced was guarding.
+  expect_match(warnings, "install_github")
+  expect_false(any(grepl("Could not read manifest", warnings)))
+
+  expect_equal(nrow(result), 1L)
+  expect_equal(result$name, "dm")
+  expect_equal(result$kind, "table")
 })
 
 test_that("datom_list tolerates a manifest with no schema_version", {
@@ -948,17 +958,24 @@ test_that("datom_list reads the frozen old-format manifest as non-empty", {
   expect_equal(result$kind, "table")
 })
 
-test_that("datom_status aborts on a newer schema rather than reporting it", {
-  # datom_status() deliberately tolerates an unreadable manifest so it can
-  # still describe the connection when storage is down. A too-new repo must
-  # NOT ride that tolerance: reporting "could not read" here is precisely the
-  # silent degradation the check exists to remove.
-  local_mocked_bindings(
-    .datom_storage_read_json = function(conn, s3_key) list(schema_version = 3L)
+test_that("datom_status rebuilds on a newer schema rather than reporting it unreadable", {
+  # AMENDED from an abort, for the reason in the datom_list test above. What has
+  # NOT changed is the part that mattered: datom_status() tolerates an unreadable
+  # manifest so it can still describe a connection when storage is down, and a
+  # too-new document must never ride that tolerance. It does not -- the outcome
+  # here is a rebuild with a warning, and the manifest is reported available.
+  mock_rebuildable_store(
+    manifest = list(schema_version = 3L),
+    artifacts = list(dm = mock_stored_artifact())
   )
 
   conn <- mock_datom_conn(list())
-  expect_error(datom_status(conn), class = "datom_schema_unsupported")
+  warnings <- capture_warnings(result <- datom_status(conn))
+
+  expect_length(warnings, 1L)
+  expect_match(warnings, "install_github")
+  expect_true(result$tables$available)
+  expect_equal(result$tables$count, 1L)
 })
 
 test_that("datom_status still reports an unreadable manifest as unavailable", {
@@ -976,10 +993,12 @@ test_that("datom_status still reports an unreadable manifest as unavailable", {
   expect_match(result$tables$error, "S3 error")
 })
 
-test_that("datom_status refuses a local clone declaring a newer schema", {
-  # The clone can be ahead of this build: a collaborator on a newer datom
-  # writes, this developer pulls. Storage here is fine, so the abort can only
-  # come from the local manifest.
+test_that("datom_status rebuilds a local clone declaring a newer schema", {
+  # AMENDED from an abort. The clone can be ahead of this build: a collaborator on
+  # a newer datom writes, this developer pulls. Storage is fine here, so the
+  # rebuild can only have been triggered by the local file -- and it is
+  # reconstructed FROM STORAGE, which is the only copy of the facts a build in
+  # this position can read.
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -994,14 +1013,23 @@ test_that("datom_status refuses a local clone declaring a newer schema", {
       auto_unbox = TRUE
     )
 
+    # The storage copy is current and carries an empty-but-present artifact list,
+    # so it does NOT trigger a rebuild of its own -- only the clone read does.
+    mock_rebuildable_store(
+      manifest = list(schema_version = 2L, artifacts = list()),
+      artifacts = list(dm = mock_stored_artifact())
+    )
     local_mocked_bindings(
-      .datom_storage_read_json = function(conn, s3_key) list(schema_version = 2L, artifacts = list()),
       .datom_status_git = function(path) {
         list(uncommitted = character(), branch = "main")
       }
     )
 
-    expect_error(datom_status(conn), class = "datom_schema_unsupported")
+    warnings <- capture_warnings(result <- datom_status(conn))
+
+    expect_length(warnings, 1L)
+    expect_match(warnings, "\\.datom/manifest\\.json")
+    expect_true(result$tables$available)
   })
 })
 

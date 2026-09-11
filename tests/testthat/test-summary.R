@@ -154,20 +154,27 @@ test_that("print uses 'local' backend label and shows root/prefix joined", {
 
 # --- schema_version gate -------------------------------------------------------
 
-test_that("datom_summary refuses a manifest declaring a newer schema", {
-  local_mocked_bindings(
-    .datom_storage_read_json = function(conn, s3_key) {
-      list(schema_version = 3L, artifacts = list())
-    }
+test_that("datom_summary rebuilds a manifest declaring a newer schema", {
+  # AMENDED from an abort -- see the same amendment in test-query.R for why the
+  # manifest, alone among datom's documents, gets a survivable failure mode.
+  # The counters come off the rebuilt index, which is the clause a rebuild that
+  # forgot to type its rows would fail: an untyped row is uncounted.
+  mock_rebuildable_store(
+    manifest = list(schema_version = 3L, artifacts = list()),
+    artifacts = list(dm = mock_stored_artifact(size_bytes = 4096))
   )
 
   conn <- mock_datom_conn(list())
-  err <- expect_error(datom_summary(conn), class = "datom_schema_unsupported")
+  warnings <- capture_warnings(s <- datom_summary(conn))
 
-  # Outside the read handler: inside it, the upgrade instruction would be
-  # reworded as "Could not read manifest".
-  expect_match(conditionMessage(err), "install_github")
-  expect_false(grepl("Could not read manifest", conditionMessage(err)))
+  expect_length(warnings, 1L)
+  expect_match(warnings, "install_github")
+  expect_false(any(grepl("Could not read manifest", warnings)))
+
+  expect_equal(s$table_count, 1L)
+  # Read off the rebuilt summary block, so the recomputed counters are exercised
+  # and not just the artifact rows.
+  expect_equal(s$total_versions, 1L)
 })
 
 test_that("datom_summary tolerates a manifest with no schema_version", {

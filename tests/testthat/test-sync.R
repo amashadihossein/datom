@@ -1263,10 +1263,16 @@ test_that("datom_pull is data-repo-only and does not touch the gov repo", {
 
 # --- schema_version gate -------------------------------------------------------
 
-test_that("datom_sync_manifest refuses a local manifest declaring a newer schema", {
-  # Developer-side entry point reading the git clone's copy. Same reachable
-  # scenario as datom_status(): a collaborator writes with a newer datom and
+test_that("datom_sync_manifest rebuilds a local manifest declaring a newer schema", {
+  # AMENDED from an abort. Developer-side entry point reading the git clone's
+  # copy, in the reachable scenario: a collaborator writes with a newer datom and
   # this developer pulls.
+  #
+  # The assertion that carries the weight is `status`. Storage records a `dm`
+  # artifact whose source file hash differs from the one on disk, so a scan that
+  # consulted the reconstructed index calls the file "changed" -- while a scan
+  # that fell back to an empty index would call it "new". That is what proves the
+  # rebuild was used rather than merely performed.
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -1281,10 +1287,21 @@ test_that("datom_sync_manifest refuses a local manifest declaring a newer schema
       auto_unbox = TRUE
     )
 
-    expect_error(
-      datom_sync_manifest(conn),
-      class = "datom_schema_unsupported"
+    mock_rebuildable_store(
+      manifest = list(schema_version = 2L, artifacts = list()),
+      artifacts = list(dm = mock_stored_artifact(
+        extra_meta = list(original_file_sha = strrep("c", 64L))
+      ))
     )
+
+    warnings <- capture_warnings(
+      result <- suppressMessages(datom_sync_manifest(conn))
+    )
+
+    expect_length(warnings, 1L)
+    expect_match(warnings, "\\.datom/manifest\\.json")
+    expect_equal(nrow(result), 1L)
+    expect_equal(result$status, "changed")
   })
 })
 
@@ -1433,14 +1450,43 @@ test_that(".datom_read_manifest does not claim a missing storage object is absen
   expect_false(read$absent)
 })
 
-test_that(".datom_read_manifest throws a too-new document rather than returning it", {
-  # The whole point of the split: a caller cannot soften what it never receives.
-  local_mocked_bindings(
-    .datom_storage_read_json = function(conn, s3_key) list(schema_version = 99L)
+test_that(".datom_read_manifest rebuilds a too-new document for a reader", {
+  # AMENDED, and this is the load-bearing one: it pins the shared reader's own
+  # returned-versus-thrown contract. A too-new manifest used to be thrown from
+  # here so no caller could soften it. It is now reconstructed instead, and the
+  # returned document is in this build's shape -- so callers still never see a
+  # shape they do not understand, which is the property the throw was protecting.
+  mock_rebuildable_store(
+    manifest = list(schema_version = 99L),
+    artifacts = list(dm = mock_stored_artifact())
+  )
+
+  read <- NULL
+  expect_warning(
+    read <- .datom_read_manifest(mock_datom_conn(list()), "storage"),
+    class = "datom_manifest_rebuilt"
+  )
+
+  expect_true(read$ok)
+  expect_equal(read$manifest$schema_version, 2L)
+  expect_length(read$manifest$artifacts, 1L)
+  expect_equal(read$manifest$artifacts$dm$kind, "table")
+  # The number the document declared is still reported, so a caller can say what
+  # it met.
+  expect_equal(read$declared, 99L)
+})
+
+test_that(".datom_read_manifest still throws a too-new document for a writer", {
+  # The other half of the asymmetry, in the one function that decides it. A write
+  # never limps: overwriting an index this build cannot account for leaves the
+  # repo wrong for everybody.
+  mock_rebuildable_store(
+    manifest = list(schema_version = 99L),
+    artifacts = list(dm = mock_stored_artifact())
   )
 
   expect_error(
-    .datom_read_manifest(mock_datom_conn(list()), "storage"),
+    .datom_read_manifest(mock_datom_conn(list()), "storage", operation = "write"),
     class = "datom_schema_unsupported"
   )
 })
@@ -1491,9 +1537,46 @@ test_that(".datom_read_manifest returns a corrupt clone file as a failure, not a
   })
 })
 
-test_that(".datom_read_manifest names the copy it refused", {
-  # A refusal on the clone must not blame storage, and vice versa -- the
-  # difference decides whether the user pulls or upgrades.
+test_that(".datom_read_manifest names the copy it rebuilt", {
+  # AMENDED from naming the copy it REFUSED. The reason the copy has to be named
+  # is unchanged: the difference between the clone and the storage mirror decides
+  # whether the user pulls or upgrades. Only the outcome being named moved.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    fs::dir_create(".datom")
+    jsonlite::write_json(
+      list(schema_version = 99L), ".datom/manifest.json",
+      auto_unbox = TRUE
+    )
+
+    mock_rebuildable_store(
+      manifest = list(schema_version = 2L, artifacts = list()),
+      artifacts = list(dm = mock_stored_artifact())
+    )
+
+    clone_warn <- expect_warning(
+      .datom_read_manifest(conn, "clone"),
+      class = "datom_manifest_rebuilt"
+    )
+    expect_match(conditionMessage(clone_warn), "\\.datom/manifest\\.json")
+  })
+
+  mock_rebuildable_store(
+    manifest = list(schema_version = 99L),
+    artifacts = list(dm = mock_stored_artifact())
+  )
+  storage_warn <- expect_warning(
+    .datom_read_manifest(mock_datom_conn(list()), "storage"),
+    class = "datom_manifest_rebuilt"
+  )
+  expect_match(conditionMessage(storage_warn), "\\.metadata/manifest\\.json")
+})
+
+test_that(".datom_read_manifest still names the copy it refused, for a writer", {
+  # The refusal wording did not go away, it moved to the write path -- and it is
+  # still the thing that tells a developer whether to pull or to upgrade.
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$path <- getwd()
@@ -1505,20 +1588,11 @@ test_that(".datom_read_manifest names the copy it refused", {
     )
 
     clone_err <- expect_error(
-      .datom_read_manifest(conn, "clone"),
+      .datom_read_manifest(conn, "clone", operation = "write"),
       class = "datom_schema_unsupported"
     )
     expect_match(conditionMessage(clone_err), "\\.datom/manifest\\.json")
   })
-
-  local_mocked_bindings(
-    .datom_storage_read_json = function(conn, s3_key) list(schema_version = 99L)
-  )
-  storage_err <- expect_error(
-    .datom_read_manifest(mock_datom_conn(list()), "storage"),
-    class = "datom_schema_unsupported"
-  )
-  expect_match(conditionMessage(storage_err), "\\.metadata/manifest\\.json")
 })
 
 test_that(".datom_read_manifest hands back the frozen v1 fixture in current shape", {

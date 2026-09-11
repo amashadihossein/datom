@@ -1285,7 +1285,7 @@ the gate deliberately tolerates and which the R8.1 rename therefore breaks.
   **warns once**, pointing at the upgrade: a silent repair is a silent degradation, which is the
   failure this whole section exists to remove.
   **The rebuild reads the recorded version id; it never recomputes one.** `version_history.json`
-  entries already carry `version` (`R/read_write.R:485`). Recomputing through
+  entries already carry `version` (`R/read_write.R:501`). Recomputing through
   `.datom_compute_metadata_sha()` walks straight into the denylist defect (#100) in precisely the
   scenario the rebuild exists for -- an older build reading a repo a newer one wrote -- and would
   publish a `current_version` matching no version in the history, which is worse than the empty list

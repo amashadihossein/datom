@@ -98,7 +98,7 @@ There is no view or navigation config -- see "Tags replace structure" below.
   parquet. The payload is small and cheap to read, so a member index would be
   metadata-for-metadata. **This is also the answer to "how does a git-less reader diff two
   versions?"** -- it reads `version_history.json` (which already carries `data_sha` per entry,
-  `R/read_write.R:485-491`) to map version -> `data_sha`, then fetches the two content-addressed
+  `R/read_write.R:500-506`) to map version -> `data_sha`, then fetches the two content-addressed
   payloads and compares them: three small JSON reads, no git. That yields the **actual changed
   values**, which per-member digests could not. Diffing `members[]` must key on
   `id$project` + `id$name` rather than array position, since member order is not identity for
@@ -738,10 +738,11 @@ I need?* -- and neither field answers it alone.
 The manifest and per-artifact metadata look similar and behave completely differently under a
 breaking change (R22.9).
 
-**The manifest is derived, so it can be reconstructed.** Two hatches are available there, and both
-are deferred to their own issues rather than built here:
+**The manifest is derived, so it can be reconstructed.** Two hatches are available there. The first
+**shipped in Task 22** (`R/manifest-rebuild.R`), on both of R22.12's triggers rather than only the
+absent-key one described below; the second is still deferred to its own issue.
 
-- **Self-healing read**: when the artifact key a build expects is **absent**, rebuild the index from
+- **Self-healing read -- BUILT.** When the artifact key a build expects is **absent**, rebuild the index from
   a storage listing instead of concluding the repo is empty. The trigger must be *absent*, not
   *empty* -- an empty list is what a new repo looks like and what a truncated file looks like, so
   rebuilding on empty would cost a listing per call on healthy repos and would hide corruption. A
@@ -749,8 +750,11 @@ are deferred to their own issues rather than built here:
   Two constraints: a storage-only reader can only rebuild **in memory for that session** (it has no
   git and must not write to storage), and the rebuild must **say so, once**, pointing at the upgrade
   -- a rebuild that succeeds silently is itself a silent-degradation path, which is what section 10
-  exists to remove.
-- **Dual-write**: emit the old shape alongside the new for a declared window. The only hatch that
+  exists to remove. **What shipped is stricter than the second constraint above**: the rebuild writes
+  nothing at **any** role, not only for a storage-only reader. A read that quietly rewrote a repo's
+  index is a larger surprise than the one it is fixing, and the recorded copy is repaired by the next
+  ordinary write.
+- **Dual-write -- DEFERRED**: emit the old shape alongside the new for a declared window. The only hatch that
   helps builds **already released**, since it asks nothing of them. The failure mode to design
   against is a **stale** legacy copy rather than a leftover one: an old reader consuming an
   out-of-date list looks like it worked. Hence repo-level policy rather than a per-call argument,
@@ -830,7 +834,7 @@ not survive into the implementation.
 ### 10.7 The write-path entry sequence
 
 Stated once, so the pieces compose. All of it sits directly after the `datom_conn` class check and
-**above** the two routing returns at `R/read_write.R:711` and `R/read_write.R:715` --
+**above** the two routing returns at `R/read_write.R:719` and `R/read_write.R:723` --
 `.datom_sync_data_metadata()` mirrors the whole manifest to storage (`R/sync.R:212`) without ever
 reaching the manifest-writing step, so anything placed after the router misses it.
 

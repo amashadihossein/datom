@@ -145,6 +145,51 @@ this version fully understands, which is every repo it wrote itself.
   share a repo with an older install, upgrading it is the only protection there
   is.
 
+## A repo whose index this version cannot read is still listed, not reported empty
+
+The mirror of the section above, on the reading side. A manifest whose artifact
+list this version cannot use looks exactly like a repo with nothing in it --
+`datom_list()` returns no rows, `datom_summary()` and `datom_status()` report
+zero, and none of them errors. That is now replaced by a reconstruction and a
+warning.
+
+* **The artifact index is rebuilt from storage** when the list is missing after
+  the format conversion has run, or when the manifest declares a format newer
+  than this version understands. Every fact in the manifest is also recorded in
+  the per-artifact documents it summarises, so it can be reassembled: one
+  storage listing plus each artifact's own `metadata.json` and
+  `version_history.json`.
+
+* **It says so, once**, naming which copy of the manifest was rebuilt and
+  pointing at the upgrade. A repair that succeeds silently is itself a silent
+  degradation.
+
+* **Nothing is written.** The reconstruction lasts for that session only, on both
+  copies of the manifest and at every role -- a read that quietly rewrote your
+  repo's index would be a larger surprise than the one it is fixing. The
+  recorded copy is repaired by the next ordinary write.
+
+* **Reported versions are the recorded ones.** Each rebuilt row takes its version
+  from the artifact's own history rather than recomputing a hash, so a rebuilt
+  listing can never point at a version that does not exist.
+
+* **Two things still fail rather than being reconstructed.** A manifest that will
+  not parse, or that declares something which is not a format number at all,
+  keeps failing visibly -- reconstructing it would turn a damaged repo into a
+  plausible-looking one. And an artifact's own `metadata.json` is never rebuilt
+  from anything: it is the source of truth, so a document declaring a format this
+  version does not understand still stops the read.
+
+* **A write meeting either condition still refuses** (see the section above).
+  Same evidence, opposite responses: a reader that carries on gives one person
+  one session's answers, while a writer that carries on leaves the repo wrong for
+  everybody.
+
+* **Imported tables now record their source format in their own metadata**, not
+  only on the manifest row -- which is what makes that field recoverable when the
+  index is rebuilt. It does not participate in version identity, so no existing
+  version changes.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

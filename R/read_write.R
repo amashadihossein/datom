@@ -269,6 +269,12 @@ datom_read <- function(conn,
 #' @param original_file_sha SHA-256 of the source file, for imported tables.
 #'   Included in the metadata **only when non-NULL**; the derived path omits it
 #'   from the object entirely (not present-with-NULL).
+#' @param original_format Extension of the source file (`"csv"`, `"parquet"`,
+#'   ...), for imported tables. Recorded on the same only-when-non-NULL terms as
+#'   `original_file_sha`, and for one reason: it was previously written onto the
+#'   manifest row and nowhere else, which made it the single field a
+#'   reconstructed index had to drop. It is **not** part of the version identity
+#'   -- see `.datom_metadata_excluded_fields`.
 #' @param column_hashes Ordered list of per-column `list(name, sha)` digests
 #'   from [.datom_canonical_hash()], or NULL. Excluded from `metadata_sha`
 #'   (see [.datom_compute_metadata_sha()]).
@@ -282,7 +288,8 @@ datom_read <- function(conn,
 .datom_build_metadata <- function(data, data_sha, custom = NULL,
                                  table_type = "derived", size_bytes = NULL,
                                  parents = NULL, source_lineage = NULL,
-                                 original_file_sha = NULL, column_hashes = NULL) {
+                                 original_file_sha = NULL,
+                                 original_format = NULL, column_hashes = NULL) {
   if (!table_type %in% c("imported", "derived")) {
     cli::cli_abort("{.arg table_type} must be {.val imported} or {.val derived}.")
   }
@@ -307,6 +314,7 @@ datom_read <- function(conn,
   )
 
   if (!is.null(original_file_sha)) meta$original_file_sha <- original_file_sha
+  if (!is.null(original_format)) meta$original_format <- original_format
   if (!is.null(parents)) meta$parents <- parents
   if (!is.null(source_lineage)) meta$source_lineage <- source_lineage
   if (!is.null(size_bytes)) meta$size_bytes <- size_bytes
@@ -781,6 +789,7 @@ datom_write <- function(conn,
     source_lineage = source_lineage,
     size_bytes = size_bytes,
     original_file_sha = .original_file_sha,
+    original_format = .original_format,
     column_hashes = hashed$column_hashes
   )
   metadata_sha <- .datom_compute_metadata_sha(meta)
