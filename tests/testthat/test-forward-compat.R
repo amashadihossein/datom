@@ -813,3 +813,82 @@ test_that("the metadata-only route re-checks after its pull", {
   )
   expect_match(conditionMessage(err), "arrived_in_the_pull")
 })
+
+
+# --- the repair path is a write route too -------------------------------------
+
+test_that("datom_validate(fix = TRUE) goes through the write entry", {
+  # It calls .datom_sync_data_metadata() directly rather than through
+  # datom_write(), so it does not pass that door. Left ungated, a build this repo
+  # has declared too old could still publish the repo's documents to storage --
+  # through a command that reads as a repair rather than as a write. The entry
+  # therefore sits on the function, not on each caller.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+  fx$conn$min_writer_version <- "999.0.0"
+
+  # datom_validate() catches the failure and reports it rather than aborting, so
+  # the assertion is on what it says and on storage being untouched.
+  wrote <- 0L
+  local_mocked_bindings(
+    .datom_storage_write_json = function(conn, s3_key, data) {
+      wrote <<- wrote + 1L
+      invisible(TRUE)
+    }
+  )
+
+  expect_error(
+    .datom_sync_data_metadata(fx$conn, .confirm = FALSE),
+    class = "datom_writer_floor"
+  )
+  expect_identical(wrote, 0L)
+})
+
+test_that("the repair path is refused on an unrecognised field too", {
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, "dm", "metadata.json"),
+    function(doc) c(doc, list(future_field = "x"))
+  )
+
+  err <- expect_error(
+    .datom_sync_data_metadata(fx$conn, .confirm = FALSE),
+    class = "datom_vocabulary_unknown"
+  )
+  expect_match(conditionMessage(err), "dm/metadata.json")
+})
+
+test_that("the mirror read itself reports a too-new manifest as one it cannot WRITE", {
+  # The verb matters on this route for the same reason it mattered at the door:
+  # the document is on its way to storage, so "cannot read" is the wrong thing to
+  # tell someone whose write was stopped.
+  #
+  # THE ENTRY IS MOCKED OUT ON PURPOSE, and without that this test proves nothing:
+  # the entry refuses a too-new manifest a few lines earlier, with the right verb
+  # already, so the abort would come from there and the assertion would pass
+  # whatever this read said. Suppressing it is what makes the read answer for
+  # itself -- which is the point, since a message that is only correct because
+  # something upstream refused first starts lying the day the refusal moves.
+  local_mocked_bindings(
+    .datom_check_write_entry = function(conn, artifact = NULL) invisible(NULL)
+  )
+
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(
+    fs::path(fx$repo_dir, ".datom", "manifest.json"),
+    function(doc) {
+      doc$schema_version <- 99L
+      doc
+    }
+  )
+
+  err <- expect_error(
+    .datom_sync_data_metadata(fx$conn, .confirm = FALSE),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(err), "cannot write")
+})

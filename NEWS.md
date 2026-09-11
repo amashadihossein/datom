@@ -100,10 +100,13 @@ answer from the version that wrote it, on content that never moved. So the write
 now stops instead. Reads still degrade gracefully where they can -- **reads limp,
 writes stop.**
 
-Everything below runs before any hashing, any local file write and any commit, on
-every write route, so a refusal leaves nothing half-written. Nothing changes for
-a repo whose documents this version fully understands, which is every repo it
-wrote itself.
+Everything below runs before any hashing, any local file write and any commit, so
+a refusal leaves nothing half-written. It covers every route that writes,
+including the two that are easy to overlook: the one that mirrors the whole
+manifest to storage without touching a single artifact, and
+`datom_validate(fix = TRUE)`, which reads as a repair but publishes this repo's
+documents to storage just the same. Nothing changes for a repo whose documents
+this version fully understands, which is every repo it wrote itself.
 
 * **A top-level field this version cannot classify refuses the write**, naming
   the field. Checked on the manifest, on each of its artifact entries, and on

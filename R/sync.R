@@ -140,6 +140,20 @@ datom_pull <- function(conn) {
     ))
   }
 
+  # The write entry, here rather than only at datom_write()'s door, because this
+  # function has a second caller that does not go through that door:
+  # `datom_validate(fix = TRUE)` calls it directly (`R/validate.R:183`). Left
+  # ungated there, a build the repo has declared too old could still publish this
+  # repo's documents to storage -- through a command that reads as a repair.
+  #
+  # It runs on the datom_write() route too, where the door has already run. That
+  # is deliberate: every step is a local file read and none of them mutates
+  # anything, so the cost of the second pass is nothing, and gating the function
+  # rather than each caller means the next caller cannot forget.
+  #
+  # `NULL` because this route touches every artifact in the clone, not one.
+  .datom_check_write_entry(conn, NULL)
+
   repo_path <- conn$path
   table_names <- .datom_clone_artifact_names(conn)
 
@@ -179,7 +193,13 @@ datom_pull <- function(conn) {
     # would leave the repo dirty with a change nobody asked for. For a window
     # the clone is older-shaped and storage is current-shaped; both are
     # internally consistent and both read correctly.
-    read <- .datom_read_manifest(conn, "clone")
+    #
+    # `operation = "write"` because that is what this is: the document is on its
+    # way to storage. The entry above would normally have refused a too-new
+    # manifest before this line, but this read must not be correct only because
+    # of that -- a message whose accuracy rests on an upstream refusal starts
+    # lying the day the refusal moves.
+    read <- .datom_read_manifest(conn, "clone", operation = "write")
 
     # A file that disappeared between the check above and the read is an
     # absence, not a failure: the reader reports it with no condition attached,

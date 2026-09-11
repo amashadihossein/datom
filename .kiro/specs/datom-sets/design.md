@@ -831,7 +831,7 @@ not survive into the implementation.
 
 Stated once, so the pieces compose. All of it sits directly after the `datom_conn` class check and
 **above** the two routing returns at `R/read_write.R:711` and `R/read_write.R:715` --
-`.datom_sync_data_metadata()` mirrors the whole manifest to storage (`R/sync.R:182`) without ever
+`.datom_sync_data_metadata()` mirrors the whole manifest to storage (`R/sync.R:212`) without ever
 reaching the manifest-writing step, so anything placed after the router misses it.
 
 ```

@@ -1848,7 +1848,8 @@ test_that(".datom_sync_data_metadata treats a manifest that vanished as absent, 
     )
     local_mocked_bindings(
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .datom_read_manifest = function(conn, scope = c("storage", "clone")) {
+      .datom_read_manifest = function(conn, scope = c("storage", "clone"),
+                                     operation = c("read", "write")) {
         list(
           ok = FALSE, absent = TRUE, manifest = NULL, error = NULL,
           declared = NA_integer_

@@ -16,7 +16,7 @@ that followed it (see the 2026-08-26 rows in the Decisions log) -> 2686 after Ta
 after Task 5 -> 2748 after the escape-code fix that followed it -> 2836 after Task 6 -> 2861 after the
 four review findings that followed it -> 2863 after its purity audit -> **2867 after the two loose
 ends the second review pass found -> 2898 after Task 20 -> 2902 after the review that followed it
--> 2905 after the classify-late guard -> **2959 after Task 21**. Report the count in every commit
+-> 2905 after the classify-late guard -> 2959 after Task 21 -> **2965 after the three review findings that followed it**. Report the count in every commit
 message; it must never drop.
 
 ---
@@ -100,7 +100,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **2959** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **2965** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 22**.
 
@@ -605,10 +605,15 @@ necessary.
     clone by `datom_sync_manifest()` and `.datom_status_input_files()`, and that copy can be ahead
     of the installed build by an ordinary route: a collaborator upgrades datom and writes, this
     developer pulls. Left ungated, those two commands read a manifest shape this build does not
-    know. The four in-pipeline local reads (`R/sync.R:179`, `R/read_write.R:860`,
-    `.datom_update_manifest_entry()`, `R/validate.R:257`) are **deliberately excluded**: the check
-    belongs where a document enters datom, so a refusal happens before work starts rather than
-    partway through a write.
+    know. The four in-pipeline local reads (`R/sync.R:202`, `R/read_write.R:860`,
+    `.datom_update_manifest_entry()`, `R/validate.R:257`) were **deliberately excluded** at the time:
+    the check belongs where a document enters datom, so a refusal happens before work starts rather
+    than partway through a write. **Two of those four are no longer excluded, and the record is left
+    here rather than rewritten**: Task 6 routed the mirror route's read through the shared reader, so
+    it is checked and converted, and Task 21 put the whole write entry on the function that read sits
+    in -- because `datom_validate(fix = TRUE)` calls that function directly and so never passed
+    `datom_write()`'s door. The entry updater and `datom_validate()`'s project-name read are still
+    excluded, for the reason stated.
   - **THE WIRING IS NOT SIX IDENTICAL ONE-LINERS, and that is the whole difficulty of this task.**
     Three of the six wrap their read in error handling that softens failures, so a check placed
     inside it produces a *different* outcome per site. `datom_list()` and `datom_summary()` would
@@ -848,7 +853,7 @@ own; landing it first is what makes Task 6's failure loud.
     `datom_write()` never reads -- gating only the per-artifact metadata leaves the manifest
     unprotected. (b) It must sit directly after the `datom_conn` class check and **above** the two
     routing returns at `R/read_write.R:711` and `R/read_write.R:715`, because
-    `.datom_sync_data_metadata()` mirrors the whole local manifest to storage (`R/sync.R:182`)
+    `.datom_sync_data_metadata()` mirrors the whole local manifest to storage (`R/sync.R:212`)
     without ever reaching the manifest-writing step, so a check placed after the router misses it.
     A write is several steps -- local files, one commit, then the storage mirror -- so the check
     goes ahead of all of them: stopping halfway leaves a half-finished write, which is worse than
@@ -1875,7 +1880,7 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - **The entry sequence** (design 10.7): fetch, floor, read-and-check-then-chain, unreachable-shape,
     vocabulary, proceed -- all directly after the `datom_conn` class check and **above** the routing
     returns at `R/read_write.R:711` and `R/read_write.R:715`, because `.datom_sync_data_metadata()`
-    mirrors the whole manifest to storage (`R/sync.R:182`) without reaching the manifest-writing step.
+    mirrors the whole manifest to storage (`R/sync.R:212`) without reaching the manifest-writing step.
     All of it before any hashing, local write, or commit (I34).
   - **The double read is already decided, by Task 6**: the entry updater reads the same file again at
     pipeline step 6, and Task 6 accepted two reads of a small local file rather than threading the
@@ -2001,6 +2006,37 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
       vocabulary **1**, the retired-name arm; dropping the per-artifact schema check **1**, the hole
       Task 6 left; and disabling the re-check after the pull **1**. The last three would each have
       shipped green without their probe.
+    - **THREE REVIEW FINDINGS, all verified against the code before acceptance; two fixed in a
+      follow-up commit, one recorded.** Two of them are the same route arriving for the third task
+      running, which is itself the finding worth carrying: `datom_validate(fix = TRUE)` reaches storage
+      by calling `.datom_sync_data_metadata()` **directly** (`R/validate.R:183`), so it does not pass
+      `datom_write()`'s door at all.
+      1. **The repair path bypassed the whole sequence.** No floor, no vocabulary, no per-artifact
+         format check -- and the NEWS entry claimed the checks run on every write route, which was
+         false. Damage was bounded, because that route copies documents rather than rebuilding them,
+         so nothing was being deleted. It still mattered for the floor, whose stated purpose includes
+         a block for a reason that is **not about format**, and those cannot be enumerated ahead of
+         time -- so "this route only copies" is not an argument that the floor may be skipped there.
+         **Fixed by putting the entry on the function rather than on each caller**, directly after its
+         role and path guards. The `datom_write()` route now runs it twice, which costs nothing (local
+         reads, no mutation, and the function is documented as callable more than once) and means the
+         next caller cannot forget. Probed: removing it reddens two tests.
+      2. **The same route read the manifest with the wrong verb.** `R/sync.R` used the shared reader's
+         default `operation = "read"`, so a too-new manifest met on the way to storage would report a
+         format this build "cannot read" -- during a write. Fixed with one argument. **Unreachable in
+         practice once finding 1 is fixed**, since the entry refuses first, so the test has to mock the
+         entry out to reach it; without that mock the assertion passed whatever the read said, which
+         the probe caught. Kept anyway on the rule this spec applies everywhere: a message that is
+         correct only because something upstream refused first starts lying the day the refusal moves.
+      3. **The staleness fix covers one of the two pulling routes -- ACCEPTED RESIDUAL, not fixed.**
+         The table-write route also pulls, inside `.datom_git_push(pull_first = TRUE)` at step 7
+         (`R/read_write.R:849`), which is **after** step 6 has already written the metadata document and
+         edited the manifest. So the door's answer can be stale there too, and re-checking cannot help:
+         the write is already built by then. Left as it is, deliberately, because the backstop is real
+         and design 10.7 already argues for it -- the push aborts on rejection or on a merge conflict,
+         and the storage steps are 8-10, so a write cannot land on storage from a base this build has
+         not seen. Recorded because the Task 21 summary said the staleness problem was "solved", which
+         is true of the metadata-only route and overclaims for this one.
     - **Live code citations re-derived by content**, in all three spec files, after this change shifted
       lines in five `R/` files: the two routing returns, the mirror route's manifest read, the entry
       updater, `datom_sync_manifest()`'s read and its artifact lookup, `.datom_has_changes()`'s storage
@@ -2295,3 +2331,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-09 | **Artifact discovery is one helper, because the door has to inspect exactly the set the route writes.** `.datom_clone_artifact_names()` (`R/sync.R`) was factored out of `.datom_sync_data_metadata()`, which now calls it too. On the mirror-everything route there is no artifact name in the arguments at all, so the door enumerates -- and discovering the set twice, in two spellings, is how the door ends up checking a different set than the one that gets written. The discriminator stays what it was: a directory holding a `metadata.json`, with the fixed non-artifact directory list as a convenience rather than the test, so a foreign directory is tolerated (R14.2) rather than misread. | R23.1, R14.2, Task 21 |
 | 2026-09-09 | **Task 21 makes all three of Task 20's coded levels unreachable through `datom_write()`, and the four round-trip tests now hold the door open with a mock.** Expected, predicted, and not a reason to remove the merge. What stays genuinely live is the **version-history entry**, which R23.1 does not scope -- so the test written for it in Task 20's review round is the load-bearing one rather than belt-and-braces. The merge is kept and kept tested for one forward-looking reason: the day a release widens what the door accepts, the merge behind it has to already work, and a merge that quietly broke while unreachable would ship as a silent field deletion on the first write that got through. The mock is named `fc_hold_door_open()` with the reasoning at the fixture, so nobody later reads it as a test working around its own subject. | AC34, AC35, Task 20, Task 21 |
 | 2026-09-09 | **Live code citations re-derived by content for a fourth consecutive session; dated rows left frozen.** This change shifted lines in five `R/` files, and eight distinct citations had drifted: the two routing returns, the mirror route's manifest read, the entry updater, `datom_sync_manifest()`'s read and its artifact lookup, `.datom_has_changes()`'s storage read, and the local metadata write's `git_paths`. Two of them were already wrong before this session. Repointed only where the citation is a live instruction -- dated Decisions rows record what was true on their date and stay frozen per the 2026-08-23 policy. Check 5 sees none of this class: it asserts only that a cited line is not blank. | dev/check-spec.R, Task 21 |
+| 2026-09-09 | **REVIEW OF TASK 21: the write entry goes on the FUNCTION, not on each caller.** `datom_validate(fix = TRUE)` reaches storage by calling `.datom_sync_data_metadata()` directly (`R/validate.R:183`), so it never passed `datom_write()`'s door -- no floor, no vocabulary, no per-artifact format check, while the NEWS entry claimed the checks covered every write route. Bounded damage, because that route copies documents rather than rebuilding them, so nothing was being deleted. **The argument that settles it is the floor's**: its stated purpose includes a block for a reason that is *not about format* ("0.1.4 wrote bad hashes"), and those cannot be enumerated ahead of time -- so "this route only copies" cannot license skipping it. Fixed by moving the call into `.datom_sync_data_metadata()` after its role and path guards; the `datom_write()` route now runs the sequence twice, which costs nothing and means the next caller cannot forget. **This is the third task running in which this route has been the gap** (Task 6's open call 1, Task 6's purity audit, now this), which is the more durable finding: a repair verb that reaches storage without going through the write verb will keep being missed, so gate the shared function rather than the entry points. Probed: removing it reddens two tests. | Task 21, R23.1, R23.3, `R/validate.R` |
+| 2026-09-09 | **A probe caught a test asserting the wrong thing, which is the reusable part of this round.** The mirror route read the manifest with the shared reader's default `operation = "read"`, so a too-new manifest on its way to storage reported a format this build "cannot read" -- during a write. One argument fixes it. But the test written for it **passed with the fix reverted**, because the entry sequence refuses a too-new manifest a few lines earlier with the right verb already, so the abort came from there. The test now mocks the entry out so the read answers for itself, and reddens on reversion. Kept rather than dropped as unreachable, on the rule this spec applies elsewhere: a message that is correct only because something upstream refused first starts lying the day the refusal moves. **The transferable bit is the method** -- the probe was what distinguished "my fix works" from "something else already covered this", and reading the code would not have. | Task 21, Task 6, R22.4 |
+| 2026-09-09 | **ACCEPTED RESIDUAL: the door's answer can be stale on the table-write route, and re-checking cannot fix it.** `.datom_git_push(pull_first = TRUE)` pulls at step 7 (`R/read_write.R:849`), **after** step 6 has written the metadata document and edited the manifest -- so a collaborator's newer-format document can arrive after the door passed, with the write already built. The metadata-only route's remedy (re-run the sequence after the pull) does not transfer: there is nothing left to re-check before. Left as it is deliberately, because the backstop is real and design 10.7 already argues for exactly this trade -- the push aborts on rejection or on a merge conflict, the storage steps are 8-10, so a write cannot reach storage from a base this build has not seen, and abort-after-commit is acceptable for a rare race while unacceptable as a primary mechanism. Recorded because Task 21's summary said the staleness problem was "solved", which holds for one route and overclaims for the other. | design.md 10.7, I34, Task 21 |

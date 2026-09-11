@@ -59,7 +59,7 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 **Why a separate card:** the read side asks "can I interpret this document?" and answers by degrading gracefully where it can. The write side asks a stricter question, because a reader that guesses wrong gives one wrong answer to one person while a writer that guesses wrong leaves the repo wrong for everybody. **Reads limp, writes stop.**
 
-**Canonical route** -- `.datom_check_write_entry(conn, artifact)` (`R/forward-compat.R`), called immediately after `datom_write()`'s `datom_conn` class check:
+**Canonical route** -- `.datom_check_write_entry(conn, artifact)` (`R/forward-compat.R`), called immediately after `datom_write()`'s `datom_conn` class check **and** at the top of `.datom_sync_data_metadata()`, which `datom_validate(fix = TRUE)` calls directly without passing through `datom_write()`:
 
 1. **The floor.** If `project.yaml` declares a `min_writer_version` above the running build, refuse (`datom_writer_floor`). Absent means no floor. Read off the connection, which parsed that file already.
 2. **The manifest**, through `.datom_read_manifest(conn, "clone", operation = "write")` -- the schema check and then the conversion chain, exactly as the read card describes, with the refusal worded for a write.
@@ -68,7 +68,9 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 **Scope of the documents inspected:** all three are the **clone's** copies -- local file reads, no network. `artifact` is the single artifact name a table write or metadata-only sync touches; `NULL` means every artifact in the clone, which is the mirror-everything route, enumerated by `.datom_clone_artifact_names()` (the same helper that route uses, so the door cannot inspect a different set than the one that gets written).
 
-**Placement:** above the two routing returns, because one route mirrors the whole manifest to storage without touching a single artifact. Above any hashing, local write or commit, so a refusal leaves no partial state. **Re-run after a route's own pull** -- `.datom_sync_metadata()` pulls as its first act, which replaces the documents the entry just read.
+**Placement:** above the two routing returns, because one route mirrors the whole manifest to storage without touching a single artifact. Above any hashing, local write or commit, so a refusal leaves no partial state. **On the shared function, not on each caller** -- a repair verb that reaches storage without going through the write verb is the gap that has now been missed three times running. **Re-run after a route's own pull** -- `.datom_sync_metadata()` pulls as its first act, which replaces the documents the entry just read. Re-running is free and safe: every step is a local file read and none of them mutates anything.
+
+**Known residual, so it is not rediscovered as a defect:** on the table-write route the pull happens inside the push, at step 7, **after** the metadata document has been written and the manifest edited -- so the entry's answer can be stale there and re-checking cannot help, because the write is already built. The backstop is the push itself: it aborts on rejection or on a merge conflict, and the storage steps come after it, so a write cannot reach storage from a base this build has not seen.
 
 **Cases that pass through untouched:** no clone (a reader-role connection fails later with a clearer message about role), no manifest file yet (nothing written, nothing to disagree with), and a manifest that will not parse (not a compatibility failure; the write fails on it moments later with the parser's own error).
 
