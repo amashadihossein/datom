@@ -165,6 +165,16 @@ under it, so they are not re-derived.**
    Any assertion about set counts needs a hand-built manifest holding a set entry beside table entries;
    `dev/engineering-notes.md` has the two spellings that go quietly wrong.
 
+**Task 7 was cold-start audited on 2026-09-10 and is startable.** Its body now carries the audit, and
+the two things most likely to derail a fresh session are in it: **adding `kind` re-mints a version for
+every existing table**, which is an accepted owner decision from 2026-08-23 rather than a defect (both
+of the obvious fixes were closed off then), and **this task legitimately moves two pinned identity
+goldens**, which is the one licensed exception to "if a golden fails, the code drifted". Two of the
+task's own statements were wrong and were corrected: it cited a field matrix in design.md section 4
+that does not exist -- R1.3 is the field list -- and it said to keep `document_sha` out of the metadata
+document, which contradicts R1.3 and would break the read gate. P36 was rescoped, since its first
+clause asserted the opposite of what this task does.
+
 **One task was added after Task 22 and is NOT next: Task 23, `project.yaml` declares its format.** It
 sits at the end of the list but **executes immediately before Task 11**, because Task 11 is what starts
 writing `mode: product` into that file and Task 23 is what lets an older build notice. Recorded now
@@ -1207,17 +1217,33 @@ own; landing it first is what makes Task 6's failure loud.
   - `kind: "table" | "set"` -- **semantic**, participates in `metadata_sha`. A **new field**, not
     a `table_type` value; `table_type` stays validated to exactly `imported`/`derived` (I12).
   - `.datom_build_metadata()` gains `kind = "table"`; new `.datom_build_set_metadata()` produces
-    the collapsed field set (design.md section 4 matrix) using **conditional assign** so fields
-    are omitted, not nulled.
+    the collapsed field set using **conditional assign** so fields are omitted, not nulled.
+    **The authoritative field list is R1.3** -- seven fields, named there -- with R1.4 giving what is
+    absent and why. It is **not** in design.md section 4, which this bullet used to cite: that section
+    is about tags replacing structure and contains no field matrix, so the citation sent a fresh reader
+    looking for a table that does not exist.
+  - **The set builder's two concrete values, because both are easy to get wrong by copying the table
+    builder.** `data_sha` comes from `.datom_canonical_set_hash(payload)` (`R/hashable-set.R:421`),
+    already shipped by Task 2, and `hash_algo` is the string **`"datom-sv1"`** -- the encoder embeds
+    that string inside the digest but nothing stamps the field, so the builder must. Copying
+    `"datom-cv1"` across would leave a set claiming the table regime while hashing under the set one.
   - `document_sha` persisted in `version_history.json` entries from day one, mirroring the
-    `parquet_sha` conditional-add in `.datom_write_metadata_local()`.
-    **Keep it out of the metadata document, or decide what happens to it there** (Task 20's record has
-    the mechanics). `document_sha` is the one name this build already classifies and never writes, and
-    Task 20's carry-forward only rescues names it **cannot** place -- so a metadata document arriving
-    with `document_sha` on it loses the field on rewrite, silently, since the field is outside identity
-    and no version moves. In `version_history.json` it is safe: entries are prepended to, never
-    rebuilt. So the safe reading of this bullet is the literal one, and moving the field into
-    `metadata.json` is a decision with a consequence rather than a tidy-up.
+    `parquet_sha` conditional-add in `.datom_write_metadata_local()` (R7.2).
+  - **`document_sha` ALSO GOES IN A SET'S `metadata.json` -- R1.3 lists it as one of the seven.** This
+    bullet previously said to keep it out of the metadata document, which contradicts R1.3 and would
+    break the read gate: R7.1 requires the stored payload verified **before parsing**, and the reader
+    has nowhere else to get the expected hash from. The Task 20 concern that produced the old wording
+    does not survive contact with R1.3 either -- carry-forward only matters for a field **nothing
+    writes**, and once the set builder writes it there is no rewrite that can lose it. It stays on the
+    excluded (not-identity) list: it is a fact about stored bytes, and hashing it would make a set's
+    identity depend on its own serialization.
+  - **`document_sha` is inert at this task, so decide whether the plumbing lands here.** Nothing
+    computes a `document_sha` until the set **write** path exists (Task 9), so the
+    `version_history.json` conditional-add added here writes nothing and the set builder's field is
+    only reachable from a test. R7.2 says "from day one", which argues for adding it now; the
+    alternative is deferring both to Task 9 and carrying no unreachable code. **Default: add it now**,
+    with a comment saying what makes it live, because it is one line, it mirrors `parquet_sha` exactly,
+    and a deferred line is a line Task 9 has to remember.
   - **CLASSIFY EVERY FIELD THIS TASK ADDS -- Task 19 landed the allowlist, so an unclassified field
     is silently outside identity.** `kind` is **semantic** and goes in the **hash list**; every field
     `.datom_build_set_metadata()` emits needs the same decision, one by one, against design.md
@@ -1225,13 +1251,65 @@ own; landing it first is what makes Task 6's failure loud.
     set can share a version identity -- which the 2026-08-23 decision closed off deliberately, and
     which no other test in this task would catch. Task 19's classification test is written to
     enumerate what the builders emit rather than hardcode names, so it **fails** until each new field
-    is classified; extend it to cover the set builder. `document_sha` needs no entry here -- it lands
-    in `version_history.json`, which `metadata_sha` does not hash -- but it is already on the
-    excluded list from Task 4, so leave it there.
-  - _Requirements: R1, R7.1, R7.2, R9.5 (classify each added field). Invariants: I1, I12.
-    Properties: P36 (the classification half -- this is the first task to add a field after the
-    allowlist exists). Acceptance: AC8 (metadata half), AC33 (d) **extended to the set builder** --
-    Task 19 could only exercise the table half, since this task is what creates the set builder._
+    is classified; extend it to cover the set builder. `document_sha` is already on the
+    excluded list from Task 4, so leave it there -- but note it now becomes a field a builder **emits**,
+    which takes it off the classified-before-written exception list (see the audit below).
+  - **COLD-START AUDIT, 2026-09-10** -- the documented path (`dev/README.md` -> the state block ->
+    this task -> `dev/engineering-notes.md`) was walked as a fresh reader and every claim checked
+    against the tree. **Startable.** Two of this task's own statements were wrong and are corrected
+    above (the design.md section 4 citation; "keep `document_sha` out of the metadata document").
+    **No escalation flag** -- design.md section 12 carries E1 and E2 only -- so nothing is owed under
+    rule 5d. Five things a fresh session would otherwise have to derive or discover the hard way:
+    1. **ADDING `kind` RE-MINTS A VERSION FOR EVERY EXISTING TABLE, AND THAT IS AN ACCEPTED OWNER
+       DECISION, NOT A DEFECT TO ENGINEER AWAY.** `kind` is identity, so a rebuilt table document
+       hashes differently from the recorded one, `.datom_has_changes()` returns `metadata_only`, and
+       the next write of every table in every repo mints a version on unchanged content. Verified by
+       computing both hashes. The decision is in the Decisions log (2026-08-23) and **only** there,
+       which is why a fresh session would reach for the two fixes it explicitly closed off: `kind`
+       cannot be left out of the hash (a table and a set could then share a version identity) and
+       cannot live only in the manifest (AC4's cross-kind check reads it from per-artifact metadata,
+       precisely because the manifest can lag a partial write). Accepted as bounded and in the safe
+       direction -- an **extra** version, not a changed one; same content, same storage address,
+       parquet reused, nothing re-uploaded. Say it in NEWS.
+    2. **P36 AS WRITTEN SAYS THE OPPOSITE OF WHAT THIS TASK DOES, and this task cites it.** Its first
+       clause read "adding any field to a metadata document leaves every existing `metadata_sha`
+       unchanged" without qualification, which is true only for a field outside the identity list.
+       Scoped on this audit, the way P35 and AC32 were scoped when Task 22 changed their subject --
+       the property was never "no addition moves a hash", it was "identity ignores what it does not
+       name".
+    3. **THIS TASK MOVES TWO PINNED GOLDENS, AND IT IS THE FIRST ONE ALLOWED TO.** `builder-derived
+       metadata_sha goldens are stable` (`tests/testthat/test-utils-sha.R:1002`) holds two hardcoded
+       hashes computed from `.datom_build_metadata()`; adding `kind` moves both. The standing
+       instruction "if a golden fails the code drifted -- do not update the constant" is about the
+       **sv1** goldens and applying it here would deadlock the task. Record both new values with the
+       reason beside them, so the next reader can tell a licensed move from a drift.
+    4. **THE FULL SET OF TESTS THIS REDDENS IS SIX SITES, not one.** `builder-derived metadata_sha
+       goldens are stable` (`tests/testthat/test-utils-sha.R:1002`); `the pinned fixtures carry exactly
+       the keys datom's writers emit` (`tests/testthat/test-utils-sha.R:1024` -- `kind` joins the
+       `always` vector); `every field a metadata builder emits is classified`
+       (`tests/testthat/test-utils-sha.R:1040` -- the forcing function, and the one to **extend** to
+       the set builder); `nothing is classified before something writes it, except by decision`
+       (`tests/testthat/test-utils-sha.R:1084` -- `document_sha` comes **off** the exception vector
+       once the set builder emits it); `every field the metadata builder emits is in the metadata
+       vocabulary` (`tests/testthat/test-forward-compat.R:210`); and `the metadata builder emits no
+       kind, which is the only reason the rebuild may hardcode it`
+       (`tests/testthat/test-manifest-rebuild.R:381`).
+    5. **THAT LAST ONE IS A HANDOFF, NOT A FAILURE TO SILENCE.** It exists to make this task notice
+       `R/manifest-rebuild.R:200`, where a rebuilt manifest row is stamped `kind = "table"` because
+       nothing in per-artifact metadata says otherwise. Once this task adds the field, change that line
+       to read `kind` from the document and keep `"table"` as the fallback for documents written before
+       it existed, then replace the test with one asserting a set's metadata yields a row typed
+       `"set"`. Deleting it instead leaves a rebuilt set reported as a table: the set counters read
+       zero while the artifact still lists, and nothing errors.
+  - _Requirements: R1 (R1.3 is the field list, R1.4 the exclusions), R7.1, R7.2, R9.5 (classify each
+    added field). Invariants: I1, I12.
+    Properties: P36 as scoped by this task's audit (the classification half -- this is the first task
+    to add a field after the allowlist exists). Acceptance: AC8 (metadata half), AC33 (d) **extended to
+    the set builder** -- Task 19 could only exercise the table half, since this task is what creates the
+    set builder -- plus **R1.3's own inline acceptance** (exactly seven keys, asserted with
+    `setequal()` so an added field fails). **Scope note on all three**: nothing writes a set until
+    Task 9, so each is assertable here on the **builder's output** only. "A written set's metadata"
+    and AC8's "writing a set does not alter any member's lineage" belong to Task 9._
 
 - [ ] **8. `datom_member()` + validator + self-reference check**
   - `datom_member(conn, name, version)` mirroring `datom_parent()` (`R/lineage.R`): validate,
@@ -2643,3 +2721,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-10 | **NEW TASK 23 -- `project.yaml` gets a format number, and the general rule for which mechanism a document gets.** Accepted from a proposal, with three of its premises corrected. **The rule is the durable part**: a **machine-written** document (manifest, per-artifact metadata) gets a **vocabulary check**, because an unrecognised key there *is* evidence a newer datom wrote it; a **hand-edited config** (`project.yaml`) gets a **version number**, because an unrecognised key there is as likely a typo or a private note, and refusing on one would block every write in the repo until somebody found it. AC39(d) tests that a stray key is still tolerated, which is what stops the vocabulary check being extended to that file later as a tidy-up. **Three corrections to the proposal, recorded so they are not inherited as fact.** (1) `project.yaml` is **not** the only datom-owned document without a format number -- `version_history.json`, `governance.json`, `ref.json` and `dispatch.json` have none either; only the manifest and per-artifact metadata carry one. It is the only **hand-edited** one and the only one carrying writer policy, which is the argument that actually supports a number. (2) The harm is not "running `datom_sync()` on a set": Task 11's own body says today's behaviour on a product repo is a silent **no-op**, so an older build gets an unhelpful answer rather than a corrupting one. (3) Once a repo holds a set, an older **writer** is already stopped by Task 21's vocabulary check, because Task 7 adds `kind` to metadata -- and per R9.5 that addition moves **no** number, so a number would never have caught it. **The window this protects is therefore narrower than proposed: a product repo that does not yet hold a set**, which is exactly the state right after init and the state in which somebody reaches for `datom_sync()`. The stronger motivation the proposal did not make is that **`min_writer_version` already lives in that file** (Task 21), so it already carries policy an older build silently ignores; the number is the general mechanism that makes the *next* policy field enforceable rather than advisory. **One verified finding the proposal left as "confirm this": one gate does NOT cover every read.** `.datom_resolve_data_location()` re-reads `project.yaml` after a git pull (`R/ref.R:327`) and is called from `R/conn.R:1030`, *after* the parse at `R/conn.R:937` -- so a config arriving in that pull is unchecked, and `conn$min_writer_version` is read from the same pre-pull parse (`R/conn.R:1081`), meaning a pulled floor raise is missed in that session too. Pre-existing; the task must either gate the re-read or record the residual, not omit it. | R9.8, AC39, Task 23, Task 11, Task 21, R23.1 |
 | 2026-09-10 | **Task 23 executes immediately before Task 11 rather than last, and Task 11 states the dependency.** The proposal put it at the end of the list with a note that it "must ship in the same release as Task 11". Same guarantee, but enforced by memory at release time -- and the failure it insures against is precisely a release split with Task 11 in the earlier half. Making it the task immediately before Task 11, with the dependency written into Task 11's body, makes the constraint structural and removes the cross-reference that would otherwise have to be kept true in two places. Phase E's own filter argues for this: an irretrofittable half belongs early relative to the thing it protects, not at the end of a list where it can be deferred while the thing it protects ships. | Task 23, Task 11, Phase E |
 | 2026-09-10 | **The execution order was swept in one copy of three, and `check-spec.R` check 6 now guards it.** Adding Task 23 updated the state block's order and left Phase E's preamble and the `dev/README.md` status cell both saying the sequence ended at Task 7. **Found by the owner reading the file, not by the gate** -- which is the same defect class check 6 was built for, arriving in a third kind of content after the encoder pseudocode and the AC bounds. Check 6 now extracts every arrow chain beginning `18 -> 19` from all three spec files **and** from `dev/README.md`, and fails when two copies disagree, naming which one is behind. Two design points worth keeping: the copies are compared **against each other** rather than against an expected sequence, because the order changes legitimately and a gate holding today's answer would need editing every time it moved -- which is how a gate stops being trusted; and the text is collapsed to one string before matching, because the state block's copy **wraps across two lines**, so a line-by-line scan sees two short chains and the disagreement hides in the split. Verified by reintroducing the exact defect the owner found, and separately by staling only the README: both FAIL. `dev/README.md` is read for this one clause only, since that is where the third copy lives and the copy a person meets first. | dev/check-spec.R, Task 23, Phase E |
+| 2026-09-10 | **COLD-START AUDIT FOR TASK 7: startable, after two corrections to its own body, one property rescoped and five additions. No escalation flag** (design.md 12 carries E1 and E2 only), so nothing is owed under rule 5d. **Two statements in the task were wrong.** (1) It cited "design.md section 4 matrix" for the set's collapsed field set; section 4 is about tags replacing structure and contains **no** field matrix, so the citation sent a fresh reader after a table that does not exist. The authoritative list is **R1.3** (seven named fields) with R1.4 for the exclusions. (2) It said to **keep `document_sha` out of the metadata document**, which contradicts R1.3 -- that field is one of the seven -- and would break the read gate, since R7.1 requires the stored payload verified *before parsing* and the reader has nowhere else to get the expected hash. The Task 20 concern behind the old wording does not survive R1.3 either: carry-forward only matters for a field **nothing writes**, and once the set builder writes it no rewrite can lose it. **The finding that would have done real damage: adding `kind` re-mints a version for every existing table, and a fresh session would have read that as a defect.** Verified by computing the hash both ways. It is an accepted owner decision (2026-08-23) that lives **only** in a dated Decisions row, and both fixes a fresh session would reach for were closed off in that same decision -- `kind` cannot leave the hash (a table and a set could then share a version identity) and cannot live only in the manifest (AC4's cross-kind check reads it from per-artifact metadata, because the manifest can lag a partial write). Now stated in the task body. **P36 rescoped**: its first clause said adding *any* field leaves every `metadata_sha` unchanged, which is false for a field added **into** identity and therefore contradicted that decision -- the same correction P35 and AC32 needed when Task 22 changed their subject. **Three additions.** Task 7 **legitimately moves two pinned goldens** (`test-utils-sha.R:1002`), which is the first licensed exception to "if a golden fails the code drifted"; the tests it reddens are **six** sites, now enumerated with live citations rather than left to be found; and the sixth of those (`test-manifest-rebuild.R:381`) is a **handoff**, not a failure to silence -- it exists to make this task change `R/manifest-rebuild.R:200`, where a rebuilt row is stamped `kind = "table"` because nothing in metadata says otherwise, and deleting the test instead leaves a rebuilt set reported as a table with the set counters reading zero. Also recorded: the set builder's two concrete values (`.datom_canonical_set_hash()` for `data_sha`, the literal `"datom-sv1"` for `hash_algo`, both easy to get wrong by copying the table builder), that `document_sha` is **inert until Task 9** so whether its plumbing lands here is a choice with a stated default, and that all three acceptance criteria are assertable here on the **builder's output** only, since nothing writes a set until Task 9. | Task 7, R1.3, R1.4, R7.1, R7.2, P36, AC33, Task 9, Task 19, Task 22 |
