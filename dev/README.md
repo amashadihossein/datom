@@ -299,7 +299,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
   | orphaned criteria | an AC / invariant / property defined but referenced by no task -- i.e. unimplemented |
   | task numbering | task numbers not contiguous from 0 |
   | task acceptance coverage | a task with no `Acceptance:` clause |
-  | code citations | a `R/file.R:NNN` reference pointing outside the file, or resolving to nothing (every line in the cited range blank) |
+  | code citations | a `R/file.R:NNN` **or `tests/testthat/test-file.R:NNN`** reference pointing outside the file, or resolving to nothing (every line in the cited range blank). Test files were added 2026-09-09, because Task 22 has to name the individual assertions it flips and the nine it must not touch, and a stale number there sends the reader to the wrong assertion in a file of a thousand lines. It found three stale citations on the round that added it, and was verified by planting a wrong number and confirming a FAIL. |
   | superseded wording | retired phrasing surviving as a **live instruction** rather than marked historical |
   | duplicated content agrees | the same fact stated in several files with the copies disagreeing, or one copy deleted; plus any hardcoded AC upper bound |
   | ascii | non-ASCII that will trip `R CMD check` once the prose is copied into roxygen or NEWS |

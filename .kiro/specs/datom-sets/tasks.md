@@ -726,11 +726,11 @@ own; landing it first is what makes Task 6's failure loud.
     and being a file rather than an inline fixture is what stops a later sweep from quietly
     rewriting it to the new shape.
   - **Two existing tests are v1-compatibility tests and must not be swept in Task 6**:
-    `datom_list tolerates a manifest with no schema_version` (`test-query.R:894`) and
-    `datom_summary tolerates a manifest with no schema_version` (`test-summary.R:163`). Both build a
+    `datom_list tolerates a manifest with no schema_version` (`test-query.R:920`) and
+    `datom_summary tolerates a manifest with no schema_version` (`test-summary.R:173`). Both build a
     `tables` block with an entry and assert a **non-empty** result. Rewritten to `artifacts` they go
     green while asserting nothing. Add the third: `datom_sync_manifest` has the same-named test
-    (`test-sync.R:1283`) but its `tables` block is **empty**, so it passes either way and proves
+    (`test-sync.R:1291`) but its `tables` block is **empty**, so it passes either way and proves
     nothing -- give the clone-copy readers a non-empty old-format fixture too.
   - **No new export. No on-disk change. No schema bump.** The key is still `tables` when this task
     ends; `git diff` on any repo must be empty after running the suite.
@@ -889,9 +889,14 @@ own; landing it first is what makes Task 6's failure loud.
     1. **`datom_validate()` does NOT read `manifest$tables`** -- verified by grepping every
        reference to the key in `R/`. Its only manifest read is `.datom_validate_project_name()`
        (`R/validate.R:257`), which looks at `project_name` and nothing else, and
-       `.datom_validate_tables()` enumerates artifacts from a **storage listing**, not the
-       manifest. So the rename does not touch it, and the escalation rationale above previously
-       sent a reader hunting in a file with nothing in it.
+       `.datom_validate_tables()` enumerates artifacts without consulting the manifest at all. So
+       the rename does not touch it, and the escalation rationale above previously sent a reader
+       hunting in a file with nothing in it. **Corrected 2026-09-09**: this line said it enumerates
+       "from a storage listing", which is wrong -- it enumerates from the **clone**
+       (`fs::dir_ls(repo_path, type = "directory")`, `R/validate.R:386`) and then checks storage per
+       name. The conclusion above is unaffected, but the wrong version matters for Task 22, whose
+       rebuild has to serve a reader with no clone: it would send that reader looking for a
+       storage-side enumerator that does not exist.
     2. **THREE DECOY SITES that look like the rename and must not be renamed.** Each is a
        user-facing **return-value** field named `tables`, not the manifest key:
        `datom_sync()`'s result (`R/sync.R:171`, `R/sync.R:222`), `datom_validate()`'s result
@@ -912,15 +917,15 @@ own; landing it first is what makes Task 6's failure loud.
        2026-08-29:
        `tests/testthat/fixtures/manifest-v1.json` (frozen; `fixtures/README.md` says so) and its
        readers `datom_list reads the frozen old-format manifest as non-empty`
-       (`tests/testthat/test-query.R:905`), `datom_status input file scan sees entries in an
-       old-format manifest` (`tests/testthat/test-query.R:992`), `datom_summary reads the frozen
-       old-format manifest as non-empty` (`tests/testthat/test-summary.R:174`) and
+       (`tests/testthat/test-query.R:931`), `datom_status input file scan sees entries in an
+       old-format manifest` (`tests/testthat/test-query.R:1021`), `datom_summary reads the frozen
+       old-format manifest as non-empty` (`tests/testthat/test-summary.R:184`) and
        `datom_sync_manifest sees entries in an old-format manifest in the clone`
-       (`tests/testthat/test-sync.R:1302`); plus the two older tolerance tests
+       (`tests/testthat/test-sync.R:1310`); plus the two older tolerance tests
        `datom_list tolerates a manifest with no schema_version`
-       (`tests/testthat/test-query.R:894`) and `datom_summary tolerates a manifest with no
-       schema_version` (`tests/testthat/test-summary.R:163`). Note the same-named
-       `datom_sync_manifest` tolerance test (`tests/testthat/test-sync.R:1283`) has an **empty**
+       (`tests/testthat/test-query.R:920`) and `datom_summary tolerates a manifest with no
+       schema_version` (`tests/testthat/test-summary.R:173`). Note the same-named
+       `datom_sync_manifest` tolerance test (`tests/testthat/test-sync.R:1291`) has an **empty**
        `tables` block, so it proves nothing either way -- Task 5 added the non-empty clone-copy
        test above precisely because of that.
   - **DESIGN AUDIT, 2026-08-23** -- run before implementation per the E2 flag, and the reason this
@@ -2052,25 +2057,103 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
   - **Reader warns and rebuilds; writer refuses** (R22.11). Same condition, opposite responses. A
     storage-only reader rebuilds **in memory for that session** and writes nothing. Warn **once**,
     pointing at the upgrade -- a silent repair is a silent degradation.
-  - **The rebuild reads the recorded `version`** from `version_history.json` (`R/read_write.R:485`) and
+  - **The rebuild reads the recorded `version`** from `version_history.json` (`R/read_write.R:493`) and
     **never** recomputes it. Recomputing walks into the denylist defect in precisely the scenario the
     rebuild exists for, and would publish a `current_version` matching no version in the history --
     worse than the empty list it replaced. (Task 19 removes that defect, but the rebuild must not
     depend on having been run by a build that has the fix.)
   - **Persist `original_format` into per-artifact metadata.** It is written into the manifest entry
-    (`R/sync.R:1002`) and never into metadata, so it is the one manifest field a rebuild cannot recover.
+    (`R/sync.R:1060`) and never into metadata, so it is the one manifest field a rebuild cannot recover.
     Additive, and free now that Task 19 has landed -- **which is why it is sequenced here and not
     earlier**.
   - **Guard the dispatcher loop and test the no-op** (R22.10): R's `seq()` counts **down** when
     `from > to`, so guard with `if (declared < supported)` and assert a current-version document runs
-    **zero** steps.
-  - **This task AMENDS THE TEST Task 5 wrote**, though not the criterion it tests. Task 5 shipped
+    **zero** steps. **Already done by Task 6 -- see the audit below; do not rewrite it.**
+  - **This task AMENDS THE TESTS Task 5 wrote**, though not the criterion they test. Task 5 shipped
     "a too-new manifest aborts at all five readers"; from here the manifest **reader** warns and
     rebuilds while the **writer** refuses, and per-artifact metadata still aborts at any role. AC32
     and P35 are worded to hold on both sides of that change, so nothing in the spec needs restating --
-    but the assertion in `test-query.R` does, and leaving it would leave the suite asserting the
-    opposite of the design, which is the one place this spec's recurring swept-some-places defect must
-    not reach.
+    but the assertions do, and leaving them would leave the suite asserting the opposite of the design,
+    which is the one place this spec's recurring swept-some-places defect must not reach. **It is three
+    files and eight assertions, not one file -- enumerated in the audit below.**
+  - **COLD-START AUDIT, 2026-09-09** -- the documented path (`dev/README.md` -> the state block ->
+    this task -> `dev/engineering-notes.md`) was walked as a fresh reader and every claim in this task
+    checked against the tree. **Startable, after the eight items below.** Two of this task's own code
+    citations had drifted and are repointed above (`R/read_write.R:485` -> `493`, `R/sync.R:1002` ->
+    `1060`); the "never into metadata" claim **verifies** -- nothing in `R/` writes a top-level
+    `original_format` onto a metadata document.
+    1. **THE TEST SURFACE IS THREE FILES AND EIGHT ASSERTIONS.** This task's body said "the assertion
+       in `test-query.R`", which undercounts by enough to leave the suite asserting the opposite of the
+       design. Every assertion on the `datom_schema_unsupported` class was enumerated. **These must
+       flip to warn-and-rebuild**: `datom_list refuses a manifest declaring a newer schema`
+       (`tests/testthat/test-query.R:911`), `datom_status aborts on a newer schema rather than
+       reporting it` (`tests/testthat/test-query.R:961`), `datom_status refuses a local clone declaring
+       a newer schema` (`tests/testthat/test-query.R:1004`, which is the input-file scan's clone read
+       reached through `datom_status()`), `datom_summary refuses a manifest declaring a newer schema`
+       (`tests/testthat/test-summary.R:165`), `datom_sync_manifest refuses a local manifest declaring a
+       newer schema` (`tests/testthat/test-sync.R:1286`), and **the load-bearing one** --
+       `.datom_read_manifest throws a too-new document rather than returning it`
+       (`tests/testthat/test-sync.R:1444`), which is the shared reader's own returned-versus-thrown
+       contract, plus its two `names the copy it refused` assertions
+       (`tests/testthat/test-sync.R:1509`, `tests/testthat/test-sync.R:1519`). **These must NOT be
+       touched**: the per-artifact read path (`tests/testthat/test-read-write.R:182`), the three write
+       routes (`tests/testthat/test-read-write.R:2596`, `2610`, `2631`), the two write-entry tests
+       (`tests/testthat/test-forward-compat.R:713`, `891`), and the two unit tests of the check itself
+       (`tests/testthat/test-utils-validate.R:360`, `400`). All five readers do have coverage today, so
+       none has to be written from scratch.
+    2. **TASK 21 ALREADY SHIPPED THE WRITER HALF OF R22.11. Do not build it twice.** A writer meeting a
+       too-new manifest is already refused at the write entry (`datom_schema_unsupported`, with
+       `operation = "write"` in the message), and a writer meeting an **absent** artifact list after the
+       chain is already refused (`datom_shape_unreachable`). Both of R22.12's triggers therefore already
+       produce the writer's response. **What is left of R22.11 is the reader half**, plus
+       `original_format`.
+    3. **TASK 21 ALSO SUPPLIED THE DISCRIMINATOR, by accident, and it removes the hard part.**
+       "Reader warns and rebuilds, writer refuses" needs the shared reader to know which it is serving,
+       and until Task 21 it could not: `.datom_read_manifest()` took only a scope. It now takes
+       `operation`, added for a message-wording reason, and **every writer call site already passes
+       `"write"`** -- verified: the write entry and the mirror route both do, and the entry updater
+       calls `.datom_check_schema_version()` directly with `"write"`. So the branch is
+       `operation == "read"` -> warn and rebuild, `"write"` -> throw, with no new plumbing and no
+       role inspection.
+    4. **R22.10 IS ALREADY IMPLEMENTED AND AC38(b) AND (c) ARE ALREADY TESTED**, both by Task 6. The
+       guard is `if (declared >= .datom_supported_schema) return(manifest)` in
+       `.datom_manifest_upgrade()`, and the tests are `the dispatcher runs zero steps on a
+       current-version document` (`tests/testthat/test-manifest-upgrade.R:92`) and `applying the
+       dispatcher twice equals applying it once` (`tests/testthat/test-manifest-upgrade.R:114`). The
+       first one **counts** step invocations through a mocked step table rather than comparing output,
+       which is what makes it real. Nothing to add; re-deriving them would waste the chunk.
+    5. **THERE IS NO STORAGE-SIDE ARTIFACT ENUMERATOR TO REUSE, and a Task 6 audit row says
+       otherwise -- that row is WRONG.** It claimed `.datom_validate_tables()` "enumerates artifacts
+       from a storage listing". It does not: it enumerates from the **clone**
+       (`fs::dir_ls(repo_path, type = "directory")`, `R/validate.R:386`) and then checks storage per
+       name. That matters because a storage-only reader has no clone, and the rebuild exists precisely
+       for that reader. What does exist is the primitive `.datom_storage_list_objects(conn, prefix)`
+       (`R/utils-storage.R:126`), recursive, both backends; artifact names come from keys shaped
+       `{name}/.metadata/metadata.json`. **It returns FULL keys** -- including the `{prefix}/datom/`
+       portion -- which is the two-key-shapes trap in `dev/engineering-notes.md`, so strip before
+       matching. Cost of a rebuild is one listing plus two reads per artifact; budget for that when
+       deciding what AC37(c) is protecting.
+    6. **A REBUILT ENTRY MUST STAMP `kind`, OR EVERY COUNTER READS ZERO.** `kind` is not in
+       per-artifact metadata until Task 7, and this task runs before it, so the rebuild cannot recover
+       the field from the document -- it must write `kind = "table"`. That is correct today because
+       nothing writes a set until Task 9, and it is **not** optional: R22.8 deliberately gives the
+       counters no missing-`kind` fallback, so an untyped rebuilt entry is silently uncounted by
+       `.datom_artifacts_of_kind()` and a rebuilt repo reports zero artifacts while listing them. Task 7
+       and Task 9 must revisit this line; a comment at the site should say so.
+    7. **`original_format`'s CLASSIFICATION IS A DECISION WITH A CONSEQUENCE, not a formality.**
+       `original_file_sha` is already **in** the identity list (`R/utils-sha.R:422-425`), so the
+       symmetric-looking choice for its sibling is identity too -- and that would re-mint a version for
+       **every imported table in every repo**, on content that did not move. Classifying it excluded
+       costs nothing and keeps this task's own claim ("additive, and free") true. State the choice and
+       its reason rather than letting the classification test's red be settled by whichever list is
+       typed first.
+    8. **AC37(c)'s EMPTY-REPO FIXTURE MUST BE CURRENT-SHAPED.** The clause is that a genuinely empty
+       repo triggers no rebuild and performs **no storage listing**. A current-shape empty manifest
+       carries `artifacts` present-and-empty, so the absent-key trigger does not fire -- that is the
+       fixture the test needs. An **empty v1** manifest is a different state: the conversion leaves no
+       artifact key at all (deliberately, per the v1 step's own docs), so it *does* trigger a rebuild.
+       Both behaviours are correct under R22.12, but a v1 fixture here fails the test for the right
+       reason with a misleading diagnosis.
   - _Requirements: R22.11, R22.12, R22.10, R22.4 (the Design A qualification), R9.5 (per-file rule).
     Invariants: I32. Properties: P34, P36, P35, P11. Acceptance: AC37 (all six clauses), AC38 (b and
     c), and AC32 **still holding** after the behaviour change -- assert the new outcome is not reported
@@ -2334,3 +2417,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-09 | **REVIEW OF TASK 21: the write entry goes on the FUNCTION, not on each caller.** `datom_validate(fix = TRUE)` reaches storage by calling `.datom_sync_data_metadata()` directly (`R/validate.R:183`), so it never passed `datom_write()`'s door -- no floor, no vocabulary, no per-artifact format check, while the NEWS entry claimed the checks covered every write route. Bounded damage, because that route copies documents rather than rebuilding them, so nothing was being deleted. **The argument that settles it is the floor's**: its stated purpose includes a block for a reason that is *not about format* ("0.1.4 wrote bad hashes"), and those cannot be enumerated ahead of time -- so "this route only copies" cannot license skipping it. Fixed by moving the call into `.datom_sync_data_metadata()` after its role and path guards; the `datom_write()` route now runs the sequence twice, which costs nothing and means the next caller cannot forget. **This is the third task running in which this route has been the gap** (Task 6's open call 1, Task 6's purity audit, now this), which is the more durable finding: a repair verb that reaches storage without going through the write verb will keep being missed, so gate the shared function rather than the entry points. Probed: removing it reddens two tests. | Task 21, R23.1, R23.3, `R/validate.R` |
 | 2026-09-09 | **A probe caught a test asserting the wrong thing, which is the reusable part of this round.** The mirror route read the manifest with the shared reader's default `operation = "read"`, so a too-new manifest on its way to storage reported a format this build "cannot read" -- during a write. One argument fixes it. But the test written for it **passed with the fix reverted**, because the entry sequence refuses a too-new manifest a few lines earlier with the right verb already, so the abort came from there. The test now mocks the entry out so the read answers for itself, and reddens on reversion. Kept rather than dropped as unreachable, on the rule this spec applies elsewhere: a message that is correct only because something upstream refused first starts lying the day the refusal moves. **The transferable bit is the method** -- the probe was what distinguished "my fix works" from "something else already covered this", and reading the code would not have. | Task 21, Task 6, R22.4 |
 | 2026-09-09 | **ACCEPTED RESIDUAL: the door's answer can be stale on the table-write route, and re-checking cannot fix it.** `.datom_git_push(pull_first = TRUE)` pulls at step 7 (`R/read_write.R:849`), **after** step 6 has written the metadata document and edited the manifest -- so a collaborator's newer-format document can arrive after the door passed, with the write already built. The metadata-only route's remedy (re-run the sequence after the pull) does not transfer: there is nothing left to re-check before. Left as it is deliberately, because the backstop is real and design 10.7 already argues for exactly this trade -- the push aborts on rejection or on a merge conflict, the storage steps are 8-10, so a write cannot reach storage from a base this build has not seen, and abort-after-commit is acceptable for a rare race while unacceptable as a primary mechanism. Recorded because Task 21's summary said the staleness problem was "solved", which holds for one route and overclaims for the other. | design.md 10.7, I34, Task 21 |
+| 2026-09-09 | **COLD-START AUDIT FOR TASK 22: startable, after eight additions to its body. No escalation flag on it** (design.md 12 carries E1 and E2 only), so nothing is owed under rule 5d. Every claim in the task was checked against the tree; two of its own citations had drifted and are repointed, and its "`original_format` never reaches metadata" claim verifies. **The one that would have done real damage: the test surface is three files and eight assertions, not "the assertion in `test-query.R`".** Every `datom_schema_unsupported` assertion was enumerated and split into the six that must flip to warn-and-rebuild and the nine that must not be touched -- including the load-bearing one, `.datom_read_manifest`'s own returned-versus-thrown contract test, which the task's body did not mention at all. Leaving five of them would have left the suite asserting the opposite of the design, which is this spec's recurring defect arriving in the one place the task itself says it must not. **Two findings shrink the task.** Task 21 already shipped the **writer** half of R22.11 -- a too-new manifest and an unreachable shape both already refuse at the write entry -- so what is left is the reader half plus `original_format`. And R22.10's dispatcher guard plus AC38(b) and (c) were already done by Task 6, with the zero-steps test counting step invocations through a mocked step table rather than comparing output. **One finding removes the hard part**: Task 21 gave `.datom_read_manifest()` an `operation` argument for a message-wording reason, and every writer call site already passes `"write"` -- so "reader rebuilds, writer refuses" is a branch on an argument that already exists, with no role inspection and no new plumbing. **Three findings are traps.** A rebuilt entry must stamp `kind = "table"` or every counter reads zero, because R22.8 deliberately has no missing-`kind` fallback and the field is not in per-artifact metadata until Task 7. `original_format`'s classification is a real decision -- `original_file_sha` is already in the identity list, so the symmetric choice would re-mint a version for every imported table in every repo. And AC37(c)'s empty-repo fixture must be current-shaped, since an empty **v1** manifest legitimately does trigger a rebuild. **One correction to an earlier audit**: a Task 6 row claims `.datom_validate_tables()` enumerates artifacts from a storage listing. It enumerates from the **clone** (`R/validate.R:386`), which matters because the rebuild exists for the reader who has no clone -- so there is no storage-side enumerator to reuse, only the primitive `.datom_storage_list_objects()`, which returns **full** keys. | Task 22, Task 21, Task 6, R22.8, R22.10, R22.11, R22.12, AC37, AC38 |
+| 2026-09-09 | **`dev/check-spec.R`'s citation check now covers `tests/testthat/` as well as `R/`, and it found three stale citations on the round that added it.** The gate had guarded only `R/file.R:NNN`, so every test-file line number in this spec was unchecked -- including Task 5's and Task 6's lists of the tests that must **not** be swept, which are instructions a reader is meant to walk. Task 22 made the gap expensive: it has to flip six named assertions and leave nine others alone, and a stale number there points at the wrong assertion in a file of a thousand lines rather than at nothing. One regex. It immediately failed on three pre-existing citations (`test-summary.R:163` and `test-sync.R:1283` had gone blank; seven more resolved to unrelated lines and were repointed by content), and it was **verified by planting a wrong number and confirming a FAIL**, per this spec's rule that a green run is not evidence. Same lesson as the round that added check 6: the checks that matter are the ones derived from a defect that already shipped, and this one had shipped invisibly in two task bodies. | dev/check-spec.R, Task 22, Task 5, Task 6 |

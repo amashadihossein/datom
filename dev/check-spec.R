@@ -181,7 +181,13 @@ if (length(no_acceptance) > 0L) {
 # messages. This asserts the cited line exists; it cannot assert the line says
 # what the spec claims, so cited lines are printed for review.
 
-cite_re <- "R/[A-Za-z0-9_.-]+\\.R:\\d+(?:[,-]\\d+)*"
+# Test files are covered as well as R/. Added 2026-09-09: Task 22's body has to
+# name the individual assertions it amends -- a behaviour change that flips six of
+# them and must not touch nine others -- and a stale line number there sends the
+# reader to the wrong assertion in a file with hundreds. The same argument that
+# put R/ citations under the gate applies with more force to a list whose whole
+# purpose is to be walked.
+cite_re <- "(?:R|tests/testthat)/[A-Za-z0-9_.-]+\\.R:\\d+(?:[,-]\\d+)*"
 citations <- all_matches(all_lines, cite_re)
 
 # Citations a reader is expected to follow: everything except those appearing
