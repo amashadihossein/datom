@@ -40,8 +40,18 @@ wrong.
 \item Several matches means metadata-only versions of the same content; the one
 whose \code{timestamp} equals the document's \code{created_at} is the current one,
 since a version's history entry copies that field verbatim.
-\item Anything still ambiguous falls back to the newest candidate, and a document
-matching no entry at all to the newest entry overall.
+\item Anything still ambiguous takes the newest candidate. That is a choice
+between two entries that both describe the current \strong{content}, so the
+worst case is naming the wrong one of two versions of the same bytes.
 }
+
+\strong{No match at all returns \code{NULL}, and it deliberately does not fall back to
+the newest entry.} No match means the history does not record the state
+\code{metadata.json} describes -- a truncated or partly-synced history. The newest
+entry there is a version of \emph{different content}, so naming it would be a wrong
+statement rather than a missing one, and a row already tolerates carrying no
+version. \code{datom_validate()} owns the inconsistency. This is the same trade the
+carry-forward rule makes in \code{R/forward-compat.R}: a stale claim that outlives
+what it described is worse than an absent one.
 }
 \keyword{internal}

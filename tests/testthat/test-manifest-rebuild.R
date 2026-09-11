@@ -154,6 +154,27 @@ test_that(".datom_recorded_current_version invents nothing when the history is u
   ))
 })
 
+test_that(".datom_recorded_current_version returns nothing when no entry describes the content", {
+  # The fourth unusable case, and it needs its own test because the tempting
+  # implementation is different here: there IS a newest entry, it just describes
+  # different content. Taking it would make the row state something false rather
+  # than state nothing -- the same trade the carry-forward rule makes -- and it
+  # would contradict the test above two lines away. No match means the history does
+  # not record the state metadata.json describes, which is a truncated or
+  # partly-synced history for `datom_validate()` to report.
+  meta <- list(data_sha = "cc", created_at = "t3")
+  history <- list(
+    list(version = "v2", data_sha = "aa", timestamp = "t2"),
+    list(version = "v1", data_sha = "bb", timestamp = "t1")
+  )
+
+  expect_null(.datom_recorded_current_version(meta, history))
+
+  # Same when the document carries no content identity at all: there is nothing
+  # to match against, so there is nothing to claim.
+  expect_null(.datom_recorded_current_version(list(created_at = "t3"), history))
+})
+
 
 # --- AC37: the triggers --------------------------------------------------------
 
@@ -355,6 +376,31 @@ test_that("a rebuilt index matches the recorded one field for field", {
       expect_equal(got[[field]], want[[field]], info = paste(nm, field))
     }
   }
+})
+
+test_that("the metadata builder emits no kind, which is the only reason the rebuild may hardcode it", {
+  # THE FORCING FUNCTION FOR THE HARDCODED `kind = "table"` in
+  # `.datom_rebuild_manifest_entry()`. That line is correct only while
+  # per-artifact metadata says nothing about what kind of artifact it describes --
+  # and the day Task 7 adds the field, a rebuilt SET would be typed as a table:
+  # the set counters read zero while the artifact still shows up in
+  # `datom_list()`, with nothing failing.
+  #
+  # `test-utils-sha.R` does already redden when a builder gains a field, but it
+  # reddens in a fixture list about identity hashing and says nothing about this
+  # line. This test fails in the rebuild's own file, next to the hardcode, which
+  # is the whole value: the revisit stops depending on somebody remembering.
+  #
+  # WHEN THIS FAILS, do not delete it. Change the hardcode to read `kind` from the
+  # document, keep `"table"` as the fallback for documents written before the field
+  # existed, and replace this test with one asserting that a set's metadata yields
+  # a row typed `"set"`.
+  meta <- .datom_build_metadata(
+    data.frame(id = 1:2),
+    data_sha = strrep("a", 64L)
+  )
+
+  expect_false("kind" %in% names(meta))
 })
 
 test_that("original_format survives into metadata, which is what makes it rebuildable", {

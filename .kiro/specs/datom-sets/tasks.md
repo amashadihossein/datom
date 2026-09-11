@@ -17,7 +17,8 @@ after Task 5 -> 2748 after the escape-code fix that followed it -> 2836 after Ta
 four review findings that followed it -> 2863 after its purity audit -> **2867 after the two loose
 ends the second review pass found -> 2898 after Task 20 -> 2902 after the review that followed it
 -> 2905 after the classify-late guard -> 2959 after Task 21 -> 2965 after the three review findings
-that followed it -> **3050 after Task 22**. Report the count in every commit
+that followed it -> 3050 after Task 22 -> **3053 after the three review findings that followed
+it**. Report the count in every commit
 message; it must never drop.
 
 ---
@@ -123,7 +124,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3050** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3053** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 7**.
 
@@ -2249,6 +2250,18 @@ without stranding anyone. If 0.1.1 gets crowded, those slip; these do not.
     empty manifest carries its artifact list present-and-empty and triggers nothing; an empty **v1**
     manifest comes out of the conversion with no artifact key and does trigger. Both are correct under
     the same rule, and the two tests sit next to each other so the pair reads as one statement.
+  - **REVIEWED after it landed; three findings, two fixed and one recorded (tests -> 3053).**
+    (1) The hardcoded `kind = "table"` was guarded by a comment. It now has a forcing function in the
+    rebuild's own test file, asserting the metadata builder emits **no** `kind`, so the day Task 7 adds
+    the field the failure lands next to the line that has to change. Something did already redden --
+    `test-utils-sha.R`'s pinned fixture list -- but in a test about identity hashing that says nothing
+    about the rebuild, so the revisit still depended on memory. (2) `.datom_recorded_current_version()`
+    fell back to the newest history entry when **nothing** matched the current content, contradicting
+    the test two lines away that pins "no version beats a manufactured one". It now returns nothing;
+    the remaining ambiguous case still takes the newest **candidate**, which is different in kind
+    because both candidates describe the current content. (3) Recorded rather than fixed: nothing
+    memoises the rebuild, so it repeats per call while the repo stays broken -- see the Decisions row
+    and the note now in the `R/manifest-rebuild.R` file header. Both fixes were probed by reversion.
 
 ---
 
@@ -2517,3 +2530,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-10 | **Two R-level traps that make a condition's class disappear on its way to a handler, both hit in one session and both now in `dev/engineering-notes.md`.** They matter here because the whole reader/writer fork is decided **by** class: a compatibility refusal has to keep travelling while a storage failure becomes a return value. (1) `stop(cnd)` inside one `tryCatch()` handler is caught by that same `tryCatch()`'s `error` handler -- so the natural spelling "re-raise this class, catch everything else" does the opposite, and it turned every refusal raised inside the rebuild into an IO failure. Catch once, decide afterwards, re-signal from outside every handler. (2) `purrr::map()` re-signals a mapped function's condition as its own `purrr_error_indexed`, with the original demoted to a `parent`, so `inherits()` is FALSE and a class-specific handler never fires -- which is why the artifact loop in `R/manifest-rebuild.R` is `lapply()` and must stay `lapply()`, with the reason at the site. Both defects go green in a suite that only checks that something failed. | dev/engineering-notes.md, Task 22 |
 | 2026-09-10 | **A rebuilt row is stamped `kind = "table"`, and Task 7 owns that line.** Per-artifact metadata does not say what kind an artifact is until Task 7, so the rebuild has nothing to recover the field from. Hardcoding is not optional: R22.8 deliberately gives the counters no missing-`kind` fallback, so an untyped row is silently uncounted and a rebuilt repo would list its artifacts while reporting zero of them. Correct today because nothing writes a set until Task 9. The comment at the site names both tasks. | R22.8, Task 22, Task 7, Task 9 |
 | 2026-09-10 | **Live code citations re-derived by content for a FIFTH consecutive session, and this round the test citations dominated.** Four `R/` citations had gone blank (two in `R/read_write.R`, one in `R/utils-sha.R`, one in `tests/testthat/test-summary.R`) and **fifteen test citations** needed repointing because this change renamed tests in three files -- the flipped assertions Task 22's audit had named by line. Check 5 caught only the four blank ones; the other eleven resolved to unrelated lines and were repointed by content. Dated Decisions rows left frozen per the 2026-08-23 policy. The 2026-09-09 round that extended check 5 to `tests/testthat/` predicted exactly this cost and was right to. | dev/check-spec.R, Task 22 |
+| 2026-09-10 | **REVIEW OF TASK 22, finding 1: the hardcoded `kind = "table"` on a rebuilt row now has a forcing function instead of a comment.** The review said "nothing fails" when Task 7 adds `kind` to the metadata builder, which is not quite right -- `test-utils-sha.R`'s pinned fixture list reddens, because it asserts the builder emits exactly a named set. But it reddens in a test about identity hashing and says nothing about the rebuild, so the revisit still depended on somebody remembering. A test in the rebuild's own file now asserts the metadata builder emits **no** `kind`, next to the line that hardcodes it, with instructions for what to do when it fails. **The failure it prevents is the one Task 6 exists to prevent**: once Task 9 writes a set, a rebuilt repo would type it as a table, so the set counters read zero while the artifact still appears in `datom_list()`, and nothing errors. Probed: adding `kind` to the builder reddens that test and no other. | R22.8, Task 22, Task 7, Task 9 |
+| 2026-09-10 | **REVIEW OF TASK 22, finding 3: no history entry matching the current content now returns NO version, where it had fallen back to the newest entry.** The fallback and the test two lines from it disagreed. `.datom_recorded_current_version()` narrows candidates by `data_sha`; when nothing matched it took the newest entry, which is a version of **different content** -- while the neighbouring test pins that three other unusable histories yield no version at all, on the stated grounds that a manufactured version is worse than a missing one. Fixed in favour of the test, because it is the same trade the carry-forward rule already makes: a claim that outlives what it described is worse than an absent one. No match means the history does not record the state `metadata.json` describes -- a truncated or partly-synced history, which `datom_validate()` owns. The remaining ambiguous case still takes the newest **candidate**, and that is different in kind: both candidates describe the current content, so the worst case is naming the wrong one of two versions of the same bytes. Probed: restoring the fallback reddens the new test. | AC37(e), Task 22 |
+| 2026-09-10 | **ACCEPTED RESIDUAL from the Task 22 review: the rebuild repeats on every call, and nothing memoises it.** One listing plus two reads per artifact means a 300-artifact repo spends ~601 storage requests **per command** for as long as the index stays broken, and `datom_status()` reads two copies of the manifest, so a repo broken on both sides pays twice in one call. The user experiences it as datom hanging, because the warning only arrives once the work is finished. That is precisely the cost the manifest exists to avoid (`dev/datom_specification.md:1694`). Not fixed, and the reason is not effort: a session cache is already deferred package-wide pending its invalidation design (`dev/datom_specification.md:2031`), so memoising here would put session state into a library that has none, in order to speed up a state the next ordinary write removes. Recorded in the `R/manifest-rebuild.R` file header as well as here, the way the table-write staleness residual was, so it is met as a known trade rather than as a surprise. | R22.12, Task 22, dev/datom_specification.md |

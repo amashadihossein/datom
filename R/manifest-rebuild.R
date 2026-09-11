@@ -22,6 +22,23 @@
 # IT IS NOT SILENT. Every rebuild warns once, naming the upgrade. A repair that
 # succeeds without saying so is itself a silent degradation, which is the exact
 # failure the whole schema contract exists to remove.
+#
+# ACCEPTED COST, RECORDED SO IT IS NOT MET AS A SURPRISE: nothing memoises this,
+# so it runs again on every call for as long as the repo stays broken. One
+# listing plus two reads per artifact means a 300-artifact repo spends ~601
+# storage requests per command -- and `datom_status()` reads two copies of the
+# manifest, so a repo broken on both sides pays twice in one call. That is the
+# cost the manifest exists to avoid (`dev/datom_specification.md:1694`: "For
+# repos with 100-300 tables, this avoids hundreds of S3 GETs on unchanged
+# re-runs"), which is exactly why the trigger is a broken index rather than
+# anything a healthy repo can hit. The user experiences it as datom hanging,
+# because the warning only arrives once the work is finished.
+#
+# Not memoised on purpose. A session cache is already deferred package-wide
+# pending its invalidation design (`dev/datom_specification.md:2031`), and adding
+# one here would put session state into a library that has none in order to speed
+# up a state the next ordinary write removes. Upgrading, or writing once, is the
+# fix.
 
 
 #' Artifact Names Present in Storage
@@ -90,8 +107,18 @@
 #' 2. Several matches means metadata-only versions of the same content; the one
 #'    whose `timestamp` equals the document's `created_at` is the current one,
 #'    since a version's history entry copies that field verbatim.
-#' 3. Anything still ambiguous falls back to the newest candidate, and a document
-#'    matching no entry at all to the newest entry overall.
+#' 3. Anything still ambiguous takes the newest candidate. That is a choice
+#'    between two entries that both describe the current **content**, so the
+#'    worst case is naming the wrong one of two versions of the same bytes.
+#'
+#' **No match at all returns `NULL`, and it deliberately does not fall back to
+#' the newest entry.** No match means the history does not record the state
+#' `metadata.json` describes -- a truncated or partly-synced history. The newest
+#' entry there is a version of *different content*, so naming it would be a wrong
+#' statement rather than a missing one, and a row already tolerates carrying no
+#' version. `datom_validate()` owns the inconsistency. This is the same trade the
+#' carry-forward rule makes in `R/forward-compat.R`: a stale claim that outlives
+#' what it described is worse than an absent one.
 #'
 #' @param meta The artifact's parsed `metadata.json`.
 #' @param history The artifact's parsed `version_history.json`, a list of
@@ -121,7 +148,7 @@
     if (length(exact) >= 1L) candidates <- exact
   }
 
-  if (length(candidates) == 0L) candidates <- history
+  if (length(candidates) == 0L) return(NULL)
 
   version_of(candidates[[1L]])
 }
