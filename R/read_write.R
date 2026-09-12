@@ -370,6 +370,14 @@ datom_read <- function(conn,
 #'   payload has been serialized, and it is excluded from `metadata_sha`, so the
 #'   deferred assignment cannot move a version. **Nothing computes one until the
 #'   set write path exists**, so today it arrives NULL from every caller.
+#'
+#'   **The write path must populate it before writing the document.** `jsonlite`
+#'   does not omit a NULL element -- it writes `{}`, which reads back as an empty
+#'   list rather than an absent key. `parquet_sha` never hits this because its
+#'   only two outcomes are a real hash or `meta$parquet_sha <- NULL`, and
+#'   assigning NULL *removes* the element. A field left declared-and-unpopulated
+#'   through a write would satisfy a names-only field-set check while carrying an
+#'   empty object, so assert on the written bytes where the field set matters.
 #' @return Named list of exactly the seven fields a set's `metadata.json`
 #'   carries.
 #' @keywords internal

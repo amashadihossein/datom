@@ -617,8 +617,21 @@ both deliberately:
   `custom` and friends are added only when non-NULL, so an absent field is spelled by omitting the
   key rather than by a null value.
 
-The trap is that `jsonlite::write_json(auto_unbox = TRUE)` drops a NULL element anyway, so the two
-spellings produce **identical files** whenever the value is still NULL at write time. The difference
-is only visible in the in-memory object -- which is exactly where a `setequal(names(meta), ...)`
-assertion about a document's field set looks. A tidy-up that converts a declared field to a
-conditional assign therefore changes nothing on disk and still breaks the field-set contract.
+**`jsonlite` does NOT omit a NULL element -- it writes `{}`.** Verified:
+`write_json(list(kind = "set", document_sha = NULL), auto_unbox = TRUE)` produces
+`{"kind":"set","document_sha":{}}`, and reading that back gives an empty named list rather than an
+absent key. (An earlier version of this note, and design.md section 4 of the datom-sets spec, both
+claimed the key is dropped. It is not. The claim was believed because the case never arises today,
+for the reason in the next paragraph.)
+
+**So a declared field must be populated -- or explicitly removed -- before the document is written.**
+`parquet_sha` gets away with it by accident of two paths: `datom_write()` either assigns a real hash
+or assigns `NULL`, and `meta$parquet_sha <- NULL` **removes** the element rather than setting it, so
+no `{}` has ever reached a file. Any new declared field inherits that obligation without inheriting
+the accident.
+
+The consequence for a field-set contract: a `setequal(names(meta), ...)` assertion about the
+in-memory object is satisfied by a key whose value is `{}`, so it cannot tell a populated document
+from an unpopulated one. That is a reason to assert on the written bytes wherever the count is
+load-bearing, not a reason to switch to a conditional assign -- the conditional form drops the key
+from the in-memory object too, which breaks the contract outright.

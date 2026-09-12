@@ -98,7 +98,7 @@ There is no view or navigation config -- see "Tags replace structure" below.
   parquet. The payload is small and cheap to read, so a member index would be
   metadata-for-metadata. **This is also the answer to "how does a git-less reader diff two
   versions?"** -- it reads `version_history.json` (which already carries `data_sha` per entry,
-  `R/read_write.R:556-562`) to map version -> `data_sha`, then fetches the two content-addressed
+  `R/read_write.R:564-570`) to map version -> `data_sha`, then fetches the two content-addressed
   payloads and compares them: three small JSON reads, no git. That yields the **actual changed
   values**, which per-member digests could not. Diffing `members[]` must key on
   `id$project` + `id$name` rather than array position, since member order is not identity for
@@ -157,10 +157,18 @@ reconciled deliberately, because an earlier draft had the matrix granting `size_
 `custom` while R1.3 said "exactly seven", which would have made the R1.3 acceptance test and the
 matrix mutually unsatisfiable.
 
-**Omitted, not nulled** throughout -- `jsonlite::write_json(auto_unbox = TRUE)` on a list
-containing `NULL` drops the key anyway, but the *builder* must use the conditional-assign form
-so the in-memory object and the round-tripped object agree (this is exactly why
-`.datom_compute_metadata_sha()` hashes a JSON canonical form).
+**Omitted, not nulled** throughout -- an absent field must be absent from the *builder's* object,
+via the conditional-assign form, so the in-memory object and the round-tripped object agree (this is
+exactly why `.datom_compute_metadata_sha()` hashes a JSON canonical form).
+
+**Corrected 2026-09-10, during Task 7's review**: this paragraph used to say that
+`jsonlite::write_json(auto_unbox = TRUE)` "drops the key anyway" for a `NULL` element, which made the
+conditional-assign rule sound like belt-and-braces. It does not drop it -- it writes `{}`, and reading
+that back gives an empty list rather than an absent key (verified). So the rule is the whole
+mechanism, not a tidiness preference, and it has a corollary the old wording hid: a field that is
+**declared** NULL on purpose, so a later step can populate it (`parquet_sha`, and now a set's
+`document_sha`), **must** be populated or explicitly removed before the document is written.
+`meta$field <- NULL` removes the element, which is why no `{}` has ever reached a stored file.
 
 ---
 
@@ -446,7 +454,7 @@ correctness question for the write path, not the encoder:
   storage.
 - **R7.5 keeps it true over time**: never re-emit a payload for a `data_sha` already in history
   (carry the recorded `document_sha` forward, mirroring
-  `.datom_lookup_history_parquet_sha()` at `R/read_write.R:460-465`), and hold
+  `.datom_lookup_history_parquet_sha()` at `R/read_write.R:468-473`), and hold
   `datom_validate(fix = TRUE)` to the same rule, since it re-uploads from the clone.
 
 Without both, the failure is a **refused read of a valid version**, surfacing long after the write
@@ -661,7 +669,7 @@ section 11 analysed is outside our control; this one is entirely inside it.
 Nothing self-heals it either. `.datom_update_manifest_entry()` (`R/sync.R:946`) writes no
 `schema_version` on either branch, so stamping the version only in the absent-manifest skeleton
 would leave upgraded repos v2-shaped while still declaring v1 -- the gate then stays silent on
-exactly the repos it was built for. And a no-change write returns at `R/read_write.R:870-879`, before
+exactly the repos it was built for. And a no-change write returns at `R/read_write.R:878-887`, before
 the manifest is touched, so an idempotent re-run repairs nothing.
 
 Two properties were recorded as satisfied by Task 4 while the rename was queued to falsify them:
@@ -763,7 +771,7 @@ absent-key one described below; the second is still deferred to its own issue.
 
 **Per-artifact metadata has neither hatch.** It is the source of truth, so there is nothing to
 rebuild it from; and a legacy-shaped copy hashes differently from the recorded version, so change
-detection (`R/read_write.R:398`) disagrees and an older build mints a version on every run --
+detection (`R/read_write.R:406`) disagrees and an older build mints a version on every run --
 dual-write would help old readers by breaking old writers. So for that file the rules are absolute:
 additive only, forever.
 
@@ -795,7 +803,7 @@ split then falls out of a single rule instead of two.
 
 R22 keeps readers working. It does nothing about a **writer** that does not understand a document,
 and the schema number cannot fill the gap: adding a content-bearing field is reader-safe and
-writer-breaking (writers recompute identity at `R/read_write.R:398`), the format has not changed, so
+writer-breaking (writers recompute identity at `R/read_write.R:406`), the format has not changed, so
 the number must not move and there is nothing to refuse on. One number cannot encode "newer but still
 readable."
 
@@ -834,7 +842,7 @@ not survive into the implementation.
 ### 10.7 The write-path entry sequence
 
 Stated once, so the pieces compose. All of it sits directly after the `datom_conn` class check and
-**above** the two routing returns at `R/read_write.R:788` and `R/read_write.R:792` --
+**above** the two routing returns at `R/read_write.R:796` and `R/read_write.R:800` --
 `.datom_sync_data_metadata()` mirrors the whole manifest to storage (`R/sync.R:212`) without ever
 reaching the manifest-writing step, so anything placed after the router misses it.
 

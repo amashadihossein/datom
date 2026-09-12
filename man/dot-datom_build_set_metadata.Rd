@@ -16,7 +16,15 @@ either way, mirroring how \code{\link[=.datom_build_metadata]{.datom_build_metad
 for \code{\link[=datom_write]{datom_write()}} to populate: the byte hash is not knowable until the
 payload has been serialized, and it is excluded from \code{metadata_sha}, so the
 deferred assignment cannot move a version. \strong{Nothing computes one until the
-set write path exists}, so today it arrives NULL from every caller.}
+set write path exists}, so today it arrives NULL from every caller.
+
+\strong{The write path must populate it before writing the document.} \code{jsonlite}
+does not omit a NULL element -- it writes \code{{}}, which reads back as an empty
+list rather than an absent key. \code{parquet_sha} never hits this because its
+only two outcomes are a real hash or \code{meta$parquet_sha <- NULL}, and
+assigning NULL \emph{removes} the element. A field left declared-and-unpopulated
+through a write would satisfy a names-only field-set check while carrying an
+empty object, so assert on the written bytes where the field set matters.}
 }
 \value{
 Named list of exactly the seven fields a set's \code{metadata.json}

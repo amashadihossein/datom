@@ -49,6 +49,22 @@ does not move, so nothing is re-uploaded). Task 22's handoff is discharged: a re
 reads `kind` from the document and falls back to `"table"` only for documents written before the
 field existed. Two things a later change must not undo, and four probes, are in Task 7's DONE record.
 
+**Reviewed after it landed (2026-09-10). Nothing was wrong with the shipped code; two things were
+wrong in what was written about it, and both are now Task 9's to close.** (1) **A rebuilt row for a
+set is wrong in two directions, not one.** A set's row carries a member count *instead of* a byte
+size, and the rebuild produces neither correctly: the member count is missing, because it lives in
+the payload rather than in the two documents a rebuild reads, and a byte size of `0` is **present**,
+because the default has length 1 and survives the compaction step. The test that compares a rebuilt
+row against a written one field for field would catch both, but its fixture writes tables only -- so
+this is the same shape as the `kind` hardcode Task 7 just fixed: a real guard exists and reaching it
+depends on somebody connecting two files. Task 9's body now says to extend that fixture.
+(2) **`jsonlite` does not omit a NULL field -- it writes `{}`.** The Task 7 record claimed the
+declared and conditional spellings "produce identical files", which is false. It changes nothing that
+shipped (no set is written yet, and `parquet_sha` escapes because assigning NULL *removes* an element),
+but it means a set metadata document written before `document_sha` is populated would pass the
+seven-key check while carrying an empty object. Corrected in four places, including design.md section
+4, which has carried the same wrong claim since the spec was written.
+
 **TASK 22 IS CLOSED. EVERY PHASE E TASK THAT HAD TO RUN EARLY IS DONE; ITS SIXTH (TASK 23, ADDED LATER) RUNS IMMEDIATELY BEFORE TASK 11.** A reader that meets a
 manifest whose artifact list it cannot use no longer reports an empty repo. It lists storage instead,
 reconstructs the index from the per-artifact documents that hold the same facts, and **warns once**
@@ -223,7 +239,7 @@ every repo written before Task 6 keeps its artifact list under `tables` and decl
 the reader-side check tolerates that as v1, so such a repo would have passed the check and then met a
 reader looking for `artifacts` -- every discovery command reporting an empty repo without erroring.
 Neither thing that might have healed it did: the entry updater stamped no schema version, and a
-no-change write returns at `R/read_write.R:870-879` before the manifest is touched. Closed by R22 --
+no-change write returns at `R/read_write.R:878-887` before the manifest is touched. Closed by R22 --
 **reads upgrade in memory, writes upgrade on disk** -- shipped in Task 6 as `R/manifest-upgrade.R`. The
 full reasoning, including why refusing loudly was not an option, is in design.md 10.1 and 10.2, and it
 is worth reading before any later format change rather than re-deriving it.
@@ -678,7 +694,7 @@ necessary.
     clone by `datom_sync_manifest()` and `.datom_status_input_files()`, and that copy can be ahead
     of the installed build by an ordinary route: a collaborator upgrades datom and writes, this
     developer pulls. Left ungated, those two commands read a manifest shape this build does not
-    know. The four in-pipeline local reads (`R/sync.R:202`, `R/read_write.R:929`,
+    know. The four in-pipeline local reads (`R/sync.R:202`, `R/read_write.R:937`,
     `.datom_update_manifest_entry()`, `R/validate.R:257`) were **deliberately excluded** at the time:
     the check belongs where a document enters datom, so a refusal happens before work starts rather
     than partway through a write. **Two of those four are no longer excluded, and the record is left
@@ -925,7 +941,7 @@ own; landing it first is what makes Task 6's failure loud.
     Placement is the whole question, and it has two parts. (a) It needs the **manifest**, which
     `datom_write()` never reads -- gating only the per-artifact metadata leaves the manifest
     unprotected. (b) It must sit directly after the `datom_conn` class check and **above** the two
-    routing returns at `R/read_write.R:788` and `R/read_write.R:792`, because
+    routing returns at `R/read_write.R:796` and `R/read_write.R:800`, because
     `.datom_sync_data_metadata()` mirrors the whole local manifest to storage (`R/sync.R:212`)
     without ever reaching the manifest-writing step, so a check placed after the router misses it.
     A write is several steps -- local files, one commit, then the storage mirror -- so the check
@@ -1004,7 +1020,7 @@ own; landing it first is what makes Task 6's failure loud.
   - **DESIGN AUDIT, 2026-08-23** -- run before implementation per the E2 flag, and the reason this
     phase is now two tasks. It found the old-format transition described above (nothing upgraded a
     v1 manifest, and neither of the two things that might have self-healed it does: the entry
-    updater stamps no version, and a no-change write returns at `R/read_write.R:870-879` before the
+    updater stamps no version, and a no-change write returns at `R/read_write.R:878-887` before the
     manifest is touched), the two v1-compatibility tests that must not be swept, the five counters
     rather than three, the two empty-frame early returns, the placement of the write-side refusal
     above the routing returns, and two acceptance criteria this task cannot exercise (AC4 needs
@@ -1297,7 +1313,7 @@ own; landing it first is what makes Task 6's failure loud.
        kind, which is the only reason the rebuild may hardcode it`
        (`tests/testthat/test-manifest-rebuild.R:381`).
     5. **THAT LAST ONE IS A HANDOFF, NOT A FAILURE TO SILENCE.** It exists to make this task notice
-       `R/manifest-rebuild.R:204`, where a rebuilt manifest row is stamped `kind = "table"` because
+       `R/manifest-rebuild.R:210`, where a rebuilt manifest row is stamped `kind = "table"` because
        nothing in per-artifact metadata says otherwise. Once this task adds the field, change that line
        to read `kind` from the document and keep `"table"` as the fallback for documents written before
        it existed, then replace the test with one asserting a set's metadata yields a row typed
@@ -1335,12 +1351,21 @@ own; landing it first is what makes Task 6's failure loud.
        The forcing-function test that made this happen was **replaced, not deleted**, by one
        asserting all three cases (declared table, declared set, absent).
   - **Two things a later change must not undo.** (1) `document_sha` is **declared** in the set
-    builder (`document_sha = document_sha` in the `list()` call), not conditionally assigned. The two
-    spellings produce identical files while the value is NULL, so a tidy-up to conditional-assign
-    changes nothing on disk and still breaks R1.3's seven-key contract -- probed, and it reddens 3
-    tests. (2) `kind` is on the **identity** list. Moving it to the excluded list reddens 3
-    assertions including the dedicated one, and what it would allow is a table and a set sharing one
-    version string.
+    builder (`document_sha = document_sha` in the `list()` call), not conditionally assigned:
+    the conditional form drops the key from the document and breaks R1.3's seven-key contract --
+    probed, and it reddens 3 tests. (2) `kind` is on the **identity** list. Moving it to the excluded
+    list reddens 3 assertions including the dedicated one, and what it would allow is a table and a
+    set sharing one version string.
+  - **CORRECTION, made during this task's review (2026-09-10): the first of those two said the
+    declared and conditional spellings "produce identical files while the value is NULL". That is
+    false and it mattered.** `jsonlite` does **not** omit a NULL element -- it writes `{}`, and
+    reading that back gives an empty list rather than an absent key (verified; design.md section 4
+    carried the same wrong claim and is corrected there too). Nothing is wrong with the shipped code:
+    the case is unreachable because no set is written yet, and `parquet_sha` avoids it by accident,
+    since `meta$parquet_sha <- NULL` **removes** an element rather than nulling it. But it makes the
+    seven-key assertion unable to tell a populated document from an unpopulated one, so **Task 9 must
+    populate `document_sha` before it writes** and assert on the written bytes. Recorded in the
+    builder's own roxygen, in Task 9's body, and in `dev/engineering-notes.md`.
   - **Four probes, each reverted, each naming what it reddened**: misclassifying `kind` as
     not-identity reddens 3 (the dedicated test plus both goldens); the set builder claiming
     `"datom-cv1"` reddens 1; reverting the rebuild to a hardcoded kind and disabling the
@@ -1431,7 +1456,7 @@ own; landing it first is what makes Task 6's failure loud.
     legitimate use (a current table beside a locked baseline).
   - **Never re-emit a payload for a `data_sha` already in history** (R7.5 rule 1, I27, AC29b): reuse
     the stored object and **carry the recorded `document_sha` forward**. Mirror
-    `.datom_lookup_history_parquet_sha()` (`R/read_write.R:460-465`, `422-439`) -- it already does
+    `.datom_lookup_history_parquet_sha()` (`R/read_write.R:468-473`, `422-439`) -- it already does
     exactly this for parquet, including the `upload = FALSE` return. **This is the defect that passes
     every per-chunk test**: recomputing `document_sha` from fresh bytes while reusing the stored
     object records a hash of bytes nobody stored, and it surfaces later as a refused read of a valid
@@ -1445,6 +1470,25 @@ own; landing it first is what makes Task 6's failure loud.
     tidying** -- the canonical member count, not what the caller passed. Pinned because tidying can
     drop an exact duplicate, so the two can differ; today they rarely do, which is exactly why an
     unstated rule would be settled by accident.
+  - **THE REBUILT SET ROW IS THIS TASK'S TOO, and it is wrong in two directions, not one** (found in
+    Task 7's review). R8.1 says a set entry carries `member_count` **instead of** `size_bytes`;
+    `.datom_rebuild_manifest_entry()` (`R/manifest-rebuild.R`) currently produces neither correctly
+    for a set -- `member_count` is absent, because it lives in the payload rather than in the two
+    documents the rebuild reads, and `size_bytes` is **present as 0**, because the default has length
+    1 and so survives `purrr::compact()`. One field short and one field long, and a rebuilt repo then
+    answers differently from a healthy one, which is the whole thing AC37(f) exists to prevent.
+    **Extend `local_rebuild_project()` / the field-for-field test (`tests/testthat/test-manifest-rebuild.R:349`)
+    to write a set**, because that test compares row field sets and would catch both -- but its
+    fixture writes tables only, so today it cannot fire. This is the same shape as the `kind`
+    hardcode Task 7 closed: a real guard exists and reaching it depends on somebody connecting two
+    files.
+  - **POPULATE `document_sha` BEFORE WRITING THE METADATA DOCUMENT, and assert on the written bytes.**
+    `jsonlite` does not omit a NULL element -- it writes `{}` and reads it back as an empty list -- so
+    a set metadata document written while the field is still unpopulated has its seven keys and one of
+    them is an empty object. R1.3's `setequal(names(meta), ...)` check cannot see that, which is why
+    AC29a's assert-on-the-file-bytes instruction covers this too. `parquet_sha` never hits it because
+    its only outcomes are a real hash or `meta$parquet_sha <- NULL`, and assigning NULL removes the
+    element rather than nulling it.
   - _Requirements: R5, R6 (incl. R6.1a/b), R7.5, R2.14, R2.14a, R2.15, R10.3a, R12.2, R8 (set
     entries). Invariants: I2, I5, I6, I11, I15, I25, I26, I27. Properties: P7, P13, P17, P25, P29,
     P32. Acceptance: AC2, AC3, AC4, AC5, AC24, AC29 (a and b),
@@ -1806,7 +1850,7 @@ rather than in Phase D beside the task it blocks.
   - **The field inventory is fully discoverable from one function, verified 2026-08-26.** Every
     top-level key of a metadata document is assigned inside `.datom_build_metadata()`
     (`R/read_write.R:325-329` for the five conditional ones) with exactly one exception,
-    `meta$parquet_sha` at `R/read_write.R:887`, which is volatile. Nothing else in `R/` writes a
+    `meta$parquet_sha` at `R/read_write.R:895`, which is volatile. Nothing else in `R/` writes a
     top-level metadata key. So seeding the allowlist does not require a hunt: the semantic set today
     is `data_sha`, `hash_algo`, `table_type`, `nrow`, `ncol`, `colnames` always, plus
     `original_file_sha`, `parents`, `source_lineage`, `custom` when present. Recorded because an
@@ -1821,7 +1865,7 @@ rather than in Phase D beside the task it blocks.
     emits.** Verified: `metadata.json` is written as exactly the object `.datom_build_metadata()`
     produced (`R/read_write.R`, `write_json(metadata, ...)` inside
     `.datom_write_metadata_local()`), and that object has no `name` key; the `name` at
-    `R/read_write.R:875` and `R/read_write.R:950` is `datom_write()`'s **return value**, not the
+    `R/read_write.R:883` and `R/read_write.R:958` is `datom_write()`'s **return value**, not the
     document.
     So a builder-derived allowlist will not contain `name`, this fixture's hash **will** change, and
     the golden test fails -- while **no real identity moves at all**, because no stored document ever
@@ -1953,7 +1997,7 @@ rather than in Phase D beside the task it blocks.
     `.datom_carry_unknown_fields()` (copy onto a rebuilt document every top-level field of the prior
     document whose name this build cannot place), `.datom_metadata_known_fields()`,
     `.datom_manifest_entry_known_fields` and `.datom_prior_metadata()`. Two call sites:
-    `datom_write()` step 5a (`R/read_write.R:898-902`) for the per-artifact document, and
+    `datom_write()` step 5a (`R/read_write.R:906-910`) for the per-artifact document, and
     `.datom_update_manifest_entry()` (`R/sync.R:1004-1018`) for the artifact's manifest row. New
     `tests/testthat/test-forward-compat.R`, three internal `man/` pages, no new export, NAMESPACE and
     `_pkgdown.yml` untouched. tests 2867 -> **2902** (+35), FAIL 0 / WARN 0 / SKIP 0;
@@ -1961,7 +2005,7 @@ rather than in Phase D beside the task it blocks.
     documents gain fields on the way out of a step that was already there.
   - **THERE IS A FOURTH SURFACE THE REQUIREMENT DOES NOT NAME: an entry in `version_history.json`.**
     Safe by the same property as the manifest's top level -- the history list is read and the new
-    version is **prepended** (`R/read_write.R:606`), so an entry already in it is never rebuilt -- and
+    version is **prepended** (`R/read_write.R:614`), so an entry already in it is never rebuilt -- and
     equally unpinned until now. It is worth pinning rather than arguing because **two later tasks add
     fields to these entries**: Task 7's `document_sha` and Task 15's `commit_sha`. A build that
     normalised an old entry to today's field set would destroy exactly those, on a document describing
@@ -2068,7 +2112,7 @@ rather than in Phase D beside the task it blocks.
   - **Read the CLONE's copies, not storage** (R23.1a). This is the detail that makes the check
     possible at entry at all: the sequence has the manifest by then but **not** per-artifact
     metadata, which `datom_write()` does not touch until pipeline step 4 inside
-    `.datom_has_changes()` (`R/read_write.R:397-405`, the storage read being the last of those lines).
+    `.datom_has_changes()` (`R/read_write.R:405-413`, the storage read being the last of those lines).
     All three documents exist as local files
     (`{conn$path}/.datom/manifest.json`, `{conn$path}/{name}/metadata.json`), so this is a file read,
     it costs no round trip, and it works on the mirror-everything route where there is no single
@@ -2093,7 +2137,7 @@ rather than in Phase D beside the task it blocks.
     ("refuse when the expected key is absent") would have **deadlocked the v1-to-v2 upgrade itself**.
   - **The entry sequence** (design 10.7): fetch, floor, read-and-check-then-chain, unreachable-shape,
     vocabulary, proceed -- all directly after the `datom_conn` class check and **above** the routing
-    returns at `R/read_write.R:788` and `R/read_write.R:792`, because `.datom_sync_data_metadata()`
+    returns at `R/read_write.R:796` and `R/read_write.R:800`, because `.datom_sync_data_metadata()`
     mirrors the whole manifest to storage (`R/sync.R:212`) without reaching the manifest-writing step.
     All of it before any hashing, local write, or commit (I34).
   - **The double read is already decided, by Task 6**: the entry updater reads the same file again at
@@ -2244,7 +2288,7 @@ rather than in Phase D beside the task it blocks.
          correct only because something upstream refused first starts lying the day the refusal moves.
       3. **The staleness fix covers one of the two pulling routes -- ACCEPTED RESIDUAL, not fixed.**
          The table-write route also pulls, inside `.datom_git_push(pull_first = TRUE)` at step 7
-         (`R/read_write.R:918`), which is **after** step 6 has already written the metadata document and
+         (`R/read_write.R:926`), which is **after** step 6 has already written the metadata document and
          edited the manifest. So the door's answer can be stale there too, and re-checking cannot help:
          the write is already built by then. Left as it is, deliberately, because the backstop is real
          and design 10.7 already argues for it -- the push aborts on rejection or on a merge conflict,
@@ -2266,7 +2310,7 @@ rather than in Phase D beside the task it blocks.
   - **Reader warns and rebuilds; writer refuses** (R22.11). Same condition, opposite responses. A
     storage-only reader rebuilds **in memory for that session** and writes nothing. Warn **once**,
     pointing at the upgrade -- a silent repair is a silent degradation.
-  - **The rebuild reads the recorded `version`** from `version_history.json` (`R/read_write.R:557`) and
+  - **The rebuild reads the recorded `version`** from `version_history.json` (`R/read_write.R:565`) and
     **never** recomputes it. Recomputing walks into the denylist defect in precisely the scenario the
     rebuild exists for, and would publish a `current_version` matching no version in the history --
     worse than the empty list it replaced. (Task 19 removes that defect, but the rebuild must not
@@ -2769,6 +2813,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-10 | **Task 23 executes immediately before Task 11 rather than last, and Task 11 states the dependency.** The proposal put it at the end of the list with a note that it "must ship in the same release as Task 11". Same guarantee, but enforced by memory at release time -- and the failure it insures against is precisely a release split with Task 11 in the earlier half. Making it the task immediately before Task 11, with the dependency written into Task 11's body, makes the constraint structural and removes the cross-reference that would otherwise have to be kept true in two places. Phase E's own filter argues for this: an irretrofittable half belongs early relative to the thing it protects, not at the end of a list where it can be deferred while the thing it protects ships. | Task 23, Task 11, Phase E |
 | 2026-09-10 | **The execution order was swept in one copy of three, and `check-spec.R` check 6 now guards it.** Adding Task 23 updated the state block's order and left Phase E's preamble and the `dev/README.md` status cell both saying the sequence ended at Task 7. **Found by the owner reading the file, not by the gate** -- which is the same defect class check 6 was built for, arriving in a third kind of content after the encoder pseudocode and the AC bounds. Check 6 now extracts every arrow chain beginning `18 -> 19` from all three spec files **and** from `dev/README.md`, and fails when two copies disagree, naming which one is behind. Two design points worth keeping: the copies are compared **against each other** rather than against an expected sequence, because the order changes legitimately and a gate holding today's answer would need editing every time it moved -- which is how a gate stops being trusted; and the text is collapsed to one string before matching, because the state block's copy **wraps across two lines**, so a line-by-line scan sees two short chains and the disagreement hides in the split. Verified by reintroducing the exact defect the owner found, and separately by staling only the README: both FAIL. `dev/README.md` is read for this one clause only, since that is where the third copy lives and the copy a person meets first. | dev/check-spec.R, Task 23, Phase E |
 | 2026-09-10 | **COLD-START AUDIT FOR TASK 7: startable, after two corrections to its own body, one property rescoped and five additions. No escalation flag** (design.md 12 carries E1 and E2 only), so nothing is owed under rule 5d. **Two statements in the task were wrong.** (1) It cited "design.md section 4 matrix" for the set's collapsed field set; section 4 is about tags replacing structure and contains **no** field matrix, so the citation sent a fresh reader after a table that does not exist. The authoritative list is **R1.3** (seven named fields) with R1.4 for the exclusions. (2) It said to **keep `document_sha` out of the metadata document**, which contradicts R1.3 -- that field is one of the seven -- and would break the read gate, since R7.1 requires the stored payload verified *before parsing* and the reader has nowhere else to get the expected hash. The Task 20 concern behind the old wording does not survive R1.3 either: carry-forward only matters for a field **nothing writes**, and once the set builder writes it no rewrite can lose it. **The finding that would have done real damage: adding `kind` re-mints a version for every existing table, and a fresh session would have read that as a defect.** Verified by computing the hash both ways. It is an accepted owner decision (2026-08-23) that lives **only** in a dated Decisions row, and both fixes a fresh session would reach for were closed off in that same decision -- `kind` cannot leave the hash (a table and a set could then share a version identity) and cannot live only in the manifest (AC4's cross-kind check reads it from per-artifact metadata, because the manifest can lag a partial write). Now stated in the task body. **P36 rescoped**: its first clause said adding *any* field leaves every `metadata_sha` unchanged, which is false for a field added **into** identity and therefore contradicted that decision -- the same correction P35 and AC32 needed when Task 22 changed their subject. **Three additions.** Task 7 **legitimately moves two pinned goldens** (`test-utils-sha.R:1002`), which is the first licensed exception to "if a golden fails the code drifted"; the tests it reddens are **six** sites, now enumerated with live citations rather than left to be found; and the sixth of those (`test-manifest-rebuild.R:381`) is a **handoff**, not a failure to silence -- it exists to make this task change `R/manifest-rebuild.R:200`, where a rebuilt row is stamped `kind = "table"` because nothing in metadata says otherwise, and deleting the test instead leaves a rebuilt set reported as a table with the set counters reading zero. Also recorded: the set builder's two concrete values (`.datom_canonical_set_hash()` for `data_sha`, the literal `"datom-sv1"` for `hash_algo`, both easy to get wrong by copying the table builder), that `document_sha` is **inert until Task 9** so whether its plumbing lands here is a choice with a stated default, and that all three acceptance criteria are assertable here on the **builder's output** only, since nothing writes a set until Task 9. | Task 7, R1.3, R1.4, R7.1, R7.2, P36, AC33, Task 9, Task 19, Task 22 |
-| 2026-09-10 | **(implementation) `kind` is a field on the table builder, not a parameter of it, and `document_sha` is declared rather than conditionally assigned.** Two small spelling choices, each closing off a plausible tidy-up. **(1)** `.datom_build_metadata()` hardcodes `kind = "table"`: a table write is the only thing that reaches it, sets have their own builder, and a parameter would advertise a flexibility no caller has -- while inviting a future caller to build a set through the table builder and get a document with `nrow` and `colnames` on it. **(2)** `.datom_build_set_metadata()` declares `document_sha = document_sha` inside its `list()` call, so the key exists even while the value is NULL, exactly as `.datom_build_metadata()` declares `parquet_sha`. The alternative spelling (`if (!is.null(x)) meta$x <- x`) looks equivalent and is not: `list(a = NULL)` keeps the name while `meta$a <- NULL` removes it, and `write_json(auto_unbox = TRUE)` drops a NULL element anyway -- so the two produce **identical files** and differ only in the in-memory object, which is where R1.3's seven-key contract is asserted. Probed: the conditional form reddens 3 tests. Recorded in `dev/engineering-notes.md` as its own note, because the same trap applies to every "declared now, populated later" field. | Task 7, R1.3, R7.2 |
+| 2026-09-10 | **(implementation) `kind` is a field on the table builder, not a parameter of it, and `document_sha` is declared rather than conditionally assigned.** Two small spelling choices, each closing off a plausible tidy-up. **(1)** `.datom_build_metadata()` hardcodes `kind = "table"`: a table write is the only thing that reaches it, sets have their own builder, and a parameter would advertise a flexibility no caller has -- while inviting a future caller to build a set through the table builder and get a document with `nrow` and `colnames` on it. **(2)** `.datom_build_set_metadata()` declares `document_sha = document_sha` inside its `list()` call, so the key exists even while the value is NULL, exactly as `.datom_build_metadata()` declares `parquet_sha`. The alternative spelling (`if (!is.null(x)) meta$x <- x`) looks equivalent and is not: `list(a = NULL)` keeps the name while `meta$a <- NULL` removes it, so the conditional form drops the key from the document and breaks R1.3's seven-key contract. Probed: it reddens 3 tests. Recorded in `dev/engineering-notes.md` as its own note, because the same trap applies to every "declared now, populated later" field. **This row originally added a third clause -- that the two spellings "produce identical files" because `write_json` drops a NULL element -- and it is FALSE, corrected the same day during this task's review: `jsonlite` writes `{}` for a NULL element and reads it back as an empty list. The shipped code is unaffected (no set is written yet, and `parquet_sha` escapes by the removal accident above), but a declared field must be populated or explicitly removed before a write, which is now Task 9's obligation.** | Task 7, R1.3, R7.2, Task 9 |
 | 2026-09-10 | **(implementation) one probe was discarded for being imprecise, which is worth a row because the probe technique can mislead.** Deleting `kind` from **both** classification lists reddens 12 tests -- but through the write door's vocabulary check, which refuses a write on any top-level field it cannot classify, not through identity. That is the wrong mechanism for the claim being tested. The precise probe is to **move** the field from the identity list to the excluded one, which keeps it classified and reddens 3 assertions: the dedicated one plus both goldens. Both mechanisms are real and complementary, and a probe that trips the wrong one reads as confirmation while proving nothing about the guard under test. | Task 7, Task 21 |
 | 2026-09-10 | **(implementation) a rebuilt SET row is still incomplete, and the gap is stated at the site rather than left to memory.** `.datom_rebuild_manifest_entry()` now recovers `kind` from the metadata document, so a rebuilt set is at least counted as a set. It does **not** recover `member_count`, because that number lives in the payload rather than in `metadata.json` or `version_history.json` -- the two documents the rebuild reads. Left to Task 9, which owns the set row's shape, and recorded in the function's own docs plus the pathways card. Nothing writes a set row today, so there is no shape to match against and no test that can fail; the pinning test that compares a rebuilt row against a written one covers tables only. | Task 7, Task 9, Task 22 |

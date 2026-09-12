@@ -167,12 +167,18 @@
 #' document. The version's own `created_at` is used instead, which is the closest
 #' true statement available -- when this artifact's current state was written.
 #'
-#' **Rebuilding a set's row is not finished here.** `kind` is recovered, so a set
-#' is at least counted as a set, but a set's row also carries `member_count`, and
-#' that number is in the payload rather than in `metadata.json` -- so it takes a
-#' third read, at the content-addressed payload key. Whoever writes the set write
-#' path owns closing that gap; nothing writes a set row yet, so there is no
-#' shape to match against today.
+#' **Rebuilding a set's row is not finished here, and it is wrong in two
+#' directions rather than one.** `kind` is recovered, so a set is at least counted
+#' as a set. But a set's row carries `member_count` **instead of** `size_bytes`,
+#' and this function does the opposite: `member_count` is missing, because that
+#' number lives in the payload rather than in either document read here (so it
+#' takes a third read, at the content-addressed payload key), while `size_bytes`
+#' is *present as 0*, because the default below has length 1 and therefore
+#' survives `purrr::compact()`. One field short and one field long.
+#'
+#' Whoever writes the set write path owns closing both. The field-for-field test
+#' that would catch it exists, but its fixture writes tables only, so covering a
+#' set is part of that work.
 #'
 #' @param conn A `datom_conn` object.
 #' @param name Artifact name.
