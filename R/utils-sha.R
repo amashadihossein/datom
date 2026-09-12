@@ -411,7 +411,19 @@
 #
 #   data_sha          always       the content identity itself
 #   hash_algo         always       a new algorithm is a new identity regime
-#   table_type        always       imported vs derived
+#   kind              always       table or set. In identity so that a table and a
+#                                  set can never share a version: without it, two
+#                                  artifacts of different kinds whose remaining
+#                                  hashed fields agreed would mint the same
+#                                  version. The cost was known and accepted when
+#                                  the field was introduced -- a rebuilt table
+#                                  document hashes differently from the recorded
+#                                  one, so the next write of every existing table
+#                                  mints one extra version on unchanged content.
+#                                  Bounded and in the safe direction: same
+#                                  content, same `data_sha`, same storage address,
+#                                  nothing re-uploaded.
+#   table_type        always       imported vs derived (tables only)
 #   nrow, ncol        always       declared dimensions
 #   colnames          always       declared column names, in order
 #   original_file_sha conditional  imported tables only -- a new source file is a
@@ -420,7 +432,7 @@
 #   source_lineage    conditional  the transitive source union
 #   custom            conditional  user metadata, opaque and hashed as a whole
 .datom_metadata_identity_fields <- c(
-  "colnames", "custom", "data_sha", "hash_algo", "ncol", "nrow",
+  "colnames", "custom", "data_sha", "hash_algo", "kind", "ncol", "nrow",
   "original_file_sha", "parents", "source_lineage", "table_type"
 )
 

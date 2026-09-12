@@ -573,3 +573,52 @@ suite that only checks that *something* failed.
   fires. Where a mapped function is expected to raise a condition the caller dispatches on, use
   `lapply()` / `vapply()` and say why in a comment -- otherwise the next tidy-up puts `purrr::map()`
   back.
+### Adding a field to a metadata document is not the same size of change on each list
+
+Landed 2026-09-10 with `kind` (which kind of artifact the document describes) entering per-artifact
+metadata. Two lists exist -- `.datom_metadata_identity_fields` (hashed into the version) and
+`.datom_metadata_excluded_fields` (known and deliberately not hashed), both in `R/utils-sha.R` -- and
+which one a new field lands on decides whether the release is free or costs every artifact a version.
+
+- **A field added to the IDENTITY list re-mints one version for every existing artifact.** Change
+  detection recomputes the document's identity from the stored document and compares it with the
+  recorded version (`.datom_has_changes()`), so a document that has gained an identity field
+  disagrees with its own recorded version. The next write of each artifact therefore reports
+  `metadata_only` and records a version, on content that never moved -- once per artifact, at its
+  next write, in every repo. **This is a design decision, not a defect to fix at implementation
+  time.** Take it deliberately, and say it in NEWS: the cost is bounded and in the safe direction,
+  because `data_sha` does not move, so the storage address does not move, the payload is reused and
+  nothing is re-uploaded.
+
+- **A field added to the excluded list costs nothing**, which is why `schema_version`,
+  `original_format` and `document_sha` are all there. The question to ask is never "is this field
+  cheap" but "can two artifacts that differ only in this field be allowed to share a version".
+
+- **Adding either kind still forces every writer in the fleet to upgrade**, through the vocabulary
+  check rather than through identity, so "additive is free" is only ever free *for readers*. See the
+  forward-compatibility section of `.github/copilot-instructions.md`.
+
+- **Both lists are guarded by tests that fail when a builder gains a field, in both directions**
+  (`test-utils-sha.R`): every field a builder emits must be classified, and nothing may be classified
+  before a builder emits it. The second arm carries an exception vector that is currently empty. They
+  are not tests to update -- they are where the decision gets made.
+
+### A declared-but-unpopulated field has to be spelled `list(x = NULL)`, not a conditional assign
+
+`list(a = 1, b = NULL)` keeps `b` as a name; `meta$b <- NULL` **removes** it. So the two ways of
+writing "this field exists but its value is not known yet" are not interchangeable, and datom uses
+both deliberately:
+
+- **Declared, because the value arrives later in the same pipeline.** `parquet_sha` in
+  `.datom_build_metadata()` and `document_sha` in `.datom_build_set_metadata()` are both declared as
+  `NULL` because the byte hash is not knowable until the payload has been serialized. Both fields are
+  outside the version identity, which is what makes the deferred assignment safe.
+- **Conditionally assigned, because absence is a real state.** `original_file_sha`, `parents`,
+  `custom` and friends are added only when non-NULL, so an absent field is spelled by omitting the
+  key rather than by a null value.
+
+The trap is that `jsonlite::write_json(auto_unbox = TRUE)` drops a NULL element anyway, so the two
+spellings produce **identical files** whenever the value is still NULL at write time. The difference
+is only visible in the in-memory object -- which is exactly where a `setequal(names(meta), ...)`
+assertion about a document's field set looks. A tidy-up that converts a declared field to a
+conditional assign therefore changes nothing on disk and still breaks the field-set contract.

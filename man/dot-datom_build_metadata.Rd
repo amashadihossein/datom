@@ -51,6 +51,7 @@ from \code{\link[=.datom_canonical_hash]{.datom_canonical_hash()}}, or NULL. Exc
 }
 \value{
 Named list suitable for writing as metadata.json. Always carries
+\code{kind = "table"} (which artifact kind the document describes),
 \code{schema_version} (the format the document is written in) and
 \code{hash_algo = "datom-cv1"}, and declares \code{parquet_sha} (left NULL here and
 populated by \code{\link[=datom_write]{datom_write()}} after change detection, since the stored-

@@ -279,6 +279,7 @@ datom_read <- function(conn,
 #'   from [.datom_canonical_hash()], or NULL. Excluded from `metadata_sha`
 #'   (see [.datom_compute_metadata_sha()]).
 #' @return Named list suitable for writing as metadata.json. Always carries
+#'   `kind = "table"` (which artifact kind the document describes),
 #'   `schema_version` (the format the document is written in) and
 #'   `hash_algo = "datom-cv1"`, and declares `parquet_sha` (left NULL here and
 #'   populated by [datom_write()] after change detection, since the stored-
@@ -301,6 +302,14 @@ datom_read <- function(conn,
     # not-identity list, so stamping it mints no new version for content that
     # did not move.
     schema_version = .datom_supported_schema,
+    # Which kind of artifact this document describes. Not a parameter: a table
+    # write is the only thing that reaches this builder, and a set gets its own
+    # builder (.datom_build_set_metadata()) because the field sets barely
+    # overlap. It is IDENTITY -- a table and a set must not be able to share a
+    # version -- which is why adding it re-mints one version for every existing
+    # table on unchanged content. Accepted deliberately (see NEWS): the storage
+    # address is data_sha, which does not move, so nothing is re-uploaded.
+    kind = "table",
     data_sha = data_sha,
     hash_algo = "datom-cv1",
     parquet_sha = NULL,
@@ -327,6 +336,53 @@ datom_read <- function(conn,
   }
 
   meta
+}
+
+
+#' Build the Metadata Document for a Set Write
+#'
+#' A set's `metadata.json` is a collapsed version of a table's: seven fields and
+#' no more. Everything a table carries that describes a rectangle (`nrow`,
+#' `ncol`, `colnames`, `column_hashes`), the provenance axis (`table_type`,
+#' `parents`, `source_lineage`), the stored-parquet facts (`parquet_sha`,
+#' `size_bytes`) and the user-metadata channel (`custom`) are all **omitted, not
+#' nulled** -- a set's members and its user metadata both live in the payload as
+#' tags, and no counter reads a set's byte size.
+#'
+#' Kept beside [.datom_build_metadata()] on purpose: the two documents are close
+#' enough that a field copied from the wrong one is easy to miss, and two of the
+#' values here are exactly that kind of trap.
+#'
+#' * `data_sha` comes from [.datom_canonical_set_hash()], the `datom-sv1`
+#'   identity engine, **not** from the table hash. Computed here rather than
+#'   passed in, so a caller cannot hand a set a table-regime hash.
+#' * `hash_algo` is the literal `"datom-sv1"`. The encoder embeds that string
+#'   inside the digest but nothing stamps the field, so the builder must. A
+#'   copied `"datom-cv1"` would leave a set claiming one regime while hashing
+#'   under the other, and no hash comparison would notice.
+#'
+#' @param payload The set payload: a list with `members` (an unnamed list of
+#'   member records) and optional set-level `tags`. Must already be tidied and
+#'   validated -- this builder hashes what it is given.
+#' @param document_sha SHA-256 of the stored payload bytes, or NULL. Declared
+#'   either way, mirroring how [.datom_build_metadata()] declares `parquet_sha`
+#'   for [datom_write()] to populate: the byte hash is not knowable until the
+#'   payload has been serialized, and it is excluded from `metadata_sha`, so the
+#'   deferred assignment cannot move a version. **Nothing computes one until the
+#'   set write path exists**, so today it arrives NULL from every caller.
+#' @return Named list of exactly the seven fields a set's `metadata.json`
+#'   carries.
+#' @keywords internal
+.datom_build_set_metadata <- function(payload, document_sha = NULL) {
+  list(
+    schema_version = .datom_supported_schema,
+    kind = "set",
+    data_sha = .datom_canonical_set_hash(payload),
+    hash_algo = "datom-sv1",
+    document_sha = document_sha,
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    datom_version = as.character(utils::packageVersion("datom"))
+  )
 }
 
 
@@ -512,6 +568,19 @@ datom_read <- function(conn,
   # pre-cv1 / metadata_only-carrying-NULL entries clean.
   if (!is.null(metadata$parquet_sha)) {
     new_entry$parquet_sha <- metadata$parquet_sha
+  }
+
+  # The same field for a set's stored JSON payload, on the same conditional-add
+  # terms, so every version of a set carries the hash of the bytes that version
+  # pinned. It is here from day one deliberately: sets then never need the
+  # "older entries lack it, skip the check" grace that `parquet_sha` carries for
+  # pre-cv1 tables, and a set read can treat an absent `document_sha` as an
+  # error instead of building a silent-degradation path.
+  #
+  # INERT UNTIL THE SET WRITE PATH LANDS: nothing computes a `document_sha` yet,
+  # so no metadata document reaching this function carries one.
+  if (!is.null(metadata$document_sha)) {
+    new_entry$document_sha <- metadata$document_sha
   }
 
   if (!is.null(original_file_sha)) {

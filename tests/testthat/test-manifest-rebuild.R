@@ -378,29 +378,38 @@ test_that("a rebuilt index matches the recorded one field for field", {
   }
 })
 
-test_that("the metadata builder emits no kind, which is the only reason the rebuild may hardcode it", {
-  # THE FORCING FUNCTION FOR THE HARDCODED `kind = "table"` in
-  # `.datom_rebuild_manifest_entry()`. That line is correct only while
-  # per-artifact metadata says nothing about what kind of artifact it describes --
-  # and the day Task 7 adds the field, a rebuilt SET would be typed as a table:
-  # the set counters read zero while the artifact still shows up in
-  # `datom_list()`, with nothing failing.
+test_that("a rebuilt row takes its kind from the document, and defaults to table", {
+  # REPLACES the forcing function that made this revisit happen. The rebuilt row
+  # used to hardcode `kind = "table"`, which was correct only while per-artifact
+  # metadata said nothing about what it described; the test that stood here
+  # asserted the builder emitted no `kind`, so that adding the field would fail in
+  # the rebuild's own file rather than depending on somebody remembering.
   #
-  # `test-utils-sha.R` does already redden when a builder gains a field, but it
-  # reddens in a fixture list about identity hashing and says nothing about this
-  # line. This test fails in the rebuild's own file, next to the hardcode, which
-  # is the whole value: the revisit stops depending on somebody remembering.
+  # What it was protecting: a rebuilt SET typed as a table lists in
+  # `datom_list()` while the set counters read zero, and nothing errors.
   #
-  # WHEN THIS FAILS, do not delete it. Change the hardcode to read `kind` from the
-  # document, keep `"table"` as the fallback for documents written before the field
-  # existed, and replace this test with one asserting that a set's metadata yields
-  # a row typed `"set"`.
-  meta <- .datom_build_metadata(
-    data.frame(id = 1:2),
-    data_sha = strrep("a", 64L)
-  )
+  # The fallback is not defensive padding. Every document written before the field
+  # existed is a table -- sets did not exist -- and an untyped row is silently
+  # uncounted, so a rebuilt pre-`kind` repo would report zero artifacts of any
+  # kind.
+  fx <- local_rebuild_project()
+  rb_write_imported(fx, name = "dm", data = rb_data(2))
 
-  expect_false("kind" %in% names(meta))
+  meta_key <- .datom_artifact_meta_key("dm", "metadata")
+  meta <- .datom_storage_read_json(fx$conn, meta_key)
+
+  expect_identical(meta$kind, "table")
+  expect_identical(.datom_rebuild_manifest_entry(fx$conn, "dm")$kind, "table")
+
+  # A set's document yields a row typed as a set.
+  meta$kind <- "set"
+  .datom_storage_write_json(fx$conn, meta_key, meta)
+  expect_identical(.datom_rebuild_manifest_entry(fx$conn, "dm")$kind, "set")
+
+  # A document written before the field existed still yields a counted row.
+  meta$kind <- NULL
+  .datom_storage_write_json(fx$conn, meta_key, meta)
+  expect_identical(.datom_rebuild_manifest_entry(fx$conn, "dm")$kind, "table")
 })
 
 test_that("original_format survives into metadata, which is what makes it rebuildable", {

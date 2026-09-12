@@ -26,5 +26,12 @@ other by a test rather than by matching comments.
 wall clock at the moment it rewrites the row, and that moment is not in any
 document. The version's own \code{created_at} is used instead, which is the closest
 true statement available -- when this artifact's current state was written.
+
+\strong{Rebuilding a set's row is not finished here.} \code{kind} is recovered, so a set
+is at least counted as a set, but a set's row also carries \code{member_count}, and
+that number is in the payload rather than in \code{metadata.json} -- so it takes a
+third read, at the content-addressed payload key. Whoever writes the set write
+path owns closing that gap; nothing writes a set row yet, so there is no
+shape to match against today.
 }
 \keyword{internal}

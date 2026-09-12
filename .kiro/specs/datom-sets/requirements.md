@@ -151,7 +151,7 @@ the test.
   not an accident to engineer away.**
 - **R2.7 -- Q2: absence is omission; `NA` is an error.** A set payload has no data cells, so `NA`
   could only enter through optional fields. datom's existing **"omitted, not nulled"** convention
-  (`.datom_build_metadata()`, `R/read_write.R:302-305`) is therefore adopted as the canonical
+  (`.datom_build_metadata()`, `R/read_write.R:325-329`) is therefore adopted as the canonical
   form: an absent field **does not exist** in the payload, and `null` / `NA` / `""` are never
   representations of absence. Consequence for the encoder: a literal `NA` reaching sv1 **aborts**
   with "not encodable -- omit the field instead". Golden vectors include the **refusal** case, not
@@ -164,7 +164,7 @@ the test.
 - **R2.9 -- Q4: `schema_version` does not enter the payload or the hash.** It describes the
   **container format**, not the content. If it entered identity, a format bump would re-mint every
   set with unchanged members -- the same failure the `volatile` list exists to prevent
-  (`R/utils-sha.R:444-447`). It stays a metadata field (R1.3) outside the hash domain.
+  (`R/utils-sha.R:467-470`). It stays a metadata field (R1.3) outside the hash domain.
 - **R2.10 -- Q5: emitter-free structural hash, as a hash-of-hashes.** No serializer is in the
   identity path. sv1 is **three primitive encoders plus two shape rules**, not a runtime
   type-dispatch walk. This mirrors cv1's existing construction (per-column digests, then hash their
@@ -187,7 +187,7 @@ the test.
 
   Member digests sort as **lowercase hex**, `method = "radix"`, and are emitted as raw bytes.
   Stating the collation is not pedantry -- it is the same locale-independence requirement `strset`
-  and `map` carry, and `.datom_compute_metadata_sha()` (`R/utils-sha.R:502`) sets the house
+  and `map` carry, and `.datom_compute_metadata_sha()` (`R/utils-sha.R:524`) sets the house
   precedent.
 
   - **No runtime type dispatch, therefore no possible gap.** Every position's shape is known from
@@ -595,7 +595,7 @@ Relative to the artifact prefix:
 - **R7.3** `parquet_sha` is **not** renamed to a kind-neutral name. It is the correct name for a
   parquet object's byte hash. Rationale: design.md "Compatibility analysis".
 - **R7.4** `document_sha` goes in the `volatile` exclusion list of
-  `.datom_compute_metadata_sha()` (`R/utils-sha.R:444-447`), for the same reason `parquet_sha` is
+  `.datom_compute_metadata_sha()` (`R/utils-sha.R:467-470`), for the same reason `parquet_sha` is
   there -- it is a stored-object byte fact, not content identity.
 - **R7.5 -- one `data_sha`, one byte spelling, in git and in storage.** `document_sha` is only
   meaningful if the bytes at `{name}/{data_sha}.json` never change once written. Two rules enforce
@@ -604,7 +604,7 @@ Relative to the artifact prefix:
   1. **Never re-emit a payload for a `data_sha` already in history.** Reuse the stored object and
      **carry the recorded `document_sha` forward**. This is the exact `parquet_sha` pattern:
      `.datom_lookup_history_parquet_sha()` scans history newest-first for a matching `data_sha` and
-     returns `upload = FALSE` (`R/read_write.R:404-409`, `422-439`). A set needs the direct
+     returns `upload = FALSE` (`R/read_write.R:460-465`, `478-495`). A set needs the direct
      analogue. Recomputing `document_sha` from freshly emitted bytes while reusing the stored object
      records a hash of bytes nobody stored, and the failure surfaces only later, as a **refused read
      of a valid version**.
@@ -714,7 +714,7 @@ datom_read()                    --> {name}/.metadata/metadata.json   <- and here
   `.datom_read_metadata()` -> `.datom_resolve_version()` -> `.datom_read_parquet()`). So
   `schema_version` must live in **both** the manifest and per-table `metadata.json`.
 - **R9.3** `schema_version` goes in the `volatile` exclusion list of
-  `.datom_compute_metadata_sha()` (`R/utils-sha.R:444-447`), alongside `datom_version`. Otherwise a
+  `.datom_compute_metadata_sha()` (`R/utils-sha.R:467-470`), alongside `datom_version`. Otherwise a
   schema bump silently rewrites every table's version identity.
 - **R9.4** **Do not overload `datom_version`.** It records the *writing package version* --
   provenance, not contract. Most releases will not change the schema, so gating on it would
@@ -739,7 +739,7 @@ datom_read()                    --> {name}/.metadata/metadata.json   <- and here
 
   The last row is the one that has no shape-based answer. A content-bearing addition is
   **reader-safe and writer-breaking**: readers never recompute identity, writers do
-  (`R/read_write.R:342`), so an older writer disagrees with the recorded version and mints a version
+  (`R/read_write.R:398`), so an older writer disagrees with the recorded version and mints a version
   on unchanged content. The format did not change, so the number must not move -- and the writer-side
   stop therefore comes from R23's vocabulary check rather than from the number.
 
@@ -1308,7 +1308,7 @@ the gate deliberately tolerates and which the R8.1 rename therefore breaks.
   **warns once**, pointing at the upgrade: a silent repair is a silent degradation, which is the
   failure this whole section exists to remove.
   **The rebuild reads the recorded version id; it never recomputes one.** `version_history.json`
-  entries already carry `version` (`R/read_write.R:501`). Recomputing through
+  entries already carry `version` (`R/read_write.R:557`). Recomputing through
   `.datom_compute_metadata_sha()` walks straight into the denylist defect (#100) in precisely the
   scenario the rebuild exists for -- an older build reading a repo a newer one wrote -- and would
   publish a `current_version` matching no version in the history, which is worse than the empty list
@@ -1320,7 +1320,7 @@ the gate deliberately tolerates and which the R8.1 rename therefore breaks.
     makes an escape hatch possible there.
   - **Per-artifact metadata may never break.** It **is** the source of truth, so there is nothing to
     rebuild it from, and a legacy-shaped second copy backfires: change detection recomputes identity
-    from the stored file (`R/read_write.R:342`), so a copy in a different shape hashes differently
+    from the stored file (`R/read_write.R:398`), so a copy in a different shape hashes differently
     from the recorded version and an older build mints a version on every run. For that file the
     forward-compatibility rules are absolute -- additive only, forever.
   - Recorded because **this spec has the division the right way round by accident**: it breaks the
@@ -1353,7 +1353,7 @@ and already in the design: reads limp, writes stop.
   scope, so the entry sequence must name one, and it names the clone.
   Named explicitly for two different reasons at the two steps. At **step 5** the sequence does not
   otherwise have the per-artifact document in hand at all: `datom_write()` does not touch stored
-  artifact metadata until pipeline step 4, inside `.datom_has_changes()` (`R/read_write.R:341-349`), so
+  artifact metadata until pipeline step 4, inside `.datom_has_changes()` (`R/read_write.R:397-405`), so
   an unspecified scope means an implementer checks only the manifest -- dropping the check from the
   document that matters most, since per-artifact metadata is never rebuildable and is where identity
   lives. At **step 3** the default pull is the opposite one: the too-new-repo framing reads as
@@ -1364,7 +1364,7 @@ and already in the design: reads limp, writes stop.
   `R/sync.R:984`); it is a local file read rather than a round trip on every write; it is where a newer
   collaborator's work lands after a pull; and storage cannot legitimately be ahead of git (I5).
   All three documents exist as local files in the clone: `{conn$path}/.datom/manifest.json` and
-  `{conn$path}/{name}/metadata.json` (`R/read_write.R:527-535`, committed via `git_paths`). So the
+  `{conn$path}/{name}/metadata.json` (`R/read_write.R:596-604`, committed via `git_paths`). So the
   check is a **local file read, no network**, and it works for every write route including the
   mirror-everything one, where the set of artifacts is not a single name.
   **Why the local copy is the right target, not a compromise.** A newer build writes git first and

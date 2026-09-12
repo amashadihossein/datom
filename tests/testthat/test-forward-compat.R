@@ -229,6 +229,23 @@ test_that("every field the metadata builder emits is in the metadata vocabulary"
                    character())
 })
 
+test_that("every field the set metadata builder emits is in the metadata vocabulary", {
+  # The same forcing function for the other builder. One vocabulary covers both,
+  # because both documents live at the same key and pass the same door: an
+  # unclassified field on either one would look like a field a newer datom wrote,
+  # and the write entry refuses on exactly that.
+  meta <- .datom_build_set_metadata(
+    list(members = list(list(
+      id = list(project = "p", name = "dm", kind = "table",
+                version = strrep("a", 64))
+    ))),
+    document_sha = strrep("b", 64)
+  )
+
+  expect_identical(setdiff(names(meta), .datom_metadata_known_fields()),
+                   character())
+})
+
 test_that("every field written onto a manifest row is in the row vocabulary", {
   # The same forcing function one level down. Both optional row fields are
   # supplied, so the inventory is the widest a row can be.

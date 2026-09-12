@@ -1007,17 +1007,28 @@ test_that("builder-derived metadata_sha goldens are stable", {
   # Both are reproducible run to run. The only fields that vary between two
   # builds of the same table are `created_at` and `datom_version`, and neither
   # participates in `metadata_sha`.
+  #
+  # BOTH VALUES WERE DELIBERATELY MOVED once, when `kind` entered the metadata
+  # document as an identity field. That is the licensed exception to "if a golden
+  # fails, the code drifted, do not touch the constant": adding an identity field
+  # is *supposed* to move every hash it appears in, and the consequence was
+  # accepted at design time -- the next write of every existing table mints one
+  # extra version on content that did not move, with the storage address
+  # (`data_sha`) unchanged so nothing is re-uploaded. Any later movement of these
+  # two values is drift until a comparable note appears beside them.
+  #   before `kind`: f4d88543b11b4918fe96e8ec319ae6d664693735a545508095aa4c4b44da9a02
   expect_identical(
     .datom_compute_metadata_sha(builder_metadata_fixture(optional = TRUE)),
-    "f4d88543b11b4918fe96e8ec319ae6d664693735a545508095aa4c4b44da9a02"
+    "e5fe77d721305583945b4b271acee2f5e9572e2014cd31286528c91724423273"
   )
 
   # The no-optional-fields shape is pinned separately because "a document
   # missing an optional field still hashes to its own established value" is a
   # distinct property from "a fully populated document does".
+  #   before `kind`: d0c1ea7510fe9da7361de62e21886f45dbca7b556e00765c3160222f24393fd7
   expect_identical(
     .datom_compute_metadata_sha(builder_metadata_fixture(optional = FALSE)),
-    "d0c1ea7510fe9da7361de62e21886f45dbca7b556e00765c3160222f24393fd7"
+    "3003136bffc8da80028d957074abdee6d84dc98221c5acb6af45eb2ad0777246"
   )
 })
 
@@ -1026,7 +1037,7 @@ test_that("the pinned fixtures carry exactly the keys datom's writers emit", {
   # explicitly rather than derived, because the point is to notice when the set
   # changes: a builder gaining a semantic field legitimately moves the pins, and
   # that must surface as a decision rather than as a mystery.
-  always <- c("schema_version", "data_sha", "hash_algo", "parquet_sha",
+  always <- c("schema_version", "kind", "data_sha", "hash_algo", "parquet_sha",
               "table_type", "nrow", "ncol", "colnames", "column_hashes",
               "created_at", "datom_version")
   conditional <- c("original_file_sha", "original_format", "parents",
@@ -1036,6 +1047,24 @@ test_that("the pinned fixtures carry exactly the keys datom's writers emit", {
                   c(always, conditional))
   expect_setequal(names(builder_metadata_fixture(optional = FALSE)), always)
 })
+
+# Every field name any metadata builder can emit, table and set. Derived from the
+# builders rather than listed, which is what makes the tests below fail when a
+# builder gains a field instead of passing forever on a stale list.
+#
+# Both builders, not just the table one: a set's document is hashed by the same
+# function against the same allowlist, so an unclassified set field fails exactly
+# the same way -- silently outside identity.
+all_emitted_metadata_fields <- function() {
+  set_meta <- .datom_build_set_metadata(
+    list(members = list(list(
+      id = list(project = "P", name = "dm", kind = "table",
+                version = strrep("a", 64L))
+    )))
+  )
+
+  union(names(builder_metadata_fixture(optional = TRUE)), names(set_meta))
+}
 
 test_that("every field a metadata builder emits is classified", {
   # THE FORCING FUNCTION for the allowlist's failure direction. An unclassified
@@ -1047,7 +1076,7 @@ test_that("every field a metadata builder emits is classified", {
   # pass forever and would not notice the next release adding one. Written this
   # way, it fails the moment a builder gains a field, which forces the
   # classification decision at the point the field is introduced.
-  emitted <- names(builder_metadata_fixture(optional = TRUE))
+  emitted <- all_emitted_metadata_fields()
   classified <- c(.datom_metadata_identity_fields,
                   .datom_metadata_excluded_fields)
 
@@ -1068,10 +1097,11 @@ test_that("every field a metadata builder emits is classified", {
 # Names classified before anything writes them. Each entry is a decision that
 # needs a reason, which is why the list is here rather than derived.
 #
-#   document_sha  the byte checksum of a stored JSON payload. Classified by the
-#                 reader-side schema work, before the set artifact that produces
-#                 it existed. Kept out of identity deliberately: it is a fact
-#                 about stored bytes, not about content.
+#   (empty)       `document_sha` was the one entry, classified by the reader-side
+#                 schema work before the set artifact that produces it existed.
+#                 The set metadata builder now emits it, so it came off this list
+#                 -- which is the list working as intended rather than the
+#                 exception being forgiven.
 #
 # Adding a name here is the point at which to read the classify-late note in
 # `dev/engineering-notes.md`, because the cost is not obvious: a classified name
@@ -1079,7 +1109,7 @@ test_that("every field a metadata builder emits is classified", {
 # build cannot place. So a document arriving from a newer datom with that field
 # on it loses it on rewrite -- silently, for a not-identity field, since no
 # version moves to signal it.
-metadata_classified_before_written <- c("document_sha")
+metadata_classified_before_written <- character(0)
 
 test_that("nothing is classified before something writes it, except by decision", {
   # The converse arm the identity list has always had, extended to the
@@ -1087,7 +1117,7 @@ test_that("nothing is classified before something writes it, except by decision"
   # slipped through. The value is not in today's result: it is that the next
   # early classification cannot happen without editing the vector above and
   # meeting the reason for it.
-  emitted <- names(builder_metadata_fixture(optional = TRUE))
+  emitted <- all_emitted_metadata_fields()
 
   unwritten <- setdiff(.datom_metadata_excluded_fields, emitted)
 

@@ -167,6 +167,13 @@
 #' document. The version's own `created_at` is used instead, which is the closest
 #' true statement available -- when this artifact's current state was written.
 #'
+#' **Rebuilding a set's row is not finished here.** `kind` is recovered, so a set
+#' is at least counted as a set, but a set's row also carries `member_count`, and
+#' that number is in the payload rather than in `metadata.json` -- so it takes a
+#' third read, at the content-addressed payload key. Whoever writes the set write
+#' path owns closing that gap; nothing writes a set row yet, so there is no
+#' shape to match against today.
+#'
 #' @param conn A `datom_conn` object.
 #' @param name Artifact name.
 #' @return A named list: one manifest artifact row.
@@ -188,16 +195,13 @@
   )
 
   entry <- list(
-    # Hardcoded, and it has to be: `kind` does not exist in per-artifact metadata
-    # yet, so there is nothing to recover it from, and every artifact written so
-    # far is a table. It is not optional either -- an untyped row is silently
+    # Read from the document, which now declares it. The fallback covers every
+    # artifact written before it did -- all of them tables, since sets did not
+    # exist -- and is the same assumption the v1 manifest upgrade makes about an
+    # untyped row. It is not optional either way: an untyped row is silently
     # uncounted by `.datom_artifacts_of_kind()`, so a rebuilt repo would list its
     # artifacts while reporting zero of them.
-    #
-    # WHOEVER ADDS SETS MUST REVISIT THIS LINE: once metadata declares its own
-    # kind, read it from there and fall back to "table" only for documents
-    # written before it did.
-    kind = "table",
+    kind = meta$kind %||% "table",
     current_version = .datom_recorded_current_version(meta, history),
     current_data_sha = meta$data_sha,
     last_updated = meta$created_at,

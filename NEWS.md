@@ -190,6 +190,30 @@ warning.
   index is rebuilt. It does not participate in version identity, so no existing
   version changes.
 
+## An artifact's metadata now says which kind of artifact it is
+
+Every `metadata.json` carries `kind`, which is `"table"` for everything a table
+write produces. The manifest row has carried it since the rename above; the
+artifact's own document is where a check has to read it, because the manifest can
+lag a partial write while that document cannot.
+
+* **`kind` is part of the version identity**, and that is the whole point of it.
+  Leaving it out is the alternative, and it lets a table and a set whose other
+  identifying fields agree mint the same version -- at which point one version
+  string names two artifacts.
+
+* **So the first write of each existing table after upgrading records one extra
+  version, on content that has not changed.** datom detects a change by
+  recomputing the document's identity and comparing it with the recorded one, and
+  a document that has gained an identity field hashes differently. This is
+  accepted rather than worked around.
+
+  The cost is bounded and in the harmless direction: the content hash
+  (`data_sha`) does not move, so the storage address does not move either -- the
+  stored parquet is reused, nothing is re-uploaded, and no earlier version is
+  altered or invalidated. It happens once per table, at that table's next write.
+  A table you never write again is never touched.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

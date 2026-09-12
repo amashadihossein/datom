@@ -689,6 +689,32 @@ test_that("hash_algo is always present and datom-cv1", {
   )
 })
 
+test_that("a table's metadata declares kind = table", {
+  df <- data.frame(x = 1)
+  expect_identical(.datom_build_metadata(df, "sha")$kind, "table")
+  expect_identical(
+    .datom_build_metadata(df, "sha", table_type = "imported")$kind,
+    "table"
+  )
+})
+
+test_that("kind participates in metadata_sha, so a table and a set cannot share a version", {
+  # The reason `kind` is in the identity list rather than beside `schema_version`
+  # on the excluded one. Without this, two artifacts of different kinds whose
+  # remaining hashed fields agreed would mint the same version, and
+  # `datom_read(version =)` would have two artifacts answering to one identity.
+  df <- data.frame(x = 1)
+
+  as_table <- .datom_build_metadata(df, "sha")
+  as_set <- as_table
+  as_set$kind <- "set"
+
+  expect_false(
+    identical(.datom_compute_metadata_sha(as_table),
+              .datom_compute_metadata_sha(as_set))
+  )
+})
+
 test_that("parquet_sha is declared (present but NULL) for datom_write() to populate", {
   df <- data.frame(x = 1)
   result <- .datom_build_metadata(df, "sha")
@@ -924,6 +950,106 @@ test_that("size_bytes does NOT participate in metadata_sha (volatile: arrow byte
 })
 
 
+# --- .datom_build_set_metadata() -----------------------------------------------
+
+# A minimal, valid set payload: one member, no tags. Nothing writes a set yet, so
+# every assertion in this block is about the builder's output.
+set_payload_fixture <- function(name = "dm", tags = NULL) {
+  payload <- list(members = list(list(
+    id = list(project = "STUDY_001", name = name, kind = "table",
+              version = strrep("a", 64L))
+  )))
+  if (!is.null(tags)) payload$tags <- tags
+  payload
+}
+
+test_that("a set's metadata carries exactly the seven documented fields", {
+  meta <- .datom_build_set_metadata(set_payload_fixture())
+
+  # setequal, not a list of absence checks: the point is that a field ADDED to
+  # this builder fails here, which an absence-by-absence test would not catch.
+  expect_setequal(
+    names(meta),
+    c("kind", "schema_version", "data_sha", "hash_algo", "document_sha",
+      "created_at", "datom_version")
+  )
+})
+
+test_that("a set's metadata omits every table-shaped and lineage field", {
+  # The collapse is the requirement, and `parents` / `source_lineage` are an
+  # invariant of their own: a set expresses membership, and membership is not
+  # lineage. Omitted, never present-with-NULL, so a reader cannot mistake an
+  # empty declaration for a made one.
+  meta <- .datom_build_set_metadata(set_payload_fixture())
+
+  absent <- c("parents", "source_lineage", "table_type", "nrow", "ncol",
+              "colnames", "column_hashes", "parquet_sha", "size_bytes",
+              "custom")
+
+  expect_identical(intersect(absent, names(meta)), character(0))
+})
+
+test_that("a set's data_sha is the sv1 hash and its hash_algo says so", {
+  # Both values are the ones a copy from the table builder gets wrong, and a
+  # wrong `hash_algo` is the quiet half: the digest would be a real sv1 hash
+  # while the document claimed the table regime, and no hash comparison anywhere
+  # would disagree.
+  payload <- set_payload_fixture()
+  meta <- .datom_build_set_metadata(payload)
+
+  expect_identical(meta$hash_algo, "datom-sv1")
+  expect_identical(meta$data_sha, .datom_canonical_set_hash(payload))
+  expect_match(meta$data_sha, "^[0-9a-f]{64}$")
+})
+
+test_that("a set's data_sha follows its payload", {
+  a <- .datom_build_set_metadata(set_payload_fixture(name = "dm"))
+  b <- .datom_build_set_metadata(set_payload_fixture(name = "ae"))
+  tagged <- .datom_build_set_metadata(
+    set_payload_fixture(tags = list(description = "baseline"))
+  )
+
+  expect_false(identical(a$data_sha, b$data_sha))
+  expect_false(identical(a$data_sha, tagged$data_sha))
+})
+
+test_that("document_sha is declared, and carried when supplied", {
+  # Mirrors how the table builder declares `parquet_sha`: the byte hash is not
+  # knowable until the payload has been serialized, so it is declared here and
+  # populated by the write path. Declared rather than conditionally assigned so
+  # the document has its seven keys either way.
+  bare <- .datom_build_set_metadata(set_payload_fixture())
+  expect_true("document_sha" %in% names(bare))
+  expect_null(bare$document_sha)
+
+  given <- .datom_build_set_metadata(set_payload_fixture(),
+                                     document_sha = strrep("d", 64L))
+  expect_identical(given$document_sha, strrep("d", 64L))
+})
+
+test_that("document_sha does not participate in a set's metadata_sha", {
+  # It is a fact about stored bytes, not about content. In identity, a
+  # pretty-printer change in the JSON writer would mint a new version of every
+  # set whose members had not moved -- the same failure the excluded list exists
+  # to prevent for `parquet_sha`.
+  bare <- .datom_build_set_metadata(set_payload_fixture())
+  given <- bare
+  given$document_sha <- strrep("d", 64L)
+
+  expect_identical(.datom_compute_metadata_sha(bare),
+                   .datom_compute_metadata_sha(given))
+})
+
+test_that("a set's metadata declares kind = set and the current schema version", {
+  meta <- .datom_build_set_metadata(set_payload_fixture())
+
+  expect_identical(meta$kind, "set")
+  expect_identical(meta$schema_version, .datom_supported_schema)
+  expect_true(nzchar(meta$created_at))
+  expect_true(nzchar(meta$datom_version))
+})
+
+
 # --- .datom_write_metadata_local() — original_file_sha -------------------------
 
 test_that("original_file_sha stored in version_history entry", {
@@ -1024,6 +1150,54 @@ test_that("parquet_sha absent from version_history entry for pre-cv1 metadata", 
 
     history <- jsonlite::read_json("tbl/version_history.json")
     expect_null(history[[1]]$parquet_sha)
+  })
+})
+
+test_that("document_sha is persisted in the version_history entry", {
+  # The set counterpart of the parquet_sha pair above, and the reason it is here
+  # before anything computes one: every version of a set then carries the hash of
+  # the bytes it pinned, so a set read can treat an absent `document_sha` as an
+  # error rather than reproducing the skip-on-absent grace that pre-cv1 tables
+  # need. Retro-fitting it later would create exactly the legacy population that
+  # grace exists for.
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    metadata <- .datom_build_set_metadata(
+      set_payload_fixture(),
+      document_sha = strrep("d", 64L)
+    )
+    meta_sha <- .datom_compute_metadata_sha(metadata)
+
+    .datom_write_metadata_local(conn, "st", metadata, meta_sha)
+
+    history <- jsonlite::read_json("st/version_history.json")
+    expect_identical(history[[1]]$document_sha, strrep("d", 64L))
+  })
+})
+
+test_that("document_sha absent from a table's version_history entry", {
+  # Added only when non-NULL, so a table's entries keep the shape they have
+  # today. A present-but-null key would show up as a field every reader has to
+  # tolerate, for a hash a table never has.
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+
+    conn <- mock_datom_conn(list())
+    conn$path <- getwd()
+
+    metadata <- .datom_build_metadata(data.frame(x = 1), "sha1")
+    meta_sha <- .datom_compute_metadata_sha(metadata)
+
+    .datom_write_metadata_local(conn, "tbl", metadata, meta_sha)
+
+    history <- jsonlite::read_json("tbl/version_history.json")
+    expect_null(history[[1]]$document_sha)
   })
 })
 
