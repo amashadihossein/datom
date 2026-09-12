@@ -438,8 +438,9 @@ implementation traps.
 - **Both empty spellings must agree**: `strset(list())` == `strset(character(0))` == `h(0x02)`, and
   `map(list())` == `map(NULL)` == `h(0x03)`. `[]` and `{}` are the parsed-JSON forms, and write/read
   agreement depends on the R and parsed spellings hashing equal. The encoder must not lean on
-  "validation refuses empty tag values upstream" -- that is exactly how an encoder breaks silently
-  the day the refusal is relaxed.
+  "an empty tag value is dropped upstream" -- that is exactly how an encoder breaks silently the day
+  the upstream rule moves. (That upstream rule was itself stated two ways for a while: the spec said
+  both "refused by validation" and "the key is dropped". The tidy wins; corrected 2026-09-10.)
 - **Where the encoder stops.** It refuses only what it cannot encode without losing content. Grammar
   enforcement with user-facing recourse -- which key is wrong, what types are allowed, whether two
   members share an `id` with conflicting tags -- belongs to `.datom_validate_members()` and

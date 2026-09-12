@@ -437,9 +437,15 @@ Pinned edges: absent `tags` and `tags: {}` encode identically (`h(0x03)` over an
 the encoder must not depend on writers never emitting `{}`; **`strset(character(0))` is `h(0x02)`**
 by the same argument (R2.17); duplicate values are not identity;
 `radix` sort throughout for locale independence, which is **byte order -- no Unicode normalization is
-applied** (R2.16); a zero-member set is still refused (R2.8); the three degenerate
-spellings of R2.14 (duplicated member, empty tag value, empty-string tag value) are refused by
-**validation** rather than encoded, so one fact has one spelling (R2.7, R2.14).
+applied** (R2.16); a zero-member set is still refused (R2.8); and the degenerate
+spellings of R2.14 never reach the encoder, so one fact has one spelling (R2.7, R2.14) -- but they get
+there by **two different routes, and lumping them was wrong**. An **empty-string** tag value and the
+**same `id` twice with different tags** are *refused*, because tidying either one would have to guess
+what the caller meant. An **empty tag value** (`character(0)`) and an **exact duplicate member** are
+*tidied away* silently -- the key is dropped and the duplicate collapses -- because "no labels" and
+"said twice" each have one obvious reading. **Corrected 2026-09-10** (Task 8's cold-start audit): this
+sentence previously called all three "refused by validation", which contradicted R2.14's tidy table
+and would have made `datom_member()` abort at construction on a spelling the write path accepts.
 
 Exact byte rules are normative in `dev/datom_sv1_reference.R`.
 

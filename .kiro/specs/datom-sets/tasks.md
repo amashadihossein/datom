@@ -184,6 +184,29 @@ leave sitting under it, so they are not re-derived.**
    there.** Any assertion about set counts needs a hand-built manifest holding a set entry beside
    table entries; `dev/engineering-notes.md` has the two spellings that go quietly wrong.
 
+**Task 8 was cold-start audited on 2026-09-10 and is startable. Both calls the audit raised were
+settled the same day by the owner, so nothing is owed before it.** The audit is in Task 8's body.
+**(1) The self-reference refusal MOVED TO TASK 9.** Task 8's bullet said `datom_member()` should refuse
+a set that lists itself, but AC9 and R4.5 both say "at write time", and R10.3a makes the set's own
+declared name the precondition -- a name nothing writes or reads today, and one this constructor could
+not trust anyway, since the connection it takes belongs to the **member's** project rather than the
+set's. Task 8 keeps the half that actually delivers acyclicity: reading the member's snapshot, so a
+member can only point at something that already exists. **(2) An empty tag value is TIDIED, NOT
+REFUSED.** The spec said both, in two places; the later tidy-then-validate decision wins, so
+`datom_member()` drops the key. Both wrong copies are corrected, along with two more the sweep found:
+a code comment in the sv1 encoder and an engineering note, each leaning on "validation refuses" as if
+it were settled.
+
+**Three findings from the same audit that a fresh session would otherwise hit late.** (1) **A member
+with no tags must OMIT the key, never carry it as NULL** -- the hash is identical either way, so
+nothing fails, and Task 9 then writes `"tags": {}` into every untagged member, which is the one
+spelling the spec says writers never emit. Same jsonlite trap as Task 7's `document_sha`, with the
+correct answer inverted. (2) **Mirroring `.datom_validate_parents()` verbatim ships a defect**: its
+field test accepts `NA_character_` (verified), and AC27(b) requires `NA` refused, so the mirror has to
+be stricter than its model. (3) **The sv1 encoder already refuses most of the tag grammar** -- what the
+new validator genuinely adds is the empty-string refusal, the four-key `id` shape, and `kind` being one
+of exactly two values.
+
 **Two forcing functions still fire the moment a builder gains a field, and that is the design.** The
 classification test in `test-utils-sha.R` derives its field inventory from the builders themselves --
 both of them now, table and set -- so a new field fails there until it is classified, and its converse
@@ -1400,8 +1423,15 @@ own; landing it first is what makes Task 6's failure loud.
     at a time, so "same `id` twice with different `tags`" is invisible from here, and set-level `tags`
     never pass through it at all. Those are Task 9's (AC27 d/e). An earlier draft assigned all of
     AC27 here while Task 2 also claimed it; **retired** -- one half each, stated explicitly.
-  - **Refuse self-reference** (R4.5, AC9): a set listing itself as a member. One cheap check. The
-    set's own identity is known from `project.yaml` (R10.3a).
+  - ~~**Refuse self-reference** (R4.5, AC9): a set listing itself as a member. One cheap check. The
+    set's own identity is known from `project.yaml` (R10.3a).~~ **MOVED TO TASK 9 (owner-decided
+    2026-09-10, on this task's cold-start audit; do not implement it here.)** Both R4.5 and AC9 say
+    "at write time", and the set's own declared name -- R10.3a's precondition for the check -- is
+    neither written nor read by anything until Task 9 reaches for it. This constructor could not
+    trust it anyway: the connection it takes belongs to the **member's** project, so on a
+    cross-project member it would be reading a different repo's `set:` field. What stays here is the
+    half that actually delivers acyclicity: reading the member's snapshot, so a member can only point
+    at something that already exists (R4.4).
   - **Deliberately NOT built: cycle detection, a visited-set guard, or a depth limit** (R4.3/R4.4,
     design.md 5 and 20.11). Members pin immutable versions, so the graph is acyclic **by
     construction** -- a set cannot reference something that contains it, because that thing did not
@@ -1409,8 +1439,106 @@ own; landing it first is what makes Task 6's failure loud.
     level** and never traverses, so nothing could loop even if a cycle existed. An earlier draft
     specified all three; they solved a problem that cannot occur. **Do not reintroduce them as
     defensive code** (I10a).
-  - _Requirements: R4 (incl. R4.3-R4.5), R2.11, R2.7. Invariants: I9, I10, I10a, I24.
-    Acceptance: AC9, **AC27 (a, b, c -- the per-member half)**._
+  - **COLD-START AUDIT, 2026-09-10** -- the documented path (`dev/README.md` -> the state block ->
+    this task -> design.md section 5 -> `dev/engineering-notes.md`) was walked as a fresh reader and
+    every claim checked against the tree. **Startable, once the first item below is settled** -- it is
+    a scope question, not an implementation one. **No escalation flag**: design.md section 12 carries
+    E1 and E2 only, so nothing is owed under rule 5d.
+    1. **THE SELF-REFERENCE REFUSAL CANNOT LIVE IN `datom_member()`, AND THIS TASK'S BULLET SAYING SO
+       IS WRONG.** Three things settle it. AC9 says "refused **at write time**"; R4.5 says "cheap
+       check **at write time**"; and R10.3a makes the `name == project.yaml$set` gate "the
+       precondition the self-reference check (R4.5) relies on -- it needs to know the set's own
+       identity before the write". Nothing in `R/` reads or writes a `set:` or `mode:` field today
+       (verified by grep across every `yaml::read_yaml()` site: the developer conn reads
+       `project_name` and the `storage` block, `datom_init_repo()` writes nine keys and neither of
+       those two is among them), and the field only starts being written at Task 11. Worse, the
+       `conn` this constructor takes is scoped to the **member's** project, exactly as
+       `datom_parent()`'s is -- so for a cross-project member it would be reading a different repo's
+       `set:` field, which says nothing about the set being built. **The check belongs in Task 9**,
+       which knows its own name authoritatively because R10.3a's gate has just established it, and
+       which sees every member at once. What this task legitimately keeps is the half that actually
+       delivers acyclicity: reading the snapshot, which is what makes a member a pointer at something
+       that already exists (R4.4). **Default: move AC9 and R4.5's refusal to Task 9** and strike the
+       bullet here; nothing else in the task changes.
+    2. **"MIRRORING `.datom_validate_parents()`" WOULD INHERIT A HOLE THAT AC27(b) FORBIDS.** That
+       validator's per-field test is `is.character(val) && length(val) == 1L && nzchar(val)`, and
+       **`NA_character_` passes all three** -- verified in R: it is character, length 1, and
+       `nzchar(NA_character_)` is `TRUE`. AC27(b) requires `NA` refused. So the mirror must be
+       **stricter than its model**, and a session that copies the field loop verbatim ships the
+       defect while every test it wrote passes. (The looseness in `.datom_validate_parents()` itself
+       is pre-existing and out of scope here -- recorded so it is not discovered a third time.)
+    3. **`tags` MUST BE OMITTED WHEN ABSENT, NEVER DECLARED NULL -- AND NOTHING WOULD FAIL IF YOU GOT
+       IT WRONG.** `list(id = ..., tags = NULL)` keeps the name, and the encoder is indifferent
+       because an absent map and an empty map both encode `h(0x03)` (R2.10's pinned edge case) -- so
+       no golden moves, no hash changes, no test reddens. What breaks is one layer down: Task 9
+       serialises the payload with `jsonlite`, which writes `"tags": {}` for a NULL element rather
+       than omitting the key, so every untagged member would carry the one spelling R2.10 says
+       "writers never emit" and R2.7 forbids as a form of absence. This is the trap Task 7's review
+       found in `document_sha`, one level down and with the failure mode inverted: there the field had
+       to be **declared**, here it has to be **omitted**. Use the conditional-assign form and say why
+       at the site.
+    4. **THE ENCODER ALREADY REFUSES MOST OF AC27(a) AND (b), SO BE PRECISE ABOUT WHAT THE VALIDATOR
+       ADDS.** `.datom_sv1_as_strings()` (`R/hashable-set.R:112`) already refuses a `NULL` value, `NA`
+       in every form, a named list in a value position, an unnamed list holding a non-scalar-string,
+       and any non-character atomic -- each with a message naming the key path and the allowed types.
+       `.datom_sv1_map()` already refuses a blank or duplicated tag **key**. What is genuinely new:
+       the **empty-string** refusal (AC27(c)) -- there is no `nzchar()` check anywhere in the encoder,
+       so `""` currently hashes as an ordinary label; the **`id` shape**, since
+       `.datom_sv1_member()`'s own docs say enforcing "exactly these four keys, each single-valued" is
+       validation's job and it does not do it; `kind` being one of exactly `"table"` / `"set"`; and
+       messages that arrive **before** the encoder's, since validation runs first. Do not re-implement
+       what the encoder already says -- and note the encoder's aborts carry **no condition class**, so
+       tests key on message text there.
+    5. **A SPEC CONTRADICTION THAT LANDED EXACTLY HERE, NOW SETTLED (owner-decided 2026-09-10): what a
+       zero-length tag value does.**
+       R2.10 says "an empty tag value is **refused by validation**"; R2.14's tidy table says
+       `domain = character(0)` has its **key dropped** silently. Both are live instructions and they
+       disagree, and this task is where it bites, because `datom_member()` validates at construction:
+       read one way it aborts, read the other it drops. **Resolved: R2.14 wins** -- it is the later
+       owner decision (tidy-then-validate, 2026-08-18: handle trivial errors silently, refuse only
+       what needs intent guessed), so `datom_member()` **drops the key**, and R2.10's sentence plus
+       design.md 7.2's "all three are refused" have both been corrected rather than followed (the
+       design copy also wrongly lumped the exact-duplicate member in with the refusals; it is tidied,
+       not refused). Worth knowing why it cannot simply be passed through untouched: a present
+       key with an empty value hashes as `h(0x03 || str(k) || h(0x02))` while an absent key hashes as
+       `h(0x03)`, so an untidied payload mints a **different `data_sha` for the same fact**.
+    6. **THE RETURN SHAPE IS NOT `datom_parent()`'s, and "mirrors it beat for beat" is about the
+       sequence, not the result.** `datom_parent()` returns five flat fields including `data_sha`; a
+       member returns `{id: {project, name, kind, version}, tags}` and carries **no `data_sha`** on
+       purpose (design.md section 5: the version already pins content, and a second copy is a second
+       thing to keep consistent). This one is at least loud -- `.datom_sv1_member()` aborts on any
+       field outside `id` / `tags`.
+    7. **A NEW EXPORT OWES FOUR THINGS HERE, NOT ONE.** Verified mechanically: all 38 current exports
+       appear in `_pkgdown.yml`, and `pkgdown` is a required status check, so an entry there is not
+       optional. The other three are NAMESPACE (via roxygen), a `man/` page, and a **runnable
+       example** -- the house pattern for this package is a real offline walkthrough guarded by
+       `requireNamespace("git2r")`, building a bare git repo as the remote and a temp dir as the
+       store, **not** wrapped in `\dontrun{}` (see `datom_parent()`'s). A `datom_member()` example
+       needs no set: write a table, take its version from `datom_history()`, call the constructor.
+    8. **NO `schema_version` CHECK ON THE DOCUMENT IT READS, matching `datom_parent()`.** Verified:
+       `datom_parent()` reads the version-pinned snapshot with no `.datom_check_schema_version()`
+       call; the only two call sites in `R/` are the `datom_read()` entry and the manifest rebuild.
+       **Default: mirror the gap rather than close it here.** Adding the check to `datom_member()`
+       alone would make two sibling constructors disagree about the same document, and closing it for
+       both is a behaviour change to a shipped read path that no requirement in this spec asks for.
+       Recorded so it reads as a decision rather than an oversight.
+    9. **Two smaller corrections.** design.md section 5's sub-heading writes
+       `datom_member(conn, name, version)` while R4.6 and R12.1 both give `tags = NULL` -- the heading
+       is stale. And `.datom_validate_name()` hardcodes `{.arg name}` in all six of its messages,
+       which is finally **correct** for this constructor's argument name (it has always been mildly
+       wrong for `datom_parent(table = )`).
+    10. **Test fixtures to follow.** `tests/testthat/test-parent.R` is fully mocked --
+        `mock_datom_conn()` from `helper-mock.R` plus
+        `local_mocked_bindings(.datom_storage_read_json = ...)` -- and its header records that
+        versions must be 6-64 lowercase hex because `.datom_validate_sha()` runs first. That is the
+        model for `datom_member()`. `tests/testthat/test-hashable-set.R` already has `mid()` and
+        `mem()` helpers that build exactly the four-key `id` map; they are the model for member
+        fixtures, and its refusal tests (lines 383-493) are where the encoder-side grammar cases
+        already live, so the new validator's tests should not restate them.
+  - _Requirements: R4 (incl. R4.3, R4.4), R2.11, R2.7. Invariants: I9, I10, I10a, I24.
+    Acceptance: **AC27 (a, b, c -- the per-member half)**. **AC9 and R4.5 are NOT this task's** per
+    the audit above (item 1): both say "at write time", and the set's own identity does not exist
+    until Task 9's R10.3a gate reads it -- pending the owner call, they sit with Task 9._
 
 - [ ] **9. `datom_write_set()`**
   - **Two gates first, before any hashing or IO** (R10.3a, I15): the repo must declare
@@ -1418,6 +1546,16 @@ own; landing it first is what makes Task 6's failure loud.
     "one repo = one set" real, and the second is the precondition the **self-reference check** (R4.5)
     relies on -- it needs the set's own identity before the write. **Not** a cycle walk: there is
     none, and I10a forbids reintroducing one.
+  - **THE SELF-REFERENCE REFUSAL IS THIS TASK'S** (R4.5, AC9) -- moved here from Task 8, owner-decided
+    2026-09-10 on Task 8's cold-start audit. A set listing itself, at any version, is refused. It has
+    to be here and not in the member constructor for two reasons: both R4.5 and AC9 say "at write
+    time", and this is the first moment the set's own identity is known, because the gate immediately
+    above just established that `name` equals what `project.yaml` declares. The constructor could not
+    do it -- the connection it takes belongs to the **member's** project, so on a cross-project member
+    it would be reading the wrong repo's `set:` field. One cheap comparison against the member list,
+    after tidying so a duplicate spelling cannot hide it. **It is a nonsense check, not cycle
+    detection**: cycles are structurally impossible (R4.4) and I10a forbids a visited set or a depth
+    limit creeping in beside it.
   - **Signature: `datom_write_set(conn, members, tags = NULL, ...)`** (R12.2). The `tags` argument
     is **required structure, not decoration** -- R2.12 puts `tags` at the payload root, R2.6 hashes
     it, and AC2's converse half (a changed description mints a version) cannot be tested without it.
@@ -1490,8 +1628,10 @@ own; landing it first is what makes Task 6's failure loud.
     its only outcomes are a real hash or `meta$parquet_sha <- NULL`, and assigning NULL removes the
     element rather than nulling it.
   - _Requirements: R5, R6 (incl. R6.1a/b), R7.5, R2.14, R2.14a, R2.15, R10.3a, R12.2, R8 (set
-    entries). Invariants: I2, I5, I6, I11, I15, I25, I26, I27. Properties: P7, P13, P17, P25, P29,
-    P32. Acceptance: AC2, AC3, AC4, AC5, AC24, AC29 (a and b),
+    entries), **R4.5 (moved here from Task 8)**. Invariants: I2, I5, I6, I10a, I11, I15, I25, I26,
+    I27. Properties: P7, P13, P17, P25, P29,
+    P32. Acceptance: AC2, AC3, AC4, AC5, **AC9 (moved here from Task 8 -- it says "at write time",
+    and this is the first moment the set's own identity is known)**, AC24, AC29 (a and b),
     **AC27 (d, e, set-level tags, every tidy assertion, and the R2.14a allow-case)**._
 
 - [ ] **10. `datom_read_set()` + `datom_read()` refusal**
@@ -2816,3 +2956,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-10 | **(implementation) `kind` is a field on the table builder, not a parameter of it, and `document_sha` is declared rather than conditionally assigned.** Two small spelling choices, each closing off a plausible tidy-up. **(1)** `.datom_build_metadata()` hardcodes `kind = "table"`: a table write is the only thing that reaches it, sets have their own builder, and a parameter would advertise a flexibility no caller has -- while inviting a future caller to build a set through the table builder and get a document with `nrow` and `colnames` on it. **(2)** `.datom_build_set_metadata()` declares `document_sha = document_sha` inside its `list()` call, so the key exists even while the value is NULL, exactly as `.datom_build_metadata()` declares `parquet_sha`. The alternative spelling (`if (!is.null(x)) meta$x <- x`) looks equivalent and is not: `list(a = NULL)` keeps the name while `meta$a <- NULL` removes it, so the conditional form drops the key from the document and breaks R1.3's seven-key contract. Probed: it reddens 3 tests. Recorded in `dev/engineering-notes.md` as its own note, because the same trap applies to every "declared now, populated later" field. **This row originally added a third clause -- that the two spellings "produce identical files" because `write_json` drops a NULL element -- and it is FALSE, corrected the same day during this task's review: `jsonlite` writes `{}` for a NULL element and reads it back as an empty list. The shipped code is unaffected (no set is written yet, and `parquet_sha` escapes by the removal accident above), but a declared field must be populated or explicitly removed before a write, which is now Task 9's obligation.** | Task 7, R1.3, R7.2, Task 9 |
 | 2026-09-10 | **(implementation) one probe was discarded for being imprecise, which is worth a row because the probe technique can mislead.** Deleting `kind` from **both** classification lists reddens 12 tests -- but through the write door's vocabulary check, which refuses a write on any top-level field it cannot classify, not through identity. That is the wrong mechanism for the claim being tested. The precise probe is to **move** the field from the identity list to the excluded one, which keeps it classified and reddens 3 assertions: the dedicated one plus both goldens. Both mechanisms are real and complementary, and a probe that trips the wrong one reads as confirmation while proving nothing about the guard under test. | Task 7, Task 21 |
 | 2026-09-10 | **(implementation) a rebuilt SET row is still incomplete, and the gap is stated at the site rather than left to memory.** `.datom_rebuild_manifest_entry()` now recovers `kind` from the metadata document, so a rebuilt set is at least counted as a set. It does **not** recover `member_count`, because that number lives in the payload rather than in `metadata.json` or `version_history.json` -- the two documents the rebuild reads. Left to Task 9, which owns the set row's shape, and recorded in the function's own docs plus the pathways card. Nothing writes a set row today, so there is no shape to match against and no test that can fail; the pinning test that compares a rebuilt row against a written one covers tables only. | Task 7, Task 9, Task 22 |
+| 2026-09-10 | **OWNER-DECIDED, on Task 8's cold-start audit: the self-reference refusal moves from Task 8 to Task 9.** Task 8's body had `datom_member()` refusing a set that lists itself, and three things say it cannot: AC9 says "refused **at write time**", R4.5 says "cheap check **at write time**", and R10.3a makes `name == project.yaml$set` the precondition, "the set's own identity before the write". Verified that no `set:` or `mode:` field is read or written anywhere in `R/` today -- the developer conn reads `project_name` and the `storage` block, `datom_init_repo()` writes nine keys, neither field among them -- so at Task 8 there is nothing to compare against. **And the constructor could not be trusted with it even later**: its `conn` is scoped to the **member's** project, exactly as `datom_parent()`'s is, so on a cross-project member it would read a different repo's `set:` field. Task 8 keeps the half that delivers the guarantee people confuse this check with: reading the member's snapshot, which is what makes the member graph acyclic by construction (R4.4). Task 9's body and criteria line now own R4.5 + AC9, and Task 8's bullet is struck rather than deleted. | Task 8, Task 9, R4.5, AC9, R10.3a |
+| 2026-09-10 | **OWNER-DECIDED, same audit: an empty tag value is TIDIED AWAY, not refused -- and the spec said both.** R2.10 said "an empty tag value is **refused by validation**"; R2.14's tidy table said `domain = character(0)` has its **key dropped** silently. Both were live instructions for the same spelling. The later owner decision wins (tidy first, then validate, 2026-08-17: handle the trivial spellings silently, refuse only what needs intent guessed), so `datom_member()` drops the key. It mattered at Task 8 specifically because that constructor validates **at construction**, so a session following R2.10 would abort on a spelling the write path quietly accepts -- two behaviours for one payload depending on which door the caller entered. **Four copies corrected, two of them outside the spec**: R2.10's sentence; design.md 7.2, which additionally lumped the **exact-duplicate member** in with the refusals when it is tidied too; the roxygen of `.datom_sv1_as_strings()` in `R/hashable-set.R`, which leant on "validation refuses an empty tag value upstream"; and the matching bullet in `dev/engineering-notes.md`. The encoder's own behaviour is unchanged and still must not depend on the upstream rule -- `strset(character(0))` stays pinned at `h(0x02)` (R2.17). One thing a later reader must not "simplify": the key cannot merely be passed through untouched, because a present key with an empty value hashes as `h(0x03 || str(k) || h(0x02))` while an absent key hashes as `h(0x03)`, so the same fact would mint two different `data_sha`. | Task 8, R2.10, R2.14, R2.17, design.md 7.2, `R/hashable-set.R` |

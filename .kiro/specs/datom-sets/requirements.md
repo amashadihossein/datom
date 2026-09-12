@@ -212,10 +212,18 @@ the test.
     tag values are not identity (`["a","a"]` is `["a"]`); `radix` sort throughout for locale
     independence, matching `.datom_compute_metadata_sha()`'s existing rationale; a **zero-member set
     is still refused** (R2.8).
-  - **An empty tag value is refused by validation**, not encoded. `domain: character(0)` means "no
-    labels", which per R2.7 is spelled by **omitting the key**. (The encoder would produce
-    `h(0x02)` for it, so this is a validation rule keeping one spelling per fact, not a
-    correctness fix.)
+  - **An empty tag value never reaches the encoder**: `domain: character(0)` means "no labels",
+    which per R2.7 is spelled by **omitting the key**, so tidying drops the key (R2.14) and the
+    encoder never sees it. This keeps one spelling per fact; it is not a correctness fix, since the
+    encoder would produce `h(0x02)` for it either way. **Corrected 2026-09-10** (Task 8's cold-start
+    audit): this bullet used to say an empty tag value is "refused by validation", which contradicts
+    R2.14's tidy table -- the same spelling cannot both abort and be silently normalised. R2.14 wins,
+    being the later owner decision (tidy first, then validate: handle the trivial spellings silently,
+    refuse only what needs intent guessed). The contradiction mattered because `datom_member()`
+    validates at construction, so a reader following this bullet would make the constructor abort on
+    a spelling the write path quietly accepts. What must **not** happen is passing it through
+    untouched: a key present with an empty value hashes as `h(0x03 || str(k) || h(0x02))` while an
+    absent key hashes as `h(0x03)`, so the same fact would mint two different `data_sha`.
 
   `jsonlite`, or anything else, remains free to format the **stored file** however it likes,
   because stored-byte integrity is `document_sha`'s job -- a separate hash over actual bytes.

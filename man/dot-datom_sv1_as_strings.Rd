@@ -24,9 +24,9 @@ one-element array hash identically.
 }
 \details{
 \code{character(0)} and \code{list()} (the parsed form of \verb{[]}) both normalise to the
-empty set. Validation refuses an empty tag value upstream and
-canonicalization cannot produce one, but the encoder must not depend on that:
-an encoder whose correctness rests on an upstream refusal breaks silently the
-day the refusal is relaxed.
+empty set. Upstream, canonicalization drops a key whose value is empty -- "no
+labels" is spelled by omitting the key -- so the encoder should never meet one.
+It must not depend on that: an encoder whose correctness rests on an upstream
+rule breaks silently the day that rule moves.
 }
 \keyword{internal}
