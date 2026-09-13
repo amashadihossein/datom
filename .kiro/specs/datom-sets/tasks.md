@@ -179,8 +179,21 @@ golden can tell the difference, so the guard is a test on the emitted bytes.
 **Next when work resumes**: **Task 9 -- `datom_write_set()`.** The biggest task in the spec: two
 gates before anything happens, the self-reference refusal, tidy-then-validate-then-hash, a dual
 write with a different path on each side, no re-emission for a `data_sha` already in history, the
-cross-kind name refusal, and the manifest entry. Nothing is owed before it. **Six things the
-finished tasks leave sitting under it, so they are not re-derived.**
+cross-kind name refusal, and the manifest entry.
+
+**Task 9 was cold-start audited on 2026-09-11 and is startable. The audit is in Task 9's body and
+found nine things; two are OPEN scope questions with defaults, so nothing is owed before starting.**
+The two that would have cost real time: **the two gates read `project.yaml` fields nothing writes
+until Task 11, which runs after this task**, so `datom_write_set()` lands unreachable through the
+public path and its fixtures must hand-write that file -- the same deliberate inertness Task 4's gate
+had, and pulling Task 11's init half forward is the wrong fix because it drags Task 23 with it; and
+**"reuse `datom_write()`'s steps 7-10" is not a call**, because those steps are inline in that
+function's body, so this task either extracts the commit-push-then-upload sequence or writes a second
+copy of "git must succeed before storage is touched". Also found: a new write verb inherits nothing
+from the three existing write doors and must call the entry check itself (the same route-was-the-gap
+finding for the fourth task running); the **healthy** writer has the same set-row defect this task
+attributes to the rebuild alone; and one code citation named the wrong function outright. **Six
+things the finished tasks leave sitting under it, so they are not re-derived.**
 
 1. **The tag rules are already written and must be reused, not restated.**
    `.datom_validate_tag_map()` (`R/member.R`) is the grammar -- text only, no missing values, no
@@ -1691,8 +1704,11 @@ own; landing it first is what makes Task 6's failure loud.
     legitimate use (a current table beside a locked baseline).
   - **Never re-emit a payload for a `data_sha` already in history** (R7.5 rule 1, I27, AC29b): reuse
     the stored object and **carry the recorded `document_sha` forward**. Mirror
-    `.datom_lookup_history_parquet_sha()` (`R/read_write.R:468-473`, `422-439`) -- it already does
-    exactly this for parquet, including the `upload = FALSE` return. **This is the defect that passes
+    `.datom_resolve_parquet_sha()` (`R/read_write.R:469-489`) -- it already does exactly this for
+    parquet, including the `upload = FALSE` return, and it is the function that decides; the scan it
+    calls is `.datom_lookup_history_parquet_sha()` (`R/read_write.R:506-523`), which returns a hash or
+    NULL and nothing else. (An earlier version of this bullet named the scan and cited two ranges
+    belonging to neither function; corrected by the cold-start audit below, item 3.) **This is the defect that passes
     every per-chunk test**: recomputing `document_sha` from fresh bytes while reusing the stored
     object records a hash of bytes nobody stored, and it surfaces later as a refused read of a valid
     version. Reachable by an ordinary tag-value reorder, not just a dependency upgrade -- see
@@ -1724,6 +1740,84 @@ own; landing it first is what makes Task 6's failure loud.
     AC29a's assert-on-the-file-bytes instruction covers this too. `parquet_sha` never hits it because
     its only outcomes are a real hash or `meta$parquet_sha <- NULL`, and assigning NULL removes the
     element rather than nulling it.
+  - **COLD-START AUDIT, 2026-09-11** -- the documented path (`dev/README.md` -> the state block ->
+    this task -> design.md 21.4 -> `dev/engineering-notes.md`) was walked as a fresh reader and every
+    claim in this task checked against the tree. **Startable, and the two items below marked OPEN are
+    scope questions rather than implementation ones.** **No escalation flag** -- design.md 12 carries
+    E1 and E2 only -- so nothing is owed under rule 5d. What held: the rebuilt-set-row analysis is
+    exactly right (`size_bytes = as.numeric(meta$size_bytes %||% 0)` yields `0`, which has length 1 and
+    survives `purrr::compact()`, while `member_count` lives in the payload and so is unrecoverable from
+    the two documents a rebuild reads); the field-for-field test really does compare row field sets and
+    really does write tables only; and `.datom_write_metadata_local()` reads `document_sha` off the
+    metadata object, which is what makes "populate it before writing" the right instruction rather than
+    a plumbing change.
+    1. **OPEN -- THE TWO GATES READ FIELDS NOTHING WRITES, AND TASK 11 (WHICH WRITES THEM) RUNS AFTER
+       THIS TASK.** Verified by grepping every `yaml::write_yaml()` site: there are two,
+       `datom_init_repo()` (`R/conn.R:523`, nine keys, neither `mode` nor `set` among them) and
+       `datom_repo_set_data_store()`, and no `mode` or `set` is read anywhere in `R/` either. So the
+       moment this task lands, **`datom_write_set()` is unreachable through the public path**: no repo
+       can declare `mode: product`, so every set write is refused at its own door, and the same is true
+       of Task 10's read tests. This is the same shape as Task 4, whose gate landed tested-but-inert on
+       purpose so that Task 6's writer bump was not the first exercise of untested gate code -- and it
+       is fine, **but it has to be said**, because silence reads either as a defect or as an invitation
+       to pull Task 11's init work forward. Pulling it forward is the wrong move: Task 11 is blocked on
+       Task 23 precisely because writing `mode` needs a released build that already reads
+       `project.yaml`'s format number, so moving the init half up drags Task 23 up with it. **Default:
+       keep the order; fixtures hand-write `project.yaml`, and the task states the inertness the way
+       Task 4 did.** Second half of the same item, unstated anywhere: `mode` and `set` **do not ride on
+       the conn** -- only `min_writer_version` does (`R/conn.R`, read in `.datom_get_conn_developer()`)
+       -- so this task must decide between reading `project.yaml` directly at the gate and adding two
+       conn fields. Task 11 inherits whichever is chosen, so choose it here rather than there.
+    2. **`datom_write_set()` MUST CALL `.datom_check_write_entry()` ITSELF, and this task's body does
+       not say so.** Three sites call it today -- `datom_write()` (`R/read_write.R:791`),
+       `.datom_sync_data_metadata()` (`R/sync.R:155`) and `.datom_sync_metadata()`
+       (`R/utils-sha.R:595`) -- and a fourth write verb inherits nothing from any of them. Left out,
+       the floor, the format check and the vocabulary check are all silently skipped for every set
+       write. This is the exact finding that has now landed in three consecutive tasks (Task 6's open
+       call 1, Task 6's purity audit, Task 21's review): **a route that reaches storage without going
+       through the write verb keeps being missed**, and the remedy each time was to gate the shared
+       function rather than the entry point. Place it after the conn class check and before any
+       hashing, as the sequence requires (I34).
+    3. **THE `.datom_lookup_history_parquet_sha()` CITATION IS WRONG, AND IT NAMES THE WRONG
+       FUNCTION.** This task cites `R/read_write.R:468-473`, `422-439` for the reuse-and-carry-forward
+       pattern. That function is at `R/read_write.R:506-523` and it does **not** return
+       `upload = FALSE` -- it returns a hash or `NULL`. The pattern this task actually wants is
+       `.datom_resolve_parquet_sha()` (`R/read_write.R:469-489`), which is the one that decides between
+       carrying the current value forward on a metadata-only change, reusing a recorded value found in
+       history, and uploading fresh -- returning `list(parquet_sha =, upload =)`. Mirror **that**;
+       `.datom_lookup_history_parquet_sha()` is the scan it calls. The gate could not catch this: the
+       cited lines are real prose, just not the prose claimed.
+    4. **THE LIVE WRITER HAS THE SAME SET-ROW DEFECT AS THE REBUILD, and only the rebuild is flagged
+       above.** `.datom_update_manifest_entry()` reads `size_bytes` from the local metadata document
+       and defaults it to `0` (`R/sync.R:1130-1139`). A set's metadata has no `size_bytes` -- R1.4
+       removed it -- so a **healthy** set write puts `size_bytes = 0` on the row and no `member_count`:
+       one field long and one field short, which is the same two-directional wrongness this task
+       attributes to the rebuild alone. Fix both, and note the healthy path is the more damaging of the
+       two, because the rebuild only runs on a broken index.
+    5. **`.datom_update_manifest_entry()` HARDCODES `kind = "table"`** (`R/sync.R:1151`) and takes no
+       kind argument. Task 7's DONE record says so; this task's body did not, which is how a line
+       handed forward twice gets missed a third time.
+    6. **"REUSE THE GIT-GATES-STORAGE ORDERING (`datom_write()` STEPS 7-10)" IS NOT A CALL -- those
+       steps are inline in `datom_write()`'s body.** Verified: steps 0 through 10 are comments inside
+       one function (`R/read_write.R:841-950`), not helpers. So this task either **extracts** the
+       commit-push-then-upload sequence or writes a parallel copy of it, and that is the largest
+       scoping decision in the task while being phrased as though it were free. Extraction is the
+       better direction -- a second copy of "git must succeed before storage is touched" is a second
+       place for I5 to be broken -- but it edits the table write path, so it wants saying out loud
+       rather than discovering. **Default: extract, and say in the commit that the table path was
+       touched.**
+    7. **`.datom_has_changes()` genuinely does work unchanged for a set**, verified rather than
+       assumed: it keys off whether `metadata.json` exists, recomputes the recorded document's identity
+       through the allowlist, and compares `data_sha`. Task 7 classified the set builder's fields, so
+       the recompute is correct for a set document. Recorded because "reuse unchanged" is a claim a
+       fresh session would reasonably want to check, and the check is not free.
+    8. **The set payload is not in `git_paths`.** `.datom_write_metadata_local()` returns
+       `git_paths = c(metadata_path, history_path)`, so `{name}/set.json` must be written separately
+       and appended to the commit's file list -- which `datom_write()` builds by hand from that vector
+       plus `.datom/manifest.json`. One more reason item 6 leans toward extraction.
+    9. **`member_count` is deliberately absent from `.datom_manifest_entry_known_fields`** (eight names,
+       `R/forward-compat.R:63-66`), so its forcing function trips the moment this task adds the field.
+       That was Task 20's stated intent, not an oversight -- add the name, do not weaken the test.
   - _Requirements: R5, R6 (incl. R6.1a/b), R7.5, R2.14, R2.14a, R2.15, R10.3a, R12.2, R8 (set
     entries), **R4.5 (moved here from Task 8)**. Invariants: I2, I5, I6, I10a, I11, I15, I25, I26,
     I27. Properties: P7, P13, P17, P25, P29,
@@ -3064,3 +3158,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-11 | **(implementation) a snapshot declaring a kind this build does not know is refused, and the message says to upgrade.** `kind` absent means a snapshot written before the field existed, and every one of those describes a table, so the fallback is sound. A snapshot declaring something else -- a third kind from a newer datom -- is a different case: passing it through would put a pointer nothing can classify into a citable payload, and a reader meeting it would not know whether to resolve it as a table or as a set. `.datom_artifact_kinds` (`R/utils-validate.R:17`) is the vocabulary, **append-only** for the same reason the write-side field lists are: a build that stopped recognising a kind would refuse an older document and block the upgrade direction. | Task 8, Task 10, R22.8, I31 |
 | 2026-09-11 | **REVERSED the same day by review: BOTH version-pinned snapshot readers now check the format they are handed.** Task 8 shipped `datom_member()` with no `.datom_check_schema_version()` on the snapshot it reads, on the audit's stated default of mirroring `datom_parent()`. The default asked whether the two siblings should agree and stopped one question short of what the absent check was holding up: **the `kind` fallback**. An absent `kind` is read as `"table"` -- right for a document written before the field existed, wrong for one written by a build this version cannot fully parse, where a **set** is recorded as a table. That misreading is durable, not momentary: it enters the member record, the stored payload, and the set's own `data_sha`, so a citation names the wrong kind of artifact permanently and nothing fails. **The codebase had already settled the pattern and the audit missed it**: `.datom_rebuild_manifest_entry()` checks the per-artifact document (`R/manifest-rebuild.R:196`) and then applies the identical fallback (`:210`) -- so of three sites deriving `kind` from such a document, one checked and two did not, which makes the two the anomaly rather than the check the innovation. `datom_parent()` was gated in the same commit: its two fields are durable at one remove (`data_sha` becomes a storage address, `source_lineage` is unioned into the lineage of whatever table declares the parent), and leaving one sibling ungated is precisely what turned a gap into a precedent. **Verified rather than assumed** before agreeing: the snapshot is written from the same object as `metadata.json` (`.datom_push_metadata_s3()` writes one object to three keys), so it carries the format number and the check is live rather than theatre; and `datom_read(version = )` does **not** read the snapshot at all -- it resolves from `version_history.json` -- so the gap really was exactly two functions. Both checks sit **outside** the not-found handler, or the refusal is reworded as "member not found" (the Task 4 lesson). **The behaviour change is accepted, not incidental**: a snapshot declaring a newer format now aborts where it previously half-worked. Licensed by the owner's standing position, stated the same day -- the released versions are experimental and unannounced, and support for them must not buy fragility for what comes next -- and by the posture already in `.github/copilot-instructions.md`: breaking loudly is acceptable here, degrading silently is not. Tests 3218 -> **3227** (+9). | Task 8, Task 22, Task 4, R9.2, I4, `R/lineage.R` |
 | 2026-09-11 | **The `kind` fallback STAYS, and the reason is a use case rather than back-compatibility sentiment.** With the format check in place, the obvious next move -- drop the fallback and require `kind` -- was considered and rejected. Every version written before Task 7 has a snapshot with no `kind`, and requiring the field would make those versions **uncitable**: a set could name only versions written by this release onward. R2.14a wants exactly the opposite, since its worked example is a current table sitting beside a **locked baseline**, and a baseline is by definition an older pinned version. So the fallback is not the past being carried at the future's expense; it is what makes historical versions citable at all, and the format check is what makes it safe by construction rather than by convention. Recorded because the owner's standing position on not supporting released versions would otherwise point at removing it. | Task 8, R2.14a, R22.8 |
+| 2026-09-11 | **COLD-START AUDIT FOR TASK 9: startable, nine findings, two of them OPEN scope questions with stated defaults. No escalation flag** (design.md 12 carries E1 and E2 only), so nothing is owed under rule 5d. Full detail in Task 9's body; the two that would have cost real time are recorded here because they change how the task is sequenced rather than how it is written. **(1) THE TWO GATES READ `project.yaml` FIELDS NOTHING WRITES UNTIL TASK 11, WHICH RUNS AFTER THIS TASK.** Verified by grepping every `yaml::write_yaml()` site -- there are two, and neither writes `mode` or `set`; nothing reads them either. So `datom_write_set()` lands **unreachable through the public path**: no repo can declare `mode: product`, so every set write is refused at its own door, and Task 10's read inherits the same. Same deliberate inertness Task 4's gate had, and the fix is **not** to pull Task 11's init half forward: Task 11 is blocked on Task 23 because writing `mode` needs a released build that already reads `project.yaml`'s format number, so moving it up drags Task 23 with it. Default: keep the order, fixtures hand-write the file, and the task states the inertness. Second half of the same item: `mode` and `set` do **not** ride on the conn the way `min_writer_version` does, so Task 9 chooses between reading the file at the gate and adding two conn fields, and Task 11 inherits the choice. **(2) "REUSE `datom_write()`'S STEPS 7-10" IS NOT A CALL** -- those steps are inline comments in one function body (`R/read_write.R:841-950`), so the task either extracts the commit-push-then-upload sequence or writes a second copy of "git must succeed before storage is touched", which is a second place for I5 to break. Largest scoping decision in the task, currently phrased as free. Default: extract, and say in the commit that the table path was touched. **Also found:** a fourth write verb inherits nothing from the three existing `.datom_check_write_entry()` sites and must call it itself -- the route-was-the-gap finding for the fourth task running; the **healthy** writer has the same set-row defect the task attributes to the rebuild alone, because `.datom_update_manifest_entry()` reads `size_bytes` off the metadata document and defaults it to `0` while a set has no such field; `.datom_update_manifest_entry()` still hardcodes `kind = "table"`, a line handed forward three times now; and the `.datom_lookup_history_parquet_sha()` citation named the **wrong function** -- the pattern wanted is `.datom_resolve_parquet_sha()`, and the gate could not see it because the cited lines are real prose. **Two claims verified rather than trusted, both holding**: `.datom_has_changes()` genuinely works unchanged for a set (it keys off the document's existence, recomputes identity through the allowlist, and compares `data_sha`, and Task 7 classified the set builder's fields), and the rebuilt-set-row analysis is exactly right. | Task 9, Task 10, Task 11, Task 21, Task 23, R10.3a, I5, I34 |
