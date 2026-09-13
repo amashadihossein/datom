@@ -18,7 +18,7 @@ four review findings that followed it -> 2863 after its purity audit -> **2867 a
 ends the second review pass found -> 2898 after Task 20 -> 2902 after the review that followed it
 -> 2905 after the classify-late guard -> 2959 after Task 21 -> 2965 after the three review findings
 that followed it -> 3050 after Task 22 -> 3053 after the three review findings that followed
-it -> **3077 after Task 7**. Report the count in every commit
+it -> 3077 after Task 7 -> **3218 after Task 8**. Report the count in every commit
 message; it must never drop.
 
 ---
@@ -31,8 +31,9 @@ message; it must never drop.
 fetch-failure defect, #104), **Task 19** (allowlist identity hashing, #100) **Task 5** (one
 manifest reader + one skeleton builder), **Task 6** (the artifact-namespace rename plus the
 old-format conversion), **Task 20** (unfamiliar fields survive a write), **Task 21** (the writer
-refusals), **Task 22** (the reader-side rebuild) and **Task 7** (`kind` in per-artifact metadata
-plus the set metadata builder), plus three things
+refusals), **Task 22** (the reader-side rebuild), **Task 7** (`kind` in per-artifact metadata
+plus the set metadata builder) and **Task 8** (`datom_member()` plus the member and tag
+validators), plus three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
 this branch was cut, deliberately outside this history), `dev/check-spec.R`, and
@@ -152,9 +153,9 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3077** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3218** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
-code/documentation agreement (tests and examples run separately). Next is **Task 8**.
+code/documentation agreement (tests and examples run separately). Next is **Task 9**.
 
 **The submission freeze still holds**: 0.1.2 is in flight, so `main` must keep matching what CRAN
 received, and this branch PRs into `dev`. Branch heads live in `dev/README.md` "Branching During CRAN
@@ -163,49 +164,52 @@ touching anything git-adjacent: three tools misbehave silently in a git worktree
 there rather than a directory, and one of them cost us the 0.1.2 submission record -- see
 `dev/engineering-notes.md`, "In a git worktree, `.git` is a FILE".
 
-**Next when work resumes**: **Task 8 -- `datom_member()`, the member validator, and the
-self-reference refusal.** A member is a pure-data pointer at one exact version of one artifact, plus
-optional per-member tags; this task is the constructor for it and the validator every set write will
-run. It mirrors `datom_parent()` and `.datom_validate_parents()` closely enough that the risk is
-copying too much rather than too little. Nothing is owed before it. **Four things the finished tasks
-leave sitting under it, so they are not re-derived.**
+**TASK 8 IS CLOSED.** A member of a set is now constructible as pure data: `datom_member()`
+resolves one artifact version through one project connection and returns
+`{id: {project, name, kind, version}}` plus optional per-member tags. It reads the version's own
+metadata snapshot, which is what makes the pointer trustworthy -- a member can only point at
+something that already exists, and that is the whole of the acyclicity guarantee. Alongside it,
+`.datom_validate_members()` is the checker every set write will run, and two smaller helpers hold
+the tag rules in one place so the write can reuse them for set-level tags. All of it is the new
+`R/member.R`; nothing calls the validator yet, which is Task 9's job. **Three things a later change
+must not undo, and six probes, are in Task 8's DONE record.** The one worth knowing before touching
+it: an untagged member **omits** the tags key rather than carrying it as NULL, and no hash and no
+golden can tell the difference, so the guard is a test on the emitted bytes.
 
-1. **A member's `kind` can now be read from the artifact's own metadata**, which is what Task 7
-   shipped. Default it to `"table"` for a snapshot written before the field existed, exactly as the
-   manifest rebuild does -- the fallback is not padding: every pre-`kind` document is a table, and an
-   untyped pointer would be a pointer nothing can classify.
-2. **Do not build cycle detection, a visited-set guard, or a depth limit.** They solve a problem that
-   cannot occur, and I10a forbids reintroducing them as defensive code. The task body has the full
-   reasoning.
-3. **Task 8 owns only the per-member half of AC27.** A validator that sees one member at a time
-   cannot see "the same `id` listed twice with different tags", and set-level tags never pass through
-   it at all. Those are Task 9's.
-4. **Nothing writes a `kind = "set"` entry yet, so a counter filter passes whether or not it is
+**Next when work resumes**: **Task 9 -- `datom_write_set()`.** The biggest task in the spec: two
+gates before anything happens, the self-reference refusal, tidy-then-validate-then-hash, a dual
+write with a different path on each side, no re-emission for a `data_sha` already in history, the
+cross-kind name refusal, and the manifest entry. Nothing is owed before it. **Six things the
+finished tasks leave sitting under it, so they are not re-derived.**
+
+1. **The tag rules are already written and must be reused, not restated.**
+   `.datom_validate_tag_map()` (`R/member.R`) is the grammar -- text only, no missing values, no
+   empty labels, no duplicate or blank keys -- and it is what set-level tags go through, since
+   those never pass through the member constructor. `.datom_drop_empty_tags()` is the one tidy rule
+   that already exists; the rest of canonicalization (sorting keys, sorting and deduplicating
+   values, unboxing single values, ordering members) is deliberately **not** written yet, so that
+   canonical form has exactly one implementation and it is Task 9's.
+2. **Tidy must run before validate at every call site, and the reason is not style.** The validator
+   deliberately **passes** a key whose value is empty, because that is a tidy case rather than an
+   error. Validate first and the tidy rule becomes unreachable; write without tidying and the same
+   fact mints two different `data_sha` values, since a present key with an empty value hashes
+   differently from an absent one.
+3. **`.datom_validate_members()` deliberately accepts an empty member list.** The zero-member
+   refusal is a whole-payload decision and is Task 9's, as is the same-`id`-different-`tags` case,
+   which a per-member view cannot see and deduplication does not catch. Putting either refusal in
+   both places would give one failure two messages.
+4. **The self-reference refusal is Task 9's** (moved from Task 8 by owner decision, 2026-09-10):
+   both the requirement and the criterion say "at write time", and the set's own declared name is
+   established by the gate immediately above it. It is a nonsense check, not cycle detection:
+   I10a forbids a visited set or a depth limit creeping in beside it.
+5. **A member's `kind` is one of exactly two values**, held by `.datom_artifact_kinds`
+   (`R/utils-validate.R:17`), append-only for the same reason the write-side field vocabularies are.
+   Reuse it rather than spelling the pair again.
+6. **Nothing writes a `kind = "set"` entry yet, so a counter filter passes whether or not it is
    there.** Any assertion about set counts needs a hand-built manifest holding a set entry beside
-   table entries; `dev/engineering-notes.md` has the two spellings that go quietly wrong.
-
-**Task 8 was cold-start audited on 2026-09-10 and is startable. Both calls the audit raised were
-settled the same day by the owner, so nothing is owed before it.** The audit is in Task 8's body.
-**(1) The self-reference refusal MOVED TO TASK 9.** Task 8's bullet said `datom_member()` should refuse
-a set that lists itself, but AC9 and R4.5 both say "at write time", and R10.3a makes the set's own
-declared name the precondition -- a name nothing writes or reads today, and one this constructor could
-not trust anyway, since the connection it takes belongs to the **member's** project rather than the
-set's. Task 8 keeps the half that actually delivers acyclicity: reading the member's snapshot, so a
-member can only point at something that already exists. **(2) An empty tag value is TIDIED, NOT
-REFUSED.** The spec said both, in two places; the later tidy-then-validate decision wins, so
-`datom_member()` drops the key. Both wrong copies are corrected, along with two more the sweep found:
-a code comment in the sv1 encoder and an engineering note, each leaning on "validation refuses" as if
-it were settled.
-
-**Three findings from the same audit that a fresh session would otherwise hit late.** (1) **A member
-with no tags must OMIT the key, never carry it as NULL** -- the hash is identical either way, so
-nothing fails, and Task 9 then writes `"tags": {}` into every untagged member, which is the one
-spelling the spec says writers never emit. Same jsonlite trap as Task 7's `document_sha`, with the
-correct answer inverted. (2) **Mirroring `.datom_validate_parents()` verbatim ships a defect**: its
-field test accepts `NA_character_` (verified), and AC27(b) requires `NA` refused, so the mirror has to
-be stricter than its model. (3) **The sv1 encoder already refuses most of the tag grammar** -- what the
-new validator genuinely adds is the empty-string refusal, the four-key `id` shape, and `kind` being one
-of exactly two values.
+   table entries; `dev/engineering-notes.md` has the two spellings that go quietly wrong. The same
+   shape applies to the rebuilt-row test named in Task 9's body: its fixture writes tables only, so
+   the guard exists but cannot fire until somebody extends it.
 
 **Two forcing functions still fire the moment a builder gains a field, and that is the design.** The
 classification test in `test-utils-sha.R` derives its field inventory from the builders themselves --
@@ -638,8 +642,8 @@ necessary.
     | role check | **none** -- no existing `datom_storage_*` export checks `conn$role`, including the destructive `datom_storage_delete_prefix()` | the family is deliberately policy-free; role gating lives on the git-mutating verbs (Task 12). Do not add one here without deciding to break that symmetry. |
     | `.access/` today | **appears nowhere in `R/`** (verified by grep) | R19.6's "safe by construction" claim therefore holds as stated -- and with the write export dropped, datom still offers no general-purpose write path, so nothing in this task can break it. |
   - **There is no relative-key validator to reuse** -- `R/utils-validate.R` has only
-    `.datom_validate_name()` (`R/utils-validate.R:18`) and `.datom_validate_sha()`
-    (`R/utils-validate.R:68`), and nothing validates a key. So "relative-key validation" means
+    `.datom_validate_name()` (`R/utils-validate.R:28`) and `.datom_validate_sha()`
+    (`R/utils-validate.R:78`), and nothing validates a key. So "relative-key validation" means
     writing it. Two things it must catch, and they are different in kind:
     1. **Traversal / shape** (`..` segments, leading `/`, empty, non-scalar) -- an I9 concern, and it
        applies to a **read** as much as to a write. "Reads are unrestricted" was always about
@@ -669,7 +673,7 @@ necessary.
     whose bug is key-shape confusion. One message, both backends, and it names the relative key that
     was passed.
   - **The full-key refusal keys on a `datom` path segment**, and that is sound rather than heuristic:
-    `datom` is in `.datom_reserved_names` (`R/utils-validate.R:2-6`), so no legitimate relative key
+    `datom` is in `.datom_reserved_names` (`R/utils-validate.R:4-7`), so no legitimate relative key
     can contain it as a segment. Verified in the same pass that the guard is on a whole `..` segment
     and not on the dot character -- `.metadata/manifest.json`, `my.data/abc.json` and
     `dm/..hidden.json` all still pass, each with a test.
@@ -787,7 +791,7 @@ own; landing it first is what makes Task 6's failure loud.
   - **The problem this exists to make fixable.** After the rename a reader looks for `artifacts`
     while every repo written so far says `tables` and carries no `schema_version` field at all. The
     reader-side check does not stop it: it tolerates an absent version as v1
-    (`R/utils-validate.R:237`), so the repo passes and the reader then finds nothing where the list
+    (`R/utils-validate.R:257`), so the repo passes and the reader then finds nothing where the list
     should be. `datom_list()` returns an empty frame (`R/query.R:94`), `datom_summary()` reports
     zero (`R/summary.R:68`), `datom_status()` reports zero (`R/query.R:488`), and **nothing errors**
     -- the failure E2 exists to prevent, arriving through the front door instead of through a
@@ -824,7 +828,7 @@ own; landing it first is what makes Task 6's failure loud.
     not a bare `list()`: an empty bare
     list serializes as a JSON **array**, an empty named list as an **object**. Inert today (the
     skeleton is never written empty) and correct for the one case where it would be.
-  - **`.datom_check_namespace_free()` is excluded by name** (`R/utils-validate.R:168-181`). It reads
+  - **`.datom_check_namespace_free()` is excluded by name** (`R/utils-validate.R:178-190`). It reads
     a *different project's* manifest inside a handler that softens failure to `<unreadable>`, and
     that softening is right there: the message is best-effort context for a refusal that has already
     been decided. Sweeping it onto the shared helper would put a throwing check inside an
@@ -971,7 +975,7 @@ own; landing it first is what makes Task 6's failure loud.
     goes ahead of all of them: stopping halfway leaves a half-finished write, which is worse than
     the disagreement it was trying to prevent.
   - **`.datom_check_schema_version()`'s message says "which this build cannot read"**
-    (`R/utils-validate.R:269`). On a refused **write** that sentence is wrong. Give it an operation
+    (`R/utils-validate.R:279`). On a refused **write** that sentence is wrong. Give it an operation
     word, or accept it knowingly and say so.
   - **Must land atomically**: the rename, the five counters, the upgrade step and the tests, in one
     commit. A partial rename presents as "everything looks fine, the list is just empty."
@@ -1406,7 +1410,9 @@ own; landing it first is what makes Task 6's failure loud.
     **Pathway impact: yes** -- the reconstruction card's field-copying step and its closing warning
     both said `kind` was not in per-artifact metadata.
 
-- [ ] **8. `datom_member()` + validator + self-reference check**
+- [x] **8. `datom_member()` + the member and tag validators** &nbsp; **[DONE 2026-09-11. The
+  heading said "+ self-reference check" until this task landed; that half is Task 9's, per the
+  owner decision on the cold-start audit below.]**
   - `datom_member(conn, name, version)` mirroring `datom_parent()` (`R/lineage.R`): validate,
     read `{name}/.metadata/{version}.json`, derive `project` from `conn$project_name` and `kind`
     from the snapshot (defaulting to `"table"` for pre-`kind` metadata). Returns
@@ -1538,7 +1544,71 @@ own; landing it first is what makes Task 6's failure loud.
   - _Requirements: R4 (incl. R4.3, R4.4), R2.11, R2.7. Invariants: I9, I10, I10a, I24.
     Acceptance: **AC27 (a, b, c -- the per-member half)**. **AC9 and R4.5 are NOT this task's** per
     the audit above (item 1): both say "at write time", and the set's own identity does not exist
-    until Task 9's R10.3a gate reads it -- pending the owner call, they sit with Task 9._
+    until Task 9's R10.3a gate reads it -- the owner settled it the same day, and they now sit with
+    Task 9._
+  - **DONE 2026-09-11.** Everything is the new `R/member.R`, plus one constant.
+    1. **`datom_member(conn, name, version, tags = NULL)`**, exported. Same step sequence as
+       `datom_parent()` -- connection check, name check, version check including the guard that stops
+       a version string escaping the namespace, snapshot read, pure data out -- and a different
+       result: `{id: {project, name, kind, version}}` with `tags` present only when there are any,
+       and **no `data_sha`**, because the version already pins the content. `project` comes from the
+       connection, `kind` from the snapshot with `"table"` as the fallback for a snapshot written
+       before the field existed.
+    2. **`.datom_validate_members()`**, the checker Task 9 runs. Nothing calls it yet; that is the
+       sequencing, not an oversight, and it is fully tested from the test file.
+    3. **`.datom_validate_tag_map()` and `.datom_drop_empty_tags()`**, the tag grammar and the one
+       tidy rule, in one place so that the constructor, the checker, and Task 9's set-level tags all
+       share them rather than growing three copies.
+    4. **`.datom_artifact_kinds`** in `R/utils-validate.R` beside the other internal vocabularies,
+       append-only for the same reason they are: a build that stopped recognising a kind would refuse
+       an **older** document. Task 10's read will want it too; the two existing `match.arg()` sites
+       are local and were left alone.
+  - **Three things a later change must not undo.** (1) An untagged member **omits** the tags key.
+    Building the record as `list(id = ..., tags = tags)` looks equivalent and is not: `list()` keeps
+    a NULL element where `$<-` removes it, and `jsonlite` writes such an element as `{}` rather than
+    dropping it -- so every untagged member would land in the stored payload carrying an empty
+    object. **No hash and no golden can see this**, since an absent tag map and an empty one both
+    encode as `h(0x03)`, which is why the guard is an assertion on the emitted bytes and why a test
+    pins the two hashes as equal so the next reader does not try to catch it through identity.
+    (2) The field test is **stricter than `.datom_validate_parents()`**, which accepts a missing
+    value -- character, length 1, and `nzchar(NA_character_)` is `TRUE`, so the obvious three-part
+    test lets it through. A test pins that the older validator really is looser, so the divergence is
+    evidence rather than a claim. (3) **Tidy runs before validate**, and the validator deliberately
+    **passes** a key whose value is empty. Reversing the order makes the tidy rule unreachable.
+  - **Six probes, each reverted, each naming what it reddened**: building the record with
+    `tags = tags` inside `list()` reddens 5 assertions across 3 tests, including both byte-level
+    ones; dropping the missing-value clause from the field test -- i.e. mirroring the parents
+    validator verbatim -- reddens 3; disabling the empty-label refusal reddens 8 across 5 tests;
+    disabling the unknown-kind refusal reddens 3; removing the tidy step reddens 4; disabling the
+    fifth-`id`-field refusal reddens 2.
+  - **Four decisions the task body did not settle.** (1) **A `NULL` tag value is dropped, exactly
+    like `character(0)`.** The tidy table names only the second, but `list(domain = f())` where `f()`
+    returned nothing is the same nothing, and dropping one spelling while refusing the other is the
+    inconsistency tidy-then-validate exists to remove. The encoder still refuses a parsed `null`, and
+    must -- there the value came from a file, so there is no caller intent to tidy toward.
+    (2) **Per-value type checking delegates to `.datom_sv1_as_strings()`**, the encoder's own
+    coercion, rather than restating its rules; two copies of "what counts as text here" would
+    eventually disagree, and its messages already name the offending key and the allowed types. What
+    the validator adds on top is the empty-label refusal, the four-key `id` shape, and `kind` being
+    one of exactly two values -- which is what the audit predicted. (3) **A named character vector**
+    (`c(type = "output")`) is refused rather than coerced to a list: it cannot express a multi-valued
+    tag, so accepting it would add an unrequested tidy rule that Task 9's canonicalizer would also
+    have to know about. (4) **Tag values are not sorted, deduplicated or unboxed here**, so canonical
+    form has one implementation and it is Task 9's; a test pins that an out-of-order duplicated value
+    survives the constructor untouched.
+  - **No format-number check on the snapshot it reads**, mirroring `datom_parent()` -- the audit's
+    stated default. Closing it for one of two sibling constructors would make them disagree about the
+    same document, and closing it for both is a behaviour change to a shipped read path that no
+    requirement here asks for.
+  - Tests 3077 -> **3218** (+141), FAIL 0 / WARN 0 / SKIP 0. `dev/check-spec.R` 9/9; `R CMD check`
+    0/0/0 on docs and code/documentation agreement. Four internal `man/` pages plus
+    `man/datom_member.Rd`, a NAMESPACE entry, and a new **Sets** section in `_pkgdown.yml` (which
+    Task 9 and Task 10 extend). The roxygen example was run and its output checked, not just built.
+    **No pathway impact**: the constructor reads the same version-pinned snapshot `datom_parent()`
+    already reads, through the existing storage read -- no new lookup and no traversal.
+  - **Citations re-derived by content** after `.datom_artifact_kinds` shifted every line below it in
+    `R/utils-validate.R`: six live citations moved, of which the gate caught one (the rest resolved to
+    real but unrelated lines). Dated Decisions rows left frozen.
 
 - [ ] **9. `datom_write_set()`**
   - **Two gates first, before any hashing or IO** (R10.3a, I15): the repo must declare
@@ -2689,7 +2759,7 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 |---|---|
 | `datom_storage_read_json()` | 3 -- **shipped 2026-08-21** |
 | ~~`datom_storage_write_json()`~~ | **dropped 2026-08-18** -- deferred to the Backlog; see Task 3 |
-| `datom_member()` | 8 |
+| `datom_member()` | 8 -- **shipped 2026-09-11** |
 | `datom_write_set()` | 9 (extended with `include_paths` in 13) |
 | `datom_read_set()` | 10 |
 | `datom_repo_commit()` | 12 |
@@ -2958,3 +3028,10 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-10 | **(implementation) a rebuilt SET row is still incomplete, and the gap is stated at the site rather than left to memory.** `.datom_rebuild_manifest_entry()` now recovers `kind` from the metadata document, so a rebuilt set is at least counted as a set. It does **not** recover `member_count`, because that number lives in the payload rather than in `metadata.json` or `version_history.json` -- the two documents the rebuild reads. Left to Task 9, which owns the set row's shape, and recorded in the function's own docs plus the pathways card. Nothing writes a set row today, so there is no shape to match against and no test that can fail; the pinning test that compares a rebuilt row against a written one covers tables only. | Task 7, Task 9, Task 22 |
 | 2026-09-10 | **OWNER-DECIDED, on Task 8's cold-start audit: the self-reference refusal moves from Task 8 to Task 9.** Task 8's body had `datom_member()` refusing a set that lists itself, and three things say it cannot: AC9 says "refused **at write time**", R4.5 says "cheap check **at write time**", and R10.3a makes `name == project.yaml$set` the precondition, "the set's own identity before the write". Verified that no `set:` or `mode:` field is read or written anywhere in `R/` today -- the developer conn reads `project_name` and the `storage` block, `datom_init_repo()` writes nine keys, neither field among them -- so at Task 8 there is nothing to compare against. **And the constructor could not be trusted with it even later**: its `conn` is scoped to the **member's** project, exactly as `datom_parent()`'s is, so on a cross-project member it would read a different repo's `set:` field. Task 8 keeps the half that delivers the guarantee people confuse this check with: reading the member's snapshot, which is what makes the member graph acyclic by construction (R4.4). Task 9's body and criteria line now own R4.5 + AC9, and Task 8's bullet is struck rather than deleted. | Task 8, Task 9, R4.5, AC9, R10.3a |
 | 2026-09-10 | **OWNER-DECIDED, same audit: an empty tag value is TIDIED AWAY, not refused -- and the spec said both.** R2.10 said "an empty tag value is **refused by validation**"; R2.14's tidy table said `domain = character(0)` has its **key dropped** silently. Both were live instructions for the same spelling. The later owner decision wins (tidy first, then validate, 2026-08-17: handle the trivial spellings silently, refuse only what needs intent guessed), so `datom_member()` drops the key. It mattered at Task 8 specifically because that constructor validates **at construction**, so a session following R2.10 would abort on a spelling the write path quietly accepts -- two behaviours for one payload depending on which door the caller entered. **Four copies corrected, two of them outside the spec**: R2.10's sentence; design.md 7.2, which additionally lumped the **exact-duplicate member** in with the refusals when it is tidied too; the roxygen of `.datom_sv1_as_strings()` in `R/hashable-set.R`, which leant on "validation refuses an empty tag value upstream"; and the matching bullet in `dev/engineering-notes.md`. The encoder's own behaviour is unchanged and still must not depend on the upstream rule -- `strset(character(0))` stays pinned at `h(0x02)` (R2.17). One thing a later reader must not "simplify": the key cannot merely be passed through untouched, because a present key with an empty value hashes as `h(0x03 || str(k) || h(0x02))` while an absent key hashes as `h(0x03)`, so the same fact would mint two different `data_sha`. | Task 8, R2.10, R2.14, R2.17, design.md 7.2, `R/hashable-set.R` |
+| 2026-09-11 | **TASK 8 IMPLEMENTED: a member of a set is constructible as pure data.** `datom_member()` resolves one artifact version through one project connection and returns `{id: {project, name, kind, version}}` plus optional per-member tags -- no `data_sha`, because the version already pins the content and a second copy is a second thing to keep consistent. Reading the version's snapshot is the whole of the acyclicity guarantee: a member can only point at something that already exists. Alongside it, `.datom_validate_members()` is the checker Task 9 runs, and `.datom_validate_tag_map()` / `.datom_drop_empty_tags()` hold the tag rules in one place so the write reuses them for set-level tags rather than growing a third copy. All of it is the new `R/member.R`, plus `.datom_artifact_kinds` in `R/utils-validate.R`. **Six probes, each reverted, each naming what it reddened**; the two that would otherwise have shipped green are the tags-key omission (5 assertions across 3 tests, both byte-level ones among them) and the missing-value refusal (3). Tests 3077 -> **3218** (+141), FAIL 0 / WARN 0 / SKIP 0; `check-spec.R` 9/9; `R CMD check` 0/0/0 on docs and code/documentation agreement. No pathway impact -- the same version-pinned snapshot read `datom_parent()` already performs. | Task 8, R4, R2.11, R12.1, I9, I10, I10a, I24, AC27 |
+| 2026-09-11 | **(implementation) an untagged member OMITS the tags key, and no hash can tell.** An absent tag map and an empty one both encode as `h(0x03)`, so no golden moves and nothing in the identity suite reddens -- while `jsonlite` writes a NULL element as `{}` rather than dropping it, which would put the one spelling a writer must never emit into every untagged member of the stored payload. The trap is narrower than it looks and that is what makes it dangerous: `member$tags <- NULL` is safe (assignment removes the element) while `list(id = ..., tags = tags)` is not (the constructor keeps the name). Same jsonlite fact as Task 7's `document_sha`, with the correct answer **inverted** -- there the field had to be declared, here it has to be omitted. Guarded by an assertion on the emitted bytes, with a companion test pinning the two hashes as equal so the next reader does not try to catch it through identity. | Task 8, Task 7, R2.7, R2.10 |
+| 2026-09-11 | **(implementation) the member field test is deliberately STRICTER than `.datom_validate_parents()`, and a test pins the model as looser.** That validator's per-field check is `is.character(val) && length(val) == 1L && nzchar(val)`, and `NA_character_` passes all three -- so a verbatim mirror would have accepted a missing value in a member's `id`, which AC27(b) refuses and which would be spliced into a storage key or written into a citable payload. `.datom_is_text_scalar()` adds the missing-value clause. The looseness in the parents validator is pre-existing and out of scope, so rather than assert it as prose there is now a test that calls it with `data_sha = NA_character_` and records that it returns TRUE -- so the divergence is evidence, and a later tightening of the older validator fails there rather than leaving this note quietly wrong. | Task 8, AC27 |
+| 2026-09-11 | **(implementation) a `NULL` tag value is TIDIED AWAY, like `character(0)`, and the encoder still refuses one.** R2.14's tidy table names `character(0)` only. `list(domain = f())` where `f()` returned nothing is the same nothing, arrived at the way a script arrives at it, and dropping one spelling of no-labels while refusing the other is exactly the inconsistency the tidy-then-validate decision exists to remove. The encoder's refusal of a parsed `null` stands and must: there the value came out of a file, so there is no caller intent to tidy toward, and R2.7's "absence is omission" is a statement about stored documents. | Task 8, R2.7, R2.14 |
+| 2026-09-11 | **(implementation) the tag grammar delegates per-value type checking to the ENCODER's coercion rather than restating it.** `.datom_validate_tag_map()` calls `.datom_sv1_as_strings()` per value, which already refuses a number, a logical, a factor, a function, a nested object, and every form of missing value, each with a message naming the key path and the allowed types. Two copies of "what counts as text here" would eventually disagree, and the encoder's copy is the one the goldens freeze. What the validator adds on top is exactly what the cold-start audit predicted: the **empty-label** refusal (there is no `nzchar()` check anywhere in the encoder, so `""` hashes as an ordinary label), the four-key `id` shape, and `kind` being one of exactly two values. Not a breach of "the encoder does not validate" -- the borrowing runs the other way, and validation still runs first so its messages arrive first. | Task 8, R2.11, AC27 |
+| 2026-09-11 | **(implementation) canonical form is NOT computed at construction, deliberately.** `datom_member()` drops an empty-valued key and validates what remains; it does not sort keys, sort or deduplicate values, unbox a single value, or order members. Those are R2.15's, they belong to the set write, and having one implementation of canonical form is worth more than showing a caller the tidy spelling one step earlier. A test pins that an out-of-order duplicated tag value survives the constructor untouched, so the boundary is asserted rather than assumed. Related: a **named character vector** (`c(type = "output")`) is refused rather than coerced to a list -- it cannot express a multi-valued tag, so accepting it would add an unrequested tidy rule that Task 9's canonicalizer would also have to know about. | Task 8, Task 9, R2.15 |
+| 2026-09-11 | **(implementation) a snapshot declaring a kind this build does not know is refused, and the message says to upgrade.** `kind` absent means a snapshot written before the field existed, and every one of those describes a table, so the fallback is sound. A snapshot declaring something else -- a third kind from a newer datom -- is a different case: passing it through would put a pointer nothing can classify into a citable payload, and a reader meeting it would not know whether to resolve it as a table or as a set. `.datom_artifact_kinds` (`R/utils-validate.R:17`) is the vocabulary, **append-only** for the same reason the write-side field lists are: a build that stopped recognising a kind would refuse an older document and block the upgrade direction. | Task 8, Task 10, R22.8, I31 |

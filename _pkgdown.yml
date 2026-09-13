@@ -56,6 +56,11 @@ reference:
       - datom_write
       - datom_check_hashable
 
+  - title: "Sets"
+    desc: "Declare members of a versioned, citable set of artifacts"
+    contents:
+      - datom_member
+
   - title: "Query & Status"
     desc: "List tables, view history, check status"
     contents:

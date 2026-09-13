@@ -636,3 +636,16 @@ in-memory object is satisfied by a key whose value is `{}`, so it cannot tell a 
 from an unpopulated one. That is a reason to assert on the written bytes wherever the count is
 load-bearing, not a reason to switch to a conditional assign -- the conditional form drops the key
 from the in-memory object too, which breaks the contract outright.
+
+**The same fact decides the OPPOSITE way one level down, in a set member.** A member with no tags
+must **omit** the key: a payload is a list of member records, none of which has a fixed field set to
+honour, and R2.10 says a writer never emits `"tags": {}`. So `datom_member()` builds the record with
+`list(id = ...)` and adds `tags` only when there are any -- the spelling `list(id = ..., tags = tags)`
+would keep the name and put an empty object into every untagged member of the stored file.
+
+**Nothing about identity can catch either case, which is what makes them worth a note.** An absent
+tag map and an empty one both encode as `h(0x03)` under `datom-sv1`, so no hash moves and no golden
+changes; a test that compares hashes passes whichever spelling is used. The guard has to be an
+assertion on the emitted JSON. The rule to carry: **decide per field whether absence is a real state,
+then assert on the bytes, because the in-memory object and the identity hash are both blind to the
+difference.**

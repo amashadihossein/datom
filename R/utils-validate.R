@@ -6,6 +6,16 @@
   ".git", ".gitignore", "renv"
 )
 
+# The artifact kinds this build understands. A manifest entry, a per-artifact
+# metadata document, and a set member all declare one of these, and a value
+# outside the list is refused rather than tolerated -- an artifact nothing can
+# classify is one a reader cannot know how to resolve.
+#
+# APPEND-ONLY, for the same reason the write-side field vocabularies are: a
+# build that stopped recognising a kind would refuse an OLDER document, which
+# blocks the upgrade direction.
+.datom_artifact_kinds <- c("table", "set")
+
 
 #' Validate a datom Table Name
 #'
