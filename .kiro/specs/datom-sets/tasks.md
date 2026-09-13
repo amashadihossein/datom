@@ -181,8 +181,14 @@ gates before anything happens, the self-reference refusal, tidy-then-validate-th
 write with a different path on each side, no re-emission for a `data_sha` already in history, the
 cross-kind name refusal, and the manifest entry.
 
-**Task 9 was cold-start audited on 2026-09-11 and is startable. The audit is in Task 9's body and
-found nine things; two are OPEN scope questions with defaults, so nothing is owed before starting.**
+**Task 9 was cold-start audited on 2026-09-11 and is startable. NOTHING IS OWED BEFORE IT: the audit
+found nine things, and the two scope questions among them were both approved at their stated defaults
+by the owner the same day -- explicitly, so they are decisions and not defaults that happened to hold.
+Both are marked DECIDED in Task 9's body with what was approved.** The two decisions, so a fresh
+session does not reopen them: **fixtures hand-write `project.yaml`** (the execution order stands, and
+the gates read that file directly rather than riding on the conn), and **the commit-push-then-upload
+sequence gets extracted** out of `datom_write()` so both write verbs share one copy, with the commit
+message saying the table path was touched.
 The two that would have cost real time: **the two gates read `project.yaml` fields nothing writes
 until Task 11, which runs after this task**, so `datom_write_set()` lands unreachable through the
 public path and its fixtures must hand-write that file -- the same deliberate inertness Task 4's gate
@@ -1742,8 +1748,10 @@ own; landing it first is what makes Task 6's failure loud.
     element rather than nulling it.
   - **COLD-START AUDIT, 2026-09-11** -- the documented path (`dev/README.md` -> the state block ->
     this task -> design.md 21.4 -> `dev/engineering-notes.md`) was walked as a fresh reader and every
-    claim in this task checked against the tree. **Startable, and the two items below marked OPEN are
-    scope questions rather than implementation ones.** **No escalation flag** -- design.md 12 carries
+    claim in this task checked against the tree. **Startable, and NOTHING IS OPEN: the two
+    scope questions the audit raised were both APPROVED AT THEIR STATED DEFAULTS by the owner on
+    2026-09-11 -- explicitly, not on silence -- so they are decisions rather than defaults that
+    happened to hold. Each is marked DECIDED below, with what was approved.** **No escalation flag** -- design.md 12 carries
     E1 and E2 only -- so nothing is owed under rule 5d. What held: the rebuilt-set-row analysis is
     exactly right (`size_bytes = as.numeric(meta$size_bytes %||% 0)` yields `0`, which has length 1 and
     survives `purrr::compact()`, while `member_count` lives in the payload and so is unrecoverable from
@@ -1751,8 +1759,8 @@ own; landing it first is what makes Task 6's failure loud.
     really does write tables only; and `.datom_write_metadata_local()` reads `document_sha` off the
     metadata object, which is what makes "populate it before writing" the right instruction rather than
     a plumbing change.
-    1. **OPEN -- THE TWO GATES READ FIELDS NOTHING WRITES, AND TASK 11 (WHICH WRITES THEM) RUNS AFTER
-       THIS TASK.** Verified by grepping every `yaml::write_yaml()` site: there are two,
+    1. **DECIDED (approved 2026-09-11) -- THE TWO GATES READ FIELDS NOTHING WRITES, AND TASK 11
+       (WHICH WRITES THEM) RUNS AFTER THIS TASK.** Verified by grepping every `yaml::write_yaml()` site: there are two,
        `datom_init_repo()` (`R/conn.R:523`, nine keys, neither `mode` nor `set` among them) and
        `datom_repo_set_data_store()`, and no `mode` or `set` is read anywhere in `R/` either. So the
        moment this task lands, **`datom_write_set()` is unreachable through the public path**: no repo
@@ -1762,12 +1770,15 @@ own; landing it first is what makes Task 6's failure loud.
        is fine, **but it has to be said**, because silence reads either as a defect or as an invitation
        to pull Task 11's init work forward. Pulling it forward is the wrong move: Task 11 is blocked on
        Task 23 precisely because writing `mode` needs a released build that already reads
-       `project.yaml`'s format number, so moving the init half up drags Task 23 up with it. **Default:
+       `project.yaml`'s format number, so moving the init half up drags Task 23 up with it. **APPROVED:
        keep the order; fixtures hand-write `project.yaml`, and the task states the inertness the way
        Task 4 did.** Second half of the same item, unstated anywhere: `mode` and `set` **do not ride on
        the conn** -- only `min_writer_version` does (`R/conn.R`, read in `.datom_get_conn_developer()`)
        -- so this task must decide between reading `project.yaml` directly at the gate and adding two
        conn fields. Task 11 inherits whichever is chosen, so choose it here rather than there.
+       **APPROVED: read `project.yaml` at the gate.** Simpler now, and recorded here so Task 11
+       inherits it rather than re-deciding; if that task later wants the two facts on the conn, it is a
+       move with one caller to update rather than a question reopened.
     2. **`datom_write_set()` MUST CALL `.datom_check_write_entry()` ITSELF, and this task's body does
        not say so.** Three sites call it today -- `datom_write()` (`R/read_write.R:791`),
        `.datom_sync_data_metadata()` (`R/sync.R:155`) and `.datom_sync_metadata()`
@@ -1797,14 +1808,15 @@ own; landing it first is what makes Task 6's failure loud.
     5. **`.datom_update_manifest_entry()` HARDCODES `kind = "table"`** (`R/sync.R:1151`) and takes no
        kind argument. Task 7's DONE record says so; this task's body did not, which is how a line
        handed forward twice gets missed a third time.
-    6. **"REUSE THE GIT-GATES-STORAGE ORDERING (`datom_write()` STEPS 7-10)" IS NOT A CALL -- those
+    6. **DECIDED (approved 2026-09-11) -- "REUSE THE GIT-GATES-STORAGE ORDERING (`datom_write()`
+       STEPS 7-10)" IS NOT A CALL -- those
        steps are inline in `datom_write()`'s body.** Verified: steps 0 through 10 are comments inside
        one function (`R/read_write.R:841-950`), not helpers. So this task either **extracts** the
        commit-push-then-upload sequence or writes a parallel copy of it, and that is the largest
        scoping decision in the task while being phrased as though it were free. Extraction is the
        better direction -- a second copy of "git must succeed before storage is touched" is a second
        place for I5 to be broken -- but it edits the table write path, so it wants saying out loud
-       rather than discovering. **Default: extract, and say in the commit that the table path was
+       rather than discovering. **APPROVED: extract, and say in the commit that the table path was
        touched.**
     7. **`.datom_has_changes()` genuinely does work unchanged for a set**, verified rather than
        assumed: it keys off whether `metadata.json` exists, recomputes the recorded document's identity
@@ -3159,3 +3171,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-11 | **REVERSED the same day by review: BOTH version-pinned snapshot readers now check the format they are handed.** Task 8 shipped `datom_member()` with no `.datom_check_schema_version()` on the snapshot it reads, on the audit's stated default of mirroring `datom_parent()`. The default asked whether the two siblings should agree and stopped one question short of what the absent check was holding up: **the `kind` fallback**. An absent `kind` is read as `"table"` -- right for a document written before the field existed, wrong for one written by a build this version cannot fully parse, where a **set** is recorded as a table. That misreading is durable, not momentary: it enters the member record, the stored payload, and the set's own `data_sha`, so a citation names the wrong kind of artifact permanently and nothing fails. **The codebase had already settled the pattern and the audit missed it**: `.datom_rebuild_manifest_entry()` checks the per-artifact document (`R/manifest-rebuild.R:196`) and then applies the identical fallback (`:210`) -- so of three sites deriving `kind` from such a document, one checked and two did not, which makes the two the anomaly rather than the check the innovation. `datom_parent()` was gated in the same commit: its two fields are durable at one remove (`data_sha` becomes a storage address, `source_lineage` is unioned into the lineage of whatever table declares the parent), and leaving one sibling ungated is precisely what turned a gap into a precedent. **Verified rather than assumed** before agreeing: the snapshot is written from the same object as `metadata.json` (`.datom_push_metadata_s3()` writes one object to three keys), so it carries the format number and the check is live rather than theatre; and `datom_read(version = )` does **not** read the snapshot at all -- it resolves from `version_history.json` -- so the gap really was exactly two functions. Both checks sit **outside** the not-found handler, or the refusal is reworded as "member not found" (the Task 4 lesson). **The behaviour change is accepted, not incidental**: a snapshot declaring a newer format now aborts where it previously half-worked. Licensed by the owner's standing position, stated the same day -- the released versions are experimental and unannounced, and support for them must not buy fragility for what comes next -- and by the posture already in `.github/copilot-instructions.md`: breaking loudly is acceptable here, degrading silently is not. Tests 3218 -> **3227** (+9). | Task 8, Task 22, Task 4, R9.2, I4, `R/lineage.R` |
 | 2026-09-11 | **The `kind` fallback STAYS, and the reason is a use case rather than back-compatibility sentiment.** With the format check in place, the obvious next move -- drop the fallback and require `kind` -- was considered and rejected. Every version written before Task 7 has a snapshot with no `kind`, and requiring the field would make those versions **uncitable**: a set could name only versions written by this release onward. R2.14a wants exactly the opposite, since its worked example is a current table sitting beside a **locked baseline**, and a baseline is by definition an older pinned version. So the fallback is not the past being carried at the future's expense; it is what makes historical versions citable at all, and the format check is what makes it safe by construction rather than by convention. Recorded because the owner's standing position on not supporting released versions would otherwise point at removing it. | Task 8, R2.14a, R22.8 |
 | 2026-09-11 | **COLD-START AUDIT FOR TASK 9: startable, nine findings, two of them OPEN scope questions with stated defaults. No escalation flag** (design.md 12 carries E1 and E2 only), so nothing is owed under rule 5d. Full detail in Task 9's body; the two that would have cost real time are recorded here because they change how the task is sequenced rather than how it is written. **(1) THE TWO GATES READ `project.yaml` FIELDS NOTHING WRITES UNTIL TASK 11, WHICH RUNS AFTER THIS TASK.** Verified by grepping every `yaml::write_yaml()` site -- there are two, and neither writes `mode` or `set`; nothing reads them either. So `datom_write_set()` lands **unreachable through the public path**: no repo can declare `mode: product`, so every set write is refused at its own door, and Task 10's read inherits the same. Same deliberate inertness Task 4's gate had, and the fix is **not** to pull Task 11's init half forward: Task 11 is blocked on Task 23 because writing `mode` needs a released build that already reads `project.yaml`'s format number, so moving it up drags Task 23 with it. Default: keep the order, fixtures hand-write the file, and the task states the inertness. Second half of the same item: `mode` and `set` do **not** ride on the conn the way `min_writer_version` does, so Task 9 chooses between reading the file at the gate and adding two conn fields, and Task 11 inherits the choice. **(2) "REUSE `datom_write()`'S STEPS 7-10" IS NOT A CALL** -- those steps are inline comments in one function body (`R/read_write.R:841-950`), so the task either extracts the commit-push-then-upload sequence or writes a second copy of "git must succeed before storage is touched", which is a second place for I5 to break. Largest scoping decision in the task, currently phrased as free. Default: extract, and say in the commit that the table path was touched. **Also found:** a fourth write verb inherits nothing from the three existing `.datom_check_write_entry()` sites and must call it itself -- the route-was-the-gap finding for the fourth task running; the **healthy** writer has the same set-row defect the task attributes to the rebuild alone, because `.datom_update_manifest_entry()` reads `size_bytes` off the metadata document and defaults it to `0` while a set has no such field; `.datom_update_manifest_entry()` still hardcodes `kind = "table"`, a line handed forward three times now; and the `.datom_lookup_history_parquet_sha()` citation named the **wrong function** -- the pattern wanted is `.datom_resolve_parquet_sha()`, and the gate could not see it because the cited lines are real prose. **Two claims verified rather than trusted, both holding**: `.datom_has_changes()` genuinely works unchanged for a set (it keys off the document's existence, recomputes identity through the allowlist, and compares `data_sha`, and Task 7 classified the set builder's fields), and the rebuilt-set-row analysis is exactly right. | Task 9, Task 10, Task 11, Task 21, Task 23, R10.3a, I5, I34 |
+| 2026-09-11 | **Both of Task 9's scope questions APPROVED at their stated defaults -- explicitly, not on silence, so they are decisions and a fresh session must not reopen them.** (1) **The execution order stands and the set write lands inert**: `datom_write_set()` will be unreachable through the public path until Task 11 writes `mode: product`, its fixtures hand-write `project.yaml`, and the task says so the way Task 4 said it -- rather than pulling Task 11's init half forward, which would drag Task 23 up with it. The gates **read `project.yaml` directly** rather than carrying `mode` and `set` on the conn; recorded here so Task 11 inherits the choice, and if it later wants them on the conn that is a move with one caller to update rather than a question reopened. (2) **The commit-push-then-upload sequence gets extracted** out of `datom_write()`'s body so both write verbs share one copy, with the commit message stating that the table write path was touched -- the alternative being a second place for I5 ("git must succeed before storage is touched") to break independently. | Task 9, Task 11, Task 23, I5 |
