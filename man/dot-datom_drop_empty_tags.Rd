@@ -2,7 +2,7 @@
 % Please edit documentation in R/member.R
 \name{.datom_drop_empty_tags}
 \alias{.datom_drop_empty_tags}
-\title{Drop Tag Keys That Carry No Labels}
+\title{Drop Tag Keys Whose Value Is Empty}
 \usage{
 .datom_drop_empty_tags(tags)
 }
@@ -15,9 +15,12 @@ non-list is returned untouched, so the validator reports the type rather
 than this function failing on it.
 }
 \description{
-The one tidy rule this file owns: a key whose value is empty is removed,
-because "no labels" is spelled by omitting the key. Nothing is lost -- an
-empty value states no fact -- and leaving it in would be worse than cosmetic:
+The one tidy rule this file owns: a key that points at nothing is removed,
+because a tag with no values is spelled by omitting the key. Note this is
+about a tag \emph{value}, not about a member having no tags at all -- a member with
+no tags is the ordinary case and is simply accepted. Nothing is lost here --
+an empty value states no fact -- and leaving it in would be worse than
+cosmetic:
 a present key with an empty value hashes differently from an absent key, so
 the same fact would mint two different \code{data_sha} values.
 }

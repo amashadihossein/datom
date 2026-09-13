@@ -18,7 +18,7 @@ four review findings that followed it -> 2863 after its purity audit -> **2867 a
 ends the second review pass found -> 2898 after Task 20 -> 2902 after the review that followed it
 -> 2905 after the classify-late guard -> 2959 after Task 21 -> 2965 after the three review findings
 that followed it -> 3050 after Task 22 -> 3053 after the three review findings that followed
-it -> 3077 after Task 7 -> **3218 after Task 8**. Report the count in every commit
+it -> 3077 after Task 7 -> 3218 after Task 8 -> **3227 after the review finding that followed it**. Report the count in every commit
 message; it must never drop.
 
 ---
@@ -153,7 +153,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3218** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3227** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 9**.
 
@@ -1596,10 +1596,37 @@ own; landing it first is what makes Task 6's failure loud.
     have to know about. (4) **Tag values are not sorted, deduplicated or unboxed here**, so canonical
     form has one implementation and it is Task 9's; a test pins that an out-of-order duplicated value
     survives the constructor untouched.
-  - **No format-number check on the snapshot it reads**, mirroring `datom_parent()` -- the audit's
+  - ~~**No format-number check on the snapshot it reads**, mirroring `datom_parent()` -- the audit's
     stated default. Closing it for one of two sibling constructors would make them disagree about the
     same document, and closing it for both is a behaviour change to a shipped read path that no
-    requirement here asks for.
+    requirement here asks for.~~ **REVERSED by review the same day; BOTH constructors now check, and
+    the reason the original was wrong is worth keeping.** The audit's default was defensible on its own
+    terms and stopped one question short: it asked whether the two siblings should agree, and not what
+    the absent check was holding up. It is holding up the `kind` fallback. An absent `kind` is read as
+    `"table"`, which is right for a document written before the field existed and **wrong for one
+    written by a build this version cannot fully parse** -- there a **set** is recorded as a table, and
+    the misreading is durable rather than momentary: it goes into the member record, into the stored
+    payload, and into the set's own `data_sha`, so a citation names the wrong kind of artifact
+    permanently with nothing failing. The format check is exactly what separates "old document,
+    therefore certainly a table" from "newer document, therefore unknown". **The codebase had already
+    settled this** and the audit missed it: `.datom_rebuild_manifest_entry()` checks the per-artifact
+    document (`R/manifest-rebuild.R:196`) and then applies the identical fallback (`:210`), so of the
+    three places that derive `kind` from such a document, one checked and two did not. `datom_parent()`
+    is gated in the same commit for the same reason at one remove -- its two fields are durable too,
+    the `data_sha` becoming a storage address and the `source_lineage` being unioned into the lineage
+    of whatever table declares the parent -- and because leaving one sibling ungated is what turned a
+    gap into a precedent in the first place. The check sits **outside** the not-found handler at both
+    sites, or the upgrade instruction gets reworded as "member not found" (the Task 4 lesson). **The
+    behaviour change is real and is the accepted direction**: a snapshot declaring a format above what
+    this build supports now aborts where it previously half-worked. Owner's standing position, stated
+    2026-09-11, is that the released versions are experimental and unannounced, and that support for
+    them must not buy fragility for what comes next -- which is what licenses tightening a shipped
+    read path here rather than deferring it. It is also the posture
+    `.github/copilot-instructions.md` already states: breaking loudly is acceptable at this stage,
+    degrading silently is not. Tests 3218 -> **3227** (+9), including the pairing test that asserts
+    both halves together -- absent format plus absent `kind` yields a table, newer format plus absent
+    `kind` is refused -- because either half alone reads as arbitrary. Probed: removing the check at
+    both sites reddens 5 assertions across 3 tests. NEWS carries it.
   - Tests 3077 -> **3218** (+141), FAIL 0 / WARN 0 / SKIP 0. `dev/check-spec.R` 9/9; `R CMD check`
     0/0/0 on docs and code/documentation agreement. Four internal `man/` pages plus
     `man/datom_member.Rd`, a NAMESPACE entry, and a new **Sets** section in `_pkgdown.yml` (which
@@ -3035,3 +3062,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-11 | **(implementation) the tag grammar delegates per-value type checking to the ENCODER's coercion rather than restating it.** `.datom_validate_tag_map()` calls `.datom_sv1_as_strings()` per value, which already refuses a number, a logical, a factor, a function, a nested object, and every form of missing value, each with a message naming the key path and the allowed types. Two copies of "what counts as text here" would eventually disagree, and the encoder's copy is the one the goldens freeze. What the validator adds on top is exactly what the cold-start audit predicted: the **empty-label** refusal (there is no `nzchar()` check anywhere in the encoder, so `""` hashes as an ordinary label), the four-key `id` shape, and `kind` being one of exactly two values. Not a breach of "the encoder does not validate" -- the borrowing runs the other way, and validation still runs first so its messages arrive first. | Task 8, R2.11, AC27 |
 | 2026-09-11 | **(implementation) canonical form is NOT computed at construction, deliberately.** `datom_member()` drops an empty-valued key and validates what remains; it does not sort keys, sort or deduplicate values, unbox a single value, or order members. Those are R2.15's, they belong to the set write, and having one implementation of canonical form is worth more than showing a caller the tidy spelling one step earlier. A test pins that an out-of-order duplicated tag value survives the constructor untouched, so the boundary is asserted rather than assumed. Related: a **named character vector** (`c(type = "output")`) is refused rather than coerced to a list -- it cannot express a multi-valued tag, so accepting it would add an unrequested tidy rule that Task 9's canonicalizer would also have to know about. | Task 8, Task 9, R2.15 |
 | 2026-09-11 | **(implementation) a snapshot declaring a kind this build does not know is refused, and the message says to upgrade.** `kind` absent means a snapshot written before the field existed, and every one of those describes a table, so the fallback is sound. A snapshot declaring something else -- a third kind from a newer datom -- is a different case: passing it through would put a pointer nothing can classify into a citable payload, and a reader meeting it would not know whether to resolve it as a table or as a set. `.datom_artifact_kinds` (`R/utils-validate.R:17`) is the vocabulary, **append-only** for the same reason the write-side field lists are: a build that stopped recognising a kind would refuse an older document and block the upgrade direction. | Task 8, Task 10, R22.8, I31 |
+| 2026-09-11 | **REVERSED the same day by review: BOTH version-pinned snapshot readers now check the format they are handed.** Task 8 shipped `datom_member()` with no `.datom_check_schema_version()` on the snapshot it reads, on the audit's stated default of mirroring `datom_parent()`. The default asked whether the two siblings should agree and stopped one question short of what the absent check was holding up: **the `kind` fallback**. An absent `kind` is read as `"table"` -- right for a document written before the field existed, wrong for one written by a build this version cannot fully parse, where a **set** is recorded as a table. That misreading is durable, not momentary: it enters the member record, the stored payload, and the set's own `data_sha`, so a citation names the wrong kind of artifact permanently and nothing fails. **The codebase had already settled the pattern and the audit missed it**: `.datom_rebuild_manifest_entry()` checks the per-artifact document (`R/manifest-rebuild.R:196`) and then applies the identical fallback (`:210`) -- so of three sites deriving `kind` from such a document, one checked and two did not, which makes the two the anomaly rather than the check the innovation. `datom_parent()` was gated in the same commit: its two fields are durable at one remove (`data_sha` becomes a storage address, `source_lineage` is unioned into the lineage of whatever table declares the parent), and leaving one sibling ungated is precisely what turned a gap into a precedent. **Verified rather than assumed** before agreeing: the snapshot is written from the same object as `metadata.json` (`.datom_push_metadata_s3()` writes one object to three keys), so it carries the format number and the check is live rather than theatre; and `datom_read(version = )` does **not** read the snapshot at all -- it resolves from `version_history.json` -- so the gap really was exactly two functions. Both checks sit **outside** the not-found handler, or the refusal is reworded as "member not found" (the Task 4 lesson). **The behaviour change is accepted, not incidental**: a snapshot declaring a newer format now aborts where it previously half-worked. Licensed by the owner's standing position, stated the same day -- the released versions are experimental and unannounced, and support for them must not buy fragility for what comes next -- and by the posture already in `.github/copilot-instructions.md`: breaking loudly is acceptable here, degrading silently is not. Tests 3218 -> **3227** (+9). | Task 8, Task 22, Task 4, R9.2, I4, `R/lineage.R` |
+| 2026-09-11 | **The `kind` fallback STAYS, and the reason is a use case rather than back-compatibility sentiment.** With the format check in place, the obvious next move -- drop the fallback and require `kind` -- was considered and rejected. Every version written before Task 7 has a snapshot with no `kind`, and requiring the field would make those versions **uncitable**: a set could name only versions written by this release onward. R2.14a wants exactly the opposite, since its worked example is a current table sitting beside a **locked baseline**, and a baseline is by definition an older pinned version. So the fallback is not the past being carried at the future's expense; it is what makes historical versions citable at all, and the format check is what makes it safe by construction rather than by convention. Recorded because the owner's standing position on not supporting released versions would otherwise point at removing it. | Task 8, R2.14a, R22.8 |

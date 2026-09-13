@@ -52,11 +52,14 @@
 }
 
 
-#' Drop Tag Keys That Carry No Labels
+#' Drop Tag Keys Whose Value Is Empty
 #'
-#' The one tidy rule this file owns: a key whose value is empty is removed,
-#' because "no labels" is spelled by omitting the key. Nothing is lost -- an
-#' empty value states no fact -- and leaving it in would be worse than cosmetic:
+#' The one tidy rule this file owns: a key that points at nothing is removed,
+#' because a tag with no values is spelled by omitting the key. Note this is
+#' about a tag *value*, not about a member having no tags at all -- a member with
+#' no tags is the ordinary case and is simply accepted. Nothing is lost here --
+#' an empty value states no fact -- and leaving it in would be worse than
+#' cosmetic:
 #' a present key with an empty value hashes differently from an absent key, so
 #' the same fact would mint two different `data_sha` values.
 #'
@@ -150,7 +153,8 @@
       cli::cli_abort(bullets(
         "{.field {label}} contains an empty label.",
         "i" = paste0("A zero-length string is a label with no name -- almost ",
-                     "always an accident. Omit the key to mean no labels.")
+                     "always an accident. To mean {.emph no value here}, omit ",
+                     "the key; to mean {.emph no tags at all}, omit tags.")
       ))
     }
   }
@@ -303,9 +307,15 @@
 #'
 #' Values are text only: no numbers, booleans, or nesting. Write a numeric label
 #' as a string (`"500"`) and parse it downstream, exactly as you would a folder
-#' name. A key with no labels is dropped rather than refused, since that is how
-#' "no labels" is spelled; an empty string is refused, because a label with no
-#' name is almost always an accident.
+#' name.
+#'
+#' Three outcomes, and the difference is whether anything is actually there:
+#'
+#' | What you pass | What happens |
+#' |---|---|
+#' | no `tags` | accepted; the record carries no `tags` |
+#' | `list(domain = character(0))` or `list(domain = NULL)` | the key is dropped, as if never mentioned |
+#' | `list(domain = "")` | refused -- a label with no name is almost always an accident |
 #'
 #' @param conn A `datom_conn` scoped to the **member's** project store, from
 #'   [datom_get_conn()].
@@ -383,10 +393,21 @@ datom_member <- function(conn, name, version, tags = NULL) {
     }
   )
 
-  # Absent means a snapshot written before datom recorded the field, and every
-  # such snapshot describes a table -- sets did not exist yet. The fallback is
-  # not padding: an untyped pointer is one a reader cannot classify, so it would
-  # not know whether to resolve it with datom_read() or datom_read_set().
+  # THE FORMAT CHECK IS WHAT MAKES THE `kind` FALLBACK BELOW SAFE, and the two
+  # must stay together. The fallback reads an absent `kind` as `"table"`, which
+  # is right for a document written before datom recorded the field and wrong
+  # for one written by a build this version cannot fully parse -- there, a set
+  # would be recorded as a table, and that misreading is durable: it goes into
+  # the member record, into the stored payload, and into the set's own identity,
+  # with nothing failing. Refusing a too-new document first is what separates
+  # "old, therefore certainly a table" from "newer, therefore unknown".
+  #
+  # Deliberately OUTSIDE the handler above: inside it, a refusal would be
+  # reworded as "member not found", which buries the one actionable line.
+  # Same pairing as `.datom_rebuild_manifest_entry()`, which checks and then
+  # falls back in the same way.
+  .datom_check_schema_version(snap, key)
+
   kind <- snap$kind %||% "table"
   if (!.datom_is_text_scalar(kind) || !kind %in% .datom_artifact_kinds) {
     cli::cli_abort(c(

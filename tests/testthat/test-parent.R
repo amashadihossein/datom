@@ -136,6 +136,37 @@ test_that("aborts when the snapshot read fails, naming table/version/project", {
   expect_match(msg, "study001")
 })
 
+test_that("aborts when the snapshot declares a newer schema", {
+  # The snapshot is byte-identical to metadata.json, so it carries the format
+  # number. Both fields read out of it are durable -- data_sha becomes a storage
+  # address, source_lineage is unioned into a written table's lineage -- so a
+  # half-understood document would be copied forward, not just misread once.
+  conn <- .parent_conn("study001")
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      c(.parent_snapshot(), list(schema_version = 99L))
+    }
+  )
+
+  err <- expect_error(
+    datom_parent(conn, "dm", "9f3aa1b2c3"),
+    class = "datom_schema_unsupported"
+  )
+  # Checked outside the handler that turns a read failure into "not found".
+  expect_false(grepl("not found", conditionMessage(err), fixed = TRUE))
+})
+
+test_that("a snapshot with no declared schema is tolerated as v1", {
+  conn <- .parent_conn("study001")
+
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) .parent_snapshot()
+  )
+
+  expect_equal(datom_parent(conn, "dm", "9f3aa1b2c3")$data_sha, "d_dm_aaa")
+})
+
 test_that("aborts when the snapshot is missing data_sha", {
   snap <- .parent_snapshot(data_sha = NULL)
   conn <- .parent_conn("study001")

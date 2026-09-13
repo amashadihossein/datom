@@ -214,6 +214,22 @@ lag a partial write while that document cannot.
   altered or invalidated. It happens once per table, at that table's next write.
   A table you never write again is never touched.
 
+* **A version-pinned metadata document written by a newer datom is now refused
+  rather than partly read.** `datom_parent()` reads the snapshot for one exact
+  version, and it did not check the format that snapshot declares -- so a
+  document from a future version was read with whatever fields this build happens
+  to look for and the rest ignored. It now stops with the same upgrade message
+  every other reader gives. Two things make this worth a refusal rather than a
+  best effort: the fields taken out of that document are durable (one becomes a
+  storage address, one is folded into the lineage of whatever table declares the
+  parent), and `kind` is read from the same document with an absent value meaning
+  "written before the field existed" -- true of an older document and false of a
+  newer one, where it would type the wrong kind of artifact permanently and
+  silently.
+
+  Nothing changes for any document datom has ever written: a snapshot with no
+  declared format is still read as version 1 and still works.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

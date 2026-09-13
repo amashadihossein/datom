@@ -51,9 +51,14 @@ that an item can be in more than one category at once:
 
 Values are text only: no numbers, booleans, or nesting. Write a numeric label
 as a string (\code{"500"}) and parse it downstream, exactly as you would a folder
-name. A key with no labels is dropped rather than refused, since that is how
-"no labels" is spelled; an empty string is refused, because a label with no
-name is almost always an accident.
+name.
+
+Three outcomes, and the difference is whether anything is actually there:\tabular{ll}{
+   What you pass \tab What happens \cr
+   no \code{tags} \tab accepted; the record carries no \code{tags} \cr
+   \code{list(domain = character(0))} or \code{list(domain = NULL)} \tab the key is dropped, as if never mentioned \cr
+   \code{list(domain = "")} \tab refused -- a label with no name is almost always an accident \cr
+}
 }
 
 \examples{

@@ -77,6 +77,60 @@ test_that("kind defaults to table for a snapshot written before the field", {
   expect_equal(datom_member(conn, "dm", "9f3aa1b2c3")$id$kind, "table")
 })
 
+test_that("the fallback fires only on a document this build fully understands", {
+  # THE PAIRING THAT MAKES THE FALLBACK SAFE, so the two halves are asserted
+  # together rather than in two files. Absent `kind` means "written before the
+  # field existed" only while the document's format is one this build knows.
+  conn <- .member_conn()
+
+  # (a) No declared format at all: pre-v2, therefore pre-`kind`, therefore a
+  # table. Tolerated, and the fallback is correct.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) .member_snapshot(kind = NULL)
+  )
+  expect_equal(datom_member(conn, "dm", "9f3aa1b2c3")$id$kind, "table")
+
+  # (b) A format above what this build supports, with `kind` absent from where
+  # this build looks for it. Refused rather than read as a table -- otherwise a
+  # set would be cited as a table, permanently and silently, because the record
+  # goes into the payload and into the set's own identity.
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      c(.member_snapshot(kind = NULL), list(schema_version = 99L))
+    }
+  )
+  expect_error(
+    datom_member(conn, "dm", "9f3aa1b2c3"),
+    class = "datom_schema_unsupported"
+  )
+})
+
+test_that("the format refusal is not reworded as a missing member", {
+  conn <- .member_conn()
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      c(.member_snapshot(), list(schema_version = 99L))
+    }
+  )
+
+  err <- expect_error(datom_member(conn, "dm", "9f3aa1b2c3"))
+  # The check sits outside the handler that turns a read failure into "not
+  # found"; inside it, the upgrade instruction becomes a footnote.
+  expect_false(grepl("not found", conditionMessage(err), fixed = TRUE))
+  expect_match(conditionMessage(err), "Upgrade")
+})
+
+test_that("a snapshot declaring the current format is accepted", {
+  conn <- .member_conn()
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      c(.member_snapshot("set"), list(schema_version = 2L))
+    }
+  )
+
+  expect_equal(datom_member(conn, "adam", "7c1bb2d3e4")$id$kind, "set")
+})
+
 test_that("record retains no connection and is serializable", {
   conn <- .member_conn()
   local_mocked_bindings(
