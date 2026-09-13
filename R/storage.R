@@ -558,3 +558,88 @@ datom_storage_verify <- function(from_conn, to_conn,
 
   out
 }
+
+
+# ==============================================================================
+# datom_storage_read_json()
+# ==============================================================================
+
+#' Read a JSON Document from a datom Storage Namespace
+#'
+#' Reads and parses a JSON object from storage, dispatching on the connection's
+#' backend. Intended for package developers building tools on top of datom
+#' (e.g. datomanager) that need to inspect datom's own documents -- manifests,
+#' metadata, version history -- without reaching into internals via `:::`.
+#'
+#' End users should prefer the purpose-built readers: [datom_read()] for table
+#' data, [datom_list()] and [datom_summary()] for the manifest, and
+#' [datom_history()] for version history. This export is a byte-level
+#' primitive and does not interpret what it reads.
+#'
+#' `key` is a **relative** key -- the portion after `{prefix}/datom/`, e.g.
+#' `"dm/.metadata/metadata.json"`. The backend prepends the namespace itself,
+#' so passing a full key (one containing a `datom/` segment) is refused rather
+#' than silently resolving under `{prefix}/datom/{prefix}/datom/` and finding
+#' nothing. Keys containing a `..` segment or a leading `/` are refused too:
+#' reads are confined to this project's namespace.
+#'
+#' There is no corresponding write export. Documents are written by
+#' purpose-built verbs ([datom_write()], [datom_repo_attach_governance()]), not
+#' by a generic byte channel, so that every mutation of a datom namespace
+#' routes through a function that knows what it is writing.
+#'
+#' @param conn A `datom_conn` object.
+#' @param key Relative storage key (after `{prefix}/datom/`).
+#' @return The parsed JSON document as an R list. Nested structures are kept as
+#'   lists (`simplifyVector = FALSE`), so JSON arrays of objects do not collapse
+#'   into data frames.
+#' @export
+#' @seealso [datom_storage_list()] to discover keys; [datom_read()],
+#'   [datom_list()], [datom_history()] for the interpreted equivalents.
+#' @examples
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#'
+#'   # Relative key: the part after `{prefix}/datom/`
+#'   meta <- datom_storage_read_json(conn, "dm/.metadata/metadata.json")
+#'   print(meta$hash_algo)
+#'
+#'   unlink(tmp, recursive = TRUE)
+#' }
+datom_storage_read_json <- function(conn, key) {
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object.")
+  }
+  .datom_validate_rel_key(key, arg = "key")
+
+  # Probed up front so the "not found" message is the same on both backends.
+  # The local backend already aborts clearly on a missing file; S3 surfaces
+  # the provider's own error, which names the full key and not the relative
+  # one the caller passed.
+  if (!.datom_storage_exists(conn, key)) {
+    cli::cli_abort(
+      c(
+        "No object found at that storage key.",
+        "x" = "Key: {.val {key}}",
+        "i" = "Keys are relative to {.val {{prefix}}/datom/}. Use {.fun datom_storage_list} to see what exists."
+      )
+    )
+  }
+
+  .datom_storage_read_json(conn, key)
+}

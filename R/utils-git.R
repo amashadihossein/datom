@@ -376,10 +376,22 @@
     )
 
     if (isTRUE(merge_result$conflicts)) {
+      # Do NOT tell the caller to pull -- the pull is what produced this.
+      # Conflicts here are almost always in datom's own generated JSON
+      # (`version_history.json`, `.datom/manifest.json`), which a re-run
+      # rebuilds from the data, so keeping the remote side is the safe
+      # resolution rather than a hand-merge of hashes.
       cli::cli_abort(c(
         "Merge conflict detected \u2014 manual resolution required.",
-        "i" = "Pull latest changes, resolve conflicts, and re-run.",
-        "i" = "Use {.code git status} to see conflicting files."
+        "i" = "See the conflicting files with {.code git status}.",
+        "i" = paste(
+          "For datom's own files ({.file version_history.json},",
+          "{.file .datom/manifest.json}), keep the remote version",
+          "({.code git checkout --theirs <file>}) and re-run your write --",
+          "it rebuilds your side from the data."
+        ),
+        "i" = "For your own files, resolve by hand, then commit and re-run.",
+        "i" = "Nothing has been written to storage, so no version is half-published."
       ))
     }
   }
@@ -395,6 +407,13 @@
 #' telling the developer to pull first.
 #'
 #' Does NOT auto-pull - lets the developer decide how to resolve.
+#'
+#' If the fetch fails (offline, unreachable remote), this warns and returns
+#' `TRUE` without comparing anything: the cached remote-tracking refs may be
+#' arbitrarily stale, so acting on them would abort an offline developer for
+#' being behind a remote they cannot reach. The backstop is
+#' `.datom_git_push()`, which pulls and aborts if the push is rejected, so a
+#' write cannot land on storage from a stale base.
 #'
 #' @param path Repository path.
 #' @param pat GitHub personal access token. Passed to
@@ -419,14 +438,26 @@
   cred <- .datom_git_credentials(remote_url, pat = pat)
 
   # Fetch to update remote refs (cheap -- no merge)
-  tryCatch(
-    git2r::fetch(repo, name = remote_name, credentials = cred),
+  #
+  # The fetch outcome is captured and acted on OUTSIDE the handler. A bare
+  # `return()` inside the error function returns from the handler, not from
+  # this function, so execution would continue and compare HEAD against
+  # whatever the last successful fetch cached -- aborting an offline user for
+  # being "behind" a remote they cannot reach.
+  fetched <- tryCatch(
+    {
+      git2r::fetch(repo, name = remote_name, credentials = cred)
+      TRUE
+    },
     error = function(e) {
       # Network errors should not block offline work
       cli::cli_alert_warning("Could not fetch from remote: {conditionMessage(e)}")
-      return(invisible(TRUE))
+      FALSE
     }
   )
+
+  # Cached upstream refs may be arbitrarily stale, so they are not compared
+  if (!fetched) return(invisible(TRUE))
 
   # Check if upstream branch exists
   upstream_ref <- tryCatch(

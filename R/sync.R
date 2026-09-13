@@ -140,17 +140,22 @@ datom_pull <- function(conn) {
     ))
   }
 
-  # Discover tables from git repo (directories with metadata.json)
-  repo_path <- conn$path
-  table_dirs <- fs::dir_ls(repo_path, type = "directory")
-  table_dirs <- table_dirs[!grepl("^\\.", fs::path_file(table_dirs))]
-  table_dirs <- table_dirs[!fs::path_file(table_dirs) %in%
-    c("input_files", "renv", "man", "R", "tests", "vignettes", "src")]
+  # The write entry, here rather than only at datom_write()'s door, because this
+  # function has a second caller that does not go through that door:
+  # `datom_validate(fix = TRUE)` calls it directly (`R/validate.R:183`). Left
+  # ungated there, a build the repo has declared too old could still publish this
+  # repo's documents to storage -- through a command that reads as a repair.
+  #
+  # It runs on the datom_write() route too, where the door has already run. That
+  # is deliberate: every step is a local file read and none of them mutates
+  # anything, so the cost of the second pass is nothing, and gating the function
+  # rather than each caller means the next caller cannot forget.
+  #
+  # `NULL` because this route touches every artifact in the clone, not one.
+  .datom_check_write_entry(conn, NULL)
 
-  table_names <- fs::path_file(table_dirs)
-  table_names <- table_names[purrr::map_lgl(table_dirs, function(d) {
-    fs::file_exists(fs::path(d, "metadata.json"))
-  })]
+  repo_path <- conn$path
+  table_names <- .datom_clone_artifact_names(conn)
 
   # Interactive confirmation
   if (isTRUE(.confirm)) {
@@ -176,9 +181,37 @@ datom_pull <- function(conn) {
   repo_files_synced <- character()
   manifest_local <- fs::path(repo_path, ".datom", "manifest.json")
   if (fs::file_exists(manifest_local)) {
-    data <- jsonlite::read_json(manifest_local)
-    .datom_storage_write_json(conn, ".metadata/manifest.json", data)
-    repo_files_synced <- c(repo_files_synced, ".metadata/manifest.json")
+    # Read through the shared reader rather than copying the file's bytes, for
+    # two reasons. A clone still in an older shape would otherwise be pushed to
+    # storage in that shape by a build that knows the current one; and this
+    # route is reachable from datom_validate(fix = TRUE), which does not pass
+    # through datom_write()'s door, so this read is what stops it mirroring a
+    # manifest it cannot understand.
+    #
+    # The converted document goes to storage and the clone's file is left
+    # alone: this route makes no commit, so rewriting the tracked file here
+    # would leave the repo dirty with a change nobody asked for. For a window
+    # the clone is older-shaped and storage is current-shaped; both are
+    # internally consistent and both read correctly.
+    #
+    # `operation = "write"` because that is what this is: the document is on its
+    # way to storage. The entry above would normally have refused a too-new
+    # manifest before this line, but this read must not be correct only because
+    # of that -- a message whose accuracy rests on an upstream refusal starts
+    # lying the day the refusal moves.
+    read <- .datom_read_manifest(conn, "clone", operation = "write")
+
+    # A file that disappeared between the check above and the read is an
+    # absence, not a failure: the reader reports it with no condition attached,
+    # and stop(NULL) would abort with an empty message. Same split as the
+    # clone reader in .datom_status_input_files().
+    if (!read$ok && !read$absent) stop(read$error)
+
+    if (read$ok) {
+      .datom_notify_manifest_upgraded(read$declared, "data storage")
+      .datom_storage_write_json(conn, ".metadata/manifest.json", read$manifest)
+      repo_files_synced <- c(repo_files_synced, ".metadata/manifest.json")
+    }
   }
 
   cli::cli_alert_success(
@@ -191,7 +224,8 @@ datom_pull <- function(conn) {
       .datom_sync_table_metadata(conn, tbl)
     }, error = function(e) {
       cli::cli_alert_danger("Failed to sync {.val {tbl}}: {conditionMessage(e)}")
-      list(name = tbl, action = "error", error = conditionMessage(e))
+      # ansi_strip on the stored copy only -- the alert above keeps its colour.
+      list(name = tbl, action = "error", error = cli::ansi_strip(conditionMessage(e)))
     })
   })
   names(table_results) <- table_names
@@ -222,7 +256,7 @@ datom_pull <- function(conn) {
   metadata_path <- fs::path(table_dir, "metadata.json")
   if (fs::file_exists(metadata_path)) {
     data <- jsonlite::read_json(metadata_path)
-    s3_key <- paste0(name, "/.metadata/metadata.json")
+    s3_key <- .datom_artifact_meta_key(name, "metadata")
     .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
@@ -231,7 +265,7 @@ datom_pull <- function(conn) {
   history_path <- fs::path(table_dir, "version_history.json")
   if (fs::file_exists(history_path)) {
     data <- jsonlite::read_json(history_path)
-    s3_key <- paste0(name, "/.metadata/version_history.json")
+    s3_key <- .datom_artifact_meta_key(name, "version_history")
     .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)
   }
@@ -243,6 +277,10 @@ datom_pull <- function(conn) {
     for (snap in snapshot_files) {
       snap_name <- fs::path_file(snap)
       data <- jsonlite::read_json(snap)
+      # Not the snapshot-key helper: `snap_name` is a discovered FILENAME
+      # (already `{sha}.json`), not a bare sha, so the helper's sha guard does
+      # not apply. Guarding here would also change behavior -- a stray .json in
+      # .metadata/ would start aborting instead of being uploaded.
       s3_key <- paste0(name, "/.metadata/", snap_name)
       .datom_storage_write_json(conn, s3_key, data)
       s3_keys <- c(s3_keys, s3_key)
@@ -366,13 +404,19 @@ datom_sync_manifest <- function(conn,
     ))
   }
 
-  # Read current manifest (local git copy)
-  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
-  current_manifest <- if (fs::file_exists(manifest_path)) {
-    jsonlite::read_json(manifest_path)
-  } else {
-    list(tables = list())
-  }
+  # Read current manifest (local git copy). .datom_read_manifest() also checks
+  # the declared schema version, because the clone can be ahead of this build (a
+  # collaborator wrote with a newer datom and this developer pulled) and the
+  # comparison below would otherwise run against a shape this build does not
+  # understand.
+  read <- .datom_read_manifest(conn, "clone")
+
+  # No manifest yet means every input file is new. A manifest that exists but
+  # will not parse keeps failing exactly as before -- re-signalled unchanged
+  # rather than reworded.
+  if (!read$ok && !read$absent) stop(read$error)
+
+  current_manifest <- if (read$ok) read$manifest else .datom_manifest_skeleton()
 
   # Build manifest rows
   rows <- purrr::map(all_files, function(fp) {
@@ -384,7 +428,7 @@ datom_sync_manifest <- function(conn,
     # Compare against current manifest. A non-allowlisted format is flagged up
     # front and never reaches the new/changed comparison -- it is not
     # actionable regardless of whether its bytes moved.
-    existing <- current_manifest$tables[[table_name]]
+    existing <- current_manifest$artifacts[[table_name]]
     status <- if (!tolower(file_format) %in% .datom_import_formats) {
       "unsupported_format"
     } else if (is.null(existing)) {
@@ -592,7 +636,9 @@ datom_sync <- function(conn,
 
     }, error = function(e) {
       manifest$result[i] <<- "error"
-      manifest$error[i] <<- conditionMessage(e)
+      # ansi_strip: this is a data frame column the caller prints, so cli's
+      # colour and hyperlink escape codes would show up as literal text.
+      manifest$error[i] <<- cli::ansi_strip(conditionMessage(e))
 
       if (continue_on_error) {
         cli::cli_alert_danger("Failed to sync {.val {tbl_name}}: {conditionMessage(e)}")
@@ -616,6 +662,361 @@ datom_sync <- function(conn,
   )
 
   manifest
+}
+
+
+# --- Shared manifest access ----------------------------------------------------
+
+#' The Artifacts Present in the Local Clone
+#'
+#' Enumerates the artifact directories in the git checkout by the one signal
+#' that identifies them: a directory holding a `metadata.json`. Deliberately
+#' independent of the manifest, so it still answers correctly when the manifest
+#' is the document under suspicion.
+#'
+#' Two callers, and they must agree. The data-side metadata sync mirrors exactly
+#' these artifacts to storage, and the write-entry check inspects exactly the
+#' documents that route is about to write -- so discovering them twice, in two
+#' spellings, is how the door ends up checking a different set than the one that
+#' gets written.
+#'
+#' The directory filter is the pre-existing one: dotfiles out, plus the fixed
+#' list of non-artifact directories a joint repo carries (`R/`, `tests/`,
+#' `renv/`, and so on). It is a convenience rather than the discriminator --
+#' `metadata.json` is what actually decides -- which is why a foreign directory
+#' not on the list is tolerated rather than misread (R14.2).
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @return Character vector of artifact names, possibly empty.
+#' @keywords internal
+.datom_clone_artifact_names <- function(conn) {
+  if (is.null(conn$path) || !nzchar(conn$path)) return(character())
+  if (!fs::dir_exists(conn$path)) return(character())
+
+  dirs <- fs::dir_ls(conn$path, type = "directory")
+  dirs <- dirs[!grepl("^\\.", fs::path_file(dirs))]
+  dirs <- dirs[!fs::path_file(dirs) %in%
+    c("input_files", "renv", "man", "R", "tests", "vignettes", "src")]
+
+  dirs <- dirs[purrr::map_lgl(dirs, function(d) {
+    fs::file_exists(fs::path(d, "metadata.json"))
+  })]
+
+  as.character(fs::path_file(dirs))
+}
+
+
+#' Select the Artifacts of One Kind
+#'
+#' The one place the artifact list is filtered by `kind`. Four counters need it
+#' -- two in the manifest's stored `summary` block, plus the numbers
+#' [datom_summary()] and [datom_status()] count for themselves -- and a
+#' predicate written out at each of them is a predicate that can differ at one
+#' of them.
+#'
+#' **An entry that is not a named list is skipped rather than dereferenced.**
+#' The upgrade step deliberately passes such an entry through untouched, because
+#' it has no shape to convert; without the check here, that preserved entry
+#' reaches `entry$kind` and aborts with "$ operator is invalid for atomic
+#' vectors". [datom_status()] is the one that must not do that: it exists to
+#' describe a connection when the manifest cannot be trusted, and this count
+#' sits outside the error handling that gives it that tolerance. A hand-edited
+#' manifest is exactly the document most likely to reach it.
+#'
+#' Skipping is not the same as tolerating a **missing** `kind`, which stays
+#' deliberately uncounted: a typed entry with no type means the conversion was
+#' skipped, and a visibly wrong count is the intended signal for that.
+#'
+#' @param artifacts The manifest's `artifacts` list, or `NULL`.
+#' @param kind `"table"` or `"set"`.
+#' @return The entries of that kind, names preserved.
+#' @keywords internal
+.datom_artifacts_of_kind <- function(artifacts, kind) {
+  purrr::keep(artifacts %||% list(), function(entry) {
+    is.list(entry) && identical(entry$kind, kind)
+  })
+}
+
+
+#' Say That a Manifest's Format Was Moved Forward
+#'
+#' Called from the two places that **persist** a converted manifest: the entry
+#' updater, which rewrites the git-tracked file, and the data-side metadata sync,
+#' which mirrors the converted document to storage. Reads convert too and stay
+#' silent, deliberately -- a read changes nothing, and a line on every
+#' [datom_list()] call would be noise nobody can act on.
+#'
+#' Why say anything: conversion is one-way for everybody else. Once this repo's
+#' manifest declares the newer format, a collaborator on an older datom no longer
+#' finds the artifact list where their build looks for it, and their
+#' `datom_list()` reports an empty repo **without erroring**. Their
+#' [datom_read()] keeps working, because the data path never touches the
+#' manifest. That is a real consequence of a command whose stated job was
+#' something else -- `datom_validate(fix = TRUE)` in particular reads as a
+#' repair -- and an unannounced one is the silent degradation the whole schema
+#' contract exists to remove.
+#'
+#' No-op when the document was already current, which is every ordinary write.
+#'
+#' @param declared The version the document declared before conversion, as
+#'   returned by [.datom_check_schema_version()].
+#' @param where Human-readable name of the copy being written.
+#' @return Invisibly `NULL`.
+#' @keywords internal
+.datom_notify_manifest_upgraded <- function(declared, where) {
+  if (as.integer(declared) >= .datom_supported_schema) return(invisible(NULL))
+
+  cli::cli_alert_info(c(
+    "Manifest format moved from v{as.integer(declared)} to ",
+    "v{(.datom_supported_schema)} in {where}."
+  ))
+  cli::cli_bullets(c(
+    "i" = paste0(
+      "Collaborators on an older datom will list this repo as empty until they ",
+      "upgrade; reading a known table still works. See {.field NEWS} for which ",
+      "release supports which format."
+    )
+  ))
+
+  invisible(NULL)
+}
+
+
+#' Empty Manifest Skeleton
+#'
+#' The one shape of an empty manifest. Callers that need a manifest when none
+#' exists yet build it here rather than inline, so a later change to the
+#' manifest's shape has a single place to land.
+#'
+#' `artifacts` is a **named** empty list on purpose: `jsonlite` serializes an
+#' empty bare list as a JSON array (`[]`) and an empty named list as an object
+#' (`{}`), and a manifest's artifact block must be an object. Inert today, since
+#' nothing writes a manifest that still has zero entries, and correct for the one
+#' case where it would.
+#'
+#' The skeleton declares `schema_version` itself, so no repo ever exists in a
+#' state that declares no format at all -- not even between being created and
+#' receiving its first artifact. This covers only the built-from-nothing path:
+#' a document read from disk in an older shape gets its version from
+#' [.datom_manifest_upgrade()] instead, because the skeleton is unreachable
+#' whenever a manifest file exists.
+#'
+#' @param project_name Project name, or `NULL` to omit the field (callers that
+#'   only need somewhere to look up entries have no project name to hand).
+#' @return A list with `schema_version`, `project_name` (when supplied),
+#'   `artifacts` and `summary`.
+#' @keywords internal
+.datom_manifest_skeleton <- function(project_name = NULL) {
+  skeleton <- list(schema_version = .datom_supported_schema)
+  if (!is.null(project_name)) skeleton$project_name <- project_name
+  skeleton$artifacts <- structure(list(), names = character(0))
+  skeleton$summary <- list()
+  skeleton
+}
+
+
+#' Read a Manifest and Check Its Schema Version
+#'
+#' The single manifest read. Every reader that takes a manifest *into* datom
+#' goes through this, so the compatibility check happens once and cannot be
+#' softened by a caller's error handling.
+#'
+#' Two kinds of failure, handled deliberately differently:
+#'
+#' * **An IO failure is returned as data** (`ok = FALSE`), because each caller
+#'   has its own policy: `datom_list()` and `datom_summary()` abort,
+#'   `datom_status()` reports the manifest unavailable and carries on, and the
+#'   clone readers fall back to an empty manifest when the file does not exist
+#'   yet.
+#' * **A schema refusal is thrown**, so the "upgrade datom" message reaches the
+#'   user intact. Placed inside a caller's `tryCatch` it would be reworded as
+#'   "could not read manifest" at two sites and downgraded to a warning at a
+#'   third -- see `dev/engineering-notes.md`. Throwing from in here means there
+#'   is no handler for a caller to put it inside.
+#'
+#' **And one document that is not a failure at all.** When the artifact list is
+#' missing from where this build looks for it -- either because the format is
+#' newer than this build knows, or because the key is simply not there after the
+#' conversion has run -- the index is **reconstructed from storage** and a warning
+#' says so. The manifest summarises documents that each hold the same facts, so it
+#' is the one datom-owned file with something to rebuild it from. A **writer**
+#' meeting either condition is refused instead
+#' ([.datom_check_write_entry()]): reads limp, writes stop.
+#'
+#' @param conn A `datom_conn` object.
+#' @param scope `"storage"` for the copy in data storage
+#'   (`.metadata/manifest.json`), `"clone"` for the git-tracked copy
+#'   (`.datom/manifest.json`). Both exist; they can differ, and which one a
+#'   caller wants is a real choice rather than a default.
+#' @param operation What the caller is about to do with the document --
+#'   `"read"` (default) or `"write"`. Passed through to
+#'   [.datom_check_schema_version()], where it only selects a word in the
+#'   refusal message, so that a write stopped at the door does not report the
+#'   format as one this build "cannot read".
+#' @return A list with:
+#'   * `ok` -- `TRUE` when the manifest was read and parsed.
+#'   * `absent` -- `TRUE` only when the document is *known* not to exist. That
+#'     is decided for `scope = "clone"`, where testing a local path is free.
+#'     For `scope = "storage"` it is always `FALSE`, meaning "not known to be
+#'     absent": separating a missing object from an unreachable store would
+#'     cost an extra request on every read and no caller distinguishes them.
+#'   * `manifest` -- the parsed document **in current shape**, or `NULL` when
+#'     `ok` is `FALSE`. A document written in an older shape is converted in
+#'     memory on the way through ([.datom_manifest_upgrade()]); one whose artifact
+#'     list this build cannot reach is reconstructed from storage
+#'     ([.datom_rebuild_manifest()]). Neither modifies the file on disk or in
+#'     storage. So no caller ever sees a pre-current shape and none needs a
+#'     fallback for one.
+#'   * `error` -- the condition that stopped the read, or `NULL`. The whole
+#'     condition rather than its text, so a caller can re-signal the original
+#'     failure unchanged instead of manufacturing a look-alike.
+#'   * `declared` -- the version the document declared **before** conversion, or
+#'     `NA_integer_` when nothing was read. Held so a caller that goes on to
+#'     write the converted document can say the format moved, without
+#'     re-deriving the comparison or reading the file twice.
+#' @keywords internal
+.datom_read_manifest <- function(conn,
+                                 scope = c("storage", "clone"),
+                                 operation = c("read", "write")) {
+  scope <- match.arg(scope)
+  operation <- match.arg(operation)
+
+  source <- if (scope == "storage") ".metadata/manifest.json" else ".datom/manifest.json"
+
+  if (scope == "clone") {
+    manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
+    if (!fs::file_exists(manifest_path)) {
+      return(list(
+        ok = FALSE, absent = TRUE, manifest = NULL, error = NULL,
+        declared = NA_integer_
+      ))
+    }
+  }
+
+  # The handler covers the read ONLY. The schema check below must stay outside
+  # it: inside, a refusal would come back as an IO failure and every caller's
+  # tolerance would apply to it.
+  read <- tryCatch(
+    list(
+      ok = TRUE,
+      absent = FALSE,
+      manifest = if (scope == "storage") {
+        .datom_storage_read_json(conn, ".metadata/manifest.json")
+      } else {
+        jsonlite::read_json(fs::path(conn$path, ".datom", "manifest.json"))
+      },
+      error = NULL,
+      declared = NA_integer_
+    ),
+    error = function(e) {
+      list(
+        ok = FALSE, absent = FALSE, manifest = NULL, error = e,
+        declared = NA_integer_
+      )
+    }
+  )
+
+  if (!read$ok) return(read)
+
+  # A format above what this build supports is a refusal for a writer and a
+  # rebuild for a reader -- same evidence, opposite responses, because reads limp
+  # and writes stop. The refusal is caught here ONLY on the read path, and the
+  # condition is kept: if the rebuild then turns out to be impossible, the
+  # original refusal is what the user gets, never an IO failure wearing its
+  # clothes.
+  too_new <- NULL
+  declared <- if (operation == "read") {
+    tryCatch(
+      .datom_check_schema_version(read$manifest, source, operation = operation),
+      datom_schema_unsupported = function(cnd) {
+        too_new <<- cnd
+        NA_integer_
+      }
+    )
+  } else {
+    .datom_check_schema_version(read$manifest, source, operation = operation)
+  }
+
+  # `datom_schema_invalid` is deliberately NOT caught above: a value that is not
+  # a schema version at all means a corrupt or hand-edited document, and a
+  # corrupt manifest has to keep failing visibly rather than being quietly
+  # reconstructed.
+
+  if (is.null(too_new)) {
+    # The check runs first and the upgrade only on what survives it: there is no
+    # step for a version this build does not know, so the dispatcher must never
+    # see one.
+    read$manifest <- .datom_manifest_upgrade(read$manifest, declared)
+    read$declared <- declared
+  } else {
+    # Held for callers that report which format the document was in. The number
+    # is taken off the raw document because the check threw instead of returning
+    # it.
+    read$declared <- suppressWarnings(as.integer(read$manifest$schema_version))
+  }
+
+  # Writers never reach a rebuild, on either trigger. A writer meeting a manifest
+  # whose artifact list it cannot reach is refused at the door instead
+  # (`.datom_check_write_entry()`), because overwriting an index this build cannot
+  # account for leaves the repo wrong for everybody, where a reader's guess costs
+  # one person one session.
+  if (operation != "read") return(read)
+
+  reason <- if (!is.null(too_new)) {
+    "schema"
+  } else if (is.list(read$manifest) && !("artifacts" %in% names(read$manifest))) {
+    # Absent, never merely empty. An empty artifact list is what a brand-new repo
+    # looks like, so rebuilding on empty would cost a storage listing on every
+    # call against every healthy repo and would hide a truncated document behind
+    # a plausible answer.
+    "shape"
+  } else {
+    NULL
+  }
+
+  if (is.null(reason)) return(read)
+
+  attempt <- tryCatch(
+    list(ok = TRUE, manifest = .datom_rebuild_manifest(conn, read$manifest)),
+    error = function(e) list(ok = FALSE, manifest = NULL, error = e)
+  )
+
+  # A per-artifact document this build cannot read stops the rebuild rather than
+  # being softened into a missing row: that document is stamped and not
+  # reconstructible, so there is nothing to salvage. Survivability is available
+  # exactly when the break was manifest-only.
+  #
+  # Re-signalled from OUT HERE, not from a handler beside the one above. A
+  # `stop(cnd)` inside one `tryCatch()` handler is caught by that same
+  # `tryCatch()`'s `error` handler -- verified, and the opposite of what the
+  # syntax suggests -- so the two-handler spelling of this silently turned every
+  # refusal below into an IO failure.
+  if (!isTRUE(attempt$ok) &&
+      inherits(attempt$error,
+               c("datom_schema_unsupported", "datom_schema_invalid"))) {
+    stop(attempt$error)
+  }
+
+  if (isTRUE(attempt$ok)) {
+    .datom_warn_manifest_rebuilt(
+      source, reason, read$declared, length(attempt$manifest$artifacts)
+    )
+    read$manifest <- attempt$manifest
+    return(read)
+  }
+
+  # The rebuild could not be done. For a too-new document the original refusal
+  # stands -- reporting it as an unreadable manifest is the one thing the schema
+  # contract forbids at every reader. For an unreachable shape the document was
+  # readable, so the failure is the storage one and each caller keeps its own
+  # policy for that.
+  if (!is.null(too_new)) stop(too_new)
+
+  read$ok <- FALSE
+  read$manifest <- NULL
+  read$error <- attempt$error
+
+  read
 }
 
 
@@ -706,10 +1107,24 @@ datom_sync <- function(conn,
   manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   fs::dir_create(fs::path_dir(manifest_path))
 
+  # Read stays direct rather than going through .datom_read_manifest(): this is
+  # mid-write, and a compatibility refusal belongs at the front door, before any
+  # work starts, not partway through. Only the empty shape is shared.
+  #
+  # A document read from disk is converted before it is edited, so a new entry
+  # is never added under the current key while an older key sits untouched
+  # beside it -- that leaves a repo of twelve tables reporting one, in a file
+  # half in each format. The declared version comes from the same check every
+  # reader uses: it is the only thing that knows how to read the number, and it
+  # cannot fire here for a write that came through datom_write(), which refuses
+  # a too-new manifest at the door before any hashing.
+  declared <- .datom_supported_schema
   manifest <- if (fs::file_exists(manifest_path)) {
-    jsonlite::read_json(manifest_path)
+    from_disk <- jsonlite::read_json(manifest_path)
+    declared <- .datom_check_schema_version(from_disk, manifest_path, operation = "write")
+    .datom_manifest_upgrade(from_disk, declared)
   } else {
-    list(project_name = conn$project_name, tables = list(), summary = list())
+    .datom_manifest_skeleton(conn$project_name)
   }
 
   # Read size_bytes from local metadata.json (already written at this point)
@@ -733,6 +1148,7 @@ datom_sync <- function(conn,
   }
 
   entry <- list(
+    kind = "table",
     current_version = metadata_sha,
     current_data_sha = data_sha,
     last_updated = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
@@ -743,19 +1159,45 @@ datom_sync <- function(conn,
   if (!is.null(original_file_sha)) entry$original_file_sha <- original_file_sha
   if (!is.null(format)) entry$original_format <- format
 
-  manifest$tables[[name]] <- entry
+  # The row above was rebuilt from scratch, so a field this build cannot place
+  # would be deleted from it. Carry those forward. The existing row is taken from
+  # the already-converted document, so an upgrade step that moved or typed it has
+  # run first.
+  #
+  # The document's TOP level needs nothing equivalent, and that is worth knowing
+  # before restructuring this function: it is read from disk, three keys are
+  # edited, and it is written back, so an unfamiliar key beside `artifacts`
+  # survives because it is never touched. Rebuilding the document here instead of
+  # editing it would silently end that.
+  entry <- .datom_carry_unknown_fields(
+    entry,
+    manifest$artifacts[[name]],
+    .datom_manifest_entry_known_fields
+  )
 
-  # Update summary
+  manifest$artifacts[[name]] <- entry
+
+  # Update summary. Every existing counter keeps its current meaning, which is
+  # tables only, so each one selects by kind; total_sets is the new counter for
+  # the other kind. No fallback for an entry with no kind: by here the document
+  # has been through the upgrade, which types every entry, so an untyped entry
+  # means the conversion was skipped and a visibly wrong count is the point.
+  tables <- .datom_artifacts_of_kind(manifest$artifacts, "table")
+  sets <- .datom_artifacts_of_kind(manifest$artifacts, "set")
+
   manifest$updated_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   manifest$summary <- list(
-    total_tables = length(manifest$tables),
+    total_tables = length(tables),
     total_size_bytes = sum(purrr::map_dbl(
-      manifest$tables, ~ as.numeric(.x$size_bytes %||% 0L)
+      tables, ~ as.numeric(.x$size_bytes %||% 0L)
     )),
     total_versions = sum(purrr::map_int(
-      manifest$tables, ~ as.integer(.x$version_count %||% 0L)
-    ))
+      tables, ~ as.integer(.x$version_count %||% 0L)
+    )),
+    total_sets = length(sets)
   )
+
+  .datom_notify_manifest_upgraded(declared, "this repo's manifest")
 
   jsonlite::write_json(manifest, manifest_path, auto_unbox = TRUE, pretty = TRUE)
 

@@ -141,7 +141,7 @@ datom_parent <- function(conn, table, version) {
   # version is spliced into a storage key; reject path-traversal / non-hex.
   .datom_validate_sha(version, arg = "version")
 
-  key <- paste0(table, "/.metadata/", version, ".json")
+  key <- .datom_artifact_snapshot_key(table, version)
 
   snap <- tryCatch(
     .datom_storage_read_json(conn, key),
@@ -153,6 +153,17 @@ datom_parent <- function(conn, table, version) {
       ))
     }
   )
+
+  # Refuse a snapshot written by a build whose format this one does not know,
+  # before reading anything out of it. Both fields taken below are durable: the
+  # `data_sha` becomes a storage address and the `source_lineage` is unioned
+  # into the lineage of whatever table declares this parent, so a half-understood
+  # document is copied forward rather than merely misread once.
+  #
+  # Deliberately OUTSIDE the handler above, which would otherwise reword the
+  # refusal as "parent not found". Same pairing as `datom_member()` and
+  # `.datom_rebuild_manifest_entry()`.
+  .datom_check_schema_version(snap, key)
 
   data_sha <- snap$data_sha %||% ""
   if (!is.character(data_sha) || length(data_sha) != 1L ||

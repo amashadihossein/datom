@@ -19,9 +19,8 @@ Character \code{parquet_sha}, or NULL.
 \description{
 Scans the developer's local \code{version_history.json} (newest-first) for the
 most recent entry whose \code{data_sha} matches and that carries a non-empty
-\code{parquet_sha}. Returns NULL when none is found -- including the transitional
-period before task 5.1 persists \code{parquet_sha} into history entries, and for
-pre-cv1 histories. Reads the local git clone (offline-friendly); a stale
+\code{parquet_sha}. Returns NULL when none is found -- which happens for pre-cv1
+histories, whose entries predate \code{parquet_sha} being recorded. Reads the local git clone (offline-friendly); a stale
 clone is tolerated because the subsequent git push serializes concurrent
 writers (a behind clone fails to push before it can upload).
 }

@@ -263,3 +263,141 @@ test_that(".datom_validate_sha uses the arg label in the message", {
   err <- expect_error(.datom_validate_sha("zzz", arg = "data_sha"))
   expect_match(conditionMessage(err), "data_sha")
 })
+
+
+# === .datom_validate_rel_key() ================================================
+
+test_that(".datom_validate_rel_key accepts ordinary relative keys", {
+  expect_invisible(.datom_validate_rel_key("dm/.metadata/metadata.json"))
+  expect_equal(
+    .datom_validate_rel_key("dm/abc123.parquet"),
+    "dm/abc123.parquet"
+  )
+  expect_invisible(.datom_validate_rel_key(".metadata/manifest.json"))
+  expect_invisible(.datom_validate_rel_key("single-segment.json"))
+})
+
+test_that(".datom_validate_rel_key refuses non-string and empty input", {
+  expect_error(.datom_validate_rel_key(NULL), "single non-NA character")
+  expect_error(.datom_validate_rel_key(NA_character_), "single non-NA character")
+  expect_error(.datom_validate_rel_key(c("a.json", "b.json")), "single non-NA character")
+  expect_error(.datom_validate_rel_key(42), "single non-NA character")
+  expect_error(.datom_validate_rel_key(""), "must not be empty")
+})
+
+test_that(".datom_validate_rel_key refuses traversal segments", {
+  # On the local backend the key is pasted into a path and resolved by the
+  # filesystem, so a `..` segment escapes the datom namespace entirely.
+  expect_error(.datom_validate_rel_key("../../secrets.json"), "path segment")
+  expect_error(.datom_validate_rel_key("dm/../../secrets.json"), "path segment")
+  expect_error(.datom_validate_rel_key("dm/.."), "path segment")
+})
+
+test_that(".datom_validate_rel_key allows dots that are not a traversal segment", {
+  # Only a whole `..` segment is a traversal; these are legitimate keys and
+  # the guard must not become a blanket ban on the dot character.
+  expect_invisible(.datom_validate_rel_key("dm/.metadata/metadata.json"))
+  expect_invisible(.datom_validate_rel_key("my.data/abc.json"))
+  expect_invisible(.datom_validate_rel_key("dm/..hidden.json"))
+})
+
+test_that(".datom_validate_rel_key refuses an absolute path", {
+  expect_error(.datom_validate_rel_key("/dm/abc.json"), "not an absolute path")
+  expect_error(.datom_validate_rel_key("//dm/abc.json"), "not an absolute path")
+})
+
+test_that(".datom_validate_rel_key refuses a full key passed as relative", {
+  # The double-prefix hazard: this resolves under
+  # `{prefix}/datom/{prefix}/datom/...` and silently finds nothing, so it
+  # reads to the caller as a missing object rather than a malformed key.
+  err <- expect_error(
+    .datom_validate_rel_key("proj/datom/dm/.metadata/metadata.json"),
+    "full storage key"
+  )
+  expect_match(conditionMessage(err), "relative")
+
+  expect_error(.datom_validate_rel_key("datom/dm/abc.json"), "full storage key")
+})
+
+test_that(".datom_validate_rel_key uses the arg label in the message", {
+  err <- expect_error(.datom_validate_rel_key("", arg = "prefix_key"))
+  expect_match(conditionMessage(err), "prefix_key")
+})
+
+
+# --- .datom_check_schema_version() ---------------------------------------------
+
+test_that(".datom_check_schema_version tolerates an absent field as v1", {
+  # Every repo written before the field existed carries no schema_version, so
+  # absence must behave exactly as it did then.
+  expect_equal(
+    .datom_check_schema_version(list(data_sha = "abc"), "dm/.metadata/metadata.json"),
+    1L
+  )
+  expect_equal(.datom_check_schema_version(list(), "manifest.json"), 1L)
+  expect_equal(.datom_check_schema_version(NULL, "manifest.json"), 1L)
+})
+
+test_that(".datom_check_schema_version accepts the supported version and older", {
+  expect_equal(
+    .datom_check_schema_version(list(schema_version = 2L), "manifest.json"),
+    2L
+  )
+  expect_equal(
+    .datom_check_schema_version(list(schema_version = 1L), "manifest.json"),
+    1L
+  )
+  # JSON round-trips small integers as doubles; both spellings must pass.
+  expect_equal(
+    .datom_check_schema_version(list(schema_version = 2), "manifest.json"),
+    2L
+  )
+})
+
+test_that(".datom_check_schema_version refuses a newer version with recourse", {
+  err <- expect_error(
+    .datom_check_schema_version(list(schema_version = 3L), "manifest.json"),
+    class = "datom_schema_unsupported"
+  )
+  msg <- conditionMessage(err)
+  expect_match(msg, "v3")
+  expect_match(msg, "manifest.json")
+  expect_match(msg, "install_github")
+  # The supported ceiling must render as a number, not as cli markup: the
+  # constant's leading dot makes `{.datom_supported_schema}` a cli style.
+  expect_match(msg, "supports up to v2")
+})
+
+test_that(".datom_check_schema_version boundary is strictly greater-than", {
+  # The writer bump lands in the next task; if the check were >= the whole
+  # read path would break the moment anything writes v2.
+  expect_silent(.datom_check_schema_version(list(schema_version = 2L), "m.json"))
+})
+
+test_that(".datom_check_schema_version refuses an unusable value", {
+  unusable <- list(
+    "two",           # hand-edited to a string
+    NA,              # NA would otherwise propagate into if() as an opaque error
+    NA_integer_,
+    2.5,             # fractional
+    0L,              # below the first real version
+    -1L,
+    c(1L, 2L),       # not a scalar
+    TRUE,
+    list(2L)
+  )
+  purrr::walk(unusable, function(v) {
+    expect_error(
+      .datom_check_schema_version(list(schema_version = v), "manifest.json"),
+      class = "datom_schema_invalid"
+    )
+  })
+})
+
+test_that(".datom_check_schema_version names the offending document", {
+  err <- expect_error(
+    .datom_check_schema_version(list(schema_version = 9L), "dm/.metadata/metadata.json"),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(err), "dm/.metadata/metadata.json", fixed = TRUE)
+})

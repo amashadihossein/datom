@@ -35,6 +35,11 @@
 #' @param github_api_url GitHub API base URL. Sourced from
 #'   `store$github_api_url` at conn-construction time. Defaults to
 #'   `"https://api.github.com"` when not set.
+#' @param min_writer_version The lowest version of datom this repo accepts
+#'   writes from, read from `project.yaml` at conn-construction time. `NULL`
+#'   means the repo declares no such limit, which is every repo written so far.
+#'   Held on the connection because the file it comes from is already parsed
+#'   there, so the write-entry check costs no extra read.
 #'
 #' @return A `datom_conn` object.
 #' @keywords internal
@@ -55,7 +60,8 @@ new_datom_conn <- function(project_name,
                           backend = "s3",
                           data_repo_url = NULL,
                           github_pat = NULL,
-                          github_api_url = NULL) {
+                          github_api_url = NULL,
+                          min_writer_version = NULL) {
   role <- match.arg(role)
   backend <- match.arg(backend, c("s3", "local"))
 
@@ -119,7 +125,8 @@ new_datom_conn <- function(project_name,
       gov_local_path = gov_local_path,
       data_repo_url = data_repo_url,
       github_pat    = github_pat,
-      github_api_url = github_api_url
+      github_api_url = github_api_url,
+      min_writer_version = min_writer_version
     ),
     class = "datom_conn"
   )
@@ -516,15 +523,16 @@ datom_init_repo <- function(path = ".",
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
 
   # --- Create manifest.json (data repo only) ----------------------------------
-  manifest <- list(
-    project_name = project_name,
-    updated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
-    tables = structure(list(), names = character(0)),
-    summary = list(
-      total_tables = 0L,
-      total_size_bytes = 0L,
-      total_versions = 0L
-    )
+  # Built from the shared skeleton so the schema version is declared in one
+  # place rather than spelled out again here: a repo declares its format from
+  # the moment it is created, before it holds a single artifact.
+  manifest <- .datom_manifest_skeleton(project_name)
+  manifest$updated_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+  manifest$summary <- list(
+    total_tables = 0L,
+    total_size_bytes = 0L,
+    total_versions = 0L,
+    total_sets = 0L
   )
 
   jsonlite::write_json(manifest, fs::path(path, ".datom", "manifest.json"),
@@ -969,7 +977,8 @@ datom_get_conn <- function(path = NULL,
 
   # --- Governance attachment detection (four-state matrix) -------------------
   # governance.json (in the local clone) is the canonical gov-attachment signal.
-  # project.yaml carries no governance coordinates after Phase 21 Chunk 2.
+  # project.yaml no longer carries governance coordinates, so it cannot be
+  # consulted for attachment state.
   gov_json <- .datom_read_governance_json_local(path)
   has_gov_json  <- !is.null(gov_json)
   has_gov_store <- !is.null(store$governance)
@@ -1064,6 +1073,12 @@ datom_get_conn <- function(path = NULL,
   # Populate identity fields from store and git remote
   conn$github_pat <- store$github_pat
   conn$github_api_url <- store$github_api_url
+
+  # The repo's declared minimum writer version, if it declares one. Read here
+  # because project.yaml is already parsed on this path; the write entry then
+  # costs no extra read. Absent in every repo written so far, and absent must
+  # stay indistinguishable from "no limit" -- see .datom_check_writer_floor().
+  conn$min_writer_version <- cfg$min_writer_version
   conn$data_repo_url <- tryCatch({
     repo <- git2r::repository(as.character(path))
     remotes <- git2r::remotes(repo)

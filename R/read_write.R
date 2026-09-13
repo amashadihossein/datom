@@ -84,10 +84,15 @@ datom_read <- function(conn,
 .datom_read_metadata <- function(conn, name) {
   .datom_validate_name(name)
 
-  metadata_key <- paste0(name, "/.metadata/metadata.json")
-  history_key <- paste0(name, "/.metadata/version_history.json")
+  metadata_key <- .datom_artifact_meta_key(name, "metadata")
+  history_key <- .datom_artifact_meta_key(name, "version_history")
 
   current <- .datom_storage_read_json(conn, metadata_key)
+
+  # Compatibility check before the second read: datom_read() never touches the
+  # manifest, so this is the only place the data path sees a schema version.
+  .datom_check_schema_version(current, metadata_key)
+
   history <- .datom_storage_read_json(conn, history_key)
 
   list(current = current, history = history)
@@ -102,10 +107,11 @@ datom_read <- function(conn,
 #' resolves from the current `metadata.json`; if a metadata_sha string, looks
 #' it up in `version_history.json`.
 #'
-#' The `parquet_sha` may be `NULL`/`""` for pre-cv1 metadata, and for any
-#' version-pinned read until `version_history` entries persist `parquet_sha`
-#' (task 5.1). A `NULL`/empty `parquet_sha` tells [.datom_read_parquet()] to
-#' skip the integrity check (the intended pre-cv1 grace).
+#' The `parquet_sha` may be `NULL`/`""` only for **pre-cv1 metadata**: current
+#' writes persist it both in `metadata.json` and in every `version_history`
+#' entry, so version-pinned reads resolve it too. A `NULL`/empty `parquet_sha`
+#' tells [.datom_read_parquet()] to skip the integrity check -- a grace for
+#' legacy metadata, not a gap in the current writer.
 #'
 #' @param metadata_list Return value of [.datom_read_metadata()].
 #' @param version NULL (current) or a metadata_sha string.
@@ -202,8 +208,8 @@ datom_read <- function(conn,
 #' @param parquet_sha Expected SHA-256 of the stored parquet object bytes, from
 #'   the resolved metadata (see [.datom_resolve_version()]). When non-empty, the
 #'   downloaded file is verified against it and a mismatch aborts. When `NULL`
-#'   or empty (pre-cv1 metadata, or a version-pinned read before task 5.1
-#'   persists it), the integrity check is skipped and the read succeeds.
+#'   or empty -- which now happens only for pre-cv1 metadata -- the integrity
+#'   check is skipped and the read succeeds.
 #' @return Data frame.
 #' @keywords internal
 .datom_read_parquet <- function(conn, name, data_sha, parquet_sha = NULL) {
@@ -215,7 +221,7 @@ datom_read <- function(conn,
   # data_sha is spliced into a storage key; reject path-traversal / non-hex.
   .datom_validate_sha(data_sha, arg = "data_sha")
 
-  s3_key <- paste0(name, "/", data_sha, ".parquet")
+  s3_key <- .datom_artifact_payload_key(name, data_sha, "table")
   tmp <- tempfile(fileext = ".parquet")
   on.exit(unlink(tmp), add = TRUE)
 
@@ -263,11 +269,19 @@ datom_read <- function(conn,
 #' @param original_file_sha SHA-256 of the source file, for imported tables.
 #'   Included in the metadata **only when non-NULL**; the derived path omits it
 #'   from the object entirely (not present-with-NULL).
+#' @param original_format Extension of the source file (`"csv"`, `"parquet"`,
+#'   ...), for imported tables. Recorded on the same only-when-non-NULL terms as
+#'   `original_file_sha`, and for one reason: it was previously written onto the
+#'   manifest row and nowhere else, which made it the single field a
+#'   reconstructed index had to drop. It is **not** part of the version identity
+#'   -- see `.datom_metadata_excluded_fields`.
 #' @param column_hashes Ordered list of per-column `list(name, sha)` digests
 #'   from [.datom_canonical_hash()], or NULL. Excluded from `metadata_sha`
 #'   (see [.datom_compute_metadata_sha()]).
 #' @return Named list suitable for writing as metadata.json. Always carries
-#'   `hash_algo = "datom-cv1"` and declares `parquet_sha` (left NULL here and
+#'   `kind = "table"` (which artifact kind the document describes),
+#'   `schema_version` (the format the document is written in) and
+#'   `hash_algo = "datom-cv1"`, and declares `parquet_sha` (left NULL here and
 #'   populated by [datom_write()] after change detection, since the stored-
 #'   object hash is not knowable until then; it is excluded from `metadata_sha`
 #'   so this deferred assignment is safe).
@@ -275,12 +289,27 @@ datom_read <- function(conn,
 .datom_build_metadata <- function(data, data_sha, custom = NULL,
                                  table_type = "derived", size_bytes = NULL,
                                  parents = NULL, source_lineage = NULL,
-                                 original_file_sha = NULL, column_hashes = NULL) {
+                                 original_file_sha = NULL,
+                                 original_format = NULL, column_hashes = NULL) {
   if (!table_type %in% c("imported", "derived")) {
     cli::cli_abort("{.arg table_type} must be {.val imported} or {.val derived}.")
   }
 
   meta <- list(
+    # The format this document is written in, declared first because every other
+    # field's meaning depends on it. The value is what this build supports,
+    # since a build writes the only shape it knows. It is on the documented
+    # not-identity list, so stamping it mints no new version for content that
+    # did not move.
+    schema_version = .datom_supported_schema,
+    # Which kind of artifact this document describes. Not a parameter: a table
+    # write is the only thing that reaches this builder, and a set gets its own
+    # builder (.datom_build_set_metadata()) because the field sets barely
+    # overlap. It is IDENTITY -- a table and a set must not be able to share a
+    # version -- which is why adding it re-mints one version for every existing
+    # table on unchanged content. Accepted deliberately (see NEWS): the storage
+    # address is data_sha, which does not move, so nothing is re-uploaded.
+    kind = "table",
     data_sha = data_sha,
     hash_algo = "datom-cv1",
     parquet_sha = NULL,
@@ -294,6 +323,7 @@ datom_read <- function(conn,
   )
 
   if (!is.null(original_file_sha)) meta$original_file_sha <- original_file_sha
+  if (!is.null(original_format)) meta$original_format <- original_format
   if (!is.null(parents)) meta$parents <- parents
   if (!is.null(source_lineage)) meta$source_lineage <- source_lineage
   if (!is.null(size_bytes)) meta$size_bytes <- size_bytes
@@ -306,6 +336,61 @@ datom_read <- function(conn,
   }
 
   meta
+}
+
+
+#' Build the Metadata Document for a Set Write
+#'
+#' A set's `metadata.json` is a collapsed version of a table's: seven fields and
+#' no more. Everything a table carries that describes a rectangle (`nrow`,
+#' `ncol`, `colnames`, `column_hashes`), the provenance axis (`table_type`,
+#' `parents`, `source_lineage`), the stored-parquet facts (`parquet_sha`,
+#' `size_bytes`) and the user-metadata channel (`custom`) are all **omitted, not
+#' nulled** -- a set's members and its user metadata both live in the payload as
+#' tags, and no counter reads a set's byte size.
+#'
+#' Kept beside [.datom_build_metadata()] on purpose: the two documents are close
+#' enough that a field copied from the wrong one is easy to miss, and two of the
+#' values here are exactly that kind of trap.
+#'
+#' * `data_sha` comes from [.datom_canonical_set_hash()], the `datom-sv1`
+#'   identity engine, **not** from the table hash. Computed here rather than
+#'   passed in, so a caller cannot hand a set a table-regime hash.
+#' * `hash_algo` is the literal `"datom-sv1"`. The encoder embeds that string
+#'   inside the digest but nothing stamps the field, so the builder must. A
+#'   copied `"datom-cv1"` would leave a set claiming one regime while hashing
+#'   under the other, and no hash comparison would notice.
+#'
+#' @param payload The set payload: a list with `members` (an unnamed list of
+#'   member records) and optional set-level `tags`. Must already be tidied and
+#'   validated -- this builder hashes what it is given.
+#' @param document_sha SHA-256 of the stored payload bytes, or NULL. Declared
+#'   either way, mirroring how [.datom_build_metadata()] declares `parquet_sha`
+#'   for [datom_write()] to populate: the byte hash is not knowable until the
+#'   payload has been serialized, and it is excluded from `metadata_sha`, so the
+#'   deferred assignment cannot move a version. **Nothing computes one until the
+#'   set write path exists**, so today it arrives NULL from every caller.
+#'
+#'   **The write path must populate it before writing the document.** `jsonlite`
+#'   does not omit a NULL element -- it writes `{}`, which reads back as an empty
+#'   list rather than an absent key. `parquet_sha` never hits this because its
+#'   only two outcomes are a real hash or `meta$parquet_sha <- NULL`, and
+#'   assigning NULL *removes* the element. A field left declared-and-unpopulated
+#'   through a write would satisfy a names-only field-set check while carrying an
+#'   empty object, so assert on the written bytes where the field set matters.
+#' @return Named list of exactly the seven fields a set's `metadata.json`
+#'   carries.
+#' @keywords internal
+.datom_build_set_metadata <- function(payload, document_sha = NULL) {
+  list(
+    schema_version = .datom_supported_schema,
+    kind = "set",
+    data_sha = .datom_canonical_set_hash(payload),
+    hash_algo = "datom-sv1",
+    document_sha = document_sha,
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    datom_version = as.character(utils::packageVersion("datom"))
+  )
 }
 
 
@@ -326,7 +411,7 @@ datom_read <- function(conn,
 #'   history scan) without a second storage read.
 #' @keywords internal
 .datom_has_changes <- function(conn, name, new_data_sha, new_metadata_sha) {
-  metadata_key <- paste0(name, "/.metadata/metadata.json")
+  metadata_key <- .datom_artifact_meta_key(name, "metadata")
 
   # If metadata doesn't exist yet, it's a new table -> full write, no current.
   if (!.datom_storage_exists(conn, metadata_key)) {
@@ -390,12 +475,11 @@ datom_read <- function(conn,
   }
 
   # change_type == "full".
-  # Since task 5.1, version_history entries persist parquet_sha, so this lookup
-  # activates the revert-to-older reuse branch: writing content whose data_sha
-  # already appears in history reuses that version's recorded parquet_sha
-  # instead of re-uploading (a fresh serialization can differ byte-for-byte and
-  # would break the older version's integrity pin). The end-to-end revert-reuse
-  # integration test is task 12.5.
+  # version_history entries persist parquet_sha, so this lookup activates the
+  # revert-to-older reuse branch: writing content whose data_sha already appears
+  # in history reuses that version's recorded parquet_sha instead of
+  # re-uploading (a fresh serialization can differ byte-for-byte and would break
+  # the older version's integrity pin).
   reused <- .datom_lookup_history_parquet_sha(conn, name, data_sha)
   if (!is.null(reused)) {
     return(list(parquet_sha = reused, upload = FALSE))
@@ -409,9 +493,8 @@ datom_read <- function(conn,
 #'
 #' Scans the developer's local `version_history.json` (newest-first) for the
 #' most recent entry whose `data_sha` matches and that carries a non-empty
-#' `parquet_sha`. Returns NULL when none is found -- including the transitional
-#' period before task 5.1 persists `parquet_sha` into history entries, and for
-#' pre-cv1 histories. Reads the local git clone (offline-friendly); a stale
+#' `parquet_sha`. Returns NULL when none is found -- which happens for pre-cv1
+#' histories, whose entries predate `parquet_sha` being recorded. Reads the local git clone (offline-friendly); a stale
 #' clone is tolerated because the subsequent git push serializes concurrent
 #' writers (a behind clone fails to push before it can upload).
 #'
@@ -495,6 +578,19 @@ datom_read <- function(conn,
     new_entry$parquet_sha <- metadata$parquet_sha
   }
 
+  # The same field for a set's stored JSON payload, on the same conditional-add
+  # terms, so every version of a set carries the hash of the bytes that version
+  # pinned. It is here from day one deliberately: sets then never need the
+  # "older entries lack it, skip the check" grace that `parquet_sha` carries for
+  # pre-cv1 tables, and a set read can treat an absent `document_sha` as an
+  # error instead of building a silent-degradation path.
+  #
+  # INERT UNTIL THE SET WRITE PATH LANDS: nothing computes a `document_sha` yet,
+  # so no metadata document reaching this function carries one.
+  if (!is.null(metadata$document_sha)) {
+    new_entry$document_sha <- metadata$document_sha
+  }
+
   if (!is.null(original_file_sha)) {
     new_entry$original_file_sha <- original_file_sha
   }
@@ -508,6 +604,12 @@ datom_read <- function(conn,
   exists_already <- purrr::some(
     history, ~ identical(.x$version %||% "", metadata_sha)
   )
+  # The new entry is PREPENDED and the existing ones are carried through
+  # untouched, which is also what keeps a field this build cannot place alive on
+  # an older entry -- there is no rebuild here to lose it. Do not "normalise"
+  # these entries on the way past: they describe versions this build may know
+  # nothing about, and an entry rewritten to today's field set would silently
+  # drop whatever a newer datom recorded on it.
   if (!exists_already) {
     history <- c(list(new_entry), history)
   }
@@ -541,9 +643,9 @@ datom_read <- function(conn,
     list()
   }
 
-  s3_metadata_key <- paste0(name, "/.metadata/metadata.json")
-  s3_history_key <- paste0(name, "/.metadata/version_history.json")
-  s3_versioned_key <- paste0(name, "/.metadata/", metadata_sha, ".json")
+  s3_metadata_key <- .datom_artifact_meta_key(name, "metadata")
+  s3_history_key <- .datom_artifact_meta_key(name, "version_history")
+  s3_versioned_key <- .datom_artifact_snapshot_key(name, metadata_sha)
 
   .datom_storage_write_json(conn, s3_metadata_key, metadata)
   .datom_storage_write_json(conn, s3_history_key, history)
@@ -678,6 +780,16 @@ datom_write <- function(conn,
     cli::cli_abort("conn must be a datom_conn object from datom_get_conn()")
   }
 
+  # Forward-compatibility door. Above the routing returns on purpose: one of the
+  # routes mirrors the whole local manifest to storage and never reaches the
+  # manifest-writing step, so a check placed after the router would not cover
+  # it. Above the hashing and the local writes too, so a refusal leaves nothing
+  # half-written.
+  #
+  # `name` is NULL on the mirror-everything route, which is what tells the check
+  # to inspect every artifact in the clone rather than one.
+  .datom_check_write_entry(conn, name)
+
   # Route based on arguments
 
   if (is.null(data) && is.null(name)) {
@@ -754,6 +866,7 @@ datom_write <- function(conn,
     source_lineage = source_lineage,
     size_bytes = size_bytes,
     original_file_sha = .original_file_sha,
+    original_format = .original_format,
     column_hashes = hashed$column_hashes
   )
   metadata_sha <- .datom_compute_metadata_sha(meta)
@@ -780,6 +893,21 @@ datom_write <- function(conn,
     conn, name, data_sha, new_parquet_sha, change_type, chg$current
   )
   meta$parquet_sha <- parquet_decision$parquet_sha
+
+  # 5a. Keep any top-level field the existing metadata document holds that this
+  #     build cannot place -- step 3 rebuilt the document from scratch, which
+  #     would otherwise delete it.
+  #
+  #     Placed here rather than in step 3 for the same reason parquet_sha is:
+  #     metadata_sha has already been computed. Identity ignores fields it does
+  #     not name, so either position gives the same hash today, but attaching
+  #     after the fact means a carried field cannot reach a hash at all -- no
+  #     later change to the identity field list can pull one in.
+  meta <- .datom_carry_unknown_fields(
+    meta,
+    .datom_prior_metadata(conn, name),
+    .datom_metadata_known_fields()
+  )
 
   # 6. Write metadata + manifest locally
   write_result <- .datom_write_metadata_local(
@@ -808,7 +936,7 @@ datom_write <- function(conn,
 
   # 8. Upload parquet (only when step 5 decided it is needed -- after git).
   if (isTRUE(parquet_decision$upload)) {
-    parquet_key <- paste0(name, "/", data_sha, ".parquet")
+    parquet_key <- .datom_artifact_payload_key(name, data_sha, "table")
     .datom_storage_upload(conn, tmp, parquet_key)
   }
 

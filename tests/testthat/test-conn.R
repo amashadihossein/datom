@@ -342,6 +342,7 @@ create_test_datom_repo <- function(project_name = "testproj",
                                   bucket = "test-bucket",
                                   prefix = "test-prefix/",
                                   region = "us-east-1",
+                                  min_writer_version = NULL,
                                   env = parent.frame()) {
   dir <- withr::local_tempdir(.local_envir = env)
   datom_dir <- fs::path(dir, ".datom")
@@ -349,6 +350,7 @@ create_test_datom_repo <- function(project_name = "testproj",
 
   yaml_content <- list(
     project_name = project_name,
+    min_writer_version = min_writer_version,
     storage = list(
       data = list(
         type = "s3",
@@ -387,6 +389,29 @@ test_that("developer path reads project.yaml and creates connection", {
   expect_equal(conn$root, "my-bucket")
   expect_equal(conn$role, "developer")
   expect_equal(conn$path, as.character(fs::path_abs(dir)))
+})
+
+test_that("developer path carries the repo's declared minimum writer version", {
+  # The field is optional and lives in project.yaml. It rides on the connection
+  # because that file is already parsed here, which is what lets the write entry
+  # check it without an extra read. Absent must stay indistinguishable from "no
+  # limit", so both states are asserted.
+  comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
+                         access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
+                       data_repo_url = "https://github.com/test/repo.git",
+                       validate = FALSE)
+
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  declared <- create_test_datom_repo(bucket = "my-bucket",
+                                     min_writer_version = "9.9.9")
+  conn <- muffle_conn_warnings(datom_get_conn(path = declared, store = store))
+  expect_identical(conn$min_writer_version, "9.9.9")
+
+  silent <- create_test_datom_repo(bucket = "my-bucket")
+  conn <- muffle_conn_warnings(datom_get_conn(path = silent, store = store))
+  expect_null(conn$min_writer_version)
 })
 
 test_that("developer path uses reader role when store is reader", {
@@ -1099,6 +1124,12 @@ test_that("datom_init_repo creates manifest.json", {
   expect_equal(manifest$summary$total_tables, 0)
   expect_equal(manifest$summary$total_size_bytes, 0)
   expect_equal(manifest$summary$total_versions, 0)
+  expect_equal(manifest$summary$total_sets, 0)
+  # A repo declares its format from the moment it is created, so none exists in
+  # a state that declares nothing -- not even before its first artifact.
+  expect_equal(manifest$schema_version, 2L)
+  expect_true("artifacts" %in% names(manifest))
+  expect_null(manifest$tables)
 })
 
 test_that("datom_init_repo creates .gitignore with input_files/", {

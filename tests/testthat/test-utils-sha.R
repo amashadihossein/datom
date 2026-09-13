@@ -61,31 +61,43 @@ test_that("data SHA cleans up temp files", {
 
 # --- .datom_compute_metadata_sha() --------------------------------------------
 
+# The fixtures in this block deliberately use REAL metadata field names. Field
+# selection is an allowlist, so a fixture built from invented names
+# (`name`, `author`, `x` -- all of which these tests once used) survives the
+# assertion while asserting nothing: every invented field is dropped before
+# hashing, leaving `data_sha` alone to carry a test about several fields.
+
 test_that("metadata SHA is deterministic", {
-  meta <- list(data_sha = "abc", name = "test")
+  meta <- list(data_sha = "abc", table_type = "derived")
   sha1 <- .datom_compute_metadata_sha(meta)
   sha2 <- .datom_compute_metadata_sha(meta)
   expect_identical(sha1, sha2)
 })
 
 test_that("metadata SHA is order-independent", {
-  meta1 <- list(name = "test", data_sha = "abc", author = "me")
-  meta2 <- list(author = "me", name = "test", data_sha = "abc")
+  meta1 <- list(table_type = "derived", data_sha = "abc", nrow = 3L)
+  meta2 <- list(nrow = 3L, table_type = "derived", data_sha = "abc")
   sha1 <- .datom_compute_metadata_sha(meta1)
   sha2 <- .datom_compute_metadata_sha(meta2)
   expect_identical(sha1, sha2)
+
+  # Non-vacuous: the shared fields really do all reach the hash, so the
+  # invariance above is about ordering rather than about them being ignored.
+  expect_false(identical(
+    sha1, .datom_compute_metadata_sha(list(data_sha = "abc", nrow = 3L))
+  ))
 })
 
 test_that("metadata SHA differs for different content", {
-  meta1 <- list(data_sha = "abc", name = "test")
-  meta2 <- list(data_sha = "xyz", name = "test")
+  meta1 <- list(data_sha = "abc", table_type = "derived")
+  meta2 <- list(data_sha = "xyz", table_type = "derived")
   sha1 <- .datom_compute_metadata_sha(meta1)
   sha2 <- .datom_compute_metadata_sha(meta2)
   expect_false(sha1 == sha2)
 })
 
 test_that("metadata SHA is a 64-char hex string", {
-  sha <- .datom_compute_metadata_sha(list(x = 1))
+  sha <- .datom_compute_metadata_sha(list(data_sha = "abc"))
   expect_match(sha, "^[0-9a-f]{64}$")
 })
 
@@ -609,6 +621,15 @@ test_that("Feature: datom-cv1, Property 13: metadata_sha field ordering is local
   # the lowercase ones), while en_US.UTF-8 uses dictionary order. Without a
   # discriminating fixture this property would pass vacuously, so the difference
   # is asserted before the invariance is.
+  #
+  # WHY THIS TARGETS `.datom_metadata_sha_from_fields()` AND NOT
+  # `.datom_compute_metadata_sha()`. Field selection is an allowlist, so the
+  # synthetic names below would be dropped before any sorting happened, leaving
+  # one field and nothing to order -- the test would pass while asserting
+  # nothing. Real field names cannot replace them either: all ten identity field
+  # names sort identically under C and en_US.UTF-8 (checked), so no fixture built
+  # from them can discriminate. Hence the split: selection is tested by the
+  # goldens and the classification test, ordering is tested here.
   meta <- list(
     data_sha = "abc",
     Zeta = 1L,
@@ -634,8 +655,9 @@ test_that("Feature: datom-cv1, Property 13: metadata_sha field ordering is local
   expect_false(identical(order_c, order_us))
 
   # The hash does not move with the locale (Requirement 6.2).
-  sha_c <- withr::with_collate("C", .datom_compute_metadata_sha(meta))
-  sha_us <- withr::with_collate("en_US.UTF-8", .datom_compute_metadata_sha(meta))
+  sha_c <- withr::with_collate("C", .datom_metadata_sha_from_fields(meta))
+  sha_us <- withr::with_collate("en_US.UTF-8",
+                                .datom_metadata_sha_from_fields(meta))
   expect_identical(sha_c, sha_us)
 
   # And it is the radix (byte-order) arrangement that is hashed, not either
@@ -896,12 +918,224 @@ test_that("golden relations: parity, tzone equality, units split, hms==ITime", {
   expect_identical(sha(one_col(d_dbl)), sha(one_col(d_int)))
 })
 
-test_that("metadata_sha golden is stable", {
-  meta <- list(data_sha = "abc123", name = "mytable", nrow = 100L, ncol = 5L,
-               table_type = "imported", hash_algo = "datom-cv1")
+test_that("metadata_sha golden is stable, and an unknown field does not move it", {
+  # This fixture used to be pinned WITH its `name` key, at
+  # 59f1f1d936c5d65472733a924493ce2362255d442ebea6d41f7c3c9e7069d326. `name` is
+  # not a metadata field -- no builder emits it, and `metadata.json` is written
+  # as exactly the object a builder produced -- so the old pin was a hash of a
+  # document datom cannot write.
+  #
+  # Rather than retire the fixture, it is reused for the property that changed
+  # its value: an unrecognised extra field is ignored, so a document carrying one
+  # hashes identically to one without it. The pinned constant is the no-`name`
+  # value, which is what this same fixture already produced before the allowlist.
+  plain <- list(data_sha = "abc123", nrow = 100L, ncol = 5L,
+                table_type = "imported", hash_algo = "datom-cv1")
   expect_identical(
-    .datom_compute_metadata_sha(meta),
-    "59f1f1d936c5d65472733a924493ce2362255d442ebea6d41f7c3c9e7069d326"
+    .datom_compute_metadata_sha(plain),
+    "cce751b3f74d9f45c79ec96e4a19529580fec36b6ea37b39800b3a8a58e94ac8"
+  )
+
+  # A legacy unknown key (`name`) and a forward-looking one (a field a future
+  # release might add) are both ignored, together and separately. The second case
+  # is the one that matters: `name` is a historical accident, whereas an unknown
+  # field arriving from a newer datom is the situation the allowlist exists for.
+  with_name <- c(plain, list(name = "mytable"))
+  with_future <- c(plain, list(some_future_field = "whatever"))
+  with_both <- c(with_name, list(some_future_field = "whatever"))
+
+  expect_identical(.datom_compute_metadata_sha(with_name),
+                   .datom_compute_metadata_sha(plain))
+  expect_identical(.datom_compute_metadata_sha(with_future),
+                   .datom_compute_metadata_sha(plain))
+  expect_identical(.datom_compute_metadata_sha(with_both),
+                   .datom_compute_metadata_sha(plain))
+})
+
+# A metadata document built the way datom actually builds one: every top-level
+# key comes from `.datom_build_metadata()`, plus `parquet_sha`, which
+# `datom_write()` assigns after change detection rather than at build time. The
+# `optional` switch selects the two shapes that matter -- every conditionally
+# present field supplied, and none of them.
+#
+# WHY IT IS BUILDER-DERIVED RATHER THAN HAND-WRITTEN. The goldens below are the
+# before/after anchor for a change to how `.datom_compute_metadata_sha()`
+# SELECTS fields, so the fixture has to be a document datom can actually
+# produce. The older `metadata_sha golden is stable` fixture above is not: it
+# carries a `name` key that no builder emits and omits `colnames`, which every
+# builder emits.
+#
+# `data_sha` and `column_hashes` are literals rather than a live
+# `.datom_canonical_hash()` call, deliberately: a cv1 encoding drift would then
+# redden the cv1 goldens only, so a failure here names one regime instead of two.
+builder_metadata_fixture <- function(optional = TRUE) {
+  df <- data.frame(id = 1:3, val = c("a", "b", "c"), stringsAsFactors = FALSE)
+
+  args <- list(
+    data = df,
+    data_sha = "2eb1fa3e668dc15f6e5c2b384d2dbf39b216f12573c07c95543fa208dba4fef8",
+    column_hashes = list(
+      list(name = "id", sha = strrep("a", 64L)),
+      list(name = "val", sha = strrep("b", 64L))
+    )
+  )
+
+  if (optional) {
+    args <- c(args, list(
+      table_type = "imported",
+      size_bytes = 4096,
+      original_file_sha = "f00dcafe",
+      original_format = "csv",
+      parents = list(list(source = "STUDY_001", table = "dm",
+                          version = "a1b2c3d4", data_sha = "e5f6a7b8")),
+      source_lineage = list(list(project = "STUDY_001", table = "dm",
+                                 version_sha = "e5f6a7b8")),
+      custom = list(owner = "biostat", study = "STUDY_001")
+    ))
+  }
+
+  meta <- do.call(.datom_build_metadata, args)
+  meta$parquet_sha <- "deadbeef"
+  meta
+}
+
+test_that("builder-derived metadata_sha goldens are stable", {
+  # These two values are the evidence that a later change to field SELECTION is
+  # behaviour-preserving: they are computed from documents datom writes, so if
+  # either moves, some real artifact's recorded version moved with it.
+  #
+  # Both are reproducible run to run. The only fields that vary between two
+  # builds of the same table are `created_at` and `datom_version`, and neither
+  # participates in `metadata_sha`.
+  #
+  # BOTH VALUES WERE DELIBERATELY MOVED once, when `kind` entered the metadata
+  # document as an identity field. That is the licensed exception to "if a golden
+  # fails, the code drifted, do not touch the constant": adding an identity field
+  # is *supposed* to move every hash it appears in, and the consequence was
+  # accepted at design time -- the next write of every existing table mints one
+  # extra version on content that did not move, with the storage address
+  # (`data_sha`) unchanged so nothing is re-uploaded. Any later movement of these
+  # two values is drift until a comparable note appears beside them.
+  #   before `kind`: f4d88543b11b4918fe96e8ec319ae6d664693735a545508095aa4c4b44da9a02
+  expect_identical(
+    .datom_compute_metadata_sha(builder_metadata_fixture(optional = TRUE)),
+    "e5fe77d721305583945b4b271acee2f5e9572e2014cd31286528c91724423273"
+  )
+
+  # The no-optional-fields shape is pinned separately because "a document
+  # missing an optional field still hashes to its own established value" is a
+  # distinct property from "a fully populated document does".
+  #   before `kind`: d0c1ea7510fe9da7361de62e21886f45dbca7b556e00765c3160222f24393fd7
+  expect_identical(
+    .datom_compute_metadata_sha(builder_metadata_fixture(optional = FALSE)),
+    "3003136bffc8da80028d957074abdee6d84dc98221c5acb6af45eb2ad0777246"
+  )
+})
+
+test_that("the pinned fixtures carry exactly the keys datom's writers emit", {
+  # Guards the goldens above against quietly ceasing to be realistic. Listed
+  # explicitly rather than derived, because the point is to notice when the set
+  # changes: a builder gaining a semantic field legitimately moves the pins, and
+  # that must surface as a decision rather than as a mystery.
+  always <- c("schema_version", "kind", "data_sha", "hash_algo", "parquet_sha",
+              "table_type", "nrow", "ncol", "colnames", "column_hashes",
+              "created_at", "datom_version")
+  conditional <- c("original_file_sha", "original_format", "parents",
+                   "source_lineage", "size_bytes", "custom")
+
+  expect_setequal(names(builder_metadata_fixture(optional = TRUE)),
+                  c(always, conditional))
+  expect_setequal(names(builder_metadata_fixture(optional = FALSE)), always)
+})
+
+# Every field name any metadata builder can emit, table and set. Derived from the
+# builders rather than listed, which is what makes the tests below fail when a
+# builder gains a field instead of passing forever on a stale list.
+#
+# Both builders, not just the table one: a set's document is hashed by the same
+# function against the same allowlist, so an unclassified set field fails exactly
+# the same way -- silently outside identity.
+all_emitted_metadata_fields <- function() {
+  set_meta <- .datom_build_set_metadata(
+    list(members = list(list(
+      id = list(project = "P", name = "dm", kind = "table",
+                version = strrep("a", 64L))
+    )))
+  )
+
+  union(names(builder_metadata_fixture(optional = TRUE)), names(set_meta))
+}
+
+test_that("every field a metadata builder emits is classified", {
+  # THE FORCING FUNCTION for the allowlist's failure direction. An unclassified
+  # field is silently excluded from identity, so identity quietly stops
+  # responding to real content -- and no other test in the suite would notice.
+  #
+  # The inventory is DERIVED from what a builder emits, never hardcoded. That is
+  # the whole value of this test: a hardcoded list of today's field names would
+  # pass forever and would not notice the next release adding one. Written this
+  # way, it fails the moment a builder gains a field, which forces the
+  # classification decision at the point the field is introduced.
+  emitted <- all_emitted_metadata_fields()
+  classified <- c(.datom_metadata_identity_fields,
+                  .datom_metadata_excluded_fields)
+
+  # Whichever field name appears here is the one that needs a decision: into
+  # .datom_metadata_identity_fields if it is content, into
+  # .datom_metadata_excluded_fields if it is not.
+  expect_identical(setdiff(emitted, classified), character(0))
+
+  # The converse: nothing in the identity list is a field datom never writes.
+  # This is what keeps that list readable as "the fields the builders emit", and
+  # it is what rules out the tempting shortcut of allowlisting `name` to keep an
+  # old golden byte-identical -- the list would then advertise a field that does
+  # not exist.
+  expect_identical(setdiff(.datom_metadata_identity_fields, emitted),
+                   character(0))
+})
+
+# Names classified before anything writes them. Each entry is a decision that
+# needs a reason, which is why the list is here rather than derived.
+#
+#   (empty)       `document_sha` was the one entry, classified by the reader-side
+#                 schema work before the set artifact that produces it existed.
+#                 The set metadata builder now emits it, so it came off this list
+#                 -- which is the list working as intended rather than the
+#                 exception being forgiven.
+#
+# Adding a name here is the point at which to read the classify-late note in
+# `dev/engineering-notes.md`, because the cost is not obvious: a classified name
+# is invisible to `.datom_carry_unknown_fields()`, which rescues only names a
+# build cannot place. So a document arriving from a newer datom with that field
+# on it loses it on rewrite -- silently, for a not-identity field, since no
+# version moves to signal it.
+metadata_classified_before_written <- character(0)
+
+test_that("nothing is classified before something writes it, except by decision", {
+  # The converse arm the identity list has always had, extended to the
+  # not-identity list -- which is where it was missing, and where `document_sha`
+  # slipped through. The value is not in today's result: it is that the next
+  # early classification cannot happen without editing the vector above and
+  # meeting the reason for it.
+  emitted <- all_emitted_metadata_fields()
+
+  unwritten <- setdiff(.datom_metadata_excluded_fields, emitted)
+
+  expect_identical(setdiff(unwritten, metadata_classified_before_written),
+                   character(0))
+
+  # And the exception list does not outlive its exceptions: once a builder starts
+  # emitting one of these, its name comes off the list.
+  expect_identical(intersect(metadata_classified_before_written, emitted),
+                   character(0))
+})
+
+test_that("a field is classified exactly once", {
+  # A name in both lists would make its treatment depend on which list a reader
+  # consulted, and both lists are documentation as much as code.
+  expect_identical(
+    intersect(.datom_metadata_identity_fields, .datom_metadata_excluded_fields),
+    character(0)
   )
 })
 
@@ -933,4 +1167,41 @@ test_that("Property 11: package hash matches the standalone reference", {
   for (fx in fixtures) {
     expect_identical(.datom_compute_data_sha(fx), ref(fx))
   }
+})
+
+
+test_that("metadata SHA ignores schema_version and document_sha (volatile)", {
+  # Both are container facts, not content. If schema_version entered identity,
+  # the v1 -> v2 bump would mint a new version for every artifact in every repo
+  # while its content stood still -- the failure the volatile list exists for.
+  # document_sha is the stored-bytes hash of a JSON payload, i.e. the set-side
+  # analogue of parquet_sha, and drifts for the same reasons.
+  base <- list(
+    data_sha = "abc",
+    hash_algo = "datom-cv1",
+    table_type = "imported",
+    nrow = 3L,
+    ncol = 2L
+  )
+  reference <- .datom_compute_metadata_sha(base)
+
+  variants <- list(
+    schema_version = list(1L, 2L, 3L),
+    document_sha = list("aaa", "bbb")
+  )
+  for (field in names(variants)) {
+    for (value in variants[[field]]) {
+      variant <- base
+      variant[[field]] <- value
+      expect_identical(.datom_compute_metadata_sha(variant), reference,
+                       info = field)
+    }
+  }
+
+  # Presence versus absence is immaterial too, which is what makes this task's
+  # change inert for every metadata document already written.
+  both <- base
+  both$schema_version <- 2L
+  both$document_sha <- "ccc"
+  expect_identical(.datom_compute_metadata_sha(both), reference)
 })

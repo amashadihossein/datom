@@ -10,7 +10,11 @@ datom_validate(conn, fix = FALSE)
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
 \item{fix}{If \code{TRUE}, attempts to fix inconsistencies by syncing data-side
-metadata (manifest + per-table metadata) to storage.}
+metadata (manifest + per-table metadata) to storage. This repairs metadata
+documents only: a missing data payload (\code{data_missing_s3}) cannot be
+restored from the clone, because the parquet bytes are never stored there.
+Those tables are named in a warning and need \code{\link[=datom_write]{datom_write()}} re-run with
+the source data.}
 }
 \value{
 A list with:

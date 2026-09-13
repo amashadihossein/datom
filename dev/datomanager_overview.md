@@ -26,6 +26,142 @@
 > The access management architecture described below (Sections 3 onwards) remains
 > conceptually valid. The specific datom API references above need updating before
 > datomanager implementation begins.
+>
+> **Unresolved naming defect in this file**: the two bullets above both read "datomanager",
+> naming two different packages (the governance-lifecycle package and the access-enforcement
+> layer). This is a rename artifact. The access-enforcement package still needs a distinct
+> name; picking one is a prerequisite for implementing it. Until then, "the access layer" is
+> used below where the distinction matters.
+
+---
+
+## Constraints Established by the `datom-sets` Spec (August 2026)
+
+Recorded here, not only in `.kiro/specs/datom-sets/`, because they are **obligations on the
+access layer** or facts it must build around. Full derivation in that spec's `design.md`,
+sections 19-20.
+
+### 1. `role` is taken -- the access layer must choose another term
+
+datom uses `role` on `datom_conn` for the **developer / reader** distinction. This file uses
+"role" for a **named permission set**. Two unrelated meanings, one word, in adjacent docs.
+
+**Decision: datom keeps `role`. The access layer picks a different term.** The rename is free
+for a package that does not exist yet and would be a breaking change in a CRAN-submitted one.
+Candidates worth considering when the package is named: `grant_set`, `permission_set`, `gate`.
+(Note the terminology-drift block above already stated "`conn$role` does not exist on
+datom_conn" -- that is stale; it does exist and carries the developer/reader value.)
+
+### 2. There is a second artifact kind now: `set`
+
+A **set** is a versioned, citable collection of pointers to other datoms (issue #89). Its
+payload is a JSON document of member records `{project, name, kind, version}`. It carries
+**no `parents` and no `source_lineage`** -- members are *references*, not lineage.
+
+Consequences for access resolution:
+
+- **A lineage walk from a set terminates immediately with no leaves**, so under the algorithm in
+  this file a set requires **no roles** unless explicitly overridden. That is intended: a set
+  contains no data. Reading it tells you what exists; each member is gated when it is read.
+- **Conjunctive (AND) access across members would be wrong.** A 50-member product must not
+  become unreadable to someone lacking one member. If you can read `AE` but not `CM`, you read
+  the set and work with `AE`.
+- **Granting a product does not grant its members.** Auto-inheritance flows through `parents`;
+  sets have none. This will surprise people and should be documented in the access layer's own
+  docs, not just here.
+- **A sensitive member list is an explicit-override case.** Knowing which studies a product
+  pools can itself be confidential. Step 2 of the resolution algorithm (explicit entry in the
+  roles table) already covers this -- no new mechanism needed.
+- **A set is independently grantable**, because like every artifact it has its own folder under
+  the namespace.
+
+### 3. Access granularity is per-artifact, and datom's layout supports it
+
+Every artifact lives at `{prefix}/datom/{artifact}/`, so a policy can grant
+`.../datom/adsl/*` without granting `.../datom/adae/*`. This is what makes the table-level roles
+in this document enforceable at Layer 2 via prefix patterns rather than only advisable at
+Layer 1.
+
+It also means **two derived tables in the same product, bucket and prefix legitimately carry
+different requirements** -- their leaf ancestors differ, so the union differs, with no
+configuration. The `datom-sets` spec explicitly does *not* treat a storage namespace as an
+access boundary, to avoid foreclosing this.
+
+### 3a. STALE: there is no lineage walk any more -- `source_lineage` is the leaf map
+
+**This is the largest stale item in this document.** Section 1 below requires only `parents`, and
+the "Access Resolution" sections then build an optimization ladder -- naive per-hop walk ->
+session cache -> **precomputed leaf map stored in the registry**. That ladder was designed before
+datom had transitive lineage.
+
+Since **Phase 20 (May 2026)** every table carries `source_lineage`: a **precomputed transitive
+union of its imported leaf ancestors**, maintained at write time.
+
+| Table kind | `source_lineage` | Built by |
+|---|---|---|
+| imported (`datom_sync`) | `[self]`, with `version_sha = data_sha` | `R/sync.R:570-574` |
+| derived (`datom_write`) | `union(parents' source_lineage)` | `datom_lineage_union()` |
+
+So by induction, **"which imported tables ultimately feed table X" is a single metadata read with
+zero hops** -- read `source_lineage` and you have the leaf set. `dev/README.md` records the Phase
+20 API as *"single-read, no DAG walk"*. It cannot go stale, because a parent pins an
+already-existing immutable version.
+
+**What this means for the access layer:**
+
+- **Delete the walk.** `access_check()` step 1 ("walk lineage upward to find all leaf ancestors")
+  becomes one read of the requested table's `source_lineage`, via
+  `datom_get_lineage(conn, name, version, depth = "source")`.
+- **The `ROLE_LEAVES` precomputed-leaf-map optimization is unnecessary.** datom already maintains
+  that mapping per table, at write time, drift-free. Do not rebuild it in the registry.
+- **Cross-bucket metadata reads during the walk go away too** -- there is no walk, so there is no
+  need to construct temporary parent connections just to traverse. (The SOURCES table may still be
+  wanted for other reasons; see section 4.)
+- **The session cache and full-access fast path remain useful**, but for a much cheaper baseline:
+  they now save one read plus registry queries, not a multi-hop traversal.
+- **The worked examples below are still correct in their conclusions** (which roles are required)
+  but obsolete in their mechanics (how the leaves are found). Read them for the access semantics,
+  not the algorithm.
+
+The two lineage fields answer different questions and **neither requires traversal**:
+`source_lineage` = transitive leaf ancestors; `parents` = one step back, carrying `data_sha`.
+
+### 4. Name-to-location resolution is the access layer's job, not datom's
+
+datom performs **no** project-name-to-bucket lookup anywhere. Cross-project members and parents
+work by **caller-supplies-connection**: the caller passes the other project's `datom_conn`, and
+the project name is recorded as a label. So a product pooling three studies across three buckets
+works with **no governance attached**.
+
+The SOURCES table in this document is therefore the access layer's own mechanism for its lineage
+walker, and it must not expect datom to grow a competing one. Note also that datom already has a
+location-indirection layer the access layer should prefer over hardcoding: an explicit address
+lives in each project's config, `ref.json` in the governance repo takes priority once governance
+exists, and `governance.json` is the flag for whether it is attached.
+
+Corollary the spec locked in: **member records carry a logical project name and never a
+location**, because an embedded bucket would go stale the moment that bucket moves -- which is
+precisely what `ref.json` exists to prevent.
+
+### 5. The `.access/` reservation is now structurally enforced, not just conventional
+
+Section 5 below reserves `{prefix}/datom/.access/` and records an audit showing datom is safe
+there **by construction** (no list/delete calls, point-access only, key builder always inserts
+`datom/`).
+
+The `datom-sets` spec adds datom's **first general-purpose public write surface**
+(`datom_storage_write_json()`), which is also the first thing capable of breaking that
+reservation. It is specified to **refuse any key under a `.access/` segment**, alongside
+`.metadata/` and artifact payload keys. Reads are unrestricted. So the reservation survives the
+new export with a test behind it.
+
+### 6. Repo and namespace topology to build against
+
+One datom project = one git repo = one storage namespace (`{root}/{prefix}/datom/`) = one
+manifest, 1:1:1. A data-product repo (`mode: product`) holds its derived tables *and* its set in
+its own namespace, separate from the namespaces holding onboarded source data; initializing a
+product repo over another project's namespace is refused. So for a three-study product the access
+layer should expect: three source namespaces, one product namespace, one gov namespace.
 
 ---
 
@@ -44,6 +180,12 @@ datomanager depends on datom. datom does **not** depend on datomanager. datom mu
 ---
 
 ## What datom Needs to Accommodate datomanager
+
+> **STALE (see "Constraints Established by the `datom-sets` Spec" -> item 3a above).** This
+> section describes only `parents`. Since Phase 20, datom also writes `source_lineage` -- the
+> precomputed transitive union of imported leaf ancestors -- which makes the lineage *walk*
+> described later in this file unnecessary. Read this section for the `parents` schema; read
+> item 3a for what actually resolves leaves.
 
 ### 1. Lineage (parents) in Metadata — REQUIRED
 
@@ -321,6 +463,13 @@ A domain owner manages the roles for their own study. A governance admin manages
 **Lineage** — Each derived table's metadata records its immediate parents. Only immediate parents — not grandparents or deeper ancestors. The access algorithm walks upward through the lineage to discover the full ancestor tree.
 
 **Leaf tables** — Imported tables (from `datom_sync`) or derived tables with `parents: null`. These are the endpoints of the lineage walk — the original data sources whose access restrictions gate everything derived from them.
+
+> **STALE MECHANICS.** Everything from here to the end of the optimization sections describes
+> discovering leaf ancestors by traversing lineage hop by hop. datom has done this for you since
+> Phase 20: `source_lineage` on each table is already the transitive leaf set, so step 1 collapses
+> to a single read (see item 3a above). The **access semantics** below -- leaf-derived
+> requirements, explicit overrides, role/grant comparison -- remain correct and are worth reading.
+> The **traversal and its optimization ladder** are not.
 
 ### The Naive Walk Algorithm
 

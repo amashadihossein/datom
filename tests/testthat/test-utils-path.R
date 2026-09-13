@@ -300,3 +300,104 @@ test_that(".datom_store_constructor_snippet covers component types", {
   expect_match(.datom_store_constructor_snippet(creds),
                "datom_store_s3_creds(", fixed = TRUE)
 })
+
+
+# --- relative artifact keys ---------------------------------------------------
+# These build the RELATIVE keys the .datom_storage_*() dispatch layer takes,
+# as distinct from .datom_build_storage_key()'s FULL keys (tested above).
+# Passing a full key to the dispatch layer would double-prefix it, so the two
+# shapes must stay distinguishable.
+
+test_that("payload key uses .parquet for a table and .json for a set", {
+  sha <- strrep("a1", 32L)
+  expect_equal(.datom_artifact_payload_key("dm", sha, "table"),
+               paste0("dm/", sha, ".parquet"))
+  expect_equal(.datom_artifact_payload_key("dm", sha, "set"),
+               paste0("dm/", sha, ".json"))
+})
+
+test_that("payload key defaults to table", {
+  sha <- strrep("a1", 32L)
+  expect_equal(.datom_artifact_payload_key("dm", sha),
+               .datom_artifact_payload_key("dm", sha, "table"))
+})
+
+test_that("payload key rejects an unknown kind", {
+  expect_error(.datom_artifact_payload_key("dm", strrep("a1", 32L), "widget"))
+})
+
+test_that("meta key builds both fixed metadata paths", {
+  expect_equal(.datom_artifact_meta_key("dm", "metadata"),
+               "dm/.metadata/metadata.json")
+  expect_equal(.datom_artifact_meta_key("dm", "version_history"),
+               "dm/.metadata/version_history.json")
+})
+
+test_that("meta key defaults to metadata.json", {
+  expect_equal(.datom_artifact_meta_key("dm"), "dm/.metadata/metadata.json")
+})
+
+test_that("snapshot key is addressed by metadata_sha under .metadata", {
+  v <- strrep("c3", 32L)
+  expect_equal(.datom_artifact_snapshot_key("dm", v),
+               paste0("dm/.metadata/", v, ".json"))
+})
+
+test_that("snapshot and set-payload keys are different directories", {
+  # Both end in .json for a set, which is exactly why they are easy to confuse:
+  # the payload is addressed by data_sha, the snapshot by metadata_sha.
+  data_sha <- strrep("a1", 32L)
+  meta_sha <- strrep("c3", 32L)
+  expect_equal(.datom_artifact_payload_key("s", data_sha, "set"),
+               paste0("s/", data_sha, ".json"))
+  expect_equal(.datom_artifact_snapshot_key("s", meta_sha),
+               paste0("s/.metadata/", meta_sha, ".json"))
+  expect_false(identical(
+    .datom_artifact_payload_key("s", data_sha, "set"),
+    .datom_artifact_snapshot_key("s", data_sha)
+  ))
+})
+
+test_that("all three key builders validate the artifact name", {
+  sha <- strrep("a1", 32L)
+  # A reserved name that starts with a letter reaches the reserved-name check;
+  # `.metadata` and a traversal segment are stopped earlier, by the rule that a
+  # name must start with a letter.
+  expect_error(.datom_artifact_payload_key("renv", sha), "reserved")
+  expect_error(.datom_artifact_payload_key(".metadata", sha), "start with a letter")
+  expect_error(.datom_artifact_meta_key("../escape"), "start with a letter")
+  expect_error(.datom_artifact_snapshot_key("../escape", sha), "start with a letter")
+})
+
+test_that("sha-bearing key builders reject path traversal and non-hex", {
+  # The guard exists because these values are spliced into a storage key: on the
+  # local backend `fs::path()` would resolve "../.." and escape the namespace.
+  expect_error(.datom_artifact_payload_key("dm", "../../etc/passwd"))
+  expect_error(.datom_artifact_snapshot_key("dm", "../../etc/passwd"))
+  expect_error(.datom_artifact_payload_key("dm", "NOTHEX"))
+  expect_error(.datom_artifact_payload_key("dm", "abc"), "6-64")  # too short
+  expect_error(.datom_artifact_payload_key("dm", strrep("a", 65L)))  # too long
+  expect_error(.datom_artifact_payload_key("dm", toupper(strrep("a1", 32L))))
+})
+
+test_that("a non-hex data_sha in metadata.json is reported, not raised", {
+  # `.datom_validate_one_table()` wraps its payload-key build in tryCatch, so a
+  # corrupt metadata.json surfaces as a `data_missing_s3` finding rather than
+  # aborting the whole validation run. Guard behavior must not change that.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    fs::dir_create(".datom")
+    fs::dir_create("corrupt_tbl")
+    jsonlite::write_json(list(data_sha = "../../escape"),
+                         "corrupt_tbl/metadata.json", auto_unbox = TRUE)
+    local_mocked_bindings(.datom_storage_exists = function(conn, s3_key) TRUE)
+
+    result <- datom_validate(conn)
+    expect_match(
+      result$tables$status[result$tables$table == "corrupt_tbl"],
+      "data_missing_s3"
+    )
+  })
+})
