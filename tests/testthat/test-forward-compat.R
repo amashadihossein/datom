@@ -248,23 +248,53 @@ test_that("every field the set metadata builder emits is in the metadata vocabul
 
 test_that("every field written onto a manifest row is in the row vocabulary", {
   # The same forcing function one level down. Both optional row fields are
-  # supplied, so the inventory is the widest a row can be.
+  # supplied, so the table inventory is the widest a table row can be.
+  #
+  # IT TAKES A ROW OF EACH KIND NOW, and that is not a weakening. A set's row
+  # carries `member_count` INSTEAD of `size_bytes`, so no single row can carry
+  # every name on the list, and asserting against one row alone would either miss
+  # a name or need an exception vector holding the other kind's field. The
+  # inventory is still derived from real writes rather than listed here.
   fx <- local_fc_project()
   fc_write(fx, fc_data(3),
            .original_file_sha = strrep("f", 64), .original_format = "csv")
 
-  row <- fc_clone_manifest(fx)$artifacts$dm
+  table_row <- fc_clone_manifest(fx)$artifacts$dm
 
-  expect_identical(setdiff(names(row), .datom_manifest_entry_known_fields),
-                   character())
+  expect_identical(
+    setdiff(names(table_row), .datom_manifest_entry_known_fields), character()
+  )
+
+  # A set row, written through the real verb into the same repo.
+  write_product_config(fx$repo_dir, "fc-project", "fc-product")
+  version <- datom_history(fx$conn, "dm", short_hash = FALSE)$version[[1L]]
+  suppressMessages(datom_write_set(
+    fx$conn, list(datom_member(fx$conn, "dm", version))
+  ))
+
+  set_row <- fc_clone_manifest(fx)$artifacts[["fc-product"]]
+
+  expect_identical(
+    setdiff(names(set_row), .datom_manifest_entry_known_fields), character()
+  )
 
   # The converse, for the same reason the metadata lists have one: a name on this
   # list that nothing writes is invisible to the carry-forward rule, so a row
-  # arriving from a newer datom with that field on it would lose it. No exception
-  # is needed here today -- the list is exactly what a row carries when both of
-  # its optional fields are supplied, which is what this fixture does.
-  expect_identical(setdiff(.datom_manifest_entry_known_fields, names(row)),
-                   character())
+  # arriving from a newer datom with that field on it would lose it. Taken over
+  # both rows together, since that is what "a field this build writes onto a row"
+  # means once two kinds exist.
+  expect_identical(
+    setdiff(.datom_manifest_entry_known_fields,
+            union(names(table_row), names(set_row))),
+    character()
+  )
+
+  # And the two kinds really do differ in the one field, rather than the union
+  # passing because both rows are the same shape.
+  expect_true("size_bytes" %in% names(table_row))
+  expect_false("size_bytes" %in% names(set_row))
+  expect_true("member_count" %in% names(set_row))
+  expect_false("member_count" %in% names(table_row))
 })
 
 

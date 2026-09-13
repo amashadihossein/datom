@@ -98,7 +98,7 @@ There is no view or navigation config -- see "Tags replace structure" below.
   parquet. The payload is small and cheap to read, so a member index would be
   metadata-for-metadata. **This is also the answer to "how does a git-less reader diff two
   versions?"** -- it reads `version_history.json` (which already carries `data_sha` per entry,
-  `R/read_write.R:564-570`) to map version -> `data_sha`, then fetches the two content-addressed
+  `R/read_write.R:702-708`) to map version -> `data_sha`, then fetches the two content-addressed
   payloads and compares them: three small JSON reads, no git. That yields the **actual changed
   values**, which per-member digests could not. Diffing `members[]` must key on
   `id$project` + `id$name` rather than array position, since member order is not identity for
@@ -460,7 +460,8 @@ correctness question for the write path, not the encoder:
   storage.
 - **R7.5 keeps it true over time**: never re-emit a payload for a `data_sha` already in history
   (carry the recorded `document_sha` forward, mirroring
-  `.datom_lookup_history_parquet_sha()` at `R/read_write.R:468-473`), and hold
+  `.datom_resolve_parquet_sha()` at `R/read_write.R:516-536` -- the function that *decides*, not the
+  scan it calls), and hold
   `datom_validate(fix = TRUE)` to the same rule, since it re-uploads from the clone.
 
 Without both, the failure is a **refused read of a valid version**, surfacing long after the write
@@ -675,7 +676,7 @@ section 11 analysed is outside our control; this one is entirely inside it.
 Nothing self-heals it either. `.datom_update_manifest_entry()` (`R/sync.R:946`) writes no
 `schema_version` on either branch, so stamping the version only in the absent-manifest skeleton
 would leave upgraded repos v2-shaped while still declaring v1 -- the gate then stays silent on
-exactly the repos it was built for. And a no-change write returns at `R/read_write.R:878-887`, before
+exactly the repos it was built for. And a no-change write returns at `R/read_write.R:1081-1090`, before
 the manifest is touched, so an idempotent re-run repairs nothing.
 
 Two properties were recorded as satisfied by Task 4 while the rename was queued to falsify them:
@@ -848,7 +849,7 @@ not survive into the implementation.
 ### 10.7 The write-path entry sequence
 
 Stated once, so the pieces compose. All of it sits directly after the `datom_conn` class check and
-**above** the two routing returns at `R/read_write.R:796` and `R/read_write.R:800` --
+**above** the two routing returns at `R/read_write.R:994` and `R/read_write.R:998` --
 `.datom_sync_data_metadata()` mirrors the whole manifest to storage (`R/sync.R:212`) without ever
 reaching the manifest-writing step, so anything placed after the router misses it.
 

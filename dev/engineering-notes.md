@@ -527,9 +527,17 @@ before touching a manifest or a manifest fixture.
   spellings look more alike than the two working ones. If a count comes back zero for no visible
   reason, check the fixture's entries for `kind` first.
 
-- **A test that needs a set has to hand-build one.** Nothing writes a `kind = "set"` entry until
-  `datom_write_set()` exists, so every counter filter passes against a tables-only manifest whether
-  or not the filter is there. Any change to a counter needs a fixture holding a set entry beside
+- ~~**A test that needs a set has to hand-build one.**~~ **SUPERSEDED 2026-09-13: `datom_write_set()`
+  exists, so a real set is writable in a test.** What it costs is one extra fixture step -- the two
+  gates read `.datom/project.yaml` for `mode: product` and a `set:` name, and nothing in datom writes
+  either field yet, so the fixture writes that file itself via `write_product_config()` in
+  `helper-mock.R` (shared, unlike the per-file project fixtures, because it is one fact about one
+  file's format and three test files need it). Prefer a real write over a hand-built entry: a
+  hand-built row can disagree with what the writer actually produces, which is the disagreement the
+  row-vocabulary and rebuild-parity tests exist to catch. The original entry, retained because the
+  reasoning still applies to any counter added before something writes the shape it counts: nothing
+  wrote a `kind = "set"` entry, so every counter filter passed against a tables-only manifest whether
+  or not the filter was there. Any change to a counter needs a fixture holding a set entry beside
   table entries, and the assertion worth making is that the **counted** numbers
   (`datom_summary()`) and the **stored** `summary` block agree -- a filter applied to one and not the
   other is invisible until they are compared.
@@ -649,3 +657,40 @@ changes; a test that compares hashes passes whichever spelling is used. The guar
 assertion on the emitted JSON. The rule to carry: **decide per field whether absence is a real state,
 then assert on the bytes, because the in-memory object and the identity hash are both blind to the
 difference.**
+
+### A probe fixture can be small enough to pass by coin flip
+
+Found 2026-09-13 while probing the set write. The rule datom relies on is that breaking the code on
+purpose reddens something -- so a probe that reddens **nothing** is either evidence the guard is
+missing or evidence the fixture is too small to distinguish the two behaviours. Distinguish them
+before concluding either.
+
+The concrete case: the set payload's members are sorted by name in the file and by digest in the hash,
+deliberately, and swapping the file to digest order reddened **zero** assertions. The guard existed;
+the fixture had **two** members, and two items sorted by digest agree with name order half the time.
+With five members it is one chance in 120, and the fixture is now five names pinned at one version
+where digest order is the exact **reverse** of name order -- asserted inside the test, so the pinning
+is visible rather than incidental.
+
+The generalisation: **a fixture for an ordering, dedup, or selection rule needs enough elements that
+the wrong rule cannot coincide with the right one.** Two is almost always too few. Where a fixture can
+be chosen so the two rules disagree outright, assert that disagreement in the test body -- otherwise
+the next reader cannot tell a pinned fixture from an arbitrary one.
+
+### `l[["missing"]]` on a list is a subscript ERROR, not NULL
+
+`list(a = 1)$b` is `NULL`; `list(a = 1)[["b"]]` aborts with "subscript out of bounds". So the
+`x[[field]] %||% default` shape -- which reads as the obvious way to take an optional field whose
+**name is in a variable** -- fails on exactly the documents it exists for.
+
+Hit while generalising the version-history scan to look up either `parquet_sha` or `document_sha` by
+name (`.datom_lookup_history_object_sha()`, `R/read_write.R`): every history entry written before a
+field existed lacks it, which is the normal case rather than the edge case. Test presence first:
+
+```r
+if (!is.list(entry) || !(field %in% names(entry))) return("")
+value <- entry[[field]]
+```
+
+`purrr::pluck(entry, field)` also returns NULL and is fine; `$` is not available when the name is a
+variable, which is what makes this shape tempting in the first place.

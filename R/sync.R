@@ -1099,11 +1099,24 @@ datom_sync <- function(conn,
 }
 
 
-#' Update a single table entry in local .datom/manifest.json
+#' Update a single artifact entry in local .datom/manifest.json
+#'
+#' `kind` is a parameter rather than a constant because both write verbs land
+#' here, and the two kinds do not carry the same counters: a table's row declares
+#' `size_bytes`, a set's declares `member_count` **instead**. Not both -- a set
+#' row carrying `size_bytes = 0` reads as an artifact of zero bytes, and the
+#' summary's tables-only byte total would then be right by luck rather than by
+#' rule.
+#'
+#' @param member_count Required for a `"set"` row: the count **after** tidying,
+#'   which is the canonical member count and can differ from what the caller
+#'   passed, because tidying drops an exact duplicate member.
 #' @noRd
 .datom_update_manifest_entry <- function(conn, name, metadata_sha, data_sha,
                                         original_file_sha = NULL,
-                                        format = NULL) {
+                                        format = NULL,
+                                        kind = "table",
+                                        member_count = NULL) {
   manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
   fs::dir_create(fs::path_dir(manifest_path))
 
@@ -1127,17 +1140,6 @@ datom_sync <- function(conn,
     .datom_manifest_skeleton(conn$project_name)
   }
 
-  # Read size_bytes from local metadata.json (already written at this point)
-  meta_path <- fs::path(conn$path, name, "metadata.json")
-  # as.numeric (not as.integer): tables > 2 GB overflow the 2^31 integer
-  # limit, yielding NA that then poisons summary$total_size_bytes.
-  size_bytes <- if (fs::file_exists(meta_path)) {
-    m <- jsonlite::read_json(meta_path)
-    as.numeric(m$size_bytes %||% 0)
-  } else {
-    0
-  }
-
   # Count versions from version_history.json
   vh_path <- fs::path(conn$path, name, "version_history.json")
   version_count <- if (fs::file_exists(vh_path)) {
@@ -1148,13 +1150,35 @@ datom_sync <- function(conn,
   }
 
   entry <- list(
-    kind = "table",
+    kind = kind,
     current_version = metadata_sha,
     current_data_sha = data_sha,
-    last_updated = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-    size_bytes = size_bytes,
-    version_count = as.integer(version_count)
+    last_updated = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
+
+  if (identical(kind, "set")) {
+    if (is.null(member_count)) {
+      cli::cli_abort(
+        "{.arg member_count} is required for a {.val set} manifest entry."
+      )
+    }
+    entry$member_count <- as.integer(member_count)
+  } else {
+    # Read size_bytes from local metadata.json (already written at this point).
+    # A set's metadata has no size_bytes at all, which is why this read sits on
+    # the table branch: reading it there would default a real absence to 0.
+    meta_path <- fs::path(conn$path, name, "metadata.json")
+    # as.numeric (not as.integer): tables > 2 GB overflow the 2^31 integer
+    # limit, yielding NA that then poisons summary$total_size_bytes.
+    entry$size_bytes <- if (fs::file_exists(meta_path)) {
+      m <- jsonlite::read_json(meta_path)
+      as.numeric(m$size_bytes %||% 0)
+    } else {
+      0
+    }
+  }
+
+  entry$version_count <- as.integer(version_count)
 
   if (!is.null(original_file_sha)) entry$original_file_sha <- original_file_sha
   if (!is.null(format)) entry$original_format <- format

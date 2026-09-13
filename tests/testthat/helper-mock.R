@@ -159,3 +159,33 @@ mock_rebuildable_store <- function(manifest,
 
   invisible(NULL)
 }
+
+#' Declare a fixture repo a product repo that owns one named set.
+#'
+#' The two gates on a set write read `.datom/project.yaml` directly, and nothing
+#' in datom writes `mode` or `set` yet -- `datom_init_repo()` writes nine keys and
+#' neither is among them. So every fixture that needs a reachable set write hands
+#' the file over itself, which is the same deliberate inertness the reader-side
+#' format check shipped with.
+#'
+#' Shared rather than duplicated per test file, unlike the project fixtures: this
+#' is a fact about the format of one file, and three files need it.
+#'
+#' @param repo_dir The clone's root.
+#' @param project_name Project name, matching the conn's.
+#' @param set_name The one set this repo owns.
+#' @return Invisibly the path written.
+write_product_config <- function(repo_dir, project_name, set_name) {
+  datom_dir <- fs::path(repo_dir, ".datom")
+  fs::dir_create(datom_dir)
+  path <- fs::path(datom_dir, "project.yaml")
+
+  existing <- if (fs::file_exists(path)) yaml::read_yaml(path) else list()
+  existing$project_name <- project_name
+  existing$mode <- "product"
+  existing$set <- set_name
+
+  yaml::write_yaml(existing, path)
+
+  invisible(path)
+}

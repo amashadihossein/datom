@@ -67,6 +67,25 @@ rb_stored_manifest <- function(fx) {
   .datom_storage_read_json(fx$conn, ".metadata/manifest.json")
 }
 
+# A real set write, so the field-for-field comparison below has a row of the
+# other kind to compare. Without one, every set-specific branch in the rebuild is
+# unreachable from the test that exists to catch it: a set's row carries
+# `member_count` instead of `size_bytes`, and the count lives in the payload
+# rather than in either document a rebuild otherwise reads.
+#
+# The repo has to declare itself a product repo first -- nothing in datom writes
+# `mode` or `set` yet, so the fixture hands the file over.
+rb_write_set <- function(fx, name = "rb-product", member = "dm") {
+  write_product_config(fx$repo_dir, fx$conn$project_name, name)
+  version <- datom_history(fx$conn, member, short_hash = FALSE)$version[[1L]]
+  suppressMessages(datom_write_set(
+    fx$conn,
+    list(datom_member(fx$conn, member, version, tags = list(type = "output"))),
+    tags = list(description = "rebuild fixture"),
+    name = name
+  ))
+}
+
 
 # --- enumerating artifacts from a listing ---------------------------------------
 
@@ -348,10 +367,14 @@ test_that("a rebuilt index matches the recorded one field for field", {
   fx <- local_rebuild_project()
   rb_write_imported(fx, "dm", rb_data(3L))
   rb_write_imported(fx, "ae", rb_data(5L), format = "parquet")
+  # A set as well as tables, because the two kinds build different rows and the
+  # set branch is the newer half. A tables-only fixture leaves it unreached.
+  rb_write_set(fx)
 
   recorded <- rb_stored_manifest(fx)
   rebuilt <- .datom_rebuild_manifest(fx$conn, recorded)
 
+  expect_identical(recorded$artifacts[["rb-product"]]$kind, "set")
   expect_setequal(names(rebuilt), names(recorded))
   expect_equal(rebuilt$project_name, recorded$project_name)
   expect_equal(rebuilt$schema_version, recorded$schema_version)
@@ -410,6 +433,71 @@ test_that("a rebuilt row takes its kind from the document, and defaults to table
   meta$kind <- NULL
   .datom_storage_write_json(fx$conn, meta_key, meta)
   expect_identical(.datom_rebuild_manifest_entry(fx$conn, "dm")$kind, "table")
+})
+
+test_that("a rebuilt set row carries member_count instead of size_bytes", {
+  # The two directions a set row used to be wrong in. `member_count` was absent,
+  # because it lives in the payload rather than in either document a rebuild reads
+  # -- so a set costs a third read. And `size_bytes` was present as 0, because the
+  # default has length 1 and therefore survives the compaction step, leaving the
+  # row stating that the artifact is zero bytes.
+  fx <- local_rebuild_project()
+  rb_write_imported(fx, "dm", rb_data(3L))
+  rb_write_set(fx)
+
+  row <- .datom_rebuild_manifest_entry(fx$conn, "rb-product")
+
+  expect_identical(row$kind, "set")
+  expect_identical(row$member_count, 1L)
+  expect_false("size_bytes" %in% names(row))
+
+  # And a table's row is unchanged by any of it.
+  table_row <- .datom_rebuild_manifest_entry(fx$conn, "dm")
+  expect_true("size_bytes" %in% names(table_row))
+  expect_false("member_count" %in% names(table_row))
+})
+
+test_that("a set whose payload cannot be read yields a row with no member count", {
+  # The same trade the rest of this file makes: an absent count is a gap
+  # datom_validate() owns, while a manufactured one would be a statement about the
+  # set's contents that nothing supports.
+  fx <- local_rebuild_project()
+  rb_write_imported(fx, "dm", rb_data(3L))
+  res <- rb_write_set(fx)
+
+  fs::file_delete(.datom_local_path(
+    fx$conn, .datom_artifact_payload_key("rb-product", res$data_sha, "set")
+  ))
+
+  row <- .datom_rebuild_manifest_entry(fx$conn, "rb-product")
+
+  expect_identical(row$kind, "set")
+  expect_false("member_count" %in% names(row))
+  expect_false("size_bytes" %in% names(row))
+})
+
+test_that("the member count is left out rather than guessed for an unusable data_sha", {
+  expect_null(.datom_rebuild_member_count(mock_datom_conn(list()), "s", NULL))
+  expect_null(.datom_rebuild_member_count(mock_datom_conn(list()), "s", ""))
+  expect_null(
+    .datom_rebuild_member_count(mock_datom_conn(list()), "s", NA_character_)
+  )
+})
+
+test_that("a rebuilt index counts a set in total_sets and out of the table totals", {
+  fx <- local_rebuild_project()
+  rb_write_imported(fx, "dm", rb_data(3L))
+  rb_write_set(fx)
+
+  recorded <- rb_stored_manifest(fx)
+  rebuilt <- .datom_rebuild_manifest(fx$conn, recorded)
+
+  expect_identical(rebuilt$summary$total_sets, 1L)
+  expect_identical(rebuilt$summary$total_tables, 1L)
+  expect_equal(rebuilt$summary$total_sets, recorded$summary$total_sets)
+  expect_equal(rebuilt$summary$total_tables, recorded$summary$total_tables)
+  expect_equal(rebuilt$summary$total_size_bytes,
+               recorded$summary$total_size_bytes)
 })
 
 test_that("original_format survives into metadata, which is what makes it rebuildable", {

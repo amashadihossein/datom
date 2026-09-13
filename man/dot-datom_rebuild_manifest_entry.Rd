@@ -15,11 +15,12 @@
 A named list: one manifest artifact row.
 }
 \description{
-Every field on the row is copied from \code{metadata.json} or counted from
-\code{version_history.json}. The row's shape has to match what
-\code{.datom_update_manifest_entry()} writes, field for field, or a rebuilt repo
-answers differently from a healthy one -- so the two are pinned against each
-other by a test rather than by matching comments.
+Every field on the row is copied from \code{metadata.json}, counted from
+\code{version_history.json}, or -- for a set's member count -- read from the payload.
+The row's shape has to match what \code{.datom_update_manifest_entry()} writes,
+field for field, or a rebuilt repo answers differently from a healthy one -- so
+the two are pinned against each other by a test rather than by matching
+comments.
 }
 \details{
 \code{last_updated} is the one field with no recorded source: the writer stamps the
@@ -27,17 +28,12 @@ wall clock at the moment it rewrites the row, and that moment is not in any
 document. The version's own \code{created_at} is used instead, which is the closest
 true statement available -- when this artifact's current state was written.
 
-\strong{Rebuilding a set's row is not finished here, and it is wrong in two
-directions rather than one.} \code{kind} is recovered, so a set is at least counted
-as a set. But a set's row carries \code{member_count} \strong{instead of} \code{size_bytes},
-and this function does the opposite: \code{member_count} is missing, because that
-number lives in the payload rather than in either document read here (so it
-takes a third read, at the content-addressed payload key), while \code{size_bytes}
-is \emph{present as 0}, because the default below has length 1 and therefore
-survives \code{purrr::compact()}. One field short and one field long.
-
-Whoever writes the set write path owns closing both. The field-for-field test
-that would catch it exists, but its fixture writes tables only, so covering a
-set is part of that work.
+\strong{A set's row is built from different fields, and costs a third read.} A set
+carries \code{member_count} where a table carries \code{size_bytes}, and that count lives
+in the payload rather than in either document read here -- hence
+\code{\link[=.datom_rebuild_member_count]{.datom_rebuild_member_count()}}. Putting a \code{size_bytes} on a set row instead
+would be worse than leaving the count out: the default is \code{0}, which has length
+1 and therefore survives \code{purrr::compact()}, so the row would state that the
+artifact is zero bytes.
 }
 \keyword{internal}

@@ -611,9 +611,15 @@ Relative to the artifact prefix:
 
   1. **Never re-emit a payload for a `data_sha` already in history.** Reuse the stored object and
      **carry the recorded `document_sha` forward**. This is the exact `parquet_sha` pattern:
-     `.datom_lookup_history_parquet_sha()` scans history newest-first for a matching `data_sha` and
-     returns `upload = FALSE` (`R/read_write.R:468-473`, `486-503`). A set needs the direct
-     analogue. Recomputing `document_sha` from freshly emitted bytes while reusing the stored object
+     `.datom_resolve_parquet_sha()` (`R/read_write.R:516-536`) decides between carrying the current
+     value forward, reusing one a prior version already recorded for this `data_sha`, and uploading
+     fresh -- returning `list(parquet_sha =, upload =)`; the scan it calls,
+     `.datom_lookup_history_parquet_sha()` (`R/read_write.R:644-646`), returns a hash or `NULL` and
+     nothing else. A set needs the direct
+     analogue. **Shipped 2026-09-13** as `.datom_resolve_document_sha()`
+     (`R/read_write.R:572-587`), beside its sibling so the two cannot drift, over one shared scan.
+     (An earlier version of this paragraph cited the scan as though it were the decision function and
+     gave line ranges belonging to neither; corrected here.) Recomputing `document_sha` from freshly emitted bytes while reusing the stored object
      records a hash of bytes nobody stored, and the failure surfaces only later, as a **refused read
      of a valid version**.
   2. **The repair path must not break it either.** `datom_validate(fix = TRUE)` re-uploads metadata
@@ -1316,7 +1322,7 @@ the gate deliberately tolerates and which the R8.1 rename therefore breaks.
   **warns once**, pointing at the upgrade: a silent repair is a silent degradation, which is the
   failure this whole section exists to remove.
   **The rebuild reads the recorded version id; it never recomputes one.** `version_history.json`
-  entries already carry `version` (`R/read_write.R:565`). Recomputing through
+  entries already carry `version` (`R/read_write.R:703`). Recomputing through
   `.datom_compute_metadata_sha()` walks straight into the denylist defect (#100) in precisely the
   scenario the rebuild exists for -- an older build reading a repo a newer one wrote -- and would
   publish a `current_version` matching no version in the history, which is worse than the empty list
@@ -1372,7 +1378,7 @@ and already in the design: reads limp, writes stop.
   `R/sync.R:984`); it is a local file read rather than a round trip on every write; it is where a newer
   collaborator's work lands after a pull; and storage cannot legitimately be ahead of git (I5).
   All three documents exist as local files in the clone: `{conn$path}/.datom/manifest.json` and
-  `{conn$path}/{name}/metadata.json` (`R/read_write.R:604-612`, committed via `git_paths`). So the
+  `{conn$path}/{name}/metadata.json` (`R/read_write.R:742-750`, committed via `git_paths`). So the
   check is a **local file read, no network**, and it works for every write route including the
   mirror-everything one, where the set of artifacts is not a single name.
   **Why the local copy is the right target, not a compromise.** A newer build writes git first and

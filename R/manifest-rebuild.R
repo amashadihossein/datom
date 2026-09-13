@@ -154,31 +154,63 @@
 }
 
 
+#' How Many Members a Set's Current Payload Holds
+#'
+#' The third storage read a set's row costs. Only a set needs it, and only a
+#' rebuild pays it: the healthy writer knows the count from the payload it just
+#' canonicalized.
+#'
+#' Returns `NULL` for anything that is not a readable payload -- an unusable
+#' `data_sha`, a missing object, a document that will not parse. That is the same
+#' trade the rest of this file makes: an absent count is a gap
+#' `datom_validate()` owns, while a stand-in count would be a statement about the
+#' set's contents that nothing supports.
+#'
+#' @param conn A `datom_conn` object.
+#' @param name Set name.
+#' @param data_sha The current version's content hash -- the payload's address.
+#' @return An integer count, or `NULL`.
+#' @keywords internal
+.datom_rebuild_member_count <- function(conn, name, data_sha) {
+  if (!is.character(data_sha) || length(data_sha) != 1L || is.na(data_sha) ||
+      !nzchar(data_sha)) {
+    return(NULL)
+  }
+
+  payload <- tryCatch(
+    .datom_storage_read_json(
+      conn, .datom_artifact_payload_key(name, data_sha, "set")
+    ),
+    error = function(e) NULL
+  )
+
+  if (!is.list(payload) || !is.list(payload$members)) return(NULL)
+
+  as.integer(length(payload$members))
+}
+
+
 #' Rebuild One Artifact's Manifest Row from Its Own Documents
 #'
-#' Every field on the row is copied from `metadata.json` or counted from
-#' `version_history.json`. The row's shape has to match what
-#' `.datom_update_manifest_entry()` writes, field for field, or a rebuilt repo
-#' answers differently from a healthy one -- so the two are pinned against each
-#' other by a test rather than by matching comments.
+#' Every field on the row is copied from `metadata.json`, counted from
+#' `version_history.json`, or -- for a set's member count -- read from the payload.
+#' The row's shape has to match what `.datom_update_manifest_entry()` writes,
+#' field for field, or a rebuilt repo answers differently from a healthy one -- so
+#' the two are pinned against each other by a test rather than by matching
+#' comments.
 #'
 #' `last_updated` is the one field with no recorded source: the writer stamps the
 #' wall clock at the moment it rewrites the row, and that moment is not in any
 #' document. The version's own `created_at` is used instead, which is the closest
 #' true statement available -- when this artifact's current state was written.
 #'
-#' **Rebuilding a set's row is not finished here, and it is wrong in two
-#' directions rather than one.** `kind` is recovered, so a set is at least counted
-#' as a set. But a set's row carries `member_count` **instead of** `size_bytes`,
-#' and this function does the opposite: `member_count` is missing, because that
-#' number lives in the payload rather than in either document read here (so it
-#' takes a third read, at the content-addressed payload key), while `size_bytes`
-#' is *present as 0*, because the default below has length 1 and therefore
-#' survives `purrr::compact()`. One field short and one field long.
-#'
-#' Whoever writes the set write path owns closing both. The field-for-field test
-#' that would catch it exists, but its fixture writes tables only, so covering a
-#' set is part of that work.
+#' **A set's row is built from different fields, and costs a third read.** A set
+#' carries `member_count` where a table carries `size_bytes`, and that count lives
+#' in the payload rather than in either document read here -- hence
+#' [.datom_rebuild_member_count()]. Putting a `size_bytes` on a set row instead
+#' would be worse than leaving the count out: the default is `0`, which has length
+#' 1 and therefore survives `purrr::compact()`, so the row would state that the
+#' artifact is zero bytes.
 #'
 #' @param conn A `datom_conn` object.
 #' @param name Artifact name.
@@ -200,24 +232,37 @@
     error = function(e) NULL
   )
 
+  # Read from the document, which now declares it. The fallback covers every
+  # artifact written before it did -- all of them tables, since sets did not
+  # exist -- and is the same assumption the v1 manifest upgrade makes about an
+  # untyped row. It is not optional either way: an untyped row is silently
+  # uncounted by `.datom_artifacts_of_kind()`, so a rebuilt repo would list its
+  # artifacts while reporting zero of them.
+  kind <- meta$kind %||% "table"
+
   entry <- list(
-    # Read from the document, which now declares it. The fallback covers every
-    # artifact written before it did -- all of them tables, since sets did not
-    # exist -- and is the same assumption the v1 manifest upgrade makes about an
-    # untyped row. It is not optional either way: an untyped row is silently
-    # uncounted by `.datom_artifacts_of_kind()`, so a rebuilt repo would list its
-    # artifacts while reporting zero of them.
-    kind = meta$kind %||% "table",
+    kind = kind,
     current_version = .datom_recorded_current_version(meta, history),
     current_data_sha = meta$data_sha,
-    last_updated = meta$created_at,
-    # as.numeric, not as.integer: an artifact over 2 GB overflows R's integer
-    # limit and the NA then poisons the summary total.
-    size_bytes = as.numeric(meta$size_bytes %||% 0),
-    version_count = if (is.list(history)) length(history) else 0L
+    last_updated = meta$created_at
   )
 
-  entry$version_count <- as.integer(entry$version_count)
+  # The one row field that is not in either document read above, and the reason a
+  # set costs a third read. A payload that cannot be read leaves the count out
+  # rather than guessing at it: `purrr::compact()` below drops the NULL, and a row
+  # already tolerates carrying no count, whereas a manufactured one would be a
+  # wrong statement rather than a missing one.
+  if (identical(kind, "set")) {
+    entry$member_count <- .datom_rebuild_member_count(conn, name, meta$data_sha)
+  } else {
+    # as.numeric, not as.integer: an artifact over 2 GB overflows R's integer
+    # limit and the NA then poisons the summary total.
+    entry$size_bytes <- as.numeric(meta$size_bytes %||% 0)
+  }
+
+  entry$version_count <- as.integer(
+    if (is.list(history)) length(history) else 0L
+  )
 
   if (!is.null(meta$original_file_sha)) {
     entry$original_file_sha <- meta$original_file_sha

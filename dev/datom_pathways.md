@@ -82,7 +82,7 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 **Why a separate card:** the read side asks "can I interpret this document?" and answers by degrading gracefully where it can. The write side asks a stricter question, because a reader that guesses wrong gives one wrong answer to one person while a writer that guesses wrong leaves the repo wrong for everybody. **Reads limp, writes stop.**
 
-**Canonical route** -- `.datom_check_write_entry(conn, artifact)` (`R/forward-compat.R`), called immediately after `datom_write()`'s `datom_conn` class check **and** at the top of `.datom_sync_data_metadata()`, which `datom_validate(fix = TRUE)` calls directly without passing through `datom_write()`:
+**Canonical route** -- `.datom_check_write_entry(conn, artifact)` (`R/forward-compat.R`), called immediately after `datom_write()`'s `datom_conn` class check, at the top of `.datom_sync_data_metadata()` (which `datom_validate(fix = TRUE)` calls directly without passing through `datom_write()`), and from `datom_write_set()`, which inherits nothing from any of them:
 
 1. **The floor.** If `project.yaml` declares a `min_writer_version` above the running build, refuse (`datom_writer_floor`). Absent means no floor. Read off the connection, which parsed that file already.
 2. **The manifest**, through `.datom_read_manifest(conn, "clone", operation = "write")` -- the schema check and then the conversion chain, exactly as the read card describes, with the refusal worded for a write.
@@ -93,7 +93,7 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 
 **Placement:** above the two routing returns, because one route mirrors the whole manifest to storage without touching a single artifact. Above any hashing, local write or commit, so a refusal leaves no partial state. **On the shared function, not on each caller** -- a repair verb that reaches storage without going through the write verb is the gap that has now been missed three times running. **Re-run after a route's own pull** -- `.datom_sync_metadata()` pulls as its first act, which replaces the documents the entry just read. Re-running is free and safe: every step is a local file read and none of them mutates anything.
 
-**Known residual, so it is not rediscovered as a defect:** on the table-write route the pull happens inside the push, at step 7, **after** the metadata document has been written and the manifest edited -- so the entry's answer can be stale there and re-checking cannot help, because the write is already built. The backstop is the push itself: it aborts on rejection or on a merge conflict, and the storage steps come after it, so a write cannot reach storage from a base this build has not seen.
+**Known residual, so it is not rediscovered as a defect:** on both write routes the pull happens inside the push, in `.datom_commit_and_mirror()`, **after** the metadata document has been written and the manifest edited -- so the entry's answer can be stale there and re-checking cannot help, because the write is already built. The backstop is the push itself: it aborts on rejection or on a merge conflict, and the storage steps come after it, so a write cannot reach storage from a base this build has not seen.
 
 **Cases that pass through untouched:** no clone (a reader-role connection fails later with a clearer message about role), no manifest file yet (nothing written, nothing to disagree with), and a manifest that will not parse (not a compatibility failure; the write fails on it moments later with the parser's own error).
 
@@ -102,6 +102,31 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 **Why this matters:** a build that rewrites a document it cannot fully account for recomputes that document's version identity from the fields it knows, reaching a different answer from the build that wrote it -- on content that never moved. All of it binds **0.1.1 forward only**: 0.1.0 has none of these checks and none can be added to a released build.
 
 **Do not:** Add directional logic. A newer build's vocabulary is a superset of every older one's, so the vocabulary check cannot fire on the upgrade path, and a guard for it would be dead code. Do not prune a name from a vocabulary list: a build that forgets a name meets an **older** document, fails to place a key it should know, and refuses it -- blocking the one direction that must always work. Do not put the per-artifact half of the check on storage's copy: git is written first and gates the mirror, so the newer document arrives in the clone.
+
+### Given a member list, write a set
+
+**Question:** `datom_write_set()` was called with member records from `datom_member()`. What happens, in what order, and where do the bytes end up?
+
+**Why a separate card:** a set is the second artifact kind, and its write differs from a table's in three places that are easy to get wrong by analogy -- there are two extra gates before anything happens, the payload is written to **two different paths** rather than one, and the stored-object hash is over a JSON document that git also holds.
+
+**Canonical route** -- `datom_write_set()` (`R/set.R`):
+
+1. **Connection, role, clone.** Same three checks as a table write.
+2. **The two gates**, `.datom_check_set_write_gates()`: `.datom/project.yaml` must declare `mode: product`, and `name` must equal its `set:` field. These read that file directly -- neither field is on the connection. They run **before** the write entry, because they are what establish which artifact this write touches, and the entry check's `artifact = NULL` means "every artifact in the clone".
+3. **The write entry**, exactly the card above.
+4. **Tidy, then validate, then order.** Tidy normalises tag maps at both levels and the `id` key order, and is deliberately **tolerant** -- a value it does not recognise as text passes through for validation to report. Validation is `.datom_validate_tag_map()` on the set's own tags and `.datom_validate_members()` per member. Then `.datom_order_set_members()` dedupes by `datom-sv1` member digest and sorts by `project` || `name` || `version`.
+5. **The payload-level refusals**, `.datom_check_set_payload()`: zero members, the same `id` twice with different tags, and self-reference. All three need the whole payload, which is why none is in the member validator.
+6. **Identity, then the version.** `.datom_build_set_metadata()` computes `data_sha` with `.datom_canonical_set_hash()` (`datom-sv1`, `R/hashable-set.R`), then `.datom_compute_metadata_sha()` gives the version.
+7. **Change detection and the kind check.** `.datom_has_changes()` reads the artifact's current metadata from storage; `.datom_check_artifact_kind()` refuses on that same document if the name already belongs to a table. No change -> return, nothing written.
+8. **The git payload**, at `{name}/set.json`. Written before the metadata document, because `document_sha` hashes these bytes.
+9. **`document_sha`**, via `.datom_resolve_document_sha()` -- reuse the recorded hash and skip the upload when this `data_sha` is already in history, otherwise hash the bytes just written. Populated on the metadata object **before** it is written.
+10. **Metadata, history, manifest row**, then `.datom_commit_and_mirror()`: commit, push, upload the payload to `{name}/{data_sha}.json`, mirror the metadata, mirror the manifest.
+
+**Storage layout, and the two `.json` addresses that are easy to confuse:** the payload is `{name}/{data_sha}.json` (content), the versioned metadata snapshot is `{name}/.metadata/{metadata_sha}.json` (version). Build both with the `R/utils-path.R` helpers, never by hand.
+
+**Primary functions/files:** `datom_write_set()`, `.datom_check_set_write_gates()`, `.datom_tidy_set_payload()`, `.datom_order_set_members()`, `.datom_check_set_payload()` (all `R/set.R`); `datom_member()`, `.datom_validate_members()`, `.datom_validate_tag_map()` (`R/member.R`); `.datom_canonical_set_hash()` (`R/hashable-set.R`); `.datom_build_set_metadata()`, `.datom_resolve_document_sha()`, `.datom_commit_and_mirror()`, `.datom_check_artifact_kind()` (`R/read_write.R`); `.datom_update_manifest_entry()` (`R/sync.R`).
+
+**Do not:** Content-address the git path. Every version would be a new file, `git diff` would report "file added" instead of which members changed, and history would have to be read by listing filenames. Do not sort the file's members by digest -- editing one member's tags changes its digest, so the entry relocates and the diff becomes a delete plus an insert; the hash sorts by digest and the file sorts by name, and the two keys have separate reasons. Do not recompute `document_sha` for content already stored: that records a hash of bytes nobody stored, and it surfaces later as a refused read of a valid version. Do not re-serialize the payload for storage -- upload the same file git holds, so one `data_sha` cannot end up with two byte spellings. Do not add cycle detection: a member pins a version that already exists, so a set cannot contain itself, and the self-reference refusal is a nonsense check rather than the first step of a walk.
 
 ### Given data_sha, find metadata versions
 

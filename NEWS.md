@@ -230,6 +230,58 @@ lag a partial write while that document cannot.
   Nothing changes for any document datom has ever written: a snapshot with no
   declared format is still read as version 1 and still works.
 
+## New: `datom_write_set()` writes a versioned, citable set
+
+A **set** is datom's second artifact kind: a collection of pointers at exact
+versions of existing artifacts, plus text labels. It holds no data of its own, so
+writing one neither copies nor moves anything a member contains. Declare members
+with `datom_member()` and write them with
+`datom_write_set(conn, members, tags = NULL)`.
+
+* **One repo holds one set, and the repo says which.** The write refuses unless
+  `.datom/project.yaml` declares `mode: product` and a `set:` name matching what
+  is being written. Both checks run before anything is hashed or written, so a
+  refusal leaves nothing behind. **Nothing writes those two fields yet**, so this
+  release ships the checking half only -- a later release adds them at
+  initialisation. Until then a set write is reachable only in a repo whose
+  configuration was edited by hand.
+
+* **User metadata is labels, and there is no second channel for it.** There is no
+  `metadata =` argument: a description is a tag. Tag values are text, one string
+  or several, because the point of labels over folders is that an item can be in
+  more than one category at once. No folder or view structure is stored -- a
+  hierarchy is a projection a consumer computes over tags, which is why any number
+  of them cost nothing.
+
+* **The version covers the whole payload**, members and labels alike. Editing a
+  label or a description therefore mints a new version, deliberately: a set exists
+  to be cited, and "same citation, different labels" would be a lie to whoever
+  cited it. What does **not** mint a version is a purely syntactic edit --
+  reordering labels or members, repeating a label, or writing one label as a
+  one-element array. Those are normalised on the way in, so re-writing an
+  identical payload is a no-op.
+
+* **Two copies of the payload, at two deliberately different addresses.** Git
+  holds `{name}/set.json` at one stable path, modified in place, so git carries
+  the history and `git diff` between two versions shows which members changed.
+  Storage holds the same bytes content-addressed at `{name}/{data_sha}.json`, so a
+  reader with no clone can fetch an exact version. Any past version is
+  reconstructible from the clone alone with
+  `git show <commit>:{name}/set.json`.
+
+* **Refused, each with its own message**: a set with no members; the same
+  artifact version listed twice with conflicting labels (give one label several
+  values instead); a set listing itself; a label with no name; and a name already
+  used by a table in the same project. The last one now works in both directions
+  -- writing a table over an existing set is refused too, because both kinds store
+  under the same name.
+
+* **A set's manifest row carries `member_count` where a table's carries
+  `size_bytes`**, and `datom_summary()`'s `set_count` counts it. The table
+  counters keep their tables-only meaning.
+
+* Reading a set back is not in this release yet.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

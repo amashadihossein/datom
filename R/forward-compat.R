@@ -58,10 +58,16 @@
 #   current_data_sha                that version's content identity
 #   last_updated                    when the row was last rewritten
 #   size_bytes, version_count       counters the summary block aggregates
+#   member_count                    sets only -- carried INSTEAD of size_bytes,
+#                                   because nothing aggregates a set's byte size
+#                                   and the member count is what a consumer asks
+#                                   for. So no single row carries every name on
+#                                   this list, which is why the forcing test
+#                                   below it needs one row of each kind.
 #   original_file_sha               imported artifacts only
 #   original_format                 imported artifacts only
 .datom_manifest_entry_known_fields <- c(
-  "current_data_sha", "current_version", "kind", "last_updated",
+  "current_data_sha", "current_version", "kind", "last_updated", "member_count",
   "original_file_sha", "original_format", "size_bytes", "version_count"
 )
 
