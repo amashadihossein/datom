@@ -482,7 +482,7 @@ produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
   - `project` -- otherwise cross-project membership cannot resolve, and cross-project is the
     point.
   - `kind` -- because a set may contain a set; without it a resolver cannot know whether to
-    call `datom_read()` or `datom_read_set()`.
+    call `datom_read()` or `datom_get_set()`.
 - **R4.2** Members are built with **`datom_member(conn, name, version)`**, mirroring
   `datom_parent()` (`R/lineage.R`). Callers must not hand-assemble member lists:
   `datom_parent()` is the established pattern for constructing a validated reference record,
@@ -492,7 +492,7 @@ produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
   members only. Reading a set returns those member records; if a member is itself a set, the
   consumer gets a **pointer** to it and reads that set separately if they want its contents. This
   mirrors `datom_get_parents()`, which returns one step back and leaves further steps to the
-  caller. **No datom operation walks the member graph** -- not `datom_read_set()`, not
+  caller. **No datom operation walks the member graph** -- not `datom_get_set()`, not
   `datom_validate()`. A consumer wanting a flattened tree composes repeated reads in their own
   code.
 - **R4.4 -- the member graph is acyclic by construction, so no cycle detection is specified.**
@@ -892,10 +892,20 @@ On a set this fails 100% of the time and reports `data_missing_s3`.
   description must mint a version, and a description *is* a set-level tag per R6.2). Note this is
   the only channel: R1.4 deliberately withholds a `metadata =` parameter, so without `tags` the
   public surface could not express a payload the spec requires.
-- **R12.3** `datom_read_set()` -- resolves and returns the set. **Both directions of the
+- **R12.3** `datom_get_set(conn, name, version = NULL)` -- resolves and returns the set.
+  **Named `get`, not `read`, and the distinction is the package's own** (owner-decided 2026-09-13,
+  after this requirement was first written as `datom_read_set()`): `read` materialises **content**
+  (`datom_read()` hands back a data frame), while `get` fetches **references** -- which is already
+  what `datom_get_parents()` and `datom_get_lineage()` do. A set read returns pointers and tags and
+  no data at all, so `read` would have promised the wrong thing. This is also the reason the two
+  verbs are **not** unified into one kind-dispatching `datom_read()`: they are not one operation with
+  two implementations, they are two operations, and a single verb would be semantically unstable
+  rather than merely type-unstable. The implementation is shared regardless -- both verbs go through
+  `.datom_read_metadata()`, `.datom_resolve_version()`, the schema gate and the kind check -- so the
+  only per-kind code is download-verify-parse for one payload format. **Both directions of the
   kind mismatch abort with a pointer to the right function**: `datom_read()` on a set points at
-  `datom_read_set()` (AC6), and `datom_read_set()` on a table points at `datom_read()` (AC14).
-  The converse matters as much as the original -- without it, `datom_read_set()` on a table
+  `datom_get_set()` (AC6), and `datom_get_set()` on a table points at `datom_read()` (AC14).
+  The converse matters as much as the original -- without it, `datom_get_set()` on a table
   fetches `{name}/{data_sha}.json`, gets a not-found, and reports a missing payload for an
   artifact that is perfectly healthy.
 - **R12.4 -- export JSON GET only** (narrowed 2026-08-18; the put is deferred, see R12.4a).
@@ -1476,18 +1486,18 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 
 | # | Criterion |
 |---|---|
-| **AC1** | **Reader role, no git -- and "resolve" means two different things, tested separately.** (a) **Resolve the pointers**: a storage-only connection (no `github_pat`, no clone) can `datom_read_set()` and get back the member records. This always works and is the primary use case -- the "git-canonical" framing must not lead to requiring a clone. (b) **Resolve to data**: reading a member's actual content needs a connection scoped to *that member's* project -- same-project members work through the same connection; cross-project members require the caller's connection (or, later, the governance register). Conflating (a) and (b) is how this gets mis-implemented as "reading a set requires access to everything in it". |
+| **AC1** | **Reader role, no git -- and "resolve" means two different things, tested separately.** (a) **Resolve the pointers**: a storage-only connection (no `github_pat`, no clone) can `datom_get_set()` and get back the member records. This always works and is the primary use case -- the "git-canonical" framing must not lead to requiring a clone. (b) **Resolve to data**: reading a member's actual content needs a connection scoped to *that member's* project -- same-project members work through the same connection; cross-project members require the caller's connection (or, later, the governance register). Conflating (a) and (b) is how this gets mis-implemented as "reading a set requires access to everything in it". |
 | **AC2** | **Idempotent re-write -- on the whole payload, not just members.** Writing an identical **payload** (members *and* their tags) to the same set name is a no-op -- dedup on set `data_sha`, no new version appended. **Converse, tested alongside it**: an identical member list with a *changed tag or description* is **not** a no-op and **does** mint a new version (R2.6/Q1). Both halves are needed -- the original wording said "identical member list", which under whole-payload hashing would have been wrong. |
 | **AC3** | **Version sensitivity.** A set whose member *names* are unchanged but whose member *versions* advanced **must** produce a new `data_sha` and a new version. Do not "optimize" this away. |
 | **AC4** | **Name uniqueness across kinds.** Writing a set with the name of an existing table (or vice versa) is refused. **Mechanism**: the check reads `{name}/.metadata/metadata.json` from **storage** and compares `kind` -- not the manifest, which can lag behind a partially-completed write. This is the same source `.datom_has_changes()` already consults, so the check costs no extra round-trip. Stated explicitly so it is not decided by accident. |
 | **AC5** | **Empty set refused; single-member set legal.** `datom_write_set()` with zero members **aborts** (R2.8/Q3), mirroring `.datom_canonical_hash()`'s refusal of zero-row/zero-column tables. A one-member set is legal and hashes normally. The refusal is the *tested* behavior, not a documented maybe. |
-| **AC6** | **`datom_read()` on a set** aborts with a message pointing at `datom_read_set()`, not a cryptic missing-parquet error. |
+| **AC6** | **`datom_read()` on a set** aborts with a message pointing at `datom_get_set()`, not a cryptic missing-parquet error. |
 | **AC7** | **Schema gate fires, both directions.** *Refuse-newer*: a repo declaring `schema_version: 3` aborts with the upgrade message, at **both** entry points (manifest and per-artifact metadata). *Tolerate-older*: a repo with no `schema_version` field behaves exactly as 0.1.0 did. **Mechanism note**: an actually-installed 0.1.0 reader has no gate to fire, so this is not testable by installing an old version -- the test drives `.datom_check_schema_version()` directly with a fixture declaring a version above `SUPPORTED_SCHEMA`. Test the gate, not the archaeology. **Second mechanism note, added 2026-08-23**: the *tolerate-older* half is not satisfied by the gate alone once R8.1 lands, because a tolerated v1 manifest still holds its list under the old key. What makes this clause true is the upgrade in R22, and what tests it is AC30. Before that was noticed, this criterion and P10 were both recorded as met by Task 4 while the rename was queued to falsify them. |
 | **AC8** | **Lineage isolation.** A set's metadata contains no `parents` and no `source_lineage` (**omitted, not null**), and writing a set does not alter any member's lineage. |
 | **AC9** | **Self-reference refused.** Writing a set that lists itself (any version of itself) as a member is refused at write time with a clear error (R4.5). Note this is a nonsense check, **not** cycle detection -- cycles are structurally impossible (R4.4), so there is deliberately no cycle test and no depth test. |
 | **AC13** | **Write/read hash agreement, plus what is and is not identity.** Split into two levels, because the earlier single-umbrella wording was unsatisfiable for some fixtures -- (g) has no payload and no `data_sha` at all, and (e) cannot be built through the public path since R2.14 refuses it. **AC13-P, payload level** (the umbrella applies: `data_sha` from the in-memory payload equals `data_sha` recomputed after the payload has been stored and read back with `simplifyVector = FALSE` -- covers R2.5): **equal** for (a) tag-value **order**, (b) tag-value **duplication**, (c) **member order**, (d) **single string vs one-element array**; **different** for (f) **NFC vs NFD** spellings of visually identical tag text (R2.16). **AC13-E, encoder level** -- called against the encoder directly, *not* through `datom_write_set()`, since the write path tidies or refuses these before the encoder sees them: (e) a member listed twice with identical `id` **and** `tags` hashes **equal** to one entry (R2.14), (g) `strset(character(0)) == h(0x02)` as a pinned constant (R2.17). Note (c) and (d) each **reverse** an earlier fixture that required a difference. (f) **must use `\u` escapes**, not literal non-ASCII bytes -- these fixtures ship in `tests/`, and `R CMD check --as-cran` must stay at zero warnings (AC11). Number and boolean cases are not applicable -- see AC27. |
 | **AC29** | **Canonicalization happens before the local write, and one `data_sha` keeps one byte spelling.** (a) A payload supplied with unsorted tag values, a duplicated tag value, an array-wrapped single value, and unsorted members is written to `{name}/set.json` in canonical form -- assert on the **file bytes**, not the return value (R2.15). (b) Re-writing a payload whose `data_sha` is already in history does **not** re-upload and does **not** recompute `document_sha`; the recorded value is carried forward and the stored object is untouched (R7.5 rule 1). (c) `datom_validate(fix = TRUE)` on such a repo leaves the stored payload bytes and the recorded `document_sha` unchanged, and a subsequent version-pinned read still verifies (R7.5 rule 2). (c) is the clause a naive implementation fails while passing (a) and (b). |
-| **AC14** | **`datom_read_set()` on a table** aborts pointing at `datom_read()` -- the converse of AC6, not a missing-payload error for a healthy table. |
+| **AC14** | **`datom_get_set()` on a table** aborts pointing at `datom_read()` -- the converse of AC6, not a missing-payload error for a healthy table. |
 | **AC15** | **Nesting resolves one level -- no traversal.** Reading a set whose members include another set returns a **pointer** to that inner set (`kind = "set"`, name, project, version), and does **not** fetch the inner set's own members. Asserted by observing that no storage read of the inner set's payload occurs. Covers R4.3, and guards against an implementer "helpfully" flattening the tree. |
 | **AC16** | **Machine-commit isolation.** In a `mode: product` repo with an uncommitted edit at `R/foo.R`, a `datom_write()` of a table produces a commit whose tree does **not** contain the `R/foo.R` change, **and** `R/foo.R` is still dirty in the working tree afterward. Both halves matter: the second catches a "helpfully" cleaned working tree (R14.1). |
 | **AC17** | **`datom_repo_commit()` semantics.** `paths = NULL` stages a mixed tracked/untracked change set **minus** gitignored files; explicit `paths` stages exactly those; a reader conn is refused; nothing-to-stage creates **no commit** and is not an error; `push = FALSE` leaves the remote untouched. **Plus the R15.5 qualification**: with a clean tree, `push = TRUE`, and the branch ahead of the remote, no commit is created **but the push still happens** -- assert the remote advanced (R15). |

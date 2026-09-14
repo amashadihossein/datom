@@ -72,7 +72,7 @@ it.
 **"Which raw sources fed product X at version V"** is a read-time union, not a stored field:
 
 ```r
-members <- datom_read_set(conn, "study001-adam")$members
+members <- datom_get_set(conn, "study001-adam")$members
 sls <- lapply(members, function(m) {
   datom_get_lineage(conns[[m$project]], m$name, version = m$version, depth = "source")
 })
@@ -180,7 +180,7 @@ mechanism, not a tidiness preference, and it has a corollary the old wording hid
 
 - `project` -- otherwise cross-project membership cannot resolve, and cross-project is the point.
 - `kind` -- a set may contain a set; without it a resolver cannot know whether to call
-  `datom_read()` or `datom_read_set()`.
+  `datom_read()` or `datom_get_set()`.
 
 ### `datom_member(conn, name, version)`
 
@@ -1072,7 +1072,7 @@ Must-never rules. Violating any of these is a correctness bug, not a style issue
 | **I7** | Business logic **never** calls `.datom_s3_*()` or `.datom_local_*()` directly -- only `.datom_storage_*()` dispatch. |
 | **I8** | Reading a set requires **no git clone**. Storage-only readers are the primary consumer (AC1). |
 | **I9** | Any caller-influenced value spliced into a storage key passes `.datom_validate_sha()` / `.datom_validate_name()` first. |
-| **I10** | **Member resolution is one level deep. No datom operation traverses the member graph** -- not `datom_read_set()`, not `datom_validate()`. A member that is a set is returned as a pointer, never expanded. |
+| **I10** | **Member resolution is one level deep. No datom operation traverses the member graph** -- not `datom_get_set()`, not `datom_validate()`. A member that is a set is returned as a pointer, never expanded. |
 | **I10a** | The member graph is **acyclic by construction**, because a member pins an already-existing immutable version. No cycle detection, visited set, or depth limit is required or permitted to creep back in as "defensive" code. |
 | **I11** | No credentials in the payload, metadata, manifest, or any set-related file. |
 | **I12** | `table_type` remains validated to exactly `"imported"` / `"derived"`. `kind` is a separate axis and must not be smuggled into it. |
@@ -1237,7 +1237,7 @@ the code independently rather than accepted on assertion.
 | **F3** | **Public `datom_storage_write_json()` could clobber managed keys**, silently bypassing git-gates-storage and integrity for datom-managed artifacts. | Read Task 3's stated hardening (conn check, key validation) and confirmed neither constrains the key namespace. | **RESOLVED DIFFERENTLY, 2026-08-18: the export is deferred, so the hazard is removed rather than fenced.** The finding was correct and its original resolution (below) was sound; it was superseded by asking a question the review did not -- *who still needs this export?* -- to which the answer was nobody, once `datom_write_set()` existed. Recorded because the lesson generalises: a review that hardens a capability can be right about the hazard and still miss that the capability is unnecessary. Original resolution, preserved because it is the starting point if the export is revived: **Accepted.** **R12.4a**: the write export refuses `.metadata/` segments and payload-shaped keys under existing artifact directories; reads unrestricted. New **I14**, **P18**. Settled as a public-contract decision in the spec, not at implementation time. |
 | **F4** | **Set metadata field list was internally inconsistent** -- R1.3 said "exactly seven fields", the design section 4 matrix granted `size_bytes` and `custom`. A test written to one fails the other. | Diffed the two lists directly. | **Accepted.** Reconciled to R1.3's seven. `size_bytes` dropped because nothing consumes it for a set (`total_size_bytes` is tables-only; the entry carries `member_count`). `custom` dropped because tags/descriptions/view config live in the payload by R6.2, so a second channel means two places to look -- `datom_write_set()` gains no `metadata =` parameter. **R1.4** records both reasons; the matrix now states the reconciliation. Acceptance tightened to `setequal()` so an *added* field also fails. |
 | **F5** | **R10's "one repo = one set" had no stated enforcement**, and the write-time nesting check assumed the set's name is known before the write -- which only holds if that check exists. (The nesting check is now just self-reference refusal, R4.5, but it makes the same assumption.) | Confirmed no requirement or task specified the check. | **Accepted.** **R10.3a** adds two gates: `datom_write_set()` requires `mode: product`, and the name must equal `project.yaml`'s `set:` field. Both run before any hashing or IO. New **I15**. |
-| **F6** | `datom_read_set()` on a **table** was unspecified -- the converse of AC6. | Read R12.3. | **Accepted.** R12.3 now specifies both directions; **AC14** added. Without it, `datom_read_set()` on a healthy table reports a missing payload. |
+| **F6** | `datom_get_set()` on a **table** was unspecified -- the converse of AC6. | Read R12.3. | **Accepted.** R12.3 now specifies both directions; **AC14** added. Without it, `datom_get_set()` on a healthy table reports a missing payload. |
 | **F7** | **Git-side payload layout unspecified.** `governance.json` is a singleton current-state file; a set has N immutable content-addressed payloads, so the dual-pointer pattern does not transfer wholesale. | Read `R/governance_json.R` -- confirmed singleton at `.datom/governance.json`. | **Accepted, then SUPERSEDED -- see section 21.2.** The finding was right that the pattern does not transfer wholesale. Its original resolution -- git layout at `{name}/{data_sha}.json` with all historical payloads retained -- was **reversed**: git now holds one stable `{name}/set.json` so history is git's and diffs are member-level, and the retention rule is redundant because git retention is definitional. **P17** still holds, via `git show <commit>:{name}/set.json`. |
 | **F8** | **AC4 mechanism** should read storage metadata, not the manifest (which can lag). | Confirmed `.datom_has_changes()` already reads `{name}/.metadata/metadata.json`. | **Accepted.** AC4 now names the mechanism and notes it costs no extra round-trip. |
 | **F9** | **R8.1's example** omits fields real entries carry, and could be read as the full schema. | Confirmed against `.datom_update_manifest_entry()` (`R/sync.R:992-1002`). | **Accepted.** R8.1 marks the example illustrative and enumerates the omitted fields. |
@@ -1695,9 +1695,6 @@ identified a contradiction between two spec statements -- and was resolved by *a
 than by questioning whether either statement was true. Both were false. The lesson is recorded
 rather than quietly patched: when a review surfaces a contradiction, check the premises before
 building something that reconciles them.
-
----
-
 ## 21. History ownership, version semantics, and the commit link
 
 Three connected decisions, settled in review. They share one root question: **what does datom
@@ -1864,3 +1861,96 @@ version per product, with an `archived` flag), which exists because pins has no 
 history. datom already has per-artifact `version_history.json` in storage carrying the sibling git
 fields, so **no namespace-level per-version index is added** -- a reader holding a conn reads the
 artifact's history directly.
+
+
+---
+
+---
+
+## 22. Verb families on the public surface
+
+Added 2026-09-13, after a design round on ergonomics produced three badly-named proposals in a row.
+The rule was **derived from the 40 exports that already existed**, not invented: the package had
+been consistent and the drift was in what was being proposed.
+
+**The first word after `datom_` says what comes back.**
+
+| Verb | Returns | Members |
+|---|---|---|
+| `read` | materialised content | `datom_read` (tables only) |
+| `get` | references, no content | `datom_get_conn`, `datom_get_parents`, `datom_get_lineage`, `datom_get_set` |
+| `fetch` | whatever a pointer points at | `datom_fetch_member` |
+| `list` | a `data.frame` describing things | `datom_list`, `datom_list_members` |
+| `assemble` / `add` | a thing under construction | `datom_assemble_set`, `datom_add_member` |
+| `write` / `sync` | side effects on the repo | `datom_write`, `datom_write_set`, `datom_sync` |
+| `structure` | a caller-shaped view over data in hand | `datom_structure_members` |
+
+Two standing exceptions, both principled. **Subsystems are noun-first** (`datom_store_*`,
+`datom_storage_*`, `datom_repo_*`), because there the noun is the thing being configured rather than
+the thing being returned. And **pure-data constructors are bare** (`datom_parent`, `datom_member`),
+because they take no action -- they build a record.
+
+### Why `datom_get_set()` and not `datom_read_set()`
+
+A set read returns pointers and tags and **no data at all**, so `read` would promise the wrong thing.
+`get` already meant "fetch references" in this package before sets existed.
+
+This is also the answer to "why not one kind-dispatching `datom_read()`". The two verbs are not one
+operation with two implementations; they are two operations, and one name would be **semantically**
+unstable rather than merely type-unstable -- materialising content for one kind and handing back
+references for the other. The implementation is shared regardless: both go through
+`.datom_read_metadata()`, `.datom_resolve_version()`, the schema gate and the kind check, so the only
+per-kind code is download-verify-parse for one payload format. A third artifact kind would cost one
+name and about fifteen lines.
+
+**The one polymorphic door is `fetch`, at the member level**, and the domain forces it there:
+iterating a set's members, the caller cannot know each one's kind in advance. At the top level they
+named one artifact they chose, so nothing is hidden from them.
+
+### Names rejected, so they are not re-proposed
+
+| Rejected | Why |
+|---|---|
+| `datom_project_members()` | `project` is datom's own noun for a repo-plus-namespace. Considered twice and rejected twice |
+| `datom_nest_members()` | tidyverse `nest` means list-columns *in a data frame*, and its sibling `datom_list_members()` does return one -- a near-miss meaning misleads worse than a novel word |
+| `datom_group_members()` | same class of collision with `dplyr::group_by()` |
+| `datom_organize_members()` | no collision, but vague: it does not say "into a tree" |
+| `datom_set_*` anything | reads as a setter in English |
+| `datom_struct_*` | the package has no abbreviated exports |
+| `$get` on a member | `get` promises references, and a set member resolves to references while a table member resolves to data -- so `read` and `get` both lie for half the cases. `fetch` promises resolution instead |
+
+---
+
+## 23. The consumer boundary: what datom hands over, and what it does not
+
+Recorded 2026-09-13. R4.7 already decides that folder structure is a projection over tags computed by
+the consumer and never stored. These three notes keep that decision legible to whoever builds the
+consumer, and they are **notes, not work**.
+
+1. **A projection's leaves must be lazy, and the load-bearing reason is R3.3.** A leaf holding a
+   materialised value would require access to *every* member at projection time, which the
+   non-conjunctive access model forbids -- a 50-member product would be unopenable by anyone lacking
+   one member. So a leaf is a callable: `dp$input$dm(conn)`. That daapr already does it is
+   **precedent, not the reason** (and it is prior art reported by the owner rather than verifiable
+   from this repo).
+
+   **Implementation note for whoever writes one**: the leaf must take the connection as a
+   *parameter*, never capture one. A factory defined inside a function that holds a connection puts
+   that frame on the closure's parent chain, and `saveRDS()` then writes the token into the file --
+   demonstrated while designing `$fetch`, which is why datom's own factory is a namespace-level
+   function with every argument forced. The hazard is real and entirely avoidable; it is not an
+   argument against callable leaves.
+
+2. **Plain-versus-classed was never a window that closes.** Adding a class to a returned object is
+   additive. `datom_set` exists because `print` needs it, not because the shape had to be decided
+   early.
+
+3. **A positional accessor needs a stable tag vocabulary, which is why it lives downstream.**
+   `get_table(dp, "dm", "input")` only works if everyone agrees `"input"` is a `type` value and that
+   `type` is the first axis. datom cannot stabilise that without taking the position R4.7 forbids --
+   it is the datomanager "mandatory tags" job. `datom_structure_members(x, by = )` escapes this
+   because the **caller** names the axis, so no vocabulary is assumed; what datom will not do is pick
+   the axis for you.
+
+   This is also where a central consumer-side policy hooks in -- a uniform `janitor::clean_names()`,
+   a cache -- by wrapping a leaf that already works rather than by writing one.

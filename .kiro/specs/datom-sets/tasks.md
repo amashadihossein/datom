@@ -300,7 +300,7 @@ now covers as well. (2) The union
 of those two constants is the vocabulary Task 21's writer check reads; it is append-only from here.
 
 **EXECUTION ORDER IS NOT TASK ORDER.** Phase E was appended rather than inserted so that nothing
-renumbered a third time. The order is `18 -> 19 -> 5 -> 6 -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 ->
+renumbered a third time. The order is `18 -> 19 -> 5 -> 6 -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 24 -> 25 ->
 23 -> 11 onward`, and Phase
 E's preamble says why each edge exists. Task 19 before Task 7 is the one that matters most: an
 identity allowlist seeded from *table* metadata and landed after the set metadata builder would
@@ -2016,55 +2016,210 @@ own; landing it first is what makes Task 6's failure loud.
   - **Pathway impact: yes** -- the write card's storage side now has a second shape (a JSON payload at
     a content-addressed key, mirrored from the git copy rather than serialized twice), and there is a
     new gate reading `project.yaml` on the write path.
-  - **Left for later tasks, stated here rather than left to memory.** `datom_read_set()` and the
+  - **Left for later tasks, stated here rather than left to memory.** `datom_get_set()` and the
     `datom_read()` refusal are Task 10. `datom_validate()` still treats every artifact as a table, so
     it reports a set's payload missing (R11, Task 11's group). The repair half of R7.5 -- that
     `datom_validate(fix = TRUE)` must neither re-upload a stored payload nor recompute its
     `document_sha` -- is **not** implemented here and is AC29(c)'s clause in Task 14; this task owns
     rule 1 only.
 
-- [ ] **10. `datom_read_set()` + `datom_read()` refusal**
-  - `datom_read_set()`: resolve version -> read payload -> **verify `document_sha` before
-    parsing** -> return members + payload. A missing `document_sha` is an **error, not a skip**
+- [ ] **10. `datom_get_set()` + `datom_read()` refusal + the member link**
+  - **SCOPE, settled 2026-09-13 after a design round on ergonomics.** This task delivers: the getter,
+    both kind refusals, the `datom_set` class and its `print` method, and **`$fetch` on every member**
+    -- the callable link that makes a member resolvable without the caller reassembling a call. The
+    surface built **on top** of the result is split off so each half can be deferred without unpicking
+    the other: **Task 24** is the read-side ergonomics (`datom_fetch_member()`,
+    `datom_list_members()`, `datom_structure_members()`), **Task 25** the write-side
+    (`datom_assemble_set()`, `datom_add_member()`, draft support in `datom_write_set()`). Both are
+    appended, both execute after this task, and both state the dependency back.
+  - **SIGNATURE AND RESULT** (specified nowhere before; both are public shape, so both were owner
+    decisions rather than defaults): `datom_get_set(conn, name, version = NULL)` -- the three
+    arguments `datom_read()` actually uses, **without** its two dead ones (`context`, `...`). Result:
+    a list of `name`, `project`, `version`, `data_sha`, `tags`, `members`, classed **`datom_set`**
+    (single class name, matching `datom_conn` and `datom_summary`; putting `"list"` in the vector
+    opens `*.list` dispatch for no gain). The four identifying facts are there because a caller who
+    passed `version = NULL` otherwise cannot say which version they got, and a set exists to be
+    **citable**. **`version` is the version RECORDED in the history, never recomputed** -- so a caller
+    who passed an 8-character prefix gets the full one back. Reuse
+    `.datom_recorded_current_version()` (`R/manifest-rebuild.R`), which already solves this and
+    already documents why recomputing is wrong.
+  - `datom_get_set()`: resolve version -> download payload -> **verify `document_sha` before
+    parsing** -> return references. A missing `document_sha` is an **error, not a skip**
     (design.md section 8) -- sets have no legacy population, so reproducing the `parquet_sha`
     grace would build a silent-degradation path on purpose.
-  - Works with **no git clone** (AC1a) -- storage-only readers are the primary consumer.
+  - **THE INTEGRITY GATE FORBIDS THE CONVENIENT READ, AND THE CONVENIENT READ WORKS.**
+    `.datom_storage_read_json()` parses, so it cannot be used for the payload: download with
+    `.datom_storage_download()`, hash the file, **then** parse it with
+    `jsonlite::fromJSON(simplifyVector = FALSE)` (which is what keeps `members[]` a list of records
+    rather than a data frame -- R2.5's one residual condition). Verified both halves: the download
+    plus `digest(file =)` reproduces the recorded `document_sha`, and `.datom_storage_read_json()`
+    returns a structure **identical** to parsing the downloaded file -- so nothing fails if you reach
+    for it, and there is then nothing left to hash but bytes you re-serialized yourself. That is the
+    write path's "hash of bytes nobody stored" defect, inverted.
+  - **THE READ NEVER TIDIES.** `.datom_tidy_set_payload()` is right there and
+    `.datom_tidy_tag_value()`'s own comment says the spelling it normalises is "what a payload read
+    back from storage looks like". Run it on a healthy payload and **nothing changes**, because the
+    write already canonicalized -- so you reach for it, every test passes, and it diverges later.
+    Three reasons, in this order: (1) **load-bearing, R7.5 rule 2** -- repair must neither re-upload
+    payload bytes nor recompute `document_sha` for an already-stored version, and a repair built on a
+    tidying read does **both**, re-emitting reshaped bytes over an object whose recorded hash
+    describes different bytes; that is **Task 14's failure, caused here**, which is why the rule
+    belongs in this task. (2) **The read reports what was cited** -- R2.12 says a reorder must not
+    mint a *version*, not that a *reader* may perform one. (3) **Dropping an empty-valued key removes
+    a key the document contains**, which R2.12's ordering table does not cover. An earlier version of
+    this rule argued from information loss and was **refutable by the spec** -- R2.12 states nothing
+    in the payload is ordered, so "sorting loses the stated order" falls to the spec's own terms.
+    Recorded because the conclusion was right and the argument was not.
+    **Canonicalization belongs to the write; the read normalizes representation only.**
+  - **THE ONE ALLOWED NORMALIZATION, and it must cover `id` as well as `tags`.** `jsonlite` unboxes on
+    write, so one tag key returns in three R shapes -- verified: `["a","b"]` parses to a list of 2,
+    `"a"` to `character(1)`, and **`["a"]` to a list of 1**. Normalise a character-only array to a
+    character vector: same strings, same order, same count, via the element test
+    `.datom_sv1_as_strings()` already applies. **Never touch the presence axis** -- absence stays
+    `NULL`, never `character(0)`, never `NA`. **`id` values get the same normalization and then a
+    refusal**: if a value is still not a text scalar, **abort as a malformed document naming the
+    member** rather than comparing it. `id` values are spliced into storage keys, and
+    `.datom_validate_members()` enforces that contract on **write only**, so the read is where it has
+    no enforcement at all; Task 24's project comparison would otherwise compare a list against a
+    string and report a member of *this* project as belonging to another. Say at the site that
+    `datom_write_set()` cannot produce the case.
+  - **EVERY MEMBER CARRIES `$fetch(conn)`, AND IT IS A SELF-DESCRIBING LINK.** Not an add-on: it is
+    how the read constructs a member. Without it, a downstream projection cannot be built without
+    reimplementing datom's kind dispatch, the project check and version pinning -- the duplicated
+    machinery this whole spec exists to prevent.
+    - **`fetch`, not `read` or `get`.** It resolves a pointer to whatever it points at: a table
+      member yields data, a set member yields another `datom_set`. `read` would promise content and
+      `get` would promise references, and it is genuinely both -- so a neutral verb is the honest one.
+      This is the **only** polymorphic door in the design, and the member level is where the domain
+      forces it: iterating members, the caller cannot know each kind in advance. At the top level they
+      named one artifact they chose, which is why `datom_read()` / `datom_get_set()` stay separate.
+    - **No `...`.** `datom_get_set()` takes none and `datom_read()`'s is one of the two dead
+      parameters this task refuses to copy, so dots would reach nothing for half the kinds.
+    - **The factory is a NAMESPACE-LEVEL function, and every argument is `force()`d.** Both are
+      load-bearing and the first is the one that gets missed: a factory defined *inside*
+      `datom_get_set()` puts that frame -- which holds `conn` -- on the closure's parent chain, and
+      `saveRDS()` of the member then writes the PAT into the file. **Demonstrated**, same code both
+      ways: nested, 2094 bytes with the token present; namespace-level, 1609 bytes without.
+      **Pin it on the serialized bytes, not on `environment(f)`** -- an environment check passes on
+      the broken shape, because the connection is one frame up.
+    - **The link carries its own pointer**: `attr(f, "datom_member")` holds the whole member record
+      and the closure is classed `datom_link` with a `print` method. Verified callable, printable, and
+      intact across a save/load round trip. This is what closes the loop -- a consumer holding only a
+      projection can still cite what they used and add it to a new set (Task 25's
+      `datom_add_member()` accepts a link). **It has to ship with the factory**: links built without
+      the attribute cannot be repaired after the fact. The record is ~6 strings of pure data, so
+      carrying it does not weaken the purity rule, which was about connections and not about size.
+      **Do not** make the closure return its record when called with no connection -- that is the type
+      instability refused at the top-level read, in miniature.
+    - Docs must state that **a link pins the version it was read at**, since someone will expect
+      "latest".
+  - **`print.datom_set()`** shows the description, one line per member (name, kind, compact
+    `key=value` tags, `-` when untagged, truncated for large sets), and **names the next verb**
+    (`datom_fetch_member()`) -- the cheapest available fix for "how do I get data out of this", and
+    worth more to the learning curve than any amount of structure. Tags are open-keyed, so fixed
+    columns are impossible; do not try.
+  - **`datom_write_set()` must accept a `datom_set`**, because `$fetch` breaks the read-modify-write
+    loop in two places: `.datom_validate_members()` and `.datom_sv1_member()` both refuse a member
+    field outside `id` / `tags`. Fix in the **write verb**, before validation, and strip `fetch`
+    **only when `is.function()`** -- so the loop works from either spelling (`datom_write_set(conn, x)`
+    or `datom_write_set(conn, x$members)`) while a hand-built `fetch = "junk"` still aborts. **Do not
+    add a carve-out to the validator**: it keeps saying "a member is exactly `id` plus `tags`", and the
+    write knows how to get there from a read. **And it must carry `x$tags` forward** unless `tags` is
+    supplied explicitly -- otherwise read-append-write silently drops the set's description and mints
+    a version without it.
+  - Works with **no git clone** (AC1a) -- storage-only readers are the primary consumer. Verified: a
+    reader-role conn with `path = NULL` reads a set's `metadata.json` and `version_history.json`
+    without complaint, and `mock_datom_conn()` already defaults to exactly that, so the criterion
+    needs no new fixture machinery. Nothing on this path may touch `conn$path`.
+  - **ONLY ONE OF THE TWO HASHES IS A READ-TIME CHECK.** `document_sha` covers the stored bytes and is
+    verified. `data_sha` must **not** be recomputed: it is the address the payload was fetched from,
+    so it catches nothing `document_sha` did not, and it **would refuse a payload a newer datom
+    wrote**, because the sv1 encoder aborts on a top-level payload key it does not know. Same reason
+    the parsed payload is not re-validated. Precedent: `.datom_read_parquet()` verifies `parquet_sha`
+    and never recomputes the cv1 hash. Reads limp.
   - **Return member pointers; do not resolve them to data.** AC1 distinguishes *resolving the
     pointers* (always works through this one conn) from *resolving to data* (needs a conn for the
-    member's project). Same-project members work through the same conn; cross-project members are
-    the caller's to resolve (R18.1) -- datom has no name-to-location lookup. Getting this wrong
-    mis-implements a set read as "requires access to everything in it", which would contradict the
-    non-conjunctive access decision (R3.3).
+    member's project). `$fetch` is how the caller crosses that line **deliberately**, one member at a
+    time; the read itself crosses it never. Same-project members work through the same conn;
+    cross-project members are the caller's to resolve (R18.1) -- datom has no name-to-location lookup.
+    Getting this wrong mis-implements a set read as "requires access to everything in it", which would
+    contradict the non-conjunctive access decision (R3.3).
   - **Both kind-mismatch directions abort with a pointer** (R12.3): `datom_read()` on a set ->
-    `datom_read_set()` (AC6); `datom_read_set()` on a table -> `datom_read()` (AC14). Without the
+    `datom_get_set()` (AC6); `datom_get_set()` on a table -> `datom_read()` (AC14). Without the
     converse, a healthy table gets reported as a missing payload.
   - **One level only -- do not traverse** (R4.3, I10, AC15). A member that is itself a set is
     returned as a **pointer**; its own members are not fetched. Resist "helpfully" flattening the
     tree: a consumer wanting the full tree composes repeated reads, exactly as
     `datom_get_parents()` leaves further steps to the caller. Read cost must be a function of this
     set's direct member count, never of the depth beneath it (P16).
+  - **THE ERGONOMICS LAYER IS TASK 24, NOT THIS TASK** (owner-decided 2026-09-13, on the audit
+    below). This task delivers the read itself, the two kind refusals, the `datom_set` class and its
+    `print` method -- "the read works, and its result can be read at a console". `datom_member_map()`
+    and `datom_read_member()` are **Task 24**, appended and executing immediately **after** this one.
+    Split because they are two logical changes with different risk: the member resolver alone roughly
+    doubles this task's test surface (ambiguity, tag narrowing, project mismatch, kind dispatch), and
+    a checkpoint between them lets the second be deferred without unpicking the first. **Task 24
+    states the dependency back**, so the edge holds from both ends rather than depending on somebody
+    reading the order at execution time -- the same two-directional pattern Task 23 and Task 11 use.
+  - **RE-AUDITED 2026-09-13 after the design round, and the shape above is what changed.** Eight
+    mechanical checks against the tree, all clear: the six new names collide with nothing on the
+    current 40 exports; `.datom_read_metadata()` still has exactly **one** production caller, so
+    extending it stays cheap; **no** existing test compares `.datom_resolve_version()`'s whole return
+    value, so adding a field and a resolved version to it breaks nothing; both refusal points for an
+    extra member field are live (`.datom_validate_members()` and `.datom_sv1_member()`), which is why
+    the `fetch` strip goes in the write verb and covers both; `.datom_check_artifact_kind()` takes
+    `(current, name, expected)` and needs only the `operation` word added;
+    `.datom_recorded_current_version(meta, history)` is reusable as-is for the returned version; and
+    `.datom_storage_download()` dispatches on both backends, so download-verify-parse is available
+    without new plumbing. **The original audit below stands as written**, with items 1, 4, 12, 13 and
+    14 now restated as scope bullets above -- it is kept because it is the record of how each was
+    decided, and because five of its findings were verified against the tree rather than reasoned.
   - **COLD-START AUDIT, 2026-09-13** -- the documented path (`dev/README.md` -> the state block ->
     this task -> design.md 8 -> `dev/engineering-notes.md`) was walked as a fresh reader and every
-    claim in this task checked against the tree. **Startable. Eleven findings; TWO ARE SCOPE
-    QUESTIONS FOR THE OWNER and are marked OPEN with the default this task will take if nothing is
-    said.** No escalation flag -- design.md 12 carries E1 and E2 only -- so nothing is owed under rule
+    claim in this task checked against the tree. **Startable. Eleven findings, plus two more from the
+    review round on the audit itself. The two scope questions it raised were both DECIDED by the owner
+    on 2026-09-13 -- explicitly, so they are decisions rather than defaults that happened to hold --
+    and each is marked DECIDED below with what was approved.** No escalation flag -- design.md 12
+    carries E1 and E2 only -- so nothing is owed under rule
     5d. **What held**, verified rather than assumed: design.md 8's citation still resolves
     (`R/read_write.R:233` is the `parquet_sha` guard line); `document_sha` is present on a set's
     current `metadata.json` **and** on every `version_history.json` entry, so a version-pinned read
     has one to check; a set's versioned snapshot is written like any artifact's, so a set can be a
     member of a set; and `.datom_resolve_version()` resolves a set's `data_sha` correctly for both the
     current version and a pinned one, prefix matching included.
-    1. **OPEN -- THE SIGNATURE AND THE RETURN SHAPE ARE SPECIFIED NOWHERE.** Not in this task, not in
-       R12.3, not in design.md. "Return members + payload" is circular: the payload **is** members
-       plus tags. Two calls, and both are public shape, which is why they are not defaults to take
-       quietly. **Default for the signature: `datom_read_set(conn, name, version = NULL)`** -- the
-       three arguments `datom_read()` actually uses, in the same order and with the same meaning.
-       **Default for the result: a plain list of `name`, `project`, `version`, `data_sha`, `tags`,
-       `members`.** The identifying four are included because a caller who passed `version = NULL`
-       otherwise cannot say which version they got, and a set exists to be **citable** -- forcing a
-       second call to name what you just read is the one thing this artifact kind is for. No S3 class
-       and no print method: that is a separate, later decision and adding one now would freeze a
-       display format nobody has asked for.
+    1. **DECIDED (approved 2026-09-13) -- THE SIGNATURE AND THE RETURN SHAPE WERE SPECIFIED
+       NOWHERE.** Not in this task, not in R12.3, not in design.md. "Return members + payload" is
+       circular: the payload **is** members plus tags. Both are public shape, which is why neither was
+       a default to take quietly. **APPROVED: `datom_get_set(conn, name, version = NULL)`** -- the
+       three arguments `datom_read()` actually uses, in the same order and with the same meaning,
+       minus its two dead ones (item 10). **APPROVED result: `name`, `project`, `version`, `data_sha`,
+       `tags`, `members`**, classed `datom_set` (item 12). The identifying four are there because a
+       caller who passed `version = NULL` otherwise cannot say which version they got, and a set
+       exists to be **citable** -- forcing a second call to name what you just read is the one thing
+       this artifact kind is for. **`version` is the version RECORDED in the history, never
+       recomputed**, so a caller who passed an 8-character prefix gets the full version back;
+       `.datom_recorded_current_version()` (`R/manifest-rebuild.R`) already solves exactly this
+       problem for the current document and already documents why recomputing is wrong, so reuse it
+       rather than hashing the document here.
+       **`members` is a flat, UNNAMED list in payload order**, and every reason is silent if got
+       wrong: the same `project` + `name` at two different versions is legal (R2.14a), so a name-keyed
+       list is ambiguous exactly where the design says it must not be; `STUDY_001/ae` and
+       `STUDY_002/ae` are both legal, so names collide across projects; and R's `$` **partial-matches
+       on lists** (verified: `list(alpha = 1)$al` returns `1`) while a duplicated name silently
+       returns the first, so a named list would answer plausibly and wrongly. The unique key is the
+       **full `id`**, never the name.
+       **Members stay pointers -- no resolved data, and no closures.** Resolved data is excluded by
+       R3.3 / AC1: materialising it needs a connection for every member's project, which is the
+       "requires access to everything in it" reading this task already forbids. Closures are excluded
+       for three different reasons: the record is **defined by the payload**, so a `data` field stops
+       it round-tripping to JSON and stops it being the thing that was cited; a callable record saves
+       nothing where the friction actually is, because once Task 24's resolver exists the work is
+       *locating* the member, not calling it; and in the projection case the consumer builds the
+       closure anyway, which is where they want it, because that is where a central policy hooks in.
+       **NOT because a closure would capture credentials** -- that was offered as a reason and is
+       false: a projection's leaf **takes** a conn as a parameter rather than capturing one, which is
+       what daapr already does, and such closures serialize with no connection in them. The
+       implementation note that survives is in design.md's consumer-boundary section, where it belongs.
     2. **THE INTEGRITY GATE FORBIDS THE CONVENIENT READ, AND THE CONVENIENT READ WORKS -- WHICH IS
        WHY A NAIVE IMPLEMENTATION USES IT.** `.datom_storage_read_json()` parses; the payload must be
        **downloaded, hashed, and only then parsed**, exactly as `.datom_read_parquet()` does. Verified
@@ -2084,23 +2239,30 @@ own; landing it first is what makes Task 6's failure loud.
        "which recorded hash pins this version" would eventually disagree. Note the function takes a
        parsed `metadata_list` and does no IO, so whichever shape is chosen is unit-testable without a
        fixture.
-    4. **OPEN -- THE KIND CHECK IS FREE, AND THE FUNCTION TO REUSE IS WRITE-FLAVOURED.**
+    4. **DECIDED (approved 2026-09-13) -- THE KIND CHECK IS FREE, AND THE FUNCTION TO REUSE IS
+       WRITE-FLAVOURED.**
        `.datom_read_metadata()` already returns the current document, so `current$kind` costs **no
        extra storage read** at either verb (verified). But `.datom_check_artifact_kind()`, which Task 9
        added, says "{name} already exists in this project as a {found}" and closes with "Write the
-       existing {found} with {verb}, or pick another name" -- both wrong for a read, and it names the
-       two **write** verbs. **Default: give it an `operation` word (`"read"` / `"write"`) that selects
-       the wording and the verb pair, following `.datom_check_schema_version()`, which took exactly
-       that shape for exactly this reason.** The alternative -- a read-side sibling -- puts one rule in
-       two functions, and this rule is the whole of AC4 and AC6 and AC14. Recorded as open because it
-       edits a function two shipped write paths call. Related and settled: the check goes in each verb
-       after its `.datom_read_metadata()` call rather than inside that function, because the two verbs
-       want **different** answers from it -- the shared-function lesson from the write door does not
-       transfer to a shared function whose callers disagree. `.datom_read_metadata()` has exactly one
-       production caller, so the other route is cheap if it is ever wanted.
+       existing {found} with {verb}, or pick another name" -- wrong at three points for a read, and it
+       names the two **write** verbs. **APPROVED: give it an `operation` word (`"read"` / `"write"`)
+       selecting the wording and the verb pair, following `.datom_check_schema_version()`, which took
+       exactly that shape for exactly this reason. Not a read-side twin.** The reason to record: the
+       rule is **one** invariant -- one name is one artifact -- and a twin lets the two directions
+       drift silently, each passing its own tests. Note this word does more than the format check's
+       precedent, because it selects the suggested **verbs** as well as the wording -- so **assert both
+       directions' full messages, not just the condition class**. Target wording:
+       `datom_read(conn, "study001-adam")` -> `"study001-adam" is a set, not a table.` plus
+       `i Read it with datom_get_set().` **One condition class for one invariant**, for the same
+       reason as the one function: a second class would let a test key on the write direction only.
+       Related and settled: the check goes in each verb after its `.datom_read_metadata()` call rather
+       than inside that function, because the two verbs want **different** answers from it -- the
+       shared-function lesson from the write door does not transfer to a shared function whose callers
+       disagree. `.datom_read_metadata()` has exactly one production caller, so the other route is
+       cheap if it is ever wanted.
     5. **AC6's "cryptic missing-parquet error" IS CONFIRMED, NOT ASSUMED.** `datom_read()` on a real
        set today aborts with "File not found in local store" naming the store root, with nothing in it
-       about sets or about `datom_read_set()`. Reproduced on the fixture from Task 9.
+       about sets or about `datom_get_set()`. Reproduced on the fixture from Task 9.
     6. **ONLY ONE OF THE TWO HASHES IS A READ-TIME CHECK, and "verify integrity" could easily be read
        as both.** `document_sha` covers the stored bytes and is verified. `data_sha` must **not** be
        recomputed on read: it is the address the payload was fetched from, so recomputing it catches
@@ -2129,9 +2291,56 @@ own; landing it first is what makes Task 6's failure loud.
         is worse than on an old one, because nothing has to keep it. The stale line in `datom_read()`'s
         own documentation is pre-existing and out of scope here -- recorded so it is not inherited as
         fact.
-    11. **Two bookkeeping items.** `_pkgdown.yml`'s **Sets** section needs `datom_read_set` (all
-        exports are listed there and pkgdown is a required check), and the **New exports** table above
-        still shows `datom_write_set()` unmarked though it shipped 2026-09-13.
+    11. **Two bookkeeping items.** `_pkgdown.yml`'s **Sets** section needs `datom_get_set` (all
+        exports are listed there and pkgdown is a required check, and all six existing `print` methods
+        are listed, so `print.datom_set` needs an entry too), and the **New exports** table above
+        still showed `datom_write_set()` unmarked though it shipped 2026-09-13. Four NAMESPACE entries
+        across this task and Task 24, not five: three functions plus `S3method(print, datom_set)` --
+        the class itself is not an export.
+    12. **THE CLASS FOLLOWS THE HOUSE PATTERN: a single `"datom_set"`** (owner-decided 2026-09-13),
+        matching `datom_conn` and `datom_summary`, which are both `structure(list(...), class = <one
+        name>)`. `class(x) <- c("datom_set", "list")` was considered and rejected: `is.list()` is TRUE
+        either way, nothing in datom tests `inherits(x, "list")`, and putting `"list"` in the vector
+        opens S3 dispatch to `*.list` methods -- surprise surface for no gain.
+    13. **THE READ NEVER TIDIES, AND THE TIDY FUNCTION IS RIGHT THERE INVITING IT.** Found on the
+        review round after this audit, and it is a trap rather than an oversight:
+        `.datom_tidy_set_payload()` exists, and `.datom_tidy_tag_value()`'s own comment says the list
+        spelling it normalises is "what a payload read back from storage looks like". Run it on a
+        healthy payload today and **nothing changes**, because the write already canonicalized -- so
+        you reach for it, every test passes, and it diverges later. Three reasons, in this order:
+        - **Load-bearing: R7.5 rule 2.** Repair must neither re-upload payload bytes nor recompute
+          `document_sha` for an already-stored version. A repair built on a tidying read does **both**
+          -- it re-emits reshaped bytes over an object whose recorded hash describes different bytes.
+          That is **Task 14's failure, caused here**, which is why the rule is stated in this task
+          rather than in that one.
+        - **The read reports what was cited.** R2.12 says a reorder must not mint a *version*; it does
+          not say a *reader* may perform one. A transformation the hash is blind to is still a change
+          to what the reader is told.
+        - **Dropping an empty-valued key removes a key the document contains**, and R2.12's
+          ordering/duplication table does not cover that case at all.
+        An earlier version of this finding argued from information loss and was **refutable by the
+        spec**: R2.12 states that nothing in the payload is ordered, one rule with no exceptions, so
+        "sorting loses the stated order" and "deduplicating loses duplicate labels" both fall to the
+        spec's own terms. Only the empty-key row survived on that footing. Recorded because the
+        conclusion was right and the argument was not, which is the failure mode this spec keeps
+        catching. **Canonicalization belongs to the write. The read parses, normalizes representation
+        only, and never reshapes content.**
+    14. **THE ONE ALLOWED NORMALIZATION, and it must cover `id` as well as `tags`.** `jsonlite`
+        unboxes on write, so one tag key comes back in three R shapes -- verified: `["a","b"]` parses
+        to a list of 2, `"a"` to `character(1)`, and **`["a"]` to a list of 1**. Normalise a
+        character-only array to a character vector: same strings, same order, same count, using the
+        element test `.datom_sv1_as_strings()` already applies. **Do not touch the presence axis**:
+        absence stays `NULL`, never `character(0)` and never `NA`, because inventing either adds
+        information the document does not state.
+        **`id` values get the same normalization and then a refusal** (owner-decided 2026-09-13): if a
+        value is still not a text scalar afterwards, **abort as a malformed document naming the
+        member**, and do not go on to compare it. `id` values are spliced into storage keys, so a
+        non-conforming one is worse than a non-conforming tag, and `.datom_validate_members()` --
+        which requires a text scalar there via `.datom_is_text_scalar()` -- runs on **write only**, so
+        the read is where that contract has no enforcement at all. Normalising alone would silently
+        accept a document `datom_write_set()` cannot produce; Task 24's project comparison would then
+        compare a list against a string, fail to match, and report a member of *this* project as
+        belonging to another one. Say at the site that `datom_write_set()` cannot produce the case.
   - _Requirements: R12.3, R7.1, R7.2, R6.4, R4.3. Invariants: I3, I8, I10. Properties: P9, P16.
     Acceptance: AC1, AC6, AC14, AC15, **AC28**. AC28 is the integrity gate -- both halves: a
     mismatched payload is refused before parsing, **and** a missing/empty `document_sha` is an error
@@ -2344,7 +2553,7 @@ own; landing it first is what makes Task 6's failure loud.
 2026-08-23 shift record in the Decisions log); the execution order is stated here instead.
 
 ```
-18 -> 19 -> [Task 5] -> [Task 6] -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 23 -> 11 onward
+18 -> 19 -> [Task 5] -> [Task 6] -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 24 -> 25 -> 23 -> 11 onward
 ```
 
 - **18** is a prerequisite defect fix; the write-entry sequence sits on that function.
@@ -3159,6 +3368,128 @@ rather than in Phase D beside the task it blocks.
 
 ---
 
+---
+
+## Phase F -- Set ergonomics **[appended; executes after Task 10, before Task 23]**
+
+**Appended rather than inserted, for the same reason Phase E was**: nothing renumbers. Both tasks
+here are **pure additions over Task 10's result** -- neither changes a stored document, neither adds
+a storage read that Task 10 did not already make, and either can be deferred without unpicking the
+other or Task 10. That is why they are separate chunks rather than bullets inside Task 10: a
+checkpoint between "reading a set works", "finding things in it is pleasant" and "building one is
+pleasant" is worth more than one large commit.
+
+**Why they exist at all.** Task 10 hands back a correct object that is unpleasant to use: a nested
+list that prints as forty lines, whose members are reached positionally. A citable artifact whose
+read output cannot be read at a console is half-delivered, and the two highest-value messages in the
+whole design -- an ambiguous member name, and a member belonging to another project -- have nowhere
+to live until these verbs exist. Weighed against rule 4 of the conventions file (resist complexity
+that exists only for marginally better UX) and accepted on those two grounds specifically, not on
+ergonomics in general.
+
+**The naming rule these follow is in design.md** ("Verb families on the public surface"). In short:
+`get` returns references, `read` returns materialised content, `fetch` resolves a pointer to whatever
+it points at, `list` returns a data frame, `assemble` / `add` build. A name outside a family needs a
+reason.
+
+- [ ] **24. Read-side ergonomics: finding and shaping members** &nbsp; **[EXECUTES AFTER TASK 10]**
+  - **DEPENDS ON TASK 10** and says so from this end as well as that one: every verb here is a
+    function of the `datom_set` object Task 10 returns, and `datom_fetch_member()` is implemented
+    **over the same link factory** that builds `$fetch`, so there is one core with two entry points
+    rather than two implementations of kind dispatch.
+  - **`datom_fetch_member(conn, x, name, tags = NULL, version = NULL)`** -- resolves one member.
+    Accepts a **name, a member record, or a link** as its third argument, all through one internal
+    accessor, so a loop and a console call use the same verb. Dispatches on `id$kind` to
+    `datom_read()` or `datom_get_set()`.
+    - **An ambiguous name aborts and teaches.** Two members can legitimately share a name (R2.14a:
+      the same artifact at two versions, a current table beside a locked baseline). List the
+      candidates with their tags and point at the two ways to narrow. `tags =` is the one people will
+      reach for, because tags are the navigation axis; `version =` stays for exact pinning.
+    - **The project check runs BEFORE the fetch.** Both projects are known at zero cost, and this is
+      the highest-value message in the design: without it, the non-conjunctive access model (R3.3)
+      presents to a user as a confusing missing-object error rather than as "this member lives in
+      another project, open a connection to it".
+    - Note this is kind dispatch at the **member** level, which is the only level it belongs at
+      (R12.3). A polymorphic top-level `datom_read()` stays refused.
+  - **`datom_list_members(x)`** -- long format, one row per member **per tag**: `name`, `project`,
+    `version`, `kind`, `key`, `value`. Long rather than wide because tags are open-keyed and
+    multi-valued, so wide needs list-columns and a per-set column set. A plain `data.frame`, matching
+    `datom_list()`, so tag filtering is `subset()` or dplyr and datom grows no query vocabulary. **An
+    untagged member still gets a row** (with `NA` key and value), so `unique(map$name)` is complete.
+  - **`datom_structure_members(x, by, missing = "untagged")`** -- the nested navigable view: group
+    members by the values of the tag key(s) named in `by`, with each leaf the member's **link**, so
+    `dp$output$adsl(conn)` works and tab-completes. A pure function of `x` plus a caller-supplied
+    axis: it stores nothing and takes no position on hierarchy, which is what keeps it inside R4.7
+    rather than contradicting it -- ask for `by = c("domain", "type")` and you get a different tree
+    from the same object, which is that decision working rather than being violated.
+    - **A member missing the axis key goes under `missing`, never silently dropped.** Naming the
+      bucket is the whole point; a dropped member is a member the consumer cannot find and cannot see
+      is absent.
+    - Named `structure`, not `project` / `nest` / `group`: `project` collides with datom's own noun
+      for a repo-plus-namespace, and `nest` and `group` both collide with tidyverse meanings that are
+      *close but different* -- `nest`'s worst, since its sibling `datom_list_members()` does return a
+      data frame, so a tidyverse reader would expect the same here.
+    - **Known rough edge, accepted rather than solved here**: the result prints as R's default nested
+      list of functions. Add a `print` method only if it actually grates; the leaves at least print
+      readably on their own, because Task 10 classes them `datom_link`.
+  - _Requirements: R4.3, R4.6, R4.7, R12.3, R18.1, R3.3. Invariants: I10, I25. Properties: P16.
+    **Acceptance: none by design** -- these are additions over the read that AC1, AC15 and AC28
+    already pin, and no criterion in this spec describes them. Each behaviour named above gets its own
+    test instead: the ambiguity abort, the project-mismatch abort, the three accepted third-argument
+    shapes, the `NA` row for an untagged member, and the `missing` bucket._
+  - _Pathway impact: none -- no new lookup and no new traversal. `datom_fetch_member()` performs
+    exactly the reads `datom_read()` / `datom_get_set()` already perform, and the other two verbs do
+    no IO at all._
+
+- [ ] **25. Write-side ergonomics: assembling a set in steps** &nbsp; **[EXECUTES AFTER TASK 10]**
+  - **DEPENDS ON TASK 10** for `datom_add_member()` accepting a **link** (the `$fetch` closure with
+    its pointer attached), which is what lets a consumer holding only a projection add what they used
+    to a new set. Independent of Task 24; the order between the two is free.
+  - **Why an additive path when the list form already works.** Not brevity -- the pipe is about the
+    same length. Two reasons, both about error handling. **Per-entry validation**: a malformed member
+    aborts on the line that caused it, naming that member, rather than after the whole list is built
+    and indexed. And the direct form repeats `conn` on **every** member and wraps the whole thing in a
+    nested `list()`, which is bracket-heavy enough that a human miscounts. The build-script path keeps
+    the direct form; this is the human path, and the multiplicity is accepted because the second way
+    catches errors the first cannot.
+  - **`datom_assemble_set(conn, name = NULL, tags = NULL)`** -> a draft, classed
+    **`datom_set_draft`**. Named `assemble` rather than `new` because "new" is a bare state while
+    `assemble` says a whole is being built from parts, which is what the pipe that follows does; and
+    not `datom_set(...)`, which reads as a setter. **The draft holds the connection**, and that is
+    structural rather than convenient: per-entry validation needs a storage read to learn the
+    member's kind, so the draft cannot validate without one. Set-level tags are supplied here rather
+    than by a third verb; editing them on a read-back set is `x$tags$description <- "..."`, plain R.
+    **A draft is transient and must not be persisted** -- it holds a connection, so the rule that
+    connections live in memory only applies to it.
+  - **`datom_add_member(x, name, version, tags = NULL)`** -> the draft, one member longer. Validates
+    immediately, builds the member record through the same path `datom_member()` uses, and appends.
+    **Argument 2 also accepts a member record or a link** in place of a name, through the same
+    accessor Task 24's resolver uses -- so a script holding a list already can
+    `Reduce(datom_add_member, records, init = draft)` without a near-identical plural verb, which is a
+    typo hazard rather than a convenience.
+    - **`version` stays required**, and this is where the reason has to be stated rather than assumed:
+      inferring "current" would leave a build script producing a *different set* on each run from
+      byte-identical source. The pin makes the artifact immutable; requiring it makes the **code**
+      reproducible, and those are two different guarantees. The refusal names the member and points at
+      `datom_history()`.
+  - **`print.datom_set_draft()`** -- what is assembled so far and that it is not yet written. Cheap,
+    and it is what makes the pipe inspectable mid-build.
+  - **`datom_write_set()`'s first argument accepts a draft**, which already carries its connection,
+    its name and its tags -- so the pipe ends `|> datom_write_set()` with no arguments. One overload,
+    discriminated by class, documented in one line. Note the gates still run: a draft's name is
+    checked against `project.yaml` exactly as a supplied one is.
+    - **`datom_write()` is NOT overloaded to write a set.** Its second argument is a data frame, and
+      one verb writing two artifact kinds is the polymorphism refused on the read side for the same
+      reason -- the verb should say what it is writing.
+  - _Requirements: R12.2, R10.3a, R2.14, R4.2. Invariants: I15, I26. **Acceptance: none by design** --
+    the payload this path produces is byte-identical to the direct form's, which AC2, AC5, AC27 and
+    AC29 already pin; what is new is *where an error surfaces*, and no criterion describes that. Tests
+    instead: the missing-version abort names the member, a malformed tag map aborts at its own
+    `datom_add_member()` call, the draft and the direct form produce the same `data_sha`, and a draft
+    written through the gates is refused on a non-product repo exactly as a direct write is._
+  - _Pathway impact: none -- the write card's sequence is unchanged; this adds a second front door to
+    it._
+
 ## New exports introduced by this spec
 
 Track so `_pkgdown.yml` and NAMESPACE stay complete:
@@ -3169,9 +3500,17 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 | ~~`datom_storage_write_json()`~~ | **dropped 2026-08-18** -- deferred to the Backlog; see Task 3 |
 | `datom_member()` | 8 -- **shipped 2026-09-11** |
 | `datom_write_set()` | 9 -- **shipped 2026-09-13** (extended with `include_paths` in 13) |
-| `datom_read_set()` | 10 |
+| `datom_get_set()` (renamed from `datom_read_set()`, 2026-09-13 -- it returns references, not data) | 10 |
+| `print.datom_set()` | 10 |
+| `print.datom_link()` | 10 |
 | `datom_repo_commit()` | 12 |
 | `datom_repo_push()` | 12 |
+| `datom_fetch_member()` | 24 |
+| `datom_list_members()` | 24 |
+| `datom_structure_members()` | 24 |
+| `datom_assemble_set()` | 25 |
+| `datom_add_member()` | 25 |
+| `print.datom_set_draft()` | 25 |
 
 Task numbers here are **bare**, so the 2026-08-23 renumber did not touch them mechanically and they
 were corrected by hand. Check 8 cannot see them either -- it only reads numbers written as
@@ -3335,7 +3674,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-08-23 | **Two v1-compatibility tests must survive Task 6's sweep, and a third has to be added.** `datom_list` / `datom_summary` "tolerates a manifest with no schema_version" (`test-query.R:894`, `test-summary.R:163`) each build a `tables` block **with an entry** and assert a non-empty result; rewritten to `artifacts` they go green while asserting nothing, and the regression ships clean. The cold-start audit's two fixture categories (sweep, or leave as a decoy) did not cover them, so a **third category** exists: v1-compatibility fixtures, which stay on `tables` and keep asserting non-empty. The same-named `datom_sync_manifest` test (`test-sync.R:1283`) is **not** one of them -- its block is empty, so it passes either way -- which means the clone-copy readers have no old-format coverage at all and need a new test. Made structural rather than remembered by moving the evidence into a frozen file (R22.7). | AC30, R22.7, Task 5 |
 | 2026-08-23 | **E2 discharged without a model switch, and recorded so the flag does not read as unaddressed.** The working model is already the most capable one available to the owner, so the escalation is answered by an independent close review of the spec before implementation, owned by the owner. The design spot-check half of the trigger was performed and produced the eight rows above; the purity-audit half still applies **after** Task 6 lands. | design.md 12 (E2) |
 | 2026-08-23 | **One audit claim was overstated and is recorded as such.** The review argued that leaving the local-manifest read duplicated means "a repo with no local manifest reports every input file as new". True mechanically, but close to unreachable: `.datom/manifest.json` is git-tracked, so any clone has it, and it is absent only before init or after someone deletes it. The consolidation is still worth doing because Task 5 touches those sites anyway and the dangerous write-side skeleton lives in the same group -- but the justification is one-place-to-change, not a live bug. | Task 5 |
-| 2026-08-23 | **The renumber's own defect pattern, caught by reading rather than by the gate.** Two places held task numbers the mechanical sweep could not see, both because the number is not written as `Task N`: the **New exports** table's bare `Task` column (`datom_member()` said 7, now 8; `datom_write_set()` 8 -> 9; `datom_read_set()` 9 -> 10; `datom_repo_commit()` / `datom_repo_push()` 11 -> 12; `include_paths` 12 -> 13) and two spelled-out counts of `check-spec.R`'s own checks ("eight", and "Six checks" in `dev/README.md`, the latter already stale by one before today). Check 8 cannot see either, and its comment says so. Same class as the five review rounds recorded above: **a change swept some places and left others stating the old thing.** The countermeasure that works is the one already written into this spec -- never restate a count or a range, derive it -- so the exports table now carries a line telling the next reader to re-derive from the task headings. | dev/check-spec.R (check 8 limitation), tasks.md exports table |
+| 2026-08-23 | **The renumber's own defect pattern, caught by reading rather than by the gate.** Two places held task numbers the mechanical sweep could not see, both because the number is not written as `Task N`: the **New exports** table's bare `Task` column (`datom_member()` said 7, now 8; `datom_write_set()` 8 -> 9; `datom_get_set()` 9 -> 10; `datom_repo_commit()` / `datom_repo_push()` 11 -> 12; `include_paths` 12 -> 13) and two spelled-out counts of `check-spec.R`'s own checks ("eight", and "Six checks" in `dev/README.md`, the latter already stale by one before today). Check 8 cannot see either, and its comment says so. Same class as the five review rounds recorded above: **a change swept some places and left others stating the old thing.** The countermeasure that works is the one already written into this spec -- never restate a count or a range, derive it -- so the exports table now carries a line telling the next reader to re-derive from the task headings. | dev/check-spec.R (check 8 limitation), tasks.md exports table |
 | 2026-08-23 | **OWNER-DECIDED: `kind` entering identity is accepted.** Because it is semantic, the first write after upgrading mints a `metadata_only` version for every existing table -- same content, same storage address, parquet reused, nothing re-uploaded. Accepted as a bounded one-time cost in the safe direction: it produces an extra version rather than changing an existing one, so the reproducibility guarantee is not violated. The alternatives were closed off before the decision: `kind` cannot be excluded from the hash (a table and a set could then share a version identity) and cannot live only in the manifest (AC4's cross-kind check reads it from per-artifact metadata precisely because the manifest can lag a partial write). Recorded because nothing in the spec acknowledged it and it is the shape #72 was fought over -- a package upgrade producing versions. | R1.1, Task 7 |
 | 2026-08-23 | **OWNER-DECIDED: stamp the schema number always, increment it only on a break.** Review had these as one question and they separate cleanly. Stamping costs nothing -- the field is excluded from identity, so a stamped file mints no version -- and it lets any build state what shape it holds; the owner's framing was good housekeeping. Incrementing costs every pinned build its access to everything written afterwards, because the check is a refusal. So the number moves only for a rename, a removal, a meaning or type change, or a container restructure; an added field leaves it alone. **This supersedes the recommendation earlier the same day to leave per-artifact metadata unstamped** -- that concern was right about the harm and wrong about the cause, which is incrementing rather than stamping. The test is written into R9.5 as a table so it is not a judgment made under release pressure, and the call is made at design time alongside the escalation flags. Also **corrected in the same round**: an earlier claim that stamping costs *current* pinned readers their access was wrong -- no released build checks the number at all, so the entire cost is for builds from this release onward. | R9.5, design.md 10.3 |
 | 2026-08-23 | **Publish the schema-to-package mapping** (R9.6). One schema version spans many releases, so neither `schema_version` nor `datom_version` answers the only question a refusal raises -- *which datom do I need?* A table in the package docs maps each schema version to the release range that reads it. Filed as [#103](https://github.com/amashadihossein/datom/issues/103) rather than built here. | R9.6 |
