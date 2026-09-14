@@ -488,6 +488,22 @@ produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
   `datom_parent()` is the established pattern for constructing a validated reference record,
   and symmetry keeps validation at construction time rather than deep inside
   `datom_write_set()`.
+- **R4.2a -- `version` is REQUIRED at write time and must never be inferred** (owner-decided
+  2026-09-13, recorded because it was nearly relaxed as an ergonomics improvement). Defaulting it to
+  "the current version" would resolve now and record a concrete version, so the written set would
+  still pin exactly and stay citable -- which is why the relaxation looked free. What it breaks is a
+  different guarantee: **the same source, re-run, would produce a different set**, with nothing in the
+  source saying why. **Artifact immutability and code reproducibility are two guarantees, and the pin
+  only provides the first.** For a package whose premise is reproducible workflows, the second is the
+  one that decides it.
+  The asymmetry with the read side is therefore principled rather than a convenience split: at read
+  time "latest" is a **question** whose answer is supposed to change over time
+  (`datom_get_set(conn, name)` with no version, mirroring `datom_read()`); at write time it would be a
+  **silent decision**. And the boilerplate this appears to cost is largely imaginary -- a build script
+  already holds the version, because `datom_write()` returns it, so the version flows from the write
+  that produced the table rather than from a fresh `datom_history()` lookup. The loop closes through
+  the read's return: `datom_get_set()` hands back `version` precisely so a caller who explored with
+  "latest" can paste it into a script.
 - **R4.3 -- resolution is one level; datom never traverses.** A set's payload lists its **direct**
   members only. Reading a set returns those member records; if a member is itself a set, the
   consumer gets a **pointer** to it and reads that set separately if they want its contents. This
