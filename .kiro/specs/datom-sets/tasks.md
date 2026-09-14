@@ -162,6 +162,24 @@ were passing whatever the code did.
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 10**.
 
+**Task 10 was cold-start audited on 2026-09-13 and is startable, with TWO SCOPE QUESTIONS OPEN.**
+Both are marked OPEN in Task 10's body with the default it will take on silence, so nothing is
+blocked: **(1) the signature and the return shape are specified nowhere** -- not in the task, not in
+R12.3, not in design.md, and "return members + payload" is circular because the payload *is* members
+plus tags; **(2) the kind check is free but the function to reuse is write-flavoured**, so either it
+gains an `operation` word or the rule ends up in two functions. Nine further findings are in the
+task's body. **The two that would have cost real time**: the integrity gate **forbids the convenient
+read** -- `.datom_storage_read_json()` parses, so the payload must be downloaded, hashed and only then
+parsed, and the convenient function was verified to return an identical structure, which is exactly
+why a naive implementation reaches for it and then has nothing left to hash but bytes it
+re-serialized itself; and **`.datom_resolve_version()` hands back a `parquet_sha`** while a set needs
+its `document_sha`, so that function gains a field argument or a sibling (the precedent is Task 9's
+one-scan-plus-a-wrapper-per-kind). Also recorded, because each is a decision rather than an
+oversight: only **one** of a set's two hashes is a read-time check -- `data_sha` must not be
+recomputed, since it would refuse a payload a newer datom wrote and catches nothing `document_sha`
+did not -- and AC15's nested-set fixture is cheapest as a **hand-built** member with `kind = "set"`,
+where a traversing implementation errors instead of silently flattening.
+
 **The submission freeze still holds**: 0.1.2 is in flight, so `main` must keep matching what CRAN
 received, and this branch PRs into `dev`. Branch heads live in `dev/README.md` "Branching During CRAN
 Submission" rather than here, so there is one copy to keep true. One thing worth knowing before
@@ -2025,6 +2043,95 @@ own; landing it first is what makes Task 6's failure loud.
     tree: a consumer wanting the full tree composes repeated reads, exactly as
     `datom_get_parents()` leaves further steps to the caller. Read cost must be a function of this
     set's direct member count, never of the depth beneath it (P16).
+  - **COLD-START AUDIT, 2026-09-13** -- the documented path (`dev/README.md` -> the state block ->
+    this task -> design.md 8 -> `dev/engineering-notes.md`) was walked as a fresh reader and every
+    claim in this task checked against the tree. **Startable. Eleven findings; TWO ARE SCOPE
+    QUESTIONS FOR THE OWNER and are marked OPEN with the default this task will take if nothing is
+    said.** No escalation flag -- design.md 12 carries E1 and E2 only -- so nothing is owed under rule
+    5d. **What held**, verified rather than assumed: design.md 8's citation still resolves
+    (`R/read_write.R:233` is the `parquet_sha` guard line); `document_sha` is present on a set's
+    current `metadata.json` **and** on every `version_history.json` entry, so a version-pinned read
+    has one to check; a set's versioned snapshot is written like any artifact's, so a set can be a
+    member of a set; and `.datom_resolve_version()` resolves a set's `data_sha` correctly for both the
+    current version and a pinned one, prefix matching included.
+    1. **OPEN -- THE SIGNATURE AND THE RETURN SHAPE ARE SPECIFIED NOWHERE.** Not in this task, not in
+       R12.3, not in design.md. "Return members + payload" is circular: the payload **is** members
+       plus tags. Two calls, and both are public shape, which is why they are not defaults to take
+       quietly. **Default for the signature: `datom_read_set(conn, name, version = NULL)`** -- the
+       three arguments `datom_read()` actually uses, in the same order and with the same meaning.
+       **Default for the result: a plain list of `name`, `project`, `version`, `data_sha`, `tags`,
+       `members`.** The identifying four are included because a caller who passed `version = NULL`
+       otherwise cannot say which version they got, and a set exists to be **citable** -- forcing a
+       second call to name what you just read is the one thing this artifact kind is for. No S3 class
+       and no print method: that is a separate, later decision and adding one now would freeze a
+       display format nobody has asked for.
+    2. **THE INTEGRITY GATE FORBIDS THE CONVENIENT READ, AND THE CONVENIENT READ WORKS -- WHICH IS
+       WHY A NAIVE IMPLEMENTATION USES IT.** `.datom_storage_read_json()` parses; the payload must be
+       **downloaded, hashed, and only then parsed**, exactly as `.datom_read_parquet()` does. Verified
+       both halves: `.datom_storage_download()` + `digest(file =)` reproduces the recorded
+       `document_sha` bit for bit, and `.datom_storage_read_json()` returns a structure **identical**
+       to parsing the downloaded file -- so nothing fails if you reach for it, and there is then
+       nothing to hash but bytes you re-serialized yourself. That is the write path's
+       "hash of bytes nobody stored" defect, inverted. Parse the downloaded file with
+       `jsonlite::fromJSON(simplifyVector = FALSE)`, which is what keeps `members[]` a list of records
+       rather than collapsing it to a data frame (R2.5's one residual condition); verified that the
+       payload's `data_sha` recomputes from the parsed file.
+    3. **`.datom_resolve_version()` HANDS BACK A `parquet_sha` AND A SET NEEDS A `document_sha`.**
+       Verified: on a set's metadata it returns the right `data_sha` and `parquet_sha = NULL`. So this
+       task either gives that function a field argument or grows it a sibling. **The precedent is one
+       function with a field argument and a thin wrapper per kind** -- Task 9 did exactly that to the
+       history scan (`.datom_lookup_history_object_sha()`), and for the same reason: two copies of
+       "which recorded hash pins this version" would eventually disagree. Note the function takes a
+       parsed `metadata_list` and does no IO, so whichever shape is chosen is unit-testable without a
+       fixture.
+    4. **OPEN -- THE KIND CHECK IS FREE, AND THE FUNCTION TO REUSE IS WRITE-FLAVOURED.**
+       `.datom_read_metadata()` already returns the current document, so `current$kind` costs **no
+       extra storage read** at either verb (verified). But `.datom_check_artifact_kind()`, which Task 9
+       added, says "{name} already exists in this project as a {found}" and closes with "Write the
+       existing {found} with {verb}, or pick another name" -- both wrong for a read, and it names the
+       two **write** verbs. **Default: give it an `operation` word (`"read"` / `"write"`) that selects
+       the wording and the verb pair, following `.datom_check_schema_version()`, which took exactly
+       that shape for exactly this reason.** The alternative -- a read-side sibling -- puts one rule in
+       two functions, and this rule is the whole of AC4 and AC6 and AC14. Recorded as open because it
+       edits a function two shipped write paths call. Related and settled: the check goes in each verb
+       after its `.datom_read_metadata()` call rather than inside that function, because the two verbs
+       want **different** answers from it -- the shared-function lesson from the write door does not
+       transfer to a shared function whose callers disagree. `.datom_read_metadata()` has exactly one
+       production caller, so the other route is cheap if it is ever wanted.
+    5. **AC6's "cryptic missing-parquet error" IS CONFIRMED, NOT ASSUMED.** `datom_read()` on a real
+       set today aborts with "File not found in local store" naming the store root, with nothing in it
+       about sets or about `datom_read_set()`. Reproduced on the fixture from Task 9.
+    6. **ONLY ONE OF THE TWO HASHES IS A READ-TIME CHECK, and "verify integrity" could easily be read
+       as both.** `document_sha` covers the stored bytes and is verified. `data_sha` must **not** be
+       recomputed on read: it is the address the payload was fetched from, so recomputing it catches
+       nothing `document_sha` did not, and it **would refuse a payload a newer datom wrote**, because
+       the sv1 encoder aborts on a top-level payload key it does not know. Same reason the parsed
+       payload is not re-validated. Precedent: `.datom_read_parquet()` verifies `parquet_sha` and never
+       recomputes the cv1 hash. Reads limp.
+    7. **AC15 AND P16 NEED A NESTED SET, AND ONE REPO HOLDS ONE SET.** So a *real* inner set costs
+       either a second project or rewriting `project.yaml`'s `set:` field between two writes. A
+       **hand-built** member carrying `kind = "set"` is sufficient and cheaper -- `datom_member()` is
+       documented as producing pure data and the member validator accepts one -- and if the inner set
+       does not exist in storage at all, a traversing implementation **errors** rather than silently
+       flattening, which is a louder signal than a count. Assert the count as well: the read-counting
+       mock has two precedents to copy, `tests/testthat/test-forward-compat.R:670` and
+       `tests/testthat/test-member.R:403`.
+    8. **AC1(a) NEEDS NO NEW FIXTURE MACHINERY.** `mock_datom_conn()` already defaults to reader role
+       with `path = NULL`, and such a conn reads a set's `metadata.json` and `version_history.json`
+       without complaint (verified against a real local store). Nothing on the set read path may touch
+       `conn$path`.
+    9. **AC28(a)'s "before parsing" NEEDS A VALID IMPOSTER, and the engineering note for this
+       technique is written about parquet.** Replace the stored payload with a **different but valid**
+       JSON document; then the abort can only have come from the hash check. Garbage bytes would fail
+       the parse too, so they prove less.
+    10. **DO NOT COPY `context` OR `...`.** `datom_read()` carries both and its body ignores both;
+        its docstring still claims dispatch via `dispatch.json`. A dead parameter on a **new** export
+        is worse than on an old one, because nothing has to keep it. The stale line in `datom_read()`'s
+        own documentation is pre-existing and out of scope here -- recorded so it is not inherited as
+        fact.
+    11. **Two bookkeeping items.** `_pkgdown.yml`'s **Sets** section needs `datom_read_set` (all
+        exports are listed there and pkgdown is a required check), and the **New exports** table above
+        still shows `datom_write_set()` unmarked though it shipped 2026-09-13.
   - _Requirements: R12.3, R7.1, R7.2, R6.4, R4.3. Invariants: I3, I8, I10. Properties: P9, P16.
     Acceptance: AC1, AC6, AC14, AC15, **AC28**. AC28 is the integrity gate -- both halves: a
     mismatched payload is refused before parsing, **and** a missing/empty `document_sha` is an error
@@ -3061,7 +3168,7 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 | `datom_storage_read_json()` | 3 -- **shipped 2026-08-21** |
 | ~~`datom_storage_write_json()`~~ | **dropped 2026-08-18** -- deferred to the Backlog; see Task 3 |
 | `datom_member()` | 8 -- **shipped 2026-09-11** |
-| `datom_write_set()` | 9 (extended with `include_paths` in 13) |
+| `datom_write_set()` | 9 -- **shipped 2026-09-13** (extended with `include_paths` in 13) |
 | `datom_read_set()` | 10 |
 | `datom_repo_commit()` | 12 |
 | `datom_repo_push()` | 12 |
