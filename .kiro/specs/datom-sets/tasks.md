@@ -19,8 +19,8 @@ ends the second review pass found -> 2898 after Task 20 -> 2902 after the review
 -> 2905 after the classify-late guard -> 2959 after Task 21 -> 2965 after the three review findings
 that followed it -> 3050 after Task 22 -> 3053 after the three review findings that followed
 it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding that followed it ->
-**3413 after Task 9**. Report the count in every commit
-message; it must never drop.
+3413 after Task 9 -> **3418 after the review finding that followed it**. Report the count in every
+commit message; it must never drop.
 
 ---
 
@@ -158,7 +158,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3413** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3418** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 10**.
 
@@ -199,6 +199,15 @@ before touching it: the file's member order is **not** the hash's member order, 
 sorted the file by digest reddened only after a fixture was pinned where digest order is the exact
 reverse of name order -- with two members the two orders agree half the time, so an arbitrary fixture
 made that test a coin flip.
+
+**Reviewed after it landed; one finding, fixed (tests -> 3418).** Key order in the written payload was
+canonicalized at two levels and needed three: the set's tag map and each member's `id` were sorted, the
+member record's **own** `id` / `tags` pair was not. The encoder reaches both member slots by name, so
+the two spellings hash identically and only the file differs -- and the case where that costs something
+is the one the reuse machinery exists for, a revert to content already in history, where the clone's
+payload is rewritten while the stored object is reused. Git would then hold bytes that do not match the
+recorded `document_sha` while storage holds bytes that do. One line, and no existing payload changes,
+because the canonical order is the one `datom_member()` already emits.
 
 **Task 9's cold-start audit (2026-09-11) is kept below because both calls it raised are what shaped
 the result.** The audit found nine things; the two scope questions among them were approved at their
@@ -1958,7 +1967,29 @@ own; landing it first is what makes Task 6's failure loud.
     list; the alternative was an exception vector, which hides the asymmetry rather than asserting
     it. The test additionally pins that the two rows really do differ in that one field, so the union
     cannot pass because both rows came out the same shape.
-  - Tests 3227 -> **3413** (+186), FAIL 0 / WARN 0 / SKIP 0. `dev/check-spec.R` 9/9; `R CMD check`
+  - **REVIEWED after it landed; one finding, fixed (tests 3413 -> 3418). Key order was canonicalized
+    at two levels and needed three.** `.datom_tidy_set_payload()` sorted the set's tag map and each
+    member's `id`, and left the member record's **own** two keys alone -- so a hand-built
+    `list(tags = , id = )` serialised differently from `list(id = , tags = )` while producing an
+    identical `data_sha`. The encoder reaches both member slots **by name**, so it cannot see the
+    difference; only the file can. **Where it bites is exactly the case the reuse machinery exists
+    for**: on a revert to content already in history, the clone's payload is rewritten from the
+    current spelling while the stored object is deliberately reused, so git would hold bytes that do
+    not match the recorded `document_sha` while storage holds bytes that do -- a refused read of a
+    valid version, from the copy that looks canonical. That is the failure
+    `.datom_resolve_document_sha()`'s own documentation warns about, reached through a path it did not
+    cover. **Narrow but supported input**: `datom_member()` emits `id` first and a JSON round trip
+    preserves that, so it takes a hand-built record -- which `.datom_validate_members()` accepts by
+    design, since a member is documented as pure data. One line, in the function that already sorted
+    the level below, and **no existing payload changes** because alphabetically the canonical order is
+    `id`, `tags`, which is what was already emitted (asserted, not claimed: the constructor's spelling
+    of the same member re-writes as a no-op). The reason to fix it is the inconsistency rather than the
+    odds -- sorting `id`'s keys exists so the file spelling is canonical, and stopping one level short
+    left that guarantee incomplete for no stated reason. **The sort is guarded, and the guard has its
+    own test**: `order(NULL)` is `integer(0)`, so an unconditional sort would **empty** a record with
+    no names instead of leaving it recognisable for the validator to report. Probed both directions:
+    removing the sort reddens 1, making it unconditional reddens 1.
+  - Tests 3227 -> 3413 -> **3418** (+191), FAIL 0 / WARN 0 / SKIP 0. `dev/check-spec.R` 9/9; `R CMD check`
     0/0/0 on docs, code/documentation agreement and examples. Thirteen new internal `man/` pages plus
     `man/datom_write_set.Rd`, a NAMESPACE entry, and the **Sets** section of `_pkgdown.yml` extended
     (Task 10 extends it again). The roxygen example was run and its output checked, not just built --

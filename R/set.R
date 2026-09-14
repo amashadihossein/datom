@@ -228,6 +228,12 @@
 #' identity encoder and so can only run once validation has established that every
 #' value is encodable -- see [.datom_order_set_members()].
 #'
+#' Key order is canonicalized at **three** levels, not two: the set's own tag
+#' map, each member's `id`, and each member record's own `id` / `tags` pair.
+#' Stopping at the second leaves one spelling uncanonical for no reason -- the
+#' encoder reaches both member slots by name, so the two orders hash identically
+#' and serialise differently.
+#'
 #' An empty tag map has its key **removed** rather than set to `NULL`, at both
 #' levels. `jsonlite` writes a NULL element as `{}`, and `"tags": {}` is the one
 #' spelling a writer must never emit: the hash cannot tell it from an absent map,
@@ -255,6 +261,26 @@
     if ("tags" %in% names(m)) {
       m$tags <- .datom_tidy_tag_map(m$tags)
       if (length(m$tags) == 0L) m$tags <- NULL
+    }
+
+    # The record's OWN two keys, for exactly the reason `id`'s are sorted above:
+    # the encoder reaches both slots by name, so `tags` before `id` hashes
+    # identically to `id` before `tags` while serialising to different bytes --
+    # two byte spellings of one `data_sha`, which is the state `document_sha`
+    # cannot survive. It bites on a revert, where the clone's payload is rewritten
+    # from the current spelling while the stored object is reused: git would then
+    # hold bytes that do not match the recorded hash and storage would hold bytes
+    # that do. Reachable only from a hand-built record, since `datom_member()`
+    # emits `id` first and a JSON round trip preserves that -- but a member is
+    # documented as pure data, so hand-built records are supported input.
+    # Alphabetically this is `id`, `tags`, the order already emitted, so no
+    # existing payload changes.
+    #
+    # Guarded rather than unconditional: `order(NULL)` is `integer(0)`, so
+    # sorting a record with no names would empty it instead of leaving it for the
+    # validator to report.
+    if (!is.null(names(m)) && all(nzchar(names(m)))) {
+      m <- m[order(names(m), method = "radix")]
     }
 
     m

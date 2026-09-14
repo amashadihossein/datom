@@ -22,6 +22,12 @@ Member order and member deduplication are \strong{not} here, because they need t
 identity encoder and so can only run once validation has established that every
 value is encodable -- see \code{\link[=.datom_order_set_members]{.datom_order_set_members()}}.
 
+Key order is canonicalized at \strong{three} levels, not two: the set's own tag
+map, each member's \code{id}, and each member record's own \code{id} / \code{tags} pair.
+Stopping at the second leaves one spelling uncanonical for no reason -- the
+encoder reaches both member slots by name, so the two orders hash identically
+and serialise differently.
+
 An empty tag map has its key \strong{removed} rather than set to \code{NULL}, at both
 levels. \code{jsonlite} writes a NULL element as \code{{}}, and \code{"tags": {}} is the one
 spelling a writer must never emit: the hash cannot tell it from an absent map,

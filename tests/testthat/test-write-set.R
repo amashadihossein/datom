@@ -569,6 +569,53 @@ test_that("editing one member's tags leaves its entry where it was in the file",
   expect_identical(after, before)
 })
 
+test_that("a member record's own keys are canonicalized, not just its id's", {
+  # Found by review. The encoder reaches both member slots BY NAME, so
+  # `list(tags = , id = )` hashes identically to `list(id = , tags = )` and
+  # serialises to different bytes -- two byte spellings of one `data_sha`, which is
+  # the state `document_sha` cannot survive.
+  #
+  # Where it bites: on a revert to content already in history, the clone's payload
+  # is rewritten from the current spelling while the stored object is deliberately
+  # reused. Git would then hold bytes that do not match the recorded hash while
+  # storage holds bytes that do -- a refused read of a valid version, from the
+  # copy that looks canonical.
+  #
+  # Reachable only from a hand-built record, because `datom_member()` emits `id`
+  # first and a JSON round trip preserves that. A member is documented as pure
+  # data, so a hand-built record is supported input rather than misuse.
+  fx <- local_set_project()
+  version <- sw_table(fx, "dm")
+
+  reversed <- list(tags = list(type = "input"),
+                   id = list(project = "set-project", name = "dm",
+                             kind = "table", version = version))
+
+  res <- sw_write(fx, list(reversed))
+
+  expect_identical(names(sw_payload(fx)$members[[1L]]), c("id", "tags"))
+
+  # `id` before `tags` is what datom_member() already emits, so the canonical
+  # form is unchanged for every payload written so far -- asserted rather than
+  # claimed, by writing the constructor's spelling of the same member and getting
+  # a no-op.
+  again <- sw_write(fx, list(sw_member(fx, "dm", version,
+                                       tags = list(type = "input"))))
+
+  expect_identical(again$action, "none")
+  expect_identical(again$data_sha, res$data_sha)
+})
+
+test_that("the tidy step leaves a member with no names for the validator to report", {
+  # `order(NULL)` is `integer(0)`, so an unguarded sort of the record's keys would
+  # EMPTY a malformed record rather than leaving it recognisable -- and the
+  # validator's message is the one that names what is wrong.
+  out <- .datom_tidy_set_payload(list(members = list(list("no names at all"))))
+
+  expect_length(out$members[[1L]], 1L)
+  expect_error(.datom_validate_members(out$members), "named list")
+})
+
 test_that("an exact duplicate member collapses to one entry, silently", {
   fx <- local_set_project()
   version <- sw_table(fx, "dm")
