@@ -19,7 +19,8 @@ ends the second review pass found -> 2898 after Task 20 -> 2902 after the review
 -> 2905 after the classify-late guard -> 2959 after Task 21 -> 2965 after the three review findings
 that followed it -> 3050 after Task 22 -> 3053 after the three review findings that followed
 it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding that followed it ->
-3413 after Task 9 -> 3418 after the review finding that followed it -> **3553 after Task 10**.
+3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
+**3557 after the review finding that followed it**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -159,7 +160,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3553** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3557** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 24**, the read-side
 ergonomics that sit on top of Task 10's result.
@@ -2114,8 +2115,10 @@ own; landing it first is what makes Task 6's failure loud.
     `datom_write_set()` cannot produce the case.
   - **EVERY MEMBER CARRIES `$fetch(conn)`, AND IT IS A SELF-DESCRIBING LINK.** Not an add-on: it is
     how the read constructs a member. Without it, a downstream projection cannot be built without
-    reimplementing datom's kind dispatch, the project check and version pinning -- the duplicated
-    machinery this whole spec exists to prevent.
+    reimplementing datom's kind dispatch and version pinning -- the duplicated machinery this whole
+    spec exists to prevent. **This sentence said "the project check" until 2026-09-14 and the link
+    never did one**; it cannot, and the reason is in Task 24's body -- a reader's `project_name` is an
+    unvalidated label, so a comparison there refuses working reads.
     - **`fetch`, not `read` or `get`.** It resolves a pointer to whatever it points at: a table
       member yields data, a set member yields another `datom_set`. `read` would promise content and
       `get` would promise references, and it is genuinely both -- so a neutral verb is the honest one.
@@ -2476,7 +2479,21 @@ own; landing it first is what makes Task 6's failure loud.
     was lost -- but the harness now snapshots to a temp directory and restores from that, and the
     rule is in `dev/engineering-notes.md`: a probe reverts from a copy it made itself, never from
     git, because the code under probe is by definition uncommitted.
-  - Tests 3418 -> **3553** (+135), FAIL 0 / WARN 0 / SKIP 0; `dev/check-spec.R` 9/9;
+  - **REVIEWED after it landed; one finding, half accepted and half refused, plus one doc gap
+    (tests -> 3557).** The link's factory took a `project` argument, forced it, and used it nowhere --
+    while this task's body claimed the link did "kind dispatch, the project check and version
+    pinning". The dead argument is gone and the sentence is corrected. The reviewer's fix, moving the
+    comparison into the factory, was **refused on evidence**: a reader's `project_name` is a label
+    passed to `datom_get_conn()` and nothing validates it against the repo, so a gate would abort a
+    working fetch for the very consumer this task is built for -- reproduced with a reader labelled
+    `"a-label-nobody-validated"` reading a set written by `set-project`. Two tests pin the no-gate
+    behaviour. The reviewer's structural point is kept and moved into Task 24: the hint belongs in the
+    shared link core, not in `datom_fetch_member()`, because a projection's leaf is a link and never
+    enters that verb. Also fixed, from the same review: `datom_get_set()`'s docs now say that
+    `version` can be `NULL` on a truncated history and that `project` is the connection's label rather
+    than a recorded fact -- and a Decisions row surfaces the unverified-`project_name` question, which
+    wants its own issue.
+  - Tests 3418 -> 3553 -> **3557** (+139), FAIL 0 / WARN 0 / SKIP 0; `dev/check-spec.R` 9/9;
     `R CMD check` 0/0/0 on docs, code/documentation agreement and examples (the two new examples
     were run and their output read, not merely built). New `tests/testthat/test-get-set.R`.
     `_pkgdown.yml`'s Sets section gained all three new exports. **Pathway impact: yes** -- a new
@@ -3546,10 +3563,24 @@ reason.
       the same artifact at two versions, a current table beside a locked baseline). List the
       candidates with their tags and point at the two ways to narrow. `tags =` is the one people will
       reach for, because tags are the navigation axis; `version =` stays for exact pinning.
-    - **The project check runs BEFORE the fetch.** Both projects are known at zero cost, and this is
-      the highest-value message in the design: without it, the non-conjunctive access model (R3.3)
-      presents to a user as a confusing missing-object error rather than as "this member lives in
-      another project, open a connection to it".
+    - **The project check is a HINT ON FAILURE, NOT A GATE, and that was settled by evidence on
+      2026-09-14 rather than by preference.** The message is still the highest-value one in the
+      design: without it, the non-conjunctive access model (R3.3) presents as a confusing
+      missing-object error rather than as "this member lives in another project, open a connection to
+      it". But it must not refuse the fetch, because **a connection's `project_name` is not a
+      verified fact**. For a **reader** connection -- the primary consumer of a set -- it is a label
+      passed to `datom_get_conn()`; the namespace comes from the store's root and prefix, nothing
+      compares the label against the repo, and a reader is never told which string the writer used.
+      Verified end to end: a reader whose label is `"a-label-nobody-validated"` reads a set written by
+      project `set-project` and fetches its members correctly. A gate would abort that. So: attempt
+      the resolution, and when it fails **and** the two names differ, add the bullet naming the
+      member's recorded project. Two tests in `test-get-set.R` pin the no-gate half from Task 10's
+      side.
+    - **Where the check lives is decided by the projection path, not by this verb.** After
+      `datom_structure_members()`, a leaf is a **link**, so `dp$output$adsl(conn)` never enters
+      `datom_fetch_member()` -- a hint implemented only here would miss the route people actually use.
+      Put it in the shared link core both entry points already go through, and do not write a second
+      copy in this verb.
     - Note this is kind dispatch at the **member** level, which is the only level it belongs at
       (R12.3). A polymorphic top-level `datom_read()` stays refused.
   - **`datom_list_members(x)`** -- long format, one row per member **per tag**: `name`, `project`,
@@ -3972,3 +4003,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-14 | **(implementation) an `id` value is REFUSED on read where a tag value is tolerated.** `.datom_validate_members()` enforces the text-scalar contract on **write only**, so a payload read back from storage is checked nowhere else -- and `id` values are spliced into storage keys and compared against project names, so a list where a string belongs would make Task 24's project comparison report a member of this project as belonging to another. A tag value this build does not recognise as text is left alone instead: nothing downstream requires it to be text, so refusing would block a document a newer datom wrote. Fields **outside** the four `id` keys are carried untouched for the same reason, and a test writes one. | Task 10, Task 24, R2.5 |
 | 2026-09-14 | **(implementation) the member link's purity is pinned on serialized BYTES, and the probe that proves the pin needed `conn` forced.** With the factory nested inside `datom_get_set()` the connection lands on the closure's parent chain and `saveRDS()` writes the PAT into the file -- but a first probe found no token, because the nested factory's enclosing frame held `conn` as an unforced promise pointing at the global environment, which serializes as a reference. Forcing it reproduced the leak exactly. So two things are load-bearing rather than one: the factory is namespace-level **and** every argument is `force()`d. Two further notes for whoever edits that test: a dev-loaded package keeps source references, so the serialized closure carries the text of `R/set.R` -- which mentions `github_pat` in an example -- hence the search is for a token **value** the fixture invents and no source file contains; and `rawToChar()` refuses the embedded NULs in serialized R objects, so the search is `grepRaw()`. | Task 10, design.md 23 |
 | 2026-09-14 | **(process) a probe harness must restore from a copy it made itself, never from git.** A harness that reverted its deliberate defects with `git checkout -- R/set.R R/read_write.R` deleted the whole of Task 10's uncommitted implementation, since HEAD predates it. Recovered from the session transcript and the already-generated `man/` pages, verified identical by line count and by a green suite. The class of the mistake is what matters: the code under probe is **by definition** uncommitted, so git is the one thing that cannot be the restore source. In `dev/engineering-notes.md`. | Task 10 |
+| 2026-09-14 | **REVIEW FINDING ON TASK 10, half accepted and half refused on evidence: the link carried a dead `project` argument, and a project check must NOT be added to it.** The observation was right and is fixed: `.datom_member_link()` took `project` as its first argument, forced it, and referenced it nowhere -- reaching the record only through `record` -- while Task 10's body claimed the link performed "kind dispatch, **the project check** and version pinning". A forced-and-unused argument reads as a check that was meant to be there, so the argument is gone (four parameters now) and the sentence is corrected. **The recommended fix -- move the comparison into the factory -- was refused, and the reason was verified rather than argued**: for a **reader** connection, which this task documents as the primary consumer of a set, `project_name` is a label passed to `datom_get_conn()`. The namespace comes from the store's root and prefix, nothing validates the label against the repo, and a reader is never told which string the writer used. Reproduced end to end: a reader labelled `"a-label-nobody-validated"` reads a set written by project `set-project` and fetches its members correctly, and a gate in the link would have aborted that. So the mismatch is the ordinary case, not the error case. Two tests now pin the no-gate behaviour, so adding the gate reddens rather than passing. Task 24's own bullet is rewritten: the project comparison is a **hint on an already-failed resolution**, and it belongs in the shared link core rather than in `datom_fetch_member()` alone -- because after `datom_structure_members()` a leaf is a link, so the projection path never enters that verb, which is the strongest part of the review and is preserved. | Task 10, Task 24, R3.3, R18.1 |
+| 2026-09-14 | **(surfaced, NOT fixed -- owner decision needed) a connection's `project_name` is unverified, and three things quietly depend on it being true.** Found while refusing the review's project check. Nothing compares a reader's `project_name` against the repo it reads: it is used for governance ref resolution and as a display label, while the data namespace comes from the store. Consequences, in increasing order of cost: (1) `datom_get_set()` reports `project` from the connection, so a mislabelled reader gets a set whose `project` field is their own label -- documented in the roxygen and pinned by a test, since it is one of the four facts the result advertises **for citation**; (2) `datom_member()` records `project = conn$project_name` at declaration time, so a member declared through a mislabelled connection writes a wrong project name into a **citable payload** permanently, and no hash or validator can see it (pre-existing, Task 8); (3) no project comparison anywhere can be a refusal until this is settled. **The candidate fix is to verify a reader's `project_name` against the repo at connection time** -- the manifest's top-level `project_name` is the only recorded copy -- which would make all three truthful at once. It is a behaviour change for existing readers (a wrong label reads today and would abort after), it is outside this spec's scope, and it wants filing as its own issue rather than folding in here. | Task 8, Task 10, Task 24, R18.1 |

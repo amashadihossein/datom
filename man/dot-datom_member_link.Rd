@@ -4,13 +4,14 @@
 \alias{.datom_member_link}
 \title{Resolve One Member Pointer Without a Connection in the Closure}
 \usage{
-.datom_member_link(project, name, kind, version, record)
+.datom_member_link(name, kind, version, record)
 }
 \arguments{
-\item{project, name, kind, version}{The member's pinned identity.}
+\item{name, kind, version}{The member's pinned identity -- the three facts
+resolution needs. \code{project} is deliberately not a parameter: see above.}
 
 \item{record}{The member record the link describes -- pure data, attached as
-the \code{datom_member} attribute.}
+the \code{datom_member} attribute, and where \code{project} remains readable.}
 }
 \value{
 A function of one argument (\code{conn}), classed \code{datom_link}.
@@ -41,5 +42,16 @@ passes on the broken shape -- there the connection sits one frame further up.
 The link carries its own pointer as an attribute, so a consumer holding only a
 projection can still cite what they used. Links built without it cannot be
 repaired afterwards, which is why it ships with the factory rather than later.
+
+\strong{It does not compare the member's project against the connection's, and it
+must not.} That looks free -- both names are in hand -- and it would refuse
+working reads. For a \strong{reader} connection, which is the primary consumer of a
+set, \code{project_name} is a label the caller passes to \code{\link[=datom_get_conn]{datom_get_conn()}}: the
+namespace comes from the store's bucket and prefix, nothing validates the label
+against the repo, and a reader is never told which string the writer used. So a
+mismatch is the ordinary case rather than the error case, and a gate here would
+abort a fetch that resolves correctly. Pinned by a test that fetches through a
+deliberately mismatched label. A \emph{hint} on an already-failed resolution is a
+different thing and is left to the task that owns that message.
 }
 \keyword{internal}

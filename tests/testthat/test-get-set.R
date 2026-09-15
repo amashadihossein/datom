@@ -770,6 +770,45 @@ test_that("a kind this build cannot resolve aborts when the link is called, not 
   expect_match(conditionMessage(err), "upgrade datom")
 })
 
+test_that("a link does not gate on the connection's project name, and must not", {
+  # A project comparison inside the link looks free -- both names are in hand --
+  # and it would refuse working reads. For a READER connection, which is the
+  # primary consumer of a set, `project_name` is a label passed to
+  # datom_get_conn(): the namespace comes from the store's root and prefix,
+  # nothing validates the label against the repo, and a reader is never told which
+  # string the writer used. So the mismatch below is the ordinary case, and this
+  # test is what reddens if somebody adds the gate.
+  fx <- local_get_set_project()
+  gs_one_member_set(fx)
+
+  mislabelled <- fx$conn
+  mislabelled$path <- NULL
+  mislabelled$role <- "reader"
+  mislabelled$project_name <- "a-label-nobody-validated"
+
+  x <- datom_get_set(mislabelled, "product-a")
+
+  expect_identical(x$members[[1L]]$id$project, "set-project")
+  expect_identical(nrow(x$members[[1L]]$fetch(mislabelled)), 3L)
+})
+
+test_that("the set's project is the connection's label; a member's is recorded", {
+  # Which is why the docs say to cite a member's own id$project, and why the four
+  # identifying facts are not all of the same quality.
+  fx <- local_get_set_project()
+  gs_one_member_set(fx)
+
+  mislabelled <- fx$conn
+  mislabelled$path <- NULL
+  mislabelled$role <- "reader"
+  mislabelled$project_name <- "a-label-nobody-validated"
+
+  x <- datom_get_set(mislabelled, "product-a")
+
+  expect_identical(x$project, "a-label-nobody-validated")
+  expect_identical(x$members[[1L]]$id$project, "set-project")
+})
+
 test_that("two reads of one set are not identical(), and the records are", {
   # Closures compare by environment. datom_read()'s own example asserts
   # identical() for a table, so the asymmetry gets met by anyone reading both

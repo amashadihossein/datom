@@ -954,13 +954,24 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
 #' projection can still cite what they used. Links built without it cannot be
 #' repaired afterwards, which is why it ships with the factory rather than later.
 #'
-#' @param project,name,kind,version The member's pinned identity.
+#' **It does not compare the member's project against the connection's, and it
+#' must not.** That looks free -- both names are in hand -- and it would refuse
+#' working reads. For a **reader** connection, which is the primary consumer of a
+#' set, `project_name` is a label the caller passes to [datom_get_conn()]: the
+#' namespace comes from the store's bucket and prefix, nothing validates the label
+#' against the repo, and a reader is never told which string the writer used. So a
+#' mismatch is the ordinary case rather than the error case, and a gate here would
+#' abort a fetch that resolves correctly. Pinned by a test that fetches through a
+#' deliberately mismatched label. A *hint* on an already-failed resolution is a
+#' different thing and is left to the task that owns that message.
+#'
+#' @param name,kind,version The member's pinned identity -- the three facts
+#'   resolution needs. `project` is deliberately not a parameter: see above.
 #' @param record The member record the link describes -- pure data, attached as
-#'   the `datom_member` attribute.
+#'   the `datom_member` attribute, and where `project` remains readable.
 #' @return A function of one argument (`conn`), classed `datom_link`.
 #' @keywords internal
-.datom_member_link <- function(project, name, kind, version, record) {
-  force(project)
+.datom_member_link <- function(name, kind, version, record) {
   force(name)
   force(kind)
   force(version)
@@ -1166,7 +1177,6 @@ print.datom_link <- function(x, ...) {
     id <- record$id
     c(record, list(
       fetch = .datom_member_link(
-        project = id$project,
         name    = id$name,
         kind    = id$kind,
         version = id$version,
@@ -1201,6 +1211,23 @@ print.datom_link <- function(x, ...) {
 #' partial-matches on lists -- so a name-keyed list would answer plausibly and
 #' wrongly. The unique key is the full `id`.
 #'
+#' Two of the four identifying facts have limits worth knowing before you cite
+#' them:
+#'
+#' * **`version` can be `NULL`.** It is the version *recorded* in
+#'   `version_history.json` for the state `metadata.json` describes, and a
+#'   truncated or partly-synced history records no such entry. A manufactured
+#'   version would be a wrong statement rather than a missing one, so the field is
+#'   left empty and [datom_validate()] owns the inconsistency. A version-pinned
+#'   read always reports one, since the entry is what it resolved through.
+#' * **`project` is the connection's project name, not a recorded field.** No
+#'   per-artifact document records which project owns it. For a developer
+#'   connection the name comes from the clone's `.datom/project.yaml`; for a
+#'   reader connection it is the label passed to [datom_get_conn()], which
+#'   nothing validates against the repo. Each **member** carries its own recorded
+#'   `id$project`, written when the member was declared, and that is the one to
+#'   cite for a member.
+#'
 #' @section Resolving a member:
 #' Each member is `id` (`project`, `name`, `kind`, `version`), its optional
 #' `tags`, and `fetch`:
@@ -1234,8 +1261,8 @@ print.datom_link <- function(x, ...) {
 #' @param version Optional version (`metadata_sha`, or a prefix of one). `NULL`
 #'   reads the current version.
 #'
-#' @return A `datom_set`: a list of `name`, `project`, `version`, `data_sha`,
-#'   `tags` and `members`.
+#' @return A `datom_set`: a list of `name`, `project`, `version` (possibly
+#'   `NULL`), `data_sha`, `tags` and `members`.
 #' @seealso [datom_write_set()] to write one, [datom_member()] to declare a
 #'   member, [datom_read()] for tables.
 #' @export
