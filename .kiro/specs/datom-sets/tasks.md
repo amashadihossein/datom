@@ -3586,13 +3586,22 @@ reason.
       missing-object error rather than as "this member lives in another project, open a connection to
       it". But it must not refuse the fetch, because **a connection's `project_name` is not a
       verified fact**. For a **reader** connection -- the primary consumer of a set -- it is a label
-      passed to `datom_get_conn()`; the namespace comes from the store's root and prefix, nothing
-      compares the label against the repo, and a reader is never told which string the writer used.
+      passed to `datom_get_conn()`; the namespace comes from the store's root and prefix, and nothing
+      compares the label against the repo.
       Verified end to end: a reader whose label is `"a-label-nobody-validated"` reads a set written by
       project `set-project` and fetches its members correctly. A gate would abort that. So: attempt
       the resolution, and when it fails **and** the two names differ, add the bullet naming the
       member's recorded project. Two tests in `test-get-set.R` pin the no-gate half from Task 10's
       side.
+      **RESTATED 2026-09-15, because Task 26 moved half the premise.** This bullet used to add "and a
+      reader is never told which string the writer used", which is no longer true: the writing repo's
+      own project name is now recorded in per-artifact metadata, and a member's `id$project` is read
+      from there rather than copied off the connection. **The no-gate conclusion is untouched**, and so
+      are its two tests -- what makes a gate wrong is the **connection's** side of the comparison,
+      which is still an unvalidated label, and comparing a verified value against an unverified one
+      refuses working reads exactly as before. What did improve is the hint's wording: it can now name
+      the project the member's **own writer recorded**, which is a stronger claim than naming a
+      project someone typed.
     - **Where the check lives is decided by the projection path, not by this verb.** After
       `datom_structure_members()`, a leaf is a **link**, so `dp$output$adsl(conn)` never enters
       `datom_fetch_member()` -- a hint implemented only here would miss the route people actually use.
@@ -3651,11 +3660,91 @@ reason.
     - **Known rough edge, accepted rather than solved here**: the result prints as R's default nested
       list of functions. Add a `print` method only if it actually grates; the leaves at least print
       readably on their own, because Task 10 classes them `datom_link`.
+  - **COLD-START AUDIT, 2026-09-15**, run after Task 26 landed and with every claim checked against
+    the tree rather than reasoned about. **Startable. Ten findings, two of them OPEN scope questions,
+    each marked with the default it takes if nobody answers.** No escalation flag is owed (design.md
+    12 carries E1 and E2 only). **What held**, verified rather than assumed: the link factory really
+    does take `(name, kind, version, record)` with the dead `project` argument gone, and `record` is
+    on the closure, so `record$id$project` is reachable inside the link core and the project hint can
+    live there exactly as this task says; a read member really is `id` plus optional `tags` plus
+    `fetch`, built by `.datom_read_set_members()` as `c(record, list(fetch = ...))`, which is the
+    shape the third-argument accessor has to handle; `print.datom_set()` really does end with a hint
+    naming `x$members[[1]]$fetch(conn)`, so there is one real line to upgrade and it is already
+    guarded for a zero-member set; Task 9's fixture really does carry
+    `domain = c("safety", "efficacy")` (`tests/testthat/test-write-set.R:728`), so the
+    two-branch test has a fixture waiting; and R2.14a really was amended on 2026-09-13 to license the
+    collision refusal, so implementing it does not contradict the requirement it narrows.
+    1. **THIS TASK'S STATED REASON FOR THE NO-GATE RULE IS NOW PARTLY FALSE, AND THE FIX MADE THE HINT
+       STRONGER RATHER THAN WEAKER.** The bullet above says "a reader is never told which string the
+       writer used". After Task 26 that is wrong: the writing repo's own project name is recorded in
+       per-artifact metadata, and a member's `id$project` is read from there. **The conclusion is
+       unchanged and the two tests that pin it stay** -- what makes a gate wrong is the
+       **connection's** side of the comparison, which is still a label nobody validated, and that has
+       not changed at all. But the sentence must be restated, or a session reading it after Task 26
+       concludes the premise was retired along with the defect and adds the gate. Restate as: the
+       member's side is now trustworthy, the connection's side is not, and comparing a verified value
+       against an unverified one still refuses working reads. The hint's **wording** gets stronger for
+       free -- it can say the project the member's own writer recorded, rather than merely the project
+       named in the record.
+    2. **THE THIRD ARGUMENT CANNOT BE CALLED `name`.** It accepts a name, a member record, or a link,
+       so for two of the three shapes the parameter name is a lie, and
+       `datom_fetch_member(conn, x, name = m$fetch)` reads as a bug at the call site. Default:
+       **`member`**, giving `datom_fetch_member(conn, x, member, tags = NULL, version = NULL)`. It
+       reads correctly for all three shapes and matches the noun the rest of the spec uses.
+    3. **`datom_list_members()` NEEDS A ZERO-ROW FRAME, AND A ZERO-MEMBER SET IS REACHABLE.** The
+       **writer** refuses an empty member list; the **reader** does not -- `.datom_read_set_members()`
+       maps over `seq_along()` and returns `list()` for an empty payload, so a hand-built payload or
+       one from a future datom reads back with no members. Without an explicit empty path the frame is
+       built from zero rows and loses its columns, which is **exactly** the defect that took two
+       commits on `datom_list()` during Task 6. Default: a `.datom_empty_member_frame()` beside the
+       builder, mirroring `.datom_empty_artifact_frame()` (`R/query.R:16`), with a test that
+       `rbind()` of a populated and an empty result works -- the assertion that caught the second half
+       of the `datom_list()` defect.
+    4. **A `missing` BUCKET NAME CAN COLLIDE WITH A REAL TAG VALUE, and nothing in this task's body
+       says what happens.** `missing = "untagged"` produces a leaf **name**, so a set where some
+       member genuinely carries `type = "untagged"` merges the real branch and the missing bucket
+       into one, silently -- the same class of defect as the leaf-name collision this task already
+       refuses, arriving by a different door. Default: refuse it the same way, with the same shape of
+       message, naming the axis and the colliding value and pointing at passing a different
+       `missing`. One test.
+    5. **LONG FORMAT IS ONLY POSSIBLE BECAUSE THE TAG GRAMMAR IS TEXT-ONLY**, which is worth one line
+       in the code rather than being rediscovered. `.datom_validate_tag_map()` refuses numbers,
+       booleans, `null` and nesting, so a tag value is always a character vector and the `value`
+       column is a plain character column with no list-column anywhere. If the grammar ever widened,
+       this verb is one of the things that would have to change.
+    6. **THE MULTI-VALUE EXPANSION AND THE NESTING ARE THE SAME OPERATION, DONE TWICE.**
+       `datom_list_members()` expands one member into one row per tag; `datom_structure_members()`
+       with a multi-valued axis expands one member into one leaf per axis value, and with
+       `by = c("domain", "type")` it has to expand on the first axis **before** nesting on the second,
+       or a two-domain member lands under one domain only. Default: one internal expander, used by
+       both verbs, rather than a `split()` in each -- which is also what rules out the silent
+       first-value spelling the task warns about, since there is no place left to write it.
+    7. **THE COLLISION ABORT CAN NAME VERSIONS FOR FREE.** A read member's `id$version` is the full
+       recorded version string (Task 10 made the resolver echo what was recorded), so "name both
+       members with their versions and tags" costs nothing and needs no second lookup.
+    8. **OPEN (default: yes) -- does `datom_fetch_member()` accept a member with no `fetch` on it?**
+       That is the **payload** shape: what `.datom_strip_member_links()` produces, and what a caller
+       who built a member with `datom_member()` holds. Default: yes, because the accessor keys on
+       `id` and nothing else, so it costs a line and keeps read-modify-write symmetric -- the same
+       argument that made `datom_write_set()` accept a `datom_set` back. Saying no would mean the two
+       verbs disagree about what a member is.
+    9. **OPEN (default: no) -- should `datom_list_members()` carry the set's own name and version as
+       columns?** It would make a single frame self-describing when two sets' listings are `rbind()`ed,
+       which is a real use for comparing products. Default: no -- one row per member per tag, and the
+       set's identity is already on the object the caller passed, so two columns repeating one fact on
+       every row is the kind of denormalisation that later disagrees with itself. A caller who wants it
+       writes `transform(m, set = x$name)`.
+    10. **THREE EXPORTS MEAN THREE `_pkgdown.yml` ENTRIES**, beside `datom_member` /
+        `datom_write_set` / `datom_get_set` at `_pkgdown.yml:62-64`, plus the NAMESPACE entries
+        `devtools::document()` generates. The spec's own exports table already lists all three against
+        this task, so the omission would only show up in `R CMD check`'s pkgdown-adjacent noise, which
+        is to say not loudly.
   - _Requirements: R4.3, R4.6, R4.7, R12.3, R18.1, R3.3. Invariants: I10, I25. Properties: P16.
     **Acceptance: none by design** -- these are additions over the read that AC1, AC15 and AC28
     already pin, and no criterion in this spec describes them. Each behaviour named above gets its own
-    test instead: the ambiguity abort, the project-mismatch abort, the three accepted third-argument
-    shapes, the `NA` row for an untagged member, and the `missing` bucket._
+    test instead: the ambiguity abort, the project-mismatch hint, the three accepted third-argument
+    shapes, the `NA` row for an untagged member, the `missing` bucket, the two-branch multi-valued
+    axis, the leaf-name collision, the `missing`-name collision, and the zero-row frame._
   - _Pathway impact: none -- no new lookup and no new traversal. `datom_fetch_member()` performs
     exactly the reads `datom_read()` / `datom_get_set()` already perform, and the other two verbs do
     no IO at all._
