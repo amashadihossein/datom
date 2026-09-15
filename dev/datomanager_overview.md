@@ -143,17 +143,71 @@ Corollary the spec locked in: **member records carry a logical project name and 
 location**, because an embedded bucket would go stale the moment that bucket moves -- which is
 precisely what `ref.json` exists to prevent.
 
-### 5. The `.access/` reservation is now structurally enforced, not just conventional
+### 4a. CONSTRAINT ON THE RESOLVER: a project name must be verified before it is used to place a connection
+
+**This is the failure mode of the sentence in section 4 above** -- "`ref.json` in the governance
+repo takes priority once governance exists". Read that priority rule together with an unverified
+name and the pair does something neither does alone. Recorded here rather than as a datom issue,
+because the component that has to prevent it does not exist yet: whoever builds the resolver is the
+audience, and they read this section.
+
+**What datom does today.** On a **reader** connection, `project_name` is a string the caller passes
+to `datom_get_conn()`; the storage location comes from the store's own root and prefix, and nothing
+compares the two. With no governance attached that is harmless -- the name is a label and never
+selects anything. With governance attached, the name **chooses which `projects/{name}/ref.json` is
+read**, and if the location that record names differs from the caller's store, the connection is
+repointed at it.
+
+**Reproduced, not reasoned about** (2026-09-15, datom-sets Task 26). Two real projects, each with
+its own store; a governance store holding only the second one's `ref.json`; a reader whose store
+holds the **first** project's location and whose typed name is the **second** project's. The
+connection is repointed, and reading a table returns **the other project's rows**. The only signal
+is a warning saying the data has been *migrated*, which is exactly what a genuine migration says --
+so the message cannot distinguish a move from a typo. The same mistyped name with no governance
+store reads the intended project correctly. Both halves are pinned in
+`tests/testthat/test-ref.R`, as a **characterization** test: it records datom's current behaviour
+and is labelled as a hazard rather than a guarantee, so if a fix ever lands it becomes the
+assertion of that fix.
+
+**The constraint, stated as a requirement on the resolver.** *A name supplied by a caller must be
+verified against the namespace it is about to be used to reach, before it is allowed to move a
+connection.* Two things make that cheap rather than theoretical: every namespace's
+`.metadata/manifest.json` records its own `project_name` (it has, since 0.1.2), and datom already
+does exactly this cascade on the write side -- a stored document's project name is the repo's own
+declaration, never a connection label (datom-sets Task 26). So the resolver has something to
+compare against and a precedent for the shape.
+
+**Two costs the fix carries, which is why datom has not simply added it.** A reader connection does
+no storage read at all today, so verification adds one request per connection; and a caller whose
+name does not match the repo currently succeeds, so verifying breaks them -- deliberately, but it is
+a break, and it needs its own decision about whether to warn or refuse. Doing that inside datom now
+would change behaviour for existing readers in order to defend against a component nobody has built.
+
+**The hard edge**: this must be settled before `datomanager`'s attach ships. Attach is what writes
+`projects/{name}/ref.json`, and nothing in datom writes that file any more -- `.datom_create_ref()`
+has no caller left in the package. So today nothing can arm the hazard, and the release that arms it
+is the release that must carry the answer.
+
+### 5. STALE IN ITS MECHANISM: the `.access/` reservation still holds, but by construction only
+
+**The reservation itself stands. What is stale is the claim that something enforces it.** Marked
+2026-09-15, on the same terms as section 3a: read this section for the reservation, not for the
+guard it describes.
 
 Section 5 below reserves `{prefix}/datom/.access/` and records an audit showing datom is safe
 there **by construction** (no list/delete calls, point-access only, key builder always inserts
-`datom/`).
+`datom/`). That part is unchanged and is still the whole basis of the reservation.
 
-The `datom-sets` spec adds datom's **first general-purpose public write surface**
-(`datom_storage_write_json()`), which is also the first thing capable of breaking that
-reservation. It is specified to **refuse any key under a `.access/` segment**, alongside
-`.metadata/` and artifact payload keys. Reads are unrestricted. So the reservation survives the
-new export with a test behind it.
+What changed: this section used to say the `datom-sets` spec adds datom's first general-purpose
+public **write** surface, `datom_storage_write_json()`, specified to refuse any key under a
+`.access/` segment. **That export was dropped on 2026-08-18 and never shipped.** Only the internal
+`.datom_storage_write_json()` exists, reached from datom's own write paths, which write nowhere near
+`.access/`. The spec shipped the **read** half of the pair (`datom_storage_read_json()`, and reads
+were always going to be unrestricted), so datom still has no public write door at all.
+
+So there is no key refusal to inherit, and nothing for a test to sit behind. If a public write
+surface is ever added -- to datom or to datomanager -- the refusal specified here is the thing to
+build with it, and until then the reservation rests on datom having no way to reach those keys.
 
 ### 6. Repo and namespace topology to build against
 

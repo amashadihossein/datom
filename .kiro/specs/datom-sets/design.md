@@ -960,6 +960,33 @@ fetches `{name}/{data_sha}.parquet` -- which does not exist. It fails loudly, wh
 This is a designed property of keeping the table payload extension unchanged (R5.3), not an
 accident.
 
+### The triage rule this section has been applying without stating it
+
+Added 2026-09-15, generalised from how the whole spec has actually scheduled compatibility work
+rather than invented. Two classes, two answers, and the class is decided by one question: **can a
+build that does not look be made to look later?**
+
+| Class | Examples | When it is built |
+|---|---|---|
+| **Irretrofittable mechanism** -- a build that does not look can never be made to look | the reader-side format gate, the vocabulary check, the writer floor's reading half, a format number on `project.yaml` | **now**, even speculatively, because the window closes at release and does not reopen |
+| **Behaviour inside a mechanism** -- a slow path, a poor message, an awkward coupling | the name cascade reaching the repairing manifest reader; the migration warning that cannot distinguish a move from a typo | **when it bites**, because fixing it later asks nothing of old builds |
+
+The governing asymmetry, which is what makes the split safe: **corruption caused by an old build is
+never acceptable; graceful *function* of an old build is not a supported guarantee.** Everything in
+the first column exists to stop the former. Nothing in the second can cause it.
+
+The population matters to the second row and is easy to overstate. 0.1.0 through 0.1.2 is closed,
+unannounced and experimental, and the v2 manifest bump already stops those builds from writing, so a
+degradation confined to them is **recorded** rather than fixed. That is not permission to be casual:
+the reason the `parquet_sha` rename is still refused above is that its failure is silent, and
+silence is disqualifying whatever the population size.
+
+Worked application, both from the same day. Task 26's review raised two things. The **wording of a
+decisions-log row** was fixed immediately, because a future session would have read it as filing
+owed and acted on it -- a defect in the record misdirects work. The **manifest-reader coupling** was
+recorded and left, because it needs a three-way straddle to reach, writes nothing, hides nothing,
+and costs requests rather than correctness.
+
 ---
 
 ## 12. Model escalation flags
