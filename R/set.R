@@ -46,8 +46,8 @@
 #
 #   5. `document_sha` IS POPULATED BEFORE THE METADATA DOCUMENT IS WRITTEN.
 #      `jsonlite` does not omit a NULL element, it writes `{}`, so a document
-#      written while the field is still unpopulated has its seven keys and one of
-#      them is an empty object. A names-only field-set check cannot see that,
+#      written while the field is still unpopulated has every expected key and one
+#      of them is an empty object. A names-only field-set check cannot see that,
 #      which is why the tests assert on the written bytes.
 #
 # There is deliberately NO cycle detection, no visited-set guard, and no depth
@@ -670,7 +670,9 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # Identity over the canonical payload, then the version over the metadata
   # document. `document_sha` is not knowable yet -- it hashes the stored bytes --
   # and it is outside identity, so the version does not wait for it.
-  meta <- .datom_build_set_metadata(payload)
+  # `project` is the repo's own declaration -- a set write requires a clone, and a
+  # connection built from one reads the name out of `.datom/project.yaml`.
+  meta <- .datom_build_set_metadata(payload, project = conn$project_name)
   data_sha <- meta$data_sha
   metadata_sha <- .datom_compute_metadata_sha(meta)
 
@@ -780,6 +782,26 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
     action = change_type,
     commit_sha = commit_sha
   ))
+}
+
+
+#' Which Project a Set Reports Itself As Belonging To
+#'
+#' Two steps, not the three [.datom_declared_project()] uses: the set's own
+#' metadata document, then the connection's name. See the call site in
+#' [datom_get_set()] for why the manifest step is deliberately absent here.
+#'
+#' @param current The set's `metadata.json`, as already read by the set read.
+#' @param conn The connection the set was read through.
+#' @return A single string, or whatever the connection carries.
+#' @keywords internal
+.datom_set_project <- function(current, conn) {
+  recorded <- if (is.list(current) && "project" %in% names(current)) {
+    current$project
+  }
+  if (.datom_is_text_scalar(recorded)) return(recorded)
+
+  conn$project_name
 }
 
 
@@ -958,12 +980,15 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
 #' must not.** That looks free -- both names are in hand -- and it would refuse
 #' working reads. For a **reader** connection, which is the primary consumer of a
 #' set, `project_name` is a label the caller passes to [datom_get_conn()]: the
-#' namespace comes from the store's bucket and prefix, nothing validates the label
-#' against the repo, and a reader is never told which string the writer used. So a
-#' mismatch is the ordinary case rather than the error case, and a gate here would
-#' abort a fetch that resolves correctly. Pinned by a test that fetches through a
-#' deliberately mismatched label. A *hint* on an already-failed resolution is a
-#' different thing and is left to the task that owns that message.
+#' namespace comes from the store's bucket and prefix and nothing validates the
+#' label against the repo. So a mismatch is the ordinary case rather than the error
+#' case, and a gate here would abort a fetch that resolves correctly. **Recording
+#' the writer's own project name in metadata does not change this.** It makes the
+#' member's side of the comparison trustworthy; the connection's side is still a
+#' label nobody checked, so comparing them still refuses working reads. Pinned by a
+#' test that fetches through a deliberately mismatched label. A *hint* on an
+#' already-failed resolution is a different thing and is left to the task that
+#' owns that message.
 #'
 #' @param name,kind,version The member's pinned identity -- the three facts
 #'   resolution needs. `project` is deliberately not a parameter: see above.
@@ -1211,8 +1236,7 @@ print.datom_link <- function(x, ...) {
 #' partial-matches on lists -- so a name-keyed list would answer plausibly and
 #' wrongly. The unique key is the full `id`.
 #'
-#' Two of the four identifying facts have limits worth knowing before you cite
-#' them:
+#' One of the four identifying facts has a limit worth knowing before you cite it:
 #'
 #' * **`version` can be `NULL`.** It is the version *recorded* in
 #'   `version_history.json` for the state `metadata.json` describes, and a
@@ -1220,13 +1244,13 @@ print.datom_link <- function(x, ...) {
 #'   version would be a wrong statement rather than a missing one, so the field is
 #'   left empty and [datom_validate()] owns the inconsistency. A version-pinned
 #'   read always reports one, since the entry is what it resolved through.
-#' * **`project` is the connection's project name, not a recorded field.** No
-#'   per-artifact document records which project owns it. For a developer
-#'   connection the name comes from the clone's `.datom/project.yaml`; for a
-#'   reader connection it is the label passed to [datom_get_conn()], which
-#'   nothing validates against the repo. Each **member** carries its own recorded
-#'   `id$project`, written when the member was declared, and that is the one to
-#'   cite for a member.
+#'
+#' `project` is the name the set's **own metadata** records -- the declaration of
+#' the repo that wrote it, not the name on your connection. It falls back to the
+#' connection's name only for a set written by a datom that predates the field,
+#' which no released build ever was. Each **member** carries its own recorded
+#' `id$project` for the same reason, resolved through a slightly longer route
+#' because that value is durable and hashed rather than displayed.
 #'
 #' @section Resolving a member:
 #' Each member is `id` (`project`, `name`, `kind`, `version`), its optional
@@ -1341,7 +1365,16 @@ datom_get_set <- function(conn, name, version = NULL) {
   structure(
     list(
       name = name,
-      project = conn$project_name,
+      # The name the set's own metadata records, falling back to the connection's.
+      # THE FALLBACK MUST NOT READ THE MANIFEST, which is what the two pointer
+      # constructors do: the data path never touches that document -- which is why
+      # a stale build can still read data after a manifest-shape change -- and a
+      # manifest read here would put a derived, rebuildable, possibly too-new
+      # document into a read path that today cannot fail for its sake. The
+      # asymmetry is deliberate: a member's project is durable and hashed, this
+      # one is an echo for display. Silent, because every set that has ever been
+      # written records the field -- sets and the field ship together.
+      project = .datom_set_project(metadata_list$current, conn),
       version = resolved$version,
       data_sha = resolved$data_sha,
       tags = .datom_read_tag_map(payload$tags),

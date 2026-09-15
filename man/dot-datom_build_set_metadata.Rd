@@ -4,7 +4,7 @@
 \alias{.datom_build_set_metadata}
 \title{Build the Metadata Document for a Set Write}
 \usage{
-.datom_build_set_metadata(payload, document_sha = NULL)
+.datom_build_set_metadata(payload, document_sha = NULL, project = NULL)
 }
 \arguments{
 \item{payload}{The set payload: a list with \code{members} (an unnamed list of
@@ -25,14 +25,23 @@ only two outcomes are a real hash or \code{meta$parquet_sha <- NULL}, and
 assigning NULL \emph{removes} the element. A field left declared-and-unpopulated
 through a write would satisfy a names-only field-set check while carrying an
 empty object, so assert on the written bytes where the field set matters.}
+
+\item{project}{The name of the project whose namespace this set is being
+written into, from the writing repo's own \code{.datom/project.yaml}. Same field
+and same only-when-non-NULL treatment as \code{\link[=.datom_build_metadata]{.datom_build_metadata()}}'s
+\code{project}.}
 }
 \value{
-Named list of exactly the seven fields a set's \code{metadata.json}
-carries.
+Named list of exactly the fields a set's \code{metadata.json} carries,
+named in the description above. Deliberately not stated as a count: the
+count was written down in six places and went stale in all of them the first
+time a field was added.
 }
 \description{
-A set's \code{metadata.json} is a collapsed version of a table's: seven fields and
-no more. Everything a table carries that describes a rectangle (\code{nrow},
+A set's \code{metadata.json} is a collapsed version of a table's: \code{schema_version},
+\code{kind}, \code{data_sha}, \code{hash_algo}, \code{document_sha}, \code{project}, \code{created_at},
+\code{datom_version}, and no more. Everything a table carries that describes a
+rectangle (\code{nrow},
 \code{ncol}, \code{colnames}, \code{column_hashes}), the provenance axis (\code{table_type},
 \code{parents}, \code{source_lineage}), the stored-parquet facts (\code{parquet_sha},
 \code{size_bytes}) and the user-metadata channel (\code{custom}) are all \strong{omitted, not

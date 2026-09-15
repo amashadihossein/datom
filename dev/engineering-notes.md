@@ -724,6 +724,24 @@ diff came back empty) and by line count against the earlier `git diff --stat`.
 If a probe run must touch tracked files, `git stash` is not a fix either -- it is the same class of
 tool. Commit the work first, or copy it aside.
 
+**And the copy must be taken once, from a tree known to be good.** Learned the next day, 2026-09-15,
+following the rule above and still corrupting the tree. A probe crashed partway through -- the
+deliberate defect made the package fail to load, which the harness did not survive -- so the tree was
+left mutated. The harness was then re-run, and its first act was to take a **fresh** backup: it copied
+the mutated files and recorded them as pristine. The next probe layered its own defect on top, and the
+result was a source file carrying two deliberate defects with no clean copy anywhere. Repair was by
+hand, from knowledge of what had been written.
+
+Three cheap habits remove it:
+
+* **A fixed backup path, reused.** `file.path(tempdir(), "probe-pristine")` rather than
+  `tempfile()`. If the directory already exists, restore from it and do not overwrite it.
+* **Refuse to take a backup from a tree that does not parse.** Two lines, and it is the check that
+  would have caught this one.
+* **Restore inside the error handler, not only on the happy path.** A probe whose defect stops the
+  package from loading is a *successful* probe; the harness has to treat that as a result and clean
+  up, not propagate it and stop.
+
 ### A closure leaks a connection only once the connection has been FORCED
 
 Also 2026-09-14, while pinning that `$fetch` on a set member carries no credentials. The hazard is

@@ -20,7 +20,7 @@ ends the second review pass found -> 2898 after Task 20 -> 2902 after the review
 that followed it -> 3050 after Task 22 -> 3053 after the three review findings that followed
 it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding that followed it ->
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
-**3557 after the review finding that followed it**.
+3557 after the review finding that followed it -> **3585 after Task 26**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -35,7 +35,8 @@ manifest reader + one skeleton builder), **Task 6** (the artifact-namespace rena
 old-format conversion), **Task 20** (unfamiliar fields survive a write), **Task 21** (the writer
 refusals), **Task 22** (the reader-side rebuild), **Task 7** (`kind` in per-artifact metadata
 plus the set metadata builder), **Task 8** (`datom_member()` plus the member and tag
-validators) **Task 9** (`datom_write_set()`) and **Task 10** (`datom_get_set()` plus the member link), plus
+validators) **Task 9** (`datom_write_set()`), **Task 10** (`datom_get_set()` plus the member link)
+and **Task 26** (a stored project name comes from the repo, not from a connection label), plus
 three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
@@ -160,29 +161,26 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3557** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3585** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
-code/documentation agreement (tests and examples run separately). Next is **Task 26**, appended
-2026-09-14 and executing **before** Task 24: a project name that enters a stored document must come
-from the repo's own declaration rather than from a label on a connection. It runs now because what it
-costs is a forced **writer** upgrade for everyone sharing a repo, and this release already forces one
-via the artifact-namespace rename -- so the field is free here and costs a second fleet-wide upgrade in
-the release after. Phase G's preamble carries the argument; Task 26's body carries the evidence, the
-cascade, and the one existing test it deliberately inverts. Task 24 (read-side ergonomics) follows it.
+code/documentation agreement (tests and examples run separately). Next is **Task 24** (read-side
+ergonomics), then Task 25, then Task 23, then Task 11 onward.
 
-**Task 26 was cold-start audited the same day it was written, and it is startable. Nine findings, two
-open scope questions, each stated with the default it takes if nobody answers** -- so a fresh session
-can begin without a decision round. The two questions: whether the fix also covers `datom_parent()`,
-where the same one-line defect puts an unverified label **inside identity** rather than only in a
-citation (default: yes, same commit), and whether the fallback reads the manifest through the gated
-reader, which can escalate to a full namespace listing when the manifest is unusable, or raw, which is
-cheap but reads a value out of a document whose format was never checked (default: gated). The three
-findings worth knowing before touching anything: **neither metadata builder takes a connection**, so
-the name arrives as a new argument that must go **last** in each signature or a dozen positional test
-calls shift silently; **"exactly seven fields" for a set's metadata is written in six places and
-pinned by a test**, so changing the builder alone reads as contradicting the spec; and **the field
-moves no version**, unlike `kind` in Task 7, which is a classification difference rather than a
-difference in the edit and is worth one assertion.
+**TASK 26 IS CLOSED. A PROJECT NAME IN A STORED DOCUMENT NOW COMES FROM THE REPO.** Both metadata
+builders record `project`, taken from the writing repo's own `.datom/project.yaml`, and the field is
+classified outside identity -- so **no existing artifact mints a version**, which is the opposite of
+what `kind` cost in Task 7 and is now asserted rather than assumed. `datom_member()` and
+`datom_parent()` read the name through one shared cascade: the artifact's own snapshot, then the
+namespace manifest, then the connection's label **with a warning saying it is unverified**.
+`datom_get_set()` stops one step earlier, snapshot then label, and **must not read the manifest** --
+the data path never touches that document. Both open questions were taken at their stated defaults:
+`datom_parent()` is fixed in the same commit, and the manifest step goes through the gated reader.
+**Five things a later change must not undo, and the worst case is now reproduced rather than reasoned
+about, in Task 26's DONE record.** The two worth knowing before touching it: the `project` argument is
+**last** in both builder signatures and emitted **only when non-NULL**, because `jsonlite` writes a
+declared NULL as `{}` and a dozen tests call the table builder positionally; and "a set's metadata has
+exactly seven fields" is gone from all six places that said it -- the field set is named now, never
+counted, which is what stops the next addition needing six edits.
 
 **TASK 10 IS CLOSED, AND A SET IS NOW READABLE END TO END.** `datom_get_set(conn, name,
 version = NULL)` is exported and returns a `datom_set` of `name`, `project`, `version`, `data_sha`,
@@ -1082,7 +1080,7 @@ own; landing it first is what makes Task 6's failure loud.
     Placement is the whole question, and it has two parts. (a) It needs the **manifest**, which
     `datom_write()` never reads -- gating only the per-artifact metadata leaves the manifest
     unprotected. (b) It must sit directly after the `datom_conn` class check and **above** the two
-    routing returns at `R/read_write.R:994` and `R/read_write.R:998`, because
+    routing returns at `R/read_write.R:1137` and `R/read_write.R:1141`, because
     `.datom_sync_data_metadata()` mirrors the whole local manifest to storage (`R/sync.R:212`)
     without ever reaching the manifest-writing step, so a check placed after the router misses it.
     A write is several steps -- local files, one commit, then the storage mirror -- so the check
@@ -1362,7 +1360,7 @@ own; landing it first is what makes Task 6's failure loud.
       6. **`R CMD check`** (docs, Rd, code/doc agreement; tests and examples skipped as they run
          separately): 0 errors, 0 warnings, 0 notes.
       **One gap it did not close, named rather than fixed**: the write door inspects the manifest only.
-      `.datom_sync_metadata()` (`R/utils-sha.R:561`) copies a per-artifact metadata document from the
+      `.datom_sync_metadata()` (`R/utils-sha.R:576`) copies a per-artifact metadata document from the
       clone straight to storage, and a document pulled from a collaborator on a newer datom would go
       through unchecked. Pre-existing -- before Task 6 there was no write-side check at all -- so this
       narrows the hole rather than leaving it where it was. Closing it belongs with Task 21, which is
@@ -1875,9 +1873,9 @@ own; landing it first is what makes Task 6's failure loud.
        inherits it rather than re-deciding; if that task later wants the two facts on the conn, it is a
        move with one caller to update rather than a question reopened.
     2. **`datom_write_set()` MUST CALL `.datom_check_write_entry()` ITSELF, and this task's body does
-       not say so.** Three sites call it today -- `datom_write()` (`R/read_write.R:989`),
+       not say so.** Three sites call it today -- `datom_write()` (`R/read_write.R:1132`),
        `.datom_sync_data_metadata()` (`R/sync.R:155`) and `.datom_sync_metadata()`
-       (`R/utils-sha.R:595`) -- and a fourth write verb inherits nothing from any of them. Left out,
+       (`R/utils-sha.R:610`) -- and a fourth write verb inherits nothing from any of them. Left out,
        the floor, the format check and the vocabulary check are all silently skipped for every set
        write. This is the exact finding that has now landed in three consecutive tasks (Task 6's open
        call 1, Task 6's purity audit, Task 21's review): **a route that reaches storage without going
@@ -3141,7 +3139,7 @@ rather than in Phase D beside the task it blocks.
     ("refuse when the expected key is absent") would have **deadlocked the v1-to-v2 upgrade itself**.
   - **The entry sequence** (design 10.7): fetch, floor, read-and-check-then-chain, unreachable-shape,
     vocabulary, proceed -- all directly after the `datom_conn` class check and **above** the routing
-    returns at `R/read_write.R:994` and `R/read_write.R:998`, because `.datom_sync_data_metadata()`
+    returns at `R/read_write.R:1137` and `R/read_write.R:1141`, because `.datom_sync_data_metadata()`
     mirrors the whole manifest to storage (`R/sync.R:212`) without reaching the manifest-writing step.
     All of it before any hashing, local write, or commit (I34).
   - **The double read is already decided, by Task 6**: the entry updater reads the same file again at
@@ -3163,7 +3161,7 @@ rather than in Phase D beside the task it blocks.
     the route then replaces. Either the sequence owns the pull -- one fetch at step 1, no route pulling
     again afterwards -- or the checks that matter re-run after it. Decide which; do not leave both.
   - **THE ONE HOLE TASK 6'S PURITY AUDIT LEFT FOR THIS TASK, so it is not met by surprise.** The write
-    door added by Task 6 inspects the **manifest** only. `.datom_sync_metadata()` (`R/utils-sha.R:561`)
+    door added by Task 6 inspects the **manifest** only. `.datom_sync_metadata()` (`R/utils-sha.R:576`)
     copies a per-artifact metadata document from the clone straight to storage, so a document pulled
     from a collaborator on a newer datom goes through unchecked. Pre-existing -- before Task 6 there was
     no write-side check at all, so that task narrowed the hole rather than opening it -- and this
@@ -3292,7 +3290,7 @@ rather than in Phase D beside the task it blocks.
          correct only because something upstream refused first starts lying the day the refusal moves.
       3. **The staleness fix covers one of the two pulling routes -- ACCEPTED RESIDUAL, not fixed.**
          The table-write route also pulls, inside `.datom_git_push(pull_first = TRUE)` at step 7
-         (`R/read_write.R:833`), which is **after** step 6 has already written the metadata document and
+         (`R/read_write.R:976`), which is **after** step 6 has already written the metadata document and
          edited the manifest. So the door's answer can be stale there too, and re-checking cannot help:
          the write is already built by then. Left as it is, deliberately, because the backstop is real
          and design 10.7 already argues for it -- the push aborts on rejection or on a merge conflict,
@@ -3722,7 +3720,7 @@ reason.
 
 ---
 
-## Phase G -- The recorded project name **[appended; EXECUTES NEXT, before Task 24]**
+## Phase G -- The recorded project name **[appended; DONE 2026-09-15; ran before Task 24]**
 
 **Appended rather than inserted, so nothing renumbers**, for the third time and the same reason.
 
@@ -3736,7 +3734,7 @@ the kind of thing nobody schedules a forced upgrade for on its own. Free of upgr
 effort: it delays Tasks 24, 25, 23 and 11 onward by one chunk. **Task 21 is the constraint, not the
 vehicle**: it is done, and its check is *why* a late addition costs what it costs.
 
-- [ ] **26. A project name in a stored document comes from the repo, not from a connection label**
+- [x] **26. A project name in a stored document comes from the repo, not from a connection label**
   - **THE DEFECT, stated so it is not mistaken for tidying.** `conn$project_name` is not a verified
     fact. On a **developer** connection it is read from the clone's `.datom/project.yaml`, so it is
     the repo's own declaration. On a **reader** connection it is a string the caller passes to
@@ -3826,11 +3824,11 @@ vehicle**: it is done, and its check is *why* a late addition costs what it cost
     1. **NEITHER BUILDER CAN SOURCE THE NAME ITSELF.** `.datom_build_metadata()` and
        `.datom_build_set_metadata()` take no connection -- by design, since they are pure -- so the
        change is a new argument on each plus the two call sites that fill it
-       (`R/read_write.R:1136`, `R/set.R:673`). **The new argument goes LAST in the signature**:
+       (`R/read_write.R:1202`, `R/set.R:675`). **The new argument goes LAST in the signature**:
        existing tests call `.datom_build_metadata(df, "sha", ...)` positionally in a dozen places, so
        an argument inserted in the middle silently shifts `custom` into `table_type`.
     2. **OPEN (default: yes, same commit) -- THE SAME DEFECT IS IN LINEAGE, AND THERE THE LABEL IS
-       INSIDE IDENTITY.** `datom_parent()` records `source = conn$project_name` (`R/lineage.R:182`)
+       INSIDE IDENTITY.** `datom_parent()` records `source = conn$project_name` (`R/lineage.R:190`)
        from a connection scoped to the **parent's** project, with **no role check** -- so a reader
        connection's arbitrary label lands in `parents`, and `parents` and `source_lineage` are both in
        `.datom_metadata_identity_fields`. A wrong name there changes a **version**, not just a
@@ -3888,6 +3886,106 @@ vehicle**: it is done, and its check is *why* a late addition costs what it cost
   - _Pathway impact: yes -- the set read card gains the cascade, and the write cards gain the field.
     Neither route shape changes: no new lookup on the read path, and one conditional GET on the
     declaration path._
+  - **DONE 2026-09-15.** Tests 3557 -> **3585**, FAIL 0 / WARN 0 / SKIP 0; `dev/check-spec.R` 9/9.
+    **What shipped**, in the order a reader meets it:
+    1. **`project` is written by both builders**, `.datom_build_metadata()` and
+       `.datom_build_set_metadata()` (`R/read_write.R`), from `conn$project_name` at the two call
+       sites -- which on a write is the clone's `.datom/project.yaml`, because every write path
+       requires a clone.
+    2. **Classified `excluded`** in `.datom_metadata_excluded_fields` (`R/utils-sha.R`), in the same
+       change, never earlier.
+    3. **One cascade, two callers.** `.datom_declared_project()` (`R/member.R`) is what
+       `datom_member()` and `datom_parent()` both use: recorded field -> namespace manifest via the
+       gated reader -> connection label with a warning.
+    4. **`datom_get_set()` uses a two-step cascade of its own**, `.datom_set_project()` (`R/set.R`),
+       which does not read the manifest.
+    - **FIVE THINGS A LATER CHANGE MUST NOT UNDO.**
+      1. **The field is assigned AFTER the builder's `list()`, never inside it.** Inside, a caller
+         who supplies no name gets `project = NULL`, and `jsonlite` writes a NULL element as `{}` --
+         an empty object where a project name belongs, on disk, unciteable. Outside, the field is
+         simply absent, because assigning NULL to a list element removes it. Pinned by a test that a
+         builder call with no name **omits** the key; probed by writing the inside-the-list spelling,
+         which reddens it. **Two claims in this task's audit were wrong here and are corrected rather
+         than repeated.** The `if (!is.null(project))` guard is *not* the mechanism -- with the
+         assignment outside the list, dropping the guard changes nothing, which the first probe showed
+         by reddening zero assertions. And "last in the signature or a dozen positional test calls
+         shift silently" does not hold: every caller passes `data` and `data_sha` positionally and
+         everything else by name, so moving the argument ahead of `custom` reddens **nothing**. Last
+         is a convention here, not a guard, and the roxygen now says so.
+      2. **`.datom_get_set()` must not gain the manifest step.** The data path never touches
+         `.metadata/manifest.json` -- which is why the artifact-namespace rename was a
+         discovery-only break -- and a manifest read there puts a derived, rebuildable, possibly
+         too-new document into a read path that today cannot fail for its sake. Pinned by a test that
+         records every storage key the set read touches and asserts none of them is the manifest.
+      3. **The unverified warning is suppressed for a connection built from a clone**, because there
+         the label *is* the repo's declaration and calling it unverified would be a wrong statement.
+         The condition is `role == "developer" && !is.null(path)`, which is exactly what makes
+         `project_name` come from `project.yaml`.
+      4. **The member link still does not compare the member's project against the connection's.**
+         Recording the writer's name makes the member's side trustworthy; the connection's side is
+         still a label nobody checked, so the comparison would still refuse working reads. The Task 10
+         test that pins this stays exactly as it was.
+      5. **The field set of a set's metadata is named, never counted.** "Exactly seven" was in six
+         places (R1.3, its acceptance clause, two spots in design section 4, the F4 row, and the set
+         builder's roxygen twice) plus a test name. All rewritten to list the fields, so the next
+         addition costs one edit rather than seven.
+    - **ONE TEST INVERTED, DELIBERATELY.** `test-get-set.R`'s "the set's project is the connection's
+      label; a member's is recorded" became "both the set's project and a member's come from the repo,
+      not the label", with its comment explaining that the two facts were once of different quality and
+      are no longer. Its sibling, "a link does not gate on the connection's project name", is
+      untouched.
+    - **THE WORST CASE REPRODUCES, AND THIS TASK DOES NOT FIX IT.** Finding 9 was read-verified only:
+      a gov-attached **reader** whose project name matches a different registered project resolves
+      that project's `ref.json`, and when the locations differ the connection is repointed at the
+      other namespace. Built as a fixture with two real local projects and a governance store holding
+      only the second one's `ref.json`: the connection is repointed, and `datom_read(conn, "dm")`
+      returns the **other project's rows**, with a warning that says the data was *migrated* -- which
+      is what a genuine migration says, so the message does not distinguish the two. The same
+      mistyped name with **no** governance store reads correctly, because the name is then never used
+      to resolve a location. Both halves are asserted in `test-ref.R` as a **characterization** test,
+      labelled as such: recording the writer's name fixes what goes into a document, and this is a
+      wrong name steering a **connection**, which is a different failure with a different fix. **Owner:
+      unfiled.** The candidate fix -- verify a reader's project name against the namespace's manifest
+      at connection time -- changes behaviour for existing readers and wants its own issue.
+    - **ONE GAP LEFT OPEN, NAMED IN THE CODE.** When the manifest has to be reconstructed and the
+      document it replaced recorded no project name, the reconstruction fills that field from the
+      connection (`.datom_rebuild_manifest()`), so the cascade's middle step can hand back the label
+      while looking like the repo's declaration. What is lost is the **warning**, not the value: the
+      string is the one the third step would have returned anyway. Closing it properly means the
+      shared manifest reader reporting whether the document it returned was reconstructed, which is a
+      change to that reader rather than to the cascade.
+    - **BOTH FORCING FUNCTIONS FIRED AS DESIGNED**, and neither was weakened: the classification test
+      in `test-utils-sha.R` failed until `project` was classified, and the "nothing is classified
+      before something writes it" arm failed until the builder fixture emitted it. Three assertions
+      were added rather than adjusted: the two goldens **did not move** (an excluded field cannot move
+      them), and one test compares a document's `metadata_sha` with and without the field, for a table
+      and for a set.
+    - **NINE PROBES, AND TWO OF THEM ARE THE VALUABLE ONES BECAUSE THEY CAUGHT NOTHING.** Each guard
+      was broken on purpose and the reddening counted, not reasoned about:
+
+      | Deliberate defect | Reddens |
+      |---|---|
+      | `project = project` inside the set builder's `list()` (the `{}` spelling) | 1 assertion |
+      | the argument moved ahead of `custom` | **0 -- the audit's reason was wrong** |
+      | the cascade's first step returns `conn$project_name` | 6 assertions in 6 tests |
+      | the manifest step removed from the cascade | 2 |
+      | the unverified warning removed | 2 |
+      | `datom_get_set()` reads the manifest for the name | 3 |
+      | `datom_parent()` left on the connection's label | 3 |
+      | `project` classified as identity | 4 assertions in 2 tests |
+      | `project` left unclassified | 1 |
+
+    - **ONE PROCESS FAILURE, AND IT IS A NEW VARIANT OF THE RULE TASK 10 WROTE.** Task 10's rule --
+      a probe harness restores from a copy it made itself, never from git -- was followed. What broke
+      instead: the harness crashed mid-probe leaving the tree mutated, and the **re-run took a fresh
+      backup from that mutated tree**, so a second probe was layered on top of the first and the
+      "pristine" copy recorded a defect as correct code. Two probes ended up applied at once and
+      `R/read_write.R` had to be repaired by hand; the suite was back to 3585 with 0 failures before
+      anything else was done. The harness now takes its backup **once, at a fixed path, and only from
+      a tree that parses**, and reuses it on a re-run. Added to `dev/engineering-notes.md`.
+  - _Also corrected while closing this task: the audit's line citations for `datom_parent()` and both
+    builder call sites had gone stale, plus five more across the spec that `dev/check-spec.R` caught.
+    Ninth consecutive session for that class._
 
 ## New exports introduced by this spec
 
@@ -4196,3 +4294,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-14 | **CLOSED, not left open: a project name is NOT part of version identity.** Raised as an owner call while analysing the unverified-`project_name` problem, and closing it is right because it is a one-way door with a fleet-wide re-mint behind it. Identical bytes in two projects **should** share a version -- that is what content addressing is for, and a wrong-connection fetch that returns identical bytes returned the **right** bytes. The defect being fixed is a wrong **citation**, not a wrong identity, and a citation is fixed by recording the name, never by hashing it. So when `project` is added to a metadata document it goes on the documented **excluded** list, in the same change that starts writing it -- never earlier, or it becomes a classified-but-unwritten name and loses the carry-forward protection that rescues only names a build cannot place (the trap Task 7's `document_sha` review found). Recorded here rather than in the future issue, because the issue can then state it as settled instead of reopening it. | Task 7, Task 19, R9.4 |
 | 2026-09-14 | **The cheap moment to add `project` to per-artifact metadata is THIS release, and after it the same change costs a second forced upgrade.** Owner's scope note, 2026-09-14: nothing on this branch is merged, let alone released, so no repo in the wild is affected by anything here. What an added field costs is a **writer** upgrade for everyone sharing a repo -- an older build recomputes identity around a field it does not know (releases before this spec hash by exclusion) or refuses outright (after it, Task 21's vocabulary check). **This release already forces exactly that upgrade**, because the artifact-namespace rename does. So the marginal cost of one more field inside this release is zero, and the marginal cost of the same field in the release after it is a fresh fleet-wide upgrade for a citation fix. **Task 21 is the constraint, not the vehicle** -- it is done, and its vocabulary check is *why* a late addition costs what it costs; nothing currently schedules the field. Not scheduled by this row either: whether it becomes a task here or an issue for later is the owner's call, but the window is what the decision turns on rather than the size of the change. | Task 6, Task 7, Task 21, R9.1, R9.4 |
 | 2026-09-14 | **The name cascade is ASYMMETRIC between the two callers, and the reason is what the value is used for.** `datom_member()` writes `id$project` into a stored payload, where it is hashed into the set's `data_sha` and cited afterwards, so it is worth an extra read to get right: recorded field on the artifact's own document, then the namespace manifest's `project_name`, then the connection's label **marked unverified**. `datom_get_set()`'s `$project` is an echo of the connection for display and citation, so its cascade stops at the recorded field and the connection label. It must **not** read the manifest: the data path never touches that document -- which is the reason the artifact-namespace rename was a discovery-only break, since a stale build still reads data -- and a manifest read there would put a derived, rebuildable, possibly too-new document in a read path that today cannot fail for its sake. A test in `test-get-set.R` pins the set read at two documents, so the boundary reddens rather than drifting. | Task 8, Task 10, Task 24 |
+| 2026-09-15 | **(implementation, Task 26) The `{}` hazard lives in the `list()`, not in the missing `if`.** Both audit-era claims about how the new field is written turned out to be wrong, and the probes are what said so. Assigning `NULL` to a list element **removes** it, so `meta$project <- project` outside the builder's `list()` is already safe -- dropping the guard reddens nothing. The spelling that reaches disk as an empty object is `project = project` **inside** `list()`, which is where `document_sha` deliberately sits and why that field has a must-populate rule attached. And "last in the signature or a dozen positional callers shift" does not hold: every caller passes `data` and `data_sha` positionally and everything else by name, so moving the argument reddens nothing either. Last is a convention, and the roxygen now says that instead of claiming a guard. | Task 26 DONE record, `R/read_write.R` |
+| 2026-09-15 | **(implementation, Task 26) The unverified-name warning is suppressed for a connection built from a clone**, because there `project_name` is read out of `.datom/project.yaml` and calling it unverified would be a wrong statement. Only a reader connection reaches the warning. The condition is exactly the one that makes the label repo-sourced: developer role plus a non-NULL clone path. | `.datom_declared_project()`, `R/member.R` |
+| 2026-09-15 | **(Task 26) The gov-plus-wrong-name repointing hazard REPRODUCES, and this release does not fix it.** Built as a fixture rather than argued from the code: a reader who means project A, holds A's location in their store, and types B's name gets **B's rows**, because with governance attached the name selects which `ref.json` is read and the connection is repointed at B's namespace -- reported as a data *migration*, which is what a real migration says. The same mistyped name with no governance store reads A correctly. Kept in `test-ref.R` as a characterization test, labelled as one: recording the writer's project name fixes what goes **into** a document, and this is a wrong name steering a **connection**. **Owner: unfiled** -- the candidate fix, verifying a reader's name against the namespace's manifest at connection time, changes behaviour for existing readers and wants its own issue. | Task 26 DONE record, `tests/testthat/test-ref.R` |

@@ -280,6 +280,84 @@
 }
 
 
+#' Which Project an Artifact Belongs To, From the Repo Rather Than a Label
+#'
+#' The cascade both pointer constructors use -- [datom_member()] and
+#' [datom_parent()] -- to answer "which project is this artifact in" without
+#' trusting the connection it was reached through.
+#'
+#' **Why a label cannot be trusted.** On a connection built from a clone, datom
+#' reads `project_name` out of `.datom/project.yaml`, so it is the repo's own
+#' declaration. On a **reader** connection it is a string the caller passed to
+#' [datom_get_conn()]: the namespace comes from the store's root and prefix, and
+#' nothing compares the label against the repo. Both constructors write the name
+#' they settle on into a stored document -- a member's `id$project` is hashed into
+#' the set's `data_sha` and cited afterwards, and a parent's `source` is part of
+#' the declaring table's version -- so a label nobody checked would be durable
+#' wrong data that no hash and no validator can notice.
+#'
+#' Three steps, cheapest and most trustworthy first:
+#'
+#' 1. **The artifact's own snapshot**, which the caller has already read. Free,
+#'    and it is the writing repo's declaration.
+#' 2. **The manifest of the namespace the artifact lives in**. One extra read, and
+#'    only for an artifact written before datom recorded the field -- which is
+#'    every artifact in every existing repo, so this is the common path in this
+#'    release rather than a rare one. Goes through the gated reader, so a
+#'    manifest whose format this build cannot read is handled the one way datom
+#'    handles that anywhere; when the manifest is unusable, that reader can
+#'    escalate to reconstructing the index from a namespace listing, which is
+#'    accepted because a repo in that state needs attention regardless.
+#' 3. **The connection's label**, said out loud to be unverified.
+#'
+#' **One gap, named rather than guarded.** When the manifest has to be
+#' reconstructed and the document it replaced recorded no project name, the
+#' reconstruction fills that field from the connection
+#' ([.datom_rebuild_manifest()]), so step 2 can hand back the label while looking
+#' like the repo's declaration. What is lost there is the *warning*, not the
+#' value: the string is exactly the one step 3 would have returned. Closing it
+#' properly means the shared manifest reader reporting whether the document it
+#' returned was reconstructed, which is a change to that reader rather than to
+#' this cascade.
+#'
+#' @param conn The connection the artifact was read through.
+#' @param snap The artifact's metadata snapshot, already read and already checked
+#'   for a format this build understands.
+#' @param what What is being declared -- `"member"` or `"parent"` -- used only to
+#'   word the unverified-fallback warning.
+#' @return A single non-empty string.
+#' @keywords internal
+.datom_declared_project <- function(conn, snap, what = "member") {
+  recorded <- if (is.list(snap) && "project" %in% names(snap)) snap$project
+  if (.datom_is_text_scalar(recorded)) return(recorded)
+
+  manifest <- .datom_read_manifest(conn, scope = "storage", operation = "read")
+  if (isTRUE(manifest$ok)) {
+    declared <- manifest$manifest$project_name
+    if (.datom_is_text_scalar(declared)) return(declared)
+  }
+
+  # The label is the repo's own declaration whenever the connection was built from
+  # a clone, so calling it unverified there would be a wrong statement. It is
+  # unverified only for a reader, where the caller supplied the string.
+  if (!(identical(conn$role, "developer") && !is.null(conn$path))) {
+    cli::cli_warn(c(
+      paste0("Recording an unverified project name on this {what}: ",
+             "{.val {conn$project_name}}."),
+      "i" = paste0("Neither the artifact's own metadata nor the project ",
+                   "manifest names its project, so the name on your ",
+                   "connection was used -- and nothing checks that name ",
+                   "against the repo."),
+      "i" = paste0("Rewrite the artifact with a current datom to record its ",
+                   "project, or connect with the project name the repo ",
+                   "declares.")
+    ))
+  }
+
+  conn$project_name
+}
+
+
 #' Declare a member of a set
 #'
 #' Resolves one artifact version against a single project connection and returns
@@ -290,9 +368,14 @@
 #' exists, which is also why a set cannot contain itself at any depth.
 #'
 #' Same-project and cross-project members are declared identically; the only
-#' difference is which connection is passed. `project` is always derived from the
-#' connection's `project_name`, and `kind` from the snapshot (defaulting to
-#' `"table"` for a snapshot written before datom recorded the field).
+#' difference is which connection is passed. `kind` comes from the snapshot
+#' (defaulting to `"table"` for a snapshot written before datom recorded the
+#' field), and `project` comes from the **repo** rather than from the connection:
+#' the artifact's own metadata, else the project manifest, else the connection's
+#' name with a warning saying it is unverified. That matters because a reader
+#' connection's project name is a label the caller supplied and nothing checks it
+#' against the repo, while this value is hashed into the set's identity and cited
+#' afterwards.
 #'
 #' Unlike [datom_parent()], a member carries **no `data_sha`**: the version
 #' already pins the content, and a second copy of that fact would be a second
@@ -422,7 +505,10 @@ datom_member <- function(conn, name, version, tags = NULL) {
 
   member <- list(
     id = list(
-      project = conn$project_name,
+      # NOT `conn$project_name`. On a reader connection that is an unverified
+      # label, and this value is durable: it is hashed into the set's identity
+      # and cited afterwards. See `.datom_declared_project()`.
+      project = .datom_declared_project(conn, snap, "member"),
       name    = name,
       kind    = kind,
       version = version

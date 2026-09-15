@@ -87,11 +87,18 @@ Additive unless marked **[BREAKING]**.
 - **R1.2** `kind` is a new field, **not** a new `table_type` value. `table_type`
   (`imported` / `derived`) is a *provenance* axis, not a *kind* axis, and is validated to
   exactly those two values (`.datom_build_metadata()`, `R/read_write.R`).
-- **R1.3** A set's `metadata.json` collapses to **exactly these seven fields**: `kind`,
-  `schema_version`, `data_sha`, `hash_algo`, `document_sha`, `created_at`, `datom_version`. No
+- **R1.3** A set's `metadata.json` collapses to **exactly these fields, and no others**: `kind`,
+  `schema_version`, `data_sha`, `hash_algo`, `document_sha`, `project`, `created_at`,
+  `datom_version`. No
   `parents`, no `source_lineage`, no `table_type`, no `nrow` / `ncol` / `colnames` --
   **omitted, not nulled** (mirroring how `.datom_build_metadata()` already conditionally assigns
   `original_file_sha`).
+
+  **Stated as a list, never as a count.** It read "exactly seven fields" in six places until Task 26
+  added `project`, and a count written down in six places goes stale in six places the first time a
+  field arrives. `project` is the last one added: it records which project's namespace the set was
+  written into, taken from the writing repo's own `project.yaml` rather than from a label on a
+  connection (Task 26).
 - **R1.4** Also **absent from a set's metadata**, and the reason for each:
   - `size_bytes` -- nothing consumes it. `summary$total_size_bytes` is tables-only by R8.3, and
     the manifest set entry carries `member_count` instead. A field no counter reads is a field
@@ -101,9 +108,9 @@ Additive unless marked **[BREAKING]**.
     thing and two places to look for it. `datom_write_set()` therefore has no `metadata =`
     parameter.
 
-**Acceptance**: a written set's metadata has exactly the seven keys of R1.3 -- asserted with
-`setequal(names(meta), <the seven>)`, not merely by checking absences, so an added field fails
-the test.
+**Acceptance**: a written set's metadata has exactly the keys R1.3 lists -- asserted with
+`setequal(names(meta), <the list>)` on the written file, not merely by checking absences, so an
+added field fails the test.
 
 ### R2 -- Canonical set-content hash (`datom-sv1`)
 

@@ -19,12 +19,16 @@
                              source_lineage = list(
                                list(project = "study001", table = "dm",
                                     version_sha = "d_dm_aaa")
-                             )) {
+                             ),
+                             project = "study001") {
   snap <- list(
     data_sha   = data_sha,
     table_type = "imported"
   )
   if (!is.null(source_lineage)) snap$source_lineage <- source_lineage
+  # What a current build records: the writing repo's own project name. Pass NULL
+  # to model a snapshot written before the field existed.
+  if (!is.null(project)) snap$project <- project
   snap
 }
 
@@ -199,7 +203,10 @@ test_that("datom_parent has no data_sha parameter", {
 
 # --- Cross-project: two distinct mock stores ---------------------------------
 
-test_that("source is derived per-connection across two project stores", {
+test_that("source comes from each snapshot's own metadata across two stores", {
+  # Each store's snapshot records the project that wrote it, as a real write does,
+  # so this asserts the recorded name is read per artifact rather than the
+  # connection's label being copied through.
   conn_a <- .parent_conn("study001")
   conn_b <- .parent_conn("labdata")
 
@@ -208,7 +215,8 @@ test_that("source is derived per-connection across two project stores", {
       data_sha = "d_dm_aaa",
       source_lineage = list(
         list(project = "study001", table = "dm", version_sha = "d_dm_aaa")
-      )
+      ),
+      project = "study001"
     )
   )
   store_b <- list(
@@ -216,7 +224,8 @@ test_that("source is derived per-connection across two project stores", {
       data_sha = "d_ex_bbb",
       source_lineage = list(
         list(project = "labdata", table = "ex", version_sha = "d_ex_bbb")
-      )
+      ),
+      project = "labdata"
     )
   )
 
@@ -245,4 +254,62 @@ test_that("source is derived per-connection across two project stores", {
 
   # Records have identical shape regardless of which store resolved them.
   expect_setequal(names(p_a), names(p_b))
+})
+
+# --- where a parent's source comes from --------------------------------------
+#
+# The same cascade a member's project uses, and here it matters more: `parents` is
+# part of the declaring table's identity, so a name read off an unvalidated reader
+# label changes a VERSION rather than only a citation. datom_parent() also has no
+# role check, so a reader connection reaches this code.
+
+.parent_manifest <- function(project_name = "the-repos-own-name") {
+  m <- list(schema_version = 2L)
+  if (!is.null(project_name)) m$project_name <- project_name
+  m$artifacts <- structure(list(), names = character(0))
+  m
+}
+
+test_that("a mislabelled reader records the parent repo's own name", {
+  conn <- .parent_conn("a-label-nobody-validated")
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      .parent_snapshot(project = "study001")
+    }
+  )
+
+  expect_equal(datom_parent(conn, "dm", "9f3aa1b2c3")$source, "study001")
+})
+
+test_that("a snapshot written before the field falls back to the manifest", {
+  conn <- .parent_conn("a-label-nobody-validated")
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (grepl("manifest", key, fixed = TRUE)) return(.parent_manifest())
+      .parent_snapshot(project = NULL)
+    }
+  )
+
+  expect_equal(
+    datom_parent(conn, "dm", "9f3aa1b2c3")$source,
+    "the-repos-own-name"
+  )
+})
+
+test_that("with neither recorded, the label is used and called unverified", {
+  conn <- .parent_conn("a-label-nobody-validated")
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (grepl("manifest", key, fixed = TRUE)) {
+        return(.parent_manifest(project_name = NULL))
+      }
+      .parent_snapshot(project = NULL)
+    }
+  )
+
+  expect_warning(
+    p <- datom_parent(conn, "dm", "9f3aa1b2c3"),
+    "unverified"
+  )
+  expect_equal(p$source, "a-label-nobody-validated")
 })

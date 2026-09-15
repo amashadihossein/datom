@@ -963,15 +963,42 @@ set_payload_fixture <- function(name = "dm", tags = NULL) {
   payload
 }
 
-test_that("a set's metadata carries exactly the seven documented fields", {
-  meta <- .datom_build_set_metadata(set_payload_fixture())
+test_that("a set's metadata carries exactly the documented fields", {
+  meta <- .datom_build_set_metadata(set_payload_fixture(),
+                                    project = "STUDY_001")
 
   # setequal, not a list of absence checks: the point is that a field ADDED to
   # this builder fails here, which an absence-by-absence test would not catch.
+  #
+  # Named, not counted. This assertion read "the seven documented fields" until
+  # `project` made it eight, and the count was written down in six places.
   expect_setequal(
     names(meta),
     c("kind", "schema_version", "data_sha", "hash_algo", "document_sha",
-      "created_at", "datom_version")
+      "project", "created_at", "datom_version")
+  )
+})
+
+test_that("a set's metadata omits project when the writer did not supply one", {
+  # The one spelling that must not appear on disk is a declared-but-empty field:
+  # `jsonlite` writes a NULL element as `{}`, so an unpopulated project name would
+  # be an empty object where a citable name belongs. Omitted instead.
+  meta <- .datom_build_set_metadata(set_payload_fixture())
+
+  expect_false("project" %in% names(meta))
+})
+
+test_that("a project name that cannot be cited is refused by both builders", {
+  df <- data.frame(id = 1:2)
+
+  expect_error(.datom_build_metadata(df, "sha", project = ""), "project")
+  expect_error(.datom_build_metadata(df, "sha", project = NA_character_),
+               "project")
+  expect_error(.datom_build_metadata(df, "sha", project = c("a", "b")),
+               "project")
+  expect_error(
+    .datom_build_set_metadata(set_payload_fixture(), project = ""),
+    "project"
   )
 })
 
@@ -1017,7 +1044,7 @@ test_that("document_sha is declared, and carried when supplied", {
   # Mirrors how the table builder declares `parquet_sha`: the byte hash is not
   # knowable until the payload has been serialized, so it is declared here and
   # populated by the write path. Declared rather than conditionally assigned so
-  # the document has its seven keys either way.
+  # the key is in the document either way.
   bare <- .datom_build_set_metadata(set_payload_fixture())
   expect_true("document_sha" %in% names(bare))
   expect_null(bare$document_sha)
@@ -1981,6 +2008,46 @@ test_that("full datom_write records parquet_sha, hash_algo, and column_hashes in
     expect_equal(meta$column_hashes[[2]]$name, "v")
     # no truncation: every entry carries a full 64-char hex sha
     for (e in meta$column_hashes) expect_match(e$sha, "^[0-9a-f]{64}$")
+  })
+})
+
+test_that("a written table's metadata.json records the repo's project name", {
+  # Asserted on the FILE, because the field set is what matters: a value present
+  # in the in-memory object but serialised as `{}` would satisfy a check on the
+  # builder's return value and still be unciteable on disk.
+  #
+  # The name is the repo's own declaration, not a label. A write requires a clone,
+  # and a connection built from one reads `project_name` out of
+  # `.datom/project.yaml` -- which is why recording it here is a fix rather than
+  # copying an unverified string into a second place.
+  withr::with_tempdir({
+    repo <- git2r::init(".")
+    git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
+    writeLines("init", "README.md")
+    git2r::add(repo, "README.md")
+    git2r::commit(repo, "init")
+
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$project_name <- "STUDY_001"
+
+    local_mocked_bindings(
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
+      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
+      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+    )
+
+    datom_write(conn, data = data.frame(id = 1:3, v = letters[1:3]), name = "t")
+
+    meta <- jsonlite::read_json("t/metadata.json", simplifyVector = FALSE)
+    expect_identical(meta$project, "STUDY_001")
+
+    # A real string on disk, not an empty object standing in for a NULL.
+    txt <- paste(readLines("t/metadata.json", warn = FALSE), collapse = "\n")
+    expect_match(txt, "\"project\"")
+    expect_false(grepl("\"project\": {}", txt, fixed = TRUE))
   })
 })
 

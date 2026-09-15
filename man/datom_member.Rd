@@ -33,9 +33,14 @@ exists, which is also why a set cannot contain itself at any depth.
 }
 \details{
 Same-project and cross-project members are declared identically; the only
-difference is which connection is passed. \code{project} is always derived from the
-connection's \code{project_name}, and \code{kind} from the snapshot (defaulting to
-\code{"table"} for a snapshot written before datom recorded the field).
+difference is which connection is passed. \code{kind} comes from the snapshot
+(defaulting to \code{"table"} for a snapshot written before datom recorded the
+field), and \code{project} comes from the \strong{repo} rather than from the connection:
+the artifact's own metadata, else the project manifest, else the connection's
+name with a warning saying it is unverified. That matters because a reader
+connection's project name is a label the caller supplied and nothing checks it
+against the repo, while this value is hashed into the set's identity and cited
+afterwards.
 
 Unlike \code{\link[=datom_parent]{datom_parent()}}, a member carries \strong{no \code{data_sha}}: the version
 already pins the content, and a second copy of that fact would be a second

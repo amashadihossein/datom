@@ -792,9 +792,14 @@ test_that("a link does not gate on the connection's project name, and must not",
   expect_identical(nrow(x$members[[1L]]$fetch(mislabelled)), 3L)
 })
 
-test_that("the set's project is the connection's label; a member's is recorded", {
-  # Which is why the docs say to cite a member's own id$project, and why the four
-  # identifying facts are not all of the same quality.
+test_that("both the set's project and a member's come from the repo, not the label", {
+  # INVERTED DELIBERATELY, and this is not a regression. This test used to pin the
+  # opposite -- that a mislabelled reader saw its own label as the set's project --
+  # because no document recorded which project an artifact belonged to, so the two
+  # facts were of different quality: a member's project was recorded when the
+  # member was declared, the set's was whatever the connection said. Both are now
+  # recorded by the writer, from the writing repo's own project.yaml, so a label
+  # nobody validated no longer reaches either one.
   fx <- local_get_set_project()
   gs_one_member_set(fx)
 
@@ -805,8 +810,56 @@ test_that("the set's project is the connection's label; a member's is recorded",
 
   x <- datom_get_set(mislabelled, "product-a")
 
-  expect_identical(x$project, "a-label-nobody-validated")
+  expect_identical(x$project, "set-project")
   expect_identical(x$members[[1L]]$id$project, "set-project")
+})
+
+test_that("a set written before the field falls back to the connection's name", {
+  # The only route to the fallback, and it is unreachable through any released
+  # build: sets and the recorded project name ship in the same release. Kept
+  # because the fallback exists in the code, so something has to say what it does.
+  fx <- local_get_set_project()
+  gs_one_member_set(fx)
+
+  gs_edit_json(
+    gs_stored(fx, .datom_artifact_meta_key("product-a", "metadata")),
+    function(doc) {
+      doc$project <- NULL
+      doc
+    }
+  )
+
+  reader <- fx$conn
+  reader$path <- NULL
+  reader$role <- "reader"
+  reader$project_name <- "whatever-the-caller-said"
+
+  expect_identical(
+    datom_get_set(reader, "product-a")$project,
+    "whatever-the-caller-said"
+  )
+})
+
+test_that("the set read reaches the project name without reading the manifest", {
+  # The data path never touches the manifest -- which is why a build too old for
+  # the current manifest shape can still read data -- and the project-name cascade
+  # must not be what changes that. A member's cascade DOES read it, deliberately,
+  # because that value is durable and hashed; this one is an echo for display.
+  fx <- local_get_set_project()
+  gs_one_member_set(fx)
+
+  read_keys <- character(0)
+  real_read <- .datom_storage_read_json
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      read_keys <<- c(read_keys, key)
+      real_read(conn, key)
+    }
+  )
+
+  datom_get_set(fx$conn, "product-a")
+
+  expect_false(any(grepl("manifest", read_keys, fixed = TRUE)))
 })
 
 test_that("two reads of one set are not identical(), and the records are", {

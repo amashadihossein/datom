@@ -47,11 +47,14 @@ repaired afterwards, which is why it ships with the factory rather than later.
 must not.} That looks free -- both names are in hand -- and it would refuse
 working reads. For a \strong{reader} connection, which is the primary consumer of a
 set, \code{project_name} is a label the caller passes to \code{\link[=datom_get_conn]{datom_get_conn()}}: the
-namespace comes from the store's bucket and prefix, nothing validates the label
-against the repo, and a reader is never told which string the writer used. So a
-mismatch is the ordinary case rather than the error case, and a gate here would
-abort a fetch that resolves correctly. Pinned by a test that fetches through a
-deliberately mismatched label. A \emph{hint} on an already-failed resolution is a
-different thing and is left to the task that owns that message.
+namespace comes from the store's bucket and prefix and nothing validates the
+label against the repo. So a mismatch is the ordinary case rather than the error
+case, and a gate here would abort a fetch that resolves correctly. \strong{Recording
+the writer's own project name in metadata does not change this.} It makes the
+member's side of the comparison trustworthy; the connection's side is still a
+label nobody checked, so comparing them still refuses working reads. Pinned by a
+test that fetches through a deliberately mismatched label. A \emph{hint} on an
+already-failed resolution is a different thing and is left to the task that
+owns that message.
 }
 \keyword{internal}

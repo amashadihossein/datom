@@ -464,9 +464,24 @@
 #                                content -- in identity, a format bump would
 #                                re-mint a new version for every artifact in every
 #                                repo while its content stood still
+#   project                      which project's namespace this artifact was
+#                                written into. Recorded so that a citation of the
+#                                artifact rests on the repo's own declaration
+#                                rather than on a label somebody typed into a
+#                                reader connection. NOT identity, and the reason
+#                                is not cost: identical bytes written into two
+#                                projects SHOULD share a version, which is what
+#                                content addressing is for, and a fetch through
+#                                the wrong connection that returned identical
+#                                bytes returned the right bytes. What was wrong
+#                                in that case was the citation, not the identity.
+#                                So no existing artifact mints a version when this
+#                                field arrives -- unlike `kind`, which did, and
+#                                which this looks exactly like from the shape of
+#                                the edit alone.
 .datom_metadata_excluded_fields <- c(
   "column_hashes", "created_at", "datom_version", "document_sha",
-  "original_format", "parquet_sha", "schema_version", "size_bytes"
+  "original_format", "parquet_sha", "project", "schema_version", "size_bytes"
 )
 
 

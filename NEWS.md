@@ -325,6 +325,43 @@ the other verb now aborts naming the one that fits.
   pointer; its own members are not fetched, so the cost of a read is a function of
   the set's direct member count and not of the depth beneath it.
 
+## A project name in a stored document now comes from the repo, not from your connection
+
+Every artifact's `metadata.json` now records a **`project`** field: the name the
+writing repo declares in its own `.datom/project.yaml`. Nothing you write changes
+shape beyond that one field, and **no existing artifact gains a version**, because
+the field takes no part in version identity -- identical content in two projects is
+meant to share a version, and what was wrong before was the citation, not the
+identity.
+
+* **What was wrong.** A **reader** connection's project name is a string you pass
+  to `datom_get_conn()`; the namespace comes from your store's root and prefix, and
+  nothing compares that string against the repo. Two things then carried a name
+  nobody had checked. `datom_get_set()` reported it as the set's project, and
+  `datom_member()` wrote it into the member's `id$project` -- where it entered a
+  stored payload, was hashed into that set's `data_sha`, and was cited afterwards.
+  A developer connection was never affected: there the name is read from the
+  clone's `project.yaml`.
+
+* **`datom_member()` and `datom_parent()` now take the name from the artifact
+  itself**, falling back to the project's manifest for an artifact written before
+  this release, and to your connection's name only if neither records one -- which
+  it says out loud, so an unverified name is never recorded silently.
+
+* **`datom_get_set()` reports the name the set's own metadata records**, so a
+  mislabelled reader connection no longer changes what a set says about itself.
+
+* **`datom_parent()` is the one that can move a version.** Lineage is part of a
+  table's identity, so a table whose parents were declared through a mislabelled
+  reader connection mints one new version at its next write. That is the correct
+  outcome -- the recorded source project was wrong -- but it should not arrive as a
+  surprise. Declared through a developer connection, which is the ordinary case,
+  nothing moves.
+
+* **Not in scope, deliberately**: `datom_summary()`, `datom_status()` and printing a
+  connection still show the connection's project name, because that is what they
+  are reporting.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

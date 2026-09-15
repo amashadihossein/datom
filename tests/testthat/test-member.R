@@ -15,11 +15,15 @@
   conn
 }
 
-# A versioned metadata snapshot as datom writes one. `kind` is present from
-# Task 7 onward; pass NULL to model a snapshot written before it existed.
-.member_snapshot <- function(kind = "table", data_sha = "d_dm_aaa") {
+# A versioned metadata snapshot as datom writes one. `kind` and `project` are both
+# present in what a current build writes; pass either as NULL to model a snapshot
+# written before that field existed. `project` defaults to the fixture
+# connection's own name, because that is what a real write into that repo records.
+.member_snapshot <- function(kind = "table", data_sha = "d_dm_aaa",
+                             project = "study001") {
   snap <- list(data_sha = data_sha, hash_algo = "datom-cv1")
   if (!is.null(kind)) snap$kind <- kind
+  if (!is.null(project)) snap$project <- project
   snap
 }
 
@@ -522,12 +526,21 @@ test_that("a constructed member satisfies the validator and the encoder", {
 
 # --- datom_member(): cross-project ------------------------------------------
 
-test_that("project is derived per-connection across two project stores", {
+test_that("project comes from each artifact's own metadata across two stores", {
+  # Each store's snapshot records the project that wrote it, which is what a real
+  # write into either repo produces -- so this asserts the recorded name is read
+  # per artifact, not that the connection's label is copied through.
   conn_a <- .member_conn("study001")
   conn_b <- .member_conn("labdata")
 
-  store_a <- list("dm/.metadata/9f3aa1b2c3.json" = .member_snapshot("table"))
-  store_b <- list("adam/.metadata/7c1bb2d3e4.json" = .member_snapshot("set"))
+  store_a <- list(
+    "dm/.metadata/9f3aa1b2c3.json" =
+      .member_snapshot("table", project = "study001")
+  )
+  store_b <- list(
+    "adam/.metadata/7c1bb2d3e4.json" =
+      .member_snapshot("set", project = "labdata")
+  )
 
   local_mocked_bindings(
     .datom_storage_read_json = function(conn, key) {
@@ -552,6 +565,95 @@ test_that("project is derived per-connection across two project stores", {
   expect_equal(m_b$id$project, "labdata")
   expect_equal(m_b$id$kind, "set")
   expect_setequal(names(m_a$id), names(m_b$id))
+})
+
+
+# --- where a member's project name comes from --------------------------------
+#
+# A member's `id$project` is durable: it goes into the stored payload, is hashed
+# into the set's identity, and is cited afterwards. On a READER connection the
+# name the caller passed to datom_get_conn() is never compared against the repo,
+# so taking it from there wrote data nobody had checked. These four tests are the
+# three steps of the cascade plus the one thing it must not do.
+
+# A manifest as a namespace holds one, current shape, artifact list present. An
+# ABSENT artifact list would send the reader into rebuilding the index from a
+# storage listing, which is a different behaviour and not what these test.
+.member_manifest <- function(project_name = "the-repos-own-name") {
+  m <- list(schema_version = 2L)
+  if (!is.null(project_name)) m$project_name <- project_name
+  m$artifacts <- structure(list(), names = character(0))
+  m
+}
+
+test_that("a mislabelled reader records the repo's name, not its own label", {
+  # The defect this task exists for. The label is arbitrary and unvalidated; the
+  # snapshot's own `project` is the writing repo's declaration.
+  conn <- .member_conn("a-label-nobody-validated")
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      .member_snapshot("table", project = "study001")
+    }
+  )
+
+  expect_equal(datom_member(conn, "dm", "9f3aa1b2c3")$id$project, "study001")
+})
+
+test_that("an artifact written before the field falls back to the manifest", {
+  # THE COMMON PATH IN THIS RELEASE, not a rare one: every artifact written before
+  # this change lacks the field, so the manifest step is what gets a cross-project
+  # member right for the whole existing population.
+  conn <- .member_conn("a-label-nobody-validated")
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (grepl("manifest", key, fixed = TRUE)) return(.member_manifest())
+      .member_snapshot("table", project = NULL)
+    }
+  )
+
+  expect_equal(
+    datom_member(conn, "dm", "9f3aa1b2c3")$id$project,
+    "the-repos-own-name"
+  )
+})
+
+test_that("with neither recorded, the label is used and called unverified", {
+  # The last resort must SAY it is one. A name nobody checked, written silently
+  # into a citable artifact, is the failure this whole cascade is about -- so when
+  # datom has to do it anyway, it is said out loud.
+  conn <- .member_conn("a-label-nobody-validated")
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      if (grepl("manifest", key, fixed = TRUE)) {
+        return(.member_manifest(project_name = NULL))
+      }
+      .member_snapshot("table", project = NULL)
+    }
+  )
+
+  expect_warning(
+    m <- datom_member(conn, "dm", "9f3aa1b2c3"),
+    "unverified"
+  )
+  expect_equal(m$id$project, "a-label-nobody-validated")
+})
+
+test_that("a recorded project name costs no extra read", {
+  # The cascade's first step is the snapshot the constructor has already read, so
+  # the ordinary case must not acquire a manifest round trip.
+  conn <- .member_conn("study001")
+  keys <- character(0)
+  local_mocked_bindings(
+    .datom_storage_read_json = function(conn, key) {
+      keys <<- c(keys, key)
+      .member_snapshot("table", project = "study001")
+    }
+  )
+
+  datom_member(conn, "dm", "9f3aa1b2c3")
+
+  expect_length(keys, 1L)
+  expect_false(any(grepl("manifest", keys, fixed = TRUE)))
 })
 
 

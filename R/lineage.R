@@ -94,8 +94,12 @@ datom_lineage_union <- function(lineages) {
 #' @param table Parent table name (single non-empty validated string).
 #' @param version Parent version (metadata_sha; single non-empty string).
 #' @return A list with exactly `source`, `table`, `version`, `data_sha`, and
-#'   `source_lineage`. `source` is the parent connection's `project_name`;
-#'   `source_lineage` is `NULL` when the snapshot carries none.
+#'   `source_lineage`. `source` is the project the parent's own metadata says it
+#'   belongs to, falling back to the project manifest and then to the connection's
+#'   name (see `.datom_declared_project()`) -- **not** simply the name on `conn`,
+#'   which on a reader connection is an unverified label and which `source` cannot
+#'   afford, since it is part of the declaring table's version. `source_lineage`
+#'   is `NULL` when the snapshot carries none.
 #' @export
 #'
 #' @examples
@@ -179,7 +183,11 @@ datom_parent <- function(conn, table, version) {
   source_lineage <- snap$source_lineage %||% NULL
 
   list(
-    source         = conn$project_name,
+    # NOT `conn$project_name`. The same one-line defect a member had, and worse
+    # here: `parents` is part of the declaring table's identity, so an unverified
+    # label read off a reader connection would change a VERSION rather than only a
+    # citation. See `.datom_declared_project()`.
+    source         = .datom_declared_project(conn, snap, "parent"),
     table          = table,
     version        = version,
     data_sha       = data_sha,

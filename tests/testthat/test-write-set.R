@@ -787,11 +787,15 @@ test_that("member versions advancing produces a new data_sha and a new version",
 
 # === the metadata document ====================================================
 
-test_that("a written set's metadata carries exactly seven populated fields", {
+test_that("a written set's metadata carries exactly the fields a set declares", {
   # Asserted on the FILE. `jsonlite` writes a NULL element as `{}` rather than
   # omitting it, so a `document_sha` left unpopulated would satisfy a names-only
   # field-set check while carrying an empty object -- and a later read could
   # neither verify it nor tell it from corruption.
+  #
+  # The field set is named rather than counted, here and in the spec: it was once
+  # written down as "seven" in six places, and every one of them went stale the
+  # first time a field was added.
   fx <- local_set_project()
   members <- sw_one_member(fx)
   res <- sw_write(fx, members)
@@ -801,12 +805,14 @@ test_that("a written set's metadata carries exactly seven populated fields", {
   expect_setequal(
     names(meta),
     c("schema_version", "kind", "data_sha", "hash_algo", "document_sha",
-      "created_at", "datom_version")
+      "project", "created_at", "datom_version")
   )
   expect_identical(meta$kind, "set")
   expect_identical(meta$hash_algo, "datom-sv1")
   expect_identical(meta$schema_version, 2L)
   expect_identical(meta$data_sha, res$data_sha)
+  # The repo's own declaration, from .datom/project.yaml, not a label.
+  expect_identical(meta$project, "set-project")
 
   # A real hash, not an empty object: the character test is what distinguishes
   # them, since `{}` reads back as an empty list.

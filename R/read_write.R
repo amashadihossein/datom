@@ -292,6 +292,35 @@ datom_read <- function(conn,
 
 # --- Write infrastructure -----------------------------------------------------
 
+#' Refuse a Project Name That Cannot Be Cited
+#'
+#' The `project` field a metadata builder records exists to be quoted back by
+#' whoever cites the artifact, so a missing value or an empty string there is
+#' worse than no field at all: it reads as a project called nothing. Checked in
+#' the builders rather than at the call sites, because both builders take the
+#' value from the same place and a third caller will eventually appear.
+#'
+#' `NULL` passes. It means "not recorded", which is what every document written
+#' before the field existed looks like, and what a direct builder call in a test
+#' that is not about this field looks like.
+#'
+#' @param project The value passed to a builder's `project` argument.
+#' @return Invisibly `TRUE`.
+#' @keywords internal
+.datom_check_project_field <- function(project) {
+  if (is.null(project)) return(invisible(TRUE))
+
+  if (!.datom_is_text_scalar(project)) {
+    cli::cli_abort(c(
+      "{.arg project} must be a single non-empty string or NULL.",
+      "i" = "It is recorded so the artifact can be cited by project name."
+    ))
+  }
+
+  invisible(TRUE)
+}
+
+
 #' Build Metadata Object
 #'
 #' Constructs the metadata list for a table write, including auto-computed
@@ -319,6 +348,20 @@ datom_read <- function(conn,
 #' @param column_hashes Ordered list of per-column `list(name, sha)` digests
 #'   from [.datom_canonical_hash()], or NULL. Excluded from `metadata_sha`
 #'   (see [.datom_compute_metadata_sha()]).
+#' @param project The name of the project whose namespace this artifact is being
+#'   written into, from the writing repo's own `.datom/project.yaml`. Recorded on
+#'   the only-when-non-NULL terms `original_file_sha` uses, and last in the
+#'   signature to match the order the other optional fields were added in. Note
+#'   what that does **not** buy: every existing caller passes `data` and
+#'   `data_sha` positionally and everything else by name, so an argument inserted
+#'   higher up would shift nothing today -- it is a convention here, not a guard.
+#'
+#'   Why the writer records it at all: a **reader** connection's `project_name`
+#'   is a string the caller passed to [datom_get_conn()] and nothing compares it
+#'   against the repo, so anything derived from that label is unverified. A write
+#'   always has a clone, so the name written here is the repo's own declaration --
+#'   which is what later lets [datom_member()] and [datom_parent()] cite a project
+#'   without trusting a label.
 #' @return Named list suitable for writing as metadata.json. Always carries
 #'   `kind = "table"` (which artifact kind the document describes),
 #'   `schema_version` (the format the document is written in) and
@@ -331,10 +374,13 @@ datom_read <- function(conn,
                                  table_type = "derived", size_bytes = NULL,
                                  parents = NULL, source_lineage = NULL,
                                  original_file_sha = NULL,
-                                 original_format = NULL, column_hashes = NULL) {
+                                 original_format = NULL, column_hashes = NULL,
+                                 project = NULL) {
   if (!table_type %in% c("imported", "derived")) {
     cli::cli_abort("{.arg table_type} must be {.val imported} or {.val derived}.")
   }
+
+  .datom_check_project_field(project)
 
   meta <- list(
     # The format this document is written in, declared first because every other
@@ -363,6 +409,14 @@ datom_read <- function(conn,
     datom_version = as.character(utils::packageVersion("datom"))
   )
 
+  # Assigned after the list rather than inside it, which is the part that matters:
+  # `jsonlite` writes a NULL element as `{}` rather than dropping it, so
+  # `project = project` inside the list() above would put an empty object where a
+  # project name belongs, for every caller that supplies none. Out here the field
+  # is simply absent -- assigning NULL to a list element removes it, so the
+  # explicit guard below is a statement of intent rather than the mechanism.
+  if (!is.null(project)) meta$project <- project
+
   if (!is.null(original_file_sha)) meta$original_file_sha <- original_file_sha
   if (!is.null(original_format)) meta$original_format <- original_format
   if (!is.null(parents)) meta$parents <- parents
@@ -382,8 +436,10 @@ datom_read <- function(conn,
 
 #' Build the Metadata Document for a Set Write
 #'
-#' A set's `metadata.json` is a collapsed version of a table's: seven fields and
-#' no more. Everything a table carries that describes a rectangle (`nrow`,
+#' A set's `metadata.json` is a collapsed version of a table's: `schema_version`,
+#' `kind`, `data_sha`, `hash_algo`, `document_sha`, `project`, `created_at`,
+#' `datom_version`, and no more. Everything a table carries that describes a
+#' rectangle (`nrow`,
 #' `ncol`, `colnames`, `column_hashes`), the provenance axis (`table_type`,
 #' `parents`, `source_lineage`), the stored-parquet facts (`parquet_sha`,
 #' `size_bytes`) and the user-metadata channel (`custom`) are all **omitted, not
@@ -419,11 +475,20 @@ datom_read <- function(conn,
 #'   assigning NULL *removes* the element. A field left declared-and-unpopulated
 #'   through a write would satisfy a names-only field-set check while carrying an
 #'   empty object, so assert on the written bytes where the field set matters.
-#' @return Named list of exactly the seven fields a set's `metadata.json`
-#'   carries.
+#' @param project The name of the project whose namespace this set is being
+#'   written into, from the writing repo's own `.datom/project.yaml`. Same field
+#'   and same only-when-non-NULL treatment as [.datom_build_metadata()]'s
+#'   `project`.
+#' @return Named list of exactly the fields a set's `metadata.json` carries,
+#'   named in the description above. Deliberately not stated as a count: the
+#'   count was written down in six places and went stale in all of them the first
+#'   time a field was added.
 #' @keywords internal
-.datom_build_set_metadata <- function(payload, document_sha = NULL) {
-  list(
+.datom_build_set_metadata <- function(payload, document_sha = NULL,
+                                      project = NULL) {
+  .datom_check_project_field(project)
+
+  meta <- list(
     schema_version = .datom_supported_schema,
     kind = "set",
     data_sha = .datom_canonical_set_hash(payload),
@@ -432,6 +497,14 @@ datom_read <- function(conn,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     datom_version = as.character(utils::packageVersion("datom"))
   )
+
+  # Outside the list() above, for the reason the table builder states at length:
+  # inside it, a NULL would serialise as `{}`, and `{}` where a project name
+  # belongs is unciteable. `document_sha` is inside the list deliberately, because
+  # the write path is required to populate it before writing.
+  if (!is.null(project)) meta$project <- project
+
+  meta
 }
 
 
@@ -1142,7 +1215,13 @@ datom_write <- function(conn,
     size_bytes = size_bytes,
     original_file_sha = .original_file_sha,
     original_format = .original_format,
-    column_hashes = hashed$column_hashes
+    column_hashes = hashed$column_hashes,
+    # The repo's own declaration, not a label: a write requires a clone (checked
+    # above), and a connection built from a clone reads `project_name` out of
+    # `.datom/project.yaml`. Recording it here is what lets a later citation of
+    # this artifact name its project without trusting whatever string a reader
+    # happened to pass to datom_get_conn().
+    project = conn$project_name
   )
   metadata_sha <- .datom_compute_metadata_sha(meta)
 

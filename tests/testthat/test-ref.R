@@ -736,3 +736,100 @@ test_that("error message on write-time ref failure mentions orphaned data", {
     "orphaning"
   )
 })
+
+
+# =============================================================================
+# A wrong project name on a gov-attached reader connection
+# =============================================================================
+#
+# CHARACTERIZATION, NOT A GUARANTEE. This test records behaviour datom has today
+# and that nothing in the recorded-project-name work changes: recording the
+# writer's project name fixes what goes INTO a stored document, and this is a
+# wrong name steering the CONNECTION, which is a different failure with a
+# different fix. It is written down because it is the one case in that family
+# that returns wrong bytes rather than a wrong label, and because reasoning about
+# it from the code alone had been the only evidence.
+#
+# The situation: a reader means project A, has A's location in their store, and
+# types B's name. With no governance attached the name is never used for
+# resolution and the read is correct. With governance attached the name selects
+# which `ref.json` is read, B is registered, and the connection is repointed at
+# B's namespace -- reported as a data MIGRATION, which is exactly what a genuine
+# migration looks like, so the message does not distinguish the two.
+#
+# If this test starts failing because the connection is no longer repointed, that
+# is the hazard being fixed and the test should become the assertion of the fix.
+
+# One real datom project: local store, real repo, one table with recognisable
+# values. Heavier than the mocked tests above on purpose -- the claim is that data
+# comes back from the wrong namespace, which no mock can show.
+ref_local_project <- function(root, label, values, env = parent.frame()) {
+  store_dir <- fs::path(root, paste0("store-", label))
+  repo_dir  <- fs::path(root, paste0("repo-", label))
+  bare_dir  <- fs::path(root, paste0("remote-", label, ".git"))
+  fs::dir_create(c(store_dir, bare_dir))
+  git2r::init(bare_dir, bare = TRUE)
+
+  store <- datom_store(
+    data = datom_store_local(as.character(store_dir)),
+    github_pat = "ref-test-token",
+    data_repo_url = as.character(bare_dir),
+    validate = FALSE
+  )
+
+  suppressMessages({
+    datom_init_repo(as.character(repo_dir), label, store)
+    conn <- datom_get_conn(as.character(repo_dir), store)
+    datom_write(conn, data = data.frame(id = 1:3, v = values), name = "dm")
+  })
+
+  list(store_dir = as.character(store_dir), conn = conn)
+}
+
+test_that("a reader's mistyped project name can resolve another project's data", {
+  skip_if_not_installed("git2r")
+
+  root <- withr::local_tempdir()
+  a <- ref_local_project(root, "project-a", c("A1", "A2", "A3"))
+  b <- ref_local_project(root, "project-b", c("B1", "B2", "B3"))
+
+  # Governance storage with only project-b registered. The `datom/` segment is
+  # mandatory in every storage key, which is why it appears in the path.
+  gov_dir <- fs::path(root, "gov")
+  fs::dir_create(fs::path(gov_dir, "datom", "projects", "project-b"))
+  jsonlite::write_json(
+    list(current = list(type = "local", root = b$store_dir), previous = list()),
+    fs::path(gov_dir, "datom", "projects", "project-b", "ref.json"),
+    auto_unbox = TRUE
+  )
+
+  # The reader's own store holds project-a's location -- what they meant to read.
+  reader_store <- datom_store(
+    data = datom_store_local(as.character(a$store_dir)),
+    governance = datom_store_local(as.character(gov_dir)),
+    validate = FALSE
+  )
+
+  conn <- NULL
+  expect_warning(
+    conn <- datom_get_conn(store = reader_store, project_name = "project-b"),
+    "migrated"
+  )
+
+  # The connection now points at project-b's namespace, not the one the reader
+  # configured.
+  expect_identical(fs::path(conn$root), fs::path(b$store_dir))
+
+  # And the data that comes back is project-b's.
+  expect_identical(datom_read(conn, "dm")$v, c("B1", "B2", "B3"))
+
+  # For contrast: the same mistyped label with NO governance store reads project
+  # a's data correctly, because the name is then never used to resolve a location.
+  # This is what makes the hazard specific to a gov-attached reader.
+  plain_store <- datom_store(
+    data = datom_store_local(as.character(a$store_dir)),
+    validate = FALSE
+  )
+  plain <- datom_get_conn(store = plain_store, project_name = "project-b")
+  expect_identical(datom_read(plain, "dm")$v, c("A1", "A2", "A3"))
+})

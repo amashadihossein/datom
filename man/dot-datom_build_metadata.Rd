@@ -14,7 +14,8 @@
   source_lineage = NULL,
   original_file_sha = NULL,
   original_format = NULL,
-  column_hashes = NULL
+  column_hashes = NULL,
+  project = NULL
 )
 }
 \arguments{
@@ -48,6 +49,21 @@ reconstructed index had to drop. It is \strong{not} part of the version identity
 \item{column_hashes}{Ordered list of per-column \code{list(name, sha)} digests
 from \code{\link[=.datom_canonical_hash]{.datom_canonical_hash()}}, or NULL. Excluded from \code{metadata_sha}
 (see \code{\link[=.datom_compute_metadata_sha]{.datom_compute_metadata_sha()}}).}
+
+\item{project}{The name of the project whose namespace this artifact is being
+written into, from the writing repo's own \code{.datom/project.yaml}. Recorded on
+the only-when-non-NULL terms \code{original_file_sha} uses, and last in the
+signature to match the order the other optional fields were added in. Note
+what that does \strong{not} buy: every existing caller passes \code{data} and
+\code{data_sha} positionally and everything else by name, so an argument inserted
+higher up would shift nothing today -- it is a convention here, not a guard.
+
+Why the writer records it at all: a \strong{reader} connection's \code{project_name}
+is a string the caller passed to \code{\link[=datom_get_conn]{datom_get_conn()}} and nothing compares it
+against the repo, so anything derived from that label is unverified. A write
+always has a clone, so the name written here is the repo's own declaration --
+which is what later lets \code{\link[=datom_member]{datom_member()}} and \code{\link[=datom_parent]{datom_parent()}} cite a project
+without trusting a label.}
 }
 \value{
 Named list suitable for writing as metadata.json. Always carries

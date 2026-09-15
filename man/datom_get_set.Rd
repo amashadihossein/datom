@@ -44,8 +44,7 @@ legal pair of members, two projects may both hold a \code{dm}, and R's \code{$}
 partial-matches on lists -- so a name-keyed list would answer plausibly and
 wrongly. The unique key is the full \code{id}.
 
-Two of the four identifying facts have limits worth knowing before you cite
-them:
+One of the four identifying facts has a limit worth knowing before you cite it:
 \itemize{
 \item \strong{\code{version} can be \code{NULL}.} It is the version \emph{recorded} in
 \code{version_history.json} for the state \code{metadata.json} describes, and a
@@ -53,14 +52,14 @@ truncated or partly-synced history records no such entry. A manufactured
 version would be a wrong statement rather than a missing one, so the field is
 left empty and \code{\link[=datom_validate]{datom_validate()}} owns the inconsistency. A version-pinned
 read always reports one, since the entry is what it resolved through.
-\item \strong{\code{project} is the connection's project name, not a recorded field.} No
-per-artifact document records which project owns it. For a developer
-connection the name comes from the clone's \code{.datom/project.yaml}; for a
-reader connection it is the label passed to \code{\link[=datom_get_conn]{datom_get_conn()}}, which
-nothing validates against the repo. Each \strong{member} carries its own recorded
-\code{id$project}, written when the member was declared, and that is the one to
-cite for a member.
 }
+
+\code{project} is the name the set's \strong{own metadata} records -- the declaration of
+the repo that wrote it, not the name on your connection. It falls back to the
+connection's name only for a set written by a datom that predates the field,
+which no released build ever was. Each \strong{member} carries its own recorded
+\code{id$project} for the same reason, resolved through a slightly longer route
+because that value is durable and hashed rather than displayed.
 }
 
 \section{Resolving a member}{

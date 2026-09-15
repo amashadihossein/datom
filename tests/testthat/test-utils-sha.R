@@ -977,7 +977,11 @@ builder_metadata_fixture <- function(optional = TRUE) {
     column_hashes = list(
       list(name = "id", sha = strrep("a", 64L)),
       list(name = "val", sha = strrep("b", 64L))
-    )
+    ),
+    # In the base arm rather than the optional one because every real write
+    # records it: the value comes from the writing repo's own project.yaml, and a
+    # write always has a clone.
+    project = "STUDY_001"
   )
 
   if (optional) {
@@ -1016,6 +1020,11 @@ test_that("builder-derived metadata_sha goldens are stable", {
   # extra version on content that did not move, with the storage address
   # (`data_sha`) unchanged so nothing is re-uploaded. Any later movement of these
   # two values is drift until a comparable note appears beside them.
+  #
+  # `project` arrived later and did NOT move them, which is the whole difference
+  # between the two additions: it is classified outside identity, so an existing
+  # artifact keeps its version. Asserted directly in "recording a project name
+  # moves no artifact's version" below.
   #   before `kind`: f4d88543b11b4918fe96e8ec319ae6d664693735a545508095aa4c4b44da9a02
   expect_identical(
     .datom_compute_metadata_sha(builder_metadata_fixture(optional = TRUE)),
@@ -1039,7 +1048,7 @@ test_that("the pinned fixtures carry exactly the keys datom's writers emit", {
   # that must surface as a decision rather than as a mystery.
   always <- c("schema_version", "kind", "data_sha", "hash_algo", "parquet_sha",
               "table_type", "nrow", "ncol", "colnames", "column_hashes",
-              "created_at", "datom_version")
+              "created_at", "datom_version", "project")
   conditional <- c("original_file_sha", "original_format", "parents",
                    "source_lineage", "size_bytes", "custom")
 
@@ -1128,6 +1137,35 @@ test_that("nothing is classified before something writes it, except by decision"
   # emitting one of these, its name comes off the list.
   expect_identical(intersect(metadata_classified_before_written, emitted),
                    character(0))
+})
+
+test_that("recording a project name moves no artifact's version", {
+  # `project` looks exactly like `kind` from the shape of the edit -- a field
+  # added to both builders -- and `kind` re-minted a version for every existing
+  # table. What differs is the classification, so this is asserted rather than
+  # assumed: a document that gains the field keeps the version it had.
+  with_field <- builder_metadata_fixture(optional = TRUE)
+  without <- with_field
+  without$project <- NULL
+
+  expect_false("project" %in% names(without))
+  expect_identical(
+    .datom_compute_metadata_sha(without),
+    .datom_compute_metadata_sha(with_field)
+  )
+
+  # The same for a set, whose document goes through the same hash and the same
+  # allowlist.
+  payload <- list(members = list(list(
+    id = list(project = "P", name = "dm", kind = "table",
+              version = strrep("a", 64L))
+  )))
+  expect_identical(
+    .datom_compute_metadata_sha(.datom_build_set_metadata(payload)),
+    .datom_compute_metadata_sha(
+      .datom_build_set_metadata(payload, project = "STUDY_001")
+    )
+  )
 })
 
 test_that("a field is classified exactly once", {
