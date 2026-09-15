@@ -280,7 +280,50 @@ with `datom_member()` and write them with
   `size_bytes`**, and `datom_summary()`'s `set_count` counts it. The table
   counters keep their tables-only meaning.
 
-* Reading a set back is not in this release yet.
+## New: `datom_get_set()` reads one back, and every member is resolvable
+
+`datom_get_set(conn, name, version = NULL)` returns a set: its `name`,
+`project`, `version`, `data_sha`, `tags` and `members`. It returns *references and
+labels and no data at all*, which is why the verb is `get` rather than `read` --
+`datom_read()` stays the verb that materialises a table, and reading one kind with
+the other verb now aborts naming the one that fits.
+
+* **Reading a set needs access to the set's project only.** A member is a
+  pointer, and resolving it is a separate step, so a 50-member product is readable
+  by someone entitled to none of its members. A storage-only connection with no
+  git clone is enough.
+
+* **Every member carries `$fetch(conn)`** -- call it with a connection to that
+  member's project and it resolves the pointer: a table member yields data, a set
+  member yields another set. **A link pins the version it was read at**; it is a
+  citation, not a subscription. It also carries its own member record, prints
+  readably, and survives `saveRDS()`, so a consumer holding only a projected view
+  can still cite what they used.
+
+* **`datom_write_set()` now accepts what `datom_get_set()` returned**, so
+  read-modify-write is a loop rather than a reassembly: the member links are
+  dropped for you, and the set's own tags come along unless you pass `tags`.
+
+* **The stored payload is verified before it is parsed**, against the
+  `document_sha` recorded for the version being read. A version that records no
+  `document_sha` is an **error**, not a skipped check -- sets have recorded one
+  since their first write, so there is no legacy population to be lenient about.
+
+* **A version resolves to the version string that was recorded**, so an
+  8-character prefix goes in and the full version comes back.
+
+* **The read reports what was cited.** Nothing in the payload is re-sorted,
+  deduplicated or pruned on the way out; the only thing normalised is
+  representation, because JSON gives back a single label and a one-element list of
+  labels as two different R shapes of one value. Two consequences worth knowing:
+  a label list that was written out of order comes back out of order, and two
+  reads of the same set are **not** `identical()`, because each member's link is a
+  closure -- compare `m[c("id", "tags")]`, or pass
+  `ignore.environment = TRUE`.
+
+* **One level, never a traversal.** A member that is itself a set comes back as a
+  pointer; its own members are not fetched, so the cost of a read is a function of
+  the set's direct member count and not of the depth beneath it.
 
 # datom 0.1.2
 

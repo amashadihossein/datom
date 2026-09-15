@@ -57,14 +57,24 @@ datom_read <- function(conn,
   # 1. Read metadata + version history from S3
   metadata_list <- .datom_read_metadata(conn, name)
 
-  # 2. Resolve version to data_sha (+ the expected parquet_sha for integrity)
+  # 2. One name is one artifact, and this verb reads one of the two kinds. The
+  #    document has just been read, so the check costs nothing; without it a set
+  #    is reported as a missing parquet file, which names neither sets nor the
+  #    verb that reads them.
+  .datom_check_artifact_kind(
+    metadata_list$current, name, "table", operation = "read"
+  )
 
-  resolved <- .datom_resolve_version(metadata_list, version = version, name = name)
+  # 3. Resolve version to data_sha (+ the expected parquet_sha for integrity)
 
-  # 3. Download and read parquet, verifying its integrity against parquet_sha.
+  resolved <- .datom_resolve_version(
+    metadata_list, version = version, name = name, field = "parquet_sha"
+  )
+
+  # 4. Download and read parquet, verifying its integrity against parquet_sha.
   .datom_read_parquet(
     conn, name, resolved$data_sha,
-    parquet_sha = resolved$parquet_sha
+    parquet_sha = resolved$object_sha
   )
 }
 
@@ -99,27 +109,54 @@ datom_read <- function(conn,
 }
 
 
-#' Resolve Version to data_sha and parquet_sha
+#' Resolve Version to data_sha, Stored-Object Hash and Recorded Version
 #'
 #' Given metadata from [.datom_read_metadata()], resolves a version spec
-#' to the corresponding `data_sha` (the storage address) and the recorded
-#' `parquet_sha` (the stored-object integrity hash). If `version` is NULL,
-#' resolves from the current `metadata.json`; if a metadata_sha string, looks
-#' it up in `version_history.json`.
+#' to the corresponding `data_sha` (the storage address), the recorded
+#' stored-object integrity hash, and the version string as **recorded**. If
+#' `version` is NULL, resolves from the current `metadata.json`; if a
+#' metadata_sha string (or a prefix of one), looks it up in
+#' `version_history.json`.
 #'
-#' The `parquet_sha` may be `NULL`/`""` only for **pre-cv1 metadata**: current
-#' writes persist it both in `metadata.json` and in every `version_history`
-#' entry, so version-pinned reads resolve it too. A `NULL`/empty `parquet_sha`
-#' tells [.datom_read_parquet()] to skip the integrity check -- a grace for
-#' legacy metadata, not a gap in the current writer.
+#' **One function, two kinds, one `field` argument.** A table's stored object is
+#' a parquet file pinned by `parquet_sha`; a set's is a JSON payload pinned by
+#' `document_sha`. The question is identical either way -- *which recorded hash
+#' pins the version I just resolved* -- so a second copy of this lookup would
+#' eventually disagree with this one about prefix matching or about what an
+#' absent hash means. The resolved hash comes back as `object_sha` regardless,
+#' because the caller already knows which field it asked for.
+#'
+#' The `object_sha` may be `NULL`/`""`, and what that means is the caller's to
+#' decide, not this function's. For a table it is **pre-cv1 metadata** and tells
+#' [.datom_read_parquet()] to skip the integrity check -- a grace for legacy
+#' metadata, not a gap in the current writer. For a set there is no legacy
+#' population, so the set read treats it as an error.
+#'
+#' `version` is the version **recorded** for the resolved state, never
+#' recomputed: a pinned read echoes the matched history entry's own version
+#' string (so a caller who passed an 8-character prefix gets the full one back),
+#' and an unpinned read takes the current state's recorded version via
+#' [.datom_recorded_current_version()]. That helper returns `NULL` when the
+#' history records nothing matching the current document, which is a gap
+#' `datom_validate()` owns -- a manufactured version would be a wrong statement
+#' rather than a missing one.
 #'
 #' @param metadata_list Return value of [.datom_read_metadata()].
-#' @param version NULL (current) or a metadata_sha string.
-#' @param name Table name (for error messages).
-#' @return Named list with `data_sha` (character) and `parquet_sha`
-#'   (character or NULL) for the resolved version.
+#' @param version NULL (current) or a metadata_sha string / prefix.
+#' @param name Artifact name (for error messages).
+#' @param field Which recorded stored-object hash to resolve:
+#'   `"parquet_sha"` (a table's parquet) or `"document_sha"` (a set's payload).
+#' @return Named list with `data_sha` (character), `object_sha` (character or
+#'   `NULL`) and `version` (character or `NULL`) for the resolved version.
 #' @keywords internal
-.datom_resolve_version <- function(metadata_list, version = NULL, name = "table") {
+.datom_resolve_version <- function(metadata_list, version = NULL, name = "table",
+                                   field = "parquet_sha") {
+  # `doc[[field]]` on a list that lacks the name is a subscript error rather than
+  # NULL, and every document written before the field existed lacks it.
+  recorded <- function(doc) {
+    if (is.list(doc) && field %in% names(doc)) doc[[field]] else NULL
+  }
+
   if (is.null(version)) {
     data_sha <- metadata_list$current$data_sha
     if (is.null(data_sha) || !nzchar(data_sha)) {
@@ -132,7 +169,10 @@ datom_read <- function(conn,
     }
     return(list(
       data_sha = data_sha,
-      parquet_sha = metadata_list$current$parquet_sha
+      object_sha = recorded(metadata_list$current),
+      version = .datom_recorded_current_version(
+        metadata_list$current, metadata_list$history
+      )
     ))
   }
 
@@ -190,7 +230,8 @@ datom_read <- function(conn,
 
   list(
     data_sha = data_sha,
-    parquet_sha = history[[match_idx]]$parquet_sha
+    object_sha = recorded(history[[match_idx]]),
+    version = history[[match_idx]]$version
   )
 }
 
@@ -449,15 +490,35 @@ datom_read <- function(conn,
 #' An absent `kind` reads as `"table"`: every document written before the field
 #' existed describes a table, because sets did not exist. The pairing with a
 #' format check is not needed here the way it is in `datom_member()` -- a document
-#' from a future datom has already been refused at the write entry.
+#' from a future datom has already been refused at the write entry, and on the
+#' read path [.datom_read_metadata()] has just checked the same document.
+#'
+#' **Both directions of the same invariant, in one function.** A read that meets
+#' the other kind needs different words and a different suggested verb from a
+#' write that does, which `operation` selects -- following
+#' [.datom_check_schema_version()], which took exactly that shape for exactly
+#' this reason. A separate read-side twin would let the two directions drift,
+#' each passing its own tests, while the rule they enforce is single: **one name
+#' is one artifact**. For the same reason both aborts carry one condition class,
+#' so no test can key on one direction alone.
+#'
+#' The check is made by each verb after its own [.datom_read_metadata()] call
+#' rather than inside that function, because the two verbs want different answers
+#' from it.
 #'
 #' @param current The artifact's current metadata document, or `NULL` when the
 #'   name is free.
 #' @param name Artifact name.
-#' @param expected `"table"` or `"set"` -- the kind the caller is about to write.
+#' @param expected `"table"` or `"set"` -- the kind the caller's verb handles.
+#' @param operation What the caller was about to do: `"write"` (default, so
+#'   existing call sites and the messages they assert on are unchanged) or
+#'   `"read"`.
 #' @return Invisibly `NULL`. Aborts on a kind mismatch.
 #' @keywords internal
-.datom_check_artifact_kind <- function(current, name, expected) {
+.datom_check_artifact_kind <- function(current, name, expected,
+                                       operation = c("write", "read")) {
+  operation <- match.arg(operation)
+
   if (!is.list(current)) return(invisible(NULL))
 
   found <- current$kind %||% "table"
@@ -466,7 +527,23 @@ datom_read <- function(conn,
   # switch() rather than a named-vector lookup: `found` comes off a document, so
   # a value neither kind uses must fall through to a default instead of raising a
   # subscript error inside the function that exists to explain the problem.
-  verb <- switch(found, set = "datom_write_set", "datom_write")
+  verb <- if (identical(operation, "read")) {
+    switch(found, set = "datom_get_set", "datom_read")
+  } else {
+    switch(found, set = "datom_write_set", "datom_write")
+  }
+
+  if (identical(operation, "read")) {
+    cli::cli_abort(
+      c(
+        "{.val {name}} is a {found}, not a {expected}.",
+        "i" = "Read it with {.fn {verb}}.",
+        "i" = "One name is one artifact, and the two kinds are read by \\
+               different verbs: a table resolves to data, a set to references."
+      ),
+      class = "datom_artifact_kind_conflict"
+    )
+  }
 
   cli::cli_abort(
     c(

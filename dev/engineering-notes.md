@@ -694,3 +694,51 @@ value <- entry[[field]]
 
 `purrr::pluck(entry, field)` also returns NULL and is fine; `$` is not available when the name is a
 variable, which is what makes this shape tempting in the first place.
+
+### A probe harness must restore from its own copy, never from `git checkout`
+
+Learned expensively on 2026-09-14, probing the set read. The probe loop is: apply a deliberate
+defect, run the affected tests, count what reddens, put the code back. A harness that put the code
+back with
+
+```sh
+git checkout -- R/set.R R/read_write.R   # NEVER do this in a probe loop
+```
+
+deleted the entire task's implementation, because HEAD predates it. **The code under probe is by
+definition uncommitted** -- that is what the probe is checking -- so git is the one restore source
+that cannot work. Copy the files to a temp directory before the first probe and restore from those
+copies:
+
+```python
+shutil.copy2(src, backup)   # once, before any probe
+...
+shutil.copy2(backup, src)   # after each probe
+```
+
+Two things made the recovery cheap and are worth arranging in advance: `devtools::document()` had
+already been run, so every roxygen block survived in `man/*.Rd`, and the test file was a separate
+new file the harness did not touch. Recovery was verified by re-running `document()` (the `man/`
+diff came back empty) and by line count against the earlier `git diff --stat`.
+
+If a probe run must touch tracked files, `git stash` is not a fix either -- it is the same class of
+tool. Commit the work first, or copy it aside.
+
+### A closure leaks a connection only once the connection has been FORCED
+
+Also 2026-09-14, while pinning that `$fetch` on a set member carries no credentials. The hazard is
+real: a factory defined *inside* a function that holds `conn` puts that frame on the closure's parent
+chain, and `saveRDS()` then writes the PAT into the file. But the first probe of the broken shape
+found **no** token in the bytes, which looked like the guard being unnecessary.
+
+The reason is R's lazy arguments. In the probe, the outer function never used `conn`, so it was still
+an unevaluated promise whose environment is the **caller's** -- and for `saveRDS()` the global
+environment serializes as a reference rather than by value, so nothing came along. Adding one line
+that touched `conn` reproduced the leak exactly.
+
+Two consequences. **For the code**: a namespace-level factory is not enough on its own; every
+argument gets `force()`d, so nothing is left as a promise pointing back at a frame that holds a
+connection. **For the test**: search the serialized bytes for a token **value** the fixture invents,
+not for a field name -- a dev-loaded package keeps source references, so the serialized closure
+carries the text of its own source file, which mentions `github_pat` in an example. And use
+`grepRaw()`: `rawToChar()` refuses the embedded NULs in serialized R objects.

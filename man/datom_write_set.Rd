@@ -11,8 +11,9 @@ datom_write_set(conn, members, tags = NULL, name = NULL, message = NULL)
 product repo (developer role).}
 
 \item{members}{A list of member records from \code{\link[=datom_member]{datom_member()}}, each pinning one
-artifact version and optionally carrying its own tags. Hand-assembled lists
-are refused.}
+artifact version and optionally carrying its own tags -- or a \code{datom_set}
+from \code{\link[=datom_get_set]{datom_get_set()}}, to write back a set that was read. Hand-assembled
+lists are refused.}
 
 \item{tags}{Optional named list of set-level text labels -- facts about the
 collection itself, such as a description. Same grammar as a member's tags: a
@@ -77,6 +78,21 @@ Storage holds the same bytes content-addressed at \verb{\{name\}/\{data_sha\}.js
 a reader with no clone can fetch an exact version. Any past version is still
 reconstructible from the clone alone with
 \verb{git show <commit>:\{name\}/set.json}.
+}
+
+\section{Editing a set that already exists}{
+
+Read it, change it, write it back. \code{members} accepts a \code{datom_set} from
+\code{\link[=datom_get_set]{datom_get_set()}} directly, so the loop needs no unpacking:
+
+\if{html}{\out{<div class="sourceCode r">}}\preformatted{x <- datom_get_set(conn, "study001-adam")
+x$members <- c(x$members, list(datom_member(conn, "lb", v)))
+datom_write_set(conn, x)
+}\if{html}{\out{</div>}}
+
+The set's own \code{tags} come along with it unless \code{tags} is supplied, so a
+read-append-write cannot silently drop the description. Passing
+\code{x$members} instead works too, and there \code{tags} is yours to carry.
 }
 
 \examples{

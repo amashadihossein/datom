@@ -1,11 +1,17 @@
-# Writing a set: the second artifact kind's write path.
+# Sets: the second artifact kind, written and read.
 #
 # A set is a reference layer, not a data layer. Its payload is a JSON document of
 # pointers at existing artifact versions plus text labels, and everything else --
 # version history, content addressing, change detection, the git-gates-storage
 # ordering -- is the same machinery a table write uses.
 #
-# FIVE THINGS HERE ARE LOAD-BEARING AND EASY TO UNDO BY TIDYING.
+# THE WRITE CANONICALIZES; THE READ NEVER DOES. Every "same fact, two spellings"
+# decision is made once, on the way in. The read parses, normalizes
+# REPRESENTATION only (the three R shapes a JSON string array comes back as), and
+# reshapes nothing -- see `.datom_read_set_payload()` for what that costs if it is
+# undone.
+#
+# FIVE THINGS ON THE WRITE SIDE ARE LOAD-BEARING AND EASY TO UNDO BY TIDYING.
 #
 #   1. TIDY, THEN VALIDATE. Tidying clears the spellings nobody can reasonably
 #      care about (tag values out of order, a duplicated label, a one-element
@@ -439,6 +445,32 @@
 }
 
 
+#' Drop the `$fetch` Link a Read Puts on Every Member
+#'
+#' The one step that makes read-modify-write possible. A member record is
+#' payload-shaped -- exactly `id` plus optional `tags` -- and
+#' [datom_get_set()] adds a callable `fetch` to each one, which both
+#' `.datom_validate_members()` and the sv1 encoder refuse. Removing it here means
+#' neither of them needs a carve-out for a field that must never reach a payload.
+#'
+#' **Only a function is dropped.** A hand-built `fetch = "junk"` is left in place
+#' so the validator reports it; stripping by name would turn a typo into a silent
+#' success.
+#'
+#' @param members A member list.
+#' @return The member list with any callable `fetch` element removed.
+#' @keywords internal
+.datom_strip_member_links <- function(members) {
+  if (!is.list(members) || length(members) == 0L) return(members)
+
+  lapply(members, function(m) {
+    if (!is.list(m) || !("fetch" %in% names(m))) return(m)
+    if (!is.function(m[["fetch"]])) return(m)
+    m[names(m) != "fetch"]
+  })
+}
+
+
 # --- the write verb ------------------------------------------------------------
 
 #' Write a datom Set
@@ -487,11 +519,26 @@
 #' reconstructible from the clone alone with
 #' `git show <commit>:{name}/set.json`.
 #'
+#' @section Editing a set that already exists:
+#' Read it, change it, write it back. `members` accepts a `datom_set` from
+#' [datom_get_set()] directly, so the loop needs no unpacking:
+#'
+#' ```r
+#' x <- datom_get_set(conn, "study001-adam")
+#' x$members <- c(x$members, list(datom_member(conn, "lb", v)))
+#' datom_write_set(conn, x)
+#' ```
+#'
+#' The set's own `tags` come along with it unless `tags` is supplied, so a
+#' read-append-write cannot silently drop the description. Passing
+#' `x$members` instead works too, and there `tags` is yours to carry.
+#'
 #' @param conn A `datom_conn` object from [datom_get_conn()], scoped to the
 #'   product repo (developer role).
 #' @param members A list of member records from [datom_member()], each pinning one
-#'   artifact version and optionally carrying its own tags. Hand-assembled lists
-#'   are refused.
+#'   artifact version and optionally carrying its own tags -- or a `datom_set`
+#'   from [datom_get_set()], to write back a set that was read. Hand-assembled
+#'   lists are refused.
 #' @param tags Optional named list of set-level text labels -- facts about the
 #'   collection itself, such as a description. Same grammar as a member's tags: a
 #'   value is one string or several, text only.
@@ -574,6 +621,22 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
       "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
+
+  # A read-modify-write loop hands this verb back what `datom_get_set()`
+  # returned, and that value is not payload-shaped: the set's tags sit beside its
+  # member list, and every member carries a `fetch` closure. Both are fixed here,
+  # in the write verb, and NOT by relaxing `.datom_validate_members()` or the sv1
+  # encoder -- both of those keep saying "a member is exactly `id` plus `tags`",
+  # and the write is what knows how to get from a read back to a payload.
+  #
+  # `fetch` is dropped only when it is a FUNCTION, so a hand-built
+  # `fetch = "junk"` still reaches the validator and aborts. Stripping by name
+  # alone would turn a typo into a silent success.
+  if (inherits(members, "datom_set")) {
+    if (is.null(tags)) tags <- members$tags
+    members <- members$members
+  }
+  members <- .datom_strip_member_links(members)
 
   # The two gates run first because they are what establish WHICH artifact this
   # write touches -- the forward-compatibility door below needs that name, and
@@ -717,4 +780,599 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
     action = change_type,
     commit_sha = commit_sha
   ))
+}
+
+
+# --- the read path -------------------------------------------------------------
+#
+# THE READ NEVER TIDIES, AND THE TIDY FUNCTIONS ARE RIGHT THERE INVITING IT.
+# `.datom_tidy_set_payload()` run on a healthy payload changes nothing -- the
+# write already canonicalized -- so reaching for it passes every test today and
+# diverges later. Three reasons it must not be reached for, in order:
+#
+#   1. LOAD-BEARING. Repair must neither re-upload payload bytes nor recompute
+#      `document_sha` for a version already stored. A repair built on a tidying
+#      read does both: it re-emits reshaped bytes over an object whose recorded
+#      hash describes different bytes.
+#   2. THE READ REPORTS WHAT WAS CITED. A reorder must not mint a version; that
+#      does not license a reader to perform one.
+#   3. DROPPING AN EMPTY-VALUED KEY removes a key the document actually contains.
+#
+# The one thing the read does normalize is representation: `jsonlite` unboxes on
+# write, so one tag key comes back as a character vector, a length-1 character, or
+# a list of length-1 characters, depending on how many labels it had. Those are
+# three R spellings of one JSON value, not three values. Never touch the presence
+# axis: an absent key stays absent, an absent value stays NULL, and nothing
+# becomes `character(0)` or `NA`.
+
+
+#' Normalize a Parsed JSON String Array to a Character Vector
+#'
+#' `jsonlite::fromJSON(simplifyVector = FALSE)` returns a JSON array of strings
+#' as a list of length-1 characters, and `auto_unbox = TRUE` on the write means a
+#' single label was written as a bare string. So one tag key comes back in three
+#' shapes -- `character(1)`, a list of 1, or a list of n -- for what is one value
+#' in the document.
+#'
+#' Same strings, same order, same count: this is a representation change, not a
+#' content change, which is why order is preserved and duplicates are kept.
+#' Sorting or deduplicating here would be the write's canonicalization performed
+#' by a reader.
+#'
+#' Anything that is not an all-text array is returned untouched. A reader has no
+#' caller intent to tidy toward and nothing downstream requires tag values to be
+#' text, so an odd value is reported by whoever tries to use it rather than
+#' refused here.
+#'
+#' @param v A parsed JSON value.
+#' @return A character vector when `v` was an all-text array, otherwise `v`.
+#' @keywords internal
+.datom_read_string_array <- function(v) {
+  if (!is.list(v) || !is.null(names(v)) || length(v) == 0L) return(v)
+
+  strings <- vapply(
+    v,
+    function(e) is.character(e) && length(e) == 1L && !is.na(e),
+    logical(1L)
+  )
+  if (!all(strings)) return(v)
+
+  unlist(v, use.names = FALSE)
+}
+
+
+#' Normalize a Parsed Tag Map's Values
+#'
+#' Applies [.datom_read_string_array()] to every value and does nothing else: no
+#' key sorting, no value sorting, no deduplication, no dropping of an
+#' empty-valued key. A map with no names is returned untouched rather than
+#' refused, for the same reason a single odd value is.
+#'
+#' @param tags A parsed tag map, or `NULL`.
+#' @return The map with each value normalized, or `NULL`.
+#' @keywords internal
+.datom_read_tag_map <- function(tags) {
+  if (is.null(tags) || !is.list(tags) || length(tags) == 0L) return(tags)
+  if (is.null(names(tags))) return(tags)
+
+  tags[] <- lapply(tags, .datom_read_string_array)
+  tags
+}
+
+
+#' Normalize One Member Record Read Back from a Payload
+#'
+#' Normalizes representation in `id` and `tags`, then makes the one refusal the
+#' read owns: an `id` field that is not a single non-empty string after
+#' normalization aborts as a malformed document, naming the member.
+#'
+#' **Why `id` is refused where a tag value is tolerated.** `id` values are
+#' spliced into storage keys and compared against project names, and
+#' `.datom_validate_members()` enforces that contract on **write only** -- so the
+#' read is the only place a payload's `id` is ever checked. Normalizing without
+#' refusing would silently accept a document `datom_write_set()` cannot produce,
+#' and a caller comparing a list against a string would conclude that a member of
+#' this project belongs to another one.
+#'
+#' Fields outside the four are left alone rather than refused: a newer datom may
+#' have added one, and this build never reads it.
+#'
+#' @param m One parsed member record.
+#' @param at Position label used in error messages, e.g. `"members[[2]]"`.
+#' @param name The set's name, for error messages.
+#' @return The member record, normalized.
+#' @keywords internal
+.datom_read_set_member <- function(m, at, name) {
+  # `.envir` is passed through because cli interpolates in the frame that CALLS
+  # cli_abort, which here is this helper -- and the values worth naming (`fld`)
+  # live in the frame that called the helper.
+  malformed <- function(..., .envir = parent.frame()) {
+    cli::cli_abort(
+      c(
+        "The stored payload for set {.val {name}} is malformed.",
+        ...,
+        "i" = "Run {.fn datom_validate} on the project that owns this set."
+      ),
+      class = "datom_set_member_malformed",
+      .envir = .envir
+    )
+  }
+
+  if (!is.list(m) || is.null(names(m)) || !all(nzchar(names(m)))) {
+    malformed("x" = "{at} is not a named record.")
+  }
+
+  id <- m$id
+  if (!is.list(id) || length(id) == 0L || is.null(names(id))) {
+    malformed("x" = "{at} has no {.field id} map.")
+  }
+
+  id[] <- lapply(id, .datom_read_string_array)
+
+  purrr::walk(c("project", "name", "kind", "version"), function(field) {
+    fld <- paste0("id$", field)
+    if (!(field %in% names(id)) || !.datom_is_text_scalar(id[[field]])) {
+      malformed(
+        "x" = "{at}: {.field {fld}} is not a single non-empty string.",
+        "i" = "{.fn datom_write_set} cannot produce this, so the payload was \\
+               hand-edited or written by something else."
+      )
+    }
+  })
+
+  m$id <- id
+  if ("tags" %in% names(m)) m$tags <- .datom_read_tag_map(m$tags)
+
+  m
+}
+
+
+#' Resolve One Member Pointer Without a Connection in the Closure
+#'
+#' Builds the `$fetch` link every member of a read set carries: call it with a
+#' connection to the member's project and it resolves the pointer -- a table
+#' member to data via [datom_read()], a set member to references via
+#' [datom_get_set()].
+#'
+#' **`fetch` rather than `read` or `get` because it is genuinely both.** This is
+#' the one polymorphic door in the design, and the member level is where the
+#' domain forces it: iterating members, the caller cannot know each kind in
+#' advance. At the top level they named one artifact they chose, which is why
+#' [datom_read()] and [datom_get_set()] stay separate verbs.
+#'
+#' **This function is namespace-level, and that is load-bearing.** A factory
+#' defined inside [datom_get_set()] would put that call's frame -- which holds
+#' `conn`, and therefore the PAT -- on the closure's parent chain, and
+#' `saveRDS()` of the member would write the token into the file. Measured, same
+#' code both ways: nested, 2094 bytes with the token present; namespace-level,
+#' 1609 bytes without. Every argument is forced so that nothing is left as a
+#' promise pointing back at the caller's frame. The guard is a test on the
+#' **serialized bytes**, not on `environment(link)`, because an environment check
+#' passes on the broken shape -- there the connection sits one frame further up.
+#'
+#' The link carries its own pointer as an attribute, so a consumer holding only a
+#' projection can still cite what they used. Links built without it cannot be
+#' repaired afterwards, which is why it ships with the factory rather than later.
+#'
+#' @param project,name,kind,version The member's pinned identity.
+#' @param record The member record the link describes -- pure data, attached as
+#'   the `datom_member` attribute.
+#' @return A function of one argument (`conn`), classed `datom_link`.
+#' @keywords internal
+.datom_member_link <- function(project, name, kind, version, record) {
+  force(project)
+  force(name)
+  force(kind)
+  force(version)
+  force(record)
+
+  link <- function(conn) {
+    switch(
+      kind,
+      table = datom_read(conn, name, version = version),
+      set = datom_get_set(conn, name, version = version),
+      cli::cli_abort(
+        c(
+          "Member {.val {name}} is a {.val {kind}}, which this version of \\
+           datom cannot resolve.",
+          "i" = "A member points at one of {.val {(.datom_artifact_kinds)}}.",
+          "i" = "The set may have been written by a newer datom -- upgrade \\
+                 datom and retry."
+        ),
+        class = "datom_member_kind_unknown"
+      )
+    )
+  }
+
+  attr(link, "datom_member") <- record
+  class(link) <- "datom_link"
+
+  link
+}
+
+
+#' Print a Member Link
+#'
+#' @param x A `datom_link` from a member of a set read with [datom_get_set()].
+#' @param ... Ignored.
+#' @return Invisible `x`.
+#' @export
+#'
+#' @examples
+#' # See datom_get_set() for a runnable set example; a link is one of its
+#' # members' `$fetch` elements.
+#' print(names(formals(datom_get_set)))
+print.datom_link <- function(x, ...) {
+  id <- attr(x, "datom_member")$id
+  tags <- attr(x, "datom_member")$tags
+
+  cli::cli_h3("datom link")
+  cli::cli_ul()
+  cli::cli_li("Points at: {id$kind} {.val {id$name}} in project {.val {id$project}}")
+  cli::cli_li("Version:   {.val {id$version}}")
+  if (length(tags) > 0L) {
+    # Formatted first, then interpolated: a `{.something}` expression is read by
+    # cli as an inline style name, so calling a function inside the braces is a
+    # markup error rather than a call.
+    tag_line <- .datom_format_tag_line(tags)
+    cli::cli_li("Tags:      {tag_line}")
+  }
+  cli::cli_end()
+  cli::cli_alert_info(
+    "Resolve it with {.code link(conn)}, using a connection to project \\
+     {.val {id$project}}."
+  )
+
+  invisible(x)
+}
+
+
+#' Format a Tag Map for One Line of Output
+#'
+#' `key=value` pairs, several labels joined by `|`, `-` when there are no tags.
+#' Tags are open-keyed, so a fixed column layout is impossible -- do not try.
+#'
+#' @param tags A tag map, or `NULL`.
+#' @return A single string.
+#' @keywords internal
+.datom_format_tag_line <- function(tags) {
+  if (!is.list(tags) || length(tags) == 0L || is.null(names(tags))) return("-")
+
+  pairs <- vapply(
+    names(tags),
+    function(k) {
+      values <- tags[[k]]
+      values <- if (is.list(values)) {
+        vapply(values, function(v) paste(as.character(v), collapse = "|"),
+               character(1L))
+      } else {
+        as.character(values)
+      }
+      paste0(k, "=", paste(values, collapse = "|"))
+    },
+    character(1L)
+  )
+
+  paste(pairs, collapse = ", ")
+}
+
+
+#' Download, Verify and Parse a Set's Stored Payload
+#'
+#' Download, hash, **then** parse. The order is the point: a set read must not
+#' parse an unverified payload, which is the same gate position
+#' [.datom_read_parquet()] uses for `parquet_sha`.
+#'
+#' **`.datom_storage_read_json()` cannot be used here, and it would work.** It
+#' parses, so after calling it there is nothing left to hash but bytes
+#' re-serialized locally -- a hash of bytes nobody stored, which is exactly the
+#' defect the write path guards against, inverted. It returns a structure
+#' identical to parsing the downloaded file, so nothing fails if you reach for
+#' it; the integrity check simply stops meaning anything.
+#'
+#' **A missing `document_sha` is an error, not a skip.** `parquet_sha`'s
+#' skip-on-absent branch exists purely as a grace for metadata written before
+#' that field did. Sets have recorded `document_sha` since their first write, so
+#' there is no legacy population to be lenient about, and reproducing the grace
+#' would build a silent-degradation path on purpose.
+#'
+#' `data_sha` is deliberately **not** recomputed from the parsed payload. It is
+#' the address the payload was fetched from, so it catches nothing
+#' `document_sha` did not, and it would refuse a payload a newer datom wrote --
+#' the sv1 encoder aborts on a top-level payload key it does not know. Same
+#' reason the parsed payload is not re-validated. Reads limp.
+#'
+#' @param conn A `datom_conn` object.
+#' @param name Set name.
+#' @param data_sha The resolved content hash -- the payload's storage address.
+#' @param document_sha The recorded SHA-256 of the stored payload bytes.
+#' @return The parsed payload, with `members` kept as a list of records.
+#' @keywords internal
+.datom_read_set_payload <- function(conn, name, data_sha, document_sha) {
+  .datom_validate_name(name)
+
+  if (!.datom_is_text_scalar(data_sha)) {
+    cli::cli_abort("{.arg data_sha} must be a single non-empty string.")
+  }
+  # data_sha is spliced into a storage key; reject path-traversal / non-hex.
+  .datom_validate_sha(data_sha, arg = "data_sha")
+
+  if (!.datom_is_text_scalar(document_sha)) {
+    cli::cli_abort(
+      c(
+        "The recorded metadata for set {.val {name}} carries no \\
+         {.field document_sha}.",
+        "i" = "Every version of a set records the hash of its stored payload, \\
+               so a version without one cannot be verified.",
+        "i" = "Run {.fn datom_validate} on this project."
+      ),
+      class = "datom_set_document_sha_missing"
+    )
+  }
+
+  key <- .datom_artifact_payload_key(name, data_sha, "set")
+  tmp <- tempfile(fileext = ".json")
+  on.exit(unlink(tmp), add = TRUE)
+
+  .datom_storage_download(conn, key, tmp)
+
+  actual <- digest::digest(file = tmp, algo = "sha256")
+  if (!identical(actual, document_sha)) {
+    cli::cli_abort(
+      c(
+        "Stored payload for set {.val {name}} failed its integrity check.",
+        "x" = "Key: {.val {key}}",
+        "x" = "Expected {.field document_sha}: {.val {document_sha}}",
+        "x" = "Actual SHA-256: {.val {actual}}",
+        "i" = "The stored object may be corrupted or tampered with. Do not \\
+               trust this set."
+      ),
+      class = "datom_set_integrity_failure"
+    )
+  }
+
+  # simplifyVector = FALSE is what keeps `members` a list of records; the
+  # simplifying parse collapses them into a data frame, at which point a member's
+  # tags are gone.
+  jsonlite::fromJSON(tmp, simplifyVector = FALSE)
+}
+
+
+#' Turn a Parsed Member List into Resolvable Member Records
+#'
+#' @param members The payload's parsed member list.
+#' @param name The set's name, for error messages.
+#' @return An unnamed list of member records, each carrying `$fetch`.
+#' @keywords internal
+.datom_read_set_members <- function(members, name) {
+  if (!is.list(members) || (length(members) > 0L && !is.null(names(members)))) {
+    cli::cli_abort(
+      c(
+        "The stored payload for set {.val {name}} is malformed.",
+        "x" = "{.field members} is not a list of member records.",
+        "i" = "Run {.fn datom_validate} on the project that owns this set."
+      ),
+      class = "datom_set_payload_malformed"
+    )
+  }
+
+  # lapply() rather than purrr::map(): a mapped function's abort is re-signalled
+  # by purrr as its own condition, and callers dispatch on the class.
+  lapply(seq_along(members), function(i) {
+    record <- .datom_read_set_member(
+      members[[i]], sprintf("members[[%d]]", i), name
+    )
+
+    id <- record$id
+    c(record, list(
+      fetch = .datom_member_link(
+        project = id$project,
+        name    = id$name,
+        kind    = id$kind,
+        version = id$version,
+        record  = record
+      )
+    ))
+  })
+}
+
+
+#' Read a datom set
+#'
+#' Reads a **set**: a versioned, citable collection of pointers at datom
+#' artifacts. It returns *references and labels, and no data at all* -- which is
+#' why the verb is `get` rather than `read`. Every member carries a `$fetch`
+#' link, so resolving one to its content is one call and needs no reassembly.
+#'
+#' Reading a set requires access to the set's own project only. A member is a
+#' pointer, and resolving it is a separate, deliberate step -- so a 50-member
+#' product is readable by someone entitled to none of its members.
+#'
+#' @section What comes back:
+#' A `datom_set`: `name`, `project`, `version`, `data_sha`, `tags` and
+#' `members`. The four identifying facts are there so that a caller who passed
+#' `version = NULL` can still say which version they got, because a set exists to
+#' be cited. `version` is the version **recorded** in the history, so an
+#' 8-character prefix goes in and the full version comes back.
+#'
+#' `members` is a flat, **unnamed** list in payload order. Not name-keyed, and
+#' the reason is not style: the same artifact at two different versions is a
+#' legal pair of members, two projects may both hold a `dm`, and R's `$`
+#' partial-matches on lists -- so a name-keyed list would answer plausibly and
+#' wrongly. The unique key is the full `id`.
+#'
+#' @section Resolving a member:
+#' Each member is `id` (`project`, `name`, `kind`, `version`), its optional
+#' `tags`, and `fetch`:
+#'
+#' ```r
+#' x <- datom_get_set(conn, "study001-adam")
+#' dm <- x$members[[1]]$fetch(conn)
+#' ```
+#'
+#' `fetch` resolves whatever the pointer points at: a table member yields data, a
+#' set member yields another `datom_set`. **A link pins the version it was read
+#' at** -- it is a citation, not a subscription, so it never drifts to the latest.
+#' Pass a connection scoped to the member's own project; same-project members
+#' resolve through the connection you already have.
+#'
+#' Two reads of the same set are **not** `identical()`, because closures compare
+#' by environment. Compare `m[c("id", "tags")]` instead, or use
+#' `identical(a, b, ignore.environment = TRUE)`.
+#'
+#' @section Integrity, and what is not rechecked:
+#' The stored payload is verified against the recorded `document_sha` **before it
+#' is parsed**, and a version that records no `document_sha` is an error rather
+#' than a skipped check. `data_sha` is not recomputed: it is the address the
+#' payload was fetched from, so it would catch nothing the byte hash did not, and
+#' it would refuse a payload written by a newer datom. Nothing in the payload is
+#' re-canonicalized -- what you are shown is what was cited.
+#'
+#' @param conn A `datom_conn` object from [datom_get_conn()], scoped to the
+#'   set's project. A storage-only connection with no git clone is enough.
+#' @param name The set's name.
+#' @param version Optional version (`metadata_sha`, or a prefix of one). `NULL`
+#'   reads the current version.
+#'
+#' @return A `datom_set`: a list of `name`, `project`, `version`, `data_sha`,
+#'   `tags` and `members`.
+#' @seealso [datom_write_set()] to write one, [datom_member()] to declare a
+#'   member, [datom_read()] for tables.
+#' @export
+#'
+#' @examples
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'
+#'   # Declare the repo a product repo and name its set. A later release writes
+#'   # these two fields at init time; today they are added by hand.
+#'   cfg_path <- file.path(tmp, "repo", ".datom", "project.yaml")
+#'   cfg <- yaml::read_yaml(cfg_path)
+#'   cfg$mode <- "product"
+#'   cfg$set <- "example_product"
+#'   yaml::write_yaml(cfg, cfg_path)
+#'
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#'   member <- datom_member(
+#'     conn, "dm", datom_history(conn, "dm")$version[1],
+#'     tags = list(type = "input")
+#'   )
+#'   datom_write_set(conn, list(member),
+#'                   tags = list(description = "Example product"))
+#'
+#'   x <- datom_get_set(conn, "example_product")
+#'   print(x)
+#'
+#'   # Resolve one member to its data. The link pins the version it was read at.
+#'   print(head(x$members[[1]]$fetch(conn)))
+#'
+#'   unlink(tmp, recursive = TRUE)
+#' }
+datom_get_set <- function(conn, name, version = NULL) {
+
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort(
+      "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}."
+    )
+  }
+
+  .datom_validate_name(name)
+
+  # Nothing on this path touches `conn$path`: a storage-only reader with no clone
+  # is the primary consumer of a set.
+  metadata_list <- .datom_read_metadata(conn, name)
+
+  # One name is one artifact. Without this a healthy table read as a set is
+  # reported as a missing payload, which names the wrong problem.
+  .datom_check_artifact_kind(
+    metadata_list$current, name, "set", operation = "read"
+  )
+
+  resolved <- .datom_resolve_version(
+    metadata_list, version = version, name = name, field = "document_sha"
+  )
+
+  payload <- .datom_read_set_payload(
+    conn, name, resolved$data_sha, resolved$object_sha
+  )
+
+  structure(
+    list(
+      name = name,
+      project = conn$project_name,
+      version = resolved$version,
+      data_sha = resolved$data_sha,
+      tags = .datom_read_tag_map(payload$tags),
+      members = .datom_read_set_members(payload$members, name)
+    ),
+    class = "datom_set"
+  )
+}
+
+
+#' Print a datom Set
+#'
+#' One line per member -- name, kind, and its tags as compact `key=value` pairs,
+#' or `-` when it has none -- plus the route to a member's content. Long member
+#' lists are truncated.
+#'
+#' Tags are open-keyed by design, so there is no fixed column layout to print
+#' them in.
+#'
+#' @param x A `datom_set` from [datom_get_set()].
+#' @param ... Ignored.
+#' @param n Maximum number of members to list.
+#' @return Invisible `x`.
+#' @export
+#'
+#' @examples
+#' # See datom_get_set() for a runnable example that prints a set.
+#' print(names(formals(datom_get_set)))
+print.datom_set <- function(x, ..., n = 20L) {
+  cli::cli_h3("datom set: {.val {x$name}}")
+  cli::cli_ul()
+  cli::cli_li("Project: {.val {x$project}}")
+  cli::cli_li("Version: {.val {x$version %||% NA_character_}}")
+  cli::cli_li("Members: {.val {length(x$members)}}")
+  if (length(x$tags) > 0L) {
+    tag_line <- .datom_format_tag_line(x$tags)
+    cli::cli_li("Tags:    {tag_line}")
+  }
+  cli::cli_end()
+
+  shown <- utils::head(x$members, n)
+  cli::cli_ul()
+  purrr::walk(shown, function(m) {
+    line <- paste0(
+      m$id$name, " (", m$id$kind, ")  ", .datom_format_tag_line(m$tags)
+    )
+    cli::cli_li("{line}")
+  })
+  if (length(x$members) > length(shown)) {
+    cli::cli_li("... and {length(x$members) - length(shown)} more")
+  }
+  cli::cli_end()
+
+  if (length(x$members) > 0L) {
+    cli::cli_alert_info(
+      "Get a member's content with {.code x$members[[1]]$fetch(conn)}."
+    )
+  }
+
+  invisible(x)
 }

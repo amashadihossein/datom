@@ -28,7 +28,7 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 4. Fetch `{table}/{data_sha}.parquet` from the data store.
 5. **Integrity gate** (added by `datom-cv1`, issue #72): before parsing, hash the downloaded object and compare to the recorded `parquet_sha`; abort on mismatch. An absent/empty `parquet_sha` (pre-`datom-cv1` entries) skips the check. This is a gate on step 4's result, **not a new lookup** -- the route shape is unchanged.
 
-**Primary functions/files:** `datom_read()`, `.datom_read_metadata()`, `.datom_check_schema_version()`, `.datom_resolve_version()` (returns `list(data_sha, parquet_sha)`), `.datom_read_parquet()`, `metadata.json`, `{metadata_sha}.json`, `version_history.json`.
+**Primary functions/files:** `datom_read()`, `.datom_read_metadata()`, `.datom_check_schema_version()`, `.datom_check_artifact_kind()` (with `operation = "read"`, so a set read as a table names the verb that reads sets), `.datom_resolve_version()` (returns `list(data_sha, object_sha, version)`; `field =` selects which recorded stored-object hash `object_sha` holds), `.datom_read_parquet()`, `metadata.json`, `{metadata_sha}.json`, `version_history.json`.
 
 **Do not:** Try to infer metadata_sha from data_sha unless the route explicitly starts from `version_history.json`. Do not read the parquet before the integrity check -- the point of the gate is that a tampered object is never parsed. Do not add a second schema check inside the machinery of a route: the check belongs at the point a document enters datom, so a refusal happens before any work is done rather than partway through it.
 
@@ -127,6 +127,25 @@ Each route card should stay short. Put detailed schema and algorithm changes in 
 **Primary functions/files:** `datom_write_set()`, `.datom_check_set_write_gates()`, `.datom_tidy_set_payload()`, `.datom_order_set_members()`, `.datom_check_set_payload()` (all `R/set.R`); `datom_member()`, `.datom_validate_members()`, `.datom_validate_tag_map()` (`R/member.R`); `.datom_canonical_set_hash()` (`R/hashable-set.R`); `.datom_build_set_metadata()`, `.datom_resolve_document_sha()`, `.datom_commit_and_mirror()`, `.datom_check_artifact_kind()` (`R/read_write.R`); `.datom_update_manifest_entry()` (`R/sync.R`).
 
 **Do not:** Content-address the git path. Every version would be a new file, `git diff` would report "file added" instead of which members changed, and history would have to be read by listing filenames. Do not sort the file's members by digest -- editing one member's tags changes its digest, so the entry relocates and the diff becomes a delete plus an insert; the hash sorts by digest and the file sorts by name, and the two keys have separate reasons. Do not recompute `document_sha` for content already stored: that records a hash of bytes nobody stored, and it surfaces later as a refused read of a valid version. Do not re-serialize the payload for storage -- upload the same file git holds, so one `data_sha` cannot end up with two byte spellings. Do not add cycle detection: a member pins a version that already exists, so a set cannot contain itself, and the self-reference refusal is a nonsense check rather than the first step of a walk.
+
+### Given a set + version, resolve its members
+
+**Question:** `datom_get_set()` was called. What is read, what is verified, and what does the caller get back?
+
+**Why a separate card:** the shape mirrors the table read card, and the three differences are all places a naive implementation goes wrong -- the integrity gate forbids the convenient JSON read, the read is not allowed to canonicalize anything, and members come back as **pointers**, one level deep, never resolved to data.
+
+**Canonical route** -- `datom_get_set()` (`R/set.R`):
+
+1. **Metadata + history**, `.datom_read_metadata()`, which also runs the schema gate. No git clone is touched: a storage-only reader with `path = NULL` is the primary consumer.
+2. **The kind check**, `.datom_check_artifact_kind(..., operation = "read")`, on the document just read. Both directions of one invariant: a table read as a set points at `datom_get_set()`, a set read as a table points at `datom_read()`.
+3. **Resolve the version**, `.datom_resolve_version(..., field = "document_sha")`. Returns the storage address (`data_sha`), the recorded stored-object hash (`object_sha`) and the **recorded** version string, so a caller who passed an 8-character prefix gets the full version back.
+4. **Download, hash, then parse**, `.datom_read_set_payload()`. `.datom_storage_read_json()` must not be used: it parses, leaving nothing to hash but locally re-serialized bytes. A missing `document_sha` is an **error**, not a skipped check -- sets have no legacy population.
+5. **Normalize representation only.** A JSON string array comes back in three R shapes, so an all-text array becomes a character vector with the same strings in the same order. An `id` value that is still not a text scalar aborts as a malformed document, because those values are spliced into storage keys and are checked on write only.
+6. **Build the links.** Every member gets `$fetch(conn)` from `.datom_member_link()` -- a namespace-level factory, so the connection never lands on the closure's parent chain -- classed `datom_link` and carrying its own member record as an attribute.
+
+**Primary functions/files:** `datom_get_set()`, `.datom_read_set_payload()`, `.datom_read_set_members()`, `.datom_read_set_member()`, `.datom_read_string_array()`, `.datom_member_link()`, `print.datom_set()`, `print.datom_link()` (all `R/set.R`); `.datom_read_metadata()`, `.datom_resolve_version()`, `.datom_check_artifact_kind()` (`R/read_write.R`); `{name}/{data_sha}.json`, `{name}/.metadata/metadata.json`, `{name}/.metadata/version_history.json`.
+
+**Do not:** Tidy on the read. `.datom_tidy_set_payload()` is right there and changes nothing on a healthy payload, so every test passes and the divergence shows up later -- as a repair that re-uploads reshaped bytes over an object whose recorded hash describes different bytes. Do not recompute `data_sha`: it is the address the payload was fetched from, and the sv1 encoder aborts on a payload key a newer datom added. Do not resolve members to data, and do not traverse a member that is itself a set: read cost is a function of this set's direct member count, never of the depth beneath it. Do not build the link factory inside `datom_get_set()` -- that frame holds the connection, and `saveRDS()` of a member would then write the token into the file.
 
 ### Given data_sha, find metadata versions
 

@@ -57,10 +57,13 @@ reference:
       - datom_check_hashable
 
   - title: "Sets"
-    desc: "Write a versioned, citable set of artifacts, and declare its members"
+    desc: "Write and read a versioned, citable set of artifacts, and declare its members"
     contents:
       - datom_member
       - datom_write_set
+      - datom_get_set
+      - print.datom_set
+      - print.datom_link
 
   - title: "Query & Status"
     desc: "List tables, view history, check status"

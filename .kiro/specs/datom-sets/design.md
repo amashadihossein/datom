@@ -98,7 +98,7 @@ There is no view or navigation config -- see "Tags replace structure" below.
   parquet. The payload is small and cheap to read, so a member index would be
   metadata-for-metadata. **This is also the answer to "how does a git-less reader diff two
   versions?"** -- it reads `version_history.json` (which already carries `data_sha` per entry,
-  `R/read_write.R:702-708`) to map version -> `data_sha`, then fetches the two content-addressed
+  `R/read_write.R:779-785`) to map version -> `data_sha`, then fetches the two content-addressed
   payloads and compares them: three small JSON reads, no git. That yields the **actual changed
   values**, which per-member digests could not. Diffing `members[]` must key on
   `id$project` + `id$name` rather than array position, since member order is not identity for

@@ -208,7 +208,7 @@ test_that("NULL version returns current data_sha", {
   expect_equal(result$data_sha, "sha_current")
 })
 
-test_that("NULL version returns current parquet_sha alongside data_sha", {
+test_that("NULL version returns the current parquet_sha as object_sha", {
   metadata_list <- list(
     current = list(data_sha = "sha_current", parquet_sha = "pq_current"),
     history = list()
@@ -216,10 +216,10 @@ test_that("NULL version returns current parquet_sha alongside data_sha", {
 
   result <- .datom_resolve_version(metadata_list, version = NULL, name = "tbl")
   expect_equal(result$data_sha, "sha_current")
-  expect_equal(result$parquet_sha, "pq_current")
+  expect_equal(result$object_sha, "pq_current")
 })
 
-test_that("NULL version parquet_sha is NULL for pre-cv1 metadata", {
+test_that("NULL version object_sha is NULL for pre-cv1 metadata", {
   metadata_list <- list(
     current = list(data_sha = "sha_current"),
     history = list()
@@ -227,7 +227,7 @@ test_that("NULL version parquet_sha is NULL for pre-cv1 metadata", {
 
   result <- .datom_resolve_version(metadata_list, version = NULL, name = "tbl")
   expect_equal(result$data_sha, "sha_current")
-  expect_null(result$parquet_sha)
+  expect_null(result$object_sha)
 })
 
 test_that("errors when current metadata has no data_sha", {
@@ -267,7 +267,7 @@ test_that("resolves specific version from history", {
   expect_equal(result$data_sha, "sha_v1")
 })
 
-test_that("resolves parquet_sha from the matched history entry", {
+test_that("resolves the matched history entry's parquet_sha as object_sha", {
   metadata_list <- list(
     current = list(data_sha = "sha_v2", parquet_sha = "pq_v2"),
     history = list(
@@ -278,10 +278,10 @@ test_that("resolves parquet_sha from the matched history entry", {
 
   result <- .datom_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
   expect_equal(result$data_sha, "sha_v1")
-  expect_equal(result$parquet_sha, "pq_v1")
+  expect_equal(result$object_sha, "pq_v1")
 })
 
-test_that("history entry without parquet_sha resolves parquet_sha NULL", {
+test_that("history entry without parquet_sha resolves object_sha NULL", {
   metadata_list <- list(
     current = list(data_sha = "sha_v2"),
     history = list(
@@ -291,7 +291,7 @@ test_that("history entry without parquet_sha resolves parquet_sha NULL", {
 
   result <- .datom_resolve_version(metadata_list, version = "meta_sha_v1", name = "tbl")
   expect_equal(result$data_sha, "sha_v1")
-  expect_null(result$parquet_sha)
+  expect_null(result$object_sha)
 })
 
 test_that("resolves latest version from history", {

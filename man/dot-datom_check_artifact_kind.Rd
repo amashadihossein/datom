@@ -4,7 +4,12 @@
 \alias{.datom_check_artifact_kind}
 \title{Refuse to Write One Kind of Artifact Over Another}
 \usage{
-.datom_check_artifact_kind(current, name, expected)
+.datom_check_artifact_kind(
+  current,
+  name,
+  expected,
+  operation = c("write", "read")
+)
 }
 \arguments{
 \item{current}{The artifact's current metadata document, or \code{NULL} when the
@@ -12,7 +17,11 @@ name is free.}
 
 \item{name}{Artifact name.}
 
-\item{expected}{\code{"table"} or \code{"set"} -- the kind the caller is about to write.}
+\item{expected}{\code{"table"} or \code{"set"} -- the kind the caller's verb handles.}
+
+\item{operation}{What the caller was about to do: \code{"write"} (default, so
+existing call sites and the messages they assert on are unchanged) or
+\code{"read"}.}
 }
 \value{
 Invisibly \code{NULL}. Aborts on a kind mismatch.
@@ -33,6 +42,20 @@ fetched here.
 An absent \code{kind} reads as \code{"table"}: every document written before the field
 existed describes a table, because sets did not exist. The pairing with a
 format check is not needed here the way it is in \code{datom_member()} -- a document
-from a future datom has already been refused at the write entry.
+from a future datom has already been refused at the write entry, and on the
+read path \code{\link[=.datom_read_metadata]{.datom_read_metadata()}} has just checked the same document.
+
+\strong{Both directions of the same invariant, in one function.} A read that meets
+the other kind needs different words and a different suggested verb from a
+write that does, which \code{operation} selects -- following
+\code{\link[=.datom_check_schema_version]{.datom_check_schema_version()}}, which took exactly that shape for exactly
+this reason. A separate read-side twin would let the two directions drift,
+each passing its own tests, while the rule they enforce is single: \strong{one name
+is one artifact}. For the same reason both aborts carry one condition class,
+so no test can key on one direction alone.
+
+The check is made by each verb after its own \code{\link[=.datom_read_metadata]{.datom_read_metadata()}} call
+rather than inside that function, because the two verbs want different answers
+from it.
 }
 \keyword{internal}
