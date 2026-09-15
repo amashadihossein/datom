@@ -170,6 +170,20 @@ via the artifact-namespace rename -- so the field is free here and costs a secon
 the release after. Phase G's preamble carries the argument; Task 26's body carries the evidence, the
 cascade, and the one existing test it deliberately inverts. Task 24 (read-side ergonomics) follows it.
 
+**Task 26 was cold-start audited the same day it was written, and it is startable. Nine findings, two
+open scope questions, each stated with the default it takes if nobody answers** -- so a fresh session
+can begin without a decision round. The two questions: whether the fix also covers `datom_parent()`,
+where the same one-line defect puts an unverified label **inside identity** rather than only in a
+citation (default: yes, same commit), and whether the fallback reads the manifest through the gated
+reader, which can escalate to a full namespace listing when the manifest is unusable, or raw, which is
+cheap but reads a value out of a document whose format was never checked (default: gated). The three
+findings worth knowing before touching anything: **neither metadata builder takes a connection**, so
+the name arrives as a new argument that must go **last** in each signature or a dozen positional test
+calls shift silently; **"exactly seven fields" for a set's metadata is written in six places and
+pinned by a test**, so changing the builder alone reads as contradicting the spec; and **the field
+moves no version**, unlike `kind` in Task 7, which is a classification difference rather than a
+difference in the edit and is worth one assertion.
+
 **TASK 10 IS CLOSED, AND A SET IS NOW READABLE END TO END.** `datom_get_set(conn, name,
 version = NULL)` is exported and returns a `datom_set` of `name`, `project`, `version`, `data_sha`,
 `tags`, `members` -- references and labels, no data. `version` is the version **recorded** in the
@@ -3799,6 +3813,73 @@ vehicle**: it is done, and its check is *why* a late addition costs what it cost
     metadata predates the field; the fallback to the connection label says in its message that the
     value is unverified; and the set read still touches exactly two documents, which
     `test-get-set.R` already pins.
+  - **COLD-START AUDIT, 2026-09-14** -- written the same day as the task, and every claim in the body
+    checked against the tree rather than reasoned. **Startable. Nine findings, two of them OPEN scope
+    questions, each marked with the default it takes if nobody answers.** No escalation flag is owed
+    (design.md 12 carries E1 and E2 only). **What held**, verified rather than assumed: a developer
+    connection's `project_name` really is read from the clone's `project.yaml` (`R/conn.R:939`), which
+    is what makes recording it at write time a fix rather than laundering the same label; both write
+    paths reach one builder call, because `datom_sync()` routes through `datom_write()`
+    (`R/sync.R:622`); and the classification test really does derive its inventory from **both**
+    builders and really does have a converse arm, so neither half of "write it and classify it" can be
+    skipped (`tests/testthat/test-utils-sha.R:1080-1137`).
+    1. **NEITHER BUILDER CAN SOURCE THE NAME ITSELF.** `.datom_build_metadata()` and
+       `.datom_build_set_metadata()` take no connection -- by design, since they are pure -- so the
+       change is a new argument on each plus the two call sites that fill it
+       (`R/read_write.R:1136`, `R/set.R:673`). **The new argument goes LAST in the signature**:
+       existing tests call `.datom_build_metadata(df, "sha", ...)` positionally in a dozen places, so
+       an argument inserted in the middle silently shifts `custom` into `table_type`.
+    2. **OPEN (default: yes, same commit) -- THE SAME DEFECT IS IN LINEAGE, AND THERE THE LABEL IS
+       INSIDE IDENTITY.** `datom_parent()` records `source = conn$project_name` (`R/lineage.R:182`)
+       from a connection scoped to the **parent's** project, with **no role check** -- so a reader
+       connection's arbitrary label lands in `parents`, and `parents` and `source_lineage` are both in
+       `.datom_metadata_identity_fields`. A wrong name there changes a **version**, not just a
+       citation, which makes it the worse instance of the same one-line defect. Default: fix it in the
+       same commit with the same cascade, because leaving it makes this half a fix and the two are one
+       line each. State in NEWS that a table whose parents were declared through a mislabelled
+       connection mints one new version at its next write -- the correct outcome, since the recorded
+       name was wrong, but it must not arrive as a surprise. **Not affected and verified so**:
+       `R/sync.R:616` builds a self-lineage entry from `conn$project_name` too, but that path requires
+       a developer connection with a clone, so the name is already the repo's declaration.
+    3. **"EXACTLY SEVEN FIELDS" IS STATED IN SIX PLACES AND PINNED BY A TEST.** Adding `project`
+       makes a set's metadata eight: R1.3, R1.3's acceptance clause, `design.md:155`, `design.md:157`,
+       the F4 row at `design.md:1238`, `.datom_build_set_metadata()`'s roxygen in two places
+       (`R/read_write.R:385`, `R/read_write.R:422`), and
+       `tests/testthat/test-write-set.R:790` ("a written set's metadata carries exactly seven
+       populated fields"). A session that changes the builder and not the record produces something
+       that reads as a contradiction of the spec. Update all of them in the same commit; the count is
+       the thing that goes stale, so prefer wording that names the fields over wording that counts
+       them.
+    4. **OPEN (default: use the gated reader) -- THE MANIFEST FALLBACK IS NOT NECESSARILY ONE GET.**
+       `.datom_read_manifest(conn, scope = "storage", operation = "read")` can enter the rebuild
+       path, which lists the whole namespace recursively and warns once, so the cheap-fallback framing
+       is wrong for an unusable manifest. The alternative is a raw `.datom_storage_read_json()` on
+       `.metadata/manifest.json`, which is genuinely cheap and takes a value out of a document whose
+       format this build has **not** checked -- exactly what the schema gate exists to prevent.
+       Default: the gated reader, accepting the listing in the degraded case, since that case also
+       means the repo needs attention anyway.
+    5. **THE MANIFEST STEP IS THE COMMON PATH IN THIS RELEASE, NOT A RARE ONE.** Every artifact
+       written before this task lacks the field, so the cascade's middle step is what gets a
+       **cross-project** member right for the whole existing population. It is a no-op for a developer
+       connection, whose label is already the repo's declaration -- so the step earns its place only
+       on the reader-declared cross-project case, which is precisely R18.1's case.
+    6. **`project` ON THE EXCLUDED LIST MOVES NO VERSION, AND THAT NEEDS ASSERTING RATHER THAN
+       ASSUMING**, because it looks exactly like `kind`, which moved every version in Task 7. The
+       difference is the classification, not the shape of the edit. One test: an existing artifact's
+       version before and after the field exists.
+    7. **ONE TEST TO INVERT, ONE TO LEAVE ALONE**, confirmed by name.
+       `test-get-set.R`'s "the set's project is the connection's label; a member's is recorded" pins
+       today's behaviour and must be rewritten to assert the recorded name. Its sibling, "a link does
+       not gate on the connection's project name", stays exactly as it is -- the label remains
+       unverified even once a recorded name exists, so the no-gate rule is unaffected.
+    8. **THE DISPLAY SITES ARE DELIBERATELY NOT IN SCOPE.** `datom_summary()`, `datom_status()` and
+       `print.datom_conn()` keep showing the connection's label, because that is what they are
+       reporting -- the connection. Stated so a reader does not take their absence for an oversight.
+    9. **THE WORST CASE IS STILL UNREPRODUCED.** The gov-plus-located-store path where a wrong name
+       matches another registered project, and the connection is repointed at that namespace with a
+       migration warning, is read-verified only (`R/ref.R`, `R/conn.R:1159-1163`). It is the one case
+       that returns **wrong bytes** rather than a wrong label, so a fixture for it is worth the cost
+       -- and if it turns out not to reproduce, that finding is worth more than the test.
   - _Requirements: none -- this task comes from the Task 10 review round rather than from #89, and no
     requirement in this spec describes where a project name comes from. **Acceptance: none by
     design**; the criteria are the tests above. R9.4's identity-versus-provenance distinction is what
