@@ -162,8 +162,13 @@ were passing whatever the code did.
 
 **Start here.** Branch `spec/datom-sets`, working tree clean, **3557** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
-code/documentation agreement (tests and examples run separately). Next is **Task 24**, the read-side
-ergonomics that sit on top of Task 10's result.
+code/documentation agreement (tests and examples run separately). Next is **Task 26**, appended
+2026-09-14 and executing **before** Task 24: a project name that enters a stored document must come
+from the repo's own declaration rather than from a label on a connection. It runs now because what it
+costs is a forced **writer** upgrade for everyone sharing a repo, and this release already forces one
+via the artifact-namespace rename -- so the field is free here and costs a second fleet-wide upgrade in
+the release after. Phase G's preamble carries the argument; Task 26's body carries the evidence, the
+cascade, and the one existing test it deliberately inverts. Task 24 (read-side ergonomics) follows it.
 
 **TASK 10 IS CLOSED, AND A SET IS NOW READABLE END TO END.** `datom_get_set(conn, name,
 version = NULL)` is exported and returns a `datom_set` of `name`, `project`, `version`, `data_sha`,
@@ -330,7 +335,7 @@ now covers as well. (2) The union
 of those two constants is the vocabulary Task 21's writer check reads; it is append-only from here.
 
 **EXECUTION ORDER IS NOT TASK ORDER.** Phase E was appended rather than inserted so that nothing
-renumbered a third time. The order is `18 -> 19 -> 5 -> 6 -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 24 -> 25 ->
+renumbered a third time. The order is `18 -> 19 -> 5 -> 6 -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 26 -> 24 -> 25 ->
 23 -> 11 onward`, and Phase
 E's preamble says why each edge exists. Task 19 before Task 7 is the one that matters most: an
 identity allowlist seeded from *table* metadata and landed after the set metadata builder would
@@ -2711,7 +2716,7 @@ own; landing it first is what makes Task 6's failure loud.
 2026-08-23 shift record in the Decisions log); the execution order is stated here instead.
 
 ```
-18 -> 19 -> [Task 5] -> [Task 6] -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 24 -> 25 -> 23 -> 11 onward
+18 -> 19 -> [Task 5] -> [Task 6] -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 26 -> 24 -> 25 -> 23 -> 11 onward
 ```
 
 - **18** is a prerequisite defect fix; the write-entry sequence sits on that function.
@@ -3700,6 +3705,108 @@ reason.
     written through the gates is refused on a non-product repo exactly as a direct write is._
   - _Pathway impact: none -- the write card's sequence is unchanged; this adds a second front door to
     it._
+
+---
+
+## Phase G -- The recorded project name **[appended; EXECUTES NEXT, before Task 24]**
+
+**Appended rather than inserted, so nothing renumbers**, for the third time and the same reason.
+
+**Why it runs next rather than later, and this is the whole scheduling argument.** What the change
+costs is a **writer** upgrade for everyone sharing a repo -- an older build either recomputes identity
+around a field it cannot classify (every release before this spec hashes by exclusion) or refuses
+outright (every build after it, Task 21's vocabulary check). **This release already forces exactly
+that upgrade**, because the artifact-namespace rename does. So the field is free inside this release
+and costs a second fleet-wide upgrade in the release after it -- for a fix to a **citation**, which is
+the kind of thing nobody schedules a forced upgrade for on its own. Free of upgrade tax, not of
+effort: it delays Tasks 24, 25, 23 and 11 onward by one chunk. **Task 21 is the constraint, not the
+vehicle**: it is done, and its check is *why* a late addition costs what it costs.
+
+- [ ] **26. A project name in a stored document comes from the repo, not from a connection label**
+  - **THE DEFECT, stated so it is not mistaken for tidying.** `conn$project_name` is not a verified
+    fact. On a **developer** connection it is read from the clone's `.datom/project.yaml`, so it is
+    the repo's own declaration. On a **reader** connection it is a string the caller passes to
+    `datom_get_conn()`, and nothing compares it against the repo: the namespace comes from the store's
+    root and prefix. Verified end to end -- a reader labelled `"a-label-nobody-validated"` reads a set
+    written by project `set-project` and fetches its members correctly. Two things then carry a name
+    nobody checked: `datom_get_set()` reports it as the set's `project`, one of the four facts the
+    result exists to make **citable**; and `datom_member()` writes it into `id$project`, where it
+    enters a stored payload, is hashed into that set's `data_sha`, and is cited afterwards --
+    **durable wrong data in a citable artifact, invisible to every hash and every validator.**
+  - **What a wrong name does depends on the store shape**, read out of
+    `.datom_resolve_data_location()` (`R/ref.R`): with **no governance** the function returns before
+    the name is validated, so a wrong one is silent; with **governance plus a located store** an
+    unresolvable ref warns "Proceeding with store-configured data location" and the connection
+    succeeds; with **governance plus a credentials-only store** there is no fallback location and it
+    aborts. And the case worse than all three: a wrong name that **matches another registered
+    project** resolves that project's `ref.json`, and when the locations differ the connection is
+    repointed at the other namespace with only a "Data has been migrated" warning -- a typo reads a
+    different project's data while the warning blames a migration. Read-verified in `R/ref.R` and
+    `R/conn.R:1159-1163`, not reproduced on a fixture; **reproducing it is part of this task**, since
+    it is the one case that returns wrong bytes rather than a wrong label.
+  - **THE RULE, and it names no artifact kind**: *a project name that enters a stored document comes
+    from the manifest of the namespace the artifact lives in -- never from a label on the connection.*
+    A set is not addressed differently and has no manifest of its own; it is a row in its project's
+    manifest with `kind = "set"`. So set-in-set membership is covered by the same code path with no
+    extra clause.
+  - **What makes the fix real rather than laundering the same label: a write always has a clone.**
+    Every write path requires `conn$path`, so on the write side the name comes from `project.yaml`.
+    The unverified case is reader labels only, which is why recording the name at write time is
+    enough and why nothing needs to be re-derived on read.
+  - **THE CHANGE, as one commit.**
+    1. **`project` is written into per-artifact metadata** by **both** builders --
+       `.datom_build_metadata()` and `.datom_build_set_metadata()` (`R/read_write.R`) -- sourced from
+       the writing repo's own configuration.
+    2. **Classified `excluded` in the same change**, in `.datom_metadata_excluded_fields`
+       (`R/utils-sha.R`). Never earlier: a name classified before a builder emits it is invisible to
+       the carry-forward rule, which rescues only names a build cannot place, so a document arriving
+       from a newer datom with that field would lose it on rewrite -- the trap Task 7's `document_sha`
+       review found. The write-side vocabulary needs no separate edit, because
+       `.datom_metadata_known_fields()` is the union of the two classification lists.
+    3. **`datom_member()` reads it with the cascade** recorded field on the artifact's own snapshot ->
+       the namespace manifest's `project_name` -> the connection's label **marked unverified in the
+       message**. It already reads the snapshot, so the common case costs nothing; the manifest read
+       is one GET and only for an artifact written before the field existed.
+    4. **`datom_get_set()`'s cascade stops one step earlier**: recorded field -> connection label.
+       **It must not read the manifest.** The data path never touches that document -- which is the
+       reason the artifact-namespace rename was a discovery-only break, since a stale build still
+       reads data -- and a manifest read there would put a derived, rebuildable, possibly too-new
+       document in a read path that today cannot fail for its sake. The asymmetry is deliberate: one
+       value is durable and hashed, the other is an echo for display.
+  - **`project` IS NOT IDENTITY, and that is settled rather than open** (2026-09-14). Identical bytes
+    in two projects **should** share a version -- that is what content addressing is for -- and a
+    wrong-connection fetch that returned identical bytes returned the **right** bytes. The defect is a
+    wrong citation, not a wrong identity. Making it identity is a one-way door with a fleet-wide
+    re-mint behind it. So: excluded, and **no version moves for any existing artifact**, which is the
+    opposite of what `kind` cost in Task 7 and is worth asserting rather than assuming.
+  - **Two forcing functions fire, and neither is a test to update.** The classification test in
+    `test-utils-sha.R` derives its field inventory from the builders, so it fails until `project` is
+    classified -- that is where the decision gets made. And the vocabulary test in
+    `test-forward-compat.R` asserts every field a real write produces is on the known list, which the
+    union above satisfies; if it does not, the classification step was missed rather than the test
+    being wrong.
+  - **One existing test must be INVERTED, deliberately, and a cold session must not read it as a
+    regression.** `test-get-set.R`'s "the set's project is the connection's label; a member's is
+    recorded" pins today's behaviour, which this task changes: after it, a mislebelled reader gets the
+    **recorded** name. Rewrite that test to assert the new behaviour and keep its comment explaining
+    why the two facts were once of different quality. **Do not touch** its sibling, "a link does not
+    gate on the connection's project name" -- that one stays true and stays needed, because the
+    connection's label remains unverified even once the recorded name exists.
+  - Tests: the field appears in a written `metadata.json` for a table **and** for a set (asserted on
+    the bytes, since the field set is what matters); the version of an existing artifact does **not**
+    move when the field is added; a member declared through a mislabelled reader connection records
+    the repo's name rather than the label; the cascade's middle step is exercised by an artifact whose
+    metadata predates the field; the fallback to the connection label says in its message that the
+    value is unverified; and the set read still touches exactly two documents, which
+    `test-get-set.R` already pins.
+  - _Requirements: none -- this task comes from the Task 10 review round rather than from #89, and no
+    requirement in this spec describes where a project name comes from. **Acceptance: none by
+    design**; the criteria are the tests above. R9.4's identity-versus-provenance distinction is what
+    the excluded classification rests on, and R18.1 is why a cross-project member's recorded name
+    matters at all._
+  - _Pathway impact: yes -- the set read card gains the cascade, and the write cards gain the field.
+    Neither route shape changes: no new lookup on the read path, and one conditional GET on the
+    declaration path._
 
 ## New exports introduced by this spec
 
