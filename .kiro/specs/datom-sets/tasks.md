@@ -2130,10 +2130,15 @@ own; landing it first is what makes Task 6's failure loud.
       field, and R7.5 rule 2 is protected by the never-tidy rule above. Recorded because a verified
       falsehood is worth keeping so it is not re-proposed.
   - **`print.datom_set()`** shows the description, one line per member (name, kind, compact
-    `key=value` tags, `-` when untagged, truncated for large sets), and **names the next verb**
-    (`datom_fetch_member()`) -- the cheapest available fix for "how do I get data out of this", and
-    worth more to the learning curve than any amount of structure. Tags are open-keyed, so fixed
-    columns are impossible; do not try.
+    `key=value` tags, `-` when untagged, truncated for large sets), and **names the best route that
+    exists** -- the cheapest available fix for "how do I get data out of this", and worth more to the
+    learning curve than any amount of structure. Tags are open-keyed, so fixed columns are impossible;
+    do not try.
+    - **At this task the hint is `x$members[[1]]$fetch(conn)`, NOT `datom_fetch_member()`.** That verb
+      is Task 24's, and Phase F says either of those tasks can be deferred without unpicking this one
+      -- which is only true if this message does not point at a function that may not exist. Task 24
+      upgrades the hint when the named lookup lands. So the hint is correct at each stage rather than a
+      compromise at either.
   - **`datom_write_set()` must accept a `datom_set`**, because `$fetch` breaks the read-modify-write
     loop in two places: `.datom_validate_members()` and `.datom_sv1_member()` both refuse a member
     field outside `id` / `tags`. Fix in the **write verb**, before validation, and strip `fetch`
@@ -3448,9 +3453,39 @@ reason.
     multi-valued, so wide needs list-columns and a per-set column set. A plain `data.frame`, matching
     `datom_list()`, so tag filtering is `subset()` or dplyr and datom grows no query vocabulary. **An
     untagged member still gets a row** (with `NA` key and value), so `unique(map$name)` is complete.
+  - **`print.datom_set()`'s hint is upgraded here** to name `datom_fetch_member()`, which is the better
+    route once it exists. Task 10 ships that message pointing at the link form so it is never wrong;
+    changing it is part of this task, not an afterthought in it.
   - **`datom_structure_members(x, by, missing = "untagged")`** -- the nested navigable view: group
     members by the values of the tag key(s) named in `by`, with each leaf the member's **link**, so
-    `dp$output$adsl(conn)` works and tab-completes. A pure function of `x` plus a caller-supplied
+    `dp$output$adsl(conn)` works and tab-completes.
+    - **A MULTI-VALUED AXIS PUTS ONE MEMBER UNDER SEVERAL BRANCHES, AND THAT IS THE WHOLE POINT.**
+      R4.6 calls multi-valued tags "the point, not an extension" and "the **only** reason arrays exist
+      in the grammar" -- a folder cannot hold an item twice, and a tag can. So a member tagged
+      `domain = c("safety", "efficacy")` must appear under **both** `dp$safety` and `dp$efficacy` when
+      `by = "domain"`. **Test it explicitly**: presence under both branches, **and** that the total
+      leaf count exceeds the member count, which is what makes "in two places at once" observable
+      rather than inferred. The spelling to guard against is taking the first value
+      (`split()` on `m$tags[[by]][1]`), which is silent; note that `vapply(..., character(1))` over the
+      axis **errors** instead, so the loud spelling is not the one that needs a test. Task 9's fixture
+      already carries `domain = c("efficacy", "safety")`.
+    - **A LEAF-NAME COLLISION ABORTS, NAMING BOTH MEMBERS** (owner-decided 2026-09-13). Two members
+      may legitimately share `project` + `name` at different versions (R2.14a: a current table beside a
+      locked baseline), and if both carry `type = "output"` then `by = "type"` asks for two leaves with
+      one name. Refuse, name both members with their versions and tags, and point at adding an axis --
+      `by = c("type", "release")`, which the vector argument already supports. **The payload stays
+      entirely legal; only this projection request is refused.**
+      - Rejected: **silently returning the first** is the exact hazard the unnamed top-level member
+        list exists to avoid, reappearing where a projection has to name things. **A list-valued leaf**
+        makes `dp$output$adsl` sometimes a function and sometimes a list of functions -- type
+        instability at the leaf. **Suffixing with the version** was the closest alternative and loses
+        on the direction of its failure: leaf names would become a function of whether a collision
+        happens, so a script written against a single-version set breaks the day someone adds a
+        baseline, silently at authoring time.
+      - **This narrows R2.14a rather than contradicting it**, and that requirement has been amended to
+        say so. Its "datom takes no position and adds no warning" clause was written when the
+        projection lived entirely downstream; once datom builds the projection, "take no position" is
+        not available to code that must produce a name. A pure function of `x` plus a caller-supplied
     axis: it stores nothing and takes no position on hierarchy, which is what keeps it inside R4.7
     rather than contradicting it -- ask for `by = c("domain", "type")` and you get a different tree
     from the same object, which is that decision working rather than being violated.
@@ -3506,6 +3541,10 @@ reason.
       `datom_history()`.
   - **`print.datom_set_draft()`** -- what is assembled so far and that it is not yet written. Cheap,
     and it is what makes the pipe inspectable mid-build.
+    - **It also says the draft holds a connection and should not be saved.** The rule is in this task's
+      body, which is not where anyone will read it; the print method is where a user actually meets a
+      draft. **It must not print the connection itself** -- `print.datom_conn` masks its token, and a
+      message warning about a secret must not reproduce it.
   - **`datom_write_set()`'s first argument accepts a draft**, which already carries its connection,
     its name and its tags -- so the pipe ends `|> datom_write_set()` with no arguments. One overload,
     discriminated by class, documented in one line. Note the gates still run: a draft's name is

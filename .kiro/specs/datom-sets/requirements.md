@@ -355,6 +355,18 @@ the test.
     `release: "current"` / `release: "baseline"`. That is consumer-side under the projection model
     (R4.7), so datom takes no position and adds no warning -- a warning that fires on legitimate use
     becomes noise.
+
+    **NARROWED 2026-09-13, because the premise moved.** The clause above was written when the
+    projection lived **entirely downstream**, so "take no position" was available to datom. Task 24
+    puts a projection helper in datom (`datom_structure_members()`), and code that must produce a leaf
+    **name** cannot decline to take a position when two members want the same one. So: datom still
+    takes no position on a legitimate **payload** -- two versions of one name are legal and nothing
+    warns about them -- but an **under-specified projection request** is refused, naming both members
+    and pointing at adding an axis (`by = c("type", "release")`). The distinction is between
+    editorialising on someone's data, which stays forbidden, and reporting that a request has no
+    unambiguous answer, which is not the same act. Silently returning the first match was rejected as
+    the top-level naming hazard reappearing at the leaves; see Task 24 for the two other rejected
+    options and why.
   - **Note for a future reader-side diff** (not in this spec; diffing is settled as
     no-schema-change): keying members on `project/name` alone is insufficient, and keying on
     `project/name/version` makes an ordinary version bump read as a delete plus an insert rather than
