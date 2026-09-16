@@ -85,6 +85,68 @@ test_that("an untagged member still gets a row, so the name list is complete", {
   expect_true("dm" %in% unique(m$name))
 })
 
+test_that("a tag map carrying one key twice keeps both labels", {
+  # THE READ SIDE VALIDATES NO TAG MAP -- `.datom_validate_tag_map()`, which is
+  # what refuses a duplicate key, runs only on a write. So a duplicate arrives
+  # from a hand edit, a foreign writer, or a newer datom, and `jsonlite` parses
+  # `{"type": "output", "type": "baseline"}` into two same-named elements rather
+  # than collapsing them.
+  #
+  # Read by name, `tags[["type"]]` returns the first match both times: the
+  # listing showed `output` twice and lost `baseline` entirely. Built from the
+  # JSON rather than from `list()` so the fixture is the shape that actually
+  # arrives.
+  dup <- jsonlite::fromJSON('{"type": "output", "type": "baseline"}',
+                            simplifyVector = FALSE)
+  expect_length(dup, 2L)
+
+  m <- datom_list_members(sm_set(sm_member("adsl", tags = dup)))
+
+  expect_identical(nrow(m), 2L)
+  expect_identical(sort(m$value), c("baseline", "output"))
+})
+
+test_that("a duplicated key puts the member under both branches", {
+  # The same defect in the grouped view: one branch instead of two, silently.
+  # Duplicate keys mean what one multi-valued key means, so they behave the same.
+  dup <- jsonlite::fromJSON('{"type": "output", "type": "baseline"}',
+                            simplifyVector = FALSE)
+  dp <- datom_structure_members(sm_set(sm_member("adsl", tags = dup)),
+                                by = "type")
+
+  expect_true(all(c("output", "baseline") %in% names(dp)))
+  expect_s3_class(dp$output$adsl, "datom_link")
+  expect_s3_class(dp$baseline$adsl, "datom_link")
+})
+
+test_that("a duplicated key is findable by either of its labels", {
+  # The third face of it, and the one that reads as missing data: filtering used
+  # to report not-found on a label the document says the member carries.
+  dup <- jsonlite::fromJSON('{"type": "output", "type": "baseline"}',
+                            simplifyVector = FALSE)
+  x <- sm_set(sm_member("adsl", tags = dup))
+
+  expect_identical(
+    .datom_member_record(x$members, "adsl", tags = list(type = "baseline"))$id$name,
+    "adsl"
+  )
+  expect_identical(
+    .datom_member_record(x$members, "adsl", tags = list(type = "output"))$id$name,
+    "adsl"
+  )
+})
+
+test_that("a blank tag key is reported rather than read as no key", {
+  # `tags[[""]]` matches no name and returns NULL, so a by-name read gave this
+  # key an NA value and nothing crashed. By position it reports what is there.
+  x <- sm_set(sm_member("adsl", tags = stats::setNames(list("output"), "")))
+  m <- datom_list_members(x)
+
+  expect_identical(nrow(m), 1L)
+  expect_identical(m$key, "")
+  expect_identical(m$value, "output")
+})
+
 test_that("a multi-valued label becomes one row per value", {
   m <- datom_list_members(sm_mixed_set())
   domains <- m[!is.na(m$key) & m$key == "domain", ]

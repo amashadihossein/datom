@@ -20,4 +20,15 @@ member carries. So \code{tags = list(domain = "safety")} matches a member tagged
 \code{domain = c("safety", "efficacy")} -- narrowing by one label of a multi-valued
 tag is the ordinary case, since multi-valued tags are the point.
 }
+\details{
+\strong{The member's labels are read through \code{\link[=.datom_tag_pairs]{.datom_tag_pairs()}}, not off the map},
+so there is genuinely one access path to a member's tag values and the
+duplicate-key hazard documented there cannot be reintroduced here. A
+\code{member$tags[[k]]} read is the same silent-first-match defect, and it fails in
+the direction that looks like missing data: the member is reported not found
+under a label the document says it carries.
+
+The filter side is read by position for the same reason, even though
+\code{\link[=datom_fetch_member]{datom_fetch_member()}} refuses a filter with duplicate keys before this runs.
+}
 \keyword{internal}

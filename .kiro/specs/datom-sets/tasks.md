@@ -20,7 +20,7 @@ ends the second review pass found -> 2898 after Task 20 -> 2902 after the review
 that followed it -> 3050 after Task 22 -> 3053 after the three review findings that followed
 it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding that followed it ->
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
-3557 after the review finding that followed it -> 3585 after Task 26 -> **3686 after Task 24**.
+3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> **3697 after the review finding that followed it**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -162,7 +162,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3686** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3697** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 25** (write-side
 ergonomics), then Task 23, then Task 11 onward.
@@ -172,6 +172,11 @@ object `datom_get_set()` returns: `datom_fetch_member()` resolves one member nam
 record **or** by link; `datom_list_members()` returns one row per member per tag as a plain data
 frame; `datom_structure_members()` groups members by tag values into `dp$output$adsl(conn)`, where
 the branches are tag values and the **leaf is the member's own name** holding its link.
+**Reviewed after it landed; one finding, accepted and fixed (tests -> 3697)**: a tag map carrying the
+same key twice silently lost every label after the first, because the one expander read its own input
+by name and `tags[["type"]]` returns the first match. Reachable, because a reader validates no tag map
+and `jsonlite` keeps duplicate JSON keys as two same-named elements. It is item 1's hazard on the
+**key** axis rather than the value axis, which is why that item now says "by position".
 **Six things a later change must not undo, and the reasoning behind each refusal, are in Task 24's
 DONE record.** The three worth knowing before touching it: **there is one expander and both shaping
 verbs go through it** (`.datom_expand_member_tags()`), because writing the multi-value expansion
@@ -3804,12 +3809,14 @@ reason.
 
     **SIX THINGS A LATER CHANGE MUST NOT UNDO.**
 
-    1. **There is exactly one expander, and both shaping verbs go through it.**
-       `.datom_expand_member_tags()` turns a member list into one row per member per tag value, and
-       `datom_structure_members()` reads its axis values out of that frame rather than doing its own
-       `split()`. The reason is the silent spelling: taking the first value of a multi-valued tag
-       puts a member under one branch when it belongs under several, and nothing fails. With one
-       expander there is no second place to write it.
+    1. **There is exactly one expander, it reads a tag map BY POSITION, and both shaping verbs go
+       through it.** `.datom_expand_member_tags()` turns a member list into one row per member per
+       tag value, and `datom_structure_members()` reads its axis values out of that frame rather than
+       doing its own `split()`. The reason is the silent spelling: taking the first value of a
+       multi-valued tag puts a member under one branch when it belongs under several, and nothing
+       fails. With one expander there is no second place to write it. **The by-position half was
+       added by the review below, and it is the half that had actually been got wrong** -- see that
+       record for why a by-name read is the same defect one level up.
     2. **The project hint is in `.datom_link_failure()` (`R/set.R`), reached from the link core, and
        it is a hint on failure rather than a check that runs first.** Both halves matter. Putting it
        in `datom_fetch_member()` would miss the route people use, because a leaf of the grouped view
@@ -3852,6 +3859,43 @@ reason.
     the candidate lists as interpolated **values** rather than as message text, because a tag value
     may legitimately contain a brace and cli reads `{anything}` in message text as markup -- an
     artifact called `dm{1}` would turn the ambiguity message into a cli parse error.
+
+    **REVIEWED after it landed; one finding, accepted and fixed (tests 3686 -> 3697).** A tag map
+    carrying the **same key twice** silently lost every label after the first, in all three verbs, and
+    the reason is that the one expander read its own input **by name**: `tags[["type"]]` returns the
+    first match every time. So `{"type": "output", "type": "baseline"}` listed `output` twice and
+    dropped `baseline`, put the member under one branch instead of two, and reported **not found** when
+    filtered on a label the document says it carries -- the last of which reads as missing data rather
+    than as a bug.
+
+    **It is reachable through the supported read path, which is what makes it a defect rather than a
+    hypothetical.** `.datom_validate_tag_map()` is the thing that refuses a duplicate key and it runs
+    on **writes only** -- Task 10 settled that a reader validates no tag map -- and `jsonlite` parses
+    duplicate JSON keys into two same-named list elements rather than collapsing them, which was
+    checked rather than assumed. So a hand edit, a foreign writer or a newer datom delivers one and
+    nothing objects.
+
+    **Why the reviewer's framing is right and worth keeping**: this is must-not-undo item 1's own
+    hazard arriving through a different door. Having one expander closed the silent-first-match failure
+    on the **value** axis; reading that expander's input by name reopened the identical failure on the
+    **key** axis, inside the function that exists so there is nowhere left to write it. Item 1 now says
+    "by position" for that reason.
+
+    Fixed by iterating `seq_along(tags)` and taking the key from `names(tags)[[i]]`, and by routing
+    `.datom_member_has_tags()` through `.datom_tag_pairs()` so a member's tag values have genuinely one
+    access path rather than two that agree on well-formed input. Four tests, built from the parsed JSON
+    rather than from `list()` so the fixture is the shape that actually arrives. **Probed**: restoring
+    the by-name read reddens 5 assertions across 4 tests, and the restore came from a copy taken once
+    at a fixed path, never from git.
+
+    Also fixed by the same change, and reported by the reviewer as incidental: a **blank** tag key used
+    to come back with an `NA` value, because `tags[[""]]` matches no name and returns `NULL` instead of
+    erroring. Confirmed, and it now reports the value that is there.
+
+    **One thing the review checked and left alone, correctly.** `.datom_assign_leaf()`'s
+    `!is.list(child)` guard is unreachable while every path is `length(by) + 1` long. It stays: a link
+    is a **function**, so were the depth ever to become non-uniform, that line is what stops a member
+    being replaced by an empty list.
 
     **Two edits to existing files.** `print.datom_set()`'s hint now names
     `datom_fetch_member(conn, x, "<first member>")`, and the test that pinned the link form was
@@ -4523,3 +4567,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-15 | **(implementation, Task 24) A `missing` bucket name colliding with a real tag value is refused UNCONDITIONALLY, not only when a member currently lacks the axis key.** The conditional version works today and starts failing the day a member without that key is added -- silently at authoring time, which is exactly the failure direction the version-suffixed leaf name was rejected for. Two tests, one per half. | Task 24 DONE record, `R/set-members.R` |
 | 2026-09-15 | **(implementation, Task 24) `tags` / `version` supplied beside a member RECORD or LINK is refused, not ignored.** Not in the task body. Ignoring the filter would resolve a different version than the one asked for and report success, which is a correctness-shaped silence rather than a convenience. | `R/set-members.R` |
 | 2026-09-15 | **(implementation, Task 24) The member-resolution check must NOT reuse `.datom_validate_members()`.** That is the write-side contract and it refuses an `id` field a newer datom added -- which the set read deliberately carries. Reusing it would make such a member readable but unfetchable, which is a reads-limp violation arriving by a side door. A focused check on the four fields resolution actually needs replaces it. | `R/set-members.R`, `.datom_member_id()` |
+| 2026-09-15 | **(review finding, ACCEPTED and fixed, Task 24) A tag map is read BY POSITION, never by name, and item 1 of Task 24's must-not-undo list says so now.** A map can carry the same key twice -- a reader validates no tag map (Task 10), and `jsonlite` parses duplicate JSON keys into two same-named elements rather than collapsing them, verified rather than assumed -- and `tags[["type"]]` returns the first match every time. So all three verbs lost every label after the first: the listing showed one value twice, the grouped view put the member under one branch instead of two, and a filter reported **not found** on a label the document says the member carries, which reads as missing data. The reviewer's framing is the durable part: this is the one-expander rule's own hazard on the **key** axis, written inside the function that exists so the value-axis version has nowhere to live. Fixed by `seq_along()` plus `names(tags)[[i]]`, and by routing `.datom_member_has_tags()` through the expander so a member's tag values have one access path. Probed: the by-name read reddens 5 assertions across 4 tests. | Task 24 DONE record, `R/set-members.R` |

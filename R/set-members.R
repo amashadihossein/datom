@@ -10,13 +10,25 @@
 #
 # FOUR THINGS HERE ARE LOAD-BEARING AND EASY TO UNDO BY TIDYING.
 #
-#   1. THERE IS ONE EXPANDER, AND BOTH SHAPING VERBS GO THROUGH IT.
+#   1. THERE IS ONE EXPANDER, IT READS A TAG MAP BY POSITION, AND BOTH SHAPING
+#      VERBS GO THROUGH IT.
 #      `datom_list_members()` turns one member into one row per tag value;
 #      `datom_structure_members()` turns one member into one leaf per axis
 #      value. That is the same operation, and writing it twice is what invites
 #      the silent spelling -- taking the FIRST value of a multi-valued tag
 #      (`m$tags[[by]][1]`), which puts a member under one branch when it belongs
 #      under several. With one expander there is no second place to write it.
+#
+#      THE BY-POSITION HALF IS NOT A DETAIL, and it was added after the first
+#      version of this file shipped with the defect. A tag map can carry the same
+#      key twice -- nothing on the read side refuses one, and `jsonlite` parses
+#      duplicate JSON keys into two same-named elements -- and `tags[[k]]`
+#      returns the first match every time. So a by-name read is the identical
+#      silent-first-match failure one level up, on the KEY axis instead of the
+#      value axis, written inside the very function that exists to have one
+#      place for it. Every read of a member's tag values goes through
+#      `.datom_tag_pairs()` for that reason, `.datom_member_has_tags()`
+#      included.
 #
 #   2. A MULTI-VALUED AXIS PUTS ONE MEMBER UNDER SEVERAL BRANCHES. That is the
 #      whole reason labels exist here rather than folders: a folder holds an item
@@ -127,6 +139,26 @@
 #' key IS in the document, so reporting the key with no value states what is
 #' there while dropping the row would not.
 #'
+#' **THE MAP IS READ BY POSITION, NEVER BY NAME, AND THAT IS THE WHOLE POINT OF
+#' THE FUNCTION.** A tag map can carry the same key twice -- `jsonlite` parses
+#' `{"type": "output", "type": "baseline"}` into two same-named elements, and a
+#' caller can write `list(type = "a", type = "b")` -- and nothing on the read side
+#' refuses it, because a reader does not validate a tag map. `tags[["type"]]`
+#' returns the **first** match every time, so a by-name read reports one label
+#' twice and loses the other: the member lists a value it does not have, vanishes
+#' from a branch it belongs under, and cannot be found by the label the document
+#' says it carries. Verified in all three verbs before this was positional.
+#'
+#' That is the file header's one-expander rule reappearing on the **key** axis.
+#' Having one expander closed the silent-first-value spelling on the *value* axis;
+#' reading that expander's own input by name reopened the identical failure one
+#' level up.
+#'
+#' Duplicate keys are therefore treated exactly as one multi-valued key would be,
+#' which is also what they mean. Identical pairs are **not** collapsed across
+#' duplicate keys: the read reports what the document holds, and deduplicating
+#' here would be a reader canonicalizing.
+#'
 #' @param tags A tag map, or `NULL`.
 #' @return A data frame of `key` and `value`, at least one row.
 #' @keywords internal
@@ -136,10 +168,11 @@
   )
   if (!is.list(tags) || length(tags) == 0L || is.null(names(tags))) return(none)
 
-  parts <- lapply(names(tags), function(k) {
-    values <- unique(.datom_tag_values(tags[[k]]))
+  keys <- names(tags)
+  parts <- lapply(seq_along(tags), function(i) {
+    values <- unique(.datom_tag_values(tags[[i]]))
     if (length(values) == 0L) values <- NA_character_
-    data.frame(key = k, value = values, stringsAsFactors = FALSE)
+    data.frame(key = keys[[i]], value = values, stringsAsFactors = FALSE)
   })
 
   do.call(rbind, parts)
@@ -341,16 +374,30 @@
 #' `domain = c("safety", "efficacy")` -- narrowing by one label of a multi-valued
 #' tag is the ordinary case, since multi-valued tags are the point.
 #'
+#' **The member's labels are read through [.datom_tag_pairs()], not off the map**,
+#' so there is genuinely one access path to a member's tag values and the
+#' duplicate-key hazard documented there cannot be reintroduced here. A
+#' `member$tags[[k]]` read is the same silent-first-match defect, and it fails in
+#' the direction that looks like missing data: the member is reported not found
+#' under a label the document says it carries.
+#'
+#' The filter side is read by position for the same reason, even though
+#' [datom_fetch_member()] refuses a filter with duplicate keys before this runs.
+#'
 #' @param member A member record.
 #' @param tags The filter map.
 #' @return `TRUE` or `FALSE`.
 #' @keywords internal
 .datom_member_has_tags <- function(member, tags) {
+  pairs <- .datom_tag_pairs(member$tags)
+  keys <- names(tags)
+
   all(vapply(
-    names(tags),
-    function(k) {
-      want <- .datom_tag_values(tags[[k]])
-      have <- .datom_tag_values(member$tags[[k]])
+    seq_along(tags),
+    function(i) {
+      want <- .datom_tag_values(tags[[i]])
+      have <- pairs$value[!is.na(pairs$key) & pairs$key == keys[[i]]]
+      have <- have[!is.na(have)]
       length(have) > 0L && all(want %in% have)
     },
     logical(1L)
