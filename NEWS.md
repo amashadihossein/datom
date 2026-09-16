@@ -325,6 +325,58 @@ the other verb now aborts naming the one that fits.
   pointer; its own members are not fetched, so the cost of a read is a function of
   the set's direct member count and not of the depth beneath it.
 
+## New: finding and shaping a set's members
+
+Three verbs over what `datom_get_set()` returns. None of them reads anything that
+read did not already read, and two of them touch no storage at all.
+
+* **`datom_fetch_member(conn, x, member, tags = NULL, version = NULL)`** resolves
+  one member to what it points at -- a table member to data, a set member to
+  another set -- through the same code `$fetch` uses. `member` accepts a **name, a
+  member record, or a link**, so a console call and a loop use one verb.
+
+  A name is deliberately **not** a key: the same artifact at two versions is a
+  legal pair of members, such as a current table beside a locked baseline. An
+  ambiguous name aborts and lists the candidates with their versions and labels
+  rather than answering with the first. Narrow with `tags`, or pin one exactly
+  with `version`.
+
+  Pass a connection to the **member's** project. Access in datom is per project,
+  so fetching a member of another project through this connection does not work --
+  and when it fails, the error now names the project the member's own writer
+  recorded, instead of presenting as a missing object. It is a hint on failure and
+  not a check that runs first: a connection's project name is a label nothing
+  validates, so refusing on a mismatch would abort fetches that succeed.
+
+* **`datom_list_members(x)`** returns a data frame with one row per member **per
+  label value**: `name`, `project`, `version`, `kind`, `key`, `value`. Long rather
+  than wide, because labels are open-keyed and multi-valued -- so filtering is
+  `subset()` or dplyr and datom grows no query vocabulary of its own. **An
+  unlabelled member still gets a row**, with `NA` for `key` and `value`, so
+  `unique(m$name)` is the complete member list rather than the labelled part of it.
+
+* **`datom_structure_members(x, by, missing = "untagged")`** groups members by the
+  values of one or more label keys and returns a nested list whose leaves are the
+  members' links, so `dp$output$adsl(conn)` works and tab-completes. The branches
+  are label values and the leaf is the member's own name. Nothing is stored: ask
+  for `by = c("domain", "type")` and you get a different view of the same set.
+
+  * **A member labelled `domain = c("safety", "efficacy")` appears under both
+    branches.** That is the point of labels over folders -- a folder holds an item
+    once and a label does not -- so the number of leaves can exceed the number of
+    members.
+  * **A member with no value for a grouping key goes under `missing`, named**, never
+    silently dropped.
+  * **Two members that would share one leaf name abort**, naming both with their
+    versions and pointing at adding a grouping key. The set itself stays legal;
+    only that view of it is refused.
+  * **A `missing` name that is also a real label value is refused**, so the bucket
+    can never quietly merge with a real branch.
+
+* **`print()` on a set now points at `datom_fetch_member()`**, which is the route
+  you can type from what it just listed. A member's `$fetch` link still works and
+  is what a leaf of the grouped view hands you.
+
 ## A project name in a stored document now comes from the repo, not from your connection
 
 Every artifact's `metadata.json` now records a **`project`** field: the name the

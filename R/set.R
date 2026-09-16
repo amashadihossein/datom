@@ -1003,20 +1003,23 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   force(record)
 
   link <- function(conn) {
-    switch(
-      kind,
-      table = datom_read(conn, name, version = version),
-      set = datom_get_set(conn, name, version = version),
-      cli::cli_abort(
-        c(
-          "Member {.val {name}} is a {.val {kind}}, which this version of \\
-           datom cannot resolve.",
-          "i" = "A member points at one of {.val {(.datom_artifact_kinds)}}.",
-          "i" = "The set may have been written by a newer datom -- upgrade \\
-                 datom and retry."
-        ),
-        class = "datom_member_kind_unknown"
-      )
+    tryCatch(
+      switch(
+        kind,
+        table = datom_read(conn, name, version = version),
+        set = datom_get_set(conn, name, version = version),
+        cli::cli_abort(
+          c(
+            "Member {.val {name}} is a {.val {kind}}, which this version of \\
+             datom cannot resolve.",
+            "i" = "A member points at one of {.val {(.datom_artifact_kinds)}}.",
+            "i" = "The set may have been written by a newer datom -- upgrade \\
+                   datom and retry."
+          ),
+          class = "datom_member_kind_unknown"
+        )
+      ),
+      error = function(cnd) .datom_link_failure(cnd, name, kind, record, conn)
     )
   }
 
@@ -1024,6 +1027,64 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   class(link) <- "datom_link"
 
   link
+}
+
+
+#' Say Which Project a Member Belongs To, When Fetching It Has Already Failed
+#'
+#' The highest-value message in the set design, and it is a **hint on failure,
+#' never a gate**. Access in datom is per project and not conjunctive, so
+#' resolving a member of another project through this connection genuinely does
+#' not work -- but without this bullet it presents as a missing object, which
+#' names the wrong problem and sends the reader looking for corruption.
+#'
+#' **Why it cannot be a check that runs first.** A connection's `project_name` is
+#' not a verified fact. On a reader connection -- the primary consumer of a set --
+#' it is a label passed to [datom_get_conn()]: the namespace comes from the
+#' store's root and prefix and nothing compares the label against the repo. So a
+#' mismatch is the ordinary case, and refusing on it aborts fetches that resolve
+#' correctly. Verified end to end by a test that fetches through a deliberately
+#' wrong label.
+#'
+#' Recording the writer's own project name in metadata made the **member's** side
+#' of that comparison trustworthy; the connection's side is unchanged. Comparing a
+#' verified value against an unverified one still refuses working reads, which is
+#' why this stayed a hint. What it did buy is the wording: the message names the
+#' project the member's own writer recorded, rather than a project someone typed.
+#'
+#' **When the two names agree, the original condition is re-signalled untouched**
+#' -- same object, same class -- because callers dispatch on those classes and a
+#' failure that has nothing to do with projects must not be reworded.
+#'
+#' @param cnd The condition the resolution raised.
+#' @param name,kind The member's name and kind.
+#' @param record The member record, which holds its recorded project.
+#' @param conn The connection the fetch was attempted through.
+#' @return Never returns; always signals.
+#' @keywords internal
+.datom_link_failure <- function(cnd, name, kind, record, conn) {
+  theirs <- record$id$project
+  ours <- if (inherits(conn, "datom_conn")) conn$project_name
+
+  same_or_unknown <- !.datom_is_text_scalar(theirs) ||
+    !.datom_is_text_scalar(ours) ||
+    identical(theirs, ours)
+
+  if (same_or_unknown) stop(cnd)
+
+  cli::cli_abort(
+    c(
+      "Could not fetch member {.val {name}} through this connection.",
+      "i" = "That {kind} is recorded as belonging to project {.val {theirs}}, \\
+             and this connection is for {.val {ours}}.",
+      "i" = "Access is per project: open a connection to {.val {theirs}} and \\
+             fetch the member through that one.",
+      "i" = "If the two really are one project, the name on this connection \\
+             just differs -- nothing checks it -- and the cause is below."
+    ),
+    parent = cnd,
+    class = "datom_member_project_mismatch"
+  )
 }
 
 
@@ -1429,9 +1490,16 @@ print.datom_set <- function(x, ..., n = 20L) {
   cli::cli_end()
 
   if (length(x$members) > 0L) {
-    cli::cli_alert_info(
-      "Get a member's content with {.code x$members[[1]]$fetch(conn)}."
+    # The named verb rather than the link, now that it exists: it is the route a
+    # reader can type from what they see above, and it teaches the one that
+    # matters when a name turns out to be ambiguous. Built as a string first --
+    # a member name reaching cli as message text would be read as markup.
+    first <- .datom_id_text(x$members[[1L]]$id, "name")
+    hint <- sprintf(
+      "datom_fetch_member(conn, x, %s)",
+      if (is.na(first)) "member" else paste0("\"", first, "\"")
     )
+    cli::cli_alert_info("Fetch a member with {.code {hint}}.")
   }
 
   invisible(x)

@@ -774,10 +774,13 @@ test_that("a link does not gate on the connection's project name, and must not",
   # A project comparison inside the link looks free -- both names are in hand --
   # and it would refuse working reads. For a READER connection, which is the
   # primary consumer of a set, `project_name` is a label passed to
-  # datom_get_conn(): the namespace comes from the store's root and prefix,
-  # nothing validates the label against the repo, and a reader is never told which
-  # string the writer used. So the mismatch below is the ordinary case, and this
-  # test is what reddens if somebody adds the gate.
+  # datom_get_conn(): the namespace comes from the store's root and prefix and
+  # nothing validates the label against the repo. The member's OWN side of that
+  # comparison is trustworthy now -- its project is recorded by the writer -- but
+  # comparing a verified value against an unverified one still refuses working
+  # reads, so the mismatch below is the ordinary case and this test is what
+  # reddens if somebody adds the gate. A hint on an already-failed fetch is a
+  # different thing and lives in `.datom_link_failure()`.
   fx <- local_get_set_project()
   gs_one_member_set(fx)
 
@@ -965,9 +968,10 @@ test_that("printing a set names its members, their kinds and their tags", {
   expect_match(out, "description=Two members")
   # An untagged member reads as `-`, not as a blank the eye skips.
   expect_match(out, "lb \\(table\\)\\s+-")
-  # The route that exists TODAY. A named lookup verb is a later task, and this
-  # message must not point at a function that may never land.
-  expect_match(out, "x\\$members\\[\\[1\\]\\]\\$fetch\\(conn\\)")
+  # The named verb, which is the route a reader can type from what they just
+  # read above. This pointed at the link form until that verb existed; the link
+  # form still works and is what the leaf of a projection gives you.
+  expect_match(out, 'datom_fetch_member\\(conn, x, "dm"\\)')
 })
 
 test_that("printing returns its input invisibly", {

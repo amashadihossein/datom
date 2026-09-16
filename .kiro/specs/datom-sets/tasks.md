@@ -20,7 +20,7 @@ ends the second review pass found -> 2898 after Task 20 -> 2902 after the review
 that followed it -> 3050 after Task 22 -> 3053 after the three review findings that followed
 it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding that followed it ->
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
-3557 after the review finding that followed it -> **3585 after Task 26**.
+3557 after the review finding that followed it -> 3585 after Task 26 -> **3686 after Task 24**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -36,7 +36,8 @@ old-format conversion), **Task 20** (unfamiliar fields survive a write), **Task 
 refusals), **Task 22** (the reader-side rebuild), **Task 7** (`kind` in per-artifact metadata
 plus the set metadata builder), **Task 8** (`datom_member()` plus the member and tag
 validators) **Task 9** (`datom_write_set()`), **Task 10** (`datom_get_set()` plus the member link)
-and **Task 26** (a stored project name comes from the repo, not from a connection label), plus
+**Task 26** (a stored project name comes from the repo, not from a connection label)
+and **Task 24** (read-side ergonomics: finding and shaping members), plus
 three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
@@ -161,12 +162,28 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3585** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3686** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
-code/documentation agreement (tests and examples run separately). Next is **Task 24** (read-side
-ergonomics), then Task 25, then Task 23, then Task 11 onward.
+code/documentation agreement (tests and examples run separately). Next is **Task 25** (write-side
+ergonomics), then Task 23, then Task 11 onward.
 
-**TASK 24 IS AUDITED AND STARTABLE WITH NOTHING OPEN** -- ten findings in its body, and both scope
+**TASK 24 IS CLOSED, AND A SET THAT READS CORRECTLY IS NOW PLEASANT TO USE.** Three verbs over the
+object `datom_get_set()` returns: `datom_fetch_member()` resolves one member named by name, by
+record **or** by link; `datom_list_members()` returns one row per member per tag as a plain data
+frame; `datom_structure_members()` groups members by tag values into `dp$output$adsl(conn)`, where
+the branches are tag values and the **leaf is the member's own name** holding its link.
+**Six things a later change must not undo, and the reasoning behind each refusal, are in Task 24's
+DONE record.** The three worth knowing before touching it: **there is one expander and both shaping
+verbs go through it** (`.datom_expand_member_tags()`), because writing the multi-value expansion
+twice is what invites the silent first-value spelling, and with one expander there is no second
+place to write it; **the project hint lives in `.datom_link_failure()` in `R/set.R`, not in the
+fetch verb**, because after `datom_structure_members()` a leaf is a link and never reaches that verb
+-- and it re-signals the original condition **untouched** when the two project names agree, since
+callers dispatch on those classes; and **a `missing` bucket name that collides with a real tag value
+is refused whatever the members currently look like**, not only when some member is actually missing
+the key, so the view does not start failing the day one is added.
+
+**TASK 24 WAS AUDITED AND STARTABLE WITH NOTHING OPEN** -- ten findings in its body, and both scope
 questions among them were approved at their stated defaults by the owner on 2026-09-15, so a fresh
 session can begin implementing without a decision round. Three of the ten change what that task's body
 says, so read the audit before the bullets above it. **The one that would otherwise be read as a
@@ -3581,7 +3598,7 @@ ergonomics in general.
 it points at, `list` returns a data frame, `assemble` / `add` build. A name outside a family needs a
 reason.
 
-- [ ] **24. Read-side ergonomics: finding and shaping members** &nbsp; **[EXECUTES AFTER TASK 10]**
+- [x] **24. Read-side ergonomics: finding and shaping members** &nbsp; **[EXECUTES AFTER TASK 10]**
   - **DEPENDS ON TASK 10** and says so from this end as well as that one: every verb here is a
     function of the `datom_set` object Task 10 returns, and `datom_fetch_member()` is implemented
     **over the same link factory** that builds `$fetch`, so there is one core with two entry points
@@ -3764,6 +3781,84 @@ reason.
   - _Pathway impact: none -- no new lookup and no new traversal. `datom_fetch_member()` performs
     exactly the reads `datom_read()` / `datom_get_set()` already perform, and the other two verbs do
     no IO at all._
+  - **DONE 2026-09-15.** Three exports in the new `R/set-members.R`, one new helper in `R/set.R`, and
+    two edits to files that already existed. Tests 3585 -> **3686** (+101), FAIL 0 / WARN 0 / SKIP 0;
+    `dev/check-spec.R` 9/9; `R CMD check` 0/0/0 on docs and code/documentation agreement; the four
+    affected examples run and their output was read. **The shipped shape**, so a later session does
+    not re-derive it:
+
+    | Verb | Signature | Returns |
+    |---|---|---|
+    | `datom_fetch_member()` | `(conn, x, member, tags = NULL, version = NULL)` | whatever the member points at |
+    | `datom_list_members()` | `(x)` | `name`, `project`, `version`, `kind`, `key`, `value` |
+    | `datom_structure_members()` | `(x, by, missing = "untagged")` | nested list, `length(by) + 1` deep |
+
+    **ONE CORRECTION TO WHAT THIS TASK'S BODY SAID, because it changes the result rather than the
+    wording.** The body describes the grouped view as "group members by the values of the tag key(s)
+    named in `by`, with each leaf the member's link", which read alone builds a tree whose leaf name
+    is the **tag value** -- and then two members sharing one label collide immediately, which is not
+    the collision the task goes on to describe. The example `dp$output$adsl` settles it: the axis
+    values are the branches and the **member's own name is the leaf**, so the tree is
+    `length(by) + 1` levels deep. That is also what makes the collision the task specifies reachable
+    -- two members named `adsl` both tagged `type = "output"` ask for one leaf.
+
+    **SIX THINGS A LATER CHANGE MUST NOT UNDO.**
+
+    1. **There is exactly one expander, and both shaping verbs go through it.**
+       `.datom_expand_member_tags()` turns a member list into one row per member per tag value, and
+       `datom_structure_members()` reads its axis values out of that frame rather than doing its own
+       `split()`. The reason is the silent spelling: taking the first value of a multi-valued tag
+       puts a member under one branch when it belongs under several, and nothing fails. With one
+       expander there is no second place to write it.
+    2. **The project hint is in `.datom_link_failure()` (`R/set.R`), reached from the link core, and
+       it is a hint on failure rather than a check that runs first.** Both halves matter. Putting it
+       in `datom_fetch_member()` would miss the route people use, because a leaf of the grouped view
+       is a link. Making it a gate would refuse working fetches, because a connection's
+       `project_name` is a label nobody validated -- Task 26 made the **member's** side of that
+       comparison trustworthy and changed nothing about the connection's side. Pinned from three
+       directions: the hint fires through the named verb, it fires through a projection's leaf, and a
+       mismatched label alone still fetches successfully.
+    3. **When the two project names agree, the original condition is re-signalled with `stop(cnd)`,
+       untouched.** Same object, same class. A rewrap that always fires would reword a failure that
+       has nothing to do with projects, and callers dispatch on those classes -- the existing
+       unresolvable-kind test is what catches it, and there is now a second one asserting the
+       re-signal directly.
+    4. **`.datom_member_id()` checks only what resolution needs, and deliberately does not call
+       `.datom_validate_members()`.** That validator is the write-side contract and refuses an `id`
+       field a newer datom added, which the read deliberately carries -- so reusing it here would
+       make such a member readable but unfetchable. Reads limp; that rule does not stop at the read
+       verb.
+    5. **A `missing` bucket name that collides with a real tag value is refused unconditionally**, not
+       only when some member currently lacks the axis key. The conditional version works today and
+       starts failing the day a member without that key is added -- silently at authoring time, which
+       is the direction of failure the leaf-suffix option was rejected for. Two tests: the colliding
+       case, and the case where every member carries the key and it is still refused.
+    6. **Links are built before the paths are computed.** A member whose `id` cannot be resolved is
+       then reported as that, rather than as a branch called `NA` appearing in the view.
+
+    **Also shipped, from the audit's ten findings.** The third argument is `member`, not `name` (2).
+    `.datom_empty_member_frame()` mirrors `.datom_empty_artifact_frame()` and the guard is an
+    `rbind()` of an empty listing onto a populated one, which is the assertion that caught the second
+    half of the same defect in `datom_list()` (3). The `missing`-collision refusal (4). One line in
+    the code saying long format is only possible because the tag grammar is text-only (5). One
+    expander (6). The collision abort names both members with their versions, free because a read
+    member's version is the full recorded string (7). A record with no `fetch` on it is accepted, and
+    has its own test (8). No set-name or set-version columns on the listing (9). Three
+    `_pkgdown.yml` entries beside the other set verbs (10).
+
+    **Two things added beyond the task body, each with its reason.** `tags` or `version` supplied
+    beside a **record or a link** is refused rather than ignored: ignoring it would resolve a
+    different version than the one asked for and report success. And `.datom_line_bullets()` builds
+    the candidate lists as interpolated **values** rather than as message text, because a tag value
+    may legitimately contain a brace and cli reads `{anything}` in message text as markup -- an
+    artifact called `dm{1}` would turn the ambiguity message into a cli parse error.
+
+    **Two edits to existing files.** `print.datom_set()`'s hint now names
+    `datom_fetch_member(conn, x, "<first member>")`, and the test that pinned the link form was
+    updated with it rather than left to fail. And the comment on the no-gate test in
+    `test-get-set.R` still claimed "a reader is never told which string the writer used", which Task
+    26 made false; it now states the live reason -- the member's side is verified, the connection's is
+    not, and comparing the two still refuses working reads.
 
 - [ ] **25. Write-side ergonomics: assembling a set in steps** &nbsp; **[EXECUTES AFTER TASK 10]**
   - **DEPENDS ON TASK 10** for `datom_add_member()` accepting a **link** (the `$fetch` closure with
@@ -4125,9 +4220,9 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 | `print.datom_link()` | 10 -- **shipped 2026-09-14** |
 | `datom_repo_commit()` | 12 |
 | `datom_repo_push()` | 12 |
-| `datom_fetch_member()` | 24 |
-| `datom_list_members()` | 24 |
-| `datom_structure_members()` | 24 |
+| `datom_fetch_member()` | 24 -- **shipped 2026-09-15** |
+| `datom_list_members()` | 24 -- **shipped 2026-09-15** |
+| `datom_structure_members()` | 24 -- **shipped 2026-09-15** |
 | `datom_assemble_set()` | 25 |
 | `datom_add_member()` | 25 |
 | `print.datom_set_draft()` | 25 |
@@ -4424,3 +4519,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-15 | **(review finding, WITHDRAWN by the reviewer, kept because the reasoning is the useful part) the name cascade's manifest step goes through the repairing reader, and on a too-new manifest that costs a full index reconstruction.** `.datom_declared_project()` reads the manifest via `.datom_read_manifest(conn, scope = "storage", operation = "read")`, whose read path carries the reader-side rebuild: one namespace listing plus two reads per artifact. So a lookup of one field can cost 2N+1 requests. **Withdrawn on two counts, both verified rather than argued.** The answer is still **correct** -- the rebuild carries `prior$project_name` forward, and that name is on an append-only vocabulary, so a too-new manifest still supplies it; the path is expensive, not wrong. And reaching it needs a three-way straddle: an artifact written before the project name was recorded, in a namespace some *future* release has since touched, read by this build. Nothing written, nothing silent, no corruption -- so by the triage rule above it is recorded and not fixed. | `.datom_declared_project()`, `R/member.R` |
 | 2026-09-15 | **REJECTED, with the reason recorded so it does not come back: the manifest step must NOT be changed to read the document directly instead of through the gated reader.** Offered as an optional tidy alongside the withdrawn row above -- *a lookup that wants one field should read the document, not the reader that repairs it* -- and it is a good aphorism that happens to invert this spec's own gate discipline. A raw `.datom_storage_read_json()` on `.metadata/manifest.json` takes a value out of a document whose format **this build has never checked**, which is the precise thing the format gate exists to prevent: in a future shape where `project_name` moved or changed meaning, the raw read returns a wrong value silently, and the value in question then gets hashed into a set's identity and cited. This was the audit's open question 4 and was settled at its stated default (the gated reader, accepting the listing in the degraded case) for exactly this reason; the tidy would reopen it and trade a loud expensive path for a quiet wrong one. | Task 26 audit question 4, `.datom_declared_project()` |
 | 2026-09-15 | **Both of Task 24's scope questions APPROVED at their stated defaults**, explicitly rather than by silence, so they are decisions and a later session does not reopen them. **(1) The member-fetch verb accepts a member with no `fetch` attached** -- the plain-data shape `datom_member()` returns and `.datom_strip_member_links()` produces -- because the accessor keys on `id` and nothing else, so it costs a line and keeps the read and write verbs agreeing about what a member is. Saying no would make one verb's idea of a member narrower than the other's. **(2) `datom_list_members()` does NOT repeat the set's own name and version on every row.** It would make two products' listings self-describing when `rbind()`ed, which is a real use, but the set's identity is already on the object the caller passed and two columns repeating one fact per row is the denormalisation that later disagrees with itself. A caller who wants it writes `transform(m, set = x$name)`. | Task 24 audit, findings 8 and 9 |
+| 2026-09-15 | **(implementation, Task 24) The grouped view's leaf is the MEMBER'S NAME, not the tag value, so the tree is `length(by) + 1` levels deep.** The task's prose ("group members by the values of the tag key(s) named in `by`, with each leaf the member's link") reads as a tree whose deepest name is a tag value -- and that tree collides the moment two members share one label, which is not the collision the same task specifies. The `dp$output$adsl` example settles it: axis values are branches, the member's own name is the leaf. Recorded rather than fixed silently, because it is the difference between the specified collision being reachable and being unreachable. | Task 24 DONE record |
+| 2026-09-15 | **(implementation, Task 24) A `missing` bucket name colliding with a real tag value is refused UNCONDITIONALLY, not only when a member currently lacks the axis key.** The conditional version works today and starts failing the day a member without that key is added -- silently at authoring time, which is exactly the failure direction the version-suffixed leaf name was rejected for. Two tests, one per half. | Task 24 DONE record, `R/set-members.R` |
+| 2026-09-15 | **(implementation, Task 24) `tags` / `version` supplied beside a member RECORD or LINK is refused, not ignored.** Not in the task body. Ignoring the filter would resolve a different version than the one asked for and report success, which is a correctness-shaped silence rather than a convenience. | `R/set-members.R` |
+| 2026-09-15 | **(implementation, Task 24) The member-resolution check must NOT reuse `.datom_validate_members()`.** That is the write-side contract and it refuses an `id` field a newer datom added -- which the set read deliberately carries. Reusing it would make such a member readable but unfetchable, which is a reads-limp violation arriving by a side door. A focused check on the four fields resolution actually needs replaces it. | `R/set-members.R`, `.datom_member_id()` |
