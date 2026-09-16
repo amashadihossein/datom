@@ -166,6 +166,20 @@ were passing whatever the code did.
 code/documentation agreement (tests and examples run separately). Next is **Task 24** (read-side
 ergonomics), then Task 25, then Task 23, then Task 11 onward.
 
+**TASK 24 IS AUDITED AND STARTABLE WITH NOTHING OPEN** -- ten findings in its body, and both scope
+questions among them were approved at their stated defaults by the owner on 2026-09-15, so a fresh
+session can begin implementing without a decision round. Three of the ten change what that task's body
+says, so read the audit before the bullets above it. **The one that would otherwise be read as a
+regression**: Task 24 justified its no-gate rule partly on "a reader is never told which string the
+writer used", which **Task 26 made false** -- a member's project now comes from the artifact's own
+metadata. The conclusion stands unchanged, because what makes a gate wrong is the **connection's**
+side, which is still an unvalidated label; the sentence is restated in place so nobody concludes the
+premise died with the defect and adds the gate. The other two: the third argument of
+`datom_fetch_member()` is `member`, not `name`, because it accepts a name, a record **or** a link; and
+a `missing =` bucket name that collides with a real tag value is refused rather than silently merged.
+**Task 26 was also reviewed after it landed and no code changed** -- see the review record at the end
+of Task 26.
+
 **TASK 26 IS CLOSED. A PROJECT NAME IN A STORED DOCUMENT NOW COMES FROM THE REPO.** Both metadata
 builders record `project`, taken from the writing repo's own `.datom/project.yaml`, and the field is
 classified outside identity -- so **no existing artifact mints a version**, which is the opposite of
@@ -3661,9 +3675,10 @@ reason.
       list of functions. Add a `print` method only if it actually grates; the leaves at least print
       readably on their own, because Task 10 classes them `datom_link`.
   - **COLD-START AUDIT, 2026-09-15**, run after Task 26 landed and with every claim checked against
-    the tree rather than reasoned about. **Startable. Ten findings, two of them OPEN scope questions,
-    each marked with the default it takes if nobody answers.** No escalation flag is owed (design.md
-    12 carries E1 and E2 only). **What held**, verified rather than assumed: the link factory really
+    the tree rather than reasoned about. **Startable, and NOTHING IS OPEN.** Ten findings; the two
+    scope questions among them were **approved at their stated defaults by the owner the same day** --
+    explicitly, so they are decisions rather than defaults that happened to hold. No escalation flag is
+    owed (design.md 12 carries E1 and E2 only). **What held**, verified rather than assumed: the link factory really
     does take `(name, kind, version, record)` with the dead `project` argument gone, and `record` is
     on the closure, so `record$id$project` is reachable inside the link core and the project hint can
     live there exactly as this task says; a read member really is `id` plus optional `tags` plus
@@ -3722,14 +3737,15 @@ reason.
     7. **THE COLLISION ABORT CAN NAME VERSIONS FOR FREE.** A read member's `id$version` is the full
        recorded version string (Task 10 made the resolver echo what was recorded), so "name both
        members with their versions and tags" costs nothing and needs no second lookup.
-    8. **OPEN (default: yes) -- does `datom_fetch_member()` accept a member with no `fetch` on it?**
+    8. **APPROVED AT ITS DEFAULT 2026-09-15 (was open) -- `datom_fetch_member()` accepts a member with
+       no `fetch` on it.**
        That is the **payload** shape: what `.datom_strip_member_links()` produces, and what a caller
        who built a member with `datom_member()` holds. Default: yes, because the accessor keys on
        `id` and nothing else, so it costs a line and keeps read-modify-write symmetric -- the same
        argument that made `datom_write_set()` accept a `datom_set` back. Saying no would mean the two
        verbs disagree about what a member is.
-    9. **OPEN (default: no) -- should `datom_list_members()` carry the set's own name and version as
-       columns?** It would make a single frame self-describing when two sets' listings are `rbind()`ed,
+    9. **APPROVED AT ITS DEFAULT 2026-09-15 (was open) -- `datom_list_members()` does NOT carry the
+       set's own name and version as columns.** It would make a single frame self-describing when two sets' listings are `rbind()`ed,
        which is a real use for comparing products. Default: no -- one row per member per tag, and the
        set's identity is already on the object the caller passed, so two columns repeating one fact on
        every row is the kind of denormalisation that later disagrees with itself. A caller who wants it
@@ -4078,6 +4094,21 @@ vehicle**: it is done, and its check is *why* a late addition costs what it cost
   - _Also corrected while closing this task: the audit's line citations for `datom_parent()` and both
     builder call sites had gone stale, plus five more across the spec that `dev/check-spec.R` caught.
     Ninth consecutive session for that class._
+  - **REVIEWED AFTER IT LANDED (2026-09-15). NO CODE CHANGED -- the review accepted the
+    implementation, and everything it produced was documentation.** Five items. One finding was
+    **withdrawn by the reviewer** and is kept as a decisions row because the reasoning is the reusable
+    part: the cascade's manifest step goes through the repairing reader, so on a too-new manifest a
+    one-field lookup can cost a full index reconstruction -- but the answer is still correct, and
+    reaching it needs a three-way straddle, so the triage rule says record it. One suggestion was
+    **rejected with its reason recorded**: reading the manifest document directly instead of through
+    the gated reader would take a value out of a document whose format was never checked, and that
+    value is hashed into a set's identity -- which was audit question 4, settled at the gated reader
+    for exactly this. Three were **accepted**: the repointing hazard was rehomed from "unfiled issue"
+    to a constraint on the resolver in `dev/datomanager_overview.md` section 4a, directly beneath the
+    section stating the rule it exploits; `datomanager_overview.md` section 5 was marked stale in its
+    mechanism, because it promised a future package a key refusal on an export that was dropped in
+    August and never shipped; and the triage rule the spec had been applying without stating it was
+    written into design.md 11. Tests unchanged at 3585.
 
 ## New exports introduced by this spec
 
@@ -4392,3 +4423,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-15 | **TRIAGE RULE FOR OLD-BUILD COMPATIBILITY, generalised from how this spec has actually been scheduling.** Two classes, two answers. **Irretrofittable mechanisms** -- where a build that does not look can never be made to look (the reader-side format gate, the vocabulary check, the writer floor's reading half, a format number on `project.yaml`) -- are built **now**, even speculatively, because the window closes at release and cannot be reopened. **Behaviour inside those mechanisms** -- a slow path, a bad message, an awkward coupling -- is fixed **when it bites**, because fixing it later asks nothing of old builds. The governing asymmetry: *corruption caused by an old build is never acceptable; graceful **function** of an old build is not a supported guarantee.* 0.1.0-0.1.2 is a closed, unannounced, experimental population that the v2 manifest bump already stops from writing, so a degradation confined to it is recorded rather than fixed. **This is also the rule that says which of the two 2026-09-15 findings below got fixed and which did not**: the decisions-log wording was fixed (it would have misdirected a future session), the manifest-reader coupling was recorded. | design.md 11, and the two rows below |
 | 2026-09-15 | **(review finding, WITHDRAWN by the reviewer, kept because the reasoning is the useful part) the name cascade's manifest step goes through the repairing reader, and on a too-new manifest that costs a full index reconstruction.** `.datom_declared_project()` reads the manifest via `.datom_read_manifest(conn, scope = "storage", operation = "read")`, whose read path carries the reader-side rebuild: one namespace listing plus two reads per artifact. So a lookup of one field can cost 2N+1 requests. **Withdrawn on two counts, both verified rather than argued.** The answer is still **correct** -- the rebuild carries `prior$project_name` forward, and that name is on an append-only vocabulary, so a too-new manifest still supplies it; the path is expensive, not wrong. And reaching it needs a three-way straddle: an artifact written before the project name was recorded, in a namespace some *future* release has since touched, read by this build. Nothing written, nothing silent, no corruption -- so by the triage rule above it is recorded and not fixed. | `.datom_declared_project()`, `R/member.R` |
 | 2026-09-15 | **REJECTED, with the reason recorded so it does not come back: the manifest step must NOT be changed to read the document directly instead of through the gated reader.** Offered as an optional tidy alongside the withdrawn row above -- *a lookup that wants one field should read the document, not the reader that repairs it* -- and it is a good aphorism that happens to invert this spec's own gate discipline. A raw `.datom_storage_read_json()` on `.metadata/manifest.json` takes a value out of a document whose format **this build has never checked**, which is the precise thing the format gate exists to prevent: in a future shape where `project_name` moved or changed meaning, the raw read returns a wrong value silently, and the value in question then gets hashed into a set's identity and cited. This was the audit's open question 4 and was settled at its stated default (the gated reader, accepting the listing in the degraded case) for exactly this reason; the tidy would reopen it and trade a loud expensive path for a quiet wrong one. | Task 26 audit question 4, `.datom_declared_project()` |
+| 2026-09-15 | **Both of Task 24's scope questions APPROVED at their stated defaults**, explicitly rather than by silence, so they are decisions and a later session does not reopen them. **(1) The member-fetch verb accepts a member with no `fetch` attached** -- the plain-data shape `datom_member()` returns and `.datom_strip_member_links()` produces -- because the accessor keys on `id` and nothing else, so it costs a line and keeps the read and write verbs agreeing about what a member is. Saying no would make one verb's idea of a member narrower than the other's. **(2) `datom_list_members()` does NOT repeat the set's own name and version on every row.** It would make two products' listings self-describing when `rbind()`ed, which is a real use, but the set's identity is already on the object the caller passed and two columns repeating one fact per row is the denormalisation that later disagrees with itself. A caller who wants it writes `transform(m, set = x$name)`. | Task 24 audit, findings 8 and 9 |
