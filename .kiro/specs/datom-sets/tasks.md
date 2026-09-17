@@ -171,15 +171,23 @@ code/documentation agreement (tests and examples run separately). Next is **Task
 (`project.yaml` declares its format), then Task 11 onward. **Phase F is complete**, so nothing in
 the set surface is half-built.
 
-**TASK 23 IS AUDITED AND STARTABLE COLD (2026-09-16)** -- ten findings in its body, and **one must be
-settled before the first line**, though it carries a stated default so nothing is blocked. That one:
-the task says the number is "incremented by R9.5's table like any other document" but never says what
-to **stamp** today, and every existing stamp site writes the one shared constant rather than a
-per-file number -- so putting the config file on that constant means its declared number moves when
-the *manifest* or *metadata* breaks, and a build one version behind then loses the whole developer
-path on a file whose shape never changed. The default is to stamp the shared constant anyway, because
-a second one would be kept in step by hand, and to name the cost plus the escape hatch in the refusal
--- a **reader** connection never reads this file. **Two findings change what the task's body says.**
+**TASK 23 IS AUDITED AND STARTABLE COLD (2026-09-16), AND NOTHING IS OPEN** -- ten findings in its
+body, and the one that had to be settled first was **decided by the owner the same day, against this
+audit's default**. The call: `project.yaml` carries **its own** format number, `1L` today, rather than
+riding the one shared constant every other document is stamped with. The audit had priced a per-file
+number as "a second constant kept in step by hand", and that price was wrong -- the point of a
+per-file number is that it moves *independently*, so it stays `1L` through every manifest or metadata
+bump and moves only when this file's own shape changes. What the shared constant would have cost is a
+**false refusal**: the check sits in connection construction, so a build one version behind loses the
+whole developer path on a file whose shape never changed, and the reader escape hatch does not help
+the developer who is the one stuck. Two things a cold session must carry with that decision. Its one
+real hole is a **forgotten bump**, closed by a test that fails when the config's key set changes
+without the constant changing -- a tripwire that forces a *decision*, not one that mandates a bump,
+since Task 11's addition of `mode` fires it and correctly does not move the number. And the shared
+checker needs a `supported =` argument **in the same commit**, or the gate is nominal: the day this
+file's shape breaks, a build whose global ceiling already equals the new number would accept it, and
+the reading half cannot be retrofitted into builds already installed. **Two findings change what the
+task's body says.**
 The body names two read sites and there are now **four**: Task 9's set-write gates parse this file on
 every set write and read `mode` and `set`, which are the very fields the requirement exists for, so
 that site gets the check too. And the harm the body illustrates with a silent `datom_sync()` no-op is
@@ -3643,21 +3651,56 @@ rather than in Phase D beside the task it blocks.
     `schema_version` is carried forward rather than dropped, which is the edit-don't-rebuild property
     Task 20 relies on elsewhere.
 
-    1. **THE ONE TO DECIDE FIRST: WHICH NUMBER GETS STAMPED, AND WHAT IT COSTS WHEN A DIFFERENT
-       DOCUMENT BREAKS.** The body says "incremented by R9.5's table like any other document" but
-       never says what to write today. Every existing stamp site writes the **shared** constant
-       `.datom_supported_schema` (`R/utils-validate.R:212`, currently `2L`) rather than a per-file
-       number: `R/read_write.R:391`, its sibling for sets, `R/manifest-upgrade.R:134` and the
-       manifest skeleton. So the number is in practice one repo-wide format number, and putting
-       `project.yaml` on it means **this file's declared number moves when the manifest or per-artifact
-       metadata breaks**, on content that did not change. Default: **stamp
-       `.datom_supported_schema`**, because one constant is what R9.6's single schema-history table
-       describes and a second one would have to be kept in step by hand. State the cost where the
-       refusal is raised: a build supporting v2 meeting a `project.yaml` declaring v3 loses the
-       **developer** path entirely, including reads that would have worked -- and the escape hatch is
-       real and worth naming in the message, since a **reader** connection never reads this file. The
-       alternative, a per-document constant, forks the mechanism: `.datom_check_schema_version()`
-       compares against one global ceiling, so it would need a `supported =` argument.
+    1. **DECIDED BY THE OWNER 2026-09-16, AND IT WENT AGAINST THIS AUDIT'S DEFAULT:
+       `project.yaml` CARRIES ITS OWN FORMAT NUMBER, `.datom_project_schema`, which is `1L` today.**
+       The audit had defaulted to stamping the shared `.datom_supported_schema`
+       (`R/utils-validate.R:212`, currently `2L`) because every existing stamp site writes it
+       (`R/read_write.R:391`, its set sibling, `R/manifest-upgrade.R:134`, the manifest skeleton), and
+       priced the alternative as "a second constant kept in step by hand". **That price was wrong and
+       the correction is the reason the decision went the other way**: there is nothing to keep in
+       step, because the point of a per-file number is that it moves *independently* -- it stays `1L`
+       through every manifest or metadata bump, and moves only when this file's own shape changes.
+       Recorded explicitly because the shared constant is the intuitive answer and will be proposed
+       again.
+
+       **What the shared constant would actually have cost.** It never misses a change but sometimes
+       refuses wrongly, and a wrong refusal here is not cheap: the check sits in connection
+       construction (`R/conn.R:937`), so it takes the **whole developer path**, including reads that
+       would have worked. The escape hatch the audit offered -- a reader connection never reads this
+       file -- does not help the person who is stuck, because the one refused is the developer, and
+       their recovery is to hand-edit the very file whose hand-editability is why this task exists.
+
+       **One mechanism claimed for that cost does NOT exist, checked rather than accepted.** The
+       review had it that `datom_repo_set_data_store()` (`R/repo.R:90`) would silently raise the
+       declared number, making the lockout ordinary churn between current users. It does not: that
+       verb is a read-modify-write that carries `schema_version` forward untouched, and nothing but
+       `datom_init_repo()` stamps a number. So the shared constant's blast radius is **repos
+       initialised by the newer build**, not every store-pointer update. Narrower than argued -- and
+       the decision stands anyway, because the asymmetry is what settles it: a per-file number has no
+       false refusals at all.
+
+       **B'S ONE REAL HOLE IS A FORGOTTEN BUMP, AND ITS FIX IS THE KEY-SET TRIPWIRE FINDING 10
+       ALREADY POINTS AT.** A shape change that ships with an unmoved number is silently misread by
+       an older build. So: a test that fails when `project.yaml`'s key set changes without
+       `.datom_project_schema` changing -- which is exactly the "nothing in the suite asserts the
+       config's key set" gap this audit found, turned into a guard. **State what that test means or it
+       will be misread into the failure B was chosen to avoid**: it forces a *decision*, it does not
+       mandate a bump. R9.5 is explicit that an addition does not move a number, so the correct
+       response to it firing is often to extend the expected key set and leave the constant alone.
+       **Task 11 fires it immediately**, by adding `mode` and `set` -- and per that task's own bullet
+       the answer there is no bump. Same shape as the three vocabulary-list tests from Task 21.
+
+       **B HAS ONE IMPLEMENTATION CONSEQUENCE NEITHER THE AUDIT NOR THE REVIEW STATED, AND IT MUST
+       SHIP WITH THE CHECK RATHER THAN LATER.** `.datom_check_schema_version()` compares against the
+       global `.datom_supported_schema` and names it in the message. Left that way, B's gate is
+       nominal: the day this file's shape breaks and its constant becomes `2L`, a build whose global
+       ceiling is already `2L` compares `2 > 2`, proceeds, and misreads the new shape -- the gate dead
+       at exactly the moment it is needed. And because the reading half **cannot be retrofitted**,
+       which is this task's whole premise, no later release can fix the builds already installed. So
+       the checker gains a `supported =` argument, defaulting to `.datom_supported_schema` so every
+       existing call site is unchanged, and the connection-time call passes
+       `.datom_project_schema`. **The argument must feed the message as well as the comparison**, or a
+       refusal reads "supports up to v2" while refusing a v2 file.
     2. **THERE ARE NOW FOUR READ SITES, NOT TWO, AND THE NEW ONE READS EXACTLY THE FIELDS THIS
        REQUIREMENT IS ABOUT.** The body names `R/conn.R:937` and `R/ref.R:327`; both still hold.
        Since it was written, Task 9 added `.datom_check_set_write_gates()` (`R/set.R:93`, parse at
@@ -4948,3 +4991,8 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-15 | **(implementation, Task 24) `tags` / `version` supplied beside a member RECORD or LINK is refused, not ignored.** Not in the task body. Ignoring the filter would resolve a different version than the one asked for and report success, which is a correctness-shaped silence rather than a convenience. | `R/set-members.R` |
 | 2026-09-15 | **(implementation, Task 24) The member-resolution check must NOT reuse `.datom_validate_members()`.** That is the write-side contract and it refuses an `id` field a newer datom added -- which the set read deliberately carries. Reusing it would make such a member readable but unfetchable, which is a reads-limp violation arriving by a side door. A focused check on the four fields resolution actually needs replaces it. | `R/set-members.R`, `.datom_member_id()` |
 | 2026-09-15 | **(review finding, ACCEPTED and fixed, Task 24) A tag map is read BY POSITION, never by name, and item 1 of Task 24's must-not-undo list says so now.** A map can carry the same key twice -- a reader validates no tag map (Task 10), and `jsonlite` parses duplicate JSON keys into two same-named elements rather than collapsing them, verified rather than assumed -- and `tags[["type"]]` returns the first match every time. So all three verbs lost every label after the first: the listing showed one value twice, the grouped view put the member under one branch instead of two, and a filter reported **not found** on a label the document says the member carries, which reads as missing data. The reviewer's framing is the durable part: this is the one-expander rule's own hazard on the **key** axis, written inside the function that exists so the value-axis version has nowhere to live. Fixed by `seq_along()` plus `names(tags)[[i]]`, and by routing `.datom_member_has_tags()` through the expander so a member's tag values have one access path. Probed: the by-name read reddens 5 assertions across 4 tests. | Task 24 DONE record, `R/set-members.R` |
+| 2026-09-16 | **(review finding, ACCEPTED and fixed, Task 25) A draft's member count must equal the count the write produces, so an exact repeat is skipped as it is added and a same-version label disagreement aborts there.** Two write-side mechanisms did not know about the draft: `.datom_order_set_members()` drops an exact repeat silently (its digest covers tags), and `.datom_check_set_payload()` refuses the same `id` with different tags -- naming the member but not which of forty lines introduced it. So a pipe with an accidental repeat printed 40 and wrote 39, and a label disagreement surfaced after every line had run, which is the one thing this path exists to prevent. The exact repeat is **skipped with a message, not refused**: refusing would make a draft stricter than the equivalent list, so `Reduce(datom_add_member, records, init = draft)` over a generated list that repeats would fail where it works today; skipping in silence would move the surprise rather than remove it. Deliberately **not** extended to self-reference -- a draft's name may be `NULL` until `project.yaml` resolves it at the write, so a draft cannot know whether a member is itself. | Task 25 DONE record, `R/set-draft.R` |
+| 2026-09-16 | **(implementation, Task 25) Comparing member DIGESTS rather than records is what makes the duplicate check agree with the write, and no tidying is needed first.** The first fix tidied each record on the way in, on the theory that `domain = c("a", "b")` and `c("b", "a")` would otherwise read as a conflict. Probing removed that tidy and reddened **nothing**: `.datom_sv1_map()` sorts a map's keys and `.datom_sv1_strset()` encodes each value as a sorted, deduplicated set, so the digest is already blind to every spelling the write's tidy step collapses. The tidy was changing what a caller reads back out of a draft while buying nothing, and it is gone. Swapping the digest comparison for `identical()` on the two records reddens exactly the reordered-labels test, which is the guard. | `R/set-draft.R`, `.datom_draft_member_clash()` |
+| 2026-09-16 | **(owner decision, Task 23) `project.yaml` carries ITS OWN format number (`.datom_project_schema`, `1L` today), not the shared `.datom_supported_schema` every other document is stamped with.** Decided against the cold-start audit's stated default, because the price the audit put on a per-file number -- "a second constant kept in step by hand" -- does not exist: a per-file number moves *independently*, staying `1L` through every manifest or metadata bump. What the shared constant would have cost is a false refusal, and an expensive one: the check sits in connection construction (`R/conn.R:937`), so it takes the whole **developer** path including reads that would have worked, and the reader escape hatch does not help the developer, who is the one stuck and whose recovery is hand-editing the file. **One mechanism argued for that cost does not exist**, checked rather than accepted: `datom_repo_set_data_store()` (`R/repo.R:90`) is a read-modify-write that carries `schema_version` forward untouched, so it does not raise the number -- only `datom_init_repo()` stamps, which makes the shared constant's blast radius "repos initialised by the newer build" rather than every store-pointer update. Narrower than argued; the decision stands on the asymmetry, since a per-file number has no false refusals at all. | Task 23 finding 1 |
+| 2026-09-16 | **(owner decision, Task 23) The per-file number's one hole -- a forgotten bump -- is closed by a key-set tripwire test, and that test forces a DECISION rather than mandating a bump.** A shape change shipping with an unmoved number is silently misread by an older build, and nothing in the suite asserts `project.yaml`'s key set today. So: a test that fails when the key set changes without `.datom_project_schema` changing. The framing is load-bearing -- R9.5 is explicit that an addition does not move a number, and **Task 11 fires this test immediately** by adding `mode` and `set`, where the correct answer is to extend the expected set and leave the constant alone. Read as "key set changed, therefore bump", it would manufacture exactly the false refusal the per-file number was chosen to avoid. Same shape as Task 21's three vocabulary-list tests. | Task 23 finding 1 |
+| 2026-09-16 | **(implementation, Task 23) `.datom_check_schema_version()` gains a `supported =` argument in the SAME commit as the config gate, feeding the message as well as the comparison.** Neither the audit nor the review stated this, and without it the per-file number is a nominal gate: the checker compares against the global `.datom_supported_schema` and names it in the refusal, so the day this file's shape breaks and its own constant becomes `2L`, a build whose global ceiling is already `2L` compares `2 > 2`, proceeds, and misreads the new shape. Because the reading half **cannot be retrofitted** -- this task's whole premise -- no later release can fix the builds already installed, so it cannot be deferred. Defaulting the argument to `.datom_supported_schema` leaves every existing call site and its asserted message unchanged. | Task 23 finding 1, `R/utils-validate.R:253` |
