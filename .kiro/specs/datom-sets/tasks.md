@@ -186,8 +186,10 @@ without the constant changing -- a tripwire that forces a *decision*, not one th
 since Task 11's addition of `mode` fires it and correctly does not move the number. And the shared
 checker needs a `supported =` argument **in the same commit**, or the gate is nominal: the day this
 file's shape breaks, a build whose global ceiling already equals the new number would accept it, and
-the reading half cannot be retrofitted into builds already installed. **Two findings change what the
-task's body says.**
+the reading half cannot be retrofitted into builds already installed. That argument stays **optional**
+-- all eight existing call sites read machine-written documents, where the global ceiling is the right
+answer -- and the file-to-ceiling pairing lives in a three-line wrapper both of the config's callers go
+through, so a third caller cannot forget it. **Two findings change what the task's body says.**
 The body names two read sites and there are now **four**: Task 9's set-write gates parse this file on
 every set write and read `mode` and `set`, which are the very fields the requirement exists for, so
 that site gets the check too. And the harm the body illustrates with a silent `datom_sync()` no-op is
@@ -3690,6 +3692,14 @@ rather than in Phase D beside the task it blocks.
        **Task 11 fires it immediately**, by adding `mode` and `set` -- and per that task's own bullet
        the answer there is no bump. Same shape as the three vocabulary-list tests from Task 21.
 
+       **THE TRIPWIRE'S FIRST EXERCISE IS TASK 11, AND THE WORKED ANSWER GOES BESIDE THE RULE** so
+       the first person to meet a red test reads an answer rather than facing a choice: Task 11 adds
+       `mode` and `set` to the init config, the test goes red, and the correct response is to extend
+       the expected key set and leave `.datom_project_schema` at `1L` -- because an addition is
+       reader-safe (R9.5) and the older build's misreading of `mode` is a silent no-op, not a wrong
+       write. Task 11's own bullet already says the default answer there is no bump; this is the same
+       call reached from the test's side.
+
        **B HAS ONE IMPLEMENTATION CONSEQUENCE NEITHER THE AUDIT NOR THE REVIEW STATED, AND IT MUST
        SHIP WITH THE CHECK RATHER THAN LATER.** `.datom_check_schema_version()` compares against the
        global `.datom_supported_schema` and names it in the message. Left that way, B's gate is
@@ -3698,9 +3708,37 @@ rather than in Phase D beside the task it blocks.
        at exactly the moment it is needed. And because the reading half **cannot be retrofitted**,
        which is this task's whole premise, no later release can fix the builds already installed. So
        the checker gains a `supported =` argument, defaulting to `.datom_supported_schema` so every
-       existing call site is unchanged, and the connection-time call passes
-       `.datom_project_schema`. **The argument must feed the message as well as the comparison**, or a
-       refusal reads "supports up to v2" while refusing a v2 file.
+       existing call site is unchanged, and **it must feed the message as well as the comparison**
+       (`R/utils-validate.R:276` and `:281`), or a refusal reads "supports up to v2" while refusing a
+       v2 file.
+
+       **The argument stays optional rather than required, and the reason is that the default is
+       CORRECT at every existing site rather than merely convenient.** Verified: the checker has
+       exactly eight call sites -- `R/forward-compat.R:439`, `R/lineage.R:170`,
+       `R/manifest-rebuild.R:228`, `R/member.R:553`, `R/read_write.R:104`, `R/sync.R:930`, `:937` and
+       `:1137` -- and every one reads a **machine-written** document, a manifest or a per-artifact
+       metadata snapshot, which genuinely do share the global number. Requiring the argument would
+       repeat one constant at eight sites to guard against a future ninth. **The two other uses of the
+       global constant need nothing**, also checked: `.datom_notify_manifest_upgraded()`
+       (`R/sync.R:767`) is a notification rather than a gate and returns early when the document is
+       current, and the upgrade chain (`R/manifest-upgrade.R:117`) is manifest-only -- `project.yaml`
+       has no converter and gets none, only a refusal. **Note also that `.datom_check_write_entry()` is
+       not a site for this**: its schema call covers per-artifact metadata, and the config gate does
+       not belong inside it -- see finding 2 for where the write-side call does belong.
+
+       **Two things carry the decision forward instead of a required argument.** (1) **The pairing of
+       file and ceiling lives in one function, not at each call site**:
+       `.datom_check_project_schema(cfg, source, operation)`, a three-line wrapper that supplies
+       `supported = .datom_project_schema`. Two callers need it on day one -- connection construction
+       and the set-write gate -- and the same precedent applies as
+       `.datom_artifacts_of_kind()`, where one predicate written out at four sites lost a tolerance at
+       one of them. A third caller then cannot forget the pairing, which is the failure a bare
+       argument invites. (2) **The checker's own docs state the rule that predicts an override**, so a
+       future caller derives it: a document **datom writes** takes the global ceiling; a document that
+       outlives the build that created it and is **edited by hand** gets its own. The reason underneath
+       is what makes it derivable rather than memorised -- the shared number works while every
+       document on it is written by one build in one operation, and `project.yaml` is written once at
+       init and then hand-edited for years, so its shape moves on its own clock.
     2. **THERE ARE NOW FOUR READ SITES, NOT TWO, AND THE NEW ONE READS EXACTLY THE FIELDS THIS
        REQUIREMENT IS ABOUT.** The body names `R/conn.R:937` and `R/ref.R:327`; both still hold.
        Since it was written, Task 9 added `.datom_check_set_write_gates()` (`R/set.R:93`, parse at
@@ -4995,4 +5033,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-16 | **(implementation, Task 25) Comparing member DIGESTS rather than records is what makes the duplicate check agree with the write, and no tidying is needed first.** The first fix tidied each record on the way in, on the theory that `domain = c("a", "b")` and `c("b", "a")` would otherwise read as a conflict. Probing removed that tidy and reddened **nothing**: `.datom_sv1_map()` sorts a map's keys and `.datom_sv1_strset()` encodes each value as a sorted, deduplicated set, so the digest is already blind to every spelling the write's tidy step collapses. The tidy was changing what a caller reads back out of a draft while buying nothing, and it is gone. Swapping the digest comparison for `identical()` on the two records reddens exactly the reordered-labels test, which is the guard. | `R/set-draft.R`, `.datom_draft_member_clash()` |
 | 2026-09-16 | **(owner decision, Task 23) `project.yaml` carries ITS OWN format number (`.datom_project_schema`, `1L` today), not the shared `.datom_supported_schema` every other document is stamped with.** Decided against the cold-start audit's stated default, because the price the audit put on a per-file number -- "a second constant kept in step by hand" -- does not exist: a per-file number moves *independently*, staying `1L` through every manifest or metadata bump. What the shared constant would have cost is a false refusal, and an expensive one: the check sits in connection construction (`R/conn.R:937`), so it takes the whole **developer** path including reads that would have worked, and the reader escape hatch does not help the developer, who is the one stuck and whose recovery is hand-editing the file. **One mechanism argued for that cost does not exist**, checked rather than accepted: `datom_repo_set_data_store()` (`R/repo.R:90`) is a read-modify-write that carries `schema_version` forward untouched, so it does not raise the number -- only `datom_init_repo()` stamps, which makes the shared constant's blast radius "repos initialised by the newer build" rather than every store-pointer update. Narrower than argued; the decision stands on the asymmetry, since a per-file number has no false refusals at all. | Task 23 finding 1 |
 | 2026-09-16 | **(owner decision, Task 23) The per-file number's one hole -- a forgotten bump -- is closed by a key-set tripwire test, and that test forces a DECISION rather than mandating a bump.** A shape change shipping with an unmoved number is silently misread by an older build, and nothing in the suite asserts `project.yaml`'s key set today. So: a test that fails when the key set changes without `.datom_project_schema` changing. The framing is load-bearing -- R9.5 is explicit that an addition does not move a number, and **Task 11 fires this test immediately** by adding `mode` and `set`, where the correct answer is to extend the expected set and leave the constant alone. Read as "key set changed, therefore bump", it would manufacture exactly the false refusal the per-file number was chosen to avoid. Same shape as Task 21's three vocabulary-list tests. | Task 23 finding 1 |
+| 2026-09-16 | **(implementation, Task 23) The `supported =` argument stays OPTIONAL, and the file-to-ceiling pairing lives in a wrapper rather than at each call site.** Requiring it was considered and rejected on evidence: the checker has exactly eight call sites (`R/forward-compat.R:439`, `R/lineage.R:170`, `R/manifest-rebuild.R:228`, `R/member.R:553`, `R/read_write.R:104`, `R/sync.R:930`, `:937`, `:1137`) and every one reads a machine-written manifest or metadata snapshot, where the global ceiling is the **correct** answer rather than a convenient one -- so requiring it would repeat one constant eight times to guard against a future ninth. The trap it would have closed is real though: a later caller for another hand-edited document that forgets the argument gets the global ceiling silently, which is the identical dead gate. Two things close it instead. A wrapper, `.datom_check_project_schema(cfg, source, operation)`, supplies `supported = .datom_project_schema` in one place -- two callers need it on day one (connection construction and the set-write gate), and the precedent is `.datom_artifacts_of_kind()`, where one predicate written out at four sites lost a tolerance at one. And the checker's docs state the rule that predicts an override, so it is derived rather than remembered: a document **datom writes** takes the global ceiling, a document that outlives its writing build and is **hand-edited** gets its own -- because the shared number only works while every document on it is written by one build in one operation, and `project.yaml` is written once at init then edited by hand for years. | Task 23 finding 1, `R/utils-validate.R:253` |
 | 2026-09-16 | **(implementation, Task 23) `.datom_check_schema_version()` gains a `supported =` argument in the SAME commit as the config gate, feeding the message as well as the comparison.** Neither the audit nor the review stated this, and without it the per-file number is a nominal gate: the checker compares against the global `.datom_supported_schema` and names it in the refusal, so the day this file's shape breaks and its own constant becomes `2L`, a build whose global ceiling is already `2L` compares `2 > 2`, proceeds, and misreads the new shape. Because the reading half **cannot be retrofitted** -- this task's whole premise -- no later release can fix the builds already installed, so it cannot be deferred. Defaulting the argument to `.datom_supported_schema` leaves every existing call site and its asserted message unchanged. | Task 23 finding 1, `R/utils-validate.R:253` |
