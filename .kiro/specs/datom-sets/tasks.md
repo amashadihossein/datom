@@ -167,6 +167,17 @@ were passing whatever the code did.
 code/documentation agreement (tests and examples run separately). Next is **Task 25** (write-side
 ergonomics), then Task 23, then Task 11 onward.
 
+**TASK 25 IS AUDITED AND STARTABLE COLD** -- ten findings in its body, and **one must be settled
+before the first line**, though it carries a stated default so nothing is blocked. That one: the task
+says a draft goes in `datom_write_set()`'s **first** argument and then says this is the second task to
+widen **the argument Task 10 widened** -- but those are two different parameters. `conn` is first,
+Task 10 widened `members`. The pipe sentence settles which is meant, and the default is to widen
+`conn` while leaving `members` alone, with the test asserting three *routes* to one write rather than
+three shapes of one argument. Two more are corrections rather than choices: the second argument of the
+add verb cannot be called `name`, for the same reason Task 24's third argument could not; and
+`print.datom_conn` does **not** mask a token, it never prints one, so an implementer must not go
+looking for a masking helper that does not exist. No escalation flag is owed.
+
 **TASK 24 IS CLOSED, AND A SET THAT READS CORRECTLY IS NOW PLEASANT TO USE.** Three verbs over the
 object `datom_get_set()` returns: `datom_fetch_member()` resolves one member named by name, by
 record **or** by link; `datom_list_members()` returns one row per member per tag as a plain data
@@ -3872,8 +3883,9 @@ reason.
     hypothetical.** `.datom_validate_tag_map()` is the thing that refuses a duplicate key and it runs
     on **writes only** -- Task 10 settled that a reader validates no tag map -- and `jsonlite` parses
     duplicate JSON keys into two same-named list elements rather than collapsing them, which was
-    checked rather than assumed. So a hand edit, a foreign writer or a newer datom delivers one and
-    nothing objects.
+    checked rather than assumed. So a hand edit or a foreign writer delivers one and nothing objects.
+    **Not a newer datom**, which an earlier draft of this record claimed: a future format would still
+    spell two labels as an array, so there is no version of datom that emits a repeated key.
 
     **Why the reviewer's framing is right and worth keeping**: this is must-not-undo item 1's own
     hazard arriving through a different door. Having one expander closed the silent-first-match failure
@@ -3961,6 +3973,82 @@ reason.
     written through the gates is refused on a non-product repo exactly as a direct write is._
   - _Pathway impact: none -- the write card's sequence is unchanged; this adds a second front door to
     it._
+  - **COLD-START AUDIT, 2026-09-15**, run after Task 24 landed, every claim checked against the tree
+    rather than reasoned about. **STARTABLE. Ten findings, ONE that must be decided before the first
+    line is written** -- it has a stated default, so a cold session is not blocked, but taking the
+    wrong branch means writing the widening twice. No escalation flag is owed: design.md section 12
+    carries E1 (Task 2) and E2 only.
+
+    **What held**, verified rather than assumed: `datom_member()` really does take
+    `(conn, name, version, tags = NULL)` with `version` required and SHA-validated, so "version stays
+    required" needs no new refusal, only its message; `datom_write_set()` really does already branch
+    on `inherits(members, "datom_set")` (`R/set.R:635`) and strip `fetch` only when it is a function,
+    so the read-back shape is live and testable; Task 24's `.datom_member_record()` really does
+    dispatch on link / list-with-`id` / name, so the shape-dispatch half this task wants exists; and
+    `datom_add_member()` accepting a link really is reachable, because a link carries its own record
+    as an attribute.
+
+    1. **THE ONE TO DECIDE FIRST: "`datom_write_set()`'s first argument" IS NOT THE ARGUMENT TASK 10
+       WIDENED, AND THE TASK BODY CONFLATES THEM.** The signature is
+       `datom_write_set(conn, members, tags = NULL, name = NULL, message = NULL)` -- the **first**
+       argument is `conn`, and Task 10 widened the **second**, `members`. So "this is the second task
+       to widen that argument... extend the branch, do not replace it" points at a branch that is not
+       the branch this task touches, and "a test asserting all three shapes reach the same write"
+       spans two different parameters. The pipe sentence is what settles it: `|> datom_write_set()`
+       with no arguments puts the draft in the **`conn`** position. Default: **widen `conn`, leave
+       `members`'s existing `datom_set` branch exactly as it is, and say in one comment that these are
+       two independent widenings on two parameters.** Two accepted shapes for `conn`, two for
+       `members`, and the test asserts three *routes* to one write -- plain list, `datom_set`, draft --
+       rather than three shapes of one argument.
+    2. **UNPACK THE DRAFT BEFORE THE THREE GUARDS AT THE TOP OF `datom_write_set()`.** Those guards
+       are `inherits(conn, "datom_conn")`, `conn$role != "developer"` and `is.null(conn$path)`
+       (`R/set.R:604-620`). A draft in the `conn` position fails the first one, so a pipe would abort
+       with "conn must be a datom_conn" -- naming the argument the user never typed. The unpack has to
+       come first, and it also supplies `name` and `tags`, which the gate below then uses.
+    3. **THE SECOND ARGUMENT OF `datom_add_member()` CANNOT BE CALLED `name`** -- the identical finding
+       Task 24 raised about `datom_fetch_member()`, approved there and shipped as `member`. It accepts
+       a name, a record **or** a link, so for two of three shapes the parameter name is a lie and
+       `datom_add_member(draft, name = m$fetch)` reads as a bug at the call site. Default:
+       **`datom_add_member(x, member, version = NULL, tags = NULL)`**.
+    4. **`version` AND `tags` BESIDE A RECORD OR A LINK MUST BE REFUSED, NOT IGNORED**, which is why
+       `version` becomes `NULL`-defaulted in finding 3 rather than staying positional-required. A
+       record already carries its own version and tags; silently preferring one over the other would
+       add a member pinned to a version the caller did not ask for. Task 24 shipped exactly this
+       refusal (`.datom_member_record()`'s `from_object()`), and its wording is name-lookup specific,
+       so this task needs its own message rather than that one.
+    5. **"THE SAME ACCESSOR TASK 24'S RESOLVER USES" DOES NOT FIT AS BUILT, AND CALLING IT ANYWAY
+       SEARCHES THE WRONG THING.** `.datom_member_record(members, member, tags, version)` resolves a
+       name **within a set's existing member list**. In `datom_add_member()` a name means "look this
+       artifact up in the project's storage" -- that is `datom_member(conn, name, version, tags)`.
+       Passing the draft's accumulated members would look the new name up among members already added.
+       Default: **extract the shape dispatch** (link -> its record; list with `id` -> itself; string ->
+       hand back to the caller) into one small helper both verbs call, leaving the name **lookup**
+       different in each because it genuinely is.
+    6. **`print.datom_conn` DOES NOT MASK A TOKEN -- IT NEVER PRINTS ONE.** The task's premise is
+       wrong. That method prints project, role, backend, root, prefix, governance, endpoint, path and
+       repo URL (`R/conn.R:230-280`) and never touches `github_pat`. The **conclusion stands** -- the
+       draft's print method must not print the connection -- but the reason is that the existing method
+       omits the secret entirely, not that it masks it. Stated because "masks its token" sends an
+       implementer looking for a masking helper that does not exist, and inventing one is how a token
+       reaches output.
+    7. **A DRAFT DELIBERATELY HOLDS A CONNECTION, WHICH INVERTS TASK 10'S PURITY RULE**, and the two
+       must not be reconciled. Task 10's guard is a test that a serialized member contains **no**
+       token; a draft holds a live connection on purpose, because per-entry validation needs a storage
+       read. So: no purity test for a draft, the print method warns instead, and if a test ever
+       `saveRDS()`es one the fixture's fake token in the bytes is expected rather than a leak.
+    8. **PER-ENTRY VALIDATION COSTS ONE STORAGE READ PER `datom_add_member()` CALL**, because that is
+       what `datom_member()` does (`.datom_storage_read_json()` on the version's snapshot). Not a
+       regression -- the direct form makes the same n reads -- but a cold session should know a
+       50-member draft is 50 round trips, and that `datom_write_set()` must **not** re-read them when
+       the draft arrives.
+    9. **A DRAFT AND A `members` ARGUMENT TOGETHER MUST BE REFUSED.** With the draft in the `conn`
+        position, `members` is still a formal argument, so `datom_write_set(draft, some_list)` parses.
+        Silently preferring either one writes a set the caller did not describe. Same shape as finding
+        4, one test.
+    10. **THREE EXPORTS MEAN THREE `_pkgdown.yml` ENTRIES** -- `datom_assemble_set`,
+        `datom_add_member`, `print.datom_set_draft` -- beside the six set entries now at
+        `_pkgdown.yml:62-67`, plus the NAMESPACE lines `devtools::document()` generates. Task 24's
+        equivalent finding was real: nothing in the suite catches the omission.
 
 ---
 

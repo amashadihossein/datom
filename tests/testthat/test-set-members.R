@@ -88,7 +88,8 @@ test_that("an untagged member still gets a row, so the name list is complete", {
 test_that("a tag map carrying one key twice keeps both labels", {
   # THE READ SIDE VALIDATES NO TAG MAP -- `.datom_validate_tag_map()`, which is
   # what refuses a duplicate key, runs only on a write. So a duplicate arrives
-  # from a hand edit, a foreign writer, or a newer datom, and `jsonlite` parses
+  # from a hand edit or a foreign writer -- NOT from a newer datom, which would
+  # still write an array for two labels -- and `jsonlite` parses
   # `{"type": "output", "type": "baseline"}` into two same-named elements rather
   # than collapsing them.
   #
