@@ -388,7 +388,11 @@
         "A set must have at least one member.",
         "i" = "An empty set has no content to identify, so it cannot be cited.",
         "i" = "Declare members with {.fn datom_member} and write the set once \\
-               its first output exists."
+               its first output exists.",
+        # A caller who got here through a draft never called `datom_member()` and
+        # would go looking for the wrong verb.
+        "i" = "Building the set in steps? Add one with {.fn datom_add_member} \\
+               before writing the draft."
       ),
       class = "datom_set_empty"
     )

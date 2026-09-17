@@ -18,7 +18,8 @@ refused beside a record or a link.}
 is a name. Refused beside a record or a link, which carry their own.}
 }
 \value{
-The draft, one member longer.
+The draft, one member longer -- or unchanged, when the member was
+already in it with the same labels.
 }
 \description{
 Declares one member and appends it to a draft from \code{\link[=datom_assemble_set]{datom_assemble_set()}},
@@ -63,6 +64,24 @@ current". Inferring current would make a build script produce a \strong{differen
 set} on each run from byte-identical source. Pinning is what makes the
 artifact immutable; requiring the pin is what makes the code reproducible.
 List versions with \code{\link[=datom_history]{datom_history()}}.
+}
+
+\section{Adding the same member twice}{
+
+The two cases differ, and they differ the same way they differ at the write:
+\itemize{
+\item \strong{The same version with the same labels} is skipped, with a note. The write
+drops an exact repeat anyway, so refusing here would make a draft stricter
+than the equivalent list -- \code{Reduce(datom_add_member, records, init = draft)}
+over a generated list that happens to repeat would fail where it works today.
+\item \strong{The same version with different labels} aborts. One version of one
+artifact is one member holding one set of labels, and merging or choosing
+between two sets would guess. The write refuses this too; here it names the
+line that introduced it.
+}
+
+So the member count a draft reports is the count the write will produce. Two
+different \strong{versions} of one artifact are two members, and both are kept.
 }
 
 \examples{

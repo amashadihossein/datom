@@ -413,6 +413,12 @@ names that member, rather than after the whole list has been assembled.
     script produce a different set on each run from unchanged source.
   * `version` and `tags` beside a record or a link are **refused rather than
     ignored**, since a record already carries its own.
+  * **Adding the same member twice is settled as you add it**, so the count a
+    draft reports is the count the write produces. The same version with the same
+    labels is skipped, with a note -- the write drops an exact repeat anyway. The
+    same version with **different** labels stops there and names both label sets,
+    which the write refuses too; here it names the line that introduced it. Two
+    different **versions** of one artifact are two members, and both are kept.
 
 * **`datom_write_set()`'s first argument now also accepts a draft**, so the pipe
   ends with no arguments typed. The checks are the same either way: a draft's name

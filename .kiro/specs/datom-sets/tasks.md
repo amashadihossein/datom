@@ -21,7 +21,8 @@ that followed it -> 3050 after Task 22 -> 3053 after the three review findings t
 it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding that followed it ->
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
 3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
-after the review finding that followed it -> **3770 after Task 25**.
+after the review finding that followed it -> 3770 after Task 25 -> **3781 after the review finding
+that followed it**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -164,7 +165,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3770** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3781** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 23**
 (`project.yaml` declares its format), then Task 11 onward. **Phase F is complete**, so nothing in
@@ -187,6 +188,17 @@ at the top of the write and the test for a supplied member list is `missing()`, 
 argument**, because two connections on one draft ends the property the verb is built on, and the
 cross-project case is already covered by passing a **record** built on the other project's
 connection, which is a capability rather than sugar and now has its own test on the written payload.
+**Reviewed after it landed; one finding, accepted and fixed (tests -> 3781)**: a draft printed a
+member count the write could silently change, because the write drops an exact repeat -- same
+version, same labels -- while the draft appended it. Adding the same version with **different**
+labels was worse: already an error at the write, so it aborted after forty lines had run instead of
+on the line that introduced it. Both now settle at the add: an exact repeat is skipped and said out
+loud, a disagreement aborts naming both label sets. **One thing the fix over-claimed and the probe
+corrected**: it briefly tidied the record on the way in, on the theory that two spellings of one
+label set would otherwise read as a conflict -- but the identity encoder already sorts a tag map's
+keys and encodes each value as a sorted, deduplicated set, so the digest was blind to that
+difference all along. The tidy is gone; the load-bearing part is comparing **digests** rather than
+records, and swapping in `identical()` reddens exactly the test that pins it.
 
 **TASK 24 IS CLOSED, AND A SET THAT READS CORRECTLY IS NOW PLEASANT TO USE.** Three verbs over the
 object `datom_get_set()` returns: `datom_fetch_member()` resolves one member named by name, by
@@ -4173,6 +4185,58 @@ reason.
     pointer compares the four fields by name instead of comparing records with `identical()`. The
     hash does not depend on key order and the write re-canonicalises, so nothing is wrong -- but an
     `identical()` assertion there fails for a reason that has nothing to do with this path.
+
+  - **REVIEWED after it landed; one finding, accepted and fixed (tests 3770 -> 3781).** A draft's
+    printed member count could disagree with what the write produced, and the reviewer's framing of
+    why it matters *more here than in the list form* is the part worth keeping: a list is one
+    expression, so "reported once the whole list is built" is where the caller already was -- but
+    this path exists so errors land on the line that caused them, and its print method is what makes
+    a pipe inspectable mid-build, so the count is the one number a caller trusts.
+
+    **Two mechanisms in the write that did not know about the draft.**
+    `.datom_order_set_members()` drops an **exact** repeat -- same `id` *and* same tags -- silently,
+    because the digest it dedupes on covers tags. So forty `datom_add_member()` lines with one
+    accidental repeat printed 40 and wrote 39, with nothing said about the drop. The same `id` with
+    **different** tags survives that dedup and is refused by `.datom_check_set_payload()`, which
+    names the member but cannot name which of the forty lines introduced it.
+
+    **Both now settle at the add, and the two cases are deliberately answered differently.** An
+    exact repeat is **skipped, with an info message** -- not refused, because refusing would make a
+    draft stricter than the equivalent list, and `Reduce(datom_add_member, records, init = draft)`
+    over a generated list that happens to repeat would start failing where it works today; and not
+    skipped in silence, because that moves the surprise rather than removing it. A same-version
+    disagreement **aborts**, naming both label sets, reusing the write's own
+    `datom_set_member_conflict` class so a caller dispatches on the rule rather than on the site.
+    The draft is left untouched in both cases.
+
+    **ONE THING THE FIX OVER-CLAIMED, CAUGHT BY PROBING RATHER THAN BY READING, AND THE CORRECTION
+    IS THE REUSABLE PART.** The first version tidied the record on the way in and said both sides
+    had to be tidied before they were digested, or `domain = c("a", "b")` and `c("b", "a")` would
+    read as a conflict. Removing that tidy reddened **nothing**. The reason: `.datom_sv1_map()`
+    sorts a map's keys and `.datom_sv1_strset()` encodes each value as a sorted, deduplicated set,
+    so the digest is already blind to every spelling the write's tidy step collapses. The tidy was
+    therefore doing nothing for the guarantee while changing what a caller reads back out of a
+    draft, and it is gone. What **is** load-bearing is comparing digests rather than records:
+    swapping `identical(digest(a), digest(b))` for `identical(a, b)` reddens exactly the reordered
+    labels test, because that spelling refuses input the write accepts.
+
+    **Two probes, both from a copy taken once at a fixed path and never from git.** Removing the
+    skip reddens 5 assertions across 2 tests; the `identical()` spelling reddens 1.
+
+    **Not extended to self-reference, and the reviewer was right to say so**: a draft's name may be
+    `NULL` until `project.yaml` resolves it at the write, so a draft cannot know whether a member is
+    itself. That check stays where it is.
+
+    Also from the review: the empty-set refusal pointed only at `datom_member()`, which is the wrong
+    verb for anyone who arrived through a draft -- it now names `datom_add_member()` as well.
+
+    **What the reviewer verified rather than assumed, recorded so it is not re-derived**:
+    `.datom_check_set_payload()` uses `project` only for the self-reference check, so a foreign
+    member is not refused at the write and the cross-project capability works end to end rather than
+    only at the add; `.datom_validate_members()` really does refuse an unknown top-level key, so a
+    hand-built `fetch = "junk"` really does reach it; `.datom_member_shape()` really is shared by
+    both entry points; and `print.datom_set_draft()` really does read named fields off `x$conn`
+    without iterating it.
 
 ---
 

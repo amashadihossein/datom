@@ -9,7 +9,7 @@
 # bracket-heavy enough that a human miscounts. The build-script path keeps the
 # direct form; this is the human path.
 #
-# FIVE THINGS HERE ARE LOAD-BEARING AND EASY TO UNDO BY TIDYING.
+# SIX THINGS HERE ARE LOAD-BEARING AND EASY TO UNDO BY TIDYING.
 #
 #   1. THE DRAFT HOLDS THE CONNECTION, AND THAT IS STRUCTURAL RATHER THAN
 #      CONVENIENT. Validating a member as it is added means reading that
@@ -47,6 +47,75 @@
 #      test asserting a serialized one contains no token; a draft is the opposite
 #      by design. So there is no purity test for a draft -- the print method warns
 #      instead.
+#
+#   6. THE MEMBER COUNT A DRAFT REPORTS IS THE COUNT THE WRITE WILL PRODUCE, and
+#      skipping an exact repeat rather than appending it is what keeps those two
+#      numbers equal. The write drops an exact repeat silently, so a draft that
+#      appended it would print one count and write another -- and the printed
+#      count is the one number a caller inspects mid-pipe. The same version with
+#      DIFFERENT labels is an error at the write, so it is an error here too, on
+#      the line that introduced it. Both comparisons go through the write's own
+#      mechanisms -- the payload check's id key and the dedup's member digest --
+#      because `identical()` on two records reads two spellings of one label set
+#      as a disagreement and would refuse what the write accepts.
+
+
+#' Is This Member Already in the Draft, and Is It the Same Member?
+#'
+#' Answers the question the write answers twice, one step earlier, so a repeat
+#' lands on the line that introduced it.
+#'
+#' **Both of the write's rules are here, and they are deliberately different
+#' rules.** `.datom_order_set_members()` drops an **exact** repeat -- same `id`
+#' *and* same tags -- silently, because the digest it dedupes on covers tags. The
+#' same `id` with **different** tags survives that and is then refused by
+#' `.datom_check_set_payload()`, because merging the labels and picking one entry
+#' both guess. So an exact repeat is a duplicate to skip, and a same-version
+#' disagreement is an error.
+#'
+#' **The comparison uses the write's own two mechanisms rather than restating
+#' them**: the `project` / `name` / `version` key the payload check keys on, and
+#' the `datom-sv1` member digest the dedup keys on. `identical()` on the two
+#' records is the spelling to avoid, and it fails in the direction that refuses
+#' working input: the encoder sorts a tag map's keys and encodes each value as a
+#' sorted, deduplicated **set**, so `domain = c("a", "b")` and `c("b", "a")` are
+#' one member to the write and to the digest, while `identical()` reads them as a
+#' disagreement and aborts.
+#'
+#' That is also why nothing needs tidying first. Every spelling the write's tidy
+#' step collapses is a spelling the digest is already blind to, so a record can be
+#' compared -- and stored in the draft -- exactly as the caller supplied it.
+#'
+#' @param members The draft's members so far.
+#' @param record The record about to be added.
+#' @return A list with `status` -- `"new"`, `"duplicate"` or `"conflict"` -- and,
+#'   for the last two, `at`: the position of the member already in the draft.
+#' @keywords internal
+.datom_draft_member_clash <- function(members, record) {
+  if (!is.list(members) || length(members) == 0L) {
+    return(list(status = "new"))
+  }
+
+  # "\r" as the separator, for the reason the payload check uses it: an artifact
+  # name may hold a printable separator, so a printable one could make two
+  # different ids collide into one key.
+  id_key <- function(m) {
+    paste(m$id$project, m$id$name, m$id$version, sep = "\r")
+  }
+
+  at <- match(id_key(record), vapply(members, id_key, character(1L)))
+  if (is.na(at)) return(list(status = "new"))
+
+  digest <- function(m) .datom_sv1_hex(.datom_sv1_member(m, "member"))
+
+  status <- if (identical(digest(members[[at]]), digest(record))) {
+    "duplicate"
+  } else {
+    "conflict"
+  }
+
+  list(status = status, at = at)
+}
 
 
 #' Start assembling a set
@@ -221,10 +290,26 @@ datom_assemble_set <- function(conn, name = NULL, tags = NULL) {
 #' @param member The member to add: an artifact name, a member record, or a link.
 #' @param version The version to pin, when `member` is a name. Required there;
 #'   refused beside a record or a link.
+#' @section Adding the same member twice:
+#' The two cases differ, and they differ the same way they differ at the write:
+#'
+#' * **The same version with the same labels** is skipped, with a note. The write
+#'   drops an exact repeat anyway, so refusing here would make a draft stricter
+#'   than the equivalent list -- `Reduce(datom_add_member, records, init = draft)`
+#'   over a generated list that happens to repeat would fail where it works today.
+#' * **The same version with different labels** aborts. One version of one
+#'   artifact is one member holding one set of labels, and merging or choosing
+#'   between two sets would guess. The write refuses this too; here it names the
+#'   line that introduced it.
+#'
+#' So the member count a draft reports is the count the write will produce. Two
+#' different **versions** of one artifact are two members, and both are kept.
+#'
 #' @param tags Optional named list of text labels for this member, when `member`
 #'   is a name. Refused beside a record or a link, which carry their own.
 #'
-#' @return The draft, one member longer.
+#' @return The draft, one member longer -- or unchanged, when the member was
+#'   already in it with the same labels.
 #' @seealso [datom_assemble_set()] to open a draft, [datom_member()] to build a
 #'   record on another connection.
 #' @export
@@ -296,6 +381,48 @@ datom_add_member <- function(x, member, version = NULL, tags = NULL) {
     # The write-side contract, run per entry. That is the whole point of this
     # path: a malformed record aborts on the line that added it.
     .datom_validate_members(list(record))
+  }
+
+  # The record is appended AS GIVEN -- not tidied here. Tidying is the write's
+  # job, and doing it here would change what a caller reads back out of the draft
+  # for no gain: the duplicate check below compares member digests, and the
+  # encoder already treats a tag map as sorted keys over sorted, deduplicated
+  # value sets, so every spelling tidying would collapse digests the same anyway.
+  clash <- .datom_draft_member_clash(x$members, record)
+  nm <- record$id$name
+
+  if (identical(clash$status, "conflict")) {
+    have <- .datom_format_tag_line(x$members[[clash$at]]$tags)
+    want <- .datom_format_tag_line(record$tags)
+    cli::cli_abort(
+      c(
+        "{.val {nm}} is already in this draft, at the same version, with \\
+         different labels.",
+        "*" = "already added: {.val {have}}",
+        "*" = "adding now:    {.val {want}}",
+        "i" = "One version of one artifact is one member, and it holds one set \\
+               of labels.",
+        "i" = "To put it in two categories, give one key several values: \\
+               {.code list(type = c(\"input\", \"output\"))}.",
+        "i" = "Two different {.emph versions} of one artifact are two members, \\
+               and that is not this case."
+      ),
+      class = "datom_set_member_conflict"
+    )
+  }
+
+  if (identical(clash$status, "duplicate")) {
+    # SKIPPED, NOT REFUSED, and said out loud. The write drops an exact repeat
+    # silently, so refusing here would make the draft stricter than the list form
+    # -- `Reduce(datom_add_member, records, init = draft)` over a generated list
+    # that happens to repeat would start failing where it works today. Skipping
+    # in silence would move the surprise rather than remove it: the caller typed
+    # a line and the count would not move.
+    cli::cli_alert_info(
+      "{.val {nm}} is already in this draft with the same labels -- not added \\
+       twice."
+    )
+    return(x)
   }
 
   x$members <- c(x$members, list(record))

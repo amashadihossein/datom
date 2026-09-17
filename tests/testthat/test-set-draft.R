@@ -204,13 +204,14 @@ test_that("a record and a link are accepted in place of a name", {
   by_read <- datom_assemble_set(fx$conn) |>
     datom_add_member(x$members[[1L]])
 
+  # A record is appended exactly as supplied, so this one compares whole.
   expect_identical(by_record$members[[1L]], record)
 
-  # Compared field by field, not with `identical()`: the write sorts each `id`'s
-  # keys, so a record that has been through a write and a read carries the same
-  # four facts in alphabetical order. That costs nothing -- the hash does not
-  # depend on key order, and the write re-canonicalises -- but it is why these two
-  # assertions name the fields.
+  # These two are compared field by field instead, because the write sorts each
+  # `id`'s keys -- so a record that has been through a write and a read carries
+  # the same four facts in alphabetical order. Nothing about what is written or
+  # hashed changes, since the encoder sorts keys itself, which is exactly why the
+  # assertion has to name the fields rather than compare records.
   same_pointer <- function(m) {
     expect_identical(m$id[c("project", "name", "kind", "version")], record$id)
     expect_identical(m$tags, record$tags)
@@ -248,6 +249,84 @@ test_that("a version or tags beside a record or a link is refused, not ignored",
     class = "datom_member_declared_twice"
   )
   expect_match(conditionMessage(err_link), "a link")
+})
+
+test_that("the count a draft reports is the count the write produces", {
+  # An exact repeat is dropped by the write, silently, because the digest it
+  # dedupes on covers tags. A draft that appended it would print one number and
+  # write another -- and the printed number is the one a caller inspects mid-pipe.
+  fx <- local_draft_project()
+  v_dm <- sd_table(fx, "dm")
+  v_lb <- sd_table(fx, "lb")
+
+  draft <- datom_assemble_set(fx$conn) |>
+    datom_add_member("dm", v_dm, tags = list(type = "input")) |>
+    datom_add_member("lb", v_lb)
+
+  expect_message(
+    draft <- datom_add_member(draft, "dm", v_dm, tags = list(type = "input")),
+    "already in this draft"
+  )
+  expect_length(draft$members, 2L)
+
+  res <- sd_write(draft)
+  expect_identical(res$member_count, length(draft$members))
+})
+
+test_that("two spellings of one label set are one member, not a conflict", {
+  # The write tidies before it dedupes, so `c("a", "b")` and `c("b", "a")` are one
+  # member to it. A hand-written comparison here would read them as a conflict and
+  # refuse what the write accepts, which is why the check digests both sides after
+  # tidying.
+  fx <- local_draft_project()
+  v_dm <- sd_table(fx, "dm")
+
+  draft <- datom_assemble_set(fx$conn) |>
+    datom_add_member("dm", v_dm, tags = list(domain = c("safety", "efficacy")))
+
+  expect_message(
+    draft <- datom_add_member(
+      draft, "dm", v_dm, tags = list(domain = c("efficacy", "safety"))
+    ),
+    "already in this draft"
+  )
+  expect_length(draft$members, 1L)
+})
+
+test_that("the same version with different labels aborts on its own line", {
+  # Already an error at the write; this only moves it to where this path says
+  # errors belong, and the message names both label sets.
+  fx <- local_draft_project()
+  v_dm <- sd_table(fx, "dm")
+
+  draft <- datom_assemble_set(fx$conn) |>
+    datom_add_member("dm", v_dm, tags = list(type = "input"))
+
+  err <- expect_error(
+    datom_add_member(draft, "dm", v_dm, tags = list(type = "output")),
+    class = "datom_set_member_conflict"
+  )
+  msg <- conditionMessage(err)
+  expect_match(msg, "type=input")
+  expect_match(msg, "type=output")
+  # The draft is left as it was, so the caller can fix the line and carry on.
+  expect_length(draft$members, 1L)
+})
+
+test_that("two different versions of one artifact are two members", {
+  # The narrowing must not reach this: a current table beside a locked baseline is
+  # a legal pair of members, and the write keeps both.
+  fx <- local_draft_project()
+  v1 <- sd_table(fx, "dm", 3L)
+  v2 <- sd_table(fx, "dm", 5L)
+
+  draft <- datom_assemble_set(fx$conn) |>
+    datom_add_member("dm", v1, tags = list(release = "baseline")) |>
+    datom_add_member("dm", v2, tags = list(release = "current"))
+
+  expect_length(draft$members, 2L)
+  res <- sd_write(draft)
+  expect_identical(res$member_count, 2L)
 })
 
 test_that("a malformed record is refused as it is added", {
