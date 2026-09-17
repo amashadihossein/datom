@@ -175,8 +175,13 @@ Task 10 widened `members`. The pipe sentence settles which is meant, and the def
 `conn` while leaving `members` alone, with the test asserting three *routes* to one write rather than
 three shapes of one argument. Two more are corrections rather than choices: the second argument of the
 add verb cannot be called `name`, for the same reason Task 24's third argument could not; and
-`print.datom_conn` does **not** mask a token, it never prints one, so an implementer must not go
-looking for a masking helper that does not exist. No escalation flag is owed.
+`print.datom_conn` does **not** mask a token, it is an **allowlist** of named fields that never
+reaches one -- so an implementer must not go looking for a masking helper that does not exist, and
+must not later turn the allowlist into redaction, which would have to be taught every new secret.
+**One capability in that task reads as sugar and is not**: a draft holds one connection, so a member
+of another project cannot be declared by name in a pipe at all, and passing a **record** built on the
+other project's connection is the only route to a cross-project member. Restated in place with its own
+test, because "convenience" is what a later session deletes. No escalation flag is owed.
 
 **TASK 24 IS CLOSED, AND A SET THAT READS CORRECTLY IS NOW PLEASANT TO USE.** Three verbs over the
 object `datom_get_set()` returns: `datom_fetch_member()` resolves one member named by name, by
@@ -3938,10 +3943,31 @@ reason.
     connections live in memory only applies to it.
   - **`datom_add_member(x, name, version, tags = NULL)`** -> the draft, one member longer. Validates
     immediately, builds the member record through the same path `datom_member()` uses, and appends.
-    **Argument 2 also accepts a member record or a link** in place of a name, through the same
-    accessor Task 24's resolver uses -- so a script holding a list already can
+    **Argument 2 also accepts a member record or a link** in place of a name, through the shape
+    dispatch Task 24's resolver uses -- so a script holding a list already can
     `Reduce(datom_add_member, records, init = draft)` without a near-identical plural verb, which is a
     typo hazard rather than a convenience.
+    - **THAT SHAPE IS LOAD-BEARING, NOT SUGAR, AND THE CONVENIENCE FRAMING ABOVE UNDERSELLS IT TO THE
+      POINT WHERE A LATER SESSION COULD DROP IT** (raised in review of the cold-start audit,
+      2026-09-15). A draft holds **one** connection, and a name is resolved through it -- so
+      `datom_member()` reads the snapshot, its `schema_version`, its `kind` and the project cascade
+      against **that** connection. A member of a *different* project therefore cannot be declared by
+      name through a draft at all, and the record shape is the **only** route to a cross-project
+      member in a pipe:
+
+      ```r
+      datom_assemble_set(conn_a, "product") |>
+        datom_add_member("dm", v1) |>                       # this project, by name
+        datom_add_member(datom_member(conn_b, "ae", v2))    # another project, only this way
+      ```
+
+      One test, and it is not a duplicate of the shape-acceptance test: a draft on connection A
+      accepts a member declared on connection B, and the **written payload records B** as that
+      member's project.
+    - **Do not "fix" this by giving `datom_add_member()` a `conn` argument.** It would give the same
+      draft two connections and make "the draft holds the connection" false, which is the property the
+      whole verb is built on. The record shape already covers the case, and it covers it with a value
+      that is pure data.
     - **`version` stays required**, and this is where the reason has to be stated rather than assumed:
       inferring "current" would leave a build script producing a *different set* on each run from
       byte-identical source. The pin makes the artifact immutable; requiring it makes the **code**
@@ -4005,6 +4031,17 @@ reason.
        (`R/set.R:604-620`). A draft in the `conn` position fails the first one, so a pipe would abort
        with "conn must be a datom_conn" -- naming the argument the user never typed. The unpack has to
        come first, and it also supplies `name` and `tags`, which the gate below then uses.
+       - **`members` IS MISSING ON THAT CALL, NOT `NULL`, AND THE DIFFERENCE BITES** (raised in review,
+         2026-09-15). `datom_write_set(draft)` leaves `members` with no value and the formal has no
+         default, so **`is.null(members)` errors** with `argument "members" is missing, with no
+         default` -- verified. `is.null()` is the spelling somebody will reach for and it fails on the
+         correct call rather than the incorrect one. The test is `missing(members)`, and nothing may
+         evaluate `members` before the rebind.
+       - **The `conn` guard's own message goes stale with the widening** and must be updated in the
+         same edit, not after. It currently says `conn` must be a `datom_conn` from
+         `datom_get_conn()`, which becomes wrong the moment a draft is legal there -- and it is the
+         message a mistyped pipe lands on, so it is the one that most needs to name both accepted
+         shapes.
     3. **THE SECOND ARGUMENT OF `datom_add_member()` CANNOT BE CALLED `name`** -- the identical finding
        Task 24 raised about `datom_fetch_member()`, approved there and shipped as `member`. It accepts
        a name, a record **or** a link, so for two of three shapes the parameter name is a lie and
@@ -4024,13 +4061,18 @@ reason.
        Default: **extract the shape dispatch** (link -> its record; list with `id` -> itself; string ->
        hand back to the caller) into one small helper both verbs call, leaving the name **lookup**
        different in each because it genuinely is.
-    6. **`print.datom_conn` DOES NOT MASK A TOKEN -- IT NEVER PRINTS ONE.** The task's premise is
-       wrong. That method prints project, role, backend, root, prefix, governance, endpoint, path and
-       repo URL (`R/conn.R:230-280`) and never touches `github_pat`. The **conclusion stands** -- the
-       draft's print method must not print the connection -- but the reason is that the existing method
-       omits the secret entirely, not that it masks it. Stated because "masks its token" sends an
-       implementer looking for a masking helper that does not exist, and inventing one is how a token
-       reaches output.
+    6. **`print.datom_conn` DOES NOT MASK A TOKEN -- IT IS AN ALLOWLIST THAT NEVER REACHES ONE.** The
+       task's premise is wrong. That method emits one `cli_li()` per **named** field -- project, role,
+       backend, data root, data prefix, data region, governance and its three, endpoint, path, repo URL
+       (`R/conn.R:230-280`) -- and never iterates the connection, so `github_pat` is not omitted by a
+       rule, it is simply never named. The **conclusion stands** -- the draft's print method must not
+       print the connection -- but the reason has to be stated as an allowlist, for the same reason
+       identity hashing is an allowlist here: **a credential field added to `datom_conn` later cannot
+       leak through it.** Redaction would have to be taught each new secret; an allowlist is safe by
+       default. So this must not be "fixed" into masking, and the draft's own print method follows the
+       same shape -- name what it shows, never hand it an object to summarise. Stated because "masks
+       its token" sends an implementer looking for a masking helper that does not exist, and inventing
+       one is how a token reaches output.
     7. **A DRAFT DELIBERATELY HOLDS A CONNECTION, WHICH INVERTS TASK 10'S PURITY RULE**, and the two
        must not be reconciled. Task 10's guard is a test that a serialized member contains **no**
        token; a draft holds a live connection on purpose, because per-entry validation needs a storage
