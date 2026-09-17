@@ -171,6 +171,23 @@ code/documentation agreement (tests and examples run separately). Next is **Task
 (`project.yaml` declares its format), then Task 11 onward. **Phase F is complete**, so nothing in
 the set surface is half-built.
 
+**TASK 23 IS AUDITED AND STARTABLE COLD (2026-09-16)** -- ten findings in its body, and **one must be
+settled before the first line**, though it carries a stated default so nothing is blocked. That one:
+the task says the number is "incremented by R9.5's table like any other document" but never says what
+to **stamp** today, and every existing stamp site writes the one shared constant rather than a
+per-file number -- so putting the config file on that constant means its declared number moves when
+the *manifest* or *metadata* breaks, and a build one version behind then loses the whole developer
+path on a file whose shape never changed. The default is to stamp the shared constant anyway, because
+a second one would be kept in step by hand, and to name the cost plus the escape hatch in the refusal
+-- a **reader** connection never reads this file. **Two findings change what the task's body says.**
+The body names two read sites and there are now **four**: Task 9's set-write gates parse this file on
+every set write and read `mode` and `set`, which are the very fields the requirement exists for, so
+that site gets the check too. And the harm the body illustrates with a silent `datom_sync()` no-op is
+now sharper in shipped code: a future format that moved `set:` would make those gates report "declares
+`mode: product` but names no set" and send the user to hand-edit a file that is already correct.
+**No escalation flag is owed**, and unlike the last four tasks this one adds no export, so there is no
+`_pkgdown.yml` or NAMESPACE step.
+
 **TASK 25 IS CLOSED, AND A SET IS NOW PLEASANT TO BUILD AS WELL AS TO READ.**
 `datom_assemble_set(conn, name = NULL, tags = NULL)` opens a draft, `datom_add_member(x, member,
 version = NULL, tags = NULL)` validates one member and appends it, `print.datom_set_draft()` shows
@@ -3604,6 +3621,93 @@ rather than in Phase D beside the task it blocks.
     never have caught it -- the vocabulary check does. **So the window this task protects is narrower
     than it first looks: a product repo that does not yet hold a set** -- which is precisely the state
     a repo is in immediately after init, and the state in which somebody reaches for `datom_sync()`.
+  - **COLD-START AUDIT, 2026-09-16**, run after Task 25 landed, every claim checked against the tree
+    rather than reasoned about. **STARTABLE. Ten findings, ONE that must be decided before the first
+    line** -- it carries a stated default, so a cold session is not blocked, but the wrong branch
+    means a second constant and a changed checker signature. No escalation flag is owed: design.md
+    section 12 carries E1 (Task 2) and E2 (Task 6) only.
+
+    **What held**, verified rather than assumed. The developer path parses the file at
+    `R/conn.R:937` and reads `project_name` immediately after, so the reading half really is one
+    call with `cfg` and the yaml path. `.datom_check_schema_version()` (`R/utils-validate.R:253`)
+    already takes a parsed list plus a source label, already returns `invisible(1L)` when the field
+    is absent, and its `operation` argument only picks a word -- so no signature change. **Reader
+    connections really never parse this file**: `yaml::read_yaml()` has four call sites and all four
+    are developer-path. The post-pull re-read at `R/ref.R:327` is real, reads only
+    `cfg$storage$data$root`, and sits inside the migrated branch; `conn$min_writer_version` is
+    assigned at `R/conn.R:1081` from the **pre-pull** parse, so the stale-floor claim in this task's
+    body is exactly right. The init config block is where the body says (`R/conn.R:509`, with
+    `datom_version` beside it). Task 11 states the dependency from its own end. And **nothing in the
+    suite asserts `project.yaml`'s key set**, so stamping a field breaks no test --
+    `datom_repo_set_data_store()` (`R/repo.R:90`) even read-modify-writes the file, so an unknown
+    `schema_version` is carried forward rather than dropped, which is the edit-don't-rebuild property
+    Task 20 relies on elsewhere.
+
+    1. **THE ONE TO DECIDE FIRST: WHICH NUMBER GETS STAMPED, AND WHAT IT COSTS WHEN A DIFFERENT
+       DOCUMENT BREAKS.** The body says "incremented by R9.5's table like any other document" but
+       never says what to write today. Every existing stamp site writes the **shared** constant
+       `.datom_supported_schema` (`R/utils-validate.R:212`, currently `2L`) rather than a per-file
+       number: `R/read_write.R:391`, its sibling for sets, `R/manifest-upgrade.R:134` and the
+       manifest skeleton. So the number is in practice one repo-wide format number, and putting
+       `project.yaml` on it means **this file's declared number moves when the manifest or per-artifact
+       metadata breaks**, on content that did not change. Default: **stamp
+       `.datom_supported_schema`**, because one constant is what R9.6's single schema-history table
+       describes and a second one would have to be kept in step by hand. State the cost where the
+       refusal is raised: a build supporting v2 meeting a `project.yaml` declaring v3 loses the
+       **developer** path entirely, including reads that would have worked -- and the escape hatch is
+       real and worth naming in the message, since a **reader** connection never reads this file. The
+       alternative, a per-document constant, forks the mechanism: `.datom_check_schema_version()`
+       compares against one global ceiling, so it would need a `supported =` argument.
+    2. **THERE ARE NOW FOUR READ SITES, NOT TWO, AND THE NEW ONE READS EXACTLY THE FIELDS THIS
+       REQUIREMENT IS ABOUT.** The body names `R/conn.R:937` and `R/ref.R:327`; both still hold.
+       Since it was written, Task 9 added `.datom_check_set_write_gates()` (`R/set.R:93`, parse at
+       `R/set.R:107`), which reads `mode` and `set` on **every set write** -- the R10.2 fields that
+       motivate the whole task. `datom_repo_set_data_store()` (`R/repo.R:90`) parses it too, and
+       `datom_repo_attach_governance()` checks only that it exists. Default: **add the check to the
+       set-write gates** as well -- `cfg` is already parsed there and `operation = "write"` gives the
+       right wording -- and say in one line that the two `repo.R` verbs are covered by the
+       connection-time gate because both require a developer connection, rather than leaving that
+       silent.
+    3. **THE HARM THIS TASK PREVENTS NOW EXISTS IN SHIPPED CODE, AND IT IS A SHARPER EXAMPLE THAN
+       THE ONE IN THE BODY.** The body's case is a silent `datom_sync()` no-op on a product repo,
+       which is unhelpful rather than corrupting. Since Task 9, a set write reads `set:` out of this
+       file -- so a future format that renamed or moved that field would make the gate report "this
+       repo declares `mode: product` but names no set" and tell the user to hand-edit a file that is
+       already correct. An actionable-looking message that is wrong is worse than a no-op, and it is
+       reachable today rather than hypothetically.
+    4. **THE `operation` WORD, SO NOBODY ADDS A THIRD ONE.** Opening a connection is neither a read
+       nor a write, and the refusal ends "...which this build cannot {operation}". Default: leave the
+       connection-time call at the function's own default, `"read"` -- "this build cannot read" is
+       literally true of the config file -- and do **not** widen the `match.arg()` set, which would
+       touch the message text existing tests assert on. Pass `"write"` only at the set-write gate.
+    5. **AC39(c) MUST ASSERT ON THE WRITTEN FILE, AND HERE THAT IS NOT PEDANTRY.** A test against
+       the in-memory `project_config` list cannot see what `yaml::write_yaml()` did with an integer,
+       which is the one thing the clause is about. Read the file back in the test.
+    6. **AC39(b) IS A CHARACTERIZATION TEST, NOT NEW CODE.** `.datom_check_schema_version()` already
+       returns `invisible(1L)` for an absent field, so "no warning, no refusal, no change of any
+       kind" holds by reuse. Say so, or a call site grows a second absent-means-v1 branch that
+       cannot disagree with the first only by luck.
+    7. **AC39(d) IS THE CLAUSE A LATER TIDY-UP BREAKS, AND NOTHING TODAY WOULD CATCH IT.** Verified:
+       `.datom_get_conn_developer()` ignores keys it does not know, so the tolerance is real but
+       incidental -- it is a property nobody chose. The test is what converts it into a decision, and
+       it is the reason the vocabulary check must never be pointed at this file.
+    8. **THE STALE FLOOR IS NOT FIXED BY THE OBVIOUS FIX, AND THE TWO HONEST OPTIONS DIFFER IN
+       SCOPE.** Gating the post-pull re-read covers the *format* but leaves `conn$min_writer_version`
+       read from the pre-pull parse (`R/conn.R:1081`), because that assignment runs after the pull
+       but off the older `cfg`. Fixing it means re-parsing once `.datom_resolve_data_location()`
+       returns and reading the floor from the fresh copy -- a change to connection construction with
+       Task 21's test surface attached. Default: **gate the re-read, record the floor residual** the
+       way the table-write pull staleness was recorded, and do not widen scope.
+    9. **THE PATHWAY CARD NEEDS ITS QUESTION WIDENED, NOT JUST A ROW ADDED.** "Given a repo, decide
+       whether this build can read it" opens with "a metadata or manifest document just arrived from
+       storage or from the local clone", and `project.yaml` is neither -- it is a hand-edited config
+       parsed while a connection is built. Its step 3 also carves out the manifest-only rebuild
+       hatch; this file has no hatch and aborts like per-artifact metadata. Default: widen the
+       question line, add the file to the primary-files list, and add the developer-connection entry
+       to "where it is called".
+    10. **NO NEW EXPORT, SO NO `_pkgdown.yml` ENTRY AND NO NAMESPACE CHANGE** -- unlike the last four
+        tasks, which all added exports and all needed that reminder. Both halves here are internal:
+        one call inside connection construction and one field inside an existing config block.
   - _Requirements: R9.8, R9.4 (why not `datom_version`), R9.5 (the bump rule), R10.2 (the fields that
     make it matter), R23.1 (the mechanism this deliberately does not use). Acceptance: AC39 (all four
     clauses), with (d) as the one a later tidy-up would break. **Pathway impact: yes** -- the
