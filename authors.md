@@ -7,7 +7,7 @@
 ## Citation
 
 Source:
-[`DESCRIPTION`](https://github.com/amashadihossein/datom/blob/main/DESCRIPTION)
+[`DESCRIPTION`](https://github.com/amashadihossein/datom/blob/v0.1.2/DESCRIPTION)
 
 Mashadi-Hossein A (2026). *datom: A Unified Framework for Versioned,
 Traceable Tabular Data*. R package version 0.1.2,

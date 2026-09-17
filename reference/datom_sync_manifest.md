@@ -67,8 +67,8 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpO5fc63/datom-example-1924729a6213/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpO5fc63/datom-example-1924729a6213/repo
+#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b54966973/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b54966973/repo
 #> ℹ Scanned 1 file: 1 new, 0 changed, 0 unchanged.
 #>   name format status
 #> 1   dm    csv    new

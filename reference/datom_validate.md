@@ -66,8 +66,8 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpO5fc63/datom-example-192464ba7e8b/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpO5fc63/datom-example-192464ba7e8b/repo
+#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b5aac65b9/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b5aac65b9/repo
 #> ✔ Wrote "dm" (full): "039f0c3f"
 #> ℹ No governance attached -- skipping dispatch/ref/migration_history checks.
 #> ✔ All checks passed. Git and S3 are consistent.

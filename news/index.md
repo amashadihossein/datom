@@ -2,6 +2,8 @@
 
 ## datom 0.1.2
 
+CRAN release: 2026-09-08
+
 Test-only fix for the CRAN check failures reported against 0.1.1. No
 package code changed and no user-facing behaviour changed.
 
@@ -18,6 +20,8 @@ package code changed and no user-facing behaviour changed.
   already derived the branch that way and was unaffected.
 
 ## datom 0.1.1
+
+CRAN release: 2026-09-01
 
 Initial CRAN release. `datom` provides version-controlled data
 management for reproducible scientific and clinical workflows — tables

@@ -51,14 +51,14 @@ listing.
 # created governance store lists an empty portfolio.
 tmp <- tempfile("datom-example-")
 gov <- datom_store_local(file.path(tmp, "gov-storage"))
-#> ℹ Created store directory /tmp/RtmpO5fc63/datom-example-192437f944ed/gov-storage.
+#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b30ed977/gov-storage.
 
 store <- datom_store(
   governance   = gov,
   data         = datom_store_local(file.path(tmp, "storage")),
   gov_repo_url = "https://github.com/example/acme-gov"
 )
-#> ℹ Created store directory /tmp/RtmpO5fc63/datom-example-192437f944ed/storage.
+#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b30ed977/storage.
 
 datom_projects(store)
 #> [1] name          data_backend  data_root     data_prefix   registered_at
