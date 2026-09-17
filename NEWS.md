@@ -377,6 +377,51 @@ read did not already read, and two of them touch no storage at all.
   you can type from what it just listed. A member's `$fetch` link still works and
   is what a leaf of the grouped view hands you.
 
+## New: assembling a set a member at a time
+
+A set can now be built in a pipe, with each member checked as it is added:
+
+```r
+datom_assemble_set(conn, tags = list(description = "ADaM datasets")) |>
+  datom_add_member("adsl", v_adsl, tags = list(type = "output")) |>
+  datom_add_member("dm", v_dm, tags = list(type = "input")) |>
+  datom_write_set()
+```
+
+The single-call form -- a `list()` of `datom_member()` results -- is unchanged and
+still the better fit for a build script. The payload the two produce is identical;
+what differs is **where an error surfaces**. A malformed label map, or an artifact
+that does not exist at the version given, aborts on the line that declared it and
+names that member, rather than after the whole list has been assembled.
+
+* **`datom_assemble_set(conn, name = NULL, tags = NULL)`** opens a draft. `name`
+  defaults to the set the repo declares under `set:`, which is the usual case. Set
+  level labels are supplied here and are checked here too.
+
+* **`datom_add_member(x, member, version = NULL, tags = NULL)`** appends one
+  member. `member` accepts a **name, a member record, or a link**, the same three
+  shapes `datom_fetch_member()` takes.
+
+  * **A record is how you include a member of another project.** A draft holds one
+    connection, so a name can only be looked up in that project;
+    `datom_add_member(datom_member(conn_b, "ae", v))` is the route to a member of
+    another one.
+  * **A link is how a consumer cites what they used** -- a leaf of
+    `datom_structure_members()` can be added to a new set directly.
+  * **`version` is required when you add by name**, and the refusal points at
+    `datom_history()`. There is no "current": inferring one would make a build
+    script produce a different set on each run from unchanged source.
+  * `version` and `tags` beside a record or a link are **refused rather than
+    ignored**, since a record already carries its own.
+
+* **`datom_write_set()`'s first argument now also accepts a draft**, so the pipe
+  ends with no arguments typed. The checks are the same either way: a draft's name
+  is compared against `.datom/project.yaml` exactly as a supplied one is.
+
+* **A draft holds a live connection, so it belongs in memory only.** Printing one
+  shows what is assembled so far, that it is not written yet, and that it should
+  not be saved to disk. Write the set, then cite the set.
+
 ## A project name in a stored document now comes from the repo, not from your connection
 
 Every artifact's `metadata.json` now records a **`project`** field: the name the

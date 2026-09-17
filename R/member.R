@@ -163,6 +163,67 @@
 }
 
 
+#' Which of the Three Shapes a Member Argument Arrived In
+#'
+#' A caller naming one member holds one of three things, and every verb that
+#' takes a member accepts all three: a **name**, a **member record** (what
+#' [datom_member()] returns, and what stripping a read set's links produces), or
+#' a **link** (a member's `fetch` element, or a leaf of
+#' [datom_structure_members()]).
+#'
+#' This is the shape dispatch alone, deliberately without the lookup. What a
+#' **name** means differs by verb -- to [datom_fetch_member()] it is a member of
+#' the set already in hand, to [datom_add_member()] it is an artifact to look up
+#' in the project's storage -- so handing the name back to the caller is what lets
+#' one dispatch serve both without either searching the wrong thing.
+#'
+#' The refusal of `tags` / `version` beside a record or a link is left to each
+#' caller too: both refuse, and the reason differs enough to word differently
+#' (narrowing a search versus declaring a member twice). `shape` is the phrase to
+#' name it by, so the two messages at least agree on what the caller passed.
+#'
+#' @param member The value the caller passed.
+#' @param arg Argument name for the message.
+#' @return A list of `shape` (a phrase naming what arrived) and `record` (the
+#'   member record, or `NULL` when a name arrived).
+#' @keywords internal
+.datom_member_shape <- function(member, arg = "member") {
+  if (inherits(member, "datom_link")) {
+    record <- attr(member, "datom_member")
+    if (!is.list(record)) {
+      cli::cli_abort(
+        c(
+          "This link carries no member record, so what it points at is \\
+           unknown.",
+          "i" = "Links come from {.fn datom_get_set} -- read the set again \\
+                 rather than reconstructing one."
+        ),
+        class = "datom_member_unusable"
+      )
+    }
+    return(list(shape = "a link", record = record))
+  }
+
+  if (is.list(member)) {
+    return(list(shape = "a member record", record = member))
+  }
+
+  if (.datom_is_text_scalar(member)) {
+    return(list(shape = "a name", record = NULL))
+  }
+
+  cli::cli_abort(
+    c(
+      "{.arg {arg}} must be a member's name, a member record, or a link.",
+      "i" = "You passed {.cls {class(member)}}.",
+      "i" = "A link is a member's {.field fetch} element; a record is what \\
+             {.fn datom_member} returns."
+    ),
+    class = "datom_member_unusable"
+  )
+}
+
+
 #' Validate a Member List
 #'
 #' Checks that `members` is a list of member records, each an `id` of exactly

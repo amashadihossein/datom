@@ -496,6 +496,12 @@
 #' One accessor for the three shapes a caller holds, so a console call and a loop
 #' use the same verb: a **name**, a **member record**, or a **link**.
 #'
+#' The shape dispatch itself is [.datom_member_shape()], shared with
+#' [datom_add_member()]. Only the **name** half is here, and it genuinely differs
+#' between the two verbs: a name means "a member of this set" here and "an
+#' artifact in this project's storage" there, so a shared lookup would search the
+#' wrong thing on one of the two routes.
+#'
 #' A record with no `fetch` on it is accepted, and that matters: it is the payload
 #' shape -- what a caller who built a member with [datom_member()] holds, and what
 #' stripping a read set's links produces. The accessor keys on `id` and nothing
@@ -514,53 +520,27 @@
 #' @keywords internal
 .datom_member_record <- function(members, member, tags = NULL,
                                  version = NULL) {
-  from_object <- function(record, shape) {
-    if (!is.null(tags) || !is.null(version)) {
-      cli::cli_abort(
-        c(
-          "{.arg tags} and {.arg version} narrow a member {.emph name}, and \\
-           you passed {shape}.",
-          "i" = "{shape} already names one exact member, so a filter beside it \\
-                 could only disagree with it.",
-          "i" = "Drop the filter, or pass the member's name instead."
-        ),
-        class = "datom_member_filter_ignored"
-      )
-    }
-    record
+  got <- .datom_member_shape(member)
+  shape <- got$shape
+
+  if (is.null(got$record)) {
+    return(.datom_find_member(members, member, tags, version))
   }
 
-  if (inherits(member, "datom_link")) {
-    record <- attr(member, "datom_member")
-    if (!is.list(record)) {
-      cli::cli_abort(
-        c(
-          "This link carries no member record, so what it points at is \\
-           unknown.",
-          "i" = "Links come from {.fn datom_get_set} -- read the set again \\
-                 rather than reconstructing one."
-        ),
-        class = "datom_member_unusable"
-      )
-    }
-    return(from_object(record, "a link"))
-  }
-
-  if (is.list(member)) return(from_object(member, "a member record"))
-
-  if (!.datom_is_text_scalar(member)) {
+  if (!is.null(tags) || !is.null(version)) {
     cli::cli_abort(
       c(
-        "{.arg member} must be a member's name, a member record, or a link.",
-        "i" = "You passed {.cls {class(member)}}.",
-        "i" = "A link is a member's {.field fetch} element; a record is what \\
-               {.fn datom_member} returns."
+        "{.arg tags} and {.arg version} narrow a member {.emph name}, and \\
+         you passed {shape}.",
+        "i" = "{shape} already names one exact member, so a filter beside it \\
+               could only disagree with it.",
+        "i" = "Drop the filter, or pass the member's name instead."
       ),
-      class = "datom_member_unusable"
+      class = "datom_member_filter_ignored"
     )
   }
 
-  .datom_find_member(members, member, tags, version)
+  got$record
 }
 
 

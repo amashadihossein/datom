@@ -534,7 +534,10 @@
 #' `x$members` instead works too, and there `tags` is yours to carry.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()], scoped to the
-#'   product repo (developer role).
+#'   product repo (developer role) -- or a `datom_set_draft` from
+#'   [datom_assemble_set()], which already carries its connection, name, members
+#'   and tags, so a pipe ends `|> datom_write_set()` with nothing typed. The
+#'   checks below are the same either way.
 #' @param members A list of member records from [datom_member()], each pinning one
 #'   artifact version and optionally carrying its own tags -- or a `datom_set`
 #'   from [datom_get_set()], to write back a set that was read. Hand-assembled
@@ -549,7 +552,8 @@
 #' @return Invisibly, a list with `name`, `data_sha`, `metadata_sha` (the
 #'   version), `member_count` (the count after normalisation), `action`
 #'   (`"none"` or `"full"`) and `commit_sha`.
-#' @seealso [datom_member()] to declare a member, [datom_write()] for tables.
+#' @seealso [datom_member()] to declare a member, [datom_assemble_set()] to build
+#'   a set a member at a time, [datom_write()] for tables.
 #' @export
 #'
 #' @examples
@@ -602,10 +606,52 @@
 datom_write_set <- function(conn, members, tags = NULL, name = NULL,
                             message = NULL) {
 
+  # TWO INDEPENDENT WIDENINGS ON TWO DIFFERENT PARAMETERS. `members` accepts a
+  # `datom_set` (a set read back, unpacked further down); `conn` accepts a
+  # `datom_set_draft`, so a pipe ends `|> datom_write_set()` with nothing typed.
+  # They are separate branches on separate arguments -- extending either one must
+  # leave the other alone.
+  #
+  # THE UNPACK RUNS BEFORE THE THREE GUARDS BELOW. A draft in the `conn` position
+  # fails `inherits(conn, "datom_conn")`, so leaving the guards first would abort
+  # a correct pipe by naming an argument the user never typed.
+  #
+  # `missing(members)`, NEVER `is.null(members)`. On the correct call --
+  # `datom_write_set(draft)` -- `members` has no value and the formal has no
+  # default, so evaluating it errors with R's own "argument is missing" instead of
+  # reporting the conflict this refuses. Nothing may touch `members` before the
+  # rebind below.
+  if (inherits(conn, "datom_set_draft")) {
+    if (!missing(members)) {
+      cli::cli_abort(
+        c(
+          "A draft already carries its members, and {.arg members} was \\
+           supplied as well.",
+          "i" = "Write the draft on its own -- {.code datom_write_set(draft)} \\
+                 -- or pass a member list together with a connection.",
+          "i" = "Preferring one over the other would write a set you did not \\
+                 describe."
+        ),
+        class = "datom_draft_members_conflict"
+      )
+    }
+
+    draft <- conn
+    conn <- draft$conn
+    # The draft's name and tags are DEFAULTS, exactly as a `datom_set`'s tags are
+    # below: an explicitly supplied one wins, so a draft can be written under
+    # different labels without rebuilding it.
+    if (is.null(tags)) tags <- draft$tags
+    if (is.null(name)) name <- draft$name
+    members <- draft$members
+  }
+
   if (!inherits(conn, "datom_conn")) {
-    cli::cli_abort(
-      "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}."
-    )
+    cli::cli_abort(c(
+      "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}, or a \\
+       {.cls datom_set_draft} from {.fn datom_assemble_set}.",
+      "i" = "You passed {.cls {class(conn)}}."
+    ))
   }
 
   if (conn$role != "developer") {

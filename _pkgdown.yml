@@ -65,7 +65,10 @@ reference:
       - datom_fetch_member
       - datom_list_members
       - datom_structure_members
+      - datom_assemble_set
+      - datom_add_member
       - print.datom_set
+      - print.datom_set_draft
       - print.datom_link
 
   - title: "Query & Status"

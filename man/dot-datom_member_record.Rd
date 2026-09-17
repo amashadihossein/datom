@@ -23,6 +23,12 @@ One accessor for the three shapes a caller holds, so a console call and a loop
 use the same verb: a \strong{name}, a \strong{member record}, or a \strong{link}.
 }
 \details{
+The shape dispatch itself is \code{\link[=.datom_member_shape]{.datom_member_shape()}}, shared with
+\code{\link[=datom_add_member]{datom_add_member()}}. Only the \strong{name} half is here, and it genuinely differs
+between the two verbs: a name means "a member of this set" here and "an
+artifact in this project's storage" there, so a shared lookup would search the
+wrong thing on one of the two routes.
+
 A record with no \code{fetch} on it is accepted, and that matters: it is the payload
 shape -- what a caller who built a member with \code{\link[=datom_member]{datom_member()}} holds, and what
 stripping a read set's links produces. The accessor keys on \code{id} and nothing

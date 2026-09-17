@@ -20,7 +20,8 @@ ends the second review pass found -> 2898 after Task 20 -> 2902 after the review
 that followed it -> 3050 after Task 22 -> 3053 after the three review findings that followed
 it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding that followed it ->
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
-3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> **3697 after the review finding that followed it**.
+3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
+after the review finding that followed it -> **3770 after Task 25**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -36,8 +37,9 @@ old-format conversion), **Task 20** (unfamiliar fields survive a write), **Task 
 refusals), **Task 22** (the reader-side rebuild), **Task 7** (`kind` in per-artifact metadata
 plus the set metadata builder), **Task 8** (`datom_member()` plus the member and tag
 validators) **Task 9** (`datom_write_set()`), **Task 10** (`datom_get_set()` plus the member link)
-**Task 26** (a stored project name comes from the repo, not from a connection label)
-and **Task 24** (read-side ergonomics: finding and shaping members), plus
+**Task 26** (a stored project name comes from the repo, not from a connection label),
+**Task 24** (read-side ergonomics: finding and shaping members)
+and **Task 25** (write-side ergonomics: assembling a set in steps), plus
 three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
@@ -162,26 +164,29 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3697** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3770** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
-code/documentation agreement (tests and examples run separately). Next is **Task 25** (write-side
-ergonomics), then Task 23, then Task 11 onward.
+code/documentation agreement (tests and examples run separately). Next is **Task 23**
+(`project.yaml` declares its format), then Task 11 onward. **Phase F is complete**, so nothing in
+the set surface is half-built.
 
-**TASK 25 IS AUDITED AND STARTABLE COLD** -- ten findings in its body, and **one must be settled
-before the first line**, though it carries a stated default so nothing is blocked. That one: the task
-says a draft goes in `datom_write_set()`'s **first** argument and then says this is the second task to
-widen **the argument Task 10 widened** -- but those are two different parameters. `conn` is first,
-Task 10 widened `members`. The pipe sentence settles which is meant, and the default is to widen
-`conn` while leaving `members` alone, with the test asserting three *routes* to one write rather than
-three shapes of one argument. Two more are corrections rather than choices: the second argument of the
-add verb cannot be called `name`, for the same reason Task 24's third argument could not; and
-`print.datom_conn` does **not** mask a token, it is an **allowlist** of named fields that never
-reaches one -- so an implementer must not go looking for a masking helper that does not exist, and
-must not later turn the allowlist into redaction, which would have to be taught every new secret.
-**One capability in that task reads as sugar and is not**: a draft holds one connection, so a member
-of another project cannot be declared by name in a pipe at all, and passing a **record** built on the
-other project's connection is the only route to a cross-project member. Restated in place with its own
-test, because "convenience" is what a later session deletes. No escalation flag is owed.
+**TASK 25 IS CLOSED, AND A SET IS NOW PLEASANT TO BUILD AS WELL AS TO READ.**
+`datom_assemble_set(conn, name = NULL, tags = NULL)` opens a draft, `datom_add_member(x, member,
+version = NULL, tags = NULL)` validates one member and appends it, `print.datom_set_draft()` shows
+what is assembled and says it is not written, and `datom_write_set()`'s **first** argument now
+accepts the draft -- so a pipe ends `|> datom_write_set()` with nothing typed. The payload is
+byte-identical to the direct form's; what is new is that a malformed member aborts on the line that
+declared it. **The one call the audit said had to be settled first was taken at its default**: the
+two widenings sit on two different parameters, `conn` for a draft and `members` for a set read back,
+and the test asserts three *routes* to one write rather than three shapes of one argument. **Five
+things a later change must not undo, and eight probes' worth of reasoning, are in Task 25's DONE
+record.** The two worth knowing before touching it: **the draft is unpacked before the three guards
+at the top of the write and the test for a supplied member list is `missing()`, never `is.null()`**
+-- on the correct call `members` has no value and no default, so `is.null()` errors with R's own
+"argument is missing" on the call that is right; and **`datom_add_member()` must never gain a `conn`
+argument**, because two connections on one draft ends the property the verb is built on, and the
+cross-project case is already covered by passing a **record** built on the other project's
+connection, which is a capability rather than sugar and now has its own test on the written payload.
 
 **TASK 24 IS CLOSED, AND A SET THAT READS CORRECTLY IS NOW PLEASANT TO USE.** Three verbs over the
 object `datom_get_set()` returns: `datom_fetch_member()` resolves one member named by name, by
@@ -3921,7 +3926,7 @@ reason.
     26 made false; it now states the live reason -- the member's side is verified, the connection's is
     not, and comparing the two still refuses working reads.
 
-- [ ] **25. Write-side ergonomics: assembling a set in steps** &nbsp; **[EXECUTES AFTER TASK 10]**
+- [x] **25. Write-side ergonomics: assembling a set in steps** &nbsp; **[EXECUTES AFTER TASK 10]**
   - **DEPENDS ON TASK 10** for `datom_add_member()` accepting a **link** (the `$fetch` closure with
     its pointer attached), which is what lets a consumer holding only a projection add what they used
     to a new set. Independent of Task 24; the order between the two is free.
@@ -4091,6 +4096,83 @@ reason.
         `datom_add_member`, `print.datom_set_draft` -- beside the six set entries now at
         `_pkgdown.yml:62-67`, plus the NAMESPACE lines `devtools::document()` generates. Task 24's
         equivalent finding was real: nothing in the suite catches the omission.
+  - **DONE 2026-09-16.** Three exports in the new `R/set-draft.R`, one helper extracted into
+    `R/member.R`, and two edits to files that already existed. Tests 3697 -> **3770** (+73),
+    FAIL 0 / WARN 0 / SKIP 0; `dev/check-spec.R` 9/9; `R CMD check` 0/0/0 on docs and
+    code/documentation agreement; every example runs and the new one's output was read. **The
+    shipped shape**, so a later session does not re-derive it:
+
+    | Verb | Signature | Returns |
+    |---|---|---|
+    | `datom_assemble_set()` | `(conn, name = NULL, tags = NULL)` | a `datom_set_draft` with no members |
+    | `datom_add_member()` | `(x, member, version = NULL, tags = NULL)` | the draft, one member longer |
+    | `print.datom_set_draft()` | `(x, ..., n = 20L)` | invisibly `x` |
+    | `datom_write_set()` | `conn` now also accepts a draft | unchanged |
+
+    **THE ONE THAT HAD TO BE DECIDED FIRST WAS TAKEN AT ITS DEFAULT, AND THE AUDIT WAS RIGHT THAT
+    THE TWO WIDENINGS ARE TWO PARAMETERS.** `conn` accepts a `datom_set_draft`; `members` keeps its
+    `datom_set` branch untouched. So the test asserts three **routes** to one write -- a plain
+    list, a set read back, and a draft -- and all three produce the same `data_sha`, which is what
+    stops a later change collapsing the two branches into one and dropping a route.
+
+    **FIVE THINGS A LATER CHANGE MUST NOT UNDO.**
+
+    1. **The draft is unpacked before the three guards at the top of `datom_write_set()`, and the
+       test for a supplied `members` is `missing()`.** Both halves were audit findings and both are
+       real. A draft reaching `inherits(conn, "datom_conn")` aborts naming an argument the user
+       never typed; and on the correct call, `datom_write_set(draft)`, the `members` formal has no
+       value and no default, so `is.null(members)` errors with R's own "argument is missing" on the
+       call that is right rather than the one that is wrong. Nothing may evaluate `members` before
+       the rebind.
+    2. **`datom_add_member()` has no `conn` argument, and adding one would end the verb.** The
+       draft holds one connection because validating a member as it is added means reading that
+       artifact's snapshot; a second connection on one draft makes "the draft holds the connection"
+       false. The cross-project case is already covered, by a **record** built on the other
+       project's connection -- which is a capability, not sugar, and has its own test asserting the
+       written payload records the other project. The by-name route is asserted to fail there in the
+       same test, which is what makes the record shape's necessity visible rather than claimed.
+    3. **The shape dispatch is `.datom_member_shape()` in `R/member.R`, shared with Task 24's
+       accessor; the name LOOKUP is deliberately not shared.** A name means "a member of this set"
+       to `datom_fetch_member()` and "an artifact in this project's storage" to
+       `datom_add_member()`, so a shared lookup would search the wrong thing on one of the two
+       routes -- the audit's finding 5, confirmed by reading both call sites. Each verb words its
+       own refusal of `version` / `tags` beside a record, for the same reason: one is narrowing a
+       search, the other is declaring a member twice.
+    4. **The print method names every field it shows and is handed no object to summarise.** Same
+       allowlist shape as `print.datom_conn`, which does **not** mask a token -- it never reaches
+       one, because it emits one line per named field. There is no masking helper, and inventing one
+       would have to be taught every future secret. The test puts a recognisable token on the
+       fixture's connection and asserts it is absent from the output, so the assertion is not
+       vacuous.
+    5. **A draft holds a live connection on purpose, which inverts the purity rule members and
+       links follow.** There is no serialize-and-search-for-a-token test for a draft; the print
+       method's warning is the guard, and it is asserted.
+
+    **Also shipped, from the audit's ten findings.** The second argument is `member`, not `name`
+    (3). `version` or `tags` beside a record or a link is refused rather than ignored, with its own
+    message and its own class (4). A draft together with a `members` argument is refused (9). The
+    `conn` guard's message now names both accepted shapes, and there is a test on it, because it is
+    what a mistyped pipe lands on (2). Three `_pkgdown.yml` entries beside the other set verbs
+    (10). Per-entry validation still costs one storage read per call, and the write does **not**
+    re-read them when a draft arrives (8).
+
+    **Three things added beyond the task body, each with its reason.** Set-level tags are validated
+    when the draft is **opened** rather than only at the write, which is the same argument the task
+    makes for members -- a malformed description aborts on the line that wrote it. A record added
+    to a draft goes through `.datom_validate_members()` there and then, which is the write-side
+    contract run per entry and the whole point of the path; note this is deliberately the opposite
+    of `.datom_member_id()`'s read-side leniency, because refusing early is correct on a write.
+    And the draft's name and tags are **defaults** rather than overrides -- an explicitly supplied
+    `name` or `tags` wins, matching what the `datom_set` branch already does with a read set's
+    tags, so a draft can be written under different labels without being rebuilt.
+
+    **One thing a test had to state differently than expected, and it is a fact about the write
+    rather than about this task.** A member record that has been through a write and a read comes
+    back with its four `id` keys in **alphabetical** order, because the write canonicalises them
+    (Task 9's review). So the test that a link, a read member and a fresh record all reach the same
+    pointer compares the four fields by name instead of comparing records with `identical()`. The
+    hash does not depend on key order and the write re-canonicalises, so nothing is wrong -- but an
+    `identical()` assertion there fails for a reason that has nothing to do with this path.
 
 ---
 

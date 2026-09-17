@@ -8,7 +8,10 @@ datom_write_set(conn, members, tags = NULL, name = NULL, message = NULL)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}, scoped to the
-product repo (developer role).}
+product repo (developer role) -- or a \code{datom_set_draft} from
+\code{\link[=datom_assemble_set]{datom_assemble_set()}}, which already carries its connection, name, members
+and tags, so a pipe ends \verb{|> datom_write_set()} with nothing typed. The
+checks below are the same either way.}
 
 \item{members}{A list of member records from \code{\link[=datom_member]{datom_member()}}, each pinning one
 artifact version and optionally carrying its own tags -- or a \code{datom_set}
@@ -144,5 +147,6 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 }
 }
 \seealso{
-\code{\link[=datom_member]{datom_member()}} to declare a member, \code{\link[=datom_write]{datom_write()}} for tables.
+\code{\link[=datom_member]{datom_member()}} to declare a member, \code{\link[=datom_assemble_set]{datom_assemble_set()}} to build
+a set a member at a time, \code{\link[=datom_write]{datom_write()}} for tables.
 }
