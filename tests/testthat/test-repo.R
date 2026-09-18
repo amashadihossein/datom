@@ -31,7 +31,7 @@ seed_git_repo <- function(path) {
   repo
 }
 
-write_project_yaml <- function(path, extra_storage = NULL) {
+write_project_yaml <- function(path, extra_storage = NULL, schema_version = NULL) {
   cfg <- list(
     project_name = "TEST_PROJECT",
     datom_version = "0.1.0",
@@ -47,6 +47,12 @@ write_project_yaml <- function(path, extra_storage = NULL) {
     ),
     repos = list(data = list(remote_url = "https://example.com/repo.git"))
   )
+  # Added conditionally rather than as a NULL slot: a NULL round-trips through
+  # yaml as `~` and reads back as an explicit NULL, which is a different document
+  # from one where the key is simply absent. Absent is the state every repo
+  # written before the field existed is in, and every other test here relies on
+  # it, so it has to be the real absence.
+  if (!is.null(schema_version)) cfg$schema_version <- schema_version
   fs::dir_create(fs::path(path, ".datom"))
   yaml::write_yaml(cfg, fs::path(path, ".datom", "project.yaml"))
 }
@@ -92,6 +98,45 @@ test_that("datom_repo_set_data_store() errors when project.yaml missing", {
     conn  <- make_dev_conn(getwd())
     store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
     expect_error(datom_repo_set_data_store(conn, store), "project.yaml")
+  })
+})
+
+test_that("datom_repo_set_data_store() refuses a config format it cannot read", {
+  # This verb is the only writer of project.yaml besides datom_init_repo(), and it
+  # does not merely write: it merges a `storage$data` block into the document on
+  # this build's assumptions, then commits and pushes, so a shape this build
+  # cannot read would be edited wrongly and then distributed to everyone sharing
+  # the repo. A format that reparented those keys gets a stale block beside the
+  # real one.
+  #
+  # The connection-time gate does not cover this. It ran on the file as it was
+  # when the connection opened, and a hand edit or a pull since then replaces it
+  # -- which is not contrived here, because this is the storage-migration verb,
+  # called exactly when somebody is reorganising storage by hand.
+  #
+  # No git repo and no push stub are needed: the refusal happens before the merge,
+  # so nothing reaches the commit.
+  withr::with_tempdir({
+    repo_path <- fs::dir_create("repo")
+    write_project_yaml(repo_path, schema_version = .datom_project_schema + 1L)
+    yaml_path <- fs::path(repo_path, ".datom", "project.yaml")
+    before <- readLines(yaml_path, warn = FALSE)
+
+    conn      <- make_dev_conn(repo_path)
+    new_store <- datom_store_local(fs::dir_create("new-store"), validate = FALSE)
+
+    err <- expect_error(
+      datom_repo_set_data_store(conn, new_store),
+      class = "datom_schema_unsupported"
+    )
+    msg <- conditionMessage(err)
+    expect_match(msg, "project.yaml", fixed = TRUE)
+    # Worded for a write, because a write is what was stopped.
+    expect_match(msg, "cannot write")
+    expect_match(msg, paste0("supports up to v", .datom_project_schema))
+
+    # And the file is byte-identical: the refusal is a door, not a rollback.
+    expect_identical(readLines(yaml_path, warn = FALSE), before)
   })
 })
 

@@ -87,12 +87,23 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
   }
 
   # --- Read full yaml (read-modify-write: never reconstruct from conn) --------
-  # No format check here: this verb requires a developer connection, and building
-  # one already refused a config whose format this build cannot read. The
-  # read-modify-write is also what carries an unrecognised `schema_version`
-  # forward untouched rather than dropping it -- nothing but `datom_init_repo()`
-  # stamps that field, so this verb never raises the declared number.
+  # Checked before the merge below, and NOT covered by the connection-time gate:
+  # this verb edits, commits and pushes the file, so a shape this build cannot
+  # read would get a `storage$data` block merged into it on this build's
+  # assumptions -- a format that reparented those keys ends up with a stale block
+  # beside the real one -- and then distributed to every collaborator. The gate at
+  # connection time ran on the file as it was when the connection opened; a hand
+  # edit or a pull since then replaces it, and this is the storage-migration verb,
+  # so it is called exactly when somebody is reorganising storage by hand. Same
+  # reasoning as `.datom_check_set_write_gates()`, and it applies harder here,
+  # because that one only refuses a write while this one publishes one.
+  #
+  # The read-modify-write is separately what carries an unrecognised
+  # `schema_version` forward untouched rather than dropping it -- nothing but
+  # `datom_init_repo()` stamps that field, so this verb never raises the declared
+  # number.
   cfg <- yaml::read_yaml(yaml_path)
+  .datom_check_project_schema(cfg, source = yaml_path, operation = "write")
 
   # --- Build new storage.data block from new_store ---------------------------
   backend <- .datom_store_backend(new_store)

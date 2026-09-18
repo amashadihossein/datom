@@ -22,7 +22,7 @@ it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding th
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
 3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
 after the review finding that followed it -> 3770 after Task 25 -> 3781 after the review finding
-that followed it -> **3836 after Task 23**.
+that followed it -> 3836 after Task 23 -> **3841 after the review finding that followed it**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -166,7 +166,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3836** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3841** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 11**
 (project mode gating the import path), then Task 12 onward.
@@ -178,9 +178,10 @@ out of it. That number is **its own** (`.datom_project_schema`, `1L`), not the o
 document is stamped with, so it stays put through every manifest or metadata bump -- the point being
 that an upgrade elsewhere can never refuse a config whose shape never moved. Absent means v1, so no
 existing repo changes behaviour, and an unrecognised **key** stays tolerated, which is the clause a
-later tidy-up would break. Three read sites are gated, not one: connection construction, the re-read
-after a migration pull, and the set-write gates -- which read `mode` and `set`, the very fields the
-requirement exists for. **Task 11 will fire the new key-set tripwire test immediately by adding `mode`
+later tidy-up would break. **Every site that parses this file is gated -- all four**: connection
+construction, the re-read after a migration pull, the set-write gates (which read `mode` and `set`,
+the very fields the requirement exists for), and the store-pointer verb, which is the only writer of
+this file besides init and was caught by the review that followed. **Task 11 will fire the new key-set tripwire test immediately by adding `mode`
 and `set`, and the correct answer there is to extend the expected key set and leave the number at
 `1L`**; that answer is written in the test's own comment. Five things a later change must not undo,
 one recorded residual on the writer floor, and the probes are in Task 23's DONE record.
@@ -3835,11 +3836,14 @@ rather than in Phase D beside the task it blocks.
     the comparison **and** the "supports up to vN" line. `.datom_check_project_schema(cfg, source,
     operation)` is the wrapper that pairs this one file with its own ceiling, and it is the only
     thing that supplies that ceiling. `datom_init_repo()` stamps the field.
-    **Three read sites, all gated**: connection construction (`.datom_get_conn_developer()`, at
-    `operation = "read"` -- opening a connection is neither a read nor a write, and "cannot read" is
-    literally true of the config file, so the `match.arg()` set did not widen), the post-migration-pull
-    re-read in `.datom_resolve_data_location()`, and `.datom_check_set_write_gates()` at
-    `operation = "write"`.
+    **Every site that parses this file is gated, and there are exactly four** -- enumerated by the
+    review below rather than assumed, `yaml::read_yaml()` having four call sites in `R/`:
+    connection construction (`.datom_get_conn_developer()`, at `operation = "read"` -- opening a
+    connection is neither a read nor a write, and "cannot read" is literally true of the config file,
+    so the `match.arg()` set did not widen), the post-migration-pull re-read in
+    `.datom_resolve_data_location()`, `.datom_check_set_write_gates()` at `operation = "write"`, and
+    `datom_repo_set_data_store()`, also at `"write"`. The last of those was added by the review that
+    followed this task; the first commit argued it away, wrongly.
 
     **Five things a later change must not undo.**
     1. **The two constants are separate numbers, and `project.yaml` is never stamped with the shared
@@ -3886,13 +3890,36 @@ rather than in Phase D beside the task it blocks.
     test; that test starts from a readable config and has the mocked pull replace it with a too-new
     one, so it also fails if the check is ever moved above the pull.
 
-    **Two things needing no code, said once so they are not silently discovered.**
-    `datom_repo_set_data_store()` and `datom_repo_attach_governance()` both require a developer
-    connection, so building one already refused an unreadable config; a one-line comment at the
-    former's read-modify-write says so, and also records that carrying `schema_version` forward
-    untouched is why that verb never raises the declared number. And a **reader**-role connection
-    never parses this file at all, which is the right scope -- the harm is a *write* into a repo whose
-    policy this build cannot read -- but it does mean "one gate covers every role" would be wrong.
+    **One thing needing no code, said once so it is not silently discovered.** A **reader**-role
+    connection never parses this file at all, which is the right scope -- the harm is a *write* into a
+    repo whose policy this build cannot read -- but it does mean "one gate covers every role" would be
+    wrong. (`datom_repo_attach_governance()` needs nothing either, but for a duller reason: it checks
+    only that the file exists and never parses it.)
+
+    **REVIEWED after it landed (2026-09-17); one finding, ACCEPTED and fixed (tests 3836 -> 3841).
+    `datom_repo_set_data_store()` was the one site that parsed this file without checking it, and it
+    is also the only writer of it besides `datom_init_repo()`.** The first commit argued the check away
+    on the grounds that the verb requires a developer connection, so connection construction had
+    already refused an unreadable config -- **and that argument is refuted by this same commit's own
+    words elsewhere**: `.datom_check_set_write_gates()`'s docs say the connection-time gate is not
+    redundant, because a hand edit or a pull can replace the file between opening a connection and
+    writing through it. It applies harder here, for three reasons the review put in the right order.
+    The verb does not merely write: it merges a `storage$data` block into the document **on this
+    build's assumptions**, so a format that reparented those keys ends up with a stale block beside the
+    real one. It then **commits and pushes**, so the wrongly-edited file reaches everyone sharing the
+    repo -- the set-write gate only refuses a write, while this one publishes one. And the timing is
+    not contrived: this is the storage-migration verb, called exactly when somebody is reorganising
+    storage and therefore most likely to have hand-edited that file. The reading half cannot be
+    retrofitted, so it could not wait. Fixed with the same two lines the set-write gate uses,
+    `operation = "write"`, above the merge; the comment is **replaced rather than deleted**, because
+    the claim it made is the thing that is false and a later session would otherwise re-derive it. Its
+    true half is kept and now labelled as separate: the read-modify-write is why an unrecognised
+    `schema_version` is carried forward untouched, and why this verb never raises the declared number.
+    One test, asserting the refusal **and** that the file is byte-identical afterwards; removing the
+    check reddens exactly it. **The review's earlier claim that this verb silently raises the number
+    stays refuted** -- that was checked and is wrong, and the two findings are about different things:
+    one about what the verb writes into the field, this one about writing the file at all without
+    having checked it.
 
 ---
 
@@ -5262,3 +5289,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-17 | **(implementation, Task 23) The set-write gate's format check runs BEFORE `mode` and `set` are read, and it is not a duplicate of the connection-time one.** Ordering first: the two checks below it report *on* those fields, so a format this build cannot read turns them into confident advice about the wrong thing -- a shape that moved `set:` makes the gate say "declares `mode: product` but names no set" and send the user to hand-edit a file that is already correct. Non-redundancy second, and it is what the test asserts: the config is edited **after** the connection was built, because a git pull or a hand edit between opening a connection and writing through it replaces the file the connection was built from -- the same reason `.datom_check_write_entry()` is re-run after a route's own pull. Deleting this call reddens the three write-side tests while every connection-time test stays green, which is what proves the second site is not decorative. | Task 23 DONE record, `R/set.R` |
 | 2026-09-17 | **(implementation, Task 23) The post-migration-pull re-read is gated, and the writer-floor staleness beside it is RECORDED rather than fixed** -- finding 8's stated default, taken. `.datom_resolve_data_location()` re-reads `project.yaml` after pulling git, and that copy is the one the connection-time gate structurally cannot see, so without a check there a config arriving in a migration pull is the one config never checked. The probe starts from a readable config and has the mocked pull replace it with a too-new one, so it fails if the gate is ever moved above the pull. What stays open is `conn$min_writer_version`, assigned from the **pre**-pull parse: a floor raised in that pull is missed for that session. Fixing it means re-parsing after the resolve returns -- a change to connection construction with Task 21's writer-floor test surface attached -- against a window of one session on a migrating repo, with the next connection reading the pulled file. The note lives at the assignment site in `R/conn.R`, not only in the spec, because that is where somebody would otherwise re-derive it. | Task 23 DONE record, `R/conn.R`, `R/ref.R` |
 | 2026-09-17 | **(implementation, Task 23) Two `repo.R` verbs get no check of their own, and the reason is written at one of them rather than left silent.** `datom_repo_set_data_store()` and `datom_repo_attach_governance()` both require a developer connection, so building one already refused a config whose format this build cannot read. The comment at the former's read-modify-write also records the second half, which the shared-constant argument had got wrong: carrying `schema_version` forward untouched is why that verb never raises the declared number -- only `datom_init_repo()` stamps one. Stating it at the site is what stops a later session either adding a redundant gate or repeating the claim that this verb raises the number. | Task 23 finding 2, `R/repo.R` |
+| 2026-09-17 | **(review finding, ACCEPTED and fixed, Task 23) `datom_repo_set_data_store()` was the one site that parsed `project.yaml` without checking it, and it is the only verb besides `datom_init_repo()` that WRITES that file.** The first commit argued the check away -- the verb needs a developer connection, so connection construction already refused an unreadable config -- and **that argument is refuted by the same commit's own words at `.datom_check_set_write_gates()`**: the connection-time gate is not redundant, because a hand edit or a pull replaces the file between opening a connection and writing through it. It applies harder here on three counts. The verb merges a `storage$data` block in **on this build's assumptions**, so a format that reparented those keys gets a stale block beside the real one; it then **commits and pushes**, so the wrongly-edited file reaches everyone sharing the repo, where the set-write gate only refuses a write; and the timing is not contrived, since this is the storage-migration verb and is called exactly when somebody is hand-editing that file. Reading halves cannot be retrofitted, so it could not wait for a later release. Fixed with the same two lines the set-write gate uses at `operation = "write"`, above the merge. **The comment is replaced rather than deleted**, because what it asserted is the false part and a later session would otherwise re-derive it; its true half is kept and labelled separate -- the read-modify-write is why an unrecognised `schema_version` is carried forward untouched. One test, asserting the refusal **and** that the file is byte-identical afterwards; removing the check reddens exactly it. **Distinct from the reviewer's earlier claim about this verb, which stays refuted**: that one said the verb silently raises the declared number, which it does not. Tests 3836 -> 3841. | Task 23 DONE record, `R/repo.R` |

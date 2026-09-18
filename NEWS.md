@@ -75,7 +75,9 @@ something has to police.
   build that does not recognise such a setting walks past it and acts as though the
   repo had never asked for anything. A declared format is how the file gets to say
   "this repo needs a newer datom", and a config declaring a format this build
-  cannot read now stops a developer connection rather than being read anyway.
+  cannot read now stops rather than being read anyway -- everywhere datom reads it:
+  opening a developer connection, repointing a project at a new data store, and
+  writing a set.
   * **Its number is its own, and starts at 1.** It stays there through every
     manifest or metadata format change and moves only when this file's own shape
     changes, so an upgrade elsewhere in datom can never lock you out of a config

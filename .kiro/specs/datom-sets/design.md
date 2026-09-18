@@ -943,13 +943,22 @@ correct rather than merely convenient. The pairing of this file with its own cei
 wrapper, `.datom_check_project_schema()`, for the same reason the artifact-kind predicate does: a
 rule written out at each call site loses a term at one of them.
 
-**Three read sites, not one, and the third is why this shipped before R10.2.** Connection
-construction, the post-migration-pull re-read in `.datom_resolve_data_location()` (the pull can
-replace the copy the connection started from, so that copy would otherwise be the one config never
-checked), and `.datom_check_set_write_gates()`, which reads `mode` and `set` out of this file on
-every set write. That third site is where the harm is sharpest: a future format that moved `set:`
-would make the gate report "declares `mode: product` but names no set" and send the user to
-hand-edit a file that is already correct.
+**Every site that parses this file is gated, and there are four.** Connection construction; the
+post-migration-pull re-read in `.datom_resolve_data_location()` (the pull can replace the copy the
+connection started from, so that copy would otherwise be the one config never checked);
+`.datom_check_set_write_gates()`, which reads `mode` and `set` out of this file on every set write;
+and `datom_repo_set_data_store()`, the only verb besides `datom_init_repo()` that **writes** it.
+
+**The connection-time gate does not make the other three redundant, and this is the rule to keep.**
+It ran on the file as it stood when the connection opened; a hand edit or a pull replaces it, which is
+the same reason `.datom_check_write_entry()` is re-run after a route's own pull. Two of the sites make
+that concrete. On the set write, a future format that moved `set:` would make the gate report
+"declares `mode: product` but names no set" and send the user to hand-edit a file that is already
+correct. On the store-pointer verb the consequence is larger, because that verb merges a
+`storage$data` block into the document on this build's assumptions and then **commits and pushes** it:
+a format that reparented those keys gets a stale block beside the real one, distributed to everyone
+sharing the repo. That site was missed in the first commit and argued away on developer-connection
+grounds; the argument was already refuted by the set-write gate's own reasoning.
 
 **One residual, recorded rather than fixed.** `conn$min_writer_version` is read from the *pre*-pull
 parse, so a floor raised in a migration pull is missed for that session. Fixing it means re-parsing
