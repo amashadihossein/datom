@@ -1477,6 +1477,184 @@ test_that("project.yaml's key set is pinned to its declared format", {
   expect_equal(.datom_project_schema, 1L)
 })
 
+test_that("a product repo's project.yaml key set is pinned too", {
+  # THE SECOND CASE THE RULE ABOVE REQUIRES. `mode` and `set` are written only for
+  # a product repo, so the ordinary-init test cannot see them -- it would stay green
+  # through any change to them, which is the guard looking like a guard while saying
+  # nothing about the addition it was written for.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store, mode = "product", set = "study001-adam")
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+
+  expected_keys <- c(
+    "project_name", "project_description", "created_at", "datom_version",
+    "schema_version", "storage", "repos", "sync", "renv", "mode", "set"
+  )
+  expect_setequal(names(cfg), expected_keys)
+  # Adding these two keys is an addition, so the declared format does NOT move --
+  # an older build never asks for a key it does not know, and its misreading of
+  # `mode` is a silent no-op rather than a wrong write.
+  expect_equal(cfg$schema_version, .datom_project_schema)
+  expect_equal(.datom_project_schema, 1L)
+})
+
+test_that("the store-pointer verb preserves every key in project.yaml", {
+  # THE THIRD CASE THE RULE REQUIRES, and the reason it is not hypothetical: this
+  # verb is the only writer of this file besides init. It read-modify-writes, so it
+  # preserves keys by construction -- which is exactly why it is tested, because a
+  # refactor to rebuilding the document from the connection would drop most of them
+  # with nothing else failing.
+  skip_if_not_installed("git2r")
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store, mode = "product", set = "product-a")
+
+  yaml_path <- fs::path(env$work_dir, ".datom", "project.yaml")
+  before <- names(yaml::read_yaml(yaml_path))
+
+  new_store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
+  conn <- structure(
+    list(project_name = "testproj", role = "developer",
+         path = as.character(env$work_dir), gov_root = NULL, github_pat = NULL),
+    class = "datom_conn"
+  )
+  local_mocked_bindings(.datom_git_push = function(...) invisible(TRUE))
+
+  datom_repo_set_data_store(conn, new_store)
+
+  expect_setequal(names(yaml::read_yaml(yaml_path)), before)
+})
+
+test_that("datom_init_repo declares mode and set only when asked", {
+  # Absent IS "ordinary data repo" to every reader of this file, so there is no
+  # `mode: standard` line for that state. And the keys must be genuinely absent
+  # rather than written as yaml `~`: a NULL in a list() constructor is a present
+  # element, which would read back as a declared empty value.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_false("mode" %in% names(cfg))
+  expect_false("set" %in% names(cfg))
+
+  # And what it writes for a product repo is exactly what the set-write gate
+  # reads, which is the whole point of writing it.
+  env2 <- setup_init_env()
+  datom_init_repo(path = env2$work_dir, project_name = "testproj",
+                  store = env2$store, mode = "product", set = "product-a")
+  cfg2 <- yaml::read_yaml(fs::path(env2$work_dir, ".datom", "project.yaml"))
+  expect_identical(cfg2$mode, "product")
+  expect_identical(cfg2$set, "product-a")
+})
+
+test_that("datom_init_repo refuses a product repo that names no set", {
+  # A product repo with no set passes the set-write mode check and then fails its
+  # name check on every write -- a repo that looks initialised and is not. Caught
+  # at the call that could have got it right.
+  env <- setup_init_env()
+
+  err <- expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, mode = "product"),
+    "must name the set"
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)), "datom_write_set")
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+})
+
+test_that("datom_init_repo refuses a set name without the product mode", {
+  env <- setup_init_env()
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, set = "product-a"),
+    "without"
+  )
+})
+
+test_that("datom_init_repo refuses a mode it does not recognise", {
+  # A typo must not become a repo that quietly behaves as an ordinary one.
+  env <- setup_init_env()
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, mode = "prodcut", set = "s"),
+    "must be"
+  )
+})
+
+test_that("datom_init_repo validates a set name through the shared validator", {
+  # The same function the set-write gate calls, so the two cannot disagree about
+  # what a legal name is -- otherwise init accepts a name no write can use.
+  # A space is legal in a datom name, so the probe has to be a name the shared
+  # validator actually rejects -- one that does not start with a letter.
+  env <- setup_init_env()
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, mode = "product", set = "9lives"),
+    "must start with a letter"
+  )
+
+  env2 <- setup_init_env()
+  expect_error(
+    datom_init_repo(path = env2$work_dir, project_name = "testproj",
+                    store = env2$store, mode = "product", set = "bad/name"),
+    "may only contain"
+  )
+})
+
+test_that("a product repo's namespace is checked on a local store and cannot be forced", {
+  # Two widenings of one condition, both scoped to product repos. Ordinary repos
+  # keep the s3-only scope and the .force override exactly as they had them: the
+  # blast-radius argument is about a product sitting on top of data it did not
+  # produce, since teardown and prefix-delete operate on a whole namespace.
+  bare <- withr::local_tempdir()
+  git2r::init(bare, bare = TRUE)
+  store_dir <- withr::local_tempdir()
+  local_store <- datom_store_local(store_dir, prefix = "proj", validate = FALSE)
+  store <- datom_store(data = local_store, github_pat = "ghp_fake",
+                       data_repo_url = bare, validate = FALSE)
+
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, key) grepl("manifest\\.json", key),
+    .datom_storage_read_json = function(conn, key) list(project_name = "SOURCE_STUDY"),
+    .datom_storage_write_json = function(...) invisible(TRUE)
+  )
+
+  # Local backend: an ordinary repo is not checked at all, so this is the widening.
+  product_dir <- withr::local_tempdir()
+  err <- expect_error(
+    datom_init_repo(path = product_dir, project_name = "testproj", store = store,
+                    mode = "product", set = "product-a"),
+    class = "datom_namespace_occupied"
+  )
+  expect_match(conditionMessage(err), "SOURCE_STUDY")
+
+  # .force does not buy a product repo its way in, because the override is the
+  # thing the guard exists to stop here.
+  forced_dir <- withr::local_tempdir()
+  expect_error(
+    datom_init_repo(path = forced_dir, project_name = "testproj", store = store,
+                    mode = "product", set = "product-a", .force = TRUE),
+    class = "datom_namespace_occupied"
+  )
+
+  # An ordinary local repo is unaffected: no check, so an occupied namespace does
+  # not stop it. Recorded rather than fixed -- closing it is a behaviour change for
+  # every local repo and its own decision.
+  ordinary_dir <- withr::local_tempdir()
+  expect_no_error(
+    datom_init_repo(path = ordinary_dir, project_name = "testproj", store = store)
+  )
+})
+
 test_that("datom_init_repo creates README.md", {
   env <- setup_init_env()
 

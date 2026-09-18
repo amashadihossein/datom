@@ -87,13 +87,13 @@
 #' wants them on the conn it is a move with one call site to update, rather than a
 #' decision to reopen.
 #'
-#' **Nothing writes `mode` or `set` yet**, so no repo built by this version of
-#' datom can pass the mode check -- `datom_init_repo()` writes neither key. That is
-#' the same deliberate inertness the reader-side format check
-#' shipped with: the gate lands tested but unreachable through the public path,
-#' and the release that starts writing `mode: product` is a later, separate step
-#' which depends on a build already existing that can notice the declaration.
-#' Fixtures hand-write the file.
+#' **`datom_init_repo(mode = "product", set = <name>)` is what declares both
+#' fields**, so the supported route into this check is a repo created that way. It
+#' shipped inert one release earlier, on purpose: a build that can *notice* the
+#' declaration has to exist before anything writes it, or the declaration reaches
+#' installs that walk straight past it. Hand-editing the file still works and some
+#' fixtures do it, which is also what a repo created before that argument existed
+#' needs.
 #'
 #' @param conn A `datom_conn` object with a local path.
 #' @param name The set name the caller supplied, or `NULL` to take the repo's
@@ -590,15 +590,9 @@
 #'     data_repo_url = remote,
 #'     validate = FALSE
 #'   )
-#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
-#'
-#'   # Declare the repo a product repo and name its set. A later release writes
-#'   # these two fields at init time; today they are added by hand.
-#'   cfg_path <- file.path(tmp, "repo", ".datom", "project.yaml")
-#'   cfg <- yaml::read_yaml(cfg_path)
-#'   cfg$mode <- "product"
-#'   cfg$set <- "example_product"
-#'   yaml::write_yaml(cfg, cfg_path)
+#'   # A product repo declares itself as one and names the single set it owns.
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store,
+#'                   mode = "product", set = "example_product")
 #'
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
 #'
@@ -1432,15 +1426,9 @@ print.datom_link <- function(x, ...) {
 #'     data_repo_url = remote,
 #'     validate = FALSE
 #'   )
-#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
-#'
-#'   # Declare the repo a product repo and name its set. A later release writes
-#'   # these two fields at init time; today they are added by hand.
-#'   cfg_path <- file.path(tmp, "repo", ".datom", "project.yaml")
-#'   cfg <- yaml::read_yaml(cfg_path)
-#'   cfg$mode <- "product"
-#'   cfg$set <- "example_product"
-#'   yaml::write_yaml(cfg, cfg_path)
+#'   # A product repo declares itself as one and names the single set it owns.
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store,
+#'                   mode = "product", set = "example_product")
 #'
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
 #'

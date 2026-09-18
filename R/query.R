@@ -445,7 +445,10 @@ datom_status <- function(conn) {
       prefix = conn$prefix,
       region = conn$region,
       role = conn$role,
-      has_path = !is.null(conn$path)
+      has_path = !is.null(conn$path),
+      # NULL for an ordinary data repo, and for every reader connection, which
+      # never parses the config that records it.
+      mode = conn$mode
     )
   )
 
@@ -457,6 +460,16 @@ datom_status <- function(conn) {
     cli::cli_alert_info("Prefix: {.val {conn$prefix}}")
   }
   cli::cli_alert_info("Role: {.val {conn$role}}")
+
+  # Reported, never acted on -- which is why this reads the mode off the
+  # connection while every check that authorises a write re-reads the config file.
+  # Printed only when there is something to say: an ordinary data repo is the
+  # unstated default, and a "Mode: standard" line would invent a state the config
+  # does not record. A reader connection has no clone and so never knows the mode.
+  is_product <- identical(as.character(conn$mode %||% ""), "product")
+  if (is_product) {
+    cli::cli_alert_info("Mode: {.val product} (builds artifacts; no file import)")
+  }
 
   # --- Table count from S3 manifest ---
   # An unreadable manifest is reported, not fatal -- status is a diagnostic and
@@ -522,9 +535,14 @@ datom_status <- function(conn) {
       cli::cli_alert_info("Branch: {.val {git_info$branch}}")
     }
 
-    # Input files scan
+    # Input files scan. Skipped entirely on a product repo: that repo does not
+    # import files, so "Input files: directory empty" describes a repo with
+    # nothing to onboard rather than one that never will -- the same misreport the
+    # import verbs used to give. The directory is still created at init, because
+    # not creating it would change what init guarantees about the tree for a
+    # cosmetic gain.
     input_dir <- fs::path(conn$path, "input_files")
-    if (fs::dir_exists(input_dir)) {
+    if (!is_product && fs::dir_exists(input_dir)) {
       input_info <- .datom_status_input_files(conn)
       status$input_files <- input_info
 

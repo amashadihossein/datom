@@ -162,11 +162,11 @@ mock_rebuildable_store <- function(manifest,
 
 #' Declare a fixture repo a product repo that owns one named set.
 #'
-#' The two gates on a set write read `.datom/project.yaml` directly, and nothing
-#' in datom writes `mode` or `set` yet -- `datom_init_repo()` writes nine keys and
-#' neither is among them. So every fixture that needs a reachable set write hands
-#' the file over itself, which is the same deliberate inertness the reader-side
-#' format check shipped with.
+#' The gates on a set write read `.datom/project.yaml` directly.
+#' `datom_init_repo(mode = "product", set = <name>)` now writes both fields, so
+#' this helper is no longer the only route -- it stays because these fixtures build
+#' their conn by hand rather than by running init, and because a repo created
+#' before that argument existed declares its mode exactly this way.
 #'
 #' Shared rather than duplicated per test file, unlike the project fixtures: this
 #' is a fact about the format of one file, and three files need it.

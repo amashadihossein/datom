@@ -619,15 +619,9 @@
 #'     data_repo_url = remote,
 #'     validate = FALSE
 #'   )
-#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
-#'
-#'   # Declare the repo a product repo and name its set. A later release writes
-#'   # these two fields at init time; today they are added by hand.
-#'   cfg_path <- file.path(tmp, "repo", ".datom", "project.yaml")
-#'   cfg <- yaml::read_yaml(cfg_path)
-#'   cfg$mode <- "product"
-#'   cfg$set <- "example_product"
-#'   yaml::write_yaml(cfg, cfg_path)
+#'   # A product repo declares itself as one and names the single set it owns.
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store,
+#'                   mode = "product", set = "example_product")
 #'
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
 #'

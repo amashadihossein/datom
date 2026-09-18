@@ -306,8 +306,20 @@ print.datom_conn <- function(x, ...) {
 #'   a good GitHub repo name.
 #' @param max_file_size_gb Maximum file size limit in GB. Default 1000 (1TB).
 #' @param git_ignore Character vector of patterns to add to .gitignore.
-#' @param .force If `TRUE`, skip the S3 namespace safety check. Use only for
-#'   intentional takeover of an existing S3 namespace. Default `FALSE`.
+#' @param mode Project mode, or `NULL` (the default) for an ordinary data repo
+#'   that onboards source files. The only other accepted value is `"product"`,
+#'   which declares a repo that **builds** its artifacts instead: it holds one
+#'   set, writes derived tables, and refuses the file-import path. Absent is not
+#'   a missing value here -- it *is* "ordinary data repo", which is why nothing
+#'   is written to `project.yaml` unless you ask for a product.
+#' @param set Name of the set a `mode = "product"` repo owns. Required with
+#'   `mode = "product"` and refused without it: one repo holds one set, and a
+#'   product repo that names none passes the mode check and then fails every set
+#'   write, which is a repo that looks initialised and is not.
+#' @param .force If `TRUE`, skip the storage namespace safety check. Use only for
+#'   intentional takeover of an existing namespace. Default `FALSE`. It does not
+#'   help when the namespace cannot be *reached*: that refusal stands, because
+#'   the manifest upload later in this function needs the same storage.
 #'
 #' @return Invisible TRUE on success.
 #' @export
@@ -343,6 +355,8 @@ datom_init_repo <- function(path = ".",
                            create_repo = FALSE,
                            repo_name = project_name,
                            max_file_size_gb = 1000,
+                           mode = NULL,
+                           set = NULL,
                            git_ignore = c(
                              ".Rprofile", ".Renviron", ".Rhistory",
                              ".Rapp.history", ".Rproj.user/",
@@ -372,6 +386,42 @@ datom_init_repo <- function(path = ".",
   if (!is.numeric(max_file_size_gb) || length(max_file_size_gb) != 1L ||
       is.na(max_file_size_gb) || max_file_size_gb <= 0) {
     cli::cli_abort("{.arg max_file_size_gb} must be a positive number.")
+  }
+
+  # --- Project mode ------------------------------------------------------------
+  # Validated together, because each is meaningless without the other: a product
+  # repo naming no set passes the set-write mode check and then fails its name
+  # check on every write, and a set name with no mode is a declaration nothing
+  # reads. Both fail here, at the call that could have got it right, rather than
+  # at a write days later.
+  if (!is.null(mode)) {
+    if (!.datom_is_text_scalar(mode) || !identical(mode, "product")) {
+      cli::cli_abort(c(
+        "{.arg mode} must be {.val product}, or {.code NULL} for an ordinary \\
+         data repo.",
+        "x" = "Got: {.val {mode}}",
+        "i" = "A product repo builds its artifacts and holds one set; an \\
+               ordinary repo onboards source files."
+      ))
+    }
+    if (!.datom_is_text_scalar(set)) {
+      cli::cli_abort(c(
+        "A {.val product} repo must name the set it owns.",
+        "i" = "Pass {.arg set} as well: one repo holds one set, and the \\
+               declaration is what says which.",
+        "i" = "Without it, {.fn datom_write_set} refuses every write into this \\
+               repo."
+      ))
+    }
+    # The same validator the set-write gate runs, so the two cannot disagree
+    # about what a legal name is.
+    .datom_validate_name(set)
+  } else if (!is.null(set)) {
+    cli::cli_abort(c(
+      "{.arg set} was given without {.code mode = \"product\"}.",
+      "i" = "Only a product repo owns a set. Pass both, or neither.",
+      "i" = "A set name alone declares nothing: no code reads it."
+    ))
   }
 
   # --- Resolve data_repo_url -------------------------------------------------
@@ -419,40 +469,57 @@ datom_init_repo <- function(path = ".",
   data_prefix <- store$data$prefix
   data_region <- .datom_store_region(store$data)
 
-  if (data_backend == "s3" && !isTRUE(.force)) {
-    # Only the client CONSTRUCTION is tolerated here, and only because it can fail
-    # before any storage call is attempted -- a malformed credential shape, say.
-    # An unreachable store is a refusal, not a warning: see
-    # .datom_check_namespace_free(). This never yielded a working offline init
+  # A product repo is checked on EVERY backend and cannot opt out, which is two
+  # widenings of the same condition rather than one:
+  #
+  #   * the backend test -- the check reaches storage through the dispatch layer
+  #     and works unchanged on a local store, so restricting it to s3 left local
+  #     product repos with no check at all, which is the backend most product
+  #     fixtures use.
+  #   * `.force` -- the documented takeover override. For a product repo the
+  #     override is what the guard exists to stop: teardown and prefix-delete
+  #     operate on a whole namespace, so a product sharing a prefix with its
+  #     source study means deleting the product can delete the raw data. An
+  #     ordinary repo keeps the override, because the blast radius argument is
+  #     about a product sitting on top of data it did not produce.
+  #
+  # Deliberately NOT widened for ordinary repos: they keep both the s3-only scope
+  # and the override exactly as they had them. The local gap for an ordinary repo
+  # is recorded rather than closed here -- closing it is a behaviour change for
+  # every local repo, which is its own decision and not this task's.
+  is_product_init <- identical(mode %||% "", "product")
+  check_namespace <- if (is_product_init) TRUE else {
+    data_backend == "s3" && !isTRUE(.force)
+  }
+
+  if (check_namespace) {
+    # One builder for both backends, rather than an S3 client spelled out here:
+    # the check reaches storage through the dispatch layer, so a local store needs
+    # a conn with no client at all, and this is the function that already knows
+    # which shape to make. It is the same one init uses for the real data conn.
+    #
+    # Only the CONSTRUCTION is tolerated, and only because it can fail before any
+    # storage call is attempted -- a malformed credential shape, say. An
+    # unreachable store is a refusal, not a warning: see
+    # .datom_check_namespace_free(). That never yielded a working offline init
     # anyway, because the manifest upload below needs the same storage.
     #
     # The check itself runs OUTSIDE any handler, deliberately. This used to wrap
     # the whole sequence and re-raise the refusal by matching its message text,
     # which meant rewording that message would have silently turned a refusal into
     # a warning, and any other abort raised inside the check was swallowed with
-    # nothing failing to say so. The unreachable-store tolerance now lives inside
-    # .datom_check_namespace_free(), around the one call that touches storage.
-    check_conn <- tryCatch({
-      s3_check_client <- .datom_s3_client(
-        store$data$access_key, store$data$secret_key,
-        region = data_region,
-        session_token = store$data$session_token
-      )
-      new_datom_conn(
-        project_name = project_name,
-        root         = data_root,
-        prefix       = data_prefix,
-        region       = data_region,
-        client       = s3_check_client,
-        path         = NULL,
-        role         = "reader"
-      )
-    }, error = function(e) {
-      cli::cli_alert_warning(
-        "Could not verify the storage namespace is free: {conditionMessage(e)}"
-      )
-      NULL
-    })
+    # nothing failing to say so.
+    check_conn <- tryCatch(
+      .datom_build_init_conn(
+        project_name, store$data, path = NULL, role = "reader"
+      ),
+      error = function(e) {
+        cli::cli_alert_warning(
+          "Could not build a connection to check the namespace: {conditionMessage(e)}"
+        )
+        NULL
+      }
+    )
 
     if (!is.null(check_conn)) .datom_check_namespace_free(check_conn)
   }
@@ -537,6 +604,24 @@ datom_init_repo <- function(path = ".",
     ),
     renv = FALSE
   )
+
+  # Added here rather than as `mode = mode` inside the list() above, and the
+  # difference is real: in a list() CONSTRUCTOR a NULL is a present element, which
+  # yaml writes as `mode: ~` -- a declared empty value rather than an absent key.
+  # Assignment is the opposite; `$<-` with NULL removes. So the `if` is not what
+  # protects this (assignment alone would do), the PLACEMENT is, and the tests are
+  # what would catch either spelling drifting back into the constructor. Probed:
+  # moving these two into the list() above reddens two tests, while dropping the
+  # `if` from this form reddens none.
+  #
+  # Absent already MEANS "ordinary data repo" to everything that reads this file,
+  # so there is no `mode: standard` line to write for that state -- nothing would
+  # consult it. The cost is that the key-set tripwire only sees keys written on
+  # every init, which is why it has a second case that inits a product repo.
+  if (!is.null(mode)) {
+    project_config$mode <- mode
+    project_config$set <- set
+  }
 
   yaml::write_yaml(project_config, fs::path(path, ".datom", "project.yaml"))
 
@@ -1121,6 +1206,17 @@ datom_get_conn <- function(path = NULL,
   # window is one session on a migrating repo, and the next connection reads the
   # pulled file.
   conn$min_writer_version <- cfg$min_writer_version
+
+  # The repo's declared mode, for the ONE consumer that only reports: the mode
+  # line in datom_status(). Absent means an ordinary data repo.
+  #
+  # Everything that AUTHORISES A WRITE reads the file itself instead, and the two
+  # must not be merged: a gate has to see the file as it is now, because a hand
+  # edit or a pull can replace it after this parse. See
+  # .datom_refuse_import_on_product() and .datom_check_set_write_gates(), and the
+  # rule that decides which source a new site uses -- does it authorise a write?
+  # then it reads the file.
+  conn$mode <- cfg$mode
   conn$data_repo_url <- tryCatch({
     repo <- git2r::repository(as.character(path))
     remotes <- git2r::remotes(repo)

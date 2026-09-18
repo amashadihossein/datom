@@ -31,6 +31,118 @@ test_that("errors when input directory missing", {
   })
 })
 
+
+# --- the import path is refused on a product repo ------------------------------
+#
+# A product repo BUILDS its artifacts. Before this it got an unhelpful answer
+# rather than a refusal: `input_files/` exists and is empty on such a repo, so the
+# scan reported "no files found" and returned a zero-row frame -- which describes a
+# repo with nothing to import rather than one that does not import.
+
+sync_product_repo <- function(set_name = "product-a", env = parent.frame()) {
+  conn <- mock_datom_conn(list())
+  conn$role <- "developer"
+  conn$path <- getwd()
+  write_product_config(getwd(), "set-project", set_name)
+  conn
+}
+
+test_that("datom_sync_manifest refuses on a product repo", {
+  withr::with_tempdir({
+    conn <- sync_product_repo()
+    fs::dir_create("input_files")
+
+    err <- expect_error(datom_sync_manifest(conn),
+                        class = "datom_import_on_product")
+    msg <- cli::ansi_strip(conditionMessage(err))
+    # Names the verb refused and the two verbs that do work here, so the message
+    # is a route rather than a complaint.
+    expect_match(msg, "datom_sync_manifest")
+    expect_match(msg, "datom_write")
+    expect_match(msg, "datom_write_set")
+    expect_match(msg, "product-a")
+  })
+})
+
+test_that("datom_sync refuses on a product repo, independently of the scan", {
+  # This verb takes a data frame, so a caller can hand it rows a refusing scan
+  # would never have produced.
+  withr::with_tempdir({
+    conn <- sync_product_repo()
+    frame <- data.frame(
+      name = "dm", file = "dm.csv", format = "csv",
+      original_file_sha = strrep("a", 64L), status = "new",
+      stringsAsFactors = FALSE
+    )
+
+    expect_error(datom_sync(conn, frame), class = "datom_import_on_product")
+  })
+})
+
+test_that("the refusal lands above the input-file scan, not in its empty branch", {
+  # A file left in `input_files/` by accident must not be scanned, let alone
+  # imported -- the old no-op only happened when the directory was empty, so a
+  # refusal placed there would have missed the case that matters.
+  withr::with_tempdir({
+    conn <- sync_product_repo()
+    fs::dir_create("input_files")
+    writeLines("id\n1", "input_files/leftover.csv")
+
+    expect_error(datom_sync_manifest(conn), class = "datom_import_on_product")
+  })
+})
+
+test_that("the import refusal reads the config file, not the connection", {
+  # A repo hand-edited to product mode after the connection was built must be
+  # refused: a check that authorises a write has to see the file as it is now.
+  # The connection here says nothing about a mode, which is what makes the
+  # assertion meaningful.
+  withr::with_tempdir({
+    conn <- sync_product_repo()
+    expect_null(conn$mode)
+    fs::dir_create("input_files")
+
+    expect_error(datom_sync_manifest(conn), class = "datom_import_on_product")
+  })
+})
+
+test_that("the import refusal checks the config's declared format first", {
+  # Parsing project.yaml makes this a new GATED parse. Without the format check a
+  # build that cannot interpret the file would read `mode` out of it anyway and
+  # decide on a field it may have misread -- reopening, on a path that writes, the
+  # hole the format gate closed.
+  withr::with_tempdir({
+    conn <- sync_product_repo()
+    fs::dir_create("input_files")
+
+    cfg_path <- fs::path(getwd(), ".datom", "project.yaml")
+    cfg <- yaml::read_yaml(cfg_path)
+    cfg$schema_version <- .datom_project_schema + 1L
+    yaml::write_yaml(cfg, cfg_path)
+
+    err <- expect_error(datom_sync_manifest(conn),
+                        class = "datom_schema_unsupported")
+    expect_match(conditionMessage(err), "cannot write")
+  })
+})
+
+test_that("an ordinary repo's import path is untouched", {
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    fs::dir_create("input_files")
+
+    # No config at all, and a config with no mode, both proceed to the scan.
+    expect_no_error(datom_sync_manifest(conn))
+
+    fs::dir_create(".datom")
+    yaml::write_yaml(list(project_name = "p"),
+                     fs::path(".datom", "project.yaml"))
+    expect_no_error(datom_sync_manifest(conn))
+  })
+})
+
 test_that("errors when input directory has subdirectories", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())

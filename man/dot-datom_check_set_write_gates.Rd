@@ -46,12 +46,12 @@ connection construction for two fields with one consumer. If a later caller
 wants them on the conn it is a move with one call site to update, rather than a
 decision to reopen.
 
-\strong{Nothing writes \code{mode} or \code{set} yet}, so no repo built by this version of
-datom can pass the mode check -- \code{datom_init_repo()} writes neither key. That is
-the same deliberate inertness the reader-side format check
-shipped with: the gate lands tested but unreachable through the public path,
-and the release that starts writing \code{mode: product} is a later, separate step
-which depends on a build already existing that can notice the declaration.
-Fixtures hand-write the file.
+\strong{\verb{datom_init_repo(mode = "product", set = <name>)} is what declares both
+fields}, so the supported route into this check is a repo created that way. It
+shipped inert one release earlier, on purpose: a build that can \emph{notice} the
+declaration has to exist before anything writes it, or the declaration reaches
+installs that walk straight past it. Hand-editing the file still works and some
+fixtures do it, which is also what a repo created before that argument existed
+needs.
 }
 \keyword{internal}

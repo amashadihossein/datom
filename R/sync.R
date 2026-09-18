@@ -291,6 +291,76 @@ datom_pull <- function(conn) {
 }
 
 
+#' Refuse the File-Import Path on a Product Repo
+#'
+#' A `mode: product` repo **builds** its artifacts: derived tables written from
+#' data frames, and one set collecting them. It never onboards source files, so
+#' the two import verbs refuse instead of answering. Before this they answered
+#' unhelpfully -- `input_files/` exists and is empty on such a repo, so the scan
+#' reported "no files found" and handed back a zero-row frame, which describes a
+#' repo with nothing to import rather than a repo that does not import.
+#'
+#' **Read from the file, not from the connection**, and the rule behind that is
+#' worth carrying: a check that **authorises a write** must see the config as it
+#' is *now*, because a hand edit or a pull can replace it after the connection was
+#' built. Only [datom_status()], which reports rather than decides, reads the mode
+#' off the connection. A future site applies the same test: does it authorise a
+#' write? Then it reads the file.
+#'
+#' **Three steps in one place, and the middle one is easy to leave out.** Parsing
+#' this file makes this a new *gated* parse: every site that reads
+#' `.datom/project.yaml` checks its declared format first, or a build that cannot
+#' interpret the file acts on fields it has misread. Skipping that step here would
+#' reopen exactly that hole, on a path that writes.
+#'
+#' **Called from both import verbs, not only the first.** [datom_sync()] takes a
+#' manifest data frame, so a caller can hand it rows that a refusing
+#' [datom_sync_manifest()] would never have produced.
+#'
+#' **Above the input-file scan, never in its empty branch.** A product repo with a
+#' file dropped into `input_files/` by accident would otherwise be imported, which
+#' is the thing this exists to prevent; the unhelpful no-op only happened when the
+#' directory was empty.
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @param verb Name of the import verb being refused, for the message.
+#' @return Invisibly `NULL`. Aborts with class `datom_import_on_product` when the
+#'   repo declares `mode: product`.
+#' @keywords internal
+.datom_refuse_import_on_product <- function(conn, verb) {
+  yaml_path <- fs::path(conn$path, ".datom", "project.yaml")
+
+  # No config is not this check's failure to report: the verb fails on the same
+  # repo moments later with its own message about an uninitialised repo.
+  if (!fs::file_exists(yaml_path)) return(invisible(NULL))
+
+  cfg <- yaml::read_yaml(yaml_path)
+  .datom_check_project_schema(cfg, source = yaml_path, operation = "write")
+
+  if (!identical(as.character(cfg$mode %||% ""), "product")) {
+    return(invisible(NULL))
+  }
+
+  declared_set <- cfg$set
+  cli::cli_abort(
+    c(
+      "{.fn {verb}} onboards source files, and this repo declares \\
+       {.code mode: product}.",
+      "x" = "A product repo builds its artifacts; it does not import them.",
+      "i" = "Write a derived table with {.fn datom_write}, then collect the \\
+             versions into the repo's set with {.fn datom_write_set}.",
+      "i" = if (.datom_is_text_scalar(declared_set)) {
+        "This repo's set is {.val {declared_set}}."
+      } else {
+        "This repo declares no {.field set}; add {.code set: <name>} to \\
+         {.file .datom/project.yaml}."
+      }
+    ),
+    class = "datom_import_on_product"
+  )
+}
+
+
 #' Scan and Prepare Manifest for Sync
 #'
 #' Scans a flat `input_files/` directory and computes file SHAs. Compares
@@ -361,6 +431,10 @@ datom_sync_manifest <- function(conn,
       "i" = "Use {.fn datom_get_conn} with a datom-initialized repo."
     ))
   }
+
+  # Above the input-directory resolution, so a file accidentally left in
+  # `input_files/` on a product repo is never scanned, let alone imported.
+  .datom_refuse_import_on_product(conn, "datom_sync_manifest")
 
   # Resolve input directory
   input_dir <- if (is.null(path)) {
@@ -560,6 +634,10 @@ datom_sync <- function(conn,
       "i" = "Use {.fn datom_sync_manifest} to generate a valid manifest."
     ))
   }
+
+  # Independently of datom_sync_manifest(), because this verb takes a data frame:
+  # a caller can hand it rows that a refusing scan would never have produced.
+  .datom_refuse_import_on_product(conn, "datom_sync")
 
   .datom_check_rio()
 

@@ -70,6 +70,33 @@ something has to police.
 * The refusal message now says whether the build cannot *read* or cannot *write*
   the format it met.
 
+## A repo can declare that it builds its data rather than onboarding it
+
+`datom_init_repo()` takes `mode = "product"` and `set = <name>`, which records in
+`.datom/project.yaml` that this repo builds its artifacts and owns one set. An
+ordinary data repo needs neither and is unchanged: no `mode` line is written, and
+absent already means "ordinary".
+
+* **The file-import path is refused on a product repo**, rather than answering
+  unhelpfully. `datom_sync_manifest()` and `datom_sync()` both stop and point at
+  `datom_write()` and `datom_write_set()` instead. Before this they reported "no
+  files found" and handed back an empty result, which describes a repo with
+  nothing to import rather than one that does not import -- and a file left in
+  `input_files/` by accident would have been imported.
+* **The table write path is untouched.** A product repo legitimately writes
+  derived tables; that is what it is for.
+* **`datom_status()` reports the mode** and stops reporting on `input_files/` for
+  a product repo, for the same reason the import verbs now refuse.
+* **`set` and `mode` are required together.** A product repo that names no set
+  would pass the mode check on a set write and then fail its name check every
+  time, so `datom_init_repo()` refuses at the call instead. The set name goes
+  through the same validation a set write applies.
+* **A product repo's storage namespace is always checked, on every backend, and
+  `.force` does not skip it.** The reason is blast radius rather than access
+  control: teardown and prefix-delete operate on a whole namespace, so a product
+  sharing a prefix with the study it was built from means deleting the product can
+  delete the raw data. Ordinary repos keep the behaviour they had.
+
 * **Creating a repo now stops when it cannot check whether the storage namespace
   is already in use** `[breaking]`. It used to say so and carry on. That read like
   a graceful degradation and was not one: the check was not deferred, it was

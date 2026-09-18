@@ -813,6 +813,76 @@ test_that("datom_status shows input_files sync state", {
   })
 })
 
+test_that("datom_status reports the product mode and skips the input-files line", {
+  # The input-files line is the misreport this fixes: on a product repo it said
+  # "directory empty", which describes a repo with nothing to onboard rather than
+  # one that never will. The directory is still created at init -- not creating it
+  # would change what init guarantees about the tree for a cosmetic gain -- so the
+  # skip lives here.
+  #
+  # The mode is read off the CONNECTION, because this verb reports rather than
+  # decides. Every check that authorises a write re-reads the config file.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    conn$mode <- "product"
+
+    fs::dir_create("input_files")
+
+    local_mocked_bindings(
+      .datom_storage_read_json = function(conn, s3_key) {
+        list(schema_version = 2L, artifacts = list())
+      },
+      .datom_status_git = function(path) {
+        list(uncommitted = character(), branch = "main")
+      }
+    )
+
+    result <- datom_status(conn)
+
+    expect_identical(result$connection$mode, "product")
+    expect_null(result$input_files)
+
+    printed <- cli::ansi_strip(paste(
+      capture.output(datom_status(conn), type = "message"), collapse = "\n"
+    ))
+    expect_match(printed, "Mode:")
+    expect_no_match(printed, "Input files")
+  })
+})
+
+test_that("datom_status says nothing about mode on an ordinary repo", {
+  # Absent IS "ordinary data repo", so a "Mode: standard" line would invent a
+  # state the config does not record -- and a reader connection never parses that
+  # config at all, so it cannot know either way.
+  withr::with_tempdir({
+    conn <- mock_datom_conn(list())
+    conn$role <- "developer"
+    conn$path <- getwd()
+    fs::dir_create("input_files")
+
+    local_mocked_bindings(
+      .datom_storage_read_json = function(conn, s3_key) {
+        list(schema_version = 2L, artifacts = list())
+      },
+      .datom_status_git = function(path) {
+        list(uncommitted = character(), branch = "main")
+      }
+    )
+
+    result <- datom_status(conn)
+    expect_null(result$connection$mode)
+    expect_false(is.null(result$input_files))
+
+    printed <- cli::ansi_strip(paste(
+      capture.output(datom_status(conn), type = "message"), collapse = "\n"
+    ))
+    expect_no_match(printed, "Mode:")
+    expect_match(printed, "Input files")
+  })
+})
+
 test_that("datom_status omits input_files when dir missing", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
