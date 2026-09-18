@@ -2070,6 +2070,58 @@ test_that("datom_init_repo manifest.json includes project_name", {
   expect_equal(manifest$project_name, "testproj")
 })
 
+test_that("datom_init_repo does not swallow an unrecognised namespace-check failure", {
+  # THE HAZARD THE CONDITION CLASS ALONE DOES NOT CLOSE, and it lives here because
+  # the caller is what used to swallow. This wrapped the whole check in a handler
+  # that re-raised only what it recognised by message text and downgraded
+  # everything else to a warning -- so any abort added inside the check later
+  # became a warning, and init carried on, with nothing failing to say so.
+  #
+  # The store-unreachable tolerance is now scoped to the one storage call inside
+  # the check (see the test below, which still passes), so a failure for any other
+  # reason reaches the user.
+  env <- setup_init_env()
+
+  local_mocked_bindings(
+    .datom_check_namespace_free = function(conn) {
+      cli::cli_abort("a refusal this build did not anticipate")
+    }
+  )
+
+  expect_error(
+    datom_init_repo(
+      path = env$work_dir,
+      project_name = "testproj",
+      store = env$store
+    ),
+    "did not anticipate"
+  )
+})
+
+test_that("datom_init_repo dispatches the occupied refusal on its class, not its text", {
+  # The refusal must survive a reword of its own message. Six tests grep the
+  # phrase "already occupied", which is why the old text-matched re-raise was
+  # noisy rather than silent -- but noise in the suite is not a design, and the
+  # coupling is what this removes.
+  env <- setup_init_env()
+
+  local_mocked_bindings(
+    .datom_check_namespace_free = function(conn) {
+      cli::cli_abort("wording nobody greps for",
+                     class = "datom_namespace_occupied")
+    }
+  )
+
+  expect_error(
+    datom_init_repo(
+      path = env$work_dir,
+      project_name = "testproj",
+      store = env$store
+    ),
+    class = "datom_namespace_occupied"
+  )
+})
+
 test_that("datom_init_repo warns but continues when S3 connectivity fails during namespace check", {
   env <- setup_init_env()
 

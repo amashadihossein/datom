@@ -297,8 +297,8 @@ datom_storage_copy <- function(from_conn, to_conn) {
     return(data.frame(key = character(0), bytes = numeric(0)))
   }
 
-  from_label <- c(s3 = "S3", local = "local")[from_conn$backend] %||% from_conn$backend
-  to_label   <- c(s3 = "S3", local = "local")[to_conn$backend]   %||% to_conn$backend
+  from_label <- .datom_backend_label(from_conn)
+  to_label   <- .datom_backend_label(to_conn)
 
   cli::cli_alert_info(
     "Copying {length(full_keys)} object{?s} ({.val {from_label}} -> {.val {to_label}})..."

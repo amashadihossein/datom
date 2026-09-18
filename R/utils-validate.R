@@ -160,24 +160,53 @@
 
 # --- S3 namespace safety -------------------------------------------------------
 
-#' Check Whether an S3 Namespace is Free
+#' Check Whether a Storage Namespace is Free
 #'
-#' Checks for the existence of `.metadata/manifest.json` in the target S3
-#' namespace. If found, the namespace is occupied by an existing datom project.
-#' Returns `TRUE` if the namespace is free. Aborts with an actionable error
-#' if occupied, showing the existing project name when possible.
+#' Checks for the existence of `.metadata/manifest.json` in the target
+#' namespace. If found, the namespace is occupied by an existing datom project
+#' and this aborts with `datom_namespace_occupied`, naming the occupying project
+#' when it can be read.
 #'
-#' Uses `head_object` first (cheap) and only reads the manifest (via
-#' `get_object`) when the namespace is occupied, to extract the project name
-#' for the error message.
+#' Checks for the object first (cheap) and only reads the manifest when the
+#' namespace is occupied, to extract the project name for the error message.
+#'
+#' **Three outcomes, not two, and the third is why this returns rather than
+#' aborting on every failure.** A store this connection cannot reach means
+#' *unknown*, never *free*: a developer offline or without read credentials still
+#' gets to create a repo, and if storage is genuinely gone the manifest write a
+#' few steps later fails on its own. That single tolerance is expressed **here**,
+#' around the one call that touches storage, rather than by the caller wrapping
+#' this whole function -- which is what it used to do. That shape had two defects
+#' worth not reintroducing: it recognised the refusal below by **matching its
+#' message text**, so rewording the message would have quietly downgraded a
+#' refusal to a warning; and it swallowed anything it could not recognise, so any
+#' abort added to this function later would have been downgraded too, with nothing
+#' failing to say so.
+#'
+#' **The condition class is what callers dispatch on** -- never the message.
 #'
 #' @param conn A `datom_conn` object (typically a temporary conn built by
 #'   `datom_init_repo()` before the repo is fully initialised).
-#' @return Invisible `TRUE` if the namespace is free.
+#' @return Invisible `TRUE` when the namespace is free, invisible `NA` when the
+#'   store could not be reached (a message is emitted saying so). Aborts with
+#'   class `datom_namespace_occupied` when it is occupied.
 #' @keywords internal
 .datom_check_namespace_free <- function(conn) {
-  occupied <- .datom_storage_exists(conn, ".metadata/manifest.json")
+  label <- .datom_backend_label(conn)
 
+  occupied <- tryCatch(
+    .datom_storage_exists(conn, ".metadata/manifest.json"),
+    error = function(e) {
+      # A message rather than a warning, matching what this path has always
+      # emitted: the suite runs at WARN 0 and this is a diagnostic, not a defect.
+      cli::cli_alert_warning(
+        "Could not verify the {label} namespace is free: {conditionMessage(e)}"
+      )
+      NA
+    }
+  )
+
+  if (is.na(occupied)) return(invisible(NA))
   if (!occupied) return(invisible(TRUE))
 
   # Namespace is occupied — try to read the project name for a helpful message
@@ -189,18 +218,24 @@
     "<unreadable>"
   })
 
-  s3_location <- paste0(
-    "s3://", conn$root, "/",
+  # Backend-neutral: an `s3://` scheme in front of a filesystem path, or advice to
+  # change a bucket the user does not have, is a confidently wrong message.
+  location <- paste0(
+    if (identical(conn$backend %||% "s3", "s3")) "s3://" else "",
+    conn$root, "/",
     if (!is.null(conn$prefix)) paste0(gsub("/+$", "", conn$prefix), "/") else "",
     "datom/"
   )
 
-  cli::cli_abort(c(
-    "S3 namespace is already occupied by project {.val {existing_project}}.",
-    "x" = "Location: {.val {s3_location}}",
-    "i" = "Each datom project must use a unique S3 namespace (bucket + prefix).",
-    "i" = "Use a different {.arg prefix} or {.arg bucket}, or pass {.code .force = TRUE} to override."
-  ))
+  cli::cli_abort(
+    c(
+      "{label} namespace is already occupied by project {.val {existing_project}}.",
+      "x" = "Location: {.val {location}}",
+      "i" = "Each datom project must use a unique namespace (location + prefix).",
+      "i" = "Use a different {.arg prefix} or location, or pass {.code .force = TRUE} to override."
+    ),
+    class = "datom_namespace_occupied"
+  )
 }
 
 # --- Repo schema version contract ---------------------------------------------

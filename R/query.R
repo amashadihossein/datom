@@ -494,8 +494,7 @@ datom_status <- function(conn) {
 
   status$tables <- table_info
 
-  .storage_labels <- c(s3 = "S3", local = "local")
-  storage_label <- .storage_labels[conn$backend] %||% conn$backend
+  storage_label <- .datom_backend_label(conn)
   if (table_info$available) {
     cli::cli_alert_info("Tables on {storage_label}: {.val {table_info$count}}")
   } else {

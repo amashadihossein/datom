@@ -121,7 +121,7 @@ datom_summary <- function(conn) {
 #'   unlink(tmp, recursive = TRUE)
 #' }
 print.datom_summary <- function(x, ...) {
-  backend_label <- c(s3 = "S3", local = "local")[x$backend] %||% x$backend
+  backend_label <- .datom_backend_label(x)
   location <- x$root
   if (!is.null(x$prefix) && !is.na(x$prefix) && nzchar(x$prefix)) {
     location <- paste0(x$root, "/", x$prefix)

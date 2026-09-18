@@ -212,6 +212,72 @@ test_that("error message includes S3 location", {
   )
 })
 
+test_that(".datom_check_namespace_free's occupied abort carries a condition class", {
+  # Callers dispatch on the class, never on the message. datom_init_repo() used to
+  # recognise this refusal with grepl("already occupied", ...) and re-raise it,
+  # which made rewording the message enough to downgrade a refusal to a warning.
+  conn <- mock_datom_conn(list())
+
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) list(project_name = "OTHER")
+  )
+
+  expect_error(
+    .datom_check_namespace_free(conn),
+    class = "datom_namespace_occupied"
+  )
+})
+
+test_that(".datom_check_namespace_free reports an unreachable store as unknown, not free", {
+  # Three outcomes, not two. Returning TRUE here would report a namespace this
+  # connection could not read as verified-free, which is the silent degradation
+  # the whole schema/vocabulary discipline exists to remove.
+  conn <- mock_datom_conn(list())
+
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) stop("Network error")
+  )
+
+  expect_message(
+    result <- .datom_check_namespace_free(conn),
+    "Could not verify"
+  )
+  expect_true(is.na(result))
+  expect_false(isTRUE(result))
+})
+
+# The hazard the condition class alone does NOT close -- a failure raised inside
+# the namespace check for some new reason being swallowed -- belongs to the caller,
+# not to this function, because the caller is what used to wrap it. Its test lives
+# with datom_init_repo() in test-conn.R. Asserting it here would look like coverage
+# and prove nothing: an abort has always escaped this function.
+
+test_that(".datom_check_namespace_free names the backend it checked", {
+  # A message that says S3 to somebody using a local store, or prints s3:// in
+  # front of a filesystem path, is confidently wrong -- which this spec has
+  # repeatedly judged worse than saying nothing.
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) list(project_name = "OTHER")
+  )
+
+  s3_conn <- mock_datom_conn(list(), root = "my-bucket", prefix = "p")
+  err <- expect_error(.datom_check_namespace_free(s3_conn),
+                      class = "datom_namespace_occupied")
+  expect_match(conditionMessage(err), "S3 namespace")
+  expect_match(conditionMessage(err), "s3://my-bucket", fixed = TRUE)
+
+  local_conn <- mock_datom_conn(list(), root = "/tmp/store", prefix = "p")
+  local_conn$backend <- "local"
+  err <- expect_error(.datom_check_namespace_free(local_conn),
+                      class = "datom_namespace_occupied")
+  msg <- conditionMessage(err)
+  expect_match(msg, "local namespace")
+  expect_no_match(msg, "s3://", fixed = TRUE)
+  expect_no_match(msg, "bucket")
+})
+
 test_that("error message suggests .force = TRUE", {
   conn <- mock_datom_conn(list())
 

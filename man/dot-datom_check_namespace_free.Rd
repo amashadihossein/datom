@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils-validate.R
 \name{.datom_check_namespace_free}
 \alias{.datom_check_namespace_free}
-\title{Check Whether an S3 Namespace is Free}
+\title{Check Whether a Storage Namespace is Free}
 \usage{
 .datom_check_namespace_free(conn)
 }
@@ -11,17 +11,33 @@
 \code{datom_init_repo()} before the repo is fully initialised).}
 }
 \value{
-Invisible \code{TRUE} if the namespace is free.
+Invisible \code{TRUE} when the namespace is free, invisible \code{NA} when the
+store could not be reached (a message is emitted saying so). Aborts with
+class \code{datom_namespace_occupied} when it is occupied.
 }
 \description{
-Checks for the existence of \code{.metadata/manifest.json} in the target S3
-namespace. If found, the namespace is occupied by an existing datom project.
-Returns \code{TRUE} if the namespace is free. Aborts with an actionable error
-if occupied, showing the existing project name when possible.
+Checks for the existence of \code{.metadata/manifest.json} in the target
+namespace. If found, the namespace is occupied by an existing datom project
+and this aborts with \code{datom_namespace_occupied}, naming the occupying project
+when it can be read.
 }
 \details{
-Uses \code{head_object} first (cheap) and only reads the manifest (via
-\code{get_object}) when the namespace is occupied, to extract the project name
-for the error message.
+Checks for the object first (cheap) and only reads the manifest when the
+namespace is occupied, to extract the project name for the error message.
+
+\strong{Three outcomes, not two, and the third is why this returns rather than
+aborting on every failure.} A store this connection cannot reach means
+\emph{unknown}, never \emph{free}: a developer offline or without read credentials still
+gets to create a repo, and if storage is genuinely gone the manifest write a
+few steps later fails on its own. That single tolerance is expressed \strong{here},
+around the one call that touches storage, rather than by the caller wrapping
+this whole function -- which is what it used to do. That shape had two defects
+worth not reintroducing: it recognised the refusal below by \strong{matching its
+message text}, so rewording the message would have quietly downgraded a
+refusal to a warning; and it swallowed anything it could not recognise, so any
+abort added to this function later would have been downgraded too, with nothing
+failing to say so.
+
+\strong{The condition class is what callers dispatch on} -- never the message.
 }
 \keyword{internal}

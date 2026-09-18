@@ -1080,18 +1080,18 @@ own; landing it first is what makes Task 6's failure loud.
     (call sites as shipped): `datom_list()` (`R/query.R:80`) and `datom_summary()`
     (`R/summary.R:50`) abort with their own wording on an unreadable manifest; `datom_status()`
     (`R/query.R:468`) still tolerates one and reports it unavailable;
-    `.datom_status_input_files()` (`R/query.R:593`) and `datom_sync_manifest()` (`R/sync.R:392`)
+    `.datom_status_input_files()` (`R/query.R:579`) and `datom_sync_manifest()` (`R/sync.R:392`)
     still fall back to an empty manifest when the clone has no file.
   - **New: `.datom_manifest_skeleton(project_name = NULL)`** (`R/sync.R:759`) -- the one
     empty-manifest shape. It replaced three hand-built copies, now three calls to it:
-    `R/query.R:600`, `R/sync.R:408`, and the one inside the entry updater at `R/sync.R:969`, which
+    `R/query.R:599`, `R/sync.R:408`, and the one inside the entry updater at `R/sync.R:969`, which
     is the copy that would have written the old key after the rename (see Task 6). Use
     `datom_init_repo()`'s spelling,
     `structure(list(), names = character(0))` (now `R/sync.R:762`, inside the skeleton itself),
     not a bare `list()`: an empty bare
     list serializes as a JSON **array**, an empty named list as an **object**. Inert today (the
     skeleton is never written empty) and correct for the one case where it would be.
-  - **`.datom_check_namespace_free()` is excluded by name** (`R/utils-validate.R:178-190`). It reads
+  - **`.datom_check_namespace_free()` is excluded by name** (`R/utils-validate.R:194`). It reads
     a *different project's* manifest inside a handler that softens failure to `<unreadable>`, and
     that softening is right there: the message is best-effort context for a refusal that has already
     been decided. Sweeping it onto the shared helper would put a throwing check inside an
@@ -1182,7 +1182,7 @@ own; landing it first is what makes Task 6's failure loud.
     while the bug ships. Task 5 reduced it to one place, which is the point of the split.
   - Read side: **one** site now -- `.datom_read_manifest()` (`R/sync.R:812`) -- plus the six field
     accesses that read the artifact key off the returned document (`R/query.R:92,109`,
-    `R/query.R:488`, `R/query.R:605`, `R/summary.R:68`, `R/sync.R:411`).
+    `R/query.R:489`, `R/query.R:604`, `R/summary.R:68`, `R/sync.R:411`).
   - Each entry gains `kind` (`"table"` for everything existing). `summary` gains `total_sets`;
     `total_tables` / `total_size_bytes` / `total_versions` keep **current** semantics (tables
     only).
@@ -2795,7 +2795,7 @@ own; landing it first is what makes Task 6's failure loud.
     3. **`datom_status()` on a reader connection cannot report the mode, and the honest answer is that
        it should not try.** A reader has no clone and never parses `project.yaml` -- every parse site
        is developer-path, verified. The misleading output this task fixes is the input-files
-       block (`R/query.R:527`, ending in "Input files: directory empty" at `R/query.R:541`), which
+       block (`R/query.R:526`, ending in "Input files: directory empty" at `R/query.R:540`), which
        already sits inside the developer-only branch, so the fix lands where the mode is knowable.
        **Default: report the mode only when there is a clone, and put it in no stored document** --
        reaching readers would mean adding a field to a machine-written file, which is precisely the
@@ -2805,7 +2805,7 @@ own; landing it first is what makes Task 6's failure loud.
        `.force` is the hole R17.3 names -- and there is an existing test pinning that bypass
        (`tests/testthat/test-conn.R:2033`), so closing it must be conditional on the mode or that test
        changes. The unnamed one: a **local** backend gets no namespace check at all, while
-       `.datom_check_namespace_free()` (`R/utils-validate.R:178`) works through storage dispatch and
+       `.datom_check_namespace_free()` (`R/utils-validate.R:194`) works through storage dispatch and
        would function unchanged on local -- so AC22 is unsatisfiable for a product repo on a local
        store, which is the backend every set fixture in the suite uses. **Default: widen both
        conditions for product repos only**, leaving ordinary repos byte-for-byte as they are, and
@@ -2815,21 +2815,23 @@ own; landing it first is what makes Task 6's failure loud.
        2026-09-17, stated by neither the audit nor the review. The refusal is hardcoded to one backend
        in words and in format: it opens "S3 namespace is already occupied", advises "a unique S3
        namespace (bucket + prefix)", and builds its location as `paste0("s3://", conn$root, ...)`
-       (`R/utils-validate.R:192`). On a local store that prints `s3://` in front of a filesystem path
+       (`R/utils-validate.R:223`). On a local store that prints `s3://` in front of a filesystem path
        and tells the user to change a bucket they do not have. The message has to become
        backend-neutral in the same change, and `.datom_storage_*` already carries the label
        vocabulary `datom_status()` uses for this (`s3` -> "S3", `local` -> "local").
 
-    5. **AC22's "refused" is best-effort today, and the wrapper is why -- FIX THIS BEFORE FINDING 4, not
-       after.** The check sits inside a `tryCatch` whose handler (`R/conn.R:439`) downgrades any error
-       that is not "already occupied" to a warning and continues, so a credentials or network failure
-       creates the product repo unchecked. It also re-raises by **matching the message text** with
-       `grepl("already occupied", ...)` (`R/conn.R:440`), which is the string-matching pattern this spec
-       replaced with condition classes everywhere else. **Default: give
-       `.datom_check_namespace_free()`'s occupied abort a condition class and dispatch on that**, leave
-       the warn-and-continue policy alone, and state in AC22's test and in the docs that the refusal
-       holds when the namespace could be read -- an unqualified "refused" is a promise the code does not
-       keep offline.
+    5. **DONE 2026-09-17 as chunk A, before finding 4 as the ordering requires. AC22's "refused" was
+       best-effort, and the wrapper was why.** The check sat inside a `tryCatch` whose handler
+       downgraded any error that was not "already occupied" to a message and continued, so a credentials
+       or network failure created the repo unchecked. It also re-raised by **matching the message text**
+       with `grepl("already occupied", ...)`, the string-matching pattern this spec replaced with
+       condition classes everywhere else. What shipped: the occupied abort carries
+       `datom_namespace_occupied`; the blanket handler is gone; init wraps only the client construction;
+       and `.datom_check_namespace_free()` owns the one tolerated failure itself, returning `NA` for
+       "could not reach the store" -- never `TRUE`, which would report an unreadable namespace as
+       verified-free. Its refusal is also backend-neutral now, and the backend-label table that was
+       written out at four sites is one helper (`.datom_backend_label()`), because a fifth copy is how
+       the artifact-kind predicate lost a term.
 
        **Why before finding 4, and NOT for the reason first offered.** The review's argument was that
        widening the backend condition "puts more traffic through the fragile part", which does not hold:
@@ -2840,12 +2842,44 @@ own; landing it first is what makes Task 6's failure loud.
 
        **One over-claim corrected, because it changes how urgent this is.** The review has it that
        rewording the message degrades the refusal to a warning "with nothing failing and nothing to
-       notice". Four tests grep that exact string, two of them through `datom_init_repo()`
+       notice". **Six** tests grep that exact string, two of them through `datom_init_repo()`
        (`tests/testthat/test-conn.R:1986` and `:2028`), and those two fail on a reword: the abort gets
        swallowed, init proceeds, and `expect_error()` finds no error. So today the coupling is noisy,
-       not silent. It is still worth removing -- the silent case is a **new** abort added inside
-       `.datom_check_namespace_free()` for some other reason, which the handler would swallow with
-       nothing watching -- but the case for it is future-proofing, not a live silent failure.
+       not silent. (This audit first said four, which is the restated-count defect these documents keep
+       catching elsewhere; derive it from `grep`, not from memory.)
+
+       **AND THE CLASS ALONE DOES NOT CLOSE THE HAZARD THIS AUDIT CLAIMED FOR IT** -- second review
+       amendment, accepted, and it was a defect in the reasoning rather than in the plan. The audit
+       justified the class partly by "the silent case is a new abort added inside
+       `.datom_check_namespace_free()`, which the handler would swallow". After classing, the handler
+       reads `if (inherits(e, "datom_namespace_occupied")) stop(e) else warn()` -- and a new
+       **unclassed** abort still falls to the `else` and is still swallowed. The class closes the
+       reword fragility and nothing more.
+       Closing the swallow needs the catch narrowed the other way: **tolerate only a genuine
+       storage-access failure and let everything else propagate.** Both in one change, since it is one
+       line either way.
+
+       **How that was implemented, because the obvious spelling is worse.** Testing the error to decide
+       whether it was "storage-access" would be message-matching again, one layer along. Instead the
+       tolerance moved to **where the storage call is**: `.datom_check_namespace_free()` wraps its own
+       `.datom_storage_exists()` call, returns `NA` for "unknown" (never `TRUE`, which would report an
+       unreadable namespace as verified-free), and the caller's blanket handler is gone -- init now
+       wraps only the client construction, which can fail for credential reasons that say nothing about
+       occupancy. Less code than before, and there is no handler left for a later abort to fall into.
+
+       **The residual is narrowed, not closed, and AC22 must keep saying so.** A store that cannot be
+       reached still lets a repo be created unchecked -- deliberately, since a developer offline should
+       be able to init and the manifest write a few steps later fails on its own if storage is really
+       gone. So AC22's "refused" holds *when the namespace could be read*. Finding 4's product-repo
+       widening is where the question of failing **closed** for a product repo can be raised; it is not
+       decided here.
+
+       **One test relocated after a probe caught it testing the wrong layer.** A test that the check
+       lets other failures propagate was first written against
+       `.datom_check_namespace_free()` -- where an abort has always escaped, so it proved nothing. The
+       swallowing belonged to the **caller**, so the test belongs with `datom_init_repo()`, and the
+       probe confirms it: restoring the blanket handler reddens the two init-level tests and neither of
+       the helper-level ones.
     6. **Four exported examples hand-edit `project.yaml` to declare the mode, and they are how users
        will learn this.** `R/set.R:599`, `R/set.R:1441`, `R/set-draft.R:189` and `R/set-members.R:628`
        each write `cfg$mode <- "product"` into a config after init. Once init can declare it, those
@@ -3816,7 +3850,7 @@ rather than in Phase D beside the task it blocks.
     every role" would be wrong.
   - **THERE IS A SECOND READ SITE, AND ONE GATE DOES NOT COVER IT.** Verified, not assumed:
     `.datom_resolve_data_location()` re-reads `project.yaml` **after a git pull** (`R/ref.R:327`), and
-    it is called from `R/conn.R:1030` -- *after* the parse at 937. So a config arriving in that pull is
+    it is called from `R/conn.R:1057` -- *after* the parse at 944. So a config arriving in that pull is
     never checked. The same parse is also what `conn$min_writer_version` is read from
     (`R/conn.R:1081`), so a pulled floor raise is missed in that session too -- pre-existing, and named
     here rather than left to be found later. Either gate the post-pull re-read as well, or record the

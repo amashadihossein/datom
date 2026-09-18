@@ -420,13 +420,23 @@ datom_init_repo <- function(path = ".",
   data_region <- .datom_store_region(store$data)
 
   if (data_backend == "s3" && !isTRUE(.force)) {
-    tryCatch({
+    # Only the client construction is tolerated here. It reaches for credentials
+    # and can fail for reasons that say nothing about whether the namespace is
+    # taken, so a failure means "could not check" and init continues.
+    #
+    # The check itself runs OUTSIDE any handler, deliberately. This used to wrap
+    # the whole sequence and re-raise the refusal by matching its message text,
+    # which meant rewording that message would have silently turned a refusal into
+    # a warning, and any other abort raised inside the check was swallowed with
+    # nothing failing to say so. The unreachable-store tolerance now lives inside
+    # .datom_check_namespace_free(), around the one call that touches storage.
+    check_conn <- tryCatch({
       s3_check_client <- .datom_s3_client(
         store$data$access_key, store$data$secret_key,
         region = data_region,
         session_token = store$data$session_token
       )
-      check_conn <- new_datom_conn(
+      new_datom_conn(
         project_name = project_name,
         root         = data_root,
         prefix       = data_prefix,
@@ -435,15 +445,14 @@ datom_init_repo <- function(path = ".",
         path         = NULL,
         role         = "reader"
       )
-      .datom_check_namespace_free(check_conn)
     }, error = function(e) {
-      if (grepl("already occupied", conditionMessage(e))) {
-        stop(e)
-      }
       cli::cli_alert_warning(
-        "Could not verify S3 namespace is free: {conditionMessage(e)}"
+        "Could not verify the storage namespace is free: {conditionMessage(e)}"
       )
+      NULL
     })
+
+    if (!is.null(check_conn)) .datom_check_namespace_free(check_conn)
   }
 
   # --- Path setup -------------------------------------------------------------
