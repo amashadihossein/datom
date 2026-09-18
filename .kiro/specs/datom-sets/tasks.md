@@ -189,6 +189,23 @@ only on keys written at **every** init, so if those two are emitted just for a p
 green and needs a second case (Task 11 finding 1). Five things a later change must not undo,
 one recorded residual on the writer floor, and the probes are in Task 23's DONE record.
 
+**TASK 12 IS AUDITED AND STARTABLE COLD (2026-09-18), AND THE HEADLINE IS THAT ITS TWO "ALREADY TRUE BY
+CONSTRUCTION" CLAIMS BOTH HOLD AND BOTH NEED A TEST THAT THE OBVIOUS SPELLING DOES NOT GIVE.** Ten
+findings in its body, **one to decide first** (whether the commit verb runs the staleness gate -- default
+recorded). The three worth carrying into a cold session. **The machine-commit isolation test must read
+the real commit tree**: there is already a test that mocks `.datom_git_commit()` and asserts the manifest
+is in its file list, and extending that one with an exclusion assertion defends nothing, because the mock
+replaces the very function whose file list *is* the guarantee -- it would stay green through the add-all
+refactor the requirement exists to catch. **The foreign-path tolerance is two mechanisms on two
+surfaces**, a `metadata.json` filter for artifact discovery and an explicit expected-file list for the
+repo-level checks, so one test covers half of it; and the fixture directory must be a name that is
+**not** on the hardcoded exclusion list sitting in front of that filter, or the test passes by the
+mechanism the requirement does not depend on. **Two git behaviours were settled by running git2r rather
+than reasoning**: `paths = NULL` *can* delegate to the existing helper with `files = "."`, which respects
+`.gitignore` and stages deletions; and the tempting `staged_deletions = TRUE` spelling sets
+`force = TRUE`, which stages gitignored files and silently breaks the acceptance criterion. Also: two new
+exports, so NAMESPACE **and** `_pkgdown.yml` need entries, which the task body does not say.
+
 **TASK 11 IS CLOSED (2026-09-18): A REPO CAN NOW DECLARE THAT IT BUILDS ITS DATA RATHER THAN
 ONBOARDING IT.** `datom_init_repo(mode = "product", set = <name>)` records both fields; the two import
 verbs refuse on such a repo and name the two verbs that do work there; `datom_status()` reports the mode
@@ -3056,6 +3073,101 @@ own; landing it first is what makes Task 6's failure loud.
     refused, on-a-branch guard inherited (AC21).
   - _Requirements: R14, R15 (incl. R15.8/R15.9). Invariants: I16, I17, I20. Properties: P19, P22,
     P23, P24. Acceptance: AC16, AC17, AC21. No pathway impact._
+  - **COLD-START AUDIT, 2026-09-18**, run after Task 11 landed, every claim checked against the tree and
+    the two git-behaviour questions settled by **running git2r** rather than reasoning about it.
+    **STARTABLE. Ten findings, ONE that must be decided before the first line** (finding 9) -- it carries
+    a stated default. **No escalation flag is owed**: design.md section 12 carries E1 (Task 2) and E2
+    (Task 6) only. **Two new exports, so NAMESPACE and `_pkgdown.yml` both need an entry** -- the body
+    does not say so, and the natural home is the section that already holds
+    `datom_repo_set_data_store()` and `datom_repo_attach_governance()` (`_pkgdown.yml:112-113`), not a
+    new section.
+
+    **What held**, verified rather than assumed. All three delta corrections are exactly right:
+    `.datom_git_commit()` aborts on an empty `files` vector (`R/utils-git.R:185`) and on nonexistent
+    files (`R/utils-git.R:200`), and **returns HEAD's SHA** rather than aborting when nothing ends up
+    staged (`R/utils-git.R:226`). The on-a-branch guard really is inside `.datom_git_branch()`
+    (`R/utils-git.R:158`) and is reached from `.datom_git_push()` (`R/utils-git.R:265`), so `push =
+    FALSE` would never touch it. `.datom_check_git_current()` really does call `git2r::ahead_behind()`
+    and read `[[2]]` (`R/utils-git.R:486`), so the ahead count needs no new machinery. Neither export
+    exists yet, and nothing in the package passes `staged_deletions = TRUE` today. `datom_status()` does
+    report foreign dirty files as git state and never as a datom defect, because the git block is built
+    from `git2r::status()` and sits beside `status$tables` rather than inside it. AC16's fixture is
+    **newly constructible through the public path**, thanks to Task 11's `mode = "product"` argument;
+    before that it needed a hand-edited config.
+
+    1. **THE THREE DELTA CORRECTIONS ARE ALREADY TESTED, so that part of this task is reading, not
+       writing.** `tests/testthat/test-utils-git.R:332` covers the empty-`files` abort, `:337` the
+       nonexistent-file abort, and `:345` the "returns HEAD SHA when files are unchanged" branch. The
+       body reads as though each needs establishing. They need **citing** in the wrapper's comments
+       instead, so the next reader does not re-derive them.
+    2. **AC16'S TEST MUST ASSERT ON THE REAL COMMIT TREE, AND THE OBVIOUS SPELLING DOES NOT.** There is
+       already a test that captures `.datom_git_commit()`'s `files` argument through a mock and asserts
+       `.datom/manifest.json` **is in** it (`tests/testthat/test-read-write.R:1654`). Extending that one
+       with an exclusion assertion is the cheap move and it defends nothing: the mock replaces the very
+       function whose file list is the guarantee, so the test would stay green through exactly the
+       add-all refactor R14.1 exists to catch. AC16 says "a commit whose tree does not contain the
+       change", and that is the layer the test has to work at -- a real git repo, a real
+       `datom_write()`, and `git2r` reading the commit's tree. The second half is a working-tree
+       assertion (`R/foo.R` still dirty), which no mock can fake either.
+    3. **R14.2's "holds by construction" is TWO mechanisms on TWO surfaces, and one test covers one of
+       them.** Table discovery filters on the presence of `metadata.json`
+       (`R/validate.R:391`), so a foreign directory is skipped there. But the repo-level half never
+       enumerates the repo at all: `.datom_validate_repo_files()` walks an explicit list of files it
+       expects (`R/validate.R:286`), so a foreign path is structurally invisible to it. Two different
+       reasons, two tests, and neither implies the other -- a refactor of the repo-level check into a
+       directory walk would satisfy the discovery test and break R14.2.
+    4. **THE FOREIGN-PATH FIXTURE MUST NOT BE A NAME ON THE HARDCODED EXCLUSION LIST, or the test passes
+       through the mechanism the requirement does not rely on.** `.datom_validate_tables()` drops
+       dot-directories and then seven hardcoded names -- `input_files`, `renv`, `man`, `R`, `tests`,
+       `vignettes`, `src` (`R/validate.R:388`) -- **before** the `metadata.json` filter runs. So a test
+       asserting "`R/` is ignored" is satisfied by the list and would stay green if the filter were
+       deleted. `dp/` is not on that list, which is exactly why design 19.7 chose it. **Probe the test
+       rather than trusting it**: deleting the `metadata.json` filter must redden it, and deleting the
+       hardcoded list must not.
+    5. **`paths = NULL` CAN delegate to `.datom_git_commit()`, and the body implies it cannot.** Verified
+       by running: `fs::file_exists(".")` is `TRUE`, so `files = "."` passes the existence guard, and
+       `git2r::add(repo, ".")` with default flags **respects `.gitignore`** and **stages deletions**.
+       That is precisely AC17's `paths = NULL` semantics, from the helper, with no new staging code. The
+       body's true claim is narrower than its wording: delegation with `files = character(0)` is
+       impossible, which is not the same as delegation being impossible.
+    6. **THE WRONG DELEGATION IS `staged_deletions = TRUE`, IT SILENTLY VIOLATES AC17, AND IT IS THE
+       TEMPTING ONE.** That flag exists to skip the existence check, which is what a naive add-all
+       author reaches for -- and it sets `git2r::add(force = TRUE)` (`R/utils-git.R:211`), which
+       **stages gitignored files**. Verified by running: with `force = TRUE` an ignored file appears in
+       the staged set; with default flags it does not appear at all. It is also unnecessary, since
+       default flags already stage deletions. AC17's "minus gitignored files" clause is the test that
+       catches this, so write that clause as a test with a real `.gitignore` rather than as prose.
+    7. **R15.5's `invisible(NULL)` still needs the wrapper's own nothing-to-do detection, even under
+       that delegation.** The helper's empty-staging branch returns **HEAD's SHA**, which is a success
+       value, so a wrapper that just returns what the helper returned can never emit the no-op R15.5
+       requires. Default: capture HEAD before, compare after, and treat "unchanged" as the no-op --
+       cheaper and more robust than parsing a status object, and it also gets the R15.5 qualification
+       right, since the push decision is made separately from the commit outcome.
+    8. **THERE IS A FIFTH COMMIT SITE AND IT BYPASSES THE HELPER ENTIRELY.** Four sites go through
+       `.datom_git_commit()` -- `.datom_commit_and_mirror()` (`R/read_write.R:982`, shared by the table
+       write and the set write), both `repo.R` verbs (`R/repo.R:136`, `R/repo.R:416`) and the metadata
+       sync (`R/utils-sha.R:650`). `datom_init_repo()` stages four named files with a direct
+       `git2r::add()` (`R/conn.R:704`) and commits without the helper. The guarantee holds there (the
+       list is explicit, and a brand-new repo has nothing foreign to sweep), but I16 is worded about
+       "a datom machine-moment commit" without qualification, so say in the test or the invariant which
+       sites the AC16 test actually covers rather than implying all of them.
+    9. **DECIDE FIRST: does `datom_repo_commit()` run the staleness gate, and the answer changes what
+       R15.7 asks for.** `.datom_check_git_current()` calls `.datom_git_branch()` (`R/utils-git.R:478`),
+       so calling the gate would satisfy the on-a-branch guard transitively and make R15.7's "assert it
+       explicitly" redundant-looking -- which is how an explicit guard gets deleted later as duplication.
+       **Default: do not call the staleness gate, and assert the branch guard explicitly as R15.7 says.**
+       The reason is that the two verbs already handle divergence where it matters:
+       `.datom_git_push()` pulls before pushing (`R/utils-git.R:257`), so a human commit does not need
+       to refuse on a remote that moved -- and refusing would make committing your own work depend on
+       somebody else's push.
+    10. **`datom_repo_push()` needs one behaviour the body does not name: what it does when there is no
+        remote at all.** `.datom_git_push()` reads `git2r::remotes(repo)[[1L]]`
+        (`R/utils-git.R:264`), which subscripts an empty list on a repo with no remote and fails with
+        R's own out-of-bounds error rather than anything a user can act on. A data repo is required to
+        have a remote, so this is an edge rather than a scenario -- but a standalone push verb is the
+        first thing a user points at a half-configured repo. Default: check for a remote up front and
+        refuse with the recourse, in the new verb rather than in the shared helper, so no existing
+        caller's behaviour changes.
 
 - [ ] **13. `datom_write_set(include_paths = )` -- the joint commit**
   - Follow-on to Task 9 rather than folded into it: Task 9 is already large (two gates, dual-write,
