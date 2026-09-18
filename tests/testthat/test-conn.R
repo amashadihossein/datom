@@ -2122,25 +2122,62 @@ test_that("datom_init_repo dispatches the occupied refusal on its class, not its
   )
 })
 
-test_that("datom_init_repo warns but continues when S3 connectivity fails during namespace check", {
+test_that("datom_init_repo refuses when storage connectivity fails during the namespace check", {
+  # BEHAVIOUR CHANGE, deliberate and loud. This used to warn and continue, which
+  # read as a graceful degradation and was not one: it did not defer the occupancy
+  # check, it removed it. Traced end to end -- init went on to push the git repo,
+  # then aborted at the manifest upload, and the recovery that abort pointed at
+  # performs no occupancy check of any kind. So the tolerance never produced a
+  # working offline init, because storage is required to finish one; its only
+  # reachable effect was getting past the check, with a manifest written over
+  # another project's as the outcome.
+  #
+  # Refusing at the check costs nothing that worked before and names the real
+  # problem at the moment it is known, instead of surfacing later as an unrelated
+  # upload failure.
   env <- setup_init_env()
 
-  # .datom_s3_client will work but .datom_s3_exists will fail with network error
   local_mocked_bindings(
     .datom_storage_exists = function(conn, s3_key) stop("Network error"),
     .datom_storage_write_json = function(...) invisible(TRUE)
   )
 
-  # Should succeed — connectivity failure during namespace check is a warning, not fatal
-  expect_no_error(
+  expect_error(
     datom_init_repo(
       path = env$work_dir,
       project_name = "testproj",
       store = env$store
-    )
+    ),
+    class = "datom_namespace_unverified"
   )
 
-  expect_true(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+  # And it refuses before anything local is created, like the occupied refusal.
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+})
+
+test_that("datom_init_repo's manifest-upload recovery names a verb that can do it", {
+  # The hint used to say datom_sync_manifest(), which scans `input_files/` and
+  # returns a data frame of statuses -- it writes nothing to storage, so the
+  # advice could not work. The verb that mirrors metadata is internal and is
+  # reached through datom_validate(fix = TRUE).
+  env <- setup_init_env()
+
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) FALSE,
+    .datom_storage_write_json = function(...) stop("storage gone")
+  )
+
+  err <- expect_error(
+    datom_init_repo(
+      path = env$work_dir,
+      project_name = "testproj",
+      store = env$store
+    ),
+    "manifest upload failed"
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "datom_validate", fixed = TRUE)
+  expect_no_match(msg, "datom_sync_manifest", fixed = TRUE)
 })
 
 

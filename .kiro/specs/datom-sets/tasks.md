@@ -2815,7 +2815,7 @@ own; landing it first is what makes Task 6's failure loud.
        2026-09-17, stated by neither the audit nor the review. The refusal is hardcoded to one backend
        in words and in format: it opens "S3 namespace is already occupied", advises "a unique S3
        namespace (bucket + prefix)", and builds its location as `paste0("s3://", conn$root, ...)`
-       (`R/utils-validate.R:223`). On a local store that prints `s3://` in front of a filesystem path
+       (`R/utils-validate.R:237`). On a local store that prints `s3://` in front of a filesystem path
        and tells the user to change a bucket they do not have. The message has to become
        backend-neutral in the same change, and `.datom_storage_*` already carries the label
        vocabulary `datom_status()` uses for this (`s3` -> "S3", `local` -> "local").
@@ -2867,12 +2867,37 @@ own; landing it first is what makes Task 6's failure loud.
        wraps only the client construction, which can fail for credential reasons that say nothing about
        occupancy. Less code than before, and there is no handler left for a later abort to fall into.
 
-       **The residual is narrowed, not closed, and AC22 must keep saying so.** A store that cannot be
-       reached still lets a repo be created unchecked -- deliberately, since a developer offline should
-       be able to init and the manifest write a few steps later fails on its own if storage is really
-       gone. So AC22's "refused" holds *when the namespace could be read*. Finding 4's product-repo
-       widening is where the question of failing **closed** for a product repo can be raised; it is not
-       decided here.
+       **THE RESIDUAL IS CLOSED, NOT NARROWED -- AND FOR EVERY REPO, NOT JUST PRODUCT ONES.** The
+       first pass left "a store that cannot be reached still lets a repo be created unchecked" as a
+       deliberate tolerance for an offline developer, with AC22 qualified to "refused *when the namespace
+       could be read*". A third review round traced that path end to end and the tolerance does not
+       survive it: it **does not defer the check, it drops it.** Store unreachable -> warn, return
+       unknown -> init continues and pushes the git repo -> the manifest upload aborts -> and the verb
+       that abort points at performs no occupancy check of any kind. Meanwhile init **cannot finish
+       without storage** because that upload is part of it, so the tolerance never produced a working
+       offline init; its only reachable effect was getting past the check, with a manifest written over
+       another project's as the outcome. **So it fails closed**, with `datom_namespace_unverified`, and
+       AC22's "refused" is unconditional. **The posture makes this a rule rather than a judgement
+       call**: breaking a behaviour loudly is acceptable at this stage, and silently disabling a
+       verification check is not acceptable at any stage -- this was the second thing wearing the
+       clothes of the first.
+
+       **Two details the trace produced that change the code beyond the policy.** (1) The refusal must
+       **not** offer `.force`, which skips this check but not the manifest upload, so it cannot rescue an
+       init without storage either -- advice that does not work is worse than none. (2) The manifest
+       upload's own recovery hint named `datom_sync_manifest()`, which scans `input_files/` and returns a
+       data frame of statuses and **writes nothing to storage**; the verb that mirrors metadata is
+       internal and reached through `datom_validate(fix = TRUE)`. Fixed in the same commit and pinned by
+       a test, because a recovery instruction that cannot work is how the original tolerance stayed
+       plausible for this long.
+
+       **Rejected, with the reason, because it is the obvious fix and it is wrong**: adding the
+       namespace check to `datom_sync_manifest()`. That verb is also the ordinary path for your own
+       repo, where the namespace is legitimately occupied by you, so it would need a project-name
+       comparison rather than an occupancy test -- and a connection's project name is an unvalidated
+       label, which is the defect Task 26 spent a whole task on. (A name comparison does exist, in
+       `datom_validate()` at `R/validate.R:266`, which is detection after the fact rather than
+       prevention.)
 
        **One test relocated after a probe caught it testing the wrong layer.** A test that the check
        lets other failures propagate was first written against
@@ -3705,7 +3730,7 @@ rather than in Phase D beside the task it blocks.
        touched**: the per-artifact read path (`tests/testthat/test-read-write.R:182`), the three write
        routes (`tests/testthat/test-read-write.R:2596`, `2610`, `2631`), the two write-entry tests
        (`tests/testthat/test-forward-compat.R:760`, `922`), and the two unit tests of the check itself
-       (`tests/testthat/test-utils-validate.R:360`, `400`). All five readers do have coverage today, so
+       (`tests/testthat/test-utils-validate.R:451`, `491`). All five readers do have coverage today, so
        none has to be written from scratch.
     2. **TASK 21 ALREADY SHIPPED THE WRITER HALF OF R22.11. Do not build it twice.** A writer meeting a
        too-new manifest is already refused at the write entry (`datom_schema_unsupported`, with
@@ -5523,3 +5548,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-17 | **(decision, Task 11) The import refusal reads `mode` from the FILE; only `datom_status()`'s report reads it from the connection. THE AUDIT'S FIRST-STATED DEFAULT WAS WRONG and was amended by review.** The rule is the one Task 23's review settled: a check that **authorises a write** must see the file as it is *now*, because a hand edit or a pull can replace it after the connection was built, while a report is fine with the connection's snapshot. The audit then grouped the import refusal with the status line as "not a gate", which inverts what it is -- it is the thing that **stops an import**, the same job the set-write gate does -- so on the connection, a repo hand-edited to `mode: product` after the connection opened would have gone on accepting file imports, which is precisely the window the rule closes. Cost of the correction is one extra local parse on a path that already does git and storage work. **State the rule as the test a future site applies** -- does this site authorise a write? then it reads the file -- rather than as three site-by-site facts. **One consequence neither side stated, and it must ship with the refusal**: a new parse of `project.yaml` is a new **gated** parse, so the refusal carries `.datom_check_project_schema(..., operation = "write")` and the shared helper is three steps in one place (parse, format check, mode check). Missing the middle step would quietly reopen the hole Task 23 closed, on a path that writes. | Task 11 finding 2, R10.1 |
 | 2026-09-17 | **(review finding, ACCEPTED with the reason re-derived, Task 11) The namespace guard's condition class lands BEFORE the backend widening, and the reason first offered for that order does not hold.** The review argued that widening `if (data_backend == "s3" && ...)` to local "puts more traffic through the fragile part" -- the text-matched re-raise at `R/conn.R:440`. Volume is not the issue; the coupling is per-call. The real reason is that the widening's own AC22 test is what would **encode** the fragile path: written against a text-matched re-raise, it passes *through* the coupling and then defends it. Class first, widen second, and the new test dispatches on the class from the start. **One over-claim corrected, because it changes the urgency**: rewording the message does not fail silently today -- four tests grep that string and two of them go through `datom_init_repo()`, so a reword swallows the abort, lets init proceed, and reddens both. The coupling is noisy, not silent. It is still worth removing, for the case that genuinely would be silent: a **new** abort added inside `.datom_check_namespace_free()` for some other reason, which the handler swallows with nothing watching. | Task 11 findings 4 and 5 |
 | 2026-09-17 | **(audit finding, Task 11) Widening the namespace guard to local stores falsifies its message, and nothing would fail if that were missed.** Stated by neither the audit nor the review that followed it. The refusal is hardcoded to one backend in words and in format: it opens "S3 namespace is already occupied", advises "a unique S3 namespace (bucket + prefix)", and builds its location as `paste0("s3://", conn$root, ...)`. On a local store that prints `s3://` in front of a filesystem path and tells the user to change a bucket they do not have -- a message that is confidently wrong, which this spec has repeatedly judged worse than no message. The message becomes backend-neutral in the same change, using the label vocabulary `datom_status()` already has for this. | Task 11 finding 4, `R/utils-validate.R` |
+| 2026-09-17 | **(review finding, ACCEPTED and fixed, Task 11) An unverifiable storage namespace now FAILS CLOSED, for every repo rather than only product ones -- the tolerance was not a deferred check, it was a dropped one.** Traced end to end rather than argued: store unreachable -> the check warns and reports unknown -> `datom_init_repo()` continues and pushes the git repo -> the manifest upload aborts -> and the verb that abort pointed at performs **no** occupancy check of any kind. Meanwhile init **cannot finish without storage**, because that upload is part of it, so the tolerance never yielded a working offline init; its only reachable effect was getting past the check, and the outcome is a manifest written over another project's. **The posture makes this a rule, not a judgement call**: breaking a behaviour loudly is acceptable at this stage and silently disabling a verification check is not acceptable at any stage, and this was the second wearing the clothes of the first. So it aborts with `datom_namespace_unverified` and AC22's "refused" is **unconditional**, replacing the "when the namespace could be read" qualifier the first pass recorded. **Two code details the trace produced beyond the policy.** The refusal must not offer `.force`, which skips this check but not the upload, so it cannot rescue an init without storage -- advice that does not work is worse than none. And the upload's own recovery hint named `datom_sync_manifest()`, which scans `input_files/` and writes nothing to storage; the verb that mirrors metadata is internal and reached via `datom_validate(fix = TRUE)`. Both fixed here and pinned, because an unusable recovery instruction is how the tolerance stayed plausible. **Rejected, with the reason**: adding the namespace check to `datom_sync_manifest()`. That verb is also the ordinary path for your own repo, where the namespace is legitimately yours, so it would need a project-name comparison rather than an occupancy test -- and a connection's project name is the unvalidated label Task 26 spent a task on. A name comparison does exist in `datom_validate()` (`R/validate.R:266`), which is detection after the fact rather than prevention. Tests 3854 -> 3860. | Task 11 finding 5, `R/utils-validate.R`, `R/conn.R` |

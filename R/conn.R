@@ -420,9 +420,11 @@ datom_init_repo <- function(path = ".",
   data_region <- .datom_store_region(store$data)
 
   if (data_backend == "s3" && !isTRUE(.force)) {
-    # Only the client construction is tolerated here. It reaches for credentials
-    # and can fail for reasons that say nothing about whether the namespace is
-    # taken, so a failure means "could not check" and init continues.
+    # Only the client CONSTRUCTION is tolerated here, and only because it can fail
+    # before any storage call is attempted -- a malformed credential shape, say.
+    # An unreachable store is a refusal, not a warning: see
+    # .datom_check_namespace_free(). This never yielded a working offline init
+    # anyway, because the manifest upload below needs the same storage.
     #
     # The check itself runs OUTSIDE any handler, deliberately. This used to wrap
     # the whole sequence and re-raise the refusal by matching its message text,
@@ -614,7 +616,10 @@ datom_init_repo <- function(path = ".",
 
   # --- Mirror manifest to data storage ----------------------------------------
   # Manifest is part of the data-side contract -- readers need it to clone.
-  # Failure aborts; user runs datom_sync_manifest after fixing cause.
+  # Failure aborts with the verb that can actually finish the job: the recovery
+  # hint here used to name datom_sync_manifest(), which scans `input_files/` and
+  # returns a data frame of statuses and writes nothing to storage at all. The
+  # verb that mirrors metadata is reached through datom_validate(fix = TRUE).
   tryCatch({
     .datom_storage_write_json(data_conn, ".metadata/manifest.json", manifest)
   }, error = function(e) {
@@ -622,7 +627,7 @@ datom_init_repo <- function(path = ".",
       "Data repo pushed but manifest upload failed.",
       "x" = conditionMessage(e),
       "i" = "Local data clone is intact at {.path {path}}.",
-      "i" = "After fixing the cause (e.g. credentials, connectivity), run {.fn datom_sync_manifest} to upload the manifest."
+      "i" = "After fixing the cause (e.g. credentials, connectivity), run {.code datom_validate(conn, fix = TRUE)} to upload the manifest."
     ), call = NULL)
   })
 

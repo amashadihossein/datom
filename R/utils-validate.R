@@ -170,26 +170,36 @@
 #' Checks for the object first (cheap) and only reads the manifest when the
 #' namespace is occupied, to extract the project name for the error message.
 #'
-#' **Three outcomes, not two, and the third is why this returns rather than
-#' aborting on every failure.** A store this connection cannot reach means
-#' *unknown*, never *free*: a developer offline or without read credentials still
-#' gets to create a repo, and if storage is genuinely gone the manifest write a
-#' few steps later fails on its own. That single tolerance is expressed **here**,
-#' around the one call that touches storage, rather than by the caller wrapping
-#' this whole function -- which is what it used to do. That shape had two defects
-#' worth not reintroducing: it recognised the refusal below by **matching its
-#' message text**, so rewording the message would have quietly downgraded a
-#' refusal to a warning; and it swallowed anything it could not recognise, so any
-#' abort added to this function later would have been downgraded too, with nothing
-#' failing to say so.
+#' **A store this connection cannot reach means *unknown*, and unknown fails
+#' closed.** It used to warn and continue, which was not a deferral of the check
+#' but a silent removal of it: `datom_init_repo()` went on to push the git repo and
+#' then aborted at the manifest upload, and the recovery it pointed at performs no
+#' occupancy check of any kind. So the tolerance never produced a working offline
+#' init -- storage is required to finish one -- and its only reachable effect was
+#' getting past this check, with the outcome being a manifest written over another
+#' project's. Refusing here instead names the real problem at the moment it is
+#' known, rather than surfacing later as an unrelated upload failure.
 #'
-#' **The condition class is what callers dispatch on** -- never the message.
+#' There is no `.force` advice in that refusal, deliberately: `.force` skips this
+#' check but not the manifest upload, so it cannot rescue an init without storage
+#' either. Offering it would be advice that does not work.
+#'
+#' **The tolerated-failure detection lives here, around the one call that touches
+#' storage**, rather than in a handler wrapping this whole function -- which is
+#' what the caller used to do. That shape had two defects worth not
+#' reintroducing: it recognised the occupied refusal by **matching its message
+#' text**, so rewording the message would have quietly downgraded a refusal to a
+#' warning; and it swallowed anything it could not recognise, so any abort added to
+#' this function later would have been downgraded too, with nothing failing to say
+#' so.
+#'
+#' **The condition classes are what callers dispatch on** -- never the message.
 #'
 #' @param conn A `datom_conn` object (typically a temporary conn built by
 #'   `datom_init_repo()` before the repo is fully initialised).
-#' @return Invisible `TRUE` when the namespace is free, invisible `NA` when the
-#'   store could not be reached (a message is emitted saying so). Aborts with
-#'   class `datom_namespace_occupied` when it is occupied.
+#' @return Invisible `TRUE` when the namespace is free. Aborts with class
+#'   `datom_namespace_occupied` when it is occupied, or
+#'   `datom_namespace_unverified` when the store could not be reached.
 #' @keywords internal
 .datom_check_namespace_free <- function(conn) {
   label <- .datom_backend_label(conn)
@@ -197,16 +207,20 @@
   occupied <- tryCatch(
     .datom_storage_exists(conn, ".metadata/manifest.json"),
     error = function(e) {
-      # A message rather than a warning, matching what this path has always
-      # emitted: the suite runs at WARN 0 and this is a diagnostic, not a defect.
-      cli::cli_alert_warning(
-        "Could not verify the {label} namespace is free: {conditionMessage(e)}"
+      cli::cli_abort(
+        c(
+          "Could not check whether the {label} namespace is already in use.",
+          "x" = conditionMessage(e),
+          "i" = "Refusing rather than assuming it is free: another project's \\
+                 manifest would be overwritten, and nothing downstream checks \\
+                 again.",
+          "i" = "Fix the cause (credentials, connectivity, permissions) and retry."
+        ),
+        class = "datom_namespace_unverified"
       )
-      NA
     }
   )
 
-  if (is.na(occupied)) return(invisible(NA))
   if (!occupied) return(invisible(TRUE))
 
   # Namespace is occupied — try to read the project name for a helpful message

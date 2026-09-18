@@ -229,22 +229,50 @@ test_that(".datom_check_namespace_free's occupied abort carries a condition clas
   )
 })
 
-test_that(".datom_check_namespace_free reports an unreachable store as unknown, not free", {
-  # Three outcomes, not two. Returning TRUE here would report a namespace this
-  # connection could not read as verified-free, which is the silent degradation
-  # the whole schema/vocabulary discipline exists to remove.
+test_that(".datom_check_namespace_free refuses when it cannot reach the store", {
+  # FAILS CLOSED, and it did not used to. Returning "free" for a namespace this
+  # connection could not read is a verification check silently removing itself,
+  # which this project's compatibility posture forbids at any stage -- breaking
+  # loudly is fine, degrading quietly is not.
+  #
+  # Nothing is lost by refusing: datom_init_repo() cannot finish without storage
+  # either, since it uploads the manifest a few steps later.
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
     .datom_storage_exists = function(conn, s3_key) stop("Network error")
   )
 
-  expect_message(
-    result <- .datom_check_namespace_free(conn),
-    "Could not verify"
+  err <- expect_error(
+    .datom_check_namespace_free(conn),
+    class = "datom_namespace_unverified"
   )
-  expect_true(is.na(result))
-  expect_false(isTRUE(result))
+  msg <- conditionMessage(err)
+  # Carries the underlying cause, so the user knows what to fix.
+  expect_match(msg, "Network error")
+  # And does NOT offer .force, which skips this check but not the manifest
+  # upload, so it cannot rescue an init without storage.
+  expect_no_match(msg, "force", fixed = TRUE)
+})
+
+test_that(".datom_check_namespace_free's two refusals are distinguishable", {
+  # Occupied and unverified are different answers with different recourse, so a
+  # caller must be able to tell them apart without reading English.
+  conn <- mock_datom_conn(list())
+
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) stop("boom")
+  )
+  expect_error(.datom_check_namespace_free(conn),
+               class = "datom_namespace_unverified")
+
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) TRUE,
+    .datom_storage_read_json = function(conn, s3_key) list(project_name = "OTHER")
+  )
+  err <- expect_error(.datom_check_namespace_free(conn),
+                      class = "datom_namespace_occupied")
+  expect_false(inherits(err, "datom_namespace_unverified"))
 })
 
 # The hazard the condition class alone does NOT close -- a failure raised inside

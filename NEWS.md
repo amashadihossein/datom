@@ -70,6 +70,22 @@ something has to police.
 * The refusal message now says whether the build cannot *read* or cannot *write*
   the format it met.
 
+* **Creating a repo now stops when it cannot check whether the storage namespace
+  is already in use** `[breaking]`. It used to say so and carry on. That read like
+  a graceful degradation and was not one: the check was not deferred, it was
+  dropped, and nothing later in the process performs it -- so a repo could be
+  created over another project's manifest. Nothing that worked before stops
+  working, because creating a repo uploads a manifest and so cannot finish without
+  storage anyway; what changes is that you are told the real problem at the point
+  it is known, instead of a manifest upload failing afterwards for reasons that
+  look unrelated. Fix the cause -- credentials, connectivity, permissions -- and
+  retry.
+  * The refusal names the backend it was checking, and no longer says "S3" or
+    prints an `s3://` address when the store is a local directory.
+  * If the manifest upload does fail, the recovery now names
+    `datom_validate(conn, fix = TRUE)`, which uploads it. The previous advice
+    named `datom_sync_manifest()`, which scans your input files and writes nothing
+    to storage, so it could not have worked.
 * **`.datom/project.yaml` declares its format too.** That file carries settings a
   writer must *obey* rather than merely read -- `min_writer_version` today -- and a
   build that does not recognise such a setting walks past it and acts as though the
