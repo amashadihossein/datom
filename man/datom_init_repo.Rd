@@ -51,9 +51,15 @@ write, which is a repo that looks initialised and is not.}
 \item{git_ignore}{Character vector of patterns to add to .gitignore.}
 
 \item{.force}{If \code{TRUE}, skip the storage namespace safety check. Use only for
-intentional takeover of an existing namespace. Default \code{FALSE}. It does not
-help when the namespace cannot be \emph{reached}: that refusal stands, because
-the manifest upload later in this function needs the same storage.}
+intentional takeover of an existing namespace. Default \code{FALSE}. Two cases it
+does not cover, both refusals that stand:
+\itemize{
+\item a namespace that cannot be \strong{reached}, because the manifest upload later in
+this function needs the same storage, so skipping the check buys nothing;
+\item a \code{mode = "product"} repo, whose namespace check has no override at all --
+passing \code{.force} there is an error rather than a no-op, since a dropped
+override leaves you believing you took a namespace over when you did not.
+}}
 }
 \value{
 Invisible TRUE on success.

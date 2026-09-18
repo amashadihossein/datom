@@ -4,11 +4,23 @@
 \alias{.datom_check_namespace_free}
 \title{Check Whether a Storage Namespace is Free}
 \usage{
-.datom_check_namespace_free(conn)
+.datom_check_namespace_free(conn, overridable = TRUE)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object (typically a temporary conn built by
 \code{datom_init_repo()} before the repo is fully initialised).}
+
+\item{overridable}{Whether the caller honours \code{.force} as a way past an
+occupied namespace. \code{TRUE} (the default) adds that route to the refusal's
+recourse; \code{FALSE} says the override does not apply and why.
+
+\strong{It exists because this function cannot know its caller's policy, which is
+the same reason the backend label is an argument's worth of work rather than
+a constant.} A product repo is checked with no opt-out, so a static
+"pass \code{.force = TRUE} to override" bullet sent exactly those users into a
+flag that changes nothing -- a message routing somebody in a circle, which is
+the failure this function's own backend-neutral wording was fixed for one
+commit earlier.}
 }
 \value{
 Invisible \code{TRUE} when the namespace is free. Aborts with class

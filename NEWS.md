@@ -96,6 +96,11 @@ absent already means "ordinary".
   control: teardown and prefix-delete operate on a whole namespace, so a product
   sharing a prefix with the study it was built from means deleting the product can
   delete the raw data. Ordinary repos keep the behaviour they had.
+  Passing `.force = TRUE` for a product repo is an **error**, not a no-op, so you
+  are never left believing you took a namespace over when you did not. And the
+  refusal you get on an occupied namespace only offers `.force` where `.force`
+  actually works -- for a product repo it names what does work instead, and says
+  why there is no override.
 
 * **Creating a repo now stops when it cannot check whether the storage namespace
   is already in use** `[breaking]`. It used to say so and carry on. That read like

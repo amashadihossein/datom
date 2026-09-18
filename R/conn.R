@@ -317,9 +317,13 @@ print.datom_conn <- function(x, ...) {
 #'   product repo that names none passes the mode check and then fails every set
 #'   write, which is a repo that looks initialised and is not.
 #' @param .force If `TRUE`, skip the storage namespace safety check. Use only for
-#'   intentional takeover of an existing namespace. Default `FALSE`. It does not
-#'   help when the namespace cannot be *reached*: that refusal stands, because
-#'   the manifest upload later in this function needs the same storage.
+#'   intentional takeover of an existing namespace. Default `FALSE`. Two cases it
+#'   does not cover, both refusals that stand:
+#'   * a namespace that cannot be **reached**, because the manifest upload later in
+#'     this function needs the same storage, so skipping the check buys nothing;
+#'   * a `mode = "product"` repo, whose namespace check has no override at all --
+#'     passing `.force` there is an error rather than a no-op, since a dropped
+#'     override leaves you believing you took a namespace over when you did not.
 #'
 #' @return Invisible TRUE on success.
 #' @export
@@ -416,6 +420,24 @@ datom_init_repo <- function(path = ".",
     # The same validator the set-write gate runs, so the two cannot disagree
     # about what a legal name is.
     .datom_validate_name(set)
+
+    # Refused rather than ignored. A product repo's namespace check has no
+    # opt-out, so honouring this flag is impossible and dropping it silently
+    # leaves the caller believing they overrode something -- they asked for a
+    # takeover, did not get one, and were never told. Same rule as refusing a
+    # version or labels supplied beside a member record that already carries
+    # them: ignoring an argument reports success for an action nobody requested.
+    if (isTRUE(.force)) {
+      cli::cli_abort(c(
+        "{.code .force = TRUE} does not apply to a {.val product} repo.",
+        "x" = "Its namespace check has no override, so nothing would be forced.",
+        "i" = "A whole namespace is what teardown and prefix-delete operate on, \\
+               so a product sharing one with the study it was built from means \\
+               deleting the product can delete the raw data.",
+        "i" = "Drop {.arg .force}, and give this repo its own {.arg prefix} or \\
+               location."
+      ))
+    }
   } else if (!is.null(set)) {
     cli::cli_abort(c(
       "{.arg set} was given without {.code mode = \"product\"}.",
@@ -521,7 +543,12 @@ datom_init_repo <- function(path = ".",
       }
     )
 
-    if (!is.null(check_conn)) .datom_check_namespace_free(check_conn)
+    # The override bullet in that refusal is the caller's policy to declare, not
+    # the checker's to assume: a product repo has no opt-out, so advising one
+    # would send exactly those users to a flag that changes nothing.
+    if (!is.null(check_conn)) {
+      .datom_check_namespace_free(check_conn, overridable = !is_product_init)
+    }
   }
 
   # --- Path setup -------------------------------------------------------------

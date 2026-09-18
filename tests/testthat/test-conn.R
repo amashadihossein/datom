@@ -1637,13 +1637,14 @@ test_that("a product repo's namespace is checked on a local store and cannot be 
   )
   expect_match(conditionMessage(err), "SOURCE_STUDY")
 
-  # .force does not buy a product repo its way in, because the override is the
-  # thing the guard exists to stop here.
+  # .force does not buy a product repo its way in. It is refused at the argument
+  # check, before the namespace is even looked at -- see the test below for why
+  # that rather than silently dropping it.
   forced_dir <- withr::local_tempdir()
   expect_error(
     datom_init_repo(path = forced_dir, project_name = "testproj", store = store,
                     mode = "product", set = "product-a", .force = TRUE),
-    class = "datom_namespace_occupied"
+    "does not apply"
   )
 
   # An ordinary local repo is unaffected: no check, so an occupied namespace does
@@ -1653,6 +1654,57 @@ test_that("a product repo's namespace is checked on a local store and cannot be 
   expect_no_error(
     datom_init_repo(path = ordinary_dir, project_name = "testproj", store = store)
   )
+})
+
+test_that("datom_init_repo refuses .force on a product repo rather than dropping it", {
+  # REFUSED, NOT IGNORED, and the argument is the same one that refuses a version
+  # supplied beside a member record which already carries one: ignoring an
+  # argument reports success for an action nobody asked for. Here the caller
+  # requested a namespace takeover, would not have got one, and would never have
+  # been told -- so next time they would rely on an override that does not exist.
+  #
+  # It fires at the argument check, before the namespace is consulted, so it does
+  # not depend on the namespace being occupied.
+  env <- setup_init_env()
+
+  err <- expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, mode = "product", set = "product-a",
+                    .force = TRUE),
+    "does not apply"
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  # Says why there is no override, not merely that there is none.
+  expect_match(msg, "teardown")
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+})
+
+test_that("an occupied-namespace refusal advises .force only where .force works", {
+  # THE CIRCLE THIS CLOSES. The refusal's recourse used to end with "pass
+  # .force = TRUE to override" whatever the caller's policy was -- so a product
+  # repo meeting an occupied namespace was routed into a flag that changes
+  # nothing there. Same shape as the message that said "S3" to a local store: the
+  # checker cannot know its caller's policy, so the caller declares it.
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, key) TRUE,
+    .datom_storage_read_json = function(conn, key) list(project_name = "OTHER")
+  )
+  conn <- mock_datom_conn(list())
+
+  ordinary <- expect_error(.datom_check_namespace_free(conn),
+                           class = "datom_namespace_occupied")
+  expect_match(cli::ansi_strip(conditionMessage(ordinary)), ".force = TRUE",
+               fixed = TRUE)
+
+  product <- expect_error(
+    .datom_check_namespace_free(conn, overridable = FALSE),
+    class = "datom_namespace_occupied"
+  )
+  msg <- cli::ansi_strip(conditionMessage(product))
+  expect_no_match(msg, ".force", fixed = TRUE)
+  # And still says what DOES work, plus why the override is absent.
+  expect_match(msg, "prefix")
+  expect_match(msg, "teardown")
 })
 
 test_that("datom_init_repo creates README.md", {
@@ -2261,7 +2313,7 @@ test_that("datom_init_repo does not swallow an unrecognised namespace-check fail
   env <- setup_init_env()
 
   local_mocked_bindings(
-    .datom_check_namespace_free = function(conn) {
+    .datom_check_namespace_free = function(conn, ...) {
       cli::cli_abort("a refusal this build did not anticipate")
     }
   )
@@ -2284,7 +2336,7 @@ test_that("datom_init_repo dispatches the occupied refusal on its class, not its
   env <- setup_init_env()
 
   local_mocked_bindings(
-    .datom_check_namespace_free = function(conn) {
+    .datom_check_namespace_free = function(conn, ...) {
       cli::cli_abort("wording nobody greps for",
                      class = "datom_namespace_occupied")
     }

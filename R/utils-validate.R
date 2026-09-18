@@ -197,11 +197,22 @@
 #'
 #' @param conn A `datom_conn` object (typically a temporary conn built by
 #'   `datom_init_repo()` before the repo is fully initialised).
+#' @param overridable Whether the caller honours `.force` as a way past an
+#'   occupied namespace. `TRUE` (the default) adds that route to the refusal's
+#'   recourse; `FALSE` says the override does not apply and why.
+#'
+#'   **It exists because this function cannot know its caller's policy, which is
+#'   the same reason the backend label is an argument's worth of work rather than
+#'   a constant.** A product repo is checked with no opt-out, so a static
+#'   "pass `.force = TRUE` to override" bullet sent exactly those users into a
+#'   flag that changes nothing -- a message routing somebody in a circle, which is
+#'   the failure this function's own backend-neutral wording was fixed for one
+#'   commit earlier.
 #' @return Invisible `TRUE` when the namespace is free. Aborts with class
 #'   `datom_namespace_occupied` when it is occupied, or
 #'   `datom_namespace_unverified` when the store could not be reached.
 #' @keywords internal
-.datom_check_namespace_free <- function(conn) {
+.datom_check_namespace_free <- function(conn, overridable = TRUE) {
   label <- .datom_backend_label(conn)
 
   occupied <- tryCatch(
@@ -246,7 +257,14 @@
       "{label} namespace is already occupied by project {.val {existing_project}}.",
       "x" = "Location: {.val {location}}",
       "i" = "Each datom project must use a unique namespace (location + prefix).",
-      "i" = "Use a different {.arg prefix} or location, or pass {.code .force = TRUE} to override."
+      "i" = if (isTRUE(overridable)) {
+        "Use a different {.arg prefix} or location, or pass \\
+         {.code .force = TRUE} to override."
+      } else {
+        "Use a different {.arg prefix} or location. There is no override here: \\
+         a whole namespace is what teardown and prefix-delete operate on, so \\
+         sharing one means deleting this project can delete the other's data."
+      }
     ),
     class = "datom_namespace_occupied"
   )
