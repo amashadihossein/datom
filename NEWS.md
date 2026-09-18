@@ -70,6 +70,26 @@ something has to police.
 * The refusal message now says whether the build cannot *read* or cannot *write*
   the format it met.
 
+* **`.datom/project.yaml` declares its format too.** That file carries settings a
+  writer must *obey* rather than merely read -- `min_writer_version` today -- and a
+  build that does not recognise such a setting walks past it and acts as though the
+  repo had never asked for anything. A declared format is how the file gets to say
+  "this repo needs a newer datom", and a config declaring a format this build
+  cannot read now stops a developer connection rather than being read anyway.
+  * **Its number is its own, and starts at 1.** It stays there through every
+    manifest or metadata format change and moves only when this file's own shape
+    changes, so an upgrade elsewhere in datom can never lock you out of a config
+    that never moved.
+  * **Absent means version 1**, which is every repo written so far, so nothing
+    existing changes behaviour. `datom_init_repo()` stamps the field from now on.
+  * **A key datom does not recognise is still perfectly fine here.** This file is
+    hand-edited, so a stray key is as likely a note of your own or a typo as it is
+    evidence of a newer datom. The stricter check that refuses an unrecognised
+    field applies to the documents datom writes for itself and is deliberately
+    never pointed at this one.
+  * A **reader** never sees this file, having no git checkout: the harm being
+    prevented is a write into a repo whose policy this build cannot read.
+
 ## A field this version does not recognise is no longer deleted
 
 Writing a table rebuilds its metadata document and its row in the manifest from

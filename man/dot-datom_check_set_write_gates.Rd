@@ -16,13 +16,23 @@ declared one.}
 The resolved set name.
 }
 \description{
-Two checks, both reading the clone's \code{.datom/project.yaml} directly, both
-before anything is hashed or written:
+Checks that read the clone's \code{.datom/project.yaml} directly, all of them before
+anything is hashed or written:
 }
 \details{
 \enumerate{
+\item The config's declared format must be one this build can read
+(\code{\link[=.datom_check_project_schema]{.datom_check_project_schema()}}). It runs first because the two checks
+below read fields \emph{out of} this file: a future format that renamed or moved
+\verb{set:} would make check 3 report "this repo declares \code{mode: product} but
+names no set" and send the user to hand-edit a file that is already correct.
+An actionable-looking message that is wrong is worse than no answer. The
+connection-time gate does not make this one redundant -- the file can be
+hand-edited or pulled between opening a connection and writing through it,
+which is the same reason the forward-compatibility door is re-run after a
+route's own pull.
 \item The repo must declare \code{mode: product}. A set written into a repo that does
-not is a set with no declared owner, which defeats the second check too.
+not is a set with no declared owner, which defeats the one below it too.
 \item The set's name must be the one the repo declares under \verb{set:}. This is what
 makes "one repo = one set = one product" true rather than aspirational, and
 it is the precondition the self-reference refusal depends on -- that refusal
@@ -36,9 +46,9 @@ connection construction for two fields with one consumer. If a later caller
 wants them on the conn it is a move with one call site to update, rather than a
 decision to reopen.
 
-\strong{Nothing writes either field yet}, so no repo built by this version of datom
-can pass gate 1 -- \code{datom_init_repo()} writes nine keys and neither of these is
-among them. That is the same deliberate inertness the reader-side format check
+\strong{Nothing writes \code{mode} or \code{set} yet}, so no repo built by this version of
+datom can pass the mode check -- \code{datom_init_repo()} writes neither key. That is
+the same deliberate inertness the reader-side format check
 shipped with: the gate lands tested but unreachable through the public path,
 and the release that starts writing \code{mode: product} is a later, separate step
 which depends on a build already existing that can notice the declaration.

@@ -21,8 +21,8 @@ that followed it -> 3050 after Task 22 -> 3053 after the three review findings t
 it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding that followed it ->
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
 3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
-after the review finding that followed it -> 3770 after Task 25 -> **3781 after the review finding
-that followed it**.
+after the review finding that followed it -> 3770 after Task 25 -> 3781 after the review finding
+that followed it -> **3836 after Task 23**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -39,8 +39,9 @@ refusals), **Task 22** (the reader-side rebuild), **Task 7** (`kind` in per-arti
 plus the set metadata builder), **Task 8** (`datom_member()` plus the member and tag
 validators) **Task 9** (`datom_write_set()`), **Task 10** (`datom_get_set()` plus the member link)
 **Task 26** (a stored project name comes from the repo, not from a connection label),
-**Task 24** (read-side ergonomics: finding and shaping members)
-and **Task 25** (write-side ergonomics: assembling a set in steps), plus
+**Task 24** (read-side ergonomics: finding and shaping members),
+**Task 25** (write-side ergonomics: assembling a set in steps)
+and **Task 23** (`project.yaml` declares its format), plus
 three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
@@ -165,10 +166,24 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3781** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3836** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
-code/documentation agreement (tests and examples run separately). Next is **Task 23**
-(`project.yaml` declares its format), then Task 11 onward.
+code/documentation agreement (tests and examples run separately). Next is **Task 11**
+(project mode gating the import path), then Task 12 onward.
+
+**TASK 23 IS CLOSED, AND `project.yaml` NOW SAYS WHAT SHAPE IT IS IN.** The config file carries
+settings a writer must obey, and until now had no way to say "this repo needs a newer datom"; it
+declares a format number, and every place this build reads that file checks it before reading a field
+out of it. That number is **its own** (`.datom_project_schema`, `1L`), not the one every other
+document is stamped with, so it stays put through every manifest or metadata bump -- the point being
+that an upgrade elsewhere can never refuse a config whose shape never moved. Absent means v1, so no
+existing repo changes behaviour, and an unrecognised **key** stays tolerated, which is the clause a
+later tidy-up would break. Three read sites are gated, not one: connection construction, the re-read
+after a migration pull, and the set-write gates -- which read `mode` and `set`, the very fields the
+requirement exists for. **Task 11 will fire the new key-set tripwire test immediately by adding `mode`
+and `set`, and the correct answer there is to extend the expected key set and leave the number at
+`1L`**; that answer is written in the test's own comment. Five things a later change must not undo,
+one recorded residual on the writer floor, and the probes are in Task 23's DONE record.
 
 **THE SPEC GREW BY A PHASE ON 2026-09-16, AFTER TASK 25 LANDED: Phase H, Tasks 27 and 28, editing a
 set that already exists.** A set is now pleasant to build and to read, and **unpleasant to edit** --
@@ -184,7 +199,9 @@ completion, so verbs landing later would leave the sweep testing a surface that 
 runs before Task 28 because both share a plural member selector that does not exist yet, and the
 harder consumer is what shapes it correctly.
 
-**TASK 23 IS AUDITED AND STARTABLE COLD (2026-09-16), AND NOTHING IS OPEN** -- ten findings in its
+**TASK 23'S PRE-START AUDIT, KEPT BECAUSE THE REASONING IS WHAT A LATER CHANGE NEEDS (the task itself
+shipped 2026-09-17 -- see its DONE record).** It was audited cold on 2026-09-16 and startable with
+nothing open -- ten findings in its
 body, and the one that had to be settled first was **decided by the owner the same day, against this
 audit's default**. The call: `project.yaml` carries **its own** format number, `1L` today, rather than
 riding the one shared constant every other document is stamped with. The audit had priced a per-file
@@ -3592,7 +3609,7 @@ rather than in Phase D beside the task it blocks.
     memoises the rebuild, so it repeats per call while the repo stays broken -- see the Decisions row
     and the note now in the `R/manifest-rebuild.R` file header. Both fixes were probed by reversion.
 
-- [ ] **23. `project.yaml` declares its format** &nbsp; **[EXECUTES IMMEDIATELY BEFORE TASK 11 -- see the scheduling bullet]**
+- [x] **23. `project.yaml` declares its format** &nbsp; **[DONE 2026-09-17. EXECUTED IMMEDIATELY BEFORE TASK 11 -- see the scheduling bullet]**
   - **The gap.** `project.yaml` carries fields a writer must **obey**, and has no way to say "this repo
     needs a newer datom". A build that does not recognise such a field walks past it and acts as
     though the repo had not asked for anything. `min_writer_version` is already in that position
@@ -3807,6 +3824,75 @@ rather than in Phase D beside the task it blocks.
     clauses), with (d) as the one a later tidy-up would break. **Pathway impact: yes** -- the
     "decide whether this build can read it" card gains `project.yaml` as a third document, with its
     own row in that card's "where it is called" list._
+  - **DONE 2026-09-17, tests 3781 -> 3836.** `.datom/project.yaml` now declares a format, and every
+    place this build reads that file checks it first. All ten audit findings were implemented at the
+    decisions and defaults recorded above; nothing was left open and nothing deviated.
+
+    **What shipped.** `.datom_project_schema` (`1L`) beside the repo-wide
+    `.datom_supported_schema`, deliberately a separate number.
+    `.datom_check_schema_version()` gained `supported =`, defaulting to the repo-wide constant so
+    all eight existing call sites and the message text their tests assert on are untouched; it feeds
+    the comparison **and** the "supports up to vN" line. `.datom_check_project_schema(cfg, source,
+    operation)` is the wrapper that pairs this one file with its own ceiling, and it is the only
+    thing that supplies that ceiling. `datom_init_repo()` stamps the field.
+    **Three read sites, all gated**: connection construction (`.datom_get_conn_developer()`, at
+    `operation = "read"` -- opening a connection is neither a read nor a write, and "cannot read" is
+    literally true of the config file, so the `match.arg()` set did not widen), the post-migration-pull
+    re-read in `.datom_resolve_data_location()`, and `.datom_check_set_write_gates()` at
+    `operation = "write"`.
+
+    **Five things a later change must not undo.**
+    1. **The two constants are separate numbers, and `project.yaml` is never stamped with the shared
+       one.** Collapsing them is the intuitive tidy-up and it buys a false refusal: the check runs
+       while a developer connection is built, so a build one manifest bump behind would lose the whole
+       developer path -- reads included -- on a config file whose shape never moved.
+    2. **`supported =` must feed the message, not only the comparison.** Feeding only the comparison
+       produces a refusal reading "supports up to v2" while refusing a v2 file, which reads as a datom
+       bug rather than an upgrade prompt. Two tests, one per half.
+    3. **The vocabulary check must never be pointed at this file.** It is hand-edited, so an
+       unrecognised key is as likely a typo or a private note; refusing on one would block every write
+       in the repo until somebody found it. AC39(d) is the test that turns today's incidental
+       tolerance -- the parser simply ignores keys it does not know -- into a decision.
+    4. **The set-write gate's format check runs BEFORE `mode` and `set` are read.** Those two checks
+       report *on* those fields, so a format this build cannot read would turn them into confident
+       advice about the wrong thing: a future shape that moved `set:` makes the gate say "declares
+       `mode: product` but names no set" and send the user to hand-edit a file that is already
+       correct. The test edits the config **after** the connection is built, which is also what shows
+       this gate is not a duplicate of the connection-time one.
+    5. **The key-set tripwire forces a decision, not a bump.** Its comment carries the worked answer
+       for Task 11 -- adding `mode` and `set` fires it, and the correct response is to extend the
+       expected key set and leave `.datom_project_schema` at `1L` -- so the first person to meet a red
+       test reads an answer instead of facing a choice.
+
+    **One residual, recorded rather than fixed (finding 8's stated default).**
+    `conn$min_writer_version` is assigned from the **pre**-pull parse, so a floor raised in a
+    migration pull is missed for that session. The *format* of the pulled file is checked, because the
+    re-read is gated; the floor is not. Fixing it means re-parsing after
+    `.datom_resolve_data_location()` returns, which is a change to connection construction with Task
+    21's writer-floor test surface attached, and the window is one session on a migrating repo. The
+    note lives at the assignment site in `R/conn.R`, not only here.
+
+    **Four probes, by breaking the code on purpose and counting what reddened rather than by reading.**
+    (1) Feeding the comparison but not the message -- the exact half-done change -- reddens 2
+    assertions in the ceiling-in-message test. (2) Stamping `.datom_supported_schema` in
+    `datom_init_repo()` reddens 6, and **three of them are the false refusal made concrete rather than
+    argued**: beyond the two tests that assert which constant is written, three unrelated tests that
+    open a connection on a freshly initialised repo **error**, because a repo stamped `2L` is one the
+    build that just created it cannot open. That is the whole case for a per-file number, reproduced.
+    (3) Deleting the format check from the set-write gate reddens 2 write-side tests while **every**
+    connection-time test stays green, which is what shows the second site is not decorative -- and the
+    "tolerates an absent number and an unknown key" test correctly stays green too, since removing a
+    gate cannot break a tolerance. (4) Deleting the gate on the post-pull re-read reddens the migration
+    test; that test starts from a readable config and has the mocked pull replace it with a too-new
+    one, so it also fails if the check is ever moved above the pull.
+
+    **Two things needing no code, said once so they are not silently discovered.**
+    `datom_repo_set_data_store()` and `datom_repo_attach_governance()` both require a developer
+    connection, so building one already refused an unreadable config; a one-line comment at the
+    former's read-modify-write says so, and also records that carrying `schema_version` forward
+    untouched is why that verb never raises the declared number. And a **reader**-role connection
+    never parses this file at all, which is the right scope -- the harm is a *write* into a repo whose
+    policy this build cannot read -- but it does mean "one gate covers every role" would be wrong.
 
 ---
 
@@ -3939,7 +4025,7 @@ reason.
     shape the third-argument accessor has to handle; `print.datom_set()` really does end with a hint
     naming `x$members[[1]]$fetch(conn)`, so there is one real line to upgrade and it is already
     guarded for a zero-member set; Task 9's fixture really does carry
-    `domain = c("safety", "efficacy")` (`tests/testthat/test-write-set.R:728`), so the
+    `domain = c("safety", "efficacy")` (`tests/testthat/test-write-set.R:798`), so the
     two-branch test has a fixture waiting; and R2.14a really was amended on 2026-09-13 to license the
     collision refusal, so implementing it does not contradict the requirement it narrows.
     1. **THIS TASK'S STATED REASON FOR THE NO-GATE RULE IS NOW PARTLY FALSE, AND THE FIX MADE THE HINT
@@ -4542,7 +4628,7 @@ vehicle**: it is done, and its check is *why* a late addition costs what it cost
     1. **NEITHER BUILDER CAN SOURCE THE NAME ITSELF.** `.datom_build_metadata()` and
        `.datom_build_set_metadata()` take no connection -- by design, since they are pure -- so the
        change is a new argument on each plus the two call sites that fill it
-       (`R/read_write.R:1202`, `R/set.R:675`). **The new argument goes LAST in the signature**:
+       (`R/read_write.R:1202`, `R/set.R:740`). **The new argument goes LAST in the signature**:
        existing tests call `.datom_build_metadata(df, "sha", ...)` positionally in a dozen places, so
        an argument inserted in the middle silently shifts `custom` into `table_type`.
     2. **OPEN (default: yes, same commit) -- THE SAME DEFECT IS IN LINEAGE, AND THERE THE LABEL IS
@@ -5173,3 +5259,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-16 | **(design round, NOT YET BUILT) Three set-editing verbs are designed and deferred: remove, update, and an update report that feeds the commit message.** Deferred rather than appended as tasks because 0.1.2 is at CRAN and Tasks 23 and 11 are the critical path. The design, so it is not re-derived: `datom_remove_members()` and `datom_update_members()` are parallel -- same object, same three ways to name a member, same label and version narrowing, each returning the class it was handed -- with two divergences that follow from what the verbs do rather than from style. Remove **requires** a selection (selecting nothing would mean removing everything, which the writer refuses anyway) and needs no connection at all, because it only has to *find* a pointer already in hand. Update defaults to **all** members and takes one connection **per project**, because it has to *resolve* a pointer, which is also why `datom_add_member()` is draft-only. Three things the update verb must get right: a member's labels are carried forward rather than rebuilt (rebuilding drops them silently, and labels are content); connections are matched to members on `conn$project_name`, which is unverified, so the rebuilt member's **recorded** project is compared against the one it replaced and a mismatch refuses; and a member whose project has no supplied connection **refuses up front** naming that project, because whether it moved is unknowable -- while a member whose artifact no longer exists is **reported and left**, because the answer is known and its pinned version still reads. `datom_add_member()` stays singular on purpose: a plural add needs a parallel list of versions, which is the typo hazard Task 25 rejected it for. | `dev/README.md` Backlog |
 | 2026-09-16 | **(owner decision, scope) The two set-editing verbs ship in THIS release, as Phase H (Tasks 27 and 28), rather than as a deferral.** Reversing the same-day default recorded above, which had them as a backlog row. Repointing a member at a newer version is fundamental to a product -- a hundred inputs, thirty of them moved -- and dropping one is close behind; a citable artifact that cannot be safely edited is half a surface. **The decision was made on value alone, and that is possible because these verbs are unusual here: they touch no stored document**, so no field, no format number, no vocabulary entry, and therefore no forced fleet-wide writer upgrade if they had arrived a release later. Deferring them would have been free in the one dimension that is normally expensive, which is exactly why the argument came down to worth rather than timing. **Placement is forced, not chosen**: Task 16 is the acceptance sweep and Task 17 is docs plus the Spec Completion Procedure, so anything landing after either would leave the sweep testing a surface that then grew and the docs describing one missing two exports -- hence after Task 15, before Task 16, with the `23 -> 11` critical path untouched. **Task 27 before Task 28**, even though 27 is larger: both need a plural member selector that does not exist (Task 24's finder returns exactly one member and aborts on ambiguity), the harder consumer is what shapes that selector correctly, and if the release squeezes the thing that drops is then the verb the owner called less fundamental. | Phase H, R24 |
 | 2026-09-16 | **(design, Task 28) A name matching two members REFUSES on a removal but SKIPS on a repoint, and that asymmetry is deliberate.** Same evidence, opposite responses, for the same reason the reads-limp / writes-stop split exists elsewhere: skipping a **removal** silently does nothing, so the caller believes a member is gone when it is not, while skipping a **repoint** safely leaves a valid pin and says so. The removal refusal is the direct replacement for the hand-rolled `Filter()` on name, which drops every version of that name and takes a frozen baseline with it. State the asymmetry wherever either verb is documented, or a later change unifies them into whichever half it met first. | Phase H Tasks 27 and 28 |
+| 2026-09-17 | **(implementation, Task 23) The set-write gate's format check runs BEFORE `mode` and `set` are read, and it is not a duplicate of the connection-time one.** Ordering first: the two checks below it report *on* those fields, so a format this build cannot read turns them into confident advice about the wrong thing -- a shape that moved `set:` makes the gate say "declares `mode: product` but names no set" and send the user to hand-edit a file that is already correct. Non-redundancy second, and it is what the test asserts: the config is edited **after** the connection was built, because a git pull or a hand edit between opening a connection and writing through it replaces the file the connection was built from -- the same reason `.datom_check_write_entry()` is re-run after a route's own pull. Deleting this call reddens the three write-side tests while every connection-time test stays green, which is what proves the second site is not decorative. | Task 23 DONE record, `R/set.R` |
+| 2026-09-17 | **(implementation, Task 23) The post-migration-pull re-read is gated, and the writer-floor staleness beside it is RECORDED rather than fixed** -- finding 8's stated default, taken. `.datom_resolve_data_location()` re-reads `project.yaml` after pulling git, and that copy is the one the connection-time gate structurally cannot see, so without a check there a config arriving in a migration pull is the one config never checked. The probe starts from a readable config and has the mocked pull replace it with a too-new one, so it fails if the gate is ever moved above the pull. What stays open is `conn$min_writer_version`, assigned from the **pre**-pull parse: a floor raised in that pull is missed for that session. Fixing it means re-parsing after the resolve returns -- a change to connection construction with Task 21's writer-floor test surface attached -- against a window of one session on a migrating repo, with the next connection reading the pulled file. The note lives at the assignment site in `R/conn.R`, not only in the spec, because that is where somebody would otherwise re-derive it. | Task 23 DONE record, `R/conn.R`, `R/ref.R` |
+| 2026-09-17 | **(implementation, Task 23) Two `repo.R` verbs get no check of their own, and the reason is written at one of them rather than left silent.** `datom_repo_set_data_store()` and `datom_repo_attach_governance()` both require a developer connection, so building one already refused a config whose format this build cannot read. The comment at the former's read-modify-write also records the second half, which the shared-constant argument had got wrong: carrying `schema_version` forward untouched is why that verb never raises the declared number -- only `datom_init_repo()` stamps one. Stating it at the site is what stops a later session either adding a redundant gate or repeating the claim that this verb raises the number. | Task 23 finding 2, `R/repo.R` |

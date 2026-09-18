@@ -211,6 +211,26 @@
 # carry no `schema_version` field at all, and an absent field means v1.
 .datom_supported_schema <- 2L
 
+# Highest `.datom/project.yaml` format this build can read.
+#
+# Its OWN number, deliberately, rather than the shared ceiling above. The shared
+# ceiling works while every document on it is machine-written by one build in one
+# operation; `project.yaml` is written once at init and then hand-edited for
+# years, so its shape moves on its own clock. Keeping it separate means this stays
+# 1L through every manifest or metadata bump and moves only when the config's own
+# shape breaks -- and, more to the point, it means there are no false refusals.
+# The config check runs while a developer connection is built, so a build one
+# version behind on the shared ceiling would lose the whole developer path,
+# including reads that would have worked, on a file whose shape never changed.
+#
+# The hole this leaves is a FORGOTTEN bump: a shape change shipped with the number
+# unmoved is silently misread by an older build. `test-conn.R` closes it with a
+# test that fails when the key set `datom_init_repo()` writes changes without this
+# constant changing. That test forces a DECISION, not a bump -- an addition is
+# reader-safe, so extending the expected key set and leaving this at 1L is often
+# the right answer.
+.datom_project_schema <- 1L
+
 #' Check a Document's Declared Schema Version
 #'
 #' Reader-side compatibility check for one metadata or manifest document.
@@ -248,9 +268,23 @@
 #'   the message text they assert on are unchanged: without it a refused write
 #'   said the format was one "this build cannot read", which is the wrong verb
 #'   for a write that was stopped at the door.
+#' @param supported Highest version this caller can interpret, defaulting to the
+#'   repo-wide `.datom_supported_schema`. It feeds the comparison **and** the
+#'   message, so a refusal never says "supports up to v2" while refusing a v2
+#'   file.
+#'
+#'   The rule that predicts an override, so a future caller can derive it rather
+#'   than remember it: a document **datom writes** takes the repo-wide ceiling; a
+#'   document that outlives the build that created it and is then **edited by
+#'   hand** gets its own. The shared number holds while every document on it is
+#'   machine-written by one build in one operation. `.datom/project.yaml` is not
+#'   -- it is stamped once at init and hand-edited afterwards -- so it carries
+#'   `.datom_project_schema` and is checked through
+#'   [.datom_check_project_schema()], which is where that pairing lives.
 #' @return Invisible resolved schema version as an integer. Aborts otherwise.
 #' @keywords internal
-.datom_check_schema_version <- function(meta, source, operation = c("read", "write")) {
+.datom_check_schema_version <- function(meta, source, operation = c("read", "write"),
+                                        supported = .datom_supported_schema) {
   operation <- match.arg(operation)
   declared <- if (is.list(meta)) meta[["schema_version"]] else NULL
 
@@ -273,12 +307,12 @@
 
   declared <- as.integer(declared)
 
-  if (declared > .datom_supported_schema) {
+  if (declared > supported) {
     cli::cli_abort(
       c(
         "This repo uses datom schema v{declared}, which this build cannot {operation}.",
         "x" = "Declared by {.val {source}}.",
-        "x" = "Installed datom {utils::packageVersion('datom')} supports up to v{(.datom_supported_schema)}.",
+        "x" = "Installed datom {utils::packageVersion('datom')} supports up to v{supported}.",
         "i" = "Upgrade with {.code remotes::install_github('amashadihossein/datom')}."
       ),
       class = "datom_schema_unsupported"
@@ -286,6 +320,56 @@
   }
 
   invisible(declared)
+}
+
+
+#' Check `project.yaml`'s Declared Format
+#'
+#' The same reader-side check every other datom-owned document gets, pinned to
+#' the config file's own ceiling (`.datom_project_schema`) rather than the
+#' repo-wide one. Absent means v1, which is every repo written so far, so no
+#' existing repo changes behaviour.
+#'
+#' **Why the file needs a declared format at all.** `project.yaml` carries fields
+#' a writer must *obey*, not merely fields it may read: `min_writer_version`
+#' already, and `mode` / `set` for a product repo. A build that does not
+#' recognise such a field walks past it and acts as though the repo had never
+#' asked for anything -- so the file needs a way to say "this repo needs a newer
+#' datom", and a number is that way.
+#'
+#' **A number here, a vocabulary check there, and the two are not
+#' interchangeable.** The vocabulary check that guards the manifest and
+#' per-artifact metadata draws its power from those documents being
+#' machine-written: an unrecognised key there *is* evidence a newer datom wrote
+#' it. `project.yaml` is hand-edited -- storage migrations, prefixes,
+#' descriptions, private notes -- so an unrecognised key is as likely a typo, and
+#' refusing on one would block every write in the repo until somebody found it.
+#' Never point the vocabulary check at this file; an unrecognised key here stays
+#' tolerated, and there is a test that says so.
+#'
+#' **This wrapper exists so the pairing of file and ceiling cannot be forgotten.**
+#' A bare `supported =` argument at each call site is the same shape as the
+#' artifact-kind predicate that was written out at four sites and lost a
+#' tolerance at one of them. Callers pass the parsed config; the ceiling is not
+#' theirs to choose.
+#'
+#' @param cfg Parsed `project.yaml` (a named list).
+#' @param source Path of the config file, named in the refusal message.
+#' @param operation What the caller was about to do. `"read"` (the default) is
+#'   what connection construction passes -- opening a connection is neither a
+#'   read nor a write, and "this build cannot read" is literally true of the
+#'   config file. `"write"` is for the set-write gates, which read this file to
+#'   decide whether a write may proceed.
+#' @return Invisible resolved version as an integer. Aborts otherwise.
+#' @keywords internal
+.datom_check_project_schema <- function(cfg, source,
+                                        operation = c("read", "write")) {
+  .datom_check_schema_version(
+    cfg,
+    source = source,
+    operation = match.arg(operation),
+    supported = .datom_project_schema
+  )
 }
 
 # The write-side half of the schema contract used to live here as

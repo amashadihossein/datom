@@ -401,3 +401,119 @@ test_that(".datom_check_schema_version names the offending document", {
   )
   expect_match(conditionMessage(err), "dm/.metadata/metadata.json", fixed = TRUE)
 })
+
+test_that(".datom_check_schema_version compares against a supplied ceiling", {
+  # The argument exists so a document with its own format number is not measured
+  # against the repo-wide one. Without it, project.yaml's gate would be nominal:
+  # the day that file's shape breaks and its constant becomes 2L, a build whose
+  # repo-wide ceiling is already 2L would compare 2 > 2, proceed, and misread it.
+  expect_equal(
+    .datom_check_schema_version(list(schema_version = 1L), "project.yaml",
+                                supported = 1L),
+    1L
+  )
+  err <- expect_error(
+    .datom_check_schema_version(list(schema_version = 2L), "project.yaml",
+                                supported = 1L),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(err), "v2")
+
+  # A document the repo-wide ceiling would have waved through.
+  expect_silent(.datom_check_schema_version(list(schema_version = 2L), "m.json"))
+})
+
+test_that(".datom_check_schema_version's message reports the ceiling it used", {
+  # Both halves must read from the same number. Feeding the comparison but not
+  # the message produces a refusal that says "supports up to v2" while refusing
+  # a v2 file, which reads as a bug in datom rather than as an upgrade prompt.
+  err <- expect_error(
+    .datom_check_schema_version(list(schema_version = 3L), "project.yaml",
+                                supported = 1L),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(err), "supports up to v1")
+  expect_no_match(conditionMessage(err), "supports up to v2")
+})
+
+test_that(".datom_check_schema_version defaults to the repo-wide ceiling", {
+  # Every existing call site reads a machine-written document -- a manifest or a
+  # per-artifact metadata snapshot -- and those genuinely do share one number, so
+  # the argument stays optional and the default must stay this value.
+  expect_equal(
+    .datom_check_schema_version(list(schema_version = .datom_supported_schema),
+                                "manifest.json"),
+    .datom_supported_schema
+  )
+  expect_error(
+    .datom_check_schema_version(
+      list(schema_version = .datom_supported_schema + 1L), "manifest.json"
+    ),
+    class = "datom_schema_unsupported"
+  )
+})
+
+
+# --- .datom_check_project_schema() ---------------------------------------------
+
+test_that(".datom_check_project_schema pins project.yaml to its own ceiling", {
+  # The pairing of file and ceiling lives in this wrapper and nowhere else, so a
+  # third caller cannot supply the wrong one. It is deliberately NOT the
+  # repo-wide number: this file's shape moves on its own clock.
+  expect_equal(
+    .datom_check_project_schema(list(schema_version = .datom_project_schema),
+                                "project.yaml"),
+    .datom_project_schema
+  )
+  expect_error(
+    .datom_check_project_schema(
+      list(schema_version = .datom_project_schema + 1L), "project.yaml"
+    ),
+    class = "datom_schema_unsupported"
+  )
+})
+
+test_that(".datom_check_project_schema tolerates an absent field as v1", {
+  # Every repo written before the field existed carries no schema_version. This
+  # is a characterization test, not new behaviour: the shared checker already
+  # returns 1L for an absent field, and reusing it is what stops a second
+  # absent-means-v1 branch growing here that can only agree with the first by
+  # luck.
+  expect_equal(.datom_check_project_schema(list(project_name = "p"), "p.yaml"), 1L)
+  expect_equal(.datom_check_project_schema(list(), "p.yaml"), 1L)
+})
+
+test_that(".datom_check_project_schema words the refusal for the caller", {
+  read_err <- expect_error(
+    .datom_check_project_schema(list(schema_version = 9L), "project.yaml"),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(read_err), "cannot read")
+
+  write_err <- expect_error(
+    .datom_check_project_schema(list(schema_version = 9L), "project.yaml",
+                                operation = "write"),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(write_err), "cannot write")
+})
+
+test_that(".datom_check_project_schema names the config file", {
+  err <- expect_error(
+    .datom_check_project_schema(list(schema_version = 9L),
+                                "/repo/.datom/project.yaml"),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(err), "/repo/.datom/project.yaml", fixed = TRUE)
+})
+
+test_that(".datom_project_schema is separate from the repo-wide ceiling", {
+  # Not a tautology: the two constants are equal today only by accident of
+  # history, and this pins the intent that they are independent numbers. If
+  # someone replaces the constant with `.datom_supported_schema`, a build one
+  # manifest bump behind loses the whole developer path on a config file whose
+  # shape never changed.
+  expect_type(.datom_project_schema, "integer")
+  expect_length(.datom_project_schema, 1L)
+  expect_gte(.datom_project_schema, 1L)
+})

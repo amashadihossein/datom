@@ -590,6 +590,58 @@ test_that("developer: auto-pulls and succeeds when project.yaml agrees after pul
   expect_equal(result$root, "new-bucket")
 })
 
+test_that("developer: the config arriving in the migration pull is format-checked", {
+  # This re-read is the ONE copy of project.yaml that the connection-time gate
+  # cannot see: the gate runs on the file as it was before the pull, and the pull
+  # replaces it. Without a check here, a config written by a newer datom and
+  # arriving in a migration pull is the one config never checked -- so the probe
+  # starts from a config this build can read and has the pull replace it with one
+  # it cannot.
+  dir <- withr::local_tempdir()
+  datom_dir <- fs::path(dir, ".datom")
+  fs::dir_create(datom_dir)
+
+  config_at <- function(schema_version) {
+    cfg <- list(
+      project_name = "p",
+      storage = list(
+        data = list(type = "s3", root = "new-bucket", prefix = "new/",
+                    region = "us-east-1")
+      )
+    )
+    if (!is.null(schema_version)) cfg$schema_version <- schema_version
+    yaml::write_yaml(cfg, fs::path(datom_dir, "project.yaml"))
+  }
+
+  config_at(.datom_project_schema)
+
+  store <- make_test_store(
+    data_bucket = "old-bucket", data_prefix = "old/",
+    role = "developer"
+  )
+
+  local_mocked_bindings(
+    .datom_s3_client = function(...) list(),
+    .datom_resolve_ref = function(gov_conn, project_name = NULL) {
+      list(root = "new-bucket", prefix = "new/", region = "us-east-1")
+    },
+    # What a pull from a collaborator on a newer datom looks like.
+    .datom_git_pull = function(path, pat = NULL) {
+      config_at(.datom_project_schema + 1L)
+      invisible(NULL)
+    }
+  )
+
+  err <- expect_error(
+    .datom_resolve_data_location(store, role = "developer", project_name = "p",
+                                 path = as.character(dir)),
+    class = "datom_schema_unsupported"
+  )
+  expect_match(conditionMessage(err), "project.yaml", fixed = TRUE)
+  expect_match(conditionMessage(err),
+               paste0("supports up to v", .datom_project_schema))
+})
+
 test_that("developer: errors when project.yaml still disagrees after pull", {
   dir <- withr::local_tempdir()
   datom_dir <- fs::path(dir, ".datom")

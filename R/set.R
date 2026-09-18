@@ -60,12 +60,22 @@
 
 #' Refuse a Set Write the Repo Has Not Declared
 #'
-#' Two checks, both reading the clone's `.datom/project.yaml` directly, both
-#' before anything is hashed or written:
+#' Checks that read the clone's `.datom/project.yaml` directly, all of them before
+#' anything is hashed or written:
 #'
-#' 1. The repo must declare `mode: product`. A set written into a repo that does
-#'    not is a set with no declared owner, which defeats the second check too.
-#' 2. The set's name must be the one the repo declares under `set:`. This is what
+#' 1. The config's declared format must be one this build can read
+#'    ([.datom_check_project_schema()]). It runs first because the two checks
+#'    below read fields *out of* this file: a future format that renamed or moved
+#'    `set:` would make check 3 report "this repo declares `mode: product` but
+#'    names no set" and send the user to hand-edit a file that is already correct.
+#'    An actionable-looking message that is wrong is worse than no answer. The
+#'    connection-time gate does not make this one redundant -- the file can be
+#'    hand-edited or pulled between opening a connection and writing through it,
+#'    which is the same reason the forward-compatibility door is re-run after a
+#'    route's own pull.
+#' 2. The repo must declare `mode: product`. A set written into a repo that does
+#'    not is a set with no declared owner, which defeats the one below it too.
+#' 3. The set's name must be the one the repo declares under `set:`. This is what
 #'    makes "one repo = one set = one product" true rather than aspirational, and
 #'    it is the precondition the self-reference refusal depends on -- that refusal
 #'    needs the set's own identity, and this is where it is established.
@@ -77,9 +87,9 @@
 #' wants them on the conn it is a move with one call site to update, rather than a
 #' decision to reopen.
 #'
-#' **Nothing writes either field yet**, so no repo built by this version of datom
-#' can pass gate 1 -- `datom_init_repo()` writes nine keys and neither of these is
-#' among them. That is the same deliberate inertness the reader-side format check
+#' **Nothing writes `mode` or `set` yet**, so no repo built by this version of
+#' datom can pass the mode check -- `datom_init_repo()` writes neither key. That is
+#' the same deliberate inertness the reader-side format check
 #' shipped with: the gate lands tested but unreachable through the public path,
 #' and the release that starts writing `mode: product` is a later, separate step
 #' which depends on a build already existing that can notice the declaration.
@@ -105,6 +115,11 @@
   }
 
   cfg <- yaml::read_yaml(yaml_path)
+
+  # Before either field is read out of the file, not after: the checks below
+  # report on `mode` and `set`, so a format this build cannot read would turn
+  # them into confident advice about the wrong thing.
+  .datom_check_project_schema(cfg, source = yaml_path, operation = "write")
 
   declared_mode <- cfg$mode
   if (!identical(as.character(declared_mode %||% ""), "product")) {

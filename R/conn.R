@@ -511,6 +511,13 @@ datom_init_repo <- function(path = ".",
     project_description = "",
     created_at = format(Sys.Date(), "%Y-%m-%d"),
     datom_version = as.character(utils::packageVersion("datom")),
+    # The config's own format, not the repo-wide schema version: this file is
+    # hand-edited after init, so its shape moves on its own clock. Stamped from
+    # the moment the repo is created, so a repo that later raises
+    # `min_writer_version` or declares `mode: product` has already said which
+    # shape those fields are in. `datom_version` beside it is provenance and is
+    # never gated on -- it moves on every harmless upgrade.
+    schema_version = .datom_project_schema,
     storage = storage_block,
     repos = repos_block,
     sync = list(
@@ -936,6 +943,17 @@ datom_get_conn <- function(path = NULL,
 
   cfg <- yaml::read_yaml(yaml_path)
 
+  # Refuse a config whose format this build does not know, before a single field
+  # is read out of it. Absent means v1 -- every repo written so far -- so nothing
+  # existing changes behaviour, and an unrecognised KEY is still tolerated
+  # (see .datom_check_project_schema() for why that is deliberate).
+  #
+  # Reader-role connections never reach this parse: a reader has no clone and
+  # never opens this file. That is the right scope rather than a gap -- the harm
+  # this prevents is a WRITE into a repo whose policy this build cannot read --
+  # but it does mean "one gate covers every role" would be wrong here.
+  .datom_check_project_schema(cfg, source = yaml_path)
+
   project_name <- cfg$project_name
   if (is.null(project_name) || !nzchar(project_name)) {
     cli::cli_abort("Invalid {.file project.yaml}: missing {.field project_name}.")
@@ -1078,6 +1096,16 @@ datom_get_conn <- function(path = NULL,
   # because project.yaml is already parsed on this path; the write entry then
   # costs no extra read. Absent in every repo written so far, and absent must
   # stay indistinguishable from "no limit" -- see .datom_check_writer_floor().
+  #
+  # RESIDUAL, recorded rather than fixed: `cfg` is the PRE-PULL parse. When
+  # .datom_resolve_data_location() above detects a migration it pulls git, which
+  # can replace project.yaml -- so a floor raised in that pull is missed for this
+  # session. The pulled file's FORMAT is checked (the re-read in `R/ref.R` gates
+  # it), but the floor is not, because this assignment runs off the older copy.
+  # Fixing it means re-parsing after the resolve returns, which is a change to
+  # connection construction with the writer-floor test surface attached; the
+  # window is one session on a migrating repo, and the next connection reads the
+  # pulled file.
   conn$min_writer_version <- cfg$min_writer_version
   conn$data_repo_url <- tryCatch({
     repo <- git2r::repository(as.character(path))

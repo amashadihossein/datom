@@ -343,6 +343,8 @@ create_test_datom_repo <- function(project_name = "testproj",
                                   prefix = "test-prefix/",
                                   region = "us-east-1",
                                   min_writer_version = NULL,
+                                  schema_version = NULL,
+                                  extra = NULL,
                                   env = parent.frame()) {
   dir <- withr::local_tempdir(.local_envir = env)
   datom_dir <- fs::path(dir, ".datom")
@@ -364,6 +366,13 @@ create_test_datom_repo <- function(project_name = "testproj",
       data = list(remote_url = "https://github.com/test/repo.git")
     )
   )
+
+  # Added conditionally, not as a NULL slot: a NULL in the list above round-trips
+  # through yaml as `~` and reads back as an explicit NULL, which is a different
+  # document from one where the key is simply not there. The absent case is the
+  # one every repo written so far is in, so it has to be the real absence.
+  if (!is.null(schema_version)) yaml_content$schema_version <- schema_version
+  if (!is.null(extra)) yaml_content <- c(yaml_content, extra)
 
   yaml::write_yaml(yaml_content, fs::path(datom_dir, "project.yaml"))
   dir
@@ -412,6 +421,109 @@ test_that("developer path carries the repo's declared minimum writer version", {
   silent <- create_test_datom_repo(bucket = "my-bucket")
   conn <- muffle_conn_warnings(datom_get_conn(path = silent, store = store))
   expect_null(conn$min_writer_version)
+})
+
+
+# --- project.yaml declares its own format --------------------------------------
+# The file carries fields a writer must OBEY -- min_writer_version, and mode/set
+# for a product repo -- so it needs a way to say "this repo needs a newer datom".
+# The reading half cannot be retrofitted into builds already installed, which is
+# why it lands before anything starts writing those fields.
+
+conn_schema_store <- function() {
+  comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
+                         access_key = "k", secret_key = "s", validate = FALSE)
+  datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
+              data_repo_url = "https://github.com/test/repo.git",
+              validate = FALSE)
+}
+
+test_that("developer path refuses a project.yaml whose format is too new", {
+  store <- conn_schema_store()
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  dir <- create_test_datom_repo(bucket = "my-bucket",
+                                schema_version = .datom_project_schema + 1L)
+
+  err <- expect_error(
+    muffle_conn_warnings(datom_get_conn(path = dir, store = store)),
+    class = "datom_schema_unsupported"
+  )
+  msg <- conditionMessage(err)
+  # Names the file, so the user knows which document to look at, and points at
+  # the upgrade rather than at their credentials.
+  expect_match(msg, "project.yaml", fixed = TRUE)
+  expect_match(msg, "install_github")
+  # Measured against the config's own ceiling, not the repo-wide one.
+  expect_match(msg, paste0("supports up to v", .datom_project_schema))
+})
+
+test_that("developer path refuses before reading a single field out of the config", {
+  # A config this build cannot interpret must not first be mined for a project
+  # name or a store cross-check: those produce their own confident errors about
+  # the wrong thing. The probe is a config that is too new AND would fail the
+  # store cross-check; the format refusal is what has to come back.
+  store <- conn_schema_store()
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  dir <- create_test_datom_repo(bucket = "some-other-bucket",
+                                schema_version = .datom_project_schema + 1L)
+
+  expect_error(
+    muffle_conn_warnings(datom_get_conn(path = dir, store = store)),
+    class = "datom_schema_unsupported"
+  )
+})
+
+test_that("developer path treats an absent format as v1 and changes nothing", {
+  # Every repo written so far is in this state. Not merely "does not abort":
+  # no warning and no changed field either, since a silent degradation would be
+  # the failure this check exists to remove.
+  store <- conn_schema_store()
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  dir <- create_test_datom_repo(project_name = "silentproj", bucket = "my-bucket")
+  cfg <- yaml::read_yaml(fs::path(dir, ".datom", "project.yaml"))
+  expect_false("schema_version" %in% names(cfg))
+
+  conn <- muffle_conn_warnings(datom_get_conn(path = dir, store = store))
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$project_name, "silentproj")
+
+  # And a config declaring the current format behaves identically, so the field's
+  # arrival is invisible to everything downstream of it.
+  stamped <- create_test_datom_repo(project_name = "silentproj",
+                                    bucket = "my-bucket",
+                                    schema_version = .datom_project_schema)
+  stamped_conn <- muffle_conn_warnings(datom_get_conn(path = stamped, store = store))
+  expect_equal(stamped_conn$project_name, conn$project_name)
+  expect_equal(stamped_conn$root, conn$root)
+})
+
+test_that("developer path still tolerates an unrecognised key in project.yaml", {
+  # THE CLAUSE A LATER TIDY-UP BREAKS. project.yaml is hand-edited, so an
+  # unrecognised key is as likely a typo or a private note as it is evidence of a
+  # newer datom -- which is why the vocabulary check that guards the manifest and
+  # per-artifact metadata must NEVER be pointed at this file. Refusing on one
+  # would block every write in the repo until somebody found it. Today the
+  # tolerance is incidental (the parser ignores keys it does not know); this test
+  # is what makes it a decision.
+  store <- conn_schema_store()
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  dir <- create_test_datom_repo(
+    bucket = "my-bucket",
+    schema_version = .datom_project_schema,
+    extra = list(
+      a_field_datom_has_never_heard_of = "kept by hand",
+      notes = list(owner = "someone", ticket = "ABC-1")
+    )
+  )
+
+  expect_no_warning(
+    conn <- muffle_conn_warnings(datom_get_conn(path = dir, store = store))
+  )
+  expect_s3_class(conn, "datom_conn")
 })
 
 test_that("developer path uses reader role when store is reader", {
@@ -1284,6 +1396,75 @@ test_that("datom_init_repo stores datom_version in project.yaml", {
   cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
   expect_equal(cfg$datom_version,
                as.character(utils::packageVersion("datom")))
+})
+
+test_that("datom_init_repo stamps project.yaml's own format, on the written file", {
+  # Asserted on the file rather than on the in-memory config, because the one
+  # thing this clause is about is what yaml::write_yaml() did with an integer: a
+  # value that round-trips as a string would fail the checker as corrupt.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_equal(cfg$schema_version, .datom_project_schema)
+  expect_length(cfg$schema_version, 1L)
+  expect_true(is.numeric(cfg$schema_version))
+
+  # And the stamped value survives its own checker, which is the round trip that
+  # matters: a repo this build creates must be one this build can open.
+  expect_equal(
+    .datom_check_project_schema(cfg, "project.yaml"),
+    .datom_project_schema
+  )
+})
+
+test_that("datom_init_repo stamps the config's number, not the repo-wide one", {
+  # The two constants are different numbers on purpose. Stamping the repo-wide
+  # ceiling here would tie this file's declared shape to every manifest and
+  # metadata bump, and a build one bump behind would then lose the whole
+  # developer path on a config whose shape never changed.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  manifest <- jsonlite::read_json(fs::path(env$work_dir, ".datom", "manifest.json"))
+
+  expect_equal(cfg$schema_version, .datom_project_schema)
+  expect_equal(manifest$schema_version, .datom_supported_schema)
+})
+
+test_that("project.yaml's key set is pinned to its declared format", {
+  # TRIPWIRE, and it forces a DECISION rather than mandating a bump. The one real
+  # hole in giving this file its own number is a FORGOTTEN bump: a shape change
+  # shipped with the number unmoved is silently misread by an older build. This
+  # test goes red whenever the keys datom_init_repo() writes change.
+  #
+  # WHAT TO DO WHEN IT FIRES. An addition is reader-safe -- an older build never
+  # asks for a key it does not know -- so the usual answer is to extend the list
+  # below and leave .datom_project_schema alone. The worked case is `mode` and
+  # `set` for a product repo: adding those fires this test, and the correct
+  # response is no bump, because an older build's misreading of `mode` is a silent
+  # no-op rather than a wrong write. Move the number when a key is RENAMED, MOVED
+  # to a different parent, REMOVED, or changes meaning or type -- the cases where
+  # an older build reads the file and gets a wrong answer rather than a missing
+  # one.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+
+  expected_keys <- c(
+    "project_name", "project_description", "created_at", "datom_version",
+    "schema_version", "storage", "repos", "sync", "renv"
+  )
+  expect_setequal(names(cfg), expected_keys)
+  expect_equal(.datom_project_schema, 1L)
 })
 
 test_that("datom_init_repo creates README.md", {

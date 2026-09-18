@@ -129,6 +129,76 @@ sw_one_member <- function(fx, tags = list(type = "input")) {
 # checks, and the second gate is also what establishes the set's own identity,
 # which the self-reference refusal further down depends on.
 
+test_that("a config whose format this build cannot read refuses a set write", {
+  # The gates read `mode` and `set` OUT of project.yaml, so a format this build
+  # does not know has to stop them before they report on those fields. Otherwise a
+  # future format that moved `set:` produces "declares mode: product but names no
+  # set" and sends the user to hand-edit a file that is already correct -- an
+  # actionable-looking message that is wrong.
+  #
+  # The config is edited after the connection was built, which is what makes this
+  # gate more than a duplicate of the connection-time one: a git pull or a hand
+  # edit between opening a connection and writing through it replaces the file the
+  # connection was built from.
+  fx <- local_set_project(set_name = "product-a")
+  members <- sw_one_member(fx)
+
+  cfg_path <- fs::path(fx$repo_dir, ".datom", "project.yaml")
+  cfg <- yaml::read_yaml(cfg_path)
+  cfg$schema_version <- .datom_project_schema + 1L
+  yaml::write_yaml(cfg, cfg_path)
+
+  err <- expect_error(
+    datom_write_set(fx$conn, members, name = "product-a"),
+    class = "datom_schema_unsupported"
+  )
+  msg <- conditionMessage(err)
+  expect_match(msg, "project.yaml", fixed = TRUE)
+  # Worded for a write, since that is what was stopped at the door.
+  expect_match(msg, "cannot write")
+  expect_match(msg, paste0("supports up to v", .datom_project_schema))
+})
+
+test_that("a set write leaves nothing behind when the config's format is refused", {
+  # The refusal is a door, not a rollback: it runs before any hashing, any local
+  # write and any commit, so there is no half-written set to clean up.
+  fx <- local_set_project(set_name = "product-a")
+  members <- sw_one_member(fx)
+
+  cfg_path <- fs::path(fx$repo_dir, ".datom", "project.yaml")
+  cfg <- yaml::read_yaml(cfg_path)
+  cfg$schema_version <- .datom_project_schema + 1L
+  yaml::write_yaml(cfg, cfg_path)
+
+  expect_error(
+    datom_write_set(fx$conn, members, name = "product-a"),
+    class = "datom_schema_unsupported"
+  )
+
+  expect_false(fs::dir_exists(fs::path(fx$repo_dir, "product-a")))
+  manifest <- sw_clone_manifest(fx)
+  expect_false("product-a" %in% names(manifest$artifacts))
+})
+
+test_that("a set write tolerates an absent config format and an unknown key", {
+  # Absent means v1, which is every repo written before the field existed; and an
+  # unrecognised key stays tolerated here for the same reason it does at
+  # connection time -- this file is hand-edited, so a stray key is as likely a
+  # typo as evidence of a newer datom.
+  fx <- local_set_project(set_name = "product-a")
+  members <- sw_one_member(fx)
+
+  cfg_path <- fs::path(fx$repo_dir, ".datom", "project.yaml")
+  cfg <- yaml::read_yaml(cfg_path)
+  expect_false("schema_version" %in% names(cfg))
+  cfg$a_field_datom_has_never_heard_of <- "kept by hand"
+  yaml::write_yaml(cfg, cfg_path)
+
+  res <- sw_write(fx, members)
+  expect_identical(res$action, "full")
+  expect_true(fs::file_exists(sw_payload_path(fx, "product-a")))
+})
+
 test_that("a repo that does not declare mode: product refuses a set write", {
   fx <- local_set_project()
   members <- sw_one_member(fx)

@@ -4,7 +4,12 @@
 \alias{.datom_check_schema_version}
 \title{Check a Document's Declared Schema Version}
 \usage{
-.datom_check_schema_version(meta, source, operation = c("read", "write"))
+.datom_check_schema_version(
+  meta,
+  source,
+  operation = c("read", "write"),
+  supported = .datom_supported_schema
+)
 }
 \arguments{
 \item{meta}{Parsed document (a named list). A non-list or \code{NULL} is treated
@@ -19,6 +24,20 @@ a default rather than a required one, so that every existing call site and
 the message text they assert on are unchanged: without it a refused write
 said the format was one "this build cannot read", which is the wrong verb
 for a write that was stopped at the door.}
+
+\item{supported}{Highest version this caller can interpret, defaulting to the
+repo-wide \code{.datom_supported_schema}. It feeds the comparison \strong{and} the
+message, so a refusal never says "supports up to v2" while refusing a v2
+file.
+
+The rule that predicts an override, so a future caller can derive it rather
+than remember it: a document \strong{datom writes} takes the repo-wide ceiling; a
+document that outlives the build that created it and is then \strong{edited by
+hand} gets its own. The shared number holds while every document on it is
+machine-written by one build in one operation. \code{.datom/project.yaml} is not
+-- it is stamped once at init and hand-edited afterwards -- so it carries
+\code{.datom_project_schema} and is checked through
+\code{\link[=.datom_check_project_schema]{.datom_check_project_schema()}}, which is where that pairing lives.}
 }
 \value{
 Invisible resolved schema version as an integer. Aborts otherwise.

@@ -907,6 +907,61 @@ there is no handler for a caller to place the check inside, and callers keep the
 policies because the IO outcome is a value they inspect. AC32 tests both halves together, because
 the regression is a trade between them.
 
+### 10.8 `project.yaml` carries its own number, not the shared one (decided 2026-09-16)
+
+R9.8 says the config file declares a format. Which *number* it declares was decided separately, and
+against the intuitive answer, so the reasoning is recorded here rather than in the task alone.
+
+**The shared `.datom_supported_schema` never misses a change but sometimes refuses wrongly, and a
+wrong refusal here is expensive.** The check sits in connection construction, so it takes the whole
+developer path -- including reads that would have worked -- on a build one manifest or metadata bump
+behind. The escape hatch the rest of the gate relies on does not help: a reader connection never
+parses this file, so the person refused is the developer, and their recovery is to hand-edit the very
+file whose hand-editability is the reason this mechanism is a number rather than a vocabulary check.
+A per-file number has no false refusals at all, because it moves only when this file's own shape
+moves.
+
+**The cost that pushed the other way was priced wrong.** "A second constant kept in step by hand"
+describes a number that is supposed to track the shared one; a per-file number is supposed to
+*diverge*. It stays `1L` through every manifest or metadata bump and moves only on a break in this
+file, so there is nothing to keep in step.
+
+**Its one real hole is a forgotten bump**, closed by a test that fails when the key set
+`datom_init_repo()` writes changes without `.datom_project_schema` changing. That test forces a
+**decision**, not a bump: per 10.3 an addition is reader-safe, so extending the expected key set and
+leaving the constant alone is often correct. The worked case is R10.2's `mode` and `set`, which fire
+the test and do **not** move the number -- an older build's misreading of `mode` is a silent no-op,
+not a wrong write.
+
+**The checker therefore takes the ceiling as an argument**, feeding both the comparison and the
+message. Without it the gate would be nominal: the day this file's shape breaks and its number
+becomes 2, a build whose shared ceiling is already 2 compares `2 > 2`, proceeds, and misreads the new
+shape -- dead at exactly the moment it is needed, and unfixable afterwards, since the reading half
+cannot be retrofitted into installed builds. The argument stays **optional**, defaulting to the
+shared ceiling, because every other call site reads a machine-written document where that default is
+correct rather than merely convenient. The pairing of this file with its own ceiling lives in one
+wrapper, `.datom_check_project_schema()`, for the same reason the artifact-kind predicate does: a
+rule written out at each call site loses a term at one of them.
+
+**Three read sites, not one, and the third is why this shipped before R10.2.** Connection
+construction, the post-migration-pull re-read in `.datom_resolve_data_location()` (the pull can
+replace the copy the connection started from, so that copy would otherwise be the one config never
+checked), and `.datom_check_set_write_gates()`, which reads `mode` and `set` out of this file on
+every set write. That third site is where the harm is sharpest: a future format that moved `set:`
+would make the gate report "declares `mode: product` but names no set" and send the user to
+hand-edit a file that is already correct.
+
+**One residual, recorded rather than fixed.** `conn$min_writer_version` is read from the *pre*-pull
+parse, so a floor raised in a migration pull is missed for that session. Fixing it means re-parsing
+after the resolve returns, which is a change to connection construction with the writer-floor test
+surface attached; the window is one session on a migrating repo, and the next connection reads the
+pulled file. Same treatment as the table-write pull staleness.
+
+**The rule a future caller derives from it**: a document datom **writes** takes the shared ceiling; a
+document that outlives the build that created it and is then **edited by hand** gets its own. The
+shared number works while every document on it is written by one build in one operation, and
+`project.yaml` is written once at init and hand-edited for years.
+
 ---
 
 ## 11. Compatibility analysis
