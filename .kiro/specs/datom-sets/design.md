@@ -929,9 +929,14 @@ file, so there is nothing to keep in step.
 **Its one real hole is a forgotten bump**, closed by a test that fails when the key set
 `datom_init_repo()` writes changes without `.datom_project_schema` changing. That test forces a
 **decision**, not a bump: per 10.3 an addition is reader-safe, so extending the expected key set and
-leaving the constant alone is often correct. The worked case is R10.2's `mode` and `set`, which fire
-the test and do **not** move the number -- an older build's misreading of `mode` is a silent no-op,
-not a wrong write.
+leaving the constant alone is often correct. The worked case is R10.2's `mode` and `set`, which do
+**not** move the number -- an older build's misreading of `mode` is a silent no-op, not a wrong write.
+
+**One limit on the tripwire, found by Task 11's audit rather than when it was written.** It inits with
+no mode, so it sees only keys written on **every** init. If `mode` and `set` are emitted just for a
+product repo -- the likely design, and the same conditional shape `project` uses in the metadata
+builders -- the test stays green and the guard is silent on the very addition it was written for. A
+second case, inited as a product repo, is what closes that; see Task 11 finding 1.
 
 **The checker therefore takes the ceiling as an argument**, feeding both the comparison and the
 message. Without it the gate would be nominal: the day this file's shape breaks and its number

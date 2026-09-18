@@ -1446,9 +1446,12 @@ test_that("project.yaml's key set is pinned to its declared format", {
   # WHAT TO DO WHEN IT FIRES. An addition is reader-safe -- an older build never
   # asks for a key it does not know -- so the usual answer is to extend the list
   # below and leave .datom_project_schema alone. The worked case is `mode` and
-  # `set` for a product repo: adding those fires this test, and the correct
-  # response is no bump, because an older build's misreading of `mode` is a silent
-  # no-op rather than a wrong write. Move the number when a key is RENAMED, MOVED
+  # `set` for a product repo: the correct response to those is no bump, because an
+  # older build's misreading of `mode` is a silent no-op rather than a wrong write.
+  # Note what this test can and cannot see, though: it inits with no mode, so it
+  # only fires on keys written on EVERY init. Keys written only for a product repo
+  # need their own case here, inited that way -- otherwise the guard is silent on
+  # exactly the addition it was written for. Move the number when a key is RENAMED, MOVED
   # to a different parent, REMOVED, or changes meaning or type -- the cases where
   # an older build reads the file and gets a wrong answer rather than a missing
   # one.
