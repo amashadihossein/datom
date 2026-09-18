@@ -948,7 +948,8 @@ correct rather than merely convenient. The pairing of this file with its own cei
 wrapper, `.datom_check_project_schema()`, for the same reason the artifact-kind predicate does: a
 rule written out at each call site loses a term at one of them.
 
-**Every site that parses this file is gated, and there are four.** Connection construction; the
+**Every site that parses this file is gated.** State it that way rather than as a count -- Task 11 adds
+one. Connection construction; the
 post-migration-pull re-read in `.datom_resolve_data_location()` (the pull can replace the copy the
 connection started from, so that copy would otherwise be the one config never checked);
 `.datom_check_set_write_gates()`, which reads `mode` and `set` out of this file on every set write;

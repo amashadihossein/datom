@@ -178,7 +178,8 @@ out of it. That number is **its own** (`.datom_project_schema`, `1L`), not the o
 document is stamped with, so it stays put through every manifest or metadata bump -- the point being
 that an upgrade elsewhere can never refuse a config whose shape never moved. Absent means v1, so no
 existing repo changes behaviour, and an unrecognised **key** stays tolerated, which is the clause a
-later tidy-up would break. **Every site that parses this file is gated -- all four**: connection
+later tidy-up would break. **Every site that parses this file is gated** -- derive the list rather
+than trusting a count, since Task 11 adds one: connection
 construction, the re-read after a migration pull, the set-write gates (which read `mode` and `set`,
 the very fields the requirement exists for), and the store-pointer verb, which is the only writer of
 this file besides init and was caught by the review that followed. **When Task 11 adds `mode` and
@@ -188,16 +189,24 @@ only on keys written at **every** init, so if those two are emitted just for a p
 green and needs a second case (Task 11 finding 1). Five things a later change must not undo,
 one recorded residual on the writer floor, and the probes are in Task 23's DONE record.
 
-**TASK 11 IS AUDITED AND STARTABLE COLD (2026-09-17)** -- ten findings in its body, **two to settle
-before the first line**, both with stated defaults so a cold session is not blocked. The two: whether
-`datom_init_repo()` writes `mode` on every init or only for a product repo, which is what decides
-whether the tripwire above needs a second case; and whether `mode` rides on the connection or is read
-from the file at each consumer, which is the decision Task 9 deliberately deferred to this task. Three
+**TASK 11 IS AUDITED AND STARTABLE COLD (2026-09-17), AND ITS TWO MUST-DECIDE QUESTIONS WERE ANSWERED
+THE SAME DAY -- ONE OF THEM AGAINST THE AUDIT'S OWN DEFAULT.** Ten findings in its body; nothing is
+open. (1) `mode` and `set` are written **only for a product repo**, and the key-set tripwire gains the
+**rule** that it must exercise every path writing `project.yaml` -- not just an extra case, because the
+blind spot is any conditional key rather than these two, and a second path to cover exists today.
+(2) The import refusal reads `mode` **from the file**; only `datom_status()`'s report reads it from the
+connection. The audit had put both on the connection, which inverted its own rule: a check that
+authorises a write must see the file as it is now, and the import refusal is exactly such a check --
+otherwise a repo hand-edited to `mode: product` after the connection opened goes on accepting imports.
+**That correction adds a fifth parse of `project.yaml`, which by Task 23's rule must carry the format
+check**, so the shared refusal helper is parse, format check, mode check, in one place. Three
 things a cold session should carry into it. **Nothing in a machine-written document changes**, so there
 is no vocabulary entry, no format bump and no writer-refusal work here -- unusual for this spec, and
 worth knowing before hunting for it. **The namespace guard R17.3 calls "one remaining hole" is two**,
 and the unnamed one is that a **local** backend gets no namespace check at all -- the backend every set
-fixture uses -- so AC22 is unsatisfiable as written until that widens. And **four exported examples
+fixture uses -- so AC22 is unsatisfiable as written until that widens; widening also falsifies the
+refusal's message, which hardcodes `s3://` and the word bucket, and the condition class goes in before
+the widening so the new test does not encode the text-matched re-raise it would otherwise pass through. And **four exported examples
 hand-edit `project.yaml` to declare the mode**, so they teach the superseded route unless they move to
 init's new argument in the same commit.
 
@@ -2727,26 +2736,65 @@ own; landing it first is what makes Task 6's failure loud.
        the tripwire calls it with no mode (`tests/testthat/test-conn.R`, the key-set test) and compares
        against a fixed list, so conditional emission leaves it green. Conditional emission is also the
        established local precedent -- `project` in the two metadata builders is emitted only when
-       non-NULL. **Default: emit conditionally, and add a second tripwire case that inits a product
-       repo**, because writing `mode: data` into every config adds a key with no consumer, and
+       non-NULL. **DECIDED 2026-09-17: emit conditionally, and add a second tripwire case that inits a
+       product repo**, because writing `mode: data` into every config adds a key with no consumer, and
        "absent means not a product repo" is already the semantics the set-write gate implements
        (`R/set.R:124`). Then **correct the three places** that say the tripwire fires immediately, or
        the first cold session reads a promise, sees green, and assumes it broke something. The declared
        number stays `1L` on either branch, so the decision that mattered is untouched.
+
+       **THE RULE GOES IN THE TEST'S COMMENT, NOT JUST THE EXTRA CASE** (review amendment, accepted).
+       The blind spot is not about `mode`: the tripwire watches the one creation path it exercises, so
+       **any** conditionally written key is invisible the same way, and the next path somebody adds is
+       unwatched again while the test still looks like a guard. So the comment states the standard --
+       **this test must exercise every path that writes `project.yaml`, and adding such a path means
+       adding a case here** -- which is what makes it a tripwire rather than a snapshot of one path.
+
+       **That rule has a second member TODAY, so it is actionable rather than a note for later.**
+       `datom_repo_set_data_store()` also writes this file, by read-modify-write, and its test asserts
+       only that two fields survive (`tests/testthat/test-repo.R:176`). A refactor to rebuilding the
+       document would silently drop `schema_version`, `created_at`, `datom_version`, `sync` and `renv`
+       with nothing failing -- which is exactly why Task 20 tested its two read-edit-write surfaces
+       even though they needed no code.
     2. **DECIDE FIRST: where `mode` is read from, which Task 9 explicitly left to this task.** That
        task's docs say only `min_writer_version` rides on a `datom_conn`, that `mode` and `set` are
        read at the one site needing them, and that moving them to the connection is "a move with one
        call site to update rather than a decision to reopen". This task is the reopening: it adds two
-       consumers (the sync refusal and the status line). **Default: put `mode` on the connection**,
-       since construction already parses the file, **and leave the set-write gate reading the file
-       directly.** Those two must not be "unified", and the reason is the one Task 23's review just
-       settled: a gate that authorises a write has to see the file as it is **now**, because a hand
-       edit or a pull can replace it after the connection was built -- while a diagnostic and an
-       import refusal are fine with the connection's snapshot. Say that at both sites or a later change
-       collapses them into whichever it met first.
+       consumers (the sync refusal and the status line).
+
+       **DECIDED 2026-09-17, AND THE FIRST-STATED DEFAULT WAS WRONG** -- amended by review, which
+       applied this audit's own rule and got a different split. The rule: a check that **authorises a
+       write** must see the file as it is *now*, because a hand edit or a pull can replace it after the
+       connection was built; a report is fine with the connection's snapshot. Three sites, sorted by
+       that test rather than by convenience:
+
+       | Site | Authorises a write? | Reads the mode from |
+       |---|---|---|
+       | refuse the file-import route on a product repo | **yes** | the file |
+       | `datom_status()`'s mode line | no | the connection |
+       | the set-write gate (`R/set.R:124`) | yes | the file, already |
+
+       The first-stated default put the import refusal on the connection by grouping it with the status
+       line as "not a gate". It **is** a gate -- it is the thing that stops an import from happening, the
+       same job the set-write gate does -- so a repo hand-edited to `mode: product` after the connection
+       opened would have gone on accepting file imports, which is precisely the window the rule exists
+       to close. Cost of the correction: one extra local parse on the import path, which the set-write
+       path already pays.
+
+       **State the rule as the TEST a future site applies**, not as three site-by-site facts, so the
+       next consumer does not need adjudicating: does this site authorise a write? Then it reads the
+       file.
+
+       **ONE CONSEQUENCE NEITHER SIDE OF THAT EXCHANGE STATED, AND IT MUST SHIP WITH THE REFUSAL.** A
+       new parse of `project.yaml` is a new **gated** parse: Task 23's rule is that every site parsing
+       this file checks its declared format first, so the import refusal carries
+       `.datom_check_project_schema(cfg, source = yaml_path, operation = "write")` -- `"write"`, because
+       an import is a write. So the shared helper finding 8 calls for is three steps in one place: parse,
+       format check, mode check. Miss the middle step and this task quietly reopens the hole Task 23
+       closed, on a path that writes.
     3. **`datom_status()` on a reader connection cannot report the mode, and the honest answer is that
-       it should not try.** A reader has no clone and never parses `project.yaml` -- all four parse
-       sites are developer-path, verified. The misleading output this task fixes is the input-files
+       it should not try.** A reader has no clone and never parses `project.yaml` -- every parse site
+       is developer-path, verified. The misleading output this task fixes is the input-files
        block (`R/query.R:527`, ending in "Input files: directory empty" at `R/query.R:541`), which
        already sits inside the developer-only branch, so the fix lands where the mode is knowable.
        **Default: report the mode only when there is a clone, and put it in no stored document** --
@@ -2755,22 +2803,49 @@ own; landing it first is what makes Task 6's failure loud.
     4. **R17.3's "one remaining hole" is two holes, and the one it does not name is the larger.** The
        namespace check runs under `if (data_backend == "s3" && !isTRUE(.force))` (`R/conn.R:422`).
        `.force` is the hole R17.3 names -- and there is an existing test pinning that bypass
-       (`tests/testthat/test-conn.R:2023`), so closing it must be conditional on the mode or that test
+       (`tests/testthat/test-conn.R:2033`), so closing it must be conditional on the mode or that test
        changes. The unnamed one: a **local** backend gets no namespace check at all, while
        `.datom_check_namespace_free()` (`R/utils-validate.R:178`) works through storage dispatch and
        would function unchanged on local -- so AC22 is unsatisfiable for a product repo on a local
        store, which is the backend every set fixture in the suite uses. **Default: widen both
        conditions for product repos only**, leaving ordinary repos byte-for-byte as they are, and
        record the local gap for ordinary repos rather than closing it here.
-    5. **AC22's "refused" is best-effort today, and the wrapper is why.** The check sits inside a
-       `tryCatch` whose handler (`R/conn.R:439`) downgrades any error that is not "already occupied" to
-       a warning and continues -- so a credentials or network failure creates the product repo
-       unchecked. It also re-raises by **matching the message text** with `grepl("already occupied",
-       ...)`, which is the string-matching pattern this spec replaced with condition classes
-       everywhere else. **Default: give the namespace refusal a condition class and dispatch on that**,
-       leave the warn-and-continue policy alone, and state in AC22's test and in the docs that the
-       refusal holds when the namespace could be read. An unqualified "refused" would be a promise the
-       code does not keep offline.
+
+       **WIDENING TO LOCAL FALSIFIES THE MESSAGE, and nothing would fail if that is missed** -- added
+       2026-09-17, stated by neither the audit nor the review. The refusal is hardcoded to one backend
+       in words and in format: it opens "S3 namespace is already occupied", advises "a unique S3
+       namespace (bucket + prefix)", and builds its location as `paste0("s3://", conn$root, ...)`
+       (`R/utils-validate.R:192`). On a local store that prints `s3://` in front of a filesystem path
+       and tells the user to change a bucket they do not have. The message has to become
+       backend-neutral in the same change, and `.datom_storage_*` already carries the label
+       vocabulary `datom_status()` uses for this (`s3` -> "S3", `local` -> "local").
+
+    5. **AC22's "refused" is best-effort today, and the wrapper is why -- FIX THIS BEFORE FINDING 4, not
+       after.** The check sits inside a `tryCatch` whose handler (`R/conn.R:439`) downgrades any error
+       that is not "already occupied" to a warning and continues, so a credentials or network failure
+       creates the product repo unchecked. It also re-raises by **matching the message text** with
+       `grepl("already occupied", ...)` (`R/conn.R:440`), which is the string-matching pattern this spec
+       replaced with condition classes everywhere else. **Default: give
+       `.datom_check_namespace_free()`'s occupied abort a condition class and dispatch on that**, leave
+       the warn-and-continue policy alone, and state in AC22's test and in the docs that the refusal
+       holds when the namespace could be read -- an unqualified "refused" is a promise the code does not
+       keep offline.
+
+       **Why before finding 4, and NOT for the reason first offered.** The review's argument was that
+       widening the backend condition "puts more traffic through the fragile part", which does not hold:
+       the fragility is per-call, so volume does not change it. The real reason is that finding 4's new
+       AC22 test is what would encode the fragile path -- write it against a text-matched re-raise and
+       the test passes *through* the coupling, so the coupling then has a test defending it. Class
+       first, then widen, and the new test dispatches on the class from the start.
+
+       **One over-claim corrected, because it changes how urgent this is.** The review has it that
+       rewording the message degrades the refusal to a warning "with nothing failing and nothing to
+       notice". Four tests grep that exact string, two of them through `datom_init_repo()`
+       (`tests/testthat/test-conn.R:1986` and `:2028`), and those two fail on a reword: the abort gets
+       swallowed, init proceeds, and `expect_error()` finds no error. So today the coupling is noisy,
+       not silent. It is still worth removing -- the silent case is a **new** abort added inside
+       `.datom_check_namespace_free()` for some other reason, which the handler would swallow with
+       nothing watching -- but the case for it is future-proofing, not a live silent failure.
     6. **Four exported examples hand-edit `project.yaml` to declare the mode, and they are how users
        will learn this.** `R/set.R:599`, `R/set.R:1441`, `R/set-draft.R:189` and `R/set-members.R:628`
        each write `cfg$mode <- "product"` into a config after init. Once init can declare it, those
@@ -3951,8 +4026,9 @@ rather than in Phase D beside the task it blocks.
     the comparison **and** the "supports up to vN" line. `.datom_check_project_schema(cfg, source,
     operation)` is the wrapper that pairs this one file with its own ceiling, and it is the only
     thing that supplies that ceiling. `datom_init_repo()` stamps the field.
-    **Every site that parses this file is gated, and there are exactly four** -- enumerated by the
-    review below rather than assumed, `yaml::read_yaml()` having four call sites in `R/`:
+    **Every site that parses this file is gated** -- enumerated by the review below rather than
+    assumed, from `yaml::read_yaml()`'s call sites in `R/`. Four at the time this shipped, and Task 11
+    adds a fifth, which is why the rule is stated rather than the number:
     connection construction (`.datom_get_conn_developer()`, at `operation = "read"` -- opening a
     connection is neither a read nor a write, and "cannot read" is literally true of the config file,
     so the `match.arg()` set did not widen), the post-migration-pull re-read in
@@ -5409,3 +5485,7 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-17 | **(implementation, Task 23) The post-migration-pull re-read is gated, and the writer-floor staleness beside it is RECORDED rather than fixed** -- finding 8's stated default, taken. `.datom_resolve_data_location()` re-reads `project.yaml` after pulling git, and that copy is the one the connection-time gate structurally cannot see, so without a check there a config arriving in a migration pull is the one config never checked. The probe starts from a readable config and has the mocked pull replace it with a too-new one, so it fails if the gate is ever moved above the pull. What stays open is `conn$min_writer_version`, assigned from the **pre**-pull parse: a floor raised in that pull is missed for that session. Fixing it means re-parsing after the resolve returns -- a change to connection construction with Task 21's writer-floor test surface attached -- against a window of one session on a migrating repo, with the next connection reading the pulled file. The note lives at the assignment site in `R/conn.R`, not only in the spec, because that is where somebody would otherwise re-derive it. | Task 23 DONE record, `R/conn.R`, `R/ref.R` |
 | 2026-09-17 | **(implementation, Task 23) Two `repo.R` verbs get no check of their own, and the reason is written at one of them rather than left silent.** `datom_repo_set_data_store()` and `datom_repo_attach_governance()` both require a developer connection, so building one already refused a config whose format this build cannot read. The comment at the former's read-modify-write also records the second half, which the shared-constant argument had got wrong: carrying `schema_version` forward untouched is why that verb never raises the declared number -- only `datom_init_repo()` stamps one. Stating it at the site is what stops a later session either adding a redundant gate or repeating the claim that this verb raises the number. | Task 23 finding 2, `R/repo.R` |
 | 2026-09-17 | **(review finding, ACCEPTED and fixed, Task 23) `datom_repo_set_data_store()` was the one site that parsed `project.yaml` without checking it, and it is the only verb besides `datom_init_repo()` that WRITES that file.** The first commit argued the check away -- the verb needs a developer connection, so connection construction already refused an unreadable config -- and **that argument is refuted by the same commit's own words at `.datom_check_set_write_gates()`**: the connection-time gate is not redundant, because a hand edit or a pull replaces the file between opening a connection and writing through it. It applies harder here on three counts. The verb merges a `storage$data` block in **on this build's assumptions**, so a format that reparented those keys gets a stale block beside the real one; it then **commits and pushes**, so the wrongly-edited file reaches everyone sharing the repo, where the set-write gate only refuses a write; and the timing is not contrived, since this is the storage-migration verb and is called exactly when somebody is hand-editing that file. Reading halves cannot be retrofitted, so it could not wait for a later release. Fixed with the same two lines the set-write gate uses at `operation = "write"`, above the merge. **The comment is replaced rather than deleted**, because what it asserted is the false part and a later session would otherwise re-derive it; its true half is kept and labelled separate -- the read-modify-write is why an unrecognised `schema_version` is carried forward untouched. One test, asserting the refusal **and** that the file is byte-identical afterwards; removing the check reddens exactly it. **Distinct from the reviewer's earlier claim about this verb, which stays refuted**: that one said the verb silently raises the declared number, which it does not. Tests 3836 -> 3841. | Task 23 DONE record, `R/repo.R` |
+| 2026-09-17 | **(decision, Task 11) `mode` and `set` are written by `datom_init_repo()` only for a product repo, and the key-set tripwire gains the RULE rather than just a second case.** Taken at the audit's stated default: a `mode: standard` line in every config adds a key nothing reads, and "absent means not a product repo" is already the semantics the set-write gate implements. **The amendment is the part worth keeping** -- the tripwire's blind spot is not about `mode`. It watches only the creation path it exercises, so **any** conditionally written key is invisible the same way and the next path added is unwatched again, while the test still reads as a guard. So its comment now states the standard: exercise every path that writes `project.yaml`, and adding such a path means adding a case. **That rule has a second member today**, which makes it actionable rather than a note: `datom_repo_set_data_store()` writes this file too, its test asserts only that two fields survive, and a refactor to rebuilding the document would silently drop `schema_version`, `created_at`, `datom_version`, `sync` and `renv` -- the same hazard Task 20 tested its two read-edit-write surfaces for despite them needing no code. **Also corrected: Task 23's claim that this task fires the tripwire immediately**, which does not follow from conditional emission; the live statements are fixed and the frozen Decisions rows left alone. | Task 11 finding 1, `tests/testthat/test-conn.R` |
+| 2026-09-17 | **(decision, Task 11) The import refusal reads `mode` from the FILE; only `datom_status()`'s report reads it from the connection. THE AUDIT'S FIRST-STATED DEFAULT WAS WRONG and was amended by review.** The rule is the one Task 23's review settled: a check that **authorises a write** must see the file as it is *now*, because a hand edit or a pull can replace it after the connection was built, while a report is fine with the connection's snapshot. The audit then grouped the import refusal with the status line as "not a gate", which inverts what it is -- it is the thing that **stops an import**, the same job the set-write gate does -- so on the connection, a repo hand-edited to `mode: product` after the connection opened would have gone on accepting file imports, which is precisely the window the rule closes. Cost of the correction is one extra local parse on a path that already does git and storage work. **State the rule as the test a future site applies** -- does this site authorise a write? then it reads the file -- rather than as three site-by-site facts. **One consequence neither side stated, and it must ship with the refusal**: a new parse of `project.yaml` is a new **gated** parse, so the refusal carries `.datom_check_project_schema(..., operation = "write")` and the shared helper is three steps in one place (parse, format check, mode check). Missing the middle step would quietly reopen the hole Task 23 closed, on a path that writes. | Task 11 finding 2, R10.1 |
+| 2026-09-17 | **(review finding, ACCEPTED with the reason re-derived, Task 11) The namespace guard's condition class lands BEFORE the backend widening, and the reason first offered for that order does not hold.** The review argued that widening `if (data_backend == "s3" && ...)` to local "puts more traffic through the fragile part" -- the text-matched re-raise at `R/conn.R:440`. Volume is not the issue; the coupling is per-call. The real reason is that the widening's own AC22 test is what would **encode** the fragile path: written against a text-matched re-raise, it passes *through* the coupling and then defends it. Class first, widen second, and the new test dispatches on the class from the start. **One over-claim corrected, because it changes the urgency**: rewording the message does not fail silently today -- four tests grep that string and two of them go through `datom_init_repo()`, so a reword swallows the abort, lets init proceed, and reddens both. The coupling is noisy, not silent. It is still worth removing, for the case that genuinely would be silent: a **new** abort added inside `.datom_check_namespace_free()` for some other reason, which the handler swallows with nothing watching. | Task 11 findings 4 and 5 |
+| 2026-09-17 | **(audit finding, Task 11) Widening the namespace guard to local stores falsifies its message, and nothing would fail if that were missed.** Stated by neither the audit nor the review that followed it. The refusal is hardcoded to one backend in words and in format: it opens "S3 namespace is already occupied", advises "a unique S3 namespace (bucket + prefix)", and builds its location as `paste0("s3://", conn$root, ...)`. On a local store that prints `s3://` in front of a filesystem path and tells the user to change a bucket they do not have -- a message that is confidently wrong, which this spec has repeatedly judged worse than no message. The message becomes backend-neutral in the same change, using the label vocabulary `datom_status()` already has for this. | Task 11 finding 4, `R/utils-validate.R` |
