@@ -353,6 +353,34 @@ added field fails the test.
   (AC27) precisely because `project`+`name` looks like the natural key until case B is remembered --
   the first reader to "tighten" the check would break a legitimate use silently.
 
+  **RE-EXAMINED AND KEPT, owner-decided 2026-09-16**, during a design round on a prospective
+  member-update verb. Recorded here rather than in a task, because the challenge will come back:
+  keying on `project` + `name` looks like an obvious simplification, and re-deriving the answer each
+  time is what this record exists to prevent.
+
+  The cost splits three ways. **Trivial**: the identity and storage side -- the duplicate check's key
+  and the file sort key are one line and one field either way. **Already spent**: roughly a third of
+  the read-side ergonomics exists *because* a name is not a key -- the ambiguity abort with its
+  candidate listing, the two narrowing arguments on the fetch verb, the grouped view's leaf-name
+  collision refusal, and their tests. **Ongoing**: every future verb that names a member answers
+  ambiguity again, which is a per-verb tax rather than a fixed cost, and it falls hardest on a *write*
+  verb -- for a read, ambiguity is an inconvenience the caller narrows away, while for a bulk update it
+  is a hazard, because "refresh everything" is exactly the operation that would collapse two members
+  into one.
+
+  **Kept because unwinding it now costs about what the future tax saves**, and because one use case
+  survives scrutiny where the others do not. "Reproduce the interim analysis" does **not** need a
+  baseline member -- a set is itself versioned, so that is `datom_get_set(conn, name, version = ...)`.
+  What survives is **freezing one input while the rest refresh**: a control or reference table that
+  must not move even as everything around it does. That has no cheap alternative, because one repo
+  holds one set, so "put the baseline in its own set" costs a whole second repo.
+
+  **The rule this hands to any future member-update verb: SKIP AND REPORT, never refuse and never
+  guess.** Two members sharing a name are left as they are and named in the report, with the two ways
+  to repoint one deliberately -- by version, or by narrowing on a label. datom cannot know which of the
+  two is live and which is frozen; only the caller's labels say that, so choosing would be a guess, and
+  refusing the whole sweep would make the first bulk update on any set holding a baseline an error.
+
   Two consequences:
 
   - **The R2.15 file sort key must include `version`** -- otherwise two versions of one name have no
