@@ -1543,6 +1543,72 @@ and already in the design: reads limp, writes stop.
 
 ---
 
+### R24 -- Editing a set that already exists
+
+Added 2026-09-16, after a design round, and **scheduled into this release rather than deferred**
+(owner-decided): a citable artifact that cannot be safely edited is half a surface. The verbs touch
+no stored document -- no field, no format number, no vocabulary entry -- so they could have been
+deferred with **no** forward-compatibility cost, which is why the decision is a scope call rather
+than a compatibility one.
+
+**The gap they close.** Today the only route is list surgery on what a read returned, and two of the
+obvious spellings are silently wrong. Filtering members by name drops **every** version of that name,
+which quietly removes a deliberately frozen baseline alongside the live table (R2.14a). Removing by
+position removes a different member the day somebody adds one. And repointing by hand loses each
+member's labels, which are part of the set's content.
+
+- **R24.1 -- two verbs, parallel in shape and asymmetric in what they need.**
+  `datom_remove_members()` and `datom_update_members()`, each over a `datom_set` from
+  [datom_get_set()] **or** a `datom_set_draft`, each returning the class it was handed -- because the
+  write verb already accepts both, so a narrower edit verb would create a shape the write accepts and
+  the edit refuses. The asymmetry is forced rather than stylistic: removing only has to **find** a
+  pointer already in hand, so it needs no connection and does no IO, while repointing has to
+  **resolve** one, which is the same reason `datom_add_member()` is draft-only. `datom_add_member()`
+  stays **singular**: a plural add needs a parallel list of versions, which is the typo hazard it was
+  refused for.
+- **R24.2 -- one selection grammar, and the defaults differ because the operations do.** Both accept a
+  member by **name, record or link** and narrow by `tags` or `version`, reusing the read side's
+  vocabulary rather than growing a second one. **Remove requires a selection** -- selecting nothing
+  would mean removing every member, which the writer refuses anyway -- while **update defaults to
+  every member**, because refreshing everything is the common case and rerunning it is a no-op. The
+  safe default for a destructive verb is nothing; for an idempotent refresh it is everything.
+- **R24.3 -- a member's labels are carried forward, never rebuilt.** Repointing changes one field of a
+  pointer. Rebuilding the record from name and new version drops its labels **silently**, and labels
+  are content, so the set's identity would move for a reason nobody asked for. Test that a repointed
+  member's labels are byte-identical, not merely present.
+- **R24.4 -- connections are matched on an unverified label, and the result is verified.** Matching
+  members to connections has to key on `conn$project_name`, which nothing compares against the repo.
+  So: dispatch on the label, then compare the **rebuilt** member's recorded project against the one it
+  replaced, and refuse on a mismatch. Without that, a mislabelled connection silently repoints a
+  member at a same-named artifact in another project. Unverified value chooses the route; verified
+  value confirms it -- and the member's side of that comparison is trustworthy because a stored
+  document now records the writing repo's own project name.
+- **R24.5 -- unknown refuses, known-and-benign reports, and the split is what the build can tell.** A
+  member whose project has **no supplied connection** refuses the whole call up front, naming that
+  project, because whether it moved is unknowable and silence would assert something unchecked -- and
+  the refusal is actionable, since `datom_list_members()` enumerates a set's projects offline with no
+  connection at all. A member whose **artifact no longer exists** in its project is reported and
+  **left as it is**, because the answer is known, the existing pin still reads (a version is
+  immutable), and refusing a whole refresh over one retired input would be the wrong trade.
+- **R24.6 -- two members sharing a name are skipped and reported, never guessed at.** Only the
+  caller's labels say which of a live table and a frozen baseline is which, so choosing is a guess and
+  refusing the sweep would make the first bulk update on any set holding a baseline an error. The
+  report names both with their versions and labels and gives the two ways to repoint one deliberately.
+  This is R2.14a's own rule, stated there as well.
+- **R24.7 -- nothing is written, so the report IS the dry run.** Both verbs return an object; the
+  write is a separate call. So inspecting the result costs nothing, no confirmation prompt is needed
+  (unlike `renv`, which must ask because it is about to act), and an update that finds nothing new
+  produces a byte-identical payload, which existing change detection reports as no change with no
+  version minted.
+- **R24.8 -- the update report feeds the commit message.** A set write's commit message defaults to
+  `Update {name}`, which says nothing in `git log`. When an update produced a change list and the
+  caller passes no `message`, the write defaults to a summary naming what moved, `old -> new`, one
+  line per member, grouped by project. An explicit `message` still wins. The change list rides as an
+  **attribute** on the returned object rather than as a field, following the link's carried member
+  record, so it cannot reach the payload.
+
+---
+
 ## 5. Acceptance criteria
 
 These are the behaviors most likely to be silently mis-implemented. **Each gets a test.**
@@ -1585,6 +1651,8 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC36** | **The floor is read and enforced, and absent means absent.** (a) A repo whose `project.yaml` declares a minimum writer version above the running build refuses the write, naming the required version. (b) A repo with **no** floor field behaves exactly as before -- no warning, no refusal, no change of any kind. (c) Setting a floor above the setting build's own version is refused. |
 | **AC37** | **The rebuild fires on absent and on too-new, never on empty, and never recomputes identity.** (a) A manifest with the expected artifact key **absent** yields a correct non-empty listing plus exactly **one** warning naming the upgrade. (b) A manifest declaring a version **above** what the build supports yields the same for a **reader**, and a **refusal** for a **writer** (R22.11). (c) A **genuinely empty** repo triggers no rebuild and performs **no storage listing** -- asserted on the absence of the listing call, not on the result. (d) A **corrupt** manifest still fails visibly. (e) The rebuilt `current_version` for every artifact equals the `version` **recorded** in `version_history.json`, never a recomputed hash (R22.12). (f) A rebuilt index matches the on-disk one field for field on a healthy repo, `original_format` included. |
 | **AC39** | **`project.yaml`'s format is declared and checked, and absent still means absent.** (a) A repo whose `project.yaml` declares a format above what the build supports is refused when a connection is opened, naming the file. (b) A repo whose `project.yaml` carries **no** format field behaves exactly as before -- no warning, no refusal, no change of any kind, which is every repo written so far. (c) `datom_init_repo()` stamps the field, asserted on the written file rather than on the in-memory config. (d) An **unrecognised key** in `project.yaml` is still tolerated -- no refusal, no warning. This clause is the one that keeps the mechanism honest: the file is hand-edited, so the vocabulary check that guards machine-written documents must never be extended to it, and a test is what stops that being done as a tidy-up (R9.8). |
+| **AC40** | **Repointing a member changes the version and nothing else.** (a) A repointed member's labels are **byte-identical** to what they were, not merely present -- rebuilding a record from name and version drops them silently, and labels are content, so this is the clause that catches an identity change nobody asked for (R24.3). (b) The report names every member that moved with its `old -> new` versions, grouped by project. (c) An update that finds nothing new returns an object whose payload is byte-identical, so the write reports no change and mints **no** version -- asserted through the write, because that is where "free" is actually observable (R24.7). (d) Selecting members by label repoints only those, leaving the rest pinned. |
+| **AC41** | **The four ways an edit declines to act, each tested separately so a regression names which one leaked.** (a) A member whose project has **no supplied connection** refuses the whole call, naming that project -- not a partial update (R24.5). (b) A member whose artifact no longer exists is **reported and left**, and the resulting set still writes, because its pin is still readable (R24.5). (c) Two members sharing a name are **skipped and reported** with both versions, never collapsed onto one version and never refused as a whole sweep (R24.6, R2.14a). (d) A connection whose label matches but whose store holds a **different project's** artifact of that name is refused by comparing the rebuilt member's recorded project against the one it replaced (R24.4). Clause (d) is the one that cannot be found by inspection -- it needs two stores and a mislabelled connection, which is the fixture that already exists for the no-gate tests. |
 | **AC38** | **The upgrade chain runs after the check, and runs zero steps when there is nothing to do.** (a) A document declaring a version above `.datom_supported_schema` never reaches the dispatcher -- asserted by observing the abort's condition class, not by inspecting the document. (b) A **current-version** document runs **zero** upgrade steps, which catches the `seq()` counts-down defect (R22.10). (c) Applying the chain twice equals applying it once. |
 
 Plus the standing project gates:

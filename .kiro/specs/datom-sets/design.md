@@ -1911,8 +1911,15 @@ been consistent and the drift was in what was being proposed.
 | `fetch` | whatever a pointer points at | `datom_fetch_member` |
 | `list` | a `data.frame` describing things | `datom_list`, `datom_list_members` |
 | `assemble` / `add` | a thing under construction | `datom_assemble_set`, `datom_add_member` |
+| `remove` / `update` | the thing it was handed, edited | `datom_remove_members`, `datom_update_members` |
 | `write` / `sync` | side effects on the repo | `datom_write`, `datom_write_set`, `datom_sync` |
 | `structure` | a caller-shaped view over data in hand | `datom_structure_members` |
+
+The edit pair is **plural** while `add` is singular, and that is derived rather than arbitrary: `add`
+takes one member plus its version, so a plural form needs a parallel list of versions -- the typo
+hazard it was refused for -- while `remove` and `update` are *selections* over members already
+present, where acting on several is the ordinary case. `update` is also the word `renv` and every
+package manager uses for "repoint the pins at what is current now", which is exactly the operation.
 
 Two standing exceptions, both principled. **Subsystems are noun-first** (`datom_store_*`,
 `datom_storage_*`, `datom_repo_*`), because there the noun is the thing being configured rather than

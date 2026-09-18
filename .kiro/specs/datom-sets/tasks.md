@@ -168,8 +168,21 @@ were passing whatever the code did.
 **Start here.** Branch `spec/datom-sets`, working tree clean, **3781** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 on docs and
 code/documentation agreement (tests and examples run separately). Next is **Task 23**
-(`project.yaml` declares its format), then Task 11 onward. **Phase F is complete**, so nothing in
-the set surface is half-built.
+(`project.yaml` declares its format), then Task 11 onward.
+
+**THE SPEC GREW BY A PHASE ON 2026-09-16, AFTER TASK 25 LANDED: Phase H, Tasks 27 and 28, editing a
+set that already exists.** A set is now pleasant to build and to read, and **unpleasant to edit** --
+the only route is list surgery on what the read returned, and two of the obvious hand-rolled
+spellings are silently wrong. Filtering members by name drops **every** version of that name, which
+quietly removes a deliberately frozen baseline alongside the live table; and repointing by hand loses
+each member's labels, which are content. So `datom_update_members()` (repoint at newer versions) and
+`datom_remove_members()` (drop members) are scheduled into **this** release rather than deferred --
+an owner decision made on value alone, because these verbs touch no stored document and so could have
+been deferred at **no** forward-compatibility cost. **They execute after Task 15 and before Task 16**,
+which is forced rather than chosen: Task 16 is the acceptance sweep and Task 17 is docs plus spec
+completion, so verbs landing later would leave the sweep testing a surface that then grew. Task 27
+runs before Task 28 because both share a plural member selector that does not exist yet, and the
+harder consumer is what shapes it correctly.
 
 **TASK 23 IS AUDITED AND STARTABLE COLD (2026-09-16), AND NOTHING IS OPEN** -- ten findings in its
 body, and the one that had to be settled first was **decided by the owner the same day, against this
@@ -444,7 +457,7 @@ of those two constants is the vocabulary Task 21's writer check reads; it is app
 
 **EXECUTION ORDER IS NOT TASK ORDER.** Phase E was appended rather than inserted so that nothing
 renumbered a third time. The order is `18 -> 19 -> 5 -> 6 -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 26 -> 24 -> 25 ->
-23 -> 11 onward`, and Phase
+23 -> 11 -> 12 -> 13 -> 14 -> 15 -> 27 -> 28 -> 16 -> 17`, and Phase
 E's preamble says why each edge exists. Task 19 before Task 7 is the one that matters most: an
 identity allowlist seeded from *table* metadata and landed after the set metadata builder would
 silently drop set-specific fields from identity. **Task 23 before Task 11** is the other edge that is
@@ -2824,7 +2837,7 @@ own; landing it first is what makes Task 6's failure loud.
 2026-08-23 shift record in the Decisions log); the execution order is stated here instead.
 
 ```
-18 -> 19 -> [Task 5] -> [Task 6] -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 26 -> 24 -> 25 -> 23 -> 11 onward
+18 -> 19 -> [Task 5] -> [Task 6] -> 20 -> 21 -> 22 -> 7 -> 8 -> 9 -> 10 -> 26 -> 24 -> 25 -> 23 -> 11 -> 12 -> 13 -> 14 -> 15 -> 27 -> 28 -> 16 -> 17
 ```
 
 - **18** is a prerequisite defect fix; the write-entry sequence sits on that function.
@@ -4739,6 +4752,127 @@ trusting the column.
 
 ---
 
+## Phase H -- Editing a set that already exists **[appended; EXECUTES AFTER TASK 15, BEFORE TASK 16]**
+
+**Appended rather than inserted, so nothing renumbers**, for the fourth time and the same reason. The
+placement is not free choice: **Task 16 is the acceptance-criteria sweep and Task 17 is docs plus the
+Spec Completion Procedure**, so verbs landing after either would leave the sweep testing a surface
+that then grew and the docs describing one missing two exports. Nothing else waits on them -- they
+depend only on Task 10's read and Task 24's finder, both done -- so they slot in at the one place that
+satisfies that constraint and leaves the `23 -> 11` critical path untouched.
+
+**Scheduled into this release rather than deferred, owner-decided 2026-09-16.** They were designed as
+a deferral and then pulled in: repointing a member at a newer version is a fundamental operation on a
+product, and removing one is close behind. The deferral would have been **free in the one dimension
+that is usually expensive here** -- these verbs touch no stored document, so no field, no format
+number, no vocabulary entry, and therefore no forced fleet upgrade if they arrived a release later.
+That makes this a scope call and not a compatibility one, which is why it could be decided on value
+alone.
+
+**Task 27 comes first even though it is the larger one.** Both share a plural member selector that
+does not exist yet -- Task 24's finder resolves exactly **one** member and aborts on ambiguity, while
+both of these select a **set** of members. Building the harder consumer first is what gets that
+selector's shape right; building the easier one first invites a selector shaped for a filter that then
+bends for connection grouping. It also puts the risk in the right place: if the release squeezes, what
+drops is the verb the owner called less fundamental.
+
+- [ ] **27. `datom_update_members()` -- repoint members at newer versions** &nbsp; **[EXECUTES AFTER TASK 15]**
+  - **DEPENDS ON TASK 10** for the object it edits and on **Task 24** for the three shapes a member is
+    named by. Reuses `.datom_member_shape()` (`R/member.R`) rather than restating shape dispatch, the
+    same way `datom_add_member()` does.
+  - **`datom_update_members(x, conn, member = NULL, tags = NULL, version = NULL)`** -> the same class
+    it was handed, with matching members repointed. `member = NULL` means **every** member, because
+    refreshing everything is the common case and rerunning it is a no-op (R24.2). `conn` accepts one
+    connection **or a list of them**, one per project the set spans.
+    - **A plural selector is the new shared piece, and it belongs to this task.** Task 24's
+      `.datom_find_member()` returns one member and aborts when a name is ambiguous, which is right
+      for a fetch and wrong here: this verb legitimately acts on many. So one internal selector
+      answers "which members does this call refer to", and Task 28 uses it unchanged.
+    - **The version comes from each artifact's own project, and the cheap route is the manifest.** A
+      project's manifest carries `current_version` per artifact (`R/query.R:113`), so learning what
+      moved costs **one read per project**, not one per member -- and only the members that actually
+      move then pay a snapshot read, through `datom_member()`, which is what keeps the pointer
+      trustworthy. A naive implementation makes 100 snapshot reads for a 100-member set; the right one
+      makes 3 plus however many moved.
+    - **`version =` beside a single named member repoints it to exactly that version.** That is the
+      only form where a caller states a version, and it is what makes this verb strictly better than
+      remove-then-add for a retag or a deliberate downgrade: **it keeps the member's labels**, which
+      remove-then-add makes the caller retype.
+  - **LABELS ARE CARRIED, NEVER REBUILT** (R24.3). Repointing changes one field of a pointer.
+    Rebuilding the record from name plus new version drops its labels silently, and labels are
+    content, so the set's identity would move for a reason nobody asked for. **Test byte-identity of
+    the labels, not their presence** -- a rebuild that happens to re-add them in a different order
+    passes a presence check and changes the payload.
+  - **CONNECTIONS ARE MATCHED ON AN UNVERIFIED LABEL AND THE RESULT IS VERIFIED** (R24.4). Matching
+    has to key on `conn$project_name`, which nothing compares against the repo -- that is the whole
+    finding behind Task 26. So dispatch on the label, then compare the **rebuilt** member's recorded
+    project against the one it replaced and refuse on a mismatch. Without it, a connection labelled
+    for project A but pointing at project B's namespace silently repoints a member at B's same-named
+    artifact. Unverified value chooses the route; verified value confirms it.
+  - **UNKNOWN REFUSES, KNOWN-AND-BENIGN REPORTS** (R24.5), and stating the split is what stops it
+    reading as an inconsistency.
+    | Situation | Response | Why |
+    |---|---|---|
+    | a member's project has no supplied connection | **refuse the whole call**, naming the project | whether it moved is unknowable, and silence would assert something unchecked |
+    | a member's artifact no longer exists there | **report it and leave the pin** | the answer is known, the pinned version still reads, and refusing a whole refresh over one retired input is the wrong trade |
+    | two members share a name | **skip both and report** (R24.6) | only the caller's labels say which is live; choosing is a guess |
+    - The refusal is actionable rather than a dead end, and that is what earns it:
+      `unique(datom_list_members(x)$project)` enumerates a set's projects **offline, with no connection
+      at all**, because a member's project is a recorded fact after Task 26. So the caller can see what
+      connections they need before calling anything.
+  - **THE REPORT, and it is the deliverable rather than decoration.** Grouped by project, one line per
+    moved member as `name  old8 -> new8`, then the counts, then what was skipped and why, then that
+    nothing has been written. Grouped by project because that is the axis connections are supplied
+    along, so a surprise in the grouping is a surprise about which connection served what. Console
+    lines truncate the way a set prints (first 20, then `... and N more`).
+  - **NOTHING IS WRITTEN, SO THE REPORT IS THE DRY RUN** (R24.7). No confirmation prompt, unlike
+    `renv`, which has to ask because it is about to act. And an update that finds nothing new returns
+    a byte-identical payload, so the existing change detection reports no change and mints no version
+    -- assert that **through the write**, because that is where "free" is observable.
+  - **THE CHANGE LIST FEEDS THE COMMIT MESSAGE** (R24.8), which is the smallest slice here and the
+    most droppable if the task has to be cut short. A set write commits `Update {name}` today, which
+    says nothing in `git log`. When an update produced a change list and the caller passed no
+    `message`, the write defaults to a summary naming what moved, full list in the body -- git is the
+    durable record, so completeness belongs there rather than on screen. An explicit `message` still
+    wins. **The change list rides as an attribute**, not as a field, following the link's carried
+    member record, so it cannot reach the payload.
+  - _Requirements: R24 (all clauses), R2.14a (the skip rule), R4.2a (why a version is still never
+    inferred at write time). Acceptance: AC40, AC41 (a), (b), (d) -- (c) is Task 28's to share._
+  - _Pathway impact: yes -- the set-read card gains a note that resolving "what is current" for a
+    member goes through its project's manifest rather than through a per-member scan._
+
+- [ ] **28. `datom_remove_members()` -- drop members from a set** &nbsp; **[EXECUTES AFTER TASK 27]**
+  - **DEPENDS ON TASK 27** for the plural selector, which lands there because the harder consumer
+    shapes it correctly. Nothing else here is new machinery.
+  - **`datom_remove_members(x, member, tags = NULL, version = NULL)`** -> the same class it was
+    handed, minus the matching members. **No `conn` argument at all**, and that is the structural
+    difference from both sibling verbs: removing only has to **find** a pointer already in hand, while
+    adding and repointing have to **resolve** one. Say so in the docs, or the missing argument reads
+    as an oversight.
+  - **A SELECTION IS REQUIRED** (R24.2). `datom_remove_members(x)` with no selection would mean
+    removing every member, which the writer refuses anyway -- so it aborts naming what a selection
+    looks like, rather than building a payload the write then rejects. The safe default for a
+    destructive verb is nothing, which is the opposite of Task 27's default and for the same reason.
+  - **REMOVING NOTHING IS AN ERROR, NOT A SUCCESS.** A selection that matches no member is a typo, and
+    the hand-rolled `Filter()` it replaces reports success. Name what was asked for and point at
+    `datom_list_members()`.
+  - **REMOVING THE LAST MEMBER IS REFUSED ON THE LINE.** The write already refuses an empty set, so
+    this only moves the refusal to where the caller can see which removal emptied it -- the same
+    argument that put per-member validation in `datom_add_member()`.
+  - **A NAME ALONE REMOVES EVERY VERSION OF THAT NAME, AND THAT IS THE ONE THING THIS VERB MUST NOT DO
+    QUIETLY.** It is exactly the silently-wrong hand-rolled spelling the verb exists to replace: a
+    set holding a live table beside a frozen baseline loses both. So a name matching more than one
+    member **refuses**, listing both with their versions and labels and pointing at narrowing -- the
+    same shape as Task 24's ambiguity abort, and the opposite response from Task 27's skip, because
+    skipping a removal would silently do nothing while skipping a repoint safely leaves a valid pin.
+    **State that asymmetry where both are documented**, or a later change "unifies" them.
+  - _Requirements: R24.1, R24.2, R2.14a. Acceptance: AC41 (c) shares the two-members-one-name fixture
+    with Task 27; **the rest by test rather than criterion** -- the empty-selection abort, the
+    matched-nothing abort, the last-member refusal, and the ambiguous-name refusal each get one._
+  - _Pathway impact: none -- no lookup, no traversal, no IO of any kind._
+
+---
+
 ## Decisions log
 
 Record decisions as they are made, so a fresh session does not relitigate them.
@@ -5037,3 +5171,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-16 | **(implementation, Task 23) `.datom_check_schema_version()` gains a `supported =` argument in the SAME commit as the config gate, feeding the message as well as the comparison.** Neither the audit nor the review stated this, and without it the per-file number is a nominal gate: the checker compares against the global `.datom_supported_schema` and names it in the refusal, so the day this file's shape breaks and its own constant becomes `2L`, a build whose global ceiling is already `2L` compares `2 > 2`, proceeds, and misreads the new shape. Because the reading half **cannot be retrofitted** -- this task's whole premise -- no later release can fix the builds already installed, so it cannot be deferred. Defaulting the argument to `.datom_supported_schema` leaves every existing call site and its asserted message unchanged. | Task 23 finding 1, `R/utils-validate.R:253` |
 | 2026-09-16 | **(owner decision, no task) A set may hold the SAME artifact at two versions, and that rule is KEPT** -- re-examined during a design round on a prospective member-update verb, and kept because unwinding it now costs about what the future tax saves. Two things this settles, both written into R2.14a rather than here so the next challenge meets them where the rule is: the cost tally (trivial on the identity side, roughly a third of the read-side ergonomics already spent, and a per-verb tax on every future verb that names a member -- heaviest on a *write* verb, since "refresh everything" is the operation that would collapse two members into one), and the one use case that survives scrutiny. "Reproduce the interim analysis" does **not** need a baseline member, because a set is itself versioned and citable; what survives is **freezing one input while the rest refresh**, which has no cheap alternative under one-repo-one-set. **The rule handed forward: a member-update verb SKIPS two members sharing a name and reports them**, never refuses the sweep and never guesses which is live -- only the caller's labels say that. | R2.14a |
 | 2026-09-16 | **(design round, NOT YET BUILT) Three set-editing verbs are designed and deferred: remove, update, and an update report that feeds the commit message.** Deferred rather than appended as tasks because 0.1.2 is at CRAN and Tasks 23 and 11 are the critical path. The design, so it is not re-derived: `datom_remove_members()` and `datom_update_members()` are parallel -- same object, same three ways to name a member, same label and version narrowing, each returning the class it was handed -- with two divergences that follow from what the verbs do rather than from style. Remove **requires** a selection (selecting nothing would mean removing everything, which the writer refuses anyway) and needs no connection at all, because it only has to *find* a pointer already in hand. Update defaults to **all** members and takes one connection **per project**, because it has to *resolve* a pointer, which is also why `datom_add_member()` is draft-only. Three things the update verb must get right: a member's labels are carried forward rather than rebuilt (rebuilding drops them silently, and labels are content); connections are matched to members on `conn$project_name`, which is unverified, so the rebuilt member's **recorded** project is compared against the one it replaced and a mismatch refuses; and a member whose project has no supplied connection **refuses up front** naming that project, because whether it moved is unknowable -- while a member whose artifact no longer exists is **reported and left**, because the answer is known and its pinned version still reads. `datom_add_member()` stays singular on purpose: a plural add needs a parallel list of versions, which is the typo hazard Task 25 rejected it for. | `dev/README.md` Backlog |
+| 2026-09-16 | **(owner decision, scope) The two set-editing verbs ship in THIS release, as Phase H (Tasks 27 and 28), rather than as a deferral.** Reversing the same-day default recorded above, which had them as a backlog row. Repointing a member at a newer version is fundamental to a product -- a hundred inputs, thirty of them moved -- and dropping one is close behind; a citable artifact that cannot be safely edited is half a surface. **The decision was made on value alone, and that is possible because these verbs are unusual here: they touch no stored document**, so no field, no format number, no vocabulary entry, and therefore no forced fleet-wide writer upgrade if they had arrived a release later. Deferring them would have been free in the one dimension that is normally expensive, which is exactly why the argument came down to worth rather than timing. **Placement is forced, not chosen**: Task 16 is the acceptance sweep and Task 17 is docs plus the Spec Completion Procedure, so anything landing after either would leave the sweep testing a surface that then grew and the docs describing one missing two exports -- hence after Task 15, before Task 16, with the `23 -> 11` critical path untouched. **Task 27 before Task 28**, even though 27 is larger: both need a plural member selector that does not exist (Task 24's finder returns exactly one member and aborts on ambiguity), the harder consumer is what shapes that selector correctly, and if the release squeezes the thing that drops is then the verb the owner called less fundamental. | Phase H, R24 |
+| 2026-09-16 | **(design, Task 28) A name matching two members REFUSES on a removal but SKIPS on a repoint, and that asymmetry is deliberate.** Same evidence, opposite responses, for the same reason the reads-limp / writes-stop split exists elsewhere: skipping a **removal** silently does nothing, so the caller believes a member is gone when it is not, while skipping a **repoint** safely leaves a valid pin and says so. The removal refusal is the direct replacement for the hand-rolled `Filter()` on name, which drops every version of that name and takes a frozen baseline with it. State the asymmetry wherever either verb is documented, or a later change unifies them into whichever half it met first. | Phase H Tasks 27 and 28 |
