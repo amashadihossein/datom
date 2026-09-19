@@ -63,8 +63,64 @@ collapsed.
 the head it just recorded. Read it from `git log --oneline -1`, and find the last code-bearing
 commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
 
+**In a git worktree, `.git` is a FILE, and three tools silently misbehave because of it.** Any
+tool that decides "is this a git repo?" with a *directory* test gets the wrong answer in a
+worktree, and none of the three says so. All bit during the 0.1.2 CRAN fix, worked from
+`../datom-cran-fix`:
+
+| Tool | What happens | Status |
+|---|---|---|
+| `R CMD build` | its built-in exclusion covers a `.git` *directory*, so the pointer file lands in the tarball as `datom/.git`, and `--as-cran` raises "hidden files ... most likely included in error" | fixed -- `^\.git$` added to `.Rbuildignore`, which covers any checkout shape |
+| `devtools::submit_cran()` | `devtools:::flag_release()` opens with `if (!uses_git(pkg$path)) return(invisible())` and `uses_git()` is `dir_exists(path(path, ".git"))`, so **no `CRAN-SUBMISSION` is written** -- and the "don't forget to tag this release" reminder, one line above the write, never prints either | not fixable here; **verify the artifact exists after every submission from a worktree**, or submit from a normal clone |
+| `.gitignore` for `CRAN-SUBMISSION` | the rule was added on `spec/datom-sets` only (`9600db0`), so on a `main` checkout the artifact is untracked **and unignored** | never `git add .` in the submitting worktree; stage by name |
+
+The common shape: a green run is not evidence, because each failure is a step that quietly did
+not happen. The submission itself is unaffected in every case -- only local bookkeeping is
+skipped, which is exactly why it goes unnoticed. Recovery for the middle one is mechanical:
+rebuild the record from `main`'s head (confirm it has not moved) plus the built tarball's mtime
+in the R temp directory, then check `usethis:::get_release_data()` parses it.
+
 ## Gotchas
 
+- **`return()` inside a `tryCatch` handler returns from the HANDLER, not the enclosing function --
+  and the code after the `tryCatch` still runs.** This shipped as a live defect in
+  `.datom_check_git_current()` (#104, fixed 2026-08-26): the fetch-failure handler warned and
+  `return(invisible(TRUE))`d, which looked like "give up and pass" but only ended the handler, so
+  execution continued and compared `HEAD` against **stale cached** upstream refs -- aborting an
+  offline developer for being behind a remote they could not reach. It is silent because the warning
+  still prints, so the log looks exactly as intended. The shape that works: have the handler
+  **return a value**, then branch on it outside the `tryCatch`
+  (`fetched <- tryCatch({...; TRUE}, error = function(e) {...; FALSE}); if (!fetched) return(...)`).
+  Worth grepping for whenever a handler's body ends in `return()`.
+- **A metadata field name that is CLASSIFIED but not yet WRITTEN is invisible to carry-forward, so
+  classifying one early is not free.** The keep-unfamiliar-fields rule
+  (`.datom_carry_unknown_fields()`) rescues exactly the names a build **cannot** place -- so the
+  moment a name appears in `.datom_metadata_identity_fields` or
+  `.datom_metadata_excluded_fields`, the rule stops seeing it. If a document then arrives from a
+  newer datom carrying that field, this build rewrites the document without it. On the *not-identity*
+  list the loss is **silent**: the field takes no part in `metadata_sha`, so no version moves and
+  nothing in the output says anything happened. `document_sha` is the live example and the reason this
+  entry exists -- classified by the reader-side schema work before any code produced it, and now the
+  one name in the vocabulary that no builder emits. It is safe only because the task that starts
+  writing it puts it in `version_history.json`, whose entries are appended to rather than rebuilt.
+  **So: classify a field in the same change that starts writing it.** If you genuinely must classify
+  earlier, add the name to the exception vector in the classification test
+  (`test-utils-sha.R`) with the reason, which is what makes the next person meet the decision instead
+  of inheriting it.
+- **`R/` is sourced ALPHABETICALLY, so a namespace-level constant may not be built from values
+  defined in a file that sorts later.** DESCRIPTION declares no `Collate`, so the order is filename
+  order and nothing else. Hit while adding `R/forward-compat.R`, which needs the union of two
+  vectors that live in `R/utils-sha.R`: `f` sorts before `u`, so a constant joining them would be
+  evaluated before either existed and the package would fail to **install** -- not at call time,
+  where it would be obvious. The fix is to make it a **function**, which looks them up when called;
+  it also cannot then fall out of step with either half. `R/manifest-upgrade.R`'s header records the
+  same hazard from the other side, where a lookup table holds function objects and so every entry
+  must be defined above it in that same file. Two rules, one cause: **anything evaluated while the
+  namespace is being built can only see what has already been sourced.**
+- **A `cli::cli_alert_warning()` is a MESSAGE, not a condition of class `warning`.** Test it with
+  `expect_message()`; `expect_warning()` fails and reads as "the code did not warn at all", sending
+  you after a nonexistent bug. Applies to every `cli_alert_*` -- only `cli::cli_warn()` signals a
+  real warning.
 - **cli pluralization**: `{?s}` requires a quantity reference immediately before it (e.g., `{length(x)} variable{?s}`). Without the quantity, cli throws a confusing error.
 - **git2r::default_signature()**: Fails on freshly `git2r::init()`'d repos that lack local config. Always call `git2r::config(repo, user.name = ..., user.email = ...)` after init.
 - **git2r::merge()**: Expects a string (branch name), not a branch object. Use `upstream_ref$name`.
@@ -76,7 +132,23 @@ commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
 - **Lineage consistency is a composable recipe, not a dedicated function**: `datom_validate_lineage()` was removed. `datom_write()` derives a derived table's `source_lineage` from its parents' union at write time and lineage is version-pinned, so a recompute equals the recorded value in normal operation. To check consistency, compose existing reads: `datom_get_parents(conn, name)` -> for each parent read `datom_get_lineage(parent_conn, parent$table, version = parent$version, depth = "source")` through a conn scoped to that parent's project -> `datom_lineage_union(...)` -> compare to `datom_get_lineage(conn, name, depth = "source")`. This honors the one-connection-per-project model (each parent is read through its own conn) and keeps semantic checks in the caller's workflow, orthogonal to `datom_validate()`'s git/S3 storage-consistency pass.
 - **`.datom_git_commit()` is idempotent**: Returns HEAD SHA (instead of erroring) when staged files are unchanged. This is by design — enables safe re-runs after partial failures in the local → git → S3 pipeline.
 - **metadata SHA uses JSON canonical form**: `.datom_compute_metadata_sha()` hashes `jsonlite::toJSON()` output with `serialize = FALSE`, not the R object. This is critical — R's `serialize()` is type-sensitive (`10L` ≠ `10`), so metadata round-tripped through JSON would produce a different SHA. Always test SHA stability with a JSON round-trip.
-- **metadata SHA excludes volatile fields**: `created_at` and `datom_version` are stripped before hashing. Adding new metadata fields that should NOT affect versioning must be added to the `volatile` vector in `.datom_compute_metadata_sha()`.
+- **metadata SHA selects fields by ALLOWLIST, and the obligation runs the other way from what you
+  would guess.** `.datom_compute_metadata_sha()` hashes exactly the fields named in
+  `.datom_metadata_identity_fields` and ignores every other key. So **adding a field to a metadata
+  builder without classifying it silently removes it from identity** -- the opposite of the old
+  exclusion-list behaviour, where an unclassified field silently *entered* identity. (Superseded
+  wording, retained because it inverts: "adding new metadata fields that should NOT affect
+  versioning must be added to the `volatile` vector".) Every new field goes in one of two places:
+  `.datom_metadata_identity_fields` if it is content, `.datom_metadata_excluded_fields` if it is
+  not. The test `every field a metadata builder emits is classified` derives its inventory from the
+  builder rather than hardcoding names, so it **fails** until you choose -- and it is the only test
+  that catches this direction, because an ignored field leaves every pinned hash untouched
+  (verified by adding a junk builder field: the goldens stayed green, that test went red).
+- **The exclusion list is not the same idea as "volatile".** `parquet_sha`, `size_bytes`,
+  `column_hashes`, `created_at` and `datom_version` are volatile in the drift sense;
+  `schema_version` and `document_sha` are on the list for their own reasons (container format, and
+  stored-bytes integrity). Read the comment block above each constant rather than assuming the
+  rationale.
 - **version_history dedup guard**: `.datom_write_metadata_local()` skips appending when the latest entry has the same version SHA. This prevents duplicates but means the guard relies on metadata_sha correctness.
 - **`datom_pull()` is git-only**: No S3 manifest refresh — git is the source of truth for all metadata. The manifest is committed to git and pulled with everything else.
 - **`governance.json` mirror -- git canonical, storage derived**: The git copy at `.datom/governance.json` is written and committed first; the storage mirror at `{prefix}/datom/.metadata/governance.json` is pushed in the same step. Never write only one. If the mirror is missing, `.datom_sync_governance_json(conn)` regenerates it from the git copy. The file is write-once -- do not update it after creation.
@@ -84,6 +156,8 @@ commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
 - **`git2r::clone()` target path**: Must not exist or must be an empty directory. `datom_clone()` validates this upfront.
 - **`paws.storage` has no STS**: `sts` is in `paws.security.identity`, not `paws.storage`. Validation uses `HeadBucket` only (validates both credentials and bucket access).
 - **Storage abstraction**: Business logic must call `.datom_storage_*()`, never `.datom_s3_*()` or `.datom_local_*()` directly. The dispatch layer in `R/utils-storage.R` routes based on `conn$backend`.
+- **Two key shapes, and mixing them double-prefixes silently**: `.datom_build_storage_key(prefix, ...)` returns a **FULL** key (`{prefix}/datom/{...}`) and is **backend-internal** -- called only from `.datom_s3_*()` / `.datom_local_*()`, which prepend the prefix themselves. The `.datom_storage_*()` dispatch layer takes **RELATIVE** keys (everything after `{prefix}/datom/`). So business logic must never pass `.datom_build_storage_key()` output to `.datom_storage_*()`: the result is `{prefix}/datom/{prefix}/datom/...`, and because the write succeeds at a wrong location nothing errors. Build relative keys with the helpers in `R/utils-path.R`: `.datom_artifact_payload_key(name, sha, kind)`, `.datom_artifact_meta_key(name, which)`, `.datom_artifact_snapshot_key(name, metadata_sha)`. They also apply the `.datom_validate_name()` / `.datom_validate_sha()` guards -- several former call sites omitted them, and an unvalidated value spliced into a key escapes the namespace on the local backend via `fs::path()`.
+- **Payload key vs snapshot key are different directories**: `{name}/{data_sha}.{parquet|json}` is the payload, addressed by **content**; `{name}/.metadata/{metadata_sha}.json` is the versioned metadata snapshot, addressed by **version**. For a set both end in `.json`, which is precisely why they are easy to confuse -- use the two distinct helpers rather than assembling either by hand.
 - **`datom_conn` has two clients**: `client` (data store) and `gov_client` (governance store). Use `.datom_conn_for(conn, "gov")` to create a sub-connection for governance operations (this replaced the former `.datom_gov_conn()` helper).
 - **`conn$root` is backend-neutral**: S3: root = bucket name. Local: root = directory path.
 - **`conn$client` is NULL for local backend**: `.datom_local_*()` functions use `conn$root` + `conn$prefix` directly via `fs::`. Never check `is.null(conn$client)` to determine backend — use `conn$backend` instead.
@@ -123,6 +197,21 @@ commit with `git log --oneline -1 -- R/ man/ tests/ vignettes/`.
 - **Manifest `size_bytes` uses `as.numeric()`, not `as.integer()`**: `.datom_update_manifest_entry()` reads `size_bytes` as numeric; `as.integer()` returns NA above 2^31 (2 GB) and poisons `summary$total_size_bytes`. `version_count` stays integer.
 - **`.datom_mask_secret(secret, reveal_prefix = TRUE)`**: default reveals the first 4 chars (fine for GitHub PATs — `ghp_`/`github_pat_` is a public type tag, and AWS access-key `AKIA` prefix is an identifier, not entropy). The `datom_store_s3`/`datom_store_s3_creds` print methods pass `reveal_prefix = FALSE` for `secret_key` and `session_token` so those are masked fully. `datom_store` objects hold plaintext credentials in memory — SECURITY.md warns against `saveRDS()`/`.RData` of stores.
 
+- **A compatibility check must sit OUTSIDE any handler that softens read errors.** Three of the
+  manifest readers wrap their read in `tryCatch`, and `.datom_check_schema_version()` placed inside
+  one produces a different outcome at each site: `datom_list()` / `datom_summary()` reword the
+  abort as "Could not read manifest ... Underlying error: <the real message>", demoting the only
+  actionable line to a footnote, and `datom_status()` is worse -- its handler turns errors into
+  `available = FALSE` and **continues**, so that command alone would stay silent while the others
+  stopped. The shape that works: read the document inside the handler, run the check on the
+  returned object outside it. `datom_status()` needed restructuring to hold both properties at once
+  (an unreachable bucket is still reported, not fatal; a too-new repo is fatal), so if you touch
+  that block keep both its tests. Same rule for any future document-level contract check.
+- **`{.datom_supported_schema}` is cli markup, not a value** -- a concrete instance of the
+  dot-literal gotcha above, and easy to miss because the message still renders (the ceiling just
+  vanishes, so "supports up to v" reads as truncated). Splice it as
+  `{(.datom_supported_schema)}`. A test asserts the rendered message contains `supports up to v2`
+  precisely so this cannot regress into a silently incomplete abort.
 - **`_pkgdown.yml` index must be kept in sync**: Adding a new exported symbol requires a matching entry in `_pkgdown.yml`. `pkgdown::build_site()` errors with "N topics missing from index" otherwise. Check after every phase that adds exports.
 - **Non-ASCII characters in R source and vignettes**: R CMD check warns on any non-ASCII character in `R/*.R` files (even in comments), and pkgdown/knitr can silently mangle them in `.Rmd` vignettes too. Use only ASCII everywhere -- `--` instead of em-dash, `->` instead of `->`, `...` instead of ellipsis (`\u2026`), straight quotes. Bulk-check with `LC_ALL=C grep -lr '[^[:print:][:space:]]' vignettes/*.Rmd R/*.R`. **Scope note:** the ASCII rule covers `R/*.R` and `vignettes/*.Rmd` *source* only. The generated `README.md` legitimately contains non-ASCII smart-typography (en-dashes, curly quotes) because `output: github_document` applies pandoc smart punctuation to the ASCII `README.Rmd` source. This is normal, pre-existing, present on `main`, and does **not** trip R CMD check -- do NOT "fix" it. Exclude `README.md` from ASCII sweeps.
 - **pkgdown renders every `vignettes/*.Rmd`, regardless of the `_pkgdown.yml` index**: to *exclude* an article from the built site you must physically relocate the `.Rmd` out of `vignettes/` (e.g. into build-ignored `dev/`), not just drop it from the `articles:` index. Conversely, every `.Rmd` left in `vignettes/` MUST appear in exactly one `articles:` group or `pkgdown::build_site()` is noisy/incomplete. Verify the index matches disk: parse `_pkgdown.yml`, `setdiff()` the indexed basenames against `basename(Sys.glob("vignettes/*.Rmd"))` both ways -- both must be empty. (The earlier index gotcha below is the `reference:`/exports analogue of this.)
@@ -295,15 +384,75 @@ Harvested from the spec's work-handoff at completion. The *design* lives in
 - **Test fakes avoid new Suggests**: `hms` / `ITime` / `integer64` columns are faked with
   `structure(..., class = ...)`, and the same trick renders the vignette's `sf`/`units`/`zoo`
   recourse rows -- dispatch is on the class tag, so a bare structure is enough.
-- **The `metadata_sha` golden `59f1f1d9...`** in `test-utils-sha.R` survives the radix-sort and
-  volatile-set changes because its fixture has no `parquet_sha`/`column_hashes` and only simple
-  lowercase names. Keep that fixture as-is or the golden needs re-deriving.
+- **The `metadata_sha` goldens are now builder-derived, and the old hand-written one carried a field
+  datom never writes.** `59f1f1d9...` pinned a fixture containing a `name` key -- which no builder
+  emits, since `metadata.json` is written as exactly the object `.datom_build_metadata()` produced
+  (the `name` in `datom_write()` is its return value) -- and lacking `colnames`, which every builder
+  emits. Under allowlist selection that hash changed while **no stored identity moved**, so the
+  fixture was reused for the property that changed it: an unknown extra field is ignored, pinned at
+  the no-`name` value `cce751b3...`. The load-bearing goldens are now
+  `builder-derived metadata_sha goldens are stable`, built through the real builder with and without
+  its conditional fields. Lesson worth carrying: **a pinned identity fixture must be a document the
+  package can actually write**, or it pins the behaviour of a shape that does not exist. (Superseded
+  instruction: "keep that fixture as-is or the golden needs re-deriving".)
 - **An acceptance gate can have a legitimate false positive; scope the gate, do not edit the
   source.** `grep -rn "as.data.frame" R/utils-sha.R` will never be empty: the one hit is the
   roxygen line documenting the invariant ("no `as.data.frame()` or coercion, and never invokes
   arrow"). The gate's intent is that no *executable* coercion exists, which the comment asserts.
   Pipe through `grep -vE ":[0-9]+:[[:space:]]*#"` and record the documented match. Deleting the
   comment to satisfy a literal grep would delete the statement of the invariant.
+
+### datom-sv1 set identity (issue #89, spec `.kiro/specs/datom-sets/`)
+
+The set-content hash. Design lives in the spec (`requirements.md` R2, `design.md` 7); these are the
+implementation traps.
+
+- **`dev/datom_sv1_reference.R` is the normative byte layout**, exactly as
+  `dev/datom_cv1_reference.R` is for tables: standalone (base R + `digest`), Rbuildignored, ASCII,
+  self-testing, and it prints the goldens. `R/hashable-set.R` must stay byte-identical to it. The
+  parity test in `test-hashable-set.R` skips when `dev/` is absent -- i.e. under **every**
+  `R CMD check` job -- so `.github/workflows/cv1-reference-parity.yaml` (which covers cv1 **and**
+  sv1 despite its name) is what actually enforces parity, from the source tree, on x86_64 and arm64.
+  **The goldens are published, so the encoding is frozen**: a failing golden means the code drifted,
+  and a deliberate change is a `datom-sv2` bump with a new `hash_algo`, not an edit.
+- **sv1 shares NO primitive with cv1 -- do not reach for `.datom_encode_numeric()`.** There are no
+  numbers in a set payload and no length prefixes anywhere (every intermediate is a fixed 32 bytes,
+  so `h("a")||h("b")` at 64 bytes cannot collide with `h("ab")` at 32). The only common ground is
+  `digest::digest(..., algo = "sha256", serialize = FALSE)`.
+- **A NAMED list in a value position must be refused, and this is the trap worth remembering.**
+  Element-wise, `list(b = "c")` and `list("c")` are indistinguishable -- both are a one-element list
+  holding one string -- so an encoder that checks only elements hashes `{"a": {"b": "c"}}`
+  *identically* to `{"a": ["c"]}`. The inner key then sits outside identity, and two different
+  payloads share one `data_sha` and therefore one storage address. The guard is
+  `is.list(v) && !is.null(names(v))` in `.datom_sv1_as_strings()`. Same reasoning drives the other
+  two refusals: an unexpected field at the payload root or in a member record aborts rather than
+  being ignored, because an ignored field is content that never enters identity.
+- **Intermediates are raw 32-byte vectors, not hex.** Hex appears in exactly two places, both named
+  by the spec: the member-digest collation key and the final `data_sha`. Byte order and lowercase-hex
+  C-locale order agree, so `order(hex, method = "radix")` and sorting the raw bytes give the same
+  result -- but keep the hex spelling, since that is what the specification pins.
+- **`is.na()` on a closure warns instead of answering**, so the `NA` refusal sits *after* the
+  type gate, with one exception hoisted above it: an all-`NA` **logical** (a bare `NA`) is caught
+  first so it gets the "omit the field instead" advice rather than a type error. A
+  `tags = list(t = mean)` fixture is what surfaced this, against a suite held at WARN 0.
+- **Both empty spellings must agree**: `strset(list())` == `strset(character(0))` == `h(0x02)`, and
+  `map(list())` == `map(NULL)` == `h(0x03)`. `[]` and `{}` are the parsed-JSON forms, and write/read
+  agreement depends on the R and parsed spellings hashing equal. The encoder must not lean on
+  "an empty tag value is dropped upstream" -- that is exactly how an encoder breaks silently the day
+  the upstream rule moves. (That upstream rule was itself stated two ways for a while: the spec said
+  both "refused by validation" and "the key is dropped". The tidy wins; corrected 2026-09-10.)
+- **Where the encoder stops.** It refuses only what it cannot encode without losing content. Grammar
+  enforcement with user-facing recourse -- which key is wrong, what types are allowed, whether two
+  members share an `id` with conflicting tags -- belongs to `.datom_validate_members()` and
+  `datom_write_set()`, the only places that see a whole payload and the caller's intent.
+- **Sorting is `method = "radix"` everywhere**, i.e. C-locale byte order, for the same
+  locale-independence reason `.datom_compute_metadata_sha()` uses it. No Unicode normalization is
+  applied anywhere in the identity path: NFC and NFD are different tags, deliberately, because
+  normalization tables are versioned Unicode data. Note the sort runs *before* `enc2utf8()` (which
+  happens inside `str()`), which looks like an encoding hazard and is not: checked on a
+  latin1-marked string against its UTF-8 twin, radix sort produces the same order and the digests
+  agree, because R translates for the comparison. In practice the hash domain is a parsed JSON
+  payload, so it is UTF-8 anyway.
 
 ### Testing storage side effects without mocking storage
 
@@ -327,3 +476,352 @@ matter whenever a test needs to prove something did *not* happen.
 - **Locate stored objects through `.datom_local_path()`**, not a hand-written
   `{prefix}/datom/...` path, so a storage-layout change breaks the code rather than silently
   passing a test that looks in the wrong place.
+
+### `conditionMessage()` on a cli error carries terminal escape codes
+
+`cli::cli_abort()` formats its message for the terminal, so the string carries ANSI colour codes
+and OSC-8 hyperlinks: `\033[31m` to start red, `\033]8;;file://...` to make a path clickable.
+`conditionMessage()` returns that formatted string, escapes included.
+
+- **Printing it is fine.** The terminal consumes the codes, which is the whole point of them, so
+  every `cli_abort(..., "i" = "Underlying error: {conditionMessage(e)}")` site reads correctly and
+  needs no change.
+- **Storing it is not.** Any field datom *returns* holding that text will show the codes as
+  literal `\033[31m` noise the moment a caller prints the string itself, writes it to a log, or
+  puts it in a report. Wrap those in **`cli::ansi_strip()`**. Three fields needed it (fixed
+  2026-08-29): `datom_status()`'s `$tables$error`, `datom_sync()`'s `error` column, and the
+  per-table `error` in the metadata sync result. `datom_sync()`'s was the worst, being a data
+  frame cell.
+- **The distinction to apply to a new field**: is this text going into a message, or into a value
+  the caller keeps? Only the second needs stripping. A local copy used for pattern matching --
+  `grepl("403|Forbidden", conditionMessage(e))` -- is fine, though be aware the codes surround
+  the segments, so a pattern spanning styled and unstyled text will not match.
+- **A TEST FOR THIS IS VACUOUS UNLESS IT FORCES COLOUR ON.** `Rscript`, `devtools::test()` and CI
+  all run without a colour-capable terminal, so cli emits no escapes at all and the assertion
+  passes whatever the code does -- which is exactly why the defect survived to 0.1.1. Use
+  `withr::local_options(cli.num_colors = 256, cli.hyperlink = TRUE)`, then assert with
+  `expect_false(grepl("\033", x, fixed = TRUE))`. Confirm the test reddens when the fix is
+  removed; without forced colour it will not.
+- **Reproducing what a user reports**: an interactive console has colour on, so a string that
+  looks clean in your test run can look mangled in their paste. To see what they see, force the
+  same two options.
+
+### The manifest's artifact list, and the two ways a fixture goes quietly wrong
+
+Landed 2026-09-08 with the `manifest$tables` -> `manifest$artifacts` rename. Three things to know
+before touching a manifest or a manifest fixture.
+
+- **Never write a fallback for the old key.** `.datom_read_manifest()` returns the document in
+  **current shape** -- a document written in an older shape is converted on the way through, in
+  memory, and the file is left alone. So `manifest$artifacts %||% manifest$tables` at a call site is
+  not defensive, it is a second implementation of the conversion: the next format change then has to
+  edit every copy, and the one it misses fails silently. The conversion has exactly one home,
+  `R/manifest-upgrade.R`, reached from exactly two places (the shared reader, and the entry updater
+  before it edits the file).
+
+- **A fixture in the current shape needs BOTH the version and the kind.** A hand-built manifest that
+  declares `schema_version = 2` but leaves `kind` off its entries reads as a manifest with **zero
+  tables**, because the counters filter on `kind == "table"` and there is deliberately no
+  missing-`kind` fallback. Nothing errors. A fixture that declares **no** version is a valid v1
+  document and gets converted, `kind` included, so it works -- which is the trap: the two failing
+  spellings look more alike than the two working ones. If a count comes back zero for no visible
+  reason, check the fixture's entries for `kind` first.
+
+- ~~**A test that needs a set has to hand-build one.**~~ **SUPERSEDED 2026-09-13: `datom_write_set()`
+  exists, so a real set is writable in a test.** What it costs is one extra fixture step -- the two
+  gates read `.datom/project.yaml` for `mode: product` and a `set:` name, and nothing in datom writes
+  either field yet, so the fixture writes that file itself via `write_product_config()` in
+  `helper-mock.R` (shared, unlike the per-file project fixtures, because it is one fact about one
+  file's format and three test files need it). Prefer a real write over a hand-built entry: a
+  hand-built row can disagree with what the writer actually produces, which is the disagreement the
+  row-vocabulary and rebuild-parity tests exist to catch. The original entry, retained because the
+  reasoning still applies to any counter added before something writes the shape it counts: nothing
+  wrote a `kind = "set"` entry, so every counter filter passed against a tables-only manifest whether
+  or not the filter was there. Any change to a counter needs a fixture holding a set entry beside
+  table entries, and the assertion worth making is that the **counted** numbers
+  (`datom_summary()`) and the **stored** `summary` block agree -- a filter applied to one and not the
+  other is invisible until they are compared.
+
+- **`tables` still exists as a return-value field in three places** and must not be swept:
+  `datom_status()$tables`, `datom_validate()$tables`, and the per-table results in `datom_sync()`'s
+  result. A `grep tables` across `R/` hits all three. Renaming them is a separate breaking change to
+  three public shapes.
+
+### Two ways a condition's class silently disappears on its way to a handler
+
+Both were found while building the reader-side manifest rebuild (2026-09-10), where the whole
+decision is made *by* the class of the condition that came back: a compatibility refusal has to keep
+travelling, while a storage failure has to be turned into a return value. Both defects go green in a
+suite that only checks that *something* failed.
+
+- **`stop(cnd)` inside one `tryCatch()` handler is caught by that same `tryCatch()`'s `error`
+  handler.** The spelling below reads as "re-raise this class, catch everything else", and it does
+  the opposite -- the re-raised condition lands in the sibling handler and comes back as a returned
+  value:
+
+  ```r
+  # WRONG. `stop(cnd)` is caught by the error handler two lines down.
+  tryCatch(
+    risky(),
+    my_class = function(cnd) stop(cnd),
+    error    = function(e) list(ok = FALSE, error = e)
+  )
+  ```
+
+  Catch once, decide afterwards, re-signal from outside every handler:
+
+  ```r
+  out <- tryCatch(list(ok = TRUE, value = risky()),
+                  error = function(e) list(ok = FALSE, error = e))
+  if (!isTRUE(out$ok) && inherits(out$error, "my_class")) stop(out$error)
+  ```
+
+- **`purrr::map()` and friends re-signal whatever the mapped function threw as their own error.**
+  The result carries `purrr_error_indexed` / `rlang_error` and the original condition is demoted to
+  its `parent`, so `inherits(e, "my_class")` is `FALSE` and a class-specific `tryCatch` handler never
+  fires. Where a mapped function is expected to raise a condition the caller dispatches on, use
+  `lapply()` / `vapply()` and say why in a comment -- otherwise the next tidy-up puts `purrr::map()`
+  back.
+### Adding a field to a metadata document is not the same size of change on each list
+
+Landed 2026-09-10 with `kind` (which kind of artifact the document describes) entering per-artifact
+metadata. Two lists exist -- `.datom_metadata_identity_fields` (hashed into the version) and
+`.datom_metadata_excluded_fields` (known and deliberately not hashed), both in `R/utils-sha.R` -- and
+which one a new field lands on decides whether the release is free or costs every artifact a version.
+
+- **A field added to the IDENTITY list re-mints one version for every existing artifact.** Change
+  detection recomputes the document's identity from the stored document and compares it with the
+  recorded version (`.datom_has_changes()`), so a document that has gained an identity field
+  disagrees with its own recorded version. The next write of each artifact therefore reports
+  `metadata_only` and records a version, on content that never moved -- once per artifact, at its
+  next write, in every repo. **This is a design decision, not a defect to fix at implementation
+  time.** Take it deliberately, and say it in NEWS: the cost is bounded and in the safe direction,
+  because `data_sha` does not move, so the storage address does not move, the payload is reused and
+  nothing is re-uploaded.
+
+- **A field added to the excluded list costs nothing**, which is why `schema_version`,
+  `original_format` and `document_sha` are all there. The question to ask is never "is this field
+  cheap" but "can two artifacts that differ only in this field be allowed to share a version".
+
+- **Adding either kind still forces every writer in the fleet to upgrade**, through the vocabulary
+  check rather than through identity, so "additive is free" is only ever free *for readers*. See the
+  forward-compatibility section of `.github/copilot-instructions.md`.
+
+- **Both lists are guarded by tests that fail when a builder gains a field, in both directions**
+  (`test-utils-sha.R`): every field a builder emits must be classified, and nothing may be classified
+  before a builder emits it. The second arm carries an exception vector that is currently empty. They
+  are not tests to update -- they are where the decision gets made.
+
+### A declared-but-unpopulated field has to be spelled `list(x = NULL)`, not a conditional assign
+
+`list(a = 1, b = NULL)` keeps `b` as a name; `meta$b <- NULL` **removes** it. So the two ways of
+writing "this field exists but its value is not known yet" are not interchangeable, and datom uses
+both deliberately:
+
+- **Declared, because the value arrives later in the same pipeline.** `parquet_sha` in
+  `.datom_build_metadata()` and `document_sha` in `.datom_build_set_metadata()` are both declared as
+  `NULL` because the byte hash is not knowable until the payload has been serialized. Both fields are
+  outside the version identity, which is what makes the deferred assignment safe.
+- **Conditionally assigned, because absence is a real state.** `original_file_sha`, `parents`,
+  `custom` and friends are added only when non-NULL, so an absent field is spelled by omitting the
+  key rather than by a null value.
+
+**`jsonlite` does NOT omit a NULL element -- it writes `{}`.** Verified:
+`write_json(list(kind = "set", document_sha = NULL), auto_unbox = TRUE)` produces
+`{"kind":"set","document_sha":{}}`, and reading that back gives an empty named list rather than an
+absent key. (An earlier version of this note, and design.md section 4 of the datom-sets spec, both
+claimed the key is dropped. It is not. The claim was believed because the case never arises today,
+for the reason in the next paragraph.)
+
+**So a declared field must be populated -- or explicitly removed -- before the document is written.**
+`parquet_sha` gets away with it by accident of two paths: `datom_write()` either assigns a real hash
+or assigns `NULL`, and `meta$parquet_sha <- NULL` **removes** the element rather than setting it, so
+no `{}` has ever reached a file. Any new declared field inherits that obligation without inheriting
+the accident.
+
+The consequence for a field-set contract: a `setequal(names(meta), ...)` assertion about the
+in-memory object is satisfied by a key whose value is `{}`, so it cannot tell a populated document
+from an unpopulated one. That is a reason to assert on the written bytes wherever the count is
+load-bearing, not a reason to switch to a conditional assign -- the conditional form drops the key
+from the in-memory object too, which breaks the contract outright.
+
+**The same fact decides the OPPOSITE way one level down, in a set member.** A member with no tags
+must **omit** the key: a payload is a list of member records, none of which has a fixed field set to
+honour, and R2.10 says a writer never emits `"tags": {}`. So `datom_member()` builds the record with
+`list(id = ...)` and adds `tags` only when there are any -- the spelling `list(id = ..., tags = tags)`
+would keep the name and put an empty object into every untagged member of the stored file.
+
+**Nothing about identity can catch either case, which is what makes them worth a note.** An absent
+tag map and an empty one both encode as `h(0x03)` under `datom-sv1`, so no hash moves and no golden
+changes; a test that compares hashes passes whichever spelling is used. The guard has to be an
+assertion on the emitted JSON. The rule to carry: **decide per field whether absence is a real state,
+then assert on the bytes, because the in-memory object and the identity hash are both blind to the
+difference.**
+
+### A probe fixture can be small enough to pass by coin flip
+
+Found 2026-09-13 while probing the set write. The rule datom relies on is that breaking the code on
+purpose reddens something -- so a probe that reddens **nothing** is either evidence the guard is
+missing or evidence the fixture is too small to distinguish the two behaviours. Distinguish them
+before concluding either.
+
+The concrete case: the set payload's members are sorted by name in the file and by digest in the hash,
+deliberately, and swapping the file to digest order reddened **zero** assertions. The guard existed;
+the fixture had **two** members, and two items sorted by digest agree with name order half the time.
+With five members it is one chance in 120, and the fixture is now five names pinned at one version
+where digest order is the exact **reverse** of name order -- asserted inside the test, so the pinning
+is visible rather than incidental.
+
+The generalisation: **a fixture for an ordering, dedup, or selection rule needs enough elements that
+the wrong rule cannot coincide with the right one.** Two is almost always too few. Where a fixture can
+be chosen so the two rules disagree outright, assert that disagreement in the test body -- otherwise
+the next reader cannot tell a pinned fixture from an arbitrary one.
+
+### `l[["missing"]]` on a list is a subscript ERROR, not NULL
+
+`list(a = 1)$b` is `NULL`; `list(a = 1)[["b"]]` aborts with "subscript out of bounds". So the
+`x[[field]] %||% default` shape -- which reads as the obvious way to take an optional field whose
+**name is in a variable** -- fails on exactly the documents it exists for.
+
+Hit while generalising the version-history scan to look up either `parquet_sha` or `document_sha` by
+name (`.datom_lookup_history_object_sha()`, `R/read_write.R`): every history entry written before a
+field existed lacks it, which is the normal case rather than the edge case. Test presence first:
+
+```r
+if (!is.list(entry) || !(field %in% names(entry))) return("")
+value <- entry[[field]]
+```
+
+`purrr::pluck(entry, field)` also returns NULL and is fine; `$` is not available when the name is a
+variable, which is what makes this shape tempting in the first place.
+
+### A probe harness must restore from its own copy, never from `git checkout`
+
+Learned expensively on 2026-09-14, probing the set read. The probe loop is: apply a deliberate
+defect, run the affected tests, count what reddens, put the code back. A harness that put the code
+back with
+
+```sh
+git checkout -- R/set.R R/read_write.R   # NEVER do this in a probe loop
+```
+
+deleted the entire task's implementation, because HEAD predates it. **The code under probe is by
+definition uncommitted** -- that is what the probe is checking -- so git is the one restore source
+that cannot work. Copy the files to a temp directory before the first probe and restore from those
+copies:
+
+```python
+shutil.copy2(src, backup)   # once, before any probe
+...
+shutil.copy2(backup, src)   # after each probe
+```
+
+Two things made the recovery cheap and are worth arranging in advance: `devtools::document()` had
+already been run, so every roxygen block survived in `man/*.Rd`, and the test file was a separate
+new file the harness did not touch. Recovery was verified by re-running `document()` (the `man/`
+diff came back empty) and by line count against the earlier `git diff --stat`.
+
+If a probe run must touch tracked files, `git stash` is not a fix either -- it is the same class of
+tool. Commit the work first, or copy it aside.
+
+**And the copy must be taken once, from a tree known to be good.** Learned the next day, 2026-09-15,
+following the rule above and still corrupting the tree. A probe crashed partway through -- the
+deliberate defect made the package fail to load, which the harness did not survive -- so the tree was
+left mutated. The harness was then re-run, and its first act was to take a **fresh** backup: it copied
+the mutated files and recorded them as pristine. The next probe layered its own defect on top, and the
+result was a source file carrying two deliberate defects with no clean copy anywhere. Repair was by
+hand, from knowledge of what had been written.
+
+Three cheap habits remove it:
+
+* **A fixed backup path, reused.** `file.path(tempdir(), "probe-pristine")` rather than
+  `tempfile()`. If the directory already exists, restore from it and do not overwrite it.
+* **Refuse to take a backup from a tree that does not parse.** Two lines, and it is the check that
+  would have caught this one.
+* **Restore inside the error handler, not only on the happy path.** A probe whose defect stops the
+  package from loading is a *successful* probe; the harness has to treat that as a result and clean
+  up, not propagate it and stop.
+
+### A closure leaks a connection only once the connection has been FORCED
+
+Also 2026-09-14, while pinning that `$fetch` on a set member carries no credentials. The hazard is
+real: a factory defined *inside* a function that holds `conn` puts that frame on the closure's parent
+chain, and `saveRDS()` then writes the PAT into the file. But the first probe of the broken shape
+found **no** token in the bytes, which looked like the guard being unnecessary.
+
+The reason is R's lazy arguments. In the probe, the outer function never used `conn`, so it was still
+an unevaluated promise whose environment is the **caller's** -- and for `saveRDS()` the global
+environment serializes as a reference rather than by value, so nothing came along. Adding one line
+that touched `conn` reproduced the leak exactly.
+
+Two consequences. **For the code**: a namespace-level factory is not enough on its own; every
+argument gets `force()`d, so nothing is left as a promise pointing back at a frame that holds a
+connection. **For the test**: search the serialized bytes for a token **value** the fixture invents,
+not for a field name -- a dev-loaded package keeps source references, so the serialized closure
+carries the text of its own source file, which mentions `github_pat` in an example. And use
+`grepRaw()`: `rawToChar()` refuses the embedded NULs in serialized R objects.
+
+### What git2r stages, and what a commit-shaped test actually proves
+
+Landed 2026-09-18 with `datom_repo_commit()` / `datom_repo_push()` (datom-sets Task 12). Every
+claim here was settled by **running git2r**, because each of them reads plausibly either way.
+
+**Staging.** `.datom_git_commit()` has one staging call with two spellings, and they are not
+interchangeable:
+
+| Call | `.gitignore` | deletions | Use for |
+|---|---|---|---|
+| `git2r::add(repo, files)` -- default | **respected** | **staged** | everything, including `files = "."` |
+| `git2r::add(repo, files, force = TRUE)` -- what `staged_deletions = TRUE` sets | **ignored -- gitignored files ARE staged** | staged | staging a path git would refuse |
+
+- **`files = "."` is a legal add-all through the ordinary helper.** `fs::file_exists(".")` is
+  `TRUE`, so it passes the existence pre-check, and default flags give exactly "what `git add .`
+  would stage". No separate staging code is needed for an add-all wrapper.
+- **`staged_deletions = TRUE` is the trap.** It exists to skip the existence check, which is what
+  an author reaches for to make deletions work -- and it silently starts staging gitignored files.
+  It is also unnecessary, since default flags already stage deletions.
+- **An explicitly named gitignored path is dropped in SILENCE.** `git2r::add(repo, "ignored.txt")`
+  raises no error and stages nothing. `.datom_git_commit()` cannot notice, because it only objects
+  when **nothing at all** is staged and datom's own files always are -- so the commit succeeds
+  carrying everything except the file the caller asked for. Any feature that takes a caller-supplied
+  file list has to check for this itself; `datom_write_set(include_paths =)` does, in
+  `.datom_check_include_paths()` (`R/set.R`).
+- **There is no check-ignore verb in git2r.** The only route is
+  `git2r::status(repo, staged = FALSE, unstaged = FALSE, untracked = FALSE, ignored = TRUE)`, and
+  two properties of its answer decide how to use it. It reports an ignored **directory** with a
+  trailing slash (`cache/`) and does **not** recurse into it, even with
+  `all_untracked = TRUE` -- so match a caller's path as a **prefix** against a slash-stripped list,
+  or every file inside an ignored directory passes the check. And a **tracked** file is never
+  reported as ignored, which is correct rather than a gap: git stages it regardless of the rules, so
+  it really does reach the commit. `.datom_git_ignored()` (`R/set.R`) wraps both facts.
+- **`.datom_git_commit()` returning HEAD's SHA on an empty staging is a SUCCESS value, not a
+  sentinel.** A wrapper that must report "nothing to do" cannot get that from the return value; the
+  cheap way is to capture HEAD before and compare after, which is what `datom_repo_commit()` does.
+
+**`git2r::status()` reports an untracked DIRECTORY, not its contents.** A new `dp/notes.txt` in an
+otherwise-untracked `dp/` shows up as `dp/`. Assert the directory, or add the file to a directory
+git already tracks. This also reaches `datom_status()`, which passes git's answer through.
+
+**Asserting on a commit's real tree.** A test that mocks `.datom_git_commit()` and inspects the
+`files` argument it captured proves the wrapper passed a list, **not** that the commit contains that
+list -- so it stays green through an add-all refactor, which is exactly the regression the
+machine-commit isolation guarantee exists to catch. Read the real tree instead:
+
+```r
+entries <- git2r::ls_tree(repo = repo, tree = git2r::tree(commit))
+paths   <- paste0(entries$path, entries$name)   # `path` carries a trailing slash
+blob    <- git2r::lookup(repo, entries$sha[paths == "R/foo.R"])
+git2r::content(blob)                            # the bytes the commit holds
+```
+
+- **Assert content, not presence, for a tracked file.** The path is in the tree either way if the
+  file was committed earlier; the claim worth making is that the tree still holds the *old* bytes.
+- **Assert the working tree separately.** A write that "helpfully" committed or reset the edit are
+  two different defects, and only the second leaves the tree clean.
+
+**`fs::path_rel()` with a relative first argument resolves it against the working directory**, so
+`fs::path_rel("dp/build.R", "/tmp/repo")` returns `"../../private/tmp/dp/build.R"`. Anything handed
+to `.datom_commit_and_mirror()` must be an **absolute** path, since that function relativises what
+it is given against `conn$path`. The failure is loud (`.datom_git_commit()` aborts "files do not
+exist"), so this costs minutes rather than correctness -- but repo-relative input has to be
+absolutised first.

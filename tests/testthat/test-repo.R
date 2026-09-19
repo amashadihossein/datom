@@ -31,7 +31,7 @@ seed_git_repo <- function(path) {
   repo
 }
 
-write_project_yaml <- function(path, extra_storage = NULL) {
+write_project_yaml <- function(path, extra_storage = NULL, schema_version = NULL) {
   cfg <- list(
     project_name = "TEST_PROJECT",
     datom_version = "0.1.0",
@@ -47,6 +47,12 @@ write_project_yaml <- function(path, extra_storage = NULL) {
     ),
     repos = list(data = list(remote_url = "https://example.com/repo.git"))
   )
+  # Added conditionally rather than as a NULL slot: a NULL round-trips through
+  # yaml as `~` and reads back as an explicit NULL, which is a different document
+  # from one where the key is simply absent. Absent is the state every repo
+  # written before the field existed is in, and every other test here relies on
+  # it, so it has to be the real absence.
+  if (!is.null(schema_version)) cfg$schema_version <- schema_version
   fs::dir_create(fs::path(path, ".datom"))
   yaml::write_yaml(cfg, fs::path(path, ".datom", "project.yaml"))
 }
@@ -92,6 +98,45 @@ test_that("datom_repo_set_data_store() errors when project.yaml missing", {
     conn  <- make_dev_conn(getwd())
     store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
     expect_error(datom_repo_set_data_store(conn, store), "project.yaml")
+  })
+})
+
+test_that("datom_repo_set_data_store() refuses a config format it cannot read", {
+  # This verb is the only writer of project.yaml besides datom_init_repo(), and it
+  # does not merely write: it merges a `storage$data` block into the document on
+  # this build's assumptions, then commits and pushes, so a shape this build
+  # cannot read would be edited wrongly and then distributed to everyone sharing
+  # the repo. A format that reparented those keys gets a stale block beside the
+  # real one.
+  #
+  # The connection-time gate does not cover this. It ran on the file as it was
+  # when the connection opened, and a hand edit or a pull since then replaces it
+  # -- which is not contrived here, because this is the storage-migration verb,
+  # called exactly when somebody is reorganising storage by hand.
+  #
+  # No git repo and no push stub are needed: the refusal happens before the merge,
+  # so nothing reaches the commit.
+  withr::with_tempdir({
+    repo_path <- fs::dir_create("repo")
+    write_project_yaml(repo_path, schema_version = .datom_project_schema + 1L)
+    yaml_path <- fs::path(repo_path, ".datom", "project.yaml")
+    before <- readLines(yaml_path, warn = FALSE)
+
+    conn      <- make_dev_conn(repo_path)
+    new_store <- datom_store_local(fs::dir_create("new-store"), validate = FALSE)
+
+    err <- expect_error(
+      datom_repo_set_data_store(conn, new_store),
+      class = "datom_schema_unsupported"
+    )
+    msg <- conditionMessage(err)
+    expect_match(msg, "project.yaml", fixed = TRUE)
+    # Worded for a write, because a write is what was stopped.
+    expect_match(msg, "cannot write")
+    expect_match(msg, paste0("supports up to v", .datom_project_schema))
+
+    # And the file is byte-identical: the refusal is a door, not a rollback.
+    expect_identical(readLines(yaml_path, warn = FALSE), before)
   })
 })
 
@@ -720,4 +765,329 @@ test_that("datom_repo_attach_governance() returns SHA invisibly", {
     expect_false(result$visible)
     expect_type(result$value, "character")
   })
+})
+
+
+# === The sanctioned git-mutation surface ======================================
+#
+# datom_repo_commit() / datom_repo_push() exist so a downstream package can put
+# its own content in the data repo without importing git2r. Nothing is mocked
+# here: every claim is about what git ends up holding -- which file is in the
+# commit's tree, whether the remote moved -- and a mock of the commit or the push
+# would be asserting that the wrapper called the function the wrapper calls.
+#
+# The one fixture note worth carrying: the remote is a bare repo on disk, and its
+# branch is read by name rather than through HEAD, because `git2r::init()` honours
+# init.defaultBranch and the two repos need not agree about what that name is.
+
+local_git_verb_conn <- function(env = parent.frame()) {
+  root <- withr::local_tempdir(.local_envir = env)
+
+  repo_dir <- fs::path(root, "repo")
+  bare_dir <- fs::path(root, "remote.git")
+  fs::dir_create(c(repo_dir, bare_dir))
+
+  git2r::init(bare_dir, bare = TRUE)
+  repo <- seed_git_repo(repo_dir)
+  writeLines("init", fs::path(repo_dir, "README.md"))
+  writeLines("secret.txt", fs::path(repo_dir, ".gitignore"))
+  writeLines("delete me", fs::path(repo_dir, "drop.txt"))
+  git2r::add(repo, c("README.md", ".gitignore", "drop.txt"))
+  git2r::commit(repo, "Initial commit")
+  git2r::remote_add(repo, name = "origin", url = as.character(bare_dir))
+  git2r::push(repo, name = "origin", refspec = test_head_refspec(repo),
+              set_upstream = TRUE)
+
+  list(
+    conn = make_dev_conn(repo_dir),
+    repo = repo,
+    repo_dir = repo_dir,
+    bare = git2r::repository(bare_dir),
+    branch = test_head_branch(repo)
+  )
+}
+
+rv_head <- function(repo) {
+  as.character(git2r::revparse_single(repo, "HEAD")$sha)
+}
+
+# The remote's tip for a named branch. Read by branch name, never via the bare
+# repo's HEAD, which points at whatever init.defaultBranch said.
+rv_remote_head <- function(fx) {
+  branches <- git2r::branches(fx$bare, flags = "local")
+  b <- branches[[fx$branch]]
+  if (is.null(b)) return(NA_character_)
+  as.character(git2r::branch_target(b))
+}
+
+rv_tree_paths <- function(repo, rev = "HEAD") {
+  commit <- git2r::revparse_single(repo, rev)
+  entries <- git2r::ls_tree(repo = repo, tree = git2r::tree(commit))
+  paste0(entries$path, entries$name)
+}
+
+rv_tree_content <- function(repo, path, rev = "HEAD") {
+  commit <- git2r::revparse_single(repo, rev)
+  entries <- git2r::ls_tree(repo = repo, tree = git2r::tree(commit))
+  row <- entries[paste0(entries$path, entries$name) == path, , drop = FALSE]
+  if (nrow(row) != 1L) {
+    stop("rv_tree_content(): expected one entry at ", path, ", found ", nrow(row),
+         call. = FALSE)
+  }
+  git2r::content(git2r::lookup(repo, row$sha[[1L]]))
+}
+
+
+# --- datom_repo_commit(): staging semantics (AC17) ----------------------------
+
+test_that("datom_repo_commit(paths = NULL) stages tracked, untracked and deleted, minus gitignored", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+
+  writeLines("changed", fs::path(fx$repo_dir, "README.md"))   # tracked, modified
+  writeLines("new", fs::path(fx$repo_dir, "new.txt"))         # untracked
+  writeLines("shh", fs::path(fx$repo_dir, "secret.txt"))      # gitignored
+  fs::file_delete(fs::path(fx$repo_dir, "drop.txt"))          # tracked, deleted
+
+  # The deletion is here for a reason: the flag an author reaches for to make
+  # deletions work (`staged_deletions = TRUE`) sets git2r::add(force = TRUE),
+  # which also stages gitignored files. Both halves are asserted in one commit so
+  # that shortcut cannot pass.
+  sha <- suppressMessages(datom_repo_commit(fx$conn, "Human commit", push = FALSE))
+
+  paths <- rv_tree_paths(fx$repo)
+  expect_identical(rv_tree_content(fx$repo, "README.md"), "changed")
+  expect_true("new.txt" %in% paths)
+  expect_false("secret.txt" %in% paths)
+  expect_false("drop.txt" %in% paths)
+  expect_true(".gitignore" %in% paths)   # still tracked; the ignore rule still applies
+  expect_identical(sha, rv_head(fx$repo))
+
+  # Nothing left behind: the ignored file is not staged either, which a tree
+  # assertion alone cannot see.
+  status <- git2r::status(fx$repo)
+  expect_length(unlist(status$staged, use.names = FALSE), 0L)
+})
+
+test_that("datom_repo_commit(paths = ) stages exactly those paths", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+
+  writeLines("a", fs::path(fx$repo_dir, "a.txt"))
+  writeLines("b", fs::path(fx$repo_dir, "b.txt"))
+
+  suppressMessages(datom_repo_commit(fx$conn, "Just a", paths = "a.txt", push = FALSE))
+
+  paths <- rv_tree_paths(fx$repo)
+  expect_true("a.txt" %in% paths)
+  expect_false("b.txt" %in% paths)
+  expect_true("b.txt" %in% unlist(git2r::status(fx$repo)$untracked, use.names = FALSE))
+})
+
+test_that("datom_repo_commit() refuses a reader conn", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+  fx$conn$role <- "reader"
+
+  expect_error(datom_repo_commit(fx$conn, "nope"), "developer connection")
+})
+
+test_that("datom_repo_commit() validates message, paths and push", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+
+  expect_error(datom_repo_commit(fx$conn, ""), "non-empty character")
+  expect_error(datom_repo_commit(fx$conn, c("a", "b")), "non-empty character")
+  expect_error(datom_repo_commit(fx$conn, "m", paths = character()), "character vector")
+  expect_error(datom_repo_commit(fx$conn, "m", paths = 1L), "character vector")
+  expect_error(datom_repo_commit(fx$conn, "m", push = NA), "TRUE")
+})
+
+
+# --- datom_repo_commit(): idempotence and the push qualification (AC17) -------
+
+test_that("datom_repo_commit() on a clean tree creates no commit and is not an error", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+  before <- rv_head(fx$repo)
+
+  expect_message(
+    datom_repo_commit(fx$conn, "Nothing here", push = FALSE),
+    "Nothing to commit"
+  )
+
+  # Separate call rather than wrapping the one above: expect_message() returns
+  # the condition, so withVisible() around it would inspect the message object
+  # instead of the verb's return value. A second no-op is free.
+  result <- withVisible(
+    suppressMessages(datom_repo_commit(fx$conn, "Nothing here", push = FALSE))
+  )
+
+  expect_null(result$value)
+  expect_false(result$visible)
+  expect_identical(rv_head(fx$repo), before)
+})
+
+test_that("datom_repo_commit(push = FALSE) leaves the remote untouched", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+  remote_before <- rv_remote_head(fx)
+
+  writeLines("x", fs::path(fx$repo_dir, "x.txt"))
+  sha <- suppressMessages(datom_repo_commit(fx$conn, "Local only", push = FALSE))
+
+  expect_identical(rv_head(fx$repo), sha)
+  expect_identical(rv_remote_head(fx), remote_before)
+  expect_false(identical(rv_remote_head(fx), sha))
+})
+
+test_that("a clean tree with push = TRUE still pushes when the branch is ahead", {
+  skip_if_not_installed("git2r")
+
+  # The R15.5 qualification, and the failure it prevents is silent: if the no-op
+  # path returned before pushing, one failed push would leave the remote behind
+  # forever, because every later call finds a clean tree and returns early.
+  fx <- local_git_verb_conn()
+
+  writeLines("x", fs::path(fx$repo_dir, "x.txt"))
+  sha <- suppressMessages(datom_repo_commit(fx$conn, "Local only", push = FALSE))
+  expect_false(identical(rv_remote_head(fx), sha))
+
+  head_before <- rv_head(fx$repo)
+  result <- suppressMessages(datom_repo_commit(fx$conn, "Nothing to commit now"))
+
+  expect_null(result)                              # no commit was created
+  expect_identical(rv_head(fx$repo), head_before)  # ... and none appeared
+  expect_identical(rv_remote_head(fx), sha)        # ... but the push happened
+})
+
+test_that("a clean tree with push = TRUE and nothing ahead does not push", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+
+  writeLines("x", fs::path(fx$repo_dir, "x.txt"))
+  sha <- suppressMessages(datom_repo_commit(fx$conn, "Pushed"))
+  expect_identical(rv_remote_head(fx), sha)
+
+  expect_message(
+    datom_repo_commit(fx$conn, "Again"),
+    "Remote already has every commit"
+  )
+  expect_identical(rv_remote_head(fx), sha)
+})
+
+test_that("datom_repo_commit() commits and pushes in one call", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+
+  writeLines("x", fs::path(fx$repo_dir, "x.txt"))
+  sha <- suppressMessages(datom_repo_commit(fx$conn, "Add x"))
+
+  expect_identical(rv_head(fx$repo), sha)
+  expect_identical(rv_remote_head(fx), sha)
+})
+
+
+# --- The guards both verbs assert (R15.7, R15.8) ------------------------------
+
+test_that("datom_repo_commit() refuses a detached HEAD even with push = FALSE", {
+  skip_if_not_installed("git2r")
+
+  # The guard lives in `.datom_git_branch()` and is reached only from
+  # `.datom_git_push()`, so `push = FALSE` is exactly the case that would slip
+  # through if it were inherited rather than asserted. A commit onto a detached
+  # HEAD succeeds, prints a SHA, and is unreachable once the branch is checked
+  # out again -- with no push to reveal it.
+  fx <- local_git_verb_conn()
+  git2r::checkout(git2r::revparse_single(fx$repo, "HEAD"))
+  expect_true(git2r::is_detached(fx$repo))
+
+  writeLines("x", fs::path(fx$repo_dir, "x.txt"))
+  head_before <- rv_head(fx$repo)
+
+  expect_error(
+    datom_repo_commit(fx$conn, "On a detached head", push = FALSE),
+    "detached"
+  )
+  expect_identical(rv_head(fx$repo), head_before)
+})
+
+test_that("datom_repo_push() refuses a detached HEAD, by the guard it inherits", {
+  skip_if_not_installed("git2r")
+
+  # Inherited rather than asserted, and that asymmetry with the commit verb was
+  # settled by probe: adding an explicit assert here reddened nothing. The
+  # nothing-to-push early return needs an ahead count, the count needs an upstream
+  # tracking ref, and a detached HEAD has none -- so this verb always reaches
+  # `.datom_git_push()`, which checks. The commit verb has no such backstop with
+  # `push = FALSE`, which is where the explicit assert earns its line.
+  fx <- local_git_verb_conn()
+  git2r::checkout(git2r::revparse_single(fx$repo, "HEAD"))
+
+  expect_error(datom_repo_push(fx$conn), "detached")
+})
+
+test_that("both verbs refuse a repo with no remote, naming the recourse", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+  git2r::remote_remove(fx$repo, "origin")
+
+  # Classed rather than text-matched: `.datom_git_push()` would otherwise fail
+  # here with R's own subscript-out-of-bounds error from `remotes(repo)[[1L]]`.
+  expect_error(datom_repo_push(fx$conn), class = "datom_no_git_remote")
+  expect_error(datom_repo_commit(fx$conn, "m"), class = "datom_no_git_remote")
+
+  # push = FALSE is a local operation and stays legal without a remote.
+  writeLines("x", fs::path(fx$repo_dir, "x.txt"))
+  expect_type(
+    suppressMessages(datom_repo_commit(fx$conn, "Local", push = FALSE)),
+    "character"
+  )
+})
+
+
+# --- datom_repo_push() convergence (AC21) ------------------------------------
+
+test_that("datom_repo_push() advances the remote and is a no-op the second time", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+
+  writeLines("x", fs::path(fx$repo_dir, "x.txt"))
+  sha <- suppressMessages(datom_repo_commit(fx$conn, "Commit only", push = FALSE))
+  expect_false(identical(rv_remote_head(fx), sha))
+
+  result <- withVisible(suppressMessages(datom_repo_push(fx$conn)))
+  expect_true(result$value)
+  expect_false(result$visible)
+  expect_identical(rv_remote_head(fx), sha)
+
+  # Convergent, not imperative: nothing to push is information, not an error.
+  expect_message(datom_repo_push(fx$conn), "Nothing to push")
+  expect_identical(rv_remote_head(fx), sha)
+})
+
+test_that("datom_repo_push() refuses a reader conn and a conn with no clone", {
+  skip_if_not_installed("git2r")
+
+  fx <- local_git_verb_conn()
+
+  reader <- fx$conn
+  reader$role <- "reader"
+  expect_error(datom_repo_push(reader), "developer connection")
+
+  pathless <- fx$conn
+  pathless$path <- NULL
+  expect_error(datom_repo_push(pathless), "no local repo")
+
+  expect_error(datom_repo_push("not-a-conn"), "datom_conn")
 })

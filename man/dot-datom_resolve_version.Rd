@@ -2,32 +2,59 @@
 % Please edit documentation in R/read_write.R
 \name{.datom_resolve_version}
 \alias{.datom_resolve_version}
-\title{Resolve Version to data_sha and parquet_sha}
+\title{Resolve Version to data_sha, Stored-Object Hash and Recorded Version}
 \usage{
-.datom_resolve_version(metadata_list, version = NULL, name = "table")
+.datom_resolve_version(
+  metadata_list,
+  version = NULL,
+  name = "table",
+  field = "parquet_sha"
+)
 }
 \arguments{
 \item{metadata_list}{Return value of \code{\link[=.datom_read_metadata]{.datom_read_metadata()}}.}
 
-\item{version}{NULL (current) or a metadata_sha string.}
+\item{version}{NULL (current) or a metadata_sha string / prefix.}
 
-\item{name}{Table name (for error messages).}
+\item{name}{Artifact name (for error messages).}
+
+\item{field}{Which recorded stored-object hash to resolve:
+\code{"parquet_sha"} (a table's parquet) or \code{"document_sha"} (a set's payload).}
 }
 \value{
-Named list with \code{data_sha} (character) and \code{parquet_sha}
-(character or NULL) for the resolved version.
+Named list with \code{data_sha} (character), \code{object_sha} (character or
+\code{NULL}) and \code{version} (character or \code{NULL}) for the resolved version.
 }
 \description{
 Given metadata from \code{\link[=.datom_read_metadata]{.datom_read_metadata()}}, resolves a version spec
-to the corresponding \code{data_sha} (the storage address) and the recorded
-\code{parquet_sha} (the stored-object integrity hash). If \code{version} is NULL,
-resolves from the current \code{metadata.json}; if a metadata_sha string, looks
-it up in \code{version_history.json}.
+to the corresponding \code{data_sha} (the storage address), the recorded
+stored-object integrity hash, and the version string as \strong{recorded}. If
+\code{version} is NULL, resolves from the current \code{metadata.json}; if a
+metadata_sha string (or a prefix of one), looks it up in
+\code{version_history.json}.
 }
 \details{
-The \code{parquet_sha} may be \code{NULL}/\code{""} for pre-cv1 metadata, and for any
-version-pinned read until \code{version_history} entries persist \code{parquet_sha}
-(task 5.1). A \code{NULL}/empty \code{parquet_sha} tells \code{\link[=.datom_read_parquet]{.datom_read_parquet()}} to
-skip the integrity check (the intended pre-cv1 grace).
+\strong{One function, two kinds, one \code{field} argument.} A table's stored object is
+a parquet file pinned by \code{parquet_sha}; a set's is a JSON payload pinned by
+\code{document_sha}. The question is identical either way -- \emph{which recorded hash
+pins the version I just resolved} -- so a second copy of this lookup would
+eventually disagree with this one about prefix matching or about what an
+absent hash means. The resolved hash comes back as \code{object_sha} regardless,
+because the caller already knows which field it asked for.
+
+The \code{object_sha} may be \code{NULL}/\code{""}, and what that means is the caller's to
+decide, not this function's. For a table it is \strong{pre-cv1 metadata} and tells
+\code{\link[=.datom_read_parquet]{.datom_read_parquet()}} to skip the integrity check -- a grace for legacy
+metadata, not a gap in the current writer. For a set there is no legacy
+population, so the set read treats it as an error.
+
+\code{version} is the version \strong{recorded} for the resolved state, never
+recomputed: a pinned read echoes the matched history entry's own version
+string (so a caller who passed an 8-character prefix gets the full one back),
+and an unpinned read takes the current state's recorded version via
+\code{\link[=.datom_recorded_current_version]{.datom_recorded_current_version()}}. That helper returns \code{NULL} when the
+history records nothing matching the current document, which is a gap
+\code{datom_validate()} owns -- a manufactured version would be a wrong statement
+rather than a missing one.
 }
 \keyword{internal}

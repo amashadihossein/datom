@@ -6,6 +6,16 @@
   ".git", ".gitignore", "renv"
 )
 
+# The artifact kinds this build understands. A manifest entry, a per-artifact
+# metadata document, and a set member all declare one of these, and a value
+# outside the list is refused rather than tolerated -- an artifact nothing can
+# classify is one a reader cannot know how to resolve.
+#
+# APPEND-ONLY, for the same reason the write-side field vocabularies are: a
+# build that stopped recognising a kind would refuse an OLDER document, which
+# blocks the upgrade direction.
+.datom_artifact_kinds <- c("table", "set")
+
 
 #' Validate a datom Table Name
 #'
@@ -74,25 +84,153 @@
 }
 
 
+#' Validate a Caller-Supplied Relative Storage Key
+#'
+#' Guards a whole key string that a caller composed, as opposed to one datom
+#' built itself from validated parts. The internal key builders in
+#' `R/utils-path.R` need no such check: `.datom_validate_name()` admits only
+#' `[a-zA-Z0-9_ ()-]` and `.datom_validate_sha()` only hex, so their output
+#' cannot contain a `..` segment or a `datom/` segment. A key arriving through
+#' a public export has had no such filtering.
+#'
+#' Two distinct failures are caught:
+#'
+#' * **Traversal / shape.** A `..` segment or a leading `/` escapes the datom
+#'   namespace on the local backend, where the key is pasted into a path and
+#'   resolved by the filesystem (`.datom_local_path()`). This applies to reads
+#'   as much as to writes -- reading `../../secrets.json` is exactly the sort
+#'   of probe the guard sweep in #74 existed to close.
+#' * **A full key passed where a relative one belongs.** The two key shapes are
+#'   documented at the top of `R/utils-path.R`; mixing them does not error
+#'   today, it resolves under `{prefix}/datom/{prefix}/datom/...` and finds
+#'   nothing, which reads to the caller as a missing object rather than a
+#'   malformed key. A `datom` path segment is the detectable form, and it can
+#'   never occur in a legitimate relative key because `datom` is a reserved
+#'   artifact name (`.datom_reserved_names`).
+#'
+#' @param key Value to validate as a relative storage key.
+#' @param arg Name of the calling argument, used in the error message.
+#' @return Invisible `key` on success. Aborts otherwise.
+#' @keywords internal
+.datom_validate_rel_key <- function(key, arg = "key") {
+  if (!is.character(key) || length(key) != 1L || is.na(key)) {
+    cli::cli_abort("{.arg {arg}} must be a single non-NA character string.")
+  }
+
+  if (!nzchar(key)) {
+    cli::cli_abort("{.arg {arg}} must not be empty.")
+  }
+
+  if (grepl("^/", key)) {
+    cli::cli_abort(
+      c(
+        "{.arg {arg}} must be a relative storage key, not an absolute path.",
+        "x" = "Got: {.val {key}}",
+        "i" = "Drop the leading {.val /}: keys are resolved under the datom namespace."
+      )
+    )
+  }
+
+  segments <- strsplit(key, "/", fixed = TRUE)[[1]]
+
+  if (any(segments == "..")) {
+    cli::cli_abort(
+      c(
+        "{.arg {arg}} must not contain a {.val ..} path segment.",
+        "x" = "Got: {.val {key}}",
+        "i" = "Keys are confined to this project's datom namespace."
+      )
+    )
+  }
+
+  if (any(segments == "datom")) {
+    cli::cli_abort(
+      c(
+        "{.arg {arg}} looks like a full storage key, not a relative one.",
+        "x" = "Got: {.val {key}}",
+        "i" = "Relative keys start after {.val {{prefix}}/datom/} -- e.g. {.val dm/.metadata/metadata.json}, not {.val proj/datom/dm/.metadata/metadata.json}.",
+        "i" = "Passing a full key resolves under {.val {{prefix}}/datom/{{prefix}}/datom/} and finds nothing."
+      )
+    )
+  }
+
+  invisible(key)
+}
+
+
 # --- S3 namespace safety -------------------------------------------------------
 
-#' Check Whether an S3 Namespace is Free
+#' Check Whether a Storage Namespace is Free
 #'
-#' Checks for the existence of `.metadata/manifest.json` in the target S3
-#' namespace. If found, the namespace is occupied by an existing datom project.
-#' Returns `TRUE` if the namespace is free. Aborts with an actionable error
-#' if occupied, showing the existing project name when possible.
+#' Checks for the existence of `.metadata/manifest.json` in the target
+#' namespace. If found, the namespace is occupied by an existing datom project
+#' and this aborts with `datom_namespace_occupied`, naming the occupying project
+#' when it can be read.
 #'
-#' Uses `head_object` first (cheap) and only reads the manifest (via
-#' `get_object`) when the namespace is occupied, to extract the project name
-#' for the error message.
+#' Checks for the object first (cheap) and only reads the manifest when the
+#' namespace is occupied, to extract the project name for the error message.
+#'
+#' **A store this connection cannot reach means *unknown*, and unknown fails
+#' closed.** It used to warn and continue, which was not a deferral of the check
+#' but a silent removal of it: `datom_init_repo()` went on to push the git repo and
+#' then aborted at the manifest upload, and the recovery it pointed at performs no
+#' occupancy check of any kind. So the tolerance never produced a working offline
+#' init -- storage is required to finish one -- and its only reachable effect was
+#' getting past this check, with the outcome being a manifest written over another
+#' project's. Refusing here instead names the real problem at the moment it is
+#' known, rather than surfacing later as an unrelated upload failure.
+#'
+#' There is no `.force` advice in that refusal, deliberately: `.force` skips this
+#' check but not the manifest upload, so it cannot rescue an init without storage
+#' either. Offering it would be advice that does not work.
+#'
+#' **The tolerated-failure detection lives here, around the one call that touches
+#' storage**, rather than in a handler wrapping this whole function -- which is
+#' what the caller used to do. That shape had two defects worth not
+#' reintroducing: it recognised the occupied refusal by **matching its message
+#' text**, so rewording the message would have quietly downgraded a refusal to a
+#' warning; and it swallowed anything it could not recognise, so any abort added to
+#' this function later would have been downgraded too, with nothing failing to say
+#' so.
+#'
+#' **The condition classes are what callers dispatch on** -- never the message.
 #'
 #' @param conn A `datom_conn` object (typically a temporary conn built by
 #'   `datom_init_repo()` before the repo is fully initialised).
-#' @return Invisible `TRUE` if the namespace is free.
+#' @param overridable Whether the caller honours `.force` as a way past an
+#'   occupied namespace. `TRUE` (the default) adds that route to the refusal's
+#'   recourse; `FALSE` says the override does not apply and why.
+#'
+#'   **It exists because this function cannot know its caller's policy, which is
+#'   the same reason the backend label is an argument's worth of work rather than
+#'   a constant.** A product repo is checked with no opt-out, so a static
+#'   "pass `.force = TRUE` to override" bullet sent exactly those users into a
+#'   flag that changes nothing -- a message routing somebody in a circle, which is
+#'   the failure this function's own backend-neutral wording was fixed for one
+#'   commit earlier.
+#' @return Invisible `TRUE` when the namespace is free. Aborts with class
+#'   `datom_namespace_occupied` when it is occupied, or
+#'   `datom_namespace_unverified` when the store could not be reached.
 #' @keywords internal
-.datom_check_namespace_free <- function(conn) {
-  occupied <- .datom_storage_exists(conn, ".metadata/manifest.json")
+.datom_check_namespace_free <- function(conn, overridable = TRUE) {
+  label <- .datom_backend_label(conn)
+
+  occupied <- tryCatch(
+    .datom_storage_exists(conn, ".metadata/manifest.json"),
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Could not check whether the {label} namespace is already in use.",
+          "x" = conditionMessage(e),
+          "i" = "Refusing rather than assuming it is free: another project's \\
+                 manifest would be overwritten, and nothing downstream checks \\
+                 again.",
+          "i" = "Fix the cause (credentials, connectivity, permissions) and retry."
+        ),
+        class = "datom_namespace_unverified"
+      )
+    }
+  )
 
   if (!occupied) return(invisible(TRUE))
 
@@ -105,16 +243,206 @@
     "<unreadable>"
   })
 
-  s3_location <- paste0(
-    "s3://", conn$root, "/",
+  # Backend-neutral: an `s3://` scheme in front of a filesystem path, or advice to
+  # change a bucket the user does not have, is a confidently wrong message.
+  location <- paste0(
+    if (identical(conn$backend %||% "s3", "s3")) "s3://" else "",
+    conn$root, "/",
     if (!is.null(conn$prefix)) paste0(gsub("/+$", "", conn$prefix), "/") else "",
     "datom/"
   )
 
-  cli::cli_abort(c(
-    "S3 namespace is already occupied by project {.val {existing_project}}.",
-    "x" = "Location: {.val {s3_location}}",
-    "i" = "Each datom project must use a unique S3 namespace (bucket + prefix).",
-    "i" = "Use a different {.arg prefix} or {.arg bucket}, or pass {.code .force = TRUE} to override."
-  ))
+  cli::cli_abort(
+    c(
+      "{label} namespace is already occupied by project {.val {existing_project}}.",
+      "x" = "Location: {.val {location}}",
+      "i" = "Each datom project must use a unique namespace (location + prefix).",
+      "i" = if (isTRUE(overridable)) {
+        "Use a different {.arg prefix} or location, or pass \\
+         {.code .force = TRUE} to override."
+      } else {
+        "Use a different {.arg prefix} or location. There is no override here: \\
+         a whole namespace is what teardown and prefix-delete operate on, so \\
+         sharing one means deleting this project can delete the other's data."
+      }
+    ),
+    class = "datom_namespace_occupied"
+  )
 }
+
+# --- Repo schema version contract ---------------------------------------------
+
+# Highest repo schema version this build of datom can read.
+#
+# v1 is every repo written before the artifact namespace existed: those files
+# carry no `schema_version` field at all, and an absent field means v1.
+.datom_supported_schema <- 2L
+
+# Highest `.datom/project.yaml` format this build can read.
+#
+# Its OWN number, deliberately, rather than the shared ceiling above. The shared
+# ceiling works while every document on it is machine-written by one build in one
+# operation; `project.yaml` is written once at init and then hand-edited for
+# years, so its shape moves on its own clock. Keeping it separate means this stays
+# 1L through every manifest or metadata bump and moves only when the config's own
+# shape breaks -- and, more to the point, it means there are no false refusals.
+# The config check runs while a developer connection is built, so a build one
+# version behind on the shared ceiling would lose the whole developer path,
+# including reads that would have worked, on a file whose shape never changed.
+#
+# The hole this leaves is a FORGOTTEN bump: a shape change shipped with the number
+# unmoved is silently misread by an older build. `test-conn.R` closes it with a
+# test that fails when the key set `datom_init_repo()` writes changes without this
+# constant changing. That test forces a DECISION, not a bump -- an addition is
+# reader-safe, so extending the expected key set and leaving this at 1L is often
+# the right answer.
+.datom_project_schema <- 1L
+
+#' Check a Document's Declared Schema Version
+#'
+#' Reader-side compatibility check for one metadata or manifest document.
+#' Called wherever such a document enters datom from storage or from the local
+#' clone, so that a repo written by a *newer* datom fails with an actionable
+#' message instead of degrading silently -- an older reader would otherwise
+#' find none of the fields it expects and report an empty repo.
+#'
+#' The check is deliberately asymmetric:
+#'
+#' * **Newer than this build** -- abort, pointing at the upgrade. Continuing
+#'   would mean interpreting a format this build does not know.
+#' * **Absent** -- treated as v1 and tolerated, so every repo written before
+#'   `schema_version` existed keeps working unchanged.
+#' * **Equal or older** -- proceed.
+#'
+#' A present-but-unusable value (a string, a fraction, `NA`, a vector) aborts
+#' as a corrupt document rather than being coerced. Coercion here would compare
+#' garbage against the supported version and could silently read as
+#' "supported"; and in R a comparison against `NA` propagates into `if()` as an
+#' opaque "missing value where TRUE/FALSE needed" error rather than anything a
+#' user can act on.
+#'
+#' Both aborts carry a condition class so every call site is provably the same
+#' failure: `datom_schema_unsupported` for a too-new document,
+#' `datom_schema_invalid` for an unusable value.
+#'
+#' @param meta Parsed document (a named list). A non-list or `NULL` is treated
+#'   as carrying no `schema_version`, i.e. v1.
+#' @param source Path or key of the document, used in the message so the user
+#'   knows which file is too new.
+#' @param operation What the caller was about to do -- `"read"` (default) or
+#'   `"write"`. It only selects a word in the refusal message. An argument with
+#'   a default rather than a required one, so that every existing call site and
+#'   the message text they assert on are unchanged: without it a refused write
+#'   said the format was one "this build cannot read", which is the wrong verb
+#'   for a write that was stopped at the door.
+#' @param supported Highest version this caller can interpret, defaulting to the
+#'   repo-wide `.datom_supported_schema`. It feeds the comparison **and** the
+#'   message, so a refusal never says "supports up to v2" while refusing a v2
+#'   file.
+#'
+#'   The rule that predicts an override, so a future caller can derive it rather
+#'   than remember it: a document **datom writes** takes the repo-wide ceiling; a
+#'   document that outlives the build that created it and is then **edited by
+#'   hand** gets its own. The shared number holds while every document on it is
+#'   machine-written by one build in one operation. `.datom/project.yaml` is not
+#'   -- it is stamped once at init and hand-edited afterwards -- so it carries
+#'   `.datom_project_schema` and is checked through
+#'   [.datom_check_project_schema()], which is where that pairing lives.
+#' @return Invisible resolved schema version as an integer. Aborts otherwise.
+#' @keywords internal
+.datom_check_schema_version <- function(meta, source, operation = c("read", "write"),
+                                        supported = .datom_supported_schema) {
+  operation <- match.arg(operation)
+  declared <- if (is.list(meta)) meta[["schema_version"]] else NULL
+
+  if (is.null(declared)) return(invisible(1L))
+
+  usable <- length(declared) == 1L && is.numeric(declared) &&
+    !is.na(declared) && declared >= 1 && declared == trunc(declared)
+
+  if (!usable) {
+    cli::cli_abort(
+      c(
+        "{.field schema_version} in {.val {source}} is not a usable schema version.",
+        "x" = "Got: {.val {declared}}",
+        "i" = "Expected a single whole number, e.g. {.val {2L}}.",
+        "i" = "The document may be corrupt or hand-edited."
+      ),
+      class = "datom_schema_invalid"
+    )
+  }
+
+  declared <- as.integer(declared)
+
+  if (declared > supported) {
+    cli::cli_abort(
+      c(
+        "This repo uses datom schema v{declared}, which this build cannot {operation}.",
+        "x" = "Declared by {.val {source}}.",
+        "x" = "Installed datom {utils::packageVersion('datom')} supports up to v{supported}.",
+        "i" = "Upgrade with {.code remotes::install_github('amashadihossein/datom')}."
+      ),
+      class = "datom_schema_unsupported"
+    )
+  }
+
+  invisible(declared)
+}
+
+
+#' Check `project.yaml`'s Declared Format
+#'
+#' The same reader-side check every other datom-owned document gets, pinned to
+#' the config file's own ceiling (`.datom_project_schema`) rather than the
+#' repo-wide one. Absent means v1, which is every repo written so far, so no
+#' existing repo changes behaviour.
+#'
+#' **Why the file needs a declared format at all.** `project.yaml` carries fields
+#' a writer must *obey*, not merely fields it may read: `min_writer_version`
+#' already, and `mode` / `set` for a product repo. A build that does not
+#' recognise such a field walks past it and acts as though the repo had never
+#' asked for anything -- so the file needs a way to say "this repo needs a newer
+#' datom", and a number is that way.
+#'
+#' **A number here, a vocabulary check there, and the two are not
+#' interchangeable.** The vocabulary check that guards the manifest and
+#' per-artifact metadata draws its power from those documents being
+#' machine-written: an unrecognised key there *is* evidence a newer datom wrote
+#' it. `project.yaml` is hand-edited -- storage migrations, prefixes,
+#' descriptions, private notes -- so an unrecognised key is as likely a typo, and
+#' refusing on one would block every write in the repo until somebody found it.
+#' Never point the vocabulary check at this file; an unrecognised key here stays
+#' tolerated, and there is a test that says so.
+#'
+#' **This wrapper exists so the pairing of file and ceiling cannot be forgotten.**
+#' A bare `supported =` argument at each call site is the same shape as the
+#' artifact-kind predicate that was written out at four sites and lost a
+#' tolerance at one of them. Callers pass the parsed config; the ceiling is not
+#' theirs to choose.
+#'
+#' @param cfg Parsed `project.yaml` (a named list).
+#' @param source Path of the config file, named in the refusal message.
+#' @param operation What the caller was about to do. `"read"` (the default) is
+#'   what connection construction passes -- opening a connection is neither a
+#'   read nor a write, and "this build cannot read" is literally true of the
+#'   config file. `"write"` is for the set-write gates, which read this file to
+#'   decide whether a write may proceed.
+#' @return Invisible resolved version as an integer. Aborts otherwise.
+#' @keywords internal
+.datom_check_project_schema <- function(cfg, source,
+                                        operation = c("read", "write")) {
+  .datom_check_schema_version(
+    cfg,
+    source = source,
+    operation = match.arg(operation),
+    supported = .datom_project_schema
+  )
+}
+
+# The write-side half of the schema contract used to live here as
+# `.datom_check_write_schema()`, which read the clone's manifest itself and
+# checked nothing else. It is now one step of `.datom_check_write_entry()` in
+# `R/forward-compat.R`, alongside the floor, the reachable-shape refusal and the
+# vocabulary check -- one sequence rather than four doors, because they all have
+# to happen at the same moment: before any hashing, any local file write and any
+# commit.

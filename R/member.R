@@ -1,0 +1,584 @@
+# Set membership: the member constructor and the validator a set write runs.
+#
+# A member is a pure-data POINTER at one exact version of one artifact, plus
+# optional per-member tags:
+#
+#   { id: { project, name, kind, version }, tags: { ... } }
+#
+# The `id`/`tags` split is structural rather than cosmetic. `id` is a reference
+# record with four fixed single-string keys; `tags` is an open map of text
+# labels. Tags are what replace folder structure -- a folder puts an item in
+# exactly one place, whereas a multi-valued tag puts it in several at once, so
+# `domain = c("safety", "efficacy")` is the point and not an extension.
+#
+# THREE THINGS HERE ARE EASY TO GET WRONG BY ANALOGY WITH datom_parent().
+#
+#   1. A member carries NO `data_sha`. The version already pins content, so a
+#      second copy of that fact is a second thing to keep consistent. (The
+#      encoder in R/hashable-set.R aborts on any field outside `id`/`tags`, so
+#      adding one is loud rather than silent.)
+#   2. Tags are TIDIED, THEN VALIDATED -- in that order. Tidying first clears
+#      the spellings nobody can reasonably care about, so validation only ever
+#      reports genuine ambiguity; validating first would make the tidy rules
+#      unreachable.
+#   3. A member with no tags OMITS the key. It must never carry `tags = NULL`.
+#      The hash is identical either way, so nothing here would fail -- but
+#      `jsonlite` writes a NULL element as `{}` rather than dropping it, so
+#      every untagged member would land in the stored payload carrying an empty
+#      object, which is the one spelling a writer must never emit.
+#
+# There is deliberately NO cycle detection, no visited-set guard, and no depth
+# limit. A member pins an immutable version and declaring one requires that
+# version to already exist, so a set cannot reference anything that contains it
+# -- the same property that makes git history acyclic. datom also resolves one
+# level and never traverses. Both reasons are independently sufficient; do not
+# reintroduce any of the three as defensive code.
+
+
+#' Is a Value a Single Non-Empty, Non-Missing String?
+#'
+#' The field test used by the member validator. Deliberately **stricter than
+#' `.datom_validate_parents()`'s equivalent**, which accepts `NA_character_`:
+#' that value is character, has length 1, and `nzchar(NA_character_)` is `TRUE`,
+#' so the obvious three-part test lets it through. A missing value in a member's
+#' `id` would be spliced into a storage key or written into a citable payload,
+#' so it is refused here.
+#'
+#' @param x Value to test.
+#' @return `TRUE` or `FALSE`.
+#' @keywords internal
+.datom_is_text_scalar <- function(x) {
+  is.character(x) && length(x) == 1L && !is.na(x) && nzchar(x)
+}
+
+
+#' Drop Tag Keys Whose Value Is Empty
+#'
+#' The one tidy rule this file owns: a key that points at nothing is removed,
+#' because a tag with no values is spelled by omitting the key. Note this is
+#' about a tag *value*, not about a member having no tags at all -- a member with
+#' no tags is the ordinary case and is simply accepted. Nothing is lost here --
+#' an empty value states no fact -- and leaving it in would be worse than
+#' cosmetic:
+#' a present key with an empty value hashes differently from an absent key, so
+#' the same fact would mint two different `data_sha` values.
+#'
+#' Covers both empty spellings R produces. `character(0)` is the documented one;
+#' `NULL` is what an absent value looks like when a tag map is composed
+#' programmatically (`list(domain = f())` where `f()` returned nothing), and it
+#' means exactly the same thing. Note the encoder still refuses a `NULL` value,
+#' and must: there it arrives from a parsed file rather than from a caller, so
+#' there is no caller intent to tidy toward.
+#'
+#' Full canonicalization -- sorting keys, sorting and deduplicating values,
+#' unboxing single values, ordering members -- is **not** done here. It belongs
+#' to the set write, so that canonical form has exactly one implementation.
+#'
+#' @param tags A named list, or `NULL`.
+#' @return `tags` with empty-valued keys removed; `NULL` unchanged. A
+#'   non-list is returned untouched, so the validator reports the type rather
+#'   than this function failing on it.
+#' @keywords internal
+.datom_drop_empty_tags <- function(tags) {
+  if (is.null(tags) || !is.list(tags) || length(tags) == 0L) return(tags)
+
+  empty <- vapply(tags, function(v) length(v) == 0L, logical(1L))
+  if (!any(empty)) return(tags)
+
+  tags[!empty]
+}
+
+
+#' Validate a Tag Map
+#'
+#' The tag grammar, in one place, shared by [datom_member()] (its `tags`
+#' argument), the member validator (each member's `tags`), and the set write
+#' (set-level `tags`). A tag map is a named list whose values are UTF-8 strings
+#' or arrays of them -- no numbers, booleans, `null`, or nesting.
+#'
+#' Per-value type checking delegates to `.datom_sv1_as_strings()`, the same
+#' coercion the hash encoder uses, rather than restating its rules. That is
+#' deliberate: two copies of "what counts as text here" would eventually
+#' disagree, and the encoder's messages already name the offending key and the
+#' allowed types. What this function adds on top is the **empty-label** refusal,
+#' which the encoder does not make -- there, `""` hashes as an ordinary label.
+#'
+#' An empty value is **not** refused, because it is a tidy case rather than an
+#' error: call [.datom_drop_empty_tags()] first, which every caller does.
+#'
+#' @param tags A named list, or `NULL` (no tags).
+#' @param what Label used in error messages, e.g. `"tags"` or
+#'   `"members[[2]]$tags"`.
+#' @param remedy Optional `cli` bullet appended to every abort.
+#' @return Invisibly `TRUE`.
+#' @keywords internal
+.datom_validate_tag_map <- function(tags, what = "tags", remedy = NULL) {
+  if (is.null(tags)) return(invisible(TRUE))
+
+  bullets <- function(...) {
+    msg <- c(...)
+    if (!is.null(remedy)) msg <- c(msg, "i" = remedy)
+    msg
+  }
+
+  if (!is.list(tags) || (length(tags) > 0L && is.null(names(tags)))) {
+    cli::cli_abort(bullets(
+      paste0("{.field {what}} must be a named list, not ",
+             "{.cls {class(tags)}}."),
+      "i" = "For example: {.code list(type = \"output\")}."
+    ))
+  }
+  if (length(tags) == 0L) return(invisible(TRUE))
+
+  keys <- names(tags)
+  if (any(is.na(keys)) || !all(nzchar(keys))) {
+    cli::cli_abort(bullets(
+      "Every key in {.field {what}} must be a non-empty name.",
+      "i" = "An unnamed or blank key has no meaning as a tag."
+    ))
+  }
+  if (anyDuplicated(keys) > 0L) {
+    dup <- unique(keys[duplicated(keys)])
+    cli::cli_abort(bullets(
+      "{.field {what}} has {length(dup)} duplicate key{?s}: {.val {dup}}.",
+      "i" = paste0("Give one key several labels instead, e.g. ",
+                   "{.code list(domain = c(\"safety\", \"efficacy\"))}.")
+    ))
+  }
+
+  for (k in keys) {
+    label <- paste0(what, "$", k)
+    vals <- .datom_sv1_as_strings(tags[[k]], label)
+    if (length(vals) > 0L && !all(nzchar(vals))) {
+      cli::cli_abort(bullets(
+        "{.field {label}} contains an empty label.",
+        "i" = paste0("A zero-length string is a label with no name -- almost ",
+                     "always an accident. To mean {.emph no value here}, omit ",
+                     "the key; to mean {.emph no tags at all}, omit tags.")
+      ))
+    }
+  }
+
+  invisible(TRUE)
+}
+
+
+#' Which of the Three Shapes a Member Argument Arrived In
+#'
+#' A caller naming one member holds one of three things, and every verb that
+#' takes a member accepts all three: a **name**, a **member record** (what
+#' [datom_member()] returns, and what stripping a read set's links produces), or
+#' a **link** (a member's `fetch` element, or a leaf of
+#' [datom_structure_members()]).
+#'
+#' This is the shape dispatch alone, deliberately without the lookup. What a
+#' **name** means differs by verb -- to [datom_fetch_member()] it is a member of
+#' the set already in hand, to [datom_add_member()] it is an artifact to look up
+#' in the project's storage -- so handing the name back to the caller is what lets
+#' one dispatch serve both without either searching the wrong thing.
+#'
+#' The refusal of `tags` / `version` beside a record or a link is left to each
+#' caller too: both refuse, and the reason differs enough to word differently
+#' (narrowing a search versus declaring a member twice). `shape` is the phrase to
+#' name it by, so the two messages at least agree on what the caller passed.
+#'
+#' @param member The value the caller passed.
+#' @param arg Argument name for the message.
+#' @return A list of `shape` (a phrase naming what arrived) and `record` (the
+#'   member record, or `NULL` when a name arrived).
+#' @keywords internal
+.datom_member_shape <- function(member, arg = "member") {
+  if (inherits(member, "datom_link")) {
+    record <- attr(member, "datom_member")
+    if (!is.list(record)) {
+      cli::cli_abort(
+        c(
+          "This link carries no member record, so what it points at is \\
+           unknown.",
+          "i" = "Links come from {.fn datom_get_set} -- read the set again \\
+                 rather than reconstructing one."
+        ),
+        class = "datom_member_unusable"
+      )
+    }
+    return(list(shape = "a link", record = record))
+  }
+
+  if (is.list(member)) {
+    return(list(shape = "a member record", record = member))
+  }
+
+  if (.datom_is_text_scalar(member)) {
+    return(list(shape = "a name", record = NULL))
+  }
+
+  cli::cli_abort(
+    c(
+      "{.arg {arg}} must be a member's name, a member record, or a link.",
+      "i" = "You passed {.cls {class(member)}}.",
+      "i" = "A link is a member's {.field fetch} element; a record is what \\
+             {.fn datom_member} returns."
+    ),
+    class = "datom_member_unusable"
+  )
+}
+
+
+#' Validate a Member List
+#'
+#' Checks that `members` is a list of member records, each an `id` of exactly
+#' `project`, `name`, `kind`, `version` -- all single non-empty strings, with
+#' `kind` one of `"table"` or `"set"` -- plus an optional `tags` map. Aborts
+#' naming the first offending member, with a remedy pointing at
+#' [datom_member()].
+#'
+#' **This validator sees one member at a time**, so two payload-level cases are
+#' deliberately not here and belong to the set write, which is the only place
+#' that sees a whole payload:
+#'
+#' * **zero members** -- an empty member list passes here;
+#' * **the same `id` listed twice with different `tags`** -- invisible from a
+#'   per-member view, and not caught by deduplication either, since a member's
+#'   digest covers its tags, so both entries survive.
+#'
+#' Set-level tags never pass through here at all; the write validates those
+#' with [.datom_validate_tag_map()] directly.
+#'
+#' @param x Value to validate: a list of member records, or `NULL`.
+#' @return Invisibly `TRUE`.
+#' @keywords internal
+.datom_validate_members <- function(x) {
+  if (is.null(x)) return(invisible(TRUE))
+
+  remedy <- paste0(
+    "Declare members with {.fn datom_member} so each carries a validated ",
+    "{.field id}."
+  )
+
+  if (!is.list(x) || (length(x) > 0L && !is.null(names(x)))) {
+    cli::cli_abort(c(
+      "{.arg members} must be a list of member records, not a named list.",
+      "i" = remedy
+    ))
+  }
+
+  id_fields <- c("project", "name", "kind", "version")
+
+  for (i in seq_along(x)) {
+    entry <- x[[i]]
+    at <- sprintf("members[[%d]]", i)
+
+    if (!is.list(entry) || is.null(names(entry)) || !all(nzchar(names(entry)))) {
+      cli::cli_abort(c(
+        paste0("Member {i} must be a named list with an {.field id}, not ",
+               "{.cls {class(entry)}}."),
+        "i" = remedy
+      ))
+    }
+
+    unknown <- setdiff(names(entry), c("id", "tags"))
+    if (length(unknown) > 0L) {
+      cli::cli_abort(c(
+        paste0("Member {i} carries {length(unknown)} unexpected ",
+               "field{?s}: {.val {unknown}}."),
+        "i" = paste0("A member is exactly an {.field id} plus optional ",
+                     "{.field tags}. User metadata belongs in tags."),
+        "i" = remedy
+      ))
+    }
+
+    id <- entry$id
+    if (!is.list(id) || length(id) == 0L || is.null(names(id))) {
+      cli::cli_abort(c(
+        "Member {i} has no {.field id} map.",
+        "i" = remedy
+      ))
+    }
+
+    missing <- setdiff(id_fields, names(id))
+    if (length(missing) > 0L) {
+      cli::cli_abort(c(
+        paste0("Member {i} is missing required {.field id} ",
+               "field{?s}: {.val {missing}}."),
+        "i" = remedy
+      ))
+    }
+    extra <- setdiff(names(id), id_fields)
+    if (length(extra) > 0L) {
+      cli::cli_abort(c(
+        paste0("Member {i} has {length(extra)} unexpected {.field id} ",
+               "field{?s}: {.val {extra}}."),
+        "i" = "An {.field id} is exactly {.val {id_fields}}.",
+        "i" = remedy
+      ))
+    }
+
+    for (field in id_fields) {
+      if (!.datom_is_text_scalar(id[[field]])) {
+        # The label is built first: a leading `.` or a literal `$` inside an
+        # inline cli style is read as markup, not as text.
+        fld <- paste0("id$", field)
+        cli::cli_abort(c(
+          paste0("Member {i}: {.field {fld}} must be a single non-empty ",
+                 "string."),
+          "i" = remedy
+        ))
+      }
+    }
+
+    if (!id$kind %in% .datom_artifact_kinds) {
+      cli::cli_abort(c(
+        "Member {i} declares {.field kind} {.val {id$kind}}.",
+        "i" = "A member points at one of {.val {(.datom_artifact_kinds)}}.",
+        "i" = remedy
+      ))
+    }
+
+    .datom_validate_tag_map(entry$tags, paste0(at, "$tags"), remedy = remedy)
+  }
+
+  invisible(TRUE)
+}
+
+
+#' Which Project an Artifact Belongs To, From the Repo Rather Than a Label
+#'
+#' The cascade both pointer constructors use -- [datom_member()] and
+#' [datom_parent()] -- to answer "which project is this artifact in" without
+#' trusting the connection it was reached through.
+#'
+#' **Why a label cannot be trusted.** On a connection built from a clone, datom
+#' reads `project_name` out of `.datom/project.yaml`, so it is the repo's own
+#' declaration. On a **reader** connection it is a string the caller passed to
+#' [datom_get_conn()]: the namespace comes from the store's root and prefix, and
+#' nothing compares the label against the repo. Both constructors write the name
+#' they settle on into a stored document -- a member's `id$project` is hashed into
+#' the set's `data_sha` and cited afterwards, and a parent's `source` is part of
+#' the declaring table's version -- so a label nobody checked would be durable
+#' wrong data that no hash and no validator can notice.
+#'
+#' Three steps, cheapest and most trustworthy first:
+#'
+#' 1. **The artifact's own snapshot**, which the caller has already read. Free,
+#'    and it is the writing repo's declaration.
+#' 2. **The manifest of the namespace the artifact lives in**. One extra read, and
+#'    only for an artifact written before datom recorded the field -- which is
+#'    every artifact in every existing repo, so this is the common path in this
+#'    release rather than a rare one. Goes through the gated reader, so a
+#'    manifest whose format this build cannot read is handled the one way datom
+#'    handles that anywhere; when the manifest is unusable, that reader can
+#'    escalate to reconstructing the index from a namespace listing, which is
+#'    accepted because a repo in that state needs attention regardless.
+#' 3. **The connection's label**, said out loud to be unverified.
+#'
+#' **One gap, named rather than guarded.** When the manifest has to be
+#' reconstructed and the document it replaced recorded no project name, the
+#' reconstruction fills that field from the connection
+#' ([.datom_rebuild_manifest()]), so step 2 can hand back the label while looking
+#' like the repo's declaration. What is lost there is the *warning*, not the
+#' value: the string is exactly the one step 3 would have returned. Closing it
+#' properly means the shared manifest reader reporting whether the document it
+#' returned was reconstructed, which is a change to that reader rather than to
+#' this cascade.
+#'
+#' @param conn The connection the artifact was read through.
+#' @param snap The artifact's metadata snapshot, already read and already checked
+#'   for a format this build understands.
+#' @param what What is being declared -- `"member"` or `"parent"` -- used only to
+#'   word the unverified-fallback warning.
+#' @return A single non-empty string.
+#' @keywords internal
+.datom_declared_project <- function(conn, snap, what = "member") {
+  recorded <- if (is.list(snap) && "project" %in% names(snap)) snap$project
+  if (.datom_is_text_scalar(recorded)) return(recorded)
+
+  manifest <- .datom_read_manifest(conn, scope = "storage", operation = "read")
+  if (isTRUE(manifest$ok)) {
+    declared <- manifest$manifest$project_name
+    if (.datom_is_text_scalar(declared)) return(declared)
+  }
+
+  # The label is the repo's own declaration whenever the connection was built from
+  # a clone, so calling it unverified there would be a wrong statement. It is
+  # unverified only for a reader, where the caller supplied the string.
+  if (!(identical(conn$role, "developer") && !is.null(conn$path))) {
+    cli::cli_warn(c(
+      paste0("Recording an unverified project name on this {what}: ",
+             "{.val {conn$project_name}}."),
+      "i" = paste0("Neither the artifact's own metadata nor the project ",
+                   "manifest names its project, so the name on your ",
+                   "connection was used -- and nothing checks that name ",
+                   "against the repo."),
+      "i" = paste0("Rewrite the artifact with a current datom to record its ",
+                   "project, or connect with the project name the repo ",
+                   "declares.")
+    ))
+  }
+
+  conn$project_name
+}
+
+
+#' Declare a member of a set
+#'
+#' Resolves one artifact version against a single project connection and returns
+#' a pure-data member record to pass to a set write. The record is a pointer:
+#' it names the project, artifact, kind, and version, and carries no copy of the
+#' data. Reading the artifact's versioned metadata snapshot is what makes the
+#' pointer trustworthy -- a member can only point at something that already
+#' exists, which is also why a set cannot contain itself at any depth.
+#'
+#' Same-project and cross-project members are declared identically; the only
+#' difference is which connection is passed. `kind` comes from the snapshot
+#' (defaulting to `"table"` for a snapshot written before datom recorded the
+#' field), and `project` comes from the **repo** rather than from the connection:
+#' the artifact's own metadata, else the project manifest, else the connection's
+#' name with a warning saying it is unverified. That matters because a reader
+#' connection's project name is a label the caller supplied and nothing checks it
+#' against the repo, while this value is hashed into the set's identity and cited
+#' afterwards.
+#'
+#' Unlike [datom_parent()], a member carries **no `data_sha`**: the version
+#' already pins the content, and a second copy of that fact would be a second
+#' thing to keep consistent.
+#'
+#' @section Tags:
+#' `tags` is an optional named list of text labels describing this member's role
+#' in the set -- what folder structure would otherwise express. A value may be a
+#' single string or several, because the whole point of labels over folders is
+#' that an item can be in more than one category at once:
+#' `list(type = "output", domain = c("safety", "efficacy"))`.
+#'
+#' Values are text only: no numbers, booleans, or nesting. Write a numeric label
+#' as a string (`"500"`) and parse it downstream, exactly as you would a folder
+#' name.
+#'
+#' Three outcomes, and the difference is whether anything is actually there:
+#'
+#' | What you pass | What happens |
+#' |---|---|
+#' | no `tags` | accepted; the record carries no `tags` |
+#' | `list(domain = character(0))` or `list(domain = NULL)` | the key is dropped, as if never mentioned |
+#' | `list(domain = "")` | refused -- a label with no name is almost always an accident |
+#'
+#' @param conn A `datom_conn` scoped to the **member's** project store, from
+#'   [datom_get_conn()].
+#' @param name Artifact name (single validated string).
+#' @param version The artifact version (`metadata_sha`) to pin, e.g. from
+#'   [datom_history()].
+#' @param tags Optional named list of text labels for this member. Omitted from
+#'   the record when absent or empty.
+#' @return A list with `id` (a list of exactly `project`, `name`, `kind`,
+#'   `version`) and, when tags were supplied, `tags`. Pure data: it retains no
+#'   connection and is serializable.
+#' @seealso [datom_parent()] for the lineage equivalent.
+#' @export
+#'
+#' @examples
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#'
+#'   # Pin the version just written and label its role in the set.
+#'   version <- datom_history(conn, "dm")$version[1]
+#'   print(datom_member(conn, "dm", version, tags = list(type = "input")))
+#'
+#'   unlink(tmp, recursive = TRUE)
+#' }
+datom_member <- function(conn, name, version, tags = NULL) {
+
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort(
+      "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}."
+    )
+  }
+
+  .datom_validate_name(name)
+
+  if (!is.character(version) || length(version) != 1L ||
+      is.na(version) || !nzchar(version)) {
+    cli::cli_abort("{.arg version} must be a single non-empty string.")
+  }
+  # version is spliced into a storage key; reject path-traversal / non-hex.
+  .datom_validate_sha(version, arg = "version")
+
+  # Tidy, then validate what remains. Both steps run before the storage read,
+  # so a malformed tag map costs no round trip.
+  tags <- .datom_drop_empty_tags(tags)
+  .datom_validate_tag_map(tags, "tags")
+
+  key <- .datom_artifact_snapshot_key(name, version)
+
+  snap <- tryCatch(
+    .datom_storage_read_json(conn, key),
+    error = function(e) {
+      cli::cli_abort(c(
+        paste0("Member {.val {name}@{version}} not found in ",
+               "project {.val {conn$project_name}}."),
+        "i" = paste0("A member must point at a version that already exists. ",
+                     "List them with {.fn datom_history}."),
+        "i" = "Underlying error: {conditionMessage(e)}"
+      ))
+    }
+  )
+
+  # THE FORMAT CHECK IS WHAT MAKES THE `kind` FALLBACK BELOW SAFE, and the two
+  # must stay together. The fallback reads an absent `kind` as `"table"`, which
+  # is right for a document written before datom recorded the field and wrong
+  # for one written by a build this version cannot fully parse -- there, a set
+  # would be recorded as a table, and that misreading is durable: it goes into
+  # the member record, into the stored payload, and into the set's own identity,
+  # with nothing failing. Refusing a too-new document first is what separates
+  # "old, therefore certainly a table" from "newer, therefore unknown".
+  #
+  # Deliberately OUTSIDE the handler above: inside it, a refusal would be
+  # reworded as "member not found", which buries the one actionable line.
+  # Same pairing as `.datom_rebuild_manifest_entry()`, which checks and then
+  # falls back in the same way.
+  .datom_check_schema_version(snap, key)
+
+  kind <- snap$kind %||% "table"
+  if (!.datom_is_text_scalar(kind) || !kind %in% .datom_artifact_kinds) {
+    cli::cli_abort(c(
+      paste0("The snapshot for {.val {name}@{version}} declares a kind ",
+             "this version of datom cannot use."),
+      "i" = "Expected one of {.val {(.datom_artifact_kinds)}}.",
+      "i" = paste0("The snapshot at {.val {key}} in project ",
+                   "{.val {conn$project_name}} may have been written by a ",
+                   "newer datom -- upgrade datom and retry.")
+    ))
+  }
+
+  member <- list(
+    id = list(
+      # NOT `conn$project_name`. On a reader connection that is an unverified
+      # label, and this value is durable: it is hashed into the set's identity
+      # and cited afterwards. See `.datom_declared_project()`.
+      project = .datom_declared_project(conn, snap, "member"),
+      name    = name,
+      kind    = kind,
+      version = version
+    )
+  )
+  # Present only when there is something to say. `member$tags <- NULL` would
+  # not add the key, but building the record with `tags = tags` inside list()
+  # WOULD -- and jsonlite writes such a key as `{}` rather than omitting it.
+  if (length(tags) > 0L) member$tags <- tags
+
+  member
+}

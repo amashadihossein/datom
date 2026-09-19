@@ -1,6 +1,7 @@
 # Gov-clone read-side helpers
 # These helpers manage the local governance repo clone: existence check,
-# open, and initialise (clone-or-reuse). Write-side helpers are in Chunk 3.
+# open, and initialise (clone-or-reuse). datom retains gov READS only -- the
+# gov write surface was lifted out to the companion governance package.
 #
 # All helpers accept a resolved `gov_local_path` (absolute string).
 # Path resolution (.datom_resolve_gov_local_path) lives in R/store.R.

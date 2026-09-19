@@ -16,8 +16,12 @@ datom_parent(conn, table, version)
 }
 \value{
 A list with exactly \code{source}, \code{table}, \code{version}, \code{data_sha}, and
-\code{source_lineage}. \code{source} is the parent connection's \code{project_name};
-\code{source_lineage} is \code{NULL} when the snapshot carries none.
+\code{source_lineage}. \code{source} is the project the parent's own metadata says it
+belongs to, falling back to the project manifest and then to the connection's
+name (see \code{.datom_declared_project()}) -- \strong{not} simply the name on \code{conn},
+which on a reader connection is an unverified label and which \code{source} cannot
+afford, since it is part of the declaring table's version. \code{source_lineage}
+is \code{NULL} when the snapshot carries none.
 }
 \description{
 Resolves a parent table against a single project connection and returns a

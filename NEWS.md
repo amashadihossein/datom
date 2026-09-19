@@ -1,3 +1,680 @@
+# datom (development version)
+
+## The manifest's artifact list is renamed **[breaking]**
+
+`.metadata/manifest.json` and `.datom/manifest.json` now list artifacts under
+**`artifacts`** rather than `tables`, and every entry carries a `kind` field
+(`"table"` for everything datom writes today). One namespace typed by `kind`,
+rather than a second node beside the first: storage keys are `{name}/...`
+whatever the artifact is, so two artifacts sharing a name would write the same
+objects, and a single keyed list makes that a collision instead of a state
+something has to police.
+
+* **Existing repos keep working, and no manual migration is needed.** A manifest
+  written before this change carries no format number, which datom reads as
+  version 1 and converts as it goes. A **read** converts in memory and leaves
+  the file untouched, so a reader with storage access and no git clone is never
+  stuck. A **write** converts the file itself, then records the format it
+  reached -- so a repo is never half in one shape and half in the other, and the
+  counters cover every artifact that was already there rather than only the one
+  just written.
+
+* **UPGRADE EVERYONE WHO SHARES A REPO BEFORE YOU WRITE TO IT.** The compatibility
+  above runs one way: a new build reads an old repo. The reverse does not hold.
+  After a single write from this version, the manifest declares the new format,
+  and an older datom looks for the artifact list under a key that is no longer
+  there -- so `datom_list()` returns an empty frame and `datom_summary()` and
+  `datom_status()` report zero, **without an error**. `datom_read()` is
+  unaffected: the data path never reads the manifest, so a collaborator who
+  knows a table name and version can still read it. What they lose is the
+  ability to discover what the repo holds.
+
+  A write that converts a repo now says so and names that consequence.
+  `datom_validate(fix = TRUE)` converts the copy in storage too, which is worth
+  knowing because it reads as a repair rather than as a format change.
+
+* **`datom_list()` gains a `kind` column**, on populated rows and on both of its
+  empty results. Its empty results also gain **`current_data_sha`**, which
+  populated rows have always carried and they had always omitted -- so
+  `rbind()` of two listings no longer fails when one of them is empty. Both
+  columns arrive together, in this one release, rather than the second one
+  costing a later break of its own. With `include_versions = TRUE` the empty
+  result carries `version_count` as well, so the two forms of the call each
+  agree with themselves.
+
+* **`datom_summary()` gains `set_count`** beside `table_count`, and prints it.
+  `table_count`, `total_versions` and `total_size_bytes` keep the meanings they
+  had: tables only. No existing counter changed what it counts.
+
+* **`datom_status()`'s table count now counts tables**, not every artifact, so
+  the number keeps matching the label it prints.
+
+* Three return-value fields still named `tables` are **unchanged**:
+  `datom_status()$tables`, `datom_validate()$tables` and the per-table results
+  from `datom_sync()`. Only the manifest key moved.
+
+## Format numbers, and the write that gets refused
+
+* **Every manifest and every per-artifact metadata document now declares a
+  `schema_version`.** Stamping it costs nothing: it takes no part in version
+  identity, so no artifact gains a version for being stamped. A manifest created
+  from scratch declares the format immediately, before it holds anything.
+
+* **A write into a repo whose format this build does not know is refused at the
+  door** -- before any hashing, any local file write and any commit, so a
+  refusal leaves nothing half-written. This is the damaging direction and no
+  reader-side check can cover it, because the older build is the one writing.
+  The refusal covers every write route, including the one that mirrors the
+  whole manifest to storage without touching a single artifact.
+
+* The refusal message now says whether the build cannot *read* or cannot *write*
+  the format it met.
+
+## A repo can declare that it builds its data rather than onboarding it
+
+`datom_init_repo()` takes `mode = "product"` and `set = <name>`, which records in
+`.datom/project.yaml` that this repo builds its artifacts and owns one set. An
+ordinary data repo needs neither and is unchanged: no `mode` line is written, and
+absent already means "ordinary".
+
+* **The file-import path is refused on a product repo**, rather than answering
+  unhelpfully. `datom_sync_manifest()` and `datom_sync()` both stop and point at
+  `datom_write()` and `datom_write_set()` instead. Before this they reported "no
+  files found" and handed back an empty result, which describes a repo with
+  nothing to import rather than one that does not import -- and a file left in
+  `input_files/` by accident would have been imported.
+* **The table write path is untouched.** A product repo legitimately writes
+  derived tables; that is what it is for.
+* **`datom_status()` reports the mode** and stops reporting on `input_files/` for
+  a product repo, for the same reason the import verbs now refuse.
+* **`set` and `mode` are required together.** A product repo that names no set
+  would pass the mode check on a set write and then fail its name check every
+  time, so `datom_init_repo()` refuses at the call instead. The set name goes
+  through the same validation a set write applies.
+* **A product repo's storage namespace is always checked, on every backend, and
+  `.force` does not skip it.** The reason is blast radius rather than access
+  control: teardown and prefix-delete operate on a whole namespace, so a product
+  sharing a prefix with the study it was built from means deleting the product can
+  delete the raw data. Ordinary repos keep the behaviour they had.
+  Passing `.force = TRUE` for a product repo is an **error**, not a no-op, so you
+  are never left believing you took a namespace over when you did not. And the
+  refusal you get on an occupied namespace only offers `.force` where `.force`
+  actually works -- for a product repo it names what does work instead, and says
+  why there is no override.
+
+* **Creating a repo now stops when it cannot check whether the storage namespace
+  is already in use** `[breaking]`. It used to say so and carry on. That read like
+  a graceful degradation and was not one: the check was not deferred, it was
+  dropped, and nothing later in the process performs it -- so a repo could be
+  created over another project's manifest. Nothing that worked before stops
+  working, because creating a repo uploads a manifest and so cannot finish without
+  storage anyway; what changes is that you are told the real problem at the point
+  it is known, instead of a manifest upload failing afterwards for reasons that
+  look unrelated. Fix the cause -- credentials, connectivity, permissions -- and
+  retry.
+  * The refusal names the backend it was checking, and no longer says "S3" or
+    prints an `s3://` address when the store is a local directory.
+  * If the manifest upload does fail, the recovery now names
+    `datom_validate(conn, fix = TRUE)`, which uploads it. The previous advice
+    named `datom_sync_manifest()`, which scans your input files and writes nothing
+    to storage, so it could not have worked.
+* **`.datom/project.yaml` declares its format too.** That file carries settings a
+  writer must *obey* rather than merely read -- `min_writer_version` today -- and a
+  build that does not recognise such a setting walks past it and acts as though the
+  repo had never asked for anything. A declared format is how the file gets to say
+  "this repo needs a newer datom", and a config declaring a format this build
+  cannot read now stops rather than being read anyway -- everywhere datom reads it:
+  opening a developer connection, repointing a project at a new data store, and
+  writing a set.
+  * **Its number is its own, and starts at 1.** It stays there through every
+    manifest or metadata format change and moves only when this file's own shape
+    changes, so an upgrade elsewhere in datom can never lock you out of a config
+    that never moved.
+  * **Absent means version 1**, which is every repo written so far, so nothing
+    existing changes behaviour. `datom_init_repo()` stamps the field from now on.
+  * **A key datom does not recognise is still perfectly fine here.** This file is
+    hand-edited, so a stray key is as likely a note of your own or a typo as it is
+    evidence of a newer datom. The stricter check that refuses an unrecognised
+    field applies to the documents datom writes for itself and is deliberately
+    never pointed at this one.
+  * A **reader** never sees this file, having no git checkout: the harm being
+    prevented is a write into a repo whose policy this build cannot read.
+
+## New: committing your own content through datom
+
+A product repo holds code, an environment lockfile and build state beside datom's
+artifacts, and until now there was no sanctioned way to commit any of it -- so a
+downstream package had to import `git2r` and write to the data repo behind datom's
+back, or abuse a datom write. Two new exports close that:
+
+```r
+datom_repo_commit(conn, message, paths = NULL, push = TRUE)
+datom_repo_push(conn)
+```
+
+Both require a developer connection and go through the same git path datom's own
+writes use, so they inherit pull-before-push and upstream tracking.
+
+* **`paths = NULL` means what `git add .` means**: tracked modifications,
+  deletions and untracked files, minus anything `.gitignore` excludes. A character
+  vector stages exactly those paths instead.
+
+* **It is the opposite of what datom's own commits do, deliberately.** A commit
+  created inside `datom_write()` or `datom_write_set()` stages an explicit file
+  list and never add-all, because it fires at a moment datom chose and your work in
+  progress may be sitting in the tree. `datom_repo_commit()` fires when you asked
+  it to, so committing everything is the right default. Both halves are now pinned
+  by tests rather than left true by accident.
+
+* **One consequence of add-all worth knowing**: if an earlier write failed after
+  writing local metadata but before committing, those datom files are dirty and
+  this verb stages them. That is intentional -- excluding them silently would make
+  the argument lie -- and it moves git *ahead* of storage, which is the safe
+  direction. `datom_validate()` reports that state and `datom_validate(fix = TRUE)`
+  repairs it.
+
+* **Commit is idempotent and push is convergent, and neither implies the other.**
+  A clean tree produces no commit and is not an error, so "commit everything" can
+  be called twice. With `push = TRUE` the push **still runs** when the branch is
+  ahead of the remote even though no commit was created: otherwise one failed push
+  would leave the remote behind for good, since every later call finds a clean tree
+  and returns early. `datom_repo_push()` is convergent for the same reason --
+  calling it with nothing to push is information, not an error.
+
+* **Two verbs rather than one**, because "push what I already committed" must be
+  spellable without risking a commit. With only `datom_repo_commit(push = FALSE)`
+  and no standalone push, the second half of that split would be another commit
+  attempt -- and in a product repo that is add-all, so a caller who only wanted to
+  push could get a commit of whatever the tree happened to hold.
+
+* **A detached HEAD is refused up front**, for both values of `push`. A commit onto
+  a detached HEAD succeeds, prints a SHA, and becomes unreachable the moment you
+  switch branches, with no later push to reveal it.
+
+* **A repo with no remote is refused with the recourse**, rather than failing with
+  a subscript error from the git layer. `push = FALSE` stays legal there, since a
+  local commit needs no remote.
+
+**Non-datom paths were always tolerated and now have tests saying so.**
+`datom_validate()` does not report a foreign directory as a defect, and
+`datom_status()` reports foreign uncommitted files as what they are -- git state,
+honestly reported -- and never as a datom problem.
+
+## New: a set can carry the code and environment that produced it
+
+`datom_write_set()` gains `include_paths`, a character vector of repo-relative
+paths staged into the **same commit** as the set's payload and metadata:
+
+```r
+datom_write_set(conn, members, include_paths = c("R", "dp", "renv.lock"))
+```
+
+So checking out a set version's commit gives you the data pointers, the logic
+that produced them **and** the environment it ran in -- one clone, one checkout,
+the whole product. The joint version is **structural**: nothing records a link
+between the set and those files, because the commit *is* the link.
+
+* **Storage never sees them.** The mirror holds datom artifacts and nothing else;
+  `include_paths` content stops at git.
+
+* **An unchanged set is still a no-op, however dirty those files are.** No commit,
+  no version, and a message pointing at `datom_repo_commit()` -- the verb for
+  committing your own content at a moment you chose. A data write that quietly
+  committed work in progress is what datom's explicit file lists exist to
+  prevent, and re-running an idempotent write must not become a side door into
+  it.
+
+* **Four refusals, all before anything is hashed or written**, so a refused write
+  leaves nothing behind: a path that does not exist (an error, not a skipped
+  entry -- a joint commit is deterministic or it is refused), a path outside the
+  clone, a path datom owns (`.datom/`, the set itself, any artifact directory --
+  the write stages those already), and a path `.gitignore` excludes. The last one
+  is refused rather than dropped because git stages an ignored path in silence:
+  the commit would succeed while omitting exactly the file you named, and the
+  version would claim a joint commit it does not have. These refusals are settled
+  before change detection runs, so a bad path is an error even when the set turns
+  out to be unchanged.
+
+## A field this version does not recognise is no longer deleted
+
+Writing a table rebuilds its metadata document and its row in the manifest from
+scratch. Until now that quietly discarded any field the running version had
+never heard of -- which is what a document written by a newer datom looks like
+after you pull it. Such a field now survives the rewrite, wherever it sits: a
+table's own metadata document, its row in the manifest, the fields beside the
+manifest's artifact list, and an entry in its version history.
+
+* **Only unrecognised fields are carried.** A field datom does know still
+  behaves as before, including going away when the write does not set it. So a
+  table that was imported from a file and is later written straight from a data
+  frame stops claiming a source format, rather than keeping a stale one.
+
+* **Version identity is unaffected.** A carried field is attached after the
+  version has been computed, so a document holding one mints no new version by
+  itself and no existing version moves.
+
+* Nothing changes for a repo whose documents this version fully understands,
+  which is every repo it wrote itself.
+
+## A write stops when this version cannot account for the repo
+
+Carrying an unfamiliar field forward keeps a write from destroying information.
+It does not make the write correct: this version would still recompute the
+document's version identity from the fields it knows, reaching a different
+answer from the version that wrote it, on content that never moved. So the write
+now stops instead. Reads still degrade gracefully where they can -- **reads limp,
+writes stop.**
+
+Everything below runs before any hashing, any local file write and any commit, so
+a refusal leaves nothing half-written. It covers every route that writes,
+including the two that are easy to overlook: the one that mirrors the whole
+manifest to storage without touching a single artifact, and
+`datom_validate(fix = TRUE)`, which reads as a repair but publishes this repo's
+documents to storage just the same. Nothing changes for a repo whose documents
+this version fully understands, which is every repo it wrote itself.
+
+* **A top-level field this version cannot classify refuses the write**, naming
+  the field. Checked on the manifest, on each of its artifact entries, and on
+  each artifact's own `metadata.json` -- always the copy in your git checkout,
+  which is where a colleague's newer document arrives when you pull. `custom` is
+  classified as a whole, so your own metadata keys are never affected however
+  exotic.
+
+  This is the check that catches an **added or renamed** field, where the format
+  number deliberately does not move. It is the reason a release that adds any
+  field to a datom document asks everyone who writes to that repo to upgrade,
+  cosmetic additions included -- a false refusal costs one person an install, a
+  miss costs corrupted data.
+
+* **A repo may declare the oldest datom it accepts writes from.** Set
+  `min_writer_version` in `.datom/project.yaml` and an older writer is refused,
+  naming the version needed. The field is optional and **absent means no limit**,
+  so no existing repo changes behaviour. It covers the two cases the field check
+  structurally cannot see, because neither introduces a new name: a change in
+  what an existing field *means*, and a block for a reason that is not about
+  format at all.
+
+  Reading the field ships now even though nothing sets it yet, because the
+  looking has to be inside the version being stopped. A purpose-built way to
+  raise it comes later; a hand-edited value works in the meantime.
+
+* **A manifest whose artifact list this version cannot reach is not
+  overwritten.** If the list is still missing after the format conversion has
+  run, the file belongs to a lineage this version cannot produce, and replacing
+  it with a shape this version invented would be worse than stopping. A repo
+  written before the rename is not affected: the conversion reaches its list, so
+  the forward path proceeds as it always did.
+
+* **All of these bind from this version forward only.** 0.1.0, 0.1.1 and 0.1.2
+  have none of them and none can be added to a version already released. If you
+  share a repo with an older install, upgrading it is the only protection there
+  is.
+
+## A repo whose index this version cannot read is still listed, not reported empty
+
+The mirror of the section above, on the reading side. A manifest whose artifact
+list this version cannot use looks exactly like a repo with nothing in it --
+`datom_list()` returns no rows, `datom_summary()` and `datom_status()` report
+zero, and none of them errors. That is now replaced by a reconstruction and a
+warning.
+
+* **The artifact index is rebuilt from storage** when the list is missing after
+  the format conversion has run, or when the manifest declares a format newer
+  than this version understands. Every fact in the manifest is also recorded in
+  the per-artifact documents it summarises, so it can be reassembled: one
+  storage listing plus each artifact's own `metadata.json` and
+  `version_history.json`.
+
+* **It says so, once**, naming which copy of the manifest was rebuilt and
+  pointing at the upgrade. A repair that succeeds silently is itself a silent
+  degradation.
+
+* **Nothing is written.** The reconstruction lasts for that session only, on both
+  copies of the manifest and at every role -- a read that quietly rewrote your
+  repo's index would be a larger surprise than the one it is fixing. The
+  recorded copy is repaired by the next ordinary write.
+
+* **Reported versions are the recorded ones.** Each rebuilt row takes its version
+  from the artifact's own history rather than recomputing a hash, so a rebuilt
+  listing can never point at a version that does not exist.
+
+* **Two things still fail rather than being reconstructed.** A manifest that will
+  not parse, or that declares something which is not a format number at all,
+  keeps failing visibly -- reconstructing it would turn a damaged repo into a
+  plausible-looking one. And an artifact's own `metadata.json` is never rebuilt
+  from anything: it is the source of truth, so a document declaring a format this
+  version does not understand still stops the read.
+
+* **A write meeting either condition still refuses** (see the section above).
+  Same evidence, opposite responses: a reader that carries on gives one person
+  one session's answers, while a writer that carries on leaves the repo wrong for
+  everybody.
+
+* **Imported tables now record their source format in their own metadata**, not
+  only on the manifest row -- which is what makes that field recoverable when the
+  index is rebuilt. It does not participate in version identity, so no existing
+  version changes.
+
+## An artifact's metadata now says which kind of artifact it is
+
+Every `metadata.json` carries `kind`, which is `"table"` for everything a table
+write produces. The manifest row has carried it since the rename above; the
+artifact's own document is where a check has to read it, because the manifest can
+lag a partial write while that document cannot.
+
+* **`kind` is part of the version identity**, and that is the whole point of it.
+  Leaving it out is the alternative, and it lets a table and a set whose other
+  identifying fields agree mint the same version -- at which point one version
+  string names two artifacts.
+
+* **So the first write of each existing table after upgrading records one extra
+  version, on content that has not changed.** datom detects a change by
+  recomputing the document's identity and comparing it with the recorded one, and
+  a document that has gained an identity field hashes differently. This is
+  accepted rather than worked around.
+
+  The cost is bounded and in the harmless direction: the content hash
+  (`data_sha`) does not move, so the storage address does not move either -- the
+  stored parquet is reused, nothing is re-uploaded, and no earlier version is
+  altered or invalidated. It happens once per table, at that table's next write.
+  A table you never write again is never touched.
+
+* **A version-pinned metadata document written by a newer datom is now refused
+  rather than partly read.** `datom_parent()` reads the snapshot for one exact
+  version, and it did not check the format that snapshot declares -- so a
+  document from a future version was read with whatever fields this build happens
+  to look for and the rest ignored. It now stops with the same upgrade message
+  every other reader gives. Two things make this worth a refusal rather than a
+  best effort: the fields taken out of that document are durable (one becomes a
+  storage address, one is folded into the lineage of whatever table declares the
+  parent), and `kind` is read from the same document with an absent value meaning
+  "written before the field existed" -- true of an older document and false of a
+  newer one, where it would type the wrong kind of artifact permanently and
+  silently.
+
+  Nothing changes for any document datom has ever written: a snapshot with no
+  declared format is still read as version 1 and still works.
+
+## New: `datom_write_set()` writes a versioned, citable set
+
+A **set** is datom's second artifact kind: a collection of pointers at exact
+versions of existing artifacts, plus text labels. It holds no data of its own, so
+writing one neither copies nor moves anything a member contains. Declare members
+with `datom_member()` and write them with
+`datom_write_set(conn, members, tags = NULL)`.
+
+* **One repo holds one set, and the repo says which.** The write refuses unless
+  `.datom/project.yaml` declares `mode: product` and a `set:` name matching what
+  is being written. Both checks run before anything is hashed or written, so a
+  refusal leaves nothing behind. **Nothing writes those two fields yet**, so this
+  release ships the checking half only -- a later release adds them at
+  initialisation. Until then a set write is reachable only in a repo whose
+  configuration was edited by hand.
+
+* **User metadata is labels, and there is no second channel for it.** There is no
+  `metadata =` argument: a description is a tag. Tag values are text, one string
+  or several, because the point of labels over folders is that an item can be in
+  more than one category at once. No folder or view structure is stored -- a
+  hierarchy is a projection a consumer computes over tags, which is why any number
+  of them cost nothing.
+
+* **The version covers the whole payload**, members and labels alike. Editing a
+  label or a description therefore mints a new version, deliberately: a set exists
+  to be cited, and "same citation, different labels" would be a lie to whoever
+  cited it. What does **not** mint a version is a purely syntactic edit --
+  reordering labels or members, repeating a label, or writing one label as a
+  one-element array. Those are normalised on the way in, so re-writing an
+  identical payload is a no-op.
+
+* **Two copies of the payload, at two deliberately different addresses.** Git
+  holds `{name}/set.json` at one stable path, modified in place, so git carries
+  the history and `git diff` between two versions shows which members changed.
+  Storage holds the same bytes content-addressed at `{name}/{data_sha}.json`, so a
+  reader with no clone can fetch an exact version. Any past version is
+  reconstructible from the clone alone with
+  `git show <commit>:{name}/set.json`.
+
+* **Refused, each with its own message**: a set with no members; the same
+  artifact version listed twice with conflicting labels (give one label several
+  values instead); a set listing itself; a label with no name; and a name already
+  used by a table in the same project. The last one now works in both directions
+  -- writing a table over an existing set is refused too, because both kinds store
+  under the same name.
+
+* **A set's manifest row carries `member_count` where a table's carries
+  `size_bytes`**, and `datom_summary()`'s `set_count` counts it. The table
+  counters keep their tables-only meaning.
+
+## New: `datom_get_set()` reads one back, and every member is resolvable
+
+`datom_get_set(conn, name, version = NULL)` returns a set: its `name`,
+`project`, `version`, `data_sha`, `tags` and `members`. It returns *references and
+labels and no data at all*, which is why the verb is `get` rather than `read` --
+`datom_read()` stays the verb that materialises a table, and reading one kind with
+the other verb now aborts naming the one that fits.
+
+* **Reading a set needs access to the set's project only.** A member is a
+  pointer, and resolving it is a separate step, so a 50-member product is readable
+  by someone entitled to none of its members. A storage-only connection with no
+  git clone is enough.
+
+* **Every member carries `$fetch(conn)`** -- call it with a connection to that
+  member's project and it resolves the pointer: a table member yields data, a set
+  member yields another set. **A link pins the version it was read at**; it is a
+  citation, not a subscription. It also carries its own member record, prints
+  readably, and survives `saveRDS()`, so a consumer holding only a projected view
+  can still cite what they used.
+
+* **`datom_write_set()` now accepts what `datom_get_set()` returned**, so
+  read-modify-write is a loop rather than a reassembly: the member links are
+  dropped for you, and the set's own tags come along unless you pass `tags`.
+
+* **The stored payload is verified before it is parsed**, against the
+  `document_sha` recorded for the version being read. A version that records no
+  `document_sha` is an **error**, not a skipped check -- sets have recorded one
+  since their first write, so there is no legacy population to be lenient about.
+
+* **A version resolves to the version string that was recorded**, so an
+  8-character prefix goes in and the full version comes back.
+
+* **The read reports what was cited.** Nothing in the payload is re-sorted,
+  deduplicated or pruned on the way out; the only thing normalised is
+  representation, because JSON gives back a single label and a one-element list of
+  labels as two different R shapes of one value. Two consequences worth knowing:
+  a label list that was written out of order comes back out of order, and two
+  reads of the same set are **not** `identical()`, because each member's link is a
+  closure -- compare `m[c("id", "tags")]`, or pass
+  `ignore.environment = TRUE`.
+
+* **One level, never a traversal.** A member that is itself a set comes back as a
+  pointer; its own members are not fetched, so the cost of a read is a function of
+  the set's direct member count and not of the depth beneath it.
+
+## New: finding and shaping a set's members
+
+Three verbs over what `datom_get_set()` returns. None of them reads anything that
+read did not already read, and two of them touch no storage at all.
+
+* **`datom_fetch_member(conn, x, member, tags = NULL, version = NULL)`** resolves
+  one member to what it points at -- a table member to data, a set member to
+  another set -- through the same code `$fetch` uses. `member` accepts a **name, a
+  member record, or a link**, so a console call and a loop use one verb.
+
+  A name is deliberately **not** a key: the same artifact at two versions is a
+  legal pair of members, such as a current table beside a locked baseline. An
+  ambiguous name aborts and lists the candidates with their versions and labels
+  rather than answering with the first. Narrow with `tags`, or pin one exactly
+  with `version`.
+
+  Pass a connection to the **member's** project. Access in datom is per project,
+  so fetching a member of another project through this connection does not work --
+  and when it fails, the error now names the project the member's own writer
+  recorded, instead of presenting as a missing object. It is a hint on failure and
+  not a check that runs first: a connection's project name is a label nothing
+  validates, so refusing on a mismatch would abort fetches that succeed.
+
+* **`datom_list_members(x)`** returns a data frame with one row per member **per
+  label value**: `name`, `project`, `version`, `kind`, `key`, `value`. Long rather
+  than wide, because labels are open-keyed and multi-valued -- so filtering is
+  `subset()` or dplyr and datom grows no query vocabulary of its own. **An
+  unlabelled member still gets a row**, with `NA` for `key` and `value`, so
+  `unique(m$name)` is the complete member list rather than the labelled part of it.
+
+* **`datom_structure_members(x, by, missing = "untagged")`** groups members by the
+  values of one or more label keys and returns a nested list whose leaves are the
+  members' links, so `dp$output$adsl(conn)` works and tab-completes. The branches
+  are label values and the leaf is the member's own name. Nothing is stored: ask
+  for `by = c("domain", "type")` and you get a different view of the same set.
+
+  * **A member labelled `domain = c("safety", "efficacy")` appears under both
+    branches.** That is the point of labels over folders -- a folder holds an item
+    once and a label does not -- so the number of leaves can exceed the number of
+    members.
+  * **A member with no value for a grouping key goes under `missing`, named**, never
+    silently dropped.
+  * **Two members that would share one leaf name abort**, naming both with their
+    versions and pointing at adding a grouping key. The set itself stays legal;
+    only that view of it is refused.
+  * **A `missing` name that is also a real label value is refused**, so the bucket
+    can never quietly merge with a real branch.
+
+* **`print()` on a set now points at `datom_fetch_member()`**, which is the route
+  you can type from what it just listed. A member's `$fetch` link still works and
+  is what a leaf of the grouped view hands you.
+
+## New: assembling a set a member at a time
+
+A set can now be built in a pipe, with each member checked as it is added:
+
+```r
+datom_assemble_set(conn, tags = list(description = "ADaM datasets")) |>
+  datom_add_member("adsl", v_adsl, tags = list(type = "output")) |>
+  datom_add_member("dm", v_dm, tags = list(type = "input")) |>
+  datom_write_set()
+```
+
+The single-call form -- a `list()` of `datom_member()` results -- is unchanged and
+still the better fit for a build script. The payload the two produce is identical;
+what differs is **where an error surfaces**. A malformed label map, or an artifact
+that does not exist at the version given, aborts on the line that declared it and
+names that member, rather than after the whole list has been assembled.
+
+* **`datom_assemble_set(conn, name = NULL, tags = NULL)`** opens a draft. `name`
+  defaults to the set the repo declares under `set:`, which is the usual case. Set
+  level labels are supplied here and are checked here too.
+
+* **`datom_add_member(x, member, version = NULL, tags = NULL)`** appends one
+  member. `member` accepts a **name, a member record, or a link**, the same three
+  shapes `datom_fetch_member()` takes.
+
+  * **A record is how you include a member of another project.** A draft holds one
+    connection, so a name can only be looked up in that project;
+    `datom_add_member(datom_member(conn_b, "ae", v))` is the route to a member of
+    another one.
+  * **A link is how a consumer cites what they used** -- a leaf of
+    `datom_structure_members()` can be added to a new set directly.
+  * **`version` is required when you add by name**, and the refusal points at
+    `datom_history()`. There is no "current": inferring one would make a build
+    script produce a different set on each run from unchanged source.
+  * `version` and `tags` beside a record or a link are **refused rather than
+    ignored**, since a record already carries its own.
+  * **Adding the same member twice is settled as you add it**, so the count a
+    draft reports is the count the write produces. The same version with the same
+    labels is skipped, with a note -- the write drops an exact repeat anyway. The
+    same version with **different** labels stops there and names both label sets,
+    which the write refuses too; here it names the line that introduced it. Two
+    different **versions** of one artifact are two members, and both are kept.
+
+* **`datom_write_set()`'s first argument now also accepts a draft**, so the pipe
+  ends with no arguments typed. The checks are the same either way: a draft's name
+  is compared against `.datom/project.yaml` exactly as a supplied one is.
+
+* **A draft holds a live connection, so it belongs in memory only.** Printing one
+  shows what is assembled so far, that it is not written yet, and that it should
+  not be saved to disk. Write the set, then cite the set.
+
+## A project name in a stored document now comes from the repo, not from your connection
+
+Every artifact's `metadata.json` now records a **`project`** field: the name the
+writing repo declares in its own `.datom/project.yaml`. Nothing you write changes
+shape beyond that one field, and **no existing artifact gains a version**, because
+the field takes no part in version identity -- identical content in two projects is
+meant to share a version, and what was wrong before was the citation, not the
+identity.
+
+* **What was wrong.** A **reader** connection's project name is a string you pass
+  to `datom_get_conn()`; the namespace comes from your store's root and prefix, and
+  nothing compares that string against the repo. Two things then carried a name
+  nobody had checked. `datom_get_set()` reported it as the set's project, and
+  `datom_member()` wrote it into the member's `id$project` -- where it entered a
+  stored payload, was hashed into that set's `data_sha`, and was cited afterwards.
+  A developer connection was never affected: there the name is read from the
+  clone's `project.yaml`.
+
+* **`datom_member()` and `datom_parent()` now take the name from the artifact
+  itself**, falling back to the project's manifest for an artifact written before
+  this release, and to your connection's name only if neither records one -- which
+  it says out loud, so an unverified name is never recorded silently.
+
+* **`datom_get_set()` reports the name the set's own metadata records**, so a
+  mislabelled reader connection no longer changes what a set says about itself.
+
+* **`datom_parent()` is the one that can move a version.** Lineage is part of a
+  table's identity, so a table whose parents were declared through a mislabelled
+  reader connection mints one new version at its next write. That is the correct
+  outcome -- the recorded source project was wrong -- but it should not arrive as a
+  surprise. Declared through a developer connection, which is the ordinary case,
+  nothing moves.
+
+* **Not in scope, deliberately**: `datom_summary()`, `datom_status()` and printing a
+  connection still show the connection's project name, because that is what they
+  are reporting.
+
+## `datom_validate()` checks sets, and can put a set's payload back
+
+Validation looked for a parquet object for every artifact, so a set reported its
+data missing from storage 100% of the time. It now looks for whatever that
+artifact's own metadata says it is -- parquet for a table, a JSON payload for a
+set -- and its result gains a **`kind`** column, on populated rows and on the
+empty one.
+
+* **A set is checked further than a table**, because a set is a citation and a
+  citation that no longer resolves is worse than a file that is merely absent.
+  Every member's pinned version must still exist in this project's storage, and
+  the set must record the hash of its stored payload -- without which no reader
+  can verify it, and the error a reader gives in that case tells you to run this
+  verb.
+* **Member checking stops at one level.** A member that is itself a set is
+  confirmed to exist and its own member list is never opened, so validating a set
+  costs the same whatever sits beneath it. Validate an inner set by running this
+  against the project that owns it.
+* **A member recorded as belonging to another project is checked as a
+  well-formed pointer only.** Your connection sees one namespace and access in
+  datom is per project, so looking for that member here would report every
+  cross-project citation as rotten. Run validation against that project to check
+  it properly.
+* **New statuses**: `members_unresolvable` and `document_sha_missing`, both
+  distinct from `data_missing_s3` so you can tell a lost payload from a lost
+  member. Also `kind_unsupported`, for an artifact whose metadata declares a kind
+  this version does not know: that row's payload is left unchecked and reported
+  as such rather than called missing, and the rest of the repo is still checked
+  instead of the run stopping there.
+* **`fix = TRUE` now restores a set's payload when storage has lost it.** Git
+  holds `{name}/set.json`, so those bytes are recoverable -- unlike a table's
+  parquet, which never sits in the clone. This is the state a write that
+  committed and then failed to upload leaves behind, and re-running
+  `datom_write_set()` could not repair it, since the members are unchanged and
+  the write correctly does nothing.
+  * **A stored payload that is present is never overwritten**, and its recorded
+    hash is never recomputed. A version pins those exact bytes, so a fresh
+    spelling at that address would leave a valid version refusing its own
+    payload on read.
+  * **A clone whose payload does not match the recorded hash is declined out
+    loud**, naming what to do, rather than uploading bytes no version describes.
+  * A set is no longer named among the artifacts the repair cannot fix, and the
+    advice to re-run `datom_write()` with the source data now reaches tables
+    only, where it is true.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

@@ -361,6 +361,7 @@ Current state only — no history stored here:
 
 ```json
 {
+  "schema_version": 2,
   "data_sha": "abc123...",
   "hash_algo": "datom-cv1",
   "parquet_sha": "9f10a2...",
@@ -395,6 +396,7 @@ Current state only — no history stored here:
 
 | Field | Description |
 |-------|-------------|
+| `schema_version` | Format of this document, so any build can say what shape it is holding. Absent means version 1, i.e. a document written before the field existed, which is tolerated and read as normal. A build meeting a **higher** number than it knows refuses the document and points at the upgrade, rather than reading a shape it does not understand and reporting the artifact as empty. Excluded from `metadata_sha`: a format bump must not re-mint a version for every artifact whose content stood still. Distinct from `datom_version`, which is provenance -- one format spans many releases, so neither field answers "which datom do I need?" on its own. |
 | `data_sha` | Canonical `datom-cv1` hash of the table's **values** (not of the parquet file -- see "Table Identity = data_sha"). Doubles as the content address: `{table}/{data_sha}.parquet`. |
 | `hash_algo` | Identity algorithm that produced `data_sha`. Always `"datom-cv1"` for tables written by this version. **Semantic** (participates in `metadata_sha`): a new algorithm is a new identity regime. |
 | `parquet_sha` | SHA-256 of the stored parquet object's bytes. Integrity, **not** identity: verified on read before parsing; carried forward unchanged on a `metadata_only` write; reused (never overwritten) when a write reverts to content already in history. Excluded from `metadata_sha`, which is what allows `datom_write()` to set it after `metadata_sha` is computed. `null` for pre-`datom-cv1` metadata, in which case the read-time check is skipped rather than failed. |
@@ -1082,8 +1084,8 @@ datom_validate(conn, fix = FALSE)
 Checks that git metadata matches S3 storage for all tables and repo-level files. Reports mismatches as a structured result.
 
 - **Repo-level checks**: when gov is attached, `projects/{project_name}/{ref,dispatch,migration_history}.json` are read-checked in gov clone + gov storage (skipped for solo projects); `.datom/manifest.json` exists in data repo + data storage.
-- **Per-table checks**: metadata.json, version_history.json, and `{data_sha}.parquet` exist on data storage for each table tracked in git
-- `fix = TRUE`: attempts to repair inconsistencies by re-syncing **data-side** metadata (manifest + per-table metadata) to storage via the internal `.datom_sync_data_metadata(conn, .confirm = FALSE)`. Gov-side repair is datomanager's responsibility (`gov_sync_dispatch()`).
+- **Per-artifact checks**: metadata.json, version_history.json, and the payload exist on data storage for each artifact tracked in git. The payload's address follows the artifact's declared `kind` -- `{data_sha}.parquet` for a table, `{data_sha}.json` for a set. A **set** is checked further: every member's pinned version exists in this project's storage (one level deep, cross-project members as well-formed pointers only) and the set records a `document_sha`. Statuses: `metadata_missing_s3`, `history_missing_s3`, `data_missing_s3`, `members_unresolvable`, `document_sha_missing`, `kind_unsupported`.
+- `fix = TRUE`: attempts to repair inconsistencies by re-syncing **data-side** documents (manifest + each artifact's metadata, history and snapshots) to storage via the internal `.datom_sync_data_metadata(conn, .confirm = FALSE)`, which also **restores a set's payload** from the clone when storage has lost it -- only when the stored object is absent, only when the clone's bytes hash to the recorded `document_sha`, and never recomputing that hash. A table's parquet cannot be repaired this way and those tables are named in a warning. The same mechanism runs on `datom_write(conn)` with no `data` and no `name`. Gov-side repair is datomanager's responsibility (`gov_sync_dispatch()`).
 
 Returns: List with `valid` (logical), `repo_files` (data frame), `tables` (data frame), `fixed` (logical).
 
@@ -1632,10 +1634,12 @@ Lives in the **governance repository** at `projects/{project_name}/dispatch.json
 
 ```json
 {
+  "schema_version": 2,
   "project_name": "STUDY_001",
   "updated_at": "2024-01-15T10:30:00Z",
-  "tables": {
+  "artifacts": {
     "customers": {
+      "kind": "table",
       "current_version": "xyz789...",
       "current_data_sha": "abc123...",
       "original_file_sha": "def456...",
@@ -1648,10 +1652,44 @@ Lives in the **governance repository** at `projects/{project_name}/dispatch.json
   "summary": {
     "total_tables": 2,
     "total_size_bytes": 3145728,
-    "total_versions": 23
+    "total_versions": 23,
+    "total_sets": 0
   }
 }
 ```
+
+**One namespace, typed by `kind`.** Every artifact lives under `artifacts`, keyed by
+name, and each entry says what kind of artifact it is. Not two sibling nodes: storage
+keys are `{name}/...` regardless of kind, so a set and a table sharing a name would
+write the same objects and clobber each other. One namespace makes that a key
+collision in a single list rather than an illegal state something has to guard.
+
+The `summary` counters keep the meanings they have always had -- `total_tables`,
+`total_size_bytes` and `total_versions` all cover tables only -- and `total_sets` is
+the new counter beside them.
+
+**`schema_version` is the format of the file, and a manifest written before it
+existed carries none.** An absent field means version 1: the artifact list under
+`tables` and no `kind` on any entry. datom converts such a document to the current
+shape as it reads it, in memory, and leaves the file alone; a write converts the file
+itself and then stamps the version it reached. So a repo is never half in one shape
+and half in the other.
+
+**The guarantee runs one way only, and it is worth being exact about which.** A
+**newer** build reads an **older** repo -- that is what the conversion buys, and it is
+why no manual migration exists. The reverse does not hold across this rename: once
+anyone writes, the manifest declares v2, and a build predating the change looks for the
+artifact list under a key that is no longer there. It reports an empty repo and does
+**not** error. Reading a known table still works, because the data path never touches
+the manifest, so what is lost is discovery rather than access. That asymmetry is the
+whole reason the format number was introduced first: from here on a build that meets a
+document too new for it says so instead of reporting nothing, and the write side refuses
+outright rather than producing a file for a shape nobody agreed on.
+
+**A write that converts a manifest says so**, naming what collaborators on an older
+datom will see until they upgrade. Conversion is one-way for everyone sharing the repo,
+and `datom_validate(fix = TRUE)` reaches it while reading as a repair, so an
+unannounced flip would be a silent degradation of somebody else's install.
 
 **Design rationale**: The "current" fields per table enable sync optimization. When `datom_sync_manifest()` runs, it compares local file SHAs against manifest. Only on mismatch does it fetch the full `version_history.json`. For repos with 100-300 tables, this avoids hundreds of S3 GETs on unchanged re-runs.
 

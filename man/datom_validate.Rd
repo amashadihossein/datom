@@ -10,14 +10,24 @@ datom_validate(conn, fix = FALSE)
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
 \item{fix}{If \code{TRUE}, attempts to fix inconsistencies by syncing data-side
-metadata (manifest + per-table metadata) to storage.}
+metadata (manifest + per-artifact metadata) to storage, and by restoring a
+\strong{set's} payload when storage has lost it -- git holds \code{{name}/set.json},
+so those bytes are recoverable. A restore happens only when the stored
+object is absent and only when the clone's bytes hash to the
+\code{document_sha} already recorded; a stored payload is never overwritten and
+its recorded hash is never recomputed.
+
+A missing \strong{table} payload (\code{data_missing_s3}) cannot be repaired: the
+parquet bytes are never in the clone. Those tables are named in a warning
+and need \code{\link[=datom_write]{datom_write()}} re-run with the source data.}
 }
 \value{
 A list with:
 \describe{
 \item{valid}{Logical — \code{TRUE} if everything is consistent.}
 \item{repo_files}{Data frame of repo-level file checks.}
-\item{tables}{Data frame of per-table checks.}
+\item{tables}{Data frame of per-artifact checks, one row per artifact of
+either kind, with a \code{kind} column. Named \code{tables} for compatibility.}
 \item{fixed}{Logical — \code{TRUE} if \code{fix = TRUE} was applied.}
 }
 }
@@ -25,6 +35,32 @@ A list with:
 Checks that git metadata matches S3 storage for all tables and repo-level
 files. Reports mismatches as a structured result.
 }
+\section{What is checked per artifact}{
+
+Both kinds of artifact are checked, and the payload check branches on kind: a
+table's payload is a parquet object, a set's is a JSON document at
+\verb{\{name\}/\{data_sha\}.json}. A \strong{set} is checked further, because a payload
+whose members have gone is a citation that no longer resolves:
+\itemize{
+\item every member's pinned version must still exist in this project's storage.
+\strong{One level deep only} -- a member that is itself a set is confirmed to
+exist and its own member list is never opened, so the cost of validating a
+set never depends on the tree beneath it. Validating an inner set is a
+separate call against that set's own project.
+\item a member recorded as belonging to \strong{another project} is checked as a
+well-formed pointer only. This connection sees one namespace, so an
+existence check there would report every cross-project member as rotten.
+\item the set must record the hash of its stored payload, without which no reader
+can verify it.
+}
+
+Statuses reported in the \code{tables} frame: \code{metadata_missing_s3},
+\code{history_missing_s3}, \code{data_missing_s3}, \code{members_unresolvable},
+\code{document_sha_missing}, and \code{kind_unsupported} for an artifact whose metadata
+declares a kind this version of datom does not know -- reported rather than
+fatal, with that row's payload left unchecked.
+}
+
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
 # local directory for object storage.

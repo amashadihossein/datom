@@ -342,6 +342,9 @@ create_test_datom_repo <- function(project_name = "testproj",
                                   bucket = "test-bucket",
                                   prefix = "test-prefix/",
                                   region = "us-east-1",
+                                  min_writer_version = NULL,
+                                  schema_version = NULL,
+                                  extra = NULL,
                                   env = parent.frame()) {
   dir <- withr::local_tempdir(.local_envir = env)
   datom_dir <- fs::path(dir, ".datom")
@@ -349,6 +352,7 @@ create_test_datom_repo <- function(project_name = "testproj",
 
   yaml_content <- list(
     project_name = project_name,
+    min_writer_version = min_writer_version,
     storage = list(
       data = list(
         type = "s3",
@@ -362,6 +366,13 @@ create_test_datom_repo <- function(project_name = "testproj",
       data = list(remote_url = "https://github.com/test/repo.git")
     )
   )
+
+  # Added conditionally, not as a NULL slot: a NULL in the list above round-trips
+  # through yaml as `~` and reads back as an explicit NULL, which is a different
+  # document from one where the key is simply not there. The absent case is the
+  # one every repo written so far is in, so it has to be the real absence.
+  if (!is.null(schema_version)) yaml_content$schema_version <- schema_version
+  if (!is.null(extra)) yaml_content <- c(yaml_content, extra)
 
   yaml::write_yaml(yaml_content, fs::path(datom_dir, "project.yaml"))
   dir
@@ -387,6 +398,132 @@ test_that("developer path reads project.yaml and creates connection", {
   expect_equal(conn$root, "my-bucket")
   expect_equal(conn$role, "developer")
   expect_equal(conn$path, as.character(fs::path_abs(dir)))
+})
+
+test_that("developer path carries the repo's declared minimum writer version", {
+  # The field is optional and lives in project.yaml. It rides on the connection
+  # because that file is already parsed here, which is what lets the write entry
+  # check it without an extra read. Absent must stay indistinguishable from "no
+  # limit", so both states are asserted.
+  comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
+                         access_key = "k", secret_key = "s", validate = FALSE)
+  store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
+                       data_repo_url = "https://github.com/test/repo.git",
+                       validate = FALSE)
+
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  declared <- create_test_datom_repo(bucket = "my-bucket",
+                                     min_writer_version = "9.9.9")
+  conn <- muffle_conn_warnings(datom_get_conn(path = declared, store = store))
+  expect_identical(conn$min_writer_version, "9.9.9")
+
+  silent <- create_test_datom_repo(bucket = "my-bucket")
+  conn <- muffle_conn_warnings(datom_get_conn(path = silent, store = store))
+  expect_null(conn$min_writer_version)
+})
+
+
+# --- project.yaml declares its own format --------------------------------------
+# The file carries fields a writer must OBEY -- min_writer_version, and mode/set
+# for a product repo -- so it needs a way to say "this repo needs a newer datom".
+# The reading half cannot be retrofitted into builds already installed, which is
+# why it lands before anything starts writing those fields.
+
+conn_schema_store <- function() {
+  comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
+                         access_key = "k", secret_key = "s", validate = FALSE)
+  datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
+              data_repo_url = "https://github.com/test/repo.git",
+              validate = FALSE)
+}
+
+test_that("developer path refuses a project.yaml whose format is too new", {
+  store <- conn_schema_store()
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  dir <- create_test_datom_repo(bucket = "my-bucket",
+                                schema_version = .datom_project_schema + 1L)
+
+  err <- expect_error(
+    muffle_conn_warnings(datom_get_conn(path = dir, store = store)),
+    class = "datom_schema_unsupported"
+  )
+  msg <- conditionMessage(err)
+  # Names the file, so the user knows which document to look at, and points at
+  # the upgrade rather than at their credentials.
+  expect_match(msg, "project.yaml", fixed = TRUE)
+  expect_match(msg, "install_github")
+  # Measured against the config's own ceiling, not the repo-wide one.
+  expect_match(msg, paste0("supports up to v", .datom_project_schema))
+})
+
+test_that("developer path refuses before reading a single field out of the config", {
+  # A config this build cannot interpret must not first be mined for a project
+  # name or a store cross-check: those produce their own confident errors about
+  # the wrong thing. The probe is a config that is too new AND would fail the
+  # store cross-check; the format refusal is what has to come back.
+  store <- conn_schema_store()
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  dir <- create_test_datom_repo(bucket = "some-other-bucket",
+                                schema_version = .datom_project_schema + 1L)
+
+  expect_error(
+    muffle_conn_warnings(datom_get_conn(path = dir, store = store)),
+    class = "datom_schema_unsupported"
+  )
+})
+
+test_that("developer path treats an absent format as v1 and changes nothing", {
+  # Every repo written so far is in this state. Not merely "does not abort":
+  # no warning and no changed field either, since a silent degradation would be
+  # the failure this check exists to remove.
+  store <- conn_schema_store()
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  dir <- create_test_datom_repo(project_name = "silentproj", bucket = "my-bucket")
+  cfg <- yaml::read_yaml(fs::path(dir, ".datom", "project.yaml"))
+  expect_false("schema_version" %in% names(cfg))
+
+  conn <- muffle_conn_warnings(datom_get_conn(path = dir, store = store))
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$project_name, "silentproj")
+
+  # And a config declaring the current format behaves identically, so the field's
+  # arrival is invisible to everything downstream of it.
+  stamped <- create_test_datom_repo(project_name = "silentproj",
+                                    bucket = "my-bucket",
+                                    schema_version = .datom_project_schema)
+  stamped_conn <- muffle_conn_warnings(datom_get_conn(path = stamped, store = store))
+  expect_equal(stamped_conn$project_name, conn$project_name)
+  expect_equal(stamped_conn$root, conn$root)
+})
+
+test_that("developer path still tolerates an unrecognised key in project.yaml", {
+  # THE CLAUSE A LATER TIDY-UP BREAKS. project.yaml is hand-edited, so an
+  # unrecognised key is as likely a typo or a private note as it is evidence of a
+  # newer datom -- which is why the vocabulary check that guards the manifest and
+  # per-artifact metadata must NEVER be pointed at this file. Refusing on one
+  # would block every write in the repo until somebody found it. Today the
+  # tolerance is incidental (the parser ignores keys it does not know); this test
+  # is what makes it a decision.
+  store <- conn_schema_store()
+  local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
+
+  dir <- create_test_datom_repo(
+    bucket = "my-bucket",
+    schema_version = .datom_project_schema,
+    extra = list(
+      a_field_datom_has_never_heard_of = "kept by hand",
+      notes = list(owner = "someone", ticket = "ABC-1")
+    )
+  )
+
+  expect_no_warning(
+    conn <- muffle_conn_warnings(datom_get_conn(path = dir, store = store))
+  )
+  expect_s3_class(conn, "datom_conn")
 })
 
 test_that("developer path uses reader role when store is reader", {
@@ -1099,6 +1236,12 @@ test_that("datom_init_repo creates manifest.json", {
   expect_equal(manifest$summary$total_tables, 0)
   expect_equal(manifest$summary$total_size_bytes, 0)
   expect_equal(manifest$summary$total_versions, 0)
+  expect_equal(manifest$summary$total_sets, 0)
+  # A repo declares its format from the moment it is created, so none exists in
+  # a state that declares nothing -- not even before its first artifact.
+  expect_equal(manifest$schema_version, 2L)
+  expect_true("artifacts" %in% names(manifest))
+  expect_null(manifest$tables)
 })
 
 test_that("datom_init_repo creates .gitignore with input_files/", {
@@ -1253,6 +1396,315 @@ test_that("datom_init_repo stores datom_version in project.yaml", {
   cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
   expect_equal(cfg$datom_version,
                as.character(utils::packageVersion("datom")))
+})
+
+test_that("datom_init_repo stamps project.yaml's own format, on the written file", {
+  # Asserted on the file rather than on the in-memory config, because the one
+  # thing this clause is about is what yaml::write_yaml() did with an integer: a
+  # value that round-trips as a string would fail the checker as corrupt.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_equal(cfg$schema_version, .datom_project_schema)
+  expect_length(cfg$schema_version, 1L)
+  expect_true(is.numeric(cfg$schema_version))
+
+  # And the stamped value survives its own checker, which is the round trip that
+  # matters: a repo this build creates must be one this build can open.
+  expect_equal(
+    .datom_check_project_schema(cfg, "project.yaml"),
+    .datom_project_schema
+  )
+})
+
+test_that("datom_init_repo stamps the config's number, not the repo-wide one", {
+  # The two constants are different numbers on purpose. Stamping the repo-wide
+  # ceiling here would tie this file's declared shape to every manifest and
+  # metadata bump, and a build one bump behind would then lose the whole
+  # developer path on a config whose shape never changed.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  manifest <- jsonlite::read_json(fs::path(env$work_dir, ".datom", "manifest.json"))
+
+  expect_equal(cfg$schema_version, .datom_project_schema)
+  expect_equal(manifest$schema_version, .datom_supported_schema)
+})
+
+test_that("project.yaml's key set is pinned to its declared format", {
+  # TRIPWIRE, and it forces a DECISION rather than mandating a bump. The one real
+  # hole in giving this file its own number is a FORGOTTEN bump: a shape change
+  # shipped with the number unmoved is silently misread by an older build. This
+  # test goes red whenever the keys datom_init_repo() writes change.
+  #
+  # WHAT TO DO WHEN IT FIRES. An addition is reader-safe -- an older build never
+  # asks for a key it does not know -- so the usual answer is to extend the list
+  # below and leave .datom_project_schema alone. The worked case is `mode` and
+  # `set` for a product repo: the correct response to those is no bump, because an
+  # older build's misreading of `mode` is a silent no-op rather than a wrong write.
+  # THE STANDARD THIS TEST HAS TO MEET, which is wider than any one key: it must
+  # exercise EVERY path that writes project.yaml, and adding such a path means
+  # adding a case here. It only sees the creation path it calls, so a key written
+  # conditionally -- for a product repo, say -- is invisible to it, and the guard
+  # then looks like a guard while saying nothing about exactly the addition it was
+  # written for. Two paths write this file today: this one and
+  # datom_repo_set_data_store(), which read-modify-writes and so preserves keys by
+  # construction -- tested anyway, because a refactor to rebuilding the document
+  # would drop most of them with nothing else failing.
+  #
+  # Move the number when a key is RENAMED, MOVED
+  # to a different parent, REMOVED, or changes meaning or type -- the cases where
+  # an older build reads the file and gets a wrong answer rather than a missing
+  # one.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+
+  expected_keys <- c(
+    "project_name", "project_description", "created_at", "datom_version",
+    "schema_version", "storage", "repos", "sync", "renv"
+  )
+  expect_setequal(names(cfg), expected_keys)
+  expect_equal(.datom_project_schema, 1L)
+})
+
+test_that("a product repo's project.yaml key set is pinned too", {
+  # THE SECOND CASE THE RULE ABOVE REQUIRES. `mode` and `set` are written only for
+  # a product repo, so the ordinary-init test cannot see them -- it would stay green
+  # through any change to them, which is the guard looking like a guard while saying
+  # nothing about the addition it was written for.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store, mode = "product", set = "study001-adam")
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+
+  expected_keys <- c(
+    "project_name", "project_description", "created_at", "datom_version",
+    "schema_version", "storage", "repos", "sync", "renv", "mode", "set"
+  )
+  expect_setequal(names(cfg), expected_keys)
+  # Adding these two keys is an addition, so the declared format does NOT move --
+  # an older build never asks for a key it does not know, and its misreading of
+  # `mode` is a silent no-op rather than a wrong write.
+  expect_equal(cfg$schema_version, .datom_project_schema)
+  expect_equal(.datom_project_schema, 1L)
+})
+
+test_that("the store-pointer verb preserves every key in project.yaml", {
+  # THE THIRD CASE THE RULE REQUIRES, and the reason it is not hypothetical: this
+  # verb is the only writer of this file besides init. It read-modify-writes, so it
+  # preserves keys by construction -- which is exactly why it is tested, because a
+  # refactor to rebuilding the document from the connection would drop most of them
+  # with nothing else failing.
+  skip_if_not_installed("git2r")
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store, mode = "product", set = "product-a")
+
+  yaml_path <- fs::path(env$work_dir, ".datom", "project.yaml")
+  before <- names(yaml::read_yaml(yaml_path))
+
+  new_store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
+  conn <- structure(
+    list(project_name = "testproj", role = "developer",
+         path = as.character(env$work_dir), gov_root = NULL, github_pat = NULL),
+    class = "datom_conn"
+  )
+  local_mocked_bindings(.datom_git_push = function(...) invisible(TRUE))
+
+  datom_repo_set_data_store(conn, new_store)
+
+  expect_setequal(names(yaml::read_yaml(yaml_path)), before)
+})
+
+test_that("datom_init_repo declares mode and set only when asked", {
+  # Absent IS "ordinary data repo" to every reader of this file, so there is no
+  # `mode: standard` line for that state. And the keys must be genuinely absent
+  # rather than written as yaml `~`: a NULL in a list() constructor is a present
+  # element, which would read back as a declared empty value.
+  env <- setup_init_env()
+
+  datom_init_repo(path = env$work_dir, project_name = "testproj",
+                  store = env$store)
+
+  cfg <- yaml::read_yaml(fs::path(env$work_dir, ".datom", "project.yaml"))
+  expect_false("mode" %in% names(cfg))
+  expect_false("set" %in% names(cfg))
+
+  # And what it writes for a product repo is exactly what the set-write gate
+  # reads, which is the whole point of writing it.
+  env2 <- setup_init_env()
+  datom_init_repo(path = env2$work_dir, project_name = "testproj",
+                  store = env2$store, mode = "product", set = "product-a")
+  cfg2 <- yaml::read_yaml(fs::path(env2$work_dir, ".datom", "project.yaml"))
+  expect_identical(cfg2$mode, "product")
+  expect_identical(cfg2$set, "product-a")
+})
+
+test_that("datom_init_repo refuses a product repo that names no set", {
+  # A product repo with no set passes the set-write mode check and then fails its
+  # name check on every write -- a repo that looks initialised and is not. Caught
+  # at the call that could have got it right.
+  env <- setup_init_env()
+
+  err <- expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, mode = "product"),
+    "must name the set"
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)), "datom_write_set")
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+})
+
+test_that("datom_init_repo refuses a set name without the product mode", {
+  env <- setup_init_env()
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, set = "product-a"),
+    "without"
+  )
+})
+
+test_that("datom_init_repo refuses a mode it does not recognise", {
+  # A typo must not become a repo that quietly behaves as an ordinary one.
+  env <- setup_init_env()
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, mode = "prodcut", set = "s"),
+    "must be"
+  )
+})
+
+test_that("datom_init_repo validates a set name through the shared validator", {
+  # The same function the set-write gate calls, so the two cannot disagree about
+  # what a legal name is -- otherwise init accepts a name no write can use.
+  # A space is legal in a datom name, so the probe has to be a name the shared
+  # validator actually rejects -- one that does not start with a letter.
+  env <- setup_init_env()
+
+  expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, mode = "product", set = "9lives"),
+    "must start with a letter"
+  )
+
+  env2 <- setup_init_env()
+  expect_error(
+    datom_init_repo(path = env2$work_dir, project_name = "testproj",
+                    store = env2$store, mode = "product", set = "bad/name"),
+    "may only contain"
+  )
+})
+
+test_that("a product repo's namespace is checked on a local store and cannot be forced", {
+  # Two widenings of one condition, both scoped to product repos. Ordinary repos
+  # keep the s3-only scope and the .force override exactly as they had them: the
+  # blast-radius argument is about a product sitting on top of data it did not
+  # produce, since teardown and prefix-delete operate on a whole namespace.
+  bare <- withr::local_tempdir()
+  git2r::init(bare, bare = TRUE)
+  store_dir <- withr::local_tempdir()
+  local_store <- datom_store_local(store_dir, prefix = "proj", validate = FALSE)
+  store <- datom_store(data = local_store, github_pat = "ghp_fake",
+                       data_repo_url = bare, validate = FALSE)
+
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, key) grepl("manifest\\.json", key),
+    .datom_storage_read_json = function(conn, key) list(project_name = "SOURCE_STUDY"),
+    .datom_storage_write_json = function(...) invisible(TRUE)
+  )
+
+  # Local backend: an ordinary repo is not checked at all, so this is the widening.
+  product_dir <- withr::local_tempdir()
+  err <- expect_error(
+    datom_init_repo(path = product_dir, project_name = "testproj", store = store,
+                    mode = "product", set = "product-a"),
+    class = "datom_namespace_occupied"
+  )
+  expect_match(conditionMessage(err), "SOURCE_STUDY")
+
+  # .force does not buy a product repo its way in. It is refused at the argument
+  # check, before the namespace is even looked at -- see the test below for why
+  # that rather than silently dropping it.
+  forced_dir <- withr::local_tempdir()
+  expect_error(
+    datom_init_repo(path = forced_dir, project_name = "testproj", store = store,
+                    mode = "product", set = "product-a", .force = TRUE),
+    "does not apply"
+  )
+
+  # An ordinary local repo is unaffected: no check, so an occupied namespace does
+  # not stop it. Recorded rather than fixed -- closing it is a behaviour change for
+  # every local repo and its own decision.
+  ordinary_dir <- withr::local_tempdir()
+  expect_no_error(
+    datom_init_repo(path = ordinary_dir, project_name = "testproj", store = store)
+  )
+})
+
+test_that("datom_init_repo refuses .force on a product repo rather than dropping it", {
+  # REFUSED, NOT IGNORED, and the argument is the same one that refuses a version
+  # supplied beside a member record which already carries one: ignoring an
+  # argument reports success for an action nobody asked for. Here the caller
+  # requested a namespace takeover, would not have got one, and would never have
+  # been told -- so next time they would rely on an override that does not exist.
+  #
+  # It fires at the argument check, before the namespace is consulted, so it does
+  # not depend on the namespace being occupied.
+  env <- setup_init_env()
+
+  err <- expect_error(
+    datom_init_repo(path = env$work_dir, project_name = "testproj",
+                    store = env$store, mode = "product", set = "product-a",
+                    .force = TRUE),
+    "does not apply"
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  # Says why there is no override, not merely that there is none.
+  expect_match(msg, "teardown")
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+})
+
+test_that("an occupied-namespace refusal advises .force only where .force works", {
+  # THE CIRCLE THIS CLOSES. The refusal's recourse used to end with "pass
+  # .force = TRUE to override" whatever the caller's policy was -- so a product
+  # repo meeting an occupied namespace was routed into a flag that changes
+  # nothing there. Same shape as the message that said "S3" to a local store: the
+  # checker cannot know its caller's policy, so the caller declares it.
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, key) TRUE,
+    .datom_storage_read_json = function(conn, key) list(project_name = "OTHER")
+  )
+  conn <- mock_datom_conn(list())
+
+  ordinary <- expect_error(.datom_check_namespace_free(conn),
+                           class = "datom_namespace_occupied")
+  expect_match(cli::ansi_strip(conditionMessage(ordinary)), ".force = TRUE",
+               fixed = TRUE)
+
+  product <- expect_error(
+    .datom_check_namespace_free(conn, overridable = FALSE),
+    class = "datom_namespace_occupied"
+  )
+  msg <- cli::ansi_strip(conditionMessage(product))
+  expect_no_match(msg, ".force", fixed = TRUE)
+  # And still says what DOES work, plus why the override is absent.
+  expect_match(msg, "prefix")
+  expect_match(msg, "teardown")
 })
 
 test_that("datom_init_repo creates README.md", {
@@ -1848,25 +2300,114 @@ test_that("datom_init_repo manifest.json includes project_name", {
   expect_equal(manifest$project_name, "testproj")
 })
 
-test_that("datom_init_repo warns but continues when S3 connectivity fails during namespace check", {
+test_that("datom_init_repo does not swallow an unrecognised namespace-check failure", {
+  # THE HAZARD THE CONDITION CLASS ALONE DOES NOT CLOSE, and it lives here because
+  # the caller is what used to swallow. This wrapped the whole check in a handler
+  # that re-raised only what it recognised by message text and downgraded
+  # everything else to a warning -- so any abort added inside the check later
+  # became a warning, and init carried on, with nothing failing to say so.
+  #
+  # The store-unreachable tolerance is now scoped to the one storage call inside
+  # the check (see the test below, which still passes), so a failure for any other
+  # reason reaches the user.
   env <- setup_init_env()
 
-  # .datom_s3_client will work but .datom_s3_exists will fail with network error
+  local_mocked_bindings(
+    .datom_check_namespace_free = function(conn, ...) {
+      cli::cli_abort("a refusal this build did not anticipate")
+    }
+  )
+
+  expect_error(
+    datom_init_repo(
+      path = env$work_dir,
+      project_name = "testproj",
+      store = env$store
+    ),
+    "did not anticipate"
+  )
+})
+
+test_that("datom_init_repo dispatches the occupied refusal on its class, not its text", {
+  # The refusal must survive a reword of its own message. Six tests grep the
+  # phrase "already occupied", which is why the old text-matched re-raise was
+  # noisy rather than silent -- but noise in the suite is not a design, and the
+  # coupling is what this removes.
+  env <- setup_init_env()
+
+  local_mocked_bindings(
+    .datom_check_namespace_free = function(conn, ...) {
+      cli::cli_abort("wording nobody greps for",
+                     class = "datom_namespace_occupied")
+    }
+  )
+
+  expect_error(
+    datom_init_repo(
+      path = env$work_dir,
+      project_name = "testproj",
+      store = env$store
+    ),
+    class = "datom_namespace_occupied"
+  )
+})
+
+test_that("datom_init_repo refuses when storage connectivity fails during the namespace check", {
+  # BEHAVIOUR CHANGE, deliberate and loud. This used to warn and continue, which
+  # read as a graceful degradation and was not one: it did not defer the occupancy
+  # check, it removed it. Traced end to end -- init went on to push the git repo,
+  # then aborted at the manifest upload, and the recovery that abort pointed at
+  # performs no occupancy check of any kind. So the tolerance never produced a
+  # working offline init, because storage is required to finish one; its only
+  # reachable effect was getting past the check, with a manifest written over
+  # another project's as the outcome.
+  #
+  # Refusing at the check costs nothing that worked before and names the real
+  # problem at the moment it is known, instead of surfacing later as an unrelated
+  # upload failure.
+  env <- setup_init_env()
+
   local_mocked_bindings(
     .datom_storage_exists = function(conn, s3_key) stop("Network error"),
     .datom_storage_write_json = function(...) invisible(TRUE)
   )
 
-  # Should succeed — connectivity failure during namespace check is a warning, not fatal
-  expect_no_error(
+  expect_error(
     datom_init_repo(
       path = env$work_dir,
       project_name = "testproj",
       store = env$store
-    )
+    ),
+    class = "datom_namespace_unverified"
   )
 
-  expect_true(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+  # And it refuses before anything local is created, like the occupied refusal.
+  expect_false(fs::dir_exists(fs::path(env$work_dir, ".datom")))
+})
+
+test_that("datom_init_repo's manifest-upload recovery names a verb that can do it", {
+  # The hint used to say datom_sync_manifest(), which scans `input_files/` and
+  # returns a data frame of statuses -- it writes nothing to storage, so the
+  # advice could not work. The verb that mirrors metadata is internal and is
+  # reached through datom_validate(fix = TRUE).
+  env <- setup_init_env()
+
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, s3_key) FALSE,
+    .datom_storage_write_json = function(...) stop("storage gone")
+  )
+
+  err <- expect_error(
+    datom_init_repo(
+      path = env$work_dir,
+      project_name = "testproj",
+      store = env$store
+    ),
+    "manifest upload failed"
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "datom_validate", fixed = TRUE)
+  expect_no_match(msg, "datom_sync_manifest", fixed = TRUE)
 })
 
 
