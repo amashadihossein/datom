@@ -263,6 +263,75 @@ test_that("a commit that cannot be worked out omits the field rather than writin
   expect_false(grepl("commit_sha", text, fixed = TRUE))
   expect_length(vc_stored_history(fx, "ghost"), 1L)
 })
+test_that("a stored history that will not read says which commit links were lost", {
+  # The dangerous swallow. "Storage has none" is the ordinary first write;
+  # "storage would not read" means the values only storage had are unknown, and
+  # the upload replaces that file wholesale -- so a version git cannot attribute
+  # loses a good value. The two must not collapse into one silent answer.
+  #
+  # The artifact has no commits at all, which is what git being unable to
+  # attribute a version looks like from the inside; a shallow clone is the same
+  # state arrived at differently.
+  fx <- local_commit_link_project()
+
+  meta <- list(kind = "table", data_sha = "aaa", nrow = 1L, ncol = 1L,
+               colnames = list("id"), table_type = "derived", hash_algo = "sha256",
+               created_at = "2026-01-01T00:00:00Z")
+  version <- .datom_compute_metadata_sha(meta)
+  .datom_write_metadata_local(fx$conn, "ghost", meta, version, message = "ghost")
+  .datom_push_metadata_s3(fx$conn, "ghost", meta, version, commit_sha = NULL)
+
+  writeLines("{ not json", .datom_local_path(fx$conn, vc_history_key("ghost")))
+
+  expect_warning(
+    .datom_push_metadata_s3(fx$conn, "ghost", meta, version, commit_sha = NULL),
+    class = "datom_commit_shas_lost"
+  )
+})
+test_that("an unreadable stored history is not a refusal, so the repair can replace it", {
+  # Refusing would deadlock the only way out: the repair verb shares this helper,
+  # so a stored history that will not parse could never be rebuilt. The file is a
+  # projection for git-less readers and rebuilding it is what the repair is for.
+  fx <- local_commit_link_project()
+  vc_write(fx, "dm", 3L)
+  expected <- vc_links(vc_stored_history(fx, "dm"))
+
+  writeLines("{ not json", .datom_local_path(fx$conn, vc_history_key("dm")))
+
+  # No warning either: git attributes this version, so the same value came back
+  # and nothing was degraded. The warning fires on loss, not on the read failure.
+  expect_no_warning(vc_write(fx, "dm", 5L))
+  links <- vc_links(vc_stored_history(fx, "dm"))
+  expect_length(links, 2L)
+  expect_identical(links[names(expected)], expected)
+})
+test_that("a first write is silent -- nothing stored is an absence, not a failure", {
+  fx <- local_commit_link_project()
+  expect_no_warning(vc_write(fx, "dm", 3L))
+  expect_false(anyNA(vc_links(vc_stored_history(fx, "dm"))))
+})
+test_that("nothing stored AND nothing derivable is still silent -- there was nothing to lose", {
+  # The case that needs the existence probe rather than the read alone. Reading an
+  # absent key fails exactly like reading a corrupt one, so without the probe this
+  # write would report commit links as lost when storage had never held any. A
+  # false loss report is not a harmless extra: it points at recovering a value that
+  # never existed.
+  #
+  # This artifact has no commits, so the field legitimately ends up absent -- which
+  # is the state that separates the probe from the read.
+  fx <- local_commit_link_project()
+
+  meta <- list(kind = "table", data_sha = "aaa", nrow = 1L, ncol = 1L,
+               colnames = list("id"), table_type = "derived", hash_algo = "sha256",
+               created_at = "2026-01-01T00:00:00Z")
+  version <- .datom_compute_metadata_sha(meta)
+  .datom_write_metadata_local(fx$conn, "ghost", meta, version, message = "ghost")
+
+  expect_no_warning(
+    .datom_push_metadata_s3(fx$conn, "ghost", meta, version, commit_sha = NULL)
+  )
+  expect_true(is.na(vc_links(vc_stored_history(fx, "ghost"))[[version]]))
+})
 test_that("a commit id storage holds but git cannot reproduce survives the next upload", {
   # The half of the design that derivation cannot cover. A shallow clone or a
   # rewritten history leaves a recorded commit id that nothing can recompute, so

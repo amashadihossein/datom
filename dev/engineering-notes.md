@@ -880,3 +880,43 @@ The route that reaches it is **reverting an artifact to earlier content**: the v
 so no history entry is appended, but a new commit is made and handed over, and without the guard the
 entry is repointed at it. Ask what state makes a guard fire, then build that state -- a guard whose
 tests all run through the common path is untested by however many of them there are.
+
+### "Not there" and "could not look" are different answers, and a `tryCatch` erases the difference
+
+Found in review 2026-09-19, on the `commit_sha` merge. The shape is general and this is the third
+time the spec has closed it: a silent handler sitting inside the function whose output decides
+whether a guarantee holds.
+
+```r
+# The defect. An unreachable store and an empty one produce the same answer.
+stored <- tryCatch(.datom_storage_read_json(conn, key), error = function(e) NULL)
+if (!is.list(stored) || length(stored) == 0L) return(nothing_known)
+```
+
+Downstream, "nothing known" meant "work it all out from git, then upload the file whole" -- so a
+value only storage had was destroyed, in the one case where it could not be reconstructed.
+
+- **The existence probe is what separates them**, and **its own failure counts as could-not-look**,
+  never as absence: an unreachable store cannot report that a file is missing. Without the probe a
+  first-ever write reports loss where storage never held anything -- a false loss report is worse
+  than noise, because it points at recovering a value that never existed.
+- **You cannot tell an unreachable store from a corrupt file.** Both `.datom_s3_read_json()` and
+  `.datom_local_read_json()` raise their own `cli_abort()` for a network failure and for unparseable
+  bytes alike. So any policy that treats the two differently needs a different mechanism, not a
+  different handler.
+- **Refuse only if something else can still repair the file.** Refusing here would have deadlocked:
+  the repair verb goes through the same helper, so a stored document that will not parse could never
+  be replaced. A derived projection is *meant* to be rebuilt -- the rule it must satisfy is "not in
+  silence", not "never".
+- **Report on the loss, not on the failed read.** If the value could be reconstructed anyway, nothing
+  was degraded and a warning is noise. Gate the message on a version actually ending up without a
+  value.
+- **Audit silent handlers by kind, not in bulk.** In the same file, five give-ups signal *absence*
+  (they leave a gap that had no stored value either, so nothing is lost) and one signals *loss*. Say
+  which is which at the site, or the next reader tidies them into one handler.
+
+**`cli::cli_warn()` / `cli_abort()` resolve a plural against the most recent quantity in the SAME
+message**, so a `{?s}` in a bullet that names no count aborts with "Cannot pluralize without a
+quantity" -- from inside the warning, which turns a diagnostic into an error. Bind `n <-
+length(x)` and use `{n}` in each bullet that pluralizes, and make sure a test actually triggers the
+message: the failure is invisible until it fires.

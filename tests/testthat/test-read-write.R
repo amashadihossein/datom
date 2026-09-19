@@ -2118,6 +2118,10 @@ test_that("writes metadata.json and version_history.json to git repo", {
     # Mock S3 writes — just capture calls
     s3_keys <- character()
     local_mocked_bindings(
+      # The store in this fixture is EMPTY, and saying so is what keeps it
+      # quiet: reading an absent stored history fails exactly like reading a
+      # corrupt one, and the uploader reports lost commit links on the second.
+      .datom_storage_exists = function(conn, key) FALSE,
       .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
@@ -2166,6 +2170,10 @@ test_that("appends to existing version_history.json", {
     meta_sha <- .datom_compute_metadata_sha(metadata)
 
     local_mocked_bindings(
+      # The store in this fixture is EMPTY, and saying so is what keeps it
+      # quiet: reading an absent stored history fails exactly like reading a
+      # corrupt one, and the uploader reports lost commit links on the second.
+      .datom_storage_exists = function(conn, key) FALSE,
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
 
@@ -2192,6 +2200,10 @@ test_that("writes versioned metadata snapshot to S3", {
 
     s3_keys <- character()
     local_mocked_bindings(
+      # The store in this fixture is EMPTY, and saying so is what keeps it
+      # quiet: reading an absent stored history fails exactly like reading a
+      # corrupt one, and the uploader reports lost commit links on the second.
+      .datom_storage_exists = function(conn, key) FALSE,
       .datom_storage_write_json = function(conn, s3_key, data) {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
@@ -2220,6 +2232,10 @@ test_that("uses default commit message when none provided", {
     meta_sha <- .datom_compute_metadata_sha(metadata)
 
     local_mocked_bindings(
+      # The store in this fixture is EMPTY, and saying so is what keeps it
+      # quiet: reading an absent stored history fails exactly like reading a
+      # corrupt one, and the uploader reports lost commit links on the second.
+      .datom_storage_exists = function(conn, key) FALSE,
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
 
@@ -2242,6 +2258,10 @@ test_that("returns metadata_sha and paths", {
     meta_sha <- .datom_compute_metadata_sha(metadata)
 
     local_mocked_bindings(
+      # The store in this fixture is EMPTY, and saying so is what keeps it
+      # quiet: reading an absent stored history fails exactly like reading a
+      # corrupt one, and the uploader reports lost commit links on the second.
+      .datom_storage_exists = function(conn, key) FALSE,
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE)
     )
 
@@ -2575,6 +2595,10 @@ test_that("syncs version_history.json to S3 when present", {
 
     s3_keys <- character()
     local_mocked_bindings(
+      # The store in this fixture is EMPTY, and saying so is what keeps it
+      # quiet: reading an absent stored history fails exactly like reading a
+      # corrupt one, and the uploader reports lost commit links on the second.
+      .datom_storage_exists = function(conn, key) FALSE,
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_git_pull = function(...) invisible(TRUE),
       .datom_storage_write_json = function(conn, s3_key, data) {

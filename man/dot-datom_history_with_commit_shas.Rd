@@ -46,5 +46,13 @@ made the commit that produced that version, so the walk is not needed for it.
 They are ignored when storage already records a commit for that version, since
 the recorded value is the \strong{first} commit that introduced it and a later
 re-upload must not repoint it.
+
+\strong{When step 1 failed rather than found nothing, and something was lost by it,
+this says so.} The two states are not interchangeable: nothing to merge is the
+ordinary first write, whereas a stored copy that would not read means the
+values only storage had are now unknown, and the upload below replaces the file
+wholesale. The warning is raised only when a version actually ends up with no
+commit -- if git could attribute every one of them, the same values were
+reconstructed and nothing is degraded.
 }
 \keyword{internal}

@@ -17,8 +17,17 @@
 # strips it through any of the three doors, and nothing refuses that build,
 # because version-history entries have no field vocabulary to trip (unlike
 # `metadata.json` and the manifest). That is tolerable only because the value can
-# always be recomputed, which is only true if something recomputes. Hence both
-# halves below: merge what storage holds, then derive what is still missing.
+# be recomputed **from a complete clone** -- and only if something recomputes.
+# Hence both halves below: merge what storage holds, then derive what is still
+# missing. The qualifier is not decoration: a shallow clone or a rewritten history
+# cannot attribute a version, and for those the stored copy is the only copy.
+#
+# WHICH SILENCES ARE SAFE, since this file has several. Every give-up in the git
+# walk is an ABSENCE signal: it leaves a gap that had no stored value either --
+# that is why it was a gap -- so nothing is lost and nothing needs saying. The one
+# exception is failing to READ the stored copy, which is a LOSS signal: storage
+# held values nothing else can reproduce, and the upload replaces that file
+# wholesale. That case is reported. Do not tidy the two into one handler.
 #
 # WHAT IT COSTS. Derivation runs per MISSING entry, so a repo upgrading to a
 # build that writes the field backfills its back history once and then settles at
@@ -50,6 +59,14 @@
 #' the recorded value is the **first** commit that introduced it and a later
 #' re-upload must not repoint it.
 #'
+#' **When step 1 failed rather than found nothing, and something was lost by it,
+#' this says so.** The two states are not interchangeable: nothing to merge is the
+#' ordinary first write, whereas a stored copy that would not read means the
+#' values only storage had are now unknown, and the upload below replaces the file
+#' wholesale. The warning is raised only when a version actually ends up with no
+#' commit -- if git could attribute every one of them, the same values were
+#' reconstructed and nothing is degraded.
+#'
 #' @param conn A `datom_conn` object with a local path.
 #' @param name Artifact name, of either kind -- `version_history.json` is shared.
 #' @param history The clone's parsed history, newest-first, as a list of entries.
@@ -62,20 +79,21 @@
                                            version = NULL, commit_sha = NULL) {
   if (!is.list(history) || length(history) == 0L) return(history)
 
-  known <- .datom_stored_commit_shas(conn, name)
+  stored <- .datom_stored_commit_shas(conn, name)
+  known <- stored$shas
 
   if (.datom_is_text_scalar(version) && .datom_is_text_scalar(commit_sha) &&
       !(version %in% names(known))) {
     known[[version]] <- commit_sha
   }
 
-  versions <- .datom_history_versions(history)
-  if (length(setdiff(stats::na.omit(versions), names(known))) > 0L) {
+  versions <- stats::na.omit(.datom_history_versions(history))
+  if (length(setdiff(versions, names(known))) > 0L) {
     derived <- .datom_git_commit_shas_by_version(conn$path, name)
     known <- c(known, derived[setdiff(names(derived), names(known))])
   }
 
-  purrr::map(history, function(entry) {
+  out <- purrr::map(history, function(entry) {
     if (!is.list(entry)) return(entry)
     v <- entry$version
     if (!.datom_is_text_scalar(v) || !(v %in% names(known))) return(entry)
@@ -85,29 +103,97 @@
     entry$commit_sha <- known[[v]]
     entry
   })
+
+  lost <- if (isTRUE(stored$unreadable)) {
+    setdiff(versions, names(known))
+  } else {
+    character()
+  }
+  if (length(lost) > 0L) .datom_warn_commit_shas_lost(name, lost)
+
+  out
+}
+
+
+#' Say Which Commit Links Went Unrecorded, and Why
+#'
+#' Split out so the wording lives next to the reasoning rather than inside a
+#' branch. A warning rather than a refusal, and the reason is that refusing would
+#' deadlock the only route out: the repair verb goes through the same helper, so a
+#' stored history that will not parse could never be replaced. That file is a
+#' projection for git-less readers and rebuilding it is exactly what the repair is
+#' for -- what must not happen is rebuilding it in silence.
+#'
+#' @param name Artifact name.
+#' @param lost Versions left with no commit recorded.
+#' @return Invisibly `NULL`.
+#' @keywords internal
+.datom_warn_commit_shas_lost <- function(name, lost) {
+  # The quantity is bound before any `{?}` marker in each string: cli resolves a
+  # plural against the most recent quantity in the SAME message, so a marker in a
+  # bullet that names no count aborts with "Cannot pluralize without a quantity".
+  n <- length(lost)
+
+  cli::cli_warn(
+    c(
+      "The stored version history for {.val {name}} could not be read, so \\
+       {n} version{?s} lost the commit recorded against {?it/them}.",
+      "x" = "Affected: {.val {substr(lost, 1, 8)}}.",
+      "i" = "This build could not work the commit out from git either -- a \\
+             shallow clone or a rewritten history does not carry it.",
+      "i" = "Everything else was written normally; {.fn datom_history} will \\
+             report {.val NA} there.",
+      "i" = "If storage was merely unreachable, re-run once it is available: a \\
+             copy that reads restores the recorded values."
+    ),
+    class = "datom_commit_shas_lost"
+  )
+  invisible(NULL)
 }
 
 
 #' The `commit_sha` Storage Already Holds, by Version
 #'
-#' A missing or unparseable stored history is an absence, not a failure: the
-#' first write of an artifact has none, and this function's caller is on its way
-#' to writing one.
+#' **Nothing there and could not look are separate answers, and only one of them
+#' is safe to pass over in silence.** The first write of an artifact has no stored
+#' history, which is ordinary and silent. A stored copy that exists and will not
+#' read is the opposite: the values only storage had are now unknown, and the
+#' caller is about to replace that file wholesale -- so an entry git cannot
+#' attribute loses a good value. Collapsing the two into "no known values" makes
+#' the loss invisible in exactly the case where it is unrecoverable, which is why
+#' this returns the distinction rather than just a map.
+#'
+#' The existence probe is what separates them. Its own failure counts as *could
+#' not look*, never as absence: an unreachable store cannot report that a file is
+#' missing.
+#'
+#' A stored copy that reads but holds no usable pair is an absence, not a failure
+#' -- the document was inspected and had nothing to contribute.
 #'
 #' @param conn A `datom_conn` object.
 #' @param name Artifact name.
-#' @return Named character vector, `commit_sha` named by version. Empty when
-#'   storage holds nothing.
+#' @return A list with `shas` (named character vector, `commit_sha` named by
+#'   version, empty when there are none) and `unreadable` (`TRUE` when storage
+#'   holds a copy this call could not read).
 #' @keywords internal
 .datom_stored_commit_shas <- function(conn, name) {
-  stored <- tryCatch(
-    .datom_storage_read_json(
-      conn, .datom_artifact_meta_key(name, "version_history")
-    ),
-    error = function(e) NULL
-  )
+  key <- .datom_artifact_meta_key(name, "version_history")
+  empty <- stats::setNames(character(), character())
 
-  if (!is.list(stored) || length(stored) == 0L) return(stats::setNames(character(), character()))
+  present <- tryCatch(.datom_storage_exists(conn, key), error = function(e) NA)
+  if (isFALSE(present)) return(list(shas = empty, unreadable = FALSE))
+
+  stored <- tryCatch(.datom_storage_read_json(conn, key), error = function(e) NULL)
+
+  # A read failure and a parse failure arrive as the same condition from both
+  # backends, so they cannot be told apart here. Treated alike on purpose: both
+  # mean the stored values are unavailable, and the caller's response is the same
+  # either way.
+  if (is.null(stored)) return(list(shas = empty, unreadable = TRUE))
+
+  if (!is.list(stored) || length(stored) == 0L) {
+    return(list(shas = empty, unreadable = FALSE))
+  }
 
   pairs <- purrr::keep(stored, function(entry) {
     is.list(entry) &&
@@ -115,9 +201,12 @@
       .datom_is_text_scalar(entry$commit_sha)
   })
 
-  stats::setNames(
-    purrr::map_chr(pairs, ~ as.character(.x$commit_sha)),
-    purrr::map_chr(pairs, ~ as.character(.x$version))
+  list(
+    shas = stats::setNames(
+      purrr::map_chr(pairs, ~ as.character(.x$commit_sha)),
+      purrr::map_chr(pairs, ~ as.character(.x$version))
+    ),
+    unreadable = FALSE
   )
 }
 
@@ -137,6 +226,12 @@
 #' A repo git cannot answer for -- a shallow clone, a rewritten history, a
 #' document that will not parse -- yields no entry for the versions it lost.
 #' Callers omit the field in that case rather than recording a blank.
+#'
+#' **Every give-up here is silent on purpose**, and that is not a house style: a
+#' version this cannot attribute is one the caller had no stored value for either,
+#' since a stored value is what stops it being asked about. So there is nothing to
+#' lose and nothing to report. The asymmetry with reading the stored copy, where a
+#' failure does lose something, is spelled out at the top of this file.
 #'
 #' @param repo_path Path to the local clone.
 #' @param name Artifact name.

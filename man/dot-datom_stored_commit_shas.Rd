@@ -12,12 +12,26 @@
 \item{name}{Artifact name.}
 }
 \value{
-Named character vector, \code{commit_sha} named by version. Empty when
-storage holds nothing.
+A list with \code{shas} (named character vector, \code{commit_sha} named by
+version, empty when there are none) and \code{unreadable} (\code{TRUE} when storage
+holds a copy this call could not read).
 }
 \description{
-A missing or unparseable stored history is an absence, not a failure: the
-first write of an artifact has none, and this function's caller is on its way
-to writing one.
+\strong{Nothing there and could not look are separate answers, and only one of them
+is safe to pass over in silence.} The first write of an artifact has no stored
+history, which is ordinary and silent. A stored copy that exists and will not
+read is the opposite: the values only storage had are now unknown, and the
+caller is about to replace that file wholesale -- so an entry git cannot
+attribute loses a good value. Collapsing the two into "no known values" makes
+the loss invisible in exactly the case where it is unrecoverable, which is why
+this returns the distinction rather than just a map.
+}
+\details{
+The existence probe is what separates them. Its own failure counts as \emph{could
+not look}, never as absence: an unreachable store cannot report that a file is
+missing.
+
+A stored copy that reads but holds no usable pair is an absence, not a failure
+-- the document was inspected and had nothing to contribute.
 }
 \keyword{internal}

@@ -3787,6 +3787,47 @@ own; landing it first is what makes Task 6's failure loud.
     is stated at the top of `R/version-commit.R` rather than treated as a gap.
   - **Pathway impact: none** -- no new lookup route; an existing history read gains a field.
 
+  **REVIEW 2026-09-19, one finding, accepted and fixed.** Tests 4107 -> **4115**; `R CMD check`
+  0/0/0; `dev/check-spec.R` 9/9.
+
+  - **The finding: reading the stored history swallowed its failure, so "storage has none" and
+    "storage could not be read" became the same answer.** Both produced no known values, the gaps
+    were then filled from git, and the merged file was uploaded wholesale -- so a version git cannot
+    attribute lost a value only storage had. The narrow case is the only one where it matters: if git
+    can attribute everything, the same values come back and nothing is lost. Reachable in the repair
+    route, which has no earlier storage read to gate it. Accepted as the same shape the spec keeps
+    closing -- a silent handler inside the function whose output decides whether a guarantee holds.
+  - **Fixed by making the two states distinguishable, not by refusing.** Refusing was considered and
+    rejected on evidence: both backends raise the *same* condition for an unreachable store and for
+    unparseable bytes (`R/utils-s3.R:185`), so they cannot be told apart, and the repair verb shares
+    this helper -- so a refusal would leave a repo with a corrupt stored history and no route to
+    replace it. That file is a projection for git-less readers and rebuilding it is what the repair is
+    for; what must not happen is rebuilding it in silence. So: `.datom_stored_commit_shas()` returns
+    `list(shas =, unreadable =)`, and the caller warns (`datom_commit_shas_lost`).
+  - **The report fires on loss, not on the read failure**, which is the difference between a useful
+    warning and noise: if git attributed every version, the same values were reconstructed and
+    nothing is degraded.
+  - **An existence probe separates absence from failure**, and its own failure counts as *could not
+    look* -- an unreachable store cannot report that a file is missing. Without it a first-ever write
+    would report commit links as lost when storage had never held any, which is worse than noise: it
+    points at recovering a value that never existed.
+  - **The review's own defect reddened nothing on the first probe, and that was the review being
+    right twice.** Reverting the existence probe left the loss report intact, because the read still
+    fails; the actual swallow is one line lower, where a failed read returned the same answer as an
+    empty one. Probing the two separately found a missing case -- nothing stored *and* nothing
+    derivable had no test asserting silence. Fifteen defects now, each reddening its own case.
+  - **Six existing tests in `test-read-write.R` gained one mock binding** and no assertion changed.
+    They drive the legacy no-commit wrapper against a store whose reads were never mocked, so the
+    uploader correctly reported lost links; declaring the store empty is what those fixtures always
+    meant. They assert on local git files only.
+  - **The tolerance statement is qualified.** "The value can always be recomputed" now reads
+    **from a complete clone**, because the unqualified form contradicted the same file's own
+    admission two paragraphs down that a shallow clone cannot attribute a version.
+  - **Which silences are safe is now stated rather than left to look uniform.** Every give-up in the
+    git walk signals absence -- it leaves a gap that had no stored value either, which is why it was
+    a gap -- so nothing is lost and nothing needs saying. Failing to read the stored copy is the one
+    loss signal. The review was right to separate them rather than call the module defensive.
+
 - [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
   - Confirm **every AC defined in `requirements.md`** has a dedicated test -- derive the list, do not
     trust a range written here. A hardcoded range has now gone stale **twice**: it once stopped at

@@ -30,5 +30,11 @@ tie-breaking; it answers "where did this version come from".
 A repo git cannot answer for -- a shallow clone, a rewritten history, a
 document that will not parse -- yields no entry for the versions it lost.
 Callers omit the field in that case rather than recording a blank.
+
+\strong{Every give-up here is silent on purpose}, and that is not a house style: a
+version this cannot attribute is one the caller had no stored value for either,
+since a stored value is what stops it being asked about. So there is nothing to
+lose and nothing to report. The asymmetry with reading the stored copy, where a
+failure does lose something, is spelled out at the top of this file.
 }
 \keyword{internal}

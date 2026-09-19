@@ -715,6 +715,12 @@ someone holding the repo.
 * Reverting an artifact to earlier content does not repoint that version's commit
   either. The field answers "where did this version come from", not "what last
   rewrote it".
+* **If storage holds a version history datom cannot read, it says which commit
+  links went unrecorded** rather than rewriting the file in silence. The write
+  still completes -- that file is a projection and rebuilding it is intended, so
+  refusing would leave a repo with a corrupt copy and no way to replace it. The
+  warning appears only when a version actually ends up without a commit; when git
+  can supply them all, nothing was lost and nothing is said.
 
 # datom 0.1.2
 
