@@ -447,6 +447,24 @@ test_that("a stored payload that is present is never re-uploaded", {
   expect_equal(uploaded, character())
 })
 
+test_that("the mirror-everything route restores the payload too, not just the repair", {
+  fx <- local_validate_set_project()
+  vs_one_member_set(fx)
+
+  payload <- vs_stored(fx, vs_payload_key(fx))
+  recorded <- vs_clone_meta(fx)$document_sha
+  fs::file_delete(payload)
+
+  # The shared function both public routes land on: `datom_validate(fix = TRUE)`
+  # and `datom_write(conn)` with no data and no name. Called directly here for
+  # the reason test-sync.R calls it directly -- the write route asks for
+  # interactive confirmation, which a test session cannot give.
+  suppressMessages(.datom_sync_data_metadata(fx$conn, .confirm = FALSE))
+
+  expect_true(fs::file_exists(payload))
+  expect_equal(digest::digest(file = payload, algo = "sha256"), recorded)
+})
+
 test_that("the restore declines loudly when the clone's payload does not match", {
   fx <- local_validate_set_project()
   vs_one_member_set(fx)

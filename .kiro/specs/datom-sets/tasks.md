@@ -22,7 +22,7 @@ it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding th
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
 3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
 after the review finding that followed it -> 3770 after Task 25 -> 3781 after the review finding
-that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> 3974 after Task 12 proper -> 4012 after Task 13 -> **4065 after Task 14**.
+that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> 3974 after Task 12 proper -> 4012 after Task 13 -> 4065 after Task 14 -> **4067 after the review finding that followed it**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -168,7 +168,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **4065** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **4067** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 with examples run
 (tests run separately). Next is **Task 15**
 (the version-to-commit link, `commit_sha`), then Tasks 27 and 28, then the sweep.
@@ -791,7 +791,7 @@ necessary.
     `R/utils-path.R` and **16 of 17** hand-rolled key sites migrated across 7 files
     (`read_write.R`, `query.R`, `lineage.R`, `validate.R`, `sync.R`, `utils-sha.R`).
     tests: **2482** (+22).
-  - **Deliberate exclusion**: `R/sync.R:250` still builds its key with `paste0`. It splices a
+  - **Deliberate exclusion**: `R/sync.R:307` still builds its key with `paste0`. It splices a
     *discovered filename* (already `{sha}.json`) rather than a bare sha, so the helper's sha guard
     does not fit, and adding one would change behavior -- a stray `.json` in `.metadata/` would
     start aborting instead of being uploaded. Commented in place.
@@ -1179,7 +1179,7 @@ own; landing it first is what makes Task 6's failure loud.
     (call sites as shipped): `datom_list()` (`R/query.R:80`) and `datom_summary()`
     (`R/summary.R:50`) abort with their own wording on an unreadable manifest; `datom_status()`
     (`R/query.R:468`) still tolerates one and reports it unavailable;
-    `.datom_status_input_files()` (`R/query.R:579`) and `datom_sync_manifest()` (`R/sync.R:392`)
+    `.datom_status_input_files()` (`R/query.R:579`) and `datom_sync_manifest()` (`R/sync.R:596`)
     still fall back to an empty manifest when the clone has no file.
   - **New: `.datom_manifest_skeleton(project_name = NULL)`** (`R/sync.R:759`) -- the one
     empty-manifest shape. It replaced three hand-built copies, now three calls to it:
@@ -2123,8 +2123,8 @@ own; landing it first is what makes Task 6's failure loud.
        inherits it rather than re-deciding; if that task later wants the two facts on the conn, it is a
        move with one caller to update rather than a question reopened.
     2. **`datom_write_set()` MUST CALL `.datom_check_write_entry()` ITSELF, and this task's body does
-       not say so.** Three sites call it today -- `datom_write()` (`R/read_write.R:1132`),
-       `.datom_sync_data_metadata()` (`R/sync.R:155`) and `.datom_sync_metadata()`
+       not say so.** Three sites call it today -- `datom_write()` (`R/read_write.R:1143`),
+       `.datom_sync_data_metadata()` (`R/sync.R:168`) and `.datom_sync_metadata()`
        (`R/utils-sha.R:610`) -- and a fourth write verb inherits nothing from any of them. Left out,
        the floor, the format check and the vocabulary check are all silently skipped for every set
        write. This is the exact finding that has now landed in three consecutive tasks (Task 6's open
@@ -2817,7 +2817,7 @@ own; landing it first is what makes Task 6's failure loud.
     **What held**, verified rather than assumed. The block is discharged -- Task 23 shipped. The
     "silent no-op" this task exists to replace is real and now pinned to a line: `datom_init_repo()`
     always creates `input_files/`, so on a product repo the directory exists and is empty, and
-    `datom_sync_manifest()` answers with an info message and a zero-row frame (`R/sync.R:396`) --
+    `datom_sync_manifest()` answers with an info message and a zero-row frame (`R/sync.R:572-582`) --
     not silence, but an unhelpful answer rather than a refusal. **Neither sync verb has an internal
     caller anywhere in `R/`**, so unlike the write entry -- where a repair verb reached storage without
     passing the door, three times running -- there is no third route to find here. The table write path
@@ -3589,6 +3589,24 @@ own; landing it first is what makes Task 6's failure loud.
     (the write verb correctly does nothing on unchanged members), and with no upload path in the
     code AC29c's "leaves the stored bytes unchanged" would pass forever whatever the code did.
 
+  **REVIEW FINDING THAT FOLLOWED (2026-09-18), accepted in full: the restore landed on TWO public
+  routes, and only one of them was described.** `.datom_sync_one_artifact()` is reached from
+  `.datom_sync_data_metadata()`, which has two callers -- `datom_validate(fix = TRUE)`
+  (`R/validate.R:212`) and **`datom_write(conn)` with no `data` and no `name`**
+  (`R/read_write.R:1148`), the mirror-everything route. The behaviour there is correct and was kept:
+  that route exists to push the clone's authoritative state to storage, and mirroring a set's
+  metadata while leaving the payload it describes missing would be the odd half. What was wrong was
+  the vocabulary around it, in four places, all now fixed: `datom_write()`'s `name` parameter said
+  "manifest + per-table metadata", the interactive prompt counted sets while saying "table" and
+  called the operation metadata-only, `dev/datom_specification.md`'s `datom_validate()` section said
+  the same, and **`.datom_sync_table_metadata()` was a misnomer twice over** -- it handles either
+  kind and can upload a payload -- so it is now `.datom_sync_one_artifact()`, with the old name
+  recorded at the definition. One root cause: the path went kind-agnostic and kept its table-only
+  words, the same class Task 6 closed in the manifest. **The second route now has a test of its own**
+  (`.datom_sync_data_metadata(.confirm = FALSE)` restores the payload), called at that level because
+  the write route asks for interactive confirmation a test session cannot give -- which is also worth
+  knowing: non-interactively, that route is unreachable.
+
   **One residual stated rather than fixed.** A `members_unresolvable` finding survives
   `fix = TRUE` unmentioned -- nothing in the clone can restore another artifact's lost version, and
   the fix's closing line already says to re-run the verb rather than claiming completeness. If the
@@ -3655,6 +3673,10 @@ own; landing it first is what makes Task 6's failure loud.
     gate, the new exports (R13.4).
   - `dev/engineering-notes.md`: gotchas discovered (expect at least the relative-vs-full key
     distinction from Deviation D1).
+  - `.github/copilot-instructions.md`: the **guard-test rule** from the 2026-09-18 Decisions row --
+    a guard's test must fail when that guard alone is removed, and the way to know is to delete it
+    and watch. Two tasks produced an instance of the same defect, which is what makes it a
+    convention rather than an anecdote.
   - `_pkgdown.yml` reference entries for all new exports.
   - `dev/README.md`: move the spec Active -> Completed with date, test count, summary. **The spec
     persists -- do not delete it.**
@@ -5483,7 +5505,7 @@ vehicle**: it is done, and its check is *why* a late addition costs what it cost
     1. **NEITHER BUILDER CAN SOURCE THE NAME ITSELF.** `.datom_build_metadata()` and
        `.datom_build_set_metadata()` take no connection -- by design, since they are pure -- so the
        change is a new argument on each plus the two call sites that fill it
-       (`R/read_write.R:1209`, `R/set.R:955`). **The new argument goes LAST in the signature**:
+       (`R/read_write.R:1213`, `R/set.R:955`). **The new argument goes LAST in the signature**:
        existing tests call `.datom_build_metadata(df, "sha", ...)` positionally in a dozen places, so
        an argument inserted in the middle silently shifts `custom` into `table_type`.
     2. **OPEN (default: yes, same commit) -- THE SAME DEFECT IS IN LINEAGE, AND THERE THE LABEL IS
@@ -6137,3 +6159,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-18 | **(decision, Task 14) Three calls on the scope of the kind branch, all taken at the defaults proposed before implementation.** (1) **No `member_conns` argument.** R11.2's "unless the caller supplies that project's conn" is left unbuilt rather than half-built: nothing today can express it, and the route that exists is strictly better -- running `datom_validate()` against that project checks every artifact in it, not one member pointer. (2) **No byte-integrity download.** Presence and resolution only; the `document_sha` comparison stays on the read path, where it guards the bytes actually in use. (3) **`fix = TRUE` DOES restore a missing set payload**, which is beyond R11's letter, for two reasons that are both about the alternative: without it a set whose upload failed after the commit had no repair route at all (the write verb correctly no-ops on unchanged members), and with no upload path anywhere in the code AC29c's "leaves the stored bytes unchanged" would have passed forever whatever the code did. | Task 14 DONE record, R11.2, AC29c |
 | 2026-09-18 | **(implemented, Task 14) The kind branch forced a status the requirement does not name: `kind_unsupported`.** The payload-key builder validates its `kind` argument, so handing it a kind from a newer datom aborts the whole validation run -- and a run that cannot finish reports nothing about the artifacts it never reached. An unknown kind now leaves that row's payload unchecked (`data_s3 = NA`) and says so, rather than reporting a payload missing that this build cannot even address. Reads limp, and the rest of the repo is still checked. | Task 14 DONE record, `R/validate.R` |
 | 2026-09-18 | **(implemented, Task 14) A test of mine was passing through the wrong guard, and the probe is what found it.** The never-re-upload test first modified the clone's payload, which made it pass through the hash comparison and stay green with the absence check deleted -- so the rule it names, that stored bytes a version pins are never overwritten, was unasserted. It now leaves the clone matching and watches for the upload call. Same shape as Task 13's I19 finding: a test asserting a value where the behaviour lives elsewhere. | Task 14 DONE record, `tests/testthat/test-validate-sets.R` |
+| 2026-09-18 | **(review of Task 14, accepted) The set-payload restore fires on TWO public routes, and the behaviour stays on both.** `.datom_sync_data_metadata()` is called by `datom_validate(fix = TRUE)` **and** by `datom_write(conn)` with no `data` and no `name`. Restoring on the second is right -- that route mirrors the clone's authoritative state to storage, so syncing a set's metadata while leaving the payload it describes missing would be the odd half -- but every description said "repair", which would read as a bug the first time someone saw it fire under a write verb. Four wordings fixed (the `name` parameter, the interactive prompt, the specification's `datom_validate()` section, and this spec's own summary) and **`.datom_sync_table_metadata()` renamed to `.datom_sync_one_artifact()`**: it handles either kind and can upload a payload, so both halves of the old name were false and a grep for where a set reaches storage on that route missed it. Root cause is one thing, not four: the path went kind-agnostic and kept its table-only vocabulary -- the class Task 6 closed for `manifest$tables`. | Task 14 DONE record, `R/sync.R`, `R/read_write.R`, `dev/datom_specification.md` |
+| 2026-09-18 | **(rule, from two instances) A guard's test must fail when that guard ALONE is removed.** Task 13's I19 coverage asserted a returned value while the behaviour lived in git, and Task 14's never-re-upload test passed through the hash comparison while the absence check was the rule it named. Twice makes it a pattern, so it is stated as a rule rather than logged as a second incident: when a behaviour is protected by more than one condition, each condition needs a case that isolates it, and the way to know is to delete that condition and watch. A test that stays green under the deletion is testing a different guarantee than its name claims. **Task 17 harvests this into `.github/copilot-instructions.md`**, where the test discipline lives. | Task 13 and Task 14 DONE records, Task 17 |

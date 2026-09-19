@@ -1031,8 +1031,12 @@ datom_read <- function(conn,
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param data Data frame to write. If NULL with name, does metadata-only sync.
-#' @param name Table name. If NULL with NULL data, does a data-only metadata
-#'   sync to storage (manifest + per-table metadata).
+#' @param name Table name. If NULL with NULL data, mirrors the clone's
+#'   storage-side documents for **every** artifact of either kind: the manifest,
+#'   and each artifact's metadata, version history and versioned snapshots. On
+#'   that route a **set** whose stored payload is missing also has it restored
+#'   from the clone -- see [datom_validate()], which shares the mechanism, for
+#'   the conditions on that.
 #' @param metadata Optional list of custom metadata.
 #' @param message Optional commit message.
 #' @param parents Optional list of parent records produced by

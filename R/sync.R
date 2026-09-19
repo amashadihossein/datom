@@ -102,16 +102,29 @@ datom_pull <- function(conn) {
 #' Sync Data-Side Metadata to Storage
 #'
 #' Mirrors the data repo's metadata to the data store so readers see current
-#' state: the manifest (`.metadata/manifest.json`) and each table's metadata
-#' (`{name}/.metadata/metadata.json`, `version_history.json`).
+#' state: the manifest (`.metadata/manifest.json`) and each artifact's metadata
+#' (`{name}/.metadata/metadata.json`, `version_history.json`). **Every artifact
+#' of either kind**, not tables only -- discovery is `.datom_clone_artifact_names()`
+#' and has been kind-agnostic since sets existed.
+#'
+#' **It is not metadata-only, and the name understates it.** For a **set**, a
+#' payload missing from storage is restored from the clone -- see
+#' `.datom_restore_set_payload()` in this file for the three conditions on that.
+#' So this function can put content into storage, not just documents about
+#' content.
 #'
 #' Data-only: governance files (dispatch.json, ref.json, migration_history.json)
 #' are not touched here. Governance sync is owned by the governance layer
 #' (`gov_sync_dispatch()`).
 #'
+#' **Two public routes reach this**, and both get the restore: `datom_write(conn)`
+#' with no `data` and no `name` (the mirror-everything route), and
+#' `datom_validate(fix = TRUE)`. Describing the restore as repair-only would
+#' leave a reader surprised to see it fire under a write verb.
+#'
 #' Used after a failed upload, or by `datom_validate(fix = TRUE)`, to bring
-#' storage metadata back in line with the local data clone. Requires a
-#' developer connection with a local repo path.
+#' storage back in line with the local data clone. Requires a developer
+#' connection with a local repo path.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param .confirm If `TRUE` (default), requires interactive confirmation
@@ -166,8 +179,13 @@ datom_pull <- function(conn) {
       ))
     }
 
+    # "artifact", not "table": discovery is kind-agnostic, so this count has
+    # included sets since sets existed -- and for a set the operation can upload
+    # a payload as well as documents, which a prompt saying "metadata" hides.
     cli::cli_alert_warning(
-      "This will update the manifest and per-table metadata for {length(table_names)} table{?s} in data storage."
+      "This will update the manifest and the stored documents for \\
+       {length(table_names)} artifact{?s} in data storage, and restore any \\
+       set payload storage is missing."
     )
 
     answer <- readline("Proceed? [y/N] ")
@@ -218,10 +236,10 @@ datom_pull <- function(conn) {
     "Synced {length(repo_files_synced)} repo-level file{?s}."
   )
 
-  # --- Sync per-table metadata -----------------------------------------------
+  # --- Sync each artifact, either kind ---------------------------------------
   table_results <- purrr::map(table_names, function(tbl) {
     tryCatch({
-      .datom_sync_table_metadata(conn, tbl)
+      .datom_sync_one_artifact(conn, tbl)
     }, error = function(e) {
       cli::cli_alert_danger("Failed to sync {.val {tbl}}: {conditionMessage(e)}")
       # ansi_strip on the stored copy only -- the alert above keeps its colour.
@@ -244,9 +262,14 @@ datom_pull <- function(conn) {
 }
 
 
-#' Sync a single table's metadata files to S3
+#' Sync One Artifact's Stored Documents, and a Set's Payload
+#'
+#' Was `.datom_sync_table_metadata()`, renamed when the set payload restore
+#' landed here: it handles either kind, and for a set it can upload the payload
+#' itself, so both halves of the old name were wrong. A reader looking for where
+#' a set reaches storage on this route would not have found the old name.
 #' @noRd
-.datom_sync_table_metadata <- function(conn, name) {
+.datom_sync_one_artifact <- function(conn, name) {
   repo_path <- conn$path
   table_dir <- fs::path(repo_path, name)
 

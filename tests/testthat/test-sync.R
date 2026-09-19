@@ -1117,9 +1117,9 @@ test_that(".datom_sync_data_metadata handles multiple tables", {
 })
 
 
-# --- .datom_sync_table_metadata() ----------------------------------------------
+# --- .datom_sync_one_artifact() ----------------------------------------------
 
-test_that(".datom_sync_table_metadata uploads metadata and version_history", {
+test_that(".datom_sync_one_artifact uploads metadata and version_history", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$path <- getwd()
@@ -1138,7 +1138,7 @@ test_that(".datom_sync_table_metadata uploads metadata and version_history", {
       }
     )
 
-    result <- .datom_sync_table_metadata(conn, "tbl")
+    result <- .datom_sync_one_artifact(conn, "tbl")
 
     expect_equal(result$action, "synced")
     expect_true("tbl/.metadata/metadata.json" %in% result$s3_keys)
@@ -1146,7 +1146,7 @@ test_that(".datom_sync_table_metadata uploads metadata and version_history", {
   })
 })
 
-test_that(".datom_sync_table_metadata handles table with no version_history", {
+test_that(".datom_sync_one_artifact handles table with no version_history", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$path <- getwd()
@@ -1158,7 +1158,7 @@ test_that(".datom_sync_table_metadata handles table with no version_history", {
       .datom_storage_write_json = function(conn, s3_key, data) invisible(NULL)
     )
 
-    result <- .datom_sync_table_metadata(conn, "tbl")
+    result <- .datom_sync_one_artifact(conn, "tbl")
 
     expect_equal(length(result$s3_keys), 1)
     expect_equal(result$s3_keys, "tbl/.metadata/metadata.json")
@@ -1805,7 +1805,7 @@ test_that("per-table metadata sync's stored error has no escape codes", {
     writeLines("{}", "dm/metadata.json")
 
     local_mocked_bindings(
-      .datom_sync_table_metadata = function(conn, name) {
+      .datom_sync_one_artifact = function(conn, name) {
         cli::cli_abort(c(
           "Upload failed.",
           "x" = "Key: {.val {name}}"
