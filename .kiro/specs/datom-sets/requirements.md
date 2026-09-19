@@ -1135,6 +1135,16 @@ existing asymmetry rather than inventing a new shape.
   inherited. It currently lives in `.datom_git_branch()` and is reached only via
   `.datom_git_push()`, so with `push = FALSE` nothing would check it. Call it up front so the
   guard holds for both `push` values. (See design.md section 19 "Corrections to the delta".)
+  **Do not delete this guard as duplication of the staleness check** (added 2026-09-18, after the
+  Task 12 audit claimed the staleness check covers it and a review showed it does not).
+  `.datom_check_git_current()` does reach `.datom_git_branch()`, but only after four early returns
+  -- no remote, the fetch failed, no upstream, and **local SHA identical to upstream**. So that
+  path guards a detached HEAD only when you are already out of sync with the remote, and a
+  detached HEAD while up to date -- the ordinary shape of the mistake -- passes straight through.
+  The explicit assert is the only one that runs in the common case.
+  **Why it earns a line at a low rate**: a commit onto a detached HEAD succeeds, prints a SHA, and
+  becomes unreachable as soon as you switch branches, and with `push = FALSE` there is no later
+  push failure to reveal it. Silent and unrecoverable together is what justifies the guard.
 - **R15.8 -- `datom_repo_push(conn)`.** Pushes the current branch through the same path
   (`.datom_git_push()`), so it inherits pull-before-push, upstream-tracking, and the on-a-branch
   guard identically. **Convergent, not imperative**: nothing to push is an informational no-op,

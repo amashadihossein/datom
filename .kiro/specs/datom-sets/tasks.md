@@ -191,8 +191,10 @@ one recorded residual on the writer floor, and the probes are in Task 23's DONE 
 
 **TASK 12 IS AUDITED AND STARTABLE COLD (2026-09-18), AND THE HEADLINE IS THAT ITS TWO "ALREADY TRUE BY
 CONSTRUCTION" CLAIMS BOTH HOLD AND BOTH NEED A TEST THAT THE OBVIOUS SPELLING DOES NOT GIVE.** Ten
-findings in its body, **one to decide first** (whether the commit verb runs the staleness gate -- default
-recorded). The three worth carrying into a cold session. **The machine-commit isolation test must read
+findings in its body, and **its one decision is settled**: the commit verb does **not** run the staleness
+gate, and R15.7's explicit branch guard stays -- this audit's claim that the gate makes that guard
+redundant was checked and is false, since the gate reaches the branch check only after four early returns
+and so misses a detached HEAD that is up to date, which is the ordinary shape of the mistake. The three worth carrying into a cold session. **The machine-commit isolation test must read
 the real commit tree**: there is already a test that mocks `.datom_git_commit()` and asserts the manifest
 is in its file list, and extending that one with an exclusion assertion defends nothing, because the mock
 replaces the very function whose file list *is* the guarantee -- it would stay green through the add-all
@@ -3151,15 +3153,30 @@ own; landing it first is what makes Task 6's failure loud.
        list is explicit, and a brand-new repo has nothing foreign to sweep), but I16 is worded about
        "a datom machine-moment commit" without qualification, so say in the test or the invariant which
        sites the AC16 test actually covers rather than implying all of them.
-    9. **DECIDE FIRST: does `datom_repo_commit()` run the staleness gate, and the answer changes what
-       R15.7 asks for.** `.datom_check_git_current()` calls `.datom_git_branch()` (`R/utils-git.R:478`),
-       so calling the gate would satisfy the on-a-branch guard transitively and make R15.7's "assert it
-       explicitly" redundant-looking -- which is how an explicit guard gets deleted later as duplication.
-       **Default: do not call the staleness gate, and assert the branch guard explicitly as R15.7 says.**
-       The reason is that the two verbs already handle divergence where it matters:
-       `.datom_git_push()` pulls before pushing (`R/utils-git.R:257`), so a human commit does not need
-       to refuse on a remote that moved -- and refusing would make committing your own work depend on
-       somebody else's push.
+    9. **DECIDED 2026-09-18: `datom_repo_commit()` does NOT run the staleness gate, and it asserts the
+       branch guard explicitly.** The reason the default was right: a commit is local and a push is
+       shared, so gating the local verb makes saving your own work depend on somebody else's push or on
+       being online, and `.datom_git_push()` already pulls before pushing
+       (`R/utils-git.R:257`).
+
+       **AND THE REDUNDANCY WORRY THIS AUDIT RAISED IS FALSE -- corrected by review, checked line by
+       line.** The audit said calling the gate "would satisfy the on-a-branch guard transitively", which
+       overstates it badly. `.datom_check_git_current()` reaches `.datom_git_branch()` only after **four**
+       early returns: no remote, the fetch failed, no upstream, and local SHA identical to upstream
+       (`R/utils-git.R:434`, `:460`, `:468`, `:474`, with the branch call at `:478`). So the transitive
+       guarantee fires **only when you are out of sync with the remote**. A detached HEAD while
+       up to date -- the ordinary shape of this mistake -- sails straight through. **The explicit assert
+       is therefore not duplication; it is the only one that runs in the common case**, and this
+       correction belongs in R15.7's note naming the identical-SHA return, because the risk is not
+       failing to add the guard but somebody deleting it in a year for looking redundant.
+
+       **Why a cheap guard is worth it at low frequency, which is the part that justifies the line of
+       code**: a commit onto a detached HEAD succeeds, prints a SHA, and becomes unreachable the moment
+       you switch branches -- and with `push = FALSE` there is no later push failure to reveal it.
+       Silent plus unrecoverable is the combination that earns a guard regardless of rate. Detached
+       checkouts are also routine in CI rather than exotic; the frequency claim stops there, because the
+       exact trigger-by-trigger behaviour depends on how the checkout step is configured and is not
+       something this audit verified.
     10. **`datom_repo_push()` needs one behaviour the body does not name: what it does when there is no
         remote at all.** `.datom_git_push()` reads `git2r::remotes(repo)[[1L]]`
         (`R/utils-git.R:264`), which subscripts an empty list on a repo with no remote and fails with
@@ -5746,3 +5763,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-18 | **(implementation, Task 11) The namespace check builds its probe connection through `.datom_build_init_conn()`, which is what makes the local-backend widening possible at all.** It previously spelled out an S3 client inline, so there was nothing to widen: a local store needs a connection with no client, and that builder already knows which shape to make -- it is the same one init uses for the real data connection. Recorded because the widening reads as a one-line condition change and is not: without this, "check local stores too" would have constructed an S3 client for a filesystem path. | Task 11 DONE record, `R/conn.R` |
 | 2026-09-18 | **(implementation, Task 11) `datom_status()` skips the input-files block entirely on a product repo rather than relabelling it, while `datom_init_repo()` still creates the directory.** Two decisions that look inconsistent and are not. The directory stays because not creating it changes what init guarantees about the tree and breaks an existing test, for a cosmetic gain -- finding 10's default. The report skips because "Input files: directory empty" describes a repo with nothing to onboard rather than one that never will, which is the same misreport the import verbs were giving. So the honest split is: the tree is unchanged, the description of it is corrected. | Task 11 DONE record, `R/query.R` |
 | 2026-09-18 | **(review finding, ACCEPTED and fixed, Task 11) A refusal must not advise an override its caller does not honour -- and this is the same defect the same function was fixed for one commit earlier.** The occupied-namespace refusal ended with "pass `.force = TRUE` to override" whatever the caller's policy was, while a product repo's check ignores `.force` entirely: so the message routed exactly those users into a flag that changes nothing, and the test asserting `.force` is refused sat two files away from the message telling people to use it. The backend-neutrality fix had already established the principle -- **this function cannot know its caller's policy any more than it knew the backend** -- and stopped one line short of applying it. **Two fixes, each pinned independently** (dropping the argument check reddens 2 tests, making the bullet static again reddens 1). (a) `.force = TRUE` with `mode = "product"` **aborts at the argument check**, beside the mode/set co-validation, rather than being dropped: same rule as refusing a version supplied beside a member record that already carries one, since ignoring an argument reports success for an action nobody asked for and would leave the caller relying on an override that does not exist. (b) The override bullet is conditional on a new `overridable =` argument, and the product wording **says why** there is none -- a bare "use a different prefix" leaves the user hunting for the flag. `.force`'s docs now name both exceptions, the unreachable store and the product repo. Tests 3900 -> 3909. | Task 11 DONE record, `R/utils-validate.R`, `R/conn.R` |
+| 2026-09-18 | **(decision + audit correction, Task 12) `datom_repo_commit()` does NOT run the staleness gate -- and this audit's stated reason for worrying about that, that the gate would make R15.7's explicit branch guard redundant, is FALSE.** The decision itself is the audit's default, taken: a commit is local and a push is shared, so gating the local verb makes saving your own work depend on somebody else's push or on being online, and `.datom_git_push()` already pulls before pushing. **The correction is the part worth keeping.** `.datom_check_git_current()` reaches `.datom_git_branch()` only after four early returns -- no remote, fetch failed, no upstream, and **local SHA identical to upstream** (`R/utils-git.R:434`, `:460`, `:468`, `:474`; branch call at `:478`) -- so the transitive guard fires only when you are out of sync with the remote. A detached HEAD **while up to date**, which is the ordinary shape of the mistake, passes straight through. The explicit assert is therefore not duplication but the only check that runs in the common case, and the risk was never failing to add it: it was somebody deleting it later for looking redundant. Written into R15.7 naming the identical-SHA return, so it cannot be re-derived the wrong way. **Why it earns a line at a low rate**: a commit onto a detached HEAD succeeds, prints a SHA, and is unreachable the moment you switch branches -- and with `push = FALSE` no later push failure reveals it. Silent plus unrecoverable is the combination that justifies a cheap guard. Detached checkouts are routine in CI; the claim stops there, because trigger-by-trigger behaviour depends on how the checkout step is configured and was not verified. | Task 12 finding 9, R15.7 |
