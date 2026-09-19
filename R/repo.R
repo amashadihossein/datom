@@ -437,3 +437,381 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
   )
   invisible(sha)
 }
+
+
+# --- The sanctioned git-mutation surface --------------------------------------
+#
+# datom_repo_commit() and datom_repo_push() exist so a downstream package
+# (dpbuild, dpdeploy) can commit its own content -- code, environment, framework
+# state -- into the data repo without importing git2r. Every git mutation of the
+# data repo goes through datom; these two are the human-moment half of that, and
+# `.datom_git_commit()` / `.datom_git_push()` remain the machine-moment half.
+#
+# The distinction between the two halves is the whole point and is not cosmetic.
+# A machine moment (inside datom_write() / datom_write_set()) stages an explicit
+# file list and never add-all, because it fires at a time datom chose and the
+# tree may hold a human's work in progress. A human moment is the opposite: the
+# caller asked for it, so `paths = NULL` means what `git add .` means.
+
+
+#' Connection Requirements Shared by the Two Git-Mutation Verbs
+#'
+#' Both verbs need the same three things and nothing else: a real connection, a
+#' developer role, and a local clone to operate on.
+#'
+#' @param conn A `datom_conn` object.
+#' @param verb Name of the calling verb, for the message.
+#' @return Invisible `TRUE`.
+#' @keywords internal
+.datom_check_git_verb_conn <- function(conn, verb) {
+  if (!inherits(conn, "datom_conn")) {
+    cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object.")
+  }
+  if (conn$role != "developer") {
+    cli::cli_abort(c(
+      "{.fn {verb}} requires a developer connection.",
+      "i" = "Current role: {.val {conn$role}}"
+    ))
+  }
+  if (is.null(conn$path)) {
+    cli::cli_abort(c(
+      "{.arg conn} has no local repo {.field path}.",
+      "i" = "{.fn {verb}} operates on a clone; use {.fn datom_get_conn} with one."
+    ))
+  }
+
+  invisible(TRUE)
+}
+
+
+#' Refuse a Repo With No Remote, Before git2r Does It Unhelpfully
+#'
+#' `.datom_git_push()` reads `git2r::remotes(repo)[[1L]]`, which subscripts an
+#' empty list on a repo with no remote and fails with R's own out-of-bounds
+#' error -- a message naming nothing the caller can act on. A data repo is
+#' required to have a remote, so this is an edge rather than a scenario, but
+#' `datom_repo_push()` is the first thing somebody points at a half-configured
+#' repo.
+#'
+#' Deliberately **not** inside `.datom_git_push()`: putting it there would change
+#' what four existing callers do on a repo they have never met in that state.
+#' Both new verbs call it, so there is no second copy.
+#'
+#' @param path Repository path.
+#' @param verb Name of the calling verb, for the message.
+#' @return The remote name.
+#' @keywords internal
+.datom_check_git_remote <- function(path, verb) {
+  repo <- tryCatch(
+    git2r::repository(path),
+    error = function(e) {
+      cli::cli_abort("Not a git repository: {.path {path}}")
+    }
+  )
+
+  remotes <- git2r::remotes(repo)
+  if (length(remotes) == 0L) {
+    cli::cli_abort(
+      c(
+        "{.fn {verb}} needs a git remote, and {.path {path}} has none.",
+        "i" = "Add one with {.code git remote add origin <url>} and push once by hand.",
+        "i" = "A datom data repo is expected to have a remote -- see {.fn datom_init_repo}."
+      ),
+      class = "datom_no_git_remote"
+    )
+  }
+
+  remotes[[1L]]
+}
+
+
+#' Commits on This Branch the Remote Does Not Have
+#'
+#' The ahead half of the count `.datom_check_git_current()` already computes for
+#' its behind half: `git2r::ahead_behind()` element `[[1]]` is ahead, `[[2]]` is
+#' behind. No new git machinery.
+#'
+#' **Does not fetch.** The comparison is against the cached remote-tracking ref,
+#' so a stale ref can only cause an unnecessary push -- and a push pulls first
+#' and is idempotent, so the cost of being wrong in that direction is a round
+#' trip. Fetching here would instead make a clean-tree call fail when offline.
+#'
+#' @param path Repository path.
+#' @return Integer count of unpushed commits, or `NA_integer_` when it cannot be
+#'   determined -- no upstream tracking ref yet, or the comparison failed.
+#'   `NA` means *cannot prove there is nothing to publish*, so callers push: that
+#'   is exactly the state of a branch that has never been pushed.
+#' @keywords internal
+.datom_git_ahead <- function(path) {
+  repo <- tryCatch(
+    git2r::repository(path),
+    error = function(e) {
+      cli::cli_abort("Not a git repository: {.path {path}}")
+    }
+  )
+
+  upstream <- tryCatch(
+    git2r::branch_get_upstream(git2r::repository_head(repo)),
+    error = function(e) NULL
+  )
+  if (is.null(upstream)) return(NA_integer_)
+
+  tryCatch(
+    {
+      ab <- git2r::ahead_behind(
+        git2r::revparse_single(repo, "HEAD"),
+        git2r::revparse_single(repo, upstream$name)
+      )
+      as.integer(ab[[1]])
+    },
+    error = function(e) NA_integer_
+  )
+}
+
+
+#' Commit Content in the Data Repo
+#'
+#' Commits changes in the data repo clone and, by default, pushes them. This is
+#' datom's **sanctioned git-mutation surface** for downstream packages: a build
+#' or deployment package commits its own content -- code, `renv.lock`, framework
+#' state -- through this verb rather than importing `git2r` and writing to the
+#' data repo behind datom's back.
+#'
+#' **`paths = NULL` means what `git add .` means.** It stages tracked
+#' modifications, deletions and untracked files, minus anything `.gitignore`
+#' excludes. That is the correct semantic for a human-invoked moment, and it is
+#' deliberately the opposite of what datom's own writes do: a commit created
+#' inside [datom_write()] stages an explicit file list, because it fires at a
+#' moment datom chose and must never sweep up work in progress.
+#'
+#' One consequence of add-all worth knowing rather than discovering: if an
+#' earlier datom write failed after writing local metadata but before committing,
+#' those datom files are dirty and this verb will stage them. That is left
+#' intentional -- silently excluding datom's own paths would make the argument
+#' lie about its contract, and the state is exactly what [datom_validate()]
+#' reports and `datom_validate(fix = TRUE)` repairs. It also moves git *ahead* of
+#' storage, which is the safe direction.
+#'
+#' **Commit is idempotent, push is convergent, and neither implies the other.**
+#' A clean tree produces no commit and is not an error, so "commit everything"
+#' can be called twice. With `push = TRUE` the push still runs when the branch is
+#' ahead of the remote, even though no commit was created -- otherwise one failed
+#' push would leave the remote behind forever, since every later call finds a
+#' clean tree and returns early.
+#'
+#' @param conn A `datom_conn` object with `role = "developer"` and a local repo
+#'   path (`conn$path`).
+#' @param message Commit message. Required, and used only when a commit is
+#'   actually created.
+#' @param paths `NULL` (default) to stage everything `git add .` would stage, or
+#'   a character vector of repo-relative paths to stage exactly those. Explicit
+#'   paths must exist: to record a deletion, use `paths = NULL`.
+#' @param push Push after committing (default `TRUE`), through the same path
+#'   datom's own writes use -- so it inherits pull-before-push and upstream
+#'   tracking. `push = FALSE` commits only; [datom_repo_push()] is the other half
+#'   of that split.
+#' @return Invisibly, the commit SHA; `invisible(NULL)` when no commit was
+#'   created (whether or not a push happened).
+#' @export
+#' @seealso [datom_repo_push()], [datom_validate()]
+#' @examples
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   # Content datom does not own, committed through datom.
+#'   dir.create(file.path(tmp, "repo", "R"))
+#'   writeLines("build <- function() NULL", file.path(tmp, "repo", "R", "build.R"))
+#'   datom_repo_commit(conn, "Add build script")
+#'
+#'   # Idempotent: a clean tree is a no-op, not an error.
+#'   datom_repo_commit(conn, "Nothing to do")
+#'
+#'   unlink(tmp, recursive = TRUE)
+#' }
+datom_repo_commit <- function(conn, message, paths = NULL, push = TRUE) {
+  .datom_check_git2r()
+  .datom_check_git_verb_conn(conn, "datom_repo_commit")
+
+  if (!is.character(message) || length(message) != 1L || !nzchar(message)) {
+    cli::cli_abort("{.arg message} must be a non-empty character string.")
+  }
+  if (!is.null(paths) &&
+      (!is.character(paths) || length(paths) == 0L || any(!nzchar(paths)))) {
+    cli::cli_abort(c(
+      "{.arg paths} must be a non-empty character vector of repo-relative paths, or NULL.",
+      "i" = "{.code paths = NULL} stages everything {.code git add .} would stage."
+    ))
+  }
+  if (!is.logical(push) || length(push) != 1L || is.na(push)) {
+    cli::cli_abort("{.arg push} must be {.code TRUE} or {.code FALSE}.")
+  }
+
+  # Only when a push is actually going to be attempted: a repo with no remote
+  # can still legitimately be committed to locally.
+  if (isTRUE(push)) .datom_check_git_remote(conn$path, "datom_repo_commit")
+
+  # The on-a-branch guard, asserted rather than inherited. It lives inside
+  # `.datom_git_branch()` and is reached only from `.datom_git_push()`, so with
+  # `push = FALSE` nothing would check it.
+  #
+  # Do NOT delete this as duplication of `.datom_check_git_current()`. That
+  # function does reach `.datom_git_branch()`, but only after four early returns
+  # -- no remote, the fetch failed, no upstream, and local SHA identical to
+  # upstream -- so it guards a detached HEAD only when you are already out of
+  # sync with the remote. A detached HEAD while up to date is the ordinary shape
+  # of the mistake and passes straight through. This is also why the guard earns
+  # a line at a low rate: a commit onto a detached HEAD succeeds, prints a SHA,
+  # and becomes unreachable the moment you switch branches -- and with
+  # `push = FALSE` there is no later push failure to reveal it.
+  branch_name <- .datom_git_branch(conn$path)
+
+  # Nothing-to-do is detected here rather than read off the helper's return
+  # value. `.datom_git_commit()` returns HEAD's SHA when nothing ends up staged
+  # (tests/testthat/test-utils-git.R "returns HEAD SHA when files are
+  # unchanged"), which is a success value, so a wrapper that returned what it was
+  # given could never report the no-op.
+  repo <- git2r::repository(conn$path)
+  head_before <- as.character(git2r::revparse_single(repo, "HEAD")$sha)
+
+  # `files = "."` delegates the add-all to the same helper every other commit
+  # site uses: "." passes its file-existence guard, and `git2r::add()` with
+  # default flags respects `.gitignore` and stages deletions.
+  #
+  # `staged_deletions = TRUE` is the wrong spelling and the tempting one. It
+  # exists to skip the existence check, and it sets `git2r::add(force = TRUE)`,
+  # which stages gitignored files -- so it would quietly break the "minus
+  # gitignored files" half of this contract. It is also unnecessary: default
+  # flags already stage deletions.
+  sha <- .datom_git_commit(
+    conn$path,
+    files   = paths %||% ".",
+    message = message
+  )
+  created <- !identical(sha, head_before)
+
+  if (created) {
+    cli::cli_alert_success(
+      "Committed {.val {substr(sha, 1L, 7L)}} on {.val {branch_name}}: {message}"
+    )
+  } else {
+    cli::cli_alert_info("Nothing to commit -- no staged changes.")
+  }
+
+  if (isTRUE(push)) {
+    # A commit just created is by definition one the remote lacks, so the ahead
+    # count is only consulted on the no-op path -- which is the path that would
+    # otherwise leave a previously failed push unrepaired forever.
+    ahead <- if (created) NA_integer_ else .datom_git_ahead(conn$path)
+
+    if (created || is.na(ahead) || ahead > 0L) {
+      .datom_git_push(conn$path, pat = conn$github_pat)
+    } else {
+      cli::cli_alert_info(
+        "Remote already has every commit on {.val {branch_name}}."
+      )
+    }
+  }
+
+  if (created) invisible(sha) else invisible(NULL)
+}
+
+
+#' Push the Data Repo to Its Remote
+#'
+#' Pushes the current branch of the data repo clone, through the same path
+#' datom's own writes use -- so it inherits pull-before-push, upstream tracking,
+#' and the on-a-branch guard.
+#'
+#' **Convergent, not imperative.** Nothing to push is an informational no-op
+#' rather than an error, so calling it twice is safe and "make sure the remote
+#' has everything" is a legal standalone operation.
+#'
+#' This is the other half of [datom_repo_commit()]`(push = FALSE)`. Without it,
+#' "push what I already committed" would only be expressible as *another commit
+#' attempt* -- and since `paths = NULL` is add-all, a caller who merely wanted to
+#' push would risk committing whatever work in progress the tree happened to
+#' hold.
+#'
+#' @param conn A `datom_conn` object with `role = "developer"` and a local repo
+#'   path (`conn$path`).
+#' @return Invisibly `TRUE`.
+#' @export
+#' @seealso [datom_repo_commit()], [datom_pull()]
+#' @examples
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   # Commit now, push later.
+#'   writeLines("notes", file.path(tmp, "repo", "NOTES.md"))
+#'   datom_repo_commit(conn, "Add notes", push = FALSE)
+#'   datom_repo_push(conn)
+#'
+#'   # Convergent: a second call has nothing to do and says so.
+#'   datom_repo_push(conn)
+#'
+#'   unlink(tmp, recursive = TRUE)
+#' }
+datom_repo_push <- function(conn) {
+  .datom_check_git2r()
+  .datom_check_git_verb_conn(conn, "datom_repo_push")
+  .datom_check_git_remote(conn$path, "datom_repo_push")
+
+  ahead <- .datom_git_ahead(conn$path)
+
+  # The on-a-branch guard is INHERITED here, unlike in `datom_repo_commit()`
+  # where it is asserted up front. The asymmetry is deliberate and was checked by
+  # breaking it rather than reasoned about: an explicit assert here reddened
+  # nothing, because the early return below cannot be reached on a detached HEAD.
+  # `.datom_git_ahead()` needs an upstream tracking ref, a detached HEAD has none,
+  # so the count is NA, so this verb always goes on to `.datom_git_push()` --
+  # which carries the guard. The commit verb has no such backstop when
+  # `push = FALSE`, which is why the assert lives there and not here.
+  if (!is.na(ahead) && ahead == 0L) {
+    # Safe by the same property: an upstream ref exists, so HEAD is a branch.
+    branch_name <- .datom_git_branch(conn$path)
+    cli::cli_alert_info(
+      "Nothing to push -- {.val {branch_name}} matches the remote."
+    )
+    return(invisible(TRUE))
+  }
+
+  .datom_git_push(conn$path, pat = conn$github_pat)
+
+  # Deliberately no commit count in the message: the push pulls first, so a merge
+  # can add a commit between the count above and what actually went out, and a
+  # number that is wrong once in a while is worse than no number.
+  # Read after the push rather than before: cli refuses a `{}` expression that
+  # starts with a dot, and a local binding is clearer than working around that.
+  branch_name <- .datom_git_branch(conn$path)
+  cli::cli_alert_success("Pushed {.val {branch_name}} to the data remote.")
+
+  invisible(TRUE)
+}

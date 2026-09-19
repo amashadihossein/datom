@@ -111,6 +111,8 @@ reference:
       - datom_storage_verify
       - datom_repo_set_data_store
       - datom_repo_attach_governance
+      - datom_repo_commit
+      - datom_repo_push
 
   - title: "Teardown"
     desc: "Permanently remove a project's data repo and local clone"

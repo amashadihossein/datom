@@ -22,7 +22,7 @@ it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding th
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
 3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
 after the review finding that followed it -> 3770 after Task 25 -> 3781 after the review finding
-that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> **3909 after the review finding that followed it**.
+that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> **3974 after Task 12 proper**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -41,7 +41,8 @@ validators) **Task 9** (`datom_write_set()`), **Task 10** (`datom_get_set()` plu
 **Task 26** (a stored project name comes from the repo, not from a connection label),
 **Task 24** (read-side ergonomics: finding and shaping members),
 **Task 25** (write-side ergonomics: assembling a set in steps)
-and **Task 23** (`project.yaml` declares its format), plus
+**Task 23** (`project.yaml` declares its format), **Task 11** (project mode gating the
+import path) and **Task 12** (foreign-content discipline plus the two git-mutation exports), plus
 three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
@@ -166,10 +167,28 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3909** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **3974** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0 errors on docs and
-code/documentation agreement (tests and examples run separately). Next is **Task 12**
-(foreign-content discipline + `datom_repo_commit()`), then Task 13 onward.
+code/documentation agreement (tests and examples run separately). Next is **Task 13**
+(`datom_write_set(include_paths = )` -- the joint commit), then Task 14 onward.
+
+**TASK 12 IS CLOSED, AND DATOM NOW HAS A SANCTIONED WAY TO COMMIT CONTENT IT DOES NOT OWN.**
+`datom_repo_commit(conn, message, paths = NULL, push = TRUE)` and `datom_repo_push(conn)` let a
+downstream package put its code, its lockfile and its build state into the data repo without
+importing `git2r`. `paths = NULL` means what `git add .` means -- which is the **opposite** of what
+datom's own writes do, and that asymmetry is the point: a machine-moment commit fires when datom
+chose and must never sweep up work in progress, while a human-moment commit was asked for. Commit is
+idempotent, push is convergent, and **the no-op still pushes when the branch is ahead**, because
+returning early there would let one failed push leave the remote behind for good. Two verbs rather
+than one, because "push what I already committed" must be spellable without risking a commit of
+whatever the tree happens to hold. The other half of the task was proving two guarantees that were
+already true: datom's own commits exclude a human's dirty files, and datom ignores paths it does not
+own. Both now have tests that can fail -- reading the **real** commit tree rather than a mocked file
+list, and using a foreign directory (`dp/`) that is not on the hardcoded skip list sitting in front
+of the mechanism the requirement rests on. Eight things a later change must not undo, seven probes,
+one deviation that changed the code (the push verb inherits the detached-HEAD guard rather than
+asserting it -- an explicit assert there reddened nothing, and the reason is written at both sites),
+and one residual owned by Task 16, are in Task 12's DONE record.
 
 **TASK 23 IS CLOSED, AND `project.yaml` NOW SAYS WHAT SHAPE IT IS IN.** The config file carries
 settings a writer must obey, and until now had no way to say "this repo needs a newer datom"; it
@@ -3034,7 +3053,7 @@ own; landing it first is what makes Task 6's failure loud.
     its probe connection through `.datom_build_init_conn()` rather than an inline S3 client, which is
     what makes the local-backend widening work at all.
 
-- [ ] **12. Foreign-content discipline + `datom_repo_commit()`**
+- [x] **12. Foreign-content discipline + `datom_repo_commit()`** &nbsp; **[DONE 2026-09-18, in two commits -- see the DONE record]**
   - **Elevate machine-commit isolation from accident to guarantee** (R14.1, I16). Already true by
     implementation -- `.datom_git_commit()` takes an explicit file list (`R/utils-git.R:182`) --
     so this is primarily a **test** so a future add-all refactor fails CI rather than an audit:
@@ -3185,6 +3204,84 @@ own; landing it first is what makes Task 6's failure loud.
         first thing a user points at a half-configured repo. Default: check for a remote up front and
         refuse with the recourse, in the new verb rather than in the shared helper, so no existing
         caller's behaviour changes.
+
+  - **DONE 2026-09-18, in two commits**, split because the two halves are different logical
+    changes: chunk A elevated two existing guarantees to tested ones with **no `R/` change at all**
+    (new `tests/testthat/test-foreign-content.R`, 5 tests, 3909 -> 3926), chunk B added the two
+    exports (`R/repo.R`, 3926 -> **3974**). Docs: NAMESPACE, five `man/` pages, `_pkgdown.yml` under
+    the existing **Storage Extension API** section beside `datom_repo_set_data_store()`, and a NEWS
+    section. Both new examples run with their output read. `dev/check-spec.R` 9/9.
+
+    **Eight things a later change must not undo.**
+    1. **The AC16 test reads the real commit tree, and must not be consolidated with the mocked
+       one.** `test-read-write.R`'s "datom_write commits manifest.json" mocks `.datom_git_commit()`
+       and inspects the file list it captured; the new test uses real git and reads the commit's
+       tree with `ls_tree()` + `lookup()` + `content()`. Merging them back into one mocked test
+       would leave the suite green through the add-all refactor R14.1 exists to catch, because the
+       mock replaces the function whose file list *is* the guarantee.
+    2. **Asserted as bytes, not as presence.** `R/foo.R` is committed in the fixture and then
+       edited, so the path is in the tree either way -- the claim is that the tree still holds
+       `"original"`. A `%in%` check on tree paths passes whatever the write staged.
+    3. **The foreign directory is `dp/`, never `R/` or `renv/`.** `.datom_validate_tables()` drops
+       seven hardcoded names **before** the `metadata.json` filter runs, so a test named after one
+       of them is satisfied by the list and would survive deletion of the filter.
+    4. **R14.2's repo-level test asserts the whole expected set** (`expect_setequal(..., "manifest
+       .json")`), not the absence of the two foreign files it plants. The mechanism there is that
+       `.datom_validate_repo_files()` walks an explicit list and never enumerates the repo; a
+       refactor into a directory walk is exactly what must fail, and it surfaces every foreign file
+       at once.
+    5. **`paths = NULL` delegates to `.datom_git_commit()` with `files = "."`, and must never use
+       `staged_deletions = TRUE`.** That flag exists to skip the existence check -- which is what an
+       author reaches for to make deletions work -- and it sets `git2r::add(force = TRUE)`, which
+       stages gitignored files. Default flags already stage deletions, so the flag buys nothing and
+       silently breaks AC17's "minus gitignored files" clause.
+    6. **Nothing-to-do is detected by HEAD before/after, never from the helper's return value.**
+       `.datom_git_commit()` returns HEAD's SHA when nothing ends up staged, which is a success
+       value, so a wrapper that passed it through could not emit R15.5's `invisible(NULL)`.
+    7. **The no-op must not return before the push decision.** No-op means no *commit*; with
+       `push = TRUE` and the branch ahead, the push still runs. Returning early there is the silent
+       failure R15.5's qualification exists for: one failed push and every later call finds a clean
+       tree and returns, leaving the remote behind for good.
+    8. **These verbs call no forward-compatibility write gate, deliberately.** Every other write
+       verb in this spec had to call `.datom_check_write_entry()`; this one writes none of datom's
+       documents -- it commits whatever the caller named -- so gating it would refuse a commit of
+       somebody's code because of a manifest's shape. The dirty-datom-file sweep-in that `paths =
+       NULL` allows is a **local** write by this same build, which already passed the gate.
+
+    **One deviation from what R15.8 implies, found by probe rather than by reading, and the code
+    changed because of it.** The explicit on-a-branch assert is in `datom_repo_commit()` only.
+    Adding one to `datom_repo_push()` reddened **nothing**: the nothing-to-push early return needs
+    an ahead count, the count needs an upstream tracking ref, and a detached HEAD has none -- so
+    that verb always reaches `.datom_git_push()`, which carries the guard. So the push verb
+    inherits it (which is what R15.8 says), the commit verb asserts it (which is what R15.7 says,
+    and the probe confirms: removing it reddens 2 assertions), and the asymmetry is now stated at
+    both sites and in the test name rather than looking like an oversight.
+
+    **Seven probes, each run rather than argued.**
+
+    | Broken on purpose | Reddened |
+    |---|---|
+    | `git_files <- "."` in `.datom_commit_and_mirror()` (the add-all refactor) | 4 assertions, both AC16 tests |
+    | the `metadata.json` filter in `.datom_validate_tables()` deleted | 3 assertions, including the `dp/` test |
+    | the seven hardcoded directory names deleted | **nothing** -- the test rests on the filter, which is what R14.2 relies on |
+    | `staged_deletions = TRUE` on the delegation | exactly 1: the gitignored-file assertion. Deletions still worked, which is the evidence that default flags stage them |
+    | `created <- TRUE` (no before/after detection) | 4 assertions across 3 tests |
+    | `return(invisible(NULL))` before the push block | 3 assertions, including the R15.5 qualification test |
+    | the explicit branch guard removed from the commit verb / from the push verb | 2 / **0** -- see the deviation above |
+
+    **Two smaller things worth carrying.** git2r reports an untracked **directory** rather than
+    recursing into it, so the entry to assert is `"dp/"`, and that is true of `git2r::status()` and
+    of what `datom_status()` passes through from it. And `cli` refuses a `{}` expression that starts
+    with a dot, so `{.datom_git_branch(...)}` inline in a message is an error -- bind it first.
+
+    **Audit finding 1 needed no test work**, as it said: the three delta corrections are already
+    covered at `test-utils-git.R:332`, `:337` and `:345`. They are cited in the wrapper's comments
+    so the next reader does not re-derive them.
+
+    **One residual, named rather than left implicit, and it belongs to Task 16's sweep**: nothing
+    tests the interaction design 19.7 accepts, where `paths = NULL` sweeps in datom files left dirty
+    by a previously failed write. It is documented in the roxygen and is a *tolerated* behaviour
+    rather than a requirement with a criterion, and the fixture for it is a half-failed write.
 
 - [ ] **13. `datom_write_set(include_paths = )` -- the joint commit**
   - Follow-on to Task 9 rather than folded into it: Task 9 is already large (two gates, dual-write,
@@ -5313,8 +5410,8 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 | `datom_get_set()` (renamed from `datom_read_set()`, 2026-09-13 -- it returns references, not data) | 10 -- **shipped 2026-09-14** |
 | `print.datom_set()` | 10 -- **shipped 2026-09-14** |
 | `print.datom_link()` | 10 -- **shipped 2026-09-14** |
-| `datom_repo_commit()` | 12 |
-| `datom_repo_push()` | 12 |
+| `datom_repo_commit()` | 12 -- **shipped 2026-09-18** |
+| `datom_repo_push()` | 12 -- **shipped 2026-09-18** |
 | `datom_fetch_member()` | 24 -- **shipped 2026-09-15** |
 | `datom_list_members()` | 24 -- **shipped 2026-09-15** |
 | `datom_structure_members()` | 24 -- **shipped 2026-09-15** |
@@ -5764,3 +5861,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-18 | **(implementation, Task 11) `datom_status()` skips the input-files block entirely on a product repo rather than relabelling it, while `datom_init_repo()` still creates the directory.** Two decisions that look inconsistent and are not. The directory stays because not creating it changes what init guarantees about the tree and breaks an existing test, for a cosmetic gain -- finding 10's default. The report skips because "Input files: directory empty" describes a repo with nothing to onboard rather than one that never will, which is the same misreport the import verbs were giving. So the honest split is: the tree is unchanged, the description of it is corrected. | Task 11 DONE record, `R/query.R` |
 | 2026-09-18 | **(review finding, ACCEPTED and fixed, Task 11) A refusal must not advise an override its caller does not honour -- and this is the same defect the same function was fixed for one commit earlier.** The occupied-namespace refusal ended with "pass `.force = TRUE` to override" whatever the caller's policy was, while a product repo's check ignores `.force` entirely: so the message routed exactly those users into a flag that changes nothing, and the test asserting `.force` is refused sat two files away from the message telling people to use it. The backend-neutrality fix had already established the principle -- **this function cannot know its caller's policy any more than it knew the backend** -- and stopped one line short of applying it. **Two fixes, each pinned independently** (dropping the argument check reddens 2 tests, making the bullet static again reddens 1). (a) `.force = TRUE` with `mode = "product"` **aborts at the argument check**, beside the mode/set co-validation, rather than being dropped: same rule as refusing a version supplied beside a member record that already carries one, since ignoring an argument reports success for an action nobody asked for and would leave the caller relying on an override that does not exist. (b) The override bullet is conditional on a new `overridable =` argument, and the product wording **says why** there is none -- a bare "use a different prefix" leaves the user hunting for the flag. `.force`'s docs now name both exceptions, the unreachable store and the product repo. Tests 3900 -> 3909. | Task 11 DONE record, `R/utils-validate.R`, `R/conn.R` |
 | 2026-09-18 | **(decision + audit correction, Task 12) `datom_repo_commit()` does NOT run the staleness gate -- and this audit's stated reason for worrying about that, that the gate would make R15.7's explicit branch guard redundant, is FALSE.** The decision itself is the audit's default, taken: a commit is local and a push is shared, so gating the local verb makes saving your own work depend on somebody else's push or on being online, and `.datom_git_push()` already pulls before pushing. **The correction is the part worth keeping.** `.datom_check_git_current()` reaches `.datom_git_branch()` only after four early returns -- no remote, fetch failed, no upstream, and **local SHA identical to upstream** (`R/utils-git.R:434`, `:460`, `:468`, `:474`; branch call at `:478`) -- so the transitive guard fires only when you are out of sync with the remote. A detached HEAD **while up to date**, which is the ordinary shape of the mistake, passes straight through. The explicit assert is therefore not duplication but the only check that runs in the common case, and the risk was never failing to add it: it was somebody deleting it later for looking redundant. Written into R15.7 naming the identical-SHA return, so it cannot be re-derived the wrong way. **Why it earns a line at a low rate**: a commit onto a detached HEAD succeeds, prints a SHA, and is unreachable the moment you switch branches -- and with `push = FALSE` no later push failure reveals it. Silent plus unrecoverable is the combination that justifies a cheap guard. Detached checkouts are routine in CI; the claim stops there, because trigger-by-trigger behaviour depends on how the checkout step is configured and was not verified. | Task 12 finding 9, R15.7 |
+| 2026-09-18 | **(implementation, Task 12) The explicit on-a-branch assert goes in `datom_repo_commit()` and NOT in `datom_repo_push()`, and the asymmetry was settled by probe rather than by reading R15.8.** An explicit assert in the push verb reddened **nothing**, and the reason is structural rather than incidental: the nothing-to-push early return is taken only when the ahead count is a real number, the count comes from `git2r::branch_get_upstream()`, and a detached HEAD has no upstream -- so the count is `NA`, the verb always reaches `.datom_git_push()`, and the guard inside `.datom_git_branch()` fires there. The commit verb has no such backstop with `push = FALSE`, which is where R15.7's assert earns its line (removing it reddens 2 assertions). Recorded because the two verbs now *look* inconsistent: a later reader who "fixes" the push verb adds a line that cannot fail, and one who deletes the commit verb's line removes the only check that runs in the common case. Both sites and the test name state which is which. **The residual, stated rather than implied**: the push verb's guard depends on `NA` meaning "push anyway". A future change that made an unknown ahead count return early would silently take the guard with it. | Task 12, R15.7, R15.8 |
+| 2026-09-18 | **(implementation, Task 12) `datom_repo_commit()` and `datom_repo_push()` call no forward-compatibility write gate, and that is a decision rather than an omission.** Every other write verb in this spec had to call `.datom_check_write_entry()` itself -- the route-was-the-gap finding, three tasks running -- so the absence here needs a reason on the record. These verbs write **none** of datom's documents: they stage and commit whatever the caller named, so gating them would refuse a commit of somebody's R code because a manifest in the same clone carries a field this build cannot classify. The one datom-document interaction is `paths = NULL` sweeping in files left dirty by a **failed local write from this same build**, which already passed the gate when it ran. Recorded with the boundary that makes it hold: if either verb ever *produces* a datom-owned document (Task 13's `include_paths` does not -- it stages caller-named paths into the artifact write's commit, and that write is gated), the gate comes with it. | Task 12, Task 21, Task 13, I5 |

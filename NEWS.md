@@ -140,6 +140,66 @@ absent already means "ordinary".
   * A **reader** never sees this file, having no git checkout: the harm being
     prevented is a write into a repo whose policy this build cannot read.
 
+## New: committing your own content through datom
+
+A product repo holds code, an environment lockfile and build state beside datom's
+artifacts, and until now there was no sanctioned way to commit any of it -- so a
+downstream package had to import `git2r` and write to the data repo behind datom's
+back, or abuse a datom write. Two new exports close that:
+
+```r
+datom_repo_commit(conn, message, paths = NULL, push = TRUE)
+datom_repo_push(conn)
+```
+
+Both require a developer connection and go through the same git path datom's own
+writes use, so they inherit pull-before-push and upstream tracking.
+
+* **`paths = NULL` means what `git add .` means**: tracked modifications,
+  deletions and untracked files, minus anything `.gitignore` excludes. A character
+  vector stages exactly those paths instead.
+
+* **It is the opposite of what datom's own commits do, deliberately.** A commit
+  created inside `datom_write()` or `datom_write_set()` stages an explicit file
+  list and never add-all, because it fires at a moment datom chose and your work in
+  progress may be sitting in the tree. `datom_repo_commit()` fires when you asked
+  it to, so committing everything is the right default. Both halves are now pinned
+  by tests rather than left true by accident.
+
+* **One consequence of add-all worth knowing**: if an earlier write failed after
+  writing local metadata but before committing, those datom files are dirty and
+  this verb stages them. That is intentional -- excluding them silently would make
+  the argument lie -- and it moves git *ahead* of storage, which is the safe
+  direction. `datom_validate()` reports that state and `datom_validate(fix = TRUE)`
+  repairs it.
+
+* **Commit is idempotent and push is convergent, and neither implies the other.**
+  A clean tree produces no commit and is not an error, so "commit everything" can
+  be called twice. With `push = TRUE` the push **still runs** when the branch is
+  ahead of the remote even though no commit was created: otherwise one failed push
+  would leave the remote behind for good, since every later call finds a clean tree
+  and returns early. `datom_repo_push()` is convergent for the same reason --
+  calling it with nothing to push is information, not an error.
+
+* **Two verbs rather than one**, because "push what I already committed" must be
+  spellable without risking a commit. With only `datom_repo_commit(push = FALSE)`
+  and no standalone push, the second half of that split would be another commit
+  attempt -- and in a product repo that is add-all, so a caller who only wanted to
+  push could get a commit of whatever the tree happened to hold.
+
+* **A detached HEAD is refused up front**, for both values of `push`. A commit onto
+  a detached HEAD succeeds, prints a SHA, and becomes unreachable the moment you
+  switch branches, with no later push to reveal it.
+
+* **A repo with no remote is refused with the recourse**, rather than failing with
+  a subscript error from the git layer. `push = FALSE` stays legal there, since a
+  local commit needs no remote.
+
+**Non-datom paths were always tolerated and now have tests saying so.**
+`datom_validate()` does not report a foreign directory as a defect, and
+`datom_status()` reports foreign uncommitted files as what they are -- git state,
+honestly reported -- and never as a datom problem.
+
 ## A field this version does not recognise is no longer deleted
 
 Writing a table rebuilds its metadata document and its row in the manifest from
