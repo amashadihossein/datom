@@ -5997,6 +5997,127 @@ drops is the verb the owner called less fundamental.
   - _Pathway impact: yes -- the set-read card gains a note that resolving "what is current" for a
     member goes through its project's manifest rather than through a per-member scan._
 
+  **PRE-START AUDIT (2026-09-19), cold. THIRTEEN findings, and FOUR need the owner before a keystroke
+  -- they are all public-API shape, which is the one thing that cannot be fixed later at this
+  lifecycle stage without a rename.** Every claim below was checked against the tree; the two that
+  were probed by running code say so. Two claims in the task body above are **wrong** and are
+  corrected here (findings 5 and 12).
+
+  1. **The plural selector genuinely does not exist, and the singular one actively refuses the shape
+     this verb needs.** Verified exhaustively rather than by spot check: `grep -n "Filter(" R/*.R`
+     returns exactly **three** hits, all inside `.datom_find_member()` (`R/set-members.R:423`), which
+     ends `narrowed[[1L]]` after aborting on more than one match. And `.datom_member_record()`
+     (`R/set-members.R:521`) **aborts** when `tags` or `version` arrive beside a record or a link.
+     What is reusable is smaller than "the finder": `.datom_member_has_tags()`
+     (`R/set-members.R:391`) is a clean per-member predicate, and the version half is a one-line
+     `startsWith()` (`R/set-members.R:452`) that is not a helper at all. So the selector is new code
+     built from one existing predicate, not a generalisation of an existing function.
+  2. **OPEN -- `version` cannot mean both things, and today the task says it means each.** The
+     signature narrows by `version` (R24.2, and Task 28 uses it that way), while the body says
+     `version =` beside a named member **repoints to** that version. Those are opposite directions
+     for one argument. Three ways out: (a) keep `version` as the narrower in both verbs and add a
+     separate target argument -- `to = ` -- for the repoint; (b) let `version` narrow in remove and
+     target in update, and document the asymmetry; (c) drop the targeting form, losing the
+     deliberate-downgrade and retag case the body calls the reason this verb beats remove-then-add.
+     **Default if nothing is said: (a).** One name, one meaning, in both verbs, and the new argument
+     is the one that is new. It also reads correctly out loud:
+     `datom_update_members(x, conn, "dm", to = v)`.
+  3. **OPEN -- the proposed argument order matches nothing in the package.** Every verb taking a
+     connection puts it first (`datom_fetch_member(conn, x, ...)` at `R/set-members.R:647`,
+     `datom_member(conn, ...)`, `datom_write_set(conn, ...)`); every verb that puts the object first
+     takes **no** connection (`datom_add_member(x, ...)` at `R/set-draft.R:315`,
+     `datom_list_members(x)` at `R/set-members.R:736`). `datom_update_members(x, conn, ...)` would be
+     the first to do both. Against that: `x` first is what makes it pipeable from
+     `datom_get_set()` and into `datom_write_set()`, which is the whole point of an edit verb, and
+     the one existing object-in-first-position case (`datom_write_set(draft)`) gets there by sniffing
+     the class rather than by a parameter. **Default if nothing is said: keep `(x, conn, ...)`** and
+     say at the top of the roxygen why it inverts the house order, because a reader will otherwise
+     read it as an inconsistency.
+  4. **AC40(a) fails on the obvious implementation, and it fails quietly.** The natural spelling is
+     `datom_member(conn, name, new_version, tags = old$tags)` -- and `datom_member()` runs
+     `.datom_drop_empty_tags()` on what it is handed, so a label whose value is empty is **dropped**.
+     Payloads datom wrote were tidied already, so this is invisible in every ordinary fixture and
+     shows up only on a hand-built or foreign-written set. Build the pointer with **no** tags, then
+     attach the old record's `tags` **verbatim**: that keeps the snapshot read and the `kind`
+     resolution that make a pointer trustworthy while satisfying byte-identity. Assert with
+     `identical()` on the tag element, not on its names.
+  5. **CORRECTION to the body: the `$fetch` link on a repointed member is stale and nothing in the
+     task says so.** A member read by `datom_get_set()` carries a closure pinning the version it was
+     read at (`.datom_member_link()`, `R/set.R:1313`, built at `R/set.R:1558`). Repoint `id$version`
+     and leave `fetch` alone and the object contradicts itself: `id` says the new version, `$fetch()`
+     returns the old data, silently. Rebuild it **through the factory or through
+     `.datom_member_as_link()`** (`R/set-members.R:308`) and never inline -- a closure built inside
+     the verb puts the frame holding `conn`, and therefore the PAT, on its parent chain, which is the
+     leak `R/set.R:1313`'s own docs record with byte counts. Rebuild **only for members that had
+     one**, or a draft's members grow a field they never carried. Needs its own test: a repointed
+     member's link resolves the **new** data.
+  6. **OPEN -- an edited `datom_set` carries two fields that become false.** `datom_get_set()` returns
+     `version` and `data_sha` describing the payload it read (`R/set.R:1746` onward). Once members
+     move, those two describe a payload that no longer exists, and a set exists to be cited -- so a
+     stale version is a wrong statement rather than a missing one, which is the exact argument that
+     made `version` legitimately `NULL` on a truncated history. **Default if nothing is said: set both
+     to `NULL` on any edited set**, in a shared helper Task 28 uses too. Verified safe: the write verb
+     reads only `$tags` and `$members` off a `datom_set` (`R/set.R:919`), and `print.datom_set`
+     already renders a `NULL` version.
+  7. **Task 27 edits `datom_write_set()`, which the body does not say.** R24.8 needs the change list
+     to reach the commit-message default, and that default is built inside the write
+     (`R/set.R:1074`). So this task touches the write verb, and the read of the attribute must happen
+     **before** the unpack at `R/set.R:919`. Verified that the attribute cannot leak into a payload:
+     that branch takes `members$tags` and `members$members` and nothing else, so an attribute on `x`
+     is dropped by construction -- and a caller who passes `x$members` instead of `x` loses the
+     better message and gets today's default, which is worth one line of documentation.
+  8. **The cheap route to "what moved" has a trap that fails loudly, and a second that does not.**
+     `datom_list()` reads the manifest **once per project** (`R/query.R:80`) and a row's
+     `current_version` is a field off the parsed entry (`R/query.R:113`) -- so the body's cost claim
+     holds. But `short_hash = TRUE` is the **default** and truncates that column to 8 characters
+     (`R/query.R:126`), while `datom_member()` demands a full validated sha
+     (`.datom_validate_sha()`, `R/member.R:518`). Loud, so it costs minutes. The quiet one is the
+     second read: `.datom_declared_project()` (`R/member.R:391`) falls back to a **storage manifest
+     read** (`R/member.R:395`) for any artifact whose snapshot does not record `project`, so a moved
+     legacy member costs a manifest read of its own. Bounded by the number that moved, and not this
+     task's to fix -- but it means "one read per project plus one per moved member" understates it on
+     a pre-Task-26 repo.
+  9. **R24.4's verification is sound, and the reason is the cascade rather than the label.** Traced
+     rather than assumed: a connection labelled for project A but rooted at B's namespace reads **B's**
+     snapshot, which records `project = "B"`, so the rebuilt member disagrees with the one it replaced
+     and the refusal fires. If that snapshot predates the `project` field, step two of the cascade
+     reads **B's** manifest and gets `"B"` -- so it still fires. It degrades to a trivial pass only
+     when the snapshot **and** the project's manifest both omit the name, and
+     `.datom_manifest_skeleton()` has always written it. State that residual; do not build for it.
+  10. **The skip rule and the refusal rule are opposite responses to one situation, and both are
+      right.** Two members sharing a name: Task 27 **skips and reports**, Task 28 **refuses**, and the
+      existing `.datom_find_member()` also refuses (`datom_member_ambiguous`). The asymmetry is the
+      consequence, not the taste -- skipping a repoint leaves a valid pin, skipping a removal silently
+      does nothing. Document the two together, as Task 28 already instructs, or a later tidy-up
+      unifies them.
+  11. **Using the manifest means accepting its lag, and that surfaces as a wrong report rather than an
+      error.** A member absent from its project's manifest reads as "the artifact no longer exists",
+      which R24.5 handles by reporting and leaving the pin -- but the manifest is a projection that
+      can lag a half-finished write, so a retired-input report is not proof the artifact is gone. One
+      sentence in the report's wording covers it; the alternative (a per-member `datom_history()`) is
+      the cost the body deliberately rejected.
+  12. **CORRECTION to the body: AC41(d)'s fixture does NOT already exist.** The task's acceptance note
+      says clause (d) "needs two stores and a mislabelled connection, which is the fixture that
+      already exists for the no-gate tests". The no-gate test (`tests/testthat/test-set-members.R:689`)
+      is **single-store**: it mutates `project_name` on one connection, so the member and the store
+      agree and only the label differs -- which is the opposite of what (d) needs. The fixture that
+      does fit is the parameterised two-project one in a different file,
+      `local_draft_project(project_name, set_name, prefix)` (`tests/testthat/test-set-draft.R:37`, used
+      at `tests/testthat/test-set-draft.R:535`). It will have to be duplicated, since testthat shares
+      no definitions between files.
+  13. **OPEN -- on a draft, `conn` is already in the object.** A `datom_set_draft` carries the
+      connection it was opened with (`R/set-draft.R:207`), so requiring `conn` again is either
+      redundant or a second source of truth for one project. **Default if nothing is said: `conn`
+      stays required and a draft's own connection is ignored**, because a draft holds exactly one
+      connection while this verb legitimately spans several projects, and silently preferring the
+      embedded one would make the same call behave differently depending on how `x` was produced.
+
+  **Verdict: startable cold once findings 2, 3, 6 and 13 are answered.** Nothing else is blocking:
+  finding 1 sizes the new code, 4/5/7 are implementation traps now written down, 8-11 are
+  consequences to state rather than problems to solve, and 12 redirects the fixture. No model
+  escalation is owed -- the task was not flagged for it at planning, and nothing here changes a
+  stored document, a format number or an identity field.
+
 - [ ] **28. `datom_remove_members()` -- drop members from a set** &nbsp; **[EXECUTES AFTER TASK 27]**
   - **DEPENDS ON TASK 27** for the plural selector, which lands there because the harder consumer
     shapes it correctly. Nothing else here is new machinery.
