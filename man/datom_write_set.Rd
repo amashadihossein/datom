@@ -4,7 +4,14 @@
 \alias{datom_write_set}
 \title{Write a datom Set}
 \usage{
-datom_write_set(conn, members, tags = NULL, name = NULL, message = NULL)
+datom_write_set(
+  conn,
+  members,
+  tags = NULL,
+  name = NULL,
+  message = NULL,
+  include_paths = NULL
+)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}, scoped to the
@@ -26,6 +33,11 @@ value is one string or several, text only.}
 \code{.datom/project.yaml}; when supplied it must equal it.}
 
 \item{message}{Optional commit message.}
+
+\item{include_paths}{Optional character vector of repo-relative paths -- your
+own code, \code{renv.lock}, build state -- staged into the \strong{same commit} as the
+set. Never mirrored to storage: the storage namespace holds datom artifacts
+and nothing else. See the section below.}
 }
 \value{
 Invisibly, a list with \code{name}, \code{data_sha}, \code{metadata_sha} (the
@@ -81,6 +93,34 @@ Storage holds the same bytes content-addressed at \verb{\{name\}/\{data_sha\}.js
 a reader with no clone can fetch an exact version. Any past version is still
 reconstructible from the clone alone with
 \verb{git show <commit>:\{name\}/set.json}.
+}
+
+\section{Carrying your code and environment into the same commit}{
+
+\code{include_paths} stages paths you name into the \strong{one} commit that carries the
+payload and its metadata. So checking out a set version's commit yields the
+data pointers, the logic that produced them \strong{and} the environment they ran in
+-- one clone, one checkout, the whole product. The joint version is
+\strong{structural}: nothing records a link between the set and your files, because
+the commit \emph{is} the link.
+
+\if{html}{\out{<div class="sourceCode r">}}\preformatted{datom_write_set(conn, members,
+                include_paths = c("R", "dp", "renv.lock"))
+}\if{html}{\out{</div>}}
+
+Four refusals, all of them before anything is hashed or written, so a refusal
+leaves nothing behind: a path that does not exist, a path outside the clone, a
+path datom owns (\verb{.datom/}, the set, any artifact directory), and a path
+\code{.gitignore} excludes. The last one matters because git stages an ignored path
+silently and without complaint, which would leave the set version claiming a
+commit that omits exactly the file you named. Refusals win over the no-op
+below, since they are settled before change detection runs.
+
+\strong{An unchanged set is still a no-op, however dirty those paths are.} No
+commit, no version, and a message pointing at \code{\link[=datom_repo_commit]{datom_repo_commit()}}, which is
+the verb for committing your own content at a moment you chose. A data write
+that quietly committed work in progress is the thing datom's explicit file
+lists exist to prevent, and idempotency must not become a side door into it.
 }
 
 \section{Editing a set that already exists}{

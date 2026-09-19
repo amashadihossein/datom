@@ -1262,3 +1262,310 @@ test_that("an unrecognised kind on the document falls through to a usable messag
     class = "datom_artifact_kind_conflict"
   )
 })
+
+
+# === the joint commit (include_paths) =========================================
+#
+# `include_paths` is the only way a commit datom makes on its own initiative may
+# carry a path datom does not own. What it buys is that checking out a set
+# version's commit yields the data pointers AND the code and environment that
+# produced them -- so every test here is about a commit either containing exactly
+# what it claims, or not existing at all.
+#
+# Three shapes below exist because the cheaper spelling passes while defending
+# nothing:
+#
+#   * the no-op test reads GIT, not the return value. The hazard is a write that
+#     commits the dirty code and still reports `action == "none"`, and an
+#     assertion on the returned list stays green through exactly that. So: HEAD
+#     before, HEAD after.
+#   * the same test asserts the foreign file is dirty BEFORE and AFTER. Without
+#     the before half it can pass in a repo where nothing changed; without the
+#     after half a write that "helpfully" committed and cleaned the file would
+#     still fail only on the HEAD assertion.
+#   * the two AC20 gates get one test each, so a regression names which gate
+#     broke rather than reporting "include_paths validation".
+
+sw_head <- function(fx) {
+  as.character(git2r::revparse_single(fx$repo, "HEAD")$sha)
+}
+
+sw_commit_count <- function(fx) {
+  length(git2r::commits(fx$repo))
+}
+
+# Every path in a commit's tree, recursively, as repo-relative strings.
+sw_tree_paths <- function(fx, commit_sha) {
+  entries <- git2r::ls_tree(
+    repo = fx$repo, tree = git2r::tree(git2r::lookup(fx$repo, commit_sha))
+  )
+  paste0(entries$path, entries$name)
+}
+
+sw_unstaged <- function(fx) {
+  unlist(git2r::status(fx$repo)$unstaged, use.names = FALSE)
+}
+
+# A tracked, committed foreign file datom does not own. `dp/` deliberately: it is
+# not one of the names datom's artifact discovery drops by hardcoded list, so a
+# test using it cannot pass by that route.
+sw_add_foreign <- function(fx, path = "dp/build.R", content = "build <- 1") {
+  full <- fs::path(fx$repo_dir, path)
+  fs::dir_create(fs::path_dir(full))
+  writeLines(content, full)
+  full
+}
+
+
+test_that("include_paths produces ONE commit holding payload, metadata and the listed paths (AC18)", {
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+
+  # A directory and a single file, which is the shape a build package passes.
+  sw_add_foreign(fx, "dp/build.R")
+  writeLines("lockfile", fs::path(fx$repo_dir, "renv.lock"))
+
+  before <- sw_commit_count(fx)
+  res <- sw_write(fx, members, include_paths = c("dp", "renv.lock"))
+
+  # Exactly one: a second commit for the caller's files would leave two versions
+  # of "what produced this set" and no way to say which one the set pins.
+  expect_identical(sw_commit_count(fx) - before, 1L)
+
+  tree <- sw_tree_paths(fx, res$commit_sha)
+  expect_true(all(c("dp/build.R", "renv.lock") %in% tree))
+  # Non-vacuous: datom's own three files are in the same commit.
+  expect_true(paste0(fx$set_name, "/set.json") %in% tree)
+  expect_true(paste0(fx$set_name, "/metadata.json") %in% tree)
+  expect_true(".datom/manifest.json" %in% tree)
+
+  # And nothing left behind in the working tree: an include_path staged but not
+  # committed is the same defect one step earlier.
+  expect_length(unlist(git2r::status(fx$repo)$staged, use.names = FALSE), 0L)
+})
+
+test_that("include_paths content is never mirrored to storage (I18, AC18)", {
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+  sw_add_foreign(fx, "dp/build.R")
+
+  res <- sw_write(fx, members, include_paths = "dp")
+
+  stored <- as.character(fs::dir_ls(fx$store_dir, recurse = TRUE, type = "file"))
+
+  # The payload IS there, so this is not passing on an empty namespace.
+  expect_true(fs::file_exists(sw_stored_payload_path(fx, res$data_sha)))
+  # Asserting the whole set rather than the absence of one filename: the
+  # namespace holds datom artifacts and nothing else, so anything that is not a
+  # payload or a JSON document is a leak whatever it is called.
+  expect_true(all(grepl("\\.(json|parquet)$", stored)))
+  expect_false(any(grepl("build\\.R$", stored)))
+})
+
+test_that("an unchanged set makes no commit even when include_paths files are dirty (I19, AC19)", {
+  # The claim is about GIT, not about the returned value: a write that committed
+  # the dirty file and then reported "no change" would satisfy every assertion on
+  # the return list. So HEAD is read on both sides.
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+  foreign <- sw_add_foreign(fx, "dp/build.R", "original")
+
+  first <- sw_write(fx, members, include_paths = "dp/build.R")
+  expect_identical(first$action, "full")
+
+  # Tracked now, so an edit is an uncommitted change to a tracked file -- which
+  # is the state a build script leaves behind between runs.
+  writeLines("edited", foreign)
+
+  # DIRTY BEFORE. Without this the test can assert that nothing moved in a repo
+  # where nothing changed, and pass forever.
+  expect_true("dp/build.R" %in% sw_unstaged(fx))
+
+  head_before <- sw_head(fx)
+  msgs <- capture_messages(
+    again <- datom_write_set(fx$conn, members, name = fx$set_name,
+                             include_paths = "dp/build.R")
+  )
+
+  expect_identical(again$action, "none")
+  expect_identical(sw_head(fx), head_before)
+  expect_length(sw_clone_history(fx), 1L)
+
+  # DIRTY AFTER: a write that committed the edit fails the HEAD assertion, and
+  # one that "helpfully" reset it fails this one.
+  expect_true("dp/build.R" %in% sw_unstaged(fx))
+  expect_identical(readLines(foreign), "edited")
+
+  # And the caller is told, by the name of the verb that does commit their files.
+  expect_match(paste(msgs, collapse = "\n"), "datom_repo_commit")
+})
+
+test_that("a nonexistent include_path is an error, not a skip (AC20a)", {
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+  before <- sw_commit_count(fx)
+
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = c("dp/build.R", "renv.lock")),
+    class = "datom_include_path_missing"
+  )
+
+  # Refused above the first hash and the first local write, so nothing is left
+  # behind: no payload, no commit.
+  expect_false(fs::file_exists(sw_payload_path(fx)))
+  expect_identical(sw_commit_count(fx), before)
+})
+
+test_that("an include_path datom owns is refused (AC20b)", {
+  fx <- local_set_project()
+  members <- sw_one_member(fx)  # writes table `dm`, so `dm/` is an artifact dir
+
+  # Three owned shapes, one message each: the repo's own directory, the set being
+  # written, and another artifact in the same clone.
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = ".datom/manifest.json"),
+    class = "datom_include_path_datom_owned"
+  )
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = "dm/metadata.json"),
+    class = "datom_include_path_datom_owned"
+  )
+
+  sw_write(fx, members)
+
+  err <- expect_error(
+    datom_write_set(fx$conn, members, tags = list(description = "moved"),
+                    name = fx$set_name,
+                    include_paths = fs::path(fx$set_name, "set.json")),
+    class = "datom_include_path_datom_owned"
+  )
+  expect_match(conditionMessage(err), "set.json")
+})
+
+test_that("a dot-prefixed spelling of a datom path is refused too", {
+  # `./.datom/manifest.json` and `.datom/manifest.json` are one path. A gate that
+  # split the raw string would let the first past.
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = "./.datom/manifest.json"),
+    class = "datom_include_path_datom_owned"
+  )
+})
+
+test_that("a gitignored include_path is refused rather than silently dropped", {
+  # git stages an ignored path without error and without staging anything, and
+  # `.datom_git_commit()` cannot notice because it only objects when NOTHING is
+  # staged -- datom's own files always are. So the commit would succeed while
+  # omitting exactly the file the caller named.
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+
+  writeLines(c("secret.env", "cache/"), fs::path(fx$repo_dir, ".gitignore"))
+  git2r::add(fx$repo, ".gitignore")
+  git2r::commit(fx$repo, "Ignore rules")
+
+  writeLines("token", fs::path(fx$repo_dir, "secret.env"))
+  fs::dir_create(fs::path(fx$repo_dir, "cache"))
+  writeLines("intermediate", fs::path(fx$repo_dir, "cache", "step1.rds"))
+
+  # A file git names directly.
+  err <- expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = "secret.env"),
+    class = "datom_include_path_ignored"
+  )
+  expect_match(conditionMessage(err), "gitignore")
+
+  # And a file inside an ignored DIRECTORY, which git never lists by name -- it
+  # reports `cache/` and does not recurse, so equality matching would miss this.
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = "cache/step1.rds"),
+    class = "datom_include_path_ignored"
+  )
+
+  # A path git is not ignoring still goes through, so the check is not refusing
+  # everything in a repo that has a .gitignore at all.
+  sw_add_foreign(fx, "dp/build.R")
+  res <- sw_write(fx, members, include_paths = "dp/build.R")
+  expect_true("dp/build.R" %in% sw_tree_paths(fx, res$commit_sha))
+})
+
+test_that("an include_path outside the clone is refused, absolute or climbing out", {
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+
+  # `fs::path(conn$path, "/etc/passwd")` joins rather than replaces, so without
+  # this gate an absolute path is reported as missing INSIDE the repo -- a true
+  # refusal naming the wrong thing.
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = "/etc/passwd"),
+    class = "datom_include_path_outside_repo"
+  )
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = "../remote.git"),
+    class = "datom_include_path_outside_repo"
+  )
+
+  # A `..` that does not leave the clone is NOT refused: judging escape after
+  # normalisation is what keeps the gate about leaving rather than about spelling.
+  sw_add_foreign(fx, "dp/build.R")
+  res <- sw_write(fx, members, include_paths = "dp/../dp/build.R")
+  expect_true("dp/build.R" %in% sw_tree_paths(fx, res$commit_sha))
+})
+
+test_that("include_paths that is not a character vector is refused", {
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name, include_paths = 42),
+    class = "datom_include_paths_invalid"
+  )
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = c("dp", NA_character_)),
+    class = "datom_include_paths_invalid"
+  )
+})
+
+test_that("a bad include_path is refused even when the set is unchanged", {
+  # The refusal wins over the no-op, and that ordering is a consequence rather
+  # than a choice: validation runs before the hashing that change detection needs.
+  # Stated here so nobody later "fixes" it into tolerance.
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+
+  sw_write(fx, members)
+  head_before <- sw_head(fx)
+
+  expect_error(
+    datom_write_set(fx$conn, members, name = fx$set_name,
+                    include_paths = "dp/build.R"),
+    class = "datom_include_path_missing"
+  )
+  expect_identical(sw_head(fx), head_before)
+})
+
+test_that("a write with no include_paths commits exactly what it always did", {
+  # The regression guard for the argument's default: `NULL` drops out of `c()`,
+  # so the file list must be the payload, the metadata, the history and the
+  # manifest -- nothing swept in from the working tree.
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+  sw_add_foreign(fx, "dp/build.R")
+
+  res <- sw_write(fx, members)
+
+  tree <- sw_tree_paths(fx, res$commit_sha)
+  expect_false("dp/build.R" %in% tree)
+  expect_true("dp/" %in% unlist(git2r::status(fx$repo)$untracked, use.names = FALSE))
+})

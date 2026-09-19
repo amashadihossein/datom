@@ -22,7 +22,7 @@ it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding th
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
 3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
 after the review finding that followed it -> 3770 after Task 25 -> 3781 after the review finding
-that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> **3974 after Task 12 proper**.
+that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> 3974 after Task 12 proper -> **4012 after Task 13**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -42,7 +42,8 @@ validators) **Task 9** (`datom_write_set()`), **Task 10** (`datom_get_set()` plu
 **Task 24** (read-side ergonomics: finding and shaping members),
 **Task 25** (write-side ergonomics: assembling a set in steps)
 **Task 23** (`project.yaml` declares its format), **Task 11** (project mode gating the
-import path) and **Task 12** (foreign-content discipline plus the two git-mutation exports), plus
+import path), **Task 12** (foreign-content discipline plus the two git-mutation exports) and
+**Task 13** (the joint commit), plus
 three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
@@ -167,14 +168,28 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **3974** tests
-(FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0 errors on docs and
-code/documentation agreement (tests and examples run separately). Next is **Task 13**
-(`datom_write_set(include_paths = )` -- the joint commit), then Task 14 onward.
+**Start here.** Branch `spec/datom-sets`, working tree clean, **4012** tests
+(FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 with examples run
+(tests run separately). Next is **Task 14**
+(`datom_validate()` branches on `kind`), then Task 15 onward.
 
-**TASK 13 IS AUDITED AND STARTABLE COLD (2026-09-18), AND THE AUDIT WAS DELIBERATELY SCOPED TO ONE
-CLAIM.** Six findings in its body and its one scope question is decided, so a fresh session can begin
-without a decision round. The reviewer narrowed the pass to **I19** -- an unchanged set stays a no-op
+**TASK 13 IS CLOSED, AND A SET CAN NOW CARRY THE CODE AND ENVIRONMENT THAT PRODUCED IT.**
+`datom_write_set(include_paths = c("R", "dp", "renv.lock"))` stages the caller's own paths into the
+**one** commit that carries the payload and its metadata, so checking out a set version yields the
+data pointers plus what produced them -- the joint version is the commit itself, and nothing records
+a link. Storage is untouched by it. **The claim the audit said nothing pinned now has a test that
+reads git**: an unchanged set makes no commit however dirty those files are, and the probe that
+commits them on the no-op path reddens the HEAD assertions while leaving the old
+`action == "none"` assertion green, which is exactly why the existing coverage could not fail. Four
+refusals, all above the first hash and the first local write, so a bad path is an error even when the
+set turns out to be unchanged: outside the clone, datom-owned, nonexistent, and **gitignored** --
+that last one because git stages an ignored path in silence and datom's own files keep the commit
+from failing, so the version would claim a joint commit that omits exactly the file named. Five
+things a later change must not undo, and nine probes, are in Task 13's DONE record.
+
+**TASK 13'S SCOPED PRE-START AUDIT, KEPT BECAUSE THE REASONING IS WHAT A LATER CHANGE NEEDS (the task
+itself shipped 2026-09-18 -- see its DONE record).** Six findings in its body and its one scope
+question was decided, so the session began without a decision round. The reviewer narrowed the pass to **I19** -- an unchanged set stays a no-op
 even when the caller's extra files are dirty -- because the Decisions log already names what that
 protects, and a hazard claim nothing pins needs a test that can fail rather than another reading.
 **The headline is that I19 holds today and its existing coverage cannot fail**: the no-change branch
@@ -3316,7 +3331,7 @@ own; landing it first is what makes Task 6's failure loud.
     round, on the grounds that the contract is stated in `datom_repo_commit()`'s own help with
     `datom_validate(fix = TRUE)` named, which is where a caller meets it.
 
-- [ ] **13. `datom_write_set(include_paths = )` -- the joint commit**
+- [x] **13. `datom_write_set(include_paths = )` -- the joint commit** &nbsp; **[DONE 2026-09-18 -- see the DONE record]**
   - Follow-on to Task 9 rather than folded into it: Task 9 is already large (two gates, dual-write,
     dedup, name uniqueness, manifest), and the dedup edge below deserves its own commit.
   - `include_paths`: repo-relative paths staged **into the same commit** as the payload and
@@ -3347,7 +3362,7 @@ own; landing it first is what makes Task 6's failure loud.
     regenerates and NEWS gains an entry.
 
     **I19 HOLDS TODAY, AND THE REASON IS PLACEMENT RATHER THAN A CHECK.** The no-change branch is at
-    `R/set.R:746` and returns above everything that could stage a file: the payload write, the
+    `R/set.R:967` and returns above everything that could stage a file: the payload write, the
     metadata document, the manifest row, and the single `.datom_commit_and_mirror()` call. So the
     obvious implementation of this task -- validate the paths up front, hand them to that same commit
     call -- keeps the guarantee for free. This is Task 12's shape exactly: true because of where one
@@ -3386,6 +3401,75 @@ own; landing it first is what makes Task 6's failure loud.
        wins over the no-op. That is the correct reading of AC20 plus AC19 together -- a joint commit
        is deterministic or it is refused -- and it means the AC20 cases do not need a changed payload
        to reach the gate.
+
+  - **DONE 2026-09-18, in one commit.** `R/set.R` gains the argument, one gate
+    (`.datom_check_include_paths()`) and one git reader (`.datom_git_ignored()`); the commit call
+    grows one element in its file list. 11 new tests in `tests/testthat/test-write-set.R`
+    (3974 -> **4012**), FAIL 0 / WARN 0 / SKIP 0. Docs: `datom_write_set()`'s Rd plus two internal
+    ones, a NEWS section, and the set-write route card in `dev/datom_pathways.md` -- **pathway impact
+    is real**, since the card's step list gained a gate and its commit step now says what else is in
+    the commit. No export, so no NAMESPACE or `_pkgdown.yml` step. `dev/check-spec.R` 9/9;
+    `R CMD check` 0/0/0 with examples run.
+
+    **Six things a later change must not undo.**
+    1. **The no-change return sits above every line that stages a file, and that placement is the
+       whole of I19.** Payload write, metadata document, manifest row and the single
+       `.datom_commit_and_mirror()` call are all below it. Nothing checks the ordering, so the
+       comment at the return says both halves out loud: do not move the return down, and do not add
+       a staging step above it.
+    2. **AC19's test reads git HEAD, and must not be "simplified" into an assertion on the returned
+       value.** Probe P1 -- commit the listed paths on the no-op path -- reddens the HEAD assertion,
+       the dirty-after assertion and the file-content assertion, and leaves `action == "none"`
+       **green**. That is the shape the audit predicted: the two pre-existing no-op tests
+       (`:675`, `:807` at the time) cannot fail on this hazard, so AC19 got its own test rather than
+       an extra line in theirs.
+    3. **The same test asserts the foreign file is dirty BEFORE and AFTER.** Probe P2 -- drop the
+       edit -- reddens the before assertion, so the test cannot pass by finding nothing moved in a
+       repo where nothing happened.
+    4. **Validation runs above the first hash, so a bad path is an error even when the set is
+       unchanged.** The refusal wins over the no-op, and that is AC20 plus AC19 read together: a
+       joint commit is deterministic or it is refused. There is a test saying so; do not soften it
+       into "skip the check when nothing changed", which would make the answer depend on content the
+       caller cannot see.
+    5. **The gitignore refusal is the only thing between a listed path and a silent omission.**
+       `git2r::add()` on an ignored path raises nothing and stages nothing, and
+       `.datom_git_commit()` objects only when the staging area ends up empty -- datom's own files
+       are always in it. Matching is **prefix-based on a slash-stripped list**, because git reports
+       an ignored *directory* (`cache/`) and never recurses into it, so equality matching would miss
+       every file inside one.
+    6. **Paths are normalised before the owned check and absolutised before the commit call.**
+       Normalised, or `./.datom/manifest.json` walks past a gate that `.datom/manifest.json` fails
+       (probe P6 reddens exactly that test). Absolutised, because
+       `.datom_commit_and_mirror()` relativises against `conn$path` and `fs::path_rel()` on an
+       already-relative path resolves it against the working directory -- loud rather than
+       dangerous, but it costs a debugging session. Escape is judged **after** normalising, so
+       `a/../b` is `b` and allowed while `../x` and `/etc/passwd` are refused: the gate is about
+       leaving the clone, not about spelling.
+
+    **Nine probes, each reverted.** Every one reddened only its intended test, which is also how the
+    attribution below was established rather than assumed.
+
+    | Probe | What was broken | What reddened |
+    |---|---|---|
+    | P1 | commit the listed paths on the no-op path | AC19's HEAD, dirty-after and content assertions -- **not** `action == "none"` |
+    | P2 | never make the edit the test describes | AC19's dirty-before assertion (plus the two after it) |
+    | P3 | delete the gitignore refusal | the gitignore test |
+    | P4 | delete the datom-owned refusal | the owned test (3 cases) and the dot-prefixed test |
+    | P5 | delete the nonexistent-path refusal | AC20a, including its "nothing left behind" half, and the refused-even-when-unchanged test |
+    | P6 | stop normalising the caller's paths | the dot-prefixed test |
+    | P7 | delete the outside-the-clone refusal | the outside test (an absolute path became a missing-path error) |
+    | P8 | leak a foreign object into the storage namespace | both I18 assertions |
+    | P9 | commit the listed paths separately, before the write's own commit | AC18's "exactly one commit" assertion |
+
+    **Two residuals, both stated rather than fixed.**
+    * **An explicit path handed to `datom_repo_commit()` is still dropped in silence when
+      `.gitignore` excludes it.** The refusal built here is on the set write only. That asymmetry is
+      deliberate for now -- Task 12's contract for that verb is "stage exactly those paths", and it
+      has no version claiming to contain them -- but the mechanism is now one function
+      (`.datom_git_ignored()`) away if the sweep decides the human-moment verb should refuse too.
+    * **A path that is both tracked and matched by `.gitignore` is not refused**, because git does
+      not report a tracked file as ignored and stages it regardless of the rules. Correct rather
+      than tolerated: the file really does reach the commit.
 
 - [ ] **14. `datom_validate()` branches on `kind`**
   - `.datom_validate_one_table()` at `R/validate.R:444` builds the payload key with the kind
@@ -4990,7 +5074,7 @@ reason.
     **What held**, verified rather than assumed: `datom_member()` really does take
     `(conn, name, version, tags = NULL)` with `version` required and SHA-validated, so "version stays
     required" needs no new refusal, only its message; `datom_write_set()` really does already branch
-    on `inherits(members, "datom_set")` (`R/set.R:635`) and strip `fetch` only when it is a function,
+    on `inherits(members, "datom_set")` (`R/set.R:910`) and strip `fetch` only when it is a function,
     so the read-back shape is live and testable; Task 24's `.datom_member_record()` really does
     dispatch on link / list-with-`id` / name, so the shape-dispatch half this task wants exists; and
     `datom_add_member()` accepting a link really is reachable, because a link carries its own record
@@ -5010,7 +5094,7 @@ reason.
        rather than three shapes of one argument.
     2. **UNPACK THE DRAFT BEFORE THE THREE GUARDS AT THE TOP OF `datom_write_set()`.** Those guards
        are `inherits(conn, "datom_conn")`, `conn$role != "developer"` and `is.null(conn$path)`
-       (`R/set.R:604-620`). A draft in the `conn` position fails the first one, so a pipe would abort
+       (`R/set.R:878-895`). A draft in the `conn` position fails the first one, so a pipe would abort
        with "conn must be a datom_conn" -- naming the argument the user never typed. The unpack has to
        come first, and it also supplies `name` and `tags`, which the gate below then uses.
        - **`members` IS MISSING ON THAT CALL, NOT `NULL`, AND THE DIFFERENCE BITES** (raised in review,
@@ -5309,7 +5393,7 @@ vehicle**: it is done, and its check is *why* a late addition costs what it cost
     1. **NEITHER BUILDER CAN SOURCE THE NAME ITSELF.** `.datom_build_metadata()` and
        `.datom_build_set_metadata()` take no connection -- by design, since they are pure -- so the
        change is a new argument on each plus the two call sites that fill it
-       (`R/read_write.R:1202`, `R/set.R:734`). **The new argument goes LAST in the signature**:
+       (`R/read_write.R:1209`, `R/set.R:955`). **The new argument goes LAST in the signature**:
        existing tests call `.datom_build_metadata(df, "sha", ...)` positionally in a dozen places, so
        an argument inserted in the middle silently shifts `custom` into `table_type`.
     2. **OPEN (default: yes, same commit) -- THE SAME DEFECT IS IN LINEAGE, AND THERE THE LABEL IS
@@ -5958,3 +6042,5 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-18 | **(implementation, Task 12) `datom_repo_commit()` and `datom_repo_push()` call no forward-compatibility write gate, and that is a decision rather than an omission.** Every other write verb in this spec had to call `.datom_check_write_entry()` itself -- the route-was-the-gap finding, three tasks running -- so the absence here needs a reason on the record. These verbs write **none** of datom's documents: they stage and commit whatever the caller named, so gating them would refuse a commit of somebody's R code because a manifest in the same clone carries a field this build cannot classify. The one datom-document interaction is `paths = NULL` sweeping in files left dirty by a **failed local write from this same build**, which already passed the gate when it ran. Recorded with the boundary that makes it hold: if either verb ever *produces* a datom-owned document (Task 13's `include_paths` does not -- it stages caller-named paths into the artifact write's commit, and that write is gated), the gate comes with it. | Task 12, Task 21, Task 13, I5 |
 | 2026-09-18 | **(decision, Task 13) An `include_paths` entry that is gitignored is REFUSED rather than silently dropped, and the refusal ships with that task.** Settled by running git2r, not by reading it: `git2r::add(repo, <gitignored path>)` raises no error and stages nothing, and `.datom_git_commit()` cannot catch it because it only objects when **nothing at all** is staged -- and datom's own payload and metadata files always are. So the commit succeeds while omitting the file the caller explicitly named, and the set version claims a joint commit it does not contain, which is AC18 failing with no symptom. Scope was weighed against a Backlog row and rejected on the same ground this spec has used before: a silently incomplete guarantee is worse than a loud refusal, and the whole point of `include_paths` is that the joint version is structural. **It is Task 12's finding 6 in mirror image** -- there the hazard was `force = TRUE` staging ignored files, here it is the default flags skipping them -- so the two belong in one place, and both are now in `dev/engineering-notes.md`. | Task 13, AC18, R12.5, Task 12 finding 6 |
 | 2026-09-18 | **(scoped audit, Task 13) I19 holds today by PLACEMENT, and its existing coverage is the spelling that cannot fail.** The reviewer scoped the pre-start pass to this one claim because the Decisions log already names its stake, and a hazard claim nothing pins needs a test rather than a re-reading. What was found: the no-change branch (`R/set.R:746`) returns above the payload write, the manifest row and the one commit call, so the guarantee is free -- and `test-write-set.R:675` / `:807` assert `action == "none"` on the **returned list**, which stays green through a write that commits the dirty code and then reports no change, i.e. through exactly the failure I19 exists to prevent. AC19's test therefore reads git HEAD before and after, and asserts the `include_paths` file is dirty **both** before and after, without which it passes vacuously in a repo where nothing changed. Also settled: a nonexistent or overlapping path is an error **even on the no-op path**, because validation precedes the hashing the change detection needs -- recorded so it is not later "fixed" into tolerance. | Task 13, I19, AC19, AC20 |
+| 2026-09-18 | **(implemented, Task 13) The joint commit ships, and the gate grew a fourth refusal the requirement does not name: a path that leads outside the clone.** R12.5 lists two gates (nonexistent, datom-owned) and the audit added a third (gitignored). The fourth is there because `fs::path(conn$path, "/etc/passwd")` **joins** rather than replaces, so an absolute path would otherwise be reported as a missing path *inside* the repo -- a true refusal whose message names the wrong thing -- and a `../` path that resolves to a real file would reach `git2r::add()`, which stages nothing for it and says nothing, the same silent-omission failure the gitignore refusal exists to stop. Escape is judged **after** lexical normalisation, so `a/../b` is `b` and allowed: the gate is about leaving the clone, not about spelling. Normalisation is load-bearing for the owned gate too -- `./.datom/manifest.json` and `.datom/manifest.json` are one path, and a gate splitting the raw string lets the first past (probe P6 reddens exactly that test). | Task 13, R12.5, AC20 |
+| 2026-09-18 | **(implemented, Task 13) I19's proof is a probe, and the probe is what shows the old coverage could not fail.** Committing the listed paths on the no-op path reddens AC19's HEAD assertion, its dirty-after assertion and its file-content assertion, and leaves `action == "none"` **green** -- the audit's prediction, confirmed by breaking the code rather than by reading it. A second probe that simply never makes the edit reddens the dirty-before assertion, so the test cannot pass by finding nothing moved in a repo where nothing happened. Nine probes in total, each reverted, each naming what it reddened; the table is in Task 13's DONE record. **The residual worth knowing**: `datom_repo_commit(paths = <gitignored>)` still drops the path in silence, deliberately unchanged here -- that verb promises to stage what it is given and mints no version claiming otherwise -- but the refusal is now one helper (`.datom_git_ignored()`) away if the acceptance sweep decides it should refuse too. | Task 13, I19, AC19, AC18, Task 12 |

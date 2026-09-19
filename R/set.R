@@ -172,6 +172,191 @@
 }
 
 
+#' Check the Caller's Extra Paths Before a Set Write Does Anything
+#'
+#' `include_paths` is the **only** way a commit datom makes on its own initiative
+#' may carry a path datom does not own, and it is allowed only because the caller
+#' enumerated it (R14.3). What it buys is that checking out a set version's commit
+#' yields the data pointers **and** the code and environment that produced them.
+#' So every refusal here is a refusal to produce a commit that would claim more
+#' than it holds.
+#'
+#' Four refusals, in this order, each with its own condition class:
+#'
+#' 1. **Not a path inside the clone.** An absolute path, or one climbing out
+#'    through `..`, refused lexically before the filesystem is touched.
+#'    `fs::path()` joins an absolute second argument *onto* the clone path rather
+#'    than replacing it, so `/etc/passwd` would otherwise be reported as a missing
+#'    path inside the repo -- a correct refusal whose message names the wrong
+#'    thing.
+#' 2. **A datom-owned path.** `.datom/`, the set being written, and any artifact
+#'    directory already in the clone. The write stages those itself, so listing one
+#'    is either a misunderstanding or an attempt to hand-place a datom document
+#'    into a commit through a caller's argument.
+#' 3. **A path that does not exist.** An error, never a skip: a joint commit is
+#'    deterministic or it is refused.
+#' 4. **A path git is ignoring.** `git2r::add()` on a gitignored path raises
+#'    nothing and stages nothing, and [.datom_git_commit()] cannot notice, because
+#'    it objects only when the staging area ends up empty and datom's own files are
+#'    always in it. The commit would therefore succeed while omitting exactly the
+#'    file the caller named, and the set version would claim a joint commit it does
+#'    not have. Refused rather than dropped in silence (decided 2026-09-18).
+#'
+#' **This runs before the first hash and the first local write**, the same
+#' placement as the two gates above, so a refused joint commit leaves nothing
+#' behind. One consequence, stated so nobody later softens it: change detection
+#' needs the hashes, so a bad path is an error **even when the set is unchanged**.
+#' The refusal wins over the no-op.
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @param name The set being written, as resolved by
+#'   [.datom_check_set_write_gates()]. Named rather than discovered because a
+#'   first write has no directory to discover.
+#' @param include_paths The caller's character vector, or `NULL`.
+#' @return Absolute paths in the clone, or `NULL`. **Absolute**, because
+#'   [.datom_commit_and_mirror()] relativises what it is given against `conn$path`,
+#'   and `fs::path_rel()` on an already-relative path resolves it against the
+#'   working directory instead -- which aborts with "files do not exist" pointing
+#'   somewhere the caller never named.
+#' @keywords internal
+.datom_check_include_paths <- function(conn, name, include_paths) {
+  if (is.null(include_paths)) return(NULL)
+
+  if (!is.character(include_paths) || length(include_paths) == 0L ||
+      anyNA(include_paths) || !all(nzchar(include_paths))) {
+    cli::cli_abort(
+      c(
+        "{.arg include_paths} must be a non-empty character vector of \\
+         repo-relative paths, or {.code NULL}.",
+        "i" = "For example {.code include_paths = c(\"R\", \"renv.lock\")}.",
+        "i" = "You passed {.cls {class(include_paths)}}."
+      ),
+      class = "datom_include_paths_invalid"
+    )
+  }
+
+  paths <- as.character(include_paths)
+
+  # Lexically normalised once, and every check below reads the normalised form.
+  # `./dp/x` and `dp/x` are one path, and an owned-path check that split the raw
+  # string would let `./.datom/manifest.json` past a check that `.datom/...` fails.
+  # Nothing here touches the filesystem, so a path that does not exist still
+  # reaches its own refusal below with the spelling the caller used.
+  normalised <- as.character(fs::path_norm(paths))
+  segments <- fs::path_split(normalised)
+  first <- purrr::map_chr(segments, function(s) s[[1L]])
+
+  # Escape is judged AFTER normalising, so `a/../b` is `b` and allowed while
+  # `../a` and `/etc/passwd` are not. Refusing every `..` would refuse a path that
+  # never leaves the clone.
+  outside <- fs::is_absolute_path(normalised) | first == ".."
+  if (any(outside)) {
+    cli::cli_abort(
+      c(
+        "{.arg include_paths} takes paths relative to the repo root, and these \\
+         lead outside it:",
+        purrr::set_names(paths[outside], rep("x", sum(outside))),
+        "i" = "The set's commit is made in {.path {conn$path}}; a path outside \\
+               the clone cannot be part of it."
+      ),
+      class = "datom_include_path_outside_repo"
+    )
+  }
+
+  # The set being written is named rather than discovered: on a first write its
+  # directory does not exist yet, so the artifact listing cannot see it.
+  owned <- c(".datom", name, .datom_clone_artifact_names(conn))
+  is_owned <- first %in% owned
+  if (any(is_owned)) {
+    cli::cli_abort(
+      c(
+        "{.arg include_paths} names paths datom owns:",
+        purrr::set_names(paths[is_owned], rep("x", sum(is_owned))),
+        "i" = "The set's payload, its metadata and {.file .datom/manifest.json} \\
+               are staged by the write itself.",
+        "i" = "{.arg include_paths} is for content datom does not own -- code, \\
+               {.file renv.lock}, build state."
+      ),
+      class = "datom_include_path_datom_owned"
+    )
+  }
+
+  absolute <- fs::path(conn$path, normalised)
+  # `fs::file_exists()` is an access test, so a directory answers TRUE -- which is
+  # wanted: a build package lists `R/` and `tests/`, not every file under them.
+  gone <- !fs::file_exists(absolute)
+  if (any(gone)) {
+    cli::cli_abort(
+      c(
+        "{.arg include_paths} names paths that do not exist in \\
+         {.path {conn$path}}:",
+        purrr::set_names(paths[gone], rep("x", sum(gone))),
+        "i" = "A joint commit is deterministic or it is refused, so a missing \\
+               path is an error rather than a skipped entry."
+      ),
+      class = "datom_include_path_missing"
+    )
+  }
+
+  ignored <- .datom_git_ignored(conn$path)
+  # Directory-aware, because git reports an ignored DIRECTORY (`cache/`) and
+  # never the files inside it, while the caller may name either.
+  is_ignored <- purrr::map_lgl(normalised, function(p) {
+    any(purrr::map_lgl(ignored, function(g) {
+      identical(p, g) || startsWith(p, paste0(g, "/"))
+    }))
+  })
+  if (any(is_ignored)) {
+    cli::cli_abort(
+      c(
+        "{.arg include_paths} names paths {.file .gitignore} excludes:",
+        purrr::set_names(paths[is_ignored], rep("x", sum(is_ignored))),
+        "i" = "git stages an ignored path silently and reports nothing, so the \\
+               set version would claim a commit that omits it.",
+        "i" = "Un-ignore the path, or drop it from {.arg include_paths}."
+      ),
+      class = "datom_include_path_ignored"
+    )
+  }
+
+  as.character(absolute)
+}
+
+
+#' Paths git Is Ignoring in a Clone
+#'
+#' `git2r::status(ignored = TRUE)` is the only route -- git2r exposes no
+#' check-ignore verb -- and it reports an ignored **directory** with a trailing
+#' slash and does not recurse into it, so a caller's path has to be matched
+#' against these as prefixes rather than compared for equality. The trailing slash
+#' is stripped here so one comparison covers a file entry and a directory entry.
+#'
+#' Only ever called from [.datom_check_include_paths()], and only when the caller
+#' supplied paths, so no existing write gains a git read.
+#'
+#' @param path Repository path.
+#' @return Character vector of ignored paths, possibly empty, without trailing
+#'   slashes.
+#' @keywords internal
+.datom_git_ignored <- function(path) {
+  .datom_check_git2r()
+
+  repo <- tryCatch(
+    git2r::repository(path),
+    error = function(e) {
+      cli::cli_abort("Not a git repository: {.path {path}}")
+    }
+  )
+
+  entries <- git2r::status(
+    repo,
+    staged = FALSE, unstaged = FALSE, untracked = FALSE, ignored = TRUE
+  )$ignored
+
+  sub("/+$", "", unlist(entries, use.names = FALSE))
+}
+
+
 # --- canonical form ------------------------------------------------------------
 
 #' Tidy One Tag Value
@@ -538,6 +723,33 @@
 #' reconstructible from the clone alone with
 #' `git show <commit>:{name}/set.json`.
 #'
+#' @section Carrying your code and environment into the same commit:
+#' `include_paths` stages paths you name into the **one** commit that carries the
+#' payload and its metadata. So checking out a set version's commit yields the
+#' data pointers, the logic that produced them **and** the environment they ran in
+#' -- one clone, one checkout, the whole product. The joint version is
+#' **structural**: nothing records a link between the set and your files, because
+#' the commit *is* the link.
+#'
+#' ```r
+#' datom_write_set(conn, members,
+#'                 include_paths = c("R", "dp", "renv.lock"))
+#' ```
+#'
+#' Four refusals, all of them before anything is hashed or written, so a refusal
+#' leaves nothing behind: a path that does not exist, a path outside the clone, a
+#' path datom owns (`.datom/`, the set, any artifact directory), and a path
+#' `.gitignore` excludes. The last one matters because git stages an ignored path
+#' silently and without complaint, which would leave the set version claiming a
+#' commit that omits exactly the file you named. Refusals win over the no-op
+#' below, since they are settled before change detection runs.
+#'
+#' **An unchanged set is still a no-op, however dirty those paths are.** No
+#' commit, no version, and a message pointing at [datom_repo_commit()], which is
+#' the verb for committing your own content at a moment you chose. A data write
+#' that quietly committed work in progress is the thing datom's explicit file
+#' lists exist to prevent, and idempotency must not become a side door into it.
+#'
 #' @section Editing a set that already exists:
 #' Read it, change it, write it back. `members` accepts a `datom_set` from
 #' [datom_get_set()] directly, so the loop needs no unpacking:
@@ -567,6 +779,10 @@
 #' @param name The set's name. Defaults to the `set:` field in
 #'   `.datom/project.yaml`; when supplied it must equal it.
 #' @param message Optional commit message.
+#' @param include_paths Optional character vector of repo-relative paths -- your
+#'   own code, `renv.lock`, build state -- staged into the **same commit** as the
+#'   set. Never mirrored to storage: the storage namespace holds datom artifacts
+#'   and nothing else. See the section below.
 #'
 #' @return Invisibly, a list with `name`, `data_sha`, `metadata_sha` (the
 #'   version), `member_count` (the count after normalisation), `action`
@@ -617,7 +833,7 @@
 #'   unlink(tmp, recursive = TRUE)
 #' }
 datom_write_set <- function(conn, members, tags = NULL, name = NULL,
-                            message = NULL) {
+                            message = NULL, include_paths = NULL) {
 
   # TWO INDEPENDENT WIDENINGS ON TWO DIFFERENT PARAMETERS. `members` accepts a
   # `datom_set` (a set read back, unpacked further down); `conn` accepts a
@@ -711,6 +927,11 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # Write-time ref guard: ensure the data location has not moved.
   .datom_check_ref_current(conn)
 
+  # The caller's own paths, checked here rather than at the commit call, so every
+  # refusal lands above the first hash and the first local write. After the gates
+  # because the owned-path check needs the resolved set name.
+  include_paths <- .datom_check_include_paths(conn, name, include_paths)
+
   # Tidy, then validate what remains, then order. The order is not style: the
   # validator deliberately PASSES a tag key whose value is empty, because that is
   # a tidy case, so validating first would make that rule unreachable.
@@ -747,6 +968,25 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
     cli::cli_alert_info(
       "No changes detected for set {.val {name}}. Skipping write."
     )
+
+    # THIS RETURN SITS ABOVE EVERY LINE THAT STAGES A FILE -- the payload write,
+    # the metadata document, the manifest row and the single commit call are all
+    # below it -- and that placement is the whole of the no-side-channel
+    # guarantee. Nothing checks it, so do not move the return and do not move a
+    # staging step above it.
+    #
+    # The message exists because silence here reads as success: a caller who
+    # listed paths asked for a commit and did not get one, so name the verb that
+    # makes one at a moment they choose. Committing them anyway would be the
+    # add-all failure that datom's explicit file lists exist to prevent, arriving
+    # through idempotency's door.
+    if (!is.null(include_paths)) {
+      cli::cli_alert_info(
+        "{.arg include_paths} was not committed -- an unchanged set makes no \\
+         commit. Commit those paths with {.fn datom_repo_commit}."
+      )
+    }
+
     return(invisible(list(
       name = name,
       data_sha = data_sha,
@@ -813,9 +1053,15 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
 
   # The payload joins the commit explicitly: `.datom_write_metadata_local()`
   # returns the metadata and history paths only, and a set has a third file.
+  #
+  # `include_paths` joins the SAME call, which is what makes the joint version
+  # structural: one commit contains the payload, the metadata and the caller's
+  # files. A second commit for them would leave two versions of "what produced
+  # this set" and no way to say which one the set pins. `NULL` drops out of
+  # `c()`, so a write with no extra paths is byte-for-byte the previous one.
   commit_sha <- .datom_commit_and_mirror(
     conn, name, meta, metadata_sha,
-    git_paths = c(write_result$git_paths, payload_path),
+    git_paths = c(write_result$git_paths, payload_path, include_paths),
     message = message %||% paste0("Update ", name),
     upload = if (isTRUE(document_decision$upload)) {
       list(

@@ -784,7 +784,16 @@ interchangeable:
   raises no error and stages nothing. `.datom_git_commit()` cannot notice, because it only objects
   when **nothing at all** is staged and datom's own files always are -- so the commit succeeds
   carrying everything except the file the caller asked for. Any feature that takes a caller-supplied
-  file list (datom-sets Task 13's `include_paths`) has to check for this itself.
+  file list has to check for this itself; `datom_write_set(include_paths =)` does, in
+  `.datom_check_include_paths()` (`R/set.R`).
+- **There is no check-ignore verb in git2r.** The only route is
+  `git2r::status(repo, staged = FALSE, unstaged = FALSE, untracked = FALSE, ignored = TRUE)`, and
+  two properties of its answer decide how to use it. It reports an ignored **directory** with a
+  trailing slash (`cache/`) and does **not** recurse into it, even with
+  `all_untracked = TRUE` -- so match a caller's path as a **prefix** against a slash-stripped list,
+  or every file inside an ignored directory passes the check. And a **tracked** file is never
+  reported as ignored, which is correct rather than a gap: git stages it regardless of the rules, so
+  it really does reach the commit. `.datom_git_ignored()` (`R/set.R`) wraps both facts.
 - **`.datom_git_commit()` returning HEAD's SHA on an empty staging is a SUCCESS value, not a
   sentinel.** A wrapper that must report "nothing to do" cannot get that from the return value; the
   cheap way is to capture HEAD before and compare after, which is what `datom_repo_commit()` does.

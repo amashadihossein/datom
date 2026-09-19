@@ -200,6 +200,41 @@ writes use, so they inherit pull-before-push and upstream tracking.
 `datom_status()` reports foreign uncommitted files as what they are -- git state,
 honestly reported -- and never as a datom problem.
 
+## New: a set can carry the code and environment that produced it
+
+`datom_write_set()` gains `include_paths`, a character vector of repo-relative
+paths staged into the **same commit** as the set's payload and metadata:
+
+```r
+datom_write_set(conn, members, include_paths = c("R", "dp", "renv.lock"))
+```
+
+So checking out a set version's commit gives you the data pointers, the logic
+that produced them **and** the environment it ran in -- one clone, one checkout,
+the whole product. The joint version is **structural**: nothing records a link
+between the set and those files, because the commit *is* the link.
+
+* **Storage never sees them.** The mirror holds datom artifacts and nothing else;
+  `include_paths` content stops at git.
+
+* **An unchanged set is still a no-op, however dirty those files are.** No commit,
+  no version, and a message pointing at `datom_repo_commit()` -- the verb for
+  committing your own content at a moment you chose. A data write that quietly
+  committed work in progress is what datom's explicit file lists exist to
+  prevent, and re-running an idempotent write must not become a side door into
+  it.
+
+* **Four refusals, all before anything is hashed or written**, so a refused write
+  leaves nothing behind: a path that does not exist (an error, not a skipped
+  entry -- a joint commit is deterministic or it is refused), a path outside the
+  clone, a path datom owns (`.datom/`, the set itself, any artifact directory --
+  the write stages those already), and a path `.gitignore` excludes. The last one
+  is refused rather than dropped because git stages an ignored path in silence:
+  the commit would succeed while omitting exactly the file you named, and the
+  version would claim a joint commit it does not have. These refusals are settled
+  before change detection runs, so a bad path is an error even when the set turns
+  out to be unchanged.
+
 ## A field this version does not recognise is no longer deleted
 
 Writing a table rebuilds its metadata document and its row in the manifest from
