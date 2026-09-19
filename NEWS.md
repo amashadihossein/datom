@@ -630,6 +630,51 @@ identity.
   connection still show the connection's project name, because that is what they
   are reporting.
 
+## `datom_validate()` checks sets, and can put a set's payload back
+
+Validation looked for a parquet object for every artifact, so a set reported its
+data missing from storage 100% of the time. It now looks for whatever that
+artifact's own metadata says it is -- parquet for a table, a JSON payload for a
+set -- and its result gains a **`kind`** column, on populated rows and on the
+empty one.
+
+* **A set is checked further than a table**, because a set is a citation and a
+  citation that no longer resolves is worse than a file that is merely absent.
+  Every member's pinned version must still exist in this project's storage, and
+  the set must record the hash of its stored payload -- without which no reader
+  can verify it, and the error a reader gives in that case tells you to run this
+  verb.
+* **Member checking stops at one level.** A member that is itself a set is
+  confirmed to exist and its own member list is never opened, so validating a set
+  costs the same whatever sits beneath it. Validate an inner set by running this
+  against the project that owns it.
+* **A member recorded as belonging to another project is checked as a
+  well-formed pointer only.** Your connection sees one namespace and access in
+  datom is per project, so looking for that member here would report every
+  cross-project citation as rotten. Run validation against that project to check
+  it properly.
+* **New statuses**: `members_unresolvable` and `document_sha_missing`, both
+  distinct from `data_missing_s3` so you can tell a lost payload from a lost
+  member. Also `kind_unsupported`, for an artifact whose metadata declares a kind
+  this version does not know: that row's payload is left unchecked and reported
+  as such rather than called missing, and the rest of the repo is still checked
+  instead of the run stopping there.
+* **`fix = TRUE` now restores a set's payload when storage has lost it.** Git
+  holds `{name}/set.json`, so those bytes are recoverable -- unlike a table's
+  parquet, which never sits in the clone. This is the state a write that
+  committed and then failed to upload leaves behind, and re-running
+  `datom_write_set()` could not repair it, since the members are unchanged and
+  the write correctly does nothing.
+  * **A stored payload that is present is never overwritten**, and its recorded
+    hash is never recomputed. A version pins those exact bytes, so a fresh
+    spelling at that address would leave a valid version refusing its own
+    payload on read.
+  * **A clone whose payload does not match the recorded hash is declined out
+    loud**, naming what to do, rather than uploading bytes no version describes.
+  * A set is no longer named among the artifacts the repair cannot fix, and the
+    advice to re-run `datom_write()` with the source data now reaches tables
+    only, where it is true.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

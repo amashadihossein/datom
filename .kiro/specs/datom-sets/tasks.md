@@ -22,7 +22,7 @@ it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding th
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
 3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
 after the review finding that followed it -> 3770 after Task 25 -> 3781 after the review finding
-that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> 3974 after Task 12 proper -> **4012 after Task 13**.
+that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> 3974 after Task 12 proper -> 4012 after Task 13 -> **4065 after Task 14**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -42,8 +42,8 @@ validators) **Task 9** (`datom_write_set()`), **Task 10** (`datom_get_set()` plu
 **Task 24** (read-side ergonomics: finding and shaping members),
 **Task 25** (write-side ergonomics: assembling a set in steps)
 **Task 23** (`project.yaml` declares its format), **Task 11** (project mode gating the
-import path), **Task 12** (foreign-content discipline plus the two git-mutation exports) and
-**Task 13** (the joint commit), plus
+import path), **Task 12** (foreign-content discipline plus the two git-mutation exports),
+**Task 13** (the joint commit) and **Task 14** (validation branches on kind), plus
 three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
@@ -168,10 +168,28 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **4012** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **4065** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 with examples run
-(tests run separately). Next is **Task 14**
-(`datom_validate()` branches on `kind`), then Task 15 onward.
+(tests run separately). Next is **Task 15**
+(the version-to-commit link, `commit_sha`), then Tasks 27 and 28, then the sweep.
+
+**TASK 14 IS CLOSED, AND VALIDATION NOW UNDERSTANDS BOTH KINDS OF ARTIFACT.** It looked for a
+parquet object for every artifact, so a set reported its data missing every single time; the payload
+address now comes from the kind the artifact's own metadata declares. A set is checked past that:
+every member's pinned version must still exist in this project's storage, the set must record the
+hash of its payload, and **neither check descends** -- a member that is itself a set is confirmed and
+its member list is never opened, so validating a set costs the same whatever sits beneath it. A
+member recorded as belonging to another project is checked as a well-formed pointer only, because
+this connection sees one namespace and looking there would report every cross-project citation as
+rotten. **`fix = TRUE` also gained the one payload upload that is safe to give it**: git holds
+`{name}/set.json`, so a payload storage has lost comes back from the clone -- only when the stored
+object is absent, only when the clone's bytes hash to the hash already recorded, and never
+recomputing that hash. Without it a set whose upload failed after the commit had no repair route at
+all, since the write verb correctly does nothing on unchanged members. Five things a later change
+must not undo, seven probes, three decisions taken at their defaults and one residual are in
+Task 14's DONE record. **The probe worth carrying out of it**: the first spelling of the
+never-re-upload test passed through the wrong guard and stayed green with the right one deleted --
+same shape as Task 13's finding, a test asserting a value where the behaviour lives elsewhere.
 
 **TASK 13 IS CLOSED, AND A SET CAN NOW CARRY THE CODE AND ENVIRONMENT THAT PRODUCED IT.**
 `datom_write_set(include_paths = c("R", "dp", "renv.lock"))` stages the caller's own paths into the
@@ -1261,7 +1279,7 @@ own; landing it first is what makes Task 6's failure loud.
     **The skeleton was the dangerous one**: left unrenamed it writes a `tables` key after the
     rename, and it only fires on a fresh or repaired repo, so tests against an existing fixture pass
     while the bug ships. Task 5 reduced it to one place, which is the point of the split.
-  - Read side: **one** site now -- `.datom_read_manifest()` (`R/sync.R:812`) -- plus the six field
+  - Read side: **one** site now -- `.datom_read_manifest()` (`R/sync.R:1036`) -- plus the six field
     accesses that read the artifact key off the returned document (`R/query.R:92,109`,
     `R/query.R:489`, `R/query.R:604`, `R/summary.R:68`, `R/sync.R:411`).
   - Each entry gains `kind` (`"table"` for everything existing). `summary` gains `total_sets`;
@@ -1294,7 +1312,7 @@ own; landing it first is what makes Task 6's failure loud.
     contents are "never edit these" is easier to protect than a section of `R/sync.R`, which is
     already 881 lines and holds sync, import and manifest concerns. Same split reasoning as
     `R/hashable-set.R`. Apply it in the **one** place Task
-    5 created. Concretely, inside `.datom_read_manifest()` (`R/sync.R:812`) the order is: read,
+    5 created. Concretely, inside `.datom_read_manifest()` (`R/sync.R:1036`) the order is: read,
     then `.datom_check_schema_version()` -- which throws on a document too new to touch at all --
     then the upgrade chain on what survives, then return. `manifest` simply comes back upgraded.
     **The record gained a fifth field on 2026-09-08**, `declared` -- the version a document announced
@@ -1422,7 +1440,7 @@ own; landing it first is what makes Task 6's failure loud.
       applies each step in order via `purrr::reduce`, guarded by `if (declared < supported)` because
       R's `seq()` counts down (R22.10), then records the version it reached.
       `R/sync.R`: the skeleton (`R/sync.R:759`) renames its key and stamps `schema_version: 2`; the
-      shared reader (`R/sync.R:812`) gains one line -- chain **after** `.datom_check_schema_version()`
+      shared reader (`R/sync.R:1036`) gains one line -- chain **after** `.datom_check_schema_version()`
       and before the return, kept separable for Task 22's rebuild branch; the entry updater
       (`R/sync.R:946`) chains what it read from disk, writes `kind` on the entry, stamps the version,
       and filters its three summary counters (**all four kind selections went through one helper,
@@ -3471,12 +3489,13 @@ own; landing it first is what makes Task 6's failure loud.
       not report a tracked file as ignored and stages it regardless of the rules. Correct rather
       than tolerated: the file really does reach the commit.
 
-- [ ] **14. `datom_validate()` branches on `kind`**
-  - `.datom_validate_one_table()` at `R/validate.R:444` builds the payload key with the kind
+- [x] **14. `datom_validate()` branches on `kind`** &nbsp; **[DONE 2026-09-18]**
+  - `.datom_validate_one_table()` built the payload key with the kind
     **hardcoded** to `"table"`: `.datom_artifact_payload_key(name, meta$data_sha, "table")`, which
     resolves to `.parquet` and so fails 100% of the time on a set. (Task 1 replaced the original
     `paste0()` here, and the helper already accepts `kind = "set"` -- so this is a call-site change,
-    not new key logic. Earlier drafts of this task described the `paste0()` form.)
+    not new key logic. Earlier drafts of this task described the `paste0()` form.) The branch now
+    sits at `R/validate.R:501-505`; it was `R/validate.R:444` when the defect was recorded.
   - **table**: existing parquet check, unchanged. **set**: payload exists at
     `{name}/{data_sha}.json` **and** every member resolves *as far as the connections allow* --
     same-project members fully checked, cross-project members checked as well-formed pointers
@@ -3504,6 +3523,77 @@ own; landing it first is what makes Task 6's failure loud.
     (one-level member checking). **P14 has no AC of its own** -- add one here asserting `ok` for a
     healthy set and *distinguishable* statuses for a missing payload versus an unresolvable member;
     R11.3 calls this in scope rather than deferred, so it must not ship untested._
+
+  **DONE RECORD (2026-09-18).** Shipped in one commit; 4012 -> 4065 tests, `dev/check-spec.R` 9/9,
+  `R CMD check` 0/0/0. The payload key now comes from the kind the artifact's **own metadata**
+  declares, a set is checked past its payload's existence, and `fix = TRUE` gained the one payload
+  upload that is safe to give it.
+
+  **Five things a later change must not undo.**
+  1. **An unknown kind is reported, never fatal.** `.datom_declared_artifact_kind()` returns `NA`
+     for a kind this build does not know, and the payload check is skipped with `data_s3 = NA` and
+     status `kind_unsupported`. Passing that value to the key builder instead aborts the **whole
+     run** on `match.arg()`, and a validator that cannot finish reports nothing about the artifacts
+     it never reached. The same helper returns `"table"` when there is no readable metadata at all,
+     which is what keeps the pre-existing "no metadata, payload reported missing" behaviour intact.
+  2. **The same-project test compares against the project the SET's metadata records**, not
+     `conn$project_name`. On a reader connection the connection's name is a label nobody verified,
+     so comparing against it misclassifies every member when the label differs -- and the two
+     failure directions are not symmetric: a cross-project member wrongly treated as local is
+     reported rotten, on a repo that is fine.
+  3. **A member's resolution is its version snapshot's existence, and nothing deeper.** No member's
+     own payload is fetched (a same-project member has a row of its own in the same result) and no
+     inner set's member list is opened. Descending would make the cost of validating a set depend on
+     the tree beneath it, which is the property P16 states.
+  4. **The restore uploads only when the stored object is ABSENT and only when the clone's bytes
+     hash to the recorded `document_sha`.** Both conditions, not either: dropping the absence check
+     overwrites bytes a version pins, and dropping the hash check publishes bytes no version
+     describes. The recorded hash is read, never recomputed -- I27.
+  5. **`kind` is a column on the per-artifact frame, including the zero-row one.** The repair's
+     "cannot be fixed" list reads it to keep a set out (a set's payload *is* in the clone), so a
+     frame without it is a silent misclassification. Same shape as the Task 6 lesson about
+     `.datom_empty_artifact_frame()`.
+
+  **Seven probes, all of which reddened exactly what they should.**
+
+    | Probe | Reddened |
+    |---|---|
+    | P1 | put the hardcoded `"table"` kind back | 17 assertions across 10 tests |
+    | P2 | read an inner set's payload after confirming it | the nesting test's two read assertions |
+    | P3 | drop the "stored object absent" condition from the restore | the never-re-upload test |
+    | P4 | merge `document_sha_missing` into `members_unresolvable` | the document_sha test |
+    | P5 | check cross-project members for existence | the pointer-only test, all three assertions |
+    | P6 | drop the kind filter from the unrepairable list | the restore test **and** the unit test |
+    | P7 | drop the hash comparison from the restore | the declines-loudly test |
+
+  **The probe that changed a test rather than confirming it.** The first spelling of "a stored
+  payload that is present is never re-uploaded" modified the clone's copy first, so it passed
+  through the **hash** check and stayed green with the absence check deleted -- the guarantee it
+  names was unasserted. It now leaves the clone matching and watches for the upload call instead.
+  The same shape as Task 13's I19 finding: a test asserting a returned value where the behaviour
+  lives somewhere else.
+
+  **Three decisions, taken at their stated defaults on 2026-09-18.**
+  * **No `member_conns` argument.** R11.2 allows a full cross-project check "unless the caller
+    supplies that project's conn", and nothing today can express that, so the clause is unbuilt
+    rather than partly built. The route that exists is better than the argument would have been:
+    running `datom_validate()` against that project checks every artifact in it, which is a superset
+    of one member pointer. **Residual, owned by nobody**: if a caller ever needs the narrow check,
+    the shape is a named list keyed by project name, and `.datom_unresolved_members()` is the one
+    function that changes.
+  * **No byte-integrity download.** The validator checks that the payload is there and that its
+    members resolve; it does not fetch the object to compare it against `document_sha`. That check
+    exists on the read path, where it guards the bytes actually being used.
+  * **The repair uploads a missing set payload.** Beyond R11's letter and taken anyway, for two
+    reasons: without it a set whose upload failed after the commit had **no** repair route at all
+    (the write verb correctly does nothing on unchanged members), and with no upload path in the
+    code AC29c's "leaves the stored bytes unchanged" would pass forever whatever the code did.
+
+  **One residual stated rather than fixed.** A `members_unresolvable` finding survives
+  `fix = TRUE` unmentioned -- nothing in the clone can restore another artifact's lost version, and
+  the fix's closing line already says to re-run the verb rather than claiming completeness. If the
+  sweep wants it named, the naming helper is `.datom_validate_unfixable_tables()` and it already
+  reads the `kind` column it would need.
 
 - [ ] **15. Version-to-commit link (`commit_sha`)**
   - Applies to **all** artifact kinds, not just sets -- `version_history.json` is shared. Placed
@@ -6044,3 +6134,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-18 | **(scoped audit, Task 13) I19 holds today by PLACEMENT, and its existing coverage is the spelling that cannot fail.** The reviewer scoped the pre-start pass to this one claim because the Decisions log already names its stake, and a hazard claim nothing pins needs a test rather than a re-reading. What was found: the no-change branch (`R/set.R:746`) returns above the payload write, the manifest row and the one commit call, so the guarantee is free -- and `test-write-set.R:675` / `:807` assert `action == "none"` on the **returned list**, which stays green through a write that commits the dirty code and then reports no change, i.e. through exactly the failure I19 exists to prevent. AC19's test therefore reads git HEAD before and after, and asserts the `include_paths` file is dirty **both** before and after, without which it passes vacuously in a repo where nothing changed. Also settled: a nonexistent or overlapping path is an error **even on the no-op path**, because validation precedes the hashing the change detection needs -- recorded so it is not later "fixed" into tolerance. | Task 13, I19, AC19, AC20 |
 | 2026-09-18 | **(implemented, Task 13) The joint commit ships, and the gate grew a fourth refusal the requirement does not name: a path that leads outside the clone.** R12.5 lists two gates (nonexistent, datom-owned) and the audit added a third (gitignored). The fourth is there because `fs::path(conn$path, "/etc/passwd")` **joins** rather than replaces, so an absolute path would otherwise be reported as a missing path *inside* the repo -- a true refusal whose message names the wrong thing -- and a `../` path that resolves to a real file would reach `git2r::add()`, which stages nothing for it and says nothing, the same silent-omission failure the gitignore refusal exists to stop. Escape is judged **after** lexical normalisation, so `a/../b` is `b` and allowed: the gate is about leaving the clone, not about spelling. Normalisation is load-bearing for the owned gate too -- `./.datom/manifest.json` and `.datom/manifest.json` are one path, and a gate splitting the raw string lets the first past (probe P6 reddens exactly that test). | Task 13, R12.5, AC20 |
 | 2026-09-18 | **(implemented, Task 13) I19's proof is a probe, and the probe is what shows the old coverage could not fail.** Committing the listed paths on the no-op path reddens AC19's HEAD assertion, its dirty-after assertion and its file-content assertion, and leaves `action == "none"` **green** -- the audit's prediction, confirmed by breaking the code rather than by reading it. A second probe that simply never makes the edit reddens the dirty-before assertion, so the test cannot pass by finding nothing moved in a repo where nothing happened. Nine probes in total, each reverted, each naming what it reddened; the table is in Task 13's DONE record. **The residual worth knowing**: `datom_repo_commit(paths = <gitignored>)` still drops the path in silence, deliberately unchanged here -- that verb promises to stage what it is given and mints no version claiming otherwise -- but the refusal is now one helper (`.datom_git_ignored()`) away if the acceptance sweep decides it should refuse too. | Task 13, I19, AC19, AC18, Task 12 |
+| 2026-09-18 | **(decision, Task 14) Three calls on the scope of the kind branch, all taken at the defaults proposed before implementation.** (1) **No `member_conns` argument.** R11.2's "unless the caller supplies that project's conn" is left unbuilt rather than half-built: nothing today can express it, and the route that exists is strictly better -- running `datom_validate()` against that project checks every artifact in it, not one member pointer. (2) **No byte-integrity download.** Presence and resolution only; the `document_sha` comparison stays on the read path, where it guards the bytes actually in use. (3) **`fix = TRUE` DOES restore a missing set payload**, which is beyond R11's letter, for two reasons that are both about the alternative: without it a set whose upload failed after the commit had no repair route at all (the write verb correctly no-ops on unchanged members), and with no upload path anywhere in the code AC29c's "leaves the stored bytes unchanged" would have passed forever whatever the code did. | Task 14 DONE record, R11.2, AC29c |
+| 2026-09-18 | **(implemented, Task 14) The kind branch forced a status the requirement does not name: `kind_unsupported`.** The payload-key builder validates its `kind` argument, so handing it a kind from a newer datom aborts the whole validation run -- and a run that cannot finish reports nothing about the artifacts it never reached. An unknown kind now leaves that row's payload unchecked (`data_s3 = NA`) and says so, rather than reporting a payload missing that this build cannot even address. Reads limp, and the rest of the repo is still checked. | Task 14 DONE record, `R/validate.R` |
+| 2026-09-18 | **(implemented, Task 14) A test of mine was passing through the wrong guard, and the probe is what found it.** The never-re-upload test first modified the clone's payload, which made it pass through the hash comparison and stay green with the absence check deleted -- so the rule it names, that stored bytes a version pins are never overwritten, was unasserted. It now leaves the clone matching and watches for the upload call. Same shape as Task 13's I19 finding: a test asserting a value where the behaviour lives elsewhere. | Task 14 DONE record, `tests/testthat/test-validate-sets.R` |

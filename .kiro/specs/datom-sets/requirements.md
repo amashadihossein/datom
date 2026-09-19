@@ -919,13 +919,15 @@ set: study001-adam
 
 ### R11 -- `datom_validate()` branches on kind
 
-`R/validate.R:392` hardcodes the data-object check inside `.datom_validate_one_table()`:
+The data-object check inside `.datom_validate_one_table()` hardcoded the kind:
 
 ```r
 data_key <- paste0(name, "/", meta$data_sha, ".parquet")
 ```
 
-On a set this fails 100% of the time and reports `data_missing_s3`.
+On a set this failed 100% of the time and reported `data_missing_s3`. **Shipped 2026-09-18** in
+Task 14: the key now comes from the kind the artifact's own metadata declares
+(`R/validate.R:501-505`), and a set is checked further -- see R11.2.
 
 - **R11.1** **table** -- existing parquet existence check, unchanged.
 - **R11.2** **set** -- payload exists at `{name}/{data_sha}.json`, **and** every member resolves

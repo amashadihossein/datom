@@ -468,15 +468,25 @@ test_that("datom_validate with fix = TRUE names tables it cannot repair", {
 })
 
 test_that(".datom_validate_unfixable_tables selects only missing-payload rows", {
-  # Column is `table`, matching .datom_validate_tables() output
+  # Columns are `table` and `kind`, matching .datom_validate_tables() output
   checks <- data.frame(
     table = c("ok_tbl", "meta_only", "no_data", "both"),
+    kind = "table",
     status = c("ok", "metadata_missing_s3", "data_missing_s3",
                "metadata_missing_s3,data_missing_s3"),
     stringsAsFactors = FALSE
   )
 
   expect_equal(.datom_validate_unfixable_tables(checks), c("no_data", "both"))
+
+  # A set with the same finding IS repairable -- git holds its payload -- so it
+  # must not be named among the artifacts the sync cannot fix.
+  with_set <- rbind(
+    checks,
+    data.frame(table = "product-a", kind = "set", status = "data_missing_s3",
+               stringsAsFactors = FALSE)
+  )
+  expect_equal(.datom_validate_unfixable_tables(with_set), c("no_data", "both"))
 
   # "metadata_missing_s3" CONTAINS "data_missing_s3" as a substring, and that
   # finding IS repairable by the sync -- so it must not be named here

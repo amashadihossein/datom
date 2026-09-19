@@ -287,7 +287,87 @@ datom_pull <- function(conn) {
     }
   }
 
+  # A set's payload is the one stored object that also lives in the clone, so it
+  # is the one payload this route can put back. A table's parquet never is, which
+  # is why there is no table half to this.
+  s3_keys <- c(s3_keys, .datom_restore_set_payload(conn, name))
+
   list(name = name, action = "synced", s3_keys = s3_keys)
+}
+
+
+#' Put a Set's Payload Back When Storage Has Lost It
+#'
+#' The write order is git first, storage second, so a write that committed and
+#' then failed to upload leaves a version whose payload is only in the clone.
+#' For a set that is repairable: git holds `{name}/set.json`, and those are the
+#' same bytes the upload would have sent.
+#'
+#' **It restores, and never overwrites.** The bytes at `{name}/{data_sha}.json`
+#' are written once: the recorded `document_sha` pins them, and putting a fresh
+#' spelling at that address would leave a valid version refusing its own payload
+#' on read. So the upload happens only when the stored object is **absent**, and
+#' only when the clone's bytes hash to the hash already recorded -- which is
+#' read, never recomputed. Both conditions are needed: refusing only the
+#' recompute still permits the worst outcome, an overwritten object keeping the
+#' old hash.
+#'
+#' **Declining is loud.** A silent decline is indistinguishable from a repair
+#' that worked, which is the failure the whole check exists to remove.
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @param name Artifact name. A table returns immediately -- it has no
+#'   `set.json`.
+#' @return The storage key uploaded, or `character()` when nothing was.
+#' @noRd
+.datom_restore_set_payload <- function(conn, name) {
+  payload_path <- fs::path(conn$path, name, "set.json")
+  if (!fs::file_exists(payload_path)) return(character())
+
+  meta_path <- fs::path(conn$path, name, "metadata.json")
+  if (!fs::file_exists(meta_path)) return(character())
+
+  meta <- tryCatch(
+    jsonlite::read_json(meta_path, simplifyVector = TRUE),
+    error = function(e) NULL
+  )
+
+  # Declared kind rather than "there is a set.json here": the file is evidence,
+  # the document is the statement.
+  if (!identical(.datom_declared_artifact_kind(meta), "set")) return(character())
+
+  if (!.datom_is_text_scalar(meta$data_sha) ||
+      !.datom_is_text_scalar(meta$document_sha)) {
+    return(character())
+  }
+
+  key <- tryCatch(
+    .datom_artifact_payload_key(name, meta$data_sha, "set"),
+    error = function(e) NULL
+  )
+  if (is.null(key)) return(character())
+
+  if (.datom_storage_exists(conn, key)) return(character())
+
+  actual <- digest::digest(file = payload_path, algo = "sha256")
+  if (!identical(actual, meta$document_sha)) {
+    cli::cli_alert_warning(
+      "The payload in the clone for set {.val {name}} does not match the hash \\
+       its metadata records, so it was not uploaded."
+    )
+    cli::cli_alert_info(
+      "Publish the current payload by writing the set again with \\
+       {.fn datom_write_set}."
+    )
+    return(character())
+  }
+
+  .datom_storage_upload(conn, payload_path, key)
+  cli::cli_alert_success(
+    "Restored the stored payload for set {.val {name}} from the clone."
+  )
+
+  key
 }
 
 

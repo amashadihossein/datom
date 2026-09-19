@@ -78,19 +78,48 @@ datom_repository_check <- function(path) {
 #' Checks that git metadata matches S3 storage for all tables and repo-level
 #' files. Reports mismatches as a structured result.
 #'
+#' @section What is checked per artifact:
+#' Both kinds of artifact are checked, and the payload check branches on kind: a
+#' table's payload is a parquet object, a set's is a JSON document at
+#' `{name}/{data_sha}.json`. A **set** is checked further, because a payload
+#' whose members have gone is a citation that no longer resolves:
+#'
+#' * every member's pinned version must still exist in this project's storage.
+#'   **One level deep only** -- a member that is itself a set is confirmed to
+#'   exist and its own member list is never opened, so the cost of validating a
+#'   set never depends on the tree beneath it. Validating an inner set is a
+#'   separate call against that set's own project.
+#' * a member recorded as belonging to **another project** is checked as a
+#'   well-formed pointer only. This connection sees one namespace, so an
+#'   existence check there would report every cross-project member as rotten.
+#' * the set must record the hash of its stored payload, without which no reader
+#'   can verify it.
+#'
+#' Statuses reported in the `tables` frame: `metadata_missing_s3`,
+#' `history_missing_s3`, `data_missing_s3`, `members_unresolvable`,
+#' `document_sha_missing`, and `kind_unsupported` for an artifact whose metadata
+#' declares a kind this version of datom does not know -- reported rather than
+#' fatal, with that row's payload left unchecked.
+#'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param fix If `TRUE`, attempts to fix inconsistencies by syncing data-side
-#'   metadata (manifest + per-table metadata) to storage. This repairs metadata
-#'   documents only: a missing data payload (`data_missing_s3`) cannot be
-#'   restored from the clone, because the parquet bytes are never stored there.
-#'   Those tables are named in a warning and need [datom_write()] re-run with
-#'   the source data.
+#'   metadata (manifest + per-artifact metadata) to storage, and by restoring a
+#'   **set's** payload when storage has lost it -- git holds `{name}/set.json`,
+#'   so those bytes are recoverable. A restore happens only when the stored
+#'   object is absent and only when the clone's bytes hash to the
+#'   `document_sha` already recorded; a stored payload is never overwritten and
+#'   its recorded hash is never recomputed.
+#'
+#'   A missing **table** payload (`data_missing_s3`) cannot be repaired: the
+#'   parquet bytes are never in the clone. Those tables are named in a warning
+#'   and need [datom_write()] re-run with the source data.
 #'
 #' @return A list with:
 #'   \describe{
 #'     \item{valid}{Logical — `TRUE` if everything is consistent.}
 #'     \item{repo_files}{Data frame of repo-level file checks.}
-#'     \item{tables}{Data frame of per-table checks.}
+#'     \item{tables}{Data frame of per-artifact checks, one row per artifact of
+#'       either kind, with a `kind` column. Named `tables` for compatibility.}
 #'     \item{fixed}{Logical — `TRUE` if `fix = TRUE` was applied.}
 #'   }
 #' @export
@@ -210,13 +239,19 @@ datom_validate <- function(conn, fix = FALSE) {
 
 #' Findings the Metadata Sync Cannot Repair
 #'
-#' `fix = TRUE` syncs metadata documents from the git clone to storage. A
-#' missing payload (`data_missing_s3`) is outside that reach: the parquet bytes
+#' `fix = TRUE` syncs metadata documents from the git clone to storage. A missing
+#' **table** payload (`data_missing_s3`) is outside that reach: the parquet bytes
 #' live only in storage and in whatever session serialized them, never in the
 #' clone. Naming those tables is what stops the fix from reading as complete.
 #'
-#' @param table_checks The per-table check data frame from
-#'   `.datom_validate_tables()`. Its name column is `table`, not `name`.
+#' **A set with the same finding is deliberately not named here**, because for a
+#' set the claim is false: git holds `{name}/set.json`, so the sync restores the
+#' payload from the clone. Naming it would send the owner to re-run a write that
+#' detects no change and does nothing.
+#'
+#' @param table_checks The per-artifact check data frame from
+#'   `.datom_validate_tables()`. Its name column is `table`, not `name`, and it
+#'   carries a `kind` column.
 #' @return Character vector of table names whose payload is missing from
 #'   storage. Empty when there are none.
 #' @noRd
@@ -234,7 +269,12 @@ datom_validate <- function(conn, fix = FALSE) {
   has_missing_data <- purrr::map_lgl(table_checks$status, function(status) {
     "data_missing_s3" %in% trimws(strsplit(status, ",", fixed = TRUE)[[1L]])
   })
-  as.character(table_checks$table[has_missing_data])
+
+  # Same no-guard stance as above: the `kind` column must be there, so a frame
+  # built without it errors rather than quietly naming a set as unrepairable.
+  is_set <- !is.na(table_checks$kind) & table_checks$kind == "set"
+
+  as.character(table_checks$table[has_missing_data & !is_set])
 }
 
 
@@ -395,8 +435,11 @@ datom_validate <- function(conn, fix = FALSE) {
   table_names <- fs::path_file(table_dirs)
 
   if (length(table_names) == 0L) {
+    # Every column a populated result carries, `kind` included: a zero-row frame
+    # missing one makes a caller that reads it fail only when the repo is empty.
     return(data.frame(
       table = character(),
+      kind = character(),
       metadata_local = logical(),
       metadata_s3 = logical(),
       history_local = logical(),
@@ -417,7 +460,11 @@ datom_validate <- function(conn, fix = FALSE) {
 }
 
 
-#' Validate a single table's git-S3 consistency
+#' Validate one artifact's git-storage consistency
+#'
+#' Named for tables for the same reason the frame's column is `table` and the
+#' result's field is `tables`: those names are what callers already read. It
+#' handles both kinds.
 #' @noRd
 .datom_validate_one_table <- function(conn, name) {
   repo_path <- conn$path
@@ -432,33 +479,70 @@ datom_validate <- function(conn, fix = FALSE) {
     conn, .datom_artifact_meta_key(name, "version_history")
   )
 
-  # Check that data parquet exists (read data_sha from local metadata)
-  data_s3 <- FALSE
-  if (metadata_local) {
-    tryCatch({
-      meta <- jsonlite::read_json(
+  meta <- if (metadata_local) {
+    tryCatch(
+      jsonlite::read_json(
         fs::path(repo_path, name, "metadata.json"),
         simplifyVector = TRUE
-      )
-      if (!is.null(meta$data_sha) && nzchar(meta$data_sha)) {
-        data_key <- .datom_artifact_payload_key(name, meta$data_sha, "table")
-        data_s3 <- .datom_storage_exists(conn, data_key)
-      }
-    }, error = function(e) {
-      # Leave data_s3 as FALSE
-    })
+      ),
+      error = function(e) NULL
+    )
+  }
+
+  kind <- .datom_declared_artifact_kind(meta)
+
+  # The payload's address depends on the kind -- `.parquet` for a table,
+  # `.json` for a set -- and this decision was previously hardcoded to
+  # "table", so every set reported its payload missing.
+  #
+  # The key builder validates `data_sha`, which came off a file, so a
+  # hand-edited value must leave the payload unchecked rather than abort the
+  # run: same tolerance the previous tryCatch gave it.
+  payload_key <- if (!is.na(kind) && .datom_is_text_scalar(meta$data_sha)) {
+    tryCatch(
+      .datom_artifact_payload_key(name, meta$data_sha, kind),
+      error = function(e) NULL
+    )
+  }
+
+  # NA, not FALSE, when the kind is unknown: nothing was checked, and FALSE
+  # would report a missing payload this build cannot even address.
+  data_s3 <- if (is.na(kind)) {
+    NA
+  } else {
+    !is.null(payload_key) && .datom_storage_exists(conn, payload_key)
   }
 
   # Determine status
   issues <- character()
   if (metadata_local && !metadata_s3) issues <- c(issues, "metadata_missing_s3")
   if (history_local && !history_s3) issues <- c(issues, "history_missing_s3")
-  if (!data_s3) issues <- c(issues, "data_missing_s3")
+  if (isFALSE(data_s3)) issues <- c(issues, "data_missing_s3")
+
+  if (is.na(kind)) {
+    cli::cli_alert_warning(
+      "{.val {name}} declares an artifact kind this version of datom does not \\
+       know, so its stored payload was not checked."
+    )
+    cli::cli_alert_info(
+      "It may have been written by a newer datom -- upgrade datom and re-run \\
+       {.fn datom_validate}."
+    )
+    issues <- c(issues, "kind_unsupported")
+  }
+
+  if (identical(kind, "set")) {
+    issues <- c(
+      issues,
+      .datom_validate_set(conn, name, meta, payload_key, data_s3)
+    )
+  }
 
   status <- if (length(issues) == 0L) "ok" else paste(issues, collapse = ",")
 
   data.frame(
     table = name,
+    kind = kind,
     metadata_local = metadata_local,
     metadata_s3 = metadata_s3,
     history_local = history_local,
@@ -467,4 +551,162 @@ datom_validate <- function(conn, fix = FALSE) {
     status = status,
     stringsAsFactors = FALSE
   )
+}
+
+
+#' The Kind an Artifact's Own Metadata Declares
+#'
+#' `NA` rather than an abort for a kind this build has never heard of. The
+#' payload-key builder refuses such a value outright, so without this the whole
+#' validation run would stop on one artifact written by a newer datom -- and a
+#' validator that cannot finish reports nothing about the artifacts it never
+#' reached. Reads limp.
+#'
+#' An absent `kind` reads as `"table"`, because every document written before the
+#' field existed describes one. So does a document that could not be read at all:
+#' the caller reports the missing payload for it exactly as before.
+#'
+#' @param meta A parsed `metadata.json`, or `NULL` when there is none.
+#' @return `"table"`, `"set"`, or `NA_character_`.
+#' @noRd
+.datom_declared_artifact_kind <- function(meta) {
+  if (!is.list(meta)) return("table")
+
+  kind <- meta$kind %||% "table"
+  if (!.datom_is_text_scalar(kind) || !kind %in% .datom_artifact_kinds) {
+    return(NA_character_)
+  }
+
+  kind
+}
+
+
+#' Check a Set's Payload Beyond Its Existence
+#'
+#' Two findings, deliberately separate from each other and from a missing
+#' payload, because the three call for different actions: a payload that is not
+#' in storage, a payload whose members no longer resolve, and a set that records
+#' no payload hash.
+#'
+#' **A set with no recorded `document_sha` is reported rather than tolerated.**
+#' A reader refuses such a version before it parses anything, and the message it
+#' gives says to run this verb -- so reporting `ok` here would send the user in a
+#' circle.
+#'
+#' @param conn A `datom_conn` object.
+#' @param name The set's name.
+#' @param meta The set's `metadata.json` from the clone.
+#' @param payload_key Relative storage key of the payload, or `NULL` when one
+#'   could not be built.
+#' @param payload_present What the existence check found: `TRUE`, `FALSE`, or
+#'   `NA`.
+#' @return Character vector of status codes, empty when nothing is wrong.
+#' @noRd
+.datom_validate_set <- function(conn, name, meta, payload_key, payload_present) {
+  issues <- character()
+
+  if (!.datom_is_text_scalar(meta$document_sha)) {
+    cli::cli_alert_danger(
+      "Set {.val {name}} records no {.field document_sha}, so its stored \\
+       payload cannot be verified on read."
+    )
+    issues <- c(issues, "document_sha_missing")
+  }
+
+  # Nothing to list members from. The absence is already reported as
+  # `data_missing_s3`, so this is a skip with a finding attached rather than a
+  # silent one.
+  if (!isTRUE(payload_present) || is.null(payload_key)) return(issues)
+
+  members <- tryCatch(
+    .datom_storage_read_json(conn, payload_key)$members,
+    error = function(e) NULL
+  )
+
+  # Mirrors the reader's own guard in `.datom_read_set_members()`: a NAMED list
+  # is a JSON object where an array of records belongs.
+  usable <- is.list(members) &&
+    (length(members) == 0L || is.null(names(members)))
+
+  if (!usable) {
+    cli::cli_alert_danger(
+      "The stored payload for set {.val {name}} does not list members."
+    )
+    return(c(issues, "members_unresolvable"))
+  }
+
+  unresolved <- .datom_unresolved_members(
+    conn, name, members, .datom_set_project(meta, conn)
+  )
+
+  if (length(unresolved) == 0L) return(issues)
+
+  cli::cli_alert_danger(
+    "Set {.val {name}} has {length(unresolved)} member{?s} that do not \\
+     resolve: {.val {unresolved}}."
+  )
+  cli::cli_alert_info(
+    "A set is a citation, so a member that no longer resolves is a claim this \\
+     project can no longer honour."
+  )
+
+  c(issues, "members_unresolvable")
+}
+
+
+#' Which of a Set's Members Do Not Resolve
+#'
+#' A member pins a version, and a version is a stored metadata snapshot, so
+#' "resolves" means that snapshot is in storage -- the same address
+#' [datom_member()] reads when it builds the pointer. Nothing here opens a
+#' member's own payload: for a same-project member, that artifact has a row of
+#' its own in the same result.
+#'
+#' **One level, and one level only.** A member that is itself a set is confirmed
+#' to exist and its member list is never opened, so the number of storage reads
+#' depends on this set's own member count and never on the tree beneath it.
+#' Validating an inner set is a separate call against that set's own project.
+#'
+#' **A member of another project is checked as a well-formed pointer only.**
+#' Access in datom is per project and this connection sees one namespace, so an
+#' existence check there would report every cross-project member as rotten. The
+#' comparison is against the project the **set's own metadata** records, not the
+#' name on the connection: a connection's project name is a label nobody
+#' verified, so comparing against it would misclassify members on a connection
+#' opened with a different label.
+#'
+#' @param conn A `datom_conn` object.
+#' @param name The set's name, for the malformed-record messages.
+#' @param members The payload's parsed member list.
+#' @param project The project the set's own metadata records.
+#' @return Character vector labelling each member that did not resolve, empty
+#'   when they all did.
+#' @noRd
+.datom_unresolved_members <- function(conn, name, members, project) {
+  labels <- purrr::map_chr(seq_along(members), function(i) {
+    at <- sprintf("members[[%d]]", i)
+
+    # The reader's own normalizer, so the validator's idea of a usable member
+    # record cannot drift from what a read will accept.
+    record <- tryCatch(
+      .datom_read_set_member(members[[i]], at, name),
+      error = function(e) NULL
+    )
+    if (is.null(record)) return(at)
+
+    id <- record$id
+    if (!identical(id$project, project)) return(NA_character_)
+
+    # `version` came off a stored document and is spliced into a key, so a value
+    # the guard refuses counts as unresolvable rather than aborting the run.
+    key <- tryCatch(
+      .datom_artifact_snapshot_key(id$name, id$version),
+      error = function(e) NULL
+    )
+    if (!is.null(key) && .datom_storage_exists(conn, key)) return(NA_character_)
+
+    paste0(id$name, "@", substr(id$version, 1L, 8L))
+  })
+
+  labels[!is.na(labels)]
 }
