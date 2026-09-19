@@ -3635,6 +3635,83 @@ own; landing it first is what makes Task 6's failure loud.
   - _Requirements: R20, R21. Invariants: I21, I22, I23. Properties: P26, P27. Acceptance: AC25,
     AC26. No pathway impact (no new lookup route -- the existing history read gains a field)._
 
+  **PRE-START AUDIT (2026-09-19), cold, and it moves the centre of this task.** Ten findings. Two
+  must be decided before implementation; everything else is settled here. Every claim below was
+  checked against the tree or probed by running code -- the probes are named where they matter,
+  because this task's whole subject is a field that disappears silently.
+
+  1. **THE STRIP TRAP HAS THREE DOORS, AND THE BODY ABOVE NAMES ONE.** Derive the list rather than
+     trusting this one (`grep -n version_history R/*.R`); today it is:
+
+     | Function | Reached from |
+     |---|---|
+     | `.datom_push_metadata_s3()` (`R/read_write.R:939`) | **every ordinary write**, via `.datom_commit_and_mirror()` |
+     | `.datom_sync_one_artifact()` (`R/sync.R:292`) | `datom_validate(fix = TRUE)` **and** `datom_write(conn)` with no `data`/`name` |
+     | `.datom_sync_metadata()` (`R/utils-sha.R:673`) | `datom_write(conn, name = X)`, the metadata-only route |
+
+     Four public entry points over three functions. Guarding only the repair leaves the field
+     strippable by two **write** verbs, which is worse: a repair is at least something a person
+     chose to run.
+  2. **THE FIRST DOOR IS THE ORDINARY WRITE, AND IT STRIPS EVERY PRIOR ENTRY.** `.datom_push_metadata_s3()`
+     reads the clone's `version_history.json` and uploads it **wholesale**, and the clone's copy can
+     never carry `commit_sha` (R21.6). So without a merge the field survives on the newest version
+     only, and the defect lands on write **#2** -- long before any repair is involved. **Probed, not
+     read**: on a three-write fixture the stored and clone copies of that file are today
+     `identical()`, which is exactly the property that makes the wholesale upload lossy the moment
+     one copy is meant to carry more.
+  3. **The capture point needs the commit threaded in, and one caller must pass `NULL`.**
+     `.datom_commit_and_mirror()` already holds the sha (`R/read_write.R:982`) and calls
+     `.datom_push_metadata_s3()` without it (`R/read_write.R:992`). One new argument; two callers --
+     that one, and the test-only legacy wrapper `.datom_write_metadata()` (`R/read_write.R:1014`),
+     which makes **no commit** and must pass `NULL`. So a test spelled "every stored entry carries a
+     `commit_sha`" passes or fails depending on which of those two produced the fixture; write it
+     against a real write.
+  4. **Deriving from git is implementable, and the derivation is exact -- probed on a real repo
+     (git2r 0.36.2).** `git2r::commits(repo, path = "{name}/metadata.json")` filters to the commits
+     touching that path, newest-first; a blob at a commit reads through `tree(cmt)[...]` +
+     `git2r::content()`; and recomputing `.datom_compute_metadata_sha()` on the parsed blob
+     reproduces the **recorded** version exactly. Iterating oldest-first therefore yields "the first
+     commit that introduced that version" (R21.3) with no extra bookkeeping. The same probe confirmed
+     a code-only commit is no version's producer, which is AC26 from the other side. Cost: one blob
+     read plus one hash per commit touching that path.
+  5. **OPEN, MUST DECIDE (default: hybrid, in one shared helper). Where does each door get the
+     value?** (a) **Merge from the stored copy** -- exact, one storage read per upload, but nothing
+     ever heals a stored copy that lost the field. (b) **Derive everything from git on every upload**
+     -- self-healing and needs no storage read, but costs finding 4's work per upload and grows with
+     history. (c) **Hybrid** -- merge what storage has, derive only what is missing. Default (c), and
+     **one helper that all three doors call**, because three copies of "keep `commit_sha`" is three
+     places to lose it. Accept the consequence deliberately: the first write after upgrade
+     **backfills** every historical entry, which has no identity impact and is precisely "derived,
+     never authored".
+  6. **OPEN, MUST DECIDE (default: yes). `datom_history()` must surface the field or nothing can read
+     it.** R21.8 says the stored copy exists *purely* for the git-less reader, and that reader's only
+     public route into this file is `datom_history()` (`R/query.R:190`), which builds a fixed
+     five-column frame and would drop it -- leaving the field readable only by hand-parsing JSON.
+     Default: add a `commit_sha` column, `NA` where there is none, abbreviated under
+     `short_hash = TRUE` like the other two hashes, and present on the **zero-row** frame too. Same
+     shape as Task 14's `kind` column, including that last clause.
+  7. **The clone's copy must never gain the field.** The patch happens on the way to storage and
+     nothing may write the merged history back to disk -- AC25's second clause is what pins it. And a
+     value that cannot be derived (shallow clone, rewritten history) must be **omitted**, never
+     assigned as `NULL` into the entry, or `jsonlite` writes `{}` where a sha belongs (the Task 7
+     trap, corrected in four places once already).
+  8. **No vocabulary entry and no format bump, and that is a real asymmetry rather than an
+     oversight.** The three append-only field vocabularies cover `metadata.json`, manifest entries
+     and the manifest top level; **version-history entries have none**, so adding `commit_sha` trips
+     no writer refusal. State the consequence rather than fixing it here: a 0.1.x build that has
+     never heard of the field still strips it through any of the three doors and nothing stops it.
+     That is tolerable *only* because the field is derived -- which is the argument R21.7 makes, and
+     is worth restating at the code site.
+  9. **P26 and P27 need per-door tests, by the guard-test rule** (the 2026-09-18 Decisions row): a
+     test for a guard must fail when that guard alone is removed. So one case per door, and the way
+     to know each case isolates its door is to delete that door's merge and watch **only** that case
+     redden. A single "after a repair the field is still there" test satisfies neither property.
+  10. **AC26's roxygen needs the worked example, not the principle.** Since Task 13 a set carries its
+      code into the same commit, so the concrete shape of the behaviour most likely to be reported as
+      a bug is: someone refactors, re-runs, gets byte-identical data, sees **no new version**, and
+      finds `commit_sha` pointing at a commit that **does not contain their current code**. Say that;
+      "versions are code-invariant" does not land.
+
 - [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
   - Confirm **every AC defined in `requirements.md`** has a dedicated test -- derive the list, do not
     trust a range written here. A hardcoded range has now gone stale **twice**: it once stopped at
