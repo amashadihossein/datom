@@ -285,9 +285,15 @@ datom_pull <- function(conn) {
   }
 
   # version_history.json
+  #
+  # This route makes no commit, so it has no commit to hand on and every entry's
+  # `commit_sha` is worked out from git. Uploading the clone's copy untouched is
+  # what would strip the field: the clone can never carry it, because that file is
+  # inside the commit it would name. See `R/version-commit.R`.
   history_path <- fs::path(table_dir, "version_history.json")
   if (fs::file_exists(history_path)) {
     data <- jsonlite::read_json(history_path)
+    data <- .datom_history_with_commit_shas(conn, name, data)
     s3_key <- .datom_artifact_meta_key(name, "version_history")
     .datom_storage_write_json(conn, s3_key, data)
     s3_keys <- c(s3_keys, s3_key)

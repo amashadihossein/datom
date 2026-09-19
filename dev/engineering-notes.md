@@ -825,3 +825,58 @@ to `.datom_commit_and_mirror()` must be an **absolute** path, since that functio
 it is given against `conn$path`. The failure is loud (`.datom_git_commit()` aborts "files do not
 exist"), so this costs minutes rather than correctness -- but repo-relative input has to be
 absolutised first.
+
+### Reading a file as one commit left it, and why tree indexing lies
+
+Landed 2026-09-19 with `commit_sha` on the stored version history (datom-sets Task 15). Both facts
+below were settled by running git2r 0.36.2, because the wrong one looks right.
+
+- **`git2r::revparse_single(repo, "<sha>:<path>")` is the whole mechanism.** It resolves git's own
+  `commit:path` syntax straight to the blob, and raises `Requested object could not be found` when
+  the path is absent at that commit. `git2r::content(blob)` then gives the text, split by lines.
+- **`tree(commit)["dir/file"]` returns an empty `list()` for a path that is not there** -- no error,
+  no NULL, and `length()` 0. So the obvious "index the tree, `tryCatch` the failure" shape cannot
+  tell absence from success. It also does not accept a slash-separated path at all: for a nested
+  file the index has to be applied one level at a time (`tree(cmt)["dm"]["metadata.json"]`).
+- **`git2r::commits(repo, path = )` filters to the commits that touched that path**, newest-first,
+  and `reverse = TRUE` gives oldest-first. That is enough to answer "which commit first produced
+  this version" with no extra bookkeeping: hash the document as each commit left it, and the first
+  match wins. A commit that did not touch the document is not in the list, which is what makes a
+  code-only commit correctly nobody's producer.
+- **`ls_tree()` + `lookup()` also works and costs more** -- it walks the whole tree per commit. It
+  is the right tool when you want the tree's contents (see the commit-shaped-test note above), and
+  the wrong one when you know the path.
+
+### A field only storage may carry has to be merged, not appended
+
+Same task. `version_history.json` exists in two copies -- the clone's, which is committed, and
+storage's -- and `commit_sha` can only ever live on the second, because the clone's copy is *inside*
+the commit that would name it. The shape of the defect that follows is general:
+
+- **The upload sends the whole file, so it overwrites rather than adds.** Three functions upload
+  that file (`.datom_push_metadata_s3()`, `.datom_sync_one_artifact()`, `.datom_sync_metadata()`),
+  each reading the clone's copy. Without a merge the field survives on the newest entry only, and
+  the loss happens on the **second ordinary write** of an artifact -- not in the repair verb, which
+  is where the design notes had put the hazard. Derive the list of upload sites (`grep -n
+  version_history R/*.R`) rather than trusting a count written down anywhere.
+- **Preserving is not enough on its own.** "An older build may strip this, and that is fine because
+  the value can be recomputed" is only true if something recomputes. An implementation that merely
+  carries the stored value forward passes every test about the field and quietly removes the
+  property that made stripping acceptable. Both halves, in one shared helper: keep what storage has,
+  work out only what is missing.
+- **Version-history entries have no field vocabulary**, unlike `metadata.json` and the manifest, so
+  adding a field there trips no writer refusal and needs no format bump. Convenient, and it also
+  means nothing stops an old build from stripping it -- state that at the code site rather than
+  treating the asymmetry as an oversight.
+
+### A guard that only fires on a rare route needs that route's test, not the obvious one
+
+Same task, and it is the concrete case for the guard-test rule. The write path hands the uploader the
+commit it just made, and the guard says: do not use it if storage already records one for that
+version. Nine tests covered the field and **none** of them reddened when that guard was deleted,
+because every ordinary write mints a *new* version, so the guard never runs.
+
+The route that reaches it is **reverting an artifact to earlier content**: the version already exists
+so no history entry is appended, but a new commit is made and handed over, and without the guard the
+entry is repointed at it. Ask what state makes a guard fire, then build that state -- a guard whose
+tests all run through the common path is untested by however many of them there are.

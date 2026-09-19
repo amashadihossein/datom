@@ -666,9 +666,16 @@
 
   s3_keys <- s3_metadata_key
 
-  # Sync version_history.json if it exists locally
+  # Sync version_history.json if it exists locally.
+  #
+  # The commit made above is threaded in, so the version this route just recorded
+  # names its producing commit without a git walk. Older entries keep whatever
+  # storage holds, or are worked out from git. See `R/version-commit.R`.
   if (fs::file_exists(history_path)) {
     history <- jsonlite::read_json(history_path)
+    history <- .datom_history_with_commit_shas(
+      conn, name, history, version = metadata_sha, commit_sha = commit_sha
+    )
     s3_history_key <- .datom_artifact_meta_key(name, "version_history")
     .datom_storage_write_json(conn, s3_history_key, history)
     s3_keys <- c(s3_keys, s3_history_key)

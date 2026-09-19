@@ -714,6 +714,15 @@
 #' one-element array. Those are normalised on the way in, so re-writing an
 #' identical payload is a no-op.
 #'
+#' **Your code does not move a version either, even though it travels in the same
+#' commit** (see `include_paths` below). Refactor your build script, re-run it,
+#' get the same members and tags, and nothing is minted: the write is the usual
+#' no-op. [datom_history()] then shows the version it showed before, with a
+#' `commit_sha` pointing at the commit that **first** produced that payload -- a
+#' commit that does not contain the code you just wrote. That is the recorded
+#' value doing its job rather than going stale; see [datom_history()] for why the
+#' commit is deliberately not part of the version.
+#'
 #' @section Where the payload lives:
 #' Two copies, at two deliberately different addresses. Git holds
 #' `{name}/set.json` at one stable path, modified in place, so git carries the

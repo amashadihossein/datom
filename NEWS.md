@@ -675,6 +675,47 @@ empty one.
     advice to re-run `datom_write()` with the source data now reaches tables
     only, where it is true.
 
+## Every version now records the commit that produced it
+
+`datom_history()` gains a **`commit_sha`** column, on populated rows and on the
+empty one, abbreviated with the other hashes under `short_hash = TRUE`. It is
+recorded for artifacts of either kind, since tables and sets share
+`version_history.json`. So a reader with storage access and no clone can get from
+a version to the commit that made it, which until now was answerable only by
+someone holding the repo.
+
+* **The value is derived, never authored.** No argument anywhere sets it. datom
+  takes it from the commit it has just made, or works it out from your git
+  history for a version that has none. The copy in your clone does **not** carry
+  it and cannot: `version_history.json` is committed *inside* the commit that
+  would name it. Only the copy in storage has it, which is why it exists at all
+  -- with a clone, `git log -p {name}/set.json` answers the same question
+  directly.
+* **`datom_validate(fix = TRUE)` no longer strips it.** The repair re-uploads
+  metadata from your clone, so without this it would remove the field on the way
+  past. It works the values out from git instead. The same holds for the two
+  write routes that mirror stored documents without making a commit of their own.
+* **A repo upgrading to this version backfills its existing history once**, at
+  its next write, and then settles down -- the version being written arrives with
+  its commit already in hand. A version whose commit cannot be worked out, from a
+  shallow clone or a rewritten history, omits the field and `datom_history()`
+  reports `NA`.
+* **`NA` is also what an older datom leaves behind.** A build from before this
+  release strips the field through any of those routes and nothing refuses it,
+  because version-history entries have no field vocabulary to trip. That is
+  tolerable only because the value can always be recomputed -- which is why datom
+  recomputes rather than merely preserving what it finds.
+* **A version still means content, not code**, and this is the part most likely
+  to look like a bug. Refactor your build script, re-run it, get identical data:
+  no new version is minted, and the recorded `commit_sha` still points at the
+  **earlier** commit -- one that does not contain the code you are looking at. It
+  names a commit that provably produces that version, not every commit that
+  could. Deliberate: a set exists to be cited, and if a comment fix minted a new
+  product version, "v47" would stop meaning anything.
+* Reverting an artifact to earlier content does not repoint that version's commit
+  either. The field answers "where did this version come from", not "what last
+  rewrote it".
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package

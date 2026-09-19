@@ -18,12 +18,45 @@ columns to 8 characters for readability. Set to FALSE for full hashes.}
 }
 \value{
 Data frame with columns: version, data_sha, timestamp, author,
-commit_message.
+commit_message, commit_sha.
 }
 \description{
 Shows version history for a table by reading \code{version_history.json}
 from S3. Returns the most recent \code{n} versions.
 }
+\section{A version is content, not code}{
+
+
+A datom version answers one question: \emph{is this the same content and declared
+metadata?} Nothing code-derived enters it. So \strong{a change that alters no content
+mints no new version}, and this is the behaviour most often reported as a bug.
+
+Concretely: you refactor your build script, re-run it, and get byte-identical
+data. The write is a no-op, \code{datom_history()} shows the same version it showed
+before, and its \code{commit_sha} still points at the \strong{earlier} commit -- the one
+that first produced that content, which does not contain the code you are
+looking at. That is the recorded value doing its job. It names a commit that
+provably produces the version; it does not name every commit that could.
+
+The commit is deliberately not part of the version. A set exists to be cited,
+and if a comment fix minted a new product version, "v47" would stop meaning
+anything.
+}
+
+\section{Where \code{commit_sha} comes from}{
+
+
+It is \strong{derived, never authored} -- no argument anywhere sets it. The copy in
+your clone does not carry it and cannot: \code{version_history.json} is committed
+\emph{inside} the commit that would name it. Only the copy in storage has it, and it
+is there for readers who have no clone. With a clone, \verb{git log -p \{name\}/set.json}
+answers the same question directly.
+
+\code{NA} means the value is not recorded and could not be worked out from this
+repo's git history -- a shallow clone or rewritten history, typically, or a
+version written by a datom too old to record it.
+}
+
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
 # local directory for object storage.

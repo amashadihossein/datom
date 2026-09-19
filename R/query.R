@@ -137,6 +137,35 @@ datom_list <- function(conn,
 #' Shows version history for a table by reading `version_history.json`
 #' from S3. Returns the most recent `n` versions.
 #'
+#' @section A version is content, not code:
+#'
+#' A datom version answers one question: *is this the same content and declared
+#' metadata?* Nothing code-derived enters it. So **a change that alters no content
+#' mints no new version**, and this is the behaviour most often reported as a bug.
+#'
+#' Concretely: you refactor your build script, re-run it, and get byte-identical
+#' data. The write is a no-op, `datom_history()` shows the same version it showed
+#' before, and its `commit_sha` still points at the **earlier** commit -- the one
+#' that first produced that content, which does not contain the code you are
+#' looking at. That is the recorded value doing its job. It names a commit that
+#' provably produces the version; it does not name every commit that could.
+#'
+#' The commit is deliberately not part of the version. A set exists to be cited,
+#' and if a comment fix minted a new product version, "v47" would stop meaning
+#' anything.
+#'
+#' @section Where `commit_sha` comes from:
+#'
+#' It is **derived, never authored** -- no argument anywhere sets it. The copy in
+#' your clone does not carry it and cannot: `version_history.json` is committed
+#' *inside* the commit that would name it. Only the copy in storage has it, and it
+#' is there for readers who have no clone. With a clone, `git log -p {name}/set.json`
+#' answers the same question directly.
+#'
+#' `NA` means the value is not recorded and could not be worked out from this
+#' repo's git history -- a shallow clone or rewritten history, typically, or a
+#' version written by a datom too old to record it.
+#'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
 #' @param n Maximum number of versions to return. Default 10.
@@ -144,7 +173,7 @@ datom_list <- function(conn,
 #'   columns to 8 characters for readability. Set to FALSE for full hashes.
 #'
 #' @return Data frame with columns: version, data_sha, timestamp, author,
-#'   commit_message.
+#'   commit_message, commit_sha.
 #' @export
 #'
 #' @examples
@@ -201,12 +230,16 @@ datom_history <- function(conn,
   )
 
   if (!is.list(history) || length(history) == 0L) {
+    # The zero-row frame carries every column the populated one does. A caller
+    # that selects a column on an empty result would otherwise fail only on the
+    # empty case -- which is how the last two added columns were found.
     return(data.frame(
       version = character(),
       data_sha = character(),
       timestamp = character(),
       author = character(),
       commit_message = character(),
+      commit_sha = character(),
       stringsAsFactors = FALSE
     ))
   }
@@ -228,6 +261,13 @@ datom_history <- function(conn,
       timestamp = entry$timestamp %||% NA_character_,
       author = author_val,
       commit_message = entry$commit_message %||% NA_character_,
+      # Tested rather than `%||%`-defaulted: `%||%` only catches NULL, and a
+      # document carrying `"commit_sha": {}` would hand a list to `data.frame()`.
+      commit_sha = if (.datom_is_text_scalar(entry$commit_sha)) {
+        as.character(entry$commit_sha)
+      } else {
+        NA_character_
+      },
       stringsAsFactors = FALSE
     )
   })
@@ -237,6 +277,7 @@ datom_history <- function(conn,
   if (isTRUE(short_hash)) {
     result$version <- .datom_abbreviate_sha(result$version)
     result$data_sha <- .datom_abbreviate_sha(result$data_sha)
+    result$commit_sha <- .datom_abbreviate_sha(result$commit_sha)
   }
 
   result

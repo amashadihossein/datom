@@ -916,13 +916,29 @@ datom_read <- function(conn,
 #' to S3. Called AFTER git commit+push succeeds to maintain local → git → S3
 #' ordering.
 #'
+#' **The stored history carries one field the clone's copy cannot**, and this is
+#' the reason `commit_sha` exists as an argument here: the clone's
+#' `version_history.json` is inside the commit that would name it, so only a
+#' storage-bound copy can say which commit produced a version. The upload sends
+#' the clone's file wholesale, so without the merge below the field would survive
+#' on the newest version only -- the second write of an artifact would erase the
+#' first version's commit id.
+#'
+#' `commit_sha` is **derived, never authored**. It reaches this function as an
+#' argument only because the caller one layer up already holds the commit it just
+#' made; no exported verb accepts it, and every other entry's value is worked out
+#' from git. See `R/version-commit.R`.
+#'
 #' @param conn A `datom_conn` object.
 #' @param name Table name.
 #' @param metadata Named list for metadata.json.
 #' @param metadata_sha SHA of the metadata (the datom "version").
+#' @param commit_sha The commit that produced `metadata_sha`, or `NULL` from a
+#'   caller that made no commit.
 #' @return Invisible character vector of S3 keys written.
 #' @keywords internal
-.datom_push_metadata_s3 <- function(conn, name, metadata, metadata_sha) {
+.datom_push_metadata_s3 <- function(conn, name, metadata, metadata_sha,
+                                    commit_sha = NULL) {
   # Read local version_history.json (written by .datom_write_metadata_local)
   history_path <- fs::path(conn$path, name, "version_history.json")
   history <- if (fs::file_exists(history_path)) {
@@ -930,6 +946,11 @@ datom_read <- function(conn,
   } else {
     list()
   }
+
+  # In memory, on the way out. The tracked file stays exactly as committed.
+  history <- .datom_history_with_commit_shas(
+    conn, name, history, version = metadata_sha, commit_sha = commit_sha
+  )
 
   s3_metadata_key <- .datom_artifact_meta_key(name, "metadata")
   s3_history_key <- .datom_artifact_meta_key(name, "version_history")
@@ -989,7 +1010,9 @@ datom_read <- function(conn,
     .datom_storage_upload(conn, upload$path, upload$key)
   }
 
-  .datom_push_metadata_s3(conn, name, meta, metadata_sha)
+  # The commit is threaded through rather than re-derived: this function made it,
+  # so the stored history can name it without a git walk.
+  .datom_push_metadata_s3(conn, name, meta, metadata_sha, commit_sha = commit_sha)
 
   # The manifest completes the round trip. Read back from the clone rather than
   # passed in, so the mirrored copy is exactly the committed one.
@@ -1008,6 +1031,11 @@ datom_read <- function(conn,
 #' Calls [.datom_write_metadata_local()] then [.datom_push_metadata_s3()].
 #' Kept for backward compatibility. Does NOT commit or push.
 #'
+#' **It makes no commit, so it has no `commit_sha` to hand on**, and that matters
+#' for anything asserted about the history it produces: the stored entries carry a
+#' commit only where one can be worked out from git. A test that means "every
+#' stored entry names its commit" has to drive a real write.
+#'
 #' @inheritParams .datom_write_metadata_local
 #' @return Invisible list with metadata_sha, git_paths, and s3_keys.
 #' @keywords internal
@@ -1015,7 +1043,9 @@ datom_read <- function(conn,
   local_result <- .datom_write_metadata_local(
     conn, name, metadata, metadata_sha, message = message
   )
-  s3_keys <- .datom_push_metadata_s3(conn, name, metadata, metadata_sha)
+  s3_keys <- .datom_push_metadata_s3(
+    conn, name, metadata, metadata_sha, commit_sha = NULL
+  )
 
   invisible(list(
     metadata_sha = metadata_sha,

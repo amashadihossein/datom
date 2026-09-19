@@ -1194,7 +1194,7 @@ own; landing it first is what makes Task 6's failure loud.
     (call sites as shipped): `datom_list()` (`R/query.R:80`) and `datom_summary()`
     (`R/summary.R:50`) abort with their own wording on an unreadable manifest; `datom_status()`
     (`R/query.R:468`) still tolerates one and reports it unavailable;
-    `.datom_status_input_files()` (`R/query.R:579`) and `datom_sync_manifest()` (`R/sync.R:596`)
+    `.datom_status_input_files()` (`R/query.R:579`) and `datom_sync_manifest()` (`R/sync.R:602`)
     still fall back to an empty manifest when the clone has no file.
   - **New: `.datom_manifest_skeleton(project_name = NULL)`** (`R/sync.R:759`) -- the one
     empty-manifest shape. It replaced three hand-built copies, now three calls to it:
@@ -1393,7 +1393,7 @@ own; landing it first is what makes Task 6's failure loud.
     2. **THREE DECOY SITES that look like the rename and must not be renamed.** Each is a
        user-facing **return-value** field named `tables`, not the manifest key:
        `datom_sync()`'s result (`R/sync.R:171`, `R/sync.R:222`), `datom_validate()`'s result
-       (`R/validate.R:205`), and `datom_status()`'s result (`R/query.R:495`). A `grep tables`
+       (`R/validate.R:205`), and `datom_status()`'s result (`R/query.R:536`). A `grep tables`
        sweep hits all three. Renaming them is a **separate** breaking change to three return
        shapes that R8 does not ask for -- R8.1 renames the manifest key only. If it ever looks
        desirable, it needs its own decision and its own NEWS entry.
@@ -3395,7 +3395,7 @@ own; landing it first is what makes Task 6's failure loud.
     regenerates and NEWS gains an entry.
 
     **I19 HOLDS TODAY, AND THE REASON IS PLACEMENT RATHER THAN A CHECK.** The no-change branch is at
-    `R/set.R:967` and returns above everything that could stage a file: the payload write, the
+    `R/set.R:978` and returns above everything that could stage a file: the payload write, the
     metadata document, the manifest row, and the single `.datom_commit_and_mirror()` call. So the
     obvious implementation of this task -- validate the paths up front, hand them to that same commit
     call -- keeps the guarantee for free. This is Task 12's shape exactly: true because of where one
@@ -3628,7 +3628,7 @@ own; landing it first is what makes Task 6's failure loud.
   sweep wants it named, the naming helper is `.datom_validate_unfixable_tables()` and it already
   reads the `kind` column it would need.
 
-- [ ] **15. Version-to-commit link (`commit_sha`)**
+- [x] **15. Version-to-commit link (`commit_sha`)** &nbsp; **[DONE 2026-09-19 -- see the DONE record]**
   - Applies to **all** artifact kinds, not just sets -- `version_history.json` is shared. Placed
     after Task 14 because the repair-path behavior below needs `datom_validate()` to exist.
   - Add `commit_sha` to the **storage copy** of the `version_history.json` entry, beside `author`
@@ -3661,9 +3661,9 @@ own; landing it first is what makes Task 6's failure loud.
 
      | Function | Reached from |
      |---|---|
-     | `.datom_push_metadata_s3()` (`R/read_write.R:939`) | **every ordinary write**, via `.datom_commit_and_mirror()` |
-     | `.datom_sync_one_artifact()` (`R/sync.R:292`) | `datom_validate(fix = TRUE)` **and** `datom_write(conn)` with no `data`/`name` |
-     | `.datom_sync_metadata()` (`R/utils-sha.R:673`) | `datom_write(conn, name = X)`, the metadata-only route |
+     | `.datom_push_metadata_s3()` (`R/read_write.R:940`) | **every ordinary write**, via `.datom_commit_and_mirror()` |
+     | `.datom_sync_one_artifact()` (`R/sync.R:272`) | `datom_validate(fix = TRUE)` **and** `datom_write(conn)` with no `data`/`name` |
+     | `.datom_sync_metadata()` (`R/utils-sha.R:576`) | `datom_write(conn, name = X)`, the metadata-only route |
 
      Four public entry points over three functions. Guarding only the repair leaves the field
      strippable by two **write** verbs, which is worse: a repair is at least something a person
@@ -3676,12 +3676,12 @@ own; landing it first is what makes Task 6's failure loud.
      `identical()`, which is exactly the property that makes the wholesale upload lossy the moment
      one copy is meant to carry more.
   3. **The capture point needs the commit threaded in, and one caller must pass `NULL`.**
-     `.datom_commit_and_mirror()` already holds the sha (`R/read_write.R:982`) and calls
-     `.datom_push_metadata_s3()` without it (`R/read_write.R:992`). One new argument; two callers --
-     that one, and the test-only legacy wrapper `.datom_write_metadata()` (`R/read_write.R:1014`),
-     which makes **no commit** and must pass `NULL`. So a test spelled "every stored entry carries a
-     `commit_sha`" passes or fails depending on which of those two produced the fixture; write it
-     against a real write.
+     `.datom_commit_and_mirror()` already holds the sha (`R/read_write.R:997`) and, as of the audit,
+     called `.datom_push_metadata_s3()` without it -- it now passes it (`R/read_write.R:1015`). One
+     new argument; two callers -- that one, and the test-only legacy wrapper
+     `.datom_write_metadata()` (`R/read_write.R:1042`), which makes **no commit** and must pass
+     `NULL`. So a test spelled "every stored entry carries a `commit_sha`" passes or fails depending
+     on which of those two produced the fixture; write it against a real write.
   4. **Deriving from git is implementable, and the derivation is exact -- probed on a real repo
      (git2r 0.36.2).** `git2r::commits(repo, path = "{name}/metadata.json")` filters to the commits
      touching that path, newest-first; a blob at a commit reads through `tree(cmt)[...]` +
@@ -3705,7 +3705,7 @@ own; landing it first is what makes Task 6's failure loud.
      of "keep `commit_sha`" is three places to lose it.
   6. **SETTLED 2026-09-19 (owner): `datom_history()` gains a `commit_sha` column.** R21.8 says the
      stored copy exists *purely* for the git-less reader, and that reader's only public route into
-     this file is `datom_history()` (`R/query.R:190`), which builds a fixed five-column frame. Drop
+     this file is `datom_history()` (`R/query.R:202`), which built a fixed five-column frame. Drop
      the column and the feature does not exist for the only audience it was built for -- the field
      would be reachable only by hand-parsing JSON. `NA` where there is none, abbreviated under
      `short_hash = TRUE` like the other two hashes, and **present on the zero-row frame too**, which
@@ -3713,7 +3713,7 @@ own; landing it first is what makes Task 6's failure loud.
   6a. **One rule, stated once rather than as two separate facts: `commit_sha` is DERIVED, NEVER
      AUTHORED, so no user-facing verb accepts it.** `.datom_push_metadata_s3()` takes it as an
      argument only because it sits one layer below the caller that already holds it
-     (`R/read_write.R:982`), and none of the three doors is exported -- no `.datom_push_metadata_s3`,
+     (`R/read_write.R:997`), and none of the three doors is exported -- no `.datom_push_metadata_s3`,
      `.datom_sync_one_artifact` or `.datom_sync_metadata` entry exists in `NAMESPACE`, checked. That
      one sentence covers both the internal threading and why the repair path re-derives instead of
      trusting whatever it was handed.
@@ -3738,6 +3738,54 @@ own; landing it first is what makes Task 6's failure loud.
       a bug is: someone refactors, re-runs, gets byte-identical data, sees **no new version**, and
       finds `commit_sha` pointing at a commit that **does not contain their current code**. Say that;
       "versions are code-invariant" does not land.
+
+  **DONE 2026-09-19.** Tests 4067 -> **4107** (+40), FAIL 0 / WARN 0 / SKIP 0; `R CMD check` 0/0/0
+  with examples and vignettes run; `dev/check-spec.R` 9/9.
+
+  - **One shared helper, three call sites, and a new file to hold it.**
+    `.datom_history_with_commit_shas()` (`R/version-commit.R:61`) is called from
+    `R/read_write.R:951`, `R/sync.R:296` and `R/utils-sha.R:676` -- the three uploads of
+    `version_history.json`. It merges what storage already records, then derives only what is still
+    missing, and only when something is (`R/version-commit.R:102` and `R/version-commit.R:146`). The
+    file exists rather than three lines in the uploader because the whole subject is a field that
+    disappears in silence; a reader looking for "where does `commit_sha` come from" now has one
+    place to look.
+  - **The capture point is threaded, not re-derived.** `.datom_commit_and_mirror()` passes the commit
+    it just made (`R/read_write.R:1015`), so the ordinary write pays no git walk. The legacy wrapper
+    passes `NULL` (`R/read_write.R:1046`) and its roxygen now says why a test that means "every
+    stored entry names its commit" cannot use it.
+  - **Derivation is `revparse_single(repo, "<sha>:<path>")`, not tree indexing**, and that choice is
+    load-bearing: indexing a tree with a path that is not there returns an empty `list()` rather than
+    raising, so absence and success look the same. Written up in `dev/engineering-notes.md` with the
+    two other git2r facts the walk rests on.
+  - **`datom_history()` gains the column** (`R/query.R:202`), abbreviated with the other hashes under
+    `short_hash = TRUE` and present on the zero-row frame. Tested as three separate cases, because
+    each is a separate mistake.
+  - **Eleven deliberate breakages, and ten reddened the case they should have.** The eleventh found a
+    real coverage hole rather than a spare guard, and it is the one worth carrying: the rule "do not
+    repoint a version that storage already records" never fires on an ordinary write, because every
+    ordinary write mints a **new** version. Deleting it left all nine existing cases green. The route
+    that reaches it is **reverting an artifact to earlier content** -- the version already exists so
+    nothing is appended to history, but a new commit is made and handed to the uploader, and without
+    the rule that version's recorded commit moves to it. A test for that now exists, and the
+    generalisation is in `dev/engineering-notes.md`: build the state that makes a guard fire, because
+    a guard whose tests all run the common path is untested by however many of them there are.
+  - **Door 1's breakage reddens six cases, and that is not a coverage gap.** Every fixture in the
+    file is built by an ordinary write, so removing that merge disturbs everything downstream. The
+    isolation that matters holds in the other direction: door 1's own case reddens for **D1 only**,
+    door 2's for D1/D2/D4 and door 3's for D1/D3/D4 -- i.e. for its own door and for the two things
+    genuinely upstream of it.
+  - **Storage's copy wins over the derived value, which is the half derivation cannot cover.** A
+    recorded commit that git can no longer reproduce -- shallow clone, rewritten history -- survives
+    the next upload, and there is a case for it. Removing the merge while keeping derivation reddens
+    that one case and nothing else, which is what tells the two halves apart.
+  - **Nothing writes the field into the clone**, asserted twice: the tracked file carries no such key
+    after two writes, and the repo is left with nothing staged and nothing unstaged.
+  - **No identity impact, no vocabulary entry, no format bump.** `metadata_sha` hashes
+    `metadata.json`, not `version_history.json`, so no artifact gains a version. Finding 8's
+    asymmetry stands as recorded: an older build still strips the field and nothing refuses it, which
+    is stated at the top of `R/version-commit.R` rather than treated as a gap.
+  - **Pathway impact: none** -- no new lookup route; an existing history read gains a field.
 
 - [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
   - Confirm **every AC defined in `requirements.md`** has a dedicated test -- derive the list, do not
@@ -3943,7 +3991,7 @@ rather than in Phase D beside the task it blocks.
     emits.** Verified: `metadata.json` is written as exactly the object `.datom_build_metadata()`
     produced (`R/read_write.R`, `write_json(metadata, ...)` inside
     `.datom_write_metadata_local()`), and that object has no `name` key; the `name` at
-    `R/read_write.R:1163` and `R/read_write.R:1225` is `datom_write()`'s **return value**, not the
+    `R/read_write.R:1193` and `R/read_write.R:1255` is `datom_write()`'s **return value**, not the
     document.
     So a builder-derived allowlist will not contain `name`, this fixture's hash **will** change, and
     the golden test fails -- while **no real identity moves at all**, because no stored document ever
@@ -5609,7 +5657,7 @@ vehicle**: it is done, and its check is *why* a late addition costs what it cost
     1. **NEITHER BUILDER CAN SOURCE THE NAME ITSELF.** `.datom_build_metadata()` and
        `.datom_build_set_metadata()` take no connection -- by design, since they are pure -- so the
        change is a new argument on each plus the two call sites that fill it
-       (`R/read_write.R:1213`, `R/set.R:955`). **The new argument goes LAST in the signature**:
+       (`R/read_write.R:1243`, `R/set.R:964`). **The new argument goes LAST in the signature**:
        existing tests call `.datom_build_metadata(df, "sha", ...)` positionally in a dozen places, so
        an argument inserted in the middle silently shifts `custom` into `table_type`.
     2. **OPEN (default: yes, same commit) -- THE SAME DEFECT IS IN LINEAGE, AND THERE THE LABEL IS
