@@ -760,3 +760,59 @@ connection. **For the test**: search the serialized bytes for a token **value** 
 not for a field name -- a dev-loaded package keeps source references, so the serialized closure
 carries the text of its own source file, which mentions `github_pat` in an example. And use
 `grepRaw()`: `rawToChar()` refuses the embedded NULs in serialized R objects.
+
+### What git2r stages, and what a commit-shaped test actually proves
+
+Landed 2026-09-18 with `datom_repo_commit()` / `datom_repo_push()` (datom-sets Task 12). Every
+claim here was settled by **running git2r**, because each of them reads plausibly either way.
+
+**Staging.** `.datom_git_commit()` has one staging call with two spellings, and they are not
+interchangeable:
+
+| Call | `.gitignore` | deletions | Use for |
+|---|---|---|---|
+| `git2r::add(repo, files)` -- default | **respected** | **staged** | everything, including `files = "."` |
+| `git2r::add(repo, files, force = TRUE)` -- what `staged_deletions = TRUE` sets | **ignored -- gitignored files ARE staged** | staged | staging a path git would refuse |
+
+- **`files = "."` is a legal add-all through the ordinary helper.** `fs::file_exists(".")` is
+  `TRUE`, so it passes the existence pre-check, and default flags give exactly "what `git add .`
+  would stage". No separate staging code is needed for an add-all wrapper.
+- **`staged_deletions = TRUE` is the trap.** It exists to skip the existence check, which is what
+  an author reaches for to make deletions work -- and it silently starts staging gitignored files.
+  It is also unnecessary, since default flags already stage deletions.
+- **An explicitly named gitignored path is dropped in SILENCE.** `git2r::add(repo, "ignored.txt")`
+  raises no error and stages nothing. `.datom_git_commit()` cannot notice, because it only objects
+  when **nothing at all** is staged and datom's own files always are -- so the commit succeeds
+  carrying everything except the file the caller asked for. Any feature that takes a caller-supplied
+  file list (datom-sets Task 13's `include_paths`) has to check for this itself.
+- **`.datom_git_commit()` returning HEAD's SHA on an empty staging is a SUCCESS value, not a
+  sentinel.** A wrapper that must report "nothing to do" cannot get that from the return value; the
+  cheap way is to capture HEAD before and compare after, which is what `datom_repo_commit()` does.
+
+**`git2r::status()` reports an untracked DIRECTORY, not its contents.** A new `dp/notes.txt` in an
+otherwise-untracked `dp/` shows up as `dp/`. Assert the directory, or add the file to a directory
+git already tracks. This also reaches `datom_status()`, which passes git's answer through.
+
+**Asserting on a commit's real tree.** A test that mocks `.datom_git_commit()` and inspects the
+`files` argument it captured proves the wrapper passed a list, **not** that the commit contains that
+list -- so it stays green through an add-all refactor, which is exactly the regression the
+machine-commit isolation guarantee exists to catch. Read the real tree instead:
+
+```r
+entries <- git2r::ls_tree(repo = repo, tree = git2r::tree(commit))
+paths   <- paste0(entries$path, entries$name)   # `path` carries a trailing slash
+blob    <- git2r::lookup(repo, entries$sha[paths == "R/foo.R"])
+git2r::content(blob)                            # the bytes the commit holds
+```
+
+- **Assert content, not presence, for a tracked file.** The path is in the tree either way if the
+  file was committed earlier; the claim worth making is that the tree still holds the *old* bytes.
+- **Assert the working tree separately.** A write that "helpfully" committed or reset the edit are
+  two different defects, and only the second leaves the tree clean.
+
+**`fs::path_rel()` with a relative first argument resolves it against the working directory**, so
+`fs::path_rel("dp/build.R", "/tmp/repo")` returns `"../../private/tmp/dp/build.R"`. Anything handed
+to `.datom_commit_and_mirror()` must be an **absolute** path, since that function relativises what
+it is given against `conn$path`. The failure is loud (`.datom_git_commit()` aborts "files do not
+exist"), so this costs minutes rather than correctness -- but repo-relative input has to be
+absolutised first.
