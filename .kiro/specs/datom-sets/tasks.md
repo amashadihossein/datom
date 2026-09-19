@@ -173,6 +173,21 @@ were passing whatever the code did.
 (tests run separately). Next is **Task 15**
 (the version-to-commit link, `commit_sha`), then Tasks 27 and 28, then the sweep.
 
+**TASK 15 IS AUDITED AND STARTABLE COLD (2026-09-19), WITH NOTHING OPEN -- and the audit moves where
+the work is.** Eleven findings in its body, both decisions settled by the owner the same day at their
+defaults. The one thing to carry in before reading anything else: **the field this task adds is
+stripped by the ordinary write path, not only by the repair the body describes.** Three functions
+write the storage copy of `version_history.json`, and the busiest of them uploads the clone's copy
+wholesale -- so the second ordinary write erases the first version's commit id, before a repair is
+anywhere in the picture. All three therefore go through **one** helper that keeps what storage
+already has and derives only what is missing; deriving is **required rather than preferred**, because
+the argument that makes an older build's stripping tolerable ("it can always be re-derived") is false
+if nothing ever derives. The derivation was probed on a real repo rather than reasoned about:
+recomputing the version hash from each committed `metadata.json` reproduces the recorded version
+exactly, oldest-first gives the first producing commit, and a code-only commit is correctly no
+version's producer. `datom_history()` gains a `commit_sha` column, because the stored copy exists for
+the reader with no clone and that verb is their only route to it.
+
 **TASK 14 IS CLOSED, AND VALIDATION NOW UNDERSTANDS BOTH KINDS OF ARTIFACT.** It looked for a
 parquet object for every artifact, so a set reported its data missing every single time; the payload
 address now comes from the kind the artifact's own metadata declares. A set is checked past that:
@@ -3635,8 +3650,9 @@ own; landing it first is what makes Task 6's failure loud.
   - _Requirements: R20, R21. Invariants: I21, I22, I23. Properties: P26, P27. Acceptance: AC25,
     AC26. No pathway impact (no new lookup route -- the existing history read gains a field)._
 
-  **PRE-START AUDIT (2026-09-19), cold, and it moves the centre of this task.** Ten findings. Two
-  must be decided before implementation; everything else is settled here. Every claim below was
+  **PRE-START AUDIT (2026-09-19), cold, and it moves the centre of this task. NOTHING IS OPEN --
+  both decisions were settled by the owner the same day, at the defaults (findings 5 and 6).** Eleven
+  findings. Every claim below was
   checked against the tree or probed by running code -- the probes are named where they matter,
   because this task's whole subject is a field that disappears silently.
 
@@ -3674,22 +3690,33 @@ own; landing it first is what makes Task 6's failure loud.
      commit that introduced that version" (R21.3) with no extra bookkeeping. The same probe confirmed
      a code-only commit is no version's producer, which is AC26 from the other side. Cost: one blob
      read plus one hash per commit touching that path.
-  5. **OPEN, MUST DECIDE (default: hybrid, in one shared helper). Where does each door get the
-     value?** (a) **Merge from the stored copy** -- exact, one storage read per upload, but nothing
-     ever heals a stored copy that lost the field. (b) **Derive everything from git on every upload**
-     -- self-healing and needs no storage read, but costs finding 4's work per upload and grows with
-     history. (c) **Hybrid** -- merge what storage has, derive only what is missing. Default (c), and
-     **one helper that all three doors call**, because three copies of "keep `commit_sha`" is three
-     places to lose it. Accept the consequence deliberately: the first write after upgrade
-     **backfills** every historical entry, which has no identity impact and is precisely "derived,
-     never authored".
-  6. **OPEN, MUST DECIDE (default: yes). `datom_history()` must surface the field or nothing can read
-     it.** R21.8 says the stored copy exists *purely* for the git-less reader, and that reader's only
-     public route into this file is `datom_history()` (`R/query.R:190`), which builds a fixed
-     five-column frame and would drop it -- leaving the field readable only by hand-parsing JSON.
-     Default: add a `commit_sha` column, `NA` where there is none, abbreviated under
-     `short_hash = TRUE` like the other two hashes, and present on the **zero-row** frame too. Same
-     shape as Task 14's `kind` column, including that last clause.
+  5. **SETTLED 2026-09-19 (owner): keep what storage has AND derive the gaps, in ONE shared helper
+     all three doors call. It is REQUIRED, not preferred, and the reason is the sentence in finding
+     8.** The three candidates were: (a) merge from the stored copy only, (b) derive everything from
+     git on every upload, (c) both -- merge, then derive only what is missing. **(a) alone makes
+     finding 8's tolerance a lie**: "an older build strips the field, and that is tolerable because
+     the value can always be re-derived" is only true if something, somewhere, derives. Under (a)
+     nothing ever does, so a stripped field is gone for good -- and an implementation of (a) passes
+     every test this task will write while quietly removing the property that justifies the whole
+     design. That is why (c) is a requirement of the design rather than the nicer of two options.
+     **Cost is one-time and there is no standing tax**: derivation runs per **missing** entry, so an
+     upgraded repo backfills once and the steady state is 0-1 derivations per write. Backfilling has
+     no identity impact and is precisely "derived, never authored". One helper, because three copies
+     of "keep `commit_sha`" is three places to lose it.
+  6. **SETTLED 2026-09-19 (owner): `datom_history()` gains a `commit_sha` column.** R21.8 says the
+     stored copy exists *purely* for the git-less reader, and that reader's only public route into
+     this file is `datom_history()` (`R/query.R:190`), which builds a fixed five-column frame. Drop
+     the column and the feature does not exist for the only audience it was built for -- the field
+     would be reachable only by hand-parsing JSON. `NA` where there is none, abbreviated under
+     `short_hash = TRUE` like the other two hashes, and **present on the zero-row frame too**, which
+     is the clause Task 14 and Task 6 both had to fix after the fact.
+  6a. **One rule, stated once rather than as two separate facts: `commit_sha` is DERIVED, NEVER
+     AUTHORED, so no user-facing verb accepts it.** `.datom_push_metadata_s3()` takes it as an
+     argument only because it sits one layer below the caller that already holds it
+     (`R/read_write.R:982`), and none of the three doors is exported -- no `.datom_push_metadata_s3`,
+     `.datom_sync_one_artifact` or `.datom_sync_metadata` entry exists in `NAMESPACE`, checked. That
+     one sentence covers both the internal threading and why the repair path re-derives instead of
+     trusting whatever it was handed.
   7. **The clone's copy must never gain the field.** The patch happens on the way to storage and
      nothing may write the merged history back to disk -- AC25's second clause is what pins it. And a
      value that cannot be derived (shallow clone, rewritten history) must be **omitted**, never
@@ -6238,3 +6265,8 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-18 | **(implemented, Task 14) A test of mine was passing through the wrong guard, and the probe is what found it.** The never-re-upload test first modified the clone's payload, which made it pass through the hash comparison and stay green with the absence check deleted -- so the rule it names, that stored bytes a version pins are never overwritten, was unasserted. It now leaves the clone matching and watches for the upload call. Same shape as Task 13's I19 finding: a test asserting a value where the behaviour lives elsewhere. | Task 14 DONE record, `tests/testthat/test-validate-sets.R` |
 | 2026-09-18 | **(review of Task 14, accepted) The set-payload restore fires on TWO public routes, and the behaviour stays on both.** `.datom_sync_data_metadata()` is called by `datom_validate(fix = TRUE)` **and** by `datom_write(conn)` with no `data` and no `name`. Restoring on the second is right -- that route mirrors the clone's authoritative state to storage, so syncing a set's metadata while leaving the payload it describes missing would be the odd half -- but every description said "repair", which would read as a bug the first time someone saw it fire under a write verb. Four wordings fixed (the `name` parameter, the interactive prompt, the specification's `datom_validate()` section, and this spec's own summary) and **`.datom_sync_table_metadata()` renamed to `.datom_sync_one_artifact()`**: it handles either kind and can upload a payload, so both halves of the old name were false and a grep for where a set reaches storage on that route missed it. Root cause is one thing, not four: the path went kind-agnostic and kept its table-only vocabulary -- the class Task 6 closed for `manifest$tables`. | Task 14 DONE record, `R/sync.R`, `R/read_write.R`, `dev/datom_specification.md` |
 | 2026-09-18 | **(rule, from two instances) A guard's test must fail when that guard ALONE is removed.** Task 13's I19 coverage asserted a returned value while the behaviour lived in git, and Task 14's never-re-upload test passed through the hash comparison while the absence check was the rule it named. Twice makes it a pattern, so it is stated as a rule rather than logged as a second incident: when a behaviour is protected by more than one condition, each condition needs a case that isolates it, and the way to know is to delete that condition and watch. A test that stays green under the deletion is testing a different guarantee than its name claims. **Task 17 harvests this into `.github/copilot-instructions.md`**, where the test discipline lives. | Task 13 and Task 14 DONE records, Task 17 |
+| 2026-09-19 | **(pre-start audit, Task 15) The `commit_sha` strip trap has THREE doors, and the body named the one that matters least.** Three functions write the storage copy of `version_history.json`: the ordinary write path (`.datom_push_metadata_s3()`, `R/read_write.R:939`), the mirror/repair path (`.datom_sync_one_artifact()`, `R/sync.R:292`, reached from both `datom_validate(fix = TRUE)` and `datom_write(conn)`), and the metadata-only write route (`.datom_sync_metadata()`, `R/utils-sha.R:673`). The first reads the clone's file and uploads it **wholesale**, and the clone's copy can never carry the field (R21.6) -- so the second ordinary write erases the first version's id, with no repair involved. Probed rather than read: the stored and clone copies are `identical()` today, which is what makes a wholesale upload lossy the moment one copy is meant to carry more. Guarding only the repair path would leave the field strippable by two **write** verbs. | Task 15 audit findings 1-3 |
+| 2026-09-19 | **(decision, Task 15) Keep what storage has AND derive the gaps, in one shared helper -- and it is REQUIRED, not preferred.** Merging alone (no derivation anywhere) makes the design's own tolerance false: "an older build strips it, which is survivable because it can always be re-derived" holds only if something derives. An implementation that merges and never derives passes every test this task will write while quietly removing the property that justifies storing the field at all -- so this belongs in the **task body**, not only here. Cost is per **missing** entry: an upgraded repo backfills once and the steady state is 0-1 derivations per write, so there is no standing tax to mitigate. | Task 15 audit finding 5 |
+| 2026-09-19 | **(decision, Task 15) `datom_history()` gains a `commit_sha` column, zero-row frame included.** The stored copy exists purely for a reader with no clone (R21.8), and that verb is their only route into the file -- without the column the field is reachable only by hand-parsing JSON, so the feature would not exist for its only audience. | Task 15 audit finding 6 |
+| 2026-09-19 | **(rule, Task 15) `commit_sha` is derived, never authored: no user-facing verb accepts one.** `.datom_push_metadata_s3()` takes it as an argument only because it sits one layer below the caller that already holds the commit, and none of the three doors is exported (checked against `NAMESPACE`). Stating it as one rule rather than as two facts is deliberate -- it covers both the internal threading and why the repair path re-derives instead of trusting what it was handed. | Task 15 audit finding 6a, I22 |
+| 2026-09-19 | **(pre-start audit, Task 15) Deriving the producing commit from git is exact, and was probed rather than assumed (git2r 0.36.2).** `git2r::commits(repo, path = "{name}/metadata.json")` filters to the commits touching that path; a blob at a commit reads through `tree(cmt)[...]` + `git2r::content()`; and recomputing `.datom_compute_metadata_sha()` on the parsed blob reproduces the **recorded** version exactly, so iterating oldest-first yields "the first commit that introduced that version" (R21.3) with no extra bookkeeping. The same probe confirmed a code-only commit is no version's producer, which is AC26 from the other side. Cost: one blob read plus one hash per commit touching that path. | Task 15 audit finding 4 |
