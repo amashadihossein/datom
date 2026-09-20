@@ -130,7 +130,7 @@ test_that("returns TRUE when namespace is free (no manifest on S3)", {
   expect_true(.datom_check_namespace_free(conn))
 })
 
-test_that("aborts when namespace is occupied by another project", {
+test_that("aborts when namespace is occupied by another project (AC22)", {
   conn <- mock_datom_conn(list())
 
   local_mocked_bindings(
@@ -229,7 +229,7 @@ test_that(".datom_check_namespace_free's occupied abort carries a condition clas
   )
 })
 
-test_that(".datom_check_namespace_free refuses when it cannot reach the store", {
+test_that(".datom_check_namespace_free refuses when it cannot reach the store (AC22)", {
   # FAILS CLOSED, and it did not used to. Returning "free" for a namespace this
   # connection could not read is a verification check silently removing itself,
   # which this project's compatibility posture forbids at any stage -- breaking
@@ -255,7 +255,7 @@ test_that(".datom_check_namespace_free refuses when it cannot reach the store", 
   expect_no_match(msg, "force", fixed = TRUE)
 })
 
-test_that(".datom_check_namespace_free's two refusals are distinguishable", {
+test_that(".datom_check_namespace_free's two refusals are distinguishable (AC22)", {
   # Occupied and unverified are different answers with different recourse, so a
   # caller must be able to tell them apart without reading English.
   conn <- mock_datom_conn(list())
@@ -281,7 +281,7 @@ test_that(".datom_check_namespace_free's two refusals are distinguishable", {
 # with datom_init_repo() in test-conn.R. Asserting it here would look like coverage
 # and prove nothing: an abort has always escaped this function.
 
-test_that(".datom_check_namespace_free names the backend it checked", {
+test_that(".datom_check_namespace_free names the backend it checked (AC22)", {
   # A message that says S3 to somebody using a local store, or prints s3:// in
   # front of a filesystem path, is confidently wrong -- which this spec has
   # repeatedly judged worse than saying nothing.

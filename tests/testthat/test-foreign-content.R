@@ -238,3 +238,84 @@ test_that("datom_status reports foreign dirty files as git state, not as a datom
   expect_identical(status$tables$count, 1L)
   expect_true(suppressMessages(datom_validate(fx$conn))$valid)
 })
+
+
+# --- R15/design 19.7: the sweep-in is the contract, not a defect ---------------
+#
+# Task 12 wrote everything else about `datom_repo_commit()` and deliberately left
+# this one case to the acceptance sweep, because its fixture is a HALF-FAILED
+# WRITE -- local metadata on disk with no commit behind it -- which nothing else
+# in that task needed to build.
+#
+# The behaviour is ACCEPTED, not tolerated. `paths = NULL` promises to stage
+# whatever the working tree holds, so silently excluding datom's own files would
+# make the argument lie; and sweeping them in moves git ahead of storage, which is
+# the safe direction of the two. The roxygen says so and names the repair. What was
+# missing was a test, so a later "tidy-up" that excluded datom paths would have
+# looked like an improvement.
+
+test_that("datom_repo_commit(paths = NULL) sweeps in datom's own uncommitted files, and the repair reaches what it can (AC17)", {
+  skip_if_not_installed("git2r")
+  skip_if_not_installed("arrow")
+
+  fx <- local_foreign_project()
+
+  # A write that got as far as the local metadata and no further. This is the real
+  # shape of the failure -- `.datom_write_metadata_local()` runs before the commit
+  # and before anything touches storage -- so the repo is left with datom files
+  # that git has never seen and storage has never received.
+  meta <- list(
+    schema_version = 2L, kind = "table", data_sha = strrep("a", 64L),
+    hash_algo = "datom-cv1", table_type = "derived", nrow = 3L, ncol = 1L,
+    colnames = "id", created_at = "2026-01-01T00:00:00Z",
+    datom_version = "0.1.2", project = "foreign-project"
+  )
+  metadata_sha <- .datom_compute_metadata_sha(meta)
+  suppressMessages(
+    .datom_write_metadata_local(fx$conn, "dm", meta, metadata_sha)
+  )
+
+  # Both halves of the fixture, asserted before the verb runs: datom's file is
+  # uncommitted, and so is the human's. Without this the test could pass in a repo
+  # where there was nothing to sweep.
+  untracked_before <- unlist(git2r::status(fx$repo)$untracked, use.names = FALSE)
+  expect_true("dm/" %in% untracked_before || "dm/metadata.json" %in% untracked_before)
+  writeLines("edited", fs::path(fx$repo_dir, "R", "foo.R"))
+  expect_true("R/foo.R" %in% unlist(git2r::status(fx$repo)$unstaged, use.names = FALSE))
+
+  suppressMessages(datom_repo_commit(fx$conn, "Human commit", push = FALSE))
+
+  commit <- fc_head_commit(fx$repo)
+  paths <- fc_tree_paths(fx$repo, commit)
+
+  # THE SWEEP-IN. datom's orphaned metadata is now committed by a verb the human
+  # invoked, alongside the human's own edit. That is the documented contract.
+  expect_true("dm/metadata.json" %in% paths)
+  expect_true("dm/version_history.json" %in% paths)
+  expect_identical(fc_tree_content(fx$repo, commit, "R/foo.R"), "edited")
+
+  # THE NAMED RECOURSE, AND THE LIMIT ON IT. The repo is inconsistent here: git
+  # holds an artifact storage has never heard of. The repair restores the two
+  # documents git has a copy of, and it CANNOT restore the data -- a write that
+  # died before its upload produced no parquet bytes anywhere, and git never holds
+  # parquet, so no copy exists to restore from. Asserted rather than hidden,
+  # because "run the repair" reads as a promise of consistency and for a table it
+  # is not one. A SET is the case where it is: git holds `{name}/set.json`, which
+  # is why Task 14 could give `fix = TRUE` a payload upload at all.
+  before <- suppressMessages(datom_validate(fx$conn))
+  expect_false(before$valid)
+  expect_match(before$tables$status, "metadata_missing_s3")
+  expect_match(before$tables$status, "history_missing_s3")
+  expect_match(before$tables$status, "data_missing_s3")
+
+  suppressMessages(datom_validate(fx$conn, fix = TRUE))
+  after <- suppressMessages(datom_validate(fx$conn))
+
+  # What the repair reached: both documents are in storage now.
+  expect_true(after$tables$metadata_s3)
+  expect_true(after$tables$history_s3)
+  # What it could not: the data, and that is the only defect left.
+  expect_false(after$tables$data_s3)
+  expect_identical(after$tables$status, "data_missing_s3")
+  expect_false(after$valid)
+})

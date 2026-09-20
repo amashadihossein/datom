@@ -4031,6 +4031,44 @@ own; landing it first is what makes Task 6's failure loud.
   | AC33 (c) | an absent optional field materialised as an empty container before hashing | the builder-derived goldens and the unknown-field golden |
   | AC33 (d) | an unclassified field added to the set metadata builder | "every field a metadata builder emits is classified", plus 14 |
 
+  **BATCH 3 IS DONE (2026-09-19). Nine criteria, seventeen deliberate breakages, one test written,
+  and one instruction in this task's own body turned out to be wrong.** The git surface and product
+  mode.
+
+  | AC | What was broken | What reddened |
+  |---|---|---|
+  | AC16 | the machine commit made to stage the whole tree instead of its explicit file list, which is `git add -A` by another spelling | both AC16 tests, plus the explicit-paths test and the no-`include_paths` control |
+  | AC17 (paths NULL) | the `staged_deletions = TRUE` spelling the site warns against, which sets git's force flag and so stages ignored files | exactly "stages tracked, untracked and deleted, minus gitignored" |
+  | AC17 (explicit paths) | same break as AC16 | "stages exactly those paths" |
+  | AC17 (no-op) | the created-a-commit test forced true | "on a clean tree creates no commit and is not an error", plus 2 |
+  | AC17 (push FALSE) | the push branch entered unconditionally | "push = FALSE leaves the remote untouched", plus 3 |
+  | AC17 (R15.5) | the ahead count forced to zero on the no-commit path | exactly "a clean tree with push = TRUE still pushes when the branch is ahead" |
+  | AC18 | a listed path uploaded to storage alongside the artifacts | both AC18 tests, plus 3 |
+  | AC19 | the no-op early return deleted (batch 1's AC2 break) | its own test, which is the one thing that break did redden |
+  | AC20 (a) | the path-existence refusal disabled | "a nonexistent include_path is an error, not a skip", plus 1 |
+  | AC20 (b) | the datom-owned-path refusal disabled | "an include_path datom owns is refused", plus 1 |
+  | AC21 | the already-up-to-date branch of the push disabled | exactly "advances the remote and is a no-op the second time" |
+  | AC22 (occupied) | the occupied branch made to return success | 13 tests across two files |
+  | AC22 (unverifiable) | a storage failure during the check made to report the namespace free | its own test, plus the two-refusals test and the init test |
+  | AC25 (i) | the commit-id assignment removed | "the ordinary write keeps commit_sha on every stored version", plus 5 |
+  | AC25 (ii) | the enriched history written back to the clone's tracked file, the tempting one-history-one-shape simplification | exactly "the clone's version history never gains commit_sha", plus 1 |
+  | AC25 (iii) | the derivation from git disabled | "datom_validate(fix = TRUE) re-derives commit_sha instead of stripping it", plus 2 |
+  | AC26 | the already-recorded guard dropped, so a later commit repoints an existing version | exactly "reverting to earlier content leaves that version's recorded commit alone" |
+
+  **The inherited test is written, and writing it contradicted the instruction that asked for it.**
+  Task 12 left one case to this sweep: committing with no explicit file list sweeps datom's own
+  uncommitted files into the human's commit, which design 19.7 accepts because excluding them would
+  make the argument lie. The instruction said to assert the sweep-in happens **and that the repair then
+  reports the repo consistent**. The first half holds and is now tested, on a real half-failed write --
+  local metadata on disk with no commit behind it. **The second half is false for a table, and the test
+  says so instead.** A write that died before its upload produced no data bytes anywhere, and git never
+  holds parquet, so there is no copy to restore from: the repair puts both documents back into storage
+  and the data gap stays, as the only remaining defect. That is asserted field by field rather than
+  glossed, because "run the repair" reads as a promise of consistency and for a table it is not one.
+  **A set is the case where it would have been true** -- git holds `{name}/set.json`, which is the whole
+  reason Task 14 could give the repair a payload upload -- so the instruction was right about the
+  mechanism and wrong about which kind of artifact reaches it.
+
   **One probe of mine was wrong and it is worth recording, because the harness reported it as an
   ambiguous result rather than a pass.** The first attempt at AC33(c) selected the identity fields by
   the full allowlist instead of the intersection with what the document carries, expecting absent

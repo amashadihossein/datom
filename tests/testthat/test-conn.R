@@ -1610,7 +1610,7 @@ test_that("datom_init_repo validates a set name through the shared validator", {
   )
 })
 
-test_that("a product repo's namespace is checked on a local store and cannot be forced", {
+test_that("a product repo's namespace is checked on a local store and cannot be forced (AC22)", {
   # Two widenings of one condition, both scoped to product repos. Ordinary repos
   # keep the s3-only scope and the .force override exactly as they had them: the
   # blast-radius argument is about a product sitting on top of data it did not

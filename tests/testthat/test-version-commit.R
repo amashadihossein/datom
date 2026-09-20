@@ -87,7 +87,7 @@ vc_strip_stored_links <- function(fx, name) {
   invisible(NULL)
 }
 # === door 1: the ordinary write ================================================
-test_that("the ordinary write keeps `commit_sha` on every stored version, not just the newest", {
+test_that("the ordinary write keeps `commit_sha` on every stored version, not just the newest (AC25)", {
   fx <- local_commit_link_project()
 
   vc_write(fx, "dm", 3L)
@@ -111,7 +111,7 @@ test_that("the ordinary write keeps `commit_sha` on every stored version, not ju
   expect_identical(links[[v1]], first_commit)
   expect_identical(links[[v2]], second_commit)
 })
-test_that("reverting to earlier content leaves that version's recorded commit alone", {
+test_that("reverting to earlier content leaves that version's recorded commit alone (AC26)", {
   # The recorded commit is the one that FIRST produced a version. Reverting a
   # table to earlier content is the route that tests it: the version already
   # exists, so no history entry is appended, but a NEW commit is made and handed
@@ -132,7 +132,7 @@ test_that("reverting to earlier content leaves that version's recorded commit al
   expect_length(links, 2L)
   expect_identical(links[[v1]], first_commit)
 })
-test_that("the clone's version history never gains `commit_sha`", {
+test_that("the clone's version history never gains `commit_sha` (AC25)", {
   fx <- local_commit_link_project()
   vc_write(fx, "dm", 3L)
   vc_write(fx, "dm", 5L)
@@ -150,7 +150,7 @@ test_that("the clone's version history never gains `commit_sha`", {
   expect_length(unlist(status$unstaged, use.names = FALSE), 0L)
 })
 # === door 2: the repair ========================================================
-test_that("datom_validate(fix = TRUE) re-derives `commit_sha` instead of stripping it", {
+test_that("datom_validate(fix = TRUE) re-derives `commit_sha` instead of stripping it (AC25)", {
   fx <- local_commit_link_project()
   vc_write(fx, "dm", 3L)
   vc_write(fx, "dm", 5L)
@@ -195,7 +195,7 @@ test_that("the metadata-only route re-derives `commit_sha` that storage has lost
   expect_identical(links[names(expected)], expected)
 })
 # === what the derivation answers ===============================================
-test_that("a code-only commit produces no version, so it is nobody's `commit_sha`", {
+test_that("a code-only commit produces no version, so it is nobody's `commit_sha` (AC26)", {
   fx <- local_commit_link_project()
   vc_write(fx, "dm", 3L)
   write_commit <- vc_head(fx)
@@ -355,7 +355,7 @@ test_that("a commit id storage holds but git cannot reproduce survives the next 
                    strrep("d", 40L))
 })
 # === a change that alters no content alters no version =========================
-test_that("a code-only change mints no version and leaves the recorded commit alone", {
+test_that("a code-only change mints no version and leaves the recorded commit alone (AC26)", {
   fx <- local_commit_link_project()
   vc_write(fx, "dm", 3L)
   version <- datom_history(fx$conn, "dm", short_hash = FALSE)$version[[1L]]
