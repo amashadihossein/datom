@@ -4055,6 +4055,34 @@ own; landing it first is what makes Task 6's failure loud.
   | AC25 (iii) | the derivation from git disabled | "datom_validate(fix = TRUE) re-derives commit_sha instead of stripping it", plus 2 |
   | AC26 | the already-recorded guard dropped, so a later commit repoints an existing version | exactly "reverting to earlier content leaves that version's recorded commit alone" |
 
+  **THE END-TO-END SCRIPT IS WRITTEN (2026-09-19): `dev/e2e-sets.R`, 51 asserted claims, exits
+  non-zero on any mismatch.** Offline in the style of `dev/e2e-cv1-identity.R` -- a real git repo with a
+  real local bare remote plus a real local store inside `tempdir()`, no PAT, no AWS, no network. It
+  walks the lifecycle a product actually has, in seven sections: a `mode: product` repo carrying foreign
+  `R/`, `dp/` and `renv.lock`; two inputs written, then a set assembled through the draft verbs and
+  written with `include_paths`, checking that ONE commit holds the payload, the metadata and the
+  caller's files while storage receives datom artifacts only; the set read back through a
+  **storage-only connection with no clone**, and one member resolved to its data; a re-write of the
+  identical set with the caller's files dirty, which commits nothing and leaves the edit in the working
+  tree; **an input moving, repointed and then a retired member dropped, chained on one object**, so the
+  write has to produce one commit message naming both; the second write, where both versions still read
+  as what they were; and a refresh that finds nothing, which mints nothing.
+
+  **The exit code was verified by breaking the code, not by reading the script.** With the set write's
+  no-op return deleted, `dev/e2e-sets.R` exits **1** and three claims fail -- a commit was made, the
+  message naming `datom_repo_commit()` was absent, and the caller's dirty file was swept in. On a
+  healthy tree it exits **0** with 51 claims and no failures. Worth recording which break that is: it
+  is exactly the one batch 1 found the unit suite could not see, so the script catches a real class of
+  defect rather than restating what the units already assert.
+
+  **One correction the script forced.** Its first draft called `datom_find_member()` and
+  `datom_set_members()`. Neither exists: the public surface is `datom_fetch_member()`, which goes
+  straight to a member's **data**, and `datom_list_members()`, which returns one row per member per
+  label. **There is no public verb that hands back one member's record**, which is worth knowing before
+  Task 17 writes the docs -- a reader who wants the version a member is pinned at reads it out of the
+  listing. The script now does that through two small helpers rather than reaching into `$members`, so
+  it exercises the public route.
+
   **BATCH 5 IS DONE (2026-09-19). THE PROBE SWEEP IS COMPLETE: all 37 behavioural criteria are
   covered.** Two criteria, nine deliberate breakages, and one clause whose test cannot be made to fail
   for a reason worth writing down rather than engineering around.
