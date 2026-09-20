@@ -639,6 +639,13 @@ or assigns `NULL`, and `meta$parquet_sha <- NULL` **removes** the element rather
 no `{}` has ever reached a file. Any new declared field inherits that obligation without inheriting
 the accident.
 
+**The same fact bites when EMPTYING a field on an object a caller already holds**, which is a third
+case the two above do not cover. `datom_update_members()` has to stop an edited set from claiming the
+version it was read as, and `x$version <- NULL` would delete the name -- changing `names(x)` on a
+documented return shape, and silently, since `x$version` answers `NULL` either way. The spelling that
+empties without removing is `x["version"] <- list(NULL)`. A test on `names()` before and after is what
+holds it, because every assertion on the field's *value* passes under both spellings.
+
 The consequence for a field-set contract: a `setequal(names(meta), ...)` assertion about the
 in-memory object is satisfied by a key whose value is `{}`, so it cannot tell a populated document
 from an unpopulated one. That is a reason to assert on the written bytes wherever the count is
@@ -657,6 +664,16 @@ changes; a test that compares hashes passes whichever spelling is used. The guar
 assertion on the emitted JSON. The rule to carry: **decide per field whether absence is a real state,
 then assert on the bytes, because the in-memory object and the identity hash are both blind to the
 difference.**
+
+### `fs::dir_ls()` hides datom's storage metadata, because every bit of it is under a dot
+
+`fs::dir_ls(recurse = TRUE)` defaults to `all = FALSE`, so it omits dotfiles and everything under a
+dot-directory. datom's storage layout puts the manifest at `{prefix}/datom/.metadata/manifest.json`
+and every versioned snapshot under `{name}/.metadata/`, so a listing of a local-backend store shows
+the parquet files and **nothing else** -- which reads as "the mirror never ran" and sends you into
+the write path looking for a bug that is not there. Pass `all = TRUE`, or test the specific path with
+`fs::file_exists()`. Cost an hour on 2026-09-19 while building a fixture that had to corrupt the
+manifest.
 
 ### A probe fixture can be small enough to pass by coin flip
 

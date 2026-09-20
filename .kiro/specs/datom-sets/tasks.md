@@ -3020,7 +3020,7 @@ own; landing it first is what makes Task 6's failure loud.
        probe confirms it: restoring the blanket handler reddens the two init-level tests and neither of
        the helper-level ones.
     6. **Four exported examples hand-edit `project.yaml` to declare the mode, and they are how users
-       will learn this.** `R/set.R:599`, `R/set.R:1441`, `R/set-draft.R:189` and `R/set-members.R:628`
+       will learn this.** `R/set.R:599`, `R/set.R:1460`, `R/set-draft.R:189` and `R/set-members.R:628`
        each write `cfg$mode <- "product"` into a config after init. Once init can declare it, those
        examples teach the superseded route on the very release that provides the supported one.
        **Default: switch all four to the init argument** and confirm they still run under
@@ -3395,7 +3395,7 @@ own; landing it first is what makes Task 6's failure loud.
     regenerates and NEWS gains an entry.
 
     **I19 HOLDS TODAY, AND THE REASON IS PLACEMENT RATHER THAN A CHECK.** The no-change branch is at
-    `R/set.R:978` and returns above everything that could stage a file: the payload write, the
+    `R/set.R:991` and returns above everything that could stage a file: the payload write, the
     metadata document, the manifest row, and the single `.datom_commit_and_mirror()` call. So the
     obvious implementation of this task -- validate the paths up front, hand them to that same commit
     call -- keeps the guarantee for free. This is Task 12's shape exactly: true because of where one
@@ -5385,7 +5385,7 @@ reason.
     **What held**, verified rather than assumed: `datom_member()` really does take
     `(conn, name, version, tags = NULL)` with `version` required and SHA-validated, so "version stays
     required" needs no new refusal, only its message; `datom_write_set()` really does already branch
-    on `inherits(members, "datom_set")` (`R/set.R:910`) and strip `fetch` only when it is a function,
+    on `inherits(members, "datom_set")` (`R/set.R:922`) and strip `fetch` only when it is a function,
     so the read-back shape is live and testable; Task 24's `.datom_member_record()` really does
     dispatch on link / list-with-`id` / name, so the shape-dispatch half this task wants exists; and
     `datom_add_member()` accepting a link really is reachable, because a link carries its own record
@@ -5405,7 +5405,7 @@ reason.
        rather than three shapes of one argument.
     2. **UNPACK THE DRAFT BEFORE THE THREE GUARDS AT THE TOP OF `datom_write_set()`.** Those guards
        are `inherits(conn, "datom_conn")`, `conn$role != "developer"` and `is.null(conn$path)`
-       (`R/set.R:878-895`). A draft in the `conn` position fails the first one, so a pipe would abort
+       (`R/set.R:890-907`). A draft in the `conn` position fails the first one, so a pipe would abort
        with "conn must be a datom_conn" -- naming the argument the user never typed. The unpack has to
        come first, and it also supplies `name` and `tags`, which the gate below then uses.
        - **`members` IS MISSING ON THAT CALL, NOT `NULL`, AND THE DIFFERENCE BITES** (raised in review,
@@ -5704,7 +5704,7 @@ vehicle**: it is done, and its check is *why* a late addition costs what it cost
     1. **NEITHER BUILDER CAN SOURCE THE NAME ITSELF.** `.datom_build_metadata()` and
        `.datom_build_set_metadata()` take no connection -- by design, since they are pure -- so the
        change is a new argument on each plus the two call sites that fill it
-       (`R/read_write.R:1243`, `R/set.R:964`). **The new argument goes LAST in the signature**:
+       (`R/read_write.R:1243`, `R/set.R:977`). **The new argument goes LAST in the signature**:
        existing tests call `.datom_build_metadata(df, "sha", ...)` positionally in a dozen places, so
        an argument inserted in the middle silently shifts `custom` into `table_type`.
     2. **OPEN (default: yes, same commit) -- THE SAME DEFECT IS IN LINEAGE, AND THERE THE LABEL IS
@@ -5940,7 +5940,7 @@ selector's shape right; building the easier one first invites a selector shaped 
 bends for connection grouping. It also puts the risk in the right place: if the release squeezes, what
 drops is the verb the owner called less fundamental.
 
-- [ ] **27. `datom_update_members()` -- repoint members at newer versions** &nbsp; **[EXECUTES AFTER TASK 15]**
+- [x] **27. `datom_update_members()` -- repoint members at newer versions** &nbsp; **[DONE 2026-09-19 -- see the DONE record]**
   - **DEPENDS ON TASK 10** for the object it edits and on **Task 24** for the three shapes a member is
     named by. Reuses `.datom_member_shape()` (`R/member.R`) rather than restating shape dispatch, the
     same way `datom_add_member()` does.
@@ -6045,7 +6045,7 @@ drops is the verb the owner called less fundamental.
   3. **SETTLED 2026-09-19: `(x, conn, ...)` stands, and THIS AUDIT'S ORIGINAL JUSTIFICATION FOR IT WAS
      FALSE.** The claim was that object-first makes the verb pipe into the write. It does not:
      `datom_write_set()`'s first parameter accepts a `datom_conn` or a `datom_set_draft` and nothing
-     else (`R/set.R:887`), while the `datom_set` widening is on **`members`** (`R/set.R:919`) -- so a
+     else (`R/set.R:899`), while the `datom_set` widening is on **`members`** (`R/set.R:931`) -- so a
      piped set lands in the connection slot and aborts. Two further facts kill every repair of that
      claim: piping into the second argument needs the `_` placeholder, which is **R 4.2.0** while this
      package declares `R (>= 4.1.0)` (`DESCRIPTION:24`); and the read-modify-write idiom this spec
@@ -6070,26 +6070,26 @@ drops is the verb the owner called less fundamental.
      `identical()` on the tag element, not on its names.
   5. **CORRECTION to the body: the `$fetch` link on a repointed member is stale and nothing in the
      task says so.** A member read by `datom_get_set()` carries a closure pinning the version it was
-     read at (`.datom_member_link()`, `R/set.R:1313`, built at `R/set.R:1558`). Repoint `id$version`
+     read at (`.datom_member_link()`, `R/set.R:1332`, built at `R/set.R:1577`). Repoint `id$version`
      and leave `fetch` alone and the object contradicts itself: `id` says the new version, `$fetch()`
      returns the old data, silently. Rebuild it **through the factory or through
      `.datom_member_as_link()`** (`R/set-members.R:308`) and never inline -- a closure built inside
      the verb puts the frame holding `conn`, and therefore the PAT, on its parent chain, which is the
-     leak `R/set.R:1313`'s own docs record with byte counts. Rebuild **only for members that had
+     leak `R/set.R:1332`'s own docs record with byte counts. Rebuild **only for members that had
      one**, or a draft's members grow a field they never carried. Needs its own test: a repointed
      member's link resolves the **new** data.
   6. **SETTLED 2026-09-19: an edited set returns with `version` and `data_sha` blanked, in a helper
-     Task 28 shares.** `datom_get_set()` sets both from the payload it read (`R/set.R:1746` onward);
+     Task 28 shares.** `datom_get_set()` sets both from the payload it read (`R/set.R:1765` onward);
      once members move they describe a payload that no longer exists, and a set exists to be cited, so
      a stale version is a wrong statement rather than a missing one -- the same argument that makes
      `version` legitimately `NULL` on a truncated history. Verified safe: the write reads only `$tags`
-     and `$members` off a `datom_set` (`R/set.R:919`), and `print.datom_set` already renders a `NULL`
+     and `$members` off a `datom_set` (`R/set.R:931`), and `print.datom_set` already renders a `NULL`
      version.
      **Returning a `datom_set_draft` instead was proposed and rejected on two checks.** It was
      attractive -- a draft has no `version`, no `data_sha` and no links, so it would have dissolved
      this finding and finding 5 outright. It fails because **a draft carries the connection it will be
      written through**, and `datom_write_set(draft)` requires that connection to be a **developer**
-     connection on the **product** repo (`R/set.R:887` onward, then the `mode: product` gate). This
+     connection on the **product** repo (`R/set.R:899` onward, then the `mode: product` gate). This
      verb's connections are the **members'** project connections, and a product whose members all live
      in other projects supplies none for its own repo -- so the draft would carry a connection that
      cannot write the set. Second: `datom_remove_members()` has no connection to put in a draft at
@@ -6098,8 +6098,8 @@ drops is the verb the owner called less fundamental.
      dissolved are solved directly instead, by this finding and by finding 5.
   7. **Task 27 edits `datom_write_set()`, which the body does not say.** R24.8 needs the change list
      to reach the commit-message default, and that default is built inside the write
-     (`R/set.R:1074`). So this task touches the write verb, and the read of the attribute must happen
-     **before** the unpack at `R/set.R:919`. Verified that the attribute cannot leak into a payload:
+     (`R/set.R:1093`). So this task touches the write verb, and the read of the attribute must happen
+     **before** the unpack at `R/set.R:931`. Verified that the attribute cannot leak into a payload:
      that branch takes `members$tags` and `members$members` and nothing else, so an attribute on `x`
      is dropped by construction -- and a caller who passes `x$members` instead of `x` loses the
      better message and gets today's default, which is worth one line of documentation.
@@ -6151,14 +6151,14 @@ drops is the verb the owner called less fundamental.
       the first is a mechanism:
       - **Structural.** A member's record and its `fetch` link are two copies of one fact, which is
         why they can drift. Every edit path rebuilds the link from the record through the one existing
-        factory (`R/set.R:1313`, via `.datom_member_as_link()` at `R/set-members.R:308`), so drift is
+        factory (`R/set.R:1332`, via `.datom_member_as_link()` at `R/set-members.R:308`), so drift is
         unrepresentable rather than checked for.
       - **A tripwire on touched members only.** Assert that a repointed member's record and link
         agree. Untouched members came from the read and were already consistent, so the cost scales
         with the edit and not with the set. This is not the guarantee -- it is what reddens if a later
         change edits a record without rebuilding.
       - **The write is the final gate and already exists.** `.datom_validate_members()` runs on every
-        payload and links are stripped before hashing (`R/set.R:923`), so a **stored** set cannot be
+        payload and links are stripped before hashing (`R/set.R:936`), so a **stored** set cannot be
         inconsistent however the in-memory object was produced.
       **Deliberately not chased:** a hand assignment such as `x$members[[3]]$id$version <- "..."` is
       outside every verb, so no tripwire sees it. The write catches it, and this spec already holds
@@ -6189,6 +6189,59 @@ drops is the verb the owner called less fundamental.
   is Task 16 -- so a cold session would have swept acceptance criteria against a surface about to grow
   by two exports. Tasks 16 and 17 now carry execution markers saying so, and Task 16 carries the
   reason. Nothing about Phase H's placement changed; only the signposting.
+
+  **DONE 2026-09-19.** Tests 4115 -> **4219** (+104), FAIL 0 / WARN 0 / SKIP 0; `R CMD check` 0/0/0
+  with examples and vignettes run; `dev/check-spec.R` 9/9. Nothing stored changed shape: no field, no
+  format number, no vocabulary entry.
+  - **A new file, `R/set-edit.R`, holding the selection and the one verb.** Task 28 lands in it
+    unchanged, which is why it is not a section of `R/set-members.R`: that file's header claims three
+    verbs that do no IO or exactly one read, and this one reads a manifest per project.
+  - **The plural selector is `.datom_select_members()` (`R/set-edit.R:185`), and the name half
+    delegates rather than restating.** An explicit name goes through `.datom_find_member()`, so the
+    ambiguity abort and its narrowing lesson have one implementation and cannot drift from the fetch
+    verb's. Only the sweep half is new code, built on `.datom_member_has_tags()` and a one-line
+    `startsWith()`, exactly as finding 1 sized it.
+  - **The skip is keyed on project AND name (`R/set-edit.R:874`), not name alone, and the deviation
+    from R24.6's wording is deliberate.** Two members named `dm` in **different** projects resolve
+    through different manifests to different versions, with nothing to guess between them -- skipping
+    them would make a product drawing one table from two studies unrefreshable. Two named `dm` in
+    **one** project are the live-beside-baseline pair R24.6 is about, and moving both would collapse
+    them onto one version. Has its own test, and the two-project case has a separate one so a later
+    "simplification" to name-only reddens.
+  - **Labels are attached after construction (`R/set-edit.R:448`), never passed into it.** The probe
+    that matters: the naive spelling -- hand the old labels to `datom_member()` and let it build the
+    record -- turns the labels test red, because the constructor drops a key whose value is empty. The
+    test carries such a key **and asserts the naive route really does lose it**, so it cannot rot into
+    a tautology.
+  - **The link is rebuilt through the shared factory (`R/set-edit.R:453`) and the test resolves it to
+    DATA.** Two probes confirm the test earns its place: not rebuilding at all reddens it, and
+    rebuilding from the old record reddens it too. Every assertion on `id` passes in both cases, which
+    is the whole reason the test counts rows instead.
+  - **`version_to` requires a full 64-character version**, refusing the 8-character prefix someone
+    copies off a printed set. `datom_member()` would have failed anyway, at the storage read, reported
+    as "member not found" -- which names the wrong problem for the commonest typo on this argument.
+  - **An unreadable manifest refuses (`R/set-edit.R:364`).** This was a hole in the first version of
+    the tests, found by probing: skipping the abort left every test green, because an unreadable
+    manifest then read as a project with no artifacts and every member was reported as a retired
+    input. "Not there" and "could not look" are different answers and only the first may be reported.
+  - **The write learned one thing (`R/set.R:889`, `R/set.R:933`, `R/set.R:1066`).** The change list is
+    read off the object before either unpack, and feeds two different strings: the subject is what the
+    version records as its commit message, the commit gets the subject plus the full list with whole
+    versions. An explicit `message` still wins, and a change list of the wrong shape is ignored rather
+    than trusted -- it is an attribute, so a caller can put anything there.
+  - **SIXTEEN deliberate breakages, each reddening its own test**, restored from a temp copy rather
+    than from git (the code under probe is uncommitted by definition). Two found real holes: the
+    labels probe above, and the manifest one.
+  - **Three calls taken at their defaults and recorded here rather than asked about.** (a) A
+    `datom_set` whose members did not move **keeps** its `version` and `data_sha`: it still describes
+    exactly the stored payload, so emptying them would cost the common "refresh found nothing" case
+    its citability for no reason. Finding 6's argument is conditioned on members moving, and both
+    directions have a test. (b) Repointing a member onto a version another **unselected** member
+    already pins is not detected here -- the write's existing duplicate check refuses it. Reaching
+    that needs a deliberately labelled baseline plus a sweep narrowed past it, and a second skip
+    reason for it is cost the case does not carry. (c) A rebuilt member's `kind` is not compared
+    against the old one. A name is one artifact for its lifetime within a project, and the
+    cross-project case is already refused by the project comparison.
 
 - [ ] **28. `datom_remove_members()` -- drop members from a set** &nbsp; **[EXECUTES AFTER TASK 27]**
   - **DEPENDS ON TASK 27** for the plural selector, which lands there because the harder consumer
@@ -6554,9 +6607,9 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-19 | **(pre-start audit, Task 15) Deriving the producing commit from git is exact, and was probed rather than assumed (git2r 0.36.2).** `git2r::commits(repo, path = "{name}/metadata.json")` filters to the commits touching that path; a blob at a commit reads through `tree(cmt)[...]` + `git2r::content()`; and recomputing `.datom_compute_metadata_sha()` on the parsed blob reproduces the **recorded** version exactly, so iterating oldest-first yields "the first commit that introduced that version" (R21.3) with no extra bookkeeping. The same probe confirmed a code-only commit is no version's producer, which is AC26 from the other side. Cost: one blob read plus one hash per commit touching that path. | Task 15 audit finding 4 |
 | 2026-09-19 | **(decision, Task 27) The version argument splits: `version_from` selects, `version_to` targets, and `version_to` defaults to CURRENT.** One name could not carry both directions -- the signature narrowed by `version` while the body used it to state a destination. Names chosen for symmetry at the call site over the single `to` the audit floated. `version_from` is optional, needed only when a name resolves to more than one member. Two consequences to implement rather than infer: `version_to` refuses a selection matching several members, since one target version across several artifacts is not a meaning; and an **explicitly named** ambiguous member **aborts** while only the bulk sweep skips, because R24.6's skip argument is about not failing a whole refresh and does not reach a request the caller spelled out. | R24.2, R4.2a, Task 27 |
 | 2026-09-19 | **(decision, Task 27) `version_to` may infer current even though `datom_add_member()`'s version may not, and the boundary is recorded inside R4.2a.** The word carrying it is **silent**: R4.2a refuses a verb that says nothing about time quietly resolving newest. A verb whose meaning is *move forward from here* states the time-dependence in its own name and reports every version it moved before anything is written. **A verb that constructs a pointer requires a pin; a verb whose meaning is time-dependent may infer current and must then say what it inferred.** The guarantee R4.2a protects survives by a different route rather than being traded: an update is the snapshot moment and its own output is a pin, so whoever later reads the written set is as reproducible as ever. Same split `renv` draws between `update()` and `restore()`. | R4.2a, R24.2, Task 27 |
-| 2026-09-19 | **(correction, Task 27) The pre-start audit's justification for `(x, conn, ...)` was FALSE, and the order stands on a different rule.** The claim was that object-first lets the verb pipe into the write. `datom_write_set()`'s first parameter accepts a `datom_conn` or a `datom_set_draft` only (`R/set.R:887`); the `datom_set` widening is on `members` (`R/set.R:919`), so a piped set lands in the connection slot and aborts. Piping into the second argument needs the `_` placeholder, which is R 4.2.0 against this package's declared `R (>= 4.1.0)` (`DESCRIPTION:24`); and the read-modify-write idiom already documented is three statements ending `datom_write_set(conn, x)` (`R/set.R:769`), not a pipe. **The rule that does hold, and that the package already follows: a verb that EDITS an object in hand takes the object first, a verb that RESOLVES something takes the connection first** -- `datom_add_member(x, ...)` versus `datom_fetch_member(conn, x, ...)`. Decisive for the pair: `datom_remove_members()` cannot take a connection at all, so connection-first for update would split the two sibling edit verbs in the one place a reader compares them. | R24.1, Task 27 |
+| 2026-09-19 | **(correction, Task 27) The pre-start audit's justification for `(x, conn, ...)` was FALSE, and the order stands on a different rule.** The claim was that object-first lets the verb pipe into the write. `datom_write_set()`'s first parameter accepts a `datom_conn` or a `datom_set_draft` only (`R/set.R:899`); the `datom_set` widening is on `members` (`R/set.R:931`), so a piped set lands in the connection slot and aborts. Piping into the second argument needs the `_` placeholder, which is R 4.2.0 against this package's declared `R (>= 4.1.0)` (`DESCRIPTION:24`); and the read-modify-write idiom already documented is three statements ending `datom_write_set(conn, x)` (`R/set.R:769`), not a pipe. **The rule that does hold, and that the package already follows: a verb that EDITS an object in hand takes the object first, a verb that RESOLVES something takes the connection first** -- `datom_add_member(x, ...)` versus `datom_fetch_member(conn, x, ...)`. Decisive for the pair: `datom_remove_members()` cannot take a connection at all, so connection-first for update would split the two sibling edit verbs in the one place a reader compares them. | R24.1, Task 27 |
 | 2026-09-19 | **(decision, Task 27) An edited set returns with `version` and `data_sha` blanked, via a helper Task 28 shares. Returning a `datom_set_draft` instead was proposed and REJECTED on two checks.** The draft was attractive because it has no version, no `data_sha` and no links, dissolving two audit findings outright. It fails because a draft carries the connection it will be written through, and `datom_write_set(draft)` needs that to be a **developer** connection on the **product** repo -- while this verb's connections are the **members'** projects, which for a product whose members all live elsewhere includes none for its own repo. Second, `datom_remove_members()` has no connection to put in a draft, so the pair would return different classes, which R24.1's "parallel in shape" exists to prevent, and remove's chain would stay broken regardless. The two problems are solved directly instead: blank the two fields, and rebuild each repointed member's link through the existing factory. | R24.1, Task 27, Task 28 |
-| 2026-09-19 | **(decision, Task 27) Record-versus-link consistency is prevented structurally, with one tripwire and the existing write gate behind it.** A member's record and its `fetch` link are two copies of one fact, so every edit path rebuilds the link from the record through the one factory (`R/set.R:1313`) and drift becomes unrepresentable rather than checked for. A tripwire asserts agreement on **touched** members only, so cost scales with the edit; it is not the guarantee but what reddens if a later change edits a record without rebuilding. `.datom_validate_members()` plus link-stripping before hashing (`R/set.R:923`) means a **stored** set cannot be inconsistent however the in-memory object was made. Deliberately not chased: a direct hand assignment into `x$members[[i]]$id` is outside every verb, and the write catches it -- a hand-built set is already supported and untrusted. | R24.1, I10, Task 27, Task 28 |
+| 2026-09-19 | **(decision, Task 27) Record-versus-link consistency is prevented structurally, with one tripwire and the existing write gate behind it.** A member's record and its `fetch` link are two copies of one fact, so every edit path rebuilds the link from the record through the one factory (`R/set.R:1332`) and drift becomes unrepresentable rather than checked for. A tripwire asserts agreement on **touched** members only, so cost scales with the edit; it is not the guarantee but what reddens if a later change edits a record without rebuilding. `.datom_validate_members()` plus link-stripping before hashing (`R/set.R:936`) means a **stored** set cannot be inconsistent however the in-memory object was made. Deliberately not chased: a direct hand assignment into `x$members[[i]]$id` is outside every verb, and the write catches it -- a hand-built set is already supported and untrusted. | R24.1, I10, Task 27, Task 28 |
 | 2026-09-19 | **(decision, Task 27) `conn` stays required even when `x` is a draft that already carries one, and the embedded one is ignored.** A draft holds exactly one connection while this verb legitimately spans several projects, and silently preferring the embedded one would make the same call behave differently depending on how `x` was produced. | R24.1, Task 27 |
 | 2026-09-19 | **(correction, Task 27) AC41(d)'s fixture does not already exist, and the one the task pointed at cannot express it.** The no-gate test (`tests/testthat/test-set-members.R:689`) is single-store: it mutates `project_name` on one connection, so the member and the store agree and only the label differs -- the opposite of a connection whose label matches while its store holds another project's same-named artifact. The fitting base is the parameterised two-project fixture `local_draft_project(project_name, set_name, prefix)` (`tests/testthat/test-set-draft.R:37`), which will have to be duplicated since testthat shares nothing between files. | AC41, Task 27 |
 | 2026-09-19 | **(pre-start audit, Task 27) Carrying a member's labels through `datom_member()` breaks AC40(a) silently.** The natural spelling passes the old record's `tags` to the rebuild, and `datom_member()` runs `.datom_drop_empty_tags()` on what it is handed (`R/member.R:518` area), so a label whose value is empty is dropped. Invisible on every payload datom wrote, because those were tidied at write; it surfaces only on a hand-built or foreign-written set. Build the pointer with **no** tags and attach the old record's `tags` verbatim, which keeps the snapshot read and `kind` resolution while satisfying byte-identity. | AC40, Task 27 |

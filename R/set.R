@@ -787,7 +787,10 @@
 #'   value is one string or several, text only.
 #' @param name The set's name. Defaults to the `set:` field in
 #'   `.datom/project.yaml`; when supplied it must equal it.
-#' @param message Optional commit message.
+#' @param message Optional commit message. Omitted, it is `Update {name}` --
+#'   except for a set that came from [datom_update_members()], where the default
+#'   names the members that moved and their old and new versions. Pass `x` rather
+#'   than `x$members` to get that, since the change list travels with the object.
 #' @param include_paths Optional character vector of repo-relative paths -- your
 #'   own code, `renv.lock`, build state -- staged into the **same commit** as the
 #'   set. Never mirrored to storage: the storage namespace holds datom artifacts
@@ -859,6 +862,14 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # default, so evaluating it errors with R's own "argument is missing" instead of
   # reporting the conflict this refuses. Nothing may touch `members` before the
   # rebind below.
+  # An update's change list rides as an ATTRIBUTE on the object it edited, so it
+  # cannot reach the payload -- the unpack below takes `tags` and `members` and
+  # nothing else. Read here, before either unpack, because both of them replace
+  # the value the attribute is on. It defaults the commit message and nothing
+  # else; a caller who passes `x$members` instead of `x` simply gets today's
+  # default.
+  updates <- NULL
+
   if (inherits(conn, "datom_set_draft")) {
     if (!missing(members)) {
       cli::cli_abort(
@@ -875,6 +886,7 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
     }
 
     draft <- conn
+    updates <- attr(draft, "datom_updates")
     conn <- draft$conn
     # The draft's name and tags are DEFAULTS, exactly as a `datom_set`'s tags are
     # below: an explicitly supplied one wins, so a draft can be written under
@@ -918,6 +930,7 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # alone would turn a typo into a silent success.
   if (inherits(members, "datom_set")) {
     if (is.null(tags)) tags <- members$tags
+    updates <- attr(members, "datom_updates")
     members <- members$members
   }
   members <- .datom_strip_member_links(members)
@@ -1046,9 +1059,15 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
     .datom_metadata_known_fields()
   )
 
+  # `Update {name}` says nothing in `git log`, so a write that came out of
+  # `datom_update_members()` names what moved instead. One line is recorded as
+  # this version's commit message, where `datom_history()` can show it; the
+  # commit itself carries the full list.
+  messages <- .datom_set_commit_messages(name, message, updates)
+
   write_result <- .datom_write_metadata_local(
     conn, name, meta, metadata_sha,
-    message = message
+    message = messages$history
   )
   .datom_update_manifest_entry(
     conn, name,
@@ -1071,7 +1090,7 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   commit_sha <- .datom_commit_and_mirror(
     conn, name, meta, metadata_sha,
     git_paths = c(write_result$git_paths, payload_path, include_paths),
-    message = message %||% paste0("Update ", name),
+    message = messages$commit,
     upload = if (isTRUE(document_decision$upload)) {
       list(
         path = payload_path,

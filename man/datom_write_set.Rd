@@ -32,7 +32,10 @@ value is one string or several, text only.}
 \item{name}{The set's name. Defaults to the \verb{set:} field in
 \code{.datom/project.yaml}; when supplied it must equal it.}
 
-\item{message}{Optional commit message.}
+\item{message}{Optional commit message. Omitted, it is \verb{Update \{name\}} --
+except for a set that came from \code{\link[=datom_update_members]{datom_update_members()}}, where the default
+names the members that moved and their old and new versions. Pass \code{x} rather
+than \code{x$members} to get that, since the change list travels with the object.}
 
 \item{include_paths}{Optional character vector of repo-relative paths -- your
 own code, \code{renv.lock}, build state -- staged into the \strong{same commit} as the
