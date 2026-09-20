@@ -364,7 +364,7 @@ test_that("a set write respects the repo's declared writer floor", {
 # The cases only a whole-payload view can see. Each is a separate test, so a
 # regression names which one leaked rather than only that one of them did.
 
-test_that("a set with zero members is refused", {
+test_that("a set with zero members is refused (AC5, AC27e)", {
   fx <- local_set_project()
 
   expect_error(
@@ -377,7 +377,7 @@ test_that("a set with zero members is refused", {
   )
 })
 
-test_that("a one-member set is legal and hashes normally", {
+test_that("a one-member set is legal and hashes normally (AC5)", {
   fx <- local_set_project()
   members <- sw_one_member(fx)
 
@@ -433,7 +433,7 @@ test_that("the same project and name at two different versions is ALLOWED", {
   )
 })
 
-test_that("a set listing itself is refused at write time", {
+test_that("a set listing itself is refused at write time (AC9)", {
   # A nonsense check, not cycle detection: cycles are structurally impossible,
   # because a member pins a version that already exists. So there is deliberately
   # no cycle test and no depth test beside this one.
@@ -452,7 +452,7 @@ test_that("a set listing itself is refused at write time", {
   expect_match(conditionMessage(err), "product-a")
 })
 
-test_that("a set naming another project's set of the same name is not self-reference", {
+test_that("a set naming another project's set of the same name is not self-reference (AC9)", {
   # The refusal keys on project AND name. A different project's artifact that
   # happens to share this set's name is an ordinary member.
   fx <- local_set_project()
@@ -787,7 +787,7 @@ test_that("the canonical form is what a re-parse of the file produces again", {
 
 # === identity and versions ====================================================
 
-test_that("re-writing an identical payload is a no-op, whatever order it arrives in", {
+test_that("re-writing an identical payload is a no-op, whatever order it arrives in (AC2)", {
   fx <- local_set_project()
   v_dm <- sw_table(fx, "dm")
   v_lb <- sw_table(fx, "lb")
@@ -798,19 +798,37 @@ test_that("re-writing an identical payload is a no-op, whatever order it arrives
     sw_member(fx, "lb", v_lb, tags = list(domain = c("safety", "efficacy")))
   ), tags = tags)
 
-  # Same content, every collection spelled differently.
-  again <- sw_write(fx, list(
-    sw_member(fx, "lb", v_lb, tags = list(domain = c("efficacy", "safety"))),
-    sw_member(fx, "dm", v_dm, tags = list(type = c("input", "input")))
-  ), tags = tags)
+  # Same content, every collection spelled differently. Called directly rather
+  # than through sw_write(), which suppresses messages -- and the message is the
+  # assertion here.
+  msgs <- capture_messages(
+    again <- datom_write_set(fx$conn, list(
+      sw_member(fx, "lb", v_lb, tags = list(domain = c("efficacy", "safety"))),
+      sw_member(fx, "dm", v_dm, tags = list(type = c("input", "input")))
+    ), name = fx$set_name, tags = tags)
+  )
 
   expect_identical(again$action, "none")
   expect_identical(again$data_sha, first$data_sha)
   expect_identical(again$metadata_sha, first$metadata_sha)
   expect_length(sw_clone_history(fx), 1L)
+
+  # AC2's load-bearing assertions, and the only ones here that can fail. None of
+  # the four above can, and neither can a HEAD comparison -- all five stay green
+  # with the no-op return deleted, measured 2026-09-19 against the whole suite.
+  # `action` is assigned from `change_type`, so a write that skipped its early
+  # return and did the entire job still reports `"none"`; both shas are recomputed
+  # from the same payload either way; appending a version already in history
+  # dedups, so the length is 1 whether or not anything was appended; and an
+  # identical payload leaves git nothing to commit, so HEAD does not move even for
+  # a write that ran to completion. What the caller is TOLD is the one difference
+  # that survives: a skipped write says so, and a completed one announces itself.
+  joined <- paste(msgs, collapse = "\n")
+  expect_match(joined, "No changes detected")
+  expect_no_match(joined, "Wrote set")
 })
 
-test_that("an identical member list with a changed description DOES mint a version", {
+test_that("an identical member list with a changed description DOES mint a version (AC2)", {
   # The converse half, and it is the one that matters: a set exists to be cited,
   # so "same citation, different labels" would be a lie to whoever cited it.
   fx <- local_set_project()
@@ -825,7 +843,7 @@ test_that("an identical member list with a changed description DOES mint a versi
   expect_length(sw_clone_history(fx), 2L)
 })
 
-test_that("a changed per-member tag mints a version too", {
+test_that("a changed per-member tag mints a version too (AC2)", {
   fx <- local_set_project()
   version <- sw_table(fx, "dm")
 
@@ -838,7 +856,7 @@ test_that("a changed per-member tag mints a version too", {
   expect_length(sw_clone_history(fx), 2L)
 })
 
-test_that("member versions advancing produces a new data_sha and a new version", {
+test_that("member versions advancing produces a new data_sha and a new version (AC3)", {
   # Do not "optimize" this away: the member names are unchanged, so a check that
   # keyed on names alone would report no change.
   fx <- local_set_project()
@@ -891,7 +909,7 @@ test_that("a written set's metadata carries exactly the fields a set declares", 
   expect_false(grepl("{}", sw_payload_text(fx), fixed = TRUE))
 })
 
-test_that("a set's metadata records no lineage, and writing one leaves members alone", {
+test_that("a set's metadata records no lineage, and writing one leaves members alone (AC8)", {
   fx <- local_set_project()
   version <- sw_table(fx, "dm")
   before <- jsonlite::read_json(fs::path(fx$repo_dir, "dm", "metadata.json"))
@@ -1210,7 +1228,7 @@ test_that("datom_history reports a set's versions", {
 
 # === one name is one artifact =================================================
 
-test_that("a set cannot be written over an existing table of the same name", {
+test_that("a set cannot be written over an existing table of the same name (AC4)", {
   # Checked against the metadata document in STORAGE, not the manifest, which can
   # lag behind a write that got partway through. The realistic collision is a
   # product repo declaring a set name that a table in the same repo already uses.
@@ -1226,7 +1244,7 @@ test_that("a set cannot be written over an existing table of the same name", {
   expect_match(conditionMessage(err), "datom_write")
 })
 
-test_that("a table cannot be written over an existing set of the same name", {
+test_that("a table cannot be written over an existing set of the same name (AC4)", {
   # The converse, and the more damaging direction: a table write would rewrite
   # the set's metadata and history under the same key.
   fx <- local_set_project()
@@ -1241,7 +1259,7 @@ test_that("a table cannot be written over an existing set of the same name", {
   expect_match(conditionMessage(err), "datom_write_set")
 })
 
-test_that("an untyped metadata document reads as a table, so an old table still blocks a set", {
+test_that("an untyped metadata document reads as a table, so an old table still blocks a set (AC4)", {
   # Every document written before `kind` existed describes a table, because sets
   # did not exist.
   current <- list(data_sha = strrep("a", 64L))

@@ -250,7 +250,7 @@ test_that("a set with no tags carries no tags key, and an untagged member none e
   expect_false("tags" %in% names(x$members[[1L]]))
 })
 
-test_that("a set reads with no git clone at all", {
+test_that("a set reads with no git clone at all (AC1a)", {
   # Storage-only readers are the primary consumer of a set. Nothing on this path
   # may touch conn$path.
   fx <- local_get_set_project()
@@ -288,7 +288,7 @@ test_that("the arguments are validated, and there are only three of them", {
 # selection also picks which verb is suggested, and without the converse a
 # healthy table read as a set is reported as a missing payload.
 
-test_that("datom_read() on a set aborts pointing at datom_get_set()", {
+test_that("datom_read() on a set aborts pointing at datom_get_set() (AC6)", {
   fx <- local_get_set_project()
   gs_one_member_set(fx)
 
@@ -300,7 +300,7 @@ test_that("datom_read() on a set aborts pointing at datom_get_set()", {
   expect_match(conditionMessage(err), "datom_get_set")
 })
 
-test_that("datom_get_set() on a table aborts pointing at datom_read()", {
+test_that("datom_get_set() on a table aborts pointing at datom_read() (AC14)", {
   fx <- local_get_set_project()
   gs_table(fx, "dm")
 
@@ -642,7 +642,7 @@ test_that("an id field a newer datom added is carried, not refused", {
 
 # === the member link ==========================================================
 
-test_that("a table member's link resolves to exactly what datom_read() returns", {
+test_that("a table member's link resolves to exactly what datom_read() returns (AC1b)", {
   fx <- local_get_set_project()
   version <- gs_one_member_set(fx)
 
@@ -770,7 +770,7 @@ test_that("a kind this build cannot resolve aborts when the link is called, not 
   expect_match(conditionMessage(err), "upgrade datom")
 })
 
-test_that("a link does not gate on the connection's project name, and must not", {
+test_that("a link does not gate on the connection's project name, and must not (AC1b)", {
   # A project comparison inside the link looks free -- both names are in hand --
   # and it would refuse working reads. For a READER connection, which is the
   # primary consumer of a set, `project_name` is a label passed to
@@ -898,7 +898,7 @@ test_that("a link prints what it points at and how to resolve it", {
 
 # === one level only ===========================================================
 
-test_that("a member that is itself a set comes back as a pointer, not traversed", {
+test_that("a member that is itself a set comes back as a pointer, not traversed (AC15)", {
   # The inner set does not exist in storage at all, so a traversing implementation
   # errors rather than quietly flattening -- a louder signal than a count.
   fx <- local_get_set_project()
@@ -916,7 +916,7 @@ test_that("a member that is itself a set comes back as a pointer, not traversed"
   expect_identical(y$members[[1L]]$id$name, "does-not-exist")
 })
 
-test_that("read cost is this set's own documents only, whatever its members are", {
+test_that("read cost is this set's own documents only, whatever its members are (AC15)", {
   fx <- local_get_set_project()
   version <- gs_one_member_set(fx)
   x <- datom_get_set(fx$conn, "product-a")

@@ -636,7 +636,7 @@ test_that("the arguments are validated", {
 
 # === the project hint =========================================================
 
-test_that("a failed fetch of another project's member names that project", {
+test_that("a failed fetch of another project's member names that project (AC1b)", {
   # The highest-value message in the design: without it, per-project access
   # presents as a confusing missing-object error instead of "this member lives
   # somewhere else".

@@ -3950,6 +3950,67 @@ own; landing it first is what makes Task 6's failure loud.
     better **judgement** when what the task needs is **evidence**. Deliberate breakage supplies
     evidence at any model. Retired rather than deleted, so the risk it named stays visible.
 
+  **SWEEP IN PROGRESS -- the derived list and the batch boundaries (2026-09-19).** The criteria list
+  was derived from `requirements.md` rather than read off any range written here: **41 defined**, of
+  which **AC23 is retired** (it asserts a behaviour whose export was deferred, so there is nothing to
+  test) and **AC10, AC11, AC12** are project gates discharged by running the suite, the check and the
+  E2E rather than by a test. That leaves **37 behavioural criteria**, swept in five batches by area so
+  each one is a commit that stands on its own:
+
+  | Batch | Criteria | Area |
+  |---|---|---|
+  | 1 | AC1, AC2, AC3, AC4, AC5, AC6, AC8, AC9, AC14, AC15 | writing and reading a set |
+  | 2 | AC13, AC24, AC27, AC28, AC29, AC33 | hashing, canonical form, integrity |
+  | 3 | AC16, AC17, AC18, AC19, AC20, AC21, AC22, AC25, AC26 | the git surface and product mode |
+  | 4 | AC7, AC30, AC31, AC32, AC34, AC35, AC36, AC37, AC38, AC39 | forward compatibility |
+  | 5 | AC40, AC41 | the two edit verbs |
+
+  **One thing the derived list settles that the task body left open.** The `check-spec` assertion this
+  task ends with -- every criterion named somewhere under `tests/` -- cannot hold for those four
+  without an exemption, because none of them has a test to be named in. AC23 has no implementation and
+  AC10/AC11/AC12 are commands, not assertions. So the assertion ships with those four listed as
+  exempt, each with its reason at the site, rather than with four tests written to satisfy a checker.
+
+  **BATCH 1 IS DONE (2026-09-19). Ten criteria, thirteen deliberate breakages, and one genuine hole.**
+  Every row below was produced by breaking the code and watching, never by reading a test and judging
+  it relevant.
+
+  | AC | What was broken | What reddened |
+  |---|---|---|
+  | AC1a | `datom_get_set()` made to require `conn$path` | "a set reads with no git clone at all", plus 3 |
+  | AC1b | (i) the member link made to refuse when the connection's project label differs; (ii) a failed fetch re-signalled untouched instead of naming the project | (i) "a link does not gate on the connection's project name, and must not", plus 3; (ii) "a failed fetch of another project's member names that project", plus 1 |
+  | AC2 | the no-op early return deleted | **nothing at first -- see below.** After the fix: its own test plus AC19's |
+  | AC3 | `version` dropped from a member's id before hashing | "member versions advancing produces a new data_sha and a new version" and "AC3: advancing a member version mints a new data_sha (P4)", plus 7 |
+  | AC4 | the write-side half of the kind refusal skipped | all three name-collision tests, plus 2 |
+  | AC5 | (i) the empty-set guard disabled; (ii) its boundary moved to `<= 1L` | (i) "a set with zero members is refused", and nothing else; (ii) "a one-member set is legal and hashes normally" -- **and 70 other tests, so this break is not isolating**: nearly every fixture in both files builds a one-member set. The row is completable because the named test is in the red list, but a regression here would not point at AC5 |
+  | AC6 | the read branch of the kind refusal disabled, so a mismatch used the write wording | its own test, AC14's, and the unit test of that function |
+  | AC8 | `parents` and `source_lineage` added to the set metadata builder | "a set's metadata records no lineage, and writing one leaves members alone", plus the field-list test |
+  | AC9 | (i) the self-reference guard disabled; (ii) the project comparison dropped from it | (i) "a set listing itself is refused at write time"; (ii) exactly "a set naming another project's set of the same name is not self-reference" |
+  | AC14 | same break as AC6 | its own test |
+  | AC15 | a set-kind member resolved eagerly inside the read | both of its tests, plus 1 |
+
+  **The hole: AC2's test could not fail.** Deleting the no-op return -- the early exit that makes
+  re-writing an identical payload do nothing -- left every assertion in AC2's own test green. Measured
+  against the whole suite, exactly two tests reddened, and neither was AC2's: AC19's, and Task 26's
+  code-only-change test. Four reasons stack up, and each one alone would have been enough: `action` on
+  the returned list is assigned from the change type, so a write that skipped the return and did the
+  entire job still reports `"none"`; both hashes are recomputed from the same payload either way;
+  appending a version already in the history dedups, so the length is 1 whether or not anything was
+  appended; and an identical payload leaves git nothing to commit, so **HEAD does not move either** --
+  which is why the obvious fix, copying AC19's before-and-after HEAD read, was tried and also could not
+  fail. What survives is what the caller is **told**: a skipped write says so, a completed one announces
+  itself. The test now asserts both, and reddens on the break. This is the third instance of one
+  pattern -- Task 13 and Task 14 each found their own -- so the lesson is not new, only confirmed
+  again: **a test that asks a write what it reported cannot tell a no-op from a completed write.**
+
+  **Two harness facts worth having before batch 2.** Both cost time here. (1) `on.exit()` does nothing
+  at the top level of an `Rscript -e` one-liner, so a probe driven that way never restores and leaves
+  the deliberate defect in the tree -- go through the harness function every time, and check
+  `git status` after each run. (2) The pristine copy the harness restores from must not live under
+  `tempdir()`: that path is per-session, so a second invocation takes a **fresh** backup from a tree
+  the previous probe may have left mutated. Both are the engineering-notes probe-harness entry being
+  right in ways easy to re-discover; the second is literally its 2026-09-15 paragraph.
+
 - [ ] **17. Docs + Spec Completion Procedure** &nbsp; **[EXECUTES LAST, after Task 16 -- see Task 16's note on why the file order misleads]**
   - `dev/datom_pathways.md`: the set-resolution route card; note the `kind` branch and the
     `schema_version` gate on the read route (R13.1).
