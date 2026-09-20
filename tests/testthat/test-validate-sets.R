@@ -423,7 +423,7 @@ test_that("fix = TRUE restores a set payload storage has lost", {
   expect_equal(vs_clone_meta(fx)$document_sha, recorded)
 })
 
-test_that("a stored payload that is present is never re-uploaded", {
+test_that("a stored payload that is present is never re-uploaded (AC29c)", {
   fx <- local_validate_set_project()
   vs_one_member_set(fx)
 

@@ -388,7 +388,7 @@ test_that("a one-member set is legal and hashes normally (AC5)", {
   expect_match(res$data_sha, "^[0-9a-f]{64}$")
 })
 
-test_that("the same id listed twice with different tags is refused", {
+test_that("the same id listed twice with different tags is refused (AC27d)", {
   # Deduplication does NOT catch this: a member's digest covers its tags, so both
   # entries survive and the payload holds one member twice with conflicting
   # labels. Refused rather than tidied because both ways to tidy it guess.
@@ -409,7 +409,7 @@ test_that("the same id listed twice with different tags is refused", {
   expect_match(conditionMessage(err), "input")
 })
 
-test_that("the same project and name at two different versions is ALLOWED", {
+test_that("the same project and name at two different versions is ALLOWED (AC27, R2.14a)", {
   # Its own test because `project` + `name` looks like the natural duplicate key,
   # and the first reader to tighten the check to it would break a legitimate use
   # silently: a product carrying a current table beside a locked baseline.
@@ -467,7 +467,7 @@ test_that("a set naming another project's set of the same name is not self-refer
   expect_identical(res$member_count, 2L)
 })
 
-test_that("set-level tags go through the tag grammar", {
+test_that("set-level tags go through the tag grammar (AC27)", {
   fx <- local_set_project()
   members <- sw_one_member(fx)
 
@@ -513,7 +513,7 @@ test_that("a hand-assembled member list is refused, pointing at datom_member()",
 
 # === canonical form, asserted on the file bytes ================================
 
-test_that("a supplied payload is normalised before it reaches the file", {
+test_that("a supplied payload is normalised before it reaches the file (AC29a)", {
   # Assert on the FILE, not the return value: several spellings share one
   # `data_sha`, so a hash comparison cannot see whether the bytes were normalised
   # -- and `document_sha` hashes the bytes, so two spellings at one address would
@@ -686,7 +686,7 @@ test_that("the tidy step leaves a member with no names for the validator to repo
   expect_error(.datom_validate_members(out$members), "named list")
 })
 
-test_that("an exact duplicate member collapses to one entry, silently", {
+test_that("an exact duplicate member collapses to one entry, silently (AC27 tidy)", {
   fx <- local_set_project()
   version <- sw_table(fx, "dm")
   member <- sw_member(fx, "dm", version, tags = list(type = "input"))
@@ -719,7 +719,7 @@ test_that("a set with no set-level tags omits the payload's tags key", {
   expect_false(grepl("{}", sw_payload_text(fx), fixed = TRUE))
 })
 
-test_that("tidying happens before validation, so a spelling that tidies never aborts", {
+test_that("tidying happens before validation, so a spelling that tidies never aborts (AC27 tidy)", {
   # The ordering is load-bearing in both directions: validating first would make
   # every tidy rule dead code, and the validator deliberately PASSES a key whose
   # value is empty because that is a tidy case rather than an error.
@@ -965,7 +965,7 @@ test_that("document_sha hashes the bytes actually stored", {
 
 # === one data_sha, one byte spelling ==========================================
 
-test_that(".datom_resolve_document_sha reuses a recorded hash instead of the fresh one", {
+test_that(".datom_resolve_document_sha reuses a recorded hash instead of the fresh one (AC29b)", {
   # The defect this prevents passes every per-chunk test: recomputing the hash
   # from freshly emitted bytes while reusing the stored object records a hash of
   # bytes nobody stored, and it surfaces later as a refused read of a valid
@@ -1034,7 +1034,7 @@ test_that("the history scan finds the newest entry that recorded a document_sha"
   expect_null(.datom_lookup_history_document_sha(conn, "set-a", "sha_a"))
 })
 
-test_that("re-writing content already in history does not touch the stored payload", {
+test_that("re-writing content already in history does not touch the stored payload (AC29b)", {
   # Proved with a backdated mtime: a re-upload goes through fs::file_copy(
   # overwrite = TRUE) and would reset it. Byte comparison cannot distinguish
   # "not re-uploaded" from "re-uploaded identical bytes".
@@ -1066,7 +1066,7 @@ test_that("re-writing content already in history does not touch the stored paylo
 
 # === where the payload lives ==================================================
 
-test_that("the payload is git-canonical at a stable path and content-addressed in storage", {
+test_that("the payload is git-canonical at a stable path and content-addressed in storage (AC24)", {
   fx <- local_set_project()
   members <- sw_one_member(fx)
   res <- sw_write(fx, members)
@@ -1082,7 +1082,7 @@ test_that("the payload is git-canonical at a stable path and content-addressed i
   ))
 })
 
-test_that("the git payload stays one file, modified in place, so a diff is member-level", {
+test_that("the git payload stays one file, modified in place, so a diff is member-level (AC24)", {
   # A content-addressed git filename would make every version a new file: a diff
   # would report "file added" and history would have to be read by listing
   # filenames -- hand-maintaining what git already maintains.

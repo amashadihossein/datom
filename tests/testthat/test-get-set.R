@@ -347,7 +347,7 @@ test_that("a matching kind passes at both operations, and an absent kind reads a
 
 # === the integrity gate =======================================================
 
-test_that("a different but valid payload at the same address is refused before parsing", {
+test_that("a different but valid payload at the same address is refused before parsing (AC28a)", {
   # Valid JSON on purpose: garbage bytes would fail the parse too, so they could
   # not show that the refusal came from the hash check.
   fx <- local_get_set_project()
@@ -366,7 +366,7 @@ test_that("a different but valid payload at the same address is refused before p
   expect_match(conditionMessage(err), "Do not trust this set")
 })
 
-test_that("a version recording no document_sha is an error, not a skipped check", {
+test_that("a version recording no document_sha is an error, not a skipped check (AC28b)", {
   # The half a naive copy of .datom_read_parquet()'s guard gets wrong: its
   # skip-on-absent branch is a grace for metadata written before parquet_sha
   # existed, and a set has no such population.
@@ -384,7 +384,7 @@ test_that("a version recording no document_sha is an error, not a skipped check"
   )
 })
 
-test_that("an empty document_sha is refused the same way as an absent one", {
+test_that("an empty document_sha is refused the same way as an absent one (AC28b)", {
   fx <- local_get_set_project()
   gs_one_member_set(fx)
 
@@ -402,7 +402,7 @@ test_that("an empty document_sha is refused the same way as an absent one", {
   )
 })
 
-test_that("a pinned version whose history entry records no document_sha is refused", {
+test_that("a pinned version whose history entry records no document_sha is refused (AC28b)", {
   fx <- local_get_set_project()
   gs_one_member_set(fx)
   version <- datom_get_set(fx$conn, "product-a")$version

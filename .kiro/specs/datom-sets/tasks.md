@@ -4003,7 +4003,49 @@ own; landing it first is what makes Task 6's failure loud.
   pattern -- Task 13 and Task 14 each found their own -- so the lesson is not new, only confirmed
   again: **a test that asks a write what it reported cannot tell a no-op from a completed write.**
 
-  **Two harness facts worth having before batch 2.** Both cost time here. (1) `on.exit()` does nothing
+  **BATCH 2 IS DONE (2026-09-19). Six criteria, eighteen deliberate breakages, no holes.** Hashing,
+  canonical form and integrity. Every clause of the four multi-part criteria was broken separately
+  rather than one break per criterion, because these are the ones whose clauses fail independently.
+
+  | AC | What was broken | What reddened |
+  |---|---|---|
+  | AC13-P (a, b) | tag values left in the order they arrived instead of sorted and deduped | "AC13-P (a, b): tag-value order and duplication are not identity", plus the sv1 goldens and the standalone-reference parity test |
+  | AC13-P (c) | the member-digest sort dropped | "AC13-P (c): member order is not identity", plus the goldens and parity |
+  | AC13-P (d) | a list-wrapped single value marked so it could not encode identically | "AC13-P (d): a single string equals a one-element array", plus the round-trip test and parity |
+  | AC13-P (f) | NFC normalisation applied to every string before hashing, the helpful-normaliser mistake | "AC13-P (f): NFC and NFD are different tags", and nothing else |
+  | AC13-E (e) | the member-digest dedup disabled | "AC13-E (e): a duplicated member hashes equal to one entry", and nothing else |
+  | AC13-E (g) | the `0x02` domain tag changed to `0x12` | "primitive constants are pinned (AC13-E g)", plus the goldens and parity |
+  | AC24 | the git payload filename made content-addressed, so every write is an add plus a delete | "the git payload stays one file, modified in place, so a diff is member-level", plus 16 -- blunt, but the named test is red |
+  | AC27 (a) | the tag-value type gate disabled | "non-text tag values are refused, naming the key (AC27 a)", plus 5 |
+  | AC27 (b) | the all-`NA` check disabled | "NA as a tag value is refused (AC27 b)", plus 1 |
+  | AC27 (c) | the empty-string check disabled | "an empty-string tag value is refused (AC27 c)", plus 5 |
+  | AC27 (d) | the duplicate-id refusal disabled | "the same id listed twice with different tags", plus 1 |
+  | AC27 (allow, R2.14a) | the duplicate key tightened to project plus name, dropping version | exactly "the same project and name at two different versions is ALLOWED" |
+  | AC28 (a) | the payload integrity comparison disabled | exactly "a different but valid payload at the same address is refused before parsing" |
+  | AC28 (b) | the missing-`document_sha` refusal disabled, i.e. the parquet reader's tolerance copied across | all three of its tests |
+  | AC29 (a) | the tidy step skipped, so the caller's spelling reaches the file | "a supplied payload is normalised before it reaches the file", plus 7 |
+  | AC29 (b) | the history lookup's reuse branch disabled, forcing a re-upload | "re-writing content already in history does not touch the stored payload" and the helper's own test |
+  | AC29 (c) | the never-overwrite guard in the repair path disabled | exactly "a stored payload that is present is never re-uploaded" |
+  | AC33 (a) | `created_at` promoted into the identity list | "builder-derived metadata_sha goldens are stable", plus 3 |
+  | AC33 (b) | field selection switched from the allowlist to an exclusion list | exactly "metadata_sha golden is stable, and an unknown field does not move it" |
+  | AC33 (c) | an absent optional field materialised as an empty container before hashing | the builder-derived goldens and the unknown-field golden |
+  | AC33 (d) | an unclassified field added to the set metadata builder | "every field a metadata builder emits is classified", plus 14 |
+
+  **One probe of mine was wrong and it is worth recording, because the harness reported it as an
+  ambiguous result rather than a pass.** The first attempt at AC33(c) selected the identity fields by
+  the full allowlist instead of the intersection with what the document carries, expecting absent
+  fields to enter the hash as nulls. Nothing reddened -- and the reason is that the JSON serializer
+  drops a null entry, so the edit changed no behaviour at all. The rule the task states holds up
+  exactly as written: a probe that reddens nothing is telling you something, and here the something was
+  about the probe. The replacement break -- materialising an absent optional as an empty container --
+  moves only the no-optional shape, which is the clause (c) pins.
+
+  **A deliberate control was run once, and it should be repeated if the harness is ever changed.** A
+  comment-only edit to the encoder, changing no behaviour, reddened nothing. That is the result that
+  says a red count means something: without it, every probe in this table could have been reporting
+  noise from reloading the package.
+
+  **Two harness facts worth having before batch 2.** Both cost time in batch 1. (1) `on.exit()` does nothing
   at the top level of an `Rscript -e` one-liner, so a probe driven that way never restores and leaves
   the deliberate defect in the tree -- go through the harness function every time, and check
   `git status` after each run. (2) The pristine copy the harness restores from must not live under

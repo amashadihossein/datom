@@ -918,7 +918,7 @@ test_that("golden relations: parity, tzone equality, units split, hms==ITime", {
   expect_identical(sha(one_col(d_dbl)), sha(one_col(d_int)))
 })
 
-test_that("metadata_sha golden is stable, and an unknown field does not move it", {
+test_that("metadata_sha golden is stable, and an unknown field does not move it (AC33a, AC33b)", {
   # This fixture used to be pinned WITH its `name` key, at
   # 59f1f1d936c5d65472733a924493ce2362255d442ebea6d41f7c3c9e7069d326. `name` is
   # not a metadata field -- no builder emits it, and `metadata.json` is written
@@ -1003,7 +1003,7 @@ builder_metadata_fixture <- function(optional = TRUE) {
   meta
 }
 
-test_that("builder-derived metadata_sha goldens are stable", {
+test_that("builder-derived metadata_sha goldens are stable (AC33a, AC33c)", {
   # These two values are the evidence that a later change to field SELECTION is
   # behaviour-preserving: they are computed from documents datom writes, so if
   # either moves, some real artifact's recorded version moved with it.
@@ -1075,7 +1075,7 @@ all_emitted_metadata_fields <- function() {
   union(names(builder_metadata_fixture(optional = TRUE)), names(set_meta))
 }
 
-test_that("every field a metadata builder emits is classified", {
+test_that("every field a metadata builder emits is classified (AC33d)", {
   # THE FORCING FUNCTION for the allowlist's failure direction. An unclassified
   # field is silently excluded from identity, so identity quietly stops
   # responding to real content -- and no other test in the suite would notice.
