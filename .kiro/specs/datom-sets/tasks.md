@@ -3828,7 +3828,13 @@ own; landing it first is what makes Task 6's failure loud.
     a gap -- so nothing is lost and nothing needs saying. Failing to read the stored copy is the one
     loss signal. The review was right to separate them rather than call the module defensive.
 
-- [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]**
+- [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]** &nbsp; **[EXECUTES AFTER TASK 28 -- NOT the next task even though it is the next unchecked box]**
+  - **Read this before starting it.** Phase H (Tasks 27 and 28) was appended rather than inserted, so
+    it sits *below* this task in the file while executing *before* it. A cold session following "the
+    next unchecked task is where to resume" lands here and is wrong: sweeping acceptance criteria
+    before the two edit verbs land would test a surface that then grows, which is the exact reason
+    Phase H is scheduled ahead of this one. The order is at the end of the state block near the top of
+    this file, and `dev/README.md`'s status line names the real next task.
   - Confirm **every AC defined in `requirements.md`** has a dedicated test -- derive the list, do not
     trust a range written here. A hardcoded range has now gone stale **twice**: it once stopped at
     AC26 and omitted AC27, and it then stopped at AC28 and omitted AC29. `dev/check-spec.R` now
@@ -3857,7 +3863,7 @@ own; landing it first is what makes Task 6's failure loud.
   - **Escalation rationale**: the full acceptance-criteria set plus a new hash regime is a lot
     of surface to claim covered on a default model's word.
 
-- [ ] **17. Docs + Spec Completion Procedure**
+- [ ] **17. Docs + Spec Completion Procedure** &nbsp; **[EXECUTES LAST, after Task 16 -- see Task 16's note on why the file order misleads]**
   - `dev/datom_pathways.md`: the set-resolution route card; note the `kind` branch and the
     `schema_version` gate on the read route (R13.1).
   - `dev/datom_specification.md`: set artifact kind, `datom-sv1`, `schema_version` contract,
@@ -5900,6 +5906,8 @@ Track so `_pkgdown.yml` and NAMESPACE stay complete:
 | `datom_assemble_set()` | 25 |
 | `datom_add_member()` | 25 |
 | `print.datom_set_draft()` | 25 |
+| `datom_update_members()` | 27 |
+| `datom_remove_members()` | 28 |
 
 Task numbers here are **bare**, so the 2026-08-23 renumber did not touch them mechanically and they
 were corrected by hand. Check 8 cannot see them either -- it only reads numbers written as
@@ -6157,13 +6165,30 @@ drops is the verb the owner called less fundamental.
       that a hand-built set is supported and untrusted -- defending the in-memory object against
       direct assignment is where the cost stops being proportional.
 
+  15. **The step neither Phase H task names: this adds an EXPORT, so NAMESPACE and `_pkgdown.yml` both
+      need entries.** `pkgdown` is a **required status check** on this repo, and its build fails on an
+      exported function missing from the reference index -- so omitting the entry does not degrade the
+      docs, it reddens CI. The Sets section of `_pkgdown.yml` already lists every other set verb and
+      its print methods -- derive the list from the file rather than from a count written here;
+      `datom_update_members` joins it, and `datom_remove_members` follows in Task 28.
+      Recorded because this exact omission has been caught at audit time twice before in this spec,
+      and because Task 13 and Task 14 both legitimately said "no export, so no NAMESPACE or pkgdown
+      step" -- a reader who pattern-matches on those two will skip it.
+
   **Verdict: STARTABLE COLD. Nothing is open.** Findings 2, 3, 6, 13 and 14 were settled by the owner
-  on 2026-09-19; finding 1 sizes the new code; 4, 5 and 7 are implementation traps now written down;
-  8-11 are consequences to state rather than problems to solve; 12 redirects the fixture. Two claims
-  this audit itself made were checked and corrected in the same round -- finding 3's pipe
+  on 2026-09-19; finding 1 sizes the new code; 4, 5, 7 and 15 are implementation traps now written
+  down; 8-11 are consequences to state rather than problems to solve; 12 redirects the fixture. Two
+  claims this audit itself made were checked and corrected in the same round -- finding 3's pipe
   justification was false, and the draft-returning alternative in finding 6 fails on the connection it
   would have to carry. No model escalation is owed: the task was not flagged for it at planning, and
   nothing here changes a stored document, a format number or an identity field.
+
+  **One navigation hazard, fixed rather than described.** Phase H was appended so nothing renumbered,
+  which puts Tasks 27 and 28 *below* Tasks 16 and 17 in the file while they execute *before* them. The
+  Quick Start in `.github/copilot-instructions.md` says to resume at the next unchecked task, and that
+  is Task 16 -- so a cold session would have swept acceptance criteria against a surface about to grow
+  by two exports. Tasks 16 and 17 now carry execution markers saying so, and Task 16 carries the
+  reason. Nothing about Phase H's placement changed; only the signposting.
 
 - [ ] **28. `datom_remove_members()` -- drop members from a set** &nbsp; **[EXECUTES AFTER TASK 27]**
   - **DEPENDS ON TASK 27** for the plural selector, which lands there because the harder consumer
