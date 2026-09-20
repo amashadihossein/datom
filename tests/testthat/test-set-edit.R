@@ -176,10 +176,26 @@ test_that("a refresh that finds nothing says so and reports no moves", {
 test_that("an update that finds nothing new mints no version at the write", {
   # AC40(c), asserted THROUGH the write: "this refresh was free" is observable
   # there and nowhere else.
+  #
+  # WHAT THIS TEST CAN AND CANNOT CATCH, measured 2026-09-19 so nobody re-derives
+  # it. No single deliberate break turns these two assertions red, and that is a
+  # property of the design rather than a gap in the fixture. Three were tried:
+  # refreshing every selected member instead of only the moved ones, dropping a
+  # member's labels, and forgetting the set's claimed version unconditionally. All
+  # three left it green, because a set READ FROM STORAGE cannot carry the one label
+  # shape a rebuild would lose -- the write drops a key whose value is empty
+  # (AC27's tidy rule) -- so rebuilding an unmoved member is byte-identical, and
+  # the write's change detection reads the payload, never the version the object
+  # claims. The claim is therefore a composition of two things pinned elsewhere:
+  # payload-based identity (AC2, AC13) and label preservation (AC40a). This test
+  # asserts the composition holds end to end, which is worth having; what pins the
+  # nothing-moved behaviour on its own is "a set nothing moved in keeps the version
+  # it was read as", and all three breaks above redden that one.
   fx <- local_edit_project()
   v1 <- se_table(fx, "dm", 3L)
-  se_write(fx$conn, list(datom_member(fx$conn, "dm", v1,
-                                      tags = list(type = "input"))))
+  se_write(fx$conn, list(datom_member(
+    fx$conn, "dm", v1, tags = list(type = "input")
+  )))
   x <- datom_get_set(fx$conn, "product-a")
   before <- se_versions(fx, "product-a")
 

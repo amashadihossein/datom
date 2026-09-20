@@ -4055,6 +4055,38 @@ own; landing it first is what makes Task 6's failure loud.
   | AC25 (iii) | the derivation from git disabled | "datom_validate(fix = TRUE) re-derives commit_sha instead of stripping it", plus 2 |
   | AC26 | the already-recorded guard dropped, so a later commit repoints an existing version | exactly "reverting to earlier content leaves that version's recorded commit alone" |
 
+  **BATCH 5 IS DONE (2026-09-19). THE PROBE SWEEP IS COMPLETE: all 37 behavioural criteria are
+  covered.** Two criteria, nine deliberate breakages, and one clause whose test cannot be made to fail
+  for a reason worth writing down rather than engineering around.
+
+  | AC | What was broken | What reddened |
+  |---|---|---|
+  | AC40 (a) | the verbatim label copy replaced by rebuilding through `datom_member()` with the old labels passed in -- the obvious spelling, which silently drops any label whose value is empty | exactly "a repointed member's labels are byte-identical, empty key included" |
+  | AC40 (a), again | the label copy removed outright | its own test plus 4 |
+  | AC40 (b) | the `old -> new` versions dropped from each reported line | its own test plus 2 commit-message tests |
+  | AC40 (b), again | the per-project grouping header dropped | exactly its own test |
+  | AC40 (c) | three breaks tried -- see below | "a set nothing moved in keeps the version it was read as", never the through-the-write test |
+  | AC40 (d) | the label filter dropped from member selection | "selecting by label repoints only those members", plus 4 |
+  | AC41 (a) | the missing-connection condition class changed | exactly "a member whose project has no connection refuses the whole call" |
+  | AC41 (b) | the unreadable-manifest condition class changed | exactly "a manifest that cannot be read refuses rather than reporting its members gone" |
+  | AC41 (c) | the shared-name detection disabled, so two members of one name collapse | exactly "two members sharing a name are skipped and reported, never collapsed" |
+  | AC41 (d) | the recorded-project comparison disabled | exactly "a connection whose store is another project's is refused" |
+
+  **AC40(c)'s through-the-write test cannot be made to fail, and that is a property of the design.**
+  The criterion asks for "a refresh that found nothing mints no version" to be asserted through the
+  write, because that is where free is observable. It is asserted there, and no break reddens it. Three
+  were tried: refreshing every selected member rather than only the moved ones, dropping a member's
+  labels, and forgetting the set's claimed version unconditionally. The reason all three leave it green
+  is that **a set read from storage cannot carry the one label shape a rebuild would lose** -- the write
+  drops a key whose value is empty, which is AC27's tidy rule -- so rebuilding an unmoved member is
+  byte-identical, and the write's change detection reads the payload rather than the version the object
+  claims. So the criterion's claim is a composition of two things pinned elsewhere: payload-based
+  identity (AC2, AC13) and label preservation (AC40a). The test earns its place by asserting the
+  composition end to end; what pins the nothing-moved behaviour on its own is a different test, and all
+  three breaks redden that one. **This is written into the test itself**, because the next reader will
+  otherwise spend an afternoon reaching for the fixture change I reached for -- adding an empty-valued
+  label, which cannot survive the write that has to happen first.
+
   **BATCH 4 IS DONE (2026-09-19). Ten criteria, twenty-four deliberate breakages, no holes, and one
   clause that legitimately has no test.** Forward compatibility -- the largest batch, and the one whose
   criteria mostly have lettered clauses that fail independently, so almost every clause got its own
