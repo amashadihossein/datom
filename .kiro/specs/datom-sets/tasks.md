@@ -175,12 +175,19 @@ were passing whatever the code did.
 examples, tests and vignettes run. **Next is Task 17**, docs plus the Spec Completion Procedure --
 the last task in the spec. Everything before it is done; Task 16's sweep closed on 2026-09-19.
 
-**ONE THING TASK 17 MUST NOT SKIP, and it needs a fresh session rather than a continuation.** Task 16
-requires an independent re-derivation of the acceptance-criteria list: a session that is given
-`requirements.md` **and nothing else**, produces its own list of criteria, and only then diffs it
-against the sweep's. A missed criterion and a mis-credited one are different errors and re-reading your
-own work catches neither, which is why the session doing the sweep could not also do this. It is the
-one open item in Task 16 and it is named again in that task's DONE record.
+**READ TASK 17'S STATE BLOCK BEFORE ITS CHECKLIST.** Roughly half of that task is already done and the
+checklist does not say which half -- `_pkgdown.yml` is complete, `NEWS.md` covers everything except
+Phase H, and `dev/datom_specification.md` is barely started and is the bulk of the work. The block
+measures each item with a date, explains why no pre-start audit was run, and lists the open work in
+order. It also carries one finding that needs a **decision** and not just prose: there is no public verb
+returning a single member's record.
+
+**THE FIRST THING TASK 17 DOES IS NOT A DOCS PASS.** Task 16 left one item open on purpose: an
+independent re-derivation of the acceptance-criteria list, by a session given `requirements.md` **and
+nothing else**, diffed against the sweep's list afterwards. A missed criterion and a mis-credited one
+are different errors and re-reading your own work catches neither, which is why the session that did the
+sweep could not also do this. It goes first because a gap it finds is a test to write, and Task 17 is
+where "this spec is done" gets asserted.
 
 **TASK 15 IS CLOSED, AND ITS AUDIT IS WHAT MOVED THE WORK.** Eleven findings, both decisions settled
 by the owner the same day at their defaults, and the finding that relocated the task: **the field it
@@ -4315,7 +4322,61 @@ own; landing it first is what makes Task 6's failure loud.
   the previous probe may have left mutated. Both are the engineering-notes probe-harness entry being
   right in ways easy to re-discover; the second is literally its 2026-09-15 paragraph.
 
-- [ ] **17. Docs + Spec Completion Procedure** &nbsp; **[EXECUTES LAST, after Task 16 -- see Task 16's note on why the file order misleads]**
+- [ ] **17. Docs + Spec Completion Procedure** &nbsp; **[EXECUTES LAST, after Task 16 -- see Task 16's note on why the file order misleads]** &nbsp; **[STATE MEASURED 2026-09-19 -- read the block below before the checklist: roughly half of it is already done, and the checklist does not say which half]**
+
+  **NO PRE-START AUDIT WAS RUN, AND THAT WAS A DECISION RATHER THAN AN OMISSION (2026-09-19).** Every
+  task since Task 11 got one, so the absence needs a reason. Task 17 ships no behaviour: its body is a
+  checklist over documents, so its failure modes are staleness and omission rather than an invariant
+  broken invisibly. The two **mechanical** staleness risks were checked directly instead and are clean
+  -- see the table below. The one risk an audit would genuinely have addressed is that
+  `dev/datom_specification.md` and `dev/datom_pathways.md` may carry claims this spec falsified which
+  the checklist does not enumerate; **finding those means reading those documents against the current
+  code, which is this task's own work**, so an audit would have produced that reading twice. What the
+  audit's output would have been, minus the duplication, is the state block below.
+
+  **WHAT IS ALREADY DONE. Do not redo these; verify and move on.** Measured 2026-09-19, so treat each as
+  a claim with a date rather than as a standing fact.
+
+  | Checklist item | Measured state |
+  |---|---|
+  | `_pkgdown.yml` entries for all new exports | **complete** -- all 13 new exports and all 3 print methods are present, checked name by name against the export-tracking table below |
+  | the export-tracking table in this file | **current** -- 13 exports plus 3 print methods, matching `NAMESPACE` exactly against `dev` |
+  | `dev/engineering-notes.md` | **partly done.** The relative-vs-full key entry from Deviation D1 exists. Task 16's follow-up added three more: the "a test observes a layer that cannot distinguish the two behaviours" family with AC2 as its canonical case, the mechanism-clause shape with both instances it found, and the probe procedure (control run, silent-probe-is-ambiguous, crude-probe-is-not-evidence). **Still owed**: whatever Tasks 17's own passes turn up |
+  | `dev/datom_pathways.md` | **partly done** -- two set cards exist (write a set, resolve a set's members), and the read card already carries Task 27's note. Check the `kind` branch and the `schema_version` gate are on the read route (R13.1), and decide whether the edit verbs need more than the one mention they have |
+  | `NEWS.md` | **substantially done, with one clear gap** -- 16 sections cover Tasks 1 through 15 and 20 through 26, including the `artifacts` rename with its discovery-only exposure and the format-number refusals. **THE GAP: Phase H has no section at all.** `datom_update_members()` and `datom_remove_members()` appear **zero** times in `NEWS.md`, so two shipped exports currently have no release note |
+
+  **WHAT IS OPEN, in the order to do it.**
+
+  1. **THE INDEPENDENT AC DERIVATION, FIRST, BEFORE ANY DOCS ARE WRITTEN.** Task 16's one open item. A
+     session shown `requirements.md` **and nothing else** derives the criteria list, then it is diffed
+     against Task 16's. Tightened from "before Task 17 closes" for a reason: if it surfaces a missed
+     criterion, that is a test to write, and this is the task where "the spec is done" gets asserted in
+     `dev/README.md`. A task that has already written its docs has every incentive not to look.
+  2. **`dev/datom_specification.md` is the bulk of the remaining work, and it is barely started.**
+     Measured: `datom-sv1` appears **0** times, "set artifact" **0**, `datom_write_set` **0**;
+     `schema_version` 4 and `artifacts` 2. So the set artifact kind, the sv1 hash, the `schema_version`
+     contract and the `artifacts` namespace (R13.2) all still need writing.
+  3. **`NEWS.md`: a Phase H section.** The two edit verbs, why they touch no stored document, and the
+     shared edit log that turns a chained edit into one commit message.
+  4. **`.github/copilot-instructions.md`: the guard-test rule.** Confirmed absent -- the phrase is not
+     in the file. A guard's test must fail when that guard alone is removed, and the way to know is to
+     delete it and watch. It is a convention rather than an anecdote because it produced an instance in
+     four separate tasks; the family table is in `dev/engineering-notes.md` and this file should point at
+     it rather than restate it.
+  5. **The two forward-compatibility mechanisms, documented together and never separately** (R23.5), and
+     the plain statement that every write-side refusal binds **0.1.1 forward only** (R23.7). Both are
+     already stated in `.github/copilot-instructions.md`; what is owed is the **user-facing** version.
+  6. **One finding from Task 16's E2E, and it needs a decision as well as prose.** **There is no public
+     verb that returns one member's record.** `datom_fetch_member()` goes straight to the data,
+     `datom_list_members()` returns one row per member per label, and `x$members[[i]]` is plain R with no
+     by-name route. The evidence it is easy to assume otherwise: the E2E's first draft called two
+     functions that do not exist. **Document the two real routes** -- in particular that the version a
+     member is pinned at is read out of the listing -- and **decide separately whether a verb is owed**;
+     if the answer is yes it is a Backlog row, not a bullet in a docs task.
+  7. **`dev/README.md`: move the spec Active -> Completed** with date, test count and summary. **The
+     spec persists -- do not delete it.**
+  8. **PR into `dev`, merge, delete the branch.** Not `main`: 0.1.2 is with CRAN and `main` stays
+     matching what they received.
   - `dev/datom_pathways.md`: the set-resolution route card; note the `kind` branch and the
     `schema_version` gate on the read route (R13.1).
   - `dev/datom_specification.md`: set artifact kind, `datom-sv1`, `schema_version` contract,
