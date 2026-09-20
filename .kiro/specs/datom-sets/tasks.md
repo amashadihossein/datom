@@ -3830,7 +3830,7 @@ own; landing it first is what makes Task 6's failure loud.
     a gap -- so nothing is lost and nothing needs saying. Failing to read the stored copy is the one
     loss signal. The review was right to separate them rather than call the module defensive.
 
-- [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]** &nbsp; **[THIS IS NOW THE NEXT TASK -- Phase H landed 2026-09-19, so the next unchecked box is the right place]**
+- [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[coverage standard: probe each claim -- see the rule below; the old "soft escalation" flag is retired]** &nbsp; **[THIS IS NOW THE NEXT TASK -- Phase H landed 2026-09-19, so the next unchecked box is the right place]**
   - **Read this before starting it.** Phase H (Tasks 27 and 28) was appended rather than inserted, so
     it sits *below* this task in the file although it ran *before* it -- which is why the two edit
     verbs appear after this line while their code already exists. **Both shipped on 2026-09-19; see
@@ -3844,16 +3844,58 @@ own; landing it first is what makes Task 6's failure loud.
     AC26 and omitted AC27, and it then stopped at AC28 and omitted AC29. `dev/check-spec.R` now
     asserts this line names no explicit upper bound, so the defect cannot recur. Then add what the
     per-chunk tests missed.
-  - **THE SWEEP CANNOT BE DONE BY GREP, AND THAT IS THE SIZE OF THIS TASK.** Measured 2026-09-19: of
-    the **41** criteria defined, **15** name their own id somewhere under `tests/` and **26** do not --
-    the convention of putting `(AC18)` in a `test_that()` title was followed for some tasks and not
-    others. So for those 26 the criterion has to be read and matched to a test by **meaning**, and an
-    absent label is evidence of nothing either way. Three of the 26 are procedural gates rather than
-    tests (**AC10**, **AC11** suite and check; **AC12** the E2E's non-zero exit), each accounted for
-    in the bullets below, which leaves roughly 23 judgement calls. That count is the whole reason this
-    task carries a coverage-review escalation: a default model claiming "all covered" over 23 read-and-
-    match decisions is exactly the claim least worth taking on trust. Consider adding the id to the
-    title of each test you verify, so the next sweep is cheaper than this one.
+  - **THE SWEEP CANNOT BE DONE BY GREP, AND THAT IS THE SIZE OF THIS TASK.** Measured 2026-09-19, and
+    re-measured after a reviewer arrived at a different figure: of the **41** criteria defined, **15**
+    name their own id somewhere under `tests/`, and only **9** of those 15 put it in a `test_that()`
+    title -- the other six (AC17, AC21, AC32, AC37, AC40, AC41) sit in comments. **26 are not named at
+    all.** The `(AC18)`-in-the-title convention was followed by some tasks and not others. So for
+    those 26 the criterion has to be read and matched to a test by **meaning**, and an absent label is
+    evidence of nothing either way. Three of the 26 are procedural gates rather than tests (**AC10**,
+    **AC11** suite and check; **AC12** the E2E's non-zero exit), each accounted for in the bullets
+    below, which leaves roughly 23 judgement calls. (If a count of 17 turns up elsewhere, it is this
+    same measurement with `AC20a` and `AC20b` counted as two entries; they are two spellings of one
+    criterion.)
+  - **AN AC COUNTS AS COVERED ONLY WHEN A NAMED TEST REDDENS ON A DELIBERATE BREAK OF THE BEHAVIOUR IT
+    CLAIMS TO COVER. Reading a test and judging it relevant is not coverage.** This is the standard
+    for this task and it **replaces the coverage-review escalation** the task used to carry: the owner
+    is at the model ceiling, so there is nowhere to escalate to, and a stronger reader would still be
+    producing a judgement where this produces evidence. It is also the guard-test rule from the
+    2026-09-18 Decisions row applied to a whole criteria set rather than to one guard.
+    - **The deliverable is a table, so the verdict is inspectable rather than asserted**: one row per
+      AC, carrying the criterion, the test that owns it, **what was broken**, and **what reddened**.
+      An AC whose row cannot be completed is not covered, whatever reading suggests -- write the test.
+      **It goes in this task's DONE record**, where every other task's evidence lives, rather than in a
+      new file under `dev/` -- a separate coverage document has nothing keeping it current, and the
+      annotation plus the `check-spec` assertion below are what carry the result forward.
+    - **Restore from a temp copy of the touched files, never `git checkout`.** The probe target is
+      often code committed in an earlier task, so git would restore it correctly -- but the moment any
+      of the sweep's own new tests are uncommitted, a `git checkout` in the loop deletes them. The
+      full reasoning is in `dev/engineering-notes.md` under the probe-harness entry, which exists
+      because this cost a whole task's work once.
+    - **A probe that reddens nothing is ambiguous, not a pass**: it means either the guard is missing
+      or the fixture is too small to tell the two behaviours apart. Same file, the coin-flip-fixture
+      entry. Resolve it before recording the row.
+  - **ANNOTATE AS YOU SWEEP, THEN GATE IT -- and the gate goes in LAST.** Those ~23 judgements are
+    currently made, reported and discarded, so the next release re-makes all of them; the 15 already
+    annotated are the proof, since they are the ones nobody has to think about twice. So write each
+    AC's id into the test as you match it: **in the `test_that()` title** where one test owns the
+    criterion, **in a comment on the relevant assertions** where several tests split it -- AC41's four
+    clauses are deliberately four tests, and forcing one title to own it would be a worse record.
+    Then add one assertion to the AC check in `dev/check-spec.R`, beside the no-hardcoded-upper-bound
+    one that is already there because a written range went stale twice:
+    - **every `AC<n>` defined in `requirements.md` appears by name somewhere under `tests/`.**
+    - **Add it only after the annotation pass is complete.** Adding it first turns `dev/check-spec.R`
+      red on 26 criteria, and that check is a 9/9 must-pass gate for every commit in this project --
+      so the repo would be uncommittable mid-task.
+    - **The gate and the probe rule catch different failures and neither covers the other**: the gate
+      catches an AC nobody matched to anything, the probe catches an AC matched to a test that does
+      not exercise it. Say that where the assertion is written, or a later tidy-up drops one as
+      redundant.
+  - **AFTER THE SWEEP, A FRESH SESSION DERIVES THE AC LIST INDEPENDENTLY AND DIFFS IT AGAINST THE
+    TABLE.** Not a re-read by whoever did the sweep: a **missed** AC and a **mis-credited** AC are
+    different errors, and re-reading your own work catches neither. The second session gets
+    `requirements.md` and nothing else -- it must not be shown the sweep's table until it has produced
+    its own list -- then the two are diffed. An AC on one list and not the other is the finding.
   - **Two criteria are already covered and must be VERIFIED rather than rewritten.** Both bullets here
     once said no test existed, and both statements went stale when the test arrived -- so check before
     writing, and if you find a third, correct the line rather than adding a duplicate fixture.
@@ -3889,8 +3931,12 @@ own; landing it first is what makes Task 6's failure loud.
     the commit message names what changed instead of `Update {name}`.
   - Full `devtools::test()` count reported; `R CMD check --as-cran` 0E/0W (AC10, AC11).
   - _Acceptance: every AC defined in `requirements.md` -- derive the list, do not restate a bound._
-  - **Escalation rationale**: the full acceptance-criteria set plus a new hash regime is a lot
-    of surface to claim covered on a default model's word.
+  - **Why the probe standard replaced the escalation flag** (2026-09-19, owner-decided). The flag said
+    the full criteria set plus a new hash regime was too much surface to claim covered on a default
+    model's word. That reasoning was right about the risk and wrong about the remedy: the owner is
+    already at the model ceiling, so there is nowhere to escalate to, and the thing being bought was a
+    better **judgement** when what the task needs is **evidence**. Deliberate breakage supplies
+    evidence at any model. Retired rather than deleted, so the risk it named stays visible.
 
 - [ ] **17. Docs + Spec Completion Procedure** &nbsp; **[EXECUTES LAST, after Task 16 -- see Task 16's note on why the file order misleads]**
   - `dev/datom_pathways.md`: the set-resolution route card; note the `kind` branch and the
