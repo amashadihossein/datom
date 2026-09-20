@@ -34,8 +34,8 @@ means whatever that artifact's project reports as current. Requires the
 selection to resolve to a single member.}
 }
 \value{
-\code{x} with the matching members repointed, and its change list attached
-as the \code{datom_updates} attribute.
+\code{x} with the matching members repointed, and what changed appended to
+its \code{datom_edits} attribute.
 }
 \description{
 Moves members of a set forward to the versions that are current now, and
@@ -128,10 +128,12 @@ they described the payload it was read as, and that is no longer what the
 object holds. When nothing moved they are left alone, because the object still
 describes exactly that stored version.
 
-The returned object also carries the change list as an attribute, which
+The returned object also carries a log of what changed, which
 \code{\link[=datom_write_set]{datom_write_set()}} uses for the commit message when you pass no \code{message} of
 your own -- so \verb{git log} names what moved instead of saying \verb{Update \{name\}}.
-Passing \code{x$members} rather than \code{x} to the write loses that and nothing else.
+\code{\link[=datom_remove_members]{datom_remove_members()}} adds to the same log, so editing both ways before you
+write produces one message describing both. Passing \code{x$members} rather than \code{x}
+to the write loses that and nothing else.
 }
 
 \examples{
@@ -176,6 +178,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 }
 }
 \seealso{
-\code{\link[=datom_write_set]{datom_write_set()}} to store the result, \code{\link[=datom_list_members]{datom_list_members()}} to
-see what a set holds, \code{\link[=datom_member]{datom_member()}} to build a pointer from scratch.
+\code{\link[=datom_remove_members]{datom_remove_members()}} to drop members instead,
+\code{\link[=datom_write_set]{datom_write_set()}} to store the result, \code{\link[=datom_list_members]{datom_list_members()}} to see what a
+set holds, \code{\link[=datom_member]{datom_member()}} to build a pointer from scratch.
 }

@@ -862,13 +862,13 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # default, so evaluating it errors with R's own "argument is missing" instead of
   # reporting the conflict this refuses. Nothing may touch `members` before the
   # rebind below.
-  # An update's change list rides as an ATTRIBUTE on the object it edited, so it
-  # cannot reach the payload -- the unpack below takes `tags` and `members` and
-  # nothing else. Read here, before either unpack, because both of them replace
-  # the value the attribute is on. It defaults the commit message and nothing
-  # else; a caller who passes `x$members` instead of `x` simply gets today's
-  # default.
-  updates <- NULL
+  # An edit verb's log of what it changed rides as an ATTRIBUTE on the object it
+  # edited, so it cannot reach the payload -- the unpack below takes `tags` and
+  # `members` and nothing else. Read here, before either unpack, because both of
+  # them replace the value the attribute is on. It defaults the commit message and
+  # nothing else; a caller who passes `x$members` instead of `x` simply gets
+  # today's default.
+  edits <- NULL
 
   if (inherits(conn, "datom_set_draft")) {
     if (!missing(members)) {
@@ -886,7 +886,7 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
     }
 
     draft <- conn
-    updates <- attr(draft, "datom_updates")
+    edits <- attr(draft, "datom_edits")
     conn <- draft$conn
     # The draft's name and tags are DEFAULTS, exactly as a `datom_set`'s tags are
     # below: an explicitly supplied one wins, so a draft can be written under
@@ -930,7 +930,7 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # alone would turn a typo into a silent success.
   if (inherits(members, "datom_set")) {
     if (is.null(tags)) tags <- members$tags
-    updates <- attr(members, "datom_updates")
+    edits <- attr(members, "datom_edits")
     members <- members$members
   }
   members <- .datom_strip_member_links(members)
@@ -1059,11 +1059,11 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
     .datom_metadata_known_fields()
   )
 
-  # `Update {name}` says nothing in `git log`, so a write that came out of
-  # `datom_update_members()` names what moved instead. One line is recorded as
-  # this version's commit message, where `datom_history()` can show it; the
-  # commit itself carries the full list.
-  messages <- .datom_set_commit_messages(name, message, updates)
+  # `Update {name}` says nothing in `git log`, so a write of a set that was edited
+  # names what changed instead -- repoints and removals alike, since both verbs
+  # append to one log. One line is recorded as this version's commit message,
+  # where `datom_history()` can show it; the commit itself carries the full list.
+  messages <- .datom_set_commit_messages(name, message, edits)
 
   write_result <- .datom_write_metadata_local(
     conn, name, meta, metadata_sha,

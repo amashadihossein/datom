@@ -68,6 +68,7 @@ reference:
       - datom_assemble_set
       - datom_add_member
       - datom_update_members
+      - datom_remove_members
       - print.datom_set
       - print.datom_set_draft
       - print.datom_link

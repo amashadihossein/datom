@@ -6201,13 +6201,23 @@ drops is the verb the owner called less fundamental.
     ambiguity abort and its narrowing lesson have one implementation and cannot drift from the fetch
     verb's. Only the sweep half is new code, built on `.datom_member_has_tags()` and a one-line
     `startsWith()`, exactly as finding 1 sized it.
-  - **The skip is keyed on project AND name (`R/set-edit.R:874`), not name alone, and the deviation
-    from R24.6's wording is deliberate.** Two members named `dm` in **different** projects resolve
-    through different manifests to different versions, with nothing to guess between them -- skipping
-    them would make a product drawing one table from two studies unrefreshable. Two named `dm` in
-    **one** project are the live-beside-baseline pair R24.6 is about, and moving both would collapse
-    them onto one version. Has its own test, and the two-project case has a separate one so a later
-    "simplification" to name-only reddens.
+  - **The skip is keyed on project AND name (`R/set-edit.R:874`), and this is R24.6 made precise
+    rather than departed from.** R24.6 says "two members sharing a name", which was written with one
+    project in view and does not say what a name means across two. It means project plus name: two
+    members named `dm` in **different** projects resolve through different manifests to different
+    versions with nothing to guess between them, so skipping them would make a product drawing one
+    table from two studies permanently unrefreshable -- the exact shape this verb exists for. Two
+    named `dm` in **one** project are the live-beside-baseline pair the rule is actually about, and
+    moving both would collapse them onto one version. Stated here and at R24.6 so that nobody
+    "restores" the name-only reading. Both cases have their own test, so a later simplification to
+    name-only reddens.
+  - **Three mechanisms finer than the decisions specified, recorded because a refactor would flatten
+    them and nothing would say so.** (a) The labels are attached **before** the link is built
+    (`R/set-edit.R:448`, then `:453`), so the record the link carries holds them too -- attaching
+    afterwards leaves that copy short and silent. (b) The link is rebuilt **only when the record had
+    one**, or a draft's members grow a `fetch` field they never carried. (c) Identity blanking is
+    **conditional on something having moved**; unconditional would strip a set's citable version on a
+    no-op call, which is the reading a cold reviewer arrived at independently.
   - **Labels are attached after construction (`R/set-edit.R:448`), never passed into it.** The probe
     that matters: the naive spelling -- hand the old labels to `datom_member()` and let it build the
     record -- turns the labels test red, because the constructor drops a key whose value is empty. The
@@ -6229,6 +6239,10 @@ drops is the verb the owner called less fundamental.
     version records as its commit message, the commit gets the subject plus the full list with whole
     versions. An explicit `message` still wins, and a change list of the wrong shape is ignored rather
     than trusted -- it is an attribute, so a caller can put anything there.
+    **Renamed hours later, in Task 28**: this shipped as `attr(x, "datom_updates")` and is now
+    `datom_edits`, an append-only log with an `action` per entry, because a second editing verb owning
+    a second attribute would have produced a commit message naming the repoints and silent about the
+    removal. See the 2026-09-19 Decisions row; nothing had been released, so the rename cost nothing.
   - **SIXTEEN deliberate breakages, each reddening its own test**, restored from a temp copy rather
     than from git (the code under probe is uncommitted by definition). Two found real holes: the
     labels probe above, and the manifest one.
@@ -6243,7 +6257,7 @@ drops is the verb the owner called less fundamental.
     against the old one. A name is one artifact for its lifetime within a project, and the
     cross-project case is already refused by the project comparison.
 
-- [ ] **28. `datom_remove_members()` -- drop members from a set** &nbsp; **[EXECUTES AFTER TASK 27]**
+- [x] **28. `datom_remove_members()` -- drop members from a set** &nbsp; **[DONE 2026-09-19 -- see the DONE record]**
   - **DEPENDS ON TASK 27** for the plural selector, which lands there because the harder consumer
     shapes it correctly. Nothing else here is new machinery.
   - **`datom_remove_members(x, member, tags = NULL, version = NULL)`** -> the same class it was
@@ -6268,14 +6282,55 @@ drops is the verb the owner called less fundamental.
     same shape as Task 24's ambiguity abort, and the opposite response from Task 27's skip, because
     skipping a removal would silently do nothing while skipping a repoint safely leaves a valid pin.
     **State that asymmetry where both are documented**, or a later change "unifies" them.
-  - _Requirements: R24.1, R24.2, R2.14a. Acceptance: AC41 (c) shares the two-members-one-name fixture
-    with Task 27; **the rest by test rather than criterion** -- the empty-selection abort, the
-    matched-nothing abort, the last-member refusal, and the ambiguous-name refusal each get one._
+  - **IT JOINS TASK 27'S CHANGE LOG RATHER THAN STARTING ITS OWN, AND THAT IS THE FIRST THING TO
+    BUILD** (R24.8, settled in the 2026-09-19 Decisions row). Task 27 shipped
+    `attr(x, "datom_updates")` -- a data frame of what moved, read by `datom_write_set()` to name it in
+    `git log`. A removal has to appear in that message too, or chaining the pair produces a commit that
+    describes the repoints and is silent about the removal. So, before this verb is written: rename the
+    attribute to **`datom_edits`**, give it an `action` column (`"repoint"` / `"remove"`), have each
+    verb **append** its rows to whatever the object already carries, and make
+    `.datom_set_commit_messages()` render per action -- `Update {name}: repoint 3 members, drop 1`,
+    with the full list in the body. `to` is empty on a removal row; `from` records the version the
+    dropped member pinned, which is the fact a reader of that commit wants. The rename is free because
+    the attribute has never been in a release.
+  - _Requirements: R24.1, R24.2, R24.8 (the shared log), R2.14a. Acceptance: AC41 (c) shares the
+    two-members-one-name fixture with Task 27; **the rest by test rather than criterion** -- the
+    empty-selection abort, the matched-nothing abort, the last-member refusal, the ambiguous-name
+    refusal, and a chained `update |> remove` whose commit message names both, each get one._
   - _Pathway impact: none -- no lookup, no traversal, no IO of any kind._
 
----
-
-## Decisions log
+  **DONE 2026-09-19.** Tests 4219 -> **4270** (+51), FAIL 0 / WARN 0 / SKIP 0; `R CMD check` 0/0/0
+  with examples, tests and vignettes run; `dev/check-spec.R` 9/9. Nothing stored changed shape.
+  - **The shared log landed first, as instructed, and it is the only part that touched Task 27's
+    code.** `attr(x, "datom_edits")` carries `action`, `project`, `name`, `kind`, `from`, `to`;
+    `.datom_append_edits()` (`R/set-edit.R:515`) `rbind()`s onto whatever the object already holds;
+    `.datom_edit_lines()` renders per action -- `name  old8 -> new8` for a repoint,
+    `name  dropped, was old8` for a removal. The subject builds one clause per action **present**, in a
+    fixed action order, so `repoint 1 member, drop 1 member` reads the same whichever order the edits
+    happened in. Has its own test in both chain orders, and replacing the log instead of appending
+    reddens seven cases.
+  - **The verb itself is 60 lines and adds no machinery**, exactly as the task predicted: the
+    selection grammar, the ambiguity abort, the matched-nothing abort and the identity blanking are all
+    Task 27's, reached with different arguments.
+  - **Three refusals of its own, each with a class and a test.** A call with no selection at all
+    (`datom_remove_selection_required`), because letting the selector default to everything would build
+    a payload the write then rejects. A selection that is every member
+    (`datom_set_would_be_empty`) -- the write refuses an empty set anyway, so this only moves the
+    refusal to where the caller can see which selection emptied it. And an ambiguous name, which comes
+    free from the shared selector and is the **opposite** response from Task 27's skip; both are
+    documented together, in each verb's roxygen, so a later change cannot "unify" them without reading
+    the reason.
+  - **`version` here is a prefix selector and needs no full-version rule**, unlike Task 27's
+    `version_to`: nothing is recorded from it, so matching is all it has to do.
+  - **A removal blanks the set's version unconditionally**, where an update does it only when something
+    moved. Not an inconsistency: removing nothing is an error here, so a call that returns has always
+    changed the member list.
+  - **NINE deliberate breakages, each reddening its own test**, including one on the write: reading the
+    log **after** the unpack instead of before turns nine cases red, which is what pins the ordering
+    finding from Task 27's audit now that a second producer exists.
+  - **One test asserts the verb needs no credentials**, by running it on a set read through a
+    storage-only connection with no clone. That is the argument for the missing `conn` argument, and
+    without the test it is only a docs claim.
 
 Record decisions as they are made, so a fresh session does not relitigate them.
 
@@ -6613,3 +6668,4 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-19 | **(decision, Task 27) `conn` stays required even when `x` is a draft that already carries one, and the embedded one is ignored.** A draft holds exactly one connection while this verb legitimately spans several projects, and silently preferring the embedded one would make the same call behave differently depending on how `x` was produced. | R24.1, Task 27 |
 | 2026-09-19 | **(correction, Task 27) AC41(d)'s fixture does not already exist, and the one the task pointed at cannot express it.** The no-gate test (`tests/testthat/test-set-members.R:689`) is single-store: it mutates `project_name` on one connection, so the member and the store agree and only the label differs -- the opposite of a connection whose label matches while its store holds another project's same-named artifact. The fitting base is the parameterised two-project fixture `local_draft_project(project_name, set_name, prefix)` (`tests/testthat/test-set-draft.R:37`), which will have to be duplicated since testthat shares nothing between files. | AC41, Task 27 |
 | 2026-09-19 | **(pre-start audit, Task 27) Carrying a member's labels through `datom_member()` breaks AC40(a) silently.** The natural spelling passes the old record's `tags` to the rebuild, and `datom_member()` runs `.datom_drop_empty_tags()` on what it is handed (`R/member.R:518` area), so a label whose value is empty is dropped. Invisible on every payload datom wrote, because those were tidied at write; it surfaces only on a hand-built or foreign-written set. Build the pointer with **no** tags and attach the old record's `tags` verbatim, which keeps the snapshot read and `kind` resolution while satisfying byte-identity. | AC40, Task 27 |
+| 2026-09-19 | **(decision, Task 28) The commit-message change list is ONE append-only attribute both edit verbs write into, carrying an `action` per entry, rather than one attribute per verb.** Found by a cold review chaining the pair: with each verb owning its own attribute, `update \|> remove \|> write` commits a message naming the repoints and saying nothing about the removal -- and a destructive edit is the one a `git log` reader most wants named. Three shapes were available. **One attribute per verb**: the message builder reads two names, and a third editing verb means a third name plus a third branch. **No message for a removal**: cheapest, and it loses exactly the edit worth recording. **One log with an action column**: taken. Concretely the attribute is renamed **`datom_edits`**, its columns are `action`, `project`, `name`, `kind`, `from`, `to`, each verb appends its rows to whatever is already there, and `.datom_set_commit_messages()` renders per action -- `Update {name}: repoint 3 members, drop 1`, full list in the body. **The rename costs nothing because the attribute has never been released**: it was added hours earlier in Task 27, and 0.1.2 is what CRAN holds. **Deliberately not chased**: repointing a member and then removing it leaves both entries, which is an honest history of the edits and slightly odd in a commit message -- collapsing them would mean one verb reasoning about the other's entries. | R24.8, Task 27 (`R/set-edit.R`), Task 28 |

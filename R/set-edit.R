@@ -1,13 +1,19 @@
-# Editing a set that already exists: selecting members already in hand, and
-# repointing them at newer versions.
+# Editing a set that already exists: selecting members already in hand, then
+# repointing them at newer versions or dropping them.
 #
-# WHY A VERB RATHER THAN LIST SURGERY. The only route before this was editing
+# WHY VERBS RATHER THAN LIST SURGERY. The only route before these was editing
 # the list `datom_get_set()` returned, and two of the obvious spellings are
 # silently wrong. Filtering members by name drops EVERY version of that name, so
 # a deliberately frozen baseline goes out with the live table. And rebuilding a
 # pointer from its name plus a new version loses that member's labels, which are
 # part of the set's content -- so the set's identity moves for a reason nobody
 # asked for.
+#
+# THE TWO VERBS ARE ASYMMETRIC IN WHAT THEY NEED, AND THAT IS FORCED. Removing
+# has to FIND a pointer already in hand, so it takes no connection and does no
+# IO; repointing has to RESOLVE one, so it takes a connection per project. Their
+# defaults are opposite for the same kind of reason: an idempotent refresh
+# defaults to every member, a destructive verb defaults to nothing.
 #
 # FIVE THINGS HERE ARE LOAD-BEARING.
 #
@@ -246,7 +252,8 @@
       "i" = "{length(members)} member{?s} in the set:",
       .datom_line_bullets(lines),
       "i" = "A label filter needs the key and the exact value; a version may be \\
-             given as a prefix."
+             given as a prefix.",
+      "i" = "See every member with its labels using {.fn datom_list_members}."
     ),
     class = "datom_member_not_found"
   )
@@ -474,25 +481,87 @@
 
 # --- the report -------------------------------------------------------------------
 
-#' One Display Line Per Moved Member, Grouped by Project
+#' The Columns of the Edit Log, in One Place
+#'
+#' @return A character vector of column names.
+#' @keywords internal
+.datom_edit_log_fields <- function() {
+  c("action", "project", "name", "kind", "from", "to")
+}
+
+
+#' Add This Edit's Rows to Whatever Log the Object Already Carries
+#'
+#' **One log for both edit verbs, appended to rather than replaced, and that is
+#' what makes a chain of edits produce one honest commit message.** With a verb
+#' owning its own attribute, `update |> remove |> write` commits a message naming
+#' the repoints and silent about the removal -- and a destructive edit is the one
+#' a `git log` reader most wants named. So an entry says which action it records,
+#' and a third editing verb costs an action value rather than a new attribute.
+#'
+#' The log is an **attribute** rather than a field, following the link's carried
+#' member record: the write reads `tags` and `members` off a set and nothing else,
+#' so an attribute cannot reach the payload by construction.
+#'
+#' Repointing a member and then removing it leaves **both** entries. That is an
+#' honest history of the edits and slightly odd in a commit message; collapsing
+#' them would mean one verb reasoning about the other's rows.
+#'
+#' @param x The edited object.
+#' @param rows A data frame of new entries, carrying
+#'   [.datom_edit_log_fields()].
+#' @return `x`, with the log extended.
+#' @keywords internal
+.datom_append_edits <- function(x, rows) {
+  rows <- rows[, .datom_edit_log_fields(), drop = FALSE]
+  row.names(rows) <- NULL
+
+  existing <- attr(x, "datom_edits")
+  if (is.data.frame(existing) &&
+      all(.datom_edit_log_fields() %in% names(existing))) {
+    rows <- rbind(existing[, .datom_edit_log_fields(), drop = FALSE], rows)
+    row.names(rows) <- NULL
+  }
+
+  attr(x, "datom_edits") <- rows
+
+  x
+}
+
+
+#' One Display Line Per Edited Member, Grouped by Project
 #'
 #' Grouped by project because that is the axis connections are supplied along, so
 #' a surprise in the grouping is a surprise about which connection served what.
+#' A removal has no connection behind it, but it keeps the same grouping so one
+#' message can hold both kinds of entry.
 #'
-#' @param changes The change table.
+#' @param edits The edit log.
 #' @param abbreviate Whether to shorten versions to 8 characters (the console)
 #'   or leave them whole (a commit message, where git is the durable record).
 #' @return A character vector of lines.
 #' @keywords internal
-.datom_update_lines <- function(changes, abbreviate = TRUE) {
+.datom_edit_lines <- function(edits, abbreviate = TRUE) {
   short <- function(v) if (abbreviate) substr(v, 1L, 8L) else v
 
+  describe <- function(row) {
+    if (identical(row$action, "remove")) {
+      sprintf("  %s  dropped, was %s", row$name, short(row$from))
+    } else {
+      sprintf("  %s  %s -> %s", row$name, short(row$from), short(row$to))
+    }
+  }
+
   unlist(
-    lapply(unique(changes$project), function(p) {
-      rows <- changes[changes$project == p, , drop = FALSE]
+    lapply(unique(edits$project), function(p) {
+      rows <- edits[edits$project == p, , drop = FALSE]
       c(
         paste0("project ", p, ":"),
-        sprintf("  %s  %s -> %s", rows$name, short(rows$from), short(rows$to))
+        vapply(
+          seq_len(nrow(rows)),
+          function(k) describe(rows[k, , drop = FALSE]),
+          character(1L)
+        )
       )
     }),
     use.names = FALSE
@@ -531,7 +600,7 @@
     cli::cli_alert_success(
       "Repointed {moved} member{?s}, of {n_selected} selected."
     )
-    lines <- .datom_update_lines(changes)
+    lines <- .datom_edit_lines(changes)
     if (length(lines) > n) {
       extra <- length(lines) - n
       lines <- c(lines[seq_len(n)], paste0("... and ", extra, " more"))
@@ -587,9 +656,10 @@
 
 #' The Commit Message a Set Write Uses
 #'
-#' A set write commits `Update {name}`, which says nothing in `git log`. When an
-#' update produced a change list and the caller passed no `message`, the default
-#' names what moved instead.
+#' A set write commits `Update {name}`, which says nothing in `git log`. When the
+#' object being written carries an edit log and the caller passed no `message`, the
+#' default names what changed instead -- every action in the log, so a chained
+#' `update |> remove` produces one message describing both.
 #'
 #' Two messages, because they go to two places. The **subject** is recorded as the
 #' version's `commit_message`, where one line is what [datom_history()] can show.
@@ -597,30 +667,41 @@
 #' than prefixes: git is the durable record, so completeness belongs there rather
 #' than on screen.
 #'
-#' An explicit `message` always wins, and a change list of the wrong shape is
-#' ignored rather than trusted -- it is an attribute, so a caller can put anything
-#' there.
+#' An explicit `message` always wins, and a log of the wrong shape is ignored
+#' rather than trusted -- it is an attribute, so a caller can put anything there.
 #'
 #' @param name The set's name.
 #' @param message The caller's `message`, or `NULL`.
-#' @param updates The change list carried by the object being written, or `NULL`.
+#' @param edits The edit log carried by the object being written, or `NULL`.
 #' @return A list of `history` (a single line, or `NULL` to leave the existing
 #'   default in place) and `commit`.
 #' @keywords internal
-.datom_set_commit_messages <- function(name, message, updates) {
+.datom_set_commit_messages <- function(name, message, edits) {
   if (!is.null(message)) return(list(history = message, commit = message))
 
   fallback <- paste0("Update ", name)
-  usable <- is.data.frame(updates) && nrow(updates) > 0L &&
-    all(c("project", "name", "from", "to") %in% names(updates))
+  usable <- is.data.frame(edits) && nrow(edits) > 0L &&
+    all(.datom_edit_log_fields() %in% names(edits))
   if (!usable) return(list(history = NULL, commit = fallback))
 
-  subject <- paste0(
-    fallback, ": repoint ", nrow(updates), " member",
-    if (nrow(updates) == 1L) "" else "s"
+  # One clause per action present, in the order the actions are listed here so
+  # the subject reads the same whichever order the edits happened in.
+  verbs <- c(repoint = "repoint", remove = "drop")
+  counts <- vapply(
+    names(verbs), function(a) sum(edits$action == a), integer(1L)
   )
-  body <- paste(.datom_update_lines(updates, abbreviate = FALSE),
-                collapse = "\n")
+  clauses <- vapply(
+    names(verbs)[counts > 0L],
+    function(a) {
+      paste0(verbs[[a]], " ", counts[[a]], " member",
+             if (counts[[a]] == 1L) "" else "s")
+    },
+    character(1L)
+  )
+  if (length(clauses) == 0L) return(list(history = NULL, commit = fallback))
+
+  subject <- paste0(fallback, ": ", paste(clauses, collapse = ", "))
+  body <- paste(.datom_edit_lines(edits, abbreviate = FALSE), collapse = "\n")
 
   list(history = subject, commit = paste0(subject, "\n\n", body))
 }
@@ -710,10 +791,12 @@
 #' object holds. When nothing moved they are left alone, because the object still
 #' describes exactly that stored version.
 #'
-#' The returned object also carries the change list as an attribute, which
+#' The returned object also carries a log of what changed, which
 #' [datom_write_set()] uses for the commit message when you pass no `message` of
 #' your own -- so `git log` names what moved instead of saying `Update {name}`.
-#' Passing `x$members` rather than `x` to the write loses that and nothing else.
+#' [datom_remove_members()] adds to the same log, so editing both ways before you
+#' write produces one message describing both. Passing `x$members` rather than `x`
+#' to the write loses that and nothing else.
 #'
 #' @param x A `datom_set` from [datom_get_set()], or a `datom_set_draft` from
 #'   [datom_assemble_set()].
@@ -729,10 +812,11 @@
 #'   means whatever that artifact's project reports as current. Requires the
 #'   selection to resolve to a single member.
 #'
-#' @return `x` with the matching members repointed, and its change list attached
-#'   as the `datom_updates` attribute.
-#' @seealso [datom_write_set()] to store the result, [datom_list_members()] to
-#'   see what a set holds, [datom_member()] to build a pointer from scratch.
+#' @return `x` with the matching members repointed, and what changed appended to
+#'   its `datom_edits` attribute.
+#' @seealso [datom_remove_members()] to drop members instead,
+#'   [datom_write_set()] to store the result, [datom_list_members()] to see what a
+#'   set holds, [datom_member()] to build a pointer from scratch.
 #' @export
 #'
 #' @examples
@@ -916,9 +1000,8 @@ datom_update_members <- function(x, conn, member = NULL, tags = NULL,
 
     x$members <- members
     x <- .datom_forget_set_identity(x)
-    attr(x, "datom_updates") <- changes[
-      , c("project", "name", "kind", "from", "to"), drop = FALSE
-    ]
+    changes$action <- "repoint"
+    x <- .datom_append_edits(x, changes)
   }
 
   .datom_report_member_updates(
@@ -931,6 +1014,221 @@ datom_update_members <- function(x, conn, member = NULL, tags = NULL,
     },
     n_selected = length(at)
   )
+
+  x
+}
+
+
+#' Say What Was Dropped, and That Nothing Was Written
+#'
+#' @param dropped The edit rows for the removed members.
+#' @param left How many members remain.
+#' @param n Maximum number of lines to print before truncating.
+#' @return Invisibly `NULL`.
+#' @keywords internal
+.datom_report_member_removals <- function(dropped, left, n = 20L) {
+  cli::cli_alert_success(
+    "Dropped {nrow(dropped)} member{?s}; {left} remain{?s/}."
+  )
+
+  lines <- .datom_edit_lines(dropped)
+  if (length(lines) > n) {
+    extra <- length(lines) - n
+    lines <- c(lines[seq_len(n)], paste0("... and ", extra, " more"))
+  }
+  cli::cli_verbatim(lines)
+
+  cli::cli_alert_info(
+    "Nothing has been written. Write the set with \\
+     {.code datom_write_set(conn, x)}."
+  )
+
+  invisible(NULL)
+}
+
+
+#' Drop members from a set
+#'
+#' Removes the members you select and returns the set without them. **Nothing is
+#' written**: the object comes back edited, and the set is stored only when you
+#' pass the result to [datom_write_set()].
+#'
+#' It exists because the hand-rolled version is silently wrong. Filtering a
+#' member list by name drops **every** version of that name, so a set holding a
+#' live table beside a deliberately frozen baseline loses both; removing by
+#' position removes a different member the day somebody adds one.
+#'
+#' @section Why there is no connection argument:
+#' Not an oversight. Removing a member only has to **find** a pointer the set
+#' already holds, while adding or repointing one has to **resolve** it -- read the
+#' artifact's metadata, confirm its kind, record the project that wrote it. So
+#' this verb does no IO at all and needs no credentials, which is also why it is
+#' the one edit verb that works on a set read through a storage-only connection
+#' with no clone.
+#'
+#' @section Selecting what to drop:
+#' A selection is **required**. `datom_remove_members(x)` would mean removing
+#' every member, which the writer refuses anyway, so it aborts instead of building
+#' a payload the write then rejects. The safe default for a destructive verb is
+#' nothing -- the opposite of [datom_update_members()], where the safe default is
+#' everything because a refresh is idempotent.
+#'
+#' Select by name, by a member record, or by a link, and narrow with `tags` or
+#' `version`; `tags` or `version` on their own select every member they match, so
+#' `tags = list(status = "draft")` drops the labelled ones.
+#'
+#' Three things it refuses rather than doing quietly:
+#'
+#' | What you asked for | Why it stops |
+#' |---|---|
+#' | a name matching more than one member | that is the silently-wrong spelling this verb replaces -- it would drop a frozen baseline along with the live table |
+#' | a selection matching nothing | it is a typo, and `Filter()` reports success for it |
+#' | every member | a set with no members cannot be written, and the refusal belongs on the line that emptied it |
+#'
+#' **An ambiguous name refuses here while [datom_update_members()] skips it**, and
+#' the asymmetry is the consequence rather than a taste: skipping a repoint leaves
+#' a valid pinned version behind, while skipping a removal silently does nothing at
+#' all.
+#'
+#' @param x A `datom_set` from [datom_get_set()], or a `datom_set_draft` from
+#'   [datom_assemble_set()].
+#' @param member The member to drop, as its name, a member record, or a link.
+#'   Optional only when `tags` or `version` selects on its own.
+#' @param tags Optional named list of labels selecting members, e.g.
+#'   `list(status = "draft")`. A member matches when it carries every label
+#'   listed.
+#' @param version Optional version, or a prefix of one, selecting the members
+#'   pinned at it.
+#'
+#' @return `x` without the selected members, its `version` and `data_sha` emptied
+#'   because they described a payload it no longer holds, and what was dropped
+#'   appended to its `datom_edits` attribute -- which [datom_write_set()] turns
+#'   into the commit message.
+#' @seealso [datom_update_members()] to repoint members instead,
+#'   [datom_list_members()] to see what a set holds, [datom_write_set()] to store
+#'   the result.
+#' @export
+#'
+#' @examples
+#' # Offline, self-contained: a bare git repo stands in for GitHub and a
+#' # local directory for object storage.
+#' if (requireNamespace("git2r", quietly = TRUE)) {
+#'   tmp <- tempfile("datom-example-")
+#'   remote <- file.path(tmp, "remote.git")
+#'   dir.create(remote, recursive = TRUE)
+#'   git2r::init(remote, bare = TRUE)
+#'
+#'   store <- datom_store(
+#'     data = datom_store_local(file.path(tmp, "storage")),
+#'     github_pat = "example-token", # role selector; a local remote needs none
+#'     data_repo_url = remote,
+#'     validate = FALSE
+#'   )
+#'   # A product repo declares itself as one and names the single set it owns.
+#'   datom_init_repo(file.path(tmp, "repo"), "example_project", store,
+#'                   mode = "product", set = "example_product")
+#'
+#'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
+#'
+#'   datom_write(conn, data = datom_example_data("dm"), name = "dm")
+#'   datom_write(conn, data = datom_example_data("lb"), name = "lb")
+#'   datom_write_set(conn, list(
+#'     datom_member(conn, "dm", datom_history(conn, "dm")$version[1],
+#'                  tags = list(type = "input")),
+#'     datom_member(conn, "lb", datom_history(conn, "lb")$version[1],
+#'                  tags = list(status = "draft"))
+#'   ))
+#'
+#'   x <- datom_get_set(conn, "example_product")
+#'
+#'   # By label, which is the selection that does not depend on position.
+#'   x <- datom_remove_members(x, tags = list(status = "draft"))
+#'   print(datom_list_members(x))
+#'
+#'   datom_write_set(conn, x)
+#'
+#'   unlink(tmp, recursive = TRUE)
+#' }
+datom_remove_members <- function(x, member = NULL, tags = NULL,
+                                 version = NULL) {
+
+  members <- .datom_edit_members(x)
+
+  # A SELECTION IS REQUIRED, and it is checked here rather than by letting the
+  # selector default to everything: removing every member builds a payload the
+  # write refuses, so the refusal belongs on the line the caller typed.
+  if (is.null(member) && is.null(tags) && is.null(version)) {
+    cli::cli_abort(
+      c(
+        "{.fn datom_remove_members} needs to know which members to drop.",
+        "i" = "Selecting nothing would mean removing every member, and a set \\
+               with no members cannot be written.",
+        "i" = "Name one -- {.code member = \"dm\"} -- or select by label with \\
+               {.code tags = list(status = \"draft\")}, or by version with \\
+               {.code version = }.",
+        "i" = "See what the set holds with {.fn datom_list_members}."
+      ),
+      class = "datom_remove_selection_required"
+    )
+  }
+
+  if (!is.null(tags)) {
+    .datom_validate_tag_map(
+      tags, "tags",
+      remedy = "Select by labels a member carries, e.g. \\
+                {.code list(status = \"draft\")}."
+    )
+  }
+  if (!is.null(version) && !.datom_is_text_scalar(version)) {
+    cli::cli_abort(
+      c(
+        "{.arg version} must be a single non-empty string.",
+        "i" = "It says which member to drop -- a version, or a prefix of one, \\
+               as {.fn datom_history} reports them."
+      )
+    )
+  }
+
+  # An ambiguous name ABORTS through the shared selector, which is the opposite of
+  # `datom_update_members()`'s skip and is the consequence rather than a taste:
+  # skipping a repoint leaves a valid pin behind, skipping a removal silently does
+  # nothing. A selection matching nothing aborts there too.
+  at <- .datom_select_members(members, member, tags, version)
+
+  if (length(at) == length(members)) {
+    cli::cli_abort(
+      c(
+        "That selection is every member of this set, so nothing would be left.",
+        "i" = "A set with no members cannot be written -- the writer refuses \\
+               one -- so this stops here, where you can see which selection \\
+               emptied it.",
+        "i" = "To retire the set itself, that is a different operation from \\
+               emptying it.",
+        "i" = "Narrow the selection, or drop the members you meant one \\
+               selection at a time."
+      ),
+      class = "datom_set_would_be_empty"
+    )
+  }
+
+  ids <- lapply(at, function(i) .datom_member_id(members[[i]]))
+  dropped <- data.frame(
+    action = "remove",
+    project = vapply(ids, function(id) id$project, character(1L)),
+    name = vapply(ids, function(id) id$name, character(1L)),
+    kind = vapply(ids, function(id) id$kind, character(1L)),
+    from = vapply(ids, function(id) id$version, character(1L)),
+    to = NA_character_,
+    stringsAsFactors = FALSE
+  )
+
+  x$members <- members[-at]
+  # Unconditional here, unlike an update: removing nothing is an error, so a
+  # successful call always changed the member list.
+  x <- .datom_forget_set_identity(x)
+  x <- .datom_append_edits(x, dropped)
+
+  .datom_report_member_removals(dropped, left = length(x$members))
 
   x
 }

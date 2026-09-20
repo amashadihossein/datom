@@ -4,23 +4,24 @@
 \alias{.datom_set_commit_messages}
 \title{The Commit Message a Set Write Uses}
 \usage{
-.datom_set_commit_messages(name, message, updates)
+.datom_set_commit_messages(name, message, edits)
 }
 \arguments{
 \item{name}{The set's name.}
 
 \item{message}{The caller's \code{message}, or \code{NULL}.}
 
-\item{updates}{The change list carried by the object being written, or \code{NULL}.}
+\item{edits}{The edit log carried by the object being written, or \code{NULL}.}
 }
 \value{
 A list of \code{history} (a single line, or \code{NULL} to leave the existing
 default in place) and \code{commit}.
 }
 \description{
-A set write commits \verb{Update \{name\}}, which says nothing in \verb{git log}. When an
-update produced a change list and the caller passed no \code{message}, the default
-names what moved instead.
+A set write commits \verb{Update \{name\}}, which says nothing in \verb{git log}. When the
+object being written carries an edit log and the caller passed no \code{message}, the
+default names what changed instead -- every action in the log, so a chained
+\verb{update |> remove} produces one message describing both.
 }
 \details{
 Two messages, because they go to two places. The \strong{subject} is recorded as the
@@ -29,8 +30,7 @@ The \strong{commit} gets the subject plus the full list, with whole versions rat
 than prefixes: git is the durable record, so completeness belongs there rather
 than on screen.
 
-An explicit \code{message} always wins, and a change list of the wrong shape is
-ignored rather than trusted -- it is an attribute, so a caller can put anything
-there.
+An explicit \code{message} always wins, and a log of the wrong shape is ignored
+rather than trusted -- it is an attribute, so a caller can put anything there.
 }
 \keyword{internal}

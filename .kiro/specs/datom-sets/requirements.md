@@ -1622,17 +1622,35 @@ member's labels, which are part of the set's content.
   refusing the sweep would make the first bulk update on any set holding a baseline an error. The
   report names both with their versions and labels and gives the two ways to repoint one deliberately.
   This is R2.14a's own rule, stated there as well.
+
+  **"Sharing a name" means sharing a PROJECT AND a name** (made precise 2026-09-19, during Task 27,
+  because the clause above was written with one project in view and does not say what a name means
+  across two). Two members named `dm` in **different** projects resolve through different manifests to
+  different versions, with nothing to guess between them -- skipping those would make a product
+  drawing one table from two studies permanently unrefreshable, which is the shape the update verb
+  exists for. Two named `dm` in **one** project are the live-beside-baseline pair this rule is about,
+  and repointing both would collapse them onto one version. The name-only reading is therefore wrong
+  rather than simpler; both cases carry a test so restoring it reddens.
 - **R24.7 -- nothing is written, so the report IS the dry run.** Both verbs return an object; the
   write is a separate call. So inspecting the result costs nothing, no confirmation prompt is needed
   (unlike `renv`, which must ask because it is about to act), and an update that finds nothing new
   produces a byte-identical payload, which existing change detection reports as no change with no
   version minted.
-- **R24.8 -- the update report feeds the commit message.** A set write's commit message defaults to
-  `Update {name}`, which says nothing in `git log`. When an update produced a change list and the
-  caller passes no `message`, the write defaults to a summary naming what moved, `old -> new`, one
-  line per member, grouped by project. An explicit `message` still wins. The change list rides as an
-  **attribute** on the returned object rather than as a field, following the link's carried member
-  record, so it cannot reach the payload.
+- **R24.8 -- an edit's own record feeds the commit message.** A set write's commit message defaults to
+  `Update {name}`, which says nothing in `git log`. When an edit produced a change list and the
+  caller passes no `message`, the write defaults to a summary naming what changed -- `old -> new` for
+  a repoint, the dropped member for a removal -- one line each, grouped by project. An explicit
+  `message` still wins. The change list rides as an **attribute** on the returned object rather than
+  as a field, following the link's carried member record, so it cannot reach the payload.
+
+  **One attribute, appended to by both edit verbs, with an action per entry** (settled 2026-09-19,
+  after a cold review chained them). Each verb owning its own attribute means
+  `update |> remove |> write` commits a message that names the repoints and is silent about the
+  removal, which is the wrong way round: a destructive edit is the one worth naming. So the attribute
+  is a log rather than one verb's output -- an entry says which action it records, and a verb adds its
+  rows to whatever is already there instead of replacing them. A chain of edits therefore produces one
+  message describing all of them, and a third editing verb costs a new action value rather than a new
+  attribute.
 
 ---
 

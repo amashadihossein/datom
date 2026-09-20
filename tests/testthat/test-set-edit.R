@@ -167,7 +167,7 @@ test_that("a refresh that finds nothing says so and reports no moves", {
   msg <- se_messages(out <- datom_update_members(x, fx$conn))
   expect_match(msg, "No member moved")
   expect_identical(out$members[[1L]]$id$version, v1)
-  expect_null(attr(out, "datom_updates"))
+  expect_null(attr(out, "datom_edits"))
 })
 
 
@@ -226,7 +226,7 @@ test_that("selecting by label repoints only those members", {
 
   expect_identical(out$members[[1L]]$id$version, new_dm)
   expect_identical(out$members[[2L]]$id$version, v_lb)
-  expect_identical(nrow(attr(out, "datom_updates")), 1L)
+  expect_identical(nrow(attr(out, "datom_edits")), 1L)
 })
 
 test_that("selecting one member by name repoints only it", {
@@ -561,7 +561,7 @@ test_that("version_to equal to the current pin moves nothing", {
   x <- se_set(se_member("dm", v1))
 
   out <- se_update(x, fx$conn, member = "dm", version_to = v1)
-  expect_null(attr(out, "datom_updates"))
+  expect_null(attr(out, "datom_edits"))
 })
 
 test_that("version_to is refused beside a selection of several members", {
@@ -757,4 +757,295 @@ test_that("a member with no usable id is reported as unresolvable", {
 
   expect_error(datom_update_members(x, fx$conn),
                class = "datom_member_unusable")
+})
+
+
+# === datom_remove_members =======================================================
+#
+# No IO at all, which is why most of these run on a hand-built set: the verb only
+# has to FIND a pointer the set already holds. The two that go near a repo are the
+# ones asserting what the write does with the result.
+
+se_remove <- function(...) suppressMessages(datom_remove_members(...))
+
+test_that("a selection is required, and the message says what one looks like", {
+  # The opposite default from the update verb, for the same kind of reason: the
+  # safe default for a destructive verb is nothing.
+  x <- se_set(se_member("dm", strrep("a", 64L)),
+              se_member("lb", strrep("b", 64L)))
+
+  err <- expect_error(
+    datom_remove_members(x),
+    class = "datom_remove_selection_required"
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "every member")
+  expect_match(msg, "datom_list_members")
+})
+
+test_that("a name drops that member and leaves the rest", {
+  x <- se_set(se_member("dm", strrep("a", 64L)),
+              se_member("lb", strrep("b", 64L)))
+
+  out <- se_remove(x, member = "dm")
+
+  expect_length(out$members, 1L)
+  expect_identical(out$members[[1L]]$id$name, "lb")
+  expect_s3_class(out, "datom_set")
+})
+
+test_that("a label selects several members at once", {
+  x <- se_set(
+    se_member("dm", strrep("a", 64L), tags = list(status = "draft")),
+    se_member("lb", strrep("b", 64L), tags = list(status = "draft")),
+    se_member("ae", strrep("c", 64L), tags = list(status = "final"))
+  )
+
+  out <- se_remove(x, tags = list(status = "draft"))
+
+  expect_length(out$members, 1L)
+  expect_identical(out$members[[1L]]$id$name, "ae")
+})
+
+test_that("a name matching two members refuses, naming both versions", {
+  # THE ONE THING THIS VERB MUST NOT DO QUIETLY: the hand-rolled filter drops a
+  # frozen baseline along with the live table. Refusing here is also the opposite
+  # response from the update verb's skip, because skipping a removal silently does
+  # nothing at all.
+  v1 <- strrep("a", 64L)
+  v2 <- strrep("b", 64L)
+  x <- se_set(
+    se_member("dm", v1, tags = list(release = "baseline")),
+    se_member("dm", v2, tags = list(release = "live"))
+  )
+
+  err <- expect_error(
+    datom_remove_members(x, member = "dm"),
+    class = "datom_member_ambiguous"
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, substr(v1, 1L, 8L), fixed = TRUE)
+  expect_match(msg, substr(v2, 1L, 8L), fixed = TRUE)
+
+  # And the deliberate way through still works.
+  out <- se_remove(x, member = "dm", tags = list(release = "baseline"))
+  expect_length(out$members, 1L)
+  expect_identical(out$members[[1L]]$tags, list(release = "live"))
+})
+
+test_that("a selection matching nothing is an error, not a success", {
+  x <- se_set(se_member("dm", strrep("a", 64L)))
+
+  expect_error(datom_remove_members(x, member = "nope"),
+               class = "datom_member_not_found")
+  expect_error(datom_remove_members(x, tags = list(status = "draft")),
+               class = "datom_member_not_found")
+  expect_error(datom_remove_members(x, version = strrep("f", 8L)),
+               class = "datom_member_not_found")
+})
+
+test_that("removing every member refuses on the line that emptied the set", {
+  # The write refuses an empty set anyway; this only moves the refusal to where
+  # the caller can see which selection caused it.
+  x <- se_set(se_member("dm", strrep("a", 64L), tags = list(t = "x")),
+              se_member("lb", strrep("b", 64L), tags = list(t = "x")))
+
+  expect_error(
+    datom_remove_members(x, tags = list(t = "x")),
+    class = "datom_set_would_be_empty"
+  )
+  expect_error(
+    datom_remove_members(se_set(se_member("dm", strrep("a", 64L))),
+                         member = "dm"),
+    class = "datom_set_would_be_empty"
+  )
+})
+
+test_that("a record and a link each drop exactly the member they name", {
+  fx <- local_edit_project()
+  v1 <- se_table(fx, "dm", 3L)
+  v2 <- se_table(fx, "lb", 3L)
+  se_write(fx$conn, list(datom_member(fx$conn, "dm", v1),
+                         datom_member(fx$conn, "lb", v2)))
+  x <- datom_get_set(fx$conn, "product-a")
+
+  by_record <- se_remove(x, member = x$members[[1L]])
+  by_link <- se_remove(x, member = x$members[[1L]]$fetch)
+
+  expect_length(by_record$members, 1L)
+  expect_length(by_link$members, 1L)
+  expect_identical(by_record$members[[1L]]$id,
+                   x$members[[2L]]$id)
+  expect_identical(by_link$members[[1L]]$id, x$members[[2L]]$id)
+})
+
+test_that("the report says what was dropped and that nothing was written", {
+  x <- se_set(se_member("dm", strrep("a", 64L)),
+              se_member("lb", strrep("b", 64L)))
+
+  msg <- se_messages(out <- datom_remove_members(x, member = "dm"))
+
+  expect_match(msg, "Dropped 1 member")
+  expect_match(msg, paste0("dm  dropped, was ", strrep("a", 8L)), fixed = TRUE)
+  expect_match(msg, "Nothing has been written")
+})
+
+test_that("an edited set stops claiming the version it was read as", {
+  fx <- local_edit_project()
+  v1 <- se_table(fx, "dm", 3L)
+  v2 <- se_table(fx, "lb", 3L)
+  se_write(fx$conn, list(datom_member(fx$conn, "dm", v1),
+                         datom_member(fx$conn, "lb", v2)))
+  x <- datom_get_set(fx$conn, "product-a")
+  expect_true(.datom_is_text_scalar(x$version))
+
+  out <- se_remove(x, member = "dm")
+
+  expect_null(out$version)
+  expect_null(out$data_sha)
+  expect_identical(names(out), names(x))
+})
+
+test_that("a draft comes back a draft, minus the member", {
+  fx <- local_edit_project()
+  v1 <- se_table(fx, "dm", 3L)
+  v2 <- se_table(fx, "lb", 3L)
+  draft <- datom_assemble_set(fx$conn)
+  draft <- datom_add_member(draft, "dm", v1)
+  draft <- datom_add_member(draft, "lb", v2)
+
+  out <- se_remove(draft, member = "dm")
+
+  expect_s3_class(out, "datom_set_draft")
+  expect_length(out$members, 1L)
+  expect_identical(out$conn, fx$conn)
+})
+
+test_that("removing takes no connection, so it works on a reader's set", {
+  # The structural difference from both sibling verbs, and the reason the missing
+  # argument is not an oversight: a removal resolves nothing.
+  fx <- local_edit_project()
+  v1 <- se_table(fx, "dm", 3L)
+  v2 <- se_table(fx, "lb", 3L)
+  se_write(fx$conn, list(datom_member(fx$conn, "dm", v1),
+                         datom_member(fx$conn, "lb", v2)))
+
+  reader <- fx$conn
+  reader$path <- NULL
+  reader$role <- "reader"
+  x <- datom_get_set(reader, "product-a")
+
+  out <- se_remove(x, member = "dm")
+  expect_length(out$members, 1L)
+})
+
+test_that("x must be a set or a draft here too", {
+  expect_error(datom_remove_members(list(), member = "dm"),
+               class = "datom_not_a_set")
+})
+
+test_that("a removed set writes, and the write records what was dropped", {
+  fx <- local_edit_project()
+  v1 <- se_table(fx, "dm", 3L)
+  v2 <- se_table(fx, "lb", 3L)
+  se_write(fx$conn, list(datom_member(fx$conn, "dm", v1),
+                         datom_member(fx$conn, "lb", v2)))
+  x <- datom_get_set(fx$conn, "product-a")
+
+  se_write(fx$conn, se_remove(x, member = "dm"))
+
+  again <- datom_get_set(fx$conn, "product-a")
+  expect_length(again$members, 1L)
+  expect_identical(again$members[[1L]]$id$name, "lb")
+
+  commit <- git2r::commits(fx$repo)[[1L]]$message
+  expect_match(commit, "drop 1 member", fixed = TRUE)
+  expect_match(commit, paste0("dm  dropped, was ", v1), fixed = TRUE)
+})
+
+
+# === the two verbs share one edit log ===========================================
+
+test_that("chaining the two verbs produces ONE commit message naming both", {
+  # The seam a cold review found: with each verb owning its own attribute, this
+  # commit names the repoint and says nothing about the removal -- and the
+  # destructive edit is the one a git log reader most wants named.
+  fx <- local_edit_project()
+  v_dm <- se_table(fx, "dm", 3L)
+  v_lb <- se_table(fx, "lb", 3L)
+  se_write(fx$conn, list(
+    datom_member(fx$conn, "dm", v_dm, tags = list(type = "output")),
+    datom_member(fx$conn, "lb", v_lb, tags = list(type = "input"))
+  ))
+  x <- datom_get_set(fx$conn, "product-a")
+  new_dm <- se_table(fx, "dm", 4L)
+
+  edited <- se_remove(
+    se_update(x, fx$conn, tags = list(type = "output")),
+    member = "lb"
+  )
+  se_write(fx$conn, edited)
+
+  commit <- git2r::commits(fx$repo)[[1L]]$message
+  expect_match(commit, "repoint 1 member, drop 1 member", fixed = TRUE)
+  expect_match(commit, paste0("dm  ", v_dm, " -> ", new_dm), fixed = TRUE)
+  expect_match(commit, paste0("lb  dropped, was ", v_lb), fixed = TRUE)
+
+  # One line of it is what the version records.
+  recorded <- datom_history(fx$conn, "product-a")$commit_message[[1L]]
+  expect_identical(
+    recorded, "Update product-a: repoint 1 member, drop 1 member"
+  )
+})
+
+test_that("the log accumulates rather than being replaced, in either order", {
+  fx <- local_edit_project()
+  v_dm <- se_table(fx, "dm", 3L)
+  v_lb <- se_table(fx, "lb", 3L)
+  v_ae <- se_table(fx, "ae", 3L)
+  x <- se_set(se_member("dm", v_dm), se_member("lb", v_lb),
+              se_member("ae", v_ae))
+  se_table(fx, "dm", 4L)
+
+  update_first <- se_remove(se_update(x, fx$conn, member = "dm"),
+                            member = "lb")
+  remove_first <- se_update(se_remove(x, member = "lb"), fx$conn,
+                            member = "dm")
+
+  for (out in list(update_first, remove_first)) {
+    log <- attr(out, "datom_edits")
+    expect_identical(nrow(log), 2L)
+    expect_identical(sort(log$action), c("remove", "repoint"))
+    expect_identical(names(log), datom:::.datom_edit_log_fields())
+  }
+})
+
+test_that("a removal alone still gives the plain default an explicit message", {
+  fx <- local_edit_project()
+  v1 <- se_table(fx, "dm", 3L)
+  v2 <- se_table(fx, "lb", 3L)
+  se_write(fx$conn, list(datom_member(fx$conn, "dm", v1),
+                         datom_member(fx$conn, "lb", v2)))
+  x <- datom_get_set(fx$conn, "product-a")
+
+  se_write(fx$conn, se_remove(x, member = "dm"), message = "Retire dm")
+
+  expect_identical(git2r::commits(fx$repo)[[1L]]$message, "Retire dm")
+})
+
+test_that("a log of the wrong shape is ignored rather than trusted", {
+  # It is an attribute, so a caller can put anything there.
+  fx <- local_edit_project()
+  v1 <- se_table(fx, "dm", 3L)
+  members <- list(datom_member(fx$conn, "dm", v1))
+  se_write(fx$conn, members)
+  x <- datom_get_set(fx$conn, "product-a")
+
+  v2 <- se_table(fx, "dm", 4L)
+  out <- se_update(x, fx$conn)
+  attr(out, "datom_edits") <- "not a data frame"
+  se_write(fx$conn, out)
+
+  expect_identical(git2r::commits(fx$repo)[[1L]]$message, "Update product-a")
+  expect_false(identical(v1, v2))
 })
