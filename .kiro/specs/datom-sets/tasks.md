@@ -22,7 +22,7 @@ it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding th
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
 3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
 after the review finding that followed it -> 3770 after Task 25 -> 3781 after the review finding
-that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> 3974 after Task 12 proper -> 4012 after Task 13 -> 4065 after Task 14 -> **4067 after the review finding that followed it**.
+that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> 3974 after Task 12 proper -> 4012 after Task 13 -> 4065 after Task 14 -> 4067 after the review finding that followed it -> 4107 after Task 15 -> 4115 after the review finding that followed it -> 4219 after Task 27 -> **4270 after Task 28**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -43,7 +43,9 @@ validators) **Task 9** (`datom_write_set()`), **Task 10** (`datom_get_set()` plu
 **Task 25** (write-side ergonomics: assembling a set in steps)
 **Task 23** (`project.yaml` declares its format), **Task 11** (project mode gating the
 import path), **Task 12** (foreign-content discipline plus the two git-mutation exports),
-**Task 13** (the joint commit) and **Task 14** (validation branches on kind), plus
+**Task 13** (the joint commit), **Task 14** (validation branches on kind), **Task 15** (the
+version-to-commit link), **Task 27** (`datom_update_members()`) and **Task 28**
+(`datom_remove_members()`), plus
 three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
@@ -168,15 +170,16 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **4067** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **4270** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 with examples run
-(tests run separately). Next is **Task 15**
-(the version-to-commit link, `commit_sha`), then Tasks 27 and 28, then the sweep.
+(tests run separately). Next is **Task 16**, the acceptance-criteria sweep plus the end-to-end
+script, then **Task 17**, docs plus the Spec Completion Procedure. Everything before it is done:
+Task 15 (the version-to-commit link) and Phase H (Tasks 27 and 28, the two set-editing verbs) all
+landed on 2026-09-19.
 
-**TASK 15 IS AUDITED AND STARTABLE COLD (2026-09-19), WITH NOTHING OPEN -- and the audit moves where
-the work is.** Eleven findings in its body, both decisions settled by the owner the same day at their
-defaults. The one thing to carry in before reading anything else: **the field this task adds is
-stripped by the ordinary write path, not only by the repair the body describes.** Three functions
+**TASK 15 IS CLOSED, AND ITS AUDIT IS WHAT MOVED THE WORK.** Eleven findings, both decisions settled
+by the owner the same day at their defaults, and the finding that relocated the task: **the field it
+adds is stripped by the ordinary write path, not only by the repair its body described.** Three functions
 write the storage copy of `version_history.json`, and the busiest of them uploads the clone's copy
 wholesale -- so the second ordinary write erases the first version's commit id, before a repair is
 anywhere in the picture. All three therefore go through **one** helper that keeps what storage
@@ -185,8 +188,17 @@ the argument that makes an older build's stripping tolerable ("it can always be 
 if nothing ever derives. The derivation was probed on a real repo rather than reasoned about:
 recomputing the version hash from each committed `metadata.json` reproduces the recorded version
 exactly, oldest-first gives the first producing commit, and a code-only commit is correctly no
-version's producer. `datom_history()` gains a `commit_sha` column, because the stored copy exists for
+version's producer. `datom_history()` carries a `commit_sha` column, because the stored copy exists for
 the reader with no clone and that verb is their only route to it.
+
+**PHASE H IS CLOSED, SO THE SURFACE TASK 16 SWEEPS IS FINAL.** Two exports land the ability to edit a
+set that already exists: `datom_update_members()` repoints members at their projects' current versions,
+and `datom_remove_members()` drops them. **Neither touches a stored document** -- they edit the set you
+hold and hand it back, so the write is yours to make -- which is why they could be added to this
+release on value alone. Both write into one shared edit log that the next write turns into a commit
+message naming what changed, so a chained edit produces one message covering all of it. They bring
+**AC40 and AC41**, which did not exist when the rest of Task 16 was written. Full reasoning in Tasks
+27 and 28's DONE records.
 
 **TASK 14 IS CLOSED, AND VALIDATION NOW UNDERSTANDS BOTH KINDS OF ARTIFACT.** It looked for a
 parquet object for every artifact, so a set reported its data missing every single time; the payload
