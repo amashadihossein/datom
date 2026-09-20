@@ -89,7 +89,7 @@ test_that("the dispatcher is the identity on a document already at the current v
 })
 
 
-test_that("the dispatcher runs zero steps on a current-version document", {
+test_that("the dispatcher runs zero steps on a current-version document (AC38b)", {
   # Not just "the result looks unchanged": R's seq() counts DOWN when from > to,
   # so an unguarded chain would run every step backwards here and a v1 step
   # applied to a v2 document is not always visible in the output.
@@ -111,7 +111,7 @@ test_that("the dispatcher runs zero steps on a current-version document", {
 })
 
 
-test_that("applying the dispatcher twice equals applying it once", {
+test_that("applying the dispatcher twice equals applying it once (AC38c)", {
   v1 <- list(
     project_name = "p",
     tables = list(dm = list(current_version = "abc", size_bytes = 10))
@@ -146,7 +146,7 @@ test_that("the dispatcher refuses a version with no step to reach the next one",
 })
 
 
-test_that("the check supplies the version the dispatcher converts from", {
+test_that("the check supplies the version the dispatcher converts from (AC38a)", {
   # The two halves in the order they must run: a document too new for this
   # build never reaches the chain, because there is no step for a version this
   # build does not know.

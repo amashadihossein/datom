@@ -188,7 +188,7 @@ test_that("datom_summary tolerates a manifest with no schema_version", {
   expect_equal(datom_summary(conn)$table_count, 1L)
 })
 
-test_that("datom_summary reads the frozen old-format manifest as non-empty", {
+test_that("datom_summary reads the frozen old-format manifest as non-empty (AC30)", {
   # Frozen fixture -- see the note in test-query.R. Do not update it to a newer
   # manifest shape; rewritten, it would go green while asserting nothing.
   local_mocked_bindings(

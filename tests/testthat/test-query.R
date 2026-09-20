@@ -1008,7 +1008,7 @@ test_that("datom_list tolerates a manifest with no schema_version", {
   expect_equal(nrow(datom_list(conn)), 1)
 })
 
-test_that("datom_list reads the frozen old-format manifest as non-empty", {
+test_that("datom_list reads the frozen old-format manifest as non-empty (AC30)", {
   # tests/testthat/fixtures/manifest-v1.json is a preserved copy of the manifest
   # shape every repo written so far has: no schema_version, artifacts under
   # `tables`. It is frozen -- do not update it to a newer shape. It is the only

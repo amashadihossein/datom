@@ -1707,7 +1707,7 @@ test_that(".datom_read_manifest still names the copy it refused, for a writer", 
   })
 })
 
-test_that(".datom_read_manifest hands back the frozen v1 fixture in current shape", {
+test_that(".datom_read_manifest hands back the frozen v1 fixture in current shape (AC30)", {
   # The reader converts an older document on the way through, so no caller ever
   # sees the old key and none needs a fallback for it.
   local_mocked_bindings(

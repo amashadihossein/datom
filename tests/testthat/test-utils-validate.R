@@ -421,7 +421,7 @@ test_that(".datom_validate_rel_key uses the arg label in the message", {
 
 # --- .datom_check_schema_version() ---------------------------------------------
 
-test_that(".datom_check_schema_version tolerates an absent field as v1", {
+test_that(".datom_check_schema_version tolerates an absent field as v1 (AC7)", {
   # Every repo written before the field existed carries no schema_version, so
   # absence must behave exactly as it did then.
   expect_equal(
@@ -448,7 +448,7 @@ test_that(".datom_check_schema_version accepts the supported version and older",
   )
 })
 
-test_that(".datom_check_schema_version refuses a newer version with recourse", {
+test_that(".datom_check_schema_version refuses a newer version with recourse (AC7)", {
   err <- expect_error(
     .datom_check_schema_version(list(schema_version = 3L), "manifest.json"),
     class = "datom_schema_unsupported"

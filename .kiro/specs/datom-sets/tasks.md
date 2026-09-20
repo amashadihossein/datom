@@ -4055,6 +4055,42 @@ own; landing it first is what makes Task 6's failure loud.
   | AC25 (iii) | the derivation from git disabled | "datom_validate(fix = TRUE) re-derives commit_sha instead of stripping it", plus 2 |
   | AC26 | the already-recorded guard dropped, so a later commit repoints an existing version | exactly "reverting to earlier content leaves that version's recorded commit alone" |
 
+  **BATCH 4 IS DONE (2026-09-19). Ten criteria, twenty-four deliberate breakages, no holes, and one
+  clause that legitimately has no test.** Forward compatibility -- the largest batch, and the one whose
+  criteria mostly have lettered clauses that fail independently, so almost every clause got its own
+  break.
+
+  | AC | What was broken | What reddened |
+  |---|---|---|
+  | AC7 (refuse-newer) | the too-new comparison at the schema gate disabled | 20 tests, and both entry points are among them: the manifest readers and the per-artifact metadata read |
+  | AC7 (tolerate-older) | an absent `schema_version` made an abort instead of reading as v1 | 27 tests, including the frozen-fixture reads at both readers |
+  | AC30 | the v1-to-v2 rename step removed, so the artifact list stays under the old key | 17 tests across five files, including "reads the frozen old-format manifest as non-empty" at both readers |
+  | AC31 | the rename made a copy instead of a move, leaving the old key beside the new one -- the counter-collapse defect | "datom_write converts an old-shape manifest and keeps counting the tables that were already there", plus 6 |
+  | AC32 | the caught schema condition discarded, so a too-new manifest presents as an ordinary read failure | 10 tests, including "datom_status rebuilds on a newer schema rather than reporting it unreadable" |
+  | AC34 (metadata, row) | the carry-forward assignment removed | both round-trip tests |
+  | AC34 (manifest top level) | **the document rebuilt from a fixed field list instead of read-edited-written** -- this level needs no carry-forward code, so its test exists precisely to catch that refactor, and it did | exactly "an unplaceable field beside the manifest's artifact list survives a write" |
+  | AC35 (a) | the whole vocabulary check bypassed | its own test plus 4 |
+  | AC35 (b) | `custom`'s keys folded into the top-level name list, turning user metadata into a refusal | exactly "custom is opaque", plus 1 |
+  | AC35 (c) | the retired name deleted from the vocabulary, i.e. retiring by deletion | exactly "a retired field name still classifies" |
+  | AC35 (d) | the check pointed at the raw manifest instead of the converted one, which is the deadlock wording | "the forward path never refuses", plus 3 |
+  | AC35 (e) | the per-artifact vocabulary check removed, leaving only the manifest one | 5 tests -- which is the clause's point: an implementation checking only the manifest passes (a) through (d) |
+  | AC36 (a) | the declared floor read as absent | its own test plus 4 |
+  | AC36 (b) | an absent floor defaulted to a version above this build | "no declared floor means no floor", plus ~30 (blunt: every write refuses) |
+  | AC36 (c) | **not probed, and it has no test by an earlier decision.** "Setting a floor above the setting build's own version is refused" is a guard on a setter that does not exist yet; Task 21 recorded the gap instead of faking it, and the backlog row for the floor-raising verb owns it | n/a |
+  | AC37 (a) | the absent-key trigger removed | "an absent artifact key is rebuilt, with one warning naming the upgrade", plus 4 |
+  | AC37 (b) | the writers-never-rebuild return removed | "a manifest with no reachable artifact list refuses the write" |
+  | AC37 (c) | the trigger changed from absent to empty | "a genuinely empty repo triggers no rebuild and lists no storage", plus 8 |
+  | AC37 (d) | `datom_schema_invalid` caught alongside the too-new condition, so a corrupt document gets rebuilt | exactly "a corrupt manifest still fails visibly instead of being rebuilt" |
+  | AC37 (e) | the recorded version replaced with a recomputed hash | exactly "a rebuilt current_version is the recorded one, never a recomputed hash" |
+  | AC37 (f) | an extra field added to a rebuilt row | exactly "a rebuilt index matches the recorded one field for field" |
+  | AC38 (a) | the declared version clamped so the dispatcher is entered for a document the check should have refused | "the dispatcher runs zero steps on a current-version document" |
+  | AC38 (b) | the current-version guard removed, which is the counts-down defect the criterion names | 3 dispatcher tests plus 8 downstream |
+  | AC38 (c) | same break | "applying the dispatcher twice equals applying it once" |
+  | AC39 (a) | the config-format check removed from the connection open | both of its tests |
+  | AC39 (b) | covered by AC7's tolerate-older break | "developer path treats an absent format as v1 and changes nothing" |
+  | AC39 (c) | the format stamp removed from the written config | 4 tests, including the one asserting on the written file |
+  | AC39 (d) | the machine-document vocabulary check extended to `project.yaml`, which is the tidy-up the clause exists to stop | "developer path still tolerates an unrecognised key in project.yaml", plus ~18 (blunt) |
+
   **The inherited test is written, and writing it contradicted the instruction that asked for it.**
   Task 12 left one case to this sweep: committing with no explicit file list sweeps datom's own
   uncommitted files into the human's commit, which design 19.7 accepts because excluding them would

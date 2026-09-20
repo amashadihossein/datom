@@ -322,7 +322,7 @@ test_that("an unparseable prior metadata document reads as absent, not as an err
 
 # === round trip 1: a table's own metadata document ============================
 
-test_that("an unplaceable field in a table's metadata survives a write, in git and in storage", {
+test_that("an unplaceable field in a table's metadata survives a write, in git and in storage (AC34)", {
   fc_hold_door_open()
   fx <- local_fc_project()
   fc_write(fx, fc_data(3))
@@ -376,7 +376,7 @@ test_that("an unplaceable metadata field does not mint a version on its own", {
 
 # === round trip 2: one row of the manifest ====================================
 
-test_that("an unplaceable field on a manifest row survives a write, in git and in storage", {
+test_that("an unplaceable field on a manifest row survives a write, in git and in storage (AC34)", {
   fc_hold_door_open()
   fx <- local_fc_project()
   fc_write(fx, fc_data(3))
@@ -416,7 +416,7 @@ test_that("a KNOWN manifest row field the write did not set is still dropped", {
 
 # === round trip 3: the manifest's top level ===================================
 
-test_that("an unplaceable field beside the manifest's artifact list survives a write", {
+test_that("an unplaceable field beside the manifest's artifact list survives a write (AC34)", {
   # This one holds because the manifest is read, edited and written back rather
   # than rebuilt. Tested anyway: a refactor to rebuilding it would take the
   # guarantee away without failing anything else.
@@ -438,7 +438,7 @@ test_that("an unplaceable field beside the manifest's artifact list survives a w
 
 # === round trip 4: an entry in the version history ============================
 
-test_that("an unplaceable field on a version-history entry survives a later write", {
+test_that("an unplaceable field on a version-history entry survives a later write (AC34)", {
   # The fourth surface, and safe for the same reason as the manifest's top level:
   # the history list is read and the new version is prepended, so an entry
   # already in it is never rebuilt. Pinned rather than argued, because the
@@ -487,7 +487,7 @@ test_that("an unplaceable field on a version-history entry survives a later writ
 
 # --- the vocabulary check -----------------------------------------------------
 
-test_that("a top-level field the build cannot place refuses the write, naming it", {
+test_that("a top-level field the build cannot place refuses the write, naming it (AC35a)", {
   err <- expect_error(
     .datom_check_document_vocabulary(
       list(data_sha = "abc", future_field = 1),
@@ -512,7 +512,7 @@ test_that("a document whose every field classifies passes silently", {
   )
 })
 
-test_that("custom is opaque -- its contents are never treated as unrecognised", {
+test_that("custom is opaque -- its contents are never treated as unrecognised (AC35b)", {
   # `custom` holds arbitrary user keys by design, so it is classified as one
   # field and never descended into. Without this the check would refuse any
   # document whose user metadata datom has not seen before, which is all of it.
@@ -528,7 +528,7 @@ test_that("custom is opaque -- its contents are never treated as unrecognised", 
   )
 })
 
-test_that("a retired field name still classifies", {
+test_that("a retired field name still classifies (AC35c)", {
   # `tables` is what the manifest's artifact list was called before schema v2.
   # Documents carrying it exist unchanged in the world, so the name stays in the
   # vocabulary forever. A build that pruned it would meet an OLDER file, fail to
@@ -572,7 +572,7 @@ test_that("the manifest top-level vocabulary covers what a real write produces",
 
 # --- the writer floor ---------------------------------------------------------
 
-test_that("a repo declaring a newer writer than this build refuses the write", {
+test_that("a repo declaring a newer writer than this build refuses the write (AC36a)", {
   conn <- mock_datom_conn(list())
   conn$min_writer_version <- "999.0.0"
 
@@ -584,7 +584,7 @@ test_that("a repo declaring a newer writer than this build refuses the write", {
   expect_match(conditionMessage(err), as.character(utils::packageVersion("datom")))
 })
 
-test_that("no declared floor means no floor -- nothing changes at all", {
+test_that("no declared floor means no floor -- nothing changes at all (AC36b)", {
   # Every repo written so far is in this state, so this is the clause that keeps
   # the mechanism from being a breaking change on the day it ships.
   conn <- mock_datom_conn(list())
@@ -634,7 +634,7 @@ test_that("the floor stops a write before anything is hashed or written", {
 
 # --- the entry sequence, through the real write path --------------------------
 
-test_that("an unrecognised field in a table's metadata refuses the write", {
+test_that("an unrecognised field in a table's metadata refuses the write (AC35e)", {
   # The clause an implementation that checks only the manifest would pass while
   # leaving the document that matters most unchecked: per-artifact metadata is
   # never rebuildable, and it is where version identity lives.
@@ -762,7 +762,7 @@ test_that("a per-artifact document from a newer schema refuses the write", {
   expect_match(conditionMessage(err), "cannot write")
 })
 
-test_that("the forward path never refuses -- a pre-rename repo writes normally", {
+test_that("the forward path never refuses -- a pre-rename repo writes normally (AC35d)", {
   # R23.4's first row, and the case a naive "refuse when the artifact list is
   # absent" rule would have deadlocked: a current build meeting a pre-rename repo
   # finds no `artifacts` key either, so refusing on that would mean no repo could

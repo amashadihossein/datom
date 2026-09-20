@@ -2726,7 +2726,7 @@ test_that("aborts S3 sync when git commit/push fails", {
 
 # --- writing into a repo whose manifest is in an older shape --------------------
 
-test_that("datom_write converts an old-shape manifest and keeps counting the tables that were already there", {
+test_that("datom_write converts an old-shape manifest and keeps counting the tables that were already there (AC31)", {
   # The failing shape this guards against is not an error: an entry added under
   # the current key while the old key sits untouched leaves the repo reporting
   # one table when it holds two, in a file that is now half in each format.

@@ -438,7 +438,7 @@ conn_schema_store <- function() {
               validate = FALSE)
 }
 
-test_that("developer path refuses a project.yaml whose format is too new", {
+test_that("developer path refuses a project.yaml whose format is too new (AC39a)", {
   store <- conn_schema_store()
   local_mocked_bindings(.datom_s3_client = function(...) mock_s3_client())
 
@@ -475,7 +475,7 @@ test_that("developer path refuses before reading a single field out of the confi
   )
 })
 
-test_that("developer path treats an absent format as v1 and changes nothing", {
+test_that("developer path treats an absent format as v1 and changes nothing (AC39b)", {
   # Every repo written so far is in this state. Not merely "does not abort":
   # no warning and no changed field either, since a silent degradation would be
   # the failure this check exists to remove.
@@ -500,7 +500,7 @@ test_that("developer path treats an absent format as v1 and changes nothing", {
   expect_equal(stamped_conn$root, conn$root)
 })
 
-test_that("developer path still tolerates an unrecognised key in project.yaml", {
+test_that("developer path still tolerates an unrecognised key in project.yaml (AC39d)", {
   # THE CLAUSE A LATER TIDY-UP BREAKS. project.yaml is hand-edited, so an
   # unrecognised key is as likely a typo or a private note as it is evidence of a
   # newer datom -- which is why the vocabulary check that guards the manifest and
@@ -1398,7 +1398,7 @@ test_that("datom_init_repo stores datom_version in project.yaml", {
                as.character(utils::packageVersion("datom")))
 })
 
-test_that("datom_init_repo stamps project.yaml's own format, on the written file", {
+test_that("datom_init_repo stamps project.yaml's own format, on the written file (AC39c)", {
   # Asserted on the file rather than on the in-memory config, because the one
   # thing this clause is about is what yaml::write_yaml() did with an integer: a
   # value that round-trips as a string would fail the checker as corrupt.
