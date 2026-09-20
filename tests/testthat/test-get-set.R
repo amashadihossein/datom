@@ -366,6 +366,52 @@ test_that("a different but valid payload at the same address is refused before p
   expect_match(conditionMessage(err), "Do not trust this set")
 })
 
+test_that("the parser is never reached for bytes that fail the hash check (AC28a)", {
+  # AC28(a) names an ORDER as well as an outcome -- "refused BEFORE parsing" -- and
+  # the test above cannot see the order. Measured 2026-09-19: parsing the payload
+  # first and checking the hash afterwards leaves every assertion above green,
+  # because the abort still happens, with the same class and the same message. Only
+  # the absence of the parse CALL separates the two, which is the same shape as
+  # AC37(c)'s no-listing assertion.
+  #
+  # The order is the point of the check, not a detail of it: these bytes are
+  # unverified and may be hostile, so a parser is exactly what they must not reach.
+  fx <- local_get_set_project()
+  gs_one_member_set(fx)
+  x <- datom_get_set(fx$conn, "product-a")
+
+  imposter <- gs_stored(fx, gs_payload_key(fx, x$data_sha))
+  jsonlite::write_json(list(members = list(gs_raw_member())), imposter,
+                       auto_unbox = TRUE, pretty = TRUE)
+
+  # The imposter is identified by its OWN hash rather than by a bare called-or-not
+  # flag: the read legitimately parses the metadata document first, so a flag alone
+  # is tripped by a parse that is supposed to happen.
+  imposter_sha <- digest::digest(file = imposter, algo = "sha256")
+  parsed_shas <- character()
+  # Captured BEFORE the mock replaces the binding, and delegated to rather than
+  # re-implemented: the metadata read on this same path wants the real parser's
+  # simplifying behaviour, and `jsonlite::fromJSON` inside the mock would resolve
+  # to the mock itself and recurse.
+  real_from_json <- jsonlite::fromJSON
+  local_mocked_bindings(
+    fromJSON = function(txt, ...) {
+      if (is.character(txt) && length(txt) == 1L && file.exists(txt)) {
+        parsed_shas <<- c(parsed_shas,
+                          digest::digest(file = txt, algo = "sha256"))
+      }
+      real_from_json(txt, ...)
+    },
+    .package = "jsonlite"
+  )
+
+  expect_error(
+    datom_get_set(fx$conn, "product-a"),
+    class = "datom_set_integrity_failure"
+  )
+  expect_false(imposter_sha %in% parsed_shas)
+})
+
 test_that("a version recording no document_sha is an error, not a skipped check (AC28b)", {
   # The half a naive copy of .datom_read_parquet()'s guard gets wrong: its
   # skip-on-absent branch is a grace for metadata written before parquet_sha

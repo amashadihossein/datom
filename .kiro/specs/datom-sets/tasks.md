@@ -22,7 +22,7 @@ it -> 3077 after Task 7 -> 3218 after Task 8 -> 3227 after the review finding th
 3413 after Task 9 -> 3418 after the review finding that followed it -> 3553 after Task 10 ->
 3557 after the review finding that followed it -> 3585 after Task 26 -> 3686 after Task 24 -> 3697
 after the review finding that followed it -> 3770 after Task 25 -> 3781 after the review finding
-that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> 3974 after Task 12 proper -> 4012 after Task 13 -> 4065 after Task 14 -> 4067 after the review finding that followed it -> 4107 after Task 15 -> 4115 after the review finding that followed it -> 4219 after Task 27 -> **4270 after Task 28**.
+that followed it -> 3836 after Task 23 -> 3841 after the review finding that followed it -> 3854 after Task 11's guard hardening -> 3860 after the fail-closed change -> 3900 after Task 11 proper -> 3909 after the review finding that followed it -> 3926 after Task 12's chunk A -> 3974 after Task 12 proper -> 4012 after Task 13 -> 4065 after Task 14 -> 4067 after the review finding that followed it -> 4107 after Task 15 -> 4115 after the review finding that followed it -> 4219 after Task 27 -> 4270 after Task 28 -> **4292 after Task 16**.
 Report the count in every commit message; it must never drop.
 
 ---
@@ -170,7 +170,7 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **4286** tests
+**Start here.** Branch `spec/datom-sets`, working tree clean, **4292** tests
 (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` **10/10**, and `R CMD check --as-cran` 0/0/0 with
 examples, tests and vignettes run. **Next is Task 17**, docs plus the Spec Completion Procedure --
 the last task in the spec. Everything before it is done; Task 16's sweep closed on 2026-09-19.
@@ -3955,7 +3955,7 @@ own; landing it first is what makes Task 6's failure loud.
     better **judgement** when what the task needs is **evidence**. Deliberate breakage supplies
     evidence at any model. Retired rather than deleted, so the risk it named stays visible.
 
-  **DONE RECORD (2026-09-19). Shipped in seven commits.** Tests 4270 -> **4286** (+16),
+  **DONE RECORD (2026-09-19). Shipped in eight commits.** Tests 4270 -> **4292** (+22),
   FAIL 0 / WARN 0 / SKIP 0; `dev/check-spec.R` **10/10** (it gained one check, below);
   `R CMD check --as-cran` **0 errors / 0 warnings / 0 notes** with examples, tests and vignettes run
   (AC10, AC11); `dev/e2e-sets.R` exits 0 with 51/51 claims (AC12). **Pathway impact: none** -- this task
@@ -3964,7 +3964,8 @@ own; landing it first is what makes Task 6's failure loud.
   **The verdict, and it is inspectable rather than asserted.** All 37 behavioural criteria are covered,
   each by a named test that was **watched going red on a deliberate break of the behaviour it claims**.
   The evidence is the five batch tables below -- one row per criterion or clause, carrying what was
-  broken and what reddened -- totalling **81 deliberate breakages**. Two criteria carry an honest
+  broken and what reddened -- totalling **81 deliberate breakages**, plus a later mechanism-clause scan
+  that added two tests and four more probes (see the residual section). Two criteria carry an honest
   qualification rather than a clean pass, and both are stated in their own rows: AC36(c) has no test and
   cannot have one until the floor-raising verb exists, and AC40(c)'s through-the-write assertion cannot
   be made to fail because the claim composes two things pinned elsewhere.
@@ -3975,10 +3976,28 @@ own; landing it first is what makes Task 6's failure loud.
   1. **AC2's test could not fail.** Deleting the guard that makes re-writing an identical payload a
      no-op left every assertion in its own test green; across the whole suite exactly two tests
      reddened and neither was AC2's. Four independent reasons, each sufficient on its own, and a HEAD
-     comparison -- the obvious fix, copied from AC19's test -- was tried and also could not fail. What
-     survives is what the caller is **told**. Fixed, and it is the third instance of the pattern after
-     Tasks 13 and 14: **a test that asks a write what it reported cannot tell a no-op from a completed
-     write.**
+     comparison -- the obvious fix, copied from AC19's test -- was tried and also could not fail,
+     because an identical payload leaves git nothing to commit. What survives is what the caller is
+     **told**. Fixed. **It is the canonical case for the probe rule and now lives in
+     `dev/engineering-notes.md` as such**, because the property being tested destroys its own obvious
+     observable and no amount of careful reading finds that.
+
+     **The family, with the count stated honestly** -- corrected 2026-09-19 after a review, which
+     supplied the missing instance and named the wrong task for it. The family is **a test observes a
+     layer that cannot distinguish the two behaviours**. Two shipped and were found by probing; one was
+     spotted before the bad test was written, so it was never a defect:
+
+     | Where | Shape | Caught |
+     |---|---|---|
+     | Task 13 | a shipped test that could not fail | by probe, after shipping |
+     | Task 14 | a shipped test passing through the wrong guard | by probe, after shipping |
+     | Task 12 / AC16 | the same hazard, spotted before the test was written | at audit; never a defect |
+     | Task 16 / AC2 | a shipped test that could not fail, four ways over | by probe, after shipping |
+
+     The earlier wording here said "third instance after Tasks 13 and 14", which was loose in both
+     directions: it counted a narrower shape than the family and it missed Task 12's. The review that
+     supplied the fourth attributed it to Task 24; it is Task 12's, verified at `tasks.md:3211` and
+     `:3305`, both inside Task 12's body.
   2. **An instruction in this task's own body was wrong**, and the test written for it says so instead.
      The inherited `datom_repo_commit(paths = NULL)` case was to assert the sweep-in happens *and that
      the repair then reports the repo consistent*. For a **table** it cannot: a write that died before
@@ -4006,12 +4025,58 @@ own; landing it first is what makes Task 6's failure loud.
   later tidy-up would otherwise drop one as redundant: this check catches a criterion matched to
   nothing, the probe rule catches a criterion matched to a test that does not exercise it.
 
+  **WHAT THIS SWEEP DOES NOT CATCH, stated as three failure modes rather than as "it still needs a
+  reader".** Two are now gated and the third is not:
+
+  | Failure | Caught by |
+  |---|---|
+  | a criterion nobody matched to anything | `check-spec.R` check 10 |
+  | a test matched to a criterion it does not exercise | the probe rule |
+  | **a test that exercises only PART of the claim** | **nothing** |
+
+  **The independent re-derivation below does not close the third either** -- it checks the *list* of
+  criteria, not the assertions behind them. So it is the known residual, and it has a specific shape
+  worth naming because the general version is unactionable: **a criterion states a mechanism as well as
+  an outcome, and only the outcome is asserted.** In a healthy repo the named mechanism and its
+  plausible alternative produce the same result, which is why no test separates them, and why the
+  criterion bothered to name the mechanism at all.
+
+  **The class was swept rather than left as one lucky find (2026-09-19).** All 37 criteria were read for
+  a "how" clause -- *reads X rather than Y*, *from storage not the manifest*, *before parsing*,
+  *recorded not recomputed*, *asserted on the file bytes*. Most state only an outcome, so the candidate
+  list is ten. Eight already had their own assertion, several because a dedicated test exists for
+  exactly that half (`the per-artifact check needs no storage read`, `lists no storage`, `on the written
+  file`, and the helper's own unit test that pins AC29(b)'s carry-forward against a recompute -- probed
+  and confirmed). **Two were unpinned, and both are now fixed:**
+
+  | Criterion | The mechanism it names | What the probe showed | Fix |
+  |---|---|---|---|
+  | **AC4** | the kind comes from `{name}/.metadata/metadata.json` in **storage**, never the manifest row, which can lag behind a half-finished write | sourcing it from the manifest row left **all 213 tests in the file green**, both AC4 tests included | a test whose fixture makes them **disagree** in the direction a half-finished write produces -- storage knows the artifact, the manifest does not. Both wrong sources now redden it |
+  | **AC28(a)** | the stored payload is refused **before it is parsed** | moving the check to after the parse left every assertion green -- same abort, same class, same message | a test that records which files the parser was handed and asserts the failing bytes are not among them |
+
+  **Two things learned writing those two tests, both recorded in `dev/engineering-notes.md`.** AC4's
+  first draft stripped the manifest row from the **clone** only, and a manifest-reading implementation
+  sailed through by consulting storage's copy -- so both copies have to go. AC28(a)'s first draft used a
+  bare called-or-not flag, which the legitimate parse of the *metadata* document trips, so the failing
+  bytes are identified by their own hash instead.
+
+  **Four rows in the batch tables are strengthening candidates rather than equal rows**, and they are
+  the ones whose break reddens its own test plus a great many others, so a regression there would not
+  point at the criterion: **AC5**'s second half (70 others), **AC24** (16), **AC33(d)** (14),
+  **AC36(b)** (~30). Each is marked in place. Nothing is wrong with them today; they are where the next
+  hour of this kind of work would go.
+
   **ONE ITEM IS OPEN, AND IT CANNOT BE DONE BY THIS SESSION.** The task requires that **a fresh session
   derive the criteria list from `requirements.md` alone** -- without seeing the tables below -- and diff
   it against this sweep's list. The point is that a **missed** criterion and a **mis-credited** one are
   different errors, and re-reading your own work catches neither. So it is not a re-read by whoever did
-  the sweep, and I am whoever did the sweep. **Owner: the next session, before Task 17 closes the spec.**
-  What to hand it: `requirements.md`, and nothing else.
+  the sweep, and I am whoever did the sweep. What to hand it: `requirements.md`, and nothing else.
+
+  **It is the FIRST thing Task 17 does, not something done alongside it** -- tightened 2026-09-19 from
+  "before Task 17 closes", which was too loose. If the derivation surfaces a missed criterion, that is a
+  test to write, and Task 17 is the task where "this spec is done" gets asserted in `dev/README.md`.
+  Finding the gap after that assertion is worse than finding it before, and a task that has already
+  written its docs has every incentive not to look.
 
   **The derived list and the batch boundaries.** The criteria list
   was derived from `requirements.md` rather than read off any range written here: **41 defined**, of

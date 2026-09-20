@@ -937,3 +937,111 @@ message**, so a `{?s}` in a bullet that names no count aborts with "Cannot plura
 quantity" -- from inside the warning, which turns a diagnostic into an error. Bind `n <-
 length(x)` and use `{n}` in each bullet that pluralizes, and make sure a test actually triggers the
 message: the failure is invisible until it fires.
+
+### A test can observe a layer that cannot distinguish the two behaviours
+
+The family behind four separate findings, and the reason the guard-test rule in
+`.github/copilot-instructions.md` is not ceremony. **Two shipped and were found by
+probing; one was spotted before the bad test was written.** The honest count matters --
+"four instances of a defect" and "instances, one of them prevented" are different claims.
+
+| Where | Shape | Caught |
+|---|---|---|
+| datom-sets Task 13 | a shipped test that could not fail | by probe, after shipping |
+| datom-sets Task 14 | a shipped test passing through the wrong guard | by probe, after shipping |
+| datom-sets Task 12 / AC16 | the same hazard, spotted before the test was written | at audit; never a defect |
+| datom-sets Task 16 / AC2 | a shipped test that could not fail, four ways over | by probe, after shipping |
+
+**AC2 is the canonical case, because the property being tested destroys its own obvious
+observable.** The claim: re-writing a set with an identical payload does nothing. Delete
+the early return that makes it a no-op and every assertion in its own test stays green.
+Four reasons, each sufficient alone:
+
+* the reported action is assigned from the change type, so a write that skipped the
+  return and did the entire job still reports `"none"`;
+* both hashes are recomputed from the same payload either way;
+* appending a version already in the history dedups, so the length is unchanged;
+* **an identical payload leaves git nothing to commit, so HEAD does not move either.**
+
+That last one is what makes this the example to remember. The obvious fix is to read the
+commit id before and after -- which is what the neighbouring test for the same property
+under dirty caller files legitimately does -- and here it cannot fail, because a no-op
+and a completed write leave git in the same state. **No amount of careful reading finds
+this.** What survives is what the caller is *told*: a skipped write says so and a
+completed one announces itself.
+
+The rule, stated so it transfers: **a test that asks a write what it reported cannot tell
+a no-op from a completed write.** Generalised: when a property's "nothing happened" state
+is indistinguishable from its "everything happened" state at the layer you are observing,
+move the observation, and the only way to know you have moved it far enough is to break
+the code and watch.
+
+### A criterion that names a mechanism needs an assertion for the mechanism
+
+Discovered 2026-09-19, sweeping the datom-sets acceptance criteria, and it is a distinct
+failure from the one above. **The shape: a criterion states a mechanism as well as an
+outcome, and only the outcome is asserted.** In a healthy repo the mechanism and its
+plausible alternative produce the same result, which is exactly why no test separates
+them -- and exactly why the criterion bothered to name the mechanism.
+
+Two live instances, both found by reading the criteria for a "how" clause and then
+probing it, and both now fixed:
+
+* **The kind check reads the per-artifact metadata document from storage, never the
+  manifest row**, because the manifest can lag behind a write that got partway through.
+  Sourcing it from the manifest instead left every test in the file green. The fixture
+  that separates them makes the two **disagree** in the direction a half-finished write
+  produces: storage knows the artifact, the manifest does not mention it. **Strip the row
+  from both manifest copies** -- the clone's and storage's -- or you have ruled out one
+  wrong source and not the other. The first draft of that test stripped the clone alone
+  and a manifest-reading implementation sailed through it.
+* **A set's stored payload is refused before it is parsed.** Moving the hash check to
+  after the parse left every assertion green: the abort still happens, same class, same
+  message. Only the absence of the parse *call* separates them, and the order is the
+  point of the check rather than a detail of it -- those bytes are unverified and may be
+  hostile, so a parser is what they must not reach.
+
+**How to find these**: read each criterion for a phrase of the form *reads X rather than
+Y*, *from storage not the manifest*, *before parsing*, *through the shared helper*,
+*recorded not recomputed*. Most criteria state only an outcome, so the scan is bounded --
+ten candidates out of 37 in that sweep, of which eight already had their own assertion.
+
+**The fix pattern is two assertions, not one bigger one.** `commit_sha` is the template:
+carry-forward and re-derive are two halves of one claim, and they got a test each, so
+neither can be mistaken for the other.
+
+### Probing a guard: the procedure, and the two ways a probe lies
+
+The coverage rule is that a criterion or guard counts as covered only when a named test
+**goes red on a deliberate break of the behaviour it claims**. Reading a test and judging
+it relevant is not coverage. The procedure below is what makes the resulting red counts
+mean something; it came out of 81 probes in datom-sets Task 16.
+
+**Run a control, once per session.** A comment-only edit that changes no behaviour must
+redden nothing. Without that result every red count in the sweep could be noise from
+reloading the package, and there is no way to tell afterwards.
+
+**A probe that reddens nothing is AMBIGUOUS, not a pass.** It means one of three things,
+and they need different responses: the guard is missing; the fixture is too small to tell
+the two behaviours apart; or **the probe did not change any behaviour**. That third one is
+the common one and it looks exactly like the first two. Real examples, all from one sweep:
+
+* an edit that selected hash fields by the full allowlist instead of the intersection --
+  no-op, because the JSON serializer drops null entries;
+* an edit that passed old labels into a rebuild while the line two below still restored
+  them verbatim -- neutralised by its own neighbour;
+* a test fixture edited to strip a manifest row from the clone, while the code under
+  probe read storage's copy.
+
+So before recording "nothing reddened, therefore a hole": confirm the edit changes an
+observable. Compute both values side by side if that is quicker than reasoning about it.
+
+**A crude probe reads like evidence and is not.** An edit that makes the package fail to
+load, or reddens 80 tests because the write path no longer works, answers nothing about
+the criterion you were asking about. Narrow it until exactly the intended behaviour
+differs. The same applies from the other side: a break that reddens its own test *and*
+seventy others is not diagnostic -- record it as such rather than as a clean pin, because
+a regression there will not point at the criterion.
+
+**And restore from your own copy, never from git** -- see the probe-harness entry above,
+which exists because that cost a whole task's work once.

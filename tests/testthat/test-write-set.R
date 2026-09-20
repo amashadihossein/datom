@@ -1259,6 +1259,42 @@ test_that("a table cannot be written over an existing set of the same name (AC4)
   expect_match(conditionMessage(err), "datom_write_set")
 })
 
+test_that("the kind comes from the STORAGE document, not the manifest row (AC4)", {
+  # AC4 names a MECHANISM as well as an outcome: the check reads
+  # `{name}/.metadata/metadata.json` from storage and compares `kind`, never the
+  # manifest row, because the manifest can lag behind a write that got partway
+  # through. Measured 2026-09-19: sourcing the kind from the manifest row instead
+  # left all 213 tests in this file green, both AC4 tests included -- in a healthy
+  # repo the two agree, which is exactly why the substitution is invisible and
+  # exactly why the criterion bothers to name the source.
+  #
+  # So the fixture makes them DISAGREE, in the direction a half-finished write
+  # produces: storage knows about the table, the manifest row does not mention it.
+  # A check reading the manifest sees a free name and proceeds.
+  fx <- local_set_project(set_name = "dm")
+  sw_table(fx, "dm")
+  v_lb <- sw_table(fx, "lb")
+
+  # BOTH copies, or the test only rules out one of the two wrong sources -- and the
+  # first draft of this test stripped the clone alone, which a manifest-reading
+  # implementation sailed through by consulting storage's copy instead.
+  strip_dm <- function(path) {
+    m <- jsonlite::read_json(path)
+    m$artifacts[["dm"]] <- NULL
+    jsonlite::write_json(m, path, auto_unbox = TRUE, pretty = TRUE)
+    expect_null(jsonlite::read_json(path)$artifacts[["dm"]])
+  }
+  strip_dm(fs::path(fx$repo_dir, ".datom", "manifest.json"))
+  strip_dm(.datom_local_path(fx$conn, ".metadata/manifest.json"))
+
+  # Still refused, because the storage document still says "dm" is a table.
+  err <- expect_error(
+    datom_write_set(fx$conn, list(sw_member(fx, "lb", v_lb)), name = "dm"),
+    class = "datom_artifact_kind_conflict"
+  )
+  expect_match(conditionMessage(err), "table")
+})
+
 test_that("an untyped metadata document reads as a table, so an old table still blocks a set (AC4)", {
   # Every document written before `kind` existed describes a table, because sets
   # did not exist.

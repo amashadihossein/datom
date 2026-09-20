@@ -634,6 +634,13 @@ if (frozen_refs > 0L) {
 # A comment counts as well as a `test_that()` title: AC41's four clauses are
 # deliberately four tests, and forcing one title to own it would be a worse record.
 
+# THIS LIST IS WHERE THE CHECK ROTS, AND THE ONLY THING STOPPING IT IS CONVENTION.
+# The reason beside each entry is required by this comment, not by any code: nothing
+# here validates that an exemption is justified, so an entry added to make a red
+# build go green looks identical to a considered one. **A GROWING LIST IS THE
+# SIGNAL** -- four entries with real reasons is healthy, and a fifth is a review
+# item rather than a commit. The same shape as the hardcoded AC range this file
+# already forbids, which went stale twice before anyone noticed.
 AC_NAMED_EXEMPT <- c(
   # Retired 2026-08-18: it asserted that the JSON-write export refuses a
   # `.access/` key, and that export is deferred, so there is no behaviour to
