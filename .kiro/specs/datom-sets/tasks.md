@@ -182,12 +182,16 @@ measures each item with a date, explains why no pre-start audit was run, and lis
 order. It also carries one finding that needs a **decision** and not just prose: there is no public verb
 returning a single member's record.
 
-**THE FIRST THING TASK 17 DOES IS NOT A DOCS PASS.** Task 16 left one item open on purpose: an
-independent re-derivation of the acceptance-criteria list, by a session given `requirements.md` **and
-nothing else**, diffed against the sweep's list afterwards. A missed criterion and a mis-credited one
-are different errors and re-reading your own work catches neither, which is why the session that did the
-sweep could not also do this. It goes first because a gap it finds is a test to write, and Task 17 is
-where "this spec is done" gets asserted.
+**TASK 17'S FIRST ITEM IS DONE AND IT FOUND NO MISSING TEST (2026-09-20).** Task 16 had left one item
+open on purpose: an independent re-derivation of the acceptance-criteria list, by a session given
+`requirements.md` **and nothing else**, diffed against the sweep's list afterwards. A missed criterion and
+a mis-credited one are different errors and re-reading your own work catches neither, which is why the
+session that did the sweep could not also do this. It went first because a gap it found would have been a
+test to write, and Task 17 is where "this spec is done" gets asserted. **The two lists are identical --
+AC1 through AC41, no gaps, same clauses on the same 14 criteria** -- so the remaining items are the docs
+passes. What it did surface is one hole that is not an AC: two acceptance statements in `requirements.md`
+are written in prose with no id, so they are tested but ungated; it is a Backlog row, and the reasoning is
+in Task 17's derivation record.
 
 **TASK 15 IS CLOSED, AND ITS AUDIT IS WHAT MOVED THE WORK.** Eleven findings, both decisions settled
 by the owner the same day at their defaults, and the finding that relocated the task: **the field it
@@ -4073,17 +4077,21 @@ own; landing it first is what makes Task 6's failure loud.
   **AC36(b)** (~30). Each is marked in place. Nothing is wrong with them today; they are where the next
   hour of this kind of work would go.
 
-  **ONE ITEM IS OPEN, AND IT CANNOT BE DONE BY THIS SESSION.** The task requires that **a fresh session
-  derive the criteria list from `requirements.md` alone** -- without seeing the tables below -- and diff
-  it against this sweep's list. The point is that a **missed** criterion and a **mis-credited** one are
-  different errors, and re-reading your own work catches neither. So it is not a re-read by whoever did
-  the sweep, and I am whoever did the sweep. What to hand it: `requirements.md`, and nothing else.
+  **THE ONE OPEN ITEM IS NOW CLOSED, AND IT FOUND NOTHING MISSING (2026-09-20, as Task 17's first act
+  -- see Task 17's record for the full result).** The item was: **a fresh session derives the criteria
+  list from `requirements.md` alone**, without seeing the tables below, and the two lists are diffed.
+  The point is that a **missed** criterion and a **mis-credited** one are different errors, and
+  re-reading your own work catches neither -- so it could not be a re-read by whoever did the sweep. The
+  independent list is **AC1 through AC41, 41 defined, no gaps**, which is this sweep's list exactly: no
+  criterion on one list and not the other, and every one of the 14 clause-bearing criteria carries the
+  same clauses in both. **No test was owed.** What it did surface is one hole that is not an AC at all,
+  and it is recorded in Task 17.
 
-  **It is the FIRST thing Task 17 does, not something done alongside it** -- tightened 2026-09-19 from
-  "before Task 17 closes", which was too loose. If the derivation surfaces a missed criterion, that is a
-  test to write, and Task 17 is the task where "this spec is done" gets asserted in `dev/README.md`.
-  Finding the gap after that assertion is worse than finding it before, and a task that has already
-  written its docs has every incentive not to look.
+  **It was the FIRST thing Task 17 did, not something done alongside it** -- tightened 2026-09-19 from
+  "before Task 17 closes", which was too loose. If the derivation had surfaced a missed criterion, that
+  would have been a test to write, and Task 17 is the task where "this spec is done" gets asserted in
+  `dev/README.md`. Finding the gap after that assertion is worse than finding it before, and a task that
+  has already written its docs has every incentive not to look.
 
   **The derived list and the batch boundaries.** The criteria list
   was derived from `requirements.md` rather than read off any range written here: **41 defined**, of
@@ -4347,11 +4355,13 @@ own; landing it first is what makes Task 6's failure loud.
 
   **WHAT IS OPEN, in the order to do it.**
 
-  1. **THE INDEPENDENT AC DERIVATION, FIRST, BEFORE ANY DOCS ARE WRITTEN.** Task 16's one open item. A
-     session shown `requirements.md` **and nothing else** derives the criteria list, then it is diffed
-     against Task 16's. Tightened from "before Task 17 closes" for a reason: if it surfaces a missed
-     criterion, that is a test to write, and this is the task where "the spec is done" gets asserted in
-     `dev/README.md`. A task that has already written its docs has every incentive not to look.
+  1. ~~**THE INDEPENDENT AC DERIVATION, FIRST, BEFORE ANY DOCS ARE WRITTEN.**~~ **DONE 2026-09-20, and
+     the lists matched exactly -- see the derivation record at the end of this task.** Task 16's one open
+     item. A session shown `requirements.md` **and nothing else** derived the criteria list, then it was
+     diffed against Task 16's. Tightened from "before Task 17 closes" for a reason: if it surfaces a
+     missed criterion, that is a test to write, and this is the task where "the spec is done" gets
+     asserted in `dev/README.md`. A task that has already written its docs has every incentive not to
+     look. **No test was owed**, and the one hole it did find is not an AC.
   2. **`dev/datom_specification.md` is the bulk of the remaining work, and it is barely started.**
      Measured: `datom-sv1` appears **0** times, "set artifact" **0**, `datom_write_set` **0**;
      `schema_version` 4 and `artifacts` 2. So the set artifact kind, the sv1 hash, the `schema_version`
@@ -4396,6 +4406,42 @@ own; landing it first is what makes Task 6's failure loud.
     vocabulary check and the schema number cover complementary sets and neither is sufficient alone
     (R23.5). And say plainly that every write-side refusal binds **0.1.1 forward only** (R23.7).
   - PR into `dev`, merge, delete branch.
+  **THE INDEPENDENT AC DERIVATION IS DONE (2026-09-20), AND THE TWO LISTS ARE IDENTICAL.** A session was
+  given `requirements.md` and nothing else -- no `tasks.md`, no `design.md`, nothing under `tests/` or
+  `R/` -- and told to derive the criteria list from the document's own content rather than off its
+  summary table, since a table can be stale. It read to the last line and produced **AC1 through AC41,
+  41 distinct criteria, no numbering gaps**. Task 16's list is the same 41, split the same way: AC23
+  retired, AC10/AC11/AC12 project gates, 37 behavioural. **Nothing is on one list and not the other, and
+  no criterion is credited to a test the derivation says belongs elsewhere**, so no test is owed.
+
+  **The clause level agrees too, which is the half a list-only diff would miss.** The derivation found 14
+  criteria carrying separately lettered clauses and 54 clauses across them; the sweep's five batch tables
+  break out the same 14 with the same clauses. One apparent exception is not one: **AC27's clause (e)**
+  (zero members refused) has no table row of its own because it is the same behaviour as AC5's first half,
+  and the test is annotated for both -- `tests/testthat/test-write-set.R:367`, "a set with zero members is
+  refused (AC5, AC27e)". AC27's unlettered tidy-not-abort list is likewise annotated rather than tabled
+  (`test-write-set.R:689`, `:722`).
+
+  **WHAT IT FOUND, AND IT IS NOT AN ACCEPTANCE CRITERION: two acceptance statements in `requirements.md`
+  carry no `AC` id, so nothing gates them.** Section 4 states both in prose beside their requirements --
+  a written set's metadata carries exactly the fields R1.3 lists, asserted with `setequal()` on the
+  written file, and a hand-assembled member list is refused with a message pointing at `datom_member()`.
+  **Both are tested today** (`tests/testthat/test-write-set.R:878` and `:498`), so nothing is unasserted.
+  What is missing is the gate: `dev/check-spec.R` check 10 walks `AC` ids, so deleting either test trips
+  nothing -- the inverse of the failure that check exists to catch. Left as a Backlog row rather than
+  fixed here, because giving them ids means defining two criteria **and** referencing them from a closed
+  task's acceptance line, since check 2 fails an AC no task references.
+
+  **Two spelling inconsistencies it flagged, recorded so a later tidy-up does not "fix" them into phantom
+  ids.** `requirements.md` cites `AC29a` and `AC37b`, a letter-appended spelling that exists nowhere as a
+  definition -- clauses are defined as `(a)` / `(b)`. Harmless to the gate, which derives definitions from
+  the `| **AC<n>**` and `- **AC<n>**` patterns only and matches `AC<n>` not followed by a digit when
+  looking under `tests/`. Separately, four criteria are **defined out of numeric order** in the table
+  (AC29 between AC13 and AC14, AC28 after AC32, AC38 after AC41) and AC10 through AC12 are defined as
+  bullets after it -- so a reader scanning the table top to bottom can miss one. That is exactly the
+  failure mode "derive the list, do not trust a range" exists for, and the derivation caught it by
+  searching the document rather than scanning it.
+
   - _Requirements: R13, R9.6 (the schema history table ships here if #103 has not landed
     separately), R23.5, R23.7. Acceptance: **none of its own by design** -- this task ships no
     behaviour, so it has no criterion to assert. Its gate is the Spec Completion Procedure in
