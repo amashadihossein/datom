@@ -551,6 +551,21 @@ produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
   that produced the table rather than from a fresh `datom_history()` lookup. The loop closes through
   the read's return: `datom_get_set()` hands back `version` precisely so a caller who explored with
   "latest" can paste it into a script.
+
+  **THE ONE BOUNDARY, settled 2026-09-19 (owner) and written here rather than only at the verb,
+  because the two rules read as a contradiction otherwise.** `datom_update_members()`'s target
+  version **does** default to current, and that does not relax this rule. The word doing the work
+  above is **silent**: what R4.2a refuses is a verb that says nothing about time quietly resolving
+  "newest", as `datom_add_member("dm")` would. A verb whose whole meaning is *move this forward from
+  where it is* states the time-dependence in its own name, and it reports every version it moved
+  before anything is written, so the decision is neither silent nor unreviewable. **The rule to carry
+  is therefore: a verb that CONSTRUCTS a pointer requires a pin; a verb whose meaning is
+  time-dependent may infer current, and then has to say what it inferred.** Same split `renv` draws
+  between `update()` and `restore()`. Note that this preserves the guarantee R4.2a exists for by a
+  different route rather than trading it away: an update is the **snapshot** moment, and its own
+  output is a pin -- the set it produces records exact versions and is written as an immutable,
+  citable artifact, so the script that later *reads* that set is as reproducible as ever. What varies
+  between two runs of the update is which set gets written, which is what the caller asked for.
 - **R4.3 -- resolution is one level; datom never traverses.** A set's payload lists its **direct**
   members only. Reading a set returns those member records; if a member is itself a set, the
   consumer gets a **pointer** to it and reads that set separately if they want its contents. This
