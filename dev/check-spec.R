@@ -612,6 +612,85 @@ if (frozen_refs > 0L) {
        "crops of stale references, the last one half-done.")
 }
 
+# --- check 10: every acceptance criterion is named in the test suite ----------
+# Added by Task 16's sweep, and it exists because the sweep was expensive in one
+# specific way: of the 41 criteria, 26 named themselves nowhere under `tests/`, so
+# establishing who covered them meant reading each criterion and matching it to a
+# test by MEANING -- about 23 judgement calls, made once, reported, and otherwise
+# discarded. The 15 that were already annotated are the proof of what that costs:
+# they are the ones nobody has to think about twice. This check is what stops the
+# other 26 sliding back.
+#
+# THIS AND THE PROBE RULE CATCH DIFFERENT FAILURES, AND NEITHER COVERS THE OTHER.
+# Do not drop one as redundant in a tidy-up:
+#   * this check catches a criterion nobody matched to anything at all;
+#   * the probe rule -- a criterion counts as covered only when a named test
+#     reddens on a deliberate break of the behaviour it claims -- catches a
+#     criterion matched to a test that does not exercise it. That one cannot be
+#     automated, which is exactly why this one has to be.
+#
+# Matching is `AC<n>` NOT followed by another digit, so `AC1` is not satisfied by
+# `AC13`, while a clause spelling like `AC28b` or `AC20a` does satisfy AC28/AC20.
+# A comment counts as well as a `test_that()` title: AC41's four clauses are
+# deliberately four tests, and forcing one title to own it would be a worse record.
+
+AC_NAMED_EXEMPT <- c(
+  # Retired 2026-08-18: it asserted that the JSON-write export refuses a
+  # `.access/` key, and that export is deferred, so there is no behaviour to
+  # test. Revive the criterion with the export.
+  "AC23",
+  # Project gates, not behaviours. They are discharged by RUNNING something --
+  # the suite, `R CMD check --as-cran`, and `dev/e2e-sets.R` -- so there is no
+  # assertion for them to be named in. Writing three tests to satisfy a checker
+  # would be the checker driving the suite rather than the reverse.
+  "AC10", "AC11", "AC12"
+)
+
+ac_defined <- sort(unique(as.integer(gsub(
+  "^AC", "",
+  unlist(regmatches(
+    spec$requirements.md,
+    gregexpr("(?<=^\\| \\*\\*|^- \\*\\*)AC[0-9]+(?=\\*\\*)",
+             spec$requirements.md, perl = TRUE)
+  ))
+))))
+
+test_files <- list.files(file.path(repo_root, "tests"), pattern = "[.][Rr]$",
+                         recursive = TRUE, full.names = TRUE)
+test_text <- paste(unlist(lapply(test_files, read_lines_safe)), collapse = "\n")
+
+ac_unnamed <- character()
+for (n in ac_defined) {
+  id <- paste0("AC", n)
+  if (id %in% AC_NAMED_EXEMPT) next
+  if (!grepl(paste0(id, "(?![0-9])"), test_text, perl = TRUE)) {
+    ac_unnamed <- c(ac_unnamed, id)
+  }
+}
+
+if (length(test_files) == 0L) {
+  note("acceptance criteria are named in tests",
+       "no test files found under tests/ -- check skipped.",
+       "Run this from the package root.")
+} else if (length(ac_defined) == 0L) {
+  note("acceptance criteria are named in tests",
+       "no AC definitions found in requirements.md -- check skipped.")
+} else if (length(ac_unnamed) > 0L) {
+  fail("acceptance criteria are named in tests",
+       "defined in requirements.md but named nowhere under tests/:",
+       paste0("    ", paste(ac_unnamed, collapse = ", ")),
+       "Write the criterion's id into the test that covers it -- in the",
+       "test_that() title where one test owns it, in a comment on the relevant",
+       "assertions where several tests split it. If it genuinely has no test to",
+       "be named in, add it to AC_NAMED_EXEMPT above WITH THE REASON.")
+} else {
+  pass("acceptance criteria are named in tests",
+       sprintf("%d defined, %d named under tests/, %d exempt with reasons",
+               length(ac_defined),
+               length(ac_defined) - length(AC_NAMED_EXEMPT),
+               length(AC_NAMED_EXEMPT)))
+}
+
 # --- summary ------------------------------------------------------------------
 
 cat("\n")

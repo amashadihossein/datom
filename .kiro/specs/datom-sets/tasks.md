@@ -44,8 +44,8 @@ validators) **Task 9** (`datom_write_set()`), **Task 10** (`datom_get_set()` plu
 **Task 23** (`project.yaml` declares its format), **Task 11** (project mode gating the
 import path), **Task 12** (foreign-content discipline plus the two git-mutation exports),
 **Task 13** (the joint commit), **Task 14** (validation branches on kind), **Task 15** (the
-version-to-commit link), **Task 27** (`datom_update_members()`) and **Task 28**
-(`datom_remove_members()`), plus
+version-to-commit link), **Task 27** (`datom_update_members()`), **Task 28**
+(`datom_remove_members()`) and **Task 16** (the acceptance sweep plus `dev/e2e-sets.R`), plus
 three things
 that are not tasks: the prerequisite #89
 named ([#95](https://github.com/amashadihossein/datom/issues/95) / PR #96, landed on `dev` *before*
@@ -170,12 +170,17 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **4270** tests
-(FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 9/9, and `R CMD check` 0/0/0 with examples run
-(tests run separately). Next is **Task 16**, the acceptance-criteria sweep plus the end-to-end
-script, then **Task 17**, docs plus the Spec Completion Procedure. Everything before it is done:
-Task 15 (the version-to-commit link) and Phase H (Tasks 27 and 28, the two set-editing verbs) all
-landed on 2026-09-19.
+**Start here.** Branch `spec/datom-sets`, working tree clean, **4286** tests
+(FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` **10/10**, and `R CMD check --as-cran` 0/0/0 with
+examples, tests and vignettes run. **Next is Task 17**, docs plus the Spec Completion Procedure --
+the last task in the spec. Everything before it is done; Task 16's sweep closed on 2026-09-19.
+
+**ONE THING TASK 17 MUST NOT SKIP, and it needs a fresh session rather than a continuation.** Task 16
+requires an independent re-derivation of the acceptance-criteria list: a session that is given
+`requirements.md` **and nothing else**, produces its own list of criteria, and only then diffs it
+against the sweep's. A missed criterion and a mis-credited one are different errors and re-reading your
+own work catches neither, which is why the session doing the sweep could not also do this. It is the
+one open item in Task 16 and it is named again in that task's DONE record.
 
 **TASK 15 IS CLOSED, AND ITS AUDIT IS WHAT MOVED THE WORK.** Eleven findings, both decisions settled
 by the owner the same day at their defaults, and the finding that relocated the task: **the field it
@@ -3842,7 +3847,7 @@ own; landing it first is what makes Task 6's failure loud.
     a gap -- so nothing is lost and nothing needs saying. Failing to read the stored copy is the one
     loss signal. The review was right to separate them rather than call the module defensive.
 
-- [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[coverage standard: probe each claim -- see the rule below; the old "soft escalation" flag is retired]** &nbsp; **[THIS IS NOW THE NEXT TASK -- Phase H landed 2026-09-19, so the next unchecked box is the right place]**
+- [x] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[DONE 2026-09-19 -- see the DONE record. ONE ITEM IS DELIBERATELY LEFT OPEN AND IT NEEDS A FRESH SESSION: the independent re-derivation of the criteria list. It is named at the end of the record.]**
   - **Read this before starting it.** Phase H (Tasks 27 and 28) was appended rather than inserted, so
     it sits *below* this task in the file although it ran *before* it -- which is why the two edit
     verbs appear after this line while their code already exists. **Both shipped on 2026-09-19; see
@@ -3950,7 +3955,65 @@ own; landing it first is what makes Task 6's failure loud.
     better **judgement** when what the task needs is **evidence**. Deliberate breakage supplies
     evidence at any model. Retired rather than deleted, so the risk it named stays visible.
 
-  **SWEEP IN PROGRESS -- the derived list and the batch boundaries (2026-09-19).** The criteria list
+  **DONE RECORD (2026-09-19). Shipped in seven commits.** Tests 4270 -> **4286** (+16),
+  FAIL 0 / WARN 0 / SKIP 0; `dev/check-spec.R` **10/10** (it gained one check, below);
+  `R CMD check --as-cran` **0 errors / 0 warnings / 0 notes** with examples, tests and vignettes run
+  (AC10, AC11); `dev/e2e-sets.R` exits 0 with 51/51 claims (AC12). **Pathway impact: none** -- this task
+  shipped no new lookup or traversal.
+
+  **The verdict, and it is inspectable rather than asserted.** All 37 behavioural criteria are covered,
+  each by a named test that was **watched going red on a deliberate break of the behaviour it claims**.
+  The evidence is the five batch tables below -- one row per criterion or clause, carrying what was
+  broken and what reddened -- totalling **81 deliberate breakages**. Two criteria carry an honest
+  qualification rather than a clean pass, and both are stated in their own rows: AC36(c) has no test and
+  cannot have one until the floor-raising verb exists, and AC40(c)'s through-the-write assertion cannot
+  be made to fail because the claim composes two things pinned elsewhere.
+
+  **What the sweep found, as opposed to confirmed.** Four things, and only the first was a defect in the
+  suite:
+
+  1. **AC2's test could not fail.** Deleting the guard that makes re-writing an identical payload a
+     no-op left every assertion in its own test green; across the whole suite exactly two tests
+     reddened and neither was AC2's. Four independent reasons, each sufficient on its own, and a HEAD
+     comparison -- the obvious fix, copied from AC19's test -- was tried and also could not fail. What
+     survives is what the caller is **told**. Fixed, and it is the third instance of the pattern after
+     Tasks 13 and 14: **a test that asks a write what it reported cannot tell a no-op from a completed
+     write.**
+  2. **An instruction in this task's own body was wrong**, and the test written for it says so instead.
+     The inherited `datom_repo_commit(paths = NULL)` case was to assert the sweep-in happens *and that
+     the repair then reports the repo consistent*. For a **table** it cannot: a write that died before
+     its upload produced no parquet bytes anywhere and git never holds parquet, so the repair restores
+     both documents and the data gap remains. A **set** is where that instruction would have been right,
+     because git holds `{name}/set.json`.
+  3. **Two of my own probes were invalid**, and the standard's own rule is what caught both: a probe
+     that reddens nothing is ambiguous, not a pass. The first AC33(c) break was a no-op because the JSON
+     serializer drops a null entry; the first AC40(a) break was neutralised by the line two below it.
+     Both were replaced with breaks that change behaviour. A deliberate **control** -- a comment-only
+     edit -- was also run once and reddened nothing, which is what makes the other red counts mean
+     something.
+  4. **The E2E found that two verbs I expected do not exist.** There is no public verb that hands back
+     one member's record: `datom_fetch_member()` goes straight to the data and `datom_list_members()`
+     returns one row per member per label, so the version a member is pinned at is read out of the
+     listing. Task 17's docs should say that plainly.
+
+  **`dev/check-spec.R` gained check 10: every criterion defined in `requirements.md` is named somewhere
+  under `tests/`.** Added last, deliberately -- adding it before the annotation pass would have turned a
+  must-pass gate red on 26 criteria and made the repo uncommittable mid-task. Four criteria are exempt
+  **with their reasons written at the site**: AC23 is retired with its export, and AC10/AC11/AC12 are
+  project gates discharged by running something rather than by an assertion. The check was verified by
+  removing every mention of AC41 from the suite, which makes it exit 1 naming that criterion. **Its
+  comment says why it does not replace the probe rule**, because the two catch different failures and a
+  later tidy-up would otherwise drop one as redundant: this check catches a criterion matched to
+  nothing, the probe rule catches a criterion matched to a test that does not exercise it.
+
+  **ONE ITEM IS OPEN, AND IT CANNOT BE DONE BY THIS SESSION.** The task requires that **a fresh session
+  derive the criteria list from `requirements.md` alone** -- without seeing the tables below -- and diff
+  it against this sweep's list. The point is that a **missed** criterion and a **mis-credited** one are
+  different errors, and re-reading your own work catches neither. So it is not a re-read by whoever did
+  the sweep, and I am whoever did the sweep. **Owner: the next session, before Task 17 closes the spec.**
+  What to hand it: `requirements.md`, and nothing else.
+
+  **The derived list and the batch boundaries.** The criteria list
   was derived from `requirements.md` rather than read off any range written here: **41 defined**, of
   which **AC23 is retired** (it asserts a behaviour whose export was deferred, so there is nothing to
   test) and **AC10, AC11, AC12** are project gates discharged by running the suite, the check and the
