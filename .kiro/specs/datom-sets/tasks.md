@@ -325,18 +325,20 @@ hand-edit `project.yaml` to declare the mode**, so they teach the superseded rou
 init's new argument in the same commit.
 
 **THE SPEC GREW BY A PHASE ON 2026-09-16, AFTER TASK 25 LANDED: Phase H, Tasks 27 and 28, editing a
-set that already exists.** A set is now pleasant to build and to read, and **unpleasant to edit** --
-the only route is list surgery on what the read returned, and two of the obvious hand-rolled
-spellings are silently wrong. Filtering members by name drops **every** version of that name, which
-quietly removes a deliberately frozen baseline alongside the live table; and repointing by hand loses
-each member's labels, which are content. So `datom_update_members()` (repoint at newer versions) and
-`datom_remove_members()` (drop members) are scheduled into **this** release rather than deferred --
-an owner decision made on value alone, because these verbs touch no stored document and so could have
-been deferred at **no** forward-compatibility cost. **They execute after Task 15 and before Task 16**,
-which is forced rather than chosen: Task 16 is the acceptance sweep and Task 17 is docs plus spec
-completion, so verbs landing later would leave the sweep testing a surface that then grew. Task 27
-runs before Task 28 because both share a plural member selector that does not exist yet, and the
-harder consumer is what shapes it correctly.
+set that already exists. BOTH SHIPPED 2026-09-19 -- this paragraph is kept for the reasoning, not as
+pending work.** A set was pleasant to build and to read, and **unpleasant to edit** -- the only route
+was list surgery on what the read returned, and two of the obvious hand-rolled spellings are silently
+wrong. Filtering members by name drops **every** version of that name, which quietly removes a
+deliberately frozen baseline alongside the live table; and repointing by hand loses each member's
+labels, which are content. So `datom_update_members()` (repoint at newer versions) and
+`datom_remove_members()` (drop members) went into **this** release rather than being deferred -- an
+owner decision made on value alone, because these verbs touch no stored document and so could have
+been deferred at **no** forward-compatibility cost. **They executed after Task 15 and before Task
+16**, which was forced rather than chosen: Task 16 is the acceptance sweep and Task 17 is docs plus
+spec completion, so verbs landing later would have left the sweep testing a surface that then grew.
+Task 27 ran before Task 28 because both share a plural member selector that did not exist yet, and the
+harder consumer is what shaped it correctly. **What this leaves for whoever picks the spec up: Task 16
+is the next task and the next unchecked box, and the two verbs are part of the surface it sweeps.**
 
 **TASK 23'S PRE-START AUDIT, KEPT BECAUSE THE REASONING IS WHAT A LATER CHANGE NEEDS (the task itself
 shipped 2026-09-17 -- see its DONE record).** It was audited cold on 2026-09-16 and startable with
@@ -3828,24 +3830,40 @@ own; landing it first is what makes Task 6's failure loud.
     a gap -- so nothing is lost and nothing needs saying. Failing to read the stored copy is the one
     loss signal. The review was right to separate them rather than call the module defensive.
 
-- [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]** &nbsp; **[EXECUTES AFTER TASK 28 -- NOT the next task even though it is the next unchecked box]**
+- [ ] **16. Acceptance-criteria test sweep + E2E** &nbsp; **[soft escalation: coverage review]** &nbsp; **[THIS IS NOW THE NEXT TASK -- Phase H landed 2026-09-19, so the next unchecked box is the right place]**
   - **Read this before starting it.** Phase H (Tasks 27 and 28) was appended rather than inserted, so
-    it sits *below* this task in the file while executing *before* it. A cold session following "the
-    next unchecked task is where to resume" lands here and is wrong: sweeping acceptance criteria
-    before the two edit verbs land would test a surface that then grows, which is the exact reason
-    Phase H is scheduled ahead of this one. The order is at the end of the state block near the top of
-    this file, and `dev/README.md`'s status line names the real next task.
+    it sits *below* this task in the file although it ran *before* it -- which is why the two edit
+    verbs appear after this line while their code already exists. **Both shipped on 2026-09-19; see
+    their DONE records.** So the surface this sweep covers is final, and it includes two exports and
+    two acceptance criteria (AC40, AC41) that did not exist when the rest of this task was written.
+    Until 2026-09-19 this bullet said the opposite -- that a session landing here had arrived too
+    early -- which was true while Phase H was pending and is now the stale reading to ignore. The
+    execution order is at the end of the state block near the top of this file.
   - Confirm **every AC defined in `requirements.md`** has a dedicated test -- derive the list, do not
     trust a range written here. A hardcoded range has now gone stale **twice**: it once stopped at
     AC26 and omitted AC27, and it then stopped at AC28 and omitted AC29. `dev/check-spec.R` now
     asserts this line names no explicit upper bound, so the defect cannot recur. Then add what the
-    per-chunk tests
-    missed. **AC15** (nesting resolves one level) is the one easiest to skip: it needs a
-    set-containing-a-set fixture and an assertion that the inner payload is *not* read.
-    **AC16** (machine-commit isolation) is **already covered as of Task 12** --
-    `tests/testthat/test-foreign-content.R` seeds the foreign dirty file this line used to say no
-    test creates, and reads the real commit tree. Verify rather than rewrite it, and do not replace
-    it with a mocked version; the reasoning is in Task 12's DONE record.
+    per-chunk tests missed.
+  - **THE SWEEP CANNOT BE DONE BY GREP, AND THAT IS THE SIZE OF THIS TASK.** Measured 2026-09-19: of
+    the **41** criteria defined, **15** name their own id somewhere under `tests/` and **26** do not --
+    the convention of putting `(AC18)` in a `test_that()` title was followed for some tasks and not
+    others. So for those 26 the criterion has to be read and matched to a test by **meaning**, and an
+    absent label is evidence of nothing either way. Three of the 26 are procedural gates rather than
+    tests (**AC10**, **AC11** suite and check; **AC12** the E2E's non-zero exit), each accounted for
+    in the bullets below, which leaves roughly 23 judgement calls. That count is the whole reason this
+    task carries a coverage-review escalation: a default model claiming "all covered" over 23 read-and-
+    match decisions is exactly the claim least worth taking on trust. Consider adding the id to the
+    title of each test you verify, so the next sweep is cheaper than this one.
+  - **Two criteria are already covered and must be VERIFIED rather than rewritten.** Both bullets here
+    once said no test existed, and both statements went stale when the test arrived -- so check before
+    writing, and if you find a third, correct the line rather than adding a duplicate fixture.
+    **AC15** (nesting resolves one level) -- `tests/testthat/test-get-set.R:901` holds the
+    set-containing-a-set fixture, and the test at `tests/testthat/test-get-set.R:919` intercepts every
+    storage read and asserts exactly two keys, both of the outer set's own documents, which is the
+    "the inner payload is not read" assertion. **AC16** (machine-commit isolation) -- covered as of
+    Task 12: `tests/testthat/test-foreign-content.R` seeds the foreign dirty file and reads the real
+    commit tree. Do not replace either with a mocked version; the reasoning is in Task 12's DONE
+    record.
   - **Inherited from Task 12, one test it deliberately did not write.** `datom_repo_commit(paths =
     NULL)` sweeps in datom's own files if an earlier write failed after writing local metadata but
     before committing. Design 19.7 **accepts** that -- excluding datom paths silently would make the
@@ -3858,6 +3876,17 @@ own; landing it first is what makes Task 6's failure loud.
     bare-git remote + real local store, every claim asserted, non-zero exit on mismatch (AC12).
     Include a `mode: product` repo with foreign `R/`, `dp/`, and `renv.lock` content so the joint
     commit and the machine-commit isolation are exercised end to end, not only in unit tests.
+    **Nothing under `dev/` touches sets today** -- verified 2026-09-19,
+    `grep -ln "write_set\|get_set" dev/*.R` returns nothing -- so this file is entirely new rather
+    than an extension of an existing script.
+  - **THE E2E MUST WALK THE EDIT VERBS TOO** (added 2026-09-19; the bullet above predates Phase H and
+    listed only the build-and-read path). The lifecycle a product actually has is: assemble, write,
+    read, **an input moves, repoint it, drop a retired one**, write again, cite the new version. Left
+    at build-and-read, this task would ship an E2E for a surface two verbs smaller than the release --
+    the same "testing a surface that then grew" failure Phase H's scheduling exists to prevent, one
+    level over. Assert through the second write, because three of Phase H's claims are only observable
+    there: a refresh that found nothing mints **no** version, an edited set does write a new one, and
+    the commit message names what changed instead of `Update {name}`.
   - Full `devtools::test()` count reported; `R CMD check --as-cran` 0E/0W (AC10, AC11).
   - _Acceptance: every AC defined in `requirements.md` -- derive the list, do not restate a bound._
   - **Escalation rationale**: the full acceptance-criteria set plus a new hash regime is a lot
