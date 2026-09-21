@@ -698,6 +698,70 @@ The storage mirror allows readers who do not have the data clone to discover tha
 
 ---
 
+## Schema Evolution and Forward Compatibility
+
+The guarantee this exists to protect: **code that worked once keeps working.** A pinned analysis must not stop reading a repo because somebody else upgraded datom.
+
+This section is the contract as a user meets it -- what datom refuses, what it tolerates, and what it promises about a field it has never seen. The contributor-facing form of the same rules, written as instructions for whoever adds a field next, is in `.github/copilot-instructions.md` under the same heading. Both must move together.
+
+### Reading and writing are separate guarantees, and only one survives an addition
+
+An older **reader** never asks for a field it does not know, so a field added to a document is invisible to it. An older **writer** recomputes identity before writing, so any field it cannot account for makes it disagree with the recorded version -- which is why datom **refuses** such a writer rather than letting it mint versions on content that did not move. So "additive changes are free" is true only for readers, and the accepted cost is stated plainly: **a release that adds any field to a datom-owned document forces a fleet-wide writer upgrade**, cosmetic additions included. That is deliberate. Writes are infrequent and done by few people, and a false refusal costs one person an install while a miss costs corrupted data.
+
+Nothing can be retrofitted into a build that is already installed and locked in an `renv.lock`, which is why a "converter for old readers" is not buildable -- the converter would have to ship inside the build that predates the change.
+
+### The two refusal mechanisms, which are complementary and neither of which is sufficient alone
+
+Describing either one on its own oversells it, so they are always described together.
+
+| Change | Caught by |
+|---|---|
+| field added | **the vocabulary check** -- the format number does not move |
+| field renamed | the vocabulary check, and the number too |
+| field removed | **the number** -- the old name is still in an append-only vocabulary, so nothing looks unrecognised |
+| type or meaning change | **the number** -- no new name appears |
+| container restructured | **the number** -- no new name appears |
+| policy block for a non-format reason | **the writer floor** only |
+
+**The vocabulary check** inspects the top-level keys of each datom-owned document before writing and refuses if it meets one it cannot classify -- neither in the identity list nor on the documented excluded list. It is evidence-based, so it needs no configuration and no network, and `custom` is opaque and classified as a whole. It is the primary mechanism rather than the declared floor for one reason: **it cannot be forgotten.** A floor protects a repo only if somebody remembers to raise it.
+
+**The vocabulary list is append-only, and that discipline is what the rest rests on.** Never stop recognising a name that has ever existed, including names no longer written; retire by marking, never by deleting. A build that forgets a name meets an *older* document, fails to classify a key it should know, and refuses it -- blocking the upgrade direction, which is the one direction that must always work.
+
+**`schema_version` is the alarm, not the mechanism.** It exists for the case where a break could not be avoided. It is **stamped always** -- it costs nothing, because the field is in the identity exclusion set, so stamping mints no version -- and **incremented only when a change would break a reader**: renaming a field, moving it to a different parent, removing one, changing what it means or its type, restructuring a container. Adding a field is not a break, and incrementing on an addition refuses a reader that could have read the file perfectly well. Classify by effect on a reader, not by the shape of the edit.
+
+### Which files may break, and which may never
+
+| File | May break? | Why |
+|---|---|---|
+| `.metadata/manifest.json` | **yes**, with a hatch | **Derived.** Every fact in it also lives in per-artifact metadata or the storage listing, so a build that cannot read it can rebuild one. |
+| `{name}/.metadata/metadata.json` | **never** | **Source of truth.** Nothing can rebuild it, and a legacy-shaped copy hashes differently from the recorded version, so a compatibility copy there would make older writers mint a version on every run. |
+
+That difference is why the reader's response is per-file: a too-new **manifest** makes a reader warn and rebuild from storage; a too-new **per-artifact** document makes a reader refuse. Writers refuse in both cases. **The same evidence, opposite responses** -- reads limp, writes stop -- and it is not an inconsistency to be tidied away. A reader that limps still answers the question it was asked; a writer that limps produces a file nobody agreed on.
+
+Do not freeze the manifest's number to "simplify" this: a frozen number cannot tell a truncated manifest from a future-shaped one, because both present with the expected key missing.
+
+### Where a write is permitted at all, an unrecognised field survives it
+
+A build that meets a top-level field it cannot place **preserves** it rather than rebuilding the document without it. This holds at four levels: per-artifact metadata, manifest entries, the manifest's top level, and version-history entries. The reason is information loss rather than version churn -- churn settles either way, because a build that deletes a field agrees with itself on its next run.
+
+Two of the four need no code, because those documents are read, edited and written back rather than rebuilt from a field list. They are tested anyway: a refactor to rebuilding would end the guarantee without failing anything else.
+
+**Only unplaceable fields are carried.** A field datom *does* know still disappears when the write does not set it -- which is what stops a stale "this came from a CSV" claim outliving the version it described.
+
+**Classify a field when you start writing it, never earlier.** Classifying a name ahead of the code that produces it looks like tidy preparation and quietly costs the field its protection: carry-forward rescues only names a build cannot place, so a name already on a list is invisible to it. A document arriving from a newer datom with that field would then lose it on rewrite -- silently, if the name sits on the not-identity list, because no version moves to signal the loss.
+
+### A refusal leaves no partial state
+
+Every forward-compatibility check runs before any hashing, any local file write, and any commit. Aborting mid-pipeline would leave a half-finished write, which is worse than the disagreement being prevented.
+
+### Enforcement begins at 0.1.1, and 0.1.0 writers cannot be stopped
+
+Stated separately from the mechanisms, because "an older build writing into a newer repo" hides the distinction that matters: **0.1.0 has no schema check, no vocabulary check and no floor read, and none of the three can be added to a build that has shipped.** Every write-side refusal described above therefore binds builds from **0.1.1 forward only. For 0.1.0 the remedy is a release note, not engineering.** The one lever that would make it fail loudly -- relocating the manifest so 0.1.0's existing "could not read manifest" abort fires -- costs a storage-layout change and two filenames carried forever, which is not worth it for a population that is the team.
+
+`schema_version` is the **contract** and `datom_version` is **provenance**, and one format spans many releases -- so neither field answers the only question a refusal message raises, which is *which datom do I need?* That mapping is published separately and is tracked in [#103](https://github.com/amashadihossein/datom/issues/103).
+
+---
+
 ## Store Objects
 
 Store objects bundle storage configuration + credentials, replacing scattered `bucket`/`prefix`/`region` params and env-var conventions.
@@ -1710,6 +1774,17 @@ project_description: Shared data repository for analytics
 created_at: 2024-01-15
 datom_version: 0.1.0
 
+# This file's own format, stamped at init (see below -- it is not the repo's
+# schema_version, and it does not move when that one does)
+schema_version: 1
+
+# Optional. Present only in a product repo, and then both keys together
+mode: product
+set: q4-efficacy-product
+
+# Optional. The lowest datom this repo accepts writes from
+min_writer_version: 0.1.3
+
 # Two-component storage configuration
 storage:
   governance:
@@ -1754,6 +1829,16 @@ storage:
 ```
 
 **Secrets are never persisted.** The `type` field drives backend dispatch. The two-component structure (governance + data) allows routing files and data files to target different buckets/prefixes.
+
+**This file carries settings a writer must obey, so it declares its own format.** `schema_version` here is the config's number and **nothing else's** -- it is not the repo-wide number stamped into manifests and per-artifact metadata, and it deliberately stays put when that one moves. The point is that an upgrade elsewhere can never refuse a config whose shape never changed. Every site that parses this file checks the number before reading a field out of it, and there are several: opening a connection, the re-read after a migration pull, the set-write gates, and the verb that repoints the data store. An **absent** number means version 1, so no existing repo changes behaviour, and an **unrecognised key is still tolerated** -- this is a hand-edited file, and refusing a key somebody added is not datom's business. That tolerance is the clause a later tidy-up is most likely to break by extending the machine-document vocabulary check to this file; the vocabulary check applies to documents datom writes and owns, never to this one.
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | The format of **this file**, stamped from the moment the repo is created. Absent means 1. A number above what the build knows stops the read and names the file. |
+| `mode` | `product` marks a repo that owns exactly one set and may hold the caller's own code and lockfile. Absent means an ordinary data repo, which is why no `mode: standard` line is ever written -- nothing would consult it. |
+| `set` | The name of the set a product repo owns. Written only alongside `mode`, and required with it: one repo holds one set, so the name is the repo's declaration rather than an argument at write time. |
+| `min_writer_version` | The lowest datom this repo accepts writes from, compared against the running build before anything is hashed or written. Absent means no floor. A malformed value is refused rather than read as "no floor", because the failure directions are not symmetric. |
+| `datom_version` | Provenance -- which datom created the repo. **Never gated on**, because it moves on every harmless upgrade. |
 
 ### projects/{project_name}/dispatch.json (governance repo)
 
