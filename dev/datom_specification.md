@@ -15,6 +15,8 @@ The package enables version-controlled data management by abstracting tables as 
 
 The primary utility motivating datom is building version-tracked data products. Companion packages (dpbuild, dpdeploy, and dpi) build upon datom to collectively enable creating, managing, and accessing reproducible data products in clinical and scientific workflows.
 
+datom versions **two kinds of artifact**, and both live in one namespace keyed by name. A **table** is the tabular data described above. A **set** is a versioned, citable collection of pointers at exact versions of other artifacts, plus free-text labels -- so "product v47" is one string that resolves to the fifty inputs it was built from, each pinned. A set stores no data of its own and reading one requires access to the set's project only, which is what lets a fifty-member product be citable by someone entitled to none of its members. See "Set Identity = data_sha" for its identity regime and "Set Operations" for the verbs.
+
 For quick route lookups across metadata, storage, governance, lineage, and access-control concerns, see `dev/datom_pathways.md`. The pathway map is a companion navigation aid: this specification remains the source of truth for schemas and algorithms, while the pathway map records the intended routes through those components.
 
 ---
@@ -1026,6 +1028,23 @@ Pulls latest git changes from remotes. Recommended at the start of each work ses
 
 Returns: Invisible list with `data` and `governance` sub-lists, each with `commits_pulled` (integer) and `branch` (string).
 
+#### datom_repo_commit() / datom_repo_push() — Data Developers
+
+```r
+datom_repo_commit(conn, message, paths = NULL, push = TRUE)
+datom_repo_push(conn)
+```
+
+The sanctioned way to put content datom does **not** own -- derivation code, a lockfile, build state -- into the data repo, so a downstream package need not import `git2r`. Developer role only.
+
+**`paths = NULL` means what `git add .` means, which is the opposite of what datom's own writes do**, and that asymmetry is the point: a machine-moment commit fires when datom chose and must never sweep up work in progress, while a human-moment commit was asked for. Gitignored paths are still excluded.
+
+- Commit is **idempotent** (a clean tree creates none, and that is not an error) and push is **convergent**. The no-op still pushes when the branch is ahead -- returning early there would let one failed push leave the remote behind for good.
+- Two verbs rather than one, because "push what I already committed" must be spellable without risking a commit of whatever the tree happens to hold.
+- With `paths = NULL` this **will** sweep in datom's own files if an earlier write failed after writing local metadata but before committing. Accepted rather than silently filtered: excluding them would make the argument lie, and it moves git ahead of storage, which is the safe direction. `datom_validate(fix = TRUE)` is the repair -- and for a **table** that repair restores both documents while the data gap remains, because git never holds parquet.
+
+Returns: `datom_repo_commit()` invisibly, the commit SHA -- or `NULL` when no commit was created, whether or not a push happened. `datom_repo_push()` invisibly, `TRUE`.
+
 ### Core Operations
 
 #### datom_read() — All Users
@@ -1177,6 +1196,117 @@ Updates routing/governance metadata in storage to match the gov clone:
 ```
 
 Returns: Summary of updated files
+
+### Set Operations
+
+A set is the second artifact kind (see "Set Identity = data_sha"). These verbs assemble one, write it, read it back, get at its members, and edit an existing one. **Only `datom_write_set()` writes anything** -- everything else either reads, or hands back an edited object for you to write when you choose.
+
+#### datom_member() — All Users
+
+```r
+datom_member(conn, name, version, tags = NULL)
+```
+
+Declares one member: a pointer at an exact version of one artifact, plus optional labels. `version` accepts a prefix. The record it returns is the unit `datom_write_set()` accepts, and a hand-assembled list is **refused** with a message naming this function -- the record carries the four-part citation (`project`, `name`, `kind`, `version`), and the project and kind are resolved here rather than typed.
+
+Returns: a member record -- `id` plus optional `tags`.
+
+#### datom_assemble_set() / datom_add_member() — Data Developers
+
+```r
+datom_assemble_set(conn, name = NULL, tags = NULL)
+datom_add_member(x, member, version = NULL, tags = NULL)
+```
+
+The stepwise route, for a build script that discovers its inputs as it goes. `datom_assemble_set()` opens a draft; `datom_add_member()` returns the draft with one more member on it, so calls chain. `member` takes a name (looked up in this project's storage), a member record, or a link. Nothing is hashed or written until the draft reaches `datom_write_set()`.
+
+Returns: a `datom_set_draft`.
+
+#### datom_write_set() — Data Developers
+
+```r
+datom_write_set(conn, members, tags = NULL, name = NULL,
+                message = NULL, include_paths = NULL)
+
+# three call shapes, two independent widenings on two different arguments:
+datom_write_set(conn, list(m1, m2))   # a member list
+datom_write_set(conn, x)              # a set read back, or an edited one
+datom_write_set(draft)                # a draft in the first slot, so a pipe ends here
+```
+
+Writes a set, on the machinery a table write already uses: change detection on `data_sha`, one commit, git before storage. Passing a draft **and** a member list is refused rather than resolved by preference -- either choice would write a set the caller did not describe.
+
+- The repo must declare `mode: product` **and** name the set in `.datom/project.yaml`. One repo holds one set, so `name` is a cross-check rather than a free choice.
+- **Identical content is a no-op** -- no commit, no version, no upload -- and that holds even when files listed in `include_paths` are dirty. The return says so, and a message names `datom_repo_commit()` for committing those files on their own.
+- `include_paths` stages the caller's own paths into the **same** commit as the payload and its metadata, so checking out a set version yields the pointers plus what produced them. Four refusals fire above the first hash: a path outside the clone, a datom-owned path, a nonexistent path, and a **gitignored** path -- that last one because git would stage nothing and say nothing, leaving a version claiming a joint commit that omits exactly the file named.
+- A set may not take the name of an existing table, or the reverse. The check reads the artifact's own metadata **in storage**, never the manifest row, which can lag behind a half-finished write.
+- A set listing any version of itself is refused. That is a nonsense check rather than cycle detection: a member pins an immutable version that must already exist, so a set cannot contain itself.
+
+Returns: invisibly, a list of `name`, `data_sha`, `metadata_sha` (the version), `member_count` (after normalisation), `action` (`"none"` or `"full"`) and `commit_sha`. There is no `"metadata_only"` outcome for a set: its metadata document carries nothing a caller can change independently of the payload.
+
+#### datom_get_set() — All Users
+
+```r
+datom_get_set(conn, name, version = NULL)
+```
+
+Reads a set: **references and labels, no data at all**, which is why the verb is `get` rather than `read`. It needs access to the set's own project only, so a 50-member product is readable by someone entitled to none of its members. A storage-only connection with no clone is enough.
+
+- `members` is a flat, **unnamed** list in payload order. Not name-keyed, deliberately: one artifact at two versions is a legal pair of members, two projects may both hold a `dm`, and R's `$` partial-matches -- so a name-keyed list would answer plausibly and wrongly.
+- Each member carries `id`, its optional `tags`, and a callable `fetch`. **A link pins the version it was read at** -- a citation, not a subscription.
+- Nesting resolves **one level**: a member that is itself a set comes back as a pointer and its payload is never read, so reading a set costs the same whatever sits beneath it.
+- The stored payload is verified against the recorded `document_sha` **before it is parsed**. `data_sha` is not recomputed -- it is the address the payload was fetched from, so it would catch nothing the byte hash did not, and it would refuse a payload written by a newer datom.
+- `version` can come back `NULL`: it is the version *recorded* in the history, and a truncated history records none. A manufactured version would be a wrong statement rather than a missing one.
+
+Two reads of the same set are **not** `identical()`, because closures compare by environment. Compare `m[c("id", "tags")]`, or pass `ignore.environment = TRUE`.
+
+Returns: a `datom_set` -- `name`, `project`, `version`, `data_sha`, `tags`, `members`.
+
+#### Getting at one member — All Users
+
+```r
+datom_fetch_member(conn, x, member, tags = NULL, version = NULL)
+datom_list_members(x)
+datom_structure_members(x, by, missing = "untagged")
+```
+
+Which route to reach for depends on what you want back:
+
+| You want | Route |
+|---|---|
+| a member's **data** | `datom_fetch_member()`, or the member's own `$fetch(conn)` |
+| one member's **facts** -- its pin, its labels | the record itself: `x$members[[i]]$id$version` |
+| **every** member's facts as a frame | `datom_list_members()` -- one row per member per label |
+| members **grouped** by label | `datom_structure_members(x, by = "type")` |
+
+`datom_fetch_member()` accepts the three shapes a caller actually holds -- a name, a member record, or a link -- and goes through the same code the member's own `$fetch` uses, so the two cannot drift. It is kind dispatch at the **member** level, which is the only level it belongs at: iterating members you cannot know each one's kind in advance, whereas at the top level you named one artifact you chose, which is why `datom_read()` and `datom_get_set()` stay separate verbs. Resolving a member in another project needs a connection scoped to **that** project.
+
+**The trap worth knowing before writing a lookup by hand.** A name is not a unique key -- one artifact at two versions is a legal pair, a live cut beside a locked baseline -- and the obvious idiom goes **silently plural**:
+
+```r
+rows <- datom_list_members(x)
+unique(rows$version[rows$name == "dm"])
+#> "a7e6450429d2..." "d95a47e89aac..."     # two answers, no complaint
+```
+
+Narrow by label instead, which is what labels are for (`rows$key == "role" & rows$value == "current"`), or pass `tags` / `version` to `datom_fetch_member()`, which **refuses** an ambiguous name and lists the candidates rather than picking one. A by-name lookup that stops at the record without fetching the data is not exported yet; it is tracked in [#112](https://github.com/amashadihossein/datom/issues/112).
+
+#### datom_update_members() / datom_remove_members() — Data Developers
+
+```r
+datom_update_members(x, conn, member = NULL, tags = NULL,
+                     version_from = NULL, version_to = NULL)
+datom_remove_members(x, member = NULL, tags = NULL, version = NULL)
+```
+
+Editing a set that already exists. **Neither touches a stored document** -- they return the edited set and the write is yours to make -- so there is no confirmation prompt to answer and no half-applied state to recover from.
+
+- `datom_update_members()` repoints members at whatever their own projects now call current: all of them, or the ones you name, or the ones carrying a label. It needs one connection per project its members live in, and the projects a set spans can be listed with no connection at all. **Labels travel with the pointer**: rebuilding a member by hand drops them, and labels are part of what the set records, so its identity would move for a reason nobody asked for. A refresh that finds nothing mints **no** version.
+- `datom_remove_members()` takes **no connection**, because dropping a member only has to find a pointer the set already holds. A selection is **required**: asking to drop nothing in particular would mean dropping everything.
+- What each refuses rather than doing quietly differs, and the asymmetry is deliberate. A member whose project has no supplied connection stops the whole update, because nobody can tell whether it moved. A member whose artifact no longer exists is reported and left pinned -- that version still reads, and refusing a whole refresh over one retired input is the wrong trade. A **name matching two members** is skipped by the update and refused by the removal: skipping a refresh leaves a valid pin behind, while skipping a removal silently does nothing at all.
+- Both append to one shared edit log -- the `datom_edits` attribute on the returned object -- so a chained edit produces **one** commit message naming all of it (`repoint 1 member, drop 1 member`) with the detail in the body, rather than `Update {name}`.
+
+Returns: `x` with the matching members repointed or dropped, and what changed appended to its `datom_edits` attribute. Both accept a `datom_set` or a `datom_set_draft`.
 
 ### Batch Operations (Data Developers)
 
@@ -1383,6 +1513,20 @@ storage primitives; `datom_repo_*` for data-repo git operations.
 Every call routes through the internal `.datom_storage_*()` dispatch layer
 (`R/utils-storage.R`); no code in this API calls `.datom_s3_*()` or
 `.datom_local_*()` directly.
+
+### datom_storage_read_json()
+
+```r
+datom_storage_read_json(conn, key)
+```
+
+Reads one JSON document out of the project's namespace. `key` is **relative** to that namespace, and the validation is the substance of this verb rather than the read. Two failures differ in kind: a `..` segment or a leading `/` escapes the namespace on the local backend, where the key is pasted into a path; and a **full** key passed where a relative one belongs does not error at all today -- it resolves under `{prefix}/datom/{prefix}/datom/` and reads to the caller as a missing object rather than as a malformed key. The full-key case is detected by an exact `datom` path segment, which is safe rather than heuristic because `datom` is a reserved name.
+
+An absent key aborts with one message on both backends, via an upfront existence probe -- S3 would otherwise name the full resolved key, which is exactly the transformation a confused caller got wrong. There is no role check, and that is pinned by a positive test so the family's policy-free symmetry cannot break silently.
+
+Deliberately **not** folded into the internal key builders: those compose keys from parts that are already validated, so the check would be dead code there. The distinction is composed-from-parts versus supplied-whole-by-a-caller.
+
+Returns: the parsed document.
 
 ### datom_storage_list()
 
