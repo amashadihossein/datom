@@ -722,6 +722,75 @@ someone holding the repo.
   warning appears only when a version actually ends up without a commit; when git
   can supply them all, nothing was lost and nothing is said.
 
+## New: editing a set that already exists
+
+Two verbs replace hand-editing the member list a read gives you:
+
+```r
+x <- datom_get_set(conn, "trial_product")
+
+x <- datom_update_members(x, conn)                        # every input to current
+x <- datom_remove_members(x, tags = list(status = "retired"))
+
+datom_write_set(conn, x)   # one commit, one message naming both edits
+```
+
+**Neither of them touches a stored document.** They edit the set you are holding
+and hand it back, so the write is yours to make, there is no "are you sure" to
+answer, and nothing can be left half-applied. That is also why they could be added
+on value alone: no stored field changed, so no older build is forced to upgrade
+over them.
+
+They exist because the obvious hand-written versions are **quietly wrong**, not
+merely tedious. Filtering members by name drops **every** version of that name, so
+a set holding a live table beside a deliberately frozen baseline loses both.
+Repointing a member by rebuilding its pointer loses its **labels**, which are part
+of what the set records -- so the set's identity moves for a reason nobody asked
+for, and the trap is worse than it looks, because the naive spelling only drops
+labels whose value is empty and every casual test passes.
+
+* **`datom_update_members(x, conn, member = NULL, tags = NULL, version_from = NULL,
+  version_to = NULL)`** repoints members at whatever their own projects now report
+  as current: all of them by default, or the ones you name, or the ones carrying a
+  label. `conn` is one connection, or a list of them -- one per project the
+  selected members live in. The projects a set spans can be listed with no
+  connection at all.
+  * **What moved is reported before anything is written**, grouped by project and
+    naming each member `old -> new`.
+  * **A refresh that finds nothing mints no version.** Re-running it on an
+    unchanged set is free, not a new "v48".
+  * **A member's labels survive the repoint**, and so does its shortcut link --
+    otherwise the link would hand back the old data while the pointer claimed the
+    new version.
+  * **No connection for a project stops the whole call** and names that project,
+    because nobody can tell whether those members moved. An artifact that no longer
+    exists in its project is **reported and left pinned** instead: that version
+    still reads, and refusing a whole refresh over one retired input is the wrong
+    trade.
+  * **A connection labelled for one project but pointing at another's storage is
+    caught**, by comparing the rebuilt member's own recorded project against the
+    one it replaced.
+* **`datom_remove_members(x, member = NULL, tags = NULL, version = NULL)`** drops
+  members. It takes **no connection**: dropping a member only has to find a pointer
+  the set already holds, so it does no reading of any kind and works on a set read
+  with storage-only credentials and no clone.
+  * **A selection is required**, which is the opposite of the update verb's default
+    and for the same kind of reason: asking to drop nothing in particular would
+    mean dropping everything, while asking to refresh nothing in particular
+    sensibly means refresh everything.
+  * Three things it refuses rather than doing quietly: a **name matching two
+    members**, a selection matching **nothing** (the hand-written version reports
+    success for a typo), and a selection matching **every** member -- the write
+    refuses an empty set anyway, so this only moves the refusal to where you can
+    see which selection emptied it.
+* **A name matching two members is refused here and skipped by the update verb.** A
+  real asymmetry, and deliberate: skipping a refresh leaves a valid pinned version
+  behind, while skipping a removal silently does nothing at all.
+* **Chained edits produce one commit message naming all of them.** Both verbs
+  append to a shared record of what changed, which the next write turns into
+  `repoint 1 member, drop 1 member` with the full list in the commit body --
+  replacing the `Update {name}` that said nothing in a `git log`.
+
 # datom 0.1.2
 
 Test-only fix for the CRAN check failures reported against 0.1.1. No package
