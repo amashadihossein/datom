@@ -11,3 +11,11 @@ docs
 Meta
 vignettes/*.R
 dev/archive/
+
+# Transient submission artifact, written by devtools::submit_cran() and consumed
+# (then deleted) by usethis::use_github_release(). It must never be committed:
+# it is generated from `main` at submission time and the durable record of the
+# submitted SHA is the GitHub release / tag, not a tracked file. Ignored so no
+# feature branch can sweep it in via `git add .`. See dev/README.md, "CRAN-SUBMISSION".
+# Deliberate exception, if ever needed: `git add -f CRAN-SUBMISSION`.
+/CRAN-SUBMISSION

@@ -4,7 +4,7 @@
 \alias{.datom_push_metadata_s3}
 \title{Push Metadata Files to S3}
 \usage{
-.datom_push_metadata_s3(conn, name, metadata, metadata_sha)
+.datom_push_metadata_s3(conn, name, metadata, metadata_sha, commit_sha = NULL)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object.}
@@ -14,6 +14,9 @@
 \item{metadata}{Named list for metadata.json.}
 
 \item{metadata_sha}{SHA of the metadata (the datom "version").}
+
+\item{commit_sha}{The commit that produced \code{metadata_sha}, or \code{NULL} from a
+caller that made no commit.}
 }
 \value{
 Invisible character vector of S3 keys written.
@@ -22,5 +25,19 @@ Invisible character vector of S3 keys written.
 Uploads \code{metadata.json}, \code{version_history.json}, and a versioned snapshot
 to S3. Called AFTER git commit+push succeeds to maintain local → git → S3
 ordering.
+}
+\details{
+\strong{The stored history carries one field the clone's copy cannot}, and this is
+the reason \code{commit_sha} exists as an argument here: the clone's
+\code{version_history.json} is inside the commit that would name it, so only a
+storage-bound copy can say which commit produced a version. The upload sends
+the clone's file wholesale, so without the merge below the field would survive
+on the newest version only -- the second write of an artifact would erase the
+first version's commit id.
+
+\code{commit_sha} is \strong{derived, never authored}. It reaches this function as an
+argument only because the caller one layer up already holds the commit it just
+made; no exported verb accepts it, and every other entry's value is worked out
+from git. See \code{R/version-commit.R}.
 }
 \keyword{internal}

@@ -56,6 +56,23 @@ reference:
       - datom_write
       - datom_check_hashable
 
+  - title: "Sets"
+    desc: "Write and read a versioned, citable set of artifacts, and declare its members"
+    contents:
+      - datom_member
+      - datom_write_set
+      - datom_get_set
+      - datom_fetch_member
+      - datom_list_members
+      - datom_structure_members
+      - datom_assemble_set
+      - datom_add_member
+      - datom_update_members
+      - datom_remove_members
+      - print.datom_set
+      - print.datom_set_draft
+      - print.datom_link
+
   - title: "Query & Status"
     desc: "List tables, view history, check status"
     contents:
@@ -90,11 +107,14 @@ reference:
       datom_repo_delete instead.
     contents:
       - datom_storage_list
+      - datom_storage_read_json
       - datom_storage_delete_prefix
       - datom_storage_copy
       - datom_storage_verify
       - datom_repo_set_data_store
       - datom_repo_attach_governance
+      - datom_repo_commit
+      - datom_repo_push
 
   - title: "Teardown"
     desc: "Permanently remove a project's data repo and local clone"

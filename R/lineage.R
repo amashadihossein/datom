@@ -94,8 +94,12 @@ datom_lineage_union <- function(lineages) {
 #' @param table Parent table name (single non-empty validated string).
 #' @param version Parent version (metadata_sha; single non-empty string).
 #' @return A list with exactly `source`, `table`, `version`, `data_sha`, and
-#'   `source_lineage`. `source` is the parent connection's `project_name`;
-#'   `source_lineage` is `NULL` when the snapshot carries none.
+#'   `source_lineage`. `source` is the project the parent's own metadata says it
+#'   belongs to, falling back to the project manifest and then to the connection's
+#'   name (see `.datom_declared_project()`) -- **not** simply the name on `conn`,
+#'   which on a reader connection is an unverified label and which `source` cannot
+#'   afford, since it is part of the declaring table's version. `source_lineage`
+#'   is `NULL` when the snapshot carries none.
 #' @export
 #'
 #' @examples
@@ -141,7 +145,7 @@ datom_parent <- function(conn, table, version) {
   # version is spliced into a storage key; reject path-traversal / non-hex.
   .datom_validate_sha(version, arg = "version")
 
-  key <- paste0(table, "/.metadata/", version, ".json")
+  key <- .datom_artifact_snapshot_key(table, version)
 
   snap <- tryCatch(
     .datom_storage_read_json(conn, key),
@@ -153,6 +157,17 @@ datom_parent <- function(conn, table, version) {
       ))
     }
   )
+
+  # Refuse a snapshot written by a build whose format this one does not know,
+  # before reading anything out of it. Both fields taken below are durable: the
+  # `data_sha` becomes a storage address and the `source_lineage` is unioned
+  # into the lineage of whatever table declares this parent, so a half-understood
+  # document is copied forward rather than merely misread once.
+  #
+  # Deliberately OUTSIDE the handler above, which would otherwise reword the
+  # refusal as "parent not found". Same pairing as `datom_member()` and
+  # `.datom_rebuild_manifest_entry()`.
+  .datom_check_schema_version(snap, key)
 
   data_sha <- snap$data_sha %||% ""
   if (!is.character(data_sha) || length(data_sha) != 1L ||
@@ -168,7 +183,11 @@ datom_parent <- function(conn, table, version) {
   source_lineage <- snap$source_lineage %||% NULL
 
   list(
-    source         = conn$project_name,
+    # NOT `conn$project_name`. The same one-line defect a member had, and worse
+    # here: `parents` is part of the declaring table's identity, so an unverified
+    # label read off a reader connection would change a VERSION rather than only a
+    # citation. See `.datom_declared_project()`.
+    source         = .datom_declared_project(conn, snap, "parent"),
     table          = table,
     version        = version,
     data_sha       = data_sha,

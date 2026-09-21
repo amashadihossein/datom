@@ -235,15 +235,15 @@ datom picked would be wrong for someone.
 `datom_read(version = ...)`. It hashes the table's semantic metadata:
 
 ```r
-volatile  <- c("created_at", "datom_version", "parquet_sha",
-               "column_hashes", "size_bytes")
-semantic  <- metadata[setdiff(names(metadata), volatile)]
+identity  <- c("colnames", "custom", "data_sha", "hash_algo", "ncol", "nrow",
+               "original_file_sha", "parents", "source_lineage", "table_type")
+semantic  <- metadata[intersect(names(metadata), identity)]
 sorted    <- semantic[sort(names(semantic), method = "radix")]
 canonical <- jsonlite::toJSON(sorted, auto_unbox = TRUE)
 digest::digest(canonical, algo = "sha256", serialize = FALSE)
 ```
 
-Three details are load-bearing:
+Four details are load-bearing:
 
 1. **The JSON canonical form is hashed, not the R object.** R's `serialize()`
    is type-sensitive (`10L` and `10` differ); JSON-parsed metadata has lost
@@ -254,16 +254,34 @@ Three details are load-bearing:
 2. **`method = "radix"` sorts field names by byte value.** Plain `sort()` is
    locale-collated, so two machines with different `LC_COLLATE` would order
    fields differently and produce different versions for identical metadata.
-3. **The volatile set is excluded on purpose.** `created_at` and
-   `datom_version` are wall-clock and package facts. `parquet_sha` and
-   `size_bytes` move with the arrow version for identical content -- letting
-   them in would undo the whole point of hashing values. `column_hashes` is a
-   deterministic function of the same values that produce `data_sha`, so it
-   carries no independent information.
+3. **The fields are chosen by name, and anything else in the document is
+   ignored.** This is the part that keeps a pinned analysis working. The
+   alternative -- hash everything except a list of known exceptions -- cannot
+   survive a new field: a version of datom that has never heard of that field
+   cannot know it was meant to ignore it, so it folds the field into the hash,
+   disagrees with the version already recorded, and reports a change on content
+   that did not move. Not once, but on every run. Selecting by name means an
+   unfamiliar field is simply not identity, so a repo written by a newer datom
+   still reads with the versions it already has.
+4. **Everything datom deliberately leaves out is recorded as such**, in
+   `.datom_metadata_excluded_fields`: `created_at` and `datom_version` are
+   wall-clock and package facts; `parquet_sha` and `size_bytes` move with the
+   arrow version for identical content, so letting them in would undo the whole
+   point of hashing values; `document_sha` is the same kind of fact for a stored
+   JSON payload; `column_hashes` is a deterministic function of the same values
+   that produce `data_sha`, so it carries no independent information; and
+   `schema_version` describes the file's format rather than its content -- in
+   identity, a format change would mint a new version for every table in every
+   repo while the data stood still.
 
 Conversely, `original_file_sha` and `hash_algo` **are** semantic: a new source
 file is a new version of the table's provenance, and a new hash algorithm is a
 new identity regime.
+
+The two lists together are also datom's record of every field name it
+recognises. Keeping them complete is a maintenance obligation on datom, not on
+you: the test suite derives the field list from the metadata builders and fails
+if one of them emits something neither list mentions.
 
 ### The dedup guard is full-history
 

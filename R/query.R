@@ -1,7 +1,37 @@
-#' List Available Tables
+# The zero-row shape datom_list() returns when there is nothing to list, in one
+# place so its columns cannot drift from each other -- and matching the columns
+# a populated result carries, so binding two results together works when either
+# one is empty.
+#
+# It did not always match: these returns omitted current_data_sha, which
+# populated rows have always had, so rbind() of an empty result and a non-empty
+# one failed outright. Adding it was held back once as "a public shape nobody
+# asked to change", which stopped being a reason the moment the same release
+# added the kind column to that shape anyway.
+#
+# The opt-in version_count column has to be here too, for the same reason: a
+# caller CAN ask for it and get an empty repo, and then the frame they get back
+# is one column short of the frame the same call returns for a repo with
+# something in it.
+.datom_empty_artifact_frame <- function(include_versions = FALSE) {
+  frame <- data.frame(
+    name = character(),
+    kind = character(),
+    current_version = character(),
+    current_data_sha = character(),
+    last_updated = character(),
+    stringsAsFactors = FALSE
+  )
+  if (isTRUE(include_versions)) frame$version_count <- integer()
+  frame
+}
+
+
+#' List Available Artifacts
 #'
-#' Lists tables from S3 manifest. Reads `.metadata/manifest.json` from S3
-#' and returns a data frame with one row per table.
+#' Lists artifacts from the data store's manifest. Reads
+#' `.metadata/manifest.json` and returns a data frame with one row per
+#' artifact, typed by `kind`.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param pattern Optional glob pattern for filtering table names.
@@ -9,7 +39,8 @@
 #' @param short_hash If TRUE (default), truncates version and data SHA
 #'   columns to 8 characters for readability. Set to FALSE for full hashes.
 #'
-#' @return Data frame with table info (name, current_version, last_updated, etc.).
+#' @return Data frame with artifact info (name, kind, current_version,
+#'   last_updated, etc.).
 #' @export
 #'
 #' @examples
@@ -44,47 +75,41 @@ datom_list <- function(conn,
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
   }
 
-  manifest <- tryCatch(
-    .datom_storage_read_json(conn, ".metadata/manifest.json"),
-    error = function(e) {
-      cli::cli_abort(c(
-        "Could not read manifest from S3.",
-        "i" = "The repository may not be initialized or manifest is missing.",
-        "i" = "Underlying error: {conditionMessage(e)}"
-      ))
-    }
-  )
+  # .datom_read_manifest() returns IO failures and throws schema refusals, so an
+  # unreadable manifest is this function's decision while a too-new one is not.
+  read <- .datom_read_manifest(conn, "storage")
 
-  tables <- manifest$tables
-  if (is.null(tables) || length(tables) == 0L) {
-    return(data.frame(
-      name = character(),
-      current_version = character(),
-      last_updated = character(),
-      stringsAsFactors = FALSE
+  if (!read$ok) {
+    cli::cli_abort(c(
+      "Could not read manifest from S3.",
+      "i" = "The repository may not be initialized or manifest is missing.",
+      "i" = "Underlying error: {conditionMessage(read$error)}"
     ))
   }
 
-  table_names <- names(tables)
+  manifest <- read$manifest
+
+  artifacts <- manifest$artifacts
+  if (is.null(artifacts) || length(artifacts) == 0L) {
+    return(.datom_empty_artifact_frame(include_versions))
+  }
+
+  table_names <- names(artifacts)
 
   # Apply glob pattern filter
   if (!is.null(pattern)) {
     table_names <- table_names[grepl(utils::glob2rx(pattern), table_names)]
     if (length(table_names) == 0L) {
-      return(data.frame(
-        name = character(),
-        current_version = character(),
-        last_updated = character(),
-        stringsAsFactors = FALSE
-      ))
+      return(.datom_empty_artifact_frame(include_versions))
     }
   }
 
   # Build data frame
   rows <- purrr::map(table_names, function(tbl_name) {
-    entry <- tables[[tbl_name]]
+    entry <- artifacts[[tbl_name]]
     row <- data.frame(
       name = tbl_name,
+      kind = entry$kind %||% NA_character_,
       current_version = entry$current_version %||% NA_character_,
       current_data_sha = entry$current_data_sha %||% NA_character_,
       last_updated = entry$last_updated %||% NA_character_,
@@ -112,6 +137,35 @@ datom_list <- function(conn,
 #' Shows version history for a table by reading `version_history.json`
 #' from S3. Returns the most recent `n` versions.
 #'
+#' @section A version is content, not code:
+#'
+#' A datom version answers one question: *is this the same content and declared
+#' metadata?* Nothing code-derived enters it. So **a change that alters no content
+#' mints no new version**, and this is the behaviour most often reported as a bug.
+#'
+#' Concretely: you refactor your build script, re-run it, and get byte-identical
+#' data. The write is a no-op, `datom_history()` shows the same version it showed
+#' before, and its `commit_sha` still points at the **earlier** commit -- the one
+#' that first produced that content, which does not contain the code you are
+#' looking at. That is the recorded value doing its job. It names a commit that
+#' provably produces the version; it does not name every commit that could.
+#'
+#' The commit is deliberately not part of the version. A set exists to be cited,
+#' and if a comment fix minted a new product version, "v47" would stop meaning
+#' anything.
+#'
+#' @section Where `commit_sha` comes from:
+#'
+#' It is **derived, never authored** -- no argument anywhere sets it. The copy in
+#' your clone does not carry it and cannot: `version_history.json` is committed
+#' *inside* the commit that would name it. Only the copy in storage has it, and it
+#' is there for readers who have no clone. With a clone, `git log -p {name}/set.json`
+#' answers the same question directly.
+#'
+#' `NA` means the value is not recorded and could not be worked out from this
+#' repo's git history -- a shallow clone or rewritten history, typically, or a
+#' version written by a datom too old to record it.
+#'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
 #' @param n Maximum number of versions to return. Default 10.
@@ -119,7 +173,7 @@ datom_list <- function(conn,
 #'   columns to 8 characters for readability. Set to FALSE for full hashes.
 #'
 #' @return Data frame with columns: version, data_sha, timestamp, author,
-#'   commit_message.
+#'   commit_message, commit_sha.
 #' @export
 #'
 #' @examples
@@ -162,7 +216,7 @@ datom_history <- function(conn,
 
   n <- as.integer(n)
 
-  history_key <- paste0(name, "/.metadata/version_history.json")
+  history_key <- .datom_artifact_meta_key(name, "version_history")
 
   history <- tryCatch(
     .datom_storage_read_json(conn, history_key),
@@ -176,12 +230,16 @@ datom_history <- function(conn,
   )
 
   if (!is.list(history) || length(history) == 0L) {
+    # The zero-row frame carries every column the populated one does. A caller
+    # that selects a column on an empty result would otherwise fail only on the
+    # empty case -- which is how the last two added columns were found.
     return(data.frame(
       version = character(),
       data_sha = character(),
       timestamp = character(),
       author = character(),
       commit_message = character(),
+      commit_sha = character(),
       stringsAsFactors = FALSE
     ))
   }
@@ -203,6 +261,13 @@ datom_history <- function(conn,
       timestamp = entry$timestamp %||% NA_character_,
       author = author_val,
       commit_message = entry$commit_message %||% NA_character_,
+      # Tested rather than `%||%`-defaulted: `%||%` only catches NULL, and a
+      # document carrying `"commit_sha": {}` would hand a list to `data.frame()`.
+      commit_sha = if (.datom_is_text_scalar(entry$commit_sha)) {
+        as.character(entry$commit_sha)
+      } else {
+        NA_character_
+      },
       stringsAsFactors = FALSE
     )
   })
@@ -212,6 +277,7 @@ datom_history <- function(conn,
   if (isTRUE(short_hash)) {
     result$version <- .datom_abbreviate_sha(result$version)
     result$data_sha <- .datom_abbreviate_sha(result$data_sha)
+    result$commit_sha <- .datom_abbreviate_sha(result$commit_sha)
   }
 
   result
@@ -337,14 +403,14 @@ datom_get_lineage <- function(conn, name, version = NULL,
   depth <- match.arg(depth)
 
   if (is.null(version)) {
-    metadata_key <- paste0(name, "/.metadata/metadata.json")
+    metadata_key <- .datom_artifact_meta_key(name, "metadata")
   } else {
     if (!is.character(version) || length(version) != 1L || !nzchar(version)) {
       cli::cli_abort("{.arg version} must be a single non-empty string or NULL.")
     }
     # version is spliced into a storage key; reject path-traversal / non-hex.
     .datom_validate_sha(version, arg = "version")
-    metadata_key <- paste0(name, "/.metadata/", version, ".json")
+    metadata_key <- .datom_artifact_snapshot_key(name, version)
   }
 
   metadata <- tryCatch(
@@ -420,7 +486,10 @@ datom_status <- function(conn) {
       prefix = conn$prefix,
       region = conn$region,
       role = conn$role,
-      has_path = !is.null(conn$path)
+      has_path = !is.null(conn$path),
+      # NULL for an ordinary data repo, and for every reader connection, which
+      # never parses the config that records it.
+      mode = conn$mode
     )
   )
 
@@ -433,19 +502,53 @@ datom_status <- function(conn) {
   }
   cli::cli_alert_info("Role: {.val {conn$role}}")
 
+  # Reported, never acted on -- which is why this reads the mode off the
+  # connection while every check that authorises a write re-reads the config file.
+  # Printed only when there is something to say: an ordinary data repo is the
+  # unstated default, and a "Mode: standard" line would invent a state the config
+  # does not record. A reader connection has no clone and so never knows the mode.
+  is_product <- identical(as.character(conn$mode %||% ""), "product")
+  if (is_product) {
+    cli::cli_alert_info("Mode: {.val product} (builds artifacts; no file import)")
+  }
+
   # --- Table count from S3 manifest ---
-  table_info <- tryCatch({
-    manifest <- .datom_storage_read_json(conn, ".metadata/manifest.json")
-    n <- length(manifest$tables %||% list())
-    list(count = n, available = TRUE)
-  }, error = function(e) {
-    list(count = 0L, available = FALSE, error = conditionMessage(e))
-  })
+  # An unreadable manifest is reported, not fatal -- status is a diagnostic and
+  # must still describe the connection when storage is unreachable. That
+  # tolerance covers IO only: .datom_read_manifest() throws a schema refusal
+  # rather than returning it, so a repo written by a newer datom stops here
+  # instead of being reported as "could not read", which is exactly the silent
+  # degradation the check exists to remove.
+  manifest_read <- .datom_read_manifest(conn, "storage")
+
+  table_info <- if (!manifest_read$ok) {
+    # ansi_strip: cli formats abort messages with colour and hyperlink escape
+    # codes, and conditionMessage() returns them. Fine when the message is
+    # printed, noise when the text is stored in a returned field and then
+    # printed as data or written to a log.
+    list(
+      count = 0L,
+      available = FALSE,
+      error = cli::ansi_strip(conditionMessage(manifest_read$error))
+    )
+  } else {
+    # Counted, not read off the summary block, and selected by kind so the
+    # number keeps meaning what its label says now that a manifest can hold
+    # more than one kind of artifact. Selection goes through the shared helper,
+    # which skips an entry that is not a named list -- this count sits outside
+    # the tolerance above, so dereferencing one would abort the whole diagnostic
+    # over a hand-edited manifest.
+    list(
+      count = length(.datom_artifacts_of_kind(
+        manifest_read$manifest$artifacts, "table"
+      )),
+      available = TRUE
+    )
+  }
 
   status$tables <- table_info
 
-  .storage_labels <- c(s3 = "S3", local = "local")
-  storage_label <- .storage_labels[conn$backend] %||% conn$backend
+  storage_label <- .datom_backend_label(conn)
   if (table_info$available) {
     cli::cli_alert_info("Tables on {storage_label}: {.val {table_info$count}}")
   } else {
@@ -473,9 +576,14 @@ datom_status <- function(conn) {
       cli::cli_alert_info("Branch: {.val {git_info$branch}}")
     }
 
-    # Input files scan
+    # Input files scan. Skipped entirely on a product repo: that repo does not
+    # import files, so "Input files: directory empty" describes a repo with
+    # nothing to onboard rather than one that never will -- the same misreport the
+    # import verbs used to give. The directory is still created at init, because
+    # not creating it would change what init guarantees about the tree for a
+    # cosmetic gain.
     input_dir <- fs::path(conn$path, "input_files")
-    if (fs::dir_exists(input_dir)) {
+    if (!is_product && fs::dir_exists(input_dir)) {
       input_info <- .datom_status_input_files(conn)
       status$input_files <- input_info
 
@@ -536,18 +644,23 @@ datom_status <- function(conn) {
     return(list(n_total = 0L, n_new = 0L, n_changed = 0L, n_unchanged = 0L))
   }
 
-  # Read local manifest
-  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
-  manifest <- if (fs::file_exists(manifest_path)) {
-    jsonlite::read_json(manifest_path)
-  } else {
-    list(tables = list())
-  }
+  # Read local manifest. .datom_read_manifest() also checks the declared schema
+  # version, because the clone can be ahead of this build: a collaborator on a
+  # newer datom writes, this developer pulls, and their local manifest declares
+  # a format this build does not know.
+  read <- .datom_read_manifest(conn, "clone")
+
+  # A clone with no manifest yet compares every input file against nothing. A
+  # manifest that exists but will not parse keeps failing exactly as before --
+  # re-signalled unchanged rather than reworded.
+  if (!read$ok && !read$absent) stop(read$error)
+
+  manifest <- if (read$ok) read$manifest else .datom_manifest_skeleton()
 
   statuses <- purrr::map_chr(files, function(fp) {
     table_name <- fs::path_ext_remove(fs::path_file(fp))
     original_file_sha <- .datom_compute_original_file_sha(fp)
-    existing <- manifest$tables[[table_name]]
+    existing <- manifest$artifacts[[table_name]]
 
     if (is.null(existing)) {
       "new"

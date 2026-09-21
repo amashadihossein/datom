@@ -2,26 +2,64 @@
 % Please edit documentation in R/utils-validate.R
 \name{.datom_check_namespace_free}
 \alias{.datom_check_namespace_free}
-\title{Check Whether an S3 Namespace is Free}
+\title{Check Whether a Storage Namespace is Free}
 \usage{
-.datom_check_namespace_free(conn)
+.datom_check_namespace_free(conn, overridable = TRUE)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object (typically a temporary conn built by
 \code{datom_init_repo()} before the repo is fully initialised).}
+
+\item{overridable}{Whether the caller honours \code{.force} as a way past an
+occupied namespace. \code{TRUE} (the default) adds that route to the refusal's
+recourse; \code{FALSE} says the override does not apply and why.
+
+\strong{It exists because this function cannot know its caller's policy, which is
+the same reason the backend label is an argument's worth of work rather than
+a constant.} A product repo is checked with no opt-out, so a static
+"pass \code{.force = TRUE} to override" bullet sent exactly those users into a
+flag that changes nothing -- a message routing somebody in a circle, which is
+the failure this function's own backend-neutral wording was fixed for one
+commit earlier.}
 }
 \value{
-Invisible \code{TRUE} if the namespace is free.
+Invisible \code{TRUE} when the namespace is free. Aborts with class
+\code{datom_namespace_occupied} when it is occupied, or
+\code{datom_namespace_unverified} when the store could not be reached.
 }
 \description{
-Checks for the existence of \code{.metadata/manifest.json} in the target S3
-namespace. If found, the namespace is occupied by an existing datom project.
-Returns \code{TRUE} if the namespace is free. Aborts with an actionable error
-if occupied, showing the existing project name when possible.
+Checks for the existence of \code{.metadata/manifest.json} in the target
+namespace. If found, the namespace is occupied by an existing datom project
+and this aborts with \code{datom_namespace_occupied}, naming the occupying project
+when it can be read.
 }
 \details{
-Uses \code{head_object} first (cheap) and only reads the manifest (via
-\code{get_object}) when the namespace is occupied, to extract the project name
-for the error message.
+Checks for the object first (cheap) and only reads the manifest when the
+namespace is occupied, to extract the project name for the error message.
+
+\strong{A store this connection cannot reach means \emph{unknown}, and unknown fails
+closed.} It used to warn and continue, which was not a deferral of the check
+but a silent removal of it: \code{datom_init_repo()} went on to push the git repo and
+then aborted at the manifest upload, and the recovery it pointed at performs no
+occupancy check of any kind. So the tolerance never produced a working offline
+init -- storage is required to finish one -- and its only reachable effect was
+getting past this check, with the outcome being a manifest written over another
+project's. Refusing here instead names the real problem at the moment it is
+known, rather than surfacing later as an unrelated upload failure.
+
+There is no \code{.force} advice in that refusal, deliberately: \code{.force} skips this
+check but not the manifest upload, so it cannot rescue an init without storage
+either. Offering it would be advice that does not work.
+
+\strong{The tolerated-failure detection lives here, around the one call that touches
+storage}, rather than in a handler wrapping this whole function -- which is
+what the caller used to do. That shape had two defects worth not
+reintroducing: it recognised the occupied refusal by \strong{matching its message
+text}, so rewording the message would have quietly downgraded a refusal to a
+warning; and it swallowed anything it could not recognise, so any abort added to
+this function later would have been downgraded too, with nothing failing to say
+so.
+
+\strong{The condition classes are what callers dispatch on} -- never the message.
 }
 \keyword{internal}

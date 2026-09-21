@@ -13,7 +13,9 @@
   parents = NULL,
   source_lineage = NULL,
   original_file_sha = NULL,
-  column_hashes = NULL
+  original_format = NULL,
+  column_hashes = NULL,
+  project = NULL
 )
 }
 \arguments{
@@ -37,13 +39,37 @@ project, table, version_sha), or NULL.}
 Included in the metadata \strong{only when non-NULL}; the derived path omits it
 from the object entirely (not present-with-NULL).}
 
+\item{original_format}{Extension of the source file (\code{"csv"}, \code{"parquet"},
+...), for imported tables. Recorded on the same only-when-non-NULL terms as
+\code{original_file_sha}, and for one reason: it was previously written onto the
+manifest row and nowhere else, which made it the single field a
+reconstructed index had to drop. It is \strong{not} part of the version identity
+-- see \code{.datom_metadata_excluded_fields}.}
+
 \item{column_hashes}{Ordered list of per-column \code{list(name, sha)} digests
 from \code{\link[=.datom_canonical_hash]{.datom_canonical_hash()}}, or NULL. Excluded from \code{metadata_sha}
 (see \code{\link[=.datom_compute_metadata_sha]{.datom_compute_metadata_sha()}}).}
+
+\item{project}{The name of the project whose namespace this artifact is being
+written into, from the writing repo's own \code{.datom/project.yaml}. Recorded on
+the only-when-non-NULL terms \code{original_file_sha} uses, and last in the
+signature to match the order the other optional fields were added in. Note
+what that does \strong{not} buy: every existing caller passes \code{data} and
+\code{data_sha} positionally and everything else by name, so an argument inserted
+higher up would shift nothing today -- it is a convention here, not a guard.
+
+Why the writer records it at all: a \strong{reader} connection's \code{project_name}
+is a string the caller passed to \code{\link[=datom_get_conn]{datom_get_conn()}} and nothing compares it
+against the repo, so anything derived from that label is unverified. A write
+always has a clone, so the name written here is the repo's own declaration --
+which is what later lets \code{\link[=datom_member]{datom_member()}} and \code{\link[=datom_parent]{datom_parent()}} cite a project
+without trusting a label.}
 }
 \value{
 Named list suitable for writing as metadata.json. Always carries
-\code{hash_algo = "datom-cv1"} and declares \code{parquet_sha} (left NULL here and
+\code{kind = "table"} (which artifact kind the document describes),
+\code{schema_version} (the format the document is written in) and
+\code{hash_algo = "datom-cv1"}, and declares \code{parquet_sha} (left NULL here and
 populated by \code{\link[=datom_write]{datom_write()}} after change detection, since the stored-
 object hash is not knowable until then; it is excluded from \code{metadata_sha}
 so this deferred assignment is safe).

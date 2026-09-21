@@ -11,6 +11,8 @@ datom_init_repo(
   create_repo = FALSE,
   repo_name = project_name,
   max_file_size_gb = 1000,
+  mode = NULL,
+  set = NULL,
   git_ignore = c(".Rprofile", ".Renviron", ".Rhistory", ".Rapp.history", ".Rproj.user/",
     ".DS_Store", "*.csv", "*.tsv", "*.rds", "*.txt", "*.parquet", "*.sas7bdat", ".RData",
     ".RDataTmp", "*.html", "*.png", "*.pdf", ".vscode/", "rsconnect/"),
@@ -34,10 +36,30 @@ a good GitHub repo name.}
 
 \item{max_file_size_gb}{Maximum file size limit in GB. Default 1000 (1TB).}
 
+\item{mode}{Project mode, or \code{NULL} (the default) for an ordinary data repo
+that onboards source files. The only other accepted value is \code{"product"},
+which declares a repo that \strong{builds} its artifacts instead: it holds one
+set, writes derived tables, and refuses the file-import path. Absent is not
+a missing value here -- it \emph{is} "ordinary data repo", which is why nothing
+is written to \code{project.yaml} unless you ask for a product.}
+
+\item{set}{Name of the set a \code{mode = "product"} repo owns. Required with
+\code{mode = "product"} and refused without it: one repo holds one set, and a
+product repo that names none passes the mode check and then fails every set
+write, which is a repo that looks initialised and is not.}
+
 \item{git_ignore}{Character vector of patterns to add to .gitignore.}
 
-\item{.force}{If \code{TRUE}, skip the S3 namespace safety check. Use only for
-intentional takeover of an existing S3 namespace. Default \code{FALSE}.}
+\item{.force}{If \code{TRUE}, skip the storage namespace safety check. Use only for
+intentional takeover of an existing namespace. Default \code{FALSE}. Two cases it
+does not cover, both refusals that stand:
+\itemize{
+\item a namespace that cannot be \strong{reached}, because the manifest upload later in
+this function needs the same storage, so skipping the check buys nothing;
+\item a \code{mode = "product"} repo, whose namespace check has no override at all --
+passing \code{.force} there is an error rather than a no-op, since a dropped
+override leaves you believing you took a namespace over when you did not.
+}}
 }
 \value{
 Invisible TRUE on success.

@@ -22,8 +22,12 @@ datom_write(
 
 \item{data}{Data frame to write. If NULL with name, does metadata-only sync.}
 
-\item{name}{Table name. If NULL with NULL data, does a data-only metadata
-sync to storage (manifest + per-table metadata).}
+\item{name}{Table name. If NULL with NULL data, mirrors the clone's
+storage-side documents for \strong{every} artifact of either kind: the manifest,
+and each artifact's metadata, version history and versioned snapshots. On
+that route a \strong{set} whose stored payload is missing also has it restored
+from the clone -- see \code{\link[=datom_validate]{datom_validate()}}, which shares the mechanism, for
+the conditions on that.}
 
 \item{metadata}{Optional list of custom metadata.}
 
