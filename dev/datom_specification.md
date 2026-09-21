@@ -59,6 +59,15 @@ Three hashes describe a table version, each answering a different question. A fo
 
 Introduced by issue [#72](https://github.com/amashadihossein/datom/issues/72) (spec `.kiro/specs/datom-cv1-identity/`), pre-`0.1.0`. See `vignette("design-version-shas")` for the user-facing treatment.
 
+**A set answers the same three questions with two of the same names and one different one.** `data_sha` is the content hash of its payload under `datom-sv1` rather than `datom-cv1`, `metadata_sha` is the version exactly as it is for a table, and the integrity slot is **`document_sha`** -- the SHA-256 of the stored JSON payload's bytes -- because a set has no parquet object. The two integrity fields are never both present: which one a document carries follows the `kind` it declares.
+
+| Artifact kind | Content identity | Version | Stored-byte integrity |
+|---|---|---|---|
+| table | `data_sha` (`datom-cv1`) | `metadata_sha` | `parquet_sha` |
+| set | `data_sha` (`datom-sv1`) | `metadata_sha` | `document_sha` |
+
+`hash_algo` records which regime produced `data_sha`, and **`kind` participates in `metadata_sha`**, so a table and a set can never share a version string even if their content hashes somehow agreed.
+
 ### Table Identity = data_sha (`datom-cv1`)
 
 `data_sha` is a canonical hash of the table's **values**, not of its parquet serialization:
@@ -113,6 +122,52 @@ Detect it at runtime with `.Machine$sizeof.longdouble` (`8` means no extra preci
 **Mitigation, in order:** read via `arrow` (its CSV reader uses `fast_float`, correctly rounded and platform-independent by design) or store parquet (the doubles themselves -- no parsing at read time); else hold the ingesting platform fixed per table; for exact literals in code use C99 hex-float notation (`0x1.999999999999ap-4` is exactly `0.1`), which `?NumericConstants` documents and which is parse-exact everywhere. **`data.table::fread()` is not a fix** -- its own parser is also not correctly rounded and its errors differ from base R's, so the two can disagree on the same string. `readr`/`vroom` is unverified; do not assume either way.
 
 **Consequence for tests:** golden fixtures must build values parse-exactly -- powers of two, `.Machine$double.xmax`/`xmin`, hex-float literals, or short decimals verified to agree -- and never from many-digit or extreme-exponent decimal literals. A `1e300` in a golden fixture made the golden platform-dependent and broke CI on the x86_64 jobs while passing on Apple silicon. Note this also makes CRAN's noLD flavour a third relevant configuration: a fixture that is parse-exact is safe there too, one that is not would fail there as well.
+
+### Set Identity = data_sha (`datom-sv1`)
+
+A **set** is datom's second artifact kind: a named, versioned, citable list of pointers at specific versions of other artifacts, plus text labels. It is a reference layer, not a data layer -- it stores no rectangle of its own, so nothing about it is tabular and none of `datom-cv1` applies to it. Everything else is the machinery a table write already uses: content addressing, version history, change detection, and the git-gates-storage write ordering.
+
+**The payload is the content, so the payload is what identity hashes.** A set's `data_sha` is a hash of the parsed payload's data model -- its members and its labels -- under a sibling regime, `datom-sv1`:
+
+```
+h(x)       = sha256(x)
+
+str(s)     = h( 0x01 || utf8(s) )
+strset(v)  = h( 0x02 || concat( str(e) for e in sort(unique(v), radix) ) )
+map(m)     = h( 0x03 || concat( str(k) || strset(m[k]) for k in sort(keys(m), radix) ) )
+
+member(x)  = h( 0x04 || map(x.id) || map(x.tags) )
+set(p)     = h( 0x05 || map(p.tags) || concat( sort(unique( member(m) for m in p.members ), radix) ) )
+
+data_sha   = h( 0x06 || utf8("datom-sv1") || set(payload) )
+```
+
+One marker byte per constructor, so a collision across two positions reduces to a SHA-256 collision:
+
+| Marker | Position | Shape |
+|---|---|---|
+| `0x01` | string | UTF-8 bytes, never `NA` |
+| `0x02` | string set | radix-sorted, deduped |
+| `0x03` | map | radix-sorted keys; serves both a member's `id` and any tag map |
+| `0x04` | member | `map(id) \|\| map(tags)` |
+| `0x05` | set | `map(tags) \|\| concat(member digests, sorted + deduped)` |
+| `0x06` | payload root | prefixed with `utf8("datom-sv1")` |
+
+**No marker exists for a number, a boolean, or null**, because none of the three is in the payload grammar: every value position is a string or a set of strings, and absence is spelled by omitting the field rather than by writing `null`. `.datom_canonical_set_hash()` (`R/hashable-set.R`) computes it.
+
+**Properties, each of which is a decision that can be undone by tidying.**
+
+- **No serializer in the identity path.** The hash is a function of the parsed data model, so whatever formats the stored file is irrelevant. That is deliberate rather than incidental: stored-byte integrity is `document_sha`'s separate job, and identity must not share a dependency with it. This is the `datom-cv1` lesson applied to JSON -- there, hashing parquet bytes meant an arrow upgrade minted versions on content that had not moved.
+- **No runtime type dispatch.** Every position's shape is fixed by where it sits, so the encoder never asks what type a value is and therefore cannot have an unhandled answer.
+- **Every collection is sorted and deduped** -- tag keys, tag values, member digests -- with no carve-out, using C-locale byte order (`method = "radix"`), so the result is locale-independent. Consequences a caller can rely on: label order is not identity, a repeated label value is not identity, member order is not identity, and a member listed twice identically hashes as one member.
+- **No Unicode normalization.** NFC and NFD spellings of the same-looking label are different labels. Normalization tables are versioned Unicode data, and nothing versioned belongs in an identity path.
+- **No length prefixes and no numeric primitive.** Every intermediate is a fixed 32 bytes, so concatenation is already unambiguous. `datom-sv1` shares no numeric encoder with `datom-cv1`.
+
+**The file's member order is not the hash's member order, and the difference is load-bearing.** The hash sorts member *digests*, which keeps the encoder ignorant of what an `id` looks like. The stored file sorts members by `project`, then `name`, then `version`, which is stable under an edit: with digest order, changing one member's label would relocate its entry and `git diff` would report a delete plus an insert instead of one changed field.
+
+**The write canonicalizes; the read never does.** Every "same fact, two spellings" decision is made once, on the way in -- labels sorted and deduped, a one-element array and a bare string unified, a label key pointing at nothing removed entirely. The read parses and normalizes *representation* only (the three R shapes a JSON string array comes back as) and reshapes nothing. Two rules matter more than they look: an empty label map has its key **removed** rather than set to `null`, because `{}` and an absent map hash identically and nothing would ever fail; and tidying runs **before** validation, so the spellings nobody can reasonably care about are cleared and validation only ever reports genuine ambiguity.
+
+**Cross-language scope, and the normative home.** `dev/datom_sv1_reference.R` is a standalone base-R + `digest` reference written against the encoding rather than against any emitter, with 44 self-tests and printed golden constants; the package is tested byte-for-byte against it on x86_64 and arm64, and `dev/check-spec.R` compares the rules above against every other copy of them so the four documents that carry the encoding cannot drift apart. Any change to a golden means the specification was violated and requires a conscious bump to `datom-sv2`.
 
 ### datom Version = metadata_sha
 
@@ -240,6 +295,10 @@ study-001-data/
 ├── {table_name}/
 │   ├── metadata.json             # Current metadata only
 │   └── version_history.json      # Index: version -> SHA mappings
+├── {set_name}/                    # A set: same shape, plus its payload
+│   ├── set.json                  # The payload itself -- stable path, modified in place
+│   ├── metadata.json
+│   └── version_history.json
 ├── input_files/                   # Flat directory for source files (gitignored)
 │   ├── customers.csv
 │   └── orders.tsv
@@ -248,6 +307,8 @@ study-001-data/
 │   └── manifest.json             # Repository catalog (project-scoped)
 └── .gitignore
 ```
+
+**A set's directory is a table's directory plus one file**, and the difference is where the content lives: a table's bytes are in storage only, while a set's payload is small, textual and diffable, so git carries it directly. In a `mode: product` repo the caller's own derivation code and `renv.lock` sit beside these directories and can be committed **in the same commit** as a set write (`include_paths`), which is what makes checking out a set version yield the data pointers plus what produced them.
 
 **Note:** Contents of `input_files/` are gitignored. Only metadata tracked in git; actual data files stay local and sync to the data store as parquet. **`dispatch.json`, `ref.json`, and `migration_history.json` no longer live in the data repo** — they are owned by the governance repo at `projects/{project_name}/`.
 
@@ -273,13 +334,21 @@ data-bucket/
     └── datom/
         ├── .metadata/
         │   └── manifest.json          # Project manifest (mirrors data repo)
-        └── {table_name}/
-            ├── {data_sha}.parquet     # Data files (content-addressed)
+        ├── {table_name}/
+        │   ├── {data_sha}.parquet     # Data files (content-addressed)
+        │   └── .metadata/
+        │       ├── metadata.json      # Current metadata
+        │       ├── {metadata_sha}.json
+        │       └── version_history.json
+        └── {set_name}/
+            ├── {data_sha}.json        # Set payloads (content-addressed)
             └── .metadata/
-                ├── metadata.json      # Current metadata
+                ├── metadata.json
                 ├── {metadata_sha}.json
                 └── version_history.json
 ```
+
+**One namespace, whatever the kind.** Storage keys are `{name}/...` for a table and a set alike, which is why a set and a table may not share a name: they would write the same objects and clobber each other. The payload's extension follows the kind -- `{data_sha}.parquet` or `{data_sha}.json` -- so a reader that knows an artifact's declared `kind` knows where its content is without probing.
 
 **Local Filesystem Store** mirrors the cloud layout (same paths, on disk).
 
@@ -362,6 +431,7 @@ Current state only — no history stored here:
 ```json
 {
   "schema_version": 2,
+  "kind": "table",
   "data_sha": "abc123...",
   "hash_algo": "datom-cv1",
   "parquet_sha": "9f10a2...",
@@ -385,6 +455,8 @@ Current state only — no history stored here:
   "ncol": 15,
   "colnames": ["id", "name", "value"],
   "original_file_sha": "def456...",
+  "original_format": "csv",
+  "project": "STUDY_001",
   "created_at": "2024-01-15T10:30:00Z",
   "datom_version": "0.1.0",
   "custom": {
@@ -397,6 +469,7 @@ Current state only — no history stored here:
 | Field | Description |
 |-------|-------------|
 | `schema_version` | Format of this document, so any build can say what shape it is holding. Absent means version 1, i.e. a document written before the field existed, which is tolerated and read as normal. A build meeting a **higher** number than it knows refuses the document and points at the upgrade, rather than reading a shape it does not understand and reporting the artifact as empty. Excluded from `metadata_sha`: a format bump must not re-mint a version for every artifact whose content stood still. Distinct from `datom_version`, which is provenance -- one format spans many releases, so neither field answers "which datom do I need?" on its own. |
+| `kind` | Which kind of artifact this document describes: `"table"` here, `"set"` in a set's own document. **Identity** (participates in `metadata_sha`), so a table and a set can never share a version string. A document written before the field existed is read as `"table"`, which is what every such document described. It is not a parameter anywhere -- each builder stamps its own literal, because a table write and a set write reach different builders. |
 | `data_sha` | Canonical `datom-cv1` hash of the table's **values** (not of the parquet file -- see "Table Identity = data_sha"). Doubles as the content address: `{table}/{data_sha}.parquet`. |
 | `hash_algo` | Identity algorithm that produced `data_sha`. Always `"datom-cv1"` for tables written by this version. **Semantic** (participates in `metadata_sha`): a new algorithm is a new identity regime. |
 | `parquet_sha` | SHA-256 of the stored parquet object's bytes. Integrity, **not** identity: verified on read before parsing; carried forward unchanged on a `metadata_only` write; reused (never overwritten) when a write reverts to content already in history. Excluded from `metadata_sha`, which is what allows `datom_write()` to set it after `metadata_sha` is computed. `null` for pre-`datom-cv1` metadata, in which case the read-time check is skipped rather than failed. |
@@ -405,6 +478,8 @@ Current state only — no history stored here:
 | `original_file_sha` | SHA-256 of the source file's bytes, for imported tables. Present in metadata **only when non-NULL** -- the derived path omits the field entirely rather than writing it as `null`. **Semantic** (participates in `metadata_sha`). Also recorded in the `version_history.json` entry and in `.datom/manifest.json`. |
 | `parents` | Immediate parents only. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version, data_sha}` entries, or `null` if lineage not recorded. Each entry is a record produced by `datom_parent(conn, table, version)`: `source` = `conn$project_name` of the parent, `table` = table name, `version` = **metadata_sha** of the parent version, `data_sha` = authoritative content SHA of the parent's parquet file (resolved from the parent's own store at construction time). The metadata_sha is the direct S3 key for the parent's metadata snapshot: `{table}/.metadata/{version}.json`. Purpose: **traversal and retrieval** -- enables one-hop-at-a-time lineage walking and versioned reads without secondary lookups. See note below on the two-SHA design. |
 | `source_lineage` | Transitive closure of all raw-source tables that contributed data to this table. A flat list of `{project, table, version_sha}` entries where `version_sha` is the **data_sha** (canonical content hash, which is also the storage address) of the raw source table. The data_sha is the direct S3 key for the source data: `{table}/{version_sha}.parquet`. Purpose: **content identity and permissioning** -- the data_sha is stable across metadata rewrites, making it the correct key for access policy registries. For `"imported"` tables: a single self-entry. For `"derived"` tables: **derived by `datom_write()` as the deduplicated union of the parents' captured `source_lineage` fields** via `datom_lineage_union()`; callers do not supply it. **Walker invariant**: tools that walk lineage must follow `parents`, never `source_lineage` -- `source_lineage` entries are terminal leaves and following them would infinite-loop on the self-entry. |
+| `original_format` | Extension of the source file for an imported table (`"csv"`, `"parquet"`, ...). Present only when non-NULL. Recorded here as well as on the manifest row, which is what makes it survive a manifest rebuild -- it is otherwise the one fact a rebuild would lose. **Not identity**: classifying it as identity would have re-minted a version for every imported table in every repo, on content that had not moved. |
+| `project` | The name of the project whose namespace this artifact was written into, read from the writing repo's own `.datom/project.yaml` rather than from a connection label -- two people can label the same repo differently, and a citation has to mean one thing. Present only when non-NULL. |
 | `size_bytes` | Size of the parquet file in bytes |
 | `nrow`, `ncol` | Table dimensions |
 | `colnames` | Column names array |
@@ -427,6 +502,61 @@ A derived table's metadata carries two different version identifiers for its par
 
 **The `parents` bridge — `data_sha` added**: Recorded parent entries are now `{source, table, version, data_sha}`. The `data_sha` field bridges the two SHA types explicitly in the JSON: it is resolved from the parent's own store at `datom_parent()` construction time and makes the link between `parents[].version` (metadata_sha) and `source_lineage[].version_sha` (data_sha) self-documenting without a secondary lookup.
 
+### {name}/set.json — a set's payload
+
+A set's content is a JSON document of pointers plus labels. It is the file `data_sha` is computed over, and it is the only place a set's members and its user metadata live:
+
+```json
+{
+  "tags": {
+    "description": ["Q4 efficacy product"],
+    "therapeutic_area": ["oncology"]
+  },
+  "members": [
+    {
+      "id": {"project": "study001", "name": "adsl", "kind": "table", "version": "aaa111..."},
+      "tags": {"role": ["analysis"], "domain": ["ADaM"]}
+    },
+    {
+      "id": {"project": "study001", "name": "dm", "kind": "table", "version": "bbb222..."}
+    }
+  ]
+}
+```
+
+**The grammar is deliberately narrow.** Every value position is a string or an array of strings. There are no numbers, no booleans and no nulls anywhere: absence is spelled by omitting the field, which is why an untagged member has no `tags` key rather than an empty one. A member's `id` is the full four-part citation -- project, name, kind, version -- and the version is a `metadata_sha`, so a member pins one immutable version of one artifact. `tags` at either level are free-text labels; the set-level map describes the set, a member's map describes why that member is in it.
+
+Two consequences of the grammar that surprise people, both of which are identity decisions from `datom-sv1` rather than storage details: the **same name may appear twice** at two different versions (a live table beside a deliberately frozen baseline), because the duplicate check keys on the whole `id`; and a member listed twice **identically** collapses to one entry silently, because a duplicate carries no information.
+
+**Two paths, one payload, two addresses.** Git holds `{name}/set.json` at a stable path and modifies it in place, so git owns the history and a `git diff` between two versions is member-level. Storage holds the same bytes content-addressed at `{name}/{data_sha}.json`, so a reader with no clone can fetch an exact version. The git side is deliberately **not** content-addressed: every version would be a new file, and history would have to be read by listing filenames -- hand-maintaining what git already maintains.
+
+**`document_sha` covers the bytes; `data_sha` covers the content.** The metadata document records the SHA-256 of the stored payload's bytes, and a read verifies it before parsing. It is not identity, and the two hashes catch different failures: `data_sha` answers "is this the same set", `document_sha` answers "are these the bytes that were stored". **A missing or empty `document_sha` is an error, not a skip** -- unlike `parquet_sha`, which tolerates absence because tables predate it, sets have recorded one since their first write, so the only document without one is a corrupt document.
+
+The payload carries **no format number of its own**. It is pure content, and a format number in it would be content -- the declaration lives in the metadata document beside the hash that addresses the payload.
+
+### metadata.json for a set
+
+A set's per-artifact metadata is a collapsed version of a table's:
+
+```json
+{
+  "schema_version": 2,
+  "kind": "set",
+  "data_sha": "5c9e21...",
+  "hash_algo": "datom-sv1",
+  "document_sha": "77af03...",
+  "project": "STUDY_001",
+  "created_at": "2024-01-15T10:30:00Z",
+  "datom_version": "0.1.3"
+}
+```
+
+Same meanings as the table document for every field it shares. What a table carries and a set **omits entirely** -- not writes as `null` -- is everything describing a rectangle (`nrow`, `ncol`, `colnames`, `column_hashes`), the provenance axis (`table_type`, `parents`, `source_lineage`), the stored-parquet facts (`parquet_sha`, `size_bytes`), and the user-metadata channel (`custom`). A set's members and its user metadata are both in the payload as labels, and no counter reads a set's byte size.
+
+**Why no lineage on a set, ever.** A set is a citation, not a derivation: its members are recorded in the payload with their exact versions, and writing a set changes no member's lineage in either direction. Adding `parents` would claim a derivation relationship that does not exist and would make the same fact editable in two places.
+
+**Omitted rather than nulled is a rule, not a preference.** `jsonlite` does not drop a `NULL` element, it writes `{}` -- so a field declared and left unpopulated passes a names-only check while carrying an empty object. That is why the write populates `document_sha` before the document is written, and why the tests assert on the written bytes rather than on the object in memory.
+
 ### version_history.json
 
 Index mapping versions to data with full audit info. **metadata_sha serves as the datom version** — it uniquely identifies the (data, metadata) pair:
@@ -440,7 +570,8 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
     "original_file_sha": "def456...",
     "timestamp": "2024-01-15T10:30:00Z",
     "author": "jane.doe@company.com",
-    "commit_message": "Updated Q4 data"
+    "commit_message": "Updated Q4 data",
+    "commit_sha": "4f2a9c8..."
   }
 ]
 ```
@@ -454,6 +585,7 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 | `timestamp` | ISO timestamp of creation |
 | `author` | Git author (name or email) |
 | `commit_message` | Descriptive message for this version |
+| `commit_sha` | The commit that produced this version. **Present in the storage copy only** -- see below. **Derived, never authored**: no public verb accepts one. Nullable, for a version whose producing commit cannot be identified. |
 
 **Note:** A single data_sha may appear with multiple versions if metadata was updated without data changes.
 
@@ -461,7 +593,17 @@ Index mapping versions to data with full audit info. **metadata_sha serves as th
 
 **Note:** `data_sha` in each entry is the only cheap reverse-lookup path from a content address back to its version history (data_sha → all metadata_shas that reference it). Removing this field would make that direction O(n) over all metadata snapshots. Do not drop it.
 
-**Why no git commit SHA?** datom uses git as a versioning and conflict-management mechanism, not as a code repository. The meaningful version identifier is `metadata_sha` (content-addressed, deterministic). Since datom doesn't pair code with data, the git commit SHA adds no reproducibility value — data is either imported from a file or written from an R session, neither of which is captured by the commit. When git context is needed, `timestamp` + `author` or `git log --all -S "<metadata_sha>"` locates the commit directly. Git commit SHA enrichment was considered and designed but deferred — see "Deferred to v2" for the approach if a compelling use case emerges.
+#### `commit_sha`: why the two copies of this file differ on purpose
+
+Every version records the commit that produced it, and **only the copy in storage carries it**. The clone's tracked copy cannot: that file is committed *inside* the commit that would name it, so a value written there would have to predict its own commit id. The asymmetry is therefore structural, not an oversight, and it is the right way round -- the field exists for the reader who has no clone, and a developer with one can always run `git log`.
+
+**Derived, never authored.** No public verb accepts a `commit_sha`. The write path already holds the commit it just made and hands it over; anything missing is recomputed from git history by rehashing each committed `metadata.json` and taking the **oldest** commit whose content reproduces that version. Deriving is required rather than preferred: the reason an older build stripping the field is tolerable at all is that the value can always be worked out again, which is only true if something works it out. Three functions upload this file and all three go through one helper (`R/version-commit.R`) that keeps what storage already holds and derives only what is missing -- before that, the busiest of them uploaded the clone's copy wholesale, so the second ordinary write erased the first version's commit id.
+
+**What it means, stated so it is not reported as a bug.** A version identifies content, not code. Refactor a build script, re-run it, get identical data, and nothing new is minted -- so the recorded commit still points at an earlier one that does not contain the code you just wrote. The field names a commit that provably produces that version, not every commit that could.
+
+`datom_history()` surfaces it as a `commit_sha` column, because the stored copy exists for the reader with no clone and that verb is their only route to it. When a version's link genuinely cannot be recovered -- storage unreachable or its copy unparseable, and git unable to supply it either -- the write says which versions lost it rather than replacing the file in silence.
+
+**Why the version itself is still `metadata_sha`, not the commit.** A data change necessarily changes the commit, but a commit change does not necessarily change the data, so the commit is a strictly finer identifier than content. Making it the version would mint a new one for a comment typo, which is precisely what a citable artifact must not do. The commit is recorded as provenance beside a content-derived version instead.
 
 ### ref.json
 
@@ -2013,20 +2155,7 @@ All `...` params forwarded to routed function — enables API calls, SQL queries
     "timestamp": "2024-01-15T10:30:00Z"
   }
   ```
-- **Git commit SHA in version_history.json**: Denormalizing the git commit SHA into each version_history entry was designed but deferred. datom uses git for versioning mechanics, not code pairing — the `metadata_sha` is the meaningful version identifier and `git log -S` can locate commits when needed. If a use case emerges (e.g., regulatory requirement for explicit commit linkage), two enrichment approaches were evaluated:
-
-  *Approach A — Local + S3 enrichment (preferred if implemented):*
-  1. Write version_history entry without `commit` → git commit → get SHA
-  2. Enrich local file: inject `commit` SHA into the new entry
-  3. Push enriched version to S3
-  4. Self-healing: previous entry's commit baked into git on next write
-  5. Requires `datom_pull()` to auto-commit dirty enrichment files before pulling (avoids merge conflicts in multi-developer scenarios)
-
-  *Approach B — S3-only enrichment (simpler but fragile):*
-  1. Git always has `commit: null`; only S3 gets enriched after push
-  2. Simpler (no dirty working tree), but S3 deletion loses all commit SHAs with no git-based recovery
-
-  Approach A is recommended if this feature is revisited — it preserves recoverability from git alone.
+- ~~**Git commit SHA in version_history.json**~~ -- **SHIPPED**, as `commit_sha` on each entry in the **storage copy only**; see "`commit_sha`: why the two copies of this file differ on purpose" above. The two approaches recorded here were *local + storage enrichment* (preferred at the time) and *storage-only enrichment* (dismissed as fragile, because deleting the stored file would lose every commit link with no way back). What shipped is the second one plus the recovery the first was preferred for: the value is **re-derived from git history** by rehashing each committed `metadata.json`, so a lost stored copy is rebuildable and the clone's tracked file never has to be dirtied. Enriching the tracked copy turned out to be impossible rather than merely awkward -- that file is committed inside the commit that would name it -- which is what settled the choice.
 
 - **Session metadata caching**: Could reduce S3 GETs for repeated reads within a session. Requires careful invalidation design — deferred until the trade-offs are well understood.
 - **renv integration** in `datom_init_repo()`: Currently deferred; `renv` field in project.yaml defaults to `false`.

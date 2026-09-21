@@ -407,24 +407,64 @@ norm_code <- function(x) {
 # One line per encoder rule. Keyed by the constructor being defined.
 CODE_KEYS <- c("str(s)", "strset(v)", "map(m)", "member(x)", "set(p)", "data_sha")
 
+# TWO MORE COPIES ARE COMPARED, AND NEITHER IS A SPEC FILE (added 2026-09-20, when
+# Task 17 wrote the encoding into the shipped design document and so created a
+# fourth copy of it).
+#
+# `dev/datom_sv1_reference.R` is the NORMATIVE home of these rules -- the package
+# is tested byte-for-byte against it -- and until now nothing compared its header
+# against the three spec files. `dev/datom_specification.md` is the document a
+# reader reaches for first. Both are optional in the same sense dev/README.md is
+# optional for the execution order below: what is forbidden is two copies that
+# disagree, not a file that stays silent.
+#
+# Comment markers are stripped, because the reference script carries its rules in
+# a header comment, and a `data_sha` rule is only collected when it names the
+# regime it belongs to. That second point is not tidiness: the design document
+# defines `data_sha` twice, once for `datom-cv1` over a table's values and once
+# for `datom-sv1` over a set's payload, and without the qualifier the two land
+# under one key and report a disagreement that does not exist.
+EXTRA_CODE_FILES <- c("dev/datom_specification.md", "dev/datom_sv1_reference.R")
+CODE_REGIME <- "datom-sv1"
+
+strip_comment <- function(x) sub("^\\s*#+\\s?", "", x)
+
+collect_code <- function(lines, key) {
+  hits <- grep(paste0("^\\s*", gsub("([().])", "\\\\\\1", key), "\\s*="),
+               lines, perl = TRUE)
+  out <- character()
+  for (h in hits) {
+    buf <- lines[[h]]
+    j <- h
+    while (nchar(gsub("[^(]", "", buf)) > nchar(gsub("[^)]", "", buf)) &&
+           j < length(lines)) {
+      j <- j + 1L
+      buf <- paste(buf, lines[[j]])
+    }
+    if (key == "data_sha" && !grepl(CODE_REGIME, buf, fixed = TRUE)) next
+    out <- c(out, norm_code(buf))
+  }
+  out
+}
+
 code_lines <- list()
 for (fname in SPEC_FILES) {
   for (key in CODE_KEYS) {
-    hits <- grep(paste0("^\\s*", gsub("([().])", "\\\\\\1", key), "\\s*="),
-                 spec[[fname]], perl = TRUE)
-    if (length(hits) > 0L) {
-      # a rule may wrap across lines; join until the parens balance
-      collected <- character()
-      for (h in hits) {
-        buf <- spec[[fname]][[h]]
-        j <- h
-        while (nchar(gsub("[^(]", "", buf)) > nchar(gsub("[^)]", "", buf)) &&
-               j < length(spec[[fname]])) {
-          j <- j + 1L
-          buf <- paste(buf, spec[[fname]][[j]])
-        }
-        collected <- c(collected, norm_code(buf))
-      }
+    collected <- collect_code(spec[[fname]], key)
+    if (length(collected) > 0L) {
+      code_lines[[key]] <- c(code_lines[[key]],
+                             stats::setNames(collected, rep(fname, length(collected))))
+    }
+  }
+}
+
+for (fname in EXTRA_CODE_FILES) {
+  lines <- read_lines_safe(file.path(repo_root, fname))
+  if (is.null(lines)) next
+  lines <- strip_comment(lines)
+  for (key in CODE_KEYS) {
+    collected <- collect_code(lines, key)
+    if (length(collected) > 0L) {
       code_lines[[key]] <- c(code_lines[[key]],
                              stats::setNames(collected, rep(fname, length(collected))))
     }
@@ -543,8 +583,10 @@ if (length(code_mismatch) > 0L || length(ac_bound) > 0L ||
        "this is the class a prose denylist cannot catch -- it survived three sweeps.")
 } else {
   pass("duplicated content agrees",
-       sprintf("%d encoder rules present in all %d files and agreeing; no hardcoded AC bounds; %d execution-order copies agree",
-               length(CODE_KEYS), length(SPEC_FILES), length(order_found)))
+       sprintf("%d encoder rules present in all %d spec files and agreeing across %d copies; no hardcoded AC bounds; %d execution-order copies agree",
+               length(CODE_KEYS), length(SPEC_FILES),
+               length(unique(unlist(lapply(code_lines, names)))),
+               length(order_found)))
 }
 
 # --- check 7: ASCII ----------------------------------------------------------
