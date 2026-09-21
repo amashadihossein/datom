@@ -170,17 +170,33 @@ deleting the artifact key from the shared reader reddens 64 assertions across 36
 untyped entry abort inside the selection helper reddens exactly one. It also caught two tests that
 were passing whatever the code did.
 
-**Start here.** Branch `spec/datom-sets`, working tree clean, **4292** tests
-(FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` **10/10**, and `R CMD check --as-cran` 0/0/0 with
-examples, tests and vignettes run. **Next is Task 17**, docs plus the Spec Completion Procedure --
-the last task in the spec. Everything before it is done; Task 16's sweep closed on 2026-09-19.
+**THE SPEC IS COMPLETE (2026-09-21). EVERY TASK IS DONE, INCLUDING TASK 17.** Final state: **4292**
+tests (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` **10/10**, `R CMD check --as-cran` **0/0/0** with
+examples, tests and vignettes run, `dev/e2e-sets.R` exits 0 with 51 claims. The one step after this
+record was the PR into `dev` -- not `main`, which stays matching what CRAN received.
 
-**READ TASK 17'S STATE BLOCK BEFORE ITS CHECKLIST.** Roughly half of that task is already done and the
-checklist does not say which half -- `_pkgdown.yml` is complete, `NEWS.md` covers everything except
-Phase H, and `dev/datom_specification.md` is barely started and is the bulk of the work. The block
-measures each item with a date, explains why no pre-start audit was run, and lists the open work in
-order. It also carries one finding that needs a **decision** and not just prose: there is no public verb
-returning a single member's record.
+**This file is documentation now, not a worklist.** It persists deliberately; nothing here is deleted
+on completion. If you are picking the sets surface up cold, the shortest route in is
+`dev/datom_specification.md` ("Set Identity = data_sha", "Set Operations") and then
+`dev/datom_pathways.md`'s four set-related route cards -- both of which Task 17 wrote, so they are
+current as of this date. Come here for **why** a decision went the way it did: each task's DONE record
+carries what was probed, what a later change must not undo, and the deviations from the written design.
+
+**Two things this spec leaves open, both filed rather than forgotten**:
+[#111](https://github.com/amashadihossein/datom/issues/111) (two acceptance statements are tested but
+ungated) and [#112](https://github.com/amashadihossein/datom/issues/112) (a by-name member lookup that
+stops at the record instead of fetching the data).
+
+**TASK 17 IS CLOSED (2026-09-21), AND ITS STATE BLOCK IS KEPT AS A RECORD OF WHY IT WAS ORDERED THE WAY
+IT WAS.** The block measured each checklist item with a date rather than trusting the checklist, which is
+what surfaced that roughly half the task was already done: `_pkgdown.yml` was complete, `NEWS.md` covered
+everything except Phase H, and `dev/datom_specification.md` was barely started and was the bulk of the
+work. What follows below is that block as written on 2026-09-19, plus the results. The block
+measures each item with a date, explains why no pre-start audit was run, and lists the work in order. It
+also carried one finding that needed a **decision** and not just prose -- a by-name route to a single
+member's record -- which was settled by filing
+[#112](https://github.com/amashadihossein/datom/issues/112); the finding as originally stated turned out
+to be broader than the truth, and both the correction and the decision are in that task's records.
 
 **TASK 17'S FIRST ITEM IS DONE AND IT FOUND NO MISSING TEST (2026-09-20).** Task 16 had left one item
 open on purpose: an independent re-derivation of the acceptance-criteria list, by a session given
@@ -188,10 +204,11 @@ open on purpose: an independent re-derivation of the acceptance-criteria list, b
 a mis-credited one are different errors and re-reading your own work catches neither, which is why the
 session that did the sweep could not also do this. It went first because a gap it found would have been a
 test to write, and Task 17 is where "this spec is done" gets asserted. **The two lists are identical --
-AC1 through AC41, no gaps, same clauses on the same 14 criteria** -- so the remaining items are the docs
+AC1 through AC41, no gaps, same clauses on the same 14 criteria** -- so the rest of the task was the docs
 passes. What it did surface is one hole that is not an AC: two acceptance statements in `requirements.md`
-are written in prose with no id, so they are tested but ungated; it is a Backlog row, and the reasoning is
-in Task 17's derivation record.
+are written in prose with no id, so they are tested but ungated. Filed as
+[#111](https://github.com/amashadihossein/datom/issues/111) with a Backlog row carrying the reasoning,
+and the full result is in Task 17's derivation record.
 
 **TASK 15 IS CLOSED, AND ITS AUDIT IS WHAT MOVED THE WORK.** Eleven findings, both decisions settled
 by the owner the same day at their defaults, and the finding that relocated the task: **the field it
@@ -4340,7 +4357,7 @@ own; landing it first is what makes Task 6's failure loud.
   the previous probe may have left mutated. Both are the engineering-notes probe-harness entry being
   right in ways easy to re-discover; the second is literally its 2026-09-15 paragraph.
 
-- [ ] **17. Docs + Spec Completion Procedure** &nbsp; **[EXECUTES LAST, after Task 16 -- see Task 16's note on why the file order misleads]** &nbsp; **[STATE MEASURED 2026-09-19 -- read the block below before the checklist: roughly half of it is already done, and the checklist does not say which half]**
+- [x] **17. Docs + Spec Completion Procedure** &nbsp; **[DONE 2026-09-21 -- see the DONE record at the end of this task. THE SPEC IS COMPLETE.]** &nbsp; **[EXECUTED LAST, after Task 16 -- see Task 16's note on why the file order misleads]** &nbsp; **[STATE MEASURED 2026-09-19 -- the block below was read before the checklist, because roughly half of the task was already done and the checklist did not say which half]**
 
   **NO PRE-START AUDIT WAS RUN, AND THAT WAS A DECISION RATHER THAN AN OMISSION (2026-09-19).** Every
   task since Task 11 got one, so the absence needs a reason. Task 17 ships no behaviour: its body is a
@@ -4363,7 +4380,10 @@ own; landing it first is what makes Task 6's failure loud.
   | `dev/datom_pathways.md` | **partly done** -- two set cards exist (write a set, resolve a set's members), and the read card already carries Task 27's note. Check the `kind` branch and the `schema_version` gate are on the read route (R13.1), and decide whether the edit verbs need more than the one mention they have |
   | `NEWS.md` | **substantially done, with one clear gap** -- 16 sections cover Tasks 1 through 15 and 20 through 26, including the `artifacts` rename with its discovery-only exposure and the format-number refusals. **THE GAP: Phase H has no section at all.** `datom_update_members()` and `datom_remove_members()` appear **zero** times in `NEWS.md`, so two shipped exports currently have no release note |
 
-  **WHAT IS OPEN, in the order to do it.**
+  **WHAT WAS OPEN, in the order it was done. ALL EIGHT ARE CLOSED (2026-09-21); the measurements below
+  are kept as they stood on 2026-09-19, because they are what made the ordering defensible.** One
+  commit each, except items 2 and 5 which merged into one document pass and items 1 and 6 which each
+  needed a decision before any prose could be written.
 
   1. ~~**THE INDEPENDENT AC DERIVATION, FIRST, BEFORE ANY DOCS ARE WRITTEN.**~~ **DONE 2026-09-20, and
      the lists matched exactly -- see the derivation record at the end of this task.** Task 16's one open
@@ -4372,20 +4392,25 @@ own; landing it first is what makes Task 6's failure loud.
      missed criterion, that is a test to write, and this is the task where "the spec is done" gets
      asserted in `dev/README.md`. A task that has already written its docs has every incentive not to
      look. **No test was owed**, and the one hole it did find is not an AC.
-  2. **`dev/datom_specification.md` is the bulk of the remaining work, and it is barely started.**
-     Measured: `datom-sv1` appears **0** times, "set artifact" **0**, `datom_write_set` **0**;
-     `schema_version` 4 and `artifacts` 2. So the set artifact kind, the sv1 hash, the `schema_version`
-     contract and the `artifacts` namespace (R13.2) all still need writing.
-  3. **`NEWS.md`: a Phase H section.** The two edit verbs, why they touch no stored document, and the
-     shared edit log that turns a chained edit into one commit message.
-  4. **`.github/copilot-instructions.md`: the guard-test rule.** Confirmed absent -- the phrase is not
-     in the file. A guard's test must fail when that guard alone is removed, and the way to know is to
-     delete it and watch. It is a convention rather than an anecdote because it produced an instance in
-     four separate tasks; the family table is in `dev/engineering-notes.md` and this file should point at
-     it rather than restate it.
-  5. **The two forward-compatibility mechanisms, documented together and never separately** (R23.5), and
-     the plain statement that every write-side refusal binds **0.1.1 forward only** (R23.7). Both are
-     already stated in `.github/copilot-instructions.md`; what is owed is the **user-facing** version.
+  2. ~~**`dev/datom_specification.md` is the bulk of the remaining work, and it is barely started.**~~
+     **DONE in three commits.** Measured 2026-09-19: `datom-sv1` appeared **0** times, "set artifact"
+     **0**, `datom_write_set` **0**; `schema_version` 4 and `artifacts` 2. So the set artifact kind, the
+     sv1 hash, the `schema_version` contract and the `artifacts` namespace (R13.2) all needed writing,
+     and all thirteen exports were absent from the API reference. It also turned out to carry three
+     claims this spec had falsified -- see the DONE record.
+  3. ~~**`NEWS.md`: a Phase H section.**~~ **DONE.** The two edit verbs, why they touch no stored
+     document, and the shared edit log that turns a chained edit into one commit message.
+  4. ~~**`.github/copilot-instructions.md`: the guard-test rule.**~~ **DONE, as rule 2a.** Confirmed
+     absent when measured -- the phrase was not in the file, while `dev/engineering-notes.md` already
+     pointed at it as though it were. A guard's test must fail when that guard alone is removed, and the
+     way to know is to delete it and watch. It is a convention rather than an anecdote because it
+     produced an instance in four separate tasks; the family table is in `dev/engineering-notes.md` and
+     the rule points at it rather than restating it.
+  5. ~~**The two forward-compatibility mechanisms, documented together and never separately** (R23.5),
+     and the plain statement that every write-side refusal binds **0.1.1 forward only** (R23.7).~~
+     **DONE**, as a new top-level section in `dev/datom_specification.md`, written with item 2's second
+     commit. Both were already stated in `.github/copilot-instructions.md`; what was owed was the
+     **user-facing** version.
   6. **One finding from Task 16's E2E. ITS DECISION IS TAKEN (2026-09-20, owner); THE PROSE IS STILL
      OWED.** As written, this item said there is no public verb returning one member's record and that
      the pinned version is read out of the listing. **Half of that was wrong, and the half that was
@@ -4402,10 +4427,13 @@ own; landing it first is what makes Task 6's failure loud.
      the listing, `datom_structure_members()`), which one to reach for, and the trap that makes the
      verb worth filing -- **a name matching two members goes silently plural** on both the listing and a
      hand-rolled filter, because one artifact at two versions is a legal pair.
-  7. **`dev/README.md`: move the spec Active -> Completed** with date, test count and summary. **The
-     spec persists -- do not delete it.**
+  7. ~~**`dev/README.md`: move the spec Active -> Completed** with date, test count and summary.~~
+     **DONE 2026-09-21.** The spec persists; Active Specs now reads "None" and says so. The giant
+     status cell was **not** carried across -- a fresh summary was written for the Completed row,
+     because that cell was a running log of eighteen tasks and a completion row is read by somebody
+     asking what shipped.
   8. **PR into `dev`, merge, delete the branch.** Not `main`: 0.1.2 is with CRAN and `main` stays
-     matching what they received.
+     matching what they received. **The only step left when this record was written.**
   - `dev/datom_pathways.md`: the set-resolution route card; note the `kind` branch and the
     `schema_version` gate on the read route (R13.1).
   - `dev/datom_specification.md`: set artifact kind, `datom-sv1`, `schema_version` contract,
@@ -4460,6 +4488,82 @@ own; landing it first is what makes Task 6's failure loud.
   bullets after it -- so a reader scanning the table top to bottom can miss one. That is exactly the
   failure mode "derive the list, do not trust a range" exists for, and the derivation caught it by
   searching the document rather than scanning it.
+
+  **DONE RECORD (2026-09-21). Shipped in eight commits, and THE SPEC IS COMPLETE.** Tests **4292**
+  throughout (FAIL 0 / WARN 0 / SKIP 0) -- this task changed no package code, so the count not moving is
+  the expected result rather than a gap; `dev/check-spec.R` **10/10**; `R CMD check --as-cran`
+  **0 errors / 0 warnings / 0 notes** with examples, tests and vignettes run, on the built tarball;
+  `dev/e2e-sets.R` still exits 0 with all 51 claims. **Pathway impact: yes, one step** -- the table read
+  card gained the kind branch.
+
+  **THE FIRST ITEM WAS NOT A DOCS PASS, AND IT CAME BACK CLEAN.** The independent re-derivation of the
+  criteria list produced AC1 through AC41 with no gaps, matching Task 16's sweep at criterion and clause
+  level, so no test was owed. Full result in the derivation record above. The one thing it found is a
+  **gating** gap rather than a coverage gap, and it is filed:
+  [#111](https://github.com/amashadihossein/datom/issues/111).
+
+  **THE DOCUMENT THIS TASK EXISTED TO WRITE WAS ALSO CARRYING THREE CLAIMS THIS SPEC HAD FALSIFIED**, and
+  finding them was the part the checklist could not enumerate -- which is exactly why no pre-start audit
+  was run, since finding them *is* reading the document against the code.
+
+  | Claim in `dev/datom_specification.md` | Why it was false |
+  |---|---|
+  | a paragraph headed "Why no git commit SHA?", explaining that datom deliberately does not record the commit behind a version | Task 15 records one. Replaced with why the two copies of the history file differ: only storage carries it, because the clone's copy is committed **inside** the commit that would name it |
+  | the "Deferred to v2" entry for the same feature, recording two approaches and preferring the one that enriches the tracked file | What shipped is the other approach **plus** the recovery the first was preferred for. The preferred one is not merely awkward, it is impossible, for the reason above |
+  | the `metadata.json` example and field table | Missing three fields the writer has been emitting: `kind`, `original_format`, `project` |
+
+  **WHAT THE TASK ADDED, in one line each.** `datom-sv1` and the set documents, the payload grammar and
+  its two addresses, the collapsed set metadata document; a top-level **Schema Evolution and Forward
+  Compatibility** section written for a user rather than a contributor, with the two refusal mechanisms
+  in one table because either oversells itself alone; `project.yaml`'s four undocumented fields; a **Set
+  Operations** API section covering all thirteen new exports, grouped by what a caller is doing because
+  several are only usable in pairs; a `NEWS.md` section for the two edit verbs, which appeared **zero**
+  times in it; the guard-test rule as conventions rule 2a; and the kind branch promoted from a footnote
+  to a step on the table read route.
+
+  **FOUR THINGS A LATER CHANGE MUST NOT UNDO.**
+
+  1. **`dev/check-spec.R` now compares the sv1 encoder rules across FIVE copies, not three.** Writing
+     the rules into the design document created a fourth copy, and the **normative** one --
+     `dev/datom_sv1_reference.R`, which the package is tested byte-for-byte against -- had never been
+     compared at all. Comment markers are stripped so the reference script's header counts, and a
+     `data_sha` rule is collected **only when it names its regime**, because the design document defines
+     `data_sha` twice (cv1 over a table's values, sv1 over a set's payload) and without the qualifier the
+     two land under one key and report a disagreement that does not exist. Verified non-vacuous by
+     breaking each new copy separately and watching, with a clean control run.
+  2. **The kind branch runs before the payload address is built, and the route card says so as a
+     constraint.** A set's content is `{name}/{data_sha}.json`, so a read that gets past the branch
+     reports a missing parquet object for an artifact that is perfectly intact -- which is not
+     hypothetical, it is what validation did for every set until Task 14.
+  3. **The user-facing forward-compatibility section and the contributor-facing one cross-reference each
+     other and must move together.** Two audiences, one contract; whichever is edited alone becomes the
+     wrong one, and nothing detects that.
+  4. **`dev/README.md`'s Backlog lifecycle gained a step**: decide whether a row also needs an issue,
+     defaulting to yes when it names work with a finished state somebody else could pick up. Before it,
+     four of roughly seventeen live rows carried an issue and all four had been filed in one batch out of
+     a single audit -- so a row's persistence depended on which week it was discovered. The table is the
+     reasoning, an issue is the reminder, and the row stays either way.
+
+  **ONE CLAIM FROM AN EARLIER TASK WAS TOO BROAD, AND CHECKING IT COST A DECISION RATHER THAN A FIX.**
+  Task 16's E2E concluded that no public verb hands back one member's record and that a member's pinned
+  version is read out of the listing. The second half is wrong -- `x$members[[i]]` is the documented
+  return shape of `datom_get_set()` and carries `id`, labels and a callable `fetch`. What is genuinely
+  missing is narrower: a by-**name** lookup that stops at the record, since `datom_fetch_member()`
+  resolves a name safely and then fetches the data. On a real product that means downloading a table to
+  learn a version string, and it needs a connection to the **member's** project -- unavailable to
+  exactly the reader a set is designed to serve. Filed as
+  [#112](https://github.com/amashadihossein/datom/issues/112) on the owner's stated condition, export it
+  only if no rename is needed; `.datom_find_member()` is dotted with 5 call sites, so it files. The
+  over-broad claim is corrected where it was written, not only where it was found:
+  `dev/e2e-sets.R`'s comment, Task 16's record, and this task's item 6.
+
+  **WHAT THIS TASK DELIBERATELY DID NOT DO.** The three print methods got no API reference entry,
+  because no print method is documented in that file -- `print.datom_conn` included -- so three would
+  have been the exception rather than the pattern. `R9.6`'s schema-version-to-release table is still
+  owned by [#103](https://github.com/amashadihossein/datom/issues/103) rather than inlined here; the
+  design document names the issue at the point where a refusal message raises the question. And R13.3's
+  stale docstring sweep needed nothing: Task 1 had already done it, verified at zero occurrences of the
+  retired phrase in `R/`.
 
   - _Requirements: R13, R9.6 (the schema history table ships here if #103 has not landed
     separately), R23.5, R23.7. Acceptance: **none of its own by design** -- this task ships no
@@ -7247,3 +7351,6 @@ Record decisions as they are made, so a fresh session does not relitigate them.
 | 2026-09-19 | **(correction, Task 27) AC41(d)'s fixture does not already exist, and the one the task pointed at cannot express it.** The no-gate test (`tests/testthat/test-set-members.R:689`) is single-store: it mutates `project_name` on one connection, so the member and the store agree and only the label differs -- the opposite of a connection whose label matches while its store holds another project's same-named artifact. The fitting base is the parameterised two-project fixture `local_draft_project(project_name, set_name, prefix)` (`tests/testthat/test-set-draft.R:37`), which will have to be duplicated since testthat shares nothing between files. | AC41, Task 27 |
 | 2026-09-19 | **(pre-start audit, Task 27) Carrying a member's labels through `datom_member()` breaks AC40(a) silently.** The natural spelling passes the old record's `tags` to the rebuild, and `datom_member()` runs `.datom_drop_empty_tags()` on what it is handed (`R/member.R:518` area), so a label whose value is empty is dropped. Invisible on every payload datom wrote, because those were tidied at write; it surfaces only on a hand-built or foreign-written set. Build the pointer with **no** tags and attach the old record's `tags` verbatim, which keeps the snapshot read and `kind` resolution while satisfying byte-identity. | AC40, Task 27 |
 | 2026-09-19 | **(decision, Task 28) The commit-message change list is ONE append-only attribute both edit verbs write into, carrying an `action` per entry, rather than one attribute per verb.** Found by a cold review chaining the pair: with each verb owning its own attribute, `update \|> remove \|> write` commits a message naming the repoints and saying nothing about the removal -- and a destructive edit is the one a `git log` reader most wants named. Three shapes were available. **One attribute per verb**: the message builder reads two names, and a third editing verb means a third name plus a third branch. **No message for a removal**: cheapest, and it loses exactly the edit worth recording. **One log with an action column**: taken. Concretely the attribute is renamed **`datom_edits`**, its columns are `action`, `project`, `name`, `kind`, `from`, `to`, each verb appends its rows to whatever is already there, and `.datom_set_commit_messages()` renders per action -- `Update {name}: repoint 3 members, drop 1`, full list in the body. **The rename costs nothing because the attribute has never been released**: it was added hours earlier in Task 27, and 0.1.2 is what CRAN holds. **Deliberately not chased**: repointing a member and then removing it leaves both entries, which is an honest history of the edits and slightly odd in a commit message -- collapsing them would mean one verb reasoning about the other's entries. | R24.8, Task 27 (`R/set-edit.R`), Task 28 |
+| 2026-09-20 | **(owner decision, Task 17) A by-name lookup that returns a member's RECORD is filed rather than exported, and the condition the owner set is the reusable part: export it if no rename is needed, otherwise file it.** `.datom_find_member()` already does the job correctly -- no connection, no storage read, and a refusal naming both candidates when a name matches two members -- but it is dotted, which by this project's naming convention means exporting it is a rename across 5 call sites in 2 files, plus roxygen, NAMESPACE, a pkgdown row, five tests and their probes. That is behaviour landing in the task whose job is to close a spec. **The gap it leaves is worth stating precisely, because the finding that raised it was too broad**: a read already hands back complete member records, so `x$members[[i]]$id$version` is a public route to a pin; what is missing is only the by-**name** form, since `datom_fetch_member()` resolves a name safely and then continues on to fetch the data. Measured on a fixture: 20 rows downloaded to learn a 64-character string, and on a real product it is however large that table is. It also **breaks a property sets exist for** -- that fetch needs a connection to the *member's* project, so the reader a 50-member product is designed to serve is left with the idiom that goes silently plural. Filed as [#112](https://github.com/amashadihossein/datom/issues/112), which records that the verb must return the record rather than a version string, because a record composes with the three verbs that already accept one. | Task 17 item 6, Task 16 DONE record, `dev/e2e-sets.R` |
+| 2026-09-20 | **(owner decision, process) A Backlog row must decide whether it also needs a GitHub issue, defaulting to yes when it names work with a finished state somebody else could pick up.** Raised by the owner on seeing a row filed with no external home. The measurement that made it a rule rather than a preference: four of roughly seventeen live rows carried an issue, and all four had been filed in one batch out of a single design audit -- so persistence depended on which week a thing was discovered, not on whether it mattered. **The table is the reasoning and an issue is the reminder; the row stays either way**, cross-linked, because the reasoning is too long for an issue body and is the part that rots when it is moved. Stays table-only when the row records a decision *not* to do something, belongs to a package that does not exist yet, or is a note about how to work rather than a change to make. Written into `dev/README.md`'s Backlog lifecycle as step 2. | `dev/README.md` Backlog lifecycle |
+| 2026-09-21 | **(record, Task 17) The spec is complete.** Every task closed, 4292 tests (FAIL 0 / WARN 0 / SKIP 0), `dev/check-spec.R` 10/10, `R CMD check --as-cran` 0/0/0 with examples, tests and vignettes run on the built tarball, `dev/e2e-sets.R` exiting 0 with 51 claims. Two things left open and both filed: [#111](https://github.com/amashadihossein/datom/issues/111) and [#112](https://github.com/amashadihossein/datom/issues/112). **What changed in kind on merging into `dev`**: until now `dev` held documentation-only commits ahead of a released `main`, and it now holds the next release -- thirteen new exports, a second artifact kind, and a breaking manifest change -- while the version number still reads 0.1.2, which is what CRAN holds. Recorded in `dev/README.md`'s branching block, because the next submission has to bump the version and write the NEWS heading the development block does not yet have. | Task 17 DONE record, `dev/README.md` |
