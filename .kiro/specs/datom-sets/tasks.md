@@ -4221,10 +4221,20 @@ own; landing it first is what makes Task 6's failure loud.
   **One correction the script forced.** Its first draft called `datom_find_member()` and
   `datom_set_members()`. Neither exists: the public surface is `datom_fetch_member()`, which goes
   straight to a member's **data**, and `datom_list_members()`, which returns one row per member per
-  label. **There is no public verb that hands back one member's record**, which is worth knowing before
-  Task 17 writes the docs -- a reader who wants the version a member is pinned at reads it out of the
-  listing. The script now does that through two small helpers rather than reaching into `$members`, so
-  it exercises the public route.
+  label. The script reads a member's facts through two small helpers built on the listing rather than
+  reaching into `$members`, so it exercises that verb end to end.
+
+  **THE CONCLUSION DRAWN HERE WAS TOO BROAD, AND TASK 17 CORRECTED IT ON EVIDENCE (2026-09-20).** This
+  record used to say there is no public verb handing back one member's record, and that a reader who
+  wants a member's pinned version reads it out of the listing. The second half is wrong.
+  `x$members[[i]]` **is** the documented return shape of `datom_get_set()` -- each record carries `id`
+  (project, name, kind, version), its labels, and a callable `fetch` -- so `x$members[[i]]$id$version`
+  is a public route and a shorter one than the listing. What is genuinely missing is narrower: a
+  by-**name** lookup that stops at the **record**, since `datom_fetch_member()` resolves a name safely
+  and then continues on to the data. Filed as
+  [#112](https://github.com/amashadihossein/datom/issues/112) with the measurements. The owner's
+  condition for shipping it inside this release was "no rename needed", and `.datom_find_member()` is
+  dotted, so it files.
 
   **BATCH 5 IS DONE (2026-09-19). THE PROBE SWEEP IS COMPLETE: all 37 behavioural criteria are
   covered.** Two criteria, nine deliberate breakages, and one clause whose test cannot be made to fail
@@ -4376,13 +4386,22 @@ own; landing it first is what makes Task 6's failure loud.
   5. **The two forward-compatibility mechanisms, documented together and never separately** (R23.5), and
      the plain statement that every write-side refusal binds **0.1.1 forward only** (R23.7). Both are
      already stated in `.github/copilot-instructions.md`; what is owed is the **user-facing** version.
-  6. **One finding from Task 16's E2E, and it needs a decision as well as prose.** **There is no public
-     verb that returns one member's record.** `datom_fetch_member()` goes straight to the data,
-     `datom_list_members()` returns one row per member per label, and `x$members[[i]]` is plain R with no
-     by-name route. The evidence it is easy to assume otherwise: the E2E's first draft called two
-     functions that do not exist. **Document the two real routes** -- in particular that the version a
-     member is pinned at is read out of the listing -- and **decide separately whether a verb is owed**;
-     if the answer is yes it is a Backlog row, not a bullet in a docs task.
+  6. **One finding from Task 16's E2E. ITS DECISION IS TAKEN (2026-09-20, owner); THE PROSE IS STILL
+     OWED.** As written, this item said there is no public verb returning one member's record and that
+     the pinned version is read out of the listing. **Half of that was wrong, and the half that was
+     right is narrower than it sounds** -- see the correction in Task 16's DONE record. A read hands
+     back complete records: `x$members[[i]]` carries `id` (project, name, kind, version), its labels,
+     and a callable `fetch`, and that shape is documented, so `x$members[[i]]$id$version` is a public
+     route. What is missing is a by-**name** lookup that stops at the record; `datom_fetch_member()`
+     resolves a name safely and then fetches the data, which on a real product means downloading a
+     table to learn a version string, and which needs a connection to the **member's** project --
+     unavailable to exactly the reader a set is designed to serve. **Decided: file it, do not ship it**
+     ([#112](https://github.com/amashadihossein/datom/issues/112)), on the owner's stated condition --
+     export it only if no rename is needed, and `.datom_find_member()` is dotted with 5 call sites.
+     **What this item still owes is documentation**: the three routes to a member's facts (the record,
+     the listing, `datom_structure_members()`), which one to reach for, and the trap that makes the
+     verb worth filing -- **a name matching two members goes silently plural** on both the listing and a
+     hand-rolled filter, because one artifact at two versions is a legal pair.
   7. **`dev/README.md`: move the spec Active -> Completed** with date, test count and summary. **The
      spec persists -- do not delete it.**
   8. **PR into `dev`, merge, delete the branch.** Not `main`: 0.1.2 is with CRAN and `main` stays

@@ -94,9 +94,21 @@ tree_paths <- function(repo, sha) {
 unstaged <- function(repo) unlist(git2r::status(repo)$unstaged, use.names = FALSE)
 
 # The version one named member is pinned at, and the labels it carries, both read
-# through the public listing verb rather than by reaching into `$members`. There
-# is no public "give me one member's record" verb -- `datom_fetch_member()` goes
-# straight to the data -- so the listing is the public route to a member's facts.
+# through the public listing verb rather than by reaching into `$members`.
+#
+# A CHOICE, NOT THE ONLY ROUTE -- corrected 2026-09-20, because the earlier
+# wording here said the listing was the only public way to a member's facts and
+# that is wrong. `x$members[[i]]` is the documented return shape of
+# `datom_get_set()`, so `x$members[[i]]$id$version` is as public as this, and
+# simpler. The listing is used here deliberately, to exercise that verb end to
+# end.
+#
+# What genuinely does not exist is a by-NAME lookup that stops at the record:
+# `datom_fetch_member()` resolves a name safely and then fetches the data. Filed
+# as issue #112. It matters for these two helpers, because the listing is
+# label-exploded -- one row per member per label -- and goes silently plural when
+# a name is cited at two versions, which is why both wrap the result in
+# `unique()` and why a set with such a pair would need a label filter here.
 pinned_at <- function(x, nm) {
   rows <- datom_list_members(x)
   unique(rows$version[rows$name == nm])
