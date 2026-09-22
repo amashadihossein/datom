@@ -84,10 +84,23 @@ bucket and repo naming for the credentialed run, and how aggressively NEWS is cu
   `R/conn.R` is what protects this, not the guard beside it, which is exactly what the note at that site
   says. The absent-key assertion above is what would catch it if that ever changed.
 
-- [ ] **2. The credentialed end-to-end script**
+- [ ] **2. The credentialed end-to-end script** &nbsp; **[WRITTEN 2026-09-21, NOT YET RUN FOR REAL -- see the progress note]**
 
   New `dev/e2e-sets-s3.R`: the set surface against a real GitHub repo and a real S3 bucket, in the style
   of `dev/e2e-solo-s3.R`, reusing `sandbox_store()` / `sandbox_up()` / `sandbox_down()`.
+
+  **IT IS TWO REPOS, NOT ONE, AND THAT WAS FORCED RATHER THAN CHOSEN (owner-decided 2026-09-21).** The
+  first draft had one product repo onboarding CSVs and citing them. **A product repo refuses
+  `datom_sync_manifest()` and `datom_sync()`** -- it builds its artifacts, it does not import them
+  (`R/sync.R:546`, `:749`, class `datom_import_on_product`). So a set's members must live elsewhere, and
+  "elsewhere" is the case sets exist for: a citation that crosses projects. The shape is now an ordinary
+  inputs repo that onboards files exactly as `vignette("start-on-s3")` describes, plus a product repo in
+  its own directory whose set cites it. **That buys a fifth thing the offline script cannot reach** -- a
+  member whose recorded project is not the set's -- and it is the topology the vignette will show.
+
+  **This also exposed a hole in task 1's verification**: `sandbox_up(mode = "product", populate = TRUE)`
+  can never work, and task 1 only tested `populate = FALSE`. Left for task 2's own commit to fix, by
+  refusing the pair at the door rather than failing deep inside populate.
 
   - **Assert the integration facts, not the semantics** -- the table in `design.md` 3.2 lists exactly
     which, and why each one cannot be asserted offline. Re-asserting what the 4292 unit tests and the

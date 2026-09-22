@@ -344,6 +344,20 @@ sandbox_up <- function(store, ...) {
       "i" = "Governance lives in datomanager after the gov-seam lift-out."
     ))
   }
+  # A product repo refuses datom_sync_manifest() / datom_sync(), so populating
+  # one is not a slow path or a partial success -- it always fails, and it fails
+  # several steps in, after the GitHub repo has been created. Refuse the pair
+  # here instead, where the message can say what to do.
+  if (identical(cfg$mode, "product") && isTRUE(cfg$populate)) {
+    cli::cli_abort(c(
+      "A {.code mode = \"product\"} repo cannot be populated by onboarding files.",
+      "x" = "{.fn datom_sync_manifest} refuses a product repo: it builds its
+             artifacts rather than importing them.",
+      "i" = "Use {.code populate = FALSE} here, and stand up a second ordinary
+             sandbox for the inputs the set will cite.",
+      "i" = "See {.file dev/e2e-sets-s3.R} for that two-repo shape."
+    ))
+  }
 
   local_path <- fs::path(cfg$base_dir, cfg$repo_name)
 
