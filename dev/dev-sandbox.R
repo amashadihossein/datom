@@ -51,7 +51,17 @@
     region       = "us-east-1",
     base_dir     = fs::path_abs("../datom-test"),  # sibling of datom project
     populate     = TRUE,             # seed with example data?
-    n_months     = 2L                # how many monthly snapshots to sync
+    n_months     = 2L,               # how many monthly snapshots to sync
+    # The second artifact kind. Both NULL by default, which is what keeps every
+    # existing caller producing exactly the repo it produced before: absent means
+    # "ordinary data repo" to everything that reads project.yaml, and there is no
+    # `mode: standard` to write for that state.
+    #
+    # Supply BOTH to get a repo a set can be written into -- datom_init_repo()
+    # refuses `set` without `mode`, so a half-supplied pair fails at the door
+    # rather than yielding a repo that looks fine until the first set write.
+    mode         = NULL,             # "product" for a repo that owns one set
+    set          = NULL              # that set's name; required with mode
   )
 }
 
@@ -310,9 +320,14 @@ sandbox_store_local <- function(path,
 #' Creates a GitHub data repo (via datom_init_repo with create_repo = TRUE),
 #' and optionally populates with example study data. No governance is attached.
 #'
+#' Pass `mode = "product", set = "<name>"` for a repo that can hold a **set** --
+#' `datom_write_set()` refuses a repo that does not declare both. Without them you
+#' get an ordinary data repo, exactly as before.
+#'
 #' @param store A solo `datom_store` object (from `sandbox_store()` /
 #'   `sandbox_store_local()`).
-#' @param ... Override any defaults from .sandbox_defaults().
+#' @param ... Override any defaults from .sandbox_defaults(), including `mode` and
+#'   `set`.
 #' @return A sandbox environment list (pass to sandbox_down/sandbox_reset).
 sandbox_up <- function(store, ...) {
   cfg <- utils::modifyList(.sandbox_defaults(), list(...))
@@ -352,12 +367,21 @@ sandbox_up <- function(store, ...) {
   # ---- Initialize data repo (creates GitHub data repo if needed) -----------
   cli::cli_alert_info("Initializing datom repo at {.path {local_path}}...")
 
+  # `mode` and `set` are passed straight through, NULL and all. That is safe here
+  # for a reason worth knowing rather than assuming: `datom_init_repo()` assigns
+  # these two onto the config list AFTER building it, so a NULL removes the
+  # element instead of writing `mode: ~`. Inside a `list()` constructor a NULL is
+  # a present element and yaml writes it as a declared empty value, which is a
+  # different document from an absent key. See the note at that assignment in
+  # R/conn.R -- the placement is what protects it, not the `if`.
   datom::datom_init_repo(
     path         = local_path,
     project_name = cfg$project_name,
     store        = store,
     create_repo  = create_repo,
-    repo_name    = cfg$repo_name
+    repo_name    = cfg$repo_name,
+    mode         = cfg$mode,
+    set          = cfg$set
   )
 
   cli::cli_alert_success("datom repo initialized and pushed.")

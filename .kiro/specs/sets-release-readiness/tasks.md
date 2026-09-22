@@ -36,7 +36,7 @@ bucket and repo naming for the credentialed run, and how aggressively NEWS is cu
 
 ---
 
-- [ ] **1. `sandbox_up()` learns the second artifact kind**
+- [x] **1. `sandbox_up()` learns the second artifact kind** &nbsp; **[DONE 2026-09-21 -- see the DONE record]**
 
   The smallest possible first step, and it unblocks everything else in task 2. `sandbox_up()`
   (`dev/dev-sandbox.R`) calls `datom_init_repo()` with no `mode` or `set`, so it cannot create a repo a
@@ -53,6 +53,36 @@ bucket and repo naming for the credentialed run, and how aggressively NEWS is cu
     (`R/conn.R`, the note about `list()` versus assignment).
   - `dev/` is not shipped, so this is dev tooling. **No test count change is expected.**
   - _Requirements: R1.1. Design: 3.1. Invariants: I1 (no `R/` behaviour change)._
+
+  **DONE RECORD (2026-09-21).** Four lines of change in `dev/dev-sandbox.R`: `mode` and `set` in
+  `.sandbox_defaults()`, both passed through to `datom_init_repo()`. Tests **4292** (FAIL 0 / WARN 0 /
+  SKIP 0), unchanged as expected -- `dev/` is not shipped and no package code was touched.
+
+  **Verified in four directions, offline, with no credentials** -- a local store plus a local bare remote
+  plus a dummy PAT, which works because a local remote needs no authentication and the token is only a
+  role selector:
+
+  | Check | Result |
+  |---|---|
+  | `mode`/`set` supplied | `project.yaml` carries `mode: product`, `set: trial_product` |
+  | nothing supplied | **neither key present at all** -- and asserted on the raw file text, not just on the parsed names, because the failure being excluded is `mode: ~` rather than a missing name |
+  | a real set write into the product repo | accepted, `action = "full"`, and it took the set's name from the config rather than an argument |
+  | a set write into the plain repo | refused, condition class `datom_set_mode_required` |
+
+  **The third row is worth more than it looks, and it changes what task 2 uniquely owes.** That set was
+  written through `datom_init_repo()` + `datom_get_conn()` -- the real entry path, the thing
+  `dev/e2e-sets.R` cannot reach because it hand-builds the connection. So the *shape* of AC5 is now
+  demonstrated offline. What remains genuinely exclusive to the credentialed script is narrower than
+  `design.md` 3.2 implies: **GitHub repo creation through the API, S3 as the store, and `ref.json`
+  resolution against a real one.** Task 2 should not spend its length re-proving the entry path in the
+  abstract; it should prove the parts only real infrastructure can.
+
+  **Why the NULL passthrough is safe, recorded because it looks careless.** `cfg$mode` is `NULL` for
+  every existing caller and is passed anyway. That is fine because `datom_init_repo()` assigns these two
+  onto its config list **after** building it, and assigning NULL to a list element removes it -- whereas a
+  NULL inside a `list()` constructor is a present element that yaml writes as `mode: ~`. The placement in
+  `R/conn.R` is what protects this, not the guard beside it, which is exactly what the note at that site
+  says. The absent-key assertion above is what would catch it if that ever changed.
 
 - [ ] **2. The credentialed end-to-end script**
 
