@@ -84,7 +84,7 @@ bucket and repo naming for the credentialed run, and how aggressively NEWS is cu
   `R/conn.R` is what protects this, not the guard beside it, which is exactly what the note at that site
   says. The absent-key assertion above is what would catch it if that ever changed.
 
-- [ ] **2. The credentialed end-to-end script** &nbsp; **[WRITTEN 2026-09-21, NOT YET RUN FOR REAL -- see the progress note]**
+- [x] **2. The credentialed end-to-end script** &nbsp; **[DONE 2026-09-23 -- passed against real GitHub and real S3. See the DONE record; one item is left open there and it needs the owner, not a session.]**
 
   New `dev/e2e-sets-s3.R`: the set surface against a real GitHub repo and a real S3 bucket, in the style
   of `dev/e2e-solo-s3.R`, reusing `sandbox_store()` / `sandbox_up()` / `sandbox_down()`.
@@ -121,6 +121,54 @@ bucket and repo naming for the credentialed run, and how aggressively NEWS is cu
   - Not added to CI, and not run by `R CMD check` (R1.7, I5).
   - _Requirements: R1 (all). Design: 3. Acceptance: AC1, AC2, AC3, AC4, AC5, AC6. Properties: P1, P2,
     P3, P4._
+
+  **DONE RECORD (2026-09-23). It passed against real GitHub and real S3**, owner-run -- AWS credentials
+  are not reachable from a session here, so every real run of this script is the owner's. Tests **4292**
+  (FAIL 0 / WARN 0 / SKIP 0) throughout; no package code was touched, only `dev/`.
+
+  **It took three rounds, and the two defects are worth carrying because neither was findable the way I
+  was looking.**
+
+  | Round | What broke | Why the previous check missed it |
+  |---|---|---|
+  | 1 (offline dry run) | one product repo onboarding its own CSVs | a design error, not a typo: **a product repo refuses `datom_sync()`**. Reading the requirement would never have caught it; running it did, in seconds, for free |
+  | 2 (first real run) | `datom_store_s3()` aborted -- no credential defaults, and the reader store passed none | **the offline dry run could not catch it.** The local backend takes no credentials, so that line was never the line under test. A whole class of defect lives exactly there |
+  | 3 | nothing | passed |
+
+  **Round 2's lesson generalises and belongs in the notes**: an offline stand-in for a credentialed path
+  cannot test the credential plumbing, so the lines it replaces are the lines that stay unexercised.
+  Swapping the backend is a good way to test *logic* and a useless way to test *configuration*.
+
+  **The shape it settled into, which is the shape the vignette will show**: an ordinary inputs repo that
+  onboards CSVs exactly as `vignette("start-on-s3")` describes, plus a product repo in its own directory
+  whose set cites it. Two repos was forced rather than chosen -- see the note in the task body -- and it
+  bought a fifth thing the offline script cannot reach: **a member whose recorded project is not the
+  set's.**
+
+  **Teardown is a separate step, and that came from the owner watching a run.** The walk leaves a live
+  product repo citing a live inputs repo; the original `finally` destroyed it on the way out, including
+  on failure, which is exactly when that state is worth having. `DATOM_E2E_KEEP=1` now defers it and
+  prints the connections, a few things to try, and the `e2e_teardown()` call. One trap is documented at
+  the point it bites: **source the script, do not `Rscript` it, when keeping things up** -- otherwise the
+  session exits and takes the connections with it.
+
+  **What is verified, and by what.**
+
+  | Claim | Verified by |
+  |---|---|
+  | AC1 -- a real run passes | the owner's run, 2026-09-23 |
+  | AC3 -- teardown leaves nothing | the run's own post-teardown listing: both prefixes empty, both clones gone, and `gh repo view` failing for both repos |
+  | AC5 -- a set written through the real entry path reads back | the run, plus the offline entry-path coverage task 1 added |
+  | AC6 -- a storage-only reader with no PAT resolves the set and fetches a member's data | the run, including the half that matters: the product reader **cannot** reach the data alone, and can once given the inputs project's credentials |
+  | AC2 -- a failed claim exits non-zero | **demonstrated offline**, not against real infrastructure: three failing claims produced `SETS_E2E_S3_RESULT: FAILED` and a non-zero exit. The exit path is shared code, so a deliberate break against S3 would travel the same line -- recorded as the weaker evidence it is rather than claimed as equivalent |
+  | AC4 -- a clear failure on missing credentials | **NOT independently verified.** The guard is one `nzchar(Sys.getenv("GITHUB_PAT"))` check before anything is built, and it has never been watched firing |
+
+  **ONE ITEM IS LEFT OPEN AND IT NEEDS THE OWNER.** The transcript of the passing run was not captured
+  -- AC1 asks for it in this record, and what exists is the owner's confirmation plus a partial paste from
+  the **failing** round-2 run. This matters beyond bookkeeping: **task 3's vignette must show output that
+  was observed** (R2.4, AC8), and the only source of real S3 output is a run. So the next real run should
+  be captured whole, and it is the input to the vignette rather than a formality. Until then, task 3 can
+  be drafted but its output blocks cannot be filled in honestly.
 
 - [ ] **3. The vignette that ships**
 
