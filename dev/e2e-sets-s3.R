@@ -33,14 +33,27 @@
 #     The bucket is yours and is never deleted; only this run's prefixes are.
 #   - gh CLI, used only to check the repos are gone afterwards.
 #
-# RUN:
+# RUN, two ways:
+#
+#   # 1. one shot -- walk, assert, tear down, report
 #   Rscript ~/projects/dev/datom/dev/e2e-sets-s3.R
+#
+#   # 2. leave it standing so you can query it, then clean up by hand.
+#   #    Source it rather than Rscript it, or the session exits with the objects.
+#   Sys.setenv(DATOM_E2E_KEEP = "1")
+#   source("~/projects/dev/datom/dev/e2e-sets-s3.R")
+#   # ... poke at in_conn / pr_conn / reader ...
+#   e2e_teardown()
 #
 # Each run gets its own timestamped prefixes, repo names and directories, so
 # runs never collide. Teardown removes both repos, both prefixes and both
 # clones, then PROVES it by listing what is left -- sandbox_down() reports
 # success whether or not anything was there, so its return value is not
 # evidence.
+#
+# TEARDOWN IS A SEPARATE STEP, not a `finally`. The walk leaves a live product
+# repo citing a live inputs repo, which is worth querying -- and on a failure it
+# is the state you need in order to understand the failure.
 #
 # Not in CI: it costs real resources. Every claim is asserted; non-zero exit on
 # any mismatch.
@@ -96,6 +109,12 @@ if (!nzchar(Sys.getenv("AWS_ACCESS_KEY_ID")) ||
 }
 gh_ok <- system2("gh", "--version", stdout = FALSE, stderr = FALSE) == 0L
 if (!gh_ok) cat("NOTE: no gh CLI -- the repos-are-gone check will be skipped.\n")
+
+# Keep the repos and the S3 prefixes standing after the walk, so they can be
+# queried. Teardown then becomes an explicit `e2e_teardown()` call.
+KEEP <- nzchar(Sys.getenv("DATOM_E2E_KEEP"))
+cat("teardown:", if (KEEP) "DEFERRED -- call e2e_teardown() when done"
+    else "automatic at the end", "\n")
 
 # --- run identity ------------------------------------------------------------
 stamp    <- format(Sys.time(), "%Y%m%d%H%M%S")
@@ -220,10 +239,13 @@ tryCatch({
 
   # --- 4. A reader with no clone and no PAT ---------------------------------
   hr("4. the citation resolves for a reader with S3 only")
-  reader_store <- datom_store(
-    data = datom_store_s3(bucket = bucket, prefix = pr_prefix,
-                          region = "us-east-1", validate = FALSE),
-    github_pat = NULL, validate = FALSE)
+  # Reuse the store COMPONENT the run already built rather than constructing a
+  # fresh one: `datom_store_s3()` has no credential defaults, so rebuilding it
+  # here duplicates the credential plumbing and drifts from whatever
+  # sandbox_store() resolved. Dropping the PAT is the only difference that
+  # matters -- that is what makes this a reader.
+  reader_store <- datom_store(data = pr_store$data, github_pat = NULL,
+                              validate = FALSE)
   reader <- quiet(datom_get_conn(store = reader_store, project_name = pr_proj))
   claim("the reader has no clone", is.null(reader$path), TRUE)
   claim("the reader is a reader", reader$role, "reader")
@@ -243,10 +265,8 @@ tryCatch({
   claim("the product reader cannot reach the data on its own",
         !is.null(no_access), TRUE)
 
-  in_reader_store <- datom_store(
-    data = datom_store_s3(bucket = bucket, prefix = in_prefix,
-                          region = "us-east-1", validate = FALSE),
-    github_pat = NULL, validate = FALSE)
+  in_reader_store <- datom_store(data = in_store$data, github_pat = NULL,
+                                 validate = FALSE)
   in_reader <- quiet(datom_get_conn(store = in_reader_store,
                                     project_name = in_proj))
   dm_data <- quiet(datom_fetch_member(in_reader, x, "dm"))
@@ -297,8 +317,17 @@ tryCatch({
   claim("the version is unchanged", third$metadata_sha, second$metadata_sha)
 
   ok <- TRUE
-}, finally = {
-  hr("9. teardown, then check what is left")
+}, error = function(e) {
+  cat("\nERROR:", conditionMessage(e), "\n")
+  .failures <<- .failures + 1L
+})
+
+# --- 9. Teardown, as its own step -------------------------------------------
+# Separated deliberately. The walk above leaves two live repos and two live S3
+# prefixes, and that state is worth querying -- so teardown is a function you
+# call, not something that fires in a `finally`.
+e2e_teardown <- function() {
+  hr("teardown, then check what is left")
   for (e in list(pr_env, in_env)) {
     if (!is.null(e)) try(quiet(sandbox_down(e, confirm = FALSE)), silent = FALSE)
   }
@@ -320,12 +349,51 @@ tryCatch({
   } else {
     cat("SKIPPED: no gh CLI, cannot check the repos are gone.\n")
   }
-})
+  invisible(.failures)
+}
 
 hr("summary")
 if (.failures == 0L && ok) {
-  cat("All claims held.\nSETS_E2E_S3_RESULT: SUCCESS\n")
+  cat("All claims held so far.\n")
 } else {
   cat(.failures, "claim(s) FAILED -- see the << FAIL markers above.\n")
-  stop("SETS_E2E_S3_RESULT: FAILED (teardown attempted).", call. = FALSE)
+}
+
+if (KEEP) {
+  cat("\n--- LEFT STANDING for you to poke at (DATOM_E2E_KEEP is set) ---\n")
+  # Guarded: on an early failure one or both sandboxes may not exist, and this
+  # block must still print the teardown instruction rather than erroring over it.
+  cat("inputs repo :", if (is.null(in_env)) "(not created)" else in_env$local_path, "\n")
+  cat("product repo:", if (is.null(pr_env)) "(not created)" else pr_env$local_path, "\n")
+  cat("s3          : s3://", bucket, "/", in_prefix, "  and  ",
+      pr_prefix, "\n", sep = "")
+  cat("\nobjects in this session:\n")
+  cat("  in_conn, pr_conn        developer connections to each repo\n")
+  cat("  reader, in_reader       storage-only connections, no PAT, no clone\n")
+  cat("  set_name                \"", set_name, "\"\n", sep = "")
+  cat("\nthings to try:\n")
+  cat('  x <- datom_get_set(pr_conn, set_name); print(x)\n')
+  cat('  datom_list_members(x)\n')
+  cat('  datom_structure_members(x, by = "type")\n')
+  cat('  datom_history(pr_conn, set_name)\n')
+  cat('  datom_list(in_conn)\n')
+  cat('  datom_validate(pr_conn)\n')
+  cat('  datom_fetch_member(in_reader, x, "dm")   # data needs the inputs project\n')
+  cat("\nWHEN DONE -- this leaves real repos and real objects behind:\n")
+  cat("  e2e_teardown()\n")
+  if (!interactive()) {
+    cat("\nNOTE: run non-interactively, so this session is about to exit and\n",
+        "      those objects go with it. Source the script from an R session\n",
+        "      instead if you want to query them:\n",
+        '        source("~/projects/dev/datom/dev/e2e-sets-s3.R")\n', sep = "")
+  }
+} else {
+  e2e_teardown()
+  hr("final")
+  if (.failures == 0L && ok) {
+    cat("All claims held.\nSETS_E2E_S3_RESULT: SUCCESS\n")
+  } else {
+    cat(.failures, "claim(s) FAILED.\n")
+    stop("SETS_E2E_S3_RESULT: FAILED (teardown ran).", call. = FALSE)
+  }
 }
