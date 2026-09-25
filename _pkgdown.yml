@@ -139,6 +139,11 @@ articles:
     contents:
       - start-on-s3
 
+  - title: "Citable sets"
+    desc: "Name and cite an exact collection of data versions."
+    contents:
+      - citable-sets
+
   - title: "Lineage"
     desc: "Trace how derived tables descend from their sources."
     contents:

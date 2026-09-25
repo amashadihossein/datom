@@ -57,11 +57,16 @@
 #   # ... poke at in_conn / pr_conn / reader ...
 #   e2e_teardown()
 #
-# Each run gets its own timestamped prefixes, repo names and directories, so
-# runs never collide. Teardown removes both repos, both prefixes and both
-# clones, then PROVES it by listing what is left -- sandbox_down() reports
-# success whether or not anything was there, so its return value is not
-# evidence.
+# NAMES ARE FIXED, and the script CLEANS UP BEFORE IT STARTS as well as after.
+# So a run that died half way leaves at most one set of leftovers, the next run
+# clears them, and anything sitting in your account or bucket is named plainly
+# enough to delete by eye. Timestamped names were the earlier approach; they
+# isolate runs but accumulate orphans that nothing ever collects, which is the
+# quieter failure.
+#
+# Teardown removes both repos, both prefixes and both clones, then PROVES it by
+# listing what is left -- sandbox_down() reports success whether or not anything
+# was there, so its return value is not evidence.
 #
 # TEARDOWN IS A SEPARATE STEP, not a `finally`. The walk leaves a live product
 # repo citing a live inputs repo, which is worth querying -- and on a failure it
@@ -70,6 +75,56 @@
 # Not in CI: it costs real resources. Every claim is asserted; non-zero exit on
 # any mismatch.
 # -----------------------------------------------------------------------------
+
+# --- credentials -------------------------------------------------------------
+# ENVIRONMENT VARIABLES ONLY. This script deliberately does NOT touch keyring.
+#
+# Why: on macOS, keychain access is authorised per application binary, so R.app,
+# RStudio's R and the `Rscript` binary each need their own grant -- and a named
+# (non-login) keychain locks on its own timer on top of that. The result is a
+# password prompt on almost every run, which is what this used to do. Reading the
+# environment cannot prompt, so it cannot surprise you.
+#
+# SET THEM ONCE in ~/.Renviron, which R reads at startup in every context -- the
+# console, RStudio, and Rscript -- with no prompt, ever:
+#
+#   AWS_ACCESS_KEY_ID=AKIA...
+#   AWS_SECRET_ACCESS_KEY=...
+#
+# Then `usethis::edit_r_environ()` to edit it, and restart R once. Treat that file
+# the way you treat ~/.aws/credentials: user-readable only (chmod 600), never
+# committed. If you would rather not put them on disk, set them for the session
+# instead:
+#
+#   Sys.setenv(AWS_ACCESS_KEY_ID = "...", AWS_SECRET_ACCESS_KEY = "...")
+#
+# Pulling them out of a keychain is fine too -- just do it in YOUR session before
+# sourcing this file, so the prompt happens once where you expect it, rather than
+# inside a script you run repeatedly.
+#
+# GITHUB_PAT needs no setup: it comes from `gh auth token` when the gh CLI is
+# logged in, which needs no keychain of its own and already carries the
+# delete_repo scope teardown requires.
+.e2e_pat_from_gh <- function() {
+  if (nzchar(Sys.getenv("GITHUB_PAT"))) return("environment")
+  if (system2("gh", "--version", stdout = FALSE, stderr = FALSE) != 0L) {
+    return(NA_character_)
+  }
+  tok <- tryCatch(paste(system2("gh", c("auth", "token"), stdout = TRUE,
+                                stderr = FALSE), collapse = ""),
+                  error = function(e) "")
+  if (!nzchar(tok)) return(NA_character_)
+  Sys.setenv(GITHUB_PAT = tok)
+  "gh auth token"
+}
+
+.e2e_sources <- c(
+  GITHUB_PAT            = .e2e_pat_from_gh(),
+  AWS_ACCESS_KEY_ID     = if (nzchar(Sys.getenv("AWS_ACCESS_KEY_ID")))
+                            "environment" else NA_character_,
+  AWS_SECRET_ACCESS_KEY = if (nzchar(Sys.getenv("AWS_SECRET_ACCESS_KEY")))
+                            "environment" else NA_character_
+)
 
 .datom_pkg_dir <- path.expand("~/projects/dev/datom")
 if (!exists("sandbox_up")) {
@@ -110,14 +165,28 @@ proj_of <- function(x, nm) {
 
 # --- 0. Check credentials before creating anything ---------------------------
 hr("0. preflight")
+for (nm in names(.e2e_sources)) {
+  cat(sprintf("%-24s %s\n", nm,
+              if (is.na(.e2e_sources[[nm]])) "NOT FOUND"
+              else .e2e_sources[[nm]]))
+}
 if (!nzchar(Sys.getenv("GITHUB_PAT"))) {
-  stop("GITHUB_PAT is not set. It needs repo + delete_repo scope. See the header.",
+  stop("GITHUB_PAT is not set and `gh auth token` gave nothing.\n",
+       "  Fix: run `gh auth login` (the token needs repo + delete_repo), or\n",
+       "  Sys.setenv(GITHUB_PAT = \"...\") before sourcing this file.",
        call. = FALSE)
 }
 if (!nzchar(Sys.getenv("AWS_ACCESS_KEY_ID")) ||
     !nzchar(Sys.getenv("AWS_SECRET_ACCESS_KEY"))) {
-  cat("NOTE: AWS keys are not in the environment; paws may still find them in",
-      "~/.aws.\n")
+  stop("AWS credentials are not in the environment.\n",
+       "  Easiest fix, once, no prompts ever again -- put these two lines in\n",
+       "  ~/.Renviron (usethis::edit_r_environ()) and restart R:\n\n",
+       "    AWS_ACCESS_KEY_ID=...\n",
+       "    AWS_SECRET_ACCESS_KEY=...\n\n",
+       "  Or for this session only:\n",
+       "    Sys.setenv(AWS_ACCESS_KEY_ID = \"...\", AWS_SECRET_ACCESS_KEY = \"...\")\n\n",
+       "  This script does not read your keychain on purpose -- see the header.",
+       call. = FALSE)
 }
 gh_ok <- system2("gh", "--version", stdout = FALSE, stderr = FALSE) == 0L
 if (!gh_ok) cat("NOTE: no gh CLI -- the repos-are-gone check will be skipped.\n")
@@ -133,24 +202,31 @@ stamp    <- format(Sys.time(), "%Y%m%d%H%M%S")
 bucket   <- "datom-test"
 set_name <- "trial_product"
 
-# Case A layout: one bucket, one per-run root, both projects at NAMED prefixes
-# beneath it. Uniform depth, so every project is at <root>/<name>/datom/.
-run_root  <- paste0("sets-e2e-", stamp)
+# Case A layout: one bucket, one root, both projects at NAMED prefixes beneath
+# it. Uniform depth, so every project is at <root>/<name>/datom/.
+#
+# FIXED NAMES, NOT TIMESTAMPED, and the pre-clean below is what makes that safe.
+# Timestamps isolate runs, but they make a failed run leave an orphan repo and an
+# orphan prefix that nothing will ever collect -- and orphans are quiet, while a
+# name collision is loud. Fixed names plus delete-if-exists means at most one set
+# of leftovers can exist, the next run clears it, and anything left behind is
+# named so you can find it by eye. The trade given up is concurrent runs, which a
+# script one person runs by hand does not need.
+run_root  <- "sets-e2e"
 
 in_proj   <- "STUDY_001"
-in_repo   <- paste0("datom-sets-e2e-inputs-", stamp)
+in_repo   <- "datom-sets-e2e-inputs"
 in_prefix <- paste0(run_root, "/imported/")
 
 pr_proj   <- "STUDY_ADAM"
-pr_repo   <- paste0("datom-sets-e2e-product-", stamp)
+pr_repo   <- "datom-sets-e2e-product"
 pr_prefix <- paste0(run_root, "/adam/")
 
-base_dir <- fs::path_expand(fs::path("~/projects/dev/datom-test",
-                                     paste0("sets-e2e-s3-", stamp)))
-if (fs::dir_exists(base_dir)) fs::dir_delete(base_dir)
-fs::dir_create(base_dir)
+# Fixed too, and emptied by the pre-clean below rather than here, so there is one
+# place that decides what a leftover is.
+base_dir <- fs::path_expand("~/projects/dev/datom-test/sets-e2e-s3")
 
-cat("\nrun:    ", stamp,
+cat("\nstarted:", stamp,
     "\ninputs: ", in_repo, " -> s3://", bucket, "/", in_prefix,
     "\nproduct:", pr_repo, " -> s3://", bucket, "/", pr_prefix,
     "\nlocal:  ", as.character(base_dir), "\n", sep = "")
@@ -159,6 +235,38 @@ in_store <- sandbox_store(bucket = bucket, prefix = in_prefix,
                           region = "us-east-1")
 pr_store <- sandbox_store(bucket = bucket, prefix = pr_prefix,
                           region = "us-east-1")
+
+# --- 0b. Pre-clean: make a failed previous run harmless ----------------------
+# The names are fixed, so a leftover from a failed run would otherwise block
+# `datom_init_repo()` (GitHub refuses a duplicate name) and trip the
+# namespace-occupied check (storage still holds another project's manifest).
+#
+# Both halves matter and they fail differently: the repo is refused loudly, the
+# prefix is refused loudly too, but a HALF-cleaned pair is the state that
+# confuses -- so clean both every time rather than checking whether the last run
+# succeeded. Reuses the sandbox's own helpers, so there is one implementation of
+# "remove a GitHub repo" and one of "wipe a namespace".
+hr("0b. pre-clean anything a previous run left behind")
+for (nm in c(in_repo, pr_repo)) {
+  full <- tryCatch(.sandbox_repo_full_name(list(github_org = NULL),
+                                           repo_name = nm),
+                   error = function(e) NA_character_)
+  if (is.na(full)) next
+  exists_rc <- system2("gh", c("repo", "view", shQuote(full)),
+                       stdout = FALSE, stderr = FALSE)
+  if (exists_rc == 0L) {
+    cat("found leftover repo", full, "-- deleting\n")
+    try(.sandbox_gh_repo_delete(full, "leftover data repo"), silent = FALSE)
+  } else {
+    cat("no leftover repo", full, "\n")
+  }
+}
+for (s in list(list(st = pr_store, lab = "product"),
+               list(st = in_store, lab = "imported"))) {
+  try(quiet(.sandbox_wipe_storage(s$st, s$lab)), silent = FALSE)
+}
+if (fs::dir_exists(base_dir)) fs::dir_delete(base_dir)
+fs::dir_create(base_dir)
 
 in_env <- NULL; pr_env <- NULL; ok <- FALSE
 in_full <- NA_character_; pr_full <- NA_character_
