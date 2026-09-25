@@ -22,6 +22,21 @@ done that, start there.
 Output shown below is from a real run against a sandbox bucket. Your project
 names, bucket and hashes will differ.
 
+## Where you left off
+
+The previous article left you with three things: a `store` pointing at your
+bucket, a `conn` to the repo that onboards data, and `dev_dir`, its working
+directory.
+
+From here on there are **two** connections, so this article renames that one to
+say which it is:
+
+```{r}
+imported <- conn   # the connection to the onboarding repo, from start-on-s3
+```
+
+Everything called `imported` below is that connection.
+
 ## The problem
 
 You built a result from a handful of tables. Months later, half of those tables
@@ -69,7 +84,11 @@ a plain string, and this is a convention rather than a rule.
 Create it the same way as the first repo, with two extra arguments:
 
 ```{r}
-product_store <- datom_store_s3(
+# A different working directory from the onboarding repo's dev_dir.
+product_dir <- fs::path(tempdir(), "study_001_adam")
+
+# Same bucket as before, a prefix beside the onboarded data.
+product_data <- datom_store_s3(
   bucket     = "study-001-datom",
   prefix     = "adam/",
   region     = "us-east-1",
@@ -77,18 +96,22 @@ product_store <- datom_store_s3(
   secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY")
 )
 
+product_store <- datom_store(
+  data       = product_data,
+  github_pat = Sys.getenv("GITHUB_PAT")
+)
+
 datom_init_repo(
-  path         = product_dir,        # a DIFFERENT directory from the first repo
+  path         = product_dir,
   project_name = "STUDY_ADAM",
-  store        = datom_store(data = product_store,
-                             github_pat = Sys.getenv("GITHUB_PAT")),
+  store        = product_store,
   create_repo  = TRUE,
   repo_name    = "study-001-adam",
   mode         = "product",          # this repo builds; it does not onboard
   set          = "trial_product"     # the name of the set it owns
 )
 
-product <- datom_get_conn(path = product_dir, store = product_store_full)
+product <- datom_get_conn(path = product_dir, store = product_store)
 print(product)
 #> -- datom connection
 #> * Project: "STUDY_ADAM"
@@ -170,9 +193,14 @@ and no GitHub token are needed** -- this is the point of a set:
 
 ```{r}
 reader_store <- datom_store(
-  data = datom_store_s3(bucket = "study-001-datom", prefix = "adam/",
-                        region = "us-east-1",
-                        access_key = ..., secret_key = ...)
+  data = datom_store_s3(
+    bucket     = "study-001-datom",
+    prefix     = "adam/",
+    region     = "us-east-1",
+    access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
+    secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY")
+  )
+  # no github_pat: that absence is what makes this a reader
 )
 reader <- datom_get_conn(store = reader_store, project_name = "STUDY_ADAM")
 
