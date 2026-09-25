@@ -107,21 +107,35 @@ choice; if a better one turns up while writing, take it.
 
 ### 4.2 Shape
 
-Why before how (R2.2), so the first screen contains no function call:
+Why before how (R2.2), so the first screen contains no function call. It picks up where
+`vignette("start-on-s3")` leaves off (R2.8): the reader already has a study onboarded at
+`s3://<bucket>/<study>/datom/`, and this article makes a citable product from it.
 
-1. **The problem.** Fifty inputs, thirty of which moved since the analysis ran. "Which data produced
-   this result" has no answer a person can write down.
-2. **What a set is.** A name and a version that resolve to exact versions of exact artifacts. A citation.
-3. **Build one.** `datom_assemble_set()` -> `datom_add_member()` -> `datom_write_set()`, with labels
-   introduced as the navigation axis rather than as decoration.
-4. **Cite it, and read it somewhere else.** The storage-only reader with no clone -- the property that
-   makes a set worth having, and the one a reader will not guess.
-5. **An input moves.** `datom_update_members()`, the report before the write, and that a refresh finding
-   nothing mints no version.
-6. **Retire one.** `datom_remove_members()`, and that both edits land in one commit message.
-7. **What a set does not do** (R2.6): holds no data, never drifts to latest, changes nothing about its
-   members. Plus the **one-level rule** (R2.5), which is where a reader's assumption of recursion gets
-   corrected.
+1. **The problem.** A result was built from twenty tables. Months later, half of them have new
+   versions. "Which exact data produced this result" has no answer anyone wrote down.
+2. **What a set is.** A citable list of exact data versions, with a name and a version of its own.
+   Not a copy of the data -- a list of pointers.
+3. **A second repo for the product.** The onboarding repo from `start-on-s3` holds raw data; it will
+   not hold a set (it onboards, it does not build). So create a product repo beside it -- same bucket,
+   a prefix like `adam` -- in its own working directory (R2.9, Case A). This is the step the one-repo
+   draft was missing, and it is where the reader learns why there are two.
+4. **Build the set.** `datom_assemble_set()` -> `datom_add_member()` -> `datom_write_set()`, citing the
+   onboarded tables by version. Labels introduced as the way you find members later, not decoration.
+5. **Cite it, and read it from elsewhere.** A reader with storage access and no git clone resolves the
+   set -- the property that makes it worth having, and one a reader will not guess.
+6. **An input moves.** A new month lands in the onboarding repo; `datom_update_members()` repoints the
+   set, reports what moved before writing, and a refresh that finds nothing writes nothing.
+7. **Retire one.** `datom_remove_members()`, and that a repoint plus a drop land in one commit message.
+8. **What a set does not do** (R2.6): holds no data, never drifts to "latest", changes nothing about
+   its members. Plus the **one-level rule** (R2.5) -- a set can cite another set, and reading it hands
+   back a pointer rather than opening it, so cost does not compound. One closing sentence points at the
+   cross-study, cross-bucket pool as a later article (Case B), with no detail (R2.9).
+9. **Teardown**, matching `start-on-s3`'s: delete both repos and both prefixes, so a reader following
+   along on real infrastructure is not left paying for it.
+
+Language throughout is plain (R2.10): "a citable list of exact data versions", "one entry in that
+list", never the spec's own vocabulary. The transcripts come from the credentialed run's output
+(R2.4), which uses this exact layout, so they can be pasted rather than composed.
 
 ### 4.3 Chunks are not evaluated, and that is a constraint on honesty
 

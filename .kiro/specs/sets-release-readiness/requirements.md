@@ -84,6 +84,19 @@ A script under `dev/`, in the style of `dev/e2e-solo-s3.R`, that exercises the s
   writing one changes nothing about its members.
 - **R2.7** Whether this is one vignette or two -- build a set / cite and edit one -- is a design
   decision, taken in `design.md` rather than here.
+- **R2.8** It follows on from `vignette("start-on-s3")` rather than repeating it: the reader is assumed
+  to have onboarded a study's data already, and the vignette reuses that store and project instead of
+  re-teaching credentials, bucket setup and store construction. It links back in its first paragraph and
+  says plainly that `start-on-s3` should be read first.
+- **R2.9** It uses the **Case A layout** from `.kiro/specs/datom-sets/design.md` section 20: one study,
+  one bucket, onboarding at the study's prefix and the product at a prefix beside it (e.g. `adam`). Not
+  a sibling top-level prefix, and not a second bucket. This is the common shape and the one a first
+  reader should meet; the cross-study, cross-bucket pool (Case B) is named in a single closing sentence
+  as a later article and given no detail here.
+- **R2.10** **Plain language, and jargon defined on first use or not used.** No "artifact kind", no
+  "canonical", no "namespace", no "invariant" in the prose. A set is "a citable list of exact data
+  versions"; a member is "one entry in that list". This is a how-to for a data scientist, not a
+  contributor, and the spec's own vocabulary must not leak into it.
 
 ## R3 -- `NEWS.md` becomes terse, and the detail has somewhere to go
 
