@@ -3,18 +3,22 @@
 # Sets against real infrastructure: two real GitHub repos and a real S3 bucket.
 # Sibling of dev/e2e-sets.R, which walks the same ground fully offline.
 #
-# THE SHAPE, and it is the shape a real project has:
+# THE SHAPE, and it is Case A from datom-sets design.md section 20 -- the common
+# one: a single study, one bucket, onboarding under the empty prefix and the
+# product under a prefix beside it.
 #
-#   repo 1  STUDY_001   an ordinary data repo. Onboards CSVs with datom_sync().
-#                       This is exactly what vignette("start-on-s3") walks you
-#                       through.
-#   repo 2  TRIAL_PROD  a product repo, in its own directory. Onboards nothing.
-#                       It holds a SET that cites repo 1's tables by version.
+#   s3://<bucket>/<run>/datom/         repo 1  STUDY_001   onboarded tables
+#   s3://<bucket>/<run>/adam/datom/    repo 2  STUDY_ADAM  the SET + derived work
+#
+#   repo 1  onboards CSVs with datom_sync(), exactly as vignette("start-on-s3").
+#   repo 2  is a product repo in its own directory under prefix "<run>/adam". It
+#           onboards nothing; it holds a SET citing repo 1's tables by version.
 #
 # Two repos rather than one, because a product repo REFUSES datom_sync() -- it
-# builds its artifacts, it does not import them. So a set's members have to come
-# from somewhere else, and "somewhere else" is the case sets exist for: a
-# citation that crosses projects.
+# builds its artifacts, it does not import them. So a set's members come from
+# somewhere else, and here that is a sibling prefix in the SAME bucket: the
+# ordinary "one study, its raw data plus its product" layout, not a cross-bucket
+# pool (that is Case B, and it is a later vignette).
 #
 # WHAT THIS COVERS THAT THE OFFLINE SCRIPT CANNOT:
 #   1. GitHub repo creation through the API
@@ -121,13 +125,17 @@ stamp    <- format(Sys.time(), "%Y%m%d%H%M%S")
 bucket   <- "datom-test"
 set_name <- "trial_product"
 
+# Case A layout: both prefixes under one per-run root, the product NESTED beside
+# onboarding at "<run>/adam" rather than a sibling top-level prefix. Same bucket.
+run_root  <- paste0("sets-e2e-", stamp)
+
 in_proj   <- "STUDY_001"
 in_repo   <- paste0("datom-sets-e2e-inputs-", stamp)
-in_prefix <- paste0("sets-e2e-inputs-", stamp, "/")
+in_prefix <- paste0(run_root, "/")
 
-pr_proj   <- "TRIAL_PROD"
+pr_proj   <- "STUDY_ADAM"
 pr_repo   <- paste0("datom-sets-e2e-product-", stamp)
-pr_prefix <- paste0("sets-e2e-product-", stamp, "/")
+pr_prefix <- paste0(run_root, "/adam/")
 
 base_dir <- fs::path_expand(fs::path("~/projects/dev/datom-test",
                                      paste0("sets-e2e-s3-", stamp)))
