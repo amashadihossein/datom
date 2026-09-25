@@ -184,7 +184,7 @@ bucket and repo naming for the credentialed run, and how aggressively NEWS is cu
   - `R CMD check --as-cran` stays 0E/0W with the vignette added (AC7, P5).
   - _Requirements: R2 (all). Design: 4. Acceptance: AC7, AC8. Properties: P5._
 
-- [ ] **4. `NEWS.md` goes terse, and the convention is written down**
+- [x] **4. `NEWS.md` goes terse, and the convention is written down** &nbsp; **[DONE 2026-09-25 -- 792 lines to 152. Mapping table in the DONE record.]**
 
   - **Build the mapping table before deleting anything** (`design.md` 5.1): for every claim in the
     development block, name its destination -- stays, roxygen, vignette, or nowhere. **Nowhere means it
@@ -199,6 +199,46 @@ bucket and repo naming for the credentialed run, and how aggressively NEWS is cu
   - Write the convention into `.github/copilot-instructions.md` (R3.6, AC11), including the never-cite-
     `dev/` clause, which is the durable lesson here.
   - _Requirements: R3 (all). Design: 5. Acceptance: AC9, AC10, AC11. Properties: P6._
+
+  **DONE RECORD (2026-09-25).** The development block went from **792 lines / 7,709 words to 152 lines /
+  1,509 words**, in 17 sections down to 6. Tests 4292; `R CMD check --as-cran` 0/0/0 with NEWS shipped.
+
+  **THE MAPPING, BUILT BEFORE ANYTHING WAS DELETED** (R3.2). Destinations, not word counts, are what AC9
+  asks about.
+
+  | Old section | Destination |
+  |---|---|
+  | the `artifacts` rename, its discovery-only exposure, the upgrade warning | **stays, first** -- upgrade-critical |
+  | format numbers, the writer refusals, the 0.1.1-forward bound, reads-limp/writes-stop | **stays, second** -- upgrade-critical, and its fuller form lives in `dev/datom_specification.md`, which **does not ship**, so cutting it further would have left nothing a user can read |
+  | `datom_list`/`summary`/`status` column and counter changes | stays, compressed into one bullet each |
+  | the whole set surface: write, get, member, assemble, add, fetch, list, structure, update, remove | **condensed to one bullet each, pointing at `vignette("citable-sets")`** for the narrative and `?verb` for behaviour |
+  | product mode, `include_paths`, the joint commit | one bullet, with the vignette carrying the why |
+  | `datom_validate()` on sets, payload restore | one bullet; `?datom_validate` has the detail |
+  | `kind` as identity, and the one extra version it mints per table | stays -- it changes what a user observes |
+  | `datom_repo_commit`/`push`, the `paths = NULL` asymmetry | short section, `?datom_repo_commit` for the rest |
+  | `commit_sha`, derived-not-authored, storage-copy-only, content-not-code | short section; the content-not-code paragraph **stays** because it is the one most likely to be reported as a bug |
+  | `project` field, `datom_storage_read_json`, manifest rebuild, allowlist hashing, #104 | one bullet each under "Smaller changes" |
+  | every probe count, defect narrative, rejected alternative and "what a later change must not undo" | **dropped from NEWS** -- contributor archaeology, and it is all still in `.kiro/specs/datom-sets/` |
+
+  **Verified mechanically rather than by eye**, because "did anything lose its home" is exactly the
+  question a reading misses:
+
+  * **every exported verb** named in the old block resolves to at least one of NEWS, the vignette, or
+    `man/` -- 19 verbs, **zero with no destination**;
+  * **fifteen field and concept names** (`schema_version`, `min_writer_version`, `document_sha`,
+    `datom-sv1`, `original_format`, `custom`, `set_count`, ...) likewise, zero orphans. Five survive in
+    roxygen only, which is the intended home for per-field detail and which ships;
+  * **no line in NEWS cites `dev/` or `.kiro/`** (R3.5, AC10).
+
+  **The version heading is deliberately still "development version"** (R3.7). Assigning a version pulls
+  in `DESCRIPTION`, `cran-comments.md` and the CRAN-SUBMISSION dance, which is release work rather than
+  documentation work.
+
+  **The convention is now rule 7a in `.github/copilot-instructions.md`** (AC11), including the clause
+  that caused this task to exist: never cite `dev/` or `.kiro/` from NEWS, a vignette or roxygen, because
+  both are `.Rbuildignore`d and from an installed package those paths do not exist. The previous spec
+  satisfied its documentation requirement by writing to two files that do not ship, and it took a user
+  asking where the article was to notice.
 
 - [ ] **5. Spec Completion Procedure**
 
