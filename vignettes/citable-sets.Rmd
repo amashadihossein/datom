@@ -1,0 +1,340 @@
+---
+title: "Citing a Set of Tables"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Citing a Set of Tables}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE
+)
+```
+
+This article follows on from [S3 Setup and Promotion](start-on-s3.html). It assumes
+you already have a study's data onboarded and can read it back. If you have not
+done that, start there.
+
+Output shown below is from a real run against a sandbox bucket. Your project
+names, bucket and hashes will differ.
+
+## The problem
+
+You built a result from a handful of tables. Months later, half of those tables
+have newer versions, because more data arrived. Someone asks which data produced
+the result.
+
+You can answer it if you wrote the versions down somewhere. Usually nobody did,
+or they wrote them in a slide, or the script says `read_latest()` and the answer
+no longer exists.
+
+## What a set is
+
+A **set** is a citable list of exact data versions. It has a name and a version
+of its own, so you can refer to the whole collection with one string and get
+back exactly those tables at exactly those versions -- next month, next year.
+
+Three things it is not:
+
+- It is not a copy of the data. It stores pointers, so making one is cheap and
+  costs no storage.
+- It never drifts. A set pins versions. It does not mean "whatever is current".
+- It does not change the tables it points at. Writing a set is read-only on its
+  members.
+
+## Two repositories, and why
+
+The repo from the previous article **onboards** data: files land in
+`input_files/` and `datom_sync()` turns them into versioned tables. That repo
+will not hold a set -- it imports data rather than building anything from it, and
+datom refuses to mix the two.
+
+So a product gets its own repo, alongside the first one in the same bucket:
+
+```
+s3://study-001-datom/
+    imported/datom/     the onboarded tables      (the previous article)
+    adam/datom/         the set and derived work  (this article)
+```
+
+Both prefixes are named. `imported` is the word datom uses for a table that came
+from a file, as opposed to `derived` for one written from R, so the folder and
+the metadata agree. `raw/`, `edc/` or `sdtm/` work just as well -- the prefix is
+a plain string, and this is a convention rather than a rule.
+
+Create it the same way as the first repo, with two extra arguments:
+
+```{r}
+product_store <- datom_store_s3(
+  bucket     = "study-001-datom",
+  prefix     = "adam/",
+  region     = "us-east-1",
+  access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
+  secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY")
+)
+
+datom_init_repo(
+  path         = product_dir,        # a DIFFERENT directory from the first repo
+  project_name = "STUDY_ADAM",
+  store        = datom_store(data = product_store,
+                             github_pat = Sys.getenv("GITHUB_PAT")),
+  create_repo  = TRUE,
+  repo_name    = "study-001-adam",
+  mode         = "product",          # this repo builds; it does not onboard
+  set          = "trial_product"     # the name of the set it owns
+)
+
+product <- datom_get_conn(path = product_dir, store = product_store_full)
+print(product)
+#> -- datom connection
+#> * Project: "STUDY_ADAM"
+#> * Backend: "s3"
+#> * Role: "developer"
+#> * Data root: "datom-test"
+#> * Data prefix: "sets-e2e/adam/"
+#> * Data region: "us-east-1"
+#> * Governance: not attached
+#> * Path: '/Users/.../datom-sets-e2e-product'
+#> * Data repo: <https://github.com/.../datom-sets-e2e-product.git>
+```
+
+One repo owns one set, and it names that set in its own config. You do not pass
+the name again when you write.
+
+## Build the set
+
+Look at what the onboarding repo holds:
+
+```{r}
+datom_list(imported)
+#>   name  kind current_version current_data_sha         last_updated
+#> 1   dm table        dc6ec312         0d29a580 2026-09-25T06:40:36Z
+#> 2   ex table        e79ce54d         f261dbde 2026-09-25T06:40:16Z
+```
+
+Then declare each member and write the set. A member is one entry in the list: a
+table, at one version, with optional labels.
+
+```{r}
+dm_v <- datom_history(imported, "dm")$version[1]
+ex_v <- datom_history(imported, "ex")$version[1]
+
+members <- list(
+  datom_member(imported, "dm", dm_v, tags = list(type = "input", domain = "safety")),
+  datom_member(imported, "ex", ex_v, tags = list(type = "input", domain = "exposure"))
+)
+
+datom_write_set(
+  product,
+  members,
+  tags = list(description = "Trial data cut, month 1")
+)
+#> v Wrote set "trial_product" (2 members): "ae193a04"
+```
+
+`imported` is the connection to the onboarding repo. That is how a set cites
+another project's tables: you read the version through that project's
+connection, and the pointer records which project it came from.
+
+**Labels are how you find members later.** `type` and `domain` above are your
+own words -- datom attaches no meaning to them. They are worth adding, because
+selecting members by label is what the editing functions later use.
+
+If you would rather build the list step by step, for instance in a loop over
+inputs you discover as you go:
+
+```{r}
+datom_assemble_set(product, tags = list(description = "Trial data cut, month 1")) |>
+  datom_add_member("dm", dm_v, tags = list(type = "input", domain = "safety")) |>
+  datom_add_member("ex", ex_v, tags = list(type = "input", domain = "exposure")) |>
+  datom_write_set()
+```
+
+Both produce the same set. The difference is where an error appears: building
+step by step, a bad version is reported on the line that added it.
+
+## Cite it, and read it somewhere else
+
+The set has a version, and that version is the citation:
+
+```{r}
+datom_history(product, "trial_product")[, c("version", "commit_message")]
+```
+
+Anyone with read access to the product's storage can resolve it. **No git clone
+and no GitHub token are needed** -- this is the point of a set:
+
+```{r}
+reader_store <- datom_store(
+  data = datom_store_s3(bucket = "study-001-datom", prefix = "adam/",
+                        region = "us-east-1",
+                        access_key = ..., secret_key = ...)
+)
+reader <- datom_get_conn(store = reader_store, project_name = "STUDY_ADAM")
+
+x <- datom_get_set(reader, "trial_product", version = "ae193a04")
+print(x)
+#> -- datom set: "trial_product"
+#> * Project: "STUDY_ADAM"
+#> * Version: "ae193a04aff8b757ef98fcbef228cca690b0c7332dfdd31c60e91f0680a604b5"
+#> * Members: 2
+#> * Tags: description=Trial data cut, month 1
+#>   * dm (table) domain=safety, type=input
+#>   * ex (table) domain=exposure, type=input
+#> i Fetch a member with `datom_fetch_member(conn, x, "dm")`.
+```
+
+An 8-character prefix went in and the full version came back, so what you cite
+is unambiguous.
+
+To see the members as a table, one row per label:
+
+```{r}
+datom_list_members(x)
+#>   name   project          version  kind    key    value
+#> 1   dm STUDY_001 dc6ec312095c... table domain   safety
+#> 2   dm STUDY_001 dc6ec312095c... table   type    input
+```
+
+Or grouped by a label, which is where the labels earn their place:
+
+```{r}
+datom_structure_members(x, by = "type")
+#> $input
+#> $input$dm
+#> ...
+```
+
+Reading the set gave you pointers, not data. To get the data, ask for one member
+-- through a connection to **that member's** project:
+
+```{r}
+head(datom_fetch_member(imported, x, "dm"))
+#> # A tibble: 6 x 12
+#>   STUDYID   DOMAIN USUBJID         SUBJID   AGE AGEU  SEX   ...
+#> 1 STUDY-001 DM     STUDY-001-001        1    71 YEARS F
+#> 2 STUDY-001 DM     STUDY-001-002        2    27 YEARS M
+#> ...
+```
+
+This is a feature rather than an inconvenience. Reading the set needs access to
+the product only, so a collection of fifty tables can be citable by someone
+entitled to none of them.
+
+## An input moves
+
+More data arrives, and the onboarding repo takes it:
+
+```{r}
+datom_sync(imported, datom_sync_manifest(imported))
+#> i Scanned 2 files: 0 new, 1 changed, 1 unchanged.
+#> i Syncing 1 table...
+#> v Wrote "dm" (full): "dfd8e34c"
+#> v "dm" synced (changed).
+#> i Sync complete: 1 succeeded, 0 failed, 1 skipped.
+```
+
+Your set still points at the old version, which is correct -- a citation does not
+move on its own. When you want it to move, ask:
+
+```{r}
+x <- datom_get_set(product, "trial_product")
+x <- datom_update_members(x, imported)
+#> v Repointed 1 member, of 1 selected.
+#> project STUDY_001:
+#>   dm  9a256607 -> dfd8e34c
+#> i Nothing has been written. Write the set with `datom_write_set(conn, x)`.
+```
+
+Two things worth noticing. It tells you what moved, `old -> new`, **before**
+anything is written -- you are holding an edited set, and the write is yours to
+make. And labels came along with the pointer; you did not have to reattach them.
+
+```{r}
+datom_write_set(product, x)
+#> v Wrote set "trial_product" (1 member): "a206431c"
+```
+
+Run the refresh again when nothing has changed and it costs nothing:
+
+```{r}
+datom_write_set(product, datom_update_members(datom_get_set(product, "trial_product"),
+                                              imported))
+#> i No member moved: all 1 selected is already at the version this would pin.
+#> i No changes detected for set "trial_product". Skipping write.
+```
+
+No new version. A set's version moves when its content moves, and not otherwise,
+so re-running a build script is free.
+
+## Retire a member
+
+```{r}
+x <- datom_get_set(product, "trial_product")
+x <- datom_remove_members(x, tags = list(type = "input", domain = "exposure"))
+datom_write_set(product, x)
+```
+
+Select by label rather than by position. Positions shift when somebody adds a
+member; labels do not.
+
+Removing takes no connection at all -- dropping an entry only needs the list you
+already hold.
+
+**Edits made together are written together.** If you repoint and then remove
+before writing, the commit message says so:
+
+```{r}
+datom_history(product, "trial_product")[, c("version", "commit_message", "commit_sha")]
+#>    version                    commit_message                                          commit_sha
+#> 1 31d711b2  Update trial_product: repoint 1 member, drop 1 member   7b35a82cf101acad08c9bcd875e76b0aa7a21e3f
+#> 2 ae193a04  Update trial_product                                   623d71bcddc2d512ea7cbf96cc20919a388d0cd9
+```
+
+`commit_sha` is the commit that produced each version, worked out by datom rather
+than recorded by you. Note it appears here and not in your clone's copy of the
+history: that file is committed *inside* the commit that would name it, so only
+the copy in storage can carry it.
+
+## Two things that surprise people
+
+**A set can cite another set, and reading it does not open it.** You get a
+pointer back, and resolving it is a separate step you choose to take. So reading
+a set costs the same whether there is one table underneath or a hundred.
+
+**A name is not a unique key.** The same table at two versions is two perfectly
+valid members -- a live cut beside a frozen baseline is the usual reason. So this
+returns two rows, not one:
+
+```{r}
+rows <- datom_list_members(x)
+unique(rows$version[rows$name == "dm"])
+```
+
+Narrow with a label instead, or pass `tags =` to `datom_fetch_member()`, which
+refuses an ambiguous name and lists the candidates rather than guessing.
+
+## Where you are
+
+You have a study's data onboarded in one repo, and a product in another that
+cites exact versions of it. The product's version is a single string you can put
+in a report, and it resolves to the same tables forever.
+
+This scales to a product pooling several studies from several buckets; that needs
+credentials with access to all of them and is a separate article.
+
+## Teardown
+
+If you were following along on real infrastructure, remove both repos and both
+prefixes when you are done:
+
+```{r}
+datom_repo_delete(product, confirm = "STUDY_ADAM")
+datom_repo_delete(imported, confirm = "STUDY_001")
+```
+
+The bucket itself is yours; datom only removes the namespaces it created.

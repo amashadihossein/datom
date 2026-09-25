@@ -33,18 +33,26 @@ distinguishing data products**:
 
 ```
 study-001-datom/                          # one bucket = one study
-    datom/STUDY_001/...                   # raw data (prefix = "")
-    adam/datom/ADAM_STUDY_001/...         # ADaM (prefix = "adam/")
-    tlf/datom/TLF_STUDY_001/...           # TLFs (prefix = "tlf/")
+    imported/datom/...                    # onboarded tables (prefix = "imported/")
+    adam/datom/...                        # ADaM (prefix = "adam/")
+    tlf/datom/...                         # TLFs (prefix = "tlf/")
 ```
+
+**Name every prefix, including the onboarded one.** `imported` is the word the
+table's own record uses -- `table_type` is either `"imported"` or `"derived"` --
+so the folder and the metadata agree, and there is one term to learn rather than
+two. `raw/`, `edc/` or `sdtm/` are equally valid if they match how your
+organization talks; the prefix is a plain string. Avoid `source/`: in datom that
+word already means two other things (a parent's project name, and where a table
+came from).
 
 In code:
 
 ```{r}
-# Raw clinical extracts
-raw_store <- datom_store_s3(
+# Onboarded clinical extracts
+imported_store <- datom_store_s3(
   bucket     = "study-001-datom",
-  prefix     = "",                        # raw lives at the bucket root
+  prefix     = "imported/",
   region     = "us-east-1",
   access_key = ..., secret_key = ...
 )
@@ -57,6 +65,13 @@ adam_store <- datom_store_s3(
   access_key = ..., secret_key = ...
 )
 ```
+
+> **An earlier version of this article put the onboarded data at `prefix = ""`.**
+> It works, and existing repos use it -- nothing needs migrating. But it puts the
+> `datom/` segment at two different depths meaning the same thing, so
+> `s3://study-001-datom/datom/` reads like a container for everything beneath it
+> when it is really one project among several. Naming it keeps every project at
+> the same depth: `{bucket}/{name}/datom/`.
 
 ### Why this works
 
@@ -206,8 +221,8 @@ mechanics).
 
 | You have... | Use |
 |---|---|
-| One study, small team, no special IAM needs | Pattern A, empty data prefix |
-| Multiple data products per study (raw + ADaM + TLF) | Pattern A, prefix per product |
+| One study, small team, no special IAM needs | Pattern A, one named prefix (`imported/`) |
+| Multiple data products per study (imported + ADaM + TLF) | Pattern A, prefix per product |
 | Many studies under one compound, IT wants fewer buckets | Pattern B |
 | Enterprise data lake with central governance | Pattern C |
 | Sharing the gov bucket with other tooling | Pattern A or B with `prefix = "datom-gov/"` |
