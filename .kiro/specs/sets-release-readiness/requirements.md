@@ -88,11 +88,23 @@ A script under `dev/`, in the style of `dev/e2e-solo-s3.R`, that exercises the s
   to have onboarded a study's data already, and the vignette reuses that store and project instead of
   re-teaching credentials, bucket setup and store construction. It links back in its first paragraph and
   says plainly that `start-on-s3` should be read first.
-- **R2.9** It uses the **Case A layout** from `.kiro/specs/datom-sets/design.md` section 20: one study,
-  one bucket, onboarding at the study's prefix and the product at a prefix beside it (e.g. `adam`). Not
-  a sibling top-level prefix, and not a second bucket. This is the common shape and the one a first
-  reader should meet; the cross-study, cross-bucket pool (Case B) is named in a single closing sentence
-  as a later article and given no detail here.
+- **R2.9** It uses the **Case A layout** from `.kiro/specs/datom-sets/design.md` section 20 -- one study,
+  one bucket, two projects -- with **both prefixes named**:
+
+  ```
+  s3://<study-bucket>/imported/datom/    the onboarded tables
+  s3://<study-bucket>/adam/datom/        the product: its set and derived tables
+  ```
+
+  Not one bucket each, and not onboarding at the bare prefix. **`imported` rather than `raw`, and the
+  reason is vocabulary rather than taste**: it is the word the table's own record already uses
+  (`table_type` is `"imported"` or `"derived"`), so the folder name and the metadata agree and the reader
+  learns one term instead of two. `raw`/`edc`/`sdtm` mean different things in different organisations and
+  datom takes no position on any of them; `source` is unavailable, because it already means two other
+  things in this package (`parents[].source` is a project name, and `source_lineage` is where a table came
+  from, derived tables included). Say once that the prefix is a plain string and those alternatives are
+  equally valid -- this is a convention, not a contract. The cross-study, cross-bucket pool (Case B) gets
+  a single closing sentence as a later article and no detail here.
 - **R2.10** **Plain language, and jargon defined on first use or not used.** No "artifact kind", no
   "canonical", no "namespace", no "invariant" in the prose. A set is "a citable list of exact data
   versions"; a member is "one entry in that list". This is a how-to for a data scientist, not a

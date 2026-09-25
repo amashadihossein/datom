@@ -115,10 +115,10 @@ Why before how (R2.2), so the first screen contains no function call. It picks u
    versions. "Which exact data produced this result" has no answer anyone wrote down.
 2. **What a set is.** A citable list of exact data versions, with a name and a version of its own.
    Not a copy of the data -- a list of pointers.
-3. **A second repo for the product.** The onboarding repo from `start-on-s3` holds raw data; it will
-   not hold a set (it onboards, it does not build). So create a product repo beside it -- same bucket,
-   a prefix like `adam` -- in its own working directory (R2.9, Case A). This is the step the one-repo
-   draft was missing, and it is where the reader learns why there are two.
+3. **A second repo for the product.** The onboarding repo from `start-on-s3` holds the imported tables;
+   it will not hold a set (it onboards, it does not build). So create a product repo beside it -- same
+   bucket, prefix `adam/` next to `imported/` -- in its own working directory (R2.9, Case A). This is
+   the step the one-repo draft was missing, and it is where the reader learns why there are two.
 4. **Build the set.** `datom_assemble_set()` -> `datom_add_member()` -> `datom_write_set()`, citing the
    onboarded tables by version. Labels introduced as the way you find members later, not decoration.
 5. **Cite it, and read it from elsewhere.** A reader with storage access and no git clone resolves the

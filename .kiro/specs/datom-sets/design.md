@@ -1594,6 +1594,17 @@ This matches the existing house convention verbatim:
 study (raw + ADaM + TLF) -> Pattern A, prefix per product"*. We are hardening a documented
 pattern, not inventing one.
 
+> **AMENDED 2026-09-23 (sets-release-readiness spec, owner-decided).** The sketch above puts
+> onboarding at the **bare** prefix, and the shipped vignette does not: both projects get a named
+> prefix, `imported/` beside `adam/`. Nothing about the code changed and no repo needs migrating --
+> `""` still works and existing repos use it. Two reasons for the move. The `datom/` segment appeared
+> at two depths meaning the same thing, so `s3://study001/datom/` read like a container for everything
+> beneath it when it is one project among several; and naming it puts every project at the same depth,
+> `{bucket}/{name}/datom/`, which matters more in Case B where a role spans buckets. **`imported`
+> rather than `raw`** because it is the word `table_type` already uses, and rather than `source`
+> because that word is taken twice in this package. Read Case A's layout above as one valid spelling,
+> not the recommended one.
+
 ### 20.3 Case B -- one product pooling three studies across three buckets
 
 ```

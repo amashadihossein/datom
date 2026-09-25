@@ -7,12 +7,20 @@
 # one: a single study, one bucket, onboarding under the empty prefix and the
 # product under a prefix beside it.
 #
-#   s3://<bucket>/<run>/datom/         repo 1  STUDY_001   onboarded tables
-#   s3://<bucket>/<run>/adam/datom/    repo 2  STUDY_ADAM  the SET + derived work
+#   s3://<bucket>/<run>/imported/datom/   repo 1  STUDY_001   onboarded tables
+#   s3://<bucket>/<run>/adam/datom/       repo 2  STUDY_ADAM  the SET + derived
 #
 #   repo 1  onboards CSVs with datom_sync(), exactly as vignette("start-on-s3").
 #   repo 2  is a product repo in its own directory under prefix "<run>/adam". It
 #           onboards nothing; it holds a SET citing repo 1's tables by version.
+#
+# BOTH PREFIXES ARE NAMED, and "imported" is not decoration: it is the word the
+# table's own record uses (`table_type = "imported"` versus `"derived"`), so the
+# folder and the metadata agree. The earlier draft put onboarding at the bare
+# prefix, which meant the segment `datom/` appeared at two depths meaning the
+# same thing and read at the top level like a container for everything below it.
+# The prefix is a plain string -- `raw/`, `edc/`, `sdtm/` are equally valid; this
+# is a convention, not a contract.
 #
 # Two repos rather than one, because a product repo REFUSES datom_sync() -- it
 # builds its artifacts, it does not import them. So a set's members come from
@@ -125,13 +133,13 @@ stamp    <- format(Sys.time(), "%Y%m%d%H%M%S")
 bucket   <- "datom-test"
 set_name <- "trial_product"
 
-# Case A layout: both prefixes under one per-run root, the product NESTED beside
-# onboarding at "<run>/adam" rather than a sibling top-level prefix. Same bucket.
+# Case A layout: one bucket, one per-run root, both projects at NAMED prefixes
+# beneath it. Uniform depth, so every project is at <root>/<name>/datom/.
 run_root  <- paste0("sets-e2e-", stamp)
 
 in_proj   <- "STUDY_001"
 in_repo   <- paste0("datom-sets-e2e-inputs-", stamp)
-in_prefix <- paste0(run_root, "/")
+in_prefix <- paste0(run_root, "/imported/")
 
 pr_proj   <- "STUDY_ADAM"
 pr_repo   <- paste0("datom-sets-e2e-product-", stamp)
