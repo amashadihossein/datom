@@ -35,15 +35,17 @@ if (!exists("sandbox_up")) {
 }
 
 base_dir  <- fs::path_expand("~/projects/dev/datom-test/solo-e2e-s3")
-if (fs::dir_exists(base_dir)) fs::dir_delete(base_dir)
-fs::dir_create(base_dir)
-
-stamp     <- format(Sys.time(), "%Y%m%d%H%M%S")
+stamp     <- format(Sys.time(), "%Y%m%d%H%M%S")   # log only; not in any name
 proj      <- "SOLO_E2E_S3"
-repo_name <- paste0("datom-solo-e2e-s3-", stamp)
+# FIXED NAMES, and the pre-clean below is what makes that safe. Timestamped names
+# isolate runs, but a run that dies before teardown then leaves a GitHub repo and
+# an S3 prefix that nothing will ever collect -- and orphans are quiet, while a
+# name collision is loud. With fixed names at most one set of leftovers can exist,
+# the next run clears it, and anything left behind is named so you can spot it.
+# Given up: concurrent runs, which a script one person runs by hand does not need.
+repo_name <- "datom-solo-e2e-s3"
 bucket    <- "datom-test"
-prefix    <- paste0("solo-e2e-s3-", stamp, "/")   # isolate this run
-
+prefix    <- "solo-e2e-s3/"
 store <- sandbox_store(
   bucket     = bucket,
   prefix     = prefix,
@@ -51,6 +53,29 @@ store <- sandbox_store(
   github_org = NULL
 )
 stopifnot("store unexpectedly has governance" = is.null(store$governance))
+
+# --- PRE-CLEAN: make a failed previous run harmless --------------------------
+# Both halves are needed and they fail differently: a leftover GitHub repo makes
+# datom_init_repo() refuse the duplicate name, and a leftover prefix trips the
+# namespace-occupied check. Clean both every time rather than trying to work out
+# whether the last run finished.
+cat("\n=== PRE-CLEAN (leftovers from a previous run) ===\n")
+local({
+  full <- tryCatch(.sandbox_repo_full_name(list(github_org = NULL),
+                                           repo_name = repo_name),
+                   error = function(e) NA_character_)
+  if (!is.na(full) &&
+      system2("gh", c("repo", "view", shQuote(full)),
+              stdout = FALSE, stderr = FALSE) == 0L) {
+    cat("deleting leftover repo", full, "\n")
+    try(.sandbox_gh_repo_delete(full, "leftover data repo"), silent = FALSE)
+  } else {
+    cat("no leftover repo\n")
+  }
+})
+try(.sandbox_wipe_storage(store, "data"), silent = FALSE)
+if (fs::dir_exists(base_dir)) fs::dir_delete(base_dir)
+fs::dir_create(base_dir)
 
 env <- NULL
 ok  <- FALSE

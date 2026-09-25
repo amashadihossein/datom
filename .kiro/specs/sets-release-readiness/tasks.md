@@ -240,7 +240,7 @@ bucket and repo naming for the credentialed run, and how aggressively NEWS is cu
   satisfied its documentation requirement by writing to two files that do not ship, and it took a user
   asking where the article was to notice.
 
-- [ ] **5. Spec Completion Procedure**
+- [x] **5. Spec Completion Procedure** &nbsp; **[DONE 2026-09-25]**
 
   - Full suite green at 4292 or above; `R CMD check --as-cran` 0E/0W; `dev/check-spec.R` still passing
     **for `datom-sets`**, run with no argument. It does not gate this spec and reports a **false pass**
@@ -254,6 +254,44 @@ bucket and repo naming for the credentialed run, and how aggressively NEWS is cu
   - PR into `dev`, merge. **Leave the branch** unless the owner says otherwise -- the last spec's branch
     was kept deliberately to avoid accidental deletion.
   - _Requirements: R4. Acceptance: AC12._
+
+  **DONE RECORD (2026-09-25). THE SPEC IS COMPLETE.** Tests **4292** (FAIL 0 / WARN 0 / SKIP 0),
+  unchanged from spec start, which is the expected result: R4.1 forbade any behaviour change and none
+  happened. `R CMD check --as-cran` 0 errors / 0 warnings with the new vignette;
+  `dev/check-spec.R` passing for `datom-sets` (it does not gate this spec -- see the note in
+  `requirements.md`).
+
+  **`dev/e2e-solo-s3.R` got the same fixed-name treatment**, owner-approved, so both credentialed
+  scripts now pre-clean instead of accumulating orphans. It was the script that established the
+  timestamped pattern this spec moved away from, so leaving it behind would have left the older
+  convention as the one a reader copies.
+
+  **Four things harvested to `dev/engineering-notes.md`**, each with the incident that produced it:
+
+  | Lesson | Why it is not obvious |
+  |---|---|
+  | an offline stand-in cannot test the configuration it stands in for | the local-backend dry run caught a real design error in seconds **and** was structurally blind to the missing credential argument that killed the first real run -- because that was the line it replaced. The heuristic: whatever the stand-in had to change is what stays untested |
+  | timestamped test resources trade a loud failure for a quiet one | a name collision announces itself; an orphan repo does not. Fixed names plus delete-if-exists invert it, and give up only concurrent runs |
+  | macOS keychain access is per **binary** | so a dev script reading a keychain nags forever and cannot work under `Rscript` at all. Dev scripts read the environment only; getting secrets into it is the caller's business |
+  | teardown belongs in its own step, not a `finally` | the state a walk leaves is worth querying, and on a failure it is the state needed to understand the failure -- which the old shape destroyed on the way out |
+
+  **One convention added** (`.github/copilot-instructions.md` rule 7a): NEWS states what changed,
+  whether it breaks and what to do, with detail in roxygen or a vignette, and **never a citation to
+  `dev/` or `.kiro/`** because neither ships. That clause exists because the previous spec satisfied its
+  documentation requirement by writing to two `.Rbuildignore`d files, and it took a user asking where the
+  vignette was to notice.
+
+  **Two deferrals, both filed with issues** per the lifecycle step added in the last spec: the
+  cross-study pooled-product vignette (Case B), and generalising `dev/check-spec.R`, which gives a
+  **false pass** against any spec but the one it was written for -- it matched this spec's `AC1`-`AC12`
+  against tests belonging to another spec's criteria of the same numbers and reported 8 of 12 covered
+  when none were.
+
+  **Two criteria close on weaker evidence than the rest, and both are named rather than glossed.** AC2
+  (a failed claim exits non-zero) was demonstrated offline rather than against S3 -- shared exit path, so
+  the risk is low, but it is not the same evidence. AC4 (a clear failure on missing credentials) **was**
+  verified in the end, incidentally: removing the AWS variables made the script refuse before creating
+  anything, which is the guard firing for real.
 
 ---
 

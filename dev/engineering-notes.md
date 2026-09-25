@@ -1045,3 +1045,82 @@ a regression there will not point at the criterion.
 
 **And restore from your own copy, never from git** -- see the probe-harness entry above,
 which exists because that cost a whole task's work once.
+
+### An offline stand-in cannot test the configuration it stands in for
+
+From `sets-release-readiness` Task 2 (2026-09-23), and it cost a real run to find.
+
+`dev/e2e-sets-s3.R` was dry-run offline first by swapping the S3 stores for local
+ones -- a cheap, high-value trick that caught a genuine design error in seconds (a
+`mode: product` repo refuses `datom_sync()`, so a set's members cannot be onboarded
+by the repo that holds the set). Then the first real run died anyway, on
+`datom_store_s3()` aborting with *"argument access_key is missing, with no
+default"*.
+
+**The offline run could not have caught it.** The local backend takes no
+credentials, so the very line that was wrong -- a store constructor called without
+keys -- was the line the stand-in replaced. Swapping a backend tests **logic** and
+is blind to **configuration**, and the blindness is exactly shaped like the swap.
+
+So: dry-run offline to check the walk, and expect the first credentialed run to
+fail on something the dry run structurally could not see. Budget a real run rather
+than treating it as a formality. The cheap heuristic for what remains untested
+after a stand-in: anything the stand-in itself had to change.
+
+The fix in that case was to stop building a second store and reuse the component
+the run already had, dropping only the PAT -- so there is one credential path
+rather than two that can drift.
+
+### Timestamped test resources trade a loud failure for a quiet one
+
+Also from `sets-release-readiness` (2026-09-24), and it applies to every script
+under `dev/` that creates real infrastructure.
+
+Both credentialed E2E scripts named their GitHub repo and S3 prefix with a
+timestamp, to isolate runs. The cost only shows up later: a run that dies before
+teardown leaves an orphan repo and an orphan prefix that **nothing will ever
+collect**, and because each has a unique name, nothing collides to tell you. Two
+orphan repos and their objects sat in the account until someone thought to look.
+
+Fixed names plus **delete-if-exists at startup** invert that:
+
+* a failed run is self-healing -- the next run clears what it left;
+* at most one set of leftovers can exist at any time;
+* leftovers have a predictable name, so you can find them by eye rather than by
+  pattern-matching a list;
+* teardown verification still works, because the run that checks owns the name.
+
+What it gives up is concurrent runs, which a script one person runs by hand does
+not need. **Clean both the repo and the storage prefix every time** rather than
+trying to detect whether the last run finished: they fail differently (duplicate
+repo name versus the namespace-occupied check) and a half-cleaned pair is the state
+that confuses.
+
+### Keychain prompts are per-binary on macOS, so a script that reads one will nag
+
+From `sets-release-readiness` (2026-09-25). A dev script pulled AWS keys with
+`keyring::key_get(..., keyring = "remotes")`, which prompted for a password on
+almost every run and failed outright under `Rscript`.
+
+Two causes compound, and neither is fixable from inside the script:
+
+1. macOS authorises keychain access **per application binary**. R.app, RStudio's R
+   and the `Rscript` binary are different binaries, so each needs its own grant and
+   "Always Allow" does not carry across them.
+2. A **named** (non-login) keyring is a separate keychain file with its own lock
+   timer, on top of that.
+
+Under `Rscript` there is no way to service the prompt at all, so it is not a
+"console versus Rscript" problem so much as a which-keychain problem that `Rscript`
+exposes.
+
+**Dev scripts should read credentials from the environment only.** Reading the
+environment cannot prompt, so it cannot surprise anyone, and it works identically
+in every context. Getting secrets *into* the environment is the caller's business:
+`~/.Renviron` for a machine you control (same trust level as
+`~/.aws/credentials`), or `Sys.setenv()` in your own session if you would rather
+pull from a keychain -- then the prompt happens once, where you expect it, rather
+than inside a script you run repeatedly.
+
+This is the package's own secret-handling principle applied to tooling: datom
+receives secrets explicitly and never discovers them.
