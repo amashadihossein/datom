@@ -18,8 +18,8 @@ knitr::opts_chunk$set(
 This article picks up where [S3 Setup and Promotion](start-on-s3.html) left off.
 You should have a study's data onboarded and readable before starting here.
 
-Output below comes from a real run against a sandbox bucket, so the project
-names, hashes and bucket will not match yours.
+Output below is copied from a real run against a sandbox bucket, with long paths
+and wide tables shortened. Project names, hashes and bucket will not match yours.
 
 ## The problem
 
@@ -226,11 +226,13 @@ not move on its own. Move it when you decide to, and say which members you mean:
 ```{r}
 x <- datom_get_set(product, "trial_product")
 x <- datom_update_members(x, imported, tags = list(type = "input"))
-#> v Repointed 1 member, of 2 selected.
 #> project STUDY_001:
 #>   dm  9a256607 -> dfd8e34c
 #> i Nothing has been written. Write the set with `datom_write_set(conn, x)`.
 ```
+
+It opens with a count of how many of the selected members moved, then names each
+one, `old -> new`, grouped by project.
 
 This is where the labels pay off. `tags = list(type = "input")` refreshes your
 inputs and leaves your output alone, which is what you want -- your `adsl` moves
@@ -253,7 +255,6 @@ Run the same refresh when nothing has changed and it costs nothing:
 ```{r}
 datom_write_set(product, datom_update_members(datom_get_set(product, "trial_product"),
                                               imported, tags = list(type = "input")))
-#> i No member moved: all 2 selected are already at the version this would pin.
 #> i No changes detected for set "trial_product". Skipping write.
 ```
 
@@ -283,7 +284,8 @@ datom_history(product, "trial_product")[, c("version", "commit_message")]
 
 ## What a set does not do
 
-* It holds no data. Deleting a set does not touch the tables it cited.
+* It holds no data. Removing a member deletes nothing -- the table it pointed at
+  is untouched, and older versions of the set still cite it.
 * It does not drift. A member pins one version, chosen by you.
 * It does not change its members. Writing a set is read-only on them.
 
