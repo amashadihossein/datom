@@ -119,29 +119,50 @@ datom_list(imported)
 ```
 
 Pick the ones your product used -- a set cites what you used, not everything
-available -- and write it:
+available -- and note their versions:
 
 ```{r}
 dm_v <- datom_history(imported, "dm")$version[1]
 ex_v <- datom_history(imported, "ex")$version[1]
+```
 
+Then derive whatever your product produces, and write it into the **product's**
+repo:
+
+```{r}
+dm   <- datom_read(imported, "dm")
+adsl <- dm[, c("STUDYID", "USUBJID", "AGE", "SEX")]   # your real derivation here
+
+datom_write(product, data = adsl, name = "adsl")
+adsl_v <- datom_history(product, "adsl")$version[1]
+```
+
+Now write the set, citing the inputs you used **and** the table you produced:
+
+```{r}
 datom_write_set(
   product,
   members = list(
-    datom_member(imported, "dm", dm_v, tags = list(type = "input")),
-    datom_member(imported, "ex", ex_v, tags = list(type = "input"))
+    datom_member(imported, "dm", dm_v,     tags = list(type = "input")),
+    datom_member(imported, "ex", ex_v,     tags = list(type = "input")),
+    datom_member(product,  "adsl", adsl_v, tags = list(type = "output"))
   ),
   tags = list(description = "Trial data cut, month 1")
 )
-#> v Wrote set "trial_product" (2 members): "9e0c05e6"
 ```
 
 `datom_member(imported, ...)` is how a set cites another project's table: you
 resolve the version through that project's connection, and the pointer remembers
-where it came from.
+where it came from. `datom_member(product, ...)` does the same for a table in the
+product's own repo.
 
-Labels like `type = "input"` are your own words. They are worth adding because
-they are how you select members later.
+**The set is the product's index, so put everything the product produced in it.**
+A derived table sitting in the product's storage that the set does not cite is
+orphaned -- nothing points at it, so nothing will find it later. If you wrote it,
+cite it.
+
+Labels like `type = "input"` are your own words, and they are about to earn their
+keep: they are how you refresh your inputs without touching your outputs.
 
 ## Cite it, and read it somewhere else
 
@@ -166,15 +187,10 @@ reader <- datom_get_conn(store = reader_store, project_name = "STUDY_ADAM")
 
 x <- datom_get_set(reader, "trial_product")
 print(x)
-#> -- datom set: "trial_product"
-#> * Project: "STUDY_ADAM"
-#> * Version: "ae193a04aff8b757ef98fcbef228cca690b0c7332dfdd31c60e91f0680a604b5"
-#> * Members: 2
-#> * Tags: description=Trial data cut, month 1
-#>   * dm (table) domain=safety, type=input
-#>   * ex (table) domain=exposure, type=input
-#> i Fetch a member with `datom_fetch_member(conn, x, "dm")`.
 ```
+
+That prints the set's name, project and version, then each member with its
+labels -- the two inputs and the output you produced.
 
 `datom_list_members(x)` gives the same thing as a data frame, one row per label,
 if you would rather filter it than read it.
@@ -205,16 +221,24 @@ datom_sync(imported, datom_sync_manifest(imported))
 ```
 
 Your set still points at the older version, which is correct -- a citation does
-not move on its own. Move it when you decide to:
+not move on its own. Move it when you decide to, and say which members you mean:
 
 ```{r}
 x <- datom_get_set(product, "trial_product")
-x <- datom_update_members(x, imported)
-#> v Repointed 1 member, of 1 selected.
+x <- datom_update_members(x, imported, tags = list(type = "input"))
+#> v Repointed 1 member, of 2 selected.
 #> project STUDY_001:
 #>   dm  9a256607 -> dfd8e34c
 #> i Nothing has been written. Write the set with `datom_write_set(conn, x)`.
 ```
+
+This is where the labels pay off. `tags = list(type = "input")` refreshes your
+inputs and leaves your output alone, which is what you want -- your `adsl` moves
+when you rebuild it, not when an input changes underneath it.
+
+It also keeps this to one connection. Without the filter, every member is
+selected, including `adsl` in the product's own project, and datom would ask for a
+connection for that project too rather than quietly skipping it.
 
 It reports what moved, `old -> new`, **before** anything is written. You are
 holding an edited set; the write is yours to make. Labels came along with the
@@ -228,8 +252,8 @@ Run the same refresh when nothing has changed and it costs nothing:
 
 ```{r}
 datom_write_set(product, datom_update_members(datom_get_set(product, "trial_product"),
-                                              imported))
-#> i No member moved: all 1 selected is already at the version this would pin.
+                                              imported, tags = list(type = "input")))
+#> i No member moved: all 2 selected are already at the version this would pin.
 #> i No changes detected for set "trial_product". Skipping write.
 ```
 
@@ -240,12 +264,12 @@ build script is free.
 
 ```{r}
 x <- datom_get_set(product, "trial_product")
-x <- datom_remove_members(x, tags = list(type = "input"))
+x <- datom_remove_members(x, "ex")     # an input you no longer use
 datom_write_set(product, x)
 ```
 
-Select by label rather than by position, because positions shift when someone
-adds a member.
+Select by name or by label rather than by position, because positions shift when
+someone adds a member.
 
 Edits made together are written together. Repoint and remove before writing, and
 the commit message says so:
