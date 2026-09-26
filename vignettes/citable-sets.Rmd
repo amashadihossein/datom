@@ -135,9 +135,14 @@ Look at what the onboarding repo holds:
 ```{r}
 datom_list(imported)
 #>   name  kind current_version current_data_sha         last_updated
-#> 1   dm table        dc6ec312         0d29a580 2026-09-25T06:40:36Z
-#> 2   ex table        e79ce54d         f261dbde 2026-09-25T06:40:16Z
+#> 1   dm table        9a256607         e547f03d 2026-09-26T01:00:33Z
+#> 2   ae table        ddddfe5a         d5f8dd5a 2026-09-26T01:00:28Z
+#> 3   ex table        419b071c         ab96afc3 2026-09-26T01:00:37Z
+#> 4   lb table        1319d915         5d419c60 2026-09-26T01:00:41Z
 ```
+
+A set does not have to cite everything. Two of those four are enough to show the
+shape, and picking a subset is the normal case -- a product cites what it used.
 
 Then declare each member and write the set. A member is one entry in the list: a
 table, at one version, with optional labels.
@@ -156,7 +161,7 @@ datom_write_set(
   members,
   tags = list(description = "Trial data cut, month 1")
 )
-#> v Wrote set "trial_product" (2 members): "ae193a04"
+#> v Wrote set "trial_product" (2 members): "9e0c05e6"
 ```
 
 `imported` is the connection to the onboarding repo. That is how a set cites
@@ -172,13 +177,42 @@ inputs you discover as you go:
 
 ```{r}
 datom_assemble_set(product, tags = list(description = "Trial data cut, month 1")) |>
-  datom_add_member("dm", dm_v, tags = list(type = "input", domain = "safety")) |>
-  datom_add_member("ex", ex_v, tags = list(type = "input", domain = "exposure")) |>
+  datom_add_member(datom_member(imported, "dm", dm_v,
+                                tags = list(type = "input", domain = "safety"))) |>
+  datom_add_member(datom_member(imported, "ex", ex_v,
+                                tags = list(type = "input", domain = "exposure"))) |>
   datom_write_set()
 ```
 
-Both produce the same set. The difference is where an error appears: building
-step by step, a bad version is reported on the line that added it.
+**Note what is passed to `datom_add_member()`: a member built on `imported`, not
+a bare table name.** A draft carries one connection -- the product's -- so a
+plain name is looked up in the product's own project, where `dm` does not live.
+You would get:
+
+```
+Error:
+! Member "dm@9a256607..." not found in project "STUDY_ADAM".
+i A member must point at a version that already exists.
+```
+
+A bare name is right when the member lives in the **same** project as the set,
+which happens as soon as you add a derived table of your own:
+
+```{r}
+# However you derive it -- this stands in for your real derivation.
+adsl <- datom_read(imported, "dm")
+
+datom_write(product, data = adsl, name = "adsl")
+adsl_v <- datom_history(product, "adsl")$version[1]
+
+datom_assemble_set(product) |>
+  datom_add_member("adsl", adsl_v) |>                        # same project: name
+  datom_add_member(datom_member(imported, "dm", dm_v)) |>    # another: a member
+  datom_write_set()
+```
+
+Either route produces the same set. The difference is where an error appears:
+building step by step, a bad version is reported on the line that added it.
 
 ## Cite it, and read it somewhere else
 
