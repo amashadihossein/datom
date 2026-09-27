@@ -35,15 +35,14 @@
 #                            point of the real run.
 #   DATOM_E2E_BACKEND=s3     (default) real GitHub repos, real bucket.
 #
-# NEEDS (s3):
-#   GITHUB_PAT             repo + delete_repo scope; taken from `gh auth token`
-#                          when unset.
+# NEEDS (s3), as environment variables:
+#   GITHUB_PAT             repo + delete_repo scope. The GitHub account is the
+#                          token's own (asked of the API), not gh's.
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 #   DATOM_E2E_BUCKET       an existing bucket. USE A SCRATCH BUCKET: the pre-clean
 #                          and the teardown delete `imported/datom/` and
 #                          `liver-safety/datom/` in it. Nothing else is touched.
 #   DATOM_E2E_REGION       optional, default us-east-1.
-#   gh CLI                 for the pre-clean and the repos-are-gone check.
 #
 # NAMES ARE THE VIGNETTES' OWN (read from their settings chunks), so the repos
 # are `<you>/study001-imported` and `<you>/study001-liver-safety`. A run DELETES
@@ -51,9 +50,23 @@
 # delete-if-exists means a failed run leaves at most one set of leftovers and the
 # next run clears it.
 #
-# RUN (from the package root):
+# RUN, sourced from an R session (the way to go if your secrets are in a
+# keychain -- the prompt happens once, in your session):
+#
+#   Sys.setenv(
+#     AWS_ACCESS_KEY_ID     = keyring::key_get(...),
+#     AWS_SECRET_ACCESS_KEY = keyring::key_get(...),
+#     GITHUB_PAT            = keyring::key_get(...),
+#     DATOM_E2E_BUCKET      = "my-scratch-bucket"
+#   )
+#   source("~/projects/dev/datom/dev/e2e-vignettes-s3.R")
+#
+# Sourced, it leaves `run_env` behind (every object the vignettes created) and,
+# on failure, stops with an error rather than ending the session. It restores the
+# output options it changes.
+#
+# Or from a terminal, with the variables already exported:
 #   DATOM_E2E_BACKEND=local Rscript dev/e2e-vignettes-s3.R < /dev/null
-#   DATOM_E2E_BUCKET=my-scratch Rscript dev/e2e-vignettes-s3.R < /dev/null
 #
 # `< /dev/null` is not decoration: run with a terminal or pipe on stdin, the
 # Rscript process was seen to finish the walk, print its result, and then not
@@ -67,8 +80,22 @@
 # beside the package. Exit status is non-zero on any failure.
 # -----------------------------------------------------------------------------
 
-.script_path <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
-pkg_dir <- if (length(.script_path) == 1L) {
+# Sourced, or run with Rscript. The two differ in how the script finds itself
+# and in how a failure ends: under Rscript it exits with status 1; sourced, it
+# stops with an error and leaves your session running.
+.sourced <- sys.nframe() > 0L
+.script_path <- local({
+  of <- NULL
+  for (i in rev(seq_len(sys.nframe()))) {
+    of <- sys.frame(i)$ofile
+    if (!is.null(of)) break
+  }
+  if (is.null(of)) {
+    of <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
+  }
+  if (length(of) == 1L) of else NA_character_
+})
+pkg_dir <- if (!is.na(.script_path)) {
   normalizePath(file.path(dirname(.script_path), ".."))
 } else {
   path.expand("~/projects/dev/datom")
@@ -78,12 +105,36 @@ devtools::load_all(pkg_dir, quiet = TRUE)
 source(file.path(pkg_dir, "dev", "dev-sandbox.R"))
 
 # ASCII output, no colour, so transcripts paste into ASCII-only vignettes.
-options(cli.unicode = FALSE, cli.num_colors = 1, crayon.enabled = FALSE,
-        width = 80)
+# Restored at the end, so sourcing this does not change your session's output.
+.old_options <- options(cli.unicode = FALSE, cli.num_colors = 1,
+                        crayon.enabled = FALSE, width = 80)
+
+# Every early stop goes through here, so a sourced run that stops still gives
+# the session its options back.
+fail <- function(...) {
+  options(.old_options)
+  stop(..., call. = FALSE)
+}
 
 backend <- Sys.getenv("DATOM_E2E_BACKEND", "s3")
 if (!backend %in% c("s3", "local")) {
-  stop("DATOM_E2E_BACKEND must be \"s3\" or \"local\".", call. = FALSE)
+  fail("DATOM_E2E_BACKEND must be \"s3\" or \"local\".")
+}
+
+# GitHub through its API with GITHUB_PAT -- the same token the vignettes use --
+# rather than the gh CLI, which answers for whichever account gh is logged in as.
+# If those differed, the pre-clean would look for leftovers in the wrong account.
+gh_api <- function(method, path) {
+  httr2::request("https://api.github.com") |>
+    httr2::req_url_path_append(path) |>
+    httr2::req_method(method) |>
+    httr2::req_auth_bearer_token(Sys.getenv("GITHUB_PAT")) |>
+    httr2::req_headers(Accept = "application/vnd.github+json") |>
+    httr2::req_error(is_error = function(resp) FALSE) |>
+    httr2::req_perform()
+}
+gh_repo_exists <- function(full) {
+  httr2::resp_status(gh_api("GET", paste0("repos/", full))) == 200L
 }
 keep <- nzchar(Sys.getenv("DATOM_E2E_KEEP"))
 out_dir <- Sys.getenv(
@@ -135,8 +186,8 @@ required <- list(
 for (v in names(required)) {
   missing <- setdiff(required[[v]], names(vignettes[[v]]))
   if (length(missing)) {
-    stop("vignettes/", v, ".Rmd has no chunk named: ",
-         paste(missing, collapse = ", "), call. = FALSE)
+    fail("vignettes/", v, ".Rmd has no chunk named: ",
+         paste(missing, collapse = ", "))
   }
 }
 
@@ -147,29 +198,40 @@ eval(parse(text = vignettes$`citable-sets`$`settings-liver-safety`),
      envir = settings_env)
 repos    <- c(settings_env$repo_imported, settings_env$repo_liver_safety)
 prefixes <- c(settings_env$prefix_imported, settings_env$prefix_liver_safety)
+workdirs <- c(settings_env$workdir_imported, settings_env$workdir_liver_safety)
 
 # --- preflight ----------------------------------------------------------------
 hr(paste("preflight, backend:", backend))
 local_root <- NULL
 if (backend == "s3") {
-  if (!nzchar(Sys.getenv("GITHUB_PAT")) &&
-      system2("gh", "--version", stdout = FALSE, stderr = FALSE) == 0L) {
-    tok <- tryCatch(paste(system2("gh", c("auth", "token"), stdout = TRUE,
-                                  stderr = FALSE), collapse = ""),
-                    error = function(e) "")
-    if (nzchar(tok)) Sys.setenv(GITHUB_PAT = tok)
-  }
   need <- c("GITHUB_PAT", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
             "DATOM_E2E_BUCKET")
   unset <- need[!nzchar(Sys.getenv(need))]
   if (length(unset)) {
-    stop("Not set: ", paste(unset, collapse = ", "),
-         ". See the header of this script.", call. = FALSE)
+    fail("Not set: ", paste(unset, collapse = ", "),
+         ". See the header of this script.")
   }
   bucket <- Sys.getenv("DATOM_E2E_BUCKET")
   region <- Sys.getenv("DATOM_E2E_REGION", "us-east-1")
+
+  me <- gh_api("GET", "user")
+  if (httr2::resp_status(me) != 200L) {
+    fail("GITHUB_PAT was refused by the GitHub API (HTTP ",
+         httr2::resp_status(me), ").")
+  }
+  gh_owner <- httr2::resp_body_json(me)$login
+  full_repos <- paste0(gh_owner, "/", repos)
+  # A classic token lists its scopes in this header. Teardown deletes the two
+  # repos, so say now if it will not be allowed to, rather than after the walk.
+  scopes <- httr2::resp_header(me, "x-oauth-scopes")
+  if (!is.null(scopes) && !grepl("delete_repo", scopes)) {
+    fail("GITHUB_PAT has no delete_repo scope (it has: ", scopes, "). ",
+         "The pre-clean and the teardown delete the two repos.")
+  }
+
+  cat("github :", gh_owner, "\n")
   cat("bucket :", bucket, "(", region, ")\n")
-  cat("repos  :", paste(repos, collapse = ", "), "\n")
+  cat("repos  :", paste(full_repos, collapse = ", "), "\n")
   cat("prefix :", paste(paste0(prefixes, "datom/"), collapse = ", "), "\n")
 } else {
   local_root <- fs::path(tempdir(), "e2e-vignettes-local")
@@ -181,18 +243,25 @@ cat("teardown  :", if (keep) "SKIPPED (DATOM_E2E_KEEP)" else "at the end, on suc
     "\n")
 cat("transcript:", transcript, "\n")
 
-# --- pre-clean (s3) -------------------------------------------------------------
+# --- pre-clean -----------------------------------------------------------------
+hr("pre-clean anything a previous run left behind")
+# Local clones first, on both backends: a sourced run shares tempdir() with any
+# earlier run in the same session, and init refuses a folder that exists.
+for (w in workdirs) {
+  if (fs::dir_exists(w)) {
+    cat("removing leftover clone", w, "\n")
+    fs::dir_delete(w)
+  }
+}
 if (backend == "s3") {
-  hr("pre-clean anything a previous run left behind")
-  gh_ok <- system2("gh", "--version", stdout = FALSE, stderr = FALSE) == 0L
-  if (gh_ok) {
-    for (nm in repos) {
-      full <- .sandbox_repo_full_name(list(github_org = NULL), repo_name = nm)
-      .sandbox_gh_repo_delete(full, "leftover repo")
+  for (full in full_repos) {
+    if (gh_repo_exists(full)) {
+      cat("deleting leftover repo", full, "\n")
+      st <- httr2::resp_status(gh_api("DELETE", paste0("repos/", full)))
+      if (st != 204L) fail("Could not delete ", full, " (HTTP ", st, ").")
+    } else {
+      cat("no leftover repo", full, "\n")
     }
-  } else {
-    cat("NOTE: no gh CLI -- leftover repos are not checked; init fails loudly",
-        "if one exists.\n")
   }
   for (p in prefixes) {
     comp <- datom_store_s3(
@@ -341,12 +410,9 @@ if (is.null(failed) && !keep) {
     cat("objects left in storage:", paste(names(left), left, collapse = ", "), "\n")
     cat("clones left            :", paste(names(clones), clones, collapse = ", "), "\n")
     if (any(left > 0L) || any(clones)) failed <- list(v = "teardown", label = "check")
-    if (backend == "s3" &&
-        system2("gh", "--version", stdout = FALSE, stderr = FALSE) == 0L) {
-      for (nm in repos) {
-        full <- .sandbox_repo_full_name(list(github_org = NULL), repo_name = nm)
-        gone <- system2("gh", c("repo", "view", shQuote(full)),
-                        stdout = FALSE, stderr = FALSE) != 0L
+    if (backend == "s3") {
+      for (full in full_repos) {
+        gone <- !gh_repo_exists(full)
         cat("repo gone:", full, gone, "\n")
         if (!gone) failed <- list(v = "teardown", label = "repos")
       }
@@ -359,11 +425,17 @@ if (is.null(failed) && !keep) {
 }
 
 hr("result")
+options(.old_options)
 cat("transcript:", transcript, "\n")
 if (is.null(failed)) {
   cat("VIGNETTES_E2E_RESULT: SUCCESS\n")
 } else {
   cat("VIGNETTES_E2E_RESULT: FAILED at", failed$v, "/", failed$label, "\n")
   cat("Nothing was torn down; the next run's pre-clean removes what is left.\n")
-  quit(status = 1L, save = "no")
+  # Sourced: stop, and leave the session (and run_env) for inspection.
+  if (.sourced) {
+    stop("VIGNETTES_E2E_RESULT: FAILED", call. = FALSE)
+  } else {
+    quit(status = 1L, save = "no")
+  }
 }
