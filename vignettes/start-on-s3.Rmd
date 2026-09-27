@@ -206,7 +206,9 @@ returns the manifest with a `result` for each file, kept here as `synced`.
 datom_list(conn = conn_write_imported)
 #> [pending run]
 
-datom_history(conn = conn_write_imported, name = "dm")
+dm_history <- datom_history(conn = conn_write_imported, name = "dm",
+                            short_hash = TRUE)
+dm_history[, c("version", "timestamp", "commit_message")]
 #> [pending run]
 ```
 
@@ -237,11 +239,13 @@ synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
 ```
 
 Both versions stay readable. The newest is the default; an older one is read by
-its version:
+its version. The first 8 characters of a version are enough, as with a git
+commit:
 
 ```{r step2-read}
-dm_history <- datom_history(conn = conn_write_imported, name = "dm")
-dm_history[, c("version", "timestamp")]
+dm_history <- datom_history(conn = conn_write_imported, name = "dm",
+                            short_hash = TRUE)
+dm_history[, c("version", "timestamp", "commit_message")]
 #> [pending run]
 
 nrow(datom_read(conn = conn_write_imported, name = "dm"))

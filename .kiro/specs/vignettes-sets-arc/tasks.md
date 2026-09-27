@@ -7,7 +7,7 @@ runner (3). One commit per task.
 
 ## Where things stand
 
-Spec written and approved 2026-09-26. Tasks 1-2 done; next is task 3.
+Spec written and approved 2026-09-26. Tasks 1-3 done; next is task 4, the owner's credentialed run.
 
 ---
 
@@ -49,9 +49,23 @@ Spec written and approved 2026-09-26. Tasks 1-2 done; next is task 3.
   data has **no** ALT/AST above the upper limit at any cutoff (max 0.91 x ULN), so `ELEVATED` is all
   `FALSE`; the prose makes no claim about results.
 
-- [ ] **3. `dev/e2e-vignettes-s3.R` -- runs the vignettes' own code**
+- [x] **3. `dev/e2e-vignettes-s3.R` -- runs the vignettes' own code** &nbsp; **[DONE 2026-09-26]**
   - Design section 3. Verify offline first that purl + split + special-chunk handling works (a dry
     parse, no network), then hand over.
+
+  **DONE RECORD.** Two backends: `local` masks `datom_store_s3()`, `datom_store()` and
+  `datom_init_repo()` in the chunks' environment so a folder and bare git repos stand in for S3 and
+  GitHub; `s3` is the real run. Chunks are knitted one at a time into
+  `../datom-test/vignettes-e2e/transcript-<backend>.md` in the vignettes' own `#>` format, ASCII
+  (`cli.unicode = FALSE`). **Local run: SUCCESS**, all 27 chunks plus teardown, storage and clones
+  verified empty after. **Failure path checked** on a throwaway copy with one chunk replaced by
+  `stop()`: exit 1, transcript kept up to the failing chunk, nothing torn down. The `s3` path is
+  **not** exercised -- that is task 4. Found while reading the local transcript, and fixed in the
+  vignettes: `datom_history()` printed full 64-character hashes and the committer's name and email,
+  and `datom_list_members()` wrapped to three blocks; both now show selected columns, histories with
+  `short_hash = TRUE`. Also found: Rscript did not exit after finishing unless stdin was closed, so
+  the documented command ends in `< /dev/null`. AC-A6 now names the two substitutions a real run
+  forces (bucket name, GitHub account).
 
 - [ ] **4. Credentialed run (owner) and transcripts in**
   - Owner runs the script with `GITHUB_PAT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,

@@ -288,17 +288,19 @@ nrow(dp$input$lb(conn = conn_read_imported))
 `dp$output`. Each entry is a function: call it with a connection to the
 member's project and it reads that member at its pinned version.
 
-The same members as a data frame, one row per label:
+The same members as a data frame, one row per label. It also carries each
+member's full `version` and `kind`, left out here to fit the page:
 
 ```{r use-list}
-datom_list_members(x = x)
+datom_list_members(x = x)[, c("name", "project", "key", "value")]
 #> [pending run]
 ```
 
 The set's own history, and version 1 read back by its version:
 
 ```{r use-history}
-set_history <- datom_history(conn = conn_read_liver_safety, name = set_liver_safety)
+set_history <- datom_history(conn = conn_read_liver_safety,
+                             name = set_liver_safety, short_hash = TRUE)
 set_history[, c("version", "commit_message")]
 #> [pending run]
 

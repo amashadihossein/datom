@@ -41,7 +41,9 @@ On top of the brief's section 6:
       exactly once after both inputs and output have moved.
 - [ ] AC-A3: the month-4 cut writes all four domains and the sync shows four changed.
 - [ ] AC-A6: every `#>` block in both vignettes is traceable to the captured transcript of one run.
-      Allowed edits: truncating long paths or wide tables with `...`. **No value is changed.**
+      Allowed edits, and only these: truncating long paths or wide tables with `...`; the real
+      scratch bucket name shown as `study001` (the run overrides the vignette's illustrative bucket);
+      the GitHub account in repo URLs shown as `...`. **No other value is changed.**
 - [ ] AC-S: `SECURITY.md` still points at start-on-s3 for credential handling, so the vignette still
       covers keychain, environment variables and CI (one sentence for CI: set the variables, skip the
       keyring block).
