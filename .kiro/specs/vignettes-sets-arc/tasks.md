@@ -7,7 +7,7 @@ runner (3). One commit per task.
 
 ## Where things stand
 
-Spec written and approved 2026-09-26. Tasks 1-3 done; next is task 4, the owner's credentialed run.
+Spec written and approved 2026-09-26. Tasks 1-4 done; next is task 5, close out.
 
 ---
 
@@ -67,10 +67,20 @@ Spec written and approved 2026-09-26. Tasks 1-3 done; next is task 4, the owner'
   the documented command ends in `< /dev/null`. AC-A6 now names the two substitutions a real run
   forces (bucket name, GitHub account).
 
-- [ ] **4. Credentialed run (owner) and transcripts in**
+- [x] **4. Credentialed run (owner) and transcripts in** &nbsp; **[DONE 2026-09-26]**
   - Owner runs the script with `GITHUB_PAT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
     `DATOM_E2E_BUCKET` set. Agent replaces every `[pending run]` from the transcript (AC-A6).
   - Any output that contradicts the prose: fix the prose, never the output.
+
+  **DONE RECORD.** Owner sourced the script from RStudio, bucket `datom-test`, 2026-09-26 22:57 PDT,
+  at `184ac81`. All 27 chunks ran against real S3 and GitHub. All 34 placeholders replaced
+  **mechanically** by a one-off script that swapped each chunk body for the recorded one and refused
+  if the recorded code differed from the vignette's by more than output lines. Edits applied, and only
+  these: terminal hyperlink escapes removed (RStudio's cli wraps paths/URLs in them; the runner now
+  turns them off), temp paths and the GitHub account shown as `...`, `datom-test` shown as
+  `study001`. Two init chunks gained output they had no placeholder for (repo created, repo
+  initialised). Every version string matches the offline run's exactly, which is expected: versions
+  are content hashes. No output contradicted the prose.
 
 - [ ] **5. Close out**
   - `R CMD check --as-cran` 0E/0W (AC-B); test count unchanged.

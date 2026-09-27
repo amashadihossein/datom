@@ -106,7 +106,10 @@ source(file.path(pkg_dir, "dev", "dev-sandbox.R"))
 
 # ASCII output, no colour, so transcripts paste into ASCII-only vignettes.
 # Restored at the end, so sourcing this does not change your session's output.
+# Hyperlinks off too: in RStudio cli wraps every path and URL in terminal
+# hyperlink escapes, which the first real run's transcript carried verbatim.
 .old_options <- options(cli.unicode = FALSE, cli.num_colors = 1,
+                        cli.hyperlink = FALSE, cli.hyperlink_file = FALSE,
                         crayon.enabled = FALSE, width = 80)
 
 # Every early stop goes through here, so a sourced run that stops still gives

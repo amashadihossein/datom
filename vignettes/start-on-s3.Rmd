@@ -150,6 +150,8 @@ datom_init_repo(
   create_repo  = TRUE,
   repo_name    = repo_imported
 )
+#> v Created GitHub repo ".../study001-imported".
+#> v Initialized datom repository "study001-imported" at '.../study001-imported'
 ```
 
 This creates the GitHub repository, clones it into `workdir_imported`, and
@@ -170,7 +172,17 @@ conn_write_imported <- datom_get_conn(
   store = store_write_imported
 )
 print(conn_write_imported)
-#> [pending run]
+#> 
+#> -- datom connection
+#> * Project: "study001-imported"
+#> * Backend: "s3"
+#> * Role: "developer"
+#> * Data root: "study001"
+#> * Data prefix: "imported/"
+#> * Data region: "us-east-1"
+#> * Governance: not attached
+#> * Path: '.../study001-imported'
+#> * Data repo: <https://github.com/.../study001-imported.git>
 ```
 
 ## Step 1: Sync one file
@@ -192,10 +204,13 @@ Scan the folder, then sync:
 
 ```{r step1-sync}
 manifest <- datom_sync_manifest(conn = conn_write_imported)
-#> [pending run]
+#> i Scanned 1 file: 1 new, 0 changed, 0 unchanged.
 
 synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
-#> [pending run]
+#> i Syncing 1 table...
+#> v Wrote "dm" (full): "153bff41"
+#> v "dm" synced (new).
+#> i Sync complete: 1 succeeded, 0 failed, 0 skipped.
 ```
 
 The file was converted to parquet and uploaded to S3. The version record was
@@ -204,12 +219,14 @@ returns the manifest with a `result` for each file, kept here as `synced`.
 
 ```{r step1-list}
 datom_list(conn = conn_write_imported)
-#> [pending run]
+#>   name  kind current_version current_data_sha         last_updated
+#> 1   dm table        153bff41         decbafd2 2026-09-27T05:58:03Z
 
 dm_history <- datom_history(conn = conn_write_imported, name = "dm",
                             short_hash = TRUE)
 dm_history[, c("version", "timestamp", "commit_message")]
-#> [pending run]
+#>    version            timestamp commit_message
+#> 1 153bff41 2026-09-27T05:58:03Z  Sync dm (new)
 ```
 
 The input file is no longer needed. The table reads from S3:
@@ -217,7 +234,7 @@ The input file is no longer needed. The table reads from S3:
 ```{r step1-delete}
 fs::file_delete(fs::path(inputs_imported, "dm.csv"))
 nrow(datom_read(conn = conn_write_imported, name = "dm"))
-#> [pending run]
+#> [1] 4
 ```
 
 ## Step 2: Update one file
@@ -232,10 +249,13 @@ write.csv(
 )
 
 manifest <- datom_sync_manifest(conn = conn_write_imported)
-#> [pending run]
+#> i Scanned 1 file: 0 new, 1 changed, 0 unchanged.
 
 synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
-#> [pending run]
+#> i Syncing 1 table...
+#> v Wrote "dm" (full): "0fac26cd"
+#> v "dm" synced (changed).
+#> i Sync complete: 1 succeeded, 0 failed, 0 skipped.
 ```
 
 Both versions stay readable. The newest is the default; an older one is read by
@@ -246,24 +266,26 @@ commit:
 dm_history <- datom_history(conn = conn_write_imported, name = "dm",
                             short_hash = TRUE)
 dm_history[, c("version", "timestamp", "commit_message")]
-#> [pending run]
+#>    version            timestamp    commit_message
+#> 1 0fac26cd 2026-09-27T05:58:10Z Sync dm (changed)
+#> 2 153bff41 2026-09-27T05:58:03Z     Sync dm (new)
 
 nrow(datom_read(conn = conn_write_imported, name = "dm"))
-#> [pending run]
+#> [1] 16
 
 dm_version <- dm_history$version[nrow(dm_history)]   # oldest row: month 1
 nrow(datom_read(conn = conn_write_imported, name = "dm", version = dm_version))
-#> [pending run]
+#> [1] 4
 ```
 
 ## Step 3: Sync again with nothing new
 
 ```{r step3}
 manifest <- datom_sync_manifest(conn = conn_write_imported)
-#> [pending run]
+#> i Scanned 1 file: 0 new, 0 changed, 1 unchanged.
 
 synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
-#> [pending run]
+#> i No new or changed files. Nothing to sync.
 ```
 
 A file datom already holds is not uploaded again, so the sync is safe to run on
@@ -284,17 +306,30 @@ for (domain in c("dm", "ex", "lb", "ae")) {
 }
 
 manifest <- datom_sync_manifest(conn = conn_write_imported)
-#> [pending run]
+#> i Scanned 4 files: 3 new, 1 changed, 0 unchanged.
 
 synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
-#> [pending run]
+#> i Syncing 4 tables...
+#> v Wrote "ae" (full): "075773e9"
+#> v "ae" synced (new).
+#> v Wrote "dm" (full): "773e6862"
+#> v "dm" synced (changed).
+#> v Wrote "ex" (full): "8dbcc9a7"
+#> v "ex" synced (new).
+#> v Wrote "lb" (full): "435bccb0"
+#> v "lb" synced (new).
+#> i Sync complete: 4 succeeded, 0 failed, 0 skipped.
 ```
 
 All four tables are now versioned in S3:
 
 ```{r step4-list}
 datom_list(conn = conn_write_imported)
-#> [pending run]
+#>   name  kind current_version current_data_sha         last_updated
+#> 1   dm table        773e6862         e547f03d 2026-09-27T05:58:22Z
+#> 2   ae table        075773e9         d5f8dd5a 2026-09-27T05:58:17Z
+#> 3   ex table        8dbcc9a7         ab96afc3 2026-09-27T05:58:26Z
+#> 4   lb table        435bccb0         5d419c60 2026-09-27T05:58:31Z
 ```
 
 ## Reading as a reader
@@ -319,7 +354,7 @@ conn_read_imported <- datom_get_conn(
 )
 
 nrow(datom_read(conn = conn_read_imported, name = "lb"))
-#> [pending run]
+#> [1] 205
 ```
 
 The read goes straight to S3, not through GitHub.
