@@ -7,7 +7,7 @@ runner (3). One commit per task.
 
 ## Where things stand
 
-Spec written and approved 2026-09-26. Tasks 1-4 done; next is task 5, close out.
+**Complete 2026-09-26.** All five tasks done.
 
 ---
 
@@ -82,9 +82,16 @@ Spec written and approved 2026-09-26. Tasks 1-4 done; next is task 5, close out.
   initialised). Every version string matches the offline run's exactly, which is expected: versions
   are content hashes. No output contradicted the prose.
 
-- [ ] **5. Close out**
+- [x] **5. Close out** &nbsp; **[DONE 2026-09-26]**
   - `R CMD check --as-cran` 0E/0W (AC-B); test count unchanged.
   - Grep: no `dev/`/`.kiro/` cites, no `conn`/`imported`/`product`/`dev_dir` object names, no
     unnamed arguments (brief section 6).
   - `dev/README.md` completed-phase row; harvest any learning to `dev/engineering-notes.md`.
   - PR into `dev`.
+
+  **DONE RECORD.** `R CMD check --as-cran` 0 errors / 0 warnings / 0 notes; tests 4292. Greps:
+  no old object names, no `dev/`/`.kiro/` cites, no "data product" in citable-sets, keyring only in
+  start-on-s3's two setup chunks, every datom call in code names its arguments (the only positional
+  calls are inside datom's own printed messages). Literals: bucket, region, prefixes, projects,
+  repos, set and workdirs are each set once in a settings block; the brief's check is met. Fixed on
+  the way: `SECURITY.md` called the article "Start on S3", its title is "Starting on S3".
