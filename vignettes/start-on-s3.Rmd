@@ -194,12 +194,13 @@ Scan the folder, then sync:
 manifest <- datom_sync_manifest(conn = conn_write_imported)
 #> [pending run]
 
-datom_sync(conn = conn_write_imported, manifest = manifest)
+synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
 #> [pending run]
 ```
 
 The file was converted to parquet and uploaded to S3. The version record was
-committed to the metadata repository and pushed to GitHub.
+committed to the metadata repository and pushed to GitHub. `datom_sync()`
+returns the manifest with a `result` for each file, kept here as `synced`.
 
 ```{r step1-list}
 datom_list(conn = conn_write_imported)
@@ -231,7 +232,7 @@ write.csv(
 manifest <- datom_sync_manifest(conn = conn_write_imported)
 #> [pending run]
 
-datom_sync(conn = conn_write_imported, manifest = manifest)
+synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
 #> [pending run]
 ```
 
@@ -257,7 +258,7 @@ nrow(datom_read(conn = conn_write_imported, name = "dm", version = dm_version))
 manifest <- datom_sync_manifest(conn = conn_write_imported)
 #> [pending run]
 
-datom_sync(conn = conn_write_imported, manifest = manifest)
+synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
 #> [pending run]
 ```
 
@@ -281,7 +282,7 @@ for (domain in c("dm", "ex", "lb", "ae")) {
 manifest <- datom_sync_manifest(conn = conn_write_imported)
 #> [pending run]
 
-datom_sync(conn = conn_write_imported, manifest = manifest)
+synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
 #> [pending run]
 ```
 

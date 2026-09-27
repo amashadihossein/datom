@@ -15,306 +15,400 @@ knitr::opts_chunk$set(
 )
 ```
 
-This article picks up where [S3 Setup and Promotion](start-on-s3.html) left off.
-You should have a study's data onboarded and readable before starting here.
-
-Output below is copied from a real run against a sandbox bucket, with long paths
-and wide tables shortened. Project names, hashes and bucket will not match yours.
-
-## The problem
-
-You built a result from a few tables. Months later, more data has arrived and
-several of those tables have newer versions. Someone asks which data produced the
-result.
-
-That question has no answer unless somebody wrote the versions down. Usually
-nobody did.
-
-## What a set is
-
-A **set** is a citable list of exact data versions. It has a name and a version
-of its own, so one string refers to the whole collection and resolves to exactly
-those tables at exactly those versions -- next month, next year.
-
-It stores pointers, not data, so making one is cheap. And it does not drift: a set
-pins versions, and never means "whatever is current".
-
-## Where you left off
-
-The previous article left you with a `store` for your bucket, a `conn` to the
-repo that onboards data, and `dev_dir`, its working directory.
-
-You are about to have two connections, so rename that one to say which it is:
-
-```{r}
-imported <- conn   # the connection to the onboarding repo
+```{=html}
+<link rel="stylesheet" href="../inst/vignette-setup/datom.css">
 ```
 
-## A repository for the product
+This article continues [Starting on S3](start-on-s3.html) **in the same R
+session**. It reuses that article's secrets, settings and connections, and the
+four tables it onboarded into `s3://study001/imported/`.
 
-The onboarding repo takes files in and versions them. Your product is a different
-job -- it *cites* that data -- so it gets its own repo, next to the first one in
-the same bucket:
+## The aim
+
+You want to track liver safety for study001 as data arrives. For that you keep
+a small, versioned collection: the input tables you used, and the output tables
+you derived from them. Any result can then be traced back to the exact data
+behind it.
+
+<div class="datom-callout datom-callout-tip" markdown="1">
+**What a datom set is**
+
+- A named, versioned list of pointers to exact table versions. It holds no data.
+- It never drifts. Each member stays pinned until you move it.
+- Any change, to members or to labels, makes a new version. Old versions stay
+  readable.
+- Reading a set needs access to its own project only. Reading a member needs
+  access to that member's project.
+</div>
+
+## Set up the project
+
+The set lives in its own project, in a folder beside the imported tables:
 
 ```
-s3://study-001-datom/
-    imported/datom/     the onboarded tables      (previous article)
-    adam/datom/         the product               (this article)
+s3://study001/
+    imported/datom/        onboarded tables        (Starting on S3)
+    liver-safety/datom/    the set and its outputs  (this article)
 ```
 
-`imported` is the word datom uses for a table that came from a file, as opposed
-to `derived` for one written from R. `raw/`, `edc/` or `sdtm/` work just as well
--- the prefix is a plain string.
+The settings this article adds:
 
-```{r}
-product_dir <- fs::path(tempdir(), "study_001_adam")
+```{r settings-liver-safety}
+project_liver_safety <- "study001-liver-safety"
+prefix_liver_safety  <- "liver-safety/"
+repo_liver_safety    <- "study001-liver-safety"   # GitHub repo name
+set_liver_safety     <- "study001-liver-safety"   # the set this project owns
+workdir_liver_safety <- fs::path(tempdir(), "study001-liver-safety")
+```
 
-product_data <- datom_store_s3(
-  bucket     = "study-001-datom",
-  prefix     = "adam/",
-  region     = "us-east-1",
-  access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
-  secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY")
-)
+A writer store and a reader store, built the same way as before:
 
-product_store <- datom_store(
-  data       = product_data,
+```{r stores-liver-safety}
+store_write_liver_safety <- datom_store(
+  data = datom_store_s3(
+    bucket     = bucket,
+    prefix     = prefix_liver_safety,
+    region     = region,
+    access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
+    secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY")
+  ),
   github_pat = Sys.getenv("GITHUB_PAT")
 )
 
-datom_init_repo(
-  path         = product_dir,
-  project_name = "STUDY_ADAM",
-  store        = product_store,
-  create_repo  = TRUE,
-  repo_name    = "study-001-adam",
-  mode         = "product",          # this repo builds; it does not onboard files
-  set          = "trial_product"     # the set it owns
-)
-
-product <- datom_get_conn(path = product_dir, store = product_store)
-print(product)
-#> -- datom connection
-#> * Project: "STUDY_ADAM"
-#> * Backend: "s3"
-#> * Role: "developer"
-#> * Data prefix: "adam/"
-#> * Governance: not attached
-#> * Data repo: <https://github.com/.../study-001-adam.git>
-```
-
-One repo owns one set, and it names that set here. You never pass the name again.
-
-## Build the set
-
-See what the onboarding repo holds:
-
-```{r}
-datom_list(imported)
-#>   name  kind current_version current_data_sha         last_updated
-#> 1   dm table        9a256607         e547f03d 2026-09-26T01:00:33Z
-#> 2   ae table        ddddfe5a         d5f8dd5a 2026-09-26T01:00:28Z
-#> 3   ex table        419b071c         ab96afc3 2026-09-26T01:00:37Z
-#> 4   lb table        1319d915         5d419c60 2026-09-26T01:00:41Z
-```
-
-Pick the ones your product used -- a set cites what you used, not everything
-available -- and note their versions:
-
-```{r}
-dm_v <- datom_history(imported, "dm")$version[1]
-ex_v <- datom_history(imported, "ex")$version[1]
-```
-
-Then derive whatever your product produces, and write it into the **product's**
-repo:
-
-```{r}
-dm   <- datom_read(imported, "dm")
-adsl <- dm[, c("STUDYID", "USUBJID", "AGE", "SEX")]   # your real derivation here
-
-datom_write(product, data = adsl, name = "adsl")
-adsl_v <- datom_history(product, "adsl")$version[1]
-```
-
-Now write the set, citing the inputs you used **and** the table you produced:
-
-```{r}
-datom_write_set(
-  product,
-  members = list(
-    datom_member(imported, "dm", dm_v,     tags = list(type = "input")),
-    datom_member(imported, "ex", ex_v,     tags = list(type = "input")),
-    datom_member(product,  "adsl", adsl_v, tags = list(type = "output"))
-  ),
-  tags = list(description = "Trial data cut, month 1")
-)
-```
-
-`datom_member(imported, ...)` is how a set cites another project's table: you
-resolve the version through that project's connection, and the pointer remembers
-where it came from. `datom_member(product, ...)` does the same for a table in the
-product's own repo.
-
-**The set is the product's index, so put everything the product produced in it.**
-A derived table sitting in the product's storage that the set does not cite is
-orphaned -- nothing points at it, so nothing will find it later. If you wrote it,
-cite it.
-
-Labels like `type = "input"` are your own words, and they are about to earn their
-keep: they are how you refresh your inputs without touching your outputs.
-
-## Cite it, and read it somewhere else
-
-The version that came back is the citation. Put `9e0c05e6` in a report and it
-resolves to those two tables forever.
-
-Reading it needs access to the product's storage and **nothing else** -- no git
-clone, no GitHub token:
-
-```{r}
-reader_store <- datom_store(
+store_read_liver_safety <- datom_store(
   data = datom_store_s3(
-    bucket     = "study-001-datom",
-    prefix     = "adam/",
-    region     = "us-east-1",
+    bucket     = bucket,
+    prefix     = prefix_liver_safety,
+    region     = region,
     access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
     secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY")
   )
-  # no github_pat: that absence is what makes this a reader
 )
-reader <- datom_get_conn(store = reader_store, project_name = "STUDY_ADAM")
+```
 
-x <- datom_get_set(reader, "trial_product")
+Create the repository:
+
+```{r init-liver-safety}
+datom_init_repo(
+  path         = workdir_liver_safety,
+  project_name = project_liver_safety,
+  store        = store_write_liver_safety,
+  create_repo  = TRUE,
+  repo_name    = repo_liver_safety,
+  mode         = "product",
+  set          = set_liver_safety
+)
+```
+
+`mode = "product"` makes this a repository that builds from other projects'
+tables instead of taking files in: it refuses `datom_sync()`, and it owns
+exactly one set, the one named here. `mode` accepts `"product"` or nothing, so
+`mode = "yolo"` is an error.
+
+Connect, once to write and once to read:
+
+```{r conns-liver-safety}
+conn_write_liver_safety <- datom_get_conn(
+  path  = workdir_liver_safety,
+  store = store_write_liver_safety
+)
+
+conn_read_liver_safety <- datom_get_conn(
+  store        = store_read_liver_safety,
+  project_name = project_liver_safety
+)
+```
+
+From here on, writes go through a writer connection and reads through a reader
+connection.
+
+## Version 1: register every input
+
+Register every table the imported project holds, at its current version. Some
+may go unused; that is fine. A set records exact versions, so there is nothing
+to pick.
+
+```{r v1}
+tables_imported <- datom_list(conn = conn_read_imported, short_hash = FALSE)
+tables_imported[, c("name", "current_version")]
+#> [pending run]
+
+inputs <- lapply(
+  X   = seq_len(nrow(tables_imported)),
+  FUN = function(i) {
+    datom_member(
+      conn    = conn_read_imported,
+      name    = tables_imported$name[i],
+      version = tables_imported$current_version[i],
+      tags    = list(type = "input")
+    )
+  }
+)
+
+v1 <- datom_write_set(
+  conn    = conn_write_liver_safety,
+  members = inputs,
+  tags    = list(description = "Liver safety, study001")
+)
+#> [pending run]
+```
+
+`datom_member()` takes a connection to the **member's** project, so the pointer
+records which project the table belongs to. `tags` are your own labels; you will
+use `type` shortly.
+
+A set of inputs only is a valid first version. The write returns it invisibly:
+
+```{r v1-version}
+v1$metadata_sha
+#> [pending run]
+```
+
+That string is the citation. Put it in a report and it resolves to these four
+tables at these versions.
+
+## Version 2: derive the output
+
+The derivation is one function. Save it as `R/derive_liver_flags.R` inside
+`workdir_liver_safety`:
+
+```{r derive-script}
+# R/derive_liver_flags.R
+#
+# One row per subject: age, sex, dose, and peak ALT and AST as a multiple of
+# the upper limit of normal. Reads its inputs through the set `x`, so it uses
+# exactly the versions the set pins, and records them as parents.
+derive_liver_flags <- function(x, conn_input, conn_output) {
+  inputs <- c("dm", "ex", "lb")
+
+  dm <- datom_fetch_member(conn = conn_input, x = x, member = "dm")
+  ex <- datom_fetch_member(conn = conn_input, x = x, member = "ex")
+  lb <- datom_fetch_member(conn = conn_input, x = x, member = "lb")
+
+  peak_xuln <- function(test) {
+    rows <- lb[lb$LBTESTCD == test, ]
+    tapply(X = rows$LBORRES / rows$LBORNRHI, INDEX = rows$USUBJID, FUN = max)
+  }
+
+  liver_flags <- merge(
+    x  = dm[, c("USUBJID", "AGE", "SEX")],
+    y  = ex[, c("USUBJID", "EXDOSE")],
+    by = "USUBJID"
+  )
+  liver_flags$ALT_PEAK_XULN <- as.numeric(peak_xuln("ALT")[liver_flags$USUBJID])
+  liver_flags$AST_PEAK_XULN <- as.numeric(peak_xuln("AST")[liver_flags$USUBJID])
+  liver_flags$ELEVATED <- liver_flags$ALT_PEAK_XULN > 1 |
+    liver_flags$AST_PEAK_XULN > 1
+
+  # One parent per input used, at the version the set pins.
+  pinned <- datom_list_members(x = x)
+  parents <- lapply(
+    X   = inputs,
+    FUN = function(name) {
+      datom_parent(
+        conn    = conn_input,
+        table   = name,
+        version = unique(pinned$version[pinned$name == name])
+      )
+    }
+  )
+
+  datom_write(
+    conn    = conn_output,
+    data    = liver_flags,
+    name    = "liver_flags",
+    parents = parents
+  )
+}
+```
+
+It reads `dm`, `ex` and `lb` **through the set**, not by reaching into the
+imported project for whatever is current. `ae` stays registered and unused: a
+derivation can use a subset of the inputs.
+
+Load it, run it against version 1, and add the output to the set:
+
+```{r v2}
+source(fs::path(workdir_liver_safety, "R", "derive_liver_flags.R"))
+
+x <- datom_get_set(conn = conn_read_liver_safety, name = set_liver_safety)
+
+liver_flags_written <- derive_liver_flags(
+  x           = x,
+  conn_input  = conn_read_imported,
+  conn_output = conn_write_liver_safety
+)
+#> [pending run]
+
+x$members <- c(
+  x$members,
+  list(datom_member(
+    conn    = conn_read_liver_safety,
+    name    = "liver_flags",
+    version = liver_flags_written$metadata_sha,
+    tags    = list(type = "output")
+  ))
+)
+
+v2 <- datom_write_set(
+  conn          = conn_write_liver_safety,
+  members       = x,
+  include_paths = "R"
+)
+#> [pending run]
+```
+
+`include_paths = "R"` commits the derivation script in the same commit as the
+set, so checking out that commit gives you the pointers and the code that
+produced the output. Only the derivation code is kept. The setup and onboarding
+code in these articles is not, because datom already records what it did.
+
+Every output is derived from members of the set, and records them as its
+parents. So the set carries its full provenance.
+
+## Use it
+
+The labels you gave the members become the structure you read them through:
+
+```{r use-structure}
+x <- datom_get_set(conn = conn_read_liver_safety, name = set_liver_safety)
 print(x)
+#> [pending run]
+
+dp <- datom_structure_members(x = x, by = "type")
+
+head(dp$output$liver_flags(conn = conn_read_liver_safety))
+#> [pending run]
+
+nrow(dp$input$lb(conn = conn_read_imported))
+#> [pending run]
 ```
 
-That prints the set's name, project and version, then each member with its
-labels -- the two inputs and the output you produced.
+`type = "input"` and `type = "output"` are what produce `dp$input` and
+`dp$output`. Each entry is a function: call it with a connection to the
+member's project and it reads that member at its pinned version.
 
-`datom_list_members(x)` gives the same thing as a data frame, one row per label,
-if you would rather filter it than read it.
+The same members as a data frame, one row per label:
 
-Reading the set gave you pointers. For the data, ask for one member through a
-connection to **that member's** project:
-
-```{r}
-head(datom_fetch_member(imported, x, "dm"))
-#> # A tibble: 6 x 12
-#>   STUDYID   DOMAIN USUBJID         SUBJID   AGE AGEU  SEX   ...
-#> 1 STUDY-001 DM     STUDY-001-001        1    71 YEARS F
-#> 2 STUDY-001 DM     STUDY-001-002        2    27 YEARS M
+```{r use-list}
+datom_list_members(x = x)
+#> [pending run]
 ```
 
-That split is deliberate, and it is what makes a set worth having: the set is
-citable by someone who has no access to the data inside it.
+The set's own history, and version 1 read back by its version:
 
-## An input moves
+```{r use-history}
+set_history <- datom_history(conn = conn_read_liver_safety, name = set_liver_safety)
+set_history[, c("version", "commit_message")]
+#> [pending run]
 
-More data arrives and the onboarding repo takes it in, as before:
-
-```{r}
-datom_sync(imported, datom_sync_manifest(imported))
-#> i Scanned 4 files: 0 new, 1 changed, 3 unchanged.
-#> v Wrote "dm" (full): "dfd8e34c"
-#> i Sync complete: 1 succeeded, 0 failed, 3 skipped.
+datom_get_set(
+  conn    = conn_read_liver_safety,
+  name    = set_liver_safety,
+  version = v1$metadata_sha
+)
+#> [pending run]
 ```
 
-Your set still points at the older version, which is correct -- a citation does
-not move on its own. Move it when you decide to, and say which members you mean:
+## Refresh: new data arrives
 
-```{r}
-x <- datom_get_set(product, "trial_product")
-x <- datom_update_members(x, imported, tags = list(type = "input"))
-#> project STUDY_001:
-#>   dm  9a256607 -> dfd8e34c
-#> i Nothing has been written. Write the set with `datom_write_set(conn, x)`.
+The month-4 extract arrives for all four tables. The imported project takes it
+in, as before:
+
+```{r refresh-sync}
+for (domain in c("dm", "ex", "lb", "ae")) {
+  write.csv(
+    x         = datom_example_data(domain = domain, cutoff_date = "2026-04-28"),
+    file      = fs::path(inputs_imported, paste0(domain, ".csv")),
+    row.names = FALSE
+  )
+}
+
+manifest <- datom_sync_manifest(conn = conn_write_imported)
+#> [pending run]
+
+synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
+#> [pending run]
 ```
 
-It opens with a count of how many of the selected members moved, then names each
-one, `old -> new`, grouped by project.
+The set still points at the month-3 versions. A citation does not move on its
+own. Move it in this order: the inputs, then the output derived from them, then
+one write.
 
-This is where the labels pay off. `tags = list(type = "input")` refreshes your
-inputs and leaves your output alone, which is what you want -- your `adsl` moves
-when you rebuild it, not when an input changes underneath it.
+```{r refresh-update}
+x <- datom_get_set(conn = conn_read_liver_safety, name = set_liver_safety)
 
-It also keeps this to one connection. Without the filter, every member is
-selected, including `adsl` in the product's own project, and datom would ask for a
-connection for that project too rather than quietly skipping it.
+x <- datom_update_members(
+  x    = x,
+  conn = conn_read_imported,
+  tags = list(type = "input")
+)
+#> [pending run]
 
-It reports what moved, `old -> new`, **before** anything is written. You are
-holding an edited set; the write is yours to make. Labels came along with the
-pointer.
+derive_liver_flags(
+  x           = x,
+  conn_input  = conn_read_imported,
+  conn_output = conn_write_liver_safety
+)
+#> [pending run]
 
-```{r}
-datom_write_set(product, x)
+x <- datom_update_members(
+  x    = x,
+  conn = conn_read_liver_safety,
+  tags = list(type = "output")
+)
+#> [pending run]
+
+v3 <- datom_write_set(
+  conn          = conn_write_liver_safety,
+  members       = x,
+  include_paths = "R"
+)
+#> [pending run]
 ```
 
-Run the same refresh when nothing has changed and it costs nothing:
+`datom_update_members()` moves the selected members to their project's current
+version and reports what moved. Nothing is written until `datom_write_set()`.
 
-```{r}
-datom_write_set(product, datom_update_members(datom_get_set(product, "trial_product"),
-                                              imported, tags = list(type = "input")))
-#> i No changes detected for set "trial_product". Skipping write.
-```
+The derivation runs on `x` as you hold it, with the inputs already moved, so the
+new `liver_flags` is built from month-4 data. datom does not check the order for
+you. Writing once, after both the inputs and the output have moved, is what
+keeps version 3 from pairing new inputs with an output built from old ones.
 
-No new version. A set's version moves when its content moves, so re-running a
-build script is free.
+## Who can read what
 
-## Retire a member
+A set and one reader connection per project open everything in it:
 
-```{r}
-x <- datom_get_set(product, "trial_product")
-x <- datom_remove_members(x, "ex")     # an input you no longer use
-datom_write_set(product, x)
-```
+| You hold | You can read |
+|---|---|
+| `conn_read_liver_safety` | the set, every version of it, and `liver_flags` |
+| `conn_read_imported` | the input tables |
 
-Select by name or by label rather than by position, because positions shift when
-someone adds a member.
-
-Edits made together are written together. Repoint and remove before writing, and
-the commit message says so:
-
-```{r}
-datom_history(product, "trial_product")[, c("version", "commit_message")]
-#>    version                                          commit_message
-#> 1 31d711b2  Update trial_product: repoint 1 member, drop 1 member
-#> 2 ae193a04  Update trial_product
-```
-
-## What a set does not do
-
-* It holds no data. Removing a member deletes nothing -- the table it pointed at
-  is untouched, and older versions of the set still cite it.
-* It does not drift. A member pins one version, chosen by you.
-* It does not change its members. Writing a set is read-only on them.
-
-Two more things worth knowing before you build one in anger:
-
-**A write replaces the set's current version**, because one repo owns one set.
-Earlier versions stay readable by their own version string, so nothing is lost --
-but `datom_get_set(conn, name)` always gives you the newest.
-
-**Labels are content.** Changing a description or a member's label mints a new
-version, the same as changing a member would. That is the point: the set now says
-something different about itself.
+Neither needs a GitHub token or a clone. Someone who can read the liver-safety
+project but not the imported one can still read and cite the set, and see which
+inputs it names; they cannot open the inputs.
 
 ## Where you are
 
-You have a study's data in one repo and a product in another that cites exact
-versions of it. The product's version is one string you can put in a report, and
-it will resolve to the same tables in a year.
+One project holds the study's onboarded tables. A second holds a set that names
+exact versions of them, plus the output derived from them, the code that derived
+it, and three versions of history. One string cites any of those versions.
 
-A product can also pool several studies from several buckets, which needs
-credentials that reach all of them. That is a separate article.
+Pooling several studies into one set is a separate article.
 
 ## Teardown
 
-If you were following along on real infrastructure:
+Delete both projects, storage first and then the repository each time:
 
-```{r}
-datom_repo_delete(product,  confirm = "STUDY_ADAM")
-datom_repo_delete(imported, confirm = "STUDY_001")
+```{r teardown}
+datom_storage_delete_prefix(conn = conn_write_liver_safety)
+datom_repo_delete(conn = conn_write_liver_safety, confirm = project_liver_safety)
+
+datom_storage_delete_prefix(conn = conn_write_imported)
+datom_repo_delete(conn = conn_write_imported, confirm = project_imported)
 ```
 
-The buckets are yours; datom removes only the namespaces it created.
+`datom_storage_delete_prefix()` deletes everything under that project's
+`datom/` folder, and it does not ask first. The rest of the bucket, and the
+bucket itself, are left alone. `datom_repo_delete()` deletes the GitHub
+repository and the local clone, and does not touch storage.

@@ -78,7 +78,8 @@ drift:
      the bucket in the vignette is illustrative.
    - `derive-script` -- written to `workdir_liver_safety/R/derive_liver_flags.R` and sourced, not
      evaluated inline.
-   - `teardown-imported` in start-on-s3 -- deferred to the end, after citable-sets.
+   - `teardown-imported` in start-on-s3 -- skipped: the walk continues into citable-sets, whose
+     `teardown` chunk deletes both projects and runs only in `--teardown` mode.
 4. Startup: fixed resource names, delete-if-exists (repos and prefixes) -- the lesson from the last
    spec: timestamped names orphan quietly, fixed names collide loudly.
 5. Teardown is a separate step (`--teardown`), not a `finally`, so a failed walk leaves state to

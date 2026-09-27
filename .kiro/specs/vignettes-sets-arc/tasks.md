@@ -7,7 +7,7 @@ runner (3). One commit per task.
 
 ## Where things stand
 
-Spec written and approved 2026-09-26. Task 1 done; next is task 2.
+Spec written and approved 2026-09-26. Tasks 1-2 done; next is task 3.
 
 ---
 
@@ -29,7 +29,7 @@ Spec written and approved 2026-09-26. Task 1 done; next is task 2.
   calls and `write.csv()`; single-argument base helpers (`Sys.getenv()`, `nrow()`) stay positional, as
   in the brief's own examples; (5) month-3 batch written with a loop over the four domains.
 
-- [ ] **2. Rewrite `vignettes/citable-sets.Rmd` (code and prose)**
+- [x] **2. Rewrite `vignettes/citable-sets.Rmd` (code and prose)** &nbsp; **[DONE 2026-09-26]**
   - Brief section 5, plus A1-A5, A8, A9.
   - Opens: link to "Starting on S3", same-session note (A4), aim, info box.
   - v1 inputs only; v2 derive + append output + `include_paths = "R"`; use (structure, list,
@@ -37,6 +37,17 @@ Spec written and approved 2026-09-26. Task 1 done; next is task 2.
     teardown both projects.
   - Reader conns for every fetch.
   - Chunks labelled; output blocks `#> [pending run]`.
+
+  **DONE RECORD.** Renders and purls. **Dry-run offline** (local store and bare git remotes standing
+  in for S3 and GitHub, vignette chunks v1 -> refresh executed verbatim from purl): v1 4 members, v2
+  5 members with `liver_flags` 25 rows, refresh repoints 4 inputs, re-derives, repoints the output,
+  one write. Cannot test S3 or the GitHub API -- that is task 4. Found and fixed: `datom_sync()`
+  returns the manifest visibly, so every bare call printed a wide data frame after the messages; both
+  vignettes now assign it (`synced <-`). Choices: both liver-safety connections are built at setup so
+  every read uses a reader; imported reads use `conn_read_imported` throughout, including
+  `datom_list()` and `datom_member()`; citable-sets' `teardown` chunk deletes both projects. Example
+  data has **no** ALT/AST above the upper limit at any cutoff (max 0.91 x ULN), so `ELEVATED` is all
+  `FALSE`; the prose makes no claim about results.
 
 - [ ] **3. `dev/e2e-vignettes-s3.R` -- runs the vignettes' own code**
   - Design section 3. Verify offline first that purl + split + special-chunk handling works (a dry

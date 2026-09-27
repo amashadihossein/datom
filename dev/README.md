@@ -251,7 +251,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Branch | Status |
 |------|--------|--------|
-| [vignettes-sets-arc](../.kiro/specs/vignettes-sets-arc/) | `spec/vignettes-sets-arc` (from `dev`) | Rework `start-on-s3` + `citable-sets` into one walk. Task 1 of 5 done (start-on-s3 code and prose; output blocks pending the credentialed run). |
+| [vignettes-sets-arc](../.kiro/specs/vignettes-sets-arc/) | `spec/vignettes-sets-arc` (from `dev`) | Rework `start-on-s3` + `citable-sets` into one walk. Tasks 1-2 of 5 done (both vignettes' code and prose; output blocks pending the credentialed run). |
 
 Before this spec: `datom-sets` completed 2026-09-21 and `sets-release-readiness` on 2026-09-25 -- both under
 Completed Phases below. Specs persist as documentation under `.kiro/specs/`; they are not deleted on
