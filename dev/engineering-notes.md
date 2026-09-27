@@ -1124,3 +1124,31 @@ than inside a script you run repeatedly.
 
 This is the package's own secret-handling principle applied to tooling: datom
 receives secrets explicitly and never discovers them.
+
+### Vignette output comes from running the vignette's own chunks, not a copy
+
+From `vignettes-sets-arc` (2026-09-26). Vignettes that need credentials are `eval = FALSE`, so
+nothing checks their `#>` blocks, and the last hand-edited transcript shipped because of that.
+`dev/e2e-vignettes-s3.R` closes the gap: `knitr::purl()` the Rmd, split on the `## ----label`
+headers, knit one chunk at a time into a transcript, then replace each chunk body mechanically,
+refusing if the recorded code differs from the vignette's. Five things it taught:
+
+- **Label every chunk.** The runner finds chunks to skip or special-case by label. The
+  unlabelled setup chunk purls as `## ----include = FALSE----`; read naively that is a chunk
+  called `include`, and running it sets `eval = FALSE` for everything after.
+- **Capture with `cli.unicode = FALSE`, `cli.hyperlink = FALSE`, `cli.hyperlink_file = FALSE`.**
+  Vignettes are ASCII-only, and RStudio's cli wraps every path and URL in terminal hyperlink
+  escapes, which the first real run's transcript carried verbatim.
+- **A verb that returns visibly prints in a transcript.** `datom_sync()` returns its manifest
+  visibly, so a bare call prints a wide data frame of paths and hashes after its messages.
+  Assign it. `datom_history()` prints full hashes and the committer's name and email: select
+  columns and use `short_hash = TRUE`.
+- **The offline dry run predicts the real run's versions exactly.** Versions are content hashes,
+  so a local-backend run with the same example data produced the same version strings as S3.
+  A mismatch between the two is itself a finding.
+- **Talk to GitHub with the token the code uses, not the `gh` CLI.** `gh` answers for whichever
+  account it is logged into, which need not own `GITHUB_PAT`; a pre-clean through `gh` would look
+  for leftovers in the wrong account.
+
+Unresolved: under `Rscript` the runner finished, printed its result, and did not exit unless stdin
+was closed (`< /dev/null`). Sourcing from a session avoids it.
