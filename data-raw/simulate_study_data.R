@@ -6,10 +6,16 @@
 #   inst/extdata/ex.csv   -- Exposure (48 rows)
 #   inst/extdata/lb.csv   -- Labs (~720 rows: 48 subjects x 3 visits x 5 tests)
 #   inst/extdata/ae.csv   -- Adverse events (~80 rows: ~1.7 per subject)
+#   inst/extdata/vs.csv   -- Vital signs (432 rows: 48 subjects x 3 visits x 3 tests)
 #   R/sysdata.rda         -- study_cutoff_dates (named vector of monthly cuts)
 #
 # Vignettes filter these by enrollment / event date to simulate monthly
 # EDC snapshots arriving over the life of the study.
+#
+# All domains draw from ONE random stream, in the order they appear below.
+# Add a new domain AFTER the last one, never before or between: any draw
+# inserted earlier shifts every value after it, and every recorded vignette
+# output depends on the existing tables staying exactly as they are.
 
 set.seed(20260101)
 
@@ -176,6 +182,47 @@ ae <- do.call(rbind, ae_rows)
 ae$AEBODSYS <- ae_terms$AEBODSYS[match(ae$AETERM, ae_terms$AETERM)]
 rownames(ae) <- NULL
 
+# --- VS (Vital signs) --------------------------------------------------------
+# Taken at the same three visits as LB, on the same dates, 3 tests per visit.
+# 48 * 3 * 3 = 432 rows. Rows ordered subject, then visit, then test.
+
+vs_tests <- data.frame(
+  VSTESTCD = c("SYSBP", "DIABP", "PULSE"),
+  VSTEST   = c("Systolic Blood Pressure", "Diastolic Blood Pressure", "Pulse Rate"),
+  VSORRESU = c("mmHg", "mmHg", "beats/min"),
+  mean_val = c(122, 78, 72),
+  sd_val   = c(12, 8, 9),
+  stringsAsFactors = FALSE
+)
+
+vs_grid <- expand.grid(
+  test    = seq_len(nrow(vs_tests)),
+  visit   = seq_along(lb_visits),
+  subject = seq_len(n_subjects)
+)
+vs_visitnum <- vapply(lb_visits, function(v) v$visitnum, integer(1))
+vs_visit    <- vapply(lb_visits, function(v) v$visit, character(1))
+vs_offset   <- vapply(lb_visits, function(v) v$offset_days, integer(1))
+
+vs <- data.frame(
+  STUDYID  = "STUDY-001",
+  DOMAIN   = "VS",
+  USUBJID  = dm$USUBJID[vs_grid$subject],
+  SUBJID   = dm$SUBJID[vs_grid$subject],
+  VISITNUM = vs_visitnum[vs_grid$visit],
+  VISIT    = vs_visit[vs_grid$visit],
+  VSTESTCD = vs_tests$VSTESTCD[vs_grid$test],
+  VSTEST   = vs_tests$VSTEST[vs_grid$test],
+  VSORRES  = round(stats::rnorm(
+    nrow(vs_grid),
+    vs_tests$mean_val[vs_grid$test],
+    vs_tests$sd_val[vs_grid$test]
+  )),
+  VSORRESU = vs_tests$VSORRESU[vs_grid$test],
+  VSDTC    = format(enroll_dates[vs_grid$subject] + vs_offset[vs_grid$visit], "%Y-%m-%d"),
+  stringsAsFactors = FALSE
+)
+
 # --- Monthly cutoff dates ----------------------------------------------------
 study_cutoff_dates <- as.Date(paste0("2026-0", 1:6, "-28"))
 names(study_cutoff_dates) <- paste0("month_", 1:6)
@@ -187,6 +234,7 @@ write.csv(dm, "inst/extdata/dm.csv", row.names = FALSE)
 write.csv(ex, "inst/extdata/ex.csv", row.names = FALSE)
 write.csv(lb, "inst/extdata/lb.csv", row.names = FALSE)
 write.csv(ae, "inst/extdata/ae.csv", row.names = FALSE)
+write.csv(vs, "inst/extdata/vs.csv", row.names = FALSE)
 
 # Save cutoff dates as internal data
 if (!dir.exists("R")) dir.create("R")
@@ -196,4 +244,5 @@ cat("Wrote inst/extdata/dm.csv (", nrow(dm), " rows)\n")
 cat("Wrote inst/extdata/ex.csv (", nrow(ex), " rows)\n")
 cat("Wrote inst/extdata/lb.csv (", nrow(lb), " rows)\n")
 cat("Wrote inst/extdata/ae.csv (", nrow(ae), " rows)\n")
+cat("Wrote inst/extdata/vs.csv (", nrow(vs), " rows)\n")
 cat("Wrote R/sysdata.rda (study_cutoff_dates)\n")

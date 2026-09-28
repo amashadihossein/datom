@@ -12,7 +12,7 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. No code yet. **Resume at task 1.**
+Spec approved 2026-09-27 and committed. Task 1 done 2026-09-28 (4295 tests). **Resume at task 2.**
 
 Starting cold: `git checkout spec/set-sync-ergonomics`, read `requirements.md` then `design.md`
 (section 1 lists the code facts already checked, section 8 is task 1). The owner's original prompt is
@@ -20,7 +20,17 @@ untracked and not needed: every decision is in `requirements.md`.
 
 ---
 
-- [ ] **1. Example data: add `vs`** (R7, AC13)
+- [x] **1. Example data: add `vs`** (R7, AC13)
+  - **Done 2026-09-28, 4295 tests (+13).** Before editing, the unmodified simulator was re-run and
+    reproduced all four CSVs and `R/sysdata.rda` byte-for-byte (R 4.5.2), so the post-edit diff is
+    attributable to the edit alone. After the edit: same result, `sysdata.rda` included, so nothing
+    needed restoring. `vs` is 432 rows (`SYSBP`, `DIABP`, `PULSE`, integer `VSORRES`), on exactly the
+    `lb` subject/visit/date triples.
+  - Added beyond the plan: a test pinning a **value fingerprint** of each original table (sha256 over
+    the parsed columns, not the file bytes, so line endings and checkout settings cannot move it), plus
+    `ae` locked at 84 rows. Probe: moving the `vs` block ahead of `ae` in the simulator reddened the
+    `ae` fingerprint; restored and regenerated afterwards. The simulator header now says new domains
+    go last in the random stream, and why.
   - Append `vs` generation after `ae` in `data-raw/simulate_study_data.R`; write `vs.csv`.
   - The script writes with relative paths, so run it from the repo root:
     `Rscript data-raw/simulate_study_data.R`.

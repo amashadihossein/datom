@@ -4,17 +4,22 @@
 \alias{datom_example_data}
 \title{Load Example EDC Data}
 \usage{
-datom_example_data(domain = c("dm", "ex", "lb", "ae"), cutoff_date = NULL)
+datom_example_data(
+  domain = c("dm", "ex", "lb", "ae", "vs"),
+  cutoff_date = NULL
+)
 }
 \arguments{
 \item{domain}{One of \code{"dm"} (demographics, 48 rows), \code{"ex"} (exposure,
-48 rows), \code{"lb"} (labs, ~720 rows: 3 visits x 5 tests per subject),
-or \code{"ae"} (adverse events, ~80 rows).}
+48 rows), \code{"lb"} (labs, 720 rows: 3 visits x 5 tests per subject),
+\code{"ae"} (adverse events, ~80 rows), or \code{"vs"} (vital signs, 432 rows:
+3 visits x 3 tests per subject, taken on the same dates as the labs).}
 
 \item{cutoff_date}{Optional date string (\code{"YYYY-MM-DD"}) to filter
 rows whose primary date column is on or before this date, simulating
 a point-in-time EDC extract. The date column used per domain:
-\code{RFSTDTC} (dm), \code{EXSTDTC} (ex), \code{LBDTC} (lb), \code{AESTDTC} (ae).}
+\code{RFSTDTC} (dm), \code{EXSTDTC} (ex), \code{LBDTC} (lb), \code{AESTDTC} (ae),
+\code{VSDTC} (vs).}
 }
 \value{
 A data frame.
@@ -22,7 +27,7 @@ A data frame.
 \description{
 Loads bundled clinical trial example data for use in examples and
 vignettes. The data simulates a Phase II study (STUDY-001) with 48
-subjects enrolled over 6 months across four SDTM-flavored domains.
+subjects enrolled over 6 months across five SDTM-flavored domains.
 }
 \examples{
 # Full demographics
