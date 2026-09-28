@@ -492,7 +492,7 @@
 
 #' Add This Edit's Rows to Whatever Log the Object Already Carries
 #'
-#' **One log for both edit verbs, appended to rather than replaced, and that is
+#' **One log for every edit verb, appended to rather than replaced, and that is
 #' what makes a chain of edits produce one honest commit message.** With a verb
 #' owning its own attribute, `update |> remove |> write` commits a message naming
 #' the repoints and silent about the removal -- and a destructive edit is the one
@@ -506,6 +506,10 @@
 #' Repointing a member and then removing it leaves **both** entries. That is an
 #' honest history of the edits and slightly odd in a commit message; collapsing
 #' them would mean one verb reasoning about the other's rows.
+#'
+#' Three actions are written: `repoint` by [datom_update_members()], `remove` by
+#' [datom_remove_members()], and `add` by [datom_add_member()] on a `datom_set`
+#' (never on a draft, which has no earlier set to describe a change against).
 #'
 #' @param x The edited object.
 #' @param rows A data frame of new entries, carrying
@@ -545,11 +549,12 @@
   short <- function(v) if (abbreviate) substr(v, 1L, 8L) else v
 
   describe <- function(row) {
-    if (identical(row$action, "remove")) {
-      sprintf("  %s  dropped, was %s", row$name, short(row$from))
-    } else {
+    switch(
+      row$action,
+      add = sprintf("  %s  added at %s", row$name, short(row$to)),
+      remove = sprintf("  %s  dropped, was %s", row$name, short(row$from)),
       sprintf("  %s  %s -> %s", row$name, short(row$from), short(row$to))
-    }
+    )
   }
 
   unlist(
@@ -686,7 +691,7 @@
 
   # One clause per action present, in the order the actions are listed here so
   # the subject reads the same whichever order the edits happened in.
-  verbs <- c(repoint = "repoint", remove = "drop")
+  verbs <- c(add = "add", repoint = "repoint", remove = "drop")
   counts <- vapply(
     names(verbs), function(a) sum(edits$action == a), integer(1L)
   )

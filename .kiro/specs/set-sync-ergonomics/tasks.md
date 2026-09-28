@@ -12,12 +12,12 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1 and 2 done 2026-09-28. **Resume at task 3**
-(`datom_add_member()` on a saved set); ask the owner before starting it (rule 5d).
-**Current test count: 4330** -- what task 3's count must not drop below.
+Spec approved 2026-09-27 and committed. Tasks 1, 2 and 3 done 2026-09-28. **Resume at task 4**
+(provenance check in `datom_write_set()`); ask the owner before starting it (rule 5d).
+**Current test count: 4380** -- what task 4's count must not drop below.
 
-Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R4 is
-task 3) and `design.md` (section 1 lists the code facts already checked, section 5 is task 3). Before
+Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R6 is
+task 4) and `design.md` (section 1 lists the code facts already checked, section 7 is task 4). Before
 editing `R/`, read `dev/engineering-notes.md`, at least "A test can observe a layer that cannot
 distinguish the two behaviours" and "Probing a guard". Each refusal a task adds needs a probe. The
 owner's original prompt is untracked and not needed: every decision is in `requirements.md`.
@@ -61,7 +61,28 @@ owner's original prompt is untracked and not needed: every decision is in `requi
   - Parity fixture lists the baseline `lb` first, so a resolver ignoring labels picks the wrong member
     for the live case.
 
-- [ ] **3. `datom_add_member()` on a `datom_set`, with `conn =`** (R4, AC10)
+- [x] **3. `datom_add_member()` on a `datom_set`, with `conn =`** (R4, AC10)
+  - **Done 2026-09-28, 4380 tests (+50).** `datom_add_member(x, member, version = NULL, tags = NULL,
+    conn = NULL)`. A name resolves through `conn`, or the draft's own connection when omitted; a
+    `datom_set` never borrows a `conn` field (branched on class, not `conn %||% x$conn`), so a name
+    there needs `conn` (`datom_member_conn_required`). `conn` that is not a connection:
+    `datom_not_a_conn`. On a `datom_set`: link added through the shared factory, identity emptied,
+    `add` row logged, not-written line printed. Drafts unchanged apart from `conn =`.
+  - Found while writing it: the clash check digests members, and the digest refuses any field but
+    `id` / `tags`, so a set read back (every member has `$fetch`) would have errored on every add.
+    Existing members are stripped of links before the check.
+  - Added beyond the plan: the new member gets a `$fetch` link, so every member of a read set still
+    has one. Commit subject lists `add` first, then `repoint`, then `drop`.
+  - Docs whose claims this made false were rewritten: the `R/set-draft.R` header (points 1-2 said
+    the verb never takes `conn` and that a record is the only cross-project route; point 7 added),
+    the `datom_assemble_set()` "one draft" bullet, the cross-project test's title, and the
+    `dev/datom_specification.md` signature.
+  - Probes (fixed copy, `cmp` after each; control reddened nothing): the conn-required refusal, the
+    class branch, the conn type check, link stripping in the clash check, the link, identity
+    emptying, the log append, the not-written line, the set/draft wording, the draft early return,
+    the `add` commit verb, its display line and its order -- each reddened its own test. The first
+    harness run restored nothing (`on.exit()` at `Rscript` top level); recorded in
+    `dev/engineering-notes.md`.
   - Design 5, including the `add` action in the edit log and commit message.
   - Tests: by record, by name with `conn`, name without `conn` refused, draft unchanged (commit
     message too), clash rules on a `datom_set`.

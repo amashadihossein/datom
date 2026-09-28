@@ -15,10 +15,9 @@
 #   * THREE ROUTES, ONE `data_sha` -- a plain list, a set read back, and a draft.
 #     The two widenings sit on two different parameters, and a change that
 #     collapses them into one branch drops a route while every other test passes.
-#   * A CROSS-PROJECT MEMBER, which is the capability the record shape exists for
-#     rather than a convenience: a draft holds one connection, so a member of
-#     another project cannot be declared by name at all. Asserted on the written
-#     payload, which is where the other project's name has to survive.
+#   * A CROSS-PROJECT MEMBER added as a record: a draft holds one connection, so
+#     without `conn =` a name only reaches its own project. Asserted on the
+#     written payload, which is where the other project's name has to survive.
 #   * A DRAFT'S PRINT METHOD MUST NOT REACH THE CONNECTION'S TOKEN. The fixture
 #     puts a recognisable one on the conn so the assertion is real rather than
 #     vacuous.
@@ -526,11 +525,10 @@ test_that("the conn guard names both shapes it accepts", {
 
 # === one draft, one connection ================================================
 
-test_that("a member of another project can only be added as a record, and is", {
-  # THE CAPABILITY THE RECORD SHAPE EXISTS FOR, not a convenience. A draft holds
-  # ONE connection and a name is resolved through it, so a member of another
-  # project cannot be declared by name at all -- `datom_member(conn_b, ...)` is
-  # the only route, and the written payload has to record B.
+test_that("a member of another project is added as a record, and is", {
+  # A draft holds ONE connection and a name is resolved through it unless the
+  # call brings its own `conn` (tested below). A record built on the other
+  # project's connection needs neither, and the written payload has to record B.
   fx_a <- local_draft_project("project-a", "product-a", prefix = "proj-a")
   fx_b <- local_draft_project("project-b", "product-b", prefix = "proj-b")
 
@@ -553,10 +551,212 @@ test_that("a member of another project can only be added as a record, and is", {
   )
   expect_setequal(projects, c("project-a", "project-b"))
 
-  # By name it is unreachable: the draft's connection looks in project A's
-  # storage, where "ae" does not exist.
+  # By name WITHOUT `conn` it is unreachable: the draft's connection looks in
+  # project A's storage, where "ae" does not exist.
   expect_error(
     datom_add_member(datom_assemble_set(fx_a$conn), "ae", v_b),
     "not found"
   )
+})
+
+test_that("conn = resolves one name in another project and leaves the draft's", {
+  # The draft still holds exactly one connection afterwards: `conn` is used for
+  # that one lookup and never stored.
+  fx_a <- local_draft_project("project-a", "product-a", prefix = "proj-a")
+  fx_b <- local_draft_project("project-b", "product-b", prefix = "proj-b")
+  v_b <- sd_table(fx_b, "ae")
+
+  draft <- datom_assemble_set(fx_a$conn) |>
+    datom_add_member("ae", v_b, tags = list(type = "input"), conn = fx_b$conn)
+
+  expect_s3_class(draft, "datom_set_draft")
+  expect_identical(draft$members[[1L]]$id$project, "project-b")
+  expect_identical(draft$members[[1L]]$id$version, v_b)
+  expect_identical(draft$members[[1L]]$tags, list(type = "input"))
+  expect_identical(draft$conn, fx_a$conn)
+})
+
+
+# === datom_add_member() on a set read back ====================================
+
+# A product holding one input, written and read back: the object a caller has in
+# hand when they add an output to a set that already exists.
+sd_saved_set <- function(fx) {
+  v_dm <- sd_table(fx, "dm")
+  sd_write(fx$conn, list(
+    datom_member(fx$conn, "dm", v_dm, tags = list(type = "input"))
+  ))
+  datom_get_set(fx$conn, fx$set_name)
+}
+
+sd_add <- function(...) suppressMessages(datom_add_member(...))
+
+test_that("adding by name with conn to a saved set returns an edited set", {
+  fx <- local_draft_project()
+  x <- sd_saved_set(fx)
+  expect_false(is.null(x$version))
+  v_lb <- sd_table(fx, "lb")
+
+  expect_message(
+    out <- datom_add_member(x, "lb", v_lb, tags = list(type = "output"),
+                            conn = fx$conn),
+    "Nothing has been written"
+  )
+
+  expect_s3_class(out, "datom_set")
+  expect_length(out$members, 2L)
+  added <- out$members[[2L]]
+  expect_identical(added$id$name, "lb")
+  expect_identical(added$id$version, v_lb)
+  expect_identical(added$id$project, "set-project")
+  expect_identical(added$tags, list(type = "output"))
+
+  # The version it was read as no longer describes what it holds.
+  expect_null(out$version)
+  expect_null(out$data_sha)
+  expect_true(all(c("version", "data_sha") %in% names(out)))
+
+  # Like every other member of a set read back, it resolves with one call.
+  expect_true(is.function(added$fetch))
+  expect_identical(nrow(added$fetch(fx$conn)), 3L)
+
+  edits <- attr(out, "datom_edits")
+  expect_identical(nrow(edits), 1L)
+  expect_identical(edits$action, "add")
+  expect_identical(edits$name, "lb")
+  expect_identical(edits$kind, "table")
+  expect_identical(edits$project, "set-project")
+  expect_true(is.na(edits$from))
+  expect_identical(edits$to, v_lb)
+})
+
+test_that("adding a record to a saved set needs no conn and records the add", {
+  fx <- local_draft_project()
+  x <- sd_saved_set(fx)
+  v_lb <- sd_table(fx, "lb")
+  record <- datom_member(fx$conn, "lb", v_lb, tags = list(type = "output"))
+
+  out <- sd_add(x, record)
+
+  expect_s3_class(out, "datom_set")
+  expect_length(out$members, 2L)
+  expect_identical(out$members[[2L]]$id$version, v_lb)
+  expect_identical(attr(out, "datom_edits")$action, "add")
+})
+
+test_that("a name added to a saved set without conn is refused, naming conn", {
+  fx <- local_draft_project()
+  x <- sd_saved_set(fx)
+  v_lb <- sd_table(fx, "lb")
+
+  err <- expect_error(
+    datom_add_member(x, "lb", v_lb),
+    class = "datom_member_conn_required"
+  )
+  expect_match(conditionMessage(err), "conn")
+})
+
+test_that("a connection placed on a saved set by hand is not borrowed", {
+  # A set read back holds none, so one found there was put there by hand, and
+  # using it would resolve a name through a connection nobody passed.
+  fx <- local_draft_project()
+  x <- sd_saved_set(fx)
+  v_lb <- sd_table(fx, "lb")
+
+  x$conn <- fx$conn
+  expect_error(
+    datom_add_member(x, "lb", v_lb),
+    class = "datom_member_conn_required"
+  )
+})
+
+test_that("conn must be a connection", {
+  fx <- local_draft_project()
+  v <- sd_table(fx, "dm")
+  expect_error(
+    datom_add_member(datom_assemble_set(fx$conn), "dm", v, conn = "nope"),
+    class = "datom_not_a_conn"
+  )
+})
+
+test_that("the write's commit message names the add, and full versions", {
+  fx <- local_draft_project()
+  x <- sd_saved_set(fx)
+  v_lb <- sd_table(fx, "lb")
+
+  sd_write(fx$conn, sd_add(x, "lb", v_lb, conn = fx$conn))
+
+  commit <- git2r::commits(fx$repo)[[1L]]$message
+  expect_match(commit, "Update product-a: add 1 member", fixed = TRUE)
+  expect_match(commit, paste0("lb  added at ", v_lb), fixed = TRUE)
+
+  recorded <- datom_history(fx$conn, "product-a")$commit_message[[1L]]
+  expect_identical(recorded, "Update product-a: add 1 member")
+
+  # And it is written: reading back shows both members.
+  expect_length(datom_get_set(fx$conn, fx$set_name)$members, 2L)
+})
+
+test_that("an add chained with a repoint produces one message naming both", {
+  fx <- local_draft_project()
+  x <- sd_saved_set(fx)
+  v_dm_old <- x$members[[1L]]$id$version
+  v_dm_new <- sd_table(fx, "dm", 5L)
+  v_lb <- sd_table(fx, "lb")
+
+  edited <- suppressMessages(
+    x |>
+      datom_update_members(fx$conn) |>
+      datom_add_member("lb", v_lb, conn = fx$conn)
+  )
+  sd_write(fx$conn, edited)
+
+  recorded <- datom_history(fx$conn, "product-a")$commit_message[[1L]]
+  # Adds are listed first whichever order the edits happened in.
+  expect_identical(recorded, "Update product-a: add 1 member, repoint 1 member")
+  commit <- git2r::commits(fx$repo)[[1L]]$message
+  expect_match(commit, paste0("dm  ", v_dm_old, " -> ", v_dm_new), fixed = TRUE)
+  expect_match(commit, paste0("lb  added at ", v_lb), fixed = TRUE)
+})
+
+test_that("adding to a draft logs nothing, so its commit message is unchanged", {
+  fx <- local_draft_project()
+  v_dm <- sd_table(fx, "dm")
+
+  expect_silent(
+    draft <- datom_add_member(datom_assemble_set(fx$conn), "dm", v_dm)
+  )
+  expect_null(attr(draft, "datom_edits"))
+
+  sd_write(draft)
+  expect_identical(git2r::commits(fx$repo)[[1L]]$message, "Update product-a")
+})
+
+test_that("a repeat on a saved set is skipped, and a disagreement refused", {
+  # The members of a set read back carry `$fetch` links, which the clash check
+  # has to look past: the member digest refuses any field but `id` and `tags`.
+  fx <- local_draft_project()
+  x <- sd_saved_set(fx)
+  dm <- x$members[[1L]]
+  v_dm <- dm$id$version
+
+  # Exact repeat: skipped with its note only, and nothing about the set changes
+  # -- no edit logged, and the version it was read as still describes it.
+  msgs <- testthat::capture_messages(
+    out <- datom_add_member(x, "dm", v_dm, tags = list(type = "input"),
+                            conn = fx$conn)
+  )
+  expect_match(paste(msgs, collapse = " "), "already in this set")
+  expect_false(any(grepl("Nothing has been written", msgs)))
+  expect_length(out$members, 1L)
+  expect_null(attr(out, "datom_edits"))
+  expect_identical(out$version, x$version)
+
+  # Same version, different labels: refused, naming the set rather than a draft.
+  err <- expect_error(
+    datom_add_member(x, "dm", v_dm, tags = list(type = "output"),
+                     conn = fx$conn),
+    class = "datom_set_member_conflict"
+  )
+  expect_match(conditionMessage(err), "already in this set")
 })

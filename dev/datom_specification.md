@@ -1216,12 +1216,14 @@ Returns: a member record -- `id` plus optional `tags`.
 
 ```r
 datom_assemble_set(conn, name = NULL, tags = NULL)
-datom_add_member(x, member, version = NULL, tags = NULL)
+datom_add_member(x, member, version = NULL, tags = NULL, conn = NULL)
 ```
 
-The stepwise route, for a build script that discovers its inputs as it goes. `datom_assemble_set()` opens a draft; `datom_add_member()` returns the draft with one more member on it, so calls chain. `member` takes a name (looked up in this project's storage), a member record, or a link. Nothing is hashed or written until the draft reaches `datom_write_set()`.
+The stepwise route, for a build script that discovers its inputs as it goes. `datom_assemble_set()` opens a draft; `datom_add_member()` returns the draft with one more member on it, so calls chain. `member` takes a name (looked up through `conn`, or the draft's own connection when `conn` is omitted), a member record, or a link. Nothing is hashed or written until the draft reaches `datom_write_set()`.
 
-Returns: a `datom_set_draft`.
+`datom_add_member()` also accepts a `datom_set` read back with `datom_get_set()`. That set holds no connection, so a name needs `conn`. Adding to it is an edit like `datom_update_members()`: nothing is written, `version` / `data_sha` are emptied, an `add` row joins the edit log (so the write's default commit message says `add N members`), and the new member gets a `$fetch` link. A draft logs nothing.
+
+Returns: the class it was given (`datom_set_draft` or `datom_set`).
 
 #### datom_write_set() — Data Developers
 

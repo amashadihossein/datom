@@ -16,7 +16,7 @@
 \code{x}, with the log extended.
 }
 \description{
-\strong{One log for both edit verbs, appended to rather than replaced, and that is
+\strong{One log for every edit verb, appended to rather than replaced, and that is
 what makes a chain of edits produce one honest commit message.} With a verb
 owning its own attribute, \verb{update |> remove |> write} commits a message naming
 the repoints and silent about the removal -- and a destructive edit is the one
@@ -31,5 +31,9 @@ so an attribute cannot reach the payload by construction.
 Repointing a member and then removing it leaves \strong{both} entries. That is an
 honest history of the edits and slightly odd in a commit message; collapsing
 them would mean one verb reasoning about the other's rows.
+
+Three actions are written: \code{repoint} by \code{\link[=datom_update_members]{datom_update_members()}}, \code{remove} by
+\code{\link[=datom_remove_members]{datom_remove_members()}}, and \code{add} by \code{\link[=datom_add_member]{datom_add_member()}} on a \code{datom_set}
+(never on a draft, which has no earlier set to describe a change against).
 }
 \keyword{internal}

@@ -774,6 +774,12 @@ Three cheap habits remove it:
 * **Restore inside the error handler, not only on the happy path.** A probe whose defect stops the
   package from loading is a *successful* probe; the harness has to treat that as a result and clean
   up, not propagate it and stop.
+* **`on.exit()` at the top level of an `Rscript` file never runs.** It only fires when a function
+  returns, so a script-level `on.exit(file.copy(backup, src))` silently restores nothing. Found
+  2026-09-28 (set-sync-ergonomics task 3): four probes layered their defects into one file, and
+  because each run took its own fresh backup, the per-run copies were of the mutated tree -- the
+  hazard above, reached by a different route. A fixed copy taken once beforehand is what recovered
+  it. Put the probe body in a function, and `cmp` the tree against the fixed copy after every probe.
 
 ### A closure leaks a connection only once the connection has been FORCED
 

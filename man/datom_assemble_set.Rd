@@ -44,9 +44,10 @@ things follow:
 \itemize{
 \item \strong{A draft belongs in memory only.} A connection may carry a credential, so a
 draft must not be saved to disk or committed. Write the set, and cite the set.
-\item \strong{One draft, one project.} A member of another project cannot be named
-through this connection -- pass a record built on that project's connection
-instead, which \code{\link[=datom_add_member]{datom_add_member()}} accepts in place of a name.
+\item \strong{One draft, one connection.} A name is resolved through the draft's
+connection unless \code{\link[=datom_add_member]{datom_add_member()}} is given its own \verb{conn =} for that
+one call, which is how a member of another project is added by name. A
+record built on that project's connection works too.
 }
 }
 
