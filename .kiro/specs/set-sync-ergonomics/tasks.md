@@ -65,6 +65,15 @@ owner's original prompt is untracked and not needed: every decision is in `requi
   - Design 5, including the `add` action in the edit log and commit message.
   - Tests: by record, by name with `conn`, name without `conn` refused, draft unchanged (commit
     message too), clash rules on a `datom_set`.
+  - **Decided 2026-09-28 (owner):** adding to a `datom_set` prints one line, `Nothing has been
+    written. Write the set with datom_write_set(conn, x).`, matching `datom_update_members()`. Adding
+    to a draft stays silent, as today. A skipped duplicate prints only its existing note.
+  - Facts for this task re-checked 2026-09-28 and still hold (design 1): the draft-only class check
+    and `datom_not_a_draft` in `R/set-draft.R`; `.datom_set_commit_messages()` and
+    `.datom_edit_lines()` in `R/set-edit.R` know `repoint` / `remove` only; the clash helper
+    `.datom_draft_member_clash()` takes a plain member list. `datom_member_conn_required` is new. The
+    one existing refusal test (`test-set-draft.R`, "the add verb needs a draft") passes a connection,
+    not a set, so it stays; keep `datom_assemble_set` in the widened message, which it matches.
 
 - [ ] **4. Provenance check in `datom_write_set()`** (R6, AC12)
   - Design 7. Tests: mismatch stops before any local write; matching parents pass; parent not in the
