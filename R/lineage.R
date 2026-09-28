@@ -89,17 +89,42 @@ datom_lineage_union <- function(lineages) {
 #' only difference is which connection is passed. `source` is always derived
 #' from the connection's `project_name`.
 #'
+#' @section Taking the version from a set:
+#' When the inputs of a derivation are members of a set, pass the set as `x`
+#' instead of a `version`: each `table` is looked up among the set's members and
+#' declared at the version the set pins. That keeps the parents a derived table
+#' records in step with the set it is derived through, without looking each
+#' version up by hand.
+#'
+#' The member is chosen exactly as [datom_fetch_member()] chooses it. A name
+#' held by two members -- a current table beside a locked baseline, say -- stops
+#' and lists both; narrow with `tags`. A member that is itself a set stops too,
+#' since only a table can be a parent.
+#'
+#' With `x`, `table` may name several tables and the result is **always a
+#' list** of parent records, even for one table, so it can be passed straight to
+#' the `parents` argument of [datom_write()]. Without `x` the result is one
+#' record, as it always was.
+#'
 #' @param conn A `datom_conn` scoped to the parent's project store, from
 #'   [datom_get_conn()].
-#' @param table Parent table name (single non-empty validated string).
+#' @param table Parent table name (single non-empty validated string). With `x`,
+#'   a character vector of one or more member names.
 #' @param version Parent version (metadata_sha; single non-empty string).
-#' @return A list with exactly `source`, `table`, `version`, `data_sha`, and
-#'   `source_lineage`. `source` is the project the parent's own metadata says it
-#'   belongs to, falling back to the project manifest and then to the connection's
-#'   name (see `.datom_declared_project()`) -- **not** simply the name on `conn`,
-#'   which on a reader connection is an unverified label and which `source` cannot
-#'   afford, since it is part of the declaring table's version. `source_lineage`
-#'   is `NULL` when the snapshot carries none.
+#'   Exactly one of `version` and `x` is required.
+#' @param x Optional `datom_set` from [datom_get_set()] (or one being built)
+#'   whose members supply the versions. Exactly one of `version` and `x` is
+#'   required.
+#' @param tags Optional named list of labels narrowing a member name the set
+#'   holds more than once, e.g. `list(type = "input")`. Only with `x`.
+#' @return Without `x`, a list with exactly `source`, `table`, `version`,
+#'   `data_sha`, and `source_lineage`. `source` is the project the parent's own
+#'   metadata says it belongs to, falling back to the project manifest and then
+#'   to the connection's name (see `.datom_declared_project()`) -- **not** simply
+#'   the name on `conn`, which on a reader connection is an unverified label and
+#'   which `source` cannot afford, since it is part of the declaring table's
+#'   version. `source_lineage` is `NULL` when the snapshot carries none. With
+#'   `x`, an unnamed list of such records, one per `table`, in the order given.
 #' @export
 #'
 #' @examples
@@ -128,13 +153,115 @@ datom_lineage_union <- function(lineages) {
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
-datom_parent <- function(conn, table, version) {
+datom_parent <- function(conn, table, version = NULL, x = NULL, tags = NULL) {
 
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort(
       "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}."
     )
   }
+
+  # Both or neither is refused rather than resolved by precedence: with both,
+  # one of them would be silently ignored, and the parent recorded -- which is
+  # part of the declaring table's version -- might not be the one intended.
+  if (is.null(version) == is.null(x)) {
+    cli::cli_abort(
+      c(
+        "Give exactly one of {.arg version} and {.arg x}.",
+        "i" = "{.arg version} declares the parent at a version you name; \\
+               {.arg x} takes the version from a set's member of that name."
+      ),
+      class = "datom_parent_version_or_set"
+    )
+  }
+
+  if (is.null(x)) {
+    if (!is.null(tags)) {
+      cli::cli_abort(
+        c(
+          "{.arg tags} narrows a set's members, and no set was given.",
+          "i" = "Pass the set as {.arg x}, or drop {.arg tags}."
+        ),
+        class = "datom_parent_tags_without_set"
+      )
+    }
+    return(.datom_parent_record(conn, table, version))
+  }
+
+  .datom_parents_from_set(conn, table, x, tags)
+}
+
+
+#' Declare Parents at the Versions a Set Pins
+#'
+#' The `x =` route of [datom_parent()]. Each name is resolved by
+#' [.datom_find_member()], the resolver [datom_fetch_member()] uses for a name,
+#' so the two verbs cannot pick different members for the same name and labels.
+#' Tag validation is the same call with the same remedy, for the same reason.
+#'
+#' @param conn A `datom_conn` scoped to the parents' project.
+#' @param table Character vector of member names.
+#' @param x A `datom_set`.
+#' @param tags Optional label filter.
+#' @return An unnamed list of parent records, one per `table`.
+#' @keywords internal
+.datom_parents_from_set <- function(conn, table, x, tags) {
+  members <- .datom_set_members(x)
+
+  if (!is.null(tags)) {
+    .datom_validate_tag_map(
+      tags, "tags",
+      remedy = "Narrow by labels a member carries, e.g. \\
+                {.code list(type = \"input\")}."
+    )
+  }
+
+  if (!is.character(table) || length(table) == 0L || anyNA(table)) {
+    cli::cli_abort(
+      c(
+        "{.arg table} must be one or more member names.",
+        "i" = "For example: {.code table = c(\"dm\", \"lb\")}."
+      )
+    )
+  }
+
+  # lapply rather than purrr::map: the resolver's conditions (an ambiguous name,
+  # a member that is not a table) must reach the caller with their own class,
+  # and purrr re-signals a mapped function's error as its own.
+  lapply(table, function(name) {
+    .datom_validate_name(name)
+    record <- .datom_find_member(members, name, tags)
+    id <- .datom_member_id(record)
+
+    if (!identical(id$kind, "table")) {
+      cli::cli_abort(
+        c(
+          "Member {.val {name}} is a {id$kind}, and only a table can be a \\
+           parent.",
+          "i" = "A set is cited as a member of another set, not declared as \\
+                 a table's parent."
+        ),
+        class = "datom_parent_not_a_table"
+      )
+    }
+
+    .datom_parent_record(conn, name, id$version)
+  })
+}
+
+
+#' Resolve One Parent Record From Its Versioned Snapshot
+#'
+#' The body of [datom_parent()] for one table at one named version, shared by
+#' both of its routes so a parent declared by version and one declared from a
+#' set are read, checked and shaped by the same code.
+#'
+#' @param conn A `datom_conn` scoped to the parent's project.
+#' @param table Parent table name.
+#' @param version Parent version.
+#' @return One parent record.
+#' @keywords internal
+.datom_parent_record <- function(conn, table, version) {
 
   .datom_validate_name(table)
 

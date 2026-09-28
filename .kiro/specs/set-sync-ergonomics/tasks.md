@@ -12,19 +12,15 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Task 1 done 2026-09-28 and pushed. **Resume at task 2**
-(`datom_parent(x = )`); the owner has not yet approved starting it, so ask first (rule 5d).
-**Current test count: 4295** -- this, not the 4282 baseline above, is what task 2's count must not
-drop below.
+Spec approved 2026-09-27 and committed. Tasks 1 and 2 done 2026-09-28. **Resume at task 3**
+(`datom_add_member()` on a saved set); ask the owner before starting it (rule 5d).
+**Current test count: 4330** -- what task 3's count must not drop below.
 
-Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R5 is
-task 2) and `design.md` (section 1 lists the code facts already checked, section 6 is task 2). Before
+Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R4 is
+task 3) and `design.md` (section 1 lists the code facts already checked, section 5 is task 3). Before
 editing `R/`, read `dev/engineering-notes.md`, at least "A test can observe a layer that cannot
-distinguish the two behaviours" and "Probing a guard". Task 2 needs a probe for each refusal it adds.
-Section 1's facts for task 2 were re-checked on 2026-09-28 and still hold: `datom_parent(conn, table,
-version)` is in `R/lineage.R`, and the single-member resolver `.datom_find_member(members, name, tags,
-version)` in `R/set-members.R` is the one `datom_fetch_member()` uses. The owner's original prompt is
-untracked and not needed: every decision is in `requirements.md`.
+distinguish the two behaviours" and "Probing a guard". Each refusal a task adds needs a probe. The
+owner's original prompt is untracked and not needed: every decision is in `requirements.md`.
 
 ---
 
@@ -49,9 +45,21 @@ untracked and not needed: every decision is in `requirements.md`.
     cutoff, and that the existing domains' row counts are unchanged).
   - Owner cares most about: **the values of the other example tables must not change.**
 
-- [ ] **2. `datom_parent(x = )`** (R5, AC11)
-  - Design 6. Tests: resolver parity with `datom_fetch_member()`, ambiguous, set-kind, vector
-    `table`, mutual exclusion, existing positional calls.
+- [x] **2. `datom_parent(x = )`** (R5, AC11)
+  - **Done 2026-09-28, 4330 tests (+35).** `datom_parent(conn, table, version = NULL, x = NULL,
+    tags = NULL)`. The old body moved unchanged into `.datom_parent_record()`, which both routes call;
+    the set route (`.datom_parents_from_set()`) resolves each name with `.datom_find_member()` and
+    validates `tags` with the same call and remedy as `datom_fetch_member()`. Loop is `lapply()`, not
+    `purrr::map()`, so the resolver's condition classes reach the caller.
+  - Refusal classes: `datom_parent_version_or_set` (both or neither), `datom_parent_tags_without_set`
+    (name chosen here, owner agreed), `datom_parent_not_a_table`; ambiguous / not found keep the
+    resolver's `datom_member_ambiguous` / `datom_member_not_found`.
+  - Probes (restored from a copy, control reddened nothing): removing each of the three refusals, the
+    `table` shape check, and label narrowing each reddened its own test; swapping `lapply()` for
+    `purrr::map()` reddened nothing until the class test used `expect_error(inherit = FALSE)`, since
+    testthat otherwise matches a wrapped error's parent. Learning added to `dev/engineering-notes.md`.
+  - Parity fixture lists the baseline `lb` first, so a resolver ignoring labels picks the wrong member
+    for the live case.
 
 - [ ] **3. `datom_add_member()` on a `datom_set`, with `conn =`** (R4, AC10)
   - Design 5, including the `add` action in the edit log and commit message.

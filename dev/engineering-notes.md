@@ -593,7 +593,11 @@ suite that only checks that *something* failed.
   its `parent`, so `inherits(e, "my_class")` is `FALSE` and a class-specific `tryCatch` handler never
   fires. Where a mapped function is expected to raise a condition the caller dispatches on, use
   `lapply()` / `vapply()` and say why in a comment -- otherwise the next tidy-up puts `purrr::map()`
-  back.
+  back. **The test for this needs `expect_error(..., class = , inherit = FALSE)`.** By default
+  testthat also matches the class on a chained error's parents, so a plain `class =` check passes on
+  purrr's wrapper while a caller's `tryCatch(my_class = )` never fires. Found probing
+  `datom_parent(x = )` (2026-09-28): swapping `lapply()` for `purrr::map()` reddened nothing until
+  `inherit = FALSE` was added.
 ### Adding a field to a metadata document is not the same size of change on each list
 
 Landed 2026-09-10 with `kind` (which kind of artifact the document describes) entering per-artifact
