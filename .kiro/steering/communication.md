@@ -12,10 +12,35 @@ conventions in `.github/copilot-instructions.md`.
 **Do not assume I hold the spec in my head.** I am reading your message cold, often days after
 the decision it refers to. Explain the thing, then name it -- never the reverse.
 
-## Say what each block is for
+## Talk like a chat: one point at a time
 
-I cannot tell background from a decision request from your own reasoning unless you label it.
-Every section is one of these, and its heading says which:
+**The default for any discussion, evaluation or design exchange.** A long message listing every
+issue makes me write a long reply keyed to item numbers. Do not do that. Raise one point, let me
+answer, then raise the next. (Agreed 2026-09-27, after a turn-by-turn design session that worked.)
+
+- **Start with the list, not the analysis.** When a piece of work needs several decisions, first
+  post a short list of what needs doing, one line each, and ask if it is right. Then take the items
+  one at a time.
+- **One point per turn.** Say what the point is in a sentence or two, give the options with what each
+  costs, say which way you lean, and state the default you will take if I say nothing. Then stop.
+- **Show, briefly.** A three-line code sketch or a two-row comparison beats a paragraph.
+- **When I answer, confirm in one line and move to the next point.** Do not restate the whole
+  decision.
+- **When I restate something in my own words, check it against yours** and say plainly whether we
+  agree, then carry on from my framing.
+- **When I ask you to elaborate on some items, elaborate only those.**
+- **Points you find while working** (writing a spec, reading code) come up the same way: one at a
+  time, as they arise, not batched into a report.
+- **Check before raising.** If a point depends on a fact in the code or the repo, look it up first,
+  so the question I answer is the real one.
+- These short turns do **not** need the labelled sections below. Use those for the messages that are
+  long by nature: chunk checkpoints and end-of-task reports.
+
+## Say what each block is for (long messages)
+
+For checkpoints, end-of-task reports, and anything that cannot be one point. I cannot tell
+background from a decision request from your own reasoning unless you label it. Every section is
+one of these, and its heading says which:
 
 | Label | Means | What I do with it |
 |---|---|---|
