@@ -121,6 +121,7 @@ one warning per `ambiguous` / `not_checked` group with its remedy.
   | `unchanged` | member's version | same |
   | `ambiguous` | `NA` (the message lists every pinned version) | source's current |
   | `not_checked` | member's version | `NA` |
+  | `excluded` | member's version | `NA` |
 
   Columns in that order: `project, name, kind, version_from, version_to, status`; a plain
   `data.frame`, `stringsAsFactors = FALSE`, full 64-character versions (the console message
@@ -134,7 +135,7 @@ one warning per `ambiguous` / `not_checked` group with its remedy.
   | source project, kind `set` | `not_checked` row (sets are never preview rows) |
   | source project, table, absent from the source's manifest | named in the message as left its source, no row (R2.3) |
   | source project, table, present, matches `pattern` | the `new` / `changed` / `unchanged` / `ambiguous` row |
-  | source project, table, present, does **not** match `pattern` | **OPEN, point A below** |
+  | source project, table, present, does **not** match `pattern` | `excluded` row (point A below) |
 
 - **The set's own project** for R2.5 is the developer conn's `project_name`, which on a clone comes
   from `.datom/project.yaml`. Compared against each source's label before any read.
@@ -143,9 +144,14 @@ one warning per `ambiguous` / `not_checked` group with its remedy.
 
 Each has a default the agent takes if the owner says nothing. Record the answer here.
 
-- **A. A member whose table exists in its source but is filtered out by `pattern`.** Default: no row
-  and no message -- the caller narrowed the preview on purpose, and reporting it as "not checked" on
-  every narrowed call would be noise. Alternative: a `not_checked` row.
+- **A. A member whose table exists in its source but is filtered out by `pattern`.** **Answered
+  2026-09-28 (owner): it gets a row**, so the preview confirms the filter left it alone and the frame
+  always accounts for every member of every source. **Status `excluded`** (agreed 2026-09-28; the
+  owner rejected `filtered` as ambiguous between filtered in and filtered out; `skipped` was avoided
+  because the ordinary `datom_sync()` already uses it in its `result` column): member's version in
+  `version_from`, `version_to = NA`, no warning, counted in the summary line as
+  `N excluded by pattern`, and a no-op at apply. Not `not_checked`, whose warning ("build again with
+  every source") would be wrong advice here. R2.2 amended to six values.
 - **B. (task 6) A `new` row whose table the set already holds by the time it is applied** (someone
   added it after the preview). R3.6 covers only `changed` rows. Default: stop with
   `datom_sync_manifest_stale`, same as a moved `changed` row, because adding it would silently create
@@ -182,7 +188,7 @@ x = NULL)` -- new arguments last, see section 2.
 - **Open point B (section 3) decides the `new`-row stale case.**
 
 - Required columns: `project, name, kind, version_from, version_to, status`. Values: `status` in the
-  five-value set, `version_to` a full 64-hex string on `new` / `changed` rows.
+  six-value set (R2.2), `version_to` a full 64-hex string on `new` / `changed` rows.
 - `x` omitted: read the stored set, or start an empty `datom_set` (name from `project.yaml`, project
   from the conn, `version = NULL`) on first version.
 - Per `changed` row: find the member by (`project`, `name`); its version must equal `version_from`,

@@ -43,7 +43,9 @@ in the set, so a table newly onboarded in a source is never picked up.
 - R2.1 One row per table in the sources (name filtered by `pattern`, a glob as today), plus one row
   per set member the call could not check. Columns at least: `project`, `name`, `kind`,
   `version_from` (`NA` when new), `version_to`, `status`.
-- R2.2 `status` is one of `new`, `changed`, `unchanged`, `ambiguous`, `not_checked`.
+- R2.2 `status` is one of `new`, `changed`, `unchanged`, `ambiguous`, `not_checked`, `excluded`.
+  `excluded` (added 2026-09-28) marks a member whose table is in a passed source but does not match
+  `pattern`: the row confirms the filter left it alone, so the preview accounts for every member.
 - R2.3 **Never proposes a removal.** A member whose table no longer exists in its source is reported
   and left alone, as `datom_update_members()` does today.
 - R2.4 **No labels column.** Labels for new members are set when applying (R3.3).
@@ -62,8 +64,8 @@ in the set, so a table newly onboarded in a source is never picked up.
 
 - R3.1 Accepts **any row subset** of a preview (`subset()`, `dplyr::filter()`). Validates columns and
   values, never object identity or row count.
-- R3.2 `new` rows join the set; `changed` rows repoint the matching member. `unchanged`, `ambiguous`
-  and `not_checked` rows do nothing.
+- R3.2 `new` rows join the set; `changed` rows repoint the matching member. `unchanged`, `ambiguous`,
+  `not_checked` and `excluded` rows do nothing.
 - R3.3 `tags =` labels the **new** members, default `list(type = "input")`. A repointed member keeps
   its labels exactly.
 - R3.4 **Saves nothing.** Returns the updated `datom_set` and ends with
