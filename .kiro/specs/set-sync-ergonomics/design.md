@@ -105,11 +105,30 @@ one warning per `ambiguous` / `not_checked` group with its remedy.
 
 ## 7. Provenance check (R6)
 
-A new internal `.datom_check_set_parents(conn, name, members)`, called in `datom_write_set()` after
-the include-path checks and before tidy/hash.
+A new internal `.datom_check_set_parents(conn, name, members)`, called in `datom_write_set()`
+**right after `.datom_check_set_payload()` and before `.datom_build_set_metadata()`** (the first
+hash). Still above every hash and every local write, so R6.2 holds. Not earlier (the original plan
+said "after the include-path checks, before tidy"): there the members are unvalidated, so a
+malformed member would reach a snapshot read and fail with a storage error instead of the
+validator's message. Agreed with the owner 2026-09-28.
 
 - For each member of kind `table` whose project is the set's own project: read its snapshot
   (`.datom_artifact_snapshot_key()`, storage) and take `parents`.
+- **Check the snapshot's format number before reading `parents`**, with
+  `.datom_check_schema_version(snap, key)`, as `.datom_parent_record()` and `datom_member()` do: a
+  snapshot from a newer datom stops the set write and says to upgrade. Call it **outside** any
+  `tryCatch` around the read, so the refusal keeps its own class and message instead of being
+  reworded as a read failure (same pairing as `.datom_parent_record()`). Agreed with the owner
+  2026-09-28.
+- **A snapshot that cannot be read stops the write**, naming the member and the underlying error
+  (new class `datom_set_member_unreadable`). This covers both a version that does not exist and
+  storage that cannot be reached. Why stop rather than skip: a missing version means the set would
+  point at data nobody can fetch, and unreachable storage would fail the write anyway, only later,
+  after the local files are written. Agreed with the owner 2026-09-28.
+- **Metadata only.** The read is the one small JSON snapshot per member, through
+  `.datom_storage_read_json()`; no parquet is downloaded. So a readable snapshot proves the version
+  was recorded, not that its data file is still in storage. That stays `datom_validate()`'s job
+  and is out of scope here.
 - For each parent: members with that (`project = source`, `name = table`). If some exist and none is
   at `parent$version`, collect a mismatch.
 - Any mismatch aborts `datom_set_parent_mismatch`, one line per member / parent / pinned / used.

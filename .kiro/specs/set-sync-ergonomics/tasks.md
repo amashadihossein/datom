@@ -99,6 +99,11 @@ owner's original prompt is untracked and not needed: every decision is in `requi
 - [ ] **4. Provenance check in `datom_write_set()`** (R6, AC12)
   - Design 7. Tests: mismatch stops before any local write; matching parents pass; parent not in the
     set passes; baseline pair (one member at the parent's version) passes.
+  - **Design 7 corrected 2026-09-28 (owner), read it rather than this summary:** the check sits
+    right after `.datom_check_set_payload()`, not before tidying; it checks each snapshot's format
+    number; an unreadable snapshot stops the write (`datom_set_member_unreadable`). Extra tests for
+    those: a malformed member still gets the validator's message; a too-new snapshot stops the
+    write; a member whose snapshot is missing stops it, with nothing written in each case.
 
 - [ ] **5. Preview: `datom_sync_manifest(sources = )`** (R1, R2; AC1-AC3, AC5-AC7)
   - **Escalation flag: design spot-check first.**
