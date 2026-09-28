@@ -13,15 +13,29 @@ count in the message. Chunk checkpoint after every task.
 ## Where things stand
 
 Spec approved 2026-09-27 and committed. Tasks 1-4 done 2026-09-28. **Resume at task 5**
-(the preview, `datom_sync_manifest(sources = )`), which is flagged for a design spot-check on a more
-capable model first; ask the owner before starting it (rule 5d).
+(the preview, `datom_sync_manifest(sources = )`); ask the owner before starting it (rule 5d).
+**Its design spot-check is done** (2026-09-28, on the working model at the owner's request): the
+findings are the "Spot-check additions" blocks in design sections 2, 3 and 4. Three open points (A,
+B, C) are listed at the end of design section 3, each with the default to take if unanswered; check
+there whether they were answered before coding.
 **Current test count: 4406** -- what task 5's count must not drop below.
 
-Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R6 is
-task 4) and `design.md` (section 1 lists the code facts already checked, section 7 is task 4). Before
-editing `R/`, read `dev/engineering-notes.md`, at least "A test can observe a layer that cannot
-distinguish the two behaviours" and "Probing a guard". Each refusal a task adds needs a probe. The
-owner's original prompt is untracked and not needed: every decision is in `requirements.md`.
+Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R1
+and R2 are task 5) and `design.md` (section 1 lists the code facts already checked; sections 2 and 3
+are task 5, including their spot-check blocks and open points). Before editing `R/`, read
+`dev/engineering-notes.md`, at least "A test can observe a layer that cannot distinguish the two
+behaviours" and "Probing a guard". Each refusal a task adds needs a probe. The owner's original
+prompt is untracked and not needed: every decision is in `requirements.md` and `design.md`.
+
+Where the code a task 5 session needs lives: the two sync verbs and
+`.datom_refuse_import_on_product()` in `R/sync.R`; `.datom_edit_conns()`,
+`.datom_current_artifact_versions()`, `.datom_repoint_member()` and `datom_update_members()` (the
+closest existing sweep, including its "gone" and "shared name" handling) in `R/set-edit.R`;
+`datom_get_set()` in `R/set.R`; `.datom_storage_exists()` in `R/utils-storage.R`. Test fixtures to
+copy: `local_edit_project()` in `tests/testthat/test-set-edit.R` (real repo + bare remote + local
+store, product config) and `sync_product_repo()` in `tests/testthat/test-sync.R`. A second project
+(the source) needs its own store and a connection labelled with its project name; the
+mislabelled-connection test in `test-set-edit.R` builds two stores and is the pattern to follow.
 
 ---
 
@@ -126,11 +140,23 @@ owner's original prompt is untracked and not needed: every decision is in `requi
     write; a member whose snapshot is missing stops it, with nothing written in each case.
 
 - [ ] **5. Preview: `datom_sync_manifest(sources = )`** (R1, R2; AC1-AC3, AC5-AC7)
-  - **Escalation flag: design spot-check first.**
+  - **Escalation flag: design spot-check first.** Done 2026-09-28; see design 2-3 "Spot-check
+    additions" and open points A and C.
   - Design 2 and 3. New `R/sync-set.R`; branch in `R/sync.R`. Existing sync tests unchanged.
+  - The context helper and the branch land in `datom_sync_manifest()` only. `datom_sync()` gets its
+    branch in task 6, so no commit ships an apply verb that accepts `sources =` and does nothing with
+    it; until then it refuses a product repo exactly as today. Ordinary-path tests in `test-sync.R`
+    must pass untouched.
+  - Tests to write, beyond AC2/3/5/6/7: presence probe (storage unreachable is an error, not "first
+    version"); a source holding a set gives it no row; each member-placement row in design 3's table;
+    arguments from the other context stop; zero-row frame keeps its columns.
+  - Before editing `R/`, read the engineering-notes entries on `tryCatch` erasing "not there" vs
+    "could not look", on condition classes lost through `purrr::map()` (use `lapply()` where a
+    refusal class must reach the caller), and "Probing a guard".
 
 - [ ] **6. Apply: `datom_sync(sources = , tags = , x = )`** (R3; AC4, AC8, AC9)
-  - Design 4. Properties P1-P3, P5.
+  - Design 4, including its "Spot-check additions" and open point B (design 3). Properties P1-P3, P5.
+  - Adds the context branch to `datom_sync()` (above its manifest column check, design 2).
 
 - [ ] **7. Vignette code and offline dry run** (R8.1-R8.3)
   - Rewrite `citable-sets.Rmd` per design 9; `#>` blocks become `[pending run]`.

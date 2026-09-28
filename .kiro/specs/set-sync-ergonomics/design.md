@@ -39,7 +39,36 @@ write reads the file, not the connection). Each sync verb then branches once, at
 | product | given | set path |
 
 The set path lives in a new file `R/sync-set.R`; `R/sync.R` only gains the branch. Keeping the class
-`datom_import_on_product` for the refusal keeps the six existing tests and the E2E claim meaningful.
+`datom_import_on_product` for the refusal keeps the four existing tests in `test-sync.R` (lines
+~34-110, fixture `sync_product_repo()`) and the `dev/e2e-sets-s3.R` claim (line ~318) meaningful.
+Those tests assert the message names `datom_sync_manifest`, `datom_write`, `datom_write_set` and the
+set's name, so the reworded message keeps all four and adds a line naming `sources =`.
+
+**Spot-check additions (2026-09-28, checked against `R/sync.R`):**
+
+- **Signatures, new arguments LAST.** R1.3 / I1 keep positional calls working, and today's verbs are
+  `datom_sync_manifest(conn, path = NULL, pattern = "*")` and
+  `datom_sync(conn, manifest, continue_on_error = TRUE)`. So:
+  `datom_sync_manifest(conn, path = NULL, pattern = "*", sources = NULL)` and
+  `datom_sync(conn, manifest, continue_on_error = TRUE, sources = NULL, tags = list(type = "input"), x = NULL)`.
+  Section 4's original signature put `sources` third, which would have broken
+  `datom_sync(conn, m, FALSE)`.
+- **Where the branch sits.** After the existing conn / role / path checks (they are the same on both
+  paths), before everything else. In `datom_sync()` that is **above the manifest column check**:
+  today the column check runs first, so a product repo handed a set-shaped frame with no `sources`
+  would get "missing columns file, format..." instead of the refusal that names `sources =`.
+- **One gated parse per call.** The helper (`.datom_sync_context(conn)`) returns the parsed
+  `mode` and `set` from `.datom/project.yaml`, with `.datom_check_project_schema(cfg, source,
+  operation = "write")` exactly as `.datom_refuse_import_on_product()` does now (it reads the file with
+  `yaml::read_yaml()` and returns early when the file is absent). The set path takes the set's name
+  from it; nothing re-reads the file.
+- **Arguments from the other context stop too**, extending R1.2 from `sources` to every argument that
+  belongs to one path. Ordinary repo with `tags` or `x` supplied: `datom_sync_sources_on_ordinary`
+  (detect with `missing()`, since `tags` has a default). Product repo with `path` (preview) or
+  `continue_on_error` (apply, via `missing()`) supplied: `datom_sync_file_arg_on_product`. Silently
+  ignoring either would let a caller believe an argument did something.
+- **`.datom_check_rio()` and `.datom_check_git_current()` stay on the file path.** The set path writes
+  nothing (I2), and rio is an optional dependency the set path does not use.
 
 ## 3. The preview (R2)
 
@@ -64,9 +93,93 @@ set's project comes from the developer conn, which reads `.datom/project.yaml`, 
 Messages: one summary line (`Mapped N tables from K sources: a new, b changed, c unchanged.`), then
 one warning per `ambiguous` / `not_checked` group with its remedy.
 
+**Spot-check additions (2026-09-28, checked against `R/set.R`, `R/set-edit.R`, `R/read_write.R`):**
+
+- **"No set yet" needs a presence probe, not a failed read.** `datom_get_set()` reads through
+  `.datom_read_metadata()`, which calls `.datom_storage_read_json()` and aborts the same way for a
+  missing file and for storage that cannot be reached. Wrapping it in `tryCatch(..., error = NULL)`
+  would report "first version" when storage is down -- the defect in engineering-notes "'Not there'
+  and 'could not look' are different answers". So: `.datom_storage_exists(conn,
+  .datom_artifact_meta_key(set_name, "metadata"))` first. `FALSE` -> first version (empty member
+  list). `TRUE` -> `datom_get_set(conn, set_name)`, errors propagate. An error from the probe itself
+  propagates (could-not-look, never absence). One helper, used by the preview and by apply when `x`
+  is omitted.
+- **Source versions need `kind`.** `.datom_current_artifact_versions()` returns name -> current
+  version and drops `kind`, and a source may hold a set (a product repo used as a source). Add a
+  sibling that returns `name, kind, current_version` from the **same single** gated manifest read
+  (`.datom_read_manifest(conn, scope = "storage", operation = "read")`), keeping the existing
+  unreadable-manifest refusal and its class `datom_edit_manifest_unreadable`. Rows are `kind ==
+  "table"` only. An entry with no usable `current_version` gets no row and is named in the message.
+- **Sources go through `.datom_edit_conns(sources, arg = "sources")`**, so a non-connection, a
+  missing label and two connections for one project refuse exactly as `datom_update_members()` does.
+- **Row values:**
+
+  | status | `version_from` | `version_to` |
+  |---|---|---|
+  | `new` | `NA` | source's current |
+  | `changed` | member's version | source's current |
+  | `unchanged` | member's version | same |
+  | `ambiguous` | `NA` (the message lists every pinned version) | source's current |
+  | `not_checked` | member's version | `NA` |
+
+  Columns in that order: `project, name, kind, version_from, version_to, status`; a plain
+  `data.frame`, `stringsAsFactors = FALSE`, full 64-character versions (the console message
+  abbreviates, the frame never does). No matches -> a zero-row frame with the same columns.
+- **Every set member lands in exactly one place:**
+
+  | Member | Goes to |
+  |---|---|
+  | set's own project (an output) | no row, no message; outputs move with `datom_update_members()` |
+  | project that is not a source | `not_checked` row (R2.7), whatever its kind |
+  | source project, kind `set` | `not_checked` row (sets are never preview rows) |
+  | source project, table, absent from the source's manifest | named in the message as left its source, no row (R2.3) |
+  | source project, table, present, matches `pattern` | the `new` / `changed` / `unchanged` / `ambiguous` row |
+  | source project, table, present, does **not** match `pattern` | **OPEN, point A below** |
+
+- **The set's own project** for R2.5 is the developer conn's `project_name`, which on a clone comes
+  from `.datom/project.yaml`. Compared against each source's label before any read.
+
+### Open points from the spot-check (decide before coding task 5/6)
+
+Each has a default the agent takes if the owner says nothing. Record the answer here.
+
+- **A. A member whose table exists in its source but is filtered out by `pattern`.** Default: no row
+  and no message -- the caller narrowed the preview on purpose, and reporting it as "not checked" on
+  every narrowed call would be noise. Alternative: a `not_checked` row.
+- **B. (task 6) A `new` row whose table the set already holds by the time it is applied** (someone
+  added it after the preview). R3.6 covers only `changed` rows. Default: stop with
+  `datom_sync_manifest_stale`, same as a moved `changed` row, because adding it would silently create
+  a second member for one table. Alternative: treat it as `changed`.
+- **C. A source connection whose label disagrees with the project its manifest declares.** The
+  preview already reads that manifest, which records `project_name`. Default: stop at preview naming
+  both, when the manifest names a project and it differs; carry on when it names none (older repos).
+  Without it, a mislabelled source shows every table `new` and every member `not_checked`, and only
+  fails later at apply. Alternative: leave it to apply's existing declared-project check.
+
 ## 4. Applying (R3)
 
-`datom_sync(conn, manifest, sources, tags = list(type = "input"), x = NULL)`.
+`datom_sync(conn, manifest, continue_on_error = TRUE, sources = NULL, tags = list(type = "input"),
+x = NULL)` -- new arguments last, see section 2.
+
+**Spot-check additions (2026-09-28):**
+
+- **Reuse task 3's add path rather than writing a second one.** `datom_add_member()` on a
+  `datom_set` (`R/set-draft.R`, the block after `if (!is_set)`) already does the three things a `new`
+  row needs: link through `.datom_member_as_link(record)`, `.datom_forget_set_identity(x)`, and an
+  `add` row via `.datom_append_edits()` with columns `action, project, name, kind, from, to`. Factor
+  that block into a helper both call, so the edit log cannot drift between the two verbs. Repoints
+  reuse `.datom_repoint_member()` and a `repoint` row, as `datom_update_members()` does.
+- **One not-written line at the end**, not one per added member: the shared helper must not print it.
+- **A row whose `project` has no connection in `sources`** (a hand-built or subset frame) stops,
+  class `datom_sync_source_missing`, before any read.
+- **The empty first-version set** is `structure(list(name = , project = , version = NULL, data_sha =
+  NULL, tags = NULL, members = list()), class = "datom_set")`, built with `list(version = NULL)` so
+  the names survive (engineering-notes "A declared-but-unpopulated field has to be spelled
+  `list(x = NULL)`"). `datom_write_set()` then reads `members$tags` as `NULL` and applies its usual
+  default.
+- **`version_to` validation** uses the same `^[0-9a-f]{64}$` test `datom_update_members()` applies to
+  its `version_to`; `tags` goes through `.datom_validate_tag_map()` with the update verb's remedy.
+- **Open point B (section 3) decides the `new`-row stale case.**
 
 - Required columns: `project, name, kind, version_from, version_to, status`. Values: `status` in the
   five-value set, `version_to` a full 64-hex string on `new` / `changed` rows.
