@@ -298,10 +298,13 @@
 #' The final hash is
 #' `sha256( "datom-cv1" || f64le(nrow) || f64le(ncol) || concat(col_digest_hex...) )`.
 #'
+#' The per-column digests are an intermediate only and are never returned or
+#' persisted. A per-column digest lets anyone holding metadata confirm a guess
+#' about one column's values, and metadata is meant to describe a table's shape
+#' without revealing its values.
+#'
 #' @param data A data frame with at least one row and one column.
-#' @return A list with `data_sha` (character) and `column_hashes` (an ordered
-#'   list of `list(name, sha)` in column order, computed once and reused for
-#'   both `data_sha` and the persisted column index).
+#' @return A list with `data_sha` (character).
 #' @keywords internal
 .datom_canonical_hash <- function(data) {
   if (!is.data.frame(data)) {
@@ -338,15 +341,12 @@
     ))
   }
 
-  # Per-column digests -- computed once, reused for data_sha and the index.
+  # Per-column digests: the input to data_sha, and deliberately nothing else.
   col_hex <- vapply(
     seq_along(data),
     function(i) .datom_col_digest(nms[[i]], data[[i]]),
     character(1L)
   )
-  column_hashes <- lapply(seq_along(data), function(i) {
-    list(name = nms[[i]], sha = col_hex[[i]])
-  })
 
   header <- c(
     charToRaw("datom-cv1"),
@@ -358,7 +358,7 @@
     algo = "sha256", serialize = FALSE
   )
 
-  list(data_sha = data_sha, column_hashes = column_hashes)
+  list(data_sha = data_sha)
 }
 
 
@@ -446,9 +446,18 @@
 #   parquet_sha, size_bytes      stored-object byte facts: both drift with the
 #                                arrow version for identical logical content
 #   document_sha                 the same kind of fact for a stored JSON payload
-#   column_hashes                a deterministic function of the same values that
-#                                already fix `data_sha`, so it carries no
-#                                independent information
+#   column_hashes                RETIRED: no longer written. Files from datom
+#                                0.1.1 and 0.1.2 carry it -- one digest per
+#                                column -- and it stays on this list so those
+#                                files keep classifying. Forgetting the name
+#                                would make the write-side vocabulary check refuse
+#                                every such repo, and would make the carry-forward
+#                                of unrecognised fields copy the old version's
+#                                digests onto new data. Kept here, it is placed
+#                                and therefore dropped when the document is next
+#                                rebuilt. It was never identity. Dropped because a
+#                                per-column digest lets anyone holding metadata
+#                                confirm a guess about a column's values.
 #   original_format              which file extension an imported table came from.
 #                                Its sibling `original_file_sha` IS identity, so
 #                                the symmetric-looking choice here is identity

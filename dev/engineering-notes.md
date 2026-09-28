@@ -145,10 +145,20 @@ in the R temp directory, then check `usethis:::get_release_data()` parses it.
   that catches this direction, because an ignored field leaves every pinned hash untouched
   (verified by adding a junk builder field: the goldens stayed green, that test went red).
 - **The exclusion list is not the same idea as "volatile".** `parquet_sha`, `size_bytes`,
-  `column_hashes`, `created_at` and `datom_version` are volatile in the drift sense;
-  `schema_version` and `document_sha` are on the list for their own reasons (container format, and
-  stored-bytes integrity). Read the comment block above each constant rather than assuming the
-  rationale.
+  `created_at` and `datom_version` are volatile in the drift sense; `schema_version` and
+  `document_sha` are on the list for their own reasons (container format, and stored-bytes
+  integrity); `column_hashes` is there only because it is **retired** -- no longer written, but
+  carried by 0.1.1/0.1.2 files. Read the comment block above each constant rather than assuming
+  the rationale.
+- **Retiring a metadata field means: stop writing it, keep classifying it.** Deleting the name
+  from `.datom_metadata_excluded_fields` looks like tidy cleanup and breaks two things at once:
+  the write-side vocabulary check refuses every repo whose files still carry the field, and past
+  that check `.datom_carry_unknown_fields()` copies the previous version's value onto new data --
+  for `column_hashes`, digests of data that is no longer there. Kept known, the field is placed
+  and so dropped on the next rebuild. Record the name in `metadata_retired_fields` in
+  `test-utils-sha.R`, which asserts it is neither emitted nor forgotten. Verified by probing: with
+  the name removed and the door held open, a planted `column_hashes` survived a write of new
+  data.
 - **version_history dedup guard**: `.datom_write_metadata_local()` skips appending when the latest entry has the same version SHA. This prevents duplicates but means the guard relies on metadata_sha correctness.
 - **`datom_pull()` is git-only**: No S3 manifest refresh — git is the source of truth for all metadata. The manifest is committed to git and pulled with everything else.
 - **`governance.json` mirror -- git canonical, storage derived**: The git copy at `.datom/governance.json` is written and committed first; the storage mirror at `{prefix}/datom/.metadata/governance.json` is pushed in the same step. Never write only one. If the mirror is missing, `.datom_sync_governance_json(conn)` regenerates it from the git copy. The file is write-once -- do not update it after creation.
@@ -358,11 +368,13 @@ Harvested from the spec's work-handoff at completion. The *design* lives in
   which is what lets the identical string land in a cli abort bullet AND in the `error` cell of
   the manifest data frame with no markup drift. Keep it markup-free.
 - **`data_sha` recompute formula** -- lifted verbatim from `.datom_canonical_hash()`; copy it,
-  do not paraphrase, or an assertion drifts from the implementation. Lives in the Property 12
-  test in `test-utils-sha.R`:
+  do not paraphrase, or an assertion drifts from the implementation. Lives in the
+  "`.datom_canonical_hash` returns data_sha only" test in `test-utils-sha.R`. The per-column
+  digests come from `.datom_col_digest()` directly, since they are no longer returned or stored:
 
   ```r
-  shas   <- vapply(meta$column_hashes, function(e) e$sha, character(1))
+  shas   <- vapply(names(df), function(n) .datom_col_digest(n, df[[n]]),
+                   character(1), USE.NAMES = FALSE)
   header <- c(charToRaw("datom-cv1"),
               writeBin(as.double(c(nrow, ncol)), raw(), size = 8L, endian = "little"))
   recompute <- digest::digest(c(header, charToRaw(paste(shas, collapse = ""))),

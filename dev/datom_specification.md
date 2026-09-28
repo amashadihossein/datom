@@ -83,7 +83,7 @@ then:
                       concat(col_digest_hex ...))
 ```
 
-Computed by `.datom_canonical_hash()` (`R/utils-sha.R`), which returns `list(data_sha, column_hashes)`. It performs **zero I/O**, never coerces the container, and never invokes arrow.
+Computed by `.datom_canonical_hash()` (`R/utils-sha.R`), which returns `list(data_sha)`. It performs **zero I/O**, never coerces the container, and never invokes arrow.
 
 **Why not the parquet bytes.** Pre-`datom-cv1`, `data_sha` was `digest::digest(file = <parquet>)`. Parquet bytes move with the *writer* -- an arrow upgrade or a different compression default produces different bytes for identical content -- so serialization-based identity minted spurious versions. Hashing values decouples identity from the serializer; the serializer's bytes are still hashed, as `parquet_sha`, for integrity rather than identity.
 
@@ -100,7 +100,13 @@ The line is drawn at **platform non-determinism**, not at human-equivalence: dif
 
 **The table contract.** Hashing values requires a per-type encoding decision, so `datom-cv1` supports a defined set -- `logical`, `integer`, `double`, `character`, `factor`, `Date`/`IDate`, `POSIXct`, `difftime`/`hms`, `ITime`, `bit64::integer64`, and labelled vectors over those -- and refuses everything else. `R/hashable.R` holds the single classifier (`.datom_column_kind()`) and the single recourse source (`.datom_hash_recourse()`); the hash gate, the encoder dispatch, the exported checker `datom_check_hashable()`, and the vignette's recourse table all bind to them, so advice cannot drift from behavior. The refusal names every offending column in **one** abort, fires before any git/storage/manifest mutation, and therefore leaves no partial state.
 
-**Column index.** `column_hashes` persists the per-column digests as an ordered array of `{name, sha}` in table column order, untruncated -- computed once and reused for both `data_sha` and the index. `data_sha` is re-derivable from the index plus dimensions without downloading data, and two versions differing in one column differ in exactly one entry (the anchor for a future `datom_diff`, issue #73).
+**No column index -- metadata carries no per-column fingerprints.** The per-column digests are computed as the input to `data_sha` and then discarded. 0.1.1 and 0.1.2 persisted them as `column_hashes`; it was retired in [#119](https://github.com/amashadihossein/datom/issues/119), and **do not reintroduce it** (nor an opt-in switch for it) without revisiting these reasons:
+
+- **Metadata is meant to be a data-free surface.** Names, dimensions, lineage and provenance let a collaborator or an AI assistant write analysis code against a table without seeing a value, and metadata lives in git, which is often shared more widely than storage. A per-column digest lets its holder confirm a guess about one column: a low-cardinality or constant column, a small table, a few rows appended to a version already seen, or equality of same-named columns across tables.
+- **Little diff value.** Each digest covers every row, so appending rows -- the common change -- moves every entry. A future `datom_diff` (#73) downloads both versions and hashes them.
+- **Residual, by necessity.** `data_sha`, `parquet_sha` and `original_file_sha` stay: they are the storage address and the integrity checks. Each confirms a guess only about the whole table at once. User `custom` metadata is stored as given.
+
+The name stays on `.datom_metadata_excluded_fields`, marked retired, because existing files carry it: forgetting it would make the write-side vocabulary check refuse those repos, and would make carry-forward attach an old version's digests to new data. Kept known, it is dropped when the document is next rebuilt. Existing git history is not scrubbed.
 
 **Cross-language scope.** Guaranteed within R + `renv` (pinned by golden vectors across the CI matrix). The algorithm is specified in bytes and is language-implementable: `dev/datom_cv1_reference.R` is a standalone base-R + `digest` reference the package is tested byte-for-byte against and doubles as that specification. Agreement from another language requires implementing it, not luck. Raw-file onboarding identity (`original_file_sha`) is already language-independent.
 
@@ -183,11 +189,11 @@ metadata fields (sorted, semantic only) → JSON canonical form → SHA-256 → 
 
 **Field ordering is byte-wise, not locale-collated**: `sort(names(semantic), method = "radix")`. Plain `sort()` is `LC_COLLATE`-dependent, so two machines in different locales would order fields differently and mint different versions for identical metadata.
 
-**Volatile fields excluded**: `created_at`, `datom_version`, `parquet_sha`, `column_hashes`, and `size_bytes` are stripped before hashing.
+**Volatile fields excluded**: `created_at`, `datom_version`, `parquet_sha`, and `size_bytes` are stripped before hashing.
 
 - `created_at` / `datom_version` -- wall-clock and package facts.
 - `parquet_sha` / `size_bytes` -- both move with the arrow version for identical logical content; including them would re-import serializer drift into identity, undoing the point of hashing values. Excluding `parquet_sha` is also what lets `datom_write()` assign it *after* `metadata_sha` is computed (its value is unknown until change detection).
-- `column_hashes` -- a deterministic function of the same values that determine `data_sha`, so it carries no independent information.
+- `column_hashes` -- retired, no longer written (see "No column index" above); it was never identity, so documents with and without it hash alike.
 
 **Semantic, therefore included**: `original_file_sha` (a new source file is a new version of the table's provenance) and `hash_algo` (a new algorithm is a new identity regime).
 
@@ -438,11 +444,6 @@ Current state only — no history stored here:
   "hash_algo": "datom-cv1",
   "parquet_sha": "9f10a2...",
   "table_type": "derived",
-  "column_hashes": [
-    {"name": "id",    "sha": "4c1d8e..."},
-    {"name": "name",  "sha": "b70f22..."},
-    {"name": "value", "sha": "e5a913..."}
-  ],
   "parents": [
     {"source": "med-mm-001", "table": "os_data", "version": "a3f8c1..."},
     {"source": "med-mm-002", "table": "os_data", "version": "b9e2d4..."}
@@ -475,7 +476,7 @@ Current state only — no history stored here:
 | `data_sha` | Canonical `datom-cv1` hash of the table's **values** (not of the parquet file -- see "Table Identity = data_sha"). Doubles as the content address: `{table}/{data_sha}.parquet`. |
 | `hash_algo` | Identity algorithm that produced `data_sha`. Always `"datom-cv1"` for tables written by this version. **Semantic** (participates in `metadata_sha`): a new algorithm is a new identity regime. |
 | `parquet_sha` | SHA-256 of the stored parquet object's bytes. Integrity, **not** identity: verified on read before parsing; carried forward unchanged on a `metadata_only` write; reused (never overwritten) when a write reverts to content already in history. Excluded from `metadata_sha`, which is what allows `datom_write()` to set it after `metadata_sha` is computed. `null` for pre-`datom-cv1` metadata, in which case the read-time check is skipped rather than failed. |
-| `column_hashes` | Ordered array of `{name, sha}`, one entry per column in table column order, untruncated -- the same per-column digests that produced `data_sha`. Excluded from `metadata_sha`. Enables re-deriving `data_sha` from the index plus dimensions, and single-column diffing without downloading data. |
+| `column_hashes` | **Retired -- no longer written.** Per-column digests persisted by 0.1.1 and 0.1.2; still recognised so those files classify, and dropped when the document is next rebuilt. Never identity. See "No column index" under Table Identity for why it was removed. |
 | `table_type` | `"imported"` (from source file via `datom_sync`) or `"derived"` (from data frame via `datom_write`) |
 | `original_file_sha` | SHA-256 of the source file's bytes, for imported tables. Present in metadata **only when non-NULL** -- the derived path omits the field entirely rather than writing it as `null`. **Semantic** (participates in `metadata_sha`). Also recorded in the `version_history.json` entry and in `.datom/manifest.json`. |
 | `parents` | Immediate parents only. For `"imported"` tables: always `null`. For `"derived"` tables: list of `{source, table, version, data_sha}` entries, or `null` if lineage not recorded. Each entry is a record produced by `datom_parent(conn, table, version)`: `source` = `conn$project_name` of the parent, `table` = table name, `version` = **metadata_sha** of the parent version, `data_sha` = authoritative content SHA of the parent's parquet file (resolved from the parent's own store at construction time). The metadata_sha is the direct S3 key for the parent's metadata snapshot: `{table}/.metadata/{version}.json`. Purpose: **traversal and retrieval** -- enables one-hop-at-a-time lineage walking and versioned reads without secondary lookups. See note below on the two-SHA design. |
@@ -553,7 +554,7 @@ A set's per-artifact metadata is a collapsed version of a table's:
 }
 ```
 
-Same meanings as the table document for every field it shares. What a table carries and a set **omits entirely** -- not writes as `null` -- is everything describing a rectangle (`nrow`, `ncol`, `colnames`, `column_hashes`), the provenance axis (`table_type`, `parents`, `source_lineage`), the stored-parquet facts (`parquet_sha`, `size_bytes`), and the user-metadata channel (`custom`). A set's members and its user metadata are both in the payload as labels, and no counter reads a set's byte size.
+Same meanings as the table document for every field it shares. What a table carries and a set **omits entirely** -- not writes as `null` -- is everything describing a rectangle (`nrow`, `ncol`, `colnames`), the provenance axis (`table_type`, `parents`, `source_lineage`), the stored-parquet facts (`parquet_sha`, `size_bytes`), and the user-metadata channel (`custom`). A set's members and its user metadata are both in the payload as labels, and no counter reads a set's byte size.
 
 **Why no lineage on a set, ever.** A set is a citation, not a derivation: its members are recorded in the payload with their exact versions, and writing a set changes no member's lineage in either direction. Adding `parents` would claim a derivation relationship that does not exist and would make the same fact editable in two places.
 

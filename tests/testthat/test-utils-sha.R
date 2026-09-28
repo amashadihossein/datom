@@ -128,14 +128,22 @@ test_that("metadata SHA ignores parquet_sha (volatile: arrow-version byte drift)
   )
 })
 
-test_that("metadata SHA ignores column_hashes (volatile: derived from data_sha inputs)", {
+test_that("metadata SHA ignores column_hashes, present or absent (retired; on 0.1.1/0.1.2 files)", {
+  # The field is no longer written but files from 0.1.1 and 0.1.2 carry it. The
+  # absent arm is what makes retiring it free: a document rewritten without the
+  # field keeps the version it had with it.
   meta1 <- list(data_sha = "abc",
                 column_hashes = list(list(name = "x", sha = "aaa")))
   meta2 <- list(data_sha = "abc",
                 column_hashes = list(list(name = "x", sha = "bbb")))
+  meta3 <- list(data_sha = "abc")
   expect_identical(
     .datom_compute_metadata_sha(meta1),
     .datom_compute_metadata_sha(meta2)
+  )
+  expect_identical(
+    .datom_compute_metadata_sha(meta1),
+    .datom_compute_metadata_sha(meta3)
   )
 })
 
@@ -550,26 +558,7 @@ test_that(".datom_canonical_hash guards reject bad input", {
   expect_error(.datom_canonical_hash(data.frame(x = integer(0))), "at least one row")
 })
 
-test_that(".datom_canonical_hash returns data_sha and an ordered column index", {
-  df <- data.frame(x = 1:3, y = c("a", "b", "c"), stringsAsFactors = FALSE)
-  res <- .datom_canonical_hash(df)
-  expect_named(res, c("data_sha", "column_hashes"))
-  expect_match(res$data_sha, "^[0-9a-f]{64}$")
-  expect_identical(
-    vapply(res$column_hashes, function(e) e$name, character(1)),
-    names(df)
-  )
-  # data_sha recomputes from the column index + dims
-  col_hex <- vapply(res$column_hashes, function(e) e$sha, character(1))
-  header <- c(charToRaw("datom-cv1"),
-              writeBin(as.double(c(nrow(df), ncol(df))), raw(),
-                       size = 8L, endian = "little"))
-  recompute <- digest::digest(c(header, charToRaw(paste(col_hex, collapse = ""))),
-                              algo = "sha256", serialize = FALSE)
-  expect_identical(recompute, res$data_sha)
-})
-
-test_that("Feature: datom-cv1, Property 12: column index integrity", {
+test_that(".datom_canonical_hash returns data_sha only, built from the per-column digests", {
   df <- data.frame(
     id  = 1:4,
     age = c(10, 20, 30, 40),
@@ -579,38 +568,21 @@ test_that("Feature: datom-cv1, Property 12: column index integrity", {
   )
   res <- .datom_canonical_hash(df)
 
-  # (a) the persisted column_hashes array is ordered to names(data)
-  expect_identical(
-    vapply(res$column_hashes, function(e) e$name, character(1)),
-    names(df)
-  )
+  # The per-column digests are an intermediate and never leave the function:
+  # a persisted one lets anyone holding metadata confirm a guess about a column.
+  expect_named(res, "data_sha")
+  expect_match(res$data_sha, "^[0-9a-f]{64}$")
 
-  # (b) each entry's sha equals the standalone per-column digest
-  for (e in res$column_hashes) {
-    expect_identical(e$sha, .datom_col_digest(e$name, df[[e$name]]))
-  }
-
-  # (c) data_sha recomputes from the stored column_hashes + dims. Formula
-  #     lifted verbatim from .datom_canonical_hash() so the test cannot drift.
-  shas   <- vapply(res$column_hashes, function(e) e$sha, character(1))
+  # data_sha recomputes from the per-column digests + dims. Formula lifted
+  # verbatim from .datom_canonical_hash() so the test cannot drift.
+  shas   <- vapply(names(df), function(n) .datom_col_digest(n, df[[n]]),
+                   character(1), USE.NAMES = FALSE)
   header <- c(charToRaw("datom-cv1"),
               writeBin(as.double(c(nrow(df), ncol(df))), raw(),
                        size = 8L, endian = "little"))
   recompute <- digest::digest(c(header, charToRaw(paste(shas, collapse = ""))),
                               algo = "sha256", serialize = FALSE)
   expect_identical(recompute, res$data_sha)
-
-  # (d) changing exactly one column flips exactly that column's entry, leaving
-  #     every other entry untouched.
-  df2 <- df
-  df2$age <- c(11, 20, 30, 40)
-  res2 <- .datom_canonical_hash(df2)
-
-  before <- vapply(res$column_hashes,  function(e) e$sha, character(1))
-  after  <- vapply(res2$column_hashes, function(e) e$sha, character(1))
-  changed <- which(before != after)
-  expect_identical(changed, which(names(df) == "age"))
-  expect_identical(before[-changed], after[-changed])
 })
 
 # --- .datom_compute_metadata_sha(): Feature: datom-cv1, Properties 13-14 ------
@@ -965,19 +937,19 @@ test_that("metadata_sha golden is stable, and an unknown field does not move it 
 # carries a `name` key that no builder emits and omits `colnames`, which every
 # builder emits.
 #
-# `data_sha` and `column_hashes` are literals rather than a live
-# `.datom_canonical_hash()` call, deliberately: a cv1 encoding drift would then
-# redden the cv1 goldens only, so a failure here names one regime instead of two.
+# `data_sha` is a literal rather than a live `.datom_canonical_hash()` call,
+# deliberately: a cv1 encoding drift would then redden the cv1 goldens only, so a
+# failure here names one regime instead of two.
+#
+# The fixture carried `column_hashes` until that field was retired. The goldens
+# below did not move when it was dropped, which is the direct evidence that
+# retiring it re-mints no version.
 builder_metadata_fixture <- function(optional = TRUE) {
   df <- data.frame(id = 1:3, val = c("a", "b", "c"), stringsAsFactors = FALSE)
 
   args <- list(
     data = df,
     data_sha = "2eb1fa3e668dc15f6e5c2b384d2dbf39b216f12573c07c95543fa208dba4fef8",
-    column_hashes = list(
-      list(name = "id", sha = strrep("a", 64L)),
-      list(name = "val", sha = strrep("b", 64L))
-    ),
     # In the base arm rather than the optional one because every real write
     # records it: the value comes from the writing repo's own project.yaml, and a
     # write always has a clone.
@@ -1047,7 +1019,7 @@ test_that("the pinned fixtures carry exactly the keys datom's writers emit", {
   # changes: a builder gaining a semantic field legitimately moves the pins, and
   # that must surface as a decision rather than as a mystery.
   always <- c("schema_version", "kind", "data_sha", "hash_algo", "parquet_sha",
-              "table_type", "nrow", "ncol", "colnames", "column_hashes",
+              "table_type", "nrow", "ncol", "colnames",
               "created_at", "datom_version", "project")
   conditional <- c("original_file_sha", "original_format", "parents",
                    "source_lineage", "size_bytes", "custom")
@@ -1120,6 +1092,16 @@ test_that("every field a metadata builder emits is classified (AC33d)", {
 # version moves to signal it.
 metadata_classified_before_written <- character(0)
 
+# Names datom once wrote and no longer does. The other end of a field's life from
+# the list above, and kept apart from it because the obligation is opposite: a
+# retired name must STAY classified forever, since documents from older builds
+# still carry it.
+#
+#   column_hashes   one digest per column, written by 0.1.1 and 0.1.2. Retired
+#                   because a per-column digest lets anyone holding metadata
+#                   confirm a guess about a column's values.
+metadata_retired_fields <- c("column_hashes")
+
 test_that("nothing is classified before something writes it, except by decision", {
   # The converse arm the identity list has always had, extended to the
   # not-identity list -- which is where it was missing, and where `document_sha`
@@ -1130,13 +1112,39 @@ test_that("nothing is classified before something writes it, except by decision"
 
   unwritten <- setdiff(.datom_metadata_excluded_fields, emitted)
 
-  expect_identical(setdiff(unwritten, metadata_classified_before_written),
-                   character(0))
+  expect_identical(
+    setdiff(unwritten,
+            c(metadata_classified_before_written, metadata_retired_fields)),
+    character(0)
+  )
 
   # And the exception list does not outlive its exceptions: once a builder starts
   # emitting one of these, its name comes off the list.
   expect_identical(intersect(metadata_classified_before_written, emitted),
                    character(0))
+})
+
+test_that("a retired metadata field is no longer written but is still recognised", {
+  emitted <- all_emitted_metadata_fields()
+
+  # Retired means retired: no builder emits it. Without this arm the retired
+  # list could quietly become a second place to park a live field.
+  expect_identical(intersect(metadata_retired_fields, emitted), character(0))
+
+  # Still recognised, which is the half that protects existing repos. A build
+  # that forgot the name would meet a 0.1.2 document, fail to place the field,
+  # refuse the write at the vocabulary check, and -- past that -- carry the old
+  # version's digests forward onto new data.
+  expect_identical(
+    setdiff(metadata_retired_fields, .datom_metadata_known_fields()),
+    character(0)
+  )
+
+  # And never identity, so retiring it moved no version.
+  expect_identical(
+    intersect(metadata_retired_fields, .datom_metadata_identity_fields),
+    character(0)
+  )
 })
 
 test_that("recording a project name moves no artifact's version", {

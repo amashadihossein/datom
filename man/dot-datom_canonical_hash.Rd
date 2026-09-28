@@ -10,9 +10,7 @@
 \item{data}{A data frame with at least one row and one column.}
 }
 \value{
-A list with \code{data_sha} (character) and \code{column_hashes} (an ordered
-list of \code{list(name, sha)} in column order, computed once and reused for
-both \code{data_sha} and the persisted column index).
+A list with \code{data_sha} (character).
 }
 \description{
 The I/O-free identity engine for \code{datom-cv1}. Computes \code{data_sha} from the
@@ -31,5 +29,10 @@ mutation, so a refusal leaves no partial state.
 
 The final hash is
 \code{sha256( "datom-cv1" || f64le(nrow) || f64le(ncol) || concat(col_digest_hex...) )}.
+
+The per-column digests are an intermediate only and are never returned or
+persisted. A per-column digest lets anyone holding metadata confirm a guess
+about one column's values, and metadata is meant to describe a table's shape
+without revealing its values.
 }
 \keyword{internal}

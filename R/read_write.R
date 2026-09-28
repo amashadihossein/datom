@@ -345,9 +345,6 @@ datom_read <- function(conn,
 #'   manifest row and nowhere else, which made it the single field a
 #'   reconstructed index had to drop. It is **not** part of the version identity
 #'   -- see `.datom_metadata_excluded_fields`.
-#' @param column_hashes Ordered list of per-column `list(name, sha)` digests
-#'   from [.datom_canonical_hash()], or NULL. Excluded from `metadata_sha`
-#'   (see [.datom_compute_metadata_sha()]).
 #' @param project The name of the project whose namespace this artifact is being
 #'   written into, from the writing repo's own `.datom/project.yaml`. Recorded on
 #'   the only-when-non-NULL terms `original_file_sha` uses, and last in the
@@ -374,8 +371,7 @@ datom_read <- function(conn,
                                  table_type = "derived", size_bytes = NULL,
                                  parents = NULL, source_lineage = NULL,
                                  original_file_sha = NULL,
-                                 original_format = NULL, column_hashes = NULL,
-                                 project = NULL) {
+                                 original_format = NULL, project = NULL) {
   if (!table_type %in% c("imported", "derived")) {
     cli::cli_abort("{.arg table_type} must be {.val imported} or {.val derived}.")
   }
@@ -404,7 +400,6 @@ datom_read <- function(conn,
     nrow = nrow(data),
     ncol = ncol(data),
     colnames = names(data),
-    column_hashes = column_hashes,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     datom_version = as.character(utils::packageVersion("datom"))
   )
@@ -440,7 +435,7 @@ datom_read <- function(conn,
 #' `kind`, `data_sha`, `hash_algo`, `document_sha`, `project`, `created_at`,
 #' `datom_version`, and no more. Everything a table carries that describes a
 #' rectangle (`nrow`,
-#' `ncol`, `colnames`, `column_hashes`), the provenance axis (`table_type`,
+#' `ncol`, `colnames`), the provenance axis (`table_type`,
 #' `parents`, `source_lineage`), the stored-parquet facts (`parquet_sha`,
 #' `size_bytes`) and the user-metadata channel (`custom`) are all **omitted, not
 #' nulled** -- a set's members and its user metadata both live in the payload as
@@ -1223,11 +1218,10 @@ datom_write <- function(conn,
   # 0. Write-time ref guard: ensure data location hasn't changed
   .datom_check_ref_current(conn)
 
-  # 1. Canonical content hash: data_sha (the storage address) + the per-column
-  #    index, in one pass. The all-offenders abort fires here -- before any
-  #    git/storage/manifest mutation -- so a refusal leaves no partial state.
-  hashed <- .datom_canonical_hash(data)
-  data_sha <- hashed$data_sha
+  # 1. Canonical content hash: data_sha (the storage address). The
+  #    all-offenders abort fires here -- before any git/storage/manifest
+  #    mutation -- so a refusal leaves no partial state.
+  data_sha <- .datom_canonical_hash(data)$data_sha
 
   # 2. Serialize parquet to a temp file; capture its size and the stored-object
   #    integrity hash (parquet_sha) of these exact bytes.
@@ -1249,7 +1243,6 @@ datom_write <- function(conn,
     size_bytes = size_bytes,
     original_file_sha = .original_file_sha,
     original_format = .original_format,
-    column_hashes = hashed$column_hashes,
     # The repo's own declaration, not a label: a write requires a clone (checked
     # above), and a connection built from a clone reads `project_name` out of
     # `.datom/project.yaml`. Recording it here is what lets a later citation of
