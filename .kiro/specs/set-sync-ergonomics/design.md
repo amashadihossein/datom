@@ -112,7 +112,8 @@ said "after the include-path checks, before tidy"): there the members are unvali
 malformed member would reach a snapshot read and fail with a storage error instead of the
 validator's message. Agreed with the owner 2026-09-28.
 
-- For each member of kind `table` whose project is the set's own project: read its snapshot
+- For each member whose project is the set's own project (all tables: a product repo holds one set,
+  and a set listing itself is refused first, so no kind filter is needed): read its snapshot
   (`.datom_artifact_snapshot_key()`, storage) and take `parents`.
 - **Check the snapshot's format number before reading `parents`**, with
   `.datom_check_schema_version(snap, key)`, as `.datom_parent_record()` and `datom_member()` do: a

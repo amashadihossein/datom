@@ -1623,3 +1623,206 @@ test_that("a write with no include_paths commits exactly what it always did", {
   expect_false("dp/build.R" %in% tree)
   expect_true("dp/" %in% unlist(git2r::status(fx$repo)$untracked, use.names = FALSE))
 })
+
+
+# === outputs must be built from the inputs the set pins =========================
+#
+# A table records the parent versions it was derived from. A set that lists the
+# table and one of its parents at a different version describes a product that
+# was never built, so the write stops. Every refusal below asserts NOTHING was
+# written, observed at three places a partial write would leave a trace: the git
+# copy of the payload, the clone's manifest row and HEAD.
+
+# A derived table written with parents; returns its version.
+sw_derived <- function(fx, name, parents, n = 3L) {
+  suppressMessages(
+    datom_write(fx$conn, data = sw_data(n), name = name, parents = parents)
+  )
+  datom_history(fx$conn, name, short_hash = FALSE)$version[[1L]]
+}
+
+sw_snapshot_path <- function(fx, name, version) {
+  .datom_local_path(fx$conn, .datom_artifact_snapshot_key(name, version))
+}
+
+sw_expect_nothing_written <- function(fx, head_before) {
+  expect_false(fs::file_exists(sw_payload_path(fx)))
+  expect_false(fx$set_name %in% names(sw_clone_manifest(fx)$artifacts))
+  expect_identical(sw_head(fx), head_before)
+}
+
+# lb at two versions, and an output built from the FIRST one.
+sw_parent_fixture <- function(env = parent.frame()) {
+  fx <- local_set_project(env = env)
+  lb_v1 <- sw_table(fx, "lb", n = 3L)
+  flags <- sw_derived(fx, "flags",
+                      list(datom_parent(fx$conn, "lb", lb_v1)))
+  lb_v2 <- sw_table(fx, "lb", n = 4L)
+  list(fx = fx, lb_v1 = lb_v1, lb_v2 = lb_v2, flags = flags)
+}
+
+test_that("an output whose parent the set pins at another version stops the write (R6.1)", {
+  pf <- sw_parent_fixture()
+  fx <- pf$fx
+  head_before <- sw_head(fx)
+
+  err <- expect_error(
+    datom_write_set(fx$conn, list(
+      sw_member(fx, "lb", pf$lb_v2, tags = list(type = "input")),
+      sw_member(fx, "flags", pf$flags, tags = list(type = "output"))
+    )),
+    class = "datom_set_parent_mismatch"
+  )
+
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "flags was built from lb", fixed = TRUE)
+  expect_match(msg, substr(pf$lb_v1, 1L, 8L), fixed = TRUE)
+  expect_match(msg, substr(pf$lb_v2, 1L, 8L), fixed = TRUE)
+
+  # Nothing hashed-and-written: the check sits above every local write (R6.2).
+  sw_expect_nothing_written(fx, head_before)
+})
+
+test_that("every mismatch is reported, not only the first", {
+  fx <- local_set_project()
+  dm_v1 <- sw_table(fx, "dm", n = 3L)
+  lb_v1 <- sw_table(fx, "lb", n = 3L)
+  flags <- sw_derived(fx, "flags", list(
+    datom_parent(fx$conn, "dm", dm_v1),
+    datom_parent(fx$conn, "lb", lb_v1)
+  ))
+  dm_v2 <- sw_table(fx, "dm", n = 4L)
+  lb_v2 <- sw_table(fx, "lb", n = 4L)
+
+  err <- expect_error(
+    datom_write_set(fx$conn, list(
+      sw_member(fx, "dm", dm_v2),
+      sw_member(fx, "lb", lb_v2),
+      sw_member(fx, "flags", flags)
+    )),
+    class = "datom_set_parent_mismatch"
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "flags was built from dm", fixed = TRUE)
+  expect_match(msg, "flags was built from lb", fixed = TRUE)
+})
+
+test_that("an output whose parents the set pins at the versions used writes", {
+  pf <- sw_parent_fixture()
+  fx <- pf$fx
+
+  res <- sw_write(fx, list(
+    sw_member(fx, "lb", pf$lb_v1),
+    sw_member(fx, "flags", pf$flags)
+  ))
+  expect_identical(res$action, "full")
+})
+
+test_that("a parent the set does not list is not checked (R6.3)", {
+  pf <- sw_parent_fixture()
+  fx <- pf$fx
+
+  res <- sw_write(fx, list(sw_member(fx, "flags", pf$flags)))
+  expect_identical(res$action, "full")
+})
+
+test_that("a live table beside a frozen baseline passes when one is the version used", {
+  # The baseline pair is legal in a set, so "the parent's table is in the set at
+  # a different version" cannot be the whole rule: the one at the version used
+  # is what the output was built from.
+  pf <- sw_parent_fixture()
+  fx <- pf$fx
+
+  res <- sw_write(fx, list(
+    sw_member(fx, "lb", pf$lb_v2, tags = list(release = "current")),
+    sw_member(fx, "lb", pf$lb_v1, tags = list(release = "baseline")),
+    sw_member(fx, "flags", pf$flags)
+  ))
+  expect_identical(res$member_count, 3L)
+})
+
+test_that("a parent in another project is matched on project as well as name", {
+  # The parent `lb` of this project must not be confused with a member `lb` of
+  # some other project: a set pinning another study's lb is not a disagreement.
+  pf <- sw_parent_fixture()
+  fx <- pf$fx
+
+  elsewhere <- list(id = list(
+    project = "another-project", name = "lb", kind = "table",
+    version = pf$lb_v2
+  ))
+
+  res <- sw_write(fx, list(sw_member(fx, "flags", pf$flags), elsewhere))
+  expect_identical(res$member_count, 2L)
+})
+
+test_that("a member of another project is not read", {
+  # The write holds a connection to its own project only. Reading another
+  # project's member through it would look in the wrong namespace and report the
+  # version as unreadable.
+  fx <- local_set_project()
+  members <- sw_one_member(fx)
+
+  elsewhere <- list(id = list(
+    project = "another-project", name = "vs", kind = "table",
+    version = strrep("b", 64L)
+  ))
+
+  res <- sw_write(fx, c(members, list(elsewhere)))
+  expect_identical(res$member_count, 2L)
+})
+
+test_that("a member whose recorded metadata cannot be read stops the write", {
+  pf <- sw_parent_fixture()
+  fx <- pf$fx
+  members <- list(sw_member(fx, "lb", pf$lb_v1), sw_member(fx, "flags", pf$flags))
+  head_before <- sw_head(fx)
+
+  fs::file_delete(sw_snapshot_path(fx, "flags", pf$flags))
+
+  err <- expect_error(
+    datom_write_set(fx$conn, members),
+    class = "datom_set_member_unreadable",
+    inherit = FALSE
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)), "flags", fixed = TRUE)
+  sw_expect_nothing_written(fx, head_before)
+})
+
+test_that("a member snapshot from a newer datom stops the write with its own refusal", {
+  # The format check sits OUTSIDE the read's handler, so the refusal is the
+  # upgrade message, not a reworded "cannot read".
+  pf <- sw_parent_fixture()
+  fx <- pf$fx
+  members <- list(sw_member(fx, "lb", pf$lb_v1), sw_member(fx, "flags", pf$flags))
+  head_before <- sw_head(fx)
+
+  path <- sw_snapshot_path(fx, "flags", pf$flags)
+  snap <- jsonlite::read_json(path)
+  snap$schema_version <- 99L
+  jsonlite::write_json(snap, path, auto_unbox = TRUE)
+
+  expect_error(
+    datom_write_set(fx$conn, members),
+    class = "datom_schema_unsupported",
+    inherit = FALSE
+  )
+  sw_expect_nothing_written(fx, head_before)
+})
+
+test_that("a malformed member gets the validator's message, not a snapshot read error", {
+  # The check runs after validation. Placed before it, this member -- its own
+  # project, a table, a version nobody wrote -- would reach a snapshot read and
+  # fail as unreadable instead of naming the stray field.
+  fx <- local_set_project()
+  sw_table(fx, "dm")
+
+  bad <- list(
+    id = list(project = "set-project", name = "dm", kind = "table",
+              version = strrep("c", 64L)),
+    extra = "x"
+  )
+
+  err <- expect_error(datom_write_set(fx$conn, list(bad)), "unexpected")
+  expect_false(inherits(err, "datom_set_member_unreadable"))
+})

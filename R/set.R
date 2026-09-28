@@ -649,6 +649,147 @@
 }
 
 
+#' Refuse a Set Whose Outputs Were Built From Versions It Does Not Pin
+#'
+#' A table records the parent versions it was derived from. When a set lists
+#' that table **and** one of its parents, the two claims can disagree: the set
+#' says "input `lb` is version A" while the output says "I was built from `lb`
+#' version B". A citation of that set would then describe a product that was
+#' never built. This check stops the write and names both versions.
+#'
+#' **What is checked.** Every member in the set's own project -- all tables,
+#' since a product repo holds one set and a set listing itself is refused first.
+#' For each parent its snapshot records, the members naming that parent's
+#' project and table are found. None -> not checked (the parent is not part of
+#' the product). Some, and one of them at the parent's version -> fine, which is
+#' what keeps a live table beside a frozen baseline legal. Some, and none at
+#' that version -> a mismatch. All mismatches are collected and reported
+#' together.
+#'
+#' **Members of other projects are not read**: the write holds a connection to
+#' its own project only.
+#'
+#' **An unreadable snapshot stops the write** rather than being skipped. A
+#' version that does not exist means the set would point at data nobody can
+#' fetch, and storage that cannot be reached would fail the write anyway -- only
+#' later, after the local files are written. Metadata only: one small JSON per
+#' member, no parquet, so a readable snapshot proves the version was recorded,
+#' not that its data is still in storage (that is [datom_validate()]'s job).
+#'
+#' Called after the payload has been validated and before the first hash, so a
+#' malformed member gets the validator's message and a refusal leaves nothing
+#' behind.
+#'
+#' @param conn The set's own developer connection.
+#' @param name The set's name, for the message.
+#' @param members The validated, ordered member list.
+#' @return Invisibly `TRUE`.
+#' @keywords internal
+.datom_check_set_parents <- function(conn, name, members) {
+  own <- conn$project_name
+  ids <- lapply(members, function(m) m$id)
+
+  pinned <- function(project, table) {
+    hits <- Filter(
+      function(id) identical(id$project, project) && identical(id$name, table),
+      ids
+    )
+    vapply(hits, function(id) id$version, character(1L))
+  }
+
+  # No kind filter: every own-project member is a table, because the only set a
+  # product repo holds is this one, and listing itself was refused just above.
+  own_tables <- Filter(function(id) identical(id$project, own), ids)
+
+  # lapply rather than purrr::map: the two refusals raised while reading a
+  # snapshot (unreadable, format too new) must reach the caller with their own
+  # class, and purrr re-signals a mapped function's error as its own.
+  mismatches <- unlist(
+    lapply(own_tables, function(id) {
+      parents <- .datom_member_parents(conn, id)
+
+      lapply(parents, function(p) {
+        # `datom_write()` records every parent as three strings, so an entry
+        # that is not shaped that way names nothing a member could pin.
+        well_formed <- is.list(p) && .datom_is_text_scalar(p$source) &&
+          .datom_is_text_scalar(p$table) && .datom_is_text_scalar(p$version)
+        if (!well_formed) return(NULL)
+        versions <- pinned(p$source, p$table)
+        if (length(versions) == 0L || p$version %in% versions) return(NULL)
+        list(member = id$name, parent = p$table, used = p$version,
+             pinned = versions)
+      })
+    }),
+    recursive = FALSE
+  )
+  mismatches <- Filter(Negate(is.null), mismatches)
+
+  if (length(mismatches) == 0L) return(invisible(TRUE))
+
+  lines <- vapply(mismatches, function(x) {
+    paste0(
+      x$member, " was built from ", x$parent, " ", substr(x$used, 1L, 8L),
+      "; the set pins ", x$parent, " at ",
+      paste(substr(x$pinned, 1L, 8L), collapse = ", "), "."
+    )
+  }, character(1L))
+  names(lines) <- rep("x", length(lines))
+
+  cli::cli_abort(
+    c(
+      "Set {.val {name}} pins inputs at versions its outputs were not built \\
+       from.",
+      lines,
+      "i" = "Re-derive the output from the versions the set pins \\
+             ({.code datom_parent(x = )} takes them from the set), or move the \\
+             input to the version the output used with \\
+             {.fn datom_update_members}.",
+      "i" = "Nothing has been written."
+    ),
+    class = "datom_set_parent_mismatch"
+  )
+}
+
+
+#' Read the Parents One Table Member Records
+#'
+#' The snapshot read behind [.datom_check_set_parents()]. The format check sits
+#' **outside** the read's handler, so a snapshot from a newer datom keeps its own
+#' refusal instead of being reworded as a read failure -- the same pairing as
+#' [.datom_parent_record()].
+#'
+#' @param conn The set's own developer connection.
+#' @param id The member's `id` map.
+#' @return The snapshot's `parents` list, or `NULL` when it records none.
+#' @keywords internal
+.datom_member_parents <- function(conn, id) {
+  key <- .datom_artifact_snapshot_key(id$name, id$version)
+
+  snap <- tryCatch(
+    .datom_storage_read_json(conn, key),
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Cannot read the recorded metadata of member \\
+           {.val {id$name}} at version {.val {substr(id$version, 1, 8)}}.",
+          "i" = "The set would point at a version nobody can fetch, or storage \\
+                 could not be reached. Nothing has been written.",
+          "i" = "Check the version with {.fn datom_history}, or run \\
+                 {.fn datom_validate} on this project.",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        class = "datom_set_member_unreadable"
+      )
+    }
+  )
+
+  .datom_check_schema_version(snap, key, operation = "write")
+
+  if (!is.list(snap)) return(NULL)
+  snap$parents
+}
+
+
 #' Drop the `$fetch` Link a Read Puts on Every Member
 #'
 #' The one step that makes read-modify-write possible. A member record is
@@ -758,6 +899,22 @@
 #' the verb for committing your own content at a moment you chose. A data write
 #' that quietly committed work in progress is the thing datom's explicit file
 #' lists exist to prevent, and idempotency must not become a side door into it.
+#'
+#' @section Outputs must be built from the inputs the set pins:
+#' A table written with `parents` records which versions it was derived from.
+#' When a set lists such a table and also lists one of its parents, the write
+#' checks they agree: if the set pins the parent at a different version from
+#' the one the table was built from, and not at that version too, the write
+#' stops and names the member, the parent and both versions. Nothing is
+#' written. Re-derive the output with `datom_parent(x = )`, which takes the
+#' versions from the set, or move the input with [datom_update_members()].
+#'
+#' Only tables in the set's own project are checked, and a parent the set does
+#' not list is not checked. A set carrying one table at two versions (a live
+#' copy beside a frozen baseline) passes as long as one of them is the version
+#' used. Each such member's recorded metadata is read from storage; if it
+#' cannot be read -- a version that does not exist, or storage that cannot be
+#' reached -- the write stops too.
 #'
 #' @section Editing a set that already exists:
 #' Read it, change it, write it back. `members` accepts a `datom_set` from
@@ -968,6 +1125,11 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
 
   payload$members <- .datom_order_set_members(payload$members)
   .datom_check_set_payload(payload, name, conn$project_name)
+
+  # After the validator, so a malformed member gets its message rather than a
+  # storage error from a snapshot read; before the first hash and every local
+  # write, so a refusal leaves nothing behind.
+  .datom_check_set_parents(conn, name, payload$members)
 
   # Identity over the canonical payload, then the version over the metadata
   # document. `document_sha` is not knowable yet -- it hashes the stored bytes --

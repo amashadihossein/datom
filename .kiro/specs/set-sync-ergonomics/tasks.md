@@ -12,9 +12,10 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1, 2 and 3 done 2026-09-28. **Resume at task 4**
-(provenance check in `datom_write_set()`); ask the owner before starting it (rule 5d).
-**Current test count: 4380** -- what task 4's count must not drop below.
+Spec approved 2026-09-27 and committed. Tasks 1-4 done 2026-09-28. **Resume at task 5**
+(the preview, `datom_sync_manifest(sources = )`), which is flagged for a design spot-check on a more
+capable model first; ask the owner before starting it (rule 5d).
+**Current test count: 4406** -- what task 5's count must not drop below.
 
 Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R6 is
 task 4) and `design.md` (section 1 lists the code facts already checked, section 7 is task 4). Before
@@ -96,7 +97,26 @@ owner's original prompt is untracked and not needed: every decision is in `requi
     one existing refusal test (`test-set-draft.R`, "the add verb needs a draft") passes a connection,
     not a set, so it stays; keep `datom_assemble_set` in the widened message, which it matches.
 
-- [ ] **4. Provenance check in `datom_write_set()`** (R6, AC12)
+- [x] **4. Provenance check in `datom_write_set()`** (R6, AC12)
+  - **Done 2026-09-28, 4406 tests (+26).** `.datom_check_set_parents()` in `R/set.R`, called right
+    after `.datom_check_set_payload()`; the snapshot read is `.datom_member_parents()`, with the
+    format check outside its handler. Refusal classes `datom_set_parent_mismatch` (all mismatches
+    in one message, one line each, short hashes) and `datom_set_member_unreadable`; a too-new
+    snapshot keeps `datom_schema_unsupported`. New roxygen section in `datom_write_set()`.
+  - **No kind filter**, unlike design 7's wording: every own-project member is a table, because a
+    product repo holds one set and a set listing itself is refused just before. A filter there
+    could never be probed. A parent entry not shaped as three strings is skipped (datom always
+    writes three).
+  - **One earlier test changed** (`test-set-edit.R`, "a member whose artifact is gone is reported
+    and left, and still writes"): its "gone" member pinned a version that never existed, which the
+    new unreadable refusal stops at write. It now writes a real `ghost` table and drops it from both
+    manifest copies, which is what "gone" is in practice and what the test's own comment ("the pin
+    still reads") assumed.
+  - Probes (fixed copy, `cmp` after each; control reddened nothing): no abort; call removed; call
+    moved before tidy/validation; call moved after the payload file write; baseline rule; project
+    match; own-project filter; first-mismatch-only; unreadable skipped; format check inside the
+    handler; format check removed; `purrr::map()` for `lapply()` -- each reddened its own test
+    (the class tests use `inherit = FALSE`).
   - Design 7. Tests: mismatch stops before any local write; matching parents pass; parent not in the
     set passes; baseline pair (one member at the parent's version) passes.
   - **Design 7 corrected 2026-09-28 (owner), read it rather than this summary:** the check sits

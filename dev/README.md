@@ -251,7 +251,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Branch | Status |
 |---|---|---|
-| [set-sync-ergonomics](../.kiro/specs/set-sync-ergonomics/) ([#121](https://github.com/amashadihossein/datom/issues/121)) | `spec/set-sync-ergonomics` (from `dev` at `7d55a8b`) | Spec approved 2026-09-27; tasks 1 (`vs` example data), 2 (`datom_parent(x = )`) and 3 (`datom_add_member()` on a saved set) done 2026-09-28, 4380 tests; next: task 4 (parent/pin check at set write). Map -> review -> apply for sets through `datom_sync_manifest()` / `datom_sync()`, `datom_add_member()` on saved sets, `datom_parent(x = )`, a parent/pin check at set write, `vs` example data. |
+| [set-sync-ergonomics](../.kiro/specs/set-sync-ergonomics/) ([#121](https://github.com/amashadihossein/datom/issues/121)) | `spec/set-sync-ergonomics` (from `dev` at `7d55a8b`) | Spec approved 2026-09-27; tasks 1 (`vs` example data), 2 (`datom_parent(x = )`), 3 (`datom_add_member()` on a saved set) and 4 (parent/pin check at set write) done 2026-09-28, 4406 tests; next: task 5 (sync preview; design spot-check first). Map -> review -> apply for sets through `datom_sync_manifest()` / `datom_sync()`, `datom_add_member()` on saved sets, `datom_parent(x = )`, a parent/pin check at set write, `vs` example data. |
 
 Previously: `vignettes-sets-arc` completed 2026-09-26, `sets-release-readiness` on 2026-09-25 and
 `datom-sets` on 2026-09-21 -- all under Completed Phases below. Specs persist as documentation under `.kiro/specs/`; they are not deleted on

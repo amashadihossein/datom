@@ -135,6 +135,24 @@ that quietly committed work in progress is the thing datom's explicit file
 lists exist to prevent, and idempotency must not become a side door into it.
 }
 
+\section{Outputs must be built from the inputs the set pins}{
+
+A table written with \code{parents} records which versions it was derived from.
+When a set lists such a table and also lists one of its parents, the write
+checks they agree: if the set pins the parent at a different version from
+the one the table was built from, and not at that version too, the write
+stops and names the member, the parent and both versions. Nothing is
+written. Re-derive the output with \code{datom_parent(x = )}, which takes the
+versions from the set, or move the input with \code{\link[=datom_update_members]{datom_update_members()}}.
+
+Only tables in the set's own project are checked, and a parent the set does
+not list is not checked. A set carrying one table at two versions (a live
+copy beside a frozen baseline) passes as long as one of them is the version
+used. Each such member's recorded metadata is read from storage; if it
+cannot be read -- a version that does not exist, or storage that cannot be
+reached -- the write stops too.
+}
+
 \section{Editing a set that already exists}{
 
 Read it, change it, write it back. \code{members} accepts a \code{datom_set} from

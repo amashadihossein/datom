@@ -364,17 +364,33 @@ test_that("a project with no connection is fine when nothing selects it", {
 test_that("a member whose artifact is gone is reported and left, and still writes", {
   # AC41(b). The answer is known and the pin still reads, so refusing a whole
   # refresh over one retired input would be the wrong trade.
+  #
+  # "Gone" is built as it happens: a real version, then the artifact dropped
+  # from both manifest copies. Its snapshot still reads, which is the premise --
+  # the set write reads it to check parents, and refuses a pin that cannot be
+  # read at all.
   fx <- local_edit_project()
   v_dm <- se_table(fx, "dm", 3L)
-  x <- se_set(se_member("dm", v_dm), se_member("ghost", strrep("a", 64L)))
+  v_ghost <- se_table(fx, "ghost", 3L)
+  x <- se_set(se_member("dm", v_dm), se_member("ghost", v_ghost))
   new_dm <- se_table(fx, "dm", 4L)
+
+  manifests <- c(
+    fs::path(fx$repo_dir, ".datom", "manifest.json"),
+    fs::path(fx$store_dir, "proj", "datom", ".metadata", "manifest.json")
+  )
+  lapply(manifests, function(path) {
+    m <- jsonlite::read_json(path)
+    m$artifacts$ghost <- NULL
+    jsonlite::write_json(m, path, auto_unbox = TRUE, pretty = TRUE)
+  })
 
   msg <- se_messages(out <- datom_update_members(x, fx$conn))
 
   expect_match(msg, "ghost")
   expect_match(msg, "pinned")
   expect_identical(out$members[[1L]]$id$version, new_dm)
-  expect_identical(out$members[[2L]]$id$version, strrep("a", 64L))
+  expect_identical(out$members[[2L]]$id$version, v_ghost)
 
   # And the set is still writable, which is the point of leaving the pin.
   result <- se_write(fx$conn, out)
