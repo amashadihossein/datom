@@ -734,16 +734,14 @@ test_that("original_file_sha is included only when non-NULL", {
   expect_equal(imported$original_file_sha, "f00dfeed")
 })
 
-test_that("column_hashes is carried through and defaults to declared NULL", {
+test_that("the table builder writes no per-column hashes and takes no argument for them", {
+  # Retired: a per-column digest lets anyone holding metadata confirm a guess
+  # about one column's values. Both halves asserted, so a builder that quietly
+  # regained the argument, or the field, fails here.
   df <- data.frame(x = 1)
-  # declared (present) even when not supplied
   bare <- .datom_build_metadata(df, "sha")
-  expect_true("column_hashes" %in% names(bare))
-  expect_null(bare$column_hashes)
-  # passed through verbatim when supplied
-  ch <- list(list(name = "x", sha = "deadbeef"))
-  result <- .datom_build_metadata(df, "sha", column_hashes = ch)
-  expect_identical(result$column_hashes, ch)
+  expect_false("column_hashes" %in% names(bare))
+  expect_false("column_hashes" %in% names(formals(.datom_build_metadata)))
 })
 
 test_that("includes custom metadata", {
@@ -1979,7 +1977,7 @@ test_that("resolve parquet_sha: full reverting to a recorded data_sha reuses its
   expect_false(res$upload)
 })
 
-test_that("full datom_write records parquet_sha, hash_algo, and column_hashes in metadata.json", {
+test_that("full datom_write records parquet_sha and hash_algo, and no per-column hashes, in metadata.json", {
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Writer", user.email = "w@test.com")
@@ -2003,11 +2001,9 @@ test_that("full datom_write records parquet_sha, hash_algo, and column_hashes in
     meta <- jsonlite::read_json("t/metadata.json", simplifyVector = FALSE)
     expect_equal(meta$hash_algo, "datom-cv1")
     expect_match(meta$parquet_sha, "^[0-9a-f]{64}$")
-    expect_equal(length(meta$column_hashes), 2)
-    expect_equal(meta$column_hashes[[1]]$name, "id")
-    expect_equal(meta$column_hashes[[2]]$name, "v")
-    # no truncation: every entry carries a full 64-char hex sha
-    for (e in meta$column_hashes) expect_match(e$sha, "^[0-9a-f]{64}$")
+    # Asserted on the file as written, not the in-memory object: this is what
+    # a metadata-only reader sees.
+    expect_false("column_hashes" %in% names(meta))
   })
 })
 
@@ -2082,14 +2078,11 @@ test_that("full datom_write persists all columns of a wide frame, in order, untr
     datom_write(conn, data = wide, name = "w")
 
     meta <- jsonlite::read_json("w/metadata.json", simplifyVector = FALSE)
-    # every column is present, none dropped or truncated away
-    expect_equal(length(meta$column_hashes), ncol(wide))
-    expect_identical(
-      vapply(meta$column_hashes, function(e) e$name, character(1)),
-      names(wide)
-    )
-    # each persisted sha is a full, untruncated 64-char hex digest
-    for (e in meta$column_hashes) expect_match(e$sha, "^[0-9a-f]{64}$")
+    # every column is described, none dropped, in table order
+    expect_equal(meta$ncol, ncol(wide))
+    expect_identical(unlist(meta$colnames), names(wide))
+    # and nothing per-column beyond the name leaves the data
+    expect_false("column_hashes" %in% names(meta))
   })
 })
 
@@ -2810,15 +2803,11 @@ test_that("stamping the format does not turn an unchanged table into a new versi
                    stringsAsFactors = FALSE)
   hashed <- .datom_canonical_hash(df)
 
-  stored <- .datom_build_metadata(
-    df, hashed$data_sha, column_hashes = hashed$column_hashes, size_bytes = 128
-  )
+  stored <- .datom_build_metadata(df, hashed$data_sha, size_bytes = 128)
   stored$schema_version <- NULL
   stored$parquet_sha <- "deadbeef"
 
-  fresh <- .datom_build_metadata(
-    df, hashed$data_sha, column_hashes = hashed$column_hashes, size_bytes = 128
-  )
+  fresh <- .datom_build_metadata(df, hashed$data_sha, size_bytes = 128)
   expect_equal(fresh$schema_version, 2L)
 
   local_mocked_bindings(

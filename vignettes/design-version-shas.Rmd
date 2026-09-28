@@ -268,9 +268,9 @@ Four details are load-bearing:
    wall-clock and package facts; `parquet_sha` and `size_bytes` move with the
    arrow version for identical content, so letting them in would undo the whole
    point of hashing values; `document_sha` is the same kind of fact for a stored
-   JSON payload; `column_hashes` is a deterministic function of the same values
-   that produce `data_sha`, so it carries no independent information; and
-   `schema_version` describes the file's format rather than its content -- in
+   JSON payload; `column_hashes` is no longer written (see "What metadata
+   reveals about your data" below) and stays listed only so that files written
+   by earlier releases still classify; and `schema_version` describes the file's format rather than its content -- in
    identity, a format change would mint a new version for every table in every
    repo while the data stood still.
 
@@ -325,16 +325,38 @@ system re-exporting the same data with a new timestamp in the header produces
 different file bytes and identical content. datom records the new provenance
 and stores nothing twice.
 
-## The column index
+## What metadata reveals about your data
 
-Alongside `data_sha`, metadata carries `column_hashes`: an ordered array of
-`{name, sha}`, one entry per column, in table column order, untruncated. It is
-the same per-column digest that fed `data_sha`, computed once and reused.
+A table's metadata describes its shape without its values: column names and
+order, row and column counts, lineage, provenance, and whatever you put in
+`metadata =`. That makes it useful on its own. You, a collaborator, or an AI
+coding assistant can write analysis code against a table's metadata -- a model of
+`height` on `age`, say -- without ever seeing a value. And metadata lives in the
+data repo on GitHub, which is often shared more widely than the storage bucket.
 
-Two things follow. `data_sha` can be re-derived from the index plus the
-dimensions without downloading any data, which makes it cheaply self-checkable.
-And two versions that differ in exactly one column differ in exactly one
-entry -- the anchor a future column-level diff builds on.
+For that to hold, **metadata carries no per-column fingerprints.** datom computes
+one digest per column as the input to `data_sha`, then discards them. A stored
+per-column digest would let anyone holding the metadata confirm a guess about one
+column: a flag column in a small table, a column that is constant, a few rows
+appended to a version the reader has already seen, or two same-named columns in
+different tables being identical. It would buy little in return, since each
+digest covers every row and adding rows -- the common change -- moves all of
+them.
+
+What remains are **whole-table hashes**: `data_sha`, `parquet_sha`, and, for an
+imported table, `original_file_sha`. They cannot be dropped, because they are the
+storage address and the integrity checks. Like any hash, each can confirm a guess
+-- but only a guess about the entire table at once, which is realistic only for a
+tiny or near-constant table.
+
+Two things are outside datom's control. Anything you put in `metadata =` is
+stored as given, so summary statistics there travel with the metadata. And
+datom 0.1.1 and 0.1.2 did write per-column digests, as `column_hashes`: a table's
+current `metadata.json` loses the field the next time that table is written,
+while git history keeps the earlier copies.
+
+If the people who can read your metadata can also read your data -- the usual
+arrangement -- none of this changes anything.
 
 ## How far the cross-language claim goes
 

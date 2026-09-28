@@ -140,6 +140,13 @@ version, not every commit that could.
   repo declares in its own config, not the label on your connection. Two people
   can label the same repo differently, and a citation has to mean one thing. No
   existing artifact gains a version for it.
+* A table's metadata **no longer records `column_hashes`**, the per-column
+  digests added in 0.1.1. A per-column digest lets anyone who can read the
+  metadata confirm a guess about a column's values. Nothing needs doing and no
+  version moves; existing files lose the field the next time their table is
+  written. See "What metadata reveals about your data" in
+  `vignette("design-version-shas")`
+  ([#119](https://github.com/amashadihossein/datom/issues/119)).
 * New **`datom_storage_read_json()`** on the storage extension API, for reading a
   JSON document out of a project's namespace by relative key.
 * A repo whose manifest cannot be read is listed by rebuilding the index from

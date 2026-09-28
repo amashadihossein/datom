@@ -221,8 +221,7 @@ test_that("every field the metadata builder emits is in the metadata vocabulary"
     parents = list(list(source = "p", table = "t", version = strrep("b", 64))),
     source_lineage = list(list(project = "p", table = "t",
                                version_sha = strrep("c", 64))),
-    original_file_sha = strrep("d", 64),
-    column_hashes = list(list(name = "a", sha = strrep("e", 64)))
+    original_file_sha = strrep("d", 64)
   )
 
   expect_identical(setdiff(names(meta), .datom_metadata_known_fields()),
@@ -371,6 +370,56 @@ test_that("an unplaceable metadata field does not mint a version on its own", {
 
   expect_identical(result$action, "none")
   expect_identical(fc_clone_metadata(fx, "dm")$future_field, "x")
+})
+
+
+# === a retired field: column_hashes, as written by 0.1.1 and 0.1.2 ============
+
+# What an older build put in both copies of a table's metadata: one digest per
+# column. The values are placeholders; nothing reads them.
+fc_add_column_hashes <- function(doc) {
+  c(doc, list(column_hashes = list(
+    list(name = "id", sha = strrep("a", 64L)),
+    list(name = "value", sha = strrep("b", 64L))
+  )))
+}
+
+test_that("a table carrying the retired column_hashes accepts a write and loses the field", {
+  # Through the real write door, deliberately not held open: the name must
+  # still classify, or every repo written by 0.1.1 or 0.1.2 would be refused
+  # here as holding a field from a newer datom.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(fs::path(fx$repo_dir, "dm", "metadata.json"),
+                     fc_add_column_hashes)
+  fc_edit_stored_json(fx$conn, .datom_artifact_meta_key("dm", "metadata"),
+                      fc_add_column_hashes)
+
+  expect_no_error(fc_write(fx, fc_data(5)))
+
+  # Dropped rather than carried forward: carrying it would attach the old
+  # version's digests to new data.
+  expect_false("column_hashes" %in% names(fc_clone_metadata(fx, "dm")))
+  expect_false("column_hashes" %in% names(fc_stored_metadata(fx, "dm")))
+  expect_identical(fc_clone_metadata(fx, "dm")$nrow, 5L)
+})
+
+test_that("the retired column_hashes on a stored document mints no version", {
+  # The stored document has the field and the freshly built one does not. Same
+  # content, so the write must be a no-op -- which is what makes retiring the
+  # field free for every existing table.
+  fx <- local_fc_project()
+  fc_write(fx, fc_data(3))
+
+  fc_edit_clone_json(fs::path(fx$repo_dir, "dm", "metadata.json"),
+                     fc_add_column_hashes)
+  fc_edit_stored_json(fx$conn, .datom_artifact_meta_key("dm", "metadata"),
+                      fc_add_column_hashes)
+
+  result <- fc_write(fx, fc_data(3))
+
+  expect_identical(result$action, "none")
 })
 
 

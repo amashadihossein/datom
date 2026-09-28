@@ -42,7 +42,7 @@ A set's \code{metadata.json} is a collapsed version of a table's: \code{schema_v
 \code{kind}, \code{data_sha}, \code{hash_algo}, \code{document_sha}, \code{project}, \code{created_at},
 \code{datom_version}, and no more. Everything a table carries that describes a
 rectangle (\code{nrow},
-\code{ncol}, \code{colnames}, \code{column_hashes}), the provenance axis (\code{table_type},
+\code{ncol}, \code{colnames}), the provenance axis (\code{table_type},
 \code{parents}, \code{source_lineage}), the stored-parquet facts (\code{parquet_sha},
 \code{size_bytes}) and the user-metadata channel (\code{custom}) are all \strong{omitted, not
 nulled} -- a set's members and its user metadata both live in the payload as

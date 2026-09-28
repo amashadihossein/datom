@@ -14,7 +14,6 @@
   source_lineage = NULL,
   original_file_sha = NULL,
   original_format = NULL,
-  column_hashes = NULL,
   project = NULL
 )
 }
@@ -45,10 +44,6 @@ from the object entirely (not present-with-NULL).}
 manifest row and nowhere else, which made it the single field a
 reconstructed index had to drop. It is \strong{not} part of the version identity
 -- see \code{.datom_metadata_excluded_fields}.}
-
-\item{column_hashes}{Ordered list of per-column \code{list(name, sha)} digests
-from \code{\link[=.datom_canonical_hash]{.datom_canonical_hash()}}, or NULL. Excluded from \code{metadata_sha}
-(see \code{\link[=.datom_compute_metadata_sha]{.datom_compute_metadata_sha()}}).}
 
 \item{project}{The name of the project whose namespace this artifact is being
 written into, from the writing repo's own \code{.datom/project.yaml}. Recorded on
