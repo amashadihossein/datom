@@ -12,10 +12,18 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Task 1 done 2026-09-28 (4295 tests). **Resume at task 2.**
+Spec approved 2026-09-27 and committed. Task 1 done 2026-09-28 and pushed. **Resume at task 2**
+(`datom_parent(x = )`); the owner has not yet approved starting it, so ask first (rule 5d).
+**Current test count: 4295** -- this, not the 4282 baseline above, is what task 2's count must not
+drop below.
 
-Starting cold: `git checkout spec/set-sync-ergonomics`, read `requirements.md` then `design.md`
-(section 1 lists the code facts already checked, section 8 is task 1). The owner's original prompt is
+Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R5 is
+task 2) and `design.md` (section 1 lists the code facts already checked, section 6 is task 2). Before
+editing `R/`, read `dev/engineering-notes.md`, at least "A test can observe a layer that cannot
+distinguish the two behaviours" and "Probing a guard". Task 2 needs a probe for each refusal it adds.
+Section 1's facts for task 2 were re-checked on 2026-09-28 and still hold: `datom_parent(conn, table,
+version)` is in `R/lineage.R`, and the single-member resolver `.datom_find_member(members, name, tags,
+version)` in `R/set-members.R` is the one `datom_fetch_member()` uses. The owner's original prompt is
 untracked and not needed: every decision is in `requirements.md`.
 
 ---
