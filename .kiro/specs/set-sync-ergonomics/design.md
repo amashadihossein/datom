@@ -153,9 +153,12 @@ Each has a default the agent takes if the owner says nothing. Record the answer 
   `N excluded by pattern`, and a no-op at apply. Not `not_checked`, whose warning ("build again with
   every source") would be wrong advice here. R2.2 amended to six values.
 - **B. (task 6) A `new` row whose table the set already holds by the time it is applied** (someone
-  added it after the preview). R3.6 covers only `changed` rows. Default: stop with
-  `datom_sync_manifest_stale`, same as a moved `changed` row, because adding it would silently create
-  a second member for one table. Alternative: treat it as `changed`.
+  added it after the preview). **Answered 2026-09-28 (owner): stop**, class
+  `datom_sync_manifest_stale`, same as a moved `changed` row -- adding it would silently create a
+  second member for one table, and treating it as `changed` would move a member the preview never
+  showed. The owner's framing: a push refused because the remote moved. So the message's remedy is
+  the pull-and-retry equivalent: build the preview again from the current set. R3.6 extended to
+  cover it.
 - **C. A source connection whose label disagrees with the project its manifest declares.** The
   preview already reads that manifest, which records `project_name`. Default: stop at preview naming
   both, when the manifest names a project and it differs; carry on when it names none (older repos).

@@ -73,7 +73,9 @@ in the set, so a table newly onboarded in a source is never picked up.
 - R3.5 `x =` applies the preview to a set already in hand (the "top up" case); omitted, the stored set
   is read. With no stored set, the result is a set with no version, named from `.datom/project.yaml`.
 - R3.6 A `changed` row whose `version_from` no longer matches the set's member stops: the set moved
-  since the preview was built.
+  since the preview was built. So does a `new` row whose table the set now already holds (added
+  2026-09-28). Like a push refused because the remote moved, the message says to build the preview
+  again from the current set.
 - R3.7 The edits are recorded, so `datom_write_set()`'s default commit message names what was added
   and repointed.
 
