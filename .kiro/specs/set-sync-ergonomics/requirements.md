@@ -46,6 +46,9 @@ in the set, so a table newly onboarded in a source is never picked up.
 - R2.2 `status` is one of `new`, `changed`, `unchanged`, `ambiguous`, `not_checked`, `excluded`.
   `excluded` (added 2026-09-28) marks a member whose table is in a passed source but does not match
   `pattern`: the row confirms the filter left it alone, so the preview accounts for every member.
+- R2.1a **Sets count as artifacts** (added 2026-09-28, owner). "Table" in R2.1-R2.8 means a table or
+  a set: a set in a source gets a row, and a set member of a source project is compared, exactly as a
+  table is. A set built from sets is the case sets exist for, so sync must be able to move one.
 - R2.3 **Never proposes a removal.** A member whose table no longer exists in its source is reported
   and left alone, as `datom_update_members()` does today.
 - R2.4 **No labels column.** Labels for new members are set when applying (R3.3).
@@ -71,8 +74,13 @@ in the set, so a table newly onboarded in a source is never picked up.
   `not_checked` and `excluded` rows do nothing.
 - R3.3 `tags =` labels the **new** members, default `list(type = "input")`. A repointed member keeps
   its labels exactly.
-- R3.4 **Saves nothing.** Returns the updated `datom_set` and ends with
-  `Nothing has been written. Write the set with datom_write_set(conn, x).`
+- R3.4 **Saves nothing.** Returns the updated `datom_set` and, when any row was applied, ends with
+  `Nothing has been written. Write the set with datom_write_set(conn, x).` When no row applies it
+  says so instead (amended 2026-09-28, owner). **The rule for every verb that hands back a set
+  without writing: print the not-written line when the object in hand differs from what is
+  stored.** That is already how `datom_update_members()`, `datom_remove_members()` and
+  `datom_add_member()` on a saved set behave; a draft always differs, so an add to a draft prints
+  it too (reverses task 3's "adding to a draft stays silent").
 - R3.5 `x =` applies the preview to a set already in hand (the "top up" case); omitted, the stored set
   is read. With no stored set, the result is a set with no version, named from `.datom/project.yaml`.
 - R3.6 A `changed` row whose `version_from` no longer matches the set's member stops: the set moved
@@ -149,12 +157,17 @@ in the set, so a table newly onboarded in a source is never picked up.
 - [ ] AC15 Every guard above has a test watched going red with the guard removed (convention 2a).
 - [ ] AC16 `NEWS.md` entry; `dev/datom_pathways.md` route card for the set sync route; no `dev/` or
       `.kiro/` cite from NEWS, roxygen or vignettes; `R CMD check --as-cran` 0E/0W.
+- [ ] AC17 A set in a source is previewed and applied like a table (R2.1a). And a set built from a
+      real stored set (inner set written, pointed at with `datom_member()`, outer set written) reads
+      back and validates on a local store -- no test did this end to end before 2026-09-28.
 
 ## Out of scope
 
 - Label-based filtering when building a preview (names via `pattern` only).
 - Declaring sources in `project.yaml`.
-- Sets as sources (preview rows are tables only). Not precluded: rows carry `kind`.
+- ~~Sets as sources (preview rows are tables only).~~ **Brought into scope 2026-09-28** (R2.1a).
+- A set as a derived table's parent. A parent is a table version; a table member of a set can be a
+  parent, the set itself cannot (R5.3, unchanged).
 - Any change to table hashing, versioning or storage.
 - Changing table sync to save lazily. The asymmetry (tables save on sync, sets save on
   `datom_write_set()`) is deliberate and documented.

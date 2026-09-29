@@ -57,8 +57,9 @@ set's name, so the reworded message keeps all four and adds a line naming `sourc
   paths), before everything else. In `datom_sync()` that is **above the manifest column check**:
   today the column check runs first, so a product repo handed a set-shaped frame with no `sources`
   would get "missing columns file, format..." instead of the refusal that names `sources =`.
-- **One gated parse per call.** The helper (`.datom_sync_context(conn)`) returns the parsed
-  `mode` and `set` from `.datom/project.yaml`, with `.datom_check_project_schema(cfg, source,
+- **One gated parse per call.** The helper (`.datom_sync_context(conn)`, as built in task 5) returns
+  `product` (whether the repo declares `mode: product`) and the declared `set` from
+  `.datom/project.yaml`, with `.datom_check_project_schema(cfg, source,
   operation = "write")` exactly as `.datom_refuse_import_on_product()` does now (it reads the file with
   `yaml::read_yaml()` and returns early when the file is absent). The set path takes the set's name
   from it; nothing re-reads the file.
@@ -77,7 +78,16 @@ first version), one manifest per source (`.datom_current_artifact_versions()`), 
 
 Rows, in order:
 
-1. **Source tables** (kind `table`, name matching `pattern`). Keyed to set members by
+**Sets are included** (owner, 2026-09-28, reversing the out-of-scope line of 2026-09-27, which
+recorded no reason). A set in a source is a row exactly as a table is, and a set member of a source
+project is compared exactly as a table member is. Without this, sync would be the one edit verb
+that cannot move a set input, while `datom_member()`, `datom_add_member()` and
+`datom_update_members()` all handle one. Landed as a fix to task 5 (task 5b), before task 6.
+Wherever this section says "table" for a source row or a compared member, read "artifact, table or
+set". Lineage is unaffected: a parent is always a table version, so `datom_parent(x = )` still
+refuses a set member.
+
+1. **Source artifacts** (tables and sets, name matching `pattern`). Keyed to set members by
    (`project`, `name`), where `project` is the source connection's label, exactly as
    `.datom_edit_conns()` keys today. The declared project is verified at apply (section 4).
    - no matching member -> `new`, `version_from = NA`
@@ -108,8 +118,9 @@ one warning per `ambiguous` / `not_checked` group with its remedy.
   version and drops `kind`, and a source may hold a set (a product repo used as a source). Add a
   sibling that returns `name, kind, current_version` from the **same single** gated manifest read
   (`.datom_read_manifest(conn, scope = "storage", operation = "read")`), keeping the existing
-  unreadable-manifest refusal and its class `datom_edit_manifest_unreadable`. Rows are `kind ==
-  "table"` only. An entry with no usable `current_version` gets no row and is named in the message.
+  unreadable-manifest refusal and its class `datom_edit_manifest_unreadable`. Rows are tables and
+  sets (task 5 shipped tables only; task 5b widens it). An entry with no usable `current_version`,
+  or no usable `kind`, gets no row and is named in the message.
 - **Sources go through `.datom_edit_conns(sources, arg = "sources")`**, so a non-connection, a
   missing label and two connections for one project refuse exactly as `datom_update_members()` does.
 - **Row values:**
@@ -132,10 +143,12 @@ one warning per `ambiguous` / `not_checked` group with its remedy.
   |---|---|
   | set's own project (an output) | no row, no message; outputs move with `datom_update_members()` |
   | project that is not a source | `not_checked` row (R2.7), whatever its kind |
-  | source project, kind `set` | `not_checked` row (sets are never preview rows) |
-  | source project, table, absent from the source's manifest | named in the message as left its source, no row (R2.3) |
-  | source project, table, present, matches `pattern` | the `new` / `changed` / `unchanged` / `ambiguous` row |
-  | source project, table, present, does **not** match `pattern` | `excluded` row (point A below) |
+  | source project, absent from the source's manifest | named in the message as left its source, no row (R2.3) |
+  | source project, present, matches `pattern` | the `new` / `changed` / `unchanged` / `ambiguous` row |
+  | source project, present, does **not** match `pattern` | `excluded` row (point A below) |
+
+  "Member" and "present" cover tables and sets alike (task 5b). Task 5 shipped a fourth row, "source
+  project, kind `set` -> `not_checked`", which task 5b removes.
 
 - **The set's own project** for R2.5 is the developer conn's `project_name`, which on a clone comes
   from `.datom/project.yaml`. Compared against each source's label before any read.
@@ -182,27 +195,69 @@ x = NULL)` -- new arguments last, see section 2.
   that block into a helper both call, so the edit log cannot drift between the two verbs. Repoints
   reuse `.datom_repoint_member()` and a `repoint` row, as `datom_update_members()` does.
 - **One not-written line at the end**, not one per added member: the shared helper must not print it.
-- **A row whose `project` has no connection in `sources`** (a hand-built or subset frame) stops,
-  class `datom_sync_source_missing`, before any read.
+  Printed only when a row was applied; otherwise "Nothing to apply: no new or changed rows" (R3.4,
+  amended 2026-09-28). **And `datom_add_member()` on a draft now prints it too**, since a draft
+  always differs from what is stored -- done in task 6, which already reshapes that function's add
+  block. For a draft the hint is `datom_write_set(x)`, since the draft carries its connection.
+- **The set's own project in `sources` stops apply too** (owner, 2026-09-28), before any read, with
+  the preview's `.datom_refuse_own_project_source()` and class `datom_sync_own_project_source`.
+  Without it a hand-built frame plus `sources = list(conn_own)` could repoint an output that was
+  never re-derived, or add a second copy of it labelled `type = "input"`.
+- **A `new` or `changed` row whose `project` has no connection in `sources`** (a hand-built or
+  subset frame) stops, class `datom_sync_source_missing`, before any read. **Only those two
+  statuses** (owner, 2026-09-28): they are the only rows apply acts on, and a full preview's
+  `not_checked` rows belong by definition to projects not in `sources`, so checking every row would
+  make an unedited preview impossible to apply.
 - **The empty first-version set** is `structure(list(name = , project = , version = NULL, data_sha =
   NULL, tags = NULL, members = list()), class = "datom_set")`, built with `list(version = NULL)` so
   the names survive (engineering-notes "A declared-but-unpopulated field has to be spelled
   `list(x = NULL)`"). `datom_write_set()` then reads `members$tags` as `NULL` and applies its usual
   default.
 - **`version_to` validation** uses the same `^[0-9a-f]{64}$` test `datom_update_members()` applies to
-  its `version_to`; `tags` goes through `.datom_validate_tag_map()` with the update verb's remedy.
+  its `version_to`; `tags` goes through `.datom_validate_tag_map()`, with a remedy about labelling
+  new members (the update verb's remedy is about selecting existing ones, so it does not fit).
 - **Open point B (section 3) decides the `new`-row stale case.**
 
 - Required columns: `project, name, kind, version_from, version_to, status`. Values: `status` in the
   six-value set (R2.2), `version_to` a full 64-hex string on `new` / `changed` rows.
+- **Frame checks, all before any read, one class `datom_sync_manifest_invalid`** (owner,
+  2026-09-28): a frame missing those columns -- including an ordinary repo's file-import frame
+  (`file`, `format`, ...), whose message says so and points at `datom_sync_manifest(conn, sources =
+  )`; on `new` / `changed` rows, `project` and `name` non-empty text, `kind` one of the artifact
+  kinds, `version_to` full 64-hex, and `version_from` full 64-hex on `changed` rows. A short
+  `version_from` would otherwise fail the exact comparison and stop as stale, naming the wrong
+  problem.
+- **Tidy-ups in the same task** (owner, 2026-09-28): once `datom_sync()` passes the `sources =` hint
+  too, delete `.datom_refuse_import_on_product()`'s other message and its `sources_hint` switch --
+  its only two callers are the two sync verbs. Write `datom_sync()`'s `@param` entries and a "On a
+  product repo" section, as task 5 did for the preview; task 9 still adds the save-asymmetry note
+  to both.
 - `x` omitted: read the stored set, or start an empty `datom_set` (name from `project.yaml`, project
   from the conn, `version = NULL`) on first version.
+- **`x` given** (owner, 2026-09-28): a `datom_set` or a `datom_set_draft`, through
+  `.datom_edit_members()` as the other edit verbs take it -- `datom_write_set()` accepts both, so a
+  narrower apply would leave a shape that writes but cannot be synced. When `x` carries a name it must
+  equal the declared set, else `datom_set_name_mismatch` (the write gates' class). Needed because
+  `datom_write_set()` takes the name from `project.yaml` and ignores `x$name`, so another repo's set,
+  synced here and written, would be re-homed without a word. A draft with no name passes.
+- **Two `new` / `changed` rows for one (`project`, `name`)** stop up front, before any read, naming
+  the table (owner, 2026-09-28; class `datom_sync_manifest_duplicate_row`). A preview never produces
+  them; without this the second row would stop as stale, which names the wrong problem. Duplicates
+  among the other statuses are harmless, since those rows do nothing.
 - Per `changed` row: find the member by (`project`, `name`); its version must equal `version_from`,
-  else abort `datom_sync_manifest_stale`. Repoint through `.datom_repoint_member()` (labels verbatim,
+  else abort `datom_sync_manifest_stale`. **Zero or two-plus members matching also stops as stale**
+  (owner, 2026-09-28): the set was edited after the preview, and skipping would leave a removed
+  member removed, or a table unmoved, without the caller noticing. Repoint through `.datom_repoint_member()` (labels verbatim,
   project change refused).
 - Per `new` row: `datom_member(sources[[project]], name, version_to, tags = tags)`. That read is what
   validates the version exists and records the **declared** project. A declared project that differs
-  from the row's aborts, as a repoint does.
+  from the row's aborts, as a repoint does, **with the repoint's class
+  `datom_update_project_mismatch`** (owner, 2026-09-28) and wording that says "adding": one class
+  for one failure, whichever row hits it.
+- **A row's `kind` must agree with the artifact** (owner, 2026-09-28): a `new` row whose snapshot
+  (read by `datom_member()`) declares another kind, or a `changed` row whose member has another kind,
+  stops with class `datom_sync_kind_mismatch`, naming the row, its `kind` and what was found. Same
+  reasoning as the project check: the row names what was reviewed, the read confirms it.
 - **Why `sources` is passed again**: building a member without reading its snapshot would trust a
   hand-edited row's version and project, and a set pointing at a version that does not exist is found
   only when someone fetches it. Re-reading is one snapshot per applied row.
@@ -211,8 +266,10 @@ x = NULL)` -- new arguments last, see section 2.
 
 ## 5. `datom_add_member()` (R4)
 
-- Class check widens to `datom_set`. Names resolve through `conn %||% x$conn`; a `datom_set` with a
-  name and no `conn` aborts `datom_member_conn_required`.
+- Class check widens to `datom_set`. A name resolves through `conn`, or the draft's own connection
+  when omitted; a `datom_set` never borrows a `conn` field (as built in task 3, branched on class
+  rather than `conn %||% x$conn`). A `datom_set` with a name and no `conn` aborts
+  `datom_member_conn_required`.
 - The clash check (duplicate skipped, same version with different labels refused) applies to both.
 - On a `datom_set` only: `.datom_forget_set_identity()`, append an `add` edit. Drafts log nothing, so
   a draft write keeps its current commit message.

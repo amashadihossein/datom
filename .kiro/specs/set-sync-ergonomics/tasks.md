@@ -12,16 +12,25 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28. **Resume at task 6**
-(apply, `datom_sync(sources = , tags = , x = )`); ask the owner before starting it (rule 5d).
-The design spot-check (2026-09-28) covers it: design section 4's "Spot-check additions" and open
-point B (a `new` row the set already holds stops as stale, R3.6). Task 5's record below lists the
-helpers already in place for it and the one test task 6 must flip.
-**Current test count: 4504** -- what task 6's count must not drop below.
+Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28. **Resume at task 5b** (sets in
+the preview, plus a real set-of-sets test), then task 6 (apply); ask the owner before starting each
+(rule 5d).
 
-Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R1
-and R3 are task 6) and `design.md` (section 1 lists the code facts already checked; section 2 is the
-context branch, section 4 is task 6, and section 3's open point B belongs to it). Before editing
+**A cold-start review on 2026-09-28, after task 5, settled everything task 6 needed.** A fresh
+session followed these documents and found no broken references, but found about eight apply
+behaviours nothing decided. The owner answered each, one at a time, and every answer is recorded
+where it applies, marked "(owner, 2026-09-28)": design section 4 (which rows need a connection,
+stale cases, duplicate rows, kind and project mismatches, what `x =` accepts, the own-project
+refusal, frame checks, tidy-ups) and R3.4 (the not-written line). **The largest change: sets are
+now in scope for sync** (R2.1a, AC17, design 3's "Sets are included" block), which is why task 5b
+exists. There is nothing left to ask before coding 5b or 6.
+**Current test count: 4504** -- what task 5b's count must not drop below.
+
+Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R2.1a
+and AC17 are task 5b; R1 and R3 are task 6) and `design.md` (section 1 lists the code facts checked
+on 2026-09-27, several since changed by tasks 3-5 -- trust the task records and later sections over
+it; section 2 is the context branch, section 3 the preview and task 5b, section 4 is task 6, and
+section 3's open point B belongs to it). Before editing
 `R/`, read `dev/engineering-notes.md`, at least "A test can observe a layer that cannot distinguish
 the two behaviours" and "Probing a guard". Each refusal a task adds needs a probe. The owner's
 original prompt is untracked and not needed: every decision is in `requirements.md` and `design.md`.
@@ -102,6 +111,8 @@ remote and local store).
   - **Decided 2026-09-28 (owner):** adding to a `datom_set` prints one line, `Nothing has been
     written. Write the set with datom_write_set(conn, x).`, matching `datom_update_members()`. Adding
     to a draft stays silent, as today. A skipped duplicate prints only its existing note.
+    **Superseded later the same day** for drafts: an add to a draft prints the line too (R3.4's
+    one rule for every verb). Lands in task 6.
   - Facts for this task re-checked 2026-09-28 and still hold (design 1): the draft-only class check
     and `datom_not_a_draft` in `R/set-draft.R`; `.datom_set_commit_messages()` and
     `.datom_edit_lines()` in `R/set-edit.R` know `repoint` / `remove` only; the clash helper
@@ -180,9 +191,24 @@ remote and local store).
     "could not look", on condition classes lost through `purrr::map()` (use `lapply()` where a
     refusal class must reach the caller), and "Probing a guard".
 
+- [ ] **5b. Sets in the preview, and a real set-of-sets test** (R2.1a; AC17, preview half)
+  - **Added 2026-09-28 (owner).** Task 5 shipped a tables-only preview because an out-of-scope line
+    said so, with no reason recorded. The owner brought sets in: a set built from sets is the case
+    sets exist for. See design 3's "Sets are included" block.
+  - Drop the `kind == "table"` filter on source rows; compare a set member of a source project as a
+    table member is compared (it no longer goes to `not_checked`). Rows' `kind` is the manifest
+    entry's. Rework the tests that pinned the old behaviour ("a member that is a set, in a source
+    project, is not_checked"; "a set held by a source gets no row") into their opposites, and probe.
+  - New test on local stores, no mocks: write an inner set in one product repo, point at it with
+    `datom_member()` from another, write the outer set, read it back, `datom_validate()` it. Then a
+    new version of the inner set shows as `changed` in the outer repo's preview.
+  - Summary wording: "Mapped N artifacts", not "tables".
+
 - [ ] **6. Apply: `datom_sync(sources = , tags = , x = )`** (R3; AC4, AC8, AC9)
   - Design 4, including its "Spot-check additions" and open point B (design 3). Properties P1-P3, P5.
   - Adds the context branch to `datom_sync()` (above its manifest column check, design 2).
+  - Also: `datom_add_member()` on a draft prints the not-written line (R3.4, amended), with the
+    `datom_write_set(x)` hint; the task 3 test pinning a silent draft add flips.
 
 - [ ] **7. Vignette code and offline dry run** (R8.1-R8.3)
   - Rewrite `citable-sets.Rmd` per design 9; `#>` blocks become `[pending run]`.
