@@ -37,10 +37,12 @@ original prompt is untracked and not needed: every decision is in `requirements.
 
 Where the code a task 6 session needs lives: the two sync verbs, `.datom_sync_context()` and
 `.datom_refuse_import_on_product()` in `R/sync.R`; the preview and its helpers
-(`.datom_sync_read_set()`, `.datom_empty_set()`, the refusal helpers) in `R/sync-set.R`;
+(`.datom_sync_read_set()`, the refusal helpers) in `R/sync-set.R`;
 `.datom_edit_conns()`, `.datom_repoint_member()`, `.datom_append_edits()` and
-`datom_update_members()` in `R/set-edit.R`; `datom_add_member()`'s add-to-a-set block in
-`R/set-draft.R`. Test fixture to copy: `ss_project()` / `ss_pair()` in
+`datom_update_members()` in `R/set-edit.R`; `.datom_empty_set()` and the end of
+`datom_add_member()` (the add steps to factor out, design 4) in `R/set-draft.R`; the write's
+set-belongs-here checks, `.datom_reconcile_set_name()` and `.datom_check_set_project()`, in
+`R/set.R`. Test fixture to copy: `ss_project()` / `ss_pair()` in
 `tests/testthat/test-sync-set.R` (a product repo and an ordinary source, each with a real repo, bare
 remote and local store).
 

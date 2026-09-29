@@ -189,17 +189,18 @@ x = NULL)` -- new arguments last, see section 2.
 
 **Spot-check additions (2026-09-28):**
 
-- **Reuse task 3's add path rather than writing a second one.** `datom_add_member()` on a
-  `datom_set` (`R/set-draft.R`, the block after `if (!is_set)`) already does the three things a `new`
-  row needs: link through `.datom_member_as_link(record)`, `.datom_forget_set_identity(x)`, and an
-  `add` row via `.datom_append_edits()` with columns `action, project, name, kind, from, to`. Factor
-  that block into a helper both call, so the edit log cannot drift between the two verbs. Repoints
-  reuse `.datom_repoint_member()` and a `repoint` row, as `datom_update_members()` does.
+- **Reuse the add path rather than writing a second one.** The end of `datom_add_member()` in
+  `R/set-draft.R` (everything after the duplicate check's early return) already does the three things
+  a `new` row needs: link through `.datom_member_as_link(record)`, `.datom_forget_set_identity(x)`,
+  and an `add` row via `.datom_append_edits()` with columns `action, project, name, kind, from, to`.
+  It then prints the not-written line. Factor the three steps, **without the print**, into a helper
+  both verbs call, so the edit log cannot drift between them; `datom_add_member()` keeps its own
+  print after the call. Repoints reuse `.datom_repoint_member()` and a `repoint` row, as
+  `datom_update_members()` does.
 - **One not-written line at the end**, not one per added member: the shared helper must not print it.
   Printed only when a row was applied; otherwise "Nothing to apply: no new or changed rows" (R3.4,
-  amended 2026-09-28). **And `datom_add_member()` on a draft now prints it too**, since a draft
-  always differs from what is stored -- done in task 6, which already reshapes that function's add
-  block. For a draft the hint is `datom_write_set(x)`, since the draft carries its connection.
+  amended 2026-09-28). The hint is `datom_write_set(conn, x)`, the same as every other verb's.
+  (Every `datom_add_member()` call already prints it since task 5c; nothing to do there.)
 - **The set's own project in `sources` stops apply too** (owner, 2026-09-28), before any read, with
   the preview's `.datom_refuse_own_project_source()` and class `datom_sync_own_project_source`.
   Without it a hand-built frame plus `sources = list(conn_own)` could repoint an output that was
@@ -211,11 +212,11 @@ x = NULL)` -- new arguments last, see section 2.
   statuses** (owner, 2026-09-28): they are the only rows apply acts on, and a full preview's
   `not_checked` rows belong by definition to projects not in `sources`, so checking every row would
   make an unedited preview impossible to apply.
-- **The empty first-version set** is `structure(list(name = , project = , version = NULL, data_sha =
-  NULL, tags = NULL, members = list()), class = "datom_set")`, built with `list(version = NULL)` so
-  the names survive (engineering-notes "A declared-but-unpopulated field has to be spelled
-  `list(x = NULL)`"). `datom_write_set()` then reads `members$tags` as `NULL` and applies its usual
-  default.
+- **The empty first-version set** is `.datom_empty_set(name, project)` in `R/set-draft.R` (moved
+  there by task 5c; `datom_assemble_set()` returns one too). It keeps every field with `list(version
+  = NULL)` spelling so the names survive (engineering-notes "A declared-but-unpopulated field has to
+  be spelled `list(x = NULL)`"). `datom_write_set()` then reads its `tags` as `NULL` and applies its
+  usual default.
 - **`version_to` validation** uses the same `^[0-9a-f]{64}$` test `datom_update_members()` applies to
   its `version_to`; `tags` goes through `.datom_validate_tag_map()`, with a remedy about labelling
   new members (the update verb's remedy is about selecting existing ones, so it does not fit).
@@ -235,16 +236,15 @@ x = NULL)` -- new arguments last, see section 2.
   its only two callers are the two sync verbs. Write `datom_sync()`'s `@param` entries and a "On a
   product repo" section, as task 5 did for the preview; task 9 still adds the save-asymmetry note
   to both.
-- `x` omitted: read the stored set, or start an empty `datom_set` (name from `project.yaml`, project
-  from the conn, `version = NULL`) on first version.
-- **`x` given** (owner, 2026-09-28): a `datom_set` or a `datom_set_draft`, through
-  `.datom_edit_members()` as the other edit verbs take it -- `datom_write_set()` accepts both, so a
-  narrower apply would leave a shape that writes but cannot be synced. **Since task 5c (section 12)
-  there is only `datom_set`**, and the name check below moves into the write itself (R9.5), so apply
-  inherits it rather than carrying its own. When `x` carries a name it must
-  equal the declared set, else `datom_set_name_mismatch` (the write gates' class). Needed because
-  `datom_write_set()` takes the name from `project.yaml` and ignores `x$name`, so another repo's set,
-  synced here and written, would be re-homed without a word. A draft with no name passes.
+- `x` omitted: `.datom_sync_read_set()` (the preview's helper) reads the stored set, or returns
+  `.datom_empty_set(declared_name, conn$project_name)` on first version.
+- **`x` given** (owner, 2026-09-28; narrowed by task 5c): a `datom_set` however it was made, taken
+  through `.datom_edit_members()` as the other edit verbs take it. **Apply does no name or project
+  check of its own.** Since task 5c the write refuses a set whose name is another repo's declared
+  set, or whose project is not the writing repo's (R9.5, `datom_set_name_mismatch` /
+  `datom_set_project_mismatch`), so a set from another repo synced here stops when it is written,
+  with nothing written. A set with no name (an assembled one) passes, and the write gives it the
+  declared name.
 - **Two `new` / `changed` rows for one (`project`, `name`)** stop up front, before any read, naming
   the table (owner, 2026-09-28; class `datom_sync_manifest_duplicate_row`). A preview never produces
   them; without this the second row would stop as stale, which names the wrong problem. Duplicates
