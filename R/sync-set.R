@@ -324,9 +324,11 @@
   # A member pinned to one of these is reported here, and only here: its
   # artifact matches the pattern, so it is not `excluded`, and it has no current
   # version to compare against, so it has no row.
+  # `sprintf()`, not `paste0()`: with nothing unversioned, `paste0()` recycles
+  # the empty vectors to "" and returns one " in ", which reads as one artifact.
   unversioned <- arts$matches & is.na(arts$current_version)
-  unversioned_names <- paste0(arts$name[unversioned], " in ",
-                              arts$project[unversioned])
+  unversioned_names <- sprintf("%s in %s", arts$name[unversioned],
+                               arts$project[unversioned])
 
   .datom_report_sync_preview(
     result = result,

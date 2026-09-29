@@ -502,6 +502,24 @@ test_that("a source table recording no current version gets no row and is named"
   expect_match(msg, "no current version")
 })
 
+test_that("a preview with nothing to report says only its summary line", {
+  # Every source artifact has a version and every member is compared, so no
+  # warning applies. Found by the vignette dry run: the no-current-version
+  # warning fired on every clean preview, naming one blank artifact.
+  fx <- ss_pair()
+  ss_write_set(fx$product, list(ss_member(fx$source, "dm", fx$v_dm)))
+
+  # One message per cli line, so a count is exact where a match is not.
+  msgs <- cli::ansi_strip(testthat::capture_messages(
+    m <- datom_sync_manifest(fx$product$conn, sources = fx$source$conn)
+  ))
+
+  expect_identical(sort(m$name), c("dm", "lb"))
+  expect_length(msgs, 1L)
+  expect_match(msgs[[1L]], "Mapped 2 artifacts from 1 source")
+  expect_no_match(paste(msgs, collapse = ""), "no current version")
+})
+
 
 # === refusals =================================================================
 
