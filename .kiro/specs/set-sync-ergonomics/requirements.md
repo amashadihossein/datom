@@ -80,9 +80,11 @@ in the set, so a table newly onboarded in a source is never picked up.
   without writing: print the not-written line when the object in hand differs from what is
   stored.** That is already how `datom_update_members()`, `datom_remove_members()` and
   `datom_add_member()` on a saved set behave; a draft always differs, so an add to a draft prints
-  it too (reverses task 3's "adding to a draft stays silent").
+  it too (reverses task 3's "adding to a draft stays silent"). Since R9 there are no drafts: every
+  add prints it, and the hint is always `datom_write_set(conn, x)`.
 - R3.5 `x =` applies the preview to a set already in hand (the "top up" case); omitted, the stored set
   is read. With no stored set, the result is a set with no version, named from `.datom/project.yaml`.
+  Since R9, `x` is a `datom_set` however it was made, including by `datom_assemble_set()`.
 - R3.6 A `changed` row whose `version_from` no longer matches the set's member stops: the set moved
   since the preview was built. So does a `new` row whose table the set now already holds (added
   2026-09-28). Like a push refused because the remote moved, the message says to build the preview
@@ -97,6 +99,37 @@ in the set, so a table newly onboarded in a source is never picked up.
   connection; on a `datom_set` it is required for a name. A record or link still needs no `conn`.
 - R4.3 On a `datom_set`, the addition is recorded and the default commit message says `add N members`.
   A draft's commit message is unchanged.
+
+**R4 as shipped by task 3 is superseded by R9 (owner, 2026-09-29):** there is no draft class any
+more, so R4.1's "returns the class it was given" and R4.3's draft carve-out go, and R4.2's `conn =`
+is required for every name.
+
+### R9. One in-memory set (added 2026-09-29, owner)
+
+Why: a set in memory came in two kinds -- a draft, which held the product repo's connection, and a
+set read back, which held none -- and each verb had to know which it was handed. The two kinds
+disagreed in ways a user meets: `datom_write_set(conn, draft)` fails ("`members` must be a list of
+member records") while `datom_write_set(conn, x)` works for a read set; the list, structure and
+fetch verbs refuse a draft outright; and the edit verbs' "nothing has been written" hint names a
+call that fails for a draft. The foundational fact is that **writing needs the product repo's
+connection and a set value does not**, so the connection belongs on the call, never in the object.
+
+- R9.1 **A set in memory is always a `datom_set`**, with no connection in it. `datom_assemble_set()`
+  returns an empty one, the same object sync starts from on a first version. The `datom_set_draft`
+  class and its print method are removed.
+- R9.2 **Every verb that needs a connection takes it on the call.** `datom_add_member()` needs
+  `conn =` for a member given by name, whichever set it is adding to. A record or a link still needs
+  none.
+- R9.3 **One way to write what you hold:** `datom_write_set(conn, x)`, which pipes as
+  `x |> datom_write_set(conn = conn)`. `datom_write_set(draft)` goes. A plain list of
+  `datom_member()` records is still accepted in the same place, as the build-script form.
+- R9.4 **Every add is recorded**, gives the new member a fetch link, and ends with the not-written
+  line, as the other edit verbs do (R3.4). A set's first commit message therefore names its adds.
+- R9.5 **The write refuses a set that belongs to another repo.** When the set carries a name, it
+  must equal the repo's declared set; when it carries a project, it must equal the repo's project.
+  Otherwise the write stops before anything is hashed or written. Today the write ignores both, so a
+  set read from one product repo and written with another's connection is silently re-homed.
+- R9.6 The list, structure, fetch, edit and sync verbs accept a set however it was made.
 
 ### R5. `datom_parent()` from a set
 
@@ -160,6 +193,11 @@ in the set, so a table newly onboarded in a source is never picked up.
 - [ ] AC17 A set in a source is previewed and applied like a table (R2.1a). And a set built from a
       real stored set (inner set written, pointed at with `datom_member()`, outer set written) reads
       back and validates on a local store -- no test did this end to end before 2026-09-28.
+- [ ] AC18 `datom_assemble_set()` returns a `datom_set`; no `datom_set_draft` remains in `R/`,
+      `NAMESPACE`, `man/` or `_pkgdown.yml`; a name added without `conn` stops; an assembled set
+      pipes through `datom_add_member()` and `datom_list_members()` to
+      `datom_write_set(conn = conn)`; a set whose name or project is another repo's stops at write
+      with nothing written (R9).
 
 ## Out of scope
 

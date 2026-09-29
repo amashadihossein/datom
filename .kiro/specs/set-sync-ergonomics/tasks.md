@@ -3,7 +3,7 @@
 **Issue**: [#121](https://github.com/amashadihossein/datom/issues/121).
 **Branch**: `spec/set-sync-ergonomics`, from `dev` at `7d55a8b`. PRs into `dev`.
 **Test baseline**: 4282.
-**Order**: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9. One commit per task, full suite before each,
+**Order**: 1 -> 2 -> 3 -> 4 -> 5 -> 5b -> 5c -> 6 -> 7 -> 8 -> 9. One commit per task, full suite before each,
 count in the message. Chunk checkpoint after every task.
 
 **Model escalation flags (set at planning):**
@@ -13,7 +13,9 @@ count in the message. Chunk checkpoint after every task.
 ## Where things stand
 
 Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, task 5b on 2026-09-29.
-**Resume at task 6** (apply); ask the owner before starting it (rule 5d).
+**Resume at task 5c** (one in-memory set: the draft class goes), then task 6 (apply); ask the owner
+before starting each (rule 5d). Task 5c came out of the task 6 cold-start review on 2026-09-29 --
+see design section 12 for why.
 
 **A cold-start review on 2026-09-28, after task 5, settled everything task 6 needed.** A fresh
 session followed these documents and found no broken references, but found about eight apply
@@ -22,7 +24,7 @@ where it applies, marked "(owner, 2026-09-28)": design section 4 (which rows nee
 stale cases, duplicate rows, kind and project mismatches, what `x =` accepts, the own-project
 refusal, frame checks, tidy-ups) and R3.4 (the not-written line). **The largest change: sets are
 now in scope for sync** (R2.1a, AC17, design 3's "Sets are included" block), which is why task 5b
-exists. There is nothing left to ask before coding 6.
+exists. Nothing is left to ask before coding 5c or 6.
 **Current test count: 4536** -- what task 6's count must not drop below.
 
 Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R2.1a
@@ -223,11 +225,27 @@ remote and local store).
     new version of the inner set shows as `changed` in the outer repo's preview.
   - Summary wording: "Mapped N artifacts", not "tables".
 
+- [ ] **5c. One in-memory set: remove the draft class** (R9; AC18)
+  - **Added 2026-09-29 (owner).** The edit verbs' hint `datom_write_set(conn, x)` fails for a draft,
+    because the write took a draft in its first slot and a read set in its second. The fix is one
+    kind of set with no connection in it, and the connection always on the call. Design section 12
+    has the file-by-file change, the pipe before and after, and the tests to write, delete and flip.
+  - Includes the new write refusal (R9.5): a set whose name or project is another repo's stops
+    before anything is written. The project test needs two product repos declaring the same set
+    name, or it cannot go red.
+  - Absorbs what task 6 had for drafts: every add prints the not-written line, and the task 3 test
+    pinning a silent draft add (`test-set-draft.R`, `expect_silent` around the first add) flips.
+  - **Decided 2026-09-29 (owner):** the first write of an assembled set gets the edit-log commit
+    message (`Update {name}: add N members`, one line per member). A test that pins
+    `Update {name}` for a draft write flips.
+
 - [ ] **6. Apply: `datom_sync(sources = , tags = , x = )`** (R3; AC4, AC8, AC9)
   - Design 4, including its "Spot-check additions" and open point B (design 3). Properties P1-P3, P5.
   - Adds the context branch to `datom_sync()` (above its manifest column check, design 2).
-  - Also: `datom_add_member()` on a draft prints the not-written line (R3.4, amended), with the
-    `datom_write_set(x)` hint; the task 3 test pinning a silent draft add flips.
+  - `x` is a `datom_set` only (task 5c), and the set-name check is the write's (R9.5), not apply's.
+  - **Decided 2026-09-29 (owner):** `.datom_refuse_own_project_source()` is shared by the preview and
+    apply, so its message stops saying "the preview": "... so sync does not map or move them". One
+    wording, no caller argument.
 
 - [ ] **7. Vignette code and offline dry run** (R8.1-R8.3)
   - Rewrite `citable-sets.Rmd` per design 9; `#>` blocks become `[pending run]`.

@@ -203,7 +203,9 @@ x = NULL)` -- new arguments last, see section 2.
 - **The set's own project in `sources` stops apply too** (owner, 2026-09-28), before any read, with
   the preview's `.datom_refuse_own_project_source()` and class `datom_sync_own_project_source`.
   Without it a hand-built frame plus `sources = list(conn_own)` could repoint an output that was
-  never re-derived, or add a second copy of it labelled `type = "input"`.
+  never re-derived, or add a second copy of it labelled `type = "input"`. The shared message says
+  "so sync does not map or move them" rather than "the preview", so it reads right from either verb
+  (owner, 2026-09-29).
 - **A `new` or `changed` row whose `project` has no connection in `sources`** (a hand-built or
   subset frame) stops, class `datom_sync_source_missing`, before any read. **Only those two
   statuses** (owner, 2026-09-28): they are the only rows apply acts on, and a full preview's
@@ -237,7 +239,9 @@ x = NULL)` -- new arguments last, see section 2.
   from the conn, `version = NULL`) on first version.
 - **`x` given** (owner, 2026-09-28): a `datom_set` or a `datom_set_draft`, through
   `.datom_edit_members()` as the other edit verbs take it -- `datom_write_set()` accepts both, so a
-  narrower apply would leave a shape that writes but cannot be synced. When `x` carries a name it must
+  narrower apply would leave a shape that writes but cannot be synced. **Since task 5c (section 12)
+  there is only `datom_set`**, and the name check below moves into the write itself (R9.5), so apply
+  inherits it rather than carrying its own. When `x` carries a name it must
   equal the declared set, else `datom_set_name_mismatch` (the write gates' class). Needed because
   `datom_write_set()` takes the name from `project.yaml` and ignores `x$name`, so another repo's set,
   synced here and written, would be re-homed without a word. A draft with no name passes.
@@ -266,6 +270,9 @@ x = NULL)` -- new arguments last, see section 2.
   when anything changed. Report, then the not-written line.
 
 ## 5. `datom_add_member()` (R4)
+
+**As shipped by task 3. Section 12 (task 5c) replaces the draft half:** no draft class, `conn`
+required for every name, every add logged.
 
 - Class check widens to `datom_set`. A name resolves through `conn`, or the draft's own connection
   when omitted; a `datom_set` never borrows a `conn` field (as built in task 3, branched on class
@@ -375,3 +382,71 @@ not an edit).
 - P4 Same resolver: for any `table` / `tags`, `datom_parent(x = )` picks the version
   `datom_fetch_member()` would.
 - P5 Round trip: sync -> write -> get returns the members the preview promised.
+
+## 12. One in-memory set (R9, task 5c)
+
+Agreed with the owner 2026-09-29, after the task 6 cold-start review found that the edit verbs'
+"write it with `datom_write_set(conn, x)`" hint fails for a draft. The cause was structural:
+`datom_write_set()` took a draft in its **first** slot (the draft carried the product repo's
+connection) and a read set in its **second** (a read set carries none), so a draft in the second
+slot matched neither and was validated as a plain member list. Rather than teach four verbs which
+hint to print, the draft class goes: a connection is a runtime capability holding credentials, and
+it belongs on the call that uses it, never in a value that can be printed, saved or passed on.
+
+**Connections in play**, for reference, since a product set routinely spans several: the product
+repo's writer (writes the set and its outputs), the product repo's reader (the vignette adds outputs
+by name through it), and one per source project (inputs). A draft held exactly one, the product's,
+so inputs already needed `conn =` on the call; only same-project names had the shortcut.
+
+**What changes, by file:**
+
+| File | Change |
+|---|---|
+| `R/set-draft.R` | `datom_assemble_set(conn, name = NULL, tags = NULL)` keeps its signature and returns `.datom_empty_set(name, conn$project_name)` with `tags` set (the helper moves here from `R/sync-set.R`). `name` stays `NULL` when not given; the write resolves it, as today. `datom_add_member()` loses the draft branch: a name needs `conn` (`datom_member_conn_required`), every add links, forgets identity, logs `add` and prints the not-written line. `print.datom_set_draft` deleted. Header points 1, 4, 5 and 7 rewritten or dropped: they describe the draft's connection. |
+| `R/set.R` | `datom_write_set()` drops the draft-in-`conn` branch and the `datom_draft_members_conflict` refusal; `members` is a `datom_set` or a list of records. **New check (R9.5)**, in the gates, before the door and any hash: when `x` is a `datom_set`, `x$name` (when set) is fed to the name gate, so a different declared name stops with the existing `datom_set_name_mismatch`; a `name =` argument that disagrees with `x$name` stops with the same class; `x$project` (when set) must equal `conn$project_name` -- the value the write already stamps into the stored document -- else new class `datom_set_project_mismatch`. Both name the set, the repo, and what to do (write it from its own repo, or rebuild the members into this repo's set). Roxygen: the draft paragraphs in `@param conn` and the draft-pipe shape go; the pipe shown is `x |> datom_write_set(conn = conn)`. |
+| `R/set-edit.R` | `.datom_edit_members()` accepts `datom_set` only; the edit verbs' docs lose the draft sentences; the "a draft comes back a draft" behaviour goes. |
+| `R/sync-set.R` | `.datom_empty_set()` moves out; nothing else. |
+| `NAMESPACE`, `_pkgdown.yml`, `man/` | `print.datom_set_draft` gone; regenerate. |
+| `dev/e2e-sets.R`, `dev/e2e-sets-s3.R` | one assemble-and-write site each: `conn =` on name adds, `datom_write_set(conn = ...)`. |
+| `dev/datom_specification.md` | the five draft mentions. `NEWS.md` line on `datom_assemble_set()` waits for task 9. |
+
+**Why the project check, not only the name.** Two product repos may declare the same set name (two
+studies, each with a set called `adam`). A name check alone would let one's set be written into the
+other, re-stamped with the second repo's project. The project check catches it; the name check
+catches the common case with a clearer message.
+
+**Why `name` may stay `NULL` on an assembled set.** Reading the declared name at assemble time would
+need the clone's config, and a reader connection has none. The write resolves a `NULL` name to the
+declared one, as it does today, and a set that names itself is checked. Sync's rule "a set with no
+name passes" (section 4) still holds.
+
+**Pipe, before and after:**
+
+```r
+datom_assemble_set(conn, tags = t) |>
+  datom_add_member("adsl", v1, conn = conn) |>        # was: no conn
+  datom_add_member("dm", v2, conn = conn_src) |>
+  datom_write_set(conn = conn)                        # was: datom_write_set()
+```
+
+`x |> datom_write_set(conn = conn)` binds `x` to `members` by R's argument matching (checked
+2026-09-29), so the write's argument order does not change.
+
+**Behaviour changes a test will see:**
+
+- An assembled set's first write gets the edit-log commit message: `Update {name}: add N members`
+  plus one line per member, instead of `Update {name}`. **Agreed with the owner 2026-09-29**: it says
+  what the first version holds, and keeping the log empty for a never-written set would bring back
+  the special case this task removes.
+- An assembled set's members carry `$fetch` links, as a read set's do; the write strips them.
+- The list, structure and fetch verbs, which refuse a draft today, accept an assembled set.
+
+**Tests.** `test-set-draft.R`: name adds gain `conn =`, writes become `datom_write_set(conn = ...)`;
+tests of the draft's connection, its print method, `datom_draft_members_conflict` and the silent
+draft add are deleted or flipped (about 20 of 37). `test-set-edit.R`: the draft round-trip tests
+(about 5) collapse into the set ones. New: R9.5's name and project refusals with nothing written
+(the project one needs two product repos declaring the **same** set name, or removing the project
+check leaves it green); `datom_list_members()` on an assembled set; the pipe above end to end.
+
+**Probes.** Each R9.5 condition alone (name from `x`, name argument against `x$name`, project);
+the conn requirement on a name add; the add log on a fresh set.
