@@ -188,18 +188,21 @@ quiet(datom_write(conn, data = lb, name = "lb"))
 v_dm1 <- datom_history(conn, "dm")$version[1]
 v_lb1 <- datom_history(conn, "lb")$version[1]
 
-# The draft route rather than a hand-built list: this is the ergonomic path, and
-# it is what a build script uses.
-draft <- quiet(datom_assemble_set(conn, name = "trial_product",
+# The assembled route rather than a hand-built list: this is the ergonomic path.
+# A set holds no connection, so each name add brings its own and the write takes
+# the product repo's.
+x_new <- quiet(datom_assemble_set(conn, name = "trial_product",
                                   tags = list(description = "Trial data cut")))
-draft <- quiet(datom_add_member(draft, "dm", v_dm1,
-                                tags = list(type = "input", domain = "safety")))
-draft <- quiet(datom_add_member(draft, "lb", v_lb1,
-                                tags = list(type = "input", domain = "safety")))
+x_new <- quiet(datom_add_member(x_new, "dm", v_dm1,
+                                tags = list(type = "input", domain = "safety"),
+                                conn = conn))
+x_new <- quiet(datom_add_member(x_new, "lb", v_lb1,
+                                tags = list(type = "input", domain = "safety"),
+                                conn = conn))
 
 head_before <- head_sha(repo)
 first <- quiet(datom_write_set(
-  draft,
+  conn, x_new,
   include_paths = c("R/build.R", "dp/notes.md", "renv.lock")
 ))
 

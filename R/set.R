@@ -172,6 +172,72 @@
 }
 
 
+#' The Set Name a Write Uses, From the Call and From the Set Itself
+#'
+#' A `datom_set` carries its name, and the caller may pass `name =` too. When
+#' both are given they must agree: preferring either would write a set under a
+#' name one of them did not say. When only one is given it is the one used, and
+#' [.datom_check_set_write_gates()] then checks it against the repo's declared
+#' set -- so a set named for another repo stops there, with the gate's message.
+#' A set with no name (an assembled one, usually) takes the declared one.
+#'
+#' @param name The `name` argument, or `NULL`.
+#' @param set_name The name the set carries, or `NULL` (also when `members` was
+#'   a plain list of records).
+#' @return The name to hand to the gate, or `NULL`.
+#' @keywords internal
+.datom_reconcile_set_name <- function(name, set_name) {
+  if (is.null(name)) return(set_name)
+  if (is.null(set_name) || identical(name, set_name)) return(name)
+
+  cli::cli_abort(
+    c(
+      "You asked to write set {.val {name}}, but the set you passed is \\
+       {.val {set_name}}.",
+      "i" = "A set carries its own name, and the two must agree.",
+      "i" = "Drop {.arg name}, or write {.val {set_name}} from its own repo."
+    ),
+    class = "datom_set_name_mismatch"
+  )
+}
+
+
+#' Refuse a Set That Belongs to Another Project
+#'
+#' A `datom_set` records the project it belongs to: the one it was read from,
+#' or the connection it was assembled on. The write stamps `conn$project_name`
+#' into the stored document, so a set from another project written here would be
+#' silently re-homed. The name gate does not catch that on its own, because two
+#' product repos may declare the same set name (two studies, each with a set
+#' called `adam`).
+#'
+#' @param conn The product repo's developer connection.
+#' @param name The resolved set name, for the message.
+#' @param set_project The project the set carries, or `NULL` when it carries
+#'   none (a plain member list, or a set whose project was never recorded).
+#' @return Invisibly `NULL`; aborts with class `datom_set_project_mismatch`.
+#' @keywords internal
+.datom_check_set_project <- function(conn, name, set_project) {
+  if (is.null(set_project) || identical(set_project, conn$project_name)) {
+    return(invisible(NULL))
+  }
+
+  here <- conn$project_name
+  cli::cli_abort(
+    c(
+      "Set {.val {name}} belongs to project {.val {set_project}}, and this \\
+       repo is project {.val {here}}.",
+      "i" = "Writing it here would move it into project {.val {here}} without \\
+             saying so.",
+      "i" = "Write it from project {.val {set_project}}'s own repo, or build \\
+             this repo's set from its members: \\
+             {.code datom_write_set(conn, x$members)}."
+    ),
+    class = "datom_set_project_mismatch"
+  )
+}
+
+
 #' Check the Caller's Extra Paths Before a Set Write Does Anything
 #'
 #' `include_paths` is the **only** way a commit datom makes on its own initiative
@@ -589,10 +655,10 @@
         "i" = "An empty set has no content to identify, so it cannot be cited.",
         "i" = "Declare members with {.fn datom_member} and write the set once \\
                its first output exists.",
-        # A caller who got here through a draft never called `datom_member()` and
-        # would go looking for the wrong verb.
+        # A caller who got here through `datom_assemble_set()` never called
+        # `datom_member()` and would go looking for the wrong verb.
         "i" = "Building the set in steps? Add one with {.fn datom_add_member} \\
-               before writing the draft."
+               before writing the set."
       ),
       class = "datom_set_empty"
     )
@@ -930,24 +996,39 @@
 #' read-append-write cannot silently drop the description. Passing
 #' `x$members` instead works too, and there `tags` is yours to carry.
 #'
+#' A set built in steps with [datom_assemble_set()] and [datom_add_member()] is
+#' written the same way, and pipes into the write:
+#'
+#' ```r
+#' x |> datom_write_set(conn = conn)
+#' ```
+#'
+#' @section A set is written into its own repo:
+#' A `datom_set` records its name and the project it belongs to. Both are
+#' checked before anything is hashed or written: a set named for another repo's
+#' declared set, or belonging to another project, stops the write. Writing it
+#' anyway would move it into this repo's project without saying so -- the name
+#' check alone would miss that, since two product repos may declare the same set
+#' name. A `name` argument that disagrees with the set's own name stops it too.
+#' A plain list of member records carries neither, so neither is checked.
+#'
 #' @param conn A `datom_conn` object from [datom_get_conn()], scoped to the
-#'   product repo (developer role) -- or a `datom_set_draft` from
-#'   [datom_assemble_set()], which already carries its connection, name, members
-#'   and tags, so a pipe ends `|> datom_write_set()` with nothing typed. The
-#'   checks below are the same either way.
+#'   product repo (developer role).
 #' @param members A list of member records from [datom_member()], each pinning one
-#'   artifact version and optionally carrying its own tags -- or a `datom_set`
-#'   from [datom_get_set()], to write back a set that was read. Hand-assembled
-#'   lists are refused.
+#'   artifact version and optionally carrying its own tags -- or a `datom_set`,
+#'   from [datom_get_set()] or [datom_assemble_set()], edited or not.
+#'   Hand-assembled lists are refused.
 #' @param tags Optional named list of set-level text labels -- facts about the
 #'   collection itself, such as a description. Same grammar as a member's tags: a
 #'   value is one string or several, text only.
 #' @param name The set's name. Defaults to the `set:` field in
 #'   `.datom/project.yaml`; when supplied it must equal it.
 #' @param message Optional commit message. Omitted, it is `Update {name}` --
-#'   except for a set that came from [datom_update_members()], where the default
-#'   names the members that moved and their old and new versions. Pass `x` rather
-#'   than `x$members` to get that, since the change list travels with the object.
+#'   except for a set edited with [datom_add_member()], [datom_update_members()]
+#'   or [datom_remove_members()], where the default names the members added,
+#'   moved or dropped, with their versions. So a set assembled in steps gets
+#'   `Update {name}: add N members` on its first write. Pass `x` rather than
+#'   `x$members` to get that, since the change list travels with the object.
 #' @param include_paths Optional character vector of repo-relative paths -- your
 #'   own code, `renv.lock`, build state -- staged into the **same commit** as the
 #'   set. Never mirrored to storage: the storage namespace holds datom artifacts
@@ -1004,60 +1085,25 @@
 datom_write_set <- function(conn, members, tags = NULL, name = NULL,
                             message = NULL, include_paths = NULL) {
 
-  # TWO INDEPENDENT WIDENINGS ON TWO DIFFERENT PARAMETERS. `members` accepts a
-  # `datom_set` (a set read back, unpacked further down); `conn` accepts a
-  # `datom_set_draft`, so a pipe ends `|> datom_write_set()` with nothing typed.
-  # They are separate branches on separate arguments -- extending either one must
-  # leave the other alone.
+  # ONE WIDENING, ON `members` ONLY: it accepts a `datom_set` however it was made
+  # (assembled, read back, edited), unpacked further down. `conn` is always a
+  # connection -- a set holds none, so the pipe is `x |> datom_write_set(conn =
+  # conn)`, which binds `x` to `members` by argument matching.
   #
-  # THE UNPACK RUNS BEFORE THE THREE GUARDS BELOW. A draft in the `conn` position
-  # fails `inherits(conn, "datom_conn")`, so leaving the guards first would abort
-  # a correct pipe by naming an argument the user never typed.
-  #
-  # `missing(members)`, NEVER `is.null(members)`. On the correct call --
-  # `datom_write_set(draft)` -- `members` has no value and the formal has no
-  # default, so evaluating it errors with R's own "argument is missing" instead of
-  # reporting the conflict this refuses. Nothing may touch `members` before the
-  # rebind below.
   # An edit verb's log of what it changed rides as an ATTRIBUTE on the object it
   # edited, so it cannot reach the payload -- the unpack below takes `tags` and
-  # `members` and nothing else. Read here, before either unpack, because both of
-  # them replace the value the attribute is on. It defaults the commit message and
+  # `members` and nothing else. Read before the unpack, because the unpack
+  # replaces the value the attribute is on. It defaults the commit message and
   # nothing else; a caller who passes `x$members` instead of `x` simply gets
   # today's default.
   edits <- NULL
 
-  if (inherits(conn, "datom_set_draft")) {
-    if (!missing(members)) {
-      cli::cli_abort(
-        c(
-          "A draft already carries its members, and {.arg members} was \\
-           supplied as well.",
-          "i" = "Write the draft on its own -- {.code datom_write_set(draft)} \\
-                 -- or pass a member list together with a connection.",
-          "i" = "Preferring one over the other would write a set you did not \\
-                 describe."
-        ),
-        class = "datom_draft_members_conflict"
-      )
-    }
-
-    draft <- conn
-    edits <- attr(draft, "datom_edits")
-    conn <- draft$conn
-    # The draft's name and tags are DEFAULTS, exactly as a `datom_set`'s tags are
-    # below: an explicitly supplied one wins, so a draft can be written under
-    # different labels without rebuilding it.
-    if (is.null(tags)) tags <- draft$tags
-    if (is.null(name)) name <- draft$name
-    members <- draft$members
-  }
-
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort(c(
-      "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}, or a \\
-       {.cls datom_set_draft} from {.fn datom_assemble_set}.",
-      "i" = "You passed {.cls {class(conn)}}."
+      "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}.",
+      "i" = "You passed {.cls {class(conn)}}.",
+      "i" = "To write a set you hold: {.code datom_write_set(conn, x)}, or \\
+             {.code x |> datom_write_set(conn = conn)}."
     ))
   }
 
@@ -1085,17 +1131,34 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # `fetch` is dropped only when it is a FUNCTION, so a hand-built
   # `fetch = "junk"` still reaches the validator and aborts. Stripping by name
   # alone would turn a typo into a silent success.
+  #
+  # A set's own name and project are claims about WHICH repo it belongs to, and
+  # both are checked (below, with the gates) rather than silently replaced by
+  # this repo's: writing one repo's set with another's connection would re-home
+  # it under the second repo's project.
+  set_name <- NULL
+  set_project <- NULL
   if (inherits(members, "datom_set")) {
     if (is.null(tags)) tags <- members$tags
     edits <- attr(members, "datom_edits")
+    set_name <- members$name
+    set_project <- members$project
     members <- members$members
   }
   members <- .datom_strip_member_links(members)
 
+  name <- .datom_reconcile_set_name(name, set_name)
+
   # The two gates run first because they are what establish WHICH artifact this
   # write touches -- the forward-compatibility door below needs that name, and
   # handing it NULL would silently widen the door to every artifact in the clone.
+  # A set's own name reaches the name gate through `name`, so a set named for
+  # another repo stops there with the gate's message.
   name <- .datom_check_set_write_gates(conn, name)
+
+  # After the gates, so a repo that is not a product repo is told that first;
+  # before the door and every hash, so a refusal leaves nothing behind.
+  .datom_check_set_project(conn, name, set_project)
 
   # Forward-compatibility door. A new write verb inherits nothing from the three
   # routes that already call this, so leaving it out would silently skip the
@@ -1939,12 +2002,12 @@ datom_get_set <- function(conn, name, version = NULL) {
 #'
 #' One line per member -- name, kind, and its tags as compact `key=value` pairs,
 #' or `-` when it has none -- plus the route to a member's content. Long member
-#' lists are truncated.
+#' lists are truncated. A set not yet written shows version `NA`.
 #'
 #' Tags are open-keyed by design, so there is no fixed column layout to print
 #' them in.
 #'
-#' @param x A `datom_set` from [datom_get_set()].
+#' @param x A `datom_set`, from [datom_get_set()] or [datom_assemble_set()].
 #' @param ... Ignored.
 #' @param n Maximum number of members to list.
 #' @return Invisible `x`.
@@ -1954,7 +2017,14 @@ datom_get_set <- function(conn, name, version = NULL) {
 #' # See datom_get_set() for a runnable example that prints a set.
 #' print(names(formals(datom_get_set)))
 print.datom_set <- function(x, ..., n = 20L) {
-  cli::cli_h3("datom set: {.val {x$name}}")
+  # An assembled set may have no name yet -- the write takes the repo's
+  # declared one -- so the header says where the name will come from rather
+  # than printing a blank.
+  if (is.null(x$name)) {
+    cli::cli_h3("datom set: {.emph the set this repo declares}")
+  } else {
+    cli::cli_h3("datom set: {.val {x$name}}")
+  }
   cli::cli_ul()
   cli::cli_li("Project: {.val {x$project}}")
   cli::cli_li("Version: {.val {x$version %||% NA_character_}}")

@@ -33,7 +33,6 @@ honest history of the edits and slightly odd in a commit message; collapsing
 them would mean one verb reasoning about the other's rows.
 
 Three actions are written: \code{repoint} by \code{\link[=datom_update_members]{datom_update_members()}}, \code{remove} by
-\code{\link[=datom_remove_members]{datom_remove_members()}}, and \code{add} by \code{\link[=datom_add_member]{datom_add_member()}} on a \code{datom_set}
-(never on a draft, which has no earlier set to describe a change against).
+\code{\link[=datom_remove_members]{datom_remove_members()}}, and \code{add} by \code{\link[=datom_add_member]{datom_add_member()}}.
 }
 \keyword{internal}

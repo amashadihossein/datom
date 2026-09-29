@@ -15,15 +15,12 @@ datom_write_set(
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}, scoped to the
-product repo (developer role) -- or a \code{datom_set_draft} from
-\code{\link[=datom_assemble_set]{datom_assemble_set()}}, which already carries its connection, name, members
-and tags, so a pipe ends \verb{|> datom_write_set()} with nothing typed. The
-checks below are the same either way.}
+product repo (developer role).}
 
 \item{members}{A list of member records from \code{\link[=datom_member]{datom_member()}}, each pinning one
-artifact version and optionally carrying its own tags -- or a \code{datom_set}
-from \code{\link[=datom_get_set]{datom_get_set()}}, to write back a set that was read. Hand-assembled
-lists are refused.}
+artifact version and optionally carrying its own tags -- or a \code{datom_set},
+from \code{\link[=datom_get_set]{datom_get_set()}} or \code{\link[=datom_assemble_set]{datom_assemble_set()}}, edited or not.
+Hand-assembled lists are refused.}
 
 \item{tags}{Optional named list of set-level text labels -- facts about the
 collection itself, such as a description. Same grammar as a member's tags: a
@@ -33,9 +30,11 @@ value is one string or several, text only.}
 \code{.datom/project.yaml}; when supplied it must equal it.}
 
 \item{message}{Optional commit message. Omitted, it is \verb{Update \{name\}} --
-except for a set that came from \code{\link[=datom_update_members]{datom_update_members()}}, where the default
-names the members that moved and their old and new versions. Pass \code{x} rather
-than \code{x$members} to get that, since the change list travels with the object.}
+except for a set edited with \code{\link[=datom_add_member]{datom_add_member()}}, \code{\link[=datom_update_members]{datom_update_members()}}
+or \code{\link[=datom_remove_members]{datom_remove_members()}}, where the default names the members added,
+moved or dropped, with their versions. So a set assembled in steps gets
+\verb{Update \{name\}: add N members} on its first write. Pass \code{x} rather than
+\code{x$members} to get that, since the change list travels with the object.}
 
 \item{include_paths}{Optional character vector of repo-relative paths -- your
 own code, \code{renv.lock}, build state -- staged into the \strong{same commit} as the
@@ -166,6 +165,23 @@ datom_write_set(conn, x)
 The set's own \code{tags} come along with it unless \code{tags} is supplied, so a
 read-append-write cannot silently drop the description. Passing
 \code{x$members} instead works too, and there \code{tags} is yours to carry.
+
+A set built in steps with \code{\link[=datom_assemble_set]{datom_assemble_set()}} and \code{\link[=datom_add_member]{datom_add_member()}} is
+written the same way, and pipes into the write:
+
+\if{html}{\out{<div class="sourceCode r">}}\preformatted{x |> datom_write_set(conn = conn)
+}\if{html}{\out{</div>}}
+}
+
+\section{A set is written into its own repo}{
+
+A \code{datom_set} records its name and the project it belongs to. Both are
+checked before anything is hashed or written: a set named for another repo's
+declared set, or belonging to another project, stops the write. Writing it
+anyway would move it into this repo's project without saying so -- the name
+check alone would miss that, since two product repos may declare the same set
+name. A \code{name} argument that disagrees with the set's own name stops it too.
+A plain list of member records carries neither, so neither is checked.
 }
 
 \examples{

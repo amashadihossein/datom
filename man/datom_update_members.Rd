@@ -14,8 +14,7 @@ datom_update_members(
 )
 }
 \arguments{
-\item{x}{A \code{datom_set} from \code{\link[=datom_get_set]{datom_get_set()}}, or a \code{datom_set_draft} from
-\code{\link[=datom_assemble_set]{datom_assemble_set()}}.}
+\item{x}{A \code{datom_set}, from \code{\link[=datom_get_set]{datom_get_set()}} or \code{\link[=datom_assemble_set]{datom_assemble_set()}}.}
 
 \item{conn}{A \code{datom_conn} from \code{\link[=datom_get_conn]{datom_get_conn()}}, or a list of them -- one
 per project the selected members belong to.}
@@ -61,11 +60,6 @@ A set's projects can be listed \strong{offline, with no connection at all}:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{unique(datom_list_members(x)$project)
 }\if{html}{\out{</div>}}
-
-A \code{datom_set_draft} carries the connection it was opened with, and this verb
-\strong{ignores} it: a draft carries exactly one while this call legitimately spans
-several, and quietly preferring the embedded one would make the same call
-behave differently depending on how \code{x} was produced.
 }
 
 \section{Which members move}{
@@ -119,9 +113,8 @@ still reads, so the set stays writable.
 
 \section{What comes back}{
 
-The class it was handed -- a \code{datom_set} for a \code{datom_set} and a
-\code{datom_set_draft} for a draft -- with matching members repointed and each
-moved member's labels byte-identical to what they were.
+The set it was handed, with matching members repointed and each moved
+member's labels byte-identical to what they were.
 
 When something moved, a \code{datom_set}'s \code{version} and \code{data_sha} are emptied:
 they described the payload it was read as, and that is no longer what the

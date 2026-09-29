@@ -654,31 +654,26 @@ test_that("a set nothing moved in keeps the version it was read as", {
   expect_identical(out$data_sha, x$data_sha)
 })
 
-test_that("a draft comes back a draft, repointed, with its connection untouched", {
+test_that("an assembled set repoints like a read one, and writes", {
+  # One kind of set: an assembled one's members carry links, so the repoint
+  # rebuilds them, and the write logs both the add and the repoint.
   fx <- local_edit_project()
   v1 <- se_table(fx, "dm", 3L)
-  draft <- datom_add_member(datom_assemble_set(fx$conn), "dm", v1,
-                            tags = list(type = "input"))
+  x <- suppressMessages(
+    datom_add_member(datom_assemble_set(fx$conn), "dm", v1,
+                     tags = list(type = "input"), conn = fx$conn)
+  )
   v2 <- se_table(fx, "dm", 4L)
 
-  out <- se_update(draft, fx$conn)
+  out <- se_update(x, fx$conn)
 
-  expect_s3_class(out, "datom_set_draft")
+  expect_s3_class(out, "datom_set")
   expect_identical(out$members[[1L]]$id$version, v2)
   expect_identical(out$members[[1L]]$tags, list(type = "input"))
-  expect_null(out$members[[1L]]$fetch)
-  expect_identical(out$conn, fx$conn)
-})
+  expect_identical(nrow(out$members[[1L]]$fetch(fx$conn)), 4L)
+  expect_identical(attr(out, "datom_edits")$action, c("add", "repoint"))
 
-test_that("a repointed draft writes, and the write takes it as one", {
-  fx <- local_edit_project()
-  v1 <- se_table(fx, "dm", 3L)
-  draft <- datom_add_member(datom_assemble_set(fx$conn), "dm", v1)
-  v2 <- se_table(fx, "dm", 4L)
-
-  out <- se_update(draft, fx$conn)
-  se_write(out)
-
+  se_write(fx$conn, out)
   again <- datom_get_set(fx$conn, "product-a")
   expect_identical(again$members[[1L]]$id$version, v2)
 })
@@ -731,7 +726,7 @@ test_that("a write with no update behind it keeps the plain default", {
 
 # === the arguments ================================================================
 
-test_that("x must be a set or a draft, and the message names both", {
+test_that("x must be a set, and the message names both ways to get one", {
   fx <- local_edit_project()
   err <- expect_error(
     datom_update_members(list(), fx$conn),
@@ -938,19 +933,21 @@ test_that("an edited set stops claiming the version it was read as", {
   expect_identical(names(out), names(x))
 })
 
-test_that("a draft comes back a draft, minus the member", {
+test_that("an assembled set loses the member like a read one", {
   fx <- local_edit_project()
   v1 <- se_table(fx, "dm", 3L)
   v2 <- se_table(fx, "lb", 3L)
-  draft <- datom_assemble_set(fx$conn)
-  draft <- datom_add_member(draft, "dm", v1)
-  draft <- datom_add_member(draft, "lb", v2)
+  x <- suppressMessages(
+    datom_assemble_set(fx$conn) |>
+      datom_add_member("dm", v1, conn = fx$conn) |>
+      datom_add_member("lb", v2, conn = fx$conn)
+  )
 
-  out <- se_remove(draft, member = "dm")
+  out <- se_remove(x, member = "dm")
 
-  expect_s3_class(out, "datom_set_draft")
+  expect_s3_class(out, "datom_set")
   expect_length(out$members, 1L)
-  expect_identical(out$conn, fx$conn)
+  expect_identical(out$members[[1L]]$id$name, "lb")
 })
 
 test_that("removing takes no connection, so it works on a reader's set", {
@@ -971,7 +968,7 @@ test_that("removing takes no connection, so it works on a reader's set", {
   expect_length(out$members, 1L)
 })
 
-test_that("x must be a set or a draft here too", {
+test_that("x must be a set here too", {
   expect_error(datom_remove_members(list(), member = "dm"),
                class = "datom_not_a_set")
 })

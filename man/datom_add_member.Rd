@@ -7,8 +7,7 @@
 datom_add_member(x, member, version = NULL, tags = NULL, conn = NULL)
 }
 \arguments{
-\item{x}{A \code{datom_set_draft} from \code{\link[=datom_assemble_set]{datom_assemble_set()}}, or a \code{datom_set}
-from \code{\link[=datom_get_set]{datom_get_set()}}.}
+\item{x}{A \code{datom_set}, from \code{\link[=datom_assemble_set]{datom_assemble_set()}} or \code{\link[=datom_get_set]{datom_get_set()}}.}
 
 \item{member}{The member to add: an artifact name, a member record, or a link.}
 
@@ -19,43 +18,40 @@ refused beside a record or a link.}
 is a name. Refused beside a record or a link, which carry their own.}
 
 \item{conn}{A \code{datom_conn} from \code{\link[=datom_get_conn]{datom_get_conn()}} for the project a
-\strong{name} is looked up in. Required for a name added to a \code{datom_set};
-optional on a draft, which falls back to its own connection. Not used for a
-record or a link.}
+\strong{name} is looked up in. Required for a name; not used for a record or a
+link.}
 }
 \value{
-The class it was given, one member longer -- or unchanged, when the
-member was already in it with the same labels. A \code{datom_set} also has its
-\code{version} and \code{data_sha} emptied and the addition appended to its
-\code{datom_edits} attribute.
+The set, one member longer, with its \code{version} and \code{data_sha}
+emptied and the addition appended to its \code{datom_edits} attribute -- or
+unchanged, when the member was already in it with the same labels.
 }
 \description{
-Declares one member and appends it to a draft from \code{\link[=datom_assemble_set]{datom_assemble_set()}} or
-to a set read back with \code{\link[=datom_get_set]{datom_get_set()}}, validating it immediately: the
-artifact must exist at the version given, and its labels must be well formed.
-The member record is built through the same path \code{\link[=datom_member]{datom_member()}} uses, so a
-set assembled this way is byte-identical to the same set passed as a list.
+Declares one member and appends it to a set -- an empty one from
+\code{\link[=datom_assemble_set]{datom_assemble_set()}} or one read back with \code{\link[=datom_get_set]{datom_get_set()}} -- validating
+it immediately: the artifact must exist at the version given, and its labels
+must be well formed. The member record is built through the same path
+\code{\link[=datom_member]{datom_member()}} uses, so a set assembled this way is byte-identical to the
+same set passed as a list.
 }
 \section{Naming a member}{
 
 \code{member} accepts the three shapes a caller holds, and the second and third are
 not merely convenient:\tabular{ll}{
    What you pass \tab What it means \cr
-   a name \tab look this artifact up through \code{conn}, or the draft's connection when \code{conn} is omitted \cr
+   a name \tab look this artifact up through \code{conn} \cr
    a member record \tab use it as given -- from \code{\link[=datom_member]{datom_member()}}, or from a set read back \cr
    a link \tab use the member it points at -- \code{x$members[[i]]$fetch}, or a leaf of \code{\link[=datom_structure_members]{datom_structure_members()}} \cr
 }
 
 
 \strong{A name is looked up in one project's storage}: the project \code{conn} is
-for. On a draft, \code{conn} may be omitted and the draft's own connection is
-used; giving one resolves that single name elsewhere and leaves the draft's
-connection as it was. A set read back holds no connection, so a name added
-to one always needs \code{conn}. A record or a link carries its own resolved
-pointer and needs no connection at all:
+for. A set holds no connection, so a name always needs \code{conn}, whichever
+project it is in. A record or a link carries its own resolved pointer and
+needs no connection at all:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{datom_assemble_set(conn_a) |>
-  datom_add_member("dm", v1) |>                     # this project, by name
+  datom_add_member("dm", v1, conn = conn_a) |>      # this project, by name
   datom_add_member("ae", v2, conn = conn_b) |>      # another project, by name
   datom_add_member(datom_member(conn_b, "vs", v3))  # another project, as a record
 }\if{html}{\out{</div>}}
@@ -78,23 +74,21 @@ artifact immutable; requiring the pin is what makes the code reproducible.
 List versions with \code{\link[=datom_history]{datom_history()}}.
 }
 
-\section{Adding to a set read back}{
+\section{Every add is an edit}{
 
-Adding to a \code{datom_set} edits a set that already has a version, so it
-behaves like \code{\link[=datom_update_members]{datom_update_members()}} and \code{\link[=datom_remove_members]{datom_remove_members()}}:
+Adding a member behaves like \code{\link[=datom_update_members]{datom_update_members()}} and
+\code{\link[=datom_remove_members]{datom_remove_members()}}, whether the set was just assembled or read back:
 \itemize{
 \item \strong{Nothing is written.} The set is stored only when you pass the result to
 \code{\link[=datom_write_set]{datom_write_set()}}, and the call says so.
 \item \strong{\code{version} and \code{data_sha} are emptied}, because they described the
-payload the set was read as.
+payload the set was read as. A set never written has neither.
 \item \strong{The addition is recorded}, so the write's default commit message says
-\verb{add 1 member} beside any repoints or removals made on the same object.
-\item \strong{The new member gets a \verb{$fetch} link}, like every other member of a set
-read back.
+\verb{add 1 member} beside any repoints or removals made on the same object. A
+freshly assembled set's first write therefore names every member it adds.
+\item \strong{The new member gets a \verb{$fetch} link}, like every member of a set read
+back.
 }
-
-Adding to a draft does none of this: a draft has not been written, so there
-is no version to empty and no earlier set to describe a change against.
 }
 
 \section{Adding the same member twice}{
@@ -102,8 +96,8 @@ is no version to empty and no earlier set to describe a change against.
 The two cases differ, and they differ the same way they differ at the write:
 \itemize{
 \item \strong{The same version with the same labels} is skipped, with a note. The write
-drops an exact repeat anyway, so refusing here would make a draft stricter
-than the equivalent list -- \code{Reduce(datom_add_member, records, init = draft)}
+drops an exact repeat anyway, so refusing here would make this verb stricter
+than the equivalent list -- \code{Reduce(datom_add_member, records, init = x)}
 over a generated list that happens to repeat would fail where it works today.
 \item \strong{The same version with different labels} aborts. One version of one
 artifact is one member holding one set of labels, and merging or choosing
@@ -111,17 +105,17 @@ between two sets would guess. The write refuses this too; here it names the
 line that introduced it.
 }
 
-So the member count a draft reports is the count the write will produce. Two
+So the member count a set reports is the count the write will produce. Two
 different \strong{versions} of one artifact are two members, and both are kept.
 }
 
 \examples{
-# A draft needs a live connection, so the runnable example lives on
+# Adding by name needs a live connection, so the runnable example lives on
 # datom_assemble_set(), which shows the whole pipe.
 print(names(formals(datom_add_member)))
 }
 \seealso{
-\code{\link[=datom_assemble_set]{datom_assemble_set()}} to open a draft, \code{\link[=datom_get_set]{datom_get_set()}} to read a
-set back, \code{\link[=datom_member]{datom_member()}} to build a record on another connection,
+\code{\link[=datom_assemble_set]{datom_assemble_set()}} to start a set, \code{\link[=datom_get_set]{datom_get_set()}} to read one
+back, \code{\link[=datom_member]{datom_member()}} to build a record on another connection,
 \code{\link[=datom_update_members]{datom_update_members()}} and \code{\link[=datom_remove_members]{datom_remove_members()}} for the other edits.
 }

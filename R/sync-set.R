@@ -95,32 +95,6 @@
 }
 
 
-#' A Set With No Version Yet
-#'
-#' What a product repo's set is before its first write: its declared name, the
-#' repo's project, and no members. Spelled `list(version = NULL, ...)` so the
-#' empty fields keep their names, which is the shape [datom_get_set()] returns
-#' for a read set.
-#'
-#' @param name The set's name.
-#' @param project The repo's project name.
-#' @return A `datom_set`.
-#' @keywords internal
-.datom_empty_set <- function(name, project) {
-  structure(
-    list(
-      name = name,
-      project = project,
-      version = NULL,
-      data_sha = NULL,
-      tags = NULL,
-      members = list()
-    ),
-    class = "datom_set"
-  )
-}
-
-
 #' The Repo's Set As Stored, or an Empty One When It Has Never Been Written
 #'
 #' See point 1 of this file's header. The probe is on the set's current-state

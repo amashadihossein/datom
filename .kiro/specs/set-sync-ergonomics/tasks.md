@@ -12,10 +12,9 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, task 5b on 2026-09-29.
-**Resume at task 5c** (one in-memory set: the draft class goes), then task 6 (apply); ask the owner
-before starting each (rule 5d). Task 5c came out of the task 6 cold-start review on 2026-09-29 --
-see design section 12 for why.
+Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b and 5c on 2026-09-29.
+**Resume at task 6** (apply); ask the owner before starting it (rule 5d). Task 5c came out of the
+task 6 cold-start review on 2026-09-29 -- see design section 12 for why.
 
 **A cold-start review on 2026-09-28, after task 5, settled everything task 6 needed.** A fresh
 session followed these documents and found no broken references, but found about eight apply
@@ -25,7 +24,7 @@ stale cases, duplicate rows, kind and project mismatches, what `x =` accepts, th
 refusal, frame checks, tidy-ups) and R3.4 (the not-written line). **The largest change: sets are
 now in scope for sync** (R2.1a, AC17, design 3's "Sets are included" block), which is why task 5b
 exists. Nothing is left to ask before coding 5c or 6.
-**Current test count: 4536** -- what task 6's count must not drop below.
+**Current test count: 4568** -- what task 6's count must not drop below.
 
 Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R2.1a
 and AC17 are task 5b; R1 and R3 are task 6) and `design.md` (section 1 lists the code facts checked
@@ -225,7 +224,40 @@ remote and local store).
     new version of the inner set shows as `changed` in the outer repo's preview.
   - Summary wording: "Mapped N artifacts", not "tables".
 
-- [ ] **5c. One in-memory set: remove the draft class** (R9; AC18)
+- [x] **5c. One in-memory set: remove the draft class** (R9; AC18)
+  - **Done 2026-09-29, 4568 tests (+32).** `datom_assemble_set()` returns `.datom_empty_set(name,
+    conn$project_name)` with `tags` (helper moved from `R/sync-set.R` to `R/set-draft.R`); no
+    `datom_set_draft`, no `print.datom_set_draft`, no `datom_draft_members_conflict` in `R/`,
+    `NAMESPACE`, `man/` or `_pkgdown.yml`. `datom_add_member()` needs `conn` for every name, and
+    every add links, empties identity, logs `add` and prints the not-written line. `datom_write_set()`
+    takes a connection in `conn` only; its guard message shows `datom_write_set(conn, x)` and the pipe.
+  - R9.5: `.datom_reconcile_set_name()` (a `name =` disagreeing with the set's own name,
+    `datom_set_name_mismatch`, message "the set you passed") runs before the gates; the set's name
+    then reaches the name gate through `name`; `.datom_check_set_project()` (new class
+    `datom_set_project_mismatch`) runs right after the gates, before the door and any hash. The
+    message's remedy, `datom_write_set(conn, x$members)`, is tested to work.
+  - Choices made here, not in the design: the add verb's "not a set" class is now `datom_not_a_set`
+    (was `datom_not_a_draft`), the class the edit and list verbs already use.
+    `print.datom_set` says "the set this repo declares" for a set with no name, instead of a blank.
+    The list/structure/fetch refusal message now names `datom_assemble_set()` too. The internal
+    clash helper keeps its name `.datom_draft_member_clash()`.
+  - Tests: `test-set-draft.R` rewritten (43 tests); `test-set-edit.R`'s two draft round trips became
+    "an assembled set repoints / loses a member like a read one". New: no connection in the
+    serialized bytes of an assembled set; every add prints and logs, the first one included; first
+    write commits `Update {name}: add N members`; list/structure/fetch on an assembled set; the
+    documented pipe end to end with a cross-project name add; the three R9.5 refusals with nothing
+    written (commit, clone files including dot-directories, store objects), the project one on two
+    repos both declaring `adam`.
+  - Probes (fixed copy in `/tmp`, restored and compared after the run; control reddened nothing):
+    the set's name not fed to the gate (2 red), the name-argument check removed (1), the project
+    check removed, made to compare nothing, or moved after the payload file write (1 each), the add
+    borrowing a `conn` from the set (1), the conn requirement removed (3), the add log removed (8),
+    the not-written line removed (2), the link removed (4), a connection kept on the assembled set
+    (2), the empty `tags` field dropped (1), the unnamed print header removed (1) -- each reddened
+    its own test.
+  - `dev/e2e-sets.R` updated and run offline: all claims held. `dev/e2e-sets-s3.R` updated and
+    parse-checked only (needs credentials; task 8's run covers it). `dev/datom_specification.md`
+    rewritten for one kind of set. `NEWS.md` waits for task 9.
   - **Added 2026-09-29 (owner).** The edit verbs' hint `datom_write_set(conn, x)` fails for a draft,
     because the write took a draft in its first slot and a read set in its second. The fix is one
     kind of set with no connection in it, and the connection always on the call. Design section 12

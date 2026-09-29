@@ -3,7 +3,6 @@
 S3method(print,datom_conn)
 S3method(print,datom_link)
 S3method(print,datom_set)
-S3method(print,datom_set_draft)
 S3method(print,datom_store)
 S3method(print,datom_store_local)
 S3method(print,datom_store_s3)

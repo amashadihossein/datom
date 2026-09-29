@@ -2,7 +2,7 @@
 % Please edit documentation in R/set-edit.R
 \name{.datom_edit_members}
 \alias{.datom_edit_members}
-\title{The Member List of a Set or a Draft, or an Abort Naming What Was Passed}
+\title{The Member List of a Set, or an Abort Naming What Was Passed}
 \usage{
 .datom_edit_members(x, arg = "x")
 }
@@ -15,8 +15,8 @@
 The member list, possibly empty.
 }
 \description{
-Both shapes are accepted because \code{\link[=datom_write_set]{datom_write_set()}} already accepts both, so
-an edit verb narrower than the write would create a shape the write takes and
-the edit refuses.
+A \code{datom_set} however it was made -- read back, or assembled with
+\code{\link[=datom_assemble_set]{datom_assemble_set()}} -- which is exactly what \code{\link[=datom_write_set]{datom_write_set()}} takes,
+so the edit verbs and the write accept the same objects.
 }
 \keyword{internal}
