@@ -369,6 +369,26 @@
 #'   artifacts.
 #' @keywords internal
 .datom_current_artifact_versions <- function(conn) {
+  current <- .datom_current_artifacts(conn)$artifacts
+  stats::setNames(current$current_version, current$name)
+}
+
+
+#' Every Artifact in One Project, With Its Kind and Current Version, in One Read
+#'
+#' The same single manifest read as [.datom_current_artifact_versions()], and
+#' the same refusal when it cannot be read -- that function is built on this
+#' one. The set sync preview needs two things the name-to-version vector drops:
+#' each entry's **kind**, because a source may hold a set and preview rows are
+#' tables only, and the **project name the manifest records**, which is how a
+#' mislabelled source connection is caught before it shows every table as new.
+#'
+#' @param conn A connection to the project.
+#' @return A list of `project_name` (the name the manifest records, or `NULL`
+#'   when it records none) and `artifacts`, a data frame of `name`, `kind` and
+#'   `current_version`, with `NA` for a field an entry does not record usably.
+#' @keywords internal
+.datom_current_artifacts <- function(conn) {
   read <- .datom_read_manifest(conn, scope = "storage", operation = "read")
 
   if (!isTRUE(read$ok)) {
@@ -389,24 +409,38 @@
     )
   }
 
+  declared <- read$manifest$project_name
+  project_name <- if (.datom_is_text_scalar(declared)) declared
+
   artifacts <- read$manifest$artifacts
   if (!is.list(artifacts) || length(artifacts) == 0L ||
       is.null(names(artifacts))) {
-    return(stats::setNames(character(), character()))
+    return(list(
+      project_name = project_name,
+      artifacts = data.frame(name = character(), kind = character(),
+                             current_version = character(),
+                             stringsAsFactors = FALSE)
+    ))
   }
 
-  vapply(
-    names(artifacts),
-    function(nm) {
-      entry <- artifacts[[nm]]
-      # Presence first: `entry[["current_version"]]` on an entry that lacks the
-      # field is a subscript error rather than NULL.
-      value <- if (is.list(entry) && "current_version" %in% names(entry)) {
-        entry$current_version
-      }
-      if (.datom_is_text_scalar(value)) value else NA_character_
-    },
-    character(1L)
+  # Presence first: `entry[["current_version"]]` on an entry that lacks the
+  # field is a subscript error rather than NULL.
+  field <- function(entry, f) {
+    value <- if (is.list(entry) && f %in% names(entry)) entry[[f]]
+    if (.datom_is_text_scalar(value)) value else NA_character_
+  }
+
+  nms <- names(artifacts)
+  list(
+    project_name = project_name,
+    artifacts = data.frame(
+      name = nms,
+      kind = vapply(artifacts, field, character(1L), f = "kind",
+                    USE.NAMES = FALSE),
+      current_version = vapply(artifacts, field, character(1L),
+                               f = "current_version", USE.NAMES = FALSE),
+      stringsAsFactors = FALSE
+    )
   )
 }
 

@@ -4,12 +4,24 @@
 \alias{.datom_refuse_import_on_product}
 \title{Refuse the File-Import Path on a Product Repo}
 \usage{
-.datom_refuse_import_on_product(conn, verb)
+.datom_refuse_import_on_product(
+  conn,
+  verb,
+  context = .datom_sync_context(conn),
+  sources_hint = FALSE
+)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object with a local path.}
 
 \item{verb}{Name of the import verb being refused, for the message.}
+
+\item{context}{What \code{\link[=.datom_sync_context]{.datom_sync_context()}} read. Passed in by a caller that
+has already read it, so one call makes one gated parse.}
+
+\item{sources_hint}{\code{TRUE} when the refused verb has a set path the caller
+can take instead, reached by passing \verb{sources =}. The message then names
+that route rather than only the write verbs.}
 }
 \value{
 Invisibly \code{NULL}. Aborts with class \code{datom_import_on_product} when the

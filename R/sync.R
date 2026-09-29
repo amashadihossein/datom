@@ -433,24 +433,44 @@ datom_pull <- function(conn) {
 #'
 #' @param conn A `datom_conn` object with a local path.
 #' @param verb Name of the import verb being refused, for the message.
+#' @param context What [.datom_sync_context()] read. Passed in by a caller that
+#'   has already read it, so one call makes one gated parse.
+#' @param sources_hint `TRUE` when the refused verb has a set path the caller
+#'   can take instead, reached by passing `sources =`. The message then names
+#'   that route rather than only the write verbs.
 #' @return Invisibly `NULL`. Aborts with class `datom_import_on_product` when the
 #'   repo declares `mode: product`.
 #' @keywords internal
-.datom_refuse_import_on_product <- function(conn, verb) {
-  yaml_path <- fs::path(conn$path, ".datom", "project.yaml")
+.datom_refuse_import_on_product <- function(conn, verb,
+                                            context = .datom_sync_context(conn),
+                                            sources_hint = FALSE) {
+  if (!isTRUE(context$product)) return(invisible(NULL))
 
-  # No config is not this check's failure to report: the verb fails on the same
-  # repo moments later with its own message about an uninitialised repo.
-  if (!fs::file_exists(yaml_path)) return(invisible(NULL))
-
-  cfg <- yaml::read_yaml(yaml_path)
-  .datom_check_project_schema(cfg, source = yaml_path, operation = "write")
-
-  if (!identical(as.character(cfg$mode %||% ""), "product")) {
-    return(invisible(NULL))
+  declared_set <- context$set
+  set_line <- if (.datom_is_text_scalar(declared_set)) {
+    "This repo's set is {.val {declared_set}}."
+  } else {
+    "This repo declares no {.field set}; add {.code set: <name>} to \\
+     {.file .datom/project.yaml}."
   }
 
-  declared_set <- cfg$set
+  if (isTRUE(sources_hint)) {
+    cli::cli_abort(
+      c(
+        "This repo declares {.code mode: product}, so {.fn {verb}} maps its \\
+         set against source projects rather than scanning files, and no \\
+         {.arg sources} was given.",
+        "i" = "Pass one connection per project the set's inputs come from: \\
+               {.code {verb}(conn, sources = list(conn_source))}.",
+        "i" = "Outputs are not mapped: write a derived table with \\
+               {.fn datom_write}, then collect the versions into the repo's \\
+               set with {.fn datom_write_set}.",
+        "i" = set_line
+      ),
+      class = "datom_import_on_product"
+    )
+  }
+
   cli::cli_abort(
     c(
       "{.fn {verb}} onboards source files, and this repo declares \\
@@ -458,14 +478,43 @@ datom_pull <- function(conn) {
       "x" = "A product repo builds its artifacts; it does not import them.",
       "i" = "Write a derived table with {.fn datom_write}, then collect the \\
              versions into the repo's set with {.fn datom_write_set}.",
-      "i" = if (.datom_is_text_scalar(declared_set)) {
-        "This repo's set is {.val {declared_set}}."
-      } else {
-        "This repo declares no {.field set}; add {.code set: <name>} to \\
-         {.file .datom/project.yaml}."
-      }
+      "i" = set_line
     ),
     class = "datom_import_on_product"
+  )
+}
+
+
+#' Which Context a Sync Call Is In: an Ordinary Repo or a Product Repo
+#'
+#' The two sync verbs do different jobs depending on the repo: an ordinary repo
+#' imports source files, a product repo maps its one set against source
+#' projects. This reads which, once per call, so every branch below it acts on
+#' one answer.
+#'
+#' **Read from `.datom/project.yaml`, not from the connection**, for the reason
+#' [.datom_refuse_import_on_product()] gives: the answer can authorise a write,
+#' and a hand edit or a pull can change the file after the connection was built.
+#' And the parse is gated -- the file's declared format is checked before `mode`
+#' or `set` is read out of it.
+#'
+#' @param conn A `datom_conn` object with a local path.
+#' @return A list of `product` (`TRUE` for a `mode: product` repo) and `set`
+#'   (the declared set name as written, possibly `NULL`). A repo with no config
+#'   is reported as ordinary: the file path then fails with its own message about
+#'   an uninitialised repo.
+#' @keywords internal
+.datom_sync_context <- function(conn) {
+  yaml_path <- fs::path(conn$path, ".datom", "project.yaml")
+
+  if (!fs::file_exists(yaml_path)) return(list(product = FALSE, set = NULL))
+
+  cfg <- yaml::read_yaml(yaml_path)
+  .datom_check_project_schema(cfg, source = yaml_path, operation = "write")
+
+  list(
+    product = identical(as.character(cfg$mode %||% ""), "product"),
+    set = cfg$set
   )
 }
 
@@ -476,18 +525,61 @@ datom_pull <- function(conn) {
 #' against the current `.datom/manifest.json` to detect new or changed files.
 #' Returns a manifest data frame for review before calling [datom_sync()].
 #'
+#' On a product repo (`mode: product`) it maps the repo's set against source
+#' projects instead -- see "On a product repo" below.
+#'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param path Optional path to input files directory. Defaults to
-#'   `input_files/` inside the repo.
-#' @param pattern Glob pattern for file matching. Default `"*"`.
+#'   `input_files/` inside the repo. Not accepted on a product repo, which reads
+#'   no files.
+#' @param pattern Glob pattern for file matching. Default `"*"`. On a product
+#'   repo it filters source table names instead.
+#' @param sources On a product repo only, and required there: one `datom_conn`,
+#'   or a list of them, for the projects the set's inputs come from. Each
+#'   connection's project name is what members are matched on. Refused on an
+#'   ordinary repo.
 #'
 #' Files whose format is outside datom's ingestion allowlist (flat tabular
 #' formats only) are flagged `"unsupported_format"` up front, without blocking
 #' their allowlisted siblings.
 #'
-#' @return Data frame with columns: name, file, format, original_file_sha,
-#'   status (one of `"new"`, `"changed"`, `"unchanged"`,
+#' @section On a product repo:
+#' A product repo owns one set (named in `.datom/project.yaml`), and this call
+#' compares that set, as stored, with what each source project holds now. It
+#' reads one manifest per source and the stored set; it writes nothing.
+#'
+#' One row per table in the sources whose name matches `pattern`:
+#' * `new` -- no member points at it (every row, when the set has no version
+#'   yet);
+#' * `changed` / `unchanged` -- one member points at it, at an older / the
+#'   current version;
+#' * `ambiguous` -- two or more members point at it (a live table beside a
+#'   frozen baseline, say), so neither will move. Move one with
+#'   [datom_update_members()], narrowing by `member` and `tags`.
+#'
+#' Plus one row for each member the call did not compare:
+#' * `excluded` -- its table is in a source but does not match `pattern`;
+#' * `not_checked` -- its project was not passed in `sources`, or it is itself
+#'   a set.
+#'
+#' The preview never proposes removing a member. A member whose table is no
+#' longer listed in its source is named in the messages and left pinned. Members
+#' in the repo's own project are outputs and get no row: re-derive them, then
+#' move them with [datom_update_members()].
+#'
+#' It stops when `sources` includes the repo's own project, and when a source
+#' connection's project name differs from the name that project's own manifest
+#' records.
+#'
+#' @return On an ordinary repo, a data frame with columns: name, file, format,
+#'   original_file_sha, status (one of `"new"`, `"changed"`, `"unchanged"`,
 #'   `"unsupported_format"`).
+#'
+#'   On a product repo, a data frame with columns `project`, `name`, `kind`,
+#'   `version_from` (`NA` for a new table), `version_to` (`NA` for a member that
+#'   was not compared) and `status` (one of `"new"`, `"changed"`,
+#'   `"unchanged"`, `"ambiguous"`, `"not_checked"`, `"excluded"`). Versions are
+#'   full 64-character strings.
 #' @export
 #'
 #' @examples
@@ -521,7 +613,8 @@ datom_pull <- function(conn) {
 #' }
 datom_sync_manifest <- function(conn,
                                path = NULL,
-                               pattern = "*") {
+                               pattern = "*",
+                               sources = NULL) {
 
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort("{.arg conn} must be a {.cls datom_conn} object from {.fn datom_get_conn}.")
@@ -541,9 +634,22 @@ datom_sync_manifest <- function(conn,
     ))
   }
 
-  # Above the input-directory resolution, so a file accidentally left in
+  # The repo decides which job this call does, and the arguments must agree with
+  # it. Above the input-directory resolution, so a file accidentally left in
   # `input_files/` on a product repo is never scanned, let alone imported.
-  .datom_refuse_import_on_product(conn, "datom_sync_manifest")
+  context <- .datom_sync_context(conn)
+
+  if (isTRUE(context$product)) {
+    if (is.null(sources)) {
+      .datom_refuse_import_on_product(conn, "datom_sync_manifest", context,
+                                      sources_hint = TRUE)
+    }
+    if (!is.null(path)) .datom_refuse_file_arg_on_product("path")
+
+    return(.datom_sync_set_preview(conn, context$set, sources, pattern))
+  }
+
+  if (!is.null(sources)) .datom_refuse_sources_on_ordinary("sources")
 
   # Resolve input directory
   input_dir <- if (is.null(path)) {

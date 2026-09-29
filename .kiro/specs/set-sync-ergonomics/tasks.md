@@ -12,32 +12,28 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1-4 done 2026-09-28. **Resume at task 5**
-(the preview, `datom_sync_manifest(sources = )`); ask the owner before starting it (rule 5d).
-**Its design spot-check is done** (2026-09-28, on the working model at the owner's request): the
-findings are the "Spot-check additions" blocks in design sections 2, 3 and 4. The three open points
-at the end of design section 3 were **all answered by the owner 2026-09-28**: A -- a member excluded
-by `pattern` gets a row with the new status `excluded`; B -- a `new` row the set already holds stops
-as stale; C -- a source whose label disagrees with its manifest's project name stops at the preview.
-Requirements R2.2, R3.2, R3.6 and the new R2.10 carry them.
-**Current test count: 4406** -- what task 5's count must not drop below.
+Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28. **Resume at task 6**
+(apply, `datom_sync(sources = , tags = , x = )`); ask the owner before starting it (rule 5d).
+The design spot-check (2026-09-28) covers it: design section 4's "Spot-check additions" and open
+point B (a `new` row the set already holds stops as stale, R3.6). Task 5's record below lists the
+helpers already in place for it and the one test task 6 must flip.
+**Current test count: 4504** -- what task 6's count must not drop below.
 
 Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R1
-and R2 are task 5) and `design.md` (section 1 lists the code facts already checked; sections 2 and 3
-are task 5, including their spot-check blocks and open points). Before editing `R/`, read
-`dev/engineering-notes.md`, at least "A test can observe a layer that cannot distinguish the two
-behaviours" and "Probing a guard". Each refusal a task adds needs a probe. The owner's original
-prompt is untracked and not needed: every decision is in `requirements.md` and `design.md`.
+and R3 are task 6) and `design.md` (section 1 lists the code facts already checked; section 2 is the
+context branch, section 4 is task 6, and section 3's open point B belongs to it). Before editing
+`R/`, read `dev/engineering-notes.md`, at least "A test can observe a layer that cannot distinguish
+the two behaviours" and "Probing a guard". Each refusal a task adds needs a probe. The owner's
+original prompt is untracked and not needed: every decision is in `requirements.md` and `design.md`.
 
-Where the code a task 5 session needs lives: the two sync verbs and
-`.datom_refuse_import_on_product()` in `R/sync.R`; `.datom_edit_conns()`,
-`.datom_current_artifact_versions()`, `.datom_repoint_member()` and `datom_update_members()` (the
-closest existing sweep, including its "gone" and "shared name" handling) in `R/set-edit.R`;
-`datom_get_set()` in `R/set.R`; `.datom_storage_exists()` in `R/utils-storage.R`. Test fixtures to
-copy: `local_edit_project()` in `tests/testthat/test-set-edit.R` (real repo + bare remote + local
-store, product config) and `sync_product_repo()` in `tests/testthat/test-sync.R`. A second project
-(the source) needs its own store and a connection labelled with its project name; the
-mislabelled-connection test in `test-set-edit.R` builds two stores and is the pattern to follow.
+Where the code a task 6 session needs lives: the two sync verbs, `.datom_sync_context()` and
+`.datom_refuse_import_on_product()` in `R/sync.R`; the preview and its helpers
+(`.datom_sync_read_set()`, `.datom_empty_set()`, the refusal helpers) in `R/sync-set.R`;
+`.datom_edit_conns()`, `.datom_repoint_member()`, `.datom_append_edits()` and
+`datom_update_members()` in `R/set-edit.R`; `datom_add_member()`'s add-to-a-set block in
+`R/set-draft.R`. Test fixture to copy: `ss_project()` / `ss_pair()` in
+`tests/testthat/test-sync-set.R` (a product repo and an ordinary source, each with a real repo, bare
+remote and local store).
 
 ---
 
@@ -141,7 +137,35 @@ mislabelled-connection test in `test-set-edit.R` builds two stores and is the pa
     those: a malformed member still gets the validator's message; a too-new snapshot stops the
     write; a member whose snapshot is missing stops it, with nothing written in each case.
 
-- [ ] **5. Preview: `datom_sync_manifest(sources = )`** (R1, R2; AC1-AC3, AC5-AC7)
+- [x] **5. Preview: `datom_sync_manifest(sources = )`** (R1, R2; AC1-AC3, AC5-AC7)
+  - **Done 2026-09-28, 4504 tests (+98).** `datom_sync_manifest(conn, path = NULL, pattern = "*",
+    sources = NULL)`. `.datom_sync_context()` in `R/sync.R` makes the one gated parse of
+    `.datom/project.yaml`; the verb branches on it right after the conn checks. The product-repo
+    route is `.datom_sync_set_preview()` in the new `R/sync-set.R`. Existing `test-sync.R` tests pass
+    untouched.
+  - Refusal classes, new: `datom_sync_sources_on_ordinary`, `datom_sync_file_arg_on_product`,
+    `datom_sync_own_project_source`, `datom_sync_source_mislabelled`. Reused: `datom_import_on_product`
+    (product repo, no `sources`), `datom_set_undeclared` (product repo naming no set, same class the
+    set write uses), and through `.datom_edit_conns()` / the manifest read, `datom_not_a_conn`,
+    `datom_edit_conn_duplicate`, `datom_edit_manifest_unreadable`.
+  - **The refusal message names `sources =` only for the preview.** `.datom_refuse_import_on_product()`
+    gained `context` and `sources_hint`; `datom_sync()` still calls it without the hint, so it does
+    not advertise an argument it does not take yet. A test pins that ("apply still refuses a product
+    repo until it learns sources"): **task 6 flips it**, and can then drop the `sources_hint` flag.
+  - Choices made here, not in the design: rows come per source in the order passed, table names
+    sorted in C-locale order, then `excluded`, then `not_checked`. A source table whose manifest
+    entry records no current version gets no row and is named in a warning (so is a member pinned to
+    one, through its table's name). Manifest entries with an unusable `kind` get no row.
+  - Built for task 6 and used here: `.datom_current_artifacts()` (name, kind, current version and
+    the manifest's project name from one read; `.datom_current_artifact_versions()` is now built on
+    it), `.datom_empty_set()`, and `.datom_sync_read_set()` (presence probe, then read).
+  - Probes (fixed copy in `/tmp`, `cmp` after the run; control reddened nothing): 29, each reddened
+    its own test -- both context refusals, the hint, the config format check, the undeclared set,
+    the own-project refusal removed and moved after the set read, the mislabel check removed and
+    applied to a manifest with no name, `purrr::map()` for `lapply()`, the presence probe replaced by
+    a caught read, every member placement (set, output, unpassed, gone, excluded, ambiguous), the
+    kind filter in both files, sorting, the pattern, `version_from` on changed rows, each warning
+    block, the excluded count, and bypassing the connection checks.
   - **Escalation flag: design spot-check first.** Done 2026-09-28; see design 2-3 "Spot-check
     additions" and the answered points A and C (R2.2 `excluded`, R2.10).
   - Design 2 and 3. New `R/sync-set.R`; branch in `R/sync.R`. Existing sync tests unchanged.

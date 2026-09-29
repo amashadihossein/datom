@@ -780,6 +780,12 @@ Three cheap habits remove it:
   because each run took its own fresh backup, the per-run copies were of the mutated tree -- the
   hazard above, reached by a different route. A fixed copy taken once beforehand is what recovered
   it. Put the probe body in a function, and `cmp` the tree against the fixed copy after every probe.
+* **`paste0("file: ", character(0))` is `"file: "`, not `character(0)`.** A harness that reports
+  failures as `paste0(f, ": ", failed_tests)` prints one phantom failure per clean file, so the
+  control probe looks red and every count is off by one. Found 2026-09-28 (set-sync-ergonomics
+  task 5). Guard with `if (length(failed_tests))`, and write the harness output to a file rather
+  than reading it off the terminal: cli's progress output carries carriage returns that overwrite
+  lines on screen.
 
 ### A closure leaks a connection only once the connection has been FORCED
 
