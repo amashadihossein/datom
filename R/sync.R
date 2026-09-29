@@ -533,7 +533,7 @@ datom_pull <- function(conn) {
 #'   `input_files/` inside the repo. Not accepted on a product repo, which reads
 #'   no files.
 #' @param pattern Glob pattern for file matching. Default `"*"`. On a product
-#'   repo it filters source table names instead.
+#'   repo it filters source artifact names instead.
 #' @param sources On a product repo only, and required there: one `datom_conn`,
 #'   or a list of them, for the projects the set's inputs come from. Each
 #'   connection's project name is what members are matched on. Refused on an
@@ -548,7 +548,11 @@ datom_pull <- function(conn) {
 #' compares that set, as stored, with what each source project holds now. It
 #' reads one manifest per source and the stored set; it writes nothing.
 #'
-#' One row per table in the sources whose name matches `pattern`:
+#' Tables and sets are treated alike: a set a source holds gets a row, and a
+#' member that is a set is compared exactly as a table member is, so a set built
+#' from other sets syncs the same way.
+#'
+#' One row per artifact in the sources whose name matches `pattern`:
 #' * `new` -- no member points at it (every row, when the set has no version
 #'   yet);
 #' * `changed` / `unchanged` -- one member points at it, at an older / the
@@ -558,11 +562,10 @@ datom_pull <- function(conn) {
 #'   [datom_update_members()], narrowing by `member` and `tags`.
 #'
 #' Plus one row for each member the call did not compare:
-#' * `excluded` -- its table is in a source but does not match `pattern`;
-#' * `not_checked` -- its project was not passed in `sources`, or it is itself
-#'   a set.
+#' * `excluded` -- its artifact is in a source but does not match `pattern`;
+#' * `not_checked` -- its project was not passed in `sources`.
 #'
-#' The preview never proposes removing a member. A member whose table is no
+#' The preview never proposes removing a member. A member whose artifact is no
 #' longer listed in its source is named in the messages and left pinned. Members
 #' in the repo's own project are outputs and get no row: re-derive them, then
 #' move them with [datom_update_members()].
@@ -576,7 +579,7 @@ datom_pull <- function(conn) {
 #'   `"unsupported_format"`).
 #'
 #'   On a product repo, a data frame with columns `project`, `name`, `kind`,
-#'   `version_from` (`NA` for a new table), `version_to` (`NA` for a member that
+#'   `version_from` (`NA` for a new artifact), `version_to` (`NA` for a member that
 #'   was not compared) and `status` (one of `"new"`, `"changed"`,
 #'   `"unchanged"`, `"ambiguous"`, `"not_checked"`, `"excluded"`). Versions are
 #'   full 64-character strings.

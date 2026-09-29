@@ -9,19 +9,22 @@
 #   1. "NO SET YET" IS DECIDED BY A PRESENCE PROBE, NEVER BY A FAILED READ. A
 #      set read aborts the same way for a missing document and for storage that
 #      cannot be reached, so catching its error would report "first version --
-#      every table new" when storage is down. The probe answers absence; its own
+#      every artifact new" when storage is down. The probe answers absence; its own
 #      failure, and any failure after it answers "present", propagates.
 #
 #   2. EVERY MEMBER LANDS IN EXACTLY ONE PLACE. An output (the repo's own
-#      project) gets no row; a member of a project not passed, or one that is a
-#      set, is `not_checked`; a table left its source is named in the messages;
-#      a table filtered out by `pattern` is `excluded`; the rest are the rows the
+#      project) gets no row; a member of a project not passed is `not_checked`;
+#      a member whose artifact left its source is named in the messages; one
+#      filtered out by `pattern` is `excluded`; the rest are the rows the
 #      sources produce. So the frame accounts for every member of every source,
-#      and nothing is silently ignored.
+#      and nothing is silently ignored. Tables and sets are treated alike
+#      throughout: a set built from sets is what sets are for, and a preview
+#      that skipped set members would leave sync the one edit verb unable to
+#      move one.
 #
 #   3. MEMBERS ARE MATCHED TO SOURCES ON THE CONNECTION'S LABEL, AND THE LABEL IS
 #      CHECKED AGAINST THE SOURCE'S OWN MANIFEST. A wrong label would otherwise
-#      show every table as new and every member as not checked, and fail only
+#      show every artifact as new and every member as not checked, and fail only
 #      later. The manifest read is one the preview makes anyway, so the check
 #      costs no IO; a manifest that records no name is not checked.
 #
@@ -167,7 +170,7 @@
 }
 
 
-#' One Source's Tables, After Checking Its Label Against Its Own Manifest
+#' One Source's Artifacts, After Checking Its Label Against Its Own Manifest
 #'
 #' See point 3 of this file's header.
 #'
@@ -185,7 +188,7 @@
         "A connection in {.arg sources} is labelled {.val {label}}, and the \\
          project it reads calls itself {.val {declared}}.",
         "i" = "Members are matched to sources by project name, so with the \\
-               wrong label every table would look new and every member \\
+               wrong label every artifact would look new and every member \\
                unchecked.",
         "i" = "Open the connection for project {.val {declared}} with \\
                {.fn datom_get_conn}, or pass the store for {.val {label}}."
@@ -215,12 +218,12 @@
 #' Map a Product Repo's Set Against Its Sources
 #'
 #' The product-repo route of [datom_sync_manifest()]. Three kinds of read: the
-#' stored set (or none), one manifest per source, nothing per table.
+#' stored set (or none), one manifest per source, nothing per artifact.
 #'
 #' @param conn The product repo's developer connection.
 #' @param set_name The set name `.datom/project.yaml` declares.
 #' @param sources One `datom_conn` or a list of them.
-#' @param pattern Glob filtering source table names.
+#' @param pattern Glob filtering source artifact names.
 #' @return The preview data frame; see [datom_sync_manifest()].
 #' @keywords internal
 .datom_sync_set_preview <- function(conn, set_name, sources, pattern) {
@@ -235,15 +238,17 @@
 
   # `lapply()`, not `purrr::map()`: the mislabelled-source and unreadable-manifest
   # refusals are dispatched on by class, and purrr would re-wrap them.
-  tables <- lapply(names(conns), function(p) {
+  # Tables and sets both; an entry whose kind this build does not know gets no
+  # row, since nothing here could compare or move it.
+  arts <- lapply(names(conns), function(p) {
     art <- .datom_sync_source_artifacts(conns[[p]])
-    art <- art[art$kind %in% "table", , drop = FALSE]
+    art <- art[art$kind %in% .datom_artifact_kinds, , drop = FALSE]
     art <- art[order(art$name, method = "radix"), , drop = FALSE]
     art$project <- rep(p, nrow(art))
     art
   })
-  tables <- do.call(rbind, tables)
-  tables$matches <- .datom_sync_name_matches(tables$name, pattern)
+  arts <- do.call(rbind, arts)
+  arts$matches <- .datom_sync_name_matches(arts$name, pattern)
 
   ids <- lapply(members, .datom_member_id)
   mem <- data.frame(
@@ -257,26 +262,27 @@
 
   # "\r" as the key separator, for the reason `datom_update_members()` uses it:
   # an artifact name may hold a printable separator.
-  table_key <- paste(tables$project, tables$name, sep = "\r")
+  # Keyed on (project, name) and not kind: one project is one namespace, so a
+  # name there is one artifact. A row's `kind` is the source's; apply checks it
+  # against the member it moves.
+  art_key <- paste(arts$project, arts$name, sep = "\r")
   mem_key <- paste(mem$project, mem$name, sep = "\r")
 
   # Where each member goes -- point 2 of this file's header.
   is_output <- mem$project == own
   is_unpassed <- !is_output & !(mem$project %in% names(conns))
-  is_set <- !is_output & !is_unpassed & mem$kind != "table"
-  is_table <- !is_output & !is_unpassed & !is_set
+  is_compared <- !is_output & !is_unpassed
 
-  at <- match(mem_key, table_key)
-  is_gone <- is_table & is.na(at)
-  is_excluded <- is_table & !is_gone & !tables$matches[at]
+  at <- match(mem_key, art_key)
+  is_gone <- is_compared & is.na(at)
+  is_excluded <- is_compared & !is_gone & !arts$matches[at]
 
-  # The rows the sources produce: tables that match the pattern and record a
+  # The rows the sources produce: artifacts that match the pattern and record a
   # current version.
-  listed <- tables[tables$matches & !is.na(tables$current_version), ,
-                   drop = FALSE]
+  listed <- arts[arts$matches & !is.na(arts$current_version), , drop = FALSE]
   listed_key <- paste(listed$project, listed$name, sep = "\r")
 
-  pinned <- lapply(listed_key, function(k) which(is_table & mem_key == k))
+  pinned <- lapply(listed_key, function(k) which(is_compared & mem_key == k))
   n_pinned <- lengths(pinned)
 
   version_from <- vapply(
@@ -297,7 +303,7 @@
   source_rows <- data.frame(
     project = listed$project,
     name = listed$name,
-    kind = rep("table", nrow(listed)),
+    kind = listed$kind,
     version_from = version_from,
     version_to = listed$current_version,
     status = as.character(status),
@@ -319,7 +325,7 @@
   result <- rbind(
     source_rows,
     member_rows(is_excluded, "excluded"),
-    member_rows(is_unpassed | is_set, "not_checked")
+    member_rows(is_unpassed, "not_checked")
   )
   rownames(result) <- NULL
 
@@ -332,12 +338,12 @@
     }
   ))
 
-  # A member pinned to one of these is reported here, and only here: its table
-  # matches the pattern, so it is not `excluded`, and it has no current version
-  # to compare against, so it has no row.
-  unversioned <- tables$matches & is.na(tables$current_version)
-  unversioned_names <- paste0(tables$name[unversioned], " in ",
-                              tables$project[unversioned])
+  # A member pinned to one of these is reported here, and only here: its
+  # artifact matches the pattern, so it is not `excluded`, and it has no current
+  # version to compare against, so it has no row.
+  unversioned <- arts$matches & is.na(arts$current_version)
+  unversioned_names <- paste0(arts$name[unversioned], " in ",
+                              arts$project[unversioned])
 
   .datom_report_sync_preview(
     result = result,
@@ -347,7 +353,6 @@
       listed$name[[ambiguous_at[[1L]]]]
     },
     unpassed = mem[is_unpassed, , drop = FALSE],
-    sets = mem[is_set, , drop = FALSE],
     gone = mem[is_gone, , drop = FALSE],
     unversioned = unversioned_names
   )
@@ -364,20 +369,20 @@
 #' @param result The preview frame.
 #' @param n_sources How many sources were mapped.
 #' @param ambiguous_lines One line per member behind an `ambiguous` row.
-#' @param ambiguous_first The name of the first ambiguous table, for the remedy,
-#'   or `NULL`.
-#' @param unpassed,sets,gone Member rows (`project`, `name`, `kind`, `version`)
-#'   for members of a project not passed, members that are sets, and table
-#'   members no longer listed in their source.
-#' @param unversioned `"name in project"` for tables whose manifest entry records
-#'   no current version.
+#' @param ambiguous_first The name of the first ambiguous artifact, for the
+#'   remedy, or `NULL`.
+#' @param unpassed,gone Member rows (`project`, `name`, `kind`, `version`) for
+#'   members of a project not passed, and members whose artifact is no longer
+#'   listed in their source.
+#' @param unversioned `"name in project"` for artifacts whose manifest entry
+#'   records no current version.
 #' @return Invisibly `NULL`.
 #' @keywords internal
 .datom_report_sync_preview <- function(result, n_sources, ambiguous_lines,
-                                       ambiguous_first, unpassed, sets, gone,
+                                       ambiguous_first, unpassed, gone,
                                        unversioned) {
   count <- function(s) sum(result$status == s)
-  n_tables <- sum(result$status %in% c("new", "changed", "unchanged",
+  n_mapped <- sum(result$status %in% c("new", "changed", "unchanged",
                                        "ambiguous"))
   n_ambiguous <- count("ambiguous")
   n_excluded <- count("excluded")
@@ -387,7 +392,7 @@
     if (n_excluded > 0L) paste0("; ", n_excluded, " excluded by pattern")
   )
   cli::cli_alert_info(
-    "Mapped {n_tables} table{?s} from {n_sources} source{?s}: \\
+    "Mapped {n_mapped} artifact{?s} from {n_sources} source{?s}: \\
      {count('new')} new, {count('changed')} changed, \\
      {count('unchanged')} unchanged{extra}."
   )
@@ -399,7 +404,7 @@
       ambiguous_first
     )
     cli::cli_alert_warning(
-      "{n_ambiguous} table{?s} {?is/are} pinned more than once in the set, so \\
+      "{n_ambiguous} artifact{?s} {?is/are} pinned more than once in the set, so \\
        no member for {?it/them} will move:"
     )
     cli::cli_verbatim(paste0("  ", lines))
@@ -425,21 +430,11 @@
     )
   }
 
-  if (nrow(sets) > 0L) {
-    n <- nrow(sets)
-    cli::cli_alert_warning(
-      "{n} member{?s} not checked: the preview compares tables, and \\
-       {?this member is a set/these members are sets}."
-    )
-    cli::cli_verbatim(sprintf("  %s (set) in %s", sets$name, sets$project))
-    cli::cli_alert_info("Repoint a set member with {.fn datom_update_members}.")
-  }
-
   if (nrow(gone) > 0L) {
     n <- nrow(gone)
     cli::cli_alert_warning(
-      "{n} member{?s} left pinned: {?its table is/their tables are} no longer \\
-       listed in {?its/their} source."
+      "{n} member{?s} left pinned: {?its artifact is/their artifacts are} no \\
+       longer listed in {?its/their} source."
     )
     cli::cli_verbatim(sprintf("  %s (%s) in %s", gone$name, gone$kind,
                               gone$project))
@@ -452,7 +447,7 @@
   if (length(unversioned) > 0L) {
     n <- length(unversioned)
     cli::cli_alert_warning(
-      "{n} table{?s} {?has/have} no row: {?its/their} source manifest records \\
+      "{n} artifact{?s} {?has/have} no row: {?its/their} source manifest records \\
        no current version."
     )
     cli::cli_verbatim(paste0("  ", unversioned))

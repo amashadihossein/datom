@@ -18,8 +18,9 @@ when it records none) and \code{artifacts}, a data frame of \code{name}, \code{k
 The same single manifest read as \code{\link[=.datom_current_artifact_versions]{.datom_current_artifact_versions()}}, and
 the same refusal when it cannot be read -- that function is built on this
 one. The set sync preview needs two things the name-to-version vector drops:
-each entry's \strong{kind}, because a source may hold a set and preview rows are
-tables only, and the \strong{project name the manifest records}, which is how a
-mislabelled source connection is caught before it shows every table as new.
+each entry's \strong{kind}, which each preview row reports and which drops any
+kind this build does not know, and the \strong{project name the manifest records},
+which is how a mislabelled source connection is caught before it shows every
+artifact as new.
 }
 \keyword{internal}

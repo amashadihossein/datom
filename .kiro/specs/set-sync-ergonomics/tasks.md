@@ -12,9 +12,8 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28. **Resume at task 5b** (sets in
-the preview, plus a real set-of-sets test), then task 6 (apply); ask the owner before starting each
-(rule 5d).
+Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, task 5b on 2026-09-29.
+**Resume at task 6** (apply); ask the owner before starting it (rule 5d).
 
 **A cold-start review on 2026-09-28, after task 5, settled everything task 6 needed.** A fresh
 session followed these documents and found no broken references, but found about eight apply
@@ -23,8 +22,8 @@ where it applies, marked "(owner, 2026-09-28)": design section 4 (which rows nee
 stale cases, duplicate rows, kind and project mismatches, what `x =` accepts, the own-project
 refusal, frame checks, tidy-ups) and R3.4 (the not-written line). **The largest change: sets are
 now in scope for sync** (R2.1a, AC17, design 3's "Sets are included" block), which is why task 5b
-exists. There is nothing left to ask before coding 5b or 6.
-**Current test count: 4504** -- what task 5b's count must not drop below.
+exists. There is nothing left to ask before coding 6.
+**Current test count: 4536** -- what task 6's count must not drop below.
 
 Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R2.1a
 and AC17 are task 5b; R1 and R3 are task 6) and `design.md` (section 1 lists the code facts checked
@@ -191,7 +190,27 @@ remote and local store).
     "could not look", on condition classes lost through `purrr::map()` (use `lapply()` where a
     refusal class must reach the caller), and "Probing a guard".
 
-- [ ] **5b. Sets in the preview, and a real set-of-sets test** (R2.1a; AC17, preview half)
+- [x] **5b. Sets in the preview, and a real set-of-sets test** (R2.1a; AC17, preview half)
+  - **Done 2026-09-29, 4536 tests (+32).** Source rows now keep every kind in
+    `.datom_artifact_kinds` (a kind this build does not know still gets no row); members of a
+    passed source are compared whatever their kind, keyed on (`project`, `name`) only, since one
+    project is one namespace. A row's `kind` is the source manifest entry's; apply checks it against
+    the member (design 4). The "members that are sets" warning block and its `sets` argument are
+    gone.
+  - Wording: "artifact" replaces "table" in the summary (`Mapped N artifacts from K sources`), the
+    ambiguous, left-pinned and no-current-version warnings, and the `datom_sync_manifest()` roxygen
+    for the product-repo route (`pattern`, the row list, `excluded`, `not_checked`).
+  - Tests reworked into their opposites: a set member in a source project is `changed` /
+    `unchanged` like a table; a set held by a source gets a row with `kind = "set"`. New: a set
+    member whose set left its source is named as left pinned; a source entry of an unknown kind gets
+    no row (pins the kind filter, which no test covered once it stopped being `"table"` only).
+  - Set-of-sets test, three real projects, no mocks: `imported` table -> `inner-proj` set ->
+    `outer-proj` set pinning the inner set. Reads back, `datom_fetch_member()` returns the inner
+    `datom_set`, `datom_validate()` is valid on both product repos, and after the inner set moves
+    the outer preview shows one `changed` row of kind `set`.
+  - Probes (copy in `/tmp`, workspace untouched; control reddened nothing): source rows tables-only
+    again (3 red), kind filter removed (1), set members dropped from comparison (3), row kind
+    hard-coded to table (3), summary back to "tables" (2) -- each reddened its own tests.
   - **Added 2026-09-28 (owner).** Task 5 shipped a tables-only preview because an out-of-scope line
     said so, with no reason recorded. The owner brought sets in: a set built from sets is the case
     sets exist for. See design 3's "Sets are included" block.

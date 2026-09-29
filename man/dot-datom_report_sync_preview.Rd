@@ -10,7 +10,6 @@
   ambiguous_lines,
   ambiguous_first,
   unpassed,
-  sets,
   gone,
   unversioned
 )
@@ -22,15 +21,15 @@
 
 \item{ambiguous_lines}{One line per member behind an \code{ambiguous} row.}
 
-\item{ambiguous_first}{The name of the first ambiguous table, for the remedy,
-or \code{NULL}.}
+\item{ambiguous_first}{The name of the first ambiguous artifact, for the
+remedy, or \code{NULL}.}
 
-\item{unpassed, sets, gone}{Member rows (\code{project}, \code{name}, \code{kind}, \code{version})
-for members of a project not passed, members that are sets, and table
-members no longer listed in their source.}
+\item{unpassed, gone}{Member rows (\code{project}, \code{name}, \code{kind}, \code{version}) for
+members of a project not passed, and members whose artifact is no longer
+listed in their source.}
 
-\item{unversioned}{\code{"name in project"} for tables whose manifest entry records
-no current version.}
+\item{unversioned}{\code{"name in project"} for artifacts whose manifest entry
+records no current version.}
 }
 \value{
 Invisibly \code{NULL}.

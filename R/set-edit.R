@@ -379,9 +379,10 @@
 #' The same single manifest read as [.datom_current_artifact_versions()], and
 #' the same refusal when it cannot be read -- that function is built on this
 #' one. The set sync preview needs two things the name-to-version vector drops:
-#' each entry's **kind**, because a source may hold a set and preview rows are
-#' tables only, and the **project name the manifest records**, which is how a
-#' mislabelled source connection is caught before it shows every table as new.
+#' each entry's **kind**, which each preview row reports and which drops any
+#' kind this build does not know, and the **project name the manifest records**,
+#' which is how a mislabelled source connection is caught before it shows every
+#' artifact as new.
 #'
 #' @param conn A connection to the project.
 #' @return A list of `project_name` (the name the manifest records, or `NULL`

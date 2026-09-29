@@ -2,7 +2,7 @@
 % Please edit documentation in R/sync-set.R
 \name{.datom_sync_source_artifacts}
 \alias{.datom_sync_source_artifacts}
-\title{One Source's Tables, After Checking Its Label Against Its Own Manifest}
+\title{One Source's Artifacts, After Checking Its Label Against Its Own Manifest}
 \usage{
 .datom_sync_source_artifacts(conn)
 }

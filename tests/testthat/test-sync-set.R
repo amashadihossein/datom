@@ -4,9 +4,10 @@
 # REAL REPOS AND REAL LOCAL STORES, two of them at least: the product repo that
 # owns the set, and a source project whose tables become its inputs. The preview
 # reads the source's manifest from storage and the set from the product repo's
-# storage, so both have to exist for real. A few member placements can only be
-# reached with a hand-built set (a member that is itself a set, from a source
-# project); those swap the set reader for one returning that set.
+# storage, so both have to exist for real. A few set-member cases use a
+# hand-built set (swapping the set reader for one returning it) to pin a version
+# or a missing artifact cheaply; the set-of-sets test at the bottom covers the
+# same comparison with three real projects and no mocks.
 #
 # THREE OF THESE ARE THE TESTS A PLAUSIBLE IMPLEMENTATION PASSES EVERYTHING ELSE
 # WHILE FAILING.
@@ -243,7 +244,8 @@ test_that("the summary line counts each status", {
 
   msg <- ss_messages(datom_sync_manifest(fx$product$conn,
                                          sources = fx$source$conn))
-  expect_match(msg, "Mapped 3 tables from 1 source: 1 new, 1 changed, 1 unchanged",
+  expect_match(msg,
+               "Mapped 3 artifacts from 1 source: 1 new, 1 changed, 1 unchanged",
                fixed = TRUE)
 })
 
@@ -298,7 +300,7 @@ test_that("the same table pinned twice is one ambiguous row naming the fix", {
   expect_true(is.na(lb$version_from))
   expect_identical(lb$version_to, newest_lb)
 
-  expect_match(msg, "1 table is pinned more than once")
+  expect_match(msg, "1 artifact is pinned more than once")
   expect_match(msg, substr(fx$v_lb, 1L, 8L), fixed = TRUE)
   expect_match(msg, substr(new_lb, 1L, 8L), fixed = TRUE)
   expect_match(msg, "datom_update_members(x, conn, member = \"lb\", tags = ",
@@ -381,7 +383,47 @@ test_that("a member from a project not passed is not_checked, with the fix", {
   expect_match(msg, "build the preview again with every source")
 })
 
-test_that("a member that is a set, in a source project, is not_checked", {
+test_that("a member that is a set, in a source project, is compared like a table", {
+  # R2.1a and AC17. The source's manifest lists the set at a newer version than
+  # the member pins, so a preview that skipped set members could not produce
+  # `changed`. The real end-to-end case is the set-of-sets test at the bottom.
+  fx <- ss_pair()
+  ss_edit_manifest(fx$source, function(man) {
+    man$artifacts$bundle <- list(kind = "set",
+                                 current_version = strrep("d", 64L))
+    man$artifacts$frozen <- list(kind = "set",
+                                 current_version = strrep("e", 64L))
+    man
+  })
+  hand_set <- .datom_empty_set("liver-set", "liver-safety")
+  hand_set$members <- list(
+    list(id = list(project = "imported", name = "bundle", kind = "set",
+                   version = strrep("c", 64L))),
+    list(id = list(project = "imported", name = "frozen", kind = "set",
+                   version = strrep("e", 64L)))
+  )
+  local_mocked_bindings(.datom_sync_read_set = function(conn, name) hand_set)
+
+  msg <- ss_messages(m <- datom_sync_manifest(fx$product$conn,
+                                              sources = fx$source$conn))
+
+  bundle <- ss_row(m, "bundle")
+  expect_identical(nrow(bundle), 1L)
+  expect_identical(bundle$status, "changed")
+  expect_identical(bundle$kind, "set")
+  expect_identical(bundle$version_from, strrep("c", 64L))
+  expect_identical(bundle$version_to, strrep("d", 64L))
+
+  frozen <- ss_row(m, "frozen")
+  expect_identical(frozen$status, "unchanged")
+  expect_identical(frozen$kind, "set")
+
+  expect_false("not_checked" %in% m$status)
+  expect_no_match(msg, "not checked")
+  expect_match(msg, "Mapped 4 artifacts", fixed = TRUE)
+})
+
+test_that("a set member whose set left its source is reported, never removed", {
   fx <- ss_pair()
   hand_set <- .datom_empty_set("liver-set", "liver-safety")
   hand_set$members <- list(
@@ -393,17 +435,34 @@ test_that("a member that is a set, in a source project, is not_checked", {
   msg <- ss_messages(m <- datom_sync_manifest(fx$product$conn,
                                               sources = fx$source$conn))
 
-  bundle <- ss_row(m, "bundle")
-  expect_identical(bundle$status, "not_checked")
-  expect_identical(bundle$kind, "set")
-  expect_identical(bundle$version_from, strrep("c", 64L))
-  expect_match(msg, "compares tables")
+  expect_false("bundle" %in% m$name)
+  expect_match(msg, "1 member left pinned")
+  expect_match(msg, "bundle (set) in imported", fixed = TRUE)
 })
 
-test_that("a set held by a source gets no row", {
+test_that("a set held by a source gets a row with its kind", {
   fx <- ss_pair()
   ss_edit_manifest(fx$source, function(man) {
     man$artifacts$bundle <- list(kind = "set",
+                                 current_version = strrep("c", 64L))
+    man
+  })
+
+  m <- ss_preview(fx$product$conn, sources = fx$source$conn)
+  expect_identical(m$name, c("bundle", "dm", "lb"))
+
+  bundle <- ss_row(m, "bundle")
+  expect_identical(bundle$kind, "set")
+  expect_identical(bundle$status, "new")
+  expect_identical(bundle$version_to, strrep("c", 64L))
+  expect_identical(ss_row(m, "dm")$kind, "table")
+})
+
+test_that("a source entry of a kind this build does not know gets no row", {
+  # Nothing here could compare or move it; a newer datom's kind is its concern.
+  fx <- ss_pair()
+  ss_edit_manifest(fx$source, function(man) {
+    man$artifacts$future <- list(kind = "view",
                                  current_version = strrep("c", 64L))
     man
   })
@@ -586,4 +645,59 @@ test_that("the preview writes nothing to storage or git", {
 
   expect_identical(snapshot(), before)
   expect_identical(c(head_of(fx$product), head_of(fx$source)), heads)
+})
+
+
+# === a set built from a stored set ============================================
+
+test_that("a set pinning a stored set writes, reads back, validates and syncs", {
+  # AC17. Three real projects, no mocks: `imported` holds a table; `inner-proj`
+  # is a product repo whose set pins it; `outer-proj` is a product repo whose set
+  # pins the inner SET. Then the inner set moves, and the outer preview has to
+  # see it as `changed`.
+  source <- ss_project("imported", prefix = "ps")
+  inner <- ss_project("inner-proj", "inner-set", "pi")
+  outer <- ss_project("outer-proj", "outer-set", "po")
+
+  v_dm <- ss_table(source, "dm", 3L)
+  ss_write_set(inner, list(ss_member(source, "dm", v_dm)))
+  v_inner <- datom_get_set(inner$conn, "inner-set")$version
+
+  pin <- datom_member(inner$conn, "inner-set", v_inner,
+                      tags = list(type = "input"))
+  expect_identical(pin$id$kind, "set")
+  ss_write_set(outer, list(pin))
+
+  got <- datom_get_set(outer$conn, "outer-set")
+  expect_length(got$members, 1L)
+  expect_identical(got$members[[1L]]$id$project, "inner-proj")
+  expect_identical(got$members[[1L]]$id$name, "inner-set")
+  expect_identical(got$members[[1L]]$id$kind, "set")
+  expect_identical(got$members[[1L]]$id$version, v_inner)
+
+  # Fetching a set member hands back the inner set, not its data.
+  fetched <- suppressMessages(datom_fetch_member(inner$conn, got, "inner-set"))
+  expect_s3_class(fetched, "datom_set")
+  expect_identical(fetched$version, v_inner)
+
+  outer_check <- suppressMessages(datom_validate(outer$conn))
+  expect_true(outer_check$valid)
+  inner_check <- suppressMessages(datom_validate(inner$conn))
+  expect_true(inner_check$valid)
+
+  # The inner set moves: a new table joins it.
+  v_lb <- ss_table(source, "lb", 4L)
+  ss_write_set(inner, list(ss_member(source, "dm", v_dm),
+                           ss_member(source, "lb", v_lb)))
+  v_inner_2 <- datom_get_set(inner$conn, "inner-set")$version
+  expect_false(identical(v_inner_2, v_inner))
+
+  m <- ss_preview(outer$conn, sources = inner$conn)
+  expect_identical(nrow(m), 1L)
+  expect_identical(m$project, "inner-proj")
+  expect_identical(m$name, "inner-set")
+  expect_identical(m$kind, "set")
+  expect_identical(m$status, "changed")
+  expect_identical(m$version_from, v_inner)
+  expect_identical(m$version_to, v_inner_2)
 })

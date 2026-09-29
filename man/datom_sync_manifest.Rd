@@ -14,7 +14,7 @@ datom_sync_manifest(conn, path = NULL, pattern = "*", sources = NULL)
 no files.}
 
 \item{pattern}{Glob pattern for file matching. Default \code{"*"}. On a product
-repo it filters source table names instead.}
+repo it filters source artifact names instead.}
 
 \item{sources}{On a product repo only, and required there: one \code{datom_conn},
 or a list of them, for the projects the set's inputs come from. Each
@@ -31,7 +31,7 @@ original_file_sha, status (one of \code{"new"}, \code{"changed"}, \code{"unchang
 \code{"unsupported_format"}).
 
 On a product repo, a data frame with columns \code{project}, \code{name}, \code{kind},
-\code{version_from} (\code{NA} for a new table), \code{version_to} (\code{NA} for a member that
+\code{version_from} (\code{NA} for a new artifact), \code{version_to} (\code{NA} for a member that
 was not compared) and \code{status} (one of \code{"new"}, \code{"changed"},
 \code{"unchanged"}, \code{"ambiguous"}, \code{"not_checked"}, \code{"excluded"}). Versions are
 full 64-character strings.
@@ -51,7 +51,11 @@ A product repo owns one set (named in \code{.datom/project.yaml}), and this call
 compares that set, as stored, with what each source project holds now. It
 reads one manifest per source and the stored set; it writes nothing.
 
-One row per table in the sources whose name matches \code{pattern}:
+Tables and sets are treated alike: a set a source holds gets a row, and a
+member that is a set is compared exactly as a table member is, so a set built
+from other sets syncs the same way.
+
+One row per artifact in the sources whose name matches \code{pattern}:
 \itemize{
 \item \code{new} -- no member points at it (every row, when the set has no version
 yet);
@@ -64,12 +68,11 @@ frozen baseline, say), so neither will move. Move one with
 
 Plus one row for each member the call did not compare:
 \itemize{
-\item \code{excluded} -- its table is in a source but does not match \code{pattern};
-\item \code{not_checked} -- its project was not passed in \code{sources}, or it is itself
-a set.
+\item \code{excluded} -- its artifact is in a source but does not match \code{pattern};
+\item \code{not_checked} -- its project was not passed in \code{sources}.
 }
 
-The preview never proposes removing a member. A member whose table is no
+The preview never proposes removing a member. A member whose artifact is no
 longer listed in its source is named in the messages and left pinned. Members
 in the repo's own project are outputs and get no row: re-derive them, then
 move them with \code{\link[=datom_update_members]{datom_update_members()}}.

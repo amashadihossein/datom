@@ -13,13 +13,13 @@
 
 \item{sources}{One \code{datom_conn} or a list of them.}
 
-\item{pattern}{Glob filtering source table names.}
+\item{pattern}{Glob filtering source artifact names.}
 }
 \value{
 The preview data frame; see \code{\link[=datom_sync_manifest]{datom_sync_manifest()}}.
 }
 \description{
 The product-repo route of \code{\link[=datom_sync_manifest]{datom_sync_manifest()}}. Three kinds of read: the
-stored set (or none), one manifest per source, nothing per table.
+stored set (or none), one manifest per source, nothing per artifact.
 }
 \keyword{internal}

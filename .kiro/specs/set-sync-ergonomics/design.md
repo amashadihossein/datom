@@ -100,7 +100,8 @@ refuses a set member.
 Own project (R2.5): a source whose label equals the set's own project stops before any read. The
 set's project comes from the developer conn, which reads `.datom/project.yaml`, so it is trustworthy.
 
-Messages: one summary line (`Mapped N tables from K sources: a new, b changed, c unchanged.`), then
+Messages: one summary line (`Mapped N artifacts from K sources: a new, b changed, c unchanged.`;
+"tables" until task 5b), then
 one warning per `ambiguous` / `not_checked` group with its remedy.
 
 **Spot-check additions (2026-09-28, checked against `R/set.R`, `R/set-edit.R`, `R/read_write.R`):**
@@ -148,7 +149,7 @@ one warning per `ambiguous` / `not_checked` group with its remedy.
   | source project, present, does **not** match `pattern` | `excluded` row (point A below) |
 
   "Member" and "present" cover tables and sets alike (task 5b). Task 5 shipped a fourth row, "source
-  project, kind `set` -> `not_checked`", which task 5b removes.
+  project, kind `set` -> `not_checked`", which task 5b removed (2026-09-29).
 
 - **The set's own project** for R2.5 is the developer conn's `project_name`, which on a clone comes
   from `.datom/project.yaml`. Compared against each source's label before any read.
