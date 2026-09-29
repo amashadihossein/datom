@@ -26,25 +26,28 @@ now in scope for sync** (R2.1a, AC17, design 3's "Sets are included" block), whi
 exists. Nothing is left to ask before coding 5c or 6.
 **Current test count: 4687** (after task 6) -- what task 7's count must not drop below.
 
-Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R2.1a
-and AC17 are task 5b; R1 and R3 are task 6) and `design.md` (section 1 lists the code facts checked
-on 2026-09-27, several since changed by tasks 3-5 -- trust the task records and later sections over
-it; section 2 is the context branch, section 3 the preview and task 5b, section 4 is task 6, and
-section 3's open point B belongs to it). Before editing
-`R/`, read `dev/engineering-notes.md`, at least "A test can observe a layer that cannot distinguish
-the two behaviours" and "Probing a guard". Each refusal a task adds needs a probe. The owner's
-original prompt is untracked and not needed: every decision is in `requirements.md` and `design.md`.
+Starting cold (task 7): `git checkout spec/set-sync-ergonomics && git pull`, then read
+`requirements.md` R8 and `design.md` section 9 (the agreed vignette shape). The verbs it uses are
+all shipped: `datom_sync_manifest(conn, sources = )` and `datom_sync(conn, m, sources = , tags = ,
+x = )` (tasks 5-6), `datom_parent(x = )` (task 2), `datom_add_member(conn = )` on any set (tasks 3
+and 5c), and `datom_write_set(conn, x)` (task 5c). Their roxygen is the reference for
+arguments; the task 6 record below lists apply's refusals. **Task 7 changes no `R/` code**. If the
+vignette needs an API change, stop and raise it with the owner.
 
-Where the code a task 6 session needs lives: the two sync verbs, `.datom_sync_context()` and
-`.datom_refuse_import_on_product()` in `R/sync.R`; the preview and its helpers
-(`.datom_sync_read_set()`, the refusal helpers) in `R/sync-set.R`;
-`.datom_edit_conns()`, `.datom_repoint_member()`, `.datom_append_edits()` and
-`datom_update_members()` in `R/set-edit.R`; `.datom_empty_set()` and the end of
-`datom_add_member()` (the add steps to factor out, design 4) in `R/set-draft.R`; the write's
-set-belongs-here checks, `.datom_reconcile_set_name()` and `.datom_check_set_project()`, in
-`R/set.R`. Test fixture to copy: `ss_project()` / `ss_pair()` in
-`tests/testthat/test-sync-set.R` (a product repo and an ordinary source, each with a real repo, bare
-remote and local store).
+Before editing the vignette, read `dev/engineering-notes.md` "Vignette output comes from running
+the vignette's own chunks, not a copy". Two points from it matter here. **Label every chunk**: the
+runner finds chunks by label. **Assign every call that returns visibly**: on a product repo
+`datom_sync()` now returns a `datom_set`, which prints if left bare. The runner is
+`dev/e2e-vignettes-s3.R`; its header says how it runs the chunks and which labels it special-cases
+(`derive-script` among them). Offline dry run:
+`DATOM_E2E_BACKEND=local Rscript dev/e2e-vignettes-s3.R < /dev/null`, or source it from a session.
+It writes `transcript-local.md` to `DATOM_E2E_OUT`. Versions are content hashes, so the local run
+predicts the real run's versions exactly.
+
+Files: `vignettes/citable-sets.Rmd` (rewritten), `dev/e2e-sets.R` (new claims for the sync and
+parent verbs; offline, `Rscript dev/e2e-sets.R`). `vignettes/start-on-s3.Rmd` must **not** be
+edited (R8.3): its chunks run first in the same walk, and the check is that their output still
+matches the recorded blocks.
 
 ---
 
