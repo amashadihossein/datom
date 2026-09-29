@@ -159,11 +159,14 @@ Each has a default the agent takes if the owner says nothing. Record the answer 
   showed. The owner's framing: a push refused because the remote moved. So the message's remedy is
   the pull-and-retry equivalent: build the preview again from the current set. R3.6 extended to
   cover it.
-- **C. A source connection whose label disagrees with the project its manifest declares.** The
-  preview already reads that manifest, which records `project_name`. Default: stop at preview naming
-  both, when the manifest names a project and it differs; carry on when it names none (older repos).
-  Without it, a mislabelled source shows every table `new` and every member `not_checked`, and only
-  fails later at apply. Alternative: leave it to apply's existing declared-project check.
+- **C. A source connection whose label disagrees with the project its manifest declares.**
+  **Answered 2026-09-28 (owner): stop at the preview**, class `datom_sync_source_mislabelled`, naming
+  the connection's label and the manifest's `project_name`. Uses the manifest read the preview makes
+  anyway, so no extra IO. When the manifest records no `project_name` (older repos), carry on. Without
+  it, a mislabelled source shows every table `new` and every member `not_checked`, and fails only
+  later at apply. Apply keeps its own declared-project check for hand-built frames. New R2.10.
+  **Probe note:** the test must use a store whose manifest really names another project; a fixture
+  where label and manifest agree cannot redden when the check is removed.
 
 ## 4. Applying (R3)
 

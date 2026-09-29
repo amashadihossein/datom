@@ -59,6 +59,9 @@ in the set, so a table newly onboarded in a source is never picked up.
   build the manifest again with every source.
 - R2.8 **First version.** With no set yet, every row is `new`.
 - R2.9 Saves nothing.
+- R2.10 **A mislabelled source stops** (added 2026-09-28). When a source connection's project name
+  differs from the name its own manifest records, the preview stops and names both. A manifest that
+  records no name is not checked.
 
 ### R3. Applying (`datom_sync(conn, manifest, sources = , tags = , x = )`)
 
@@ -129,12 +132,14 @@ in the set, so a table newly onboarded in a source is never picked up.
 - [ ] AC2 A preview shows `new` / `changed` / `unchanged` with from/to versions and never a removal.
 - [ ] AC3 A table added to a source appears as `new` on the next preview.
 - [ ] AC4 `datom_sync()` accepts a row subset, and a hand-built frame with the right columns.
-- [ ] AC5 Own project as a source stops; an unpassed source project shows `not_checked` with the fix.
+- [ ] AC5 Own project as a source stops; an unpassed source project shows `not_checked` with the fix;
+      a member excluded by `pattern` shows `excluded` and does not move; a mislabelled source stops.
 - [ ] AC6 A duplicated table shows `ambiguous` and neither member moves.
 - [ ] AC7 First version: every row `new`, result is a versionless set with the declared name.
 - [ ] AC8 Sync saves nothing and prints the not-written line; the next set write's commit message
       names adds and repoints.
-- [ ] AC9 A preview made stale by a set change stops at apply.
+- [ ] AC9 A preview made stale by a set change stops at apply -- a moved `changed` member, and a
+      `new` table the set has since gained.
 - [ ] AC10 `datom_add_member()` on a `datom_set`, by record and by name with `conn`, records the add.
 - [ ] AC11 `datom_parent(x = )` picks what `datom_fetch_member()` picks; ambiguous and set-kind stop;
       several tables return a list; existing calls unchanged.
