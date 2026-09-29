@@ -4,24 +4,52 @@
 \alias{datom_sync}
 \title{Sync Files to datom Repository}
 \usage{
-datom_sync(conn, manifest, continue_on_error = TRUE)
+datom_sync(
+  conn,
+  manifest,
+  continue_on_error = TRUE,
+  sources = NULL,
+  tags = list(type = "input"),
+  x = NULL
+)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
-\item{manifest}{Data frame from \code{\link[=datom_sync_manifest]{datom_sync_manifest()}}, with columns
-\code{name}, \code{file}, \code{format}, \code{original_file_sha}, \code{status}.}
+\item{manifest}{Data frame from \code{\link[=datom_sync_manifest]{datom_sync_manifest()}}. On an ordinary repo,
+with columns \code{name}, \code{file}, \code{format}, \code{original_file_sha}, \code{status}. On a
+product repo, the set preview: \code{project}, \code{name}, \code{kind}, \code{version_from},
+\code{version_to}, \code{status}. Any subset of its rows will do.}
 
 \item{continue_on_error}{If \code{TRUE} (default), continues processing
-remaining tables when one fails. If \code{FALSE}, stops on first error.
+remaining tables when one fails. If \code{FALSE}, stops on first error. Not
+accepted on a product repo, where one failure stops the call and nothing
+has been written.}
+
+\item{sources}{On a product repo only, and required there: one \code{datom_conn},
+or a list of them, for the projects named by the rows being applied -- the
+same connections the preview was built with. Refused on an ordinary repo.}
+
+\item{tags}{On a product repo only: the labels given to members added by
+\code{new} rows. Default \code{list(type = "input")}. A repointed member keeps its
+own labels. Refused on an ordinary repo.}
+
+\item{x}{On a product repo only: the \code{datom_set} to apply the preview to,
+from \code{\link[=datom_get_set]{datom_get_set()}} or \code{\link[=datom_assemble_set]{datom_assemble_set()}}. Omitted, the repo's
+stored set is read, or an empty one used when it has never been written.
+Refused on an ordinary repo.
 
 Rows flagged \code{"unsupported_format"} by \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} are reported
 as \code{result = "error"} with the recourse in the \code{error} column; the rest of
 the batch still processes.}
 }
 \value{
-The manifest data frame augmented with \code{result} and \code{error} columns.
-\code{result} is \code{"success"}, \code{"skipped"}, or \code{"error"}.
+On an ordinary repo, the manifest data frame augmented with \code{result}
+and \code{error} columns. \code{result} is \code{"success"}, \code{"skipped"}, or \code{"error"}.
+
+On a product repo, the updated \code{datom_set}, with what changed appended to
+its \code{datom_edits} attribute. Its \code{version} and \code{data_sha} are emptied when
+any row was applied.
 }
 \description{
 Processes new/changed files from a manifest produced by
@@ -30,6 +58,38 @@ a data frame, and calls \code{\link[=datom_write]{datom_write()}} to store as pa
 metadata. Updates the local \code{.datom/manifest.json} after each successful
 write.
 }
+\details{
+On a product repo (\code{mode: product}) it applies a preview of the repo's set
+instead -- see "On a product repo" below.
+}
+\section{On a product repo}{
+
+A product repo owns one set, and this call applies a preview from
+\code{\link[=datom_sync_manifest]{datom_sync_manifest()}} to it: each \code{new} row adds a member at \code{version_to},
+labelled with \code{tags}, and each \code{changed} row repoints the member it names
+from \code{version_from} to \code{version_to}, keeping that member's labels exactly.
+Rows of any other status do nothing. Filter the preview first to apply only
+part of it -- \code{subset(m, name != "lb")} -- or build the frame by hand with the
+same columns.
+
+\strong{Nothing is written.} The set comes back edited, and it is stored only when
+you pass it to \code{\link[=datom_write_set]{datom_write_set()}}; the call ends by saying so. The write's
+default commit message then names what was added and repointed.
+
+Every member added is read from its source first, which confirms the version
+exists and records the project that wrote it. The call stops, before
+changing anything, when:
+\itemize{
+\item the set has moved since the preview was built -- a \code{changed} row's member
+is no longer at \code{version_from}, or a \code{new} row's artifact is already in the
+set. Build the preview again from the current set;
+\item a row's \code{kind} or \code{project} disagrees with the artifact it names;
+\item a \code{new} or \code{changed} row names a project with no connection in \code{sources},
+or the same artifact appears in two such rows;
+\item \code{sources} includes the repo's own project, whose members are outputs.
+}
+}
+
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
 # local directory for object storage. File import needs the optional

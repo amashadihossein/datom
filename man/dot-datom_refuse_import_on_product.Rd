@@ -4,24 +4,13 @@
 \alias{.datom_refuse_import_on_product}
 \title{Refuse the File-Import Path on a Product Repo}
 \usage{
-.datom_refuse_import_on_product(
-  conn,
-  verb,
-  context = .datom_sync_context(conn),
-  sources_hint = FALSE
-)
+.datom_refuse_import_on_product(verb, context)
 }
 \arguments{
-\item{conn}{A \code{datom_conn} object with a local path.}
+\item{verb}{Name of the sync verb being refused, for the message.}
 
-\item{verb}{Name of the import verb being refused, for the message.}
-
-\item{context}{What \code{\link[=.datom_sync_context]{.datom_sync_context()}} read. Passed in by a caller that
-has already read it, so one call makes one gated parse.}
-
-\item{sources_hint}{\code{TRUE} when the refused verb has a set path the caller
-can take instead, reached by passing \verb{sources =}. The message then names
-that route rather than only the write verbs.}
+\item{context}{What \code{\link[=.datom_sync_context]{.datom_sync_context()}} read, so one call makes one gated
+parse.}
 }
 \value{
 Invisibly \code{NULL}. Aborts with class \code{datom_import_on_product} when the
@@ -49,7 +38,7 @@ this file makes this a new \emph{gated} parse: every site that reads
 interpret the file acts on fields it has misread. Skipping that step here would
 reopen exactly that hole, on a path that writes.
 
-\strong{Called from both import verbs, not only the first.} \code{\link[=datom_sync]{datom_sync()}} takes a
+\strong{Called from both sync verbs, not only the first.} \code{\link[=datom_sync]{datom_sync()}} takes a
 manifest data frame, so a caller can hand it rows that a refusing
 \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} would never have produced.
 
@@ -57,5 +46,9 @@ manifest data frame, so a caller can hand it rows that a refusing
 file dropped into \verb{input_files/} by accident would otherwise be imported, which
 is the thing this exists to prevent; the unhelpful no-op only happened when the
 directory was empty.
+
+Both verbs have a set route on a product repo, reached by passing
+\verb{sources =}, so the message names that route rather than only the write
+verbs.
 }
 \keyword{internal}

@@ -274,6 +274,41 @@ datom_assemble_set <- function(conn, name = NULL, tags = NULL) {
 }
 
 
+#' Append One Member Record to a Set, as an Edit
+#'
+#' The three steps every addition takes -- a `$fetch` link, the set's version
+#' forgotten, an `add` row in the edit log -- in one place, so
+#' [datom_add_member()] and the set route of [datom_sync()] cannot drift apart
+#' in what they record. See points 5 and 6 of this file's header. **It prints
+#' nothing**: each caller says "nothing has been written" once, which for sync
+#' means once per call rather than once per added member.
+#'
+#' The link goes through the shared factory, never inline, so no frame holding
+#' a connection lands on its parent chain.
+#'
+#' @param x A `datom_set`.
+#' @param record A member record, already validated and checked for clashes.
+#' @return `x`, one member longer.
+#' @keywords internal
+.datom_set_add_record <- function(x, record) {
+  id <- .datom_member_id(record)
+  record$fetch <- .datom_member_as_link(record)
+
+  x$members <- c(x$members, list(record))
+  x <- .datom_forget_set_identity(x)
+
+  .datom_append_edits(x, data.frame(
+    action = "add",
+    project = id$project,
+    name = id$name,
+    kind = id$kind,
+    from = NA_character_,
+    to = id$version,
+    stringsAsFactors = FALSE
+  ))
+}
+
+
 #' Add one member to a set
 #'
 #' Declares one member and appends it to a set -- an empty one from
@@ -519,23 +554,7 @@ datom_add_member <- function(x, member, version = NULL, tags = NULL,
     return(x)
   }
 
-  # An edit, logged and reported like the other edit verbs -- see points 5 and 6
-  # of this file's header. The link goes through the shared factory, never
-  # inline, so no frame holding a connection lands on its parent chain.
-  id <- .datom_member_id(record)
-  record$fetch <- .datom_member_as_link(record)
-
-  x$members <- c(x$members, list(record))
-  x <- .datom_forget_set_identity(x)
-  x <- .datom_append_edits(x, data.frame(
-    action = "add",
-    project = id$project,
-    name = id$name,
-    kind = id$kind,
-    from = NA_character_,
-    to = id$version,
-    stringsAsFactors = FALSE
-  ))
+  x <- .datom_set_add_record(x, record)
 
   cli::cli_alert_info(
     "Nothing has been written. Write the set with \\

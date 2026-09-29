@@ -422,7 +422,7 @@ datom_pull <- function(conn) {
 #' interpret the file acts on fields it has misread. Skipping that step here would
 #' reopen exactly that hole, on a path that writes.
 #'
-#' **Called from both import verbs, not only the first.** [datom_sync()] takes a
+#' **Called from both sync verbs, not only the first.** [datom_sync()] takes a
 #' manifest data frame, so a caller can hand it rows that a refusing
 #' [datom_sync_manifest()] would never have produced.
 #'
@@ -431,19 +431,17 @@ datom_pull <- function(conn) {
 #' is the thing this exists to prevent; the unhelpful no-op only happened when the
 #' directory was empty.
 #'
-#' @param conn A `datom_conn` object with a local path.
-#' @param verb Name of the import verb being refused, for the message.
-#' @param context What [.datom_sync_context()] read. Passed in by a caller that
-#'   has already read it, so one call makes one gated parse.
-#' @param sources_hint `TRUE` when the refused verb has a set path the caller
-#'   can take instead, reached by passing `sources =`. The message then names
-#'   that route rather than only the write verbs.
+#' Both verbs have a set route on a product repo, reached by passing
+#' `sources =`, so the message names that route rather than only the write
+#' verbs.
+#'
+#' @param verb Name of the sync verb being refused, for the message.
+#' @param context What [.datom_sync_context()] read, so one call makes one gated
+#'   parse.
 #' @return Invisibly `NULL`. Aborts with class `datom_import_on_product` when the
 #'   repo declares `mode: product`.
 #' @keywords internal
-.datom_refuse_import_on_product <- function(conn, verb,
-                                            context = .datom_sync_context(conn),
-                                            sources_hint = FALSE) {
+.datom_refuse_import_on_product <- function(verb, context) {
   if (!isTRUE(context$product)) return(invisible(NULL))
 
   declared_set <- context$set
@@ -454,30 +452,23 @@ datom_pull <- function(conn) {
      {.file .datom/project.yaml}."
   }
 
-  if (isTRUE(sources_hint)) {
-    cli::cli_abort(
-      c(
-        "This repo declares {.code mode: product}, so {.fn {verb}} maps its \\
-         set against source projects rather than scanning files, and no \\
-         {.arg sources} was given.",
-        "i" = "Pass one connection per project the set's inputs come from: \\
-               {.code {verb}(conn, sources = list(conn_source))}.",
-        "i" = "Outputs are not mapped: write a derived table with \\
-               {.fn datom_write}, then collect the versions into the repo's \\
-               set with {.fn datom_write_set}.",
-        "i" = set_line
-      ),
-      class = "datom_import_on_product"
-    )
+  # The apply verb also takes the preview it applies, so its call shape differs.
+  call_hint <- if (identical(verb, "datom_sync")) {
+    "datom_sync(conn, manifest, sources = list(conn_source))"
+  } else {
+    paste0(verb, "(conn, sources = list(conn_source))")
   }
 
   cli::cli_abort(
     c(
-      "{.fn {verb}} onboards source files, and this repo declares \\
-       {.code mode: product}.",
-      "x" = "A product repo builds its artifacts; it does not import them.",
-      "i" = "Write a derived table with {.fn datom_write}, then collect the \\
-             versions into the repo's set with {.fn datom_write_set}.",
+      "This repo declares {.code mode: product}, so {.fn {verb}} works on its \\
+       set against source projects rather than importing files, and no \\
+       {.arg sources} was given.",
+      "i" = "Pass one connection per project the set's inputs come from: \\
+             {.code {call_hint}}.",
+      "i" = "Outputs are not mapped: write a derived table with \\
+             {.fn datom_write}, then collect the versions into the repo's \\
+             set with {.fn datom_write_set}.",
       "i" = set_line
     ),
     class = "datom_import_on_product"
@@ -644,8 +635,7 @@ datom_sync_manifest <- function(conn,
 
   if (isTRUE(context$product)) {
     if (is.null(sources)) {
-      .datom_refuse_import_on_product(conn, "datom_sync_manifest", context,
-                                      sources_hint = TRUE)
+      .datom_refuse_import_on_product("datom_sync_manifest", context)
     }
     if (!is.null(path)) .datom_refuse_file_arg_on_product("path")
 
@@ -772,18 +762,63 @@ datom_sync_manifest <- function(conn,
 #' metadata. Updates the local `.datom/manifest.json` after each successful
 #' write.
 #'
+#' On a product repo (`mode: product`) it applies a preview of the repo's set
+#' instead -- see "On a product repo" below.
+#'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
-#' @param manifest Data frame from [datom_sync_manifest()], with columns
-#'   `name`, `file`, `format`, `original_file_sha`, `status`.
+#' @param manifest Data frame from [datom_sync_manifest()]. On an ordinary repo,
+#'   with columns `name`, `file`, `format`, `original_file_sha`, `status`. On a
+#'   product repo, the set preview: `project`, `name`, `kind`, `version_from`,
+#'   `version_to`, `status`. Any subset of its rows will do.
 #' @param continue_on_error If `TRUE` (default), continues processing
-#'   remaining tables when one fails. If `FALSE`, stops on first error.
+#'   remaining tables when one fails. If `FALSE`, stops on first error. Not
+#'   accepted on a product repo, where one failure stops the call and nothing
+#'   has been written.
+#' @param sources On a product repo only, and required there: one `datom_conn`,
+#'   or a list of them, for the projects named by the rows being applied -- the
+#'   same connections the preview was built with. Refused on an ordinary repo.
+#' @param tags On a product repo only: the labels given to members added by
+#'   `new` rows. Default `list(type = "input")`. A repointed member keeps its
+#'   own labels. Refused on an ordinary repo.
+#' @param x On a product repo only: the `datom_set` to apply the preview to,
+#'   from [datom_get_set()] or [datom_assemble_set()]. Omitted, the repo's
+#'   stored set is read, or an empty one used when it has never been written.
+#'   Refused on an ordinary repo.
 #'
 #' Rows flagged `"unsupported_format"` by [datom_sync_manifest()] are reported
 #' as `result = "error"` with the recourse in the `error` column; the rest of
 #' the batch still processes.
 #'
-#' @return The manifest data frame augmented with `result` and `error` columns.
-#'   `result` is `"success"`, `"skipped"`, or `"error"`.
+#' @section On a product repo:
+#' A product repo owns one set, and this call applies a preview from
+#' [datom_sync_manifest()] to it: each `new` row adds a member at `version_to`,
+#' labelled with `tags`, and each `changed` row repoints the member it names
+#' from `version_from` to `version_to`, keeping that member's labels exactly.
+#' Rows of any other status do nothing. Filter the preview first to apply only
+#' part of it -- `subset(m, name != "lb")` -- or build the frame by hand with the
+#' same columns.
+#'
+#' **Nothing is written.** The set comes back edited, and it is stored only when
+#' you pass it to [datom_write_set()]; the call ends by saying so. The write's
+#' default commit message then names what was added and repointed.
+#'
+#' Every member added is read from its source first, which confirms the version
+#' exists and records the project that wrote it. The call stops, before
+#' changing anything, when:
+#' * the set has moved since the preview was built -- a `changed` row's member
+#'   is no longer at `version_from`, or a `new` row's artifact is already in the
+#'   set. Build the preview again from the current set;
+#' * a row's `kind` or `project` disagrees with the artifact it names;
+#' * a `new` or `changed` row names a project with no connection in `sources`,
+#'   or the same artifact appears in two such rows;
+#' * `sources` includes the repo's own project, whose members are outputs.
+#'
+#' @return On an ordinary repo, the manifest data frame augmented with `result`
+#'   and `error` columns. `result` is `"success"`, `"skipped"`, or `"error"`.
+#'
+#'   On a product repo, the updated `datom_set`, with what changed appended to
+#'   its `datom_edits` attribute. Its `version` and `data_sha` are emptied when
+#'   any row was applied.
 #' @export
 #'
 #' @examples
@@ -819,7 +854,10 @@ datom_sync_manifest <- function(conn,
 #' }
 datom_sync <- function(conn,
                       manifest,
-                      continue_on_error = TRUE) {
+                      continue_on_error = TRUE,
+                      sources = NULL,
+                      tags = list(type = "input"),
+                      x = NULL) {
 
   # --- validation ---
   if (!inherits(conn, "datom_conn")) {
@@ -840,6 +878,29 @@ datom_sync <- function(conn,
     ))
   }
 
+  # The repo decides which job this call does, and the arguments must agree with
+  # it. Above the manifest column check, so a product repo handed any frame
+  # without `sources` gets the refusal naming `sources =`, not a list of
+  # file-import columns. Independently of datom_sync_manifest(), because this
+  # verb takes a data frame: a caller can hand it rows a refusing scan would
+  # never have produced.
+  context <- .datom_sync_context(conn)
+
+  if (isTRUE(context$product)) {
+    if (is.null(sources)) .datom_refuse_import_on_product("datom_sync", context)
+    # `missing()`, not a value test: the default is a real value, so only
+    # whether the caller typed it says they believed it would do something.
+    if (!missing(continue_on_error)) {
+      .datom_refuse_file_arg_on_product("continue_on_error")
+    }
+
+    return(.datom_sync_set_apply(conn, context$set, manifest, sources, tags, x))
+  }
+
+  if (!is.null(sources)) .datom_refuse_sources_on_ordinary("sources")
+  if (!missing(tags)) .datom_refuse_sources_on_ordinary("tags")
+  if (!is.null(x)) .datom_refuse_sources_on_ordinary("x")
+
   if (!is.data.frame(manifest)) {
     cli::cli_abort("{.arg manifest} must be a data frame from {.fn datom_sync_manifest}.")
   }
@@ -852,10 +913,6 @@ datom_sync <- function(conn,
       "i" = "Use {.fn datom_sync_manifest} to generate a valid manifest."
     ))
   }
-
-  # Independently of datom_sync_manifest(), because this verb takes a data frame:
-  # a caller can hand it rows that a refusing scan would never have produced.
-  .datom_refuse_import_on_product(conn, "datom_sync")
 
   .datom_check_rio()
 

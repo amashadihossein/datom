@@ -598,6 +598,13 @@ suite that only checks that *something* failed.
   purrr's wrapper while a caller's `tryCatch(my_class = )` never fires. Found probing
   `datom_parent(x = )` (2026-09-28): swapping `lapply()` for `purrr::map()` reddened nothing until
   `inherit = FALSE` was added.
+- **`purrr::reduce()` does NOT wrap, so the `map()` rule does not extend to it.** Checked on purrr
+  1.2.1 (2026-09-29, set-sync-ergonomics task 6): an error thrown inside `reduce()`'s function
+  reaches the caller with its own class first, while the same error from `map()` arrives as
+  `purrr_error_indexed`. The apply loop of `datom_sync()` was first written with base `Reduce()`
+  "to keep the class", and the probe swapping in `purrr::reduce()` reddened nothing, even under
+  `inherit = FALSE`. So the choice guarded nothing. The loop now uses `purrr::reduce()`, as the
+  conventions ask. Probe the claim before writing a comment that depends on it.
 ### Adding a field to a metadata document is not the same size of change on each list
 
 Landed 2026-09-10 with `kind` (which kind of artifact the document describes) entering per-artifact
@@ -780,6 +787,11 @@ Three cheap habits remove it:
   because each run took its own fresh backup, the per-run copies were of the mutated tree -- the
   hazard above, reached by a different route. A fixed copy taken once beforehand is what recovered
   it. Put the probe body in a function, and `cmp` the tree against the fixed copy after every probe.
+* **An interrupted tool wait does not stop the harness.** Found 2026-09-29 (set-sync-ergonomics
+  task 6): the agent's wait on a probe run was cancelled partway through, and the Python driver
+  and its current `Rscript` child kept running and kept rewriting `R/`. So after any interruption,
+  check `ps` for the driver before touching or comparing the tree. Restoring by hand while it runs
+  loses to its next probe. Let it finish, or kill it, then `cmp` against the fixed copy.
 * **`paste0("file: ", character(0))` is `"file: "`, not `character(0)`.** A harness that reports
   failures as `paste0(f, ": ", failed_tests)` prints one phantom failure per clean file, so the
   control probe looks red and every count is off by one. Found 2026-09-28 (set-sync-ergonomics

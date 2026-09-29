@@ -29,7 +29,16 @@
 #      costs no IO; a manifest that records no name is not checked.
 #
 #   4. NOTHING HERE WRITES. The preview is a report, so it needs no confirmation
-#      prompt, and a refusal anywhere leaves nothing behind.
+#      prompt, and a refusal anywhere leaves nothing behind. Apply hands back an
+#      edited set; `datom_write_set()` stays the only thing that stores one.
+#
+#   5. APPLY TRUSTS THE FRAME'S SHAPE, NEVER ITS FACTS. It takes any rows with
+#      the right columns -- a subset, a hand-built frame -- so every fact a row
+#      states is re-checked before it lands: the member it moves must still be
+#      where the preview saw it (else the preview is stale, like a push refused
+#      because the remote moved), and a new member is read from its source,
+#      which confirms its version exists and records its project and kind. Every
+#      check that needs no read runs before the first read.
 
 
 #' Refuse `sources =` (or Another Set-Path Argument) on an Ordinary Repo
@@ -135,7 +144,7 @@
     c(
       "{.arg sources} includes this repo's own project, {.val {own}}.",
       "i" = "Tables in the set's own project are its outputs, derived from the \\
-             inputs, so the preview does not map them.",
+             inputs, so sync does not map or move them.",
       "i" = "Re-derive an output, write it, then move it with \\
              {.code datom_update_members(x, conn, tags = list(type = \"output\"))}."
     ),
@@ -429,4 +438,446 @@
   }
 
   invisible(NULL)
+}
+
+
+# --- applying a preview -----------------------------------------------------------
+
+#' The Columns a Set Sync Preview Carries, in Order
+#'
+#' @return A character vector.
+#' @keywords internal
+.datom_sync_preview_cols <- function() {
+  c("project", "name", "kind", "version_from", "version_to", "status")
+}
+
+
+#' A Preview Frame Checked for Shape and Values, as Plain Text Columns
+#'
+#' Columns and values only, never where the frame came from: a subset or a
+#' hand-built frame is as good as the preview itself. Every check runs before
+#' any read.
+#'
+#' Values are checked only on the rows apply acts on (`new`, `changed`); the
+#' others do nothing, so a hand-trimmed `not_checked` row is harmless. A short
+#' `version_from` would otherwise fail the exact comparison later and stop as
+#' stale, naming the wrong problem.
+#'
+#' @param manifest What the caller passed.
+#' @return A data frame of the six preview columns, each character.
+#' @keywords internal
+.datom_sync_apply_frame <- function(manifest) {
+  cols <- .datom_sync_preview_cols()
+  remedy <- "Build it with {.code datom_sync_manifest(conn, sources = )}."
+
+  if (!is.data.frame(manifest)) {
+    cli::cli_abort(
+      c(
+        "{.arg manifest} must be a data frame: the set preview from \\
+         {.fn datom_sync_manifest}, or any subset of its rows.",
+        "i" = "You passed {.cls {class(manifest)}}.",
+        "i" = remedy
+      ),
+      class = "datom_sync_manifest_invalid"
+    )
+  }
+
+  missing_cols <- setdiff(cols, names(manifest))
+  if (length(missing_cols) > 0L) {
+    file_shaped <- all(c("file", "format") %in% names(manifest))
+    cli::cli_abort(
+      c(
+        "{.arg manifest} is missing column{?s} {.val {missing_cols}}.",
+        "i" = if (file_shaped) {
+          "It looks like a file-import manifest, which is what an ordinary \\
+           repo's sync takes. This is a product repo, so sync applies a \\
+           preview of its set."
+        },
+        "i" = "A set preview has columns {.val {cols}}.",
+        "i" = remedy
+      ),
+      class = "datom_sync_manifest_invalid"
+    )
+  }
+
+  rows <- data.frame(
+    lapply(manifest[cols], as.character),
+    stringsAsFactors = FALSE
+  )
+  names(rows) <- cols
+  rownames(rows) <- NULL
+
+  statuses <- c("new", "changed", "unchanged", "ambiguous", "not_checked",
+                "excluded")
+  is_full <- function(v) !is.na(v) & grepl("^[0-9a-f]{64}$", v)
+  is_text <- function(v) !is.na(v) & nzchar(v)
+
+  acts <- rows$status %in% c("new", "changed")
+  changed <- rows$status %in% "changed"
+
+  problems <- list(
+    list(bad = !rows$status %in% statuses,
+         what = paste0("status is not one of ",
+                       paste(statuses, collapse = ", "))),
+    list(bad = acts & !is_text(rows$project), what = "project is empty"),
+    list(bad = acts & !is_text(rows$name), what = "name is empty"),
+    list(bad = acts & !rows$kind %in% .datom_artifact_kinds,
+         what = "kind is not table or set"),
+    list(bad = acts & !is_full(rows$version_to),
+         what = "version_to is not a full 64-character version"),
+    list(bad = changed & !is_full(rows$version_from),
+         what = "version_from is not a full 64-character version"),
+    list(bad = changed & is_full(rows$version_from) &
+           rows$version_from == rows$version_to,
+         what = "a changed row's version_to equals its version_from")
+  )
+
+  lines <- unlist(lapply(problems, function(p) {
+    at <- which(p$bad)
+    if (length(at) == 0L) return(character())
+    sprintf("row %d (%s): %s", at, rows$name[at], p$what)
+  }))
+
+  if (length(lines) > 0L) {
+    n <- length(lines)
+    cli::cli_abort(
+      c(
+        "{.arg manifest} has {n} unusable value{?s}:",
+        .datom_line_bullets(lines),
+        "i" = "Versions are recorded whole, so a {.code new} or \\
+               {.code changed} row needs full 64-character versions, as the \\
+               preview gives them.",
+        "i" = remedy
+      ),
+      class = "datom_sync_manifest_invalid"
+    )
+  }
+
+  rows
+}
+
+
+#' Refuse Two Applied Rows for One Artifact
+#'
+#' A preview never produces them. Without this the second row would stop as
+#' stale, which names the wrong problem.
+#'
+#' @param todo The `new` and `changed` rows.
+#' @return Invisibly `NULL`; aborts with class `datom_sync_manifest_duplicate_row`.
+#' @keywords internal
+.datom_sync_refuse_duplicate_rows <- function(todo) {
+  key <- paste(todo$project, todo$name, sep = "\r")
+  dup <- unique(key[duplicated(key)])
+  if (length(dup) == 0L) return(invisible(NULL))
+
+  at <- match(dup, key)
+  lines <- sprintf("%s in %s", todo$name[at], todo$project[at])
+  cli::cli_abort(
+    c(
+      "{.arg manifest} has more than one {.code new} or {.code changed} row \\
+       for the same artifact:",
+      .datom_line_bullets(lines),
+      "i" = "One row per artifact says where its member goes; two could only \\
+             disagree.",
+      "i" = "Keep one of them, or build the preview again with \\
+             {.fn datom_sync_manifest}."
+    ),
+    class = "datom_sync_manifest_duplicate_row"
+  )
+}
+
+
+#' Refuse Applied Rows Whose Project Has No Connection
+#'
+#' Only `new` and `changed` rows: they are the only ones apply acts on, and a
+#' full preview's `not_checked` rows belong by definition to projects not in
+#' `sources`, so checking every row would make an unedited preview impossible
+#' to apply.
+#'
+#' @param todo The `new` and `changed` rows.
+#' @param labels The project names of the source connections.
+#' @return Invisibly `NULL`; aborts with class `datom_sync_source_missing`.
+#' @keywords internal
+.datom_sync_refuse_missing_source <- function(todo, labels) {
+  unknown <- setdiff(unique(todo$project), labels)
+  if (length(unknown) == 0L) return(invisible(NULL))
+
+  cli::cli_abort(
+    c(
+      "{.arg manifest} has rows to apply for project{?s} {.val {unknown}}, \\
+       and {.arg sources} has no connection for {?it/them}.",
+      "i" = "Each added or repointed member is read from its own project first, \\
+             so apply needs the connection the preview was built with.",
+      "i" = "Pass the same sources to both calls: \\
+             {.code datom_sync(conn, m, sources = list(conn_a, conn_b))}."
+    ),
+    class = "datom_sync_source_missing"
+  )
+}
+
+
+#' Refuse a Preview the Set Has Moved Away From
+#'
+#' A `changed` row must find exactly one member for its artifact, at
+#' `version_from`; a `new` row must find none. Anything else means the set was
+#' edited after the preview was built, and acting anyway would leave a removed
+#' member removed, move a member the preview never showed, or add a second
+#' member for one artifact.
+#'
+#' @param todo The `new` and `changed` rows.
+#' @param hits For each row of `todo`, the positions of the set's members with
+#'   that project and name.
+#' @param members The set's member list.
+#' @param x_given Whether the caller passed the set, which changes the remedy:
+#'   the preview always compares against the stored set.
+#' @return Invisibly `NULL`; aborts with class `datom_sync_manifest_stale`.
+#' @keywords internal
+.datom_sync_refuse_stale <- function(todo, hits, members, x_given) {
+  short <- function(v) substr(v, 1L, 8L)
+
+  lines <- unlist(lapply(seq_len(nrow(todo)), function(k) {
+    row <- todo[k, , drop = FALSE]
+    at <- hits[[k]]
+    where <- sprintf("%s in %s", row$name, row$project)
+
+    if (identical(row$status, "new")) {
+      if (length(at) == 0L) return(character())
+      return(sprintf("%s: the preview says new, and the set now holds it",
+                     where))
+    }
+
+    if (length(at) != 1L) {
+      return(sprintf(
+        "%s: the preview saw one member, and the set now holds %d",
+        where, length(at)
+      ))
+    }
+
+    pinned <- .datom_id_text(members[[at]]$id, "version")
+    if (identical(pinned, row$version_from)) return(character())
+    sprintf("%s: the preview saw it at %s, and the set now pins %s",
+            where, short(row$version_from), short(pinned))
+  }))
+
+  if (length(lines) == 0L) return(invisible(NULL))
+
+  n <- length(lines)
+  cli::cli_abort(
+    c(
+      "The set has moved since this preview was built, so {n} row{?s} no \\
+       longer describe{?s/} it:",
+      .datom_line_bullets(lines),
+      "i" = "Nothing was changed.",
+      "i" = if (x_given) {
+        "The preview compares against the stored set, and the set you passed \\
+         differs from it there. Write that set first and build the preview \\
+         again, or apply the preview without {.arg x}."
+      } else {
+        "Build the preview again from the current set: \\
+         {.code m <- datom_sync_manifest(conn, sources = )}."
+      }
+    ),
+    class = "datom_sync_manifest_stale"
+  )
+}
+
+
+#' Refuse a Row Whose Kind Disagrees With the Artifact
+#'
+#' @param row One preview row.
+#' @param found The kind the member or the snapshot records.
+#' @return Invisibly `NULL`; aborts with class `datom_sync_kind_mismatch`.
+#' @keywords internal
+.datom_sync_check_kind <- function(row, found) {
+  if (identical(row$kind, found)) return(invisible(NULL))
+
+  where <- row$name
+  cli::cli_abort(
+    c(
+      "The row for {.val {where}} in project {.val {row$project}} says kind \\
+       {.val {row$kind}}, and the artifact is a {.val {found}}.",
+      "i" = "A row names what was reviewed, so a disagreement means it is not \\
+             the artifact the preview showed.",
+      "i" = "Build the preview again with {.fn datom_sync_manifest}."
+    ),
+    class = "datom_sync_kind_mismatch"
+  )
+}
+
+
+#' Build the Member a `new` Row Adds, From Its Source
+#'
+#' Read through [datom_member()], which confirms the version exists and records
+#' the project the artifact's own metadata declares. That project and the kind
+#' are then checked against the row: the connection's label is what routed the
+#' read, and nothing verifies a label.
+#'
+#' @param row One `new` row.
+#' @param conn The connection for the row's project.
+#' @param tags Labels for the new member.
+#' @return A member record.
+#' @keywords internal
+.datom_sync_new_member <- function(row, conn, tags) {
+  record <- datom_member(conn, row$name, row$version_to, tags = tags)
+
+  declared <- record$id$project
+  if (!identical(declared, row$project)) {
+    where <- row$name
+    cli::cli_abort(
+      c(
+        "Adding {.val {where}} would add it from project {.val {declared}}, \\
+         and the row says project {.val {row$project}}.",
+        "i" = "A connection's project name is a label nothing checks against \\
+               the repo, so the connection used here is labelled \\
+               {.val {row$project}} while its store holds project \\
+               {.val {declared}}.",
+        "i" = "Open a connection whose store really is project \\
+               {.val {row$project}}'s and retry."
+      ),
+      class = "datom_update_project_mismatch"
+    )
+  }
+
+  .datom_sync_check_kind(row, record$id$kind)
+
+  record
+}
+
+
+#' Say What Apply Did, and That Nothing Was Written
+#'
+#' @param todo The `new` and `changed` rows that were applied.
+#' @param n Maximum number of lines to print before truncating.
+#' @return Invisibly `NULL`.
+#' @keywords internal
+.datom_report_sync_apply <- function(todo, n = 20L) {
+  if (nrow(todo) == 0L) {
+    cli::cli_alert_info("Nothing to apply: no new or changed rows.")
+    return(invisible(NULL))
+  }
+
+  n_rows <- nrow(todo)
+  n_add <- sum(todo$status == "new")
+  n_repoint <- sum(todo$status == "changed")
+  cli::cli_alert_success(
+    "Applied {n_rows} row{?s}: {n_add} added, {n_repoint} repointed."
+  )
+
+  edits <- data.frame(
+    action = ifelse(todo$status == "new", "add", "repoint"),
+    project = todo$project,
+    name = todo$name,
+    kind = todo$kind,
+    from = todo$version_from,
+    to = todo$version_to,
+    stringsAsFactors = FALSE
+  )
+  lines <- .datom_edit_lines(edits)
+  if (length(lines) > n) {
+    extra <- length(lines) - n
+    lines <- c(lines[seq_len(n)], paste0("... and ", extra, " more"))
+  }
+  cli::cli_verbatim(lines)
+
+  cli::cli_alert_info(
+    "Nothing has been written. Write the set with \\
+     {.code datom_write_set(conn, x)}."
+  )
+
+  invisible(NULL)
+}
+
+
+#' Apply a Set Sync Preview to a Product Repo's Set
+#'
+#' The product-repo route of [datom_sync()]. See point 5 of this file's header:
+#' every check that needs no read comes first, then the set is read (when not
+#' passed), then the stale and kind checks against it, and only then one
+#' snapshot read per applied row.
+#'
+#' @param conn The product repo's developer connection.
+#' @param set_name The set name `.datom/project.yaml` declares.
+#' @param manifest The preview, or any frame with its columns.
+#' @param sources One `datom_conn` or a list of them.
+#' @param tags Labels for members added by `new` rows.
+#' @param x A `datom_set`, or `NULL` to read the stored one.
+#' @return The edited `datom_set`.
+#' @keywords internal
+.datom_sync_set_apply <- function(conn, set_name, manifest, sources, tags, x) {
+  set_name <- .datom_sync_set_name(set_name)
+  rows <- .datom_sync_apply_frame(manifest)
+  conns <- .datom_edit_conns(sources, arg = "sources")
+
+  own <- conn$project_name
+  .datom_refuse_own_project_source(own, names(conns))
+
+  # Tidy, then validate, as `datom_member()` does.
+  tags <- .datom_drop_empty_tags(tags)
+  .datom_validate_tag_map(
+    tags, "tags",
+    remedy = "They label the members {.code new} rows add, e.g. \\
+              {.code list(type = \"input\")}."
+  )
+
+  x_given <- !is.null(x)
+
+  todo <- rows[rows$status %in% c("new", "changed"), , drop = FALSE]
+  rownames(todo) <- NULL
+  .datom_sync_refuse_duplicate_rows(todo)
+  .datom_sync_refuse_missing_source(todo, names(conns))
+
+  # --- the first read ---
+  if (!x_given) x <- .datom_sync_read_set(conn, set_name)
+  members <- .datom_edit_members(x)
+
+  ids <- lapply(members, .datom_member_id)
+  mem_key <- vapply(
+    ids, function(id) paste(id$project, id$name, sep = "\r"), character(1L)
+  )
+  todo_key <- paste(todo$project, todo$name, sep = "\r")
+  hits <- lapply(todo_key, function(k) which(mem_key == k))
+
+  .datom_sync_refuse_stale(todo, hits, members, x_given)
+
+  # A changed row's kind is checked against the member it moves -- no read.
+  lapply(which(todo$status == "changed"), function(k) {
+    .datom_sync_check_kind(todo[k, , drop = FALSE],
+                           ids[[hits[[k]]]]$kind)
+  })
+
+  # --- one snapshot read per applied row ---
+  # Positions in `hits` stay valid: a repoint replaces in place and an add
+  # appends. The refusals raised in here reach the caller with their own class
+  # (tested with `inherit = FALSE`): `purrr::reduce()` does not re-wrap errors
+  # the way `purrr::map()` does.
+  x <- purrr::reduce(
+    .x = seq_len(nrow(todo)),
+    .init = x,
+    .f = function(x, k) {
+      row <- todo[k, , drop = FALSE]
+      src <- conns[[row$project]]
+
+      if (identical(row$status, "new")) {
+        return(.datom_set_add_record(x, .datom_sync_new_member(row, src, tags)))
+      }
+
+      at <- hits[[k]]
+      x$members[[at]] <- .datom_repoint_member(x$members[[at]], src,
+                                               row$version_to)
+      x <- .datom_forget_set_identity(x)
+      .datom_append_edits(x, data.frame(
+        action = "repoint",
+        project = row$project,
+        name = row$name,
+        kind = row$kind,
+        from = row$version_from,
+        to = row$version_to,
+        stringsAsFactors = FALSE
+      ))
+    }
+  )
+
+  .datom_report_sync_apply(todo)
+
+  x
 }

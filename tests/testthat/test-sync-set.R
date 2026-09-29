@@ -174,7 +174,7 @@ test_that("the context comes from the config file, not the connection", {
   expect_identical(names(m), preview_cols)
 })
 
-test_that("apply still refuses a product repo until it learns sources", {
+test_that("apply on a product repo without sources stops and names the argument", {
   fx <- ss_pair()
   frame <- data.frame(
     name = "dm", file = "dm.csv", format = "csv",
@@ -183,9 +183,9 @@ test_that("apply still refuses a product repo until it learns sources", {
   )
   err <- expect_error(datom_sync(fx$product$conn, frame),
                       class = "datom_import_on_product")
-  # No route named that the verb does not take yet.
-  expect_no_match(cli::ansi_strip(conditionMessage(err)), "sources =",
-                  fixed = TRUE)
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "datom_sync(conn, manifest, sources = ", fixed = TRUE)
+  expect_match(msg, "liver-set")
 })
 
 
@@ -700,4 +700,630 @@ test_that("a set pinning a stored set writes, reads back, validates and syncs", 
   expect_identical(m$status, "changed")
   expect_identical(m$version_from, v_inner)
   expect_identical(m$version_to, v_inner_2)
+})
+
+
+# ==============================================================================
+# Applying a preview: `datom_sync(conn, manifest, sources = , tags = , x = )`.
+#
+# Apply writes nothing, so "did it act" is read off the returned set and its
+# edit log, and "did it stop before any read" is tested by making every storage
+# read fail after the preview is built -- a check placed after a read would then
+# surface as that failure instead of its own class.
+# ==============================================================================
+
+ss_apply <- function(...) suppressMessages(datom_sync(...))
+
+ss_ids <- function(x) {
+  do.call(rbind, lapply(x$members, function(m) {
+    data.frame(project = m$id$project, name = m$id$name, kind = m$id$kind,
+               version = m$id$version, stringsAsFactors = FALSE)
+  }))
+}
+
+ss_no_reads <- function(env = parent.frame()) {
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, key) stop("no read expected"),
+    .datom_storage_read_json = function(conn, key) stop("no read expected"),
+    .env = env
+  )
+}
+
+# The usual pair with a stored set: dm unchanged, lb changed, ex new.
+ss_moved <- function(env = parent.frame()) {
+  fx <- ss_pair(env = env)
+  ss_write_set(fx$product, list(
+    ss_member(fx$source, "dm", fx$v_dm),
+    ss_member(fx$source, "lb", fx$v_lb,
+              tags = list(type = "input", domain = c("lab", "safety")))
+  ))
+  fx$new_lb <- ss_table(fx$source, "lb", 6L)
+  fx$v_ex <- ss_table(fx$source, "ex", 2L)
+  fx$m <- ss_preview(fx$product$conn, sources = fx$source$conn)
+  fx
+}
+
+
+# === which context the call is in =============================================
+
+test_that("apply's new arguments come last, so positional calls keep working", {
+  expect_identical(
+    names(formals(datom_sync)),
+    c("conn", "manifest", "continue_on_error", "sources", "tags", "x")
+  )
+})
+
+test_that("a set-shaped frame without sources gets the sources refusal", {
+  # The branch sits above the file-column check, or this would be told it is
+  # missing `file` and `format`.
+  fx <- ss_moved()
+  expect_error(datom_sync(fx$product$conn, fx$m),
+               class = "datom_import_on_product")
+})
+
+test_that("an ordinary repo given sources, tags or x stops before the column check", {
+  fx <- ss_moved()
+  conn <- fx$source$conn
+  expect_error(datom_sync(conn, fx$m, sources = fx$product$conn),
+               class = "datom_sync_sources_on_ordinary")
+  expect_error(datom_sync(conn, fx$m, tags = list(type = "input")),
+               class = "datom_sync_sources_on_ordinary")
+  err <- expect_error(
+    datom_sync(conn, fx$m, x = .datom_empty_set("s", "p")),
+    class = "datom_sync_sources_on_ordinary"
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)), "`x`", fixed = TRUE)
+})
+
+test_that("a product repo given continue_on_error stops rather than ignoring it", {
+  fx <- ss_moved()
+  expect_error(
+    datom_sync(fx$product$conn, fx$m, continue_on_error = TRUE,
+               sources = fx$source$conn),
+    class = "datom_sync_file_arg_on_product"
+  )
+})
+
+
+# === what apply does ==========================================================
+
+test_that("first version: every row joins a versionless set with the declared name", {
+  # AC7, apply half.
+  fx <- ss_pair()
+  m <- ss_preview(fx$product$conn, sources = fx$source$conn)
+  x <- ss_apply(fx$product$conn, m, sources = fx$source$conn)
+
+  expect_s3_class(x, "datom_set")
+  expect_identical(x$name, "liver-set")
+  expect_identical(x$project, "liver-safety")
+  expect_null(x$version)
+  expect_null(x$data_sha)
+
+  ids <- ss_ids(x)
+  expect_identical(ids$name, c("dm", "lb"))
+  expect_identical(ids$project, c("imported", "imported"))
+  expect_identical(ids$version, c(fx$v_dm, fx$v_lb))
+  expect_true(all(vapply(x$members, function(mm) {
+    identical(mm$tags, list(type = "input"))
+  }, logical(1L))))
+  expect_true(all(vapply(x$members, function(mm) is.function(mm$fetch),
+                         logical(1L))))
+})
+
+test_that("new rows add, changed rows repoint, every other row does nothing", {
+  # R3.2 and P3: the repointed member's labels are identical before and after.
+  fx <- ss_moved()
+  before <- datom_get_set(fx$product$conn, "liver-set")
+  lb_tags <- before$members[[2L]]$tags
+
+  x <- ss_apply(fx$product$conn, fx$m, sources = fx$source$conn)
+
+  ids <- ss_ids(x)
+  expect_identical(ids$name, c("dm", "lb", "ex"))
+  expect_identical(ids$version, c(fx$v_dm, fx$new_lb, fx$v_ex))
+  expect_identical(x$members[[2L]]$tags, lb_tags)
+  expect_identical(x$members[[1L]], before$members[[1L]])
+  expect_identical(x$members[[3L]]$tags, list(type = "input"))
+
+  # The repointed member's link follows its record.
+  expect_identical(attr(x$members[[2L]]$fetch, "datom_member")$id$version,
+                   fx$new_lb)
+
+  edits <- attr(x, "datom_edits")
+  # In the preview's row order, which sorts names.
+  expect_identical(edits$action, c("add", "repoint"))
+  expect_identical(edits$name, c("ex", "lb"))
+  expect_identical(edits$from, c(NA_character_, fx$v_lb))
+  expect_identical(edits$to, c(fx$v_ex, fx$new_lb))
+
+  expect_null(x$version)
+  expect_null(x$data_sha)
+})
+
+test_that("a row subset changes exactly the members its rows name", {
+  # P2 and AC4.
+  fx <- ss_moved()
+  x <- ss_apply(fx$product$conn, subset(fx$m, name != "lb"),
+                sources = fx$source$conn)
+
+  ids <- ss_ids(x)
+  expect_identical(ids$name, c("dm", "lb", "ex"))
+  expect_identical(ids$version, c(fx$v_dm, fx$v_lb, fx$v_ex))
+  expect_identical(attr(x, "datom_edits")$action, "add")
+})
+
+test_that("a hand-built frame with the right columns applies", {
+  # AC4: columns and values are checked, never where the frame came from.
+  fx <- ss_moved()
+  frame <- data.frame(
+    project = "imported", name = "lb", kind = "table",
+    version_from = fx$v_lb, version_to = fx$new_lb, status = "changed",
+    stringsAsFactors = TRUE
+  )
+  x <- ss_apply(fx$product$conn, frame, sources = fx$source$conn)
+  expect_identical(ss_ids(x)$version, c(fx$v_dm, fx$new_lb))
+  # A repoint alone moves the set off the version it was read as.
+  expect_null(x$version)
+  expect_null(x$data_sha)
+})
+
+test_that("tags label the new members only", {
+  # R3.3.
+  fx <- ss_moved()
+  lb_tags <- datom_get_set(fx$product$conn, "liver-set")$members[[2L]]$tags
+  x <- ss_apply(fx$product$conn, fx$m, sources = fx$source$conn,
+                tags = list(type = "input", origin = "month-4"))
+
+  expect_identical(x$members[[3L]]$tags,
+                   list(type = "input", origin = "month-4"))
+  expect_identical(x$members[[2L]]$tags, lb_tags)
+})
+
+test_that("malformed tags stop before any read", {
+  fx <- ss_moved()
+  ss_no_reads()
+  expect_error(
+    datom_sync(fx$product$conn, fx$m, sources = fx$source$conn,
+               tags = list(type = 1)),
+    "tags"
+  )
+})
+
+test_that("apply saves nothing and says so", {
+  # AC8 and R2.9's counterpart for apply (I2).
+  fx <- ss_moved()
+
+  snapshot <- function() {
+    files <- fs::dir_ls(c(fx$product$store_dir, fx$source$store_dir,
+                          fx$product$repo_dir), recurse = TRUE, all = TRUE,
+                        type = "file")
+    files <- files[!grepl("/\\.git/", files)]
+    stats::setNames(tools::md5sum(files), files)
+  }
+  head_of <- function(f) as.character(git2r::revparse_single(f$repo, "HEAD")$sha)
+
+  before <- snapshot()
+  heads <- c(head_of(fx$product), head_of(fx$source))
+
+  msg <- ss_messages(datom_sync(fx$product$conn, fx$m,
+                                sources = fx$source$conn))
+
+  expect_identical(snapshot(), before)
+  expect_identical(c(head_of(fx$product), head_of(fx$source)), heads)
+
+  expect_match(msg, "Applied 2 rows: 1 added, 1 repointed.", fixed = TRUE)
+  expect_match(msg, "ex  added at", fixed = TRUE)
+  expect_match(msg, "Nothing has been written. Write the set with `datom_write_set(conn, x)`.",
+               fixed = TRUE)
+  expect_identical(lengths(regmatches(msg, gregexpr("Nothing has been written",
+                                                    msg))), 1L)
+})
+
+test_that("with no row to apply it says so, and returns the set unedited", {
+  fx <- ss_moved()
+  keep <- fx$m[fx$m$status == "unchanged", , drop = FALSE]
+  before <- datom_get_set(fx$product$conn, "liver-set")
+
+  msg <- ss_messages(x <- datom_sync(fx$product$conn, keep,
+                                     sources = fx$source$conn))
+
+  expect_match(msg, "Nothing to apply: no new or changed rows.", fixed = TRUE)
+  expect_no_match(msg, "Nothing has been written")
+  expect_identical(x$version, before$version)
+  expect_null(attr(x, "datom_edits"))
+})
+
+test_that("the next set write's commit message names the adds and repoints", {
+  # AC8 and R3.7.
+  fx <- ss_moved()
+  x <- ss_apply(fx$product$conn, fx$m, sources = fx$source$conn)
+  ss_write_set(fx$product, x)
+
+  msg <- git2r::commits(fx$product$repo, n = 1L)[[1L]]$message
+  expect_match(msg, "Update liver-set: add 1 member, repoint 1 member",
+               fixed = TRUE)
+  expect_match(msg, paste0("ex  added at ", fx$v_ex), fixed = TRUE)
+  expect_match(msg, paste0("lb  ", fx$v_lb, " -> ", fx$new_lb), fixed = TRUE)
+})
+
+test_that("apply, write, preview again: nothing new or changed", {
+  # P1 (idempotence) and P5 (the round trip returns what the preview promised).
+  fx <- ss_moved()
+  promised <- fx$m[fx$m$status %in% c("new", "changed", "unchanged"), ]
+
+  x <- ss_apply(fx$product$conn, fx$m, sources = fx$source$conn)
+  ss_write_set(fx$product, x)
+
+  got <- ss_ids(datom_get_set(fx$product$conn, "liver-set"))
+  key <- function(p, n, v) paste(p, n, v)
+  expect_setequal(key(got$project, got$name, got$version),
+                  key(promised$project, promised$name, promised$version_to))
+
+  again <- ss_preview(fx$product$conn, sources = fx$source$conn)
+  expect_false(any(again$status %in% c("new", "changed")))
+  expect_true(all(again$status == "unchanged"))
+})
+
+test_that("x applies the preview to a set in hand, and keeps what the set holds", {
+  # R3.5, the top-up case: an output added in memory survives the sync.
+  fx <- ss_moved()
+  v_out <- ss_table(fx$product, "liver_flags", 3L)
+  x <- datom_get_set(fx$product$conn, "liver-set")
+  x <- suppressMessages(datom_add_member(
+    x, "liver_flags", v_out, tags = list(type = "output"),
+    conn = fx$product$conn
+  ))
+
+  x <- ss_apply(fx$product$conn, fx$m, sources = fx$source$conn, x = x)
+
+  expect_identical(ss_ids(x)$name, c("dm", "lb", "liver_flags", "ex"))
+  expect_identical(attr(x, "datom_edits")$action, c("add", "add", "repoint"))
+})
+
+test_that("x may be a freshly assembled set", {
+  fx <- ss_pair()
+  m <- ss_preview(fx$product$conn, sources = fx$source$conn)
+  x <- ss_apply(fx$product$conn, m, sources = fx$source$conn,
+                x = datom_assemble_set(fx$product$conn))
+
+  expect_null(x$name)
+  expect_identical(ss_ids(x)$name, c("dm", "lb"))
+
+  ss_write_set(fx$product, x)
+  expect_identical(ss_ids(datom_get_set(fx$product$conn, "liver-set"))$name,
+                   c("dm", "lb"))
+})
+
+test_that("x must be a set", {
+  fx <- ss_moved()
+  ss_no_reads()
+  expect_error(
+    datom_sync(fx$product$conn, fx$m, sources = fx$source$conn,
+               x = list(members = list())),
+    class = "datom_not_a_set"
+  )
+})
+
+test_that("a full preview with not_checked rows applies without their project", {
+  # Only new and changed rows need a connection.
+  fx <- ss_pair()
+  other <- ss_project("imported-b", prefix = "pb")
+  v_b <- ss_table(other, "ae", 5L)
+  ss_write_set(fx$product, list(ss_member(fx$source, "dm", fx$v_dm),
+                                ss_member(other, "ae", v_b)))
+  m <- ss_preview(fx$product$conn, sources = fx$source$conn)
+  expect_true("not_checked" %in% m$status)
+
+  x <- ss_apply(fx$product$conn, m, sources = fx$source$conn)
+  expect_identical(ss_ids(x)$name, c("dm", "ae", "lb"))
+})
+
+test_that("a set member moved by sync writes, reads back and validates", {
+  # AC17, apply half: the inner set moves and the outer set follows it.
+  source <- ss_project("imported", prefix = "ps")
+  inner <- ss_project("inner-proj", "inner-set", "pi")
+  outer <- ss_project("outer-proj", "outer-set", "po")
+
+  v_dm <- ss_table(source, "dm", 3L)
+  ss_write_set(inner, list(ss_member(source, "dm", v_dm)))
+
+  m <- ss_preview(outer$conn, sources = inner$conn)
+  expect_identical(m$kind, "set")
+  ss_write_set(outer, ss_apply(outer$conn, m, sources = inner$conn))
+
+  v_lb <- ss_table(source, "lb", 4L)
+  ss_write_set(inner, list(ss_member(source, "dm", v_dm),
+                           ss_member(source, "lb", v_lb)))
+  v_inner_2 <- datom_get_set(inner$conn, "inner-set")$version
+
+  m <- ss_preview(outer$conn, sources = inner$conn)
+  expect_identical(m$status, "changed")
+  ss_write_set(outer, ss_apply(outer$conn, m, sources = inner$conn))
+
+  got <- datom_get_set(outer$conn, "outer-set")
+  expect_identical(got$members[[1L]]$id$kind, "set")
+  expect_identical(got$members[[1L]]$id$version, v_inner_2)
+  expect_true(suppressMessages(datom_validate(outer$conn))$valid)
+})
+
+
+# === the set moved since the preview ==========================================
+
+test_that("a changed row whose member has moved stops as stale", {
+  # AC9, first half.
+  fx <- ss_moved()
+  newest <- ss_table(fx$source, "lb", 7L)
+  x <- datom_get_set(fx$product$conn, "liver-set")
+  x <- suppressMessages(datom_update_members(x, fx$source$conn, member = "lb",
+                                             version_to = newest))
+  ss_write_set(fx$product, x)
+
+  err <- expect_error(
+    datom_sync(fx$product$conn, fx$m, sources = fx$source$conn),
+    class = "datom_sync_manifest_stale", inherit = FALSE
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "lb in imported", fixed = TRUE)
+  expect_match(msg, substr(newest, 1L, 8L), fixed = TRUE)
+  expect_match(msg, "datom_sync_manifest(conn, sources = )", fixed = TRUE)
+})
+
+test_that("a new row whose artifact the set has since gained stops as stale", {
+  # AC9, second half, and open point B.
+  fx <- ss_moved()
+  x <- datom_get_set(fx$product$conn, "liver-set")
+  x <- suppressMessages(datom_add_member(x, "ex", fx$v_ex,
+                                         conn = fx$source$conn))
+  ss_write_set(fx$product, x)
+
+  err <- expect_error(
+    datom_sync(fx$product$conn, fx$m, sources = fx$source$conn),
+    class = "datom_sync_manifest_stale", inherit = FALSE
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)),
+               "ex in imported: the preview says new", fixed = TRUE)
+})
+
+test_that("a changed row whose member was removed, or doubled, stops as stale", {
+  fx <- ss_moved()
+  lb <- fx$m[fx$m$name == "lb", , drop = FALSE]
+
+  x <- datom_get_set(fx$product$conn, "liver-set")
+  gone <- suppressMessages(datom_remove_members(x, member = "lb"))
+  expect_error(
+    datom_sync(fx$product$conn, lb, sources = fx$source$conn, x = gone),
+    class = "datom_sync_manifest_stale", inherit = FALSE
+  )
+
+  doubled <- suppressMessages(datom_add_member(
+    x, "lb", fx$new_lb, tags = list(release = "live"), conn = fx$source$conn
+  ))
+  err <- expect_error(
+    datom_sync(fx$product$conn, lb, sources = fx$source$conn, x = doubled),
+    class = "datom_sync_manifest_stale", inherit = FALSE
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "now holds 2", fixed = TRUE)
+  # The set was passed, so rebuilding the preview alone would not help.
+  expect_match(msg, "without `x`", fixed = TRUE)
+})
+
+test_that("a stale row stops the whole call before any member is read", {
+  fx <- ss_moved()
+  x <- datom_get_set(fx$product$conn, "liver-set")
+  x <- suppressMessages(datom_remove_members(x, member = "lb"))
+
+  ss_no_reads()
+  expect_error(
+    datom_sync(fx$product$conn, fx$m, sources = fx$source$conn, x = x),
+    class = "datom_sync_manifest_stale", inherit = FALSE
+  )
+})
+
+
+# === a row that disagrees with the artifact ===================================
+
+test_that("a changed row whose kind disagrees with the member stops, before any read", {
+  fx <- ss_moved()
+  lb <- fx$m[fx$m$name == "lb", , drop = FALSE]
+  lb$kind <- "set"
+  x <- datom_get_set(fx$product$conn, "liver-set")
+
+  ss_no_reads()
+  err <- expect_error(
+    datom_sync(fx$product$conn, lb, sources = fx$source$conn, x = x),
+    class = "datom_sync_kind_mismatch", inherit = FALSE
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)), "\"set\"", fixed = TRUE)
+})
+
+test_that("a new row whose kind disagrees with the snapshot stops", {
+  fx <- ss_moved()
+  ex <- fx$m[fx$m$name == "ex", , drop = FALSE]
+  ex$kind <- "set"
+
+  expect_error(
+    datom_sync(fx$product$conn, ex, sources = fx$source$conn),
+    class = "datom_sync_kind_mismatch", inherit = FALSE
+  )
+})
+
+test_that("a new row read through a mislabelled connection stops as a project mismatch", {
+  # The snapshot records the project that wrote it, and that is what the row's
+  # project is checked against -- the connection's label only routed the read.
+  fx <- ss_moved()
+  relabelled <- fx$source$conn
+  relabelled$project_name <- "renamed"
+  ex <- fx$m[fx$m$name == "ex", , drop = FALSE]
+  ex$project <- "renamed"
+
+  err <- expect_error(
+    datom_sync(fx$product$conn, ex, sources = relabelled),
+    class = "datom_update_project_mismatch", inherit = FALSE
+  )
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "Adding", fixed = TRUE)
+  expect_match(msg, "\"imported\"", fixed = TRUE)
+})
+
+test_that("a new row pinning a version that does not exist stops", {
+  fx <- ss_moved()
+  ex <- fx$m[fx$m$name == "ex", , drop = FALSE]
+  ex$version_to <- strrep("0", 64L)
+
+  expect_error(
+    ss_apply(fx$product$conn, ex, sources = fx$source$conn),
+    "not found"
+  )
+})
+
+
+# === refusals before any read =================================================
+
+test_that("the set's own project in sources stops apply, before any read", {
+  fx <- ss_moved()
+  ss_no_reads()
+  err <- expect_error(
+    datom_sync(fx$product$conn, fx$m,
+               sources = list(fx$source$conn, fx$product$conn)),
+    class = "datom_sync_own_project_source"
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)),
+               "sync does not map or move them", fixed = TRUE)
+})
+
+test_that("a row to apply whose project has no connection stops, before any read", {
+  fx <- ss_moved()
+  other <- ss_project("imported-b", prefix = "pb")
+  frame <- rbind(fx$m, data.frame(
+    project = "imported-c", name = "ae", kind = "table", version_from = NA,
+    version_to = strrep("a", 64L), status = "new", stringsAsFactors = FALSE
+  ))
+
+  ss_no_reads()
+  err <- expect_error(
+    datom_sync(fx$product$conn, frame,
+               sources = list(fx$source$conn, other$conn)),
+    class = "datom_sync_source_missing"
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)), "imported-c")
+})
+
+test_that("two rows to apply for one artifact stop, before any read", {
+  fx <- ss_moved()
+  frame <- rbind(fx$m, fx$m[fx$m$name == "ex", , drop = FALSE])
+
+  ss_no_reads()
+  err <- expect_error(
+    datom_sync(fx$product$conn, frame, sources = fx$source$conn),
+    class = "datom_sync_manifest_duplicate_row"
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)), "ex in imported",
+               fixed = TRUE)
+})
+
+test_that("duplicate rows among statuses that do nothing are harmless", {
+  fx <- ss_moved()
+  frame <- rbind(fx$m, fx$m[fx$m$name == "dm", , drop = FALSE])
+  x <- ss_apply(fx$product$conn, frame, sources = fx$source$conn)
+  expect_identical(ss_ids(x)$name, c("dm", "lb", "ex"))
+})
+
+test_that("sources must be connections, one per project, for apply too", {
+  fx <- ss_moved()
+  ss_no_reads()
+  expect_error(
+    datom_sync(fx$product$conn, fx$m, sources = list("not a conn")),
+    class = "datom_not_a_conn"
+  )
+  expect_error(
+    datom_sync(fx$product$conn, fx$m,
+               sources = list(fx$source$conn, fx$source$conn)),
+    class = "datom_edit_conn_duplicate"
+  )
+})
+
+test_that("a set probe that fails is an error at apply, not a first version", {
+  fx <- ss_moved()
+  local_mocked_bindings(
+    .datom_storage_exists = function(conn, key) stop("storage unreachable")
+  )
+  expect_error(
+    datom_sync(fx$product$conn, fx$m, sources = fx$source$conn),
+    "storage unreachable"
+  )
+})
+
+
+# === the frame's shape and values =============================================
+
+test_that("a frame that is not a set preview stops, before any read", {
+  fx <- ss_moved()
+  ss_no_reads()
+  conn <- fx$product$conn
+  src <- fx$source$conn
+
+  expect_error(datom_sync(conn, list(a = 1), sources = src),
+               class = "datom_sync_manifest_invalid")
+  # A plain list carrying every column is still not a frame.
+  err <- expect_error(datom_sync(conn, as.list(fx$m), sources = src),
+                      class = "datom_sync_manifest_invalid")
+  expect_match(cli::ansi_strip(conditionMessage(err)), "must be a data frame")
+
+  err <- expect_error(
+    datom_sync(conn, fx$m[, c("project", "name")], sources = src),
+    class = "datom_sync_manifest_invalid"
+  )
+  expect_match(cli::ansi_strip(conditionMessage(err)), "version_to")
+
+  file_frame <- data.frame(
+    name = "dm", file = "dm.csv", format = "csv",
+    original_file_sha = strrep("a", 64L), status = "new",
+    stringsAsFactors = FALSE
+  )
+  err <- expect_error(datom_sync(conn, file_frame, sources = src),
+                      class = "datom_sync_manifest_invalid")
+  msg <- cli::ansi_strip(conditionMessage(err))
+  expect_match(msg, "file-import manifest")
+  expect_match(msg, "datom_sync_manifest(conn, sources = )", fixed = TRUE)
+})
+
+test_that("each unusable value on a row to apply stops, naming the row", {
+  fx <- ss_moved()
+  ss_no_reads()
+  conn <- fx$product$conn
+  src <- fx$source$conn
+  lb <- fx$m[fx$m$name == "lb", , drop = FALSE]
+  ex <- fx$m[fx$m$name == "ex", , drop = FALSE]
+
+  refuse <- function(frame, pattern) {
+    err <- expect_error(datom_sync(conn, frame, sources = src),
+                        class = "datom_sync_manifest_invalid")
+    expect_match(cli::ansi_strip(conditionMessage(err)), pattern,
+                 fixed = TRUE)
+  }
+
+  bad <- ex; bad$status <- "added"
+  refuse(bad, "status is not one of")
+  bad <- ex; bad$project <- ""
+  refuse(bad, "project is empty")
+  bad <- ex; bad$name <- NA_character_
+  refuse(bad, "name is empty")
+  bad <- ex; bad$kind <- "view"
+  refuse(bad, "kind is not table or set")
+  bad <- ex; bad$version_to <- substr(ex$version_to, 1L, 8L)
+  refuse(bad, "row 1 (ex): version_to is not a full 64-character version")
+  bad <- lb; bad$version_from <- substr(lb$version_from, 1L, 8L)
+  refuse(bad, "version_from is not a full 64-character version")
+  bad <- lb; bad$version_to <- lb$version_from
+  refuse(bad, "version_to equals its version_from")
+})
+
+test_that("values on rows that do nothing are not checked", {
+  fx <- ss_moved()
+  frame <- fx$m
+  frame$version_to[frame$status == "unchanged"] <- "junk"
+  frame$kind[frame$status == "unchanged"] <- "view"
+  x <- ss_apply(fx$product$conn, frame, sources = fx$source$conn)
+  expect_identical(ss_ids(x)$name, c("dm", "lb", "ex"))
 })

@@ -12,8 +12,8 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b and 5c on 2026-09-29.
-**Resume at task 6** (apply); ask the owner before starting it (rule 5d). Task 5c came out of the
+Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b, 5c and 6 on 2026-09-29.
+**Resume at task 7** (vignette code and offline dry run); ask the owner before starting it (rule 5d). Task 5c came out of the
 task 6 cold-start review on 2026-09-29 -- see design section 12 for why.
 
 **A cold-start review on 2026-09-28, after task 5, settled everything task 6 needed.** A fresh
@@ -24,7 +24,7 @@ stale cases, duplicate rows, kind and project mismatches, what `x =` accepts, th
 refusal, frame checks, tidy-ups) and R3.4 (the not-written line). **The largest change: sets are
 now in scope for sync** (R2.1a, AC17, design 3's "Sets are included" block), which is why task 5b
 exists. Nothing is left to ask before coding 5c or 6.
-**Current test count: 4568** -- what task 6's count must not drop below.
+**Current test count: 4687** (after task 6) -- what task 7's count must not drop below.
 
 Starting cold: `git checkout spec/set-sync-ergonomics && git pull`, then read `requirements.md` (R2.1a
 and AC17 are task 5b; R1 and R3 are task 6) and `design.md` (section 1 lists the code facts checked
@@ -273,7 +273,39 @@ remote and local store).
     message (`Update {name}: add N members`, one line per member). A test that pins
     `Update {name}` for a draft write flips.
 
-- [ ] **6. Apply: `datom_sync(sources = , tags = , x = )`** (R3; AC4, AC8, AC9)
+- [x] **6. Apply: `datom_sync(sources = , tags = , x = )`** (R3; AC4, AC8, AC9)
+  - **Done 2026-09-29, 4687 tests (+119).** `datom_sync(conn, manifest, continue_on_error = TRUE,
+    sources = NULL, tags = list(type = "input"), x = NULL)`. The context branch sits above the file
+    column check. The product route is `.datom_sync_set_apply()` in `R/sync-set.R`. Order of work:
+    set name, frame checks, connections, own project, tags, duplicate rows, missing sources (all
+    before any read); then the set read (or `x`); then the stale and changed-row kind checks (still
+    no snapshot read); then one `datom_member()` read per applied row. `new` rows go through
+    `.datom_set_add_record()` (the add steps factored out of `datom_add_member()`, no print);
+    `changed` rows through `.datom_repoint_member()` and a `repoint` log row. One summary line, one
+    line per edit, one not-written line; "Nothing to apply: no new or changed rows." otherwise.
+  - Refusal classes, new: `datom_sync_manifest_invalid`, `datom_sync_manifest_duplicate_row`,
+    `datom_sync_source_missing`, `datom_sync_manifest_stale`, `datom_sync_kind_mismatch`. Reused:
+    `datom_import_on_product`, `datom_sync_file_arg_on_product` (`continue_on_error` typed on a
+    product repo), `datom_sync_sources_on_ordinary` (`sources`, `tags` or `x` on an ordinary repo),
+    `datom_sync_own_project_source`, `datom_update_project_mismatch` (wording says "Adding"),
+    `datom_not_a_set`, `datom_not_a_conn`, `datom_edit_conn_duplicate`.
+  - Tidy-ups done: `.datom_refuse_import_on_product(verb, context)` has one message, always naming
+    `sources =`; for `datom_sync` the hint is `datom_sync(conn, manifest, sources = list(...))`. The
+    own-project message says "so sync does not map or move them". The task 5 test "apply still
+    refuses a product repo until it learns sources" flipped to "names the argument".
+  - Choices made here, not in the design: a `changed` row with `version_to == version_from` is
+    refused as invalid (a preview never makes one, and applying it would log a repoint that moves
+    nothing). Edits are logged in frame row order. When `x` was passed, the stale message's remedy
+    says the preview compares against the stored set, so rebuilding it alone would not help.
+    Factor/`NA`-logical columns are coerced to text before checking.
+  - Probes (fixed copy in `/tmp`, `cmp` after each; control reddened nothing): 45, each reddened its
+    own test. They covered every refusal removed, the column check moved above the branch, the
+    own-project and stale checks moved after a read, the missing-source check widened to every
+    row, the frame values checked on every row, tags dropped, labels rebuilt instead of carried,
+    identity kept, each log row dropped, both report lines, and the three add-helper steps. The one
+    probe that reddened nothing was base `Reduce()` swapped for `purrr::reduce()`. purrr's reduce does not wrap
+    errors (checked, purrr 1.2.1), so the loop now uses it. Learning in `dev/engineering-notes.md`,
+    plus one about an interrupted wait leaving the probe driver running.
   - Design 4, including its "Spot-check additions" and open point B (design 3). Properties P1-P3, P5.
   - Adds the context branch to `datom_sync()` (above its manifest column check, design 2).
   - `x` is a `datom_set` only (task 5c), and the set-name check is the write's (R9.5), not apply's.
