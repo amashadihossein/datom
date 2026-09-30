@@ -364,7 +364,9 @@ arrangement -- none of this changes anything.
   pin the byte layout across the supported platform matrix.
 - **The specification is language-implementable.** `datom-cv1` is defined in
   terms of bytes -- UTF-8 tags, little-endian IEEE-754 doubles, NUL-terminated
-  strings, SHA-256 -- not R semantics. `dev/datom_cv1_reference.R` is a
+  strings, SHA-256 -- not R semantics.
+  [`datom_cv1_reference.R`](https://github.com/amashadihossein/datom/blob/main/dev/datom_cv1_reference.R),
+  in the package's source repository rather than the installed package, is a
   standalone base-R + `digest` reference implementation that the package is
   tested byte-for-byte against, and it doubles as the spec any other language
   would implement. What is **not** claimed is that an arbitrary Python or Julia

@@ -7,8 +7,7 @@
 datom_remove_members(x, member = NULL, tags = NULL, version = NULL)
 }
 \arguments{
-\item{x}{A \code{datom_set} from \code{\link[=datom_get_set]{datom_get_set()}}, or a \code{datom_set_draft} from
-\code{\link[=datom_assemble_set]{datom_assemble_set()}}.}
+\item{x}{A \code{datom_set}, from \code{\link[=datom_get_set]{datom_get_set()}} or \code{\link[=datom_assemble_set]{datom_assemble_set()}}.}
 
 \item{member}{The member to drop, as its name, a member record, or a link.
 Optional only when \code{tags} or \code{version} selects on its own.}

@@ -7,27 +7,29 @@
 datom_assemble_set(conn, name = NULL, tags = NULL)
 }
 \arguments{
-\item{conn}{A \code{datom_conn} from \code{\link[=datom_get_conn]{datom_get_conn()}}, scoped to the product repo.}
+\item{conn}{A \code{datom_conn} from \code{\link[=datom_get_conn]{datom_get_conn()}} for the product repo. Its
+project name is recorded as the set's project; nothing else is kept.}
 
-\item{name}{The set's name. \code{NULL} (the default) takes the name the repo
-declares under \verb{set:} in \code{.datom/project.yaml}, which is the usual case --
-one repo holds one set.}
+\item{name}{The set's name. \code{NULL} (the default) leaves it to the write, which
+takes the name the repo declares under \verb{set:} in \code{.datom/project.yaml} --
+the usual case, since one repo holds one set.}
 
 \item{tags}{Optional named list of set-level text labels, e.g. a description.}
 }
 \value{
-A \code{datom_set_draft}: the connection, the name, the tags, and an empty
-member list.
+A \code{datom_set} with no version and no members.
 }
 \description{
-Opens a \strong{draft} set, to be filled in with \code{\link[=datom_add_member]{datom_add_member()}} and written
+Returns an empty set, to be filled in with \code{\link[=datom_add_member]{datom_add_member()}} and written
 with \code{\link[=datom_write_set]{datom_write_set()}}:
 }
 \details{
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{datom_assemble_set(conn, tags = list(description = "ADaM datasets")) |>
-  datom_add_member("adsl", v_adsl, tags = list(type = "output")) |>
-  datom_add_member("dm", v_dm, tags = list(type = "input")) |>
-  datom_write_set()
+  datom_add_member("adsl", v_adsl, tags = list(type = "output"),
+                   conn = conn) |>
+  datom_add_member("dm", v_dm, tags = list(type = "input"),
+                   conn = conn_src) |>
+  datom_write_set(conn = conn)
 }\if{html}{\out{</div>}}
 
 The equivalent single call -- a \code{list()} of \code{\link[=datom_member]{datom_member()}} results passed to
@@ -36,25 +38,26 @@ build script. What this path adds is \strong{where an error surfaces}: a malform
 member aborts on the line that declared it and names that member, instead of
 aborting once the whole list has been assembled and indexed.
 }
-\section{A draft holds a connection}{
+\section{One kind of set}{
 
-Validating each member as it is added means reading that artifact's metadata
-from storage, so the draft carries the connection it was opened with. Two
-things follow:
-\itemize{
-\item \strong{A draft belongs in memory only.} A connection may carry a credential, so a
-draft must not be saved to disk or committed. Write the set, and cite the set.
-\item \strong{One draft, one project.} A member of another project cannot be named
-through this connection -- pass a record built on that project's connection
-instead, which \code{\link[=datom_add_member]{datom_add_member()}} accepts in place of a name.
-}
+What comes back is a \code{datom_set}, the same kind of object \code{\link[=datom_get_set]{datom_get_set()}}
+returns, only with no version yet. So every verb that takes a set takes this
+one: \code{\link[=datom_list_members]{datom_list_members()}}, \code{\link[=datom_update_members]{datom_update_members()}}, \code{\link[=datom_write_set]{datom_write_set()}}
+and the rest.
+
+\strong{It holds no connection.} A connection may carry a credential, so it is
+passed on each call that needs one rather than kept in a value that can be
+printed or saved: \verb{conn =} on \code{\link[=datom_add_member]{datom_add_member()}} for a member given by name,
+and \code{conn} on \code{\link[=datom_write_set]{datom_write_set()}}. The connection given here is used only to
+record which project the set belongs to; the write checks that it is the
+project it is written into.
 }
 
 \section{Set-level tags}{
 
 Supplied here rather than by a third verb, because they are facts about the
 collection rather than about any member. Editing them later is plain R --
-\code{draft$tags$description <- "..."} -- and the same grammar applies as to a
+\code{x$tags$description <- "..."} -- and the same grammar applies as to a
 member's tags: text only, one label or several.
 }
 
@@ -85,15 +88,15 @@ if (requireNamespace("git2r", quietly = TRUE)) {
   v_dm <- datom_history(conn, "dm")$version[1]
   v_lb <- datom_history(conn, "lb")$version[1]
 
-  draft <- datom_assemble_set(
+  x <- datom_assemble_set(
     conn,
     tags = list(description = "Example product for STUDY-001")
   ) |>
-    datom_add_member("dm", v_dm, tags = list(type = "input")) |>
-    datom_add_member("lb", v_lb, tags = list(type = "output"))
+    datom_add_member("dm", v_dm, tags = list(type = "input"), conn = conn) |>
+    datom_add_member("lb", v_lb, tags = list(type = "output"), conn = conn)
 
-  print(draft)
-  datom_write_set(draft)
+  print(datom_list_members(x))
+  x |> datom_write_set(conn = conn)
 
   unlink(tmp, recursive = TRUE)
 }

@@ -7,7 +7,7 @@
 \method{print}{datom_set}(x, ..., n = 20L)
 }
 \arguments{
-\item{x}{A \code{datom_set} from \code{\link[=datom_get_set]{datom_get_set()}}.}
+\item{x}{A \code{datom_set}, from \code{\link[=datom_get_set]{datom_get_set()}} or \code{\link[=datom_assemble_set]{datom_assemble_set()}}.}
 
 \item{...}{Ignored.}
 
@@ -19,7 +19,7 @@ Invisible \code{x}.
 \description{
 One line per member -- name, kind, and its tags as compact \code{key=value} pairs,
 or \code{-} when it has none -- plus the route to a member's content. Long member
-lists are truncated.
+lists are truncated. A set not yet written shows version \code{NA}.
 }
 \details{
 Tags are open-keyed by design, so there is no fixed column layout to print

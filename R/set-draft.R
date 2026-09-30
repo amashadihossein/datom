@@ -1,5 +1,4 @@
-# Assembling a set in steps: a draft, a verb that adds one member to it, and the
-# widening that lets a pipe end at the write.
+# Assembling a set in steps: an empty set, and a verb that adds one member to it.
 #
 # WHY THIS EXISTS WHEN THE LIST FORM ALREADY WORKS. Not brevity -- the pipe is
 # about the same length as the nested `list()`. Two reasons, both about where an
@@ -11,22 +10,24 @@
 #
 # SIX THINGS HERE ARE LOAD-BEARING AND EASY TO UNDO BY TIDYING.
 #
-#   1. THE DRAFT HOLDS THE CONNECTION, AND THAT IS STRUCTURAL RATHER THAN
-#      CONVENIENT. Validating a member as it is added means reading that
-#      artifact's own metadata snapshot out of storage, so a draft that held no
-#      connection could not validate at all -- which is the entire reason the
-#      verb exists. Two consequences follow, and neither is optional:
-#      `datom_add_member()` must never take a `conn` argument (that would put two
-#      connections on one draft and make the property false), and a draft is
-#      transient -- it must not be saved, because a connection may carry a
-#      credential and connections live in memory only.
+#   1. A SET IN MEMORY HOLDS NO CONNECTION, HOWEVER IT WAS MADE. An assembled
+#      set is the same `datom_set` a read returns, only with no version yet. A
+#      connection is a runtime capability that may carry a credential, so it
+#      belongs on the call that uses it -- `datom_add_member(conn = )` for a
+#      name, `datom_write_set(conn, x)` for the write -- and never in a value
+#      that can be printed, saved or passed on. An earlier draft class held the
+#      product repo's connection, which is why the write once took a draft in
+#      its first slot and a read set in its second, and why a hint telling the
+#      caller to write `x` with `datom_write_set(conn, x)` failed for a draft.
+#      Putting a connection back on the object brings both problems back.
 #
-#   2. A RECORD IN ARGUMENT 2 IS A CAPABILITY, NOT SUGAR. A draft holds ONE
-#      connection, and a name is resolved through it, so a member of a DIFFERENT
-#      project cannot be declared by name in a pipe at all. Passing a record built
-#      on the other project's connection -- `datom_member(conn_b, "ae", v)` -- is
-#      the only route to a cross-project member here. Deleting the record shape
-#      as "a convenience" would remove a capability.
+#   2. A RECORD IN ARGUMENT 2 IS A CAPABILITY, NOT SUGAR. A link or a
+#      read-back record is what a consumer holds when they cite what they used,
+#      often with no connection to the member's project at all. Those carry
+#      their own resolved pointer, so they need no connection and can cross
+#      projects freely. Deleting the record shape as "a convenience" would
+#      remove a capability, even though a name plus `conn =` reaches another
+#      project too.
 #
 #   3. `version` STAYS REQUIRED WHEN A MEMBER IS ADDED BY NAME. Inferring
 #      "current" would leave a build script producing a DIFFERENT set on each run
@@ -34,23 +35,9 @@
 #      the pin makes the code reproducible, and those are two separate
 #      guarantees.
 #
-#   4. THE PRINT METHOD NAMES EVERY FIELD IT SHOWS AND NEVER HANDS THE
-#      CONNECTION TO ANYTHING. Same shape as `print.datom_conn`, and for the same
-#      reason: that method is an ALLOWLIST of named fields, so a credential field
-#      added to a connection later cannot leak through it. Redaction would have
-#      to be taught each new secret; an allowlist is safe by default. There is no
-#      masking helper to reach for, and inventing one is how a token reaches
-#      output.
-#
-#   5. A DRAFT DELIBERATELY HOLDS A LIVE CONNECTION, WHICH INVERTS THE PURITY
-#      RULE MEMBERS AND LINKS FOLLOW. A member record is pure data and there is a
-#      test asserting a serialized one contains no token; a draft is the opposite
-#      by design. So there is no purity test for a draft -- the print method warns
-#      instead.
-#
-#   6. THE MEMBER COUNT A DRAFT REPORTS IS THE COUNT THE WRITE WILL PRODUCE, and
+#   4. THE MEMBER COUNT A SET REPORTS IS THE COUNT THE WRITE WILL PRODUCE, and
 #      skipping an exact repeat rather than appending it is what keeps those two
-#      numbers equal. The write drops an exact repeat silently, so a draft that
+#      numbers equal. The write drops an exact repeat silently, so a set that
 #      appended it would print one count and write another -- and the printed
 #      count is the one number a caller inspects mid-pipe. The same version with
 #      DIFFERENT labels is an error at the write, so it is an error here too, on
@@ -58,9 +45,24 @@
 #      mechanisms -- the payload check's id key and the dedup's member digest --
 #      because `identical()` on two records reads two spellings of one label set
 #      as a disagreement and would refuse what the write accepts.
+#
+#   5. EVERY ADD IS AN EDIT, LOGGED AND REPORTED LIKE THE OTHER EDIT VERBS. It
+#      empties the set's version (a no-op on a set never written), appends an
+#      `add` row to the edit log `datom_update_members()` and
+#      `datom_remove_members()` share, and says nothing has been written. So a
+#      freshly assembled set's first write commits `Update {name}: add N
+#      members` with one line per member, which says what the first version
+#      holds. Skipping the log for a set never written would bring back the
+#      special case one kind of set removed.
+#
+#   6. EVERY MEMBER CARRIES A `$fetch` LINK, however the set was made. A member
+#      added here gets one through the shared factory, so an assembled set looks
+#      like a read one; the clash check strips links before digesting (the
+#      member digest refuses any field beyond `id` and `tags`), and the write
+#      strips them before hashing.
 
 
-#' Is This Member Already in the Draft, and Is It the Same Member?
+#' Is This Member Already in the Set, and Is It the Same Member?
 #'
 #' Answers the question the write answers twice, one step earlier, so a repeat
 #' lands on the line that introduced it.
@@ -84,12 +86,12 @@
 #'
 #' That is also why nothing needs tidying first. Every spelling the write's tidy
 #' step collapses is a spelling the digest is already blind to, so a record can be
-#' compared -- and stored in the draft -- exactly as the caller supplied it.
+#' compared -- and stored in the set -- exactly as the caller supplied it.
 #'
-#' @param members The draft's members so far.
+#' @param members The set's members so far, with their links stripped.
 #' @param record The record about to be added.
 #' @return A list with `status` -- `"new"`, `"duplicate"` or `"conflict"` -- and,
-#'   for the last two, `at`: the position of the member already in the draft.
+#'   for the last two, `at`: the position of the member already in the set.
 #' @keywords internal
 .datom_draft_member_clash <- function(members, record) {
   if (!is.list(members) || length(members) == 0L) {
@@ -120,14 +122,16 @@
 
 #' Start assembling a set
 #'
-#' Opens a **draft** set, to be filled in with [datom_add_member()] and written
+#' Returns an empty set, to be filled in with [datom_add_member()] and written
 #' with [datom_write_set()]:
 #'
 #' ```r
 #' datom_assemble_set(conn, tags = list(description = "ADaM datasets")) |>
-#'   datom_add_member("adsl", v_adsl, tags = list(type = "output")) |>
-#'   datom_add_member("dm", v_dm, tags = list(type = "input")) |>
-#'   datom_write_set()
+#'   datom_add_member("adsl", v_adsl, tags = list(type = "output"),
+#'                    conn = conn) |>
+#'   datom_add_member("dm", v_dm, tags = list(type = "input"),
+#'                    conn = conn_src) |>
+#'   datom_write_set(conn = conn)
 #' ```
 #'
 #' The equivalent single call -- a `list()` of [datom_member()] results passed to
@@ -136,31 +140,33 @@
 #' member aborts on the line that declared it and names that member, instead of
 #' aborting once the whole list has been assembled and indexed.
 #'
-#' @section A draft holds a connection:
-#' Validating each member as it is added means reading that artifact's metadata
-#' from storage, so the draft carries the connection it was opened with. Two
-#' things follow:
+#' @section One kind of set:
+#' What comes back is a `datom_set`, the same kind of object [datom_get_set()]
+#' returns, only with no version yet. So every verb that takes a set takes this
+#' one: [datom_list_members()], [datom_update_members()], [datom_write_set()]
+#' and the rest.
 #'
-#' * **A draft belongs in memory only.** A connection may carry a credential, so a
-#'   draft must not be saved to disk or committed. Write the set, and cite the set.
-#' * **One draft, one project.** A member of another project cannot be named
-#'   through this connection -- pass a record built on that project's connection
-#'   instead, which [datom_add_member()] accepts in place of a name.
+#' **It holds no connection.** A connection may carry a credential, so it is
+#' passed on each call that needs one rather than kept in a value that can be
+#' printed or saved: `conn =` on [datom_add_member()] for a member given by name,
+#' and `conn` on [datom_write_set()]. The connection given here is used only to
+#' record which project the set belongs to; the write checks that it is the
+#' project it is written into.
 #'
 #' @section Set-level tags:
 #' Supplied here rather than by a third verb, because they are facts about the
 #' collection rather than about any member. Editing them later is plain R --
-#' `draft$tags$description <- "..."` -- and the same grammar applies as to a
+#' `x$tags$description <- "..."` -- and the same grammar applies as to a
 #' member's tags: text only, one label or several.
 #'
-#' @param conn A `datom_conn` from [datom_get_conn()], scoped to the product repo.
-#' @param name The set's name. `NULL` (the default) takes the name the repo
-#'   declares under `set:` in `.datom/project.yaml`, which is the usual case --
-#'   one repo holds one set.
+#' @param conn A `datom_conn` from [datom_get_conn()] for the product repo. Its
+#'   project name is recorded as the set's project; nothing else is kept.
+#' @param name The set's name. `NULL` (the default) leaves it to the write, which
+#'   takes the name the repo declares under `set:` in `.datom/project.yaml` --
+#'   the usual case, since one repo holds one set.
 #' @param tags Optional named list of set-level text labels, e.g. a description.
 #'
-#' @return A `datom_set_draft`: the connection, the name, the tags, and an empty
-#'   member list.
+#' @return A `datom_set` with no version and no members.
 #' @seealso [datom_add_member()] to add one member, [datom_write_set()] to write
 #'   the result, [datom_member()] for the single-call form.
 #' @export
@@ -192,15 +198,15 @@
 #'   v_dm <- datom_history(conn, "dm")$version[1]
 #'   v_lb <- datom_history(conn, "lb")$version[1]
 #'
-#'   draft <- datom_assemble_set(
+#'   x <- datom_assemble_set(
 #'     conn,
 #'     tags = list(description = "Example product for STUDY-001")
 #'   ) |>
-#'     datom_add_member("dm", v_dm, tags = list(type = "input")) |>
-#'     datom_add_member("lb", v_lb, tags = list(type = "output"))
+#'     datom_add_member("dm", v_dm, tags = list(type = "input"), conn = conn) |>
+#'     datom_add_member("lb", v_lb, tags = list(type = "output"), conn = conn)
 #'
-#'   print(draft)
-#'   datom_write_set(draft)
+#'   print(datom_list_members(x))
+#'   x |> datom_write_set(conn = conn)
 #'
 #'   unlink(tmp, recursive = TRUE)
 #' }
@@ -210,8 +216,9 @@ datom_assemble_set <- function(conn, name = NULL, tags = NULL) {
     cli::cli_abort(
       c(
         "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}.",
-        "i" = "A draft validates each member as it is added, which needs the \\
-               connection the members are read through."
+        "i" = "The set records the project it belongs to, taken from this \\
+               connection, and the write checks it against the repo it is \\
+               written into."
       ),
       class = "datom_not_a_conn"
     )
@@ -230,20 +237,86 @@ datom_assemble_set <- function(conn, name = NULL, tags = NULL) {
               {.code list(description = \"ADaM datasets for STUDY-001\")}."
   )
 
+  # `x["tags"] <- list(NULL)` keeps the field when there are none; `x$tags <-
+  # NULL` would remove it and change `names(x)` from what a read returns.
+  x <- .datom_empty_set(name, conn$project_name)
+  x["tags"] <- list(tags)
+
+  x
+}
+
+
+#' A Set With No Version Yet
+#'
+#' What a set is before its first write: a name (or `NULL`, left for the write
+#' to resolve), the project it belongs to, and no members. Spelled
+#' `list(version = NULL, ...)` so the empty fields keep their names, which is
+#' the shape [datom_get_set()] returns for a read set. [datom_assemble_set()]
+#' returns one, and the sync preview starts from one when the repo's set has
+#' never been written.
+#'
+#' @param name The set's name, or `NULL`.
+#' @param project The repo's project name.
+#' @return A `datom_set`.
+#' @keywords internal
+.datom_empty_set <- function(name, project) {
   structure(
-    list(conn = conn, name = name, tags = tags, members = list()),
-    class = "datom_set_draft"
+    list(
+      name = name,
+      project = project,
+      version = NULL,
+      data_sha = NULL,
+      tags = NULL,
+      members = list()
+    ),
+    class = "datom_set"
   )
 }
 
 
-#' Add one member to a draft set
+#' Append One Member Record to a Set, as an Edit
 #'
-#' Declares one member and appends it to a draft from [datom_assemble_set()],
-#' validating it immediately: the artifact must exist at the version given, and
-#' its labels must be well formed. The member record is built through the same
-#' path [datom_member()] uses, so a set assembled this way is byte-identical to
-#' the same set passed as a list.
+#' The three steps every addition takes -- a `$fetch` link, the set's version
+#' forgotten, an `add` row in the edit log -- in one place, so
+#' [datom_add_member()] and the set route of [datom_sync()] cannot drift apart
+#' in what they record. See points 5 and 6 of this file's header. **It prints
+#' nothing**: each caller says "nothing has been written" once, which for sync
+#' means once per call rather than once per added member.
+#'
+#' The link goes through the shared factory, never inline, so no frame holding
+#' a connection lands on its parent chain.
+#'
+#' @param x A `datom_set`.
+#' @param record A member record, already validated and checked for clashes.
+#' @return `x`, one member longer.
+#' @keywords internal
+.datom_set_add_record <- function(x, record) {
+  id <- .datom_member_id(record)
+  record$fetch <- .datom_member_as_link(record)
+
+  x$members <- c(x$members, list(record))
+  x <- .datom_forget_set_identity(x)
+
+  .datom_append_edits(x, data.frame(
+    action = "add",
+    project = id$project,
+    name = id$name,
+    kind = id$kind,
+    from = NA_character_,
+    to = id$version,
+    stringsAsFactors = FALSE
+  ))
+}
+
+
+#' Add one member to a set
+#'
+#' Declares one member and appends it to a set -- an empty one from
+#' [datom_assemble_set()] or one read back with [datom_get_set()] -- validating
+#' it immediately: the artifact must exist at the version given, and its labels
+#' must be well formed. The member record is built through the same path
+#' [datom_member()] uses, so a set assembled this way is byte-identical to the
+#' same set passed as a list.
 #'
 #' @section Naming a member:
 #' `member` accepts the three shapes a caller holds, and the second and third are
@@ -251,18 +324,20 @@ datom_assemble_set <- function(conn, name = NULL, tags = NULL) {
 #'
 #' | What you pass | What it means |
 #' |---|---|
-#' | a name | look this artifact up through the draft's connection |
+#' | a name | look this artifact up through `conn` |
 #' | a member record | use it as given -- from [datom_member()], or from a set read back |
 #' | a link | use the member it points at -- `x$members[[i]]$fetch`, or a leaf of [datom_structure_members()] |
 #'
-#' **A record is the only way to add a member of another project.** A draft holds
-#' one connection, so a name can only be resolved in that project; a record built
-#' on the other project's connection carries its own resolved pointer:
+#' **A name is looked up in one project's storage**: the project `conn` is
+#' for. A set holds no connection, so a name always needs `conn`, whichever
+#' project it is in. A record or a link carries its own resolved pointer and
+#' needs no connection at all:
 #'
 #' ```r
 #' datom_assemble_set(conn_a) |>
-#'   datom_add_member("dm", v1) |>                     # this project, by name
-#'   datom_add_member(datom_member(conn_b, "ae", v2))   # another project
+#'   datom_add_member("dm", v1, conn = conn_a) |>      # this project, by name
+#'   datom_add_member("ae", v2, conn = conn_b) |>      # another project, by name
+#'   datom_add_member(datom_member(conn_b, "vs", v3))  # another project, as a record
 #' ```
 #'
 #' **A link is how a consumer cites what they used.** Someone holding only a
@@ -280,50 +355,85 @@ datom_assemble_set <- function(conn, name = NULL, tags = NULL) {
 #' artifact immutable; requiring the pin is what makes the code reproducible.
 #' List versions with [datom_history()].
 #'
-#' @param x A `datom_set_draft` from [datom_assemble_set()].
+#' @section Every add is an edit:
+#' Adding a member behaves like [datom_update_members()] and
+#' [datom_remove_members()], whether the set was just assembled or read back:
+#'
+#' * **Nothing is written.** The set is stored only when you pass the result to
+#'   [datom_write_set()], and the call says so.
+#' * **`version` and `data_sha` are emptied**, because they described the
+#'   payload the set was read as. A set never written has neither.
+#' * **The addition is recorded**, so the write's default commit message says
+#'   `add 1 member` beside any repoints or removals made on the same object. A
+#'   freshly assembled set's first write therefore names every member it adds.
+#' * **The new member gets a `$fetch` link**, like every member of a set read
+#'   back.
+#'
+#' @param x A `datom_set`, from [datom_assemble_set()] or [datom_get_set()].
 #' @param member The member to add: an artifact name, a member record, or a link.
 #' @param version The version to pin, when `member` is a name. Required there;
 #'   refused beside a record or a link.
+#' @param conn A `datom_conn` from [datom_get_conn()] for the project a
+#'   **name** is looked up in. Required for a name; not used for a record or a
+#'   link.
 #' @section Adding the same member twice:
 #' The two cases differ, and they differ the same way they differ at the write:
 #'
 #' * **The same version with the same labels** is skipped, with a note. The write
-#'   drops an exact repeat anyway, so refusing here would make a draft stricter
-#'   than the equivalent list -- `Reduce(datom_add_member, records, init = draft)`
+#'   drops an exact repeat anyway, so refusing here would make this verb stricter
+#'   than the equivalent list -- `Reduce(datom_add_member, records, init = x)`
 #'   over a generated list that happens to repeat would fail where it works today.
 #' * **The same version with different labels** aborts. One version of one
 #'   artifact is one member holding one set of labels, and merging or choosing
 #'   between two sets would guess. The write refuses this too; here it names the
 #'   line that introduced it.
 #'
-#' So the member count a draft reports is the count the write will produce. Two
+#' So the member count a set reports is the count the write will produce. Two
 #' different **versions** of one artifact are two members, and both are kept.
 #'
 #' @param tags Optional named list of text labels for this member, when `member`
 #'   is a name. Refused beside a record or a link, which carry their own.
 #'
-#' @return The draft, one member longer -- or unchanged, when the member was
-#'   already in it with the same labels.
-#' @seealso [datom_assemble_set()] to open a draft, [datom_member()] to build a
-#'   record on another connection.
+#' @return The set, one member longer, with its `version` and `data_sha`
+#'   emptied and the addition appended to its `datom_edits` attribute -- or
+#'   unchanged, when the member was already in it with the same labels.
+#' @seealso [datom_assemble_set()] to start a set, [datom_get_set()] to read one
+#'   back, [datom_member()] to build a record on another connection,
+#'   [datom_update_members()] and [datom_remove_members()] for the other edits.
 #' @export
 #'
 #' @examples
-#' # A draft needs a live connection, so the runnable example lives on
+#' # Adding by name needs a live connection, so the runnable example lives on
 #' # datom_assemble_set(), which shows the whole pipe.
 #' print(names(formals(datom_add_member)))
-datom_add_member <- function(x, member, version = NULL, tags = NULL) {
+datom_add_member <- function(x, member, version = NULL, tags = NULL,
+                             conn = NULL) {
 
-  if (!inherits(x, "datom_set_draft")) {
+  if (!inherits(x, "datom_set")) {
     cli::cli_abort(
       c(
-        "{.arg x} must be a {.cls datom_set_draft} from \\
-         {.fn datom_assemble_set}.",
-        "i" = "Open one first: \\
-               {.code datom_assemble_set(conn) |> datom_add_member(\"dm\", v)}.",
+        "{.arg x} must be a {.cls datom_set}, from {.fn datom_assemble_set} or \\
+         {.fn datom_get_set}.",
+        "i" = "You passed {.cls {class(x)}}.",
+        "i" = "Start one: {.code datom_assemble_set(conn) |> \\
+               datom_add_member(\"dm\", v, conn = conn)}.",
+        "i" = "Or read the set: \\
+               {.code x <- datom_get_set(conn, \"my-product\")}.",
         "i" = "To build a member on its own, use {.fn datom_member}."
       ),
-      class = "datom_not_a_draft"
+      class = "datom_not_a_set"
+    )
+  }
+
+  if (!is.null(conn) && !inherits(conn, "datom_conn")) {
+    cli::cli_abort(
+      c(
+        "{.arg conn} must be a {.cls datom_conn} from {.fn datom_get_conn}.",
+        "i" = "You passed {.cls {class(conn)}}.",
+        "i" = "It is the connection a member given by name is looked up \\
+               through."
+      ),
+      class = "datom_not_a_conn"
     )
   }
 
@@ -331,9 +441,9 @@ datom_add_member <- function(x, member, version = NULL, tags = NULL) {
   shape <- got$shape
 
   if (is.null(got$record)) {
-    # A NAME, resolved through the draft's one connection. `datom_member()` reads
-    # the version's own snapshot, so a member that does not exist aborts here --
-    # on the line that declared it -- rather than at the write.
+    # A NAME, resolved through `conn`. `datom_member()` reads the version's own
+    # snapshot, so a member that does not exist aborts here -- on the line that
+    # declared it -- rather than at the write.
     if (is.null(version)) {
       # Built as a string first: an artifact name reaching cli as message text
       # would be read as markup.
@@ -350,7 +460,26 @@ datom_add_member <- function(x, member, version = NULL, tags = NULL) {
       )
     }
 
-    record <- datom_member(x$conn, member, version, tags = tags)
+    # Only the `conn` argument, never a `conn` field on `x`: a set holds no
+    # connection (point 1 of this file's header), so one found there was put
+    # there by hand and must not be used silently.
+    if (is.null(conn)) {
+      hint <- sprintf(
+        "datom_add_member(x, \"%s\", version, conn = conn)", member
+      )
+      cli::cli_abort(
+        c(
+          "Adding {.val {member}} by name needs {.arg conn}.",
+          "i" = "A set holds no connection, and a name is looked up in one \\
+                 project's storage.",
+          "i" = "Pass the connection for the project that holds it: \\
+                 {.code {hint}}."
+        ),
+        class = "datom_member_conn_required"
+      )
+    }
+
+    record <- datom_member(conn, member, version, tags = tags)
   } else {
     if (!is.null(version) || !is.null(tags)) {
       cli::cli_abort(
@@ -378,11 +507,17 @@ datom_add_member <- function(x, member, version = NULL, tags = NULL) {
   }
 
   # The record is appended AS GIVEN -- not tidied here. Tidying is the write's
-  # job, and doing it here would change what a caller reads back out of the draft
+  # job, and doing it here would change what a caller reads back out of the set
   # for no gain: the duplicate check below compares member digests, and the
   # encoder already treats a tag map as sorted keys over sorted, deduplicated
   # value sets, so every spelling tidying would collapse digests the same anyway.
-  clash <- .datom_draft_member_clash(x$members, record)
+  #
+  # The existing members are compared WITHOUT their links: every member of a set
+  # read back carries a callable `$fetch`, and the member digest refuses any
+  # field beyond `id` and `tags`.
+  clash <- .datom_draft_member_clash(
+    .datom_strip_member_links(x$members), record
+  )
   nm <- record$id$name
 
   if (identical(clash$status, "conflict")) {
@@ -390,7 +525,7 @@ datom_add_member <- function(x, member, version = NULL, tags = NULL) {
     want <- .datom_format_tag_line(record$tags)
     cli::cli_abort(
       c(
-        "{.val {nm}} is already in this draft, at the same version, with \\
+        "{.val {nm}} is already in this set, at the same version, with \\
          different labels.",
         "*" = "already added: {.val {have}}",
         "*" = "adding now:    {.val {want}}",
@@ -407,83 +542,24 @@ datom_add_member <- function(x, member, version = NULL, tags = NULL) {
 
   if (identical(clash$status, "duplicate")) {
     # SKIPPED, NOT REFUSED, and said out loud. The write drops an exact repeat
-    # silently, so refusing here would make the draft stricter than the list form
-    # -- `Reduce(datom_add_member, records, init = draft)` over a generated list
+    # silently, so refusing here would make this verb stricter than the list
+    # form -- `Reduce(datom_add_member, records, init = x)` over a generated list
     # that happens to repeat would start failing where it works today. Skipping
     # in silence would move the surprise rather than remove it: the caller typed
     # a line and the count would not move.
     cli::cli_alert_info(
-      "{.val {nm}} is already in this draft with the same labels -- not added \\
-       twice."
+      "{.val {nm}} is already in this set with the same labels -- not \\
+       added twice."
     )
     return(x)
   }
 
-  x$members <- c(x$members, list(record))
+  x <- .datom_set_add_record(x, record)
 
-  x
-}
-
-
-#' Print a draft set
-#'
-#' What is assembled so far, and that it is not written yet. One line per member
-#' -- name, kind, and its labels as compact `key=value` pairs -- which is what
-#' makes a pipe inspectable mid-build.
-#'
-#' **It names every field it shows and never prints the connection.** A
-#' connection may carry a credential, and a `datom_conn` prints an allowlist of
-#' named fields for exactly that reason: a secret added to a connection later
-#' cannot leak through a method that never iterates it.
-#'
-#' @param x A `datom_set_draft` from [datom_assemble_set()].
-#' @param ... Ignored.
-#' @param n Maximum number of members to list.
-#' @return Invisible `x`.
-#' @export
-#'
-#' @examples
-#' # See datom_assemble_set() for a runnable example that prints a draft.
-#' print(names(formals(datom_assemble_set)))
-print.datom_set_draft <- function(x, ..., n = 20L) {
-
-  # A name is optional, and the usual case is not supplying one -- so the header
-  # says where the name will come from rather than quoting a sentence as if it
-  # were the set's name.
-  if (is.null(x$name)) {
-    cli::cli_h3("datom set draft: {.emph the set this repo declares}")
-  } else {
-    cli::cli_h3("datom set draft: {.val {x$name}}")
-  }
-
-  cli::cli_ul()
-  # Named fields only, and never `x$conn` itself -- see this method's docs.
-  cli::cli_li("Project: {.val {x$conn$project_name}}")
-  cli::cli_li("Members: {.val {length(x$members)}}")
-  if (length(x$tags) > 0L) {
-    tag_line <- .datom_format_tag_line(x$tags)
-    cli::cli_li("Tags:    {tag_line}")
-  }
-  cli::cli_end()
-
-  shown <- utils::head(x$members, n)
-  cli::cli_ul()
-  purrr::walk(shown, function(m) {
-    line <- paste0(
-      m$id$name, " (", m$id$kind, ")  ", .datom_format_tag_line(m$tags)
-    )
-    cli::cli_li("{line}")
-  })
-  if (length(x$members) > length(shown)) {
-    cli::cli_li("... and {length(x$members) - length(shown)} more")
-  }
-  cli::cli_end()
-
-  cli::cli_alert_info("Not written yet -- finish with {.code datom_write_set()}.")
-  cli::cli_alert_warning(
-    "A draft holds a live connection, so it belongs in memory only -- do not \\
-     save one to disk or commit it."
+  cli::cli_alert_info(
+    "Nothing has been written. Write the set with \\
+     {.code datom_write_set(conn, x)}."
   )
 
-  invisible(x)
+  x
 }

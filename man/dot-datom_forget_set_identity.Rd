@@ -7,7 +7,7 @@
 .datom_forget_set_identity(x)
 }
 \arguments{
-\item{x}{The edited \code{datom_set} or \code{datom_set_draft}.}
+\item{x}{The edited \code{datom_set}.}
 }
 \value{
 \code{x}, with \code{version} and \code{data_sha} emptied when it had them.
@@ -25,6 +25,7 @@ common "refresh found nothing" case its citability for no reason.
 element and change \code{names(x)}. A read set may legitimately report a \code{NULL}
 version, so the field exists and is empty rather than being absent.
 
-A draft has neither field, so this is a no-op on one.
+A set never written has both fields empty already, so this changes nothing
+there.
 }
 \keyword{internal}

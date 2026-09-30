@@ -55,22 +55,22 @@
 
 # --- the object being edited ----------------------------------------------------
 
-#' The Member List of a Set or a Draft, or an Abort Naming What Was Passed
+#' The Member List of a Set, or an Abort Naming What Was Passed
 #'
-#' Both shapes are accepted because [datom_write_set()] already accepts both, so
-#' an edit verb narrower than the write would create a shape the write takes and
-#' the edit refuses.
+#' A `datom_set` however it was made -- read back, or assembled with
+#' [datom_assemble_set()] -- which is exactly what [datom_write_set()] takes,
+#' so the edit verbs and the write accept the same objects.
 #'
 #' @param x The value the caller passed.
 #' @param arg Argument name for the message.
 #' @return The member list, possibly empty.
 #' @keywords internal
 .datom_edit_members <- function(x, arg = "x") {
-  if (!inherits(x, "datom_set") && !inherits(x, "datom_set_draft")) {
+  if (!inherits(x, "datom_set")) {
     cli::cli_abort(
       c(
-        "{.arg {arg}} must be a {.cls datom_set} from {.fn datom_get_set} or a \\
-         {.cls datom_set_draft} from {.fn datom_assemble_set}.",
+        "{.arg {arg}} must be a {.cls datom_set}, from {.fn datom_get_set} or \\
+         {.fn datom_assemble_set}.",
         "i" = "You passed {.cls {class(x)}}.",
         "i" = "Read the set first: \\
                {.code x <- datom_get_set(conn, \"my-product\")}."
@@ -99,9 +99,10 @@
 #' element and change `names(x)`. A read set may legitimately report a `NULL`
 #' version, so the field exists and is empty rather than being absent.
 #'
-#' A draft has neither field, so this is a no-op on one.
+#' A set never written has both fields empty already, so this changes nothing
+#' there.
 #'
-#' @param x The edited `datom_set` or `datom_set_draft`.
+#' @param x The edited `datom_set`.
 #' @return `x`, with `version` and `data_sha` emptied when it had them.
 #' @keywords internal
 .datom_forget_set_identity <- function(x) {
@@ -369,6 +370,27 @@
 #'   artifacts.
 #' @keywords internal
 .datom_current_artifact_versions <- function(conn) {
+  current <- .datom_current_artifacts(conn)$artifacts
+  stats::setNames(current$current_version, current$name)
+}
+
+
+#' Every Artifact in One Project, With Its Kind and Current Version, in One Read
+#'
+#' The same single manifest read as [.datom_current_artifact_versions()], and
+#' the same refusal when it cannot be read -- that function is built on this
+#' one. The set sync preview needs two things the name-to-version vector drops:
+#' each entry's **kind**, which each preview row reports and which drops any
+#' kind this build does not know, and the **project name the manifest records**,
+#' which is how a mislabelled source connection is caught before it shows every
+#' artifact as new.
+#'
+#' @param conn A connection to the project.
+#' @return A list of `project_name` (the name the manifest records, or `NULL`
+#'   when it records none) and `artifacts`, a data frame of `name`, `kind` and
+#'   `current_version`, with `NA` for a field an entry does not record usably.
+#' @keywords internal
+.datom_current_artifacts <- function(conn) {
   read <- .datom_read_manifest(conn, scope = "storage", operation = "read")
 
   if (!isTRUE(read$ok)) {
@@ -389,24 +411,38 @@
     )
   }
 
+  declared <- read$manifest$project_name
+  project_name <- if (.datom_is_text_scalar(declared)) declared
+
   artifacts <- read$manifest$artifacts
   if (!is.list(artifacts) || length(artifacts) == 0L ||
       is.null(names(artifacts))) {
-    return(stats::setNames(character(), character()))
+    return(list(
+      project_name = project_name,
+      artifacts = data.frame(name = character(), kind = character(),
+                             current_version = character(),
+                             stringsAsFactors = FALSE)
+    ))
   }
 
-  vapply(
-    names(artifacts),
-    function(nm) {
-      entry <- artifacts[[nm]]
-      # Presence first: `entry[["current_version"]]` on an entry that lacks the
-      # field is a subscript error rather than NULL.
-      value <- if (is.list(entry) && "current_version" %in% names(entry)) {
-        entry$current_version
-      }
-      if (.datom_is_text_scalar(value)) value else NA_character_
-    },
-    character(1L)
+  # Presence first: `entry[["current_version"]]` on an entry that lacks the
+  # field is a subscript error rather than NULL.
+  field <- function(entry, f) {
+    value <- if (is.list(entry) && f %in% names(entry)) entry[[f]]
+    if (.datom_is_text_scalar(value)) value else NA_character_
+  }
+
+  nms <- names(artifacts)
+  list(
+    project_name = project_name,
+    artifacts = data.frame(
+      name = nms,
+      kind = vapply(artifacts, field, character(1L), f = "kind",
+                    USE.NAMES = FALSE),
+      current_version = vapply(artifacts, field, character(1L),
+                               f = "current_version", USE.NAMES = FALSE),
+      stringsAsFactors = FALSE
+    )
   )
 }
 
@@ -454,8 +490,8 @@
   # them too.
   if (length(record$tags) > 0L) fresh$tags <- record$tags
 
-  # Only for a member that had a link, or a draft's members would grow a field
-  # they never carried.
+  # Only for a member that had a link, or the members of a hand-built set would
+  # grow a field they never carried.
   if (is.function(record$fetch)) {
     fresh$fetch <- .datom_member_as_link(fresh)
 
@@ -492,7 +528,7 @@
 
 #' Add This Edit's Rows to Whatever Log the Object Already Carries
 #'
-#' **One log for both edit verbs, appended to rather than replaced, and that is
+#' **One log for every edit verb, appended to rather than replaced, and that is
 #' what makes a chain of edits produce one honest commit message.** With a verb
 #' owning its own attribute, `update |> remove |> write` commits a message naming
 #' the repoints and silent about the removal -- and a destructive edit is the one
@@ -506,6 +542,9 @@
 #' Repointing a member and then removing it leaves **both** entries. That is an
 #' honest history of the edits and slightly odd in a commit message; collapsing
 #' them would mean one verb reasoning about the other's rows.
+#'
+#' Three actions are written: `repoint` by [datom_update_members()], `remove` by
+#' [datom_remove_members()], and `add` by [datom_add_member()].
 #'
 #' @param x The edited object.
 #' @param rows A data frame of new entries, carrying
@@ -545,11 +584,12 @@
   short <- function(v) if (abbreviate) substr(v, 1L, 8L) else v
 
   describe <- function(row) {
-    if (identical(row$action, "remove")) {
-      sprintf("  %s  dropped, was %s", row$name, short(row$from))
-    } else {
+    switch(
+      row$action,
+      add = sprintf("  %s  added at %s", row$name, short(row$to)),
+      remove = sprintf("  %s  dropped, was %s", row$name, short(row$from)),
       sprintf("  %s  %s -> %s", row$name, short(row$from), short(row$to))
-    }
+    )
   }
 
   unlist(
@@ -686,7 +726,7 @@
 
   # One clause per action present, in the order the actions are listed here so
   # the subject reads the same whichever order the edits happened in.
-  verbs <- c(repoint = "repoint", remove = "drop")
+  verbs <- c(add = "add", repoint = "repoint", remove = "drop")
   counts <- vapply(
     names(verbs), function(a) sum(edits$action == a), integer(1L)
   )
@@ -734,11 +774,6 @@
 #' unique(datom_list_members(x)$project)
 #' ```
 #'
-#' A `datom_set_draft` carries the connection it was opened with, and this verb
-#' **ignores** it: a draft carries exactly one while this call legitimately spans
-#' several, and quietly preferring the embedded one would make the same call
-#' behave differently depending on how `x` was produced.
-#'
 #' @section Which members move:
 #' With no `member`, **every** member -- refreshing everything is the common case
 #' and rerunning it changes nothing. Otherwise select one the way
@@ -782,9 +817,8 @@
 #' still reads, so the set stays writable.
 #'
 #' @section What comes back:
-#' The class it was handed -- a `datom_set` for a `datom_set` and a
-#' `datom_set_draft` for a draft -- with matching members repointed and each
-#' moved member's labels byte-identical to what they were.
+#' The set it was handed, with matching members repointed and each moved
+#' member's labels byte-identical to what they were.
 #'
 #' When something moved, a `datom_set`'s `version` and `data_sha` are emptied:
 #' they described the payload it was read as, and that is no longer what the
@@ -798,8 +832,7 @@
 #' write produces one message describing both. Passing `x$members` rather than `x`
 #' to the write loses that and nothing else.
 #'
-#' @param x A `datom_set` from [datom_get_set()], or a `datom_set_draft` from
-#'   [datom_assemble_set()].
+#' @param x A `datom_set`, from [datom_get_set()] or [datom_assemble_set()].
 #' @param conn A `datom_conn` from [datom_get_conn()], or a list of them -- one
 #'   per project the selected members belong to.
 #' @param member Optional: the member to repoint, as its name, a member record,
@@ -1090,8 +1123,7 @@ datom_update_members <- function(x, conn, member = NULL, tags = NULL,
 #' a valid pinned version behind, while skipping a removal silently does nothing at
 #' all.
 #'
-#' @param x A `datom_set` from [datom_get_set()], or a `datom_set_draft` from
-#'   [datom_assemble_set()].
+#' @param x A `datom_set`, from [datom_get_set()] or [datom_assemble_set()].
 #' @param member The member to drop, as its name, a member record, or a link.
 #'   Optional only when `tags` or `version` selects on its own.
 #' @param tags Optional named list of labels selecting members, e.g.

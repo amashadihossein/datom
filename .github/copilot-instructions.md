@@ -7,6 +7,9 @@
 3. **Find your place**: In `tasks.md`, the next unchecked task is where to resume.
 4. **Continue work**: As you complete each task, check it off in `tasks.md` in the **same commit** as its code, and update the `dev/README.md` Active Specs status line. See "Workflow model — spec = phase" under Operational Discipline.
 
+**How to talk to the owner** (chat, checkpoints, design discussions): follow
+`.kiro/steering/communication.md` -- above all, one point at a time rather than long numbered reports.
+
 ## Project Overview
 
 datom is an R package for version-controlled data management. It stores tabular data in S3 with git-tracked metadata, enabling reproducibility for clinical/scientific workflows.

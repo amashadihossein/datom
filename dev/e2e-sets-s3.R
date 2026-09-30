@@ -319,13 +319,13 @@ tryCatch({
 
   # --- 3. The set cites the other project's tables --------------------------
   hr("3. a set in the product repo, citing the inputs project")
-  draft <- quiet(datom_assemble_set(
+  x_new <- quiet(datom_assemble_set(
     pr_conn, tags = list(description = "Trial data cut, month 1")))
-  draft <- quiet(datom_add_member(
-    draft, datom_member(in_conn, "dm", v_dm1,
+  x_new <- quiet(datom_add_member(
+    x_new, datom_member(in_conn, "dm", v_dm1,
                         tags = list(type = "input", domain = "safety"))))
-  draft <- quiet(datom_add_member(
-    draft, datom_member(in_conn, "ex", v_ex1,
+  x_new <- quiet(datom_add_member(
+    x_new, datom_member(in_conn, "ex", v_ex1,
                         tags = list(type = "input", domain = "exposure"))))
 
   # The caller's own code, committed into the same commit as the set.
@@ -337,7 +337,7 @@ tryCatch({
 
   head_before <- head_sha(pr_repo_obj)
   first <- quiet(datom_write_set(
-    draft, include_paths = c("R/build.R", "renv.lock")))
+    pr_conn, x_new, include_paths = c("R/build.R", "renv.lock")))
   in_tree <- tree_paths(pr_repo_obj, head_sha(pr_repo_obj))
 
   claim("the set was written", first$action, "full")

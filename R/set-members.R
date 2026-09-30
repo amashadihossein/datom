@@ -68,7 +68,8 @@
   if (!inherits(x, "datom_set")) {
     cli::cli_abort(
       c(
-        "{.arg {arg}} must be a {.cls datom_set} from {.fn datom_get_set}.",
+        "{.arg {arg}} must be a {.cls datom_set}, from {.fn datom_get_set} or \\
+         {.fn datom_assemble_set}.",
         "i" = "Read the set first: \\
                {.code x <- datom_get_set(conn, \"my-product\")}."
       ),

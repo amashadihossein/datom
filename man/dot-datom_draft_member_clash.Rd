@@ -2,18 +2,18 @@
 % Please edit documentation in R/set-draft.R
 \name{.datom_draft_member_clash}
 \alias{.datom_draft_member_clash}
-\title{Is This Member Already in the Draft, and Is It the Same Member?}
+\title{Is This Member Already in the Set, and Is It the Same Member?}
 \usage{
 .datom_draft_member_clash(members, record)
 }
 \arguments{
-\item{members}{The draft's members so far.}
+\item{members}{The set's members so far, with their links stripped.}
 
 \item{record}{The record about to be added.}
 }
 \value{
 A list with \code{status} -- \code{"new"}, \code{"duplicate"} or \code{"conflict"} -- and,
-for the last two, \code{at}: the position of the member already in the draft.
+for the last two, \code{at}: the position of the member already in the set.
 }
 \description{
 Answers the question the write answers twice, one step earlier, so a repeat
@@ -39,6 +39,6 @@ disagreement and aborts.
 
 That is also why nothing needs tidying first. Every spelling the write's tidy
 step collapses is a spelling the digest is already blind to, so a record can be
-compared -- and stored in the draft -- exactly as the caller supplied it.
+compared -- and stored in the set -- exactly as the caller supplied it.
 }
 \keyword{internal}

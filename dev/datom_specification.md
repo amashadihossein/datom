@@ -1099,7 +1099,7 @@ For normal writes:
 - Handles: no-op (`none`), metadata-only update, or full update with storage upload
 - **`parquet_sha` decision** (`.datom_resolve_parquet_sha()`): `metadata_only` carries the current `parquet_sha` forward and skips the upload; `full` whose `data_sha` already has a recorded `parquet_sha` in history reuses it and does **not** re-upload (a fresh serialization can differ byte-for-byte and would break that version's integrity pin); `full` otherwise uploads and records the new hash.
 - The parquet upload stays **after** the git push. Git push is the serialization point that makes the reuse decision safe against concurrent writers; this ordering is load-bearing and must not be refactored.
-- `parents`: list of `list(source, table, version, data_sha)` entries recording immediate parent lineage. Records are produced by `datom_parent(conn, table, version)` — one conn per parent project — which resolves `data_sha` and `source_lineage` from the parent's own store. `NULL` if lineage not recorded. `datom_sync()` never passes `parents` — imported tables always have `parents: null`.
+- `parents`: list of `list(source, table, version, data_sha)` entries recording immediate parent lineage. Records are produced by `datom_parent(conn, table, version)` — one conn per parent project — which resolves `data_sha` and `source_lineage` from the parent's own store. `datom_parent(conn, table, x = , tags = )` takes the version from a set instead: `version` and `x` are mutually exclusive, `table` may name several tables, the result is always a list, and each name resolves exactly as `datom_fetch_member()` resolves it (ambiguous stops listing candidates, narrowed by `tags`; a set-kind member stops, since a set is never a parent). `NULL` if lineage not recorded. `datom_sync()` never passes `parents` — imported tables always have `parents: null`.
 - `source_lineage`: derived by `datom_write()` as the deduplicated union of the parents' captured `source_lineage` fields; there is no `source_lineage` argument to supply. For `datom_sync()`, auto-computed as a single self-entry (project, table, data_sha of the imported file).
 
 Returns: List with deployment details
@@ -1216,12 +1216,14 @@ Returns: a member record -- `id` plus optional `tags`.
 
 ```r
 datom_assemble_set(conn, name = NULL, tags = NULL)
-datom_add_member(x, member, version = NULL, tags = NULL)
+datom_add_member(x, member, version = NULL, tags = NULL, conn = NULL)
 ```
 
-The stepwise route, for a build script that discovers its inputs as it goes. `datom_assemble_set()` opens a draft; `datom_add_member()` returns the draft with one more member on it, so calls chain. `member` takes a name (looked up in this project's storage), a member record, or a link. Nothing is hashed or written until the draft reaches `datom_write_set()`.
+The stepwise route, for a build script that discovers its inputs as it goes. **There is one kind of set in memory, a `datom_set`, and it holds no connection**: a connection may carry a credential, so it goes on each call that uses it. `datom_assemble_set()` returns an empty `datom_set` (no version, no members; `name` `NULL` unless given, resolved by the write; `project` from `conn`). `datom_add_member()` returns the set with one more member on it, so calls chain. `member` takes a name (looked up through `conn`, **required** for a name), a member record, or a link (neither needs `conn`). Nothing is hashed or written until the set reaches `datom_write_set(conn, x)`.
 
-Returns: a `datom_set_draft`.
+Every add is an edit, whether the set was assembled or read back, exactly like `datom_update_members()`: nothing is written (and the call says so), `version` / `data_sha` are emptied, an `add` row joins the edit log (so the write's default commit message says `add N members` -- including an assembled set's first write), and the new member gets a `$fetch` link. The list, structure, fetch and edit verbs take an assembled set as they take a read one.
+
+Returns: the `datom_set`, one member longer (or unchanged, when an exact repeat was skipped).
 
 #### datom_write_set() — Data Developers
 
@@ -1229,19 +1231,21 @@ Returns: a `datom_set_draft`.
 datom_write_set(conn, members, tags = NULL, name = NULL,
                 message = NULL, include_paths = NULL)
 
-# three call shapes, two independent widenings on two different arguments:
+# two call shapes, one widening on `members`:
 datom_write_set(conn, list(m1, m2))   # a member list
-datom_write_set(conn, x)              # a set read back, or an edited one
-datom_write_set(draft)                # a draft in the first slot, so a pipe ends here
+datom_write_set(conn, x)              # a datom_set: assembled, read back, or edited
+x |> datom_write_set(conn = conn)     # the same, piped; `x` binds to `members`
 ```
 
-Writes a set, on the machinery a table write already uses: change detection on `data_sha`, one commit, git before storage. Passing a draft **and** a member list is refused rather than resolved by preference -- either choice would write a set the caller did not describe.
+Writes a set, on the machinery a table write already uses: change detection on `data_sha`, one commit, git before storage.
 
 - The repo must declare `mode: product` **and** name the set in `.datom/project.yaml`. One repo holds one set, so `name` is a cross-check rather than a free choice.
+- **A `datom_set` is written into its own repo only.** Its name (when set) goes through the same check as `name`, so another repo's set stops with `datom_set_name_mismatch`; a `name` argument disagreeing with the set's own name stops with the same class; its project (when set) must equal `conn$project_name`, else `datom_set_project_mismatch`. The project check is what catches two product repos declaring the same set name. All before the first hash and every local write. A plain member list carries neither claim, which is the route for rebuilding another repo's members into this repo's set.
 - **Identical content is a no-op** -- no commit, no version, no upload -- and that holds even when files listed in `include_paths` are dirty. The return says so, and a message names `datom_repo_commit()` for committing those files on their own.
 - `include_paths` stages the caller's own paths into the **same** commit as the payload and its metadata, so checking out a set version yields the pointers plus what produced them. Four refusals fire above the first hash: a path outside the clone, a datom-owned path, a nonexistent path, and a **gitignored** path -- that last one because git would stage nothing and say nothing, leaving a version claiming a joint commit that omits exactly the file named.
 - A set may not take the name of an existing table, or the reverse. The check reads the artifact's own metadata **in storage**, never the manifest row, which can lag behind a half-finished write.
 - A set listing any version of itself is refused. That is a nonsense check rather than cycle detection: a member pins an immutable version that must already exist, so a set cannot contain itself.
+- **Outputs must be built from the inputs the set pins.** For each member in the set's own project, the write reads its snapshot's recorded `parents`. A parent whose table the set pins at a different version, and not also at the parent's version, stops the write (`datom_set_parent_mismatch`, every mismatch listed). A parent the set does not list is not checked, and a table pinned twice (live beside a frozen baseline) passes if either pin matches. An unreadable snapshot stops the write (`datom_set_member_unreadable`); a too-new one keeps `datom_schema_unsupported`. Runs after member validation and before the first hash. This is what catches a refresh that moved the inputs and wrote the set without re-deriving the output.
 
 Returns: invisibly, a list of `name`, `data_sha`, `metadata_sha` (the version), `member_count` (after normalisation), `action` (`"none"` or `"full"`) and `commit_sha`. There is no `"metadata_only"` outcome for a set: its metadata document carries nothing a caller can change independently of the payload.
 
@@ -1307,15 +1311,17 @@ Editing a set that already exists. **Neither touches a stored document** -- they
 - What each refuses rather than doing quietly differs, and the asymmetry is deliberate. A member whose project has no supplied connection stops the whole update, because nobody can tell whether it moved. A member whose artifact no longer exists is reported and left pinned -- that version still reads, and refusing a whole refresh over one retired input is the wrong trade. A **name matching two members** is skipped by the update and refused by the removal: skipping a refresh leaves a valid pin behind, while skipping a removal silently does nothing at all.
 - Both append to one shared edit log -- the `datom_edits` attribute on the returned object -- so a chained edit produces **one** commit message naming all of it (`repoint 1 member, drop 1 member`) with the detail in the body, rather than `Update {name}`.
 
-Returns: `x` with the matching members repointed or dropped, and what changed appended to its `datom_edits` attribute. Both accept a `datom_set` or a `datom_set_draft`.
+Returns: `x` with the matching members repointed or dropped, and what changed appended to its `datom_edits` attribute. Both accept a `datom_set`, however it was made.
 
 ### Batch Operations (Data Developers)
 
 #### datom_sync_manifest()
 
 ```r
-datom_sync_manifest(conn, path = NULL, pattern = "*")
+datom_sync_manifest(conn, path = NULL, pattern = "*", sources = NULL)
 ```
+
+**Two contexts, one verb; the repo decides which.** On a `mode: product` repo it previews the repo's set against source projects (see "Set sync on a product repo" below); `sources` is required there and `path` is refused. On an ordinary repo `sources` is refused and the file scan below runs unchanged.
 
 Scans flat `input_files/` directory:
 - No subdirectories allowed
@@ -1329,8 +1335,11 @@ Returns: Manifest for review (columns `name`, `file`, `format`, `original_file_s
 #### datom_sync()
 
 ```r
-datom_sync(conn, manifest, continue_on_error = TRUE)
+datom_sync(conn, manifest, continue_on_error = TRUE,
+           sources = NULL, tags = list(type = "input"), x = NULL)
 ```
+
+On a `mode: product` repo it applies a set preview (see "Set sync on a product repo" below); `sources` is required there and a typed `continue_on_error` is refused. On an ordinary repo `sources`, `tags` and `x` are refused and file sync runs unchanged.
 
 Processes new/changed files:
 - One commit per table
@@ -1344,6 +1353,22 @@ Returns: Updated manifest with results
 Rationale: flat tabular only. A container format (`.rds`, `.json`, `.xml`) can deserialize to anything, including the list and exotic columns the table contract refuses, so refusing at the door keeps the failure legible instead of deferring it to a type error deep in the write.
 
 **Escape-hatch tradeoff (a rule, not a footnote).** A user may always read an unsupported source themselves and pass the data frame to `datom_write()`. That table is then **derived**: it carries no `original_file_sha`, so input-file change detection does not apply to it. Converting the source to CSV/parquet once and letting `datom_sync()` onboard it is the way to keep file-level change detection.
+
+#### Set sync on a product repo
+
+```r
+m <- datom_sync_manifest(conn, sources = list(conn_a, conn_b), pattern = "*")
+x <- datom_sync(conn, m, sources = list(conn_a, conn_b))   # or a subset of m's rows
+datom_write_set(conn, x)
+```
+
+Map what the sources hold, review it as a frame, apply it -- the shape file sync has, for a set. **Tables and sets in a source are treated alike**, so a set built from sets syncs the same way.
+
+The preview reads the stored set and **one manifest per source**, nothing per artifact, and writes nothing. Columns `project`, `name`, `kind`, `version_from` (`NA` when new), `version_to`, `status`. One row per source artifact matching `pattern`: `new` (no member points at it; every row on a first version), `changed` / `unchanged`, or `ambiguous` (two members share it, e.g. live plus frozen baseline, so neither moves; `datom_update_members(member = , tags = )` moves one). Plus a row per member not compared: `excluded` (filtered by `pattern`) and `not_checked` (its project not passed). **Every member lands in exactly one place**: members of the repo's own project are outputs and get no row; a member whose artifact left its source is named in a warning and left pinned. **Never a removal.** It stops when `sources` includes the repo's own project, and when a source connection's label differs from the project name that source's manifest records.
+
+Apply accepts **any row subset**, or a hand-built frame with the same columns, and trusts none of its facts. `new` rows add a member at `version_to` labelled with `tags`; `changed` rows repoint the member, **keeping its labels**; other statuses do nothing. It stops, before changing anything, when the set moved since the preview (a `changed` member is no longer at `version_from`, or a `new` artifact is already held -- rebuild the preview), when a row's `kind` or `project` disagrees with what it names, on duplicate rows, and on a row whose project has no connection. `x =` applies to a set in hand; omitted, the stored set is read, or an empty one used on a first version.
+
+**Tables save on sync; a set saves on `datom_write_set()`.** Deliberate: a set is one document built from many rows, so the edit becomes one version, which the caller can inspect or add to first. Apply ends with the not-written line, and the edits ride on the set's edit log, so the write's default commit message names what was added and repointed. The write's provenance check then catches an output left underived after its inputs moved.
 
 #### datom_check_hashable() — All Users
 
@@ -1439,12 +1464,13 @@ datom_migrate(conn_from, conn_to, tables, update_ref = TRUE)
 #### datom_example_data()
 
 ```r
-datom_example_data(domain = c("dm", "ex", "lb", "ae"), cutoff_date = NULL)
+datom_example_data(domain = c("dm", "ex", "lb", "ae", "vs"), cutoff_date = NULL)
 ```
 
-Loads bundled clinical trial example data for use in examples and vignettes. The data simulates a Phase II study (STUDY-001) with 48 subjects across four SDTM-style domains.
+Loads bundled clinical trial example data for use in examples and vignettes. The data simulates a Phase II study (STUDY-001) with 48 subjects across five SDTM-style domains.
 
-- `domain`: `"dm"` (demographics), `"ex"` (exposure), `"lb"` (laboratory), or `"ae"` (adverse events)
+- `domain`: `"dm"` (demographics), `"ex"` (exposure), `"lb"` (laboratory), `"ae"` (adverse events), or `"vs"` (vital signs, on the same subject/visit/date triples as `lb`)
+- `data-raw/simulate_study_data.R` generates all five from one random stream, so **a new domain goes last** in the script: generating it earlier would shift every later draw and change tables whose values recorded vignette output depends on.
 - `cutoff_date`: Optional `"YYYY-MM-DD"` to filter rows on or before this date, simulating a point-in-time EDC extract
 
 Returns: Data frame.
