@@ -81,9 +81,21 @@ walks the whole arc.
   why the verb is `get`. Every member carries a `$fetch(conn)` link that pins the
   version it was read at -- a citation, not a subscription. A member that is
   itself a set comes back as a pointer, so read cost does not grow with depth.
-* **`datom_member()`** declares one member. **`datom_assemble_set()`** and
-  **`datom_add_member()`** build a set a member at a time, so a bad version is
-  reported on the line that added it.
+* **`datom_member()`** declares one member. **`datom_assemble_set()`** starts an
+  empty set and **`datom_add_member()`** adds one member at a time, to a new set
+  or one read back, so a bad version is reported on the line that added it. A
+  set in memory holds no connection: pass `conn =` to add a member by name, and
+  write with `datom_write_set(conn, x)` or `x |> datom_write_set(conn = conn)`.
+* **On a product repo, `datom_sync_manifest(conn, sources = )` and
+  `datom_sync(conn, manifest, sources = )` build and refresh the set** the way
+  they onboard files elsewhere: map what the source projects hold, review it as
+  a data frame, apply it. Tables and sets in a source are handled alike. The
+  preview never proposes a removal and says which members it could not check.
+  Unlike table sync, applying writes nothing: `datom_write_set()` saves the set.
+  See `?datom_sync_manifest` and `?datom_sync`.
+* **`datom_parent(conn, table, x = )`** takes the parent's version from the set
+  you hold, resolving the name as `datom_fetch_member()` does, and returns a list
+  ready for `datom_write(parents = )`. Calls with `version =` are unchanged.
 * **`datom_fetch_member()`**, **`datom_list_members()`** and
   **`datom_structure_members()`** get at members: the data, a row per member per
   label, or a view grouped by label. Labels are the navigation axis -- a name is
@@ -97,6 +109,10 @@ walks the whole arc.
   commit** as the set, with `datom_write_set(include_paths = )`, so checking out a
   set version gives you the data pointers plus what produced them. A product repo
   refuses to onboard files -- it builds its artifacts rather than importing them.
+* `datom_write_set()` stops before writing anything when a member's recorded
+  parents name an input that the set pins at a different version (the output
+  was not derived again after its inputs moved), and when the set you pass
+  belongs to another repo, by name or by project. See `?datom_write_set`.
 * `datom_validate()` understands both kinds. A set is checked for members whose
   pinned versions still exist and for a recorded payload hash, without descending
   into members that are themselves sets. `fix = TRUE` can restore a set's payload
@@ -147,6 +163,8 @@ version, not every commit that could.
   written. See "What metadata reveals about your data" in
   `vignette("design-version-shas")`
   ([#119](https://github.com/amashadihossein/datom/issues/119)).
+* `datom_example_data("vs")` returns a vital-signs table for the same 48
+  subjects and visits as `lb`. The other four example tables are unchanged.
 * New **`datom_storage_read_json()`** on the storage extension API, for reading a
   JSON document out of a project's namespace by relative key.
 * A repo whose manifest cannot be read is listed by rebuilding the index from

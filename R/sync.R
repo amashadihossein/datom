@@ -442,6 +442,9 @@ datom_pull <- function(conn) {
 #'   repo declares `mode: product`.
 #' @keywords internal
 .datom_refuse_import_on_product <- function(verb, context) {
+  # Unreachable today, and kept on purpose: both callers only call this on a
+  # product repo, so no test can reach this line. It keeps the helper correct for
+  # a future caller that skips that check.
   if (!isTRUE(context$product)) return(invisible(NULL))
 
   declared_set <- context$set

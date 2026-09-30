@@ -276,6 +276,14 @@ in the R temp directory, then check `usethis:::get_release_data()` parses it.
   first. Sweeping the 22 is a one-commit pre-CRAN cleanup, deliberately not folded into spec
   work (`vignettes/*.Rmd` is already clean).
 
+- **In roxygen, a paragraph after the last `@param` belongs to that `@param`.** A blank line does
+  not end a tag; only the next tag does. So a description paragraph placed below the argument
+  list is rendered inside the last argument's entry, and moves silently when an argument is
+  added. Found 2026-09-29 (set-sync-ergonomics task 9): both sync verbs' notes on unsupported
+  file formats had sat under `pattern` / `continue_on_error`, then under the new `sources` /
+  `x`, through a spec that edited both blocks. Put description paragraphs above the first tag,
+  and check the rendered `.Rd` (`grep -n "item{" man/verb.Rd`) when a block ends in prose.
+
 ### datom-cv1 identity (issue #72, landed pre-0.1.0)
 
 Harvested from the spec's work-handoff at completion. The *design* lives in
@@ -605,6 +613,7 @@ suite that only checks that *something* failed.
   "to keep the class", and the probe swapping in `purrr::reduce()` reddened nothing, even under
   `inherit = FALSE`. So the choice guarded nothing. The loop now uses `purrr::reduce()`, as the
   conventions ask. Probe the claim before writing a comment that depends on it.
+
 ### Adding a field to a metadata document is not the same size of change on each list
 
 Landed 2026-09-10 with `kind` (which kind of artifact the document describes) entering per-artifact
@@ -797,7 +806,11 @@ Three cheap habits remove it:
   control probe looks red and every count is off by one. Found 2026-09-28 (set-sync-ergonomics
   task 5). Guard with `if (length(failed_tests))`, and write the harness output to a file rather
   than reading it off the terminal: cli's progress output carries carriage returns that overwrite
-  lines on screen.
+  lines on screen. **It bit package code too**, a day later: the set sync preview built its
+  "no current version" warning with `paste0(name, " in ", project)` over empty vectors, so every
+  clean preview warned about one blank artifact. No unit test saw it (they checked the warning
+  fired when it should); the vignette dry run did. `sprintf()` returns `character(0)` for empty
+  input, and a test that a clean call prints only its summary line pins it.
 
 ### A closure leaks a connection only once the connection has been FORCED
 
@@ -1085,6 +1098,15 @@ a regression there will not point at the criterion.
 
 **And restore from your own copy, never from git** -- see the probe-harness entry above,
 which exists because that cost a whole task's work once.
+
+**A guard no caller can reach cannot be probed, so decide its fate once and say so at the
+site.** Two cases in set-sync-ergonomics went opposite ways, and both are right. A kind filter
+in the set write's provenance check could never fire (every own-project member of a product
+repo is a table) and nothing depended on it, so it was left out (task 4). The early return
+opening `.datom_refuse_import_on_product()` cannot fire either, since both callers test the
+same condition first, but it keeps the helper correct for a future caller that skips that
+test, so the owner kept it (2026-09-29). Without a comment at the site, every coverage review
+reports it as a gap again.
 
 ### An offline stand-in cannot test the configuration it stands in for
 

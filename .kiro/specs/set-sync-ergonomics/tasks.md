@@ -12,9 +12,8 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b, 5c, 6, 7 and 8 on 2026-09-29.
-**Resume at task 9** (close out). Its coverage review is done and its three gaps are closed (see the
-task 9 entry); ask the owner before starting the rest (rule 5d). Task 5c came out of the
+Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b, 5c, 6, 7, 8 and 9 on
+2026-09-29. **Every task is done**; what remains is the PR into `dev`. Task 5c came out of the
 task 6 cold-start review on 2026-09-29 -- see design section 12 for why.
 
 **A cold-start review on 2026-09-28, after task 5, settled everything task 6 needed.** A fresh
@@ -353,7 +352,31 @@ to its code needs another credentialed run of `dev/e2e-vignettes-s3.R`.
     refresh; no row for `liver_flags`; three set versions. Nothing contradicted.
   - Owner runs `dev/e2e-vignettes-s3.R` with credentials; agent fills blocks mechanically.
 
-- [ ] **9. Close out** (AC15, AC16)
+- [x] **9. Close out** (AC15, AC16)
+  - **Done 2026-09-29, 4705 tests, `R CMD check --as-cran` 0E/0W/0N.** Two commits. First, both sync
+    verbs' product-repo roxygen says tables save on sync and a set on `datom_write_set()`; the
+    ordinary-repo notes on unsupported formats, which had been rendering inside the last `@param`
+    entry, moved into the description. Second, the close-out:
+  - `NEWS.md`: folded into the unreleased "New: citable sets" section rather than a section of its
+    own, since sets have never shipped and a reader upgrading from 0.1.2 never saw drafts. New
+    bullets for sync on a product repo, `datom_parent(x = )` and the two write refusals; the
+    assemble/add bullet rewritten for one kind of set; `vs` under "Smaller changes". Cites only
+    `?verb` and `vignette(...)`.
+  - `dev/datom_pathways.md`: new card "Given a product repo and its source projects, map and apply
+    set changes"; the set write card gained steps for unpacking a `datom_set` and the name, project
+    and provenance checks.
+  - `dev/datom_specification.md`: both sync signatures and a "Set sync on a product repo" section;
+    `datom_parent(x = , tags = )` in the `parents` bullet; the provenance check under
+    `datom_write_set()`; `vs` and the "new domains go last" rule under example data.
+  - `dev/engineering-notes.md`: roxygen prose after the last `@param`; `paste0()` over empty vectors
+    in package code (extends the harness note); unreachable guards, both decisions from this spec.
+    The kept early return in `.datom_refuse_import_on_product()` now says at the site why it stays.
+    (The first commit also dropped "FOUR THINGS" over a five-item list in the `R/sync-set.R` header.)
+  - `dev/README.md`: completed row; Active Specs empty.
+  - AC16's "no `dev/` or `.kiro/` cite" holds for everything this spec added. Two older cites remain,
+    both from before this spec: `vignettes/design-version-shas.Rmd` names
+    `dev/datom_cv1_reference.R`, and an internal helper's roxygen in `R/sync.R` names
+    `dev/engineering-notes.md`.
   - **Escalation flag: test coverage review first.** **Done 2026-09-29**, by Claude Code independently
     of these records: `handoff/ac15-coverage-review.md`. It removed 57 guards one at a time in a
     scratch copy; 54 turned a test red, and 3 had no test. All three gaps are now closed, 4705 tests (+14):
