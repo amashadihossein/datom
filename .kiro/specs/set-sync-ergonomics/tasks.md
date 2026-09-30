@@ -12,8 +12,9 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b, 5c and 6 on 2026-09-29.
-**Resume at task 7** (vignette code and offline dry run); ask the owner before starting it (rule 5d). Task 5c came out of the
+Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b, 5c, 6 and 7 on 2026-09-29.
+**Resume at task 8** (the owner's credentialed run; the agent then fills the `[pending run]` blocks from
+`transcript-s3.md`); ask the owner before starting it (rule 5d). Task 5c came out of the
 task 6 cold-start review on 2026-09-29 -- see design section 12 for why.
 
 **A cold-start review on 2026-09-28, after task 5, settled everything task 6 needed.** A fresh
@@ -24,31 +25,19 @@ stale cases, duplicate rows, kind and project mismatches, what `x =` accepts, th
 refusal, frame checks, tidy-ups) and R3.4 (the not-written line). **The largest change: sets are
 now in scope for sync** (R2.1a, AC17, design 3's "Sets are included" block), which is why task 5b
 exists. Nothing is left to ask before coding 5c or 6.
-**Current test count: 4687** (after task 6) -- what task 7's count must not drop below.
+**Current test count: 4691** (after task 7's preview fix) -- what later counts must not drop below.
 
-Starting cold (task 7): `git checkout spec/set-sync-ergonomics && git pull`, then read
-`requirements.md` R8 and `design.md` section 9 (the agreed vignette shape). The verbs it uses are
-all shipped: `datom_sync_manifest(conn, sources = )` and `datom_sync(conn, m, sources = , tags = ,
-x = )` (tasks 5-6), `datom_parent(x = )` (task 2), `datom_add_member(conn = )` on any set (tasks 3
-and 5c), and `datom_write_set(conn, x)` (task 5c). Their roxygen is the reference for
-arguments; the task 6 record below lists apply's refusals. **Task 7 changes no `R/` code**. If the
-vignette needs an API change, stop and raise it with the owner.
-
-Before editing the vignette, read `dev/engineering-notes.md` "Vignette output comes from running
-the vignette's own chunks, not a copy". Two points from it matter here. **Label every chunk**: the
-runner finds chunks by label. **Assign every call that returns visibly**: on a product repo
-`datom_sync()` now returns a `datom_set`, which prints if left bare. The runner is
-`dev/e2e-vignettes-s3.R`; its header says how it runs the chunks and which labels it special-cases
-(`derive-script` among them). Offline dry run:
-`DATOM_E2E_BACKEND=local Rscript dev/e2e-vignettes-s3.R < /dev/null`, or source it from a session.
-It writes `transcript-local.md` to `DATOM_E2E_OUT`. Versions are content hashes, so the local run
-predicts the real run's versions exactly.
-
-Files: `vignettes/citable-sets.Rmd` (rewritten), `dev/e2e-sets.R` (new claims for the sync and
-parent verbs; offline, `Rscript dev/e2e-sets.R`). `vignettes/start-on-s3.Rmd` must **not** be
-edited (R8.3): its chunks run first in the same walk, and the check is that their output still
-matches the recorded blocks.
-
+Starting cold (task 8): `git checkout spec/set-sync-ergonomics && git pull`. The owner runs
+`dev/e2e-vignettes-s3.R` with credentials (its header lists the environment variables; sourcing it
+from a session is the easy route). It writes `transcript-s3.md` to `DATOM_E2E_OUT`. The agent then
+replaces each `#> [pending run]` in `vignettes/citable-sets.Rmd` with that chunk's output from the
+transcript, mechanically, refusing any chunk whose code in the transcript differs from the
+vignette's. Allowed edits only (R8.4): paths and the GitHub account shown as `...`, the scratch
+bucket shown as `study001`. Any output that contradicts the prose: fix the prose, never the output.
+`vignettes/start-on-s3.Rmd` is **not** edited (R8.3), even though its timestamps will differ in the
+new run; check instead that its versions match the recorded ones, as task 7 did offline. The
+offline transcript from task 7 predicts every version string the real run should print, so a
+different version is a finding, not a formatting difference.
 ---
 
 - [x] **1. Example data: add `vs`** (R7, AC13)
@@ -316,7 +305,36 @@ matches the recorded blocks.
     apply, so its message stops saying "the preview": "... so sync does not map or move them". One
     wording, no caller argument.
 
-- [ ] **7. Vignette code and offline dry run** (R8.1-R8.3)
+- [x] **7. Vignette code and offline dry run** (R8.1-R8.3)
+  - **Done 2026-09-29, 4691 tests.** `citable-sets.Rmd` follows design 9: v1 is a preview
+    (`v1-preview`, shown as `m[, c("project", "name", "kind", "status")]`) then apply and one write
+    (`v1`); `derive_liver_flags(x, conn_input)` returns a data frame, and `v2` writes it with
+    `parents = datom_parent(..., x = x)`, adds it with `datom_add_member(conn = )` and writes the
+    set; the refresh is `refresh-sync` (five domains, `vs` new), `refresh-inputs` (preview and
+    apply: four `changed`, `vs` `new`) and `refresh-output` (derive, write, `datom_update_members()`
+    for the output, one write). Every `#>` block is `[pending run]`. The `for` loop writing the
+    month-4 CSVs stays: it mirrors start-on-s3 step 4 and builds no member list.
+  - Prose changed where the old text became false: a product repo no longer "refuses
+    `datom_sync()`"; the refresh no longer says "datom does not check the order for you" -- the
+    set write now refuses an output whose parents disagree with the pins (task 4), and the text
+    says what that catches. New paragraph on the save asymmetry (tables save on sync, a set on
+    `datom_write_set()`).
+  - **Found by the dry run, fixed first as its own commit (owner, "fix now"):** every clean preview
+    warned that one blank artifact ("` in `") had no current version -- `paste0()` over empty
+    vectors returns one string. Now `sprintf()`; new test that a clean preview prints only its
+    summary line; restoring `paste0()` reddened it and nothing else. 4687 -> 4691.
+  - Dry run (`DATOM_E2E_BACKEND=local`): SUCCESS, all chunks, teardown left nothing. start-on-s3's
+    recorded blocks compared chunk by chunk with the transcript: every version identical; the only
+    differences are timestamps, local paths and the local backend (no GitHub repo line, `local`
+    connection print). Set v1 and v2 come out at the currently recorded `d2d0456b` / `66d721f3`
+    (same content); v3 is now 6 members.
+  - `dev/e2e-sets.R` section 8, 31 claims, offline, all held: a second (ordinary) project as the
+    source; preview rows, no row for the set's own member, one message line on a clean preview;
+    apply writes nothing and labels new members `input`; `datom_parent(x = )` at the pins;
+    `datom_add_member(conn = )` by name; the first commit subject `add 3 members`; the source moves
+    -> `changed` / `unchanged`, repoint keeps labels; a set write that skips re-deriving the output
+    stops with `datom_set_parent_mismatch`, no commit, clean tree; re-derive, update, write;
+    preview again finds nothing (P1); `datom_validate()` valid.
   - Rewrite `citable-sets.Rmd` per design 9; `#>` blocks become `[pending run]`.
   - Month-4 extract includes `vs`.
   - `dev/e2e-vignettes-s3.R` local backend: whole walk green; `start-on-s3` outputs unchanged.

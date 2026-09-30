@@ -30,6 +30,11 @@
 #   6. the second write: a new version, and the new pins readable at it while the
 #      first version still reads as it always did
 #   7. a refresh that finds nothing: no version minted
+#   8. the set synced against a SECOND project, an ordinary one: map, review,
+#      apply (nothing written until the set write), an output derived with its
+#      parents taken from the set and added by name; then the source moves, and
+#      a set write that skips re-deriving the output is refused, because the
+#      output's parents disagree with the set's new pins
 #
 # Every claim is asserted and the script exits non-zero if any fails (AC12).
 #
@@ -400,6 +405,166 @@ cat("\n--- repo tree (git) ---\n")
 fs::dir_tree(repo_dir, recurse = 2L)
 cat("\n--- store tree (one object per distinct content) ---\n")
 fs::dir_tree(store_dir, recurse = 3L)
+
+
+# --- 8. Sync against a source project, derive, refresh -----------------------
+hr("8. Map -> review -> apply against a source project, derive, refresh")
+
+# A second project, an ordinary one, built the way section 1 builds the product
+# repo. Its tables are the set's inputs; the product repo's own tables are its
+# outputs. The push names the branch git actually created, whatever
+# init.defaultBranch says.
+src_dir   <- fs::path(root, "src-repo")
+src_store <- fs::path(root, "src-store")
+src_bare  <- fs::path(root, "src-remote.git")
+fs::dir_create(c(src_dir, src_store, src_bare))
+
+git2r::init(src_bare, bare = TRUE)
+src_repo <- git2r::init(src_dir)
+git2r::config(src_repo, user.name = "Tire Kicker", user.email = "you@example.com")
+writeLines("init", fs::path(src_dir, "README.md"))
+git2r::add(src_repo, "README.md")
+git2r::commit(src_repo, "Initial commit")
+git2r::remote_add(src_repo, "origin", as.character(src_bare))
+git2r::push(src_repo, "origin",
+            refspec = paste0("refs/heads/", git2r::repository_head(src_repo)$name),
+            set_upstream = TRUE)
+
+fs::dir_create(fs::path(src_dir, ".datom"))
+yaml::write_yaml(
+  list(project_name = "SRC_E2E", schema_version = 1L),
+  fs::path(src_dir, ".datom", "project.yaml")
+)
+
+src_conn <- conn
+src_conn$project_name <- "SRC_E2E"
+src_conn$root <- as.character(src_store)
+src_conn$path <- as.character(src_dir)
+
+# Sources are read-only to the set, so the sync verbs get a reader.
+src_reader <- src_conn
+src_reader$path <- NULL
+src_reader$role <- "reader"
+
+quiet(datom_write(src_conn, name = "dm",
+                  data = datom_example_data("dm", cutoff_date = "2026-03-28")))
+quiet(datom_write(src_conn, name = "vs",
+                  data = datom_example_data("vs", cutoff_date = "2026-03-28")))
+v_src_dm1 <- datom_history(src_conn, "dm")$version[1]
+
+# Map. The set holds only `lb`, one of the product repo's own tables, so it is
+# an output: no row. The source's two tables are new.
+msgs <- capture.output(
+  m <- datom_sync_manifest(conn, sources = list(src_reader)),
+  type = "message"
+)
+claim("the preview has one row per source table", sort(m$name), c("dm", "vs"))
+claim("both are new", unique(m$status), "new")
+claim("the set's own member gets no row", "lb" %in% m$name, FALSE)
+claim("the preview carries full versions",
+      all(nchar(m$version_to) == 64L), TRUE)
+claim("a clean preview prints only its summary line", length(msgs), 1L)
+
+# Apply. It hands back the edited set and writes nothing.
+head_before <- head_sha(repo)
+versions_before <- datom_history(conn, "trial_product")$version
+msgs <- capture.output(
+  x8 <- datom_sync(conn, m, sources = list(src_reader)),
+  type = "message"
+)
+claim("apply hands back a set", inherits(x8, "datom_set"), TRUE)
+claim("the new inputs joined, the output stayed",
+      sort(unique(datom_list_members(x8)$name)), c("dm", "lb", "vs"))
+claim("a new member is labelled as an input", labels_of(x8, "vs"), "input")
+claim("a new member is pinned at the source's current version",
+      pinned_at(x8, "dm"), v_src_dm1)
+claim("apply made no commit", head_sha(repo), head_before)
+claim("apply minted no version",
+      datom_history(conn, "trial_product")$version, versions_before)
+claim("apply says nothing has been written",
+      any(grepl("Nothing has been written", msgs)), TRUE)
+
+# Derive through the set: the inputs are read at the set's pins, and the parents
+# are declared from the same pins.
+derive <- function(x) {
+  dm_in <- quiet(datom_fetch_member(src_reader, x, "dm"))
+  vs_in <- quiet(datom_fetch_member(src_reader, x, "vs"))
+  data.frame(
+    USUBJID = dm_in$USUBJID,
+    N_VS = as.integer(table(factor(vs_in$USUBJID, levels = dm_in$USUBJID))),
+    stringsAsFactors = FALSE
+  )
+}
+
+parents <- datom_parent(src_reader, table = c("dm", "vs"), x = x8)
+claim("datom_parent(x =) gives one record per table", length(parents), 2L)
+claim("each parent is at the version the set pins",
+      vapply(parents, function(p) p$version, character(1L)),
+      c(pinned_at(x8, "dm"), pinned_at(x8, "vs")))
+
+out1 <- quiet(datom_write(conn, data = derive(x8), name = "vs_counts",
+                          parents = parents))
+
+# Add the output by name to the set in hand, through its own project's conn.
+msgs <- capture.output(
+  x8 <- datom_add_member(x8, "vs_counts", out1$metadata_sha,
+                         tags = list(type = "output"), conn = conn),
+  type = "message"
+)
+claim("an add by name says nothing has been written",
+      any(grepl("Nothing has been written", msgs)), TRUE)
+
+third <- quiet(datom_write_set(conn, x8))
+claim("the synced set writes a new version", third$action, "full")
+claim("its commit subject names the three adds",
+      grepl("add 3 members", git2r::commits(repo, n = 1L)[[1L]]$summary,
+            fixed = TRUE), TRUE)
+
+# The source moves. The preview sees it; apply repoints and keeps labels.
+quiet(datom_write(src_conn, name = "dm",
+                  data = datom_example_data("dm", cutoff_date = "2026-04-28")))
+v_src_dm2 <- datom_history(src_conn, "dm")$version[1]
+
+m2 <- quiet(datom_sync_manifest(conn, sources = list(src_reader)))
+claim("after the source moves, dm is changed",
+      m2$status[m2$name == "dm"], "changed")
+claim("and vs is unchanged", m2$status[m2$name == "vs"], "unchanged")
+claim("dm's row moves from the pin the set holds",
+      m2$version_from[m2$name == "dm"], v_src_dm1)
+
+x9 <- quiet(datom_sync(conn, m2, sources = list(src_reader)))
+claim("dm is repointed to the source's new version",
+      pinned_at(x9, "dm"), v_src_dm2)
+claim("the repointed input kept its labels", labels_of(x9, "dm"), "input")
+
+# Writing now would pair the new dm with an output derived from the old one.
+head_before <- head_sha(repo)
+err <- tryCatch(quiet(datom_write_set(conn, x9)), error = function(e) e)
+claim("a write that skips re-deriving the output is refused",
+      inherits(err, "datom_set_parent_mismatch"), TRUE)
+claim("the refusal names the output", grepl("vs_counts", conditionMessage(err)),
+      TRUE)
+claim("the refusal made no commit", head_sha(repo), head_before)
+claim("the refusal left the working tree clean", length(unstaged(repo)), 0L)
+
+# Re-derive, move the output, write once.
+out2 <- quiet(datom_write(conn, data = derive(x9), name = "vs_counts",
+                          parents = datom_parent(src_reader, c("dm", "vs"),
+                                                 x = x9)))
+x9 <- quiet(datom_update_members(x9, conn, tags = list(type = "output")))
+claim("the output is repointed to the new derivation",
+      pinned_at(x9, "vs_counts"), out2$metadata_sha)
+
+fourth <- quiet(datom_write_set(conn, x9))
+claim("inputs and output moved together write a new version",
+      fourth$action, "full")
+
+m3 <- quiet(datom_sync_manifest(conn, sources = list(src_reader)))
+claim("previewing again finds nothing to apply",
+      any(m3$status %in% c("new", "changed")), FALSE)
+
+check <- quiet(datom_validate(conn))
+claim("datom_validate still reports the repo consistent", check$valid, TRUE)
 
 
 # --- summary ----------------------------------------------------------------
