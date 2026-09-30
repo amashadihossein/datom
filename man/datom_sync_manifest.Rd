@@ -19,11 +19,7 @@ repo it filters source artifact names instead.}
 \item{sources}{On a product repo only, and required there: one \code{datom_conn},
 or a list of them, for the projects the set's inputs come from. Each
 connection's project name is what members are matched on. Refused on an
-ordinary repo.
-
-Files whose format is outside datom's ingestion allowlist (flat tabular
-formats only) are flagged \code{"unsupported_format"} up front, without blocking
-their allowlisted siblings.}
+ordinary repo.}
 }
 \value{
 On an ordinary repo, a data frame with columns: name, file, format,
@@ -42,6 +38,10 @@ against the current \code{.datom/manifest.json} to detect new or changed files.
 Returns a manifest data frame for review before calling \code{\link[=datom_sync]{datom_sync()}}.
 }
 \details{
+Files whose format is outside datom's ingestion allowlist (flat tabular
+formats only) are flagged \code{"unsupported_format"} up front, without blocking
+their allowlisted siblings.
+
 On a product repo (\code{mode: product}) it maps the repo's set against source
 projects instead -- see "On a product repo" below.
 }
@@ -80,6 +80,11 @@ move them with \code{\link[=datom_update_members]{datom_update_members()}}.
 It stops when \code{sources} includes the repo's own project, and when a source
 connection's project name differs from the name that project's own manifest
 records.
+
+\strong{Tables and sets are saved at different points.} On an ordinary repo,
+\code{\link[=datom_sync]{datom_sync()}} writes each table as it syncs. On a product repo it hands the
+edited set back, and the set is saved only by \code{\link[=datom_write_set]{datom_write_set()}} -- one
+version for the whole edit, which you can look at or add to first.
 }
 
 \examples{

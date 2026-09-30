@@ -4,7 +4,7 @@
 # and `datom_sync()` branch once, at the top, on what `.datom/project.yaml`
 # declares. This file is the product-repo half; `R/sync.R` holds the branch.
 #
-# FOUR THINGS HERE ARE LOAD-BEARING.
+# THE LOAD-BEARING RULES HERE:
 #
 #   1. "NO SET YET" IS DECIDED BY A PRESENCE PROBE, NEVER BY A FAILED READ. A
 #      set read aborts the same way for a missing document and for storage that

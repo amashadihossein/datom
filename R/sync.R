@@ -516,6 +516,10 @@ datom_pull <- function(conn) {
 #' against the current `.datom/manifest.json` to detect new or changed files.
 #' Returns a manifest data frame for review before calling [datom_sync()].
 #'
+#' Files whose format is outside datom's ingestion allowlist (flat tabular
+#' formats only) are flagged `"unsupported_format"` up front, without blocking
+#' their allowlisted siblings.
+#'
 #' On a product repo (`mode: product`) it maps the repo's set against source
 #' projects instead -- see "On a product repo" below.
 #'
@@ -529,10 +533,6 @@ datom_pull <- function(conn) {
 #'   or a list of them, for the projects the set's inputs come from. Each
 #'   connection's project name is what members are matched on. Refused on an
 #'   ordinary repo.
-#'
-#' Files whose format is outside datom's ingestion allowlist (flat tabular
-#' formats only) are flagged `"unsupported_format"` up front, without blocking
-#' their allowlisted siblings.
 #'
 #' @section On a product repo:
 #' A product repo owns one set (named in `.datom/project.yaml`), and this call
@@ -564,6 +564,11 @@ datom_pull <- function(conn) {
 #' It stops when `sources` includes the repo's own project, and when a source
 #' connection's project name differs from the name that project's own manifest
 #' records.
+#'
+#' **Tables and sets are saved at different points.** On an ordinary repo,
+#' [datom_sync()] writes each table as it syncs. On a product repo it hands the
+#' edited set back, and the set is saved only by [datom_write_set()] -- one
+#' version for the whole edit, which you can look at or add to first.
 #'
 #' @return On an ordinary repo, a data frame with columns: name, file, format,
 #'   original_file_sha, status (one of `"new"`, `"changed"`, `"unchanged"`,
@@ -762,6 +767,10 @@ datom_sync_manifest <- function(conn,
 #' metadata. Updates the local `.datom/manifest.json` after each successful
 #' write.
 #'
+#' Rows flagged `"unsupported_format"` by [datom_sync_manifest()] are reported
+#' as `result = "error"` with the recourse in the `error` column; the rest of
+#' the batch still processes.
+#'
 #' On a product repo (`mode: product`) it applies a preview of the repo's set
 #' instead -- see "On a product repo" below.
 #'
@@ -785,10 +794,6 @@ datom_sync_manifest <- function(conn,
 #'   stored set is read, or an empty one used when it has never been written.
 #'   Refused on an ordinary repo.
 #'
-#' Rows flagged `"unsupported_format"` by [datom_sync_manifest()] are reported
-#' as `result = "error"` with the recourse in the `error` column; the rest of
-#' the batch still processes.
-#'
 #' @section On a product repo:
 #' A product repo owns one set, and this call applies a preview from
 #' [datom_sync_manifest()] to it: each `new` row adds a member at `version_to`,
@@ -801,6 +806,10 @@ datom_sync_manifest <- function(conn,
 #' **Nothing is written.** The set comes back edited, and it is stored only when
 #' you pass it to [datom_write_set()]; the call ends by saying so. The write's
 #' default commit message then names what was added and repointed.
+#'
+#' This is the one difference from syncing files, where each table is written
+#' as it syncs. A set is saved in one step, so the edit becomes one version, and
+#' you can look at the set, or add to it, before it does.
 #'
 #' Every member added is read from its source first, which confirms the version
 #' exists and records the project that wrote it. The call stops, before

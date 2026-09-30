@@ -37,11 +37,7 @@ own labels. Refused on an ordinary repo.}
 \item{x}{On a product repo only: the \code{datom_set} to apply the preview to,
 from \code{\link[=datom_get_set]{datom_get_set()}} or \code{\link[=datom_assemble_set]{datom_assemble_set()}}. Omitted, the repo's
 stored set is read, or an empty one used when it has never been written.
-Refused on an ordinary repo.
-
-Rows flagged \code{"unsupported_format"} by \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} are reported
-as \code{result = "error"} with the recourse in the \code{error} column; the rest of
-the batch still processes.}
+Refused on an ordinary repo.}
 }
 \value{
 On an ordinary repo, the manifest data frame augmented with \code{result}
@@ -59,6 +55,10 @@ metadata. Updates the local \code{.datom/manifest.json} after each successful
 write.
 }
 \details{
+Rows flagged \code{"unsupported_format"} by \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} are reported
+as \code{result = "error"} with the recourse in the \code{error} column; the rest of
+the batch still processes.
+
 On a product repo (\code{mode: product}) it applies a preview of the repo's set
 instead -- see "On a product repo" below.
 }
@@ -75,6 +75,10 @@ same columns.
 \strong{Nothing is written.} The set comes back edited, and it is stored only when
 you pass it to \code{\link[=datom_write_set]{datom_write_set()}}; the call ends by saying so. The write's
 default commit message then names what was added and repointed.
+
+This is the one difference from syncing files, where each table is written
+as it syncs. A set is saved in one step, so the edit becomes one version, and
+you can look at the set, or add to it, before it does.
 
 Every member added is read from its source first, which confirms the version
 exists and records the project that wrote it. The call stops, before
