@@ -793,6 +793,22 @@ test_that("an ordinary repo given sources, tags or x stops before the column che
   expect_match(cli::ansi_strip(conditionMessage(err)), "`x`", fixed = TRUE)
 })
 
+test_that("apply on a product repo that names no set stops, before any read", {
+  # The preview's refusal is tested above; this is apply's own call to it.
+  # Without it apply would read storage for a set with no name.
+  fx <- ss_moved()
+  cfg_path <- fs::path(fx$product$repo_dir, ".datom", "project.yaml")
+  cfg <- yaml::read_yaml(cfg_path)
+  cfg$set <- NULL
+  yaml::write_yaml(cfg, cfg_path)
+  ss_no_reads()
+
+  expect_error(
+    datom_sync(fx$product$conn, fx$m, sources = fx$source$conn),
+    class = "datom_set_undeclared"
+  )
+})
+
 test_that("a product repo given continue_on_error stops rather than ignoring it", {
   fx <- ss_moved()
   expect_error(

@@ -508,6 +508,45 @@ test_that("x = stops on a member that is a set, before any read", {
   expect_length(reads$keys, 0L)
 })
 
+test_that("x = refuses malformed tags as datom_fetch_member() does, before any read", {
+  # R5.3: resolved exactly as datom_fetch_member() resolves it, labels included.
+  # Without the check a numeric label reaches the resolver and fails as "not
+  # found", which names the wrong problem. The validator raises no class, so the
+  # two verbs are compared on the message's first line; the remedy lines differ
+  # by one example value.
+  reads <- .local_parent_store()
+  conn <- .parent_conn("study001")
+  x <- .parent_fixture_set()
+  local_mocked_bindings(datom_read = function(conn, name, version = NULL, ...) {
+    stop("no read expected")
+  })
+  first_line <- function(e) strsplit(cli::ansi_strip(conditionMessage(e)), "\n")[[1]][1]
+
+  for (bad in list(list(type = 1), list("input"))) {
+    err_parent <- expect_error(datom_parent(conn, "lb", x = x, tags = bad))
+    err_fetch <- expect_error(datom_fetch_member(conn, x, "lb", tags = bad))
+    expect_false(inherits(err_parent, "datom_member_not_found"))
+    expect_identical(first_line(err_parent), first_line(err_fetch))
+  }
+  expect_match(first_line(err_parent), "named list", fixed = TRUE)
+  expect_length(reads$keys, 0L)
+})
+
+test_that("x = refuses an invalid table name as a name, not as not found", {
+  # Each name is validated before it is looked up. Without that, a name no
+  # member could ever have fails as datom_member_not_found. Not first in the
+  # vector, so the check has to run per name.
+  .local_parent_store()
+  conn <- .parent_conn("study001")
+
+  err <- expect_error(
+    datom_parent(conn, c("dm", "Not A Name!"), x = .parent_fixture_set())
+  )
+  expect_false(inherits(err, "datom_member_not_found"))
+  expect_match(cli::ansi_strip(conditionMessage(err)), "may only contain",
+               fixed = TRUE)
+})
+
 test_that("x must be a datom_set", {
   conn <- .parent_conn("study001")
   expect_error(

@@ -13,8 +13,8 @@ count in the message. Chunk checkpoint after every task.
 ## Where things stand
 
 Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b, 5c, 6, 7 and 8 on 2026-09-29.
-**Resume at task 9** (close out). Its escalation flag comes first: a test coverage review on a more
-capable model, then ask the owner before starting (rule 5d). Task 5c came out of the
+**Resume at task 9** (close out). Its coverage review is done and its three gaps are closed (see the
+task 9 entry); ask the owner before starting the rest (rule 5d). Task 5c came out of the
 task 6 cold-start review on 2026-09-29 -- see design section 12 for why.
 
 **A cold-start review on 2026-09-28, after task 5, settled everything task 6 needed.** A fresh
@@ -25,7 +25,8 @@ stale cases, duplicate rows, kind and project mismatches, what `x =` accepts, th
 refusal, frame checks, tidy-ups) and R3.4 (the not-written line). **The largest change: sets are
 now in scope for sync** (R2.1a, AC17, design 3's "Sets are included" block), which is why task 5b
 exists. Nothing is left to ask before coding 5c or 6.
-**Current test count: 4691** (after task 7's preview fix) -- what later counts must not drop below.
+**Current test count: 4705** (after the coverage review's three tests) -- what later counts must not
+drop below.
 
 Starting cold (task 9): `git checkout spec/set-sync-ergonomics && git pull`. **The escalation flag
 comes first**: a test coverage review, on a more capable model, confirming every guard in this spec
@@ -353,7 +354,18 @@ to its code needs another credentialed run of `dev/e2e-vignettes-s3.R`.
   - Owner runs `dev/e2e-vignettes-s3.R` with credentials; agent fills blocks mechanically.
 
 - [ ] **9. Close out** (AC15, AC16)
-  - **Escalation flag: test coverage review first.**
+  - **Escalation flag: test coverage review first.** **Done 2026-09-29**, by Claude Code independently
+    of these records: `handoff/ac15-coverage-review.md`. It removed 57 guards one at a time in a
+    scratch copy; 54 turned a test red, and 3 had no test. All three gaps are now closed, 4705 tests (+14):
+    `datom_parent(x = )` refuses malformed `tags` with the same first line as `datom_fetch_member()`,
+    before any read; it refuses an invalid table name (second in the vector) as a name, not as
+    `datom_member_not_found`; `datom_sync()` on a product repo naming no set stops with
+    `datom_set_undeclared` before any read. Probes (scratch copy, control reddened nothing): each
+    guard removed alone reddened exactly its new test.
+  - **Kept on purpose (owner, 2026-09-29):** the first line of `.datom_refuse_import_on_product()`
+    returns early on a repo that is not a product repo. Both callers only call it on product repos,
+    so the line can never run and no test can cover it. Kept anyway: if a future caller skips the
+    product check, the helper still does the right thing. A later review should not flag it again.
   - `NEWS.md` (sync on product repos, add to saved sets, parents from a set, the new write refusal,
     `vs`), roxygen for both sync verbs documenting the save asymmetry.
   - `dev/datom_pathways.md` route card; `dev/README.md` completed row; learnings to
