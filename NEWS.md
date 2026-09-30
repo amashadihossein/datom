@@ -1,4 +1,4 @@
-# datom (development version)
+# datom 0.2.0
 
 This release adds a second kind of artifact -- a **set**, which is a citable list
 of exact data versions -- and renames one key in the manifest to make room for it.

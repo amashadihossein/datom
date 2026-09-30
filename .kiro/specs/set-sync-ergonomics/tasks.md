@@ -373,10 +373,13 @@ to its code needs another credentialed run of `dev/e2e-vignettes-s3.R`.
     The kept early return in `.datom_refuse_import_on_product()` now says at the site why it stays.
     (The first commit also dropped "FOUR THINGS" over a five-item list in the `R/sync-set.R` header.)
   - `dev/README.md`: completed row; Active Specs empty.
-  - AC16's "no `dev/` or `.kiro/` cite" holds for everything this spec added. Two older cites remain,
-    both from before this spec: `vignettes/design-version-shas.Rmd` names
-    `dev/datom_cv1_reference.R`, and an internal helper's roxygen in `R/sync.R` names
-    `dev/engineering-notes.md`.
+  - AC16's "no `dev/` or `.kiro/` cite": two older cites, from before this spec, fixed in their own
+    commit (owner, "fix now"): `vignettes/design-version-shas.Rmd` now links the cv1 reference script
+    on GitHub, and an internal helper's roxygen in `R/sync.R` drops its `dev/engineering-notes.md`
+    pointer. None remain in NEWS, vignettes, `man/` or roxygen.
+  - **Version bumped to 0.2.0** (owner, 2026-09-29): `DESCRIPTION`, and the NEWS heading
+    `# datom 0.2.0`. A minor bump, because sets are a new artifact kind and the manifest rename
+    breaks older readers. `cran-comments.md` still describes 0.1.2; it is rewritten at submission.
   - **Escalation flag: test coverage review first.** **Done 2026-09-29**, by Claude Code independently
     of these records: `handoff/ac15-coverage-review.md`. It removed 57 guards one at a time in a
     scratch copy; 54 turned a test red, and 3 had no test. All three gaps are now closed, 4705 tests (+14):

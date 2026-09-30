@@ -116,9 +116,11 @@ A unit of work is a **Kiro spec** under `.kiro/specs/{feature}/` (see Workflow m
 > artifact kind, and a **breaking** change to the manifest's artifact list, plus the
 > forward-compatibility machinery that makes that rename survivable. So `dev` is no longer a
 > documentation delta ahead of a released `main`; it is the next release. Two consequences worth
-> writing down rather than rediscovering: the version number on `dev` still says 0.1.2, which is what
-> CRAN holds, so whoever prepares the next submission bumps it and writes the NEWS heading that the
-> development block currently lacks; and the breaking manifest change means the release notes' upgrade
+> writing down rather than rediscovering: the version on `dev` is **0.2.0** (bumped 2026-09-29 at the
+> close of `set-sync-ergonomics`, a minor bump because sets are a new artifact kind and the manifest
+> rename breaks older readers), and `NEWS.md` is headed `# datom 0.2.0`, while `cran-comments.md`
+> still describes the 0.1.2 submission and is rewritten when the next one is prepared; and the
+> breaking manifest change means the release notes' upgrade
 > warning is aimed at a real population -- everyone sharing a repo has to upgrade before anyone writes
 > to it.
 >
