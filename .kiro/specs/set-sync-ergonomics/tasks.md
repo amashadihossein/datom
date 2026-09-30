@@ -12,9 +12,9 @@ count in the message. Chunk checkpoint after every task.
 
 ## Where things stand
 
-Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b, 5c, 6 and 7 on 2026-09-29.
-**Resume at task 8** (the owner's credentialed run; the agent then fills the `[pending run]` blocks from
-`transcript-s3.md`); ask the owner before starting it (rule 5d). Task 5c came out of the
+Spec approved 2026-09-27 and committed. Tasks 1-5 done 2026-09-28, tasks 5b, 5c, 6, 7 and 8 on 2026-09-29.
+**Resume at task 9** (close out). Its escalation flag comes first: a test coverage review on a more
+capable model, then ask the owner before starting (rule 5d). Task 5c came out of the
 task 6 cold-start review on 2026-09-29 -- see design section 12 for why.
 
 **A cold-start review on 2026-09-28, after task 5, settled everything task 6 needed.** A fresh
@@ -27,17 +27,12 @@ now in scope for sync** (R2.1a, AC17, design 3's "Sets are included" block), whi
 exists. Nothing is left to ask before coding 5c or 6.
 **Current test count: 4691** (after task 7's preview fix) -- what later counts must not drop below.
 
-Starting cold (task 8): `git checkout spec/set-sync-ergonomics && git pull`. The owner runs
-`dev/e2e-vignettes-s3.R` with credentials (its header lists the environment variables; sourcing it
-from a session is the easy route). It writes `transcript-s3.md` to `DATOM_E2E_OUT`. The agent then
-replaces each `#> [pending run]` in `vignettes/citable-sets.Rmd` with that chunk's output from the
-transcript, mechanically, refusing any chunk whose code in the transcript differs from the
-vignette's. Allowed edits only (R8.4): paths and the GitHub account shown as `...`, the scratch
-bucket shown as `study001`. Any output that contradicts the prose: fix the prose, never the output.
-`vignettes/start-on-s3.Rmd` is **not** edited (R8.3), even though its timestamps will differ in the
-new run; check instead that its versions match the recorded ones, as task 7 did offline. The
-offline transcript from task 7 predicts every version string the real run should print, so a
-different version is a finding, not a formatting difference.
+Starting cold (task 9): `git checkout spec/set-sync-ergonomics && git pull`. **The escalation flag
+comes first**: a test coverage review, on a more capable model, confirming every guard in this spec
+has a test watched going red with that guard alone removed (AC15; the probe records are in each
+task's entry below). Then task 9's list. `NEWS.md` cites only `?verb` and `vignette(...)`, never
+`dev/` or `.kiro/` (conventions rule 7a). The vignette's output blocks are final: any later change
+to its code needs another credentialed run of `dev/e2e-vignettes-s3.R`.
 ---
 
 - [x] **1. Example data: add `vs`** (R7, AC13)
@@ -340,7 +335,21 @@ different version is a finding, not a formatting difference.
   - `dev/e2e-vignettes-s3.R` local backend: whole walk green; `start-on-s3` outputs unchanged.
   - Add the new verbs to `dev/e2e-sets.R` claims.
 
-- [ ] **8. Credentialed run (owner) and transcripts in** (R8.4, AC14)
+- [x] **8. Credentialed run (owner) and transcripts in** (R8.4, AC14)
+  - **Done 2026-09-29, 4691 tests.** Owner ran `dev/e2e-vignettes-s3.R` (S3 + GitHub) at `cbf6074`
+    on 2026-09-29 19:30 PDT: every chunk ran, teardown deleted both repos, both storage prefixes and
+    both clones. All 11 `[pending run]` blocks in `citable-sets.Rmd` filled by a script that
+    replaced each chunk body with the transcript's and refused any chunk whose code differed; none
+    did. The diff touches `#>` lines only. Edits: the two clone paths and the GitHub account in
+    `init-liver-safety` shown as `...`, nothing else (the bucket name never appears in citable-sets
+    output).
+  - Every version the real run printed equals the task 7 offline prediction (set `d2d0456b`,
+    `66d721f3`, `35e39f62`; `liver_flags` `dafdb954`, `0f89dd1b`; `vs` `28c748b0`). start-on-s3
+    was not edited (R8.3); in the real run its versions and data hashes all equal the recorded
+    ones. The rest differs only where the allowed edits apply (bucket, paths, account) and in
+    timestamps.
+  - Prose checked against the output: every row `new` at v1; four `changed` and `vs` `new` at the
+    refresh; no row for `liver_flags`; three set versions. Nothing contradicted.
   - Owner runs `dev/e2e-vignettes-s3.R` with credentials; agent fills blocks mechanically.
 
 - [ ] **9. Close out** (AC15, AC16)

@@ -98,7 +98,8 @@ datom_init_repo(
   mode         = "product",
   set          = set_liver_safety
 )
-#> [pending run]
+#> v Created GitHub repo ".../study001-liver-safety".
+#> v Initialized datom repository "study001-liver-safety" at '.../study001-liver-safety'
 ```
 
 `mode = "product"` makes this a repository that builds from other projects'
@@ -138,10 +139,14 @@ m <- datom_sync_manifest(
   conn    = conn_write_liver_safety,
   sources = list(conn_read_imported)
 )
-#> [pending run]
+#> i Mapped 4 artifacts from 1 source: 4 new, 0 changed, 0 unchanged.
 
 m[, c("project", "name", "kind", "status")]
-#> [pending run]
+#>             project name  kind status
+#> 1 study001-imported   ae table    new
+#> 2 study001-imported   dm table    new
+#> 3 study001-imported   ex table    new
+#> 4 study001-imported   lb table    new
 ```
 
 `m` is a data frame with one row per table in the source. There is no set yet,
@@ -158,14 +163,20 @@ x <- datom_sync(
   manifest = m,
   sources  = list(conn_read_imported)
 )
-#> [pending run]
+#> v Applied 4 rows: 4 added, 0 repointed.
+#> project study001-imported:
+#>   ae  added at 075773e9
+#>   dm  added at 773e6862
+#>   ex  added at 8dbcc9a7
+#>   lb  added at 435bccb0
+#> i Nothing has been written. Write the set with `datom_write_set(conn, x)`.
 
 v1 <- datom_write_set(
   conn    = conn_write_liver_safety,
   members = x,
   tags    = list(description = "Liver safety, study001")
 )
-#> [pending run]
+#> v Wrote set "study001-liver-safety" (4 members): "d2d0456b"
 ```
 
 `datom_sync()` adds one member per `new` row, labelled `type = "input"` unless
@@ -182,7 +193,7 @@ The write returns the new version invisibly:
 
 ```{r v1-version}
 v1$metadata_sha
-#> [pending run]
+#> [1] "d2d0456b719244fe18d01f74a59b4e77637108405b716037c8e8b960dc15d786"
 ```
 
 That string is the citation. Put it in a report and it resolves to these four
@@ -247,7 +258,7 @@ liver_flags_written <- datom_write(
     x     = x
   )
 )
-#> [pending run]
+#> v Wrote "liver_flags" (full): "dafdb954"
 
 x <- datom_add_member(
   x       = x,
@@ -256,14 +267,14 @@ x <- datom_add_member(
   tags    = list(type = "output"),
   conn    = conn_read_liver_safety
 )
-#> [pending run]
+#> i Nothing has been written. Write the set with `datom_write_set(conn, x)`.
 
 v2 <- datom_write_set(
   conn          = conn_write_liver_safety,
   members       = x,
   include_paths = "R"
 )
-#> [pending run]
+#> v Wrote set "study001-liver-safety" (5 members): "66d721f3"
 ```
 
 `datom_parent()` with `x` records each input as a parent of `liver_flags`, at
@@ -290,15 +301,34 @@ The labels you gave the members become the structure you read them through:
 ```{r use-structure}
 x <- datom_get_set(conn = conn_read_liver_safety, name = set_liver_safety)
 print(x)
-#> [pending run]
+#> 
+#> -- datom set: "study001-liver-safety"
+#> * Project: "study001-liver-safety"
+#> * Version: "66d721f34ab2d8419b952fc267560218b06df6ea065669206277c1a1aa0a21ad"
+#> * Members: 5
+#> * Tags: description=Liver safety, study001
+#>   * ae (table) type=input
+#>   * dm (table) type=input
+#>   * ex (table) type=input
+#>   * lb (table) type=input
+#>   * liver_flags (table) type=output
+#> i Fetch a member with `datom_fetch_member(conn, x, "ae")`.
 
 dp <- datom_structure_members(x = x, by = "type")
 
 head(dp$output$liver_flags(conn = conn_read_liver_safety))
-#> [pending run]
+#> # A tibble: 6 x 7
+#>   USUBJID         AGE SEX   EXDOSE ALT_PEAK_XULN AST_PEAK_XULN ELEVATED
+#>   <chr>         <int> <chr>  <int>         <dbl>         <dbl> <lgl>   
+#> 1 STUDY-001-001    71 F        200         0.416         0.648 FALSE   
+#> 2 STUDY-001-002    27 M        200         0.711         0.585 FALSE   
+#> 3 STUDY-001-003    35 M          0         0.911         0.455 FALSE   
+#> 4 STUDY-001-004    68 M        200         0.752         0.728 FALSE   
+#> 5 STUDY-001-005    43 M        200         0.846         0.535 FALSE   
+#> 6 STUDY-001-006    60 F          0         0.404         0.722 FALSE
 
 nrow(dp$input$lb(conn = conn_read_imported))
-#> [pending run]
+#> [1] 205
 ```
 
 `type = "input"` and `type = "output"` are what produce `dp$input` and
@@ -310,7 +340,12 @@ member's full `version` and `kind`, left out here to fit the page:
 
 ```{r use-list}
 datom_list_members(x = x)[, c("name", "project", "key", "value")]
-#> [pending run]
+#>          name               project  key  value
+#> 1          ae     study001-imported type  input
+#> 2          dm     study001-imported type  input
+#> 3          ex     study001-imported type  input
+#> 4          lb     study001-imported type  input
+#> 5 liver_flags study001-liver-safety type output
 ```
 
 The set's own history, and version 1 read back by its version:
@@ -319,14 +354,26 @@ The set's own history, and version 1 read back by its version:
 set_history <- datom_history(conn = conn_read_liver_safety,
                              name = set_liver_safety, short_hash = TRUE)
 set_history[, c("version", "commit_message")]
-#> [pending run]
+#>    version                              commit_message
+#> 1 66d721f3  Update study001-liver-safety: add 1 member
+#> 2 d2d0456b Update study001-liver-safety: add 4 members
 
 datom_get_set(
   conn    = conn_read_liver_safety,
   name    = set_liver_safety,
   version = v1$metadata_sha
 )
-#> [pending run]
+#> 
+#> -- datom set: "study001-liver-safety"
+#> * Project: "study001-liver-safety"
+#> * Version: "d2d0456b719244fe18d01f74a59b4e77637108405b716037c8e8b960dc15d786"
+#> * Members: 4
+#> * Tags: description=Liver safety, study001
+#>   * ae (table) type=input
+#>   * dm (table) type=input
+#>   * ex (table) type=input
+#>   * lb (table) type=input
+#> i Fetch a member with `datom_fetch_member(conn, x, "ae")`.
 ```
 
 ## Refresh: new data arrives
@@ -344,10 +391,21 @@ for (domain in c("dm", "ex", "lb", "ae", "vs")) {
 }
 
 manifest <- datom_sync_manifest(conn = conn_write_imported)
-#> [pending run]
+#> i Scanned 5 files: 1 new, 4 changed, 0 unchanged.
 
 synced <- datom_sync(conn = conn_write_imported, manifest = manifest)
-#> [pending run]
+#> i Syncing 5 tables...
+#> v Wrote "ae" (full): "97e2a95a"
+#> v "ae" synced (changed).
+#> v Wrote "dm" (full): "a87789e0"
+#> v "dm" synced (changed).
+#> v Wrote "ex" (full): "b59939d6"
+#> v "ex" synced (changed).
+#> v Wrote "lb" (full): "dc682195"
+#> v "lb" synced (changed).
+#> v Wrote "vs" (full): "28c748b0"
+#> v "vs" synced (new).
+#> i Sync complete: 5 succeeded, 0 failed, 0 skipped.
 ```
 
 The set still points at the month-3 versions. A citation does not move on its
@@ -361,17 +419,29 @@ m <- datom_sync_manifest(
   conn    = conn_write_liver_safety,
   sources = list(conn_read_imported)
 )
-#> [pending run]
+#> i Mapped 5 artifacts from 1 source: 1 new, 4 changed, 0 unchanged.
 
 m[, c("project", "name", "kind", "status")]
-#> [pending run]
+#>             project name  kind  status
+#> 1 study001-imported   ae table changed
+#> 2 study001-imported   dm table changed
+#> 3 study001-imported   ex table changed
+#> 4 study001-imported   lb table changed
+#> 5 study001-imported   vs table     new
 
 x <- datom_sync(
   conn     = conn_write_liver_safety,
   manifest = m,
   sources  = list(conn_read_imported)
 )
-#> [pending run]
+#> v Applied 5 rows: 1 added, 4 repointed.
+#> project study001-imported:
+#>   ae  075773e9 -> 97e2a95a
+#>   dm  773e6862 -> a87789e0
+#>   ex  8dbcc9a7 -> b59939d6
+#>   lb  435bccb0 -> dc682195
+#>   vs  added at 28c748b0
+#> i Nothing has been written. Write the set with `datom_write_set(conn, x)`.
 ```
 
 The four tables the set holds are `changed`, and `vs` is `new`, so it joins the
@@ -394,21 +464,24 @@ liver_flags_written <- datom_write(
     x     = x
   )
 )
-#> [pending run]
+#> v Wrote "liver_flags" (full): "0f89dd1b"
 
 x <- datom_update_members(
   x    = x,
   conn = conn_read_liver_safety,
   tags = list(type = "output")
 )
-#> [pending run]
+#> v Repointed 1 member, of 1 selected.
+#> project study001-liver-safety:
+#>   liver_flags  dafdb954 -> 0f89dd1b
+#> i Nothing has been written. Write the set with `datom_write_set(conn, x)`.
 
 v3 <- datom_write_set(
   conn          = conn_write_liver_safety,
   members       = x,
   include_paths = "R"
 )
-#> [pending run]
+#> v Wrote set "study001-liver-safety" (6 members): "35e39f62"
 ```
 
 `datom_update_members()` moves the selected members to their project's current
