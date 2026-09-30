@@ -1196,8 +1196,8 @@ datom_sync <- function(conn,
 #' * **A schema refusal is thrown**, so the "upgrade datom" message reaches the
 #'   user intact. Placed inside a caller's `tryCatch` it would be reworded as
 #'   "could not read manifest" at two sites and downgraded to a warning at a
-#'   third -- see `dev/engineering-notes.md`. Throwing from in here means there
-#'   is no handler for a caller to put it inside.
+#'   third. Throwing from in here means there is no handler for a caller to put
+#'   it inside.
 #'
 #' **And one document that is not a failure at all.** When the artifact list is
 #' missing from where this build looks for it -- either because the format is
