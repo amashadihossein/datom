@@ -884,12 +884,12 @@
 
 # --- the write verb ------------------------------------------------------------
 
-#' Write a datom Set
+#' Save a Set as a New Version
 #'
-#' Writes a **set**: a versioned, citable, content-addressed collection of
-#' pointers at existing datom artifacts. A set holds no data of its own -- its
-#' payload is the member list plus text labels -- so writing one neither copies
-#' nor moves anything a member contains.
+#' Saves a [set][datom-package]: a named list of exact versions of tables (or
+#' other sets), plus labels, that you can cite with one version string. A set
+#' holds no data, so saving one copies nothing. Saving the same members and
+#' labels again creates no new version.
 #'
 #' One repo holds one set. The repo declares which, in `.datom/project.yaml`:
 #'
@@ -1831,18 +1831,20 @@ print.datom_link <- function(x, ...) {
 }
 
 
-#' Read a datom set
+#' Read a datom Set
 #'
-#' Reads a **set**: a versioned, citable collection of pointers at datom
-#' artifacts. It returns *references and labels, and no data at all* -- which is
-#' why the verb is `get` rather than `read`. Every member carries a `$fetch`
-#' link, so resolving one to its content is one call and needs no reassembly.
+#' Returns a [set][datom-package]'s members and labels, at its current version
+#' or a past one. It reads no table data: to get the data behind a member, use
+#' [datom_fetch_member()]. Works with reader connections.
 #'
 #' Reading a set requires access to the set's own project only. A member is a
 #' pointer, and resolving it is a separate, deliberate step -- so a 50-member
 #' product is readable by someone entitled to none of its members.
 #'
 #' @section What comes back:
+#' References and labels, and no data at all -- which is why the verb is `get`
+#' rather than `read`.
+#'
 #' A `datom_set`: `name`, `project`, `version`, `data_sha`, `tags` and
 #' `members`. The four identifying facts are there so that a caller who passed
 #' `version = NULL` can still say which version they got, because a set exists to

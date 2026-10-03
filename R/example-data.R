@@ -1,8 +1,13 @@
-#' Load Example EDC Data
+#' Load Example Clinical Trial Data
 #'
-#' Loads bundled clinical trial example data for use in examples and
-#' vignettes. The data simulates a Phase II study (STUDY-001) with 48
-#' subjects enrolled over 6 months across five SDTM-flavored domains.
+#' Returns one of five small, made-up tables from a simulated clinical trial
+#' of 48 subjects: demographics, exposure (dosing), lab results, adverse events
+#' or vital signs. Set `cutoff_date` to get the data as it stood on that date,
+#' which mimics a new data delivery each month; [datom_example_cutoffs()] lists
+#' the dates the examples use.
+#'
+#' The data simulates STUDY-001, a Phase II study enrolling over six months;
+#' table and column names loosely follow SDTM.
 #'
 #' @param domain One of `"dm"` (demographics, 48 rows), `"ex"` (exposure,
 #'   48 rows), `"lb"` (labs, 720 rows: 3 visits x 5 tests per subject),

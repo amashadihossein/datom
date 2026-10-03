@@ -2,7 +2,7 @@
 % Please edit documentation in R/set.R
 \name{datom_get_set}
 \alias{datom_get_set}
-\title{Read a datom set}
+\title{Read a datom Set}
 \usage{
 datom_get_set(conn, name, version = NULL)
 }
@@ -20,10 +20,9 @@ A \code{datom_set}: a list of \code{name}, \code{project}, \code{version} (possi
 \code{NULL}), \code{data_sha}, \code{tags} and \code{members}.
 }
 \description{
-Reads a \strong{set}: a versioned, citable collection of pointers at datom
-artifacts. It returns \emph{references and labels, and no data at all} -- which is
-why the verb is \code{get} rather than \code{read}. Every member carries a \verb{$fetch}
-link, so resolving one to its content is one call and needs no reassembly.
+Returns a \link[=datom-package]{set}'s members and labels, at its current version
+or a past one. It reads no table data: to get the data behind a member, use
+\code{\link[=datom_fetch_member]{datom_fetch_member()}}. Works with reader connections.
 }
 \details{
 Reading a set requires access to the set's own project only. A member is a
@@ -31,6 +30,9 @@ pointer, and resolving it is a separate, deliberate step -- so a 50-member
 product is readable by someone entitled to none of its members.
 }
 \section{What comes back}{
+
+References and labels, and no data at all -- which is why the verb is \code{get}
+rather than \code{read}.
 
 A \code{datom_set}: \code{name}, \code{project}, \code{version}, \code{data_sha}, \code{tags} and
 \code{members}. The four identifying facts are there so that a caller who passed

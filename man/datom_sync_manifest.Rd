@@ -2,7 +2,7 @@
 % Please edit documentation in R/sync.R
 \name{datom_sync_manifest}
 \alias{datom_sync_manifest}
-\title{Scan and Prepare Manifest for Sync}
+\title{Preview What a Sync Will Change}
 \usage{
 datom_sync_manifest(conn, path = NULL, pattern = "*", sources = NULL)
 }
@@ -33,11 +33,15 @@ was not compared) and \code{status} (one of \code{"new"}, \code{"changed"},
 full 64-character strings.
 }
 \description{
-Scans a flat \verb{input_files/} directory and computes file SHAs. Compares
-against the current \code{.datom/manifest.json} to detect new or changed files.
-Returns a manifest data frame for review before calling \code{\link[=datom_sync]{datom_sync()}}.
+Looks at the files in the project's \verb{input_files/} folder and returns one
+row per file, saying whether it is new, changed, unchanged since it was last
+synced, or in a format datom cannot read. Nothing is written. Review the
+result, drop any rows you do not want, then pass it to \code{\link[=datom_sync]{datom_sync()}}.
 }
 \details{
+A file counts as changed when its bytes differ from the file last synced
+under that name.
+
 Files whose format is outside datom's ingestion allowlist (flat tabular
 formats only) are flagged \code{"unsupported_format"} up front, without blocking
 their allowlisted siblings.

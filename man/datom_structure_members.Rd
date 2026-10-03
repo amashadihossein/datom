@@ -2,7 +2,7 @@
 % Please edit documentation in R/set-members.R
 \name{datom_structure_members}
 \alias{datom_structure_members}
-\title{Group a set's members into a navigable view}
+\title{Group a Set's Members into a Navigable View}
 \usage{
 datom_structure_members(x, by, missing = "untagged")
 }

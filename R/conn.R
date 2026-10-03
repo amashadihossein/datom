@@ -283,10 +283,14 @@ print.datom_conn <- function(x, ...) {
 
 # --- Exported connection functions --------------------------------------------
 
-#' Initialize a datom Repository
+#' Create a New datom Project
 #'
-#' One-time setup for data developers. Creates folder structure, initializes
-#' git with remote, sets up configuration files, and pushes to S3.
+#' Run once to start a new [project][datom-package]. It creates the project
+#' folder (including an `input_files/` folder for files you want to bring in),
+#' sets up git, pushes a first commit to GitHub -- creating the GitHub
+#' repository if `create_repo = TRUE` -- and records the new, empty project in
+#' storage. The store must carry a GitHub token; to join a project that already
+#' exists, use [datom_clone()] instead.
 #'
 #' Initializes the **data repository only**. The project is left as a solo
 #' project: `project.yaml` is the location authority, no `governance.json` /
@@ -890,9 +894,15 @@ datom_clone <- function(path, store, ...) {
 }
 
 
-#' Get a datom Connection
+#' Get a Pointer to a datom Project
 #'
-#' Flexible connection for both developers and readers.
+#' Returns a pointer to the project, called a [connection][datom-package]
+#' (`conn`): a record of which project you are working on, where its data is
+#' kept, and whether you can write. Almost every other datom function takes it
+#' as its first argument. Nothing stays open; it only checks once that the
+#' storage (and, for a developer, the GitHub repository) can be reached.
+#' Developers pass `path` (their local copy) and `store`; readers, who have no
+#' local copy, pass `store` and `project_name`.
 #'
 #' **Developer** (local repo + store): provide `path` and `store`. Reads
 #' project identity from `.datom/project.yaml`; uses store for credentials and

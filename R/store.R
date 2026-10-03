@@ -8,9 +8,12 @@
 
 #' Create a datom Store
 #'
-#' Bundles a governance store component, a data store component, and git config
-#' into a single store object. Role (developer vs reader) is derived from
-#' `github_pat` presence.
+#' A store tells datom where a project's data is kept -- a local folder
+#' ([datom_store_local()]) or an S3 bucket ([datom_store_s3()]) -- and, if you
+#' will be writing, your GitHub token. With a token you are a
+#' [developer][datom-package] and can write; without one you are a reader and
+#' can only read. Pass the store to [datom_init_repo()] to start a project, or
+#' to [datom_get_conn()] to connect to one.
 #'
 #' @param governance A store component (e.g., `datom_store_s3()`) for governance
 #'   files (dispatch, ref, migration history), or `NULL` for a no-governance

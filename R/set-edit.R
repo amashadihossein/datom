@@ -749,7 +749,7 @@
 
 # --- the verb ---------------------------------------------------------------------
 
-#' Repoint a set's members at newer versions
+#' Repoint a Set's Members at Newer Versions
 #'
 #' Moves members of a set forward to the versions that are current now, and
 #' returns the set with those pointers changed. **Nothing is written**: the
@@ -1080,7 +1080,7 @@ datom_update_members <- function(x, conn, member = NULL, tags = NULL,
 }
 
 
-#' Drop members from a set
+#' Drop Members from a Set
 #'
 #' Removes the members you select and returns the set without them. **Nothing is
 #' written**: the object comes back edited, and the set is stored only when you

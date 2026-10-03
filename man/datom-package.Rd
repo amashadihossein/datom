@@ -8,6 +8,44 @@
 \description{
 Provides versioned storage for tabular data without a database or a server. Each table is written as an immutable, content-addressed version -- identical content is detected and stored only once -- while its version history and metadata are kept as code in a 'git' repository and the data itself in a local filesystem or cloud object storage ('S3'). Any past version can be read back exactly by its identifier, and each table records the sources it was derived from, so a project carries full data lineage. A lightweight reader role retrieves current or historical data from storage alone, without 'git' or write access, giving downstream analyses and pipelines a single versioned source of truth. It targets analytical and scientific data management, such as preparing clinical study datasets, and is designed as a foundation for higher-level governance tooling.
 }
+\section{Key terms}{
+
+\itemize{
+\item \strong{Project}: one body of data you manage together, such as one clinical
+study. It has a name, a GitHub repository that records every change, and a
+storage location that holds the data itself; the data never goes into git.
+Created once with \code{\link[=datom_init_repo]{datom_init_repo()}}.
+\item \strong{Store}: tells datom where a project's data lives (a local folder or an
+S3 bucket) and, if you will write, your GitHub token. Built with
+\code{\link[=datom_store]{datom_store()}}.
+\item \strong{Developer and reader}: the two roles. A developer has a GitHub token and
+a local copy of the project, and can write. A reader needs only access to
+the storage -- no token, no git -- and can only read. datom picks the role
+from whether the store carries a token.
+\item \strong{Connection (\code{conn})}: a pointer to one project, returned by
+\code{\link[=datom_get_conn]{datom_get_conn()}}. It records which project, where its data is kept, and
+your role, and it is the first argument to almost every other function.
+\item \strong{Table}: a data frame saved in datom under a name, such as \code{dm}. Saved
+with \code{\link[=datom_write]{datom_write()}} or \code{\link[=datom_sync]{datom_sync()}}, read with \code{\link[=datom_read]{datom_read()}}.
+\item \strong{Version}: a long identifier for one exact saved state of a table or a
+set. Old versions are never overwritten, and a save that changes nothing
+makes no new version. \code{\link[=datom_history]{datom_history()}} lists them; pass one as
+\verb{version =} to read it back.
+\item \strong{Sync manifest}: the preview \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} returns -- one row
+per file in \verb{input_files/}, each marked new, changed, unchanged, or in a
+format datom cannot read -- which you then pass to \code{\link[=datom_sync]{datom_sync()}}.
+\item \strong{Set}: a named, versioned list of exact versions of tables (or other
+sets), so a whole collection can be cited with one version string. It holds
+no data.
+\item \strong{Member}: one entry in a set -- one table or set, pinned at one version,
+with optional labels such as \code{type = "input"}.
+\item \strong{Parent, source and lineage}: a parent is a table another table was made
+from, named with \code{\link[=datom_parent]{datom_parent()}} before writing. A source is an original
+imported table at the start of the chain. Lineage is the record of both,
+read with \code{\link[=datom_get_lineage]{datom_get_lineage()}}.
+}
+}
+
 \seealso{
 Useful links:
 \itemize{
@@ -21,4 +59,3 @@ Useful links:
 \strong{Maintainer}: Afshin Mashadi-Hossein \email{amashadihossein@gmail.com} [copyright holder]
 
 }
-\keyword{internal}

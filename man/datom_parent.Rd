@@ -2,7 +2,7 @@
 % Please edit documentation in R/lineage.R
 \name{datom_parent}
 \alias{datom_parent}
-\title{Declare a parent for lineage}
+\title{Name an Input for a Table You Are About to Write}
 \usage{
 datom_parent(conn, table, version = NULL, x = NULL, tags = NULL)
 }
@@ -34,14 +34,20 @@ version. \code{source_lineage} is \code{NULL} when the snapshot carries none. Wi
 \code{x}, an unnamed list of such records, one per \code{table}, in the order given.
 }
 \description{
-Resolves a parent table against a single project connection and returns a
-pure-data lineage record. The parent's authoritative \code{data_sha} and its
-\code{source_lineage} are read from the parent's own versioned metadata
-snapshot at \verb{\{table\}/.metadata/\{version\}.json}; a caller cannot supply or
-override \code{data_sha} (there is no \code{data_sha} parameter). The returned
-record retains no live connection and is serializable as plain data.
+Use before \code{\link[=datom_write]{datom_write()}} when the table you are writing was made from other
+datom tables. Each call names one input -- one table at one exact version --
+and returns a note that \code{\link[=datom_write]{datom_write()}} saves with the new table, so its
+\link[=datom-package]{lineage} records what it was made from. For several inputs,
+make one call each and pass them together as a list to \code{parents}. If the
+inputs are members of a set, pass the set as \code{x} and name several tables at
+once; each gets the version the set pins.
 }
 \details{
+The parent's data fingerprint is read from the parent's own saved record; you
+cannot supply it, so a lineage entry cannot claim data the parent never had.
+The record is plain data with no connection inside, so it can be saved and
+reused.
+
 Same-project and cross-project parents are declared identically -- the
 only difference is which connection is passed. \code{source} is always derived
 from the connection's \code{project_name}.

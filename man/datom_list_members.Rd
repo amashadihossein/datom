@@ -2,7 +2,7 @@
 % Please edit documentation in R/set-members.R
 \name{datom_list_members}
 \alias{datom_list_members}
-\title{List a set's members and their labels}
+\title{List a Set's Members and Their Labels}
 \usage{
 datom_list_members(x)
 }

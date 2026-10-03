@@ -547,12 +547,14 @@
 
 # --- the three verbs -----------------------------------------------------------
 
-#' Fetch one member of a set
+#' Get the Data Behind One Member of a Set
 #'
-#' Resolves one member of a set to what it points at: a table member to its data,
-#' a set member to another set. It is the named route to the same resolution a
-#' member's own `$fetch` link performs, and it goes through the same code -- so
-#' the two cannot drift.
+#' Returns what one [member][datom-package] of a set points at, at the exact
+#' version the set records: a data frame for a table, another set for a set.
+#' Name the member, as in `datom_fetch_member(conn, x, "dm")`, and pass a
+#' connection to that member's own project.
+#'
+#' `x$members[[i]]$fetch(conn)` does the same thing.
 #'
 #' This is kind dispatch at the **member** level, which is the only level it
 #' belongs at. Iterating members, a caller cannot know each one's kind in advance;
@@ -680,7 +682,7 @@ datom_fetch_member <- function(conn, x, member, tags = NULL, version = NULL) {
 }
 
 
-#' List a set's members and their labels
+#' List a Set's Members and Their Labels
 #'
 #' A data frame with one row per member **per label value** -- long format, not
 #' wide. Tags are open-keyed and multi-valued, so a wide frame would need a
@@ -775,7 +777,7 @@ datom_list_members <- function(x) {
 }
 
 
-#' Group a set's members into a navigable view
+#' Group a Set's Members into a Navigable View
 #'
 #' Groups members by the values of the label key(s) named in `by` and returns a
 #' nested list whose leaves are the members' **links**, so

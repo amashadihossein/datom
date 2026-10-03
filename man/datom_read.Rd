@@ -13,16 +13,17 @@ datom_read(conn, name, version = NULL, context = NULL, ...)
 
 \item{version}{Optional metadata_sha (datom version). If NULL, uses current.}
 
-\item{context}{Optional context for dispatch (e.g., "default", "cached").}
+\item{context}{Reserved; currently ignored.}
 
-\item{...}{Additional parameters forwarded to routed function.}
+\item{...}{Reserved; currently ignored.}
 }
 \value{
-Data frame or routed function result.
+A data frame.
 }
 \description{
-Unified read function with dispatch via \code{dispatch.json}. Reads from S3
-metadata cache for data readers.
+Returns a table as a data frame: the current version by default, or a past
+version when you pass \code{version} (copy it from \code{\link[=datom_history]{datom_history()}}). Works with
+both developer and reader connections. To read a set, use \code{\link[=datom_get_set]{datom_get_set()}}.
 }
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
