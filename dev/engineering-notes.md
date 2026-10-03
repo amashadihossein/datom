@@ -71,8 +71,8 @@ worktree, and none of the three says so. All bit during the 0.1.2 CRAN fix, work
 | Tool | What happens | Status |
 |---|---|---|
 | `R CMD build` | its built-in exclusion covers a `.git` *directory*, so the pointer file lands in the tarball as `datom/.git`, and `--as-cran` raises "hidden files ... most likely included in error" | fixed -- `^\.git$` added to `.Rbuildignore`, which covers any checkout shape |
-| `devtools::submit_cran()` | `devtools:::flag_release()` opens with `if (!uses_git(pkg$path)) return(invisible())` and `uses_git()` is `dir_exists(path(path, ".git"))`, so **no `CRAN-SUBMISSION` is written** -- and the "don't forget to tag this release" reminder, one line above the write, never prints either | not fixable here; **verify the artifact exists after every submission from a worktree**, or submit from a normal clone |
-| `.gitignore` for `CRAN-SUBMISSION` | the rule was added on `spec/datom-sets` only (`9600db0`), so on a `main` checkout the artifact is untracked **and unignored** | never `git add .` in the submitting worktree; stage by name |
+| `devtools::submit_cran()` | `devtools:::flag_release()` opens with `if (!uses_git(pkg$path)) return(invisible())` and `uses_git()` is `dir_exists(path(path, ".git"))`, so **no `CRAN-SUBMISSION` is written** -- and the "don't forget to tag this release" reminder, one line above the write, never prints either | not fixable here; **submit only from the primary clone** (`dev/README.md`, "Branching and Releases"); this bit again for 0.2.0 |
+| `.gitignore` for `CRAN-SUBMISSION` | the rule was added on `spec/datom-sets` only (`9600db0`), so on the 0.1.2-era `main` checkout the artifact was untracked **and unignored** | fixed -- the rule reached `main` with 0.2.0 |
 
 The common shape: a green run is not evidence, because each failure is a step that quietly did
 not happen. The submission itself is unaffected in every case -- only local bookkeeping is

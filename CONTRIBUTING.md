@@ -15,11 +15,12 @@ fits the current roadmap.
    minimal reproducible example.
 2. **Feature requests**: Open an issue using the feature request template.
 3. **Pull requests**:
-   - Fork the repository and create a branch from `main`.
+   - Fork the repository and create a branch from `dev`, where all development happens.
+     (`main` matches the CRAN release and only changes when a release is made.)
    - Install development dependencies: `devtools::install_dev_deps()`.
    - Make your changes with tests: `devtools::test()` must pass.
    - Run `devtools::check()` — aim for 0 errors and 0 warnings.
-   - Open a PR against `main` with a clear description of what changed and why.
+   - Open a PR against `dev` with a clear description of what changed and why.
 
 ## Development setup
 
@@ -59,9 +60,9 @@ self-assigned, follow these steps:
    unclear, incomplete, or requires clarification, post a scoping comment on the
    issue before writing any code.
 
-3. **Create a branch.** Branch off `main` with a descriptive name:
+3. **Create a branch.** Branch off `dev` with a descriptive name:
    ```
-   git checkout -b issue-{number}-{short-slug}
+   git checkout -b issue-{number}-{short-slug} dev
    ```
 
 4. **Plan (for non-trivial changes).** If the fix touches more than two files
@@ -82,7 +83,7 @@ self-assigned, follow these steps:
    - Update any affected documentation (`man/`, vignettes, `_pkgdown.yml`).
    - Run `devtools::check()` -- aim for 0 errors and 0 warnings.
 
-7. **Open a PR against `main`.** Include:
+7. **Open a PR against `dev`.** Include:
    - A `Closes #N` reference in the description.
    - A concise summary of what changed and why.
    - The test count delta (e.g. `tests: 1713 (+13)`).

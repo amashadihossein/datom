@@ -312,7 +312,7 @@ in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files)
 
 0. **Follow the dev process for multi-step work**: Any task spanning more than a single commit **must** follow the spec-driven workflow:
    a. Read `dev/README.md` and relevant dev docs (spec, architecture) to understand current state.
-   b. Create a feature branch: `git checkout -b spec/{feature}` from `main`.
+   b. Create a feature branch off `dev`: `git checkout -b spec/{feature} dev`.
    c. The plan lives in the spec under `.kiro/specs/{feature}/`: `requirements.md` (goal +
       acceptance criteria), `design.md` (context, design, invariants, correctness
       properties), `tasks.md` (the chunk breakdown + status). If the spec does not yet exist,
@@ -326,7 +326,8 @@ in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files)
       The spec's `design.md` already holds the "read first" context, invariants, and
       correctness properties; add task-specific notes there when a task spans multiple files
       or carries strict must-never rules.
-   f. Complete the Spec Completion Procedure (item 7) when done. PR to `main`, merge, delete branch.
+   f. Complete the Spec Completion Procedure (item 7) when done. PR into `dev`, merge, delete branch.
+      (`dev` -> `main` happens only at release time; see `dev/README.md` "Branching and Releases".)
    Never jump straight to coding on multi-step work. The spec is the plan AND the audit trail.
 1. **Read before writing**: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the spec's task description alone.
 2. **Full test suite before every commit**: Run `devtools::test()` (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost.
@@ -339,7 +340,7 @@ in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files)
 5d. **Mandatory chunk checkpoint**: After completing and committing a chunk, STOP. Post a one-paragraph summary of what shipped and any decisions made, then ask: "Ready to proceed to Chunk N: [name]?" Do not start the next chunk until the user replies with an explicit go-ahead. This applies even if the next chunk seems obvious or low-risk. Completing a chunk is not permission to start the next one.
 5e. **Approval signals are explicit, not contextual**: The following are NOT approval to proceed: silence, a question about the work just done, a comment about model behavior, a request to "queue" a model switch, or any message that does not directly address the next action. Explicit approval looks like: "go ahead", "yes", "do it", "proceed", "continue", or equivalent affirmatives directed at the next step.
 5c. **Before retrying any remote-mutating action, verify remote state first**: Before a second attempt at `gh issue create`, `git push`, `gh pr create`, etc., run a read-only check (`gh issue list`, `git log --remotes`, `gh pr list`) to confirm whether the first attempt already succeeded. Acting on stale local evidence is how duplicates happen.
-7. **Spec completion is mandatory**: When all tasks are done, harvest durable learnings (API/design → `dev/datom_specification.md`; gotchas/pitfalls → `dev/engineering-notes.md`; conventions → these instructions; deferrals → README Backlog), update the `dev/README.md` Active Specs table, and commit. **Specs persist — do NOT delete them** (this replaces the old "delete the phase doc" rule). Then PR + merge + delete the branch. Do NOT start the next spec until this is done.
+7. **Spec completion is mandatory**: When all tasks are done, harvest durable learnings (API/design → `dev/datom_specification.md`; gotchas/pitfalls → `dev/engineering-notes.md`; conventions → these instructions; deferrals → README Backlog), update the `dev/README.md` Active Specs table, and commit. **Specs persist — do NOT delete them** (this replaces the old "delete the phase doc" rule). Then PR into `dev` + merge + delete the branch. Do NOT start the next spec until this is done.
 7a. **`NEWS.md` states what changed, whether it breaks, and what to do — reasoning goes elsewhere.** One or two lines per change, with the upgrade-critical items first, because a reader who stops after two items must have hit the two that can cost them data or discovery. Detail belongs in roxygen (per-verb behaviour, refusals, return shape) or a vignette (cross-cutting narrative), and NEWS points at it: `?verb`, `vignette("name")`. **Never cite `dev/` or `.kiro/` from NEWS, a vignette, or roxygen** — both are `.Rbuildignore`d, so from an installed package those paths do not exist. That is not hypothetical: one spec satisfied its documentation requirement by writing to two files that do not ship, and nobody noticed until a user asked where the article was. **Do not delete an explanation that has nowhere to go** — verbose beats lost, so move the destination first and cut second. The datom-sets release block went from 7,700 words to 1,500 this way; the mapping of every removed claim to its destination is in the `sets-release-readiness` spec's Task 4 record, which is the format to reuse.
 
 ## Model Escalation
