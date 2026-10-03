@@ -27,7 +27,8 @@ new_datom_conn(
   backend = "s3",
   data_repo_url = NULL,
   github_pat = NULL,
-  github_api_url = NULL
+  github_api_url = NULL,
+  min_writer_version = NULL
 )
 ```
 
@@ -110,6 +111,14 @@ new_datom_conn(
   GitHub API base URL. Sourced from `store$github_api_url` at
   conn-construction time. Defaults to `"https://api.github.com"` when
   not set.
+
+- min_writer_version:
+
+  The lowest version of datom this repo accepts writes from, read from
+  `project.yaml` at conn-construction time. `NULL` means the repo
+  declares no such limit, which is every repo written so far. Held on
+  the connection because the file it comes from is already parsed there,
+  so the write-entry check costs no extra read.
 
 ## Value
 

@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -40,7 +40,7 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>datom: A Unified Framework for Versioned, Traceable Tabular Data</h1>
-      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.2/R/datom-package.R" class="external-link"><code>R/datom-package.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/R/datom-package.R" class="external-link"><code>R/datom-package.R</code></a></small>
       <div class="d-none name"><code>datom-package.Rd</code></div>
     </div>
 
@@ -49,6 +49,43 @@
     </div>
 
 
+    <div class="section level2">
+    <h2 id="key-terms">Key terms<a class="anchor" aria-label="anchor" href="#key-terms"></a></h2>
+
+
+<ul><li><p><strong>Project</strong>: one body of data you manage together, such as one clinical
+study. It has a name, a GitHub repository that records every change, and a
+storage location that holds the data itself; the data never goes into git.
+Created once with <code><a href="datom_init_repo.html">datom_init_repo()</a></code>.</p></li>
+<li><p><strong>Store</strong>: tells datom where a project's data lives (a local folder or an
+S3 bucket) and, if you will write, your GitHub token. Built with
+<code><a href="datom_store.html">datom_store()</a></code>.</p></li>
+<li><p><strong>Developer and reader</strong>: the two roles. A developer has a GitHub token and
+a local copy of the project, and can write. A reader needs only access to
+the storage – no token, no git – and can only read. datom picks the role
+from whether the store carries a token.</p></li>
+<li><p><strong>Connection (<code>conn</code>)</strong>: a pointer to one project, returned by
+<code><a href="datom_get_conn.html">datom_get_conn()</a></code>. It records which project, where its data is kept, and
+your role, and it is the first argument to almost every other function.</p></li>
+<li><p><strong>Table</strong>: a data frame saved in datom under a name, such as <code>dm</code>. Saved
+with <code><a href="datom_write.html">datom_write()</a></code> or <code><a href="datom_sync.html">datom_sync()</a></code>, read with <code><a href="datom_read.html">datom_read()</a></code>.</p></li>
+<li><p><strong>Version</strong>: a long identifier for one exact saved state of a table or a
+set. Old versions are never overwritten, and a save that changes nothing
+makes no new version. <code><a href="datom_history.html">datom_history()</a></code> lists them; pass one as
+<code>version =</code> to read it back.</p></li>
+<li><p><strong>Sync manifest</strong>: the preview <code><a href="datom_sync_manifest.html">datom_sync_manifest()</a></code> returns – one row
+per file in <code>input_files/</code>, each marked new, changed, unchanged, or in a
+format datom cannot read – which you then pass to <code><a href="datom_sync.html">datom_sync()</a></code>.</p></li>
+<li><p><strong>Set</strong>: a named, versioned list of exact versions of tables (or other
+sets), so a whole collection can be cited with one version string. It holds
+no data.</p></li>
+<li><p><strong>Member</strong>: one entry in a set – one table or set, pinned at one version,
+with optional labels such as <code>type = "input"</code>.</p></li>
+<li><p><strong>Parent, source and lineage</strong>: a parent is a table another table was made
+from, named with <code><a href="datom_parent.html">datom_parent()</a></code> before writing. A source is an original
+imported table at the start of the chain. Lineage is the record of both,
+read with <code><a href="datom_get_lineage.html">datom_get_lineage()</a></code>.</p></li>
+</ul></div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
     <div class="dont-index"><p>Useful links:</p><ul><li><p><a href="https://github.com/amashadihossein/datom" class="external-link">https://github.com/amashadihossein/datom</a></p></li>

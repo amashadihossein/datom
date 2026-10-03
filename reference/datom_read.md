@@ -1,7 +1,10 @@
 # Read a datom Table
 
-Unified read function with dispatch via `dispatch.json`. Reads from S3
-metadata cache for data readers.
+Returns a table as a data frame: the current version by default, or a
+past version when you pass `version` (copy it from
+[`datom_history()`](https://amashadihossein.github.io/datom/reference/datom_history.md)).
+Works with both developer and reader connections. To read a set, use
+[`datom_get_set()`](https://amashadihossein.github.io/datom/reference/datom_get_set.md).
 
 ## Usage
 
@@ -26,15 +29,15 @@ datom_read(conn, name, version = NULL, context = NULL, ...)
 
 - context:
 
-  Optional context for dispatch (e.g., "default", "cached").
+  Reserved; currently ignored.
 
 - ...:
 
-  Additional parameters forwarded to routed function.
+  Reserved; currently ignored.
 
 ## Value
 
-Data frame or routed function result.
+A data frame.
 
 ## Examples
 
@@ -68,9 +71,9 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b29439652/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b29439652/repo
-#> ✔ Wrote "dm" (full): "039f0c3f"
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd66c2c91e/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd66c2c91e/repo
+#> ✔ Wrote "dm" (full): "b5cbba45"
 #> # A tibble: 6 × 12
 #>   STUDYID   DOMAIN USUBJID SUBJID   AGE AGEU  SEX   RACE  ETHNIC COUNTRY RFSTDTC
 #>   <chr>     <chr>  <chr>    <int> <int> <chr> <chr> <chr> <chr>  <chr>   <chr>  

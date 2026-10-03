@@ -56,11 +56,11 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b15383e23/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b15383e23/repo
-#> ✔ Wrote "dm" (full): "039f0c3f"
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd77961d62/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd77961d62/repo
+#> ✔ Wrote "dm" (full): "b5cbba45"
 #> [1] "datom/.metadata/manifest.json"                                                           
-#> [2] "datom/dm/.metadata/039f0c3fc4d639b4977f44e83df863da9535e70df737cc758747bda8bd2d89d8.json"
+#> [2] "datom/dm/.metadata/b5cbba4501f518d7bbe1eaf4f0c236895b12d63677b9f75b9388b715055c832e.json"
 #> [3] "datom/dm/.metadata/metadata.json"                                                        
 #> [4] "datom/dm/.metadata/version_history.json"                                                 
 #> [5] "datom/dm/71a93ffaa4cdc59750a5d5fbf49bb4ffcd656f00038cae2849958acae622b538.parquet"       

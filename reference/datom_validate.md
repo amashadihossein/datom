@@ -19,7 +19,18 @@ datom_validate(conn, fix = FALSE)
 - fix:
 
   If `TRUE`, attempts to fix inconsistencies by syncing data-side
-  metadata (manifest + per-table metadata) to storage.
+  metadata (manifest + per-artifact metadata) to storage, and by
+  restoring a **set's** payload when storage has lost it – git holds
+  `{name}/set.json`, so those bytes are recoverable. A restore happens
+  only when the stored object is absent and only when the clone's bytes
+  hash to the `document_sha` already recorded; a stored payload is never
+  overwritten and its recorded hash is never recomputed.
+
+  A missing **table** payload (`data_missing_s3`) cannot be repaired:
+  the parquet bytes are never in the clone. Those tables are named in a
+  warning and need
+  [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
+  re-run with the source data.
 
 ## Value
 
@@ -35,11 +46,40 @@ A list with:
 
 - tables:
 
-  Data frame of per-table checks.
+  Data frame of per-artifact checks, one row per artifact of either
+  kind, with a `kind` column. Named `tables` for compatibility.
 
 - fixed:
 
   Logical — `TRUE` if `fix = TRUE` was applied.
+
+## What is checked per artifact
+
+Both kinds of artifact are checked, and the payload check branches on
+kind: a table's payload is a parquet object, a set's is a JSON document
+at `{name}/{data_sha}.json`. A **set** is checked further, because a
+payload whose members have gone is a citation that no longer resolves:
+
+- every member's pinned version must still exist in this project's
+  storage. **One level deep only** – a member that is itself a set is
+  confirmed to exist and its own member list is never opened, so the
+  cost of validating a set never depends on the tree beneath it.
+  Validating an inner set is a separate call against that set's own
+  project.
+
+- a member recorded as belonging to **another project** is checked as a
+  well-formed pointer only. This connection sees one namespace, so an
+  existence check there would report every cross-project member as
+  rotten.
+
+- the set must record the hash of its stored payload, without which no
+  reader can verify it.
+
+Statuses reported in the `tables` frame: `metadata_missing_s3`,
+`history_missing_s3`, `data_missing_s3`, `members_unresolvable`,
+`document_sha_missing`, and `kind_unsupported` for an artifact whose
+metadata declares a kind this version of datom does not know – reported
+rather than fatal, with that row's payload left unchecked.
 
 ## Examples
 
@@ -66,9 +106,9 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b5aac65b9/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b5aac65b9/repo
-#> ✔ Wrote "dm" (full): "039f0c3f"
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd68ad3b1b/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd68ad3b1b/repo
+#> ✔ Wrote "dm" (full): "b5cbba45"
 #> ℹ No governance attached -- skipping dispatch/ref/migration_history checks.
 #> ✔ All checks passed. Git and S3 are consistent.
 ```

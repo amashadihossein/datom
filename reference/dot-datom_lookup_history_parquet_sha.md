@@ -1,13 +1,9 @@
 # Most-recent version_history parquet_sha for a data_sha
 
-Scans the developer's local `version_history.json` (newest-first) for
-the most recent entry whose `data_sha` matches and that carries a
-non-empty `parquet_sha`. Returns NULL when none is found – including the
-transitional period before task 5.1 persists `parquet_sha` into history
-entries, and for pre-cv1 histories. Reads the local git clone
-(offline-friendly); a stale clone is tolerated because the subsequent
-git push serializes concurrent writers (a behind clone fails to push
-before it can upload).
+The table half of
+[`.datom_lookup_history_object_sha()`](https://amashadihossein.github.io/datom/reference/dot-datom_lookup_history_object_sha.md).
+Returns NULL for a pre-cv1 history, whose entries predate `parquet_sha`
+being recorded.
 
 ## Usage
 
@@ -23,7 +19,7 @@ before it can upload).
 
 - name:
 
-  Table name.
+  Artifact name.
 
 - data_sha:
 

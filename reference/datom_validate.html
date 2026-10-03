@@ -9,7 +9,7 @@ files. Reports mismatches as a structured result."><meta property="og:image" con
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -42,7 +42,7 @@ files. Reports mismatches as a structured result."><meta property="og:image" con
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Validate Git-Storage Consistency</h1>
-      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.2/R/validate.R" class="external-link"><code>R/validate.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/R/validate.R" class="external-link"><code>R/validate.R</code></a></small>
       <div class="d-none name"><code>datom_validate.Rd</code></div>
     </div>
 
@@ -66,7 +66,15 @@ files. Reports mismatches as a structured result.</p>
 
 <dt id="arg-fix">fix<a class="anchor" aria-label="anchor" href="#arg-fix"></a></dt>
 <dd><p>If <code>TRUE</code>, attempts to fix inconsistencies by syncing data-side
-metadata (manifest + per-table metadata) to storage.</p></dd>
+metadata (manifest + per-artifact metadata) to storage, and by restoring a
+<strong>set's</strong> payload when storage has lost it – git holds <code>{name}/set.json</code>,
+so those bytes are recoverable. A restore happens only when the stored
+object is absent and only when the clone's bytes hash to the
+<code>document_sha</code> already recorded; a stored payload is never overwritten and
+its recorded hash is never recomputed.</p>
+<p>A missing <strong>table</strong> payload (<code>data_missing_s3</code>) cannot be repaired: the
+parquet bytes are never in the clone. Those tables are named in a warning
+and need <code><a href="datom_write.html">datom_write()</a></code> re-run with the source data.</p></dd>
 
 </dl></div>
     <div class="section level2">
@@ -78,13 +86,37 @@ metadata (manifest + per-table metadata) to storage.</p></dd>
 <dd><p>Data frame of repo-level file checks.</p></dd>
 
 <dt>tables</dt>
-<dd><p>Data frame of per-table checks.</p></dd>
+<dd><p>Data frame of per-artifact checks, one row per artifact of
+either kind, with a <code>kind</code> column. Named <code>tables</code> for compatibility.</p></dd>
 
 <dt>fixed</dt>
 <dd><p>Logical — <code>TRUE</code> if <code>fix = TRUE</code> was applied.</p></dd>
 
 
 </dl></div>
+    <div class="section level2">
+    <h2 id="what-is-checked-per-artifact">What is checked per artifact<a class="anchor" aria-label="anchor" href="#what-is-checked-per-artifact"></a></h2>
+
+
+<p>Both kinds of artifact are checked, and the payload check branches on kind: a
+table's payload is a parquet object, a set's is a JSON document at
+<code>{name}/{data_sha}.json</code>. A <strong>set</strong> is checked further, because a payload
+whose members have gone is a citation that no longer resolves:</p><ul><li><p>every member's pinned version must still exist in this project's storage.
+<strong>One level deep only</strong> – a member that is itself a set is confirmed to
+exist and its own member list is never opened, so the cost of validating a
+set never depends on the tree beneath it. Validating an inner set is a
+separate call against that set's own project.</p></li>
+<li><p>a member recorded as belonging to <strong>another project</strong> is checked as a
+well-formed pointer only. This connection sees one namespace, so an
+existence check there would report every cross-project member as rotten.</p></li>
+<li><p>the set must record the hash of its stored payload, without which no reader
+can verify it.</p></li>
+</ul><p>Statuses reported in the <code>tables</code> frame: <code>metadata_missing_s3</code>,
+<code>history_missing_s3</code>, <code>data_missing_s3</code>, <code>members_unresolvable</code>,
+<code>document_sha_missing</code>, and <code>kind_unsupported</code> for an artifact whose metadata
+declares a kind this version of datom does not know – reported rather than
+fatal, with that row's payload left unchecked.</p>
+    </div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
@@ -110,9 +142,9 @@ metadata (manifest + per-table metadata) to storage.</p></dd>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">tmp</span>, recursive <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">}</span></span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Created store directory <span style="color: #0000BB;">/tmp/RtmpaWgK9C/datom-example-1a6b5aac65b9/storage</span>.</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Initialized datom repository <span style="color: #0000BB;">"example_project"</span> at <span style="color: #0000BB;">/tmp/RtmpaWgK9C/datom-example-1a6b5aac65b9/repo</span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Wrote <span style="color: #0000BB;">"dm"</span> (full): <span style="color: #0000BB;">"039f0c3f"</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Created store directory <span style="color: #0000BB;">/tmp/RtmphTeynu/datom-example-1afd68ad3b1b/storage</span>.</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Initialized datom repository <span style="color: #0000BB;">"example_project"</span> at <span style="color: #0000BB;">/tmp/RtmphTeynu/datom-example-1afd68ad3b1b/repo</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Wrote <span style="color: #0000BB;">"dm"</span> (full): <span style="color: #0000BB;">"b5cbba45"</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> No governance attached -- skipping dispatch/ref/migration_history checks.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> All checks passed. Git and S3 are consistent.</span>
 </code></pre></div>

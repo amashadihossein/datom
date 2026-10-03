@@ -1,6 +1,13 @@
-# Get a datom Connection
+# Get a Pointer to a datom Project
 
-Flexible connection for both developers and readers.
+Returns a pointer to the project, called a
+[connection](https://amashadihossein.github.io/datom/reference/datom-package.md)
+(`conn`): a record of which project you are working on, where its data
+is kept, and whether you can write. Almost every other datom function
+takes it as its first argument. Nothing stays open; it only checks once
+that the storage (and, for a developer, the GitHub repository) can be
+reached. Developers pass `path` (their local copy) and `store`; readers,
+who have no local copy, pass `store` and `project_name`.
 
 ## Usage
 
@@ -72,22 +79,22 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b3e373f69/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b3e373f69/repo
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd2242a129/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd2242a129/repo
 #> 
 #> ── datom connection 
 #> • Project: "example_project"
 #> • Backend: "local"
 #> • Role: "developer"
-#> • Data root: "/tmp/RtmpaWgK9C/datom-example-1a6b3e373f69/storage"
+#> • Data root: "/tmp/RtmphTeynu/datom-example-1afd2242a129/storage"
 #> • Governance: not attached
-#> • Path: /tmp/RtmpaWgK9C/datom-example-1a6b3e373f69/repo
-#> • Data repo: </tmp/RtmpaWgK9C/datom-example-1a6b3e373f69/remote.git>
+#> • Path: /tmp/RtmphTeynu/datom-example-1afd2242a129/repo
+#> • Data repo: </tmp/RtmphTeynu/datom-example-1afd2242a129/remote.git>
 #> 
 #> ── datom connection 
 #> • Project: "example_project"
 #> • Backend: "local"
 #> • Role: "reader"
-#> • Data root: "/tmp/RtmpaWgK9C/datom-example-1a6b3e373f69/storage"
+#> • Data root: "/tmp/RtmphTeynu/datom-example-1afd2242a129/storage"
 #> • Governance: not attached
 ```

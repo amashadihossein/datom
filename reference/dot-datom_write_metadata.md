@@ -37,3 +37,11 @@ Kept for backward compatibility. Does NOT commit or push.
 ## Value
 
 Invisible list with metadata_sha, git_paths, and s3_keys.
+
+## Details
+
+**It makes no commit, so it has no `commit_sha` to hand on**, and that
+matters for anything asserted about the history it produces: the stored
+entries carry a commit only where one can be worked out from git. A test
+that means "every stored entry names its commit" has to drive a real
+write.

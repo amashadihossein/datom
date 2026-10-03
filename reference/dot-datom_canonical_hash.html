@@ -17,7 +17,7 @@ two frames with equal values hash identically regardless of container class
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -50,7 +50,7 @@ two frames with equal values hash identically regardless of container class
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Compute the datom-cv1 Canonical Content Hash</h1>
-      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.2/R/utils-sha.R" class="external-link"><code>R/utils-sha.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/R/utils-sha.R" class="external-link"><code>R/utils-sha.R</code></a></small>
       <div class="d-none name"><code>dot-datom_canonical_hash.Rd</code></div>
     </div>
 
@@ -78,9 +78,7 @@ two frames with equal values hash identically regardless of container class
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A list with <code>data_sha</code> (character) and <code>column_hashes</code> (an ordered
-list of <code>list(name, sha)</code> in column order, computed once and reused for
-both <code>data_sha</code> and the persisted column index).</p>
+    <p>A list with <code>data_sha</code> (character).</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -91,6 +89,10 @@ computation (step 1 of <code><a href="datom_write.html">datom_write()</a></code>
 mutation, so a refusal leaves no partial state.</p>
 <p>The final hash is
 <code>sha256( "datom-cv1" || f64le(nrow) || f64le(ncol) || concat(col_digest_hex...) )</code>.</p>
+<p>The per-column digests are an intermediate only and are never returned or
+persisted. A per-column digest lets anyone holding metadata confirm a guess
+about one column's values, and metadata is meant to describe a table's shape
+without revealing its values.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

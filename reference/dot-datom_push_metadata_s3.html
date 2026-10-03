@@ -11,7 +11,7 @@ ordering."><meta property="og:image" content="https://amashadihossein.github.io/
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -44,7 +44,7 @@ ordering."><meta property="og:image" content="https://amashadihossein.github.io/
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Push Metadata Files to S3</h1>
-      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.2/R/read_write.R" class="external-link"><code>R/read_write.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/R/read_write.R" class="external-link"><code>R/read_write.R</code></a></small>
       <div class="d-none name"><code>dot-datom_push_metadata_s3.Rd</code></div>
     </div>
 
@@ -56,7 +56,7 @@ ordering.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.datom_push_metadata_s3</span><span class="op">(</span><span class="va">conn</span>, <span class="va">name</span>, <span class="va">metadata</span>, <span class="va">metadata_sha</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.datom_push_metadata_s3</span><span class="op">(</span><span class="va">conn</span>, <span class="va">name</span>, <span class="va">metadata</span>, <span class="va">metadata_sha</span>, commit_sha <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -78,10 +78,29 @@ ordering.</p>
 <dt id="arg-metadata-sha">metadata_sha<a class="anchor" aria-label="anchor" href="#arg-metadata-sha"></a></dt>
 <dd><p>SHA of the metadata (the datom "version").</p></dd>
 
+
+<dt id="arg-commit-sha">commit_sha<a class="anchor" aria-label="anchor" href="#arg-commit-sha"></a></dt>
+<dd><p>The commit that produced <code>metadata_sha</code>, or <code>NULL</code> from a
+caller that made no commit.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>Invisible character vector of S3 keys written.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p><strong>The stored history carries one field the clone's copy cannot</strong>, and this is
+the reason <code>commit_sha</code> exists as an argument here: the clone's
+<code>version_history.json</code> is inside the commit that would name it, so only a
+storage-bound copy can say which commit produced a version. The upload sends
+the clone's file wholesale, so without the merge below the field would survive
+on the newest version only – the second write of an artifact would erase the
+first version's commit id.</p>
+<p><code>commit_sha</code> is <strong>derived, never authored</strong>. It reaches this function as an
+argument only because the caller one layer up already holds the commit it just
+made; no exported verb accepts it, and every other entry's value is worked out
+from git. See <code>R/version-commit.R</code>.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

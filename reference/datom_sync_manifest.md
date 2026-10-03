@@ -1,14 +1,15 @@
-# Scan and Prepare Manifest for Sync
+# Preview What a Sync Will Change
 
-Scans a flat `input_files/` directory and computes file SHAs. Compares
-against the current `.datom/manifest.json` to detect new or changed
-files. Returns a manifest data frame for review before calling
+Looks at the files in the project's `input_files/` folder and returns
+one row per file, saying whether it is new, changed, unchanged since it
+was last synced, or in a format datom cannot read. Nothing is written.
+Review the result, drop any rows you do not want, then pass it to
 [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
 
 ## Usage
 
 ``` r
-datom_sync_manifest(conn, path = NULL, pattern = "*")
+datom_sync_manifest(conn, path = NULL, pattern = "*", sources = NULL)
 ```
 
 ## Arguments
@@ -21,20 +22,90 @@ datom_sync_manifest(conn, path = NULL, pattern = "*")
 - path:
 
   Optional path to input files directory. Defaults to `input_files/`
-  inside the repo.
+  inside the repo. Not accepted on a product repo, which reads no files.
 
 - pattern:
 
-  Glob pattern for file matching. Default `"*"`.
+  Glob pattern for file matching. Default `"*"`. On a product repo it
+  filters source artifact names instead.
 
-  Files whose format is outside datom's ingestion allowlist (flat
-  tabular formats only) are flagged `"unsupported_format"` up front,
-  without blocking their allowlisted siblings.
+- sources:
+
+  On a product repo only, and required there: one `datom_conn`, or a
+  list of them, for the projects the set's inputs come from. Each
+  connection's project name is what members are matched on. Refused on
+  an ordinary repo.
 
 ## Value
 
-Data frame with columns: name, file, format, original_file_sha, status
-(one of `"new"`, `"changed"`, `"unchanged"`, `"unsupported_format"`).
+On an ordinary repo, a data frame with columns: name, file, format,
+original_file_sha, status (one of `"new"`, `"changed"`, `"unchanged"`,
+`"unsupported_format"`).
+
+On a product repo, a data frame with columns `project`, `name`, `kind`,
+`version_from` (`NA` for a new artifact), `version_to` (`NA` for a
+member that was not compared) and `status` (one of `"new"`, `"changed"`,
+`"unchanged"`, `"ambiguous"`, `"not_checked"`, `"excluded"`). Versions
+are full 64-character strings.
+
+## Details
+
+A file counts as changed when its bytes differ from the file last synced
+under that name.
+
+Files whose format is outside datom's ingestion allowlist (flat tabular
+formats only) are flagged `"unsupported_format"` up front, without
+blocking their allowlisted siblings.
+
+On a product repo (`mode: product`) it maps the repo's set against
+source projects instead – see "On a product repo" below.
+
+## On a product repo
+
+A product repo owns one set (named in `.datom/project.yaml`), and this
+call compares that set, as stored, with what each source project holds
+now. It reads one manifest per source and the stored set; it writes
+nothing.
+
+Tables and sets are treated alike: a set a source holds gets a row, and
+a member that is a set is compared exactly as a table member is, so a
+set built from other sets syncs the same way.
+
+One row per artifact in the sources whose name matches `pattern`:
+
+- `new` – no member points at it (every row, when the set has no version
+  yet);
+
+- `changed` / `unchanged` – one member points at it, at an older / the
+  current version;
+
+- `ambiguous` – two or more members point at it (a live table beside a
+  frozen baseline, say), so neither will move. Move one with
+  [`datom_update_members()`](https://amashadihossein.github.io/datom/reference/datom_update_members.md),
+  narrowing by `member` and `tags`.
+
+Plus one row for each member the call did not compare:
+
+- `excluded` – its artifact is in a source but does not match `pattern`;
+
+- `not_checked` – its project was not passed in `sources`.
+
+The preview never proposes removing a member. A member whose artifact is
+no longer listed in its source is named in the messages and left pinned.
+Members in the repo's own project are outputs and get no row: re-derive
+them, then move them with
+[`datom_update_members()`](https://amashadihossein.github.io/datom/reference/datom_update_members.md).
+
+It stops when `sources` includes the repo's own project, and when a
+source connection's project name differs from the name that project's
+own manifest records.
+
+**Tables and sets are saved at different points.** On an ordinary repo,
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
+writes each table as it syncs. On a product repo it hands the edited set
+back, and the set is saved only by
+[`datom_write_set()`](https://amashadihossein.github.io/datom/reference/datom_write_set.md)
+– one version for the whole edit, which you can look at or add to first.
 
 ## Examples
 
@@ -67,8 +138,8 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b54966973/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b54966973/repo
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd58cef5be/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd58cef5be/repo
 #> ℹ Scanned 1 file: 1 new, 0 changed, 0 unchanged.
 #>   name format status
 #> 1   dm    csv    new

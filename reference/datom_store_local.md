@@ -34,11 +34,11 @@ A `datom_store_local` object.
 ``` r
 tmp <- tempfile("datom_store_")
 store <- datom_store_local(path = tmp, validate = TRUE)
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom_store_1a6b3d262b9b.
+#> ℹ Created store directory /tmp/RtmphTeynu/datom_store_1afd1fbb6a7b.
 store
 #> 
 #> ── datom local store component 
-#> • Path: /tmp/RtmpaWgK9C/datom_store_1a6b3d262b9b
+#> • Path: /tmp/RtmphTeynu/datom_store_1afd1fbb6a7b
 #> • Validated: TRUE
 is_datom_store_local(store)
 #> [1] TRUE

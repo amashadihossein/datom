@@ -33,9 +33,9 @@ tampering aborts rather than being silently read.
   metadata (see
   [`.datom_resolve_version()`](https://amashadihossein.github.io/datom/reference/dot-datom_resolve_version.md)).
   When non-empty, the downloaded file is verified against it and a
-  mismatch aborts. When `NULL` or empty (pre-cv1 metadata, or a
-  version-pinned read before task 5.1 persists it), the integrity check
-  is skipped and the read succeeds.
+  mismatch aborts. When `NULL` or empty – which now happens only for
+  pre-cv1 metadata – the integrity check is skipped and the read
+  succeeds.
 
 ## Value
 

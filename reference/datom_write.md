@@ -1,7 +1,12 @@
-# Write a datom Table
+# Save a Data Frame as a datom Table
 
-Writes data to a datom repository. Commits to git, pushes, and syncs to
-S3.
+Saves a data frame as a new version of a named
+[table](https://amashadihossein.github.io/datom/reference/datom-package.md):
+the data goes to storage, and a record of the change is committed and
+pushed to the project's GitHub repository. If nothing has changed since
+the last version, nothing is saved. To bring in files rather than data
+frames, use
+[`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md).
 
 ## Usage
 
@@ -33,8 +38,13 @@ datom_write(
 
 - name:
 
-  Table name. If NULL with NULL data, does a data-only metadata sync to
-  storage (manifest + per-table metadata).
+  Table name. If NULL with NULL data, mirrors the clone's storage-side
+  documents for **every** artifact of either kind: the manifest, and
+  each artifact's metadata, version history and versioned snapshots. On
+  that route a **set** whose stored payload is missing also has it
+  restored from the clone – see
+  [`datom_validate()`](https://amashadihossein.github.io/datom/reference/datom_validate.md),
+  which shares the mechanism, for the conditions on that.
 
 - metadata:
 
@@ -143,15 +153,15 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b572d83a/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b572d83a/repo
-#> ✔ Wrote "dm" (full): "039f0c3f"
-#> ✔ Wrote "lb" (full): "6c9b32e4"
-#> ✔ Wrote "lb_summary" (full): "8b43b1b7"
-#> ✔ Wrote "dm_lb_merged" (full): "052274e4"
-#>           name current_version current_data_sha         last_updated
-#> 1           dm        039f0c3f         71a93ffa 2026-09-17T05:57:10Z
-#> 2           lb        6c9b32e4         87f206ab 2026-09-17T05:57:10Z
-#> 3   lb_summary        8b43b1b7         b081ff1a 2026-09-17T05:57:10Z
-#> 4 dm_lb_merged        052274e4         03b9889f 2026-09-17T05:57:11Z
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd395de3a6/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd395de3a6/repo
+#> ✔ Wrote "dm" (full): "b5cbba45"
+#> ✔ Wrote "lb" (full): "b2937781"
+#> ✔ Wrote "lb_summary" (full): "1d4d8762"
+#> ✔ Wrote "dm_lb_merged" (full): "93014c1c"
+#>           name  kind current_version current_data_sha         last_updated
+#> 1           dm table        b5cbba45         71a93ffa 2026-10-03T18:04:42Z
+#> 2           lb table        b2937781         87f206ab 2026-10-03T18:04:42Z
+#> 3   lb_summary table        1d4d8762         b081ff1a 2026-10-03T18:04:42Z
+#> 4 dm_lb_merged table        93014c1c         03b9889f 2026-10-03T18:04:42Z
 ```

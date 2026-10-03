@@ -21,7 +21,9 @@ datom_summary(conn)
 
 A `datom_summary` S3 object (a list with class `"datom_summary"`)
 containing: `project_name`, `role`, `backend`, `root`, `prefix`,
-`table_count`, `total_versions`, `last_updated`, `remote_url`.
+`table_count`, `set_count`, `total_versions`, `last_updated`,
+`remote_url`. `table_count` counts tables only and `set_count` counts
+sets; `total_versions` stays tables-only, so no counter changed meaning.
 `remote_url` is `NULL` for readers (no local data clone).
 
 ## Examples
@@ -49,15 +51,16 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b1d3f7031/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b1d3f7031/repo
-#> ✔ Wrote "dm" (full): "039f0c3f"
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd1ba1599/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd1ba1599/repo
+#> ✔ Wrote "dm" (full): "b5cbba45"
 #> 
 #> ── datom project summary 
 #> • Project: "example_project"
 #> • Role: "developer"
-#> • Backend: local -- "/tmp/RtmpaWgK9C/datom-example-1a6b1d3f7031/storage"
+#> • Backend: local -- "/tmp/RtmphTeynu/datom-example-1afd1ba1599/storage"
 #> • Tables: 1 (1 version total)
-#> • Last write: "2026-09-17T05:57:09Z"
-#> • Remote: "/tmp/RtmpaWgK9C/datom-example-1a6b1d3f7031/remote.git"
+#> • Sets: 0
+#> • Last write: "2026-10-03T18:04:40Z"
+#> • Remote: "/tmp/RtmphTeynu/datom-example-1afd1ba1599/remote.git"
 ```

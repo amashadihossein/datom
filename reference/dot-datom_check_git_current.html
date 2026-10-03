@@ -11,7 +11,7 @@ telling the developer to pull first."><meta property="og:image" content="https:/
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -44,7 +44,7 @@ telling the developer to pull first."><meta property="og:image" content="https:/
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Check Local Branch is Current with Remote</h1>
-      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.2/R/utils-git.R" class="external-link"><code>R/utils-git.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/R/utils-git.R" class="external-link"><code>R/utils-git.R</code></a></small>
       <div class="d-none name"><code>dot-datom_check_git_current.Rd</code></div>
     </div>
 
@@ -79,6 +79,12 @@ telling the developer to pull first.</p>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>Does NOT auto-pull - lets the developer decide how to resolve.</p>
+<p>If the fetch fails (offline, unreachable remote), this warns and returns
+<code>TRUE</code> without comparing anything: the cached remote-tracking refs may be
+arbitrarily stale, so acting on them would abort an offline developer for
+being behind a remote they cannot reach. The backstop is
+<code><a href="dot-datom_git_push.html">.datom_git_push()</a></code>, which pulls and aborts if the push is rejected, so a
+write cannot land on storage from a stale base.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

@@ -76,10 +76,10 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b8b013a0/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b8b013a0/repo
-#> ✔ Wrote "dm" (full): "039f0c3f"
-#> ✔ Wrote "dm_female" (full): "3bd94a7a"
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd36f84d5d/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd36f84d5d/repo
+#> ✔ Wrote "dm" (full): "b5cbba45"
+#> ✔ Wrote "dm_female" (full): "612321c1"
 #> [[1]]
 #> [[1]]$source
 #> [1] "example_project"
@@ -88,7 +88,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 #> [1] "dm"
 #> 
 #> [[1]]$version
-#> [1] "039f0c3fc4d639b4977f44e83df863da9535e70df737cc758747bda8bd2d89d8"
+#> [1] "b5cbba4501f518d7bbe1eaf4f0c236895b12d63677b9f75b9388b715055c832e"
 #> 
 #> [[1]]$data_sha
 #> [1] "71a93ffaa4cdc59750a5d5fbf49bb4ffcd656f00038cae2849958acae622b538"

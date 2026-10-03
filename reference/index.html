@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -43,6 +43,22 @@
     </div>
 
     <div class="section level2">
+      <h2 id="key-terms">Key terms<a class="anchor" aria-label="anchor" href="#key-terms"></a></h2>
+
+      <div class="section-desc"><p>What datom’s words mean: project, store, connection, table, version, set</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="datom-package.html">datom</a></code> <code><a href="datom-package.html">datom-package</a></code>
+
+        </dt>
+        <dd>datom: A Unified Framework for Versioned, Traceable Tabular Data</dd>
+      </dl></div><div class="section level2">
       <h2 id="connection-setup">Connection &amp; Setup<a class="anchor" aria-label="anchor" href="#connection-setup"></a></h2>
 
       <div class="section-desc"><p>Create connections, initialize repositories</p></div>
@@ -57,7 +73,7 @@
           <code><a href="datom_init_repo.html">datom_init_repo()</a></code>
 
         </dt>
-        <dd>Initialize a datom Repository</dd>
+        <dd>Create a New datom Project</dd>
 
         <dt>
 
@@ -71,7 +87,7 @@
           <code><a href="datom_get_conn.html">datom_get_conn()</a></code>
 
         </dt>
-        <dd>Get a datom Connection</dd>
+        <dd>Get a Pointer to a datom Project</dd>
 
         <dt>
 
@@ -194,7 +210,7 @@
           <code><a href="datom_write.html">datom_write()</a></code>
 
         </dt>
-        <dd>Write a datom Table</dd>
+        <dd>Save a Data Frame as a datom Table</dd>
 
         <dt>
 
@@ -202,6 +218,99 @@
 
         </dt>
         <dd>Check Whether a Table Can Be Hashed by datom</dd>
+      </dl></div><div class="section level2">
+      <h2 id="sets">Sets<a class="anchor" aria-label="anchor" href="#sets"></a></h2>
+
+      <div class="section-desc"><p>Write and read a versioned, citable set of artifacts, and declare its members</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="datom_member.html">datom_member()</a></code>
+
+        </dt>
+        <dd>Declare a Member of a Set</dd>
+
+        <dt>
+
+          <code><a href="datom_write_set.html">datom_write_set()</a></code>
+
+        </dt>
+        <dd>Save a Set as a New Version</dd>
+
+        <dt>
+
+          <code><a href="datom_get_set.html">datom_get_set()</a></code>
+
+        </dt>
+        <dd>Read a datom Set</dd>
+
+        <dt>
+
+          <code><a href="datom_fetch_member.html">datom_fetch_member()</a></code>
+
+        </dt>
+        <dd>Get the Data Behind One Member of a Set</dd>
+
+        <dt>
+
+          <code><a href="datom_list_members.html">datom_list_members()</a></code>
+
+        </dt>
+        <dd>List a Set's Members and Their Labels</dd>
+
+        <dt>
+
+          <code><a href="datom_structure_members.html">datom_structure_members()</a></code>
+
+        </dt>
+        <dd>Group a Set's Members into a Navigable View</dd>
+
+        <dt>
+
+          <code><a href="datom_assemble_set.html">datom_assemble_set()</a></code>
+
+        </dt>
+        <dd>Start Assembling a Set</dd>
+
+        <dt>
+
+          <code><a href="datom_add_member.html">datom_add_member()</a></code>
+
+        </dt>
+        <dd>Add One Member to a Set</dd>
+
+        <dt>
+
+          <code><a href="datom_update_members.html">datom_update_members()</a></code>
+
+        </dt>
+        <dd>Repoint a Set's Members at Newer Versions</dd>
+
+        <dt>
+
+          <code><a href="datom_remove_members.html">datom_remove_members()</a></code>
+
+        </dt>
+        <dd>Drop Members from a Set</dd>
+
+        <dt>
+
+          <code><a href="print.datom_set.html">print(<i>&lt;datom_set&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Print a datom Set</dd>
+
+        <dt>
+
+          <code><a href="print.datom_link.html">print(<i>&lt;datom_link&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Print a Member Link</dd>
       </dl></div><div class="section level2">
       <h2 id="query-status">Query &amp; Status<a class="anchor" aria-label="anchor" href="#query-status"></a></h2>
 
@@ -217,7 +326,7 @@
           <code><a href="datom_list.html">datom_list()</a></code>
 
         </dt>
-        <dd>List Available Tables</dd>
+        <dd>List the Tables and Sets in a Project</dd>
 
         <dt>
 
@@ -266,21 +375,21 @@
           <code><a href="datom_get_lineage.html">datom_get_lineage()</a></code>
 
         </dt>
-        <dd>Get Lineage for a Table</dd>
+        <dd>Show a Table's Original Sources or Direct Inputs</dd>
 
         <dt>
 
           <code><a href="datom_parent.html">datom_parent()</a></code>
 
         </dt>
-        <dd>Declare a parent for lineage</dd>
+        <dd>Name an Input for a Table You Are About to Write</dd>
 
         <dt>
 
           <code><a href="datom_lineage_union.html">datom_lineage_union()</a></code>
 
         </dt>
-        <dd>Union and deduplicate source_lineage lists</dd>
+        <dd>Union and Deduplicate source_lineage Lists</dd>
       </dl></div><div class="section level2">
       <h2 id="sync-operations">Sync Operations<a class="anchor" aria-label="anchor" href="#sync-operations"></a></h2>
 
@@ -303,14 +412,14 @@
           <code><a href="datom_sync.html">datom_sync()</a></code>
 
         </dt>
-        <dd>Sync Files to datom Repository</dd>
+        <dd>Bring New and Changed Files Into a Project</dd>
 
         <dt>
 
           <code><a href="datom_sync_manifest.html">datom_sync_manifest()</a></code>
 
         </dt>
-        <dd>Scan and Prepare Manifest for Sync</dd>
+        <dd>Preview What a Sync Will Change</dd>
       </dl></div><div class="section level2">
       <h2 id="validation">Validation<a class="anchor" aria-label="anchor" href="#validation"></a></h2>
 
@@ -353,6 +462,13 @@
 
         <dt>
 
+          <code><a href="datom_storage_read_json.html">datom_storage_read_json()</a></code>
+
+        </dt>
+        <dd>Read a JSON Document from a datom Storage Namespace</dd>
+
+        <dt>
+
           <code><a href="datom_storage_delete_prefix.html">datom_storage_delete_prefix()</a></code>
 
         </dt>
@@ -385,6 +501,20 @@
 
         </dt>
         <dd>Write the Data-Side Governance Attachment Record</dd>
+
+        <dt>
+
+          <code><a href="datom_repo_commit.html">datom_repo_commit()</a></code>
+
+        </dt>
+        <dd>Commit Content in the Data Repo</dd>
+
+        <dt>
+
+          <code><a href="datom_repo_push.html">datom_repo_push()</a></code>
+
+        </dt>
+        <dd>Push the Data Repo to Its Remote</dd>
       </dl></div><div class="section level2">
       <h2 id="teardown">Teardown<a class="anchor" aria-label="anchor" href="#teardown"></a></h2>
 
@@ -416,7 +546,7 @@
           <code><a href="datom_example_data.html">datom_example_data()</a></code>
 
         </dt>
-        <dd>Load Example EDC Data</dd>
+        <dd>Load Example Clinical Trial Data</dd>
 
         <dt>
 

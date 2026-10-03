@@ -1,6 +1,6 @@
 # datom
 
-## A right-sized foundation for versioned, traceable data
+## A Unified Framework for Versioned, Traceable Tabular Data
 
 Analytical work depends on data that continues to change. A single
 project may involve dozens or hundreds of tables, with further tables

@@ -15,7 +15,7 @@ Reader: S3-only access, no local repo
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -48,7 +48,7 @@ Reader: S3-only access, no local repo
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Create a datom Connection Object</h1>
-      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.2/R/conn.R" class="external-link"><code>R/conn.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/R/conn.R" class="external-link"><code>R/conn.R</code></a></small>
       <div class="d-none name"><code>new_datom_conn.Rd</code></div>
     </div>
 
@@ -77,7 +77,8 @@ Reader: S3-only access, no local repo
 <span>  backend <span class="op">=</span> <span class="st">"s3"</span>,</span>
 <span>  data_repo_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  github_pat <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  github_api_url <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  github_api_url <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  min_writer_version <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -160,6 +161,14 @@ and never printed.</p></dd>
 <dd><p>GitHub API base URL. Sourced from
 <code>store$github_api_url</code> at conn-construction time. Defaults to
 <code>"https://api.github.com"</code> when not set.</p></dd>
+
+
+<dt id="arg-min-writer-version">min_writer_version<a class="anchor" aria-label="anchor" href="#arg-min-writer-version"></a></dt>
+<dd><p>The lowest version of datom this repo accepts
+writes from, read from <code>project.yaml</code> at conn-construction time. <code>NULL</code>
+means the repo declares no such limit, which is every repo written so far.
+Held on the connection because the file it comes from is already parsed
+there, so the write-entry check costs no extra read.</p></dd>
 
 </dl></div>
     <div class="section level2">

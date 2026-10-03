@@ -1,9 +1,10 @@
-# Get Lineage for a Table
+# Show a Table's Original Sources or Direct Inputs
 
-Reads lineage metadata for a table. Depending on `depth`, returns either
-the pre-computed transitive source list (`source_lineage`) or the
-immediate parent list (`parents`). Both fields are stored flat in the
-table's metadata – no walking or cross-project resolution is performed.
+Answers "where did this table come from?" from the table's own record.
+By default (`depth = "source"`) it lists the original imported tables at
+the start of the chain, skipping the tables in between;
+`depth = "parents"` lists only its direct inputs, one step back. Works
+for any version, and with reader connections.
 
 ## Usage
 
@@ -40,6 +41,9 @@ of source-table descriptors (each with `project`, `table`,
 `table`, `version`, `data_sha`), or `NULL` if no lineage is recorded.
 
 ## Details
+
+It needs access to this table's project only, not to the projects its
+sources live in.
 
 The two fields answer different questions:
 
@@ -83,9 +87,9 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b7c3f3d17/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b7c3f3d17/repo
-#> ✔ Wrote "dm" (full): "039f0c3f"
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd14e9e9d3/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd14e9e9d3/repo
+#> ✔ Wrote "dm" (full): "b5cbba45"
 #> NULL
 #> NULL
 ```

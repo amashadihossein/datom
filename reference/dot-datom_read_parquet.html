@@ -13,7 +13,7 @@ parsing, so corruption or tampering aborts rather than being silently read."><me
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -46,7 +46,7 @@ parsing, so corruption or tampering aborts rather than being silently read."><me
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Download and Read Parquet from S3</h1>
-      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.2/R/read_write.R" class="external-link"><code>R/read_write.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/R/read_write.R" class="external-link"><code>R/read_write.R</code></a></small>
       <div class="d-none name"><code>dot-datom_read_parquet.Rd</code></div>
     </div>
 
@@ -82,8 +82,8 @@ parsing, so corruption or tampering aborts rather than being silently read.</p>
 <dd><p>Expected SHA-256 of the stored parquet object bytes, from
 the resolved metadata (see <code><a href="dot-datom_resolve_version.html">.datom_resolve_version()</a></code>). When non-empty, the
 downloaded file is verified against it and a mismatch aborts. When <code>NULL</code>
-or empty (pre-cv1 metadata, or a version-pinned read before task 5.1
-persists it), the integrity check is skipped and the read succeeds.</p></dd>
+or empty – which now happens only for pre-cv1 metadata – the integrity
+check is skipped and the read succeeds.</p></dd>
 
 </dl></div>
     <div class="section level2">

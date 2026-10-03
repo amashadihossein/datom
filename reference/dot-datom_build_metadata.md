@@ -16,7 +16,8 @@ any user-supplied custom metadata.
   parents = NULL,
   source_lineage = NULL,
   original_file_sha = NULL,
-  column_hashes = NULL
+  original_format = NULL,
+  project = NULL
 )
 ```
 
@@ -59,18 +60,44 @@ any user-supplied custom metadata.
   metadata **only when non-NULL**; the derived path omits it from the
   object entirely (not present-with-NULL).
 
-- column_hashes:
+- original_format:
 
-  Ordered list of per-column `list(name, sha)` digests from
-  [`.datom_canonical_hash()`](https://amashadihossein.github.io/datom/reference/dot-datom_canonical_hash.md),
-  or NULL. Excluded from `metadata_sha` (see
-  [`.datom_compute_metadata_sha()`](https://amashadihossein.github.io/datom/reference/dot-datom_compute_metadata_sha.md)).
+  Extension of the source file (`"csv"`, `"parquet"`, ...), for imported
+  tables. Recorded on the same only-when-non-NULL terms as
+  `original_file_sha`, and for one reason: it was previously written
+  onto the manifest row and nowhere else, which made it the single field
+  a reconstructed index had to drop. It is **not** part of the version
+  identity – see `.datom_metadata_excluded_fields`.
+
+- project:
+
+  The name of the project whose namespace this artifact is being written
+  into, from the writing repo's own `.datom/project.yaml`. Recorded on
+  the only-when-non-NULL terms `original_file_sha` uses, and last in the
+  signature to match the order the other optional fields were added in.
+  Note what that does **not** buy: every existing caller passes `data`
+  and `data_sha` positionally and everything else by name, so an
+  argument inserted higher up would shift nothing today – it is a
+  convention here, not a guard.
+
+  Why the writer records it at all: a **reader** connection's
+  `project_name` is a string the caller passed to
+  [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)
+  and nothing compares it against the repo, so anything derived from
+  that label is unverified. A write always has a clone, so the name
+  written here is the repo's own declaration – which is what later lets
+  [`datom_member()`](https://amashadihossein.github.io/datom/reference/datom_member.md)
+  and
+  [`datom_parent()`](https://amashadihossein.github.io/datom/reference/datom_parent.md)
+  cite a project without trusting a label.
 
 ## Value
 
 Named list suitable for writing as metadata.json. Always carries
-`hash_algo = "datom-cv1"` and declares `parquet_sha` (left NULL here and
-populated by
+`kind = "table"` (which artifact kind the document describes),
+`schema_version` (the format the document is written in) and
+`hash_algo = "datom-cv1"`, and declares `parquet_sha` (left NULL here
+and populated by
 [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
 after change detection, since the stored- object hash is not knowable
 until then; it is excluded from `metadata_sha` so this deferred

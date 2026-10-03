@@ -28,11 +28,11 @@ Invisible `x`.
 ``` r
 tmp <- tempfile("datom_store_")
 store <- datom_store_local(path = tmp, validate = TRUE)
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom_store_1a6b427be03c.
+#> ℹ Created store directory /tmp/RtmphTeynu/datom_store_1afd5416fb55.
 print(store)
 #> 
 #> ── datom local store component 
-#> • Path: /tmp/RtmpaWgK9C/datom_store_1a6b427be03c
+#> • Path: /tmp/RtmphTeynu/datom_store_1afd5416fb55
 #> • Validated: TRUE
 unlink(tmp, recursive = TRUE)
 ```

@@ -1,4 +1,4 @@
-# Union and deduplicate source_lineage lists
+# Union and Deduplicate source_lineage Lists
 
 Takes a list of zero or more `source_lineage` lists and returns their
 deduplicated union. Each entry is a list with `project`, `table`, and

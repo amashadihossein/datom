@@ -1,8 +1,17 @@
 # Create a datom Store
 
-Bundles a governance store component, a data store component, and git
-config into a single store object. Role (developer vs reader) is derived
-from `github_pat` presence.
+A store tells datom where a project's data is kept – a local folder
+([`datom_store_local()`](https://amashadihossein.github.io/datom/reference/datom_store_local.md))
+or an S3 bucket
+([`datom_store_s3()`](https://amashadihossein.github.io/datom/reference/datom_store_s3.md))
+– and, if you will be writing, your GitHub token. With a token you are a
+[developer](https://amashadihossein.github.io/datom/reference/datom-package.md)
+and can write; without one you are a reader and can only read. Pass the
+store to
+[`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
+to start a project, or to
+[`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)
+to connect to one.
 
 ## Usage
 
@@ -90,7 +99,7 @@ store <- datom_store(
   data_repo_url = "https://github.com/example/my-project",
   validate = FALSE
 )
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom_store_1a6bc1e1d78.
+#> ℹ Created store directory /tmp/RtmphTeynu/datom_store_1afd418af0b4.
 store
 #> 
 #> ── datom store 
@@ -103,7 +112,7 @@ store
 #> Data:
 #> 
 #> ── datom local store component 
-#>   • Path: /tmp/RtmpaWgK9C/datom_store_1a6bc1e1d78
+#>   • Path: /tmp/RtmphTeynu/datom_store_1afd418af0b4
 #>   • Validated: TRUE
 is_datom_store(store)
 #> [1] TRUE

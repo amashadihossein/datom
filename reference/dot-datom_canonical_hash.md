@@ -24,9 +24,7 @@ data.frame vs grouped_df), row names, or arrow version.
 
 ## Value
 
-A list with `data_sha` (character) and `column_hashes` (an ordered list
-of `list(name, sha)` in column order, computed once and reused for both
-`data_sha` and the persisted column index).
+A list with `data_sha` (character).
 
 ## Details
 
@@ -41,3 +39,8 @@ state.
 
 The final hash is
 `sha256( "datom-cv1" || f64le(nrow) || f64le(ncol) || concat(col_digest_hex...) )`.
+
+The per-column digests are an intermediate only and are never returned
+or persisted. A per-column digest lets anyone holding metadata confirm a
+guess about one column's values, and metadata is meant to describe a
+table's shape without revealing its values.

@@ -1,7 +1,8 @@
-# List Available Tables
+# List the Tables and Sets in a Project
 
-Lists tables from S3 manifest. Reads `.metadata/manifest.json` from S3
-and returns a data frame with one row per table.
+Returns one row per table and set in the project, with its current
+version and when it was last updated. Works with both developer and
+reader connections.
 
 ## Usage
 
@@ -31,7 +32,8 @@ datom_list(conn, pattern = NULL, include_versions = FALSE, short_hash = TRUE)
 
 ## Value
 
-Data frame with table info (name, current_version, last_updated, etc.).
+Data frame with artifact info (name, kind, current_version,
+last_updated, etc.).
 
 ## Examples
 
@@ -58,9 +60,9 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmpaWgK9C/datom-example-1a6b7da16f4/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmpaWgK9C/datom-example-1a6b7da16f4/repo
-#> ✔ Wrote "dm" (full): "039f0c3f"
-#>   name current_version current_data_sha         last_updated
-#> 1   dm        039f0c3f         71a93ffa 2026-09-17T05:57:04Z
+#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd23dfd22c/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd23dfd22c/repo
+#> ✔ Wrote "dm" (full): "b5cbba45"
+#>   name  kind current_version current_data_sha         last_updated
+#> 1   dm table        b5cbba45         71a93ffa 2026-10-03T18:04:32Z
 ```

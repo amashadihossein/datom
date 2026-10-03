@@ -1,6 +1,6 @@
 # datom
 
-## A right-sized foundation for versioned, traceable data
+## A Unified Framework for Versioned, Traceable Tabular Data
 
 Analytical work depends on data that continues to change. A single
 project may involve dozens or hundreds of tables, with further tables
@@ -270,16 +270,24 @@ are computed – see the **Design** articles in the same site, or
 
 # Package index
 
+## Key terms
+
+What datom’s words mean: project, store, connection, table, version, set
+
+- [`datom`](https://amashadihossein.github.io/datom/reference/datom-package.md)
+  [`datom-package`](https://amashadihossein.github.io/datom/reference/datom-package.md)
+  : datom: A Unified Framework for Versioned, Traceable Tabular Data
+
 ## Connection & Setup
 
 Create connections, initialize repositories
 
 - [`datom_init_repo()`](https://amashadihossein.github.io/datom/reference/datom_init_repo.md)
-  : Initialize a datom Repository
+  : Create a New datom Project
 - [`datom_clone()`](https://amashadihossein.github.io/datom/reference/datom_clone.md)
   : Clone a datom Repository
 - [`datom_get_conn()`](https://amashadihossein.github.io/datom/reference/datom_get_conn.md)
-  : Get a datom Connection
+  : Get a Pointer to a datom Project
 - [`print(`*`<datom_conn>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_conn.md)
   : Print a datom Connection
 
@@ -319,16 +327,46 @@ Read and write versioned tables
 - [`datom_read()`](https://amashadihossein.github.io/datom/reference/datom_read.md)
   : Read a datom Table
 - [`datom_write()`](https://amashadihossein.github.io/datom/reference/datom_write.md)
-  : Write a datom Table
+  : Save a Data Frame as a datom Table
 - [`datom_check_hashable()`](https://amashadihossein.github.io/datom/reference/datom_check_hashable.md)
   : Check Whether a Table Can Be Hashed by datom
+
+## Sets
+
+Write and read a versioned, citable set of artifacts, and declare its
+members
+
+- [`datom_member()`](https://amashadihossein.github.io/datom/reference/datom_member.md)
+  : Declare a Member of a Set
+- [`datom_write_set()`](https://amashadihossein.github.io/datom/reference/datom_write_set.md)
+  : Save a Set as a New Version
+- [`datom_get_set()`](https://amashadihossein.github.io/datom/reference/datom_get_set.md)
+  : Read a datom Set
+- [`datom_fetch_member()`](https://amashadihossein.github.io/datom/reference/datom_fetch_member.md)
+  : Get the Data Behind One Member of a Set
+- [`datom_list_members()`](https://amashadihossein.github.io/datom/reference/datom_list_members.md)
+  : List a Set's Members and Their Labels
+- [`datom_structure_members()`](https://amashadihossein.github.io/datom/reference/datom_structure_members.md)
+  : Group a Set's Members into a Navigable View
+- [`datom_assemble_set()`](https://amashadihossein.github.io/datom/reference/datom_assemble_set.md)
+  : Start Assembling a Set
+- [`datom_add_member()`](https://amashadihossein.github.io/datom/reference/datom_add_member.md)
+  : Add One Member to a Set
+- [`datom_update_members()`](https://amashadihossein.github.io/datom/reference/datom_update_members.md)
+  : Repoint a Set's Members at Newer Versions
+- [`datom_remove_members()`](https://amashadihossein.github.io/datom/reference/datom_remove_members.md)
+  : Drop Members from a Set
+- [`print(`*`<datom_set>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_set.md)
+  : Print a datom Set
+- [`print(`*`<datom_link>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_link.md)
+  : Print a Member Link
 
 ## Query & Status
 
 List tables, view history, check status
 
 - [`datom_list()`](https://amashadihossein.github.io/datom/reference/datom_list.md)
-  : List Available Tables
+  : List the Tables and Sets in a Project
 - [`datom_summary()`](https://amashadihossein.github.io/datom/reference/datom_summary.md)
   : Summarize a datom Project
 - [`print(`*`<datom_summary>`*`)`](https://amashadihossein.github.io/datom/reference/print.datom_summary.md)
@@ -342,11 +380,11 @@ List tables, view history, check status
 - [`datom_get_parents()`](https://amashadihossein.github.io/datom/reference/datom_get_parents.md)
   : Get Parent Lineage for a Table
 - [`datom_get_lineage()`](https://amashadihossein.github.io/datom/reference/datom_get_lineage.md)
-  : Get Lineage for a Table
+  : Show a Table's Original Sources or Direct Inputs
 - [`datom_parent()`](https://amashadihossein.github.io/datom/reference/datom_parent.md)
-  : Declare a parent for lineage
+  : Name an Input for a Table You Are About to Write
 - [`datom_lineage_union()`](https://amashadihossein.github.io/datom/reference/datom_lineage_union.md)
-  : Union and deduplicate source_lineage lists
+  : Union and Deduplicate source_lineage Lists
 
 ## Sync Operations
 
@@ -355,9 +393,9 @@ Batch sync from files, scan manifests, sync metadata to S3
 - [`datom_pull()`](https://amashadihossein.github.io/datom/reference/datom_pull.md)
   : Pull Latest Changes from Remote
 - [`datom_sync()`](https://amashadihossein.github.io/datom/reference/datom_sync.md)
-  : Sync Files to datom Repository
+  : Bring New and Changed Files Into a Project
 - [`datom_sync_manifest()`](https://amashadihossein.github.io/datom/reference/datom_sync_manifest.md)
-  : Scan and Prepare Manifest for Sync
+  : Preview What a Sync Will Change
 
 ## Validation
 
@@ -376,6 +414,8 @@ datom_repo_delete instead.
 
 - [`datom_storage_list()`](https://amashadihossein.github.io/datom/reference/datom_storage_list.md)
   : List All Objects in a datom Storage Namespace
+- [`datom_storage_read_json()`](https://amashadihossein.github.io/datom/reference/datom_storage_read_json.md)
+  : Read a JSON Document from a datom Storage Namespace
 - [`datom_storage_delete_prefix()`](https://amashadihossein.github.io/datom/reference/datom_storage_delete_prefix.md)
   : Delete All Objects Under a datom Storage Prefix
 - [`datom_storage_copy()`](https://amashadihossein.github.io/datom/reference/datom_storage_copy.md)
@@ -386,6 +426,10 @@ datom_repo_delete instead.
   : Rewrite the Data Store Pointer in project.yaml
 - [`datom_repo_attach_governance()`](https://amashadihossein.github.io/datom/reference/datom_repo_attach_governance.md)
   : Write the Data-Side Governance Attachment Record
+- [`datom_repo_commit()`](https://amashadihossein.github.io/datom/reference/datom_repo_commit.md)
+  : Commit Content in the Data Repo
+- [`datom_repo_push()`](https://amashadihossein.github.io/datom/reference/datom_repo_push.md)
+  : Push the Data Repo to Its Remote
 
 ## Teardown
 
@@ -399,7 +443,7 @@ Permanently remove a project’s data repo and local clone
 Bundled clinical trial data for examples and vignettes
 
 - [`datom_example_data()`](https://amashadihossein.github.io/datom/reference/datom_example_data.md)
-  : Load Example EDC Data
+  : Load Example Clinical Trial Data
 - [`datom_example_cutoffs()`](https://amashadihossein.github.io/datom/reference/datom_example_cutoffs.md)
   : Monthly Cutoff Dates for Example Study
 
@@ -418,6 +462,13 @@ The same workflow directly in object storage.
 
 - [Starting on
   S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md):
+
+### Citable sets
+
+Name and cite an exact collection of data versions.
+
+- [Citing a Set of
+  Tables](https://amashadihossein.github.io/datom/articles/citable-sets.md):
 
 ### Lineage
 

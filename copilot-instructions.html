@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -40,7 +40,7 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="logo.svg" class="logo" alt=""><h1>Copilot Instructions for datom</h1>
-      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.2/.github/copilot-instructions.md" class="external-link"><code>.github/copilot-instructions.md</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/.github/copilot-instructions.md" class="external-link"><code>.github/copilot-instructions.md</code></a></small>
     </div>
 
 <div id="copilot-instructions-for-datom" class="section level1">
@@ -55,11 +55,12 @@
 <strong>Find your place</strong>: In <code>tasks.md</code>, the next unchecked task is where to resume.</li>
 <li>
 <strong>Continue work</strong>: As you complete each task, check it off in <code>tasks.md</code> in the <strong>same commit</strong> as its code, and update the <code>dev/README.md</code> Active Specs status line. See “Workflow model — spec = phase” under Operational Discipline.</li>
-</ol></div>
+</ol><p><strong>How to talk to the owner</strong> (chat, checkpoints, design discussions): follow <code>.kiro/steering/communication.md</code> – above all, one point at a time rather than long numbered reports.</p>
+</div>
 <div class="section level2">
 <h2 id="project-overview">Project Overview<a class="anchor" aria-label="anchor" href="#project-overview"></a></h2>
 <p>datom is an R package for version-controlled data management. It stores tabular data in S3 with git-tracked metadata, enabling reproducibility for clinical/scientific workflows.</p>
-<p><strong>Pre-release status</strong>: This package has not been released and no production data products depend on it. Proceed without backward compatibility or lifecycle management concerns — rename freely, delete freely, break APIs as needed.</p>
+<p><strong>Compatibility posture</strong>: datom is <code>lifecycle: experimental</code> (0.1.0 under/after CRAN review, no reverse dependencies). The distinction that governs a change is failure mode, not compatibility: breaking a behavior loudly (user upgrades, gets a clear error, fixes their code) is acceptable at this stage; silently degrading or disabling an integrity/verification check is not acceptable at any stage. Don’t default to “rename/delete freely” reasoning — check whether a change can be made to fail loudly instead of silently before treating it as a free rename.</p>
 <p><strong>Core concept</strong>: Tables abstracted as code in git; actual data in cloud storage (parquet format).</p>
 <p><strong>Git + GitHub for the data repo are mandatory, always; the governance layer is optional and on-demand</strong> (amended Phase 18, 2026-05-02; supersedes the Phase-16 lock that required gov from day one). Every datom project requires a data git repo with a remote (today: GitHub) and a storage backend for parquet bytes. The governance layer – portfolio register, dispatch routing, managed migration – is adopted on-demand via <code>datom_attach_gov()</code>, typically when graduating to object storage or migrating data. Once attached, gov cannot be detached; <code>project.yaml</code>’s <code>storage.governance</code> block, once populated, is permanent. The companion governance package (<code>datomanager</code>) will eventually own the gov surface; the <code># GOV_SEAM:</code> boundary already marks the lift-out. See <code>dev/datomanager_scope.md</code> for full scope. There is still no “local-only / no-remote” mode for the data repo: a <code>data_repo_url</code> is required. Single-user no-GitHub demos are explicitly rejected scope.</p>
 </div>
@@ -219,6 +220,92 @@ dev/engineering-notes.md         ← Gotchas &amp; pitfalls (read before editing
 <li>Downstream helpers (e.g. git credential helpers) must use the explicit value passed from <code>conn</code> / <code>store</code>. <strong>No env-var fallback inside datom</strong> – if no explicit value is available, the helper returns NULL / unauthenticated. Callers who rely on env vars must read them themselves and pass the value to the store constructor.</li>
 </ul></div>
 <div class="section level2">
+<h2 id="schema-evolution-and-forward-compatibility">Schema Evolution and Forward Compatibility<a class="anchor" aria-label="anchor" href="#schema-evolution-and-forward-compatibility"></a></h2>
+<p>Added 2026-08-23, from the datom-sets spec. The goal this serves: <strong>code that worked once keeps working.</strong> A pinned analysis should not stop reading a repo because someone else upgraded datom.</p>
+<p><strong>Forward compatibility is a writer-side problem.</strong> A new build can always read old files, because it knows both shapes. An old build can only read new files if the writer left it something it already understands. Nothing can be retrofitted into a package that is already installed and locked in an <code>renv.lock</code>, so a “converter for old readers” is not buildable – the converter would have to ship inside the build that predates the change.</p>
+<p><strong>Reader compatibility and writer compatibility are separate guarantees.</strong> Only the reader one survives an addition. An older <strong>reader</strong> never asks for a key it does not know, so an added field is invisible to it. An older <strong>writer</strong> recomputes identity before writing, so any added field makes it disagree with the recorded version – which is why datom <strong>refuses</strong> such a writer outright (see “The writer refusals” below). Do not reason from “additive changes are free” without saying free <em>for whom</em>.</p>
+<div class="section level3">
+<h3 id="the-four-rules-in-decreasing-order-of-what-they-buy">The four rules, in decreasing order of what they buy<a class="anchor" aria-label="anchor" href="#the-four-rules-in-decreasing-order-of-what-they-buy"></a></h3>
+<ol style="list-style-type: decimal"><li>
+<strong>Additive only, by default.</strong> Add fields; never rename, move, or remove one. This keeps <strong>readers</strong> working, which is the guarantee that can be kept. It does <strong>not</strong> keep older writers working – a release that adds any field to a datom-owned document forces a fleet-wide writer upgrade, cosmetic additions included. Accepted deliberately: writes are infrequent and done by few people, and a false refusal costs one person an install while a miss costs corrupted data.</li>
+<li>
+<strong>A field’s name and meaning are fixed forever.</strong> Never repurpose. Renaming is the loud version of the same violation.</li>
+<li>
+<strong>If a break is genuinely unavoidable, dual-write</strong> the old shape alongside the new for a declared window. This is the only mechanism that helps builds <strong>already released</strong>, because it asks nothing of them. The danger is a <strong>stale</strong> legacy copy, not a leftover one – an old reader consuming an out-of-date file looks like it worked. So: repo-level policy rather than a per-call argument, removal as a verb that deletes the copies in the same operation, and the sunset recorded inside the legacy file.</li>
+<li>
+<strong><code>schema_version</code> is the alarm, not the mechanism.</strong> It exists for when rules 1-3 could not be followed. Leaning on it means the guarantee is already gone.</li>
+</ol></div>
+<div class="section level3">
+<h3 id="stamped-always-incremented-only-on-a-break">Stamped always, incremented only on a break<a class="anchor" aria-label="anchor" href="#stamped-always-incremented-only-on-a-break"></a></h3>
+<p>Two separate decisions, routinely confused:</p>
+<ul><li>
+<strong>Stamp</strong> every manifest and every per-artifact metadata document. It costs nothing (the field is in the identity exclusion set, so a stamped file mints no version) and any build can then say what shape it holds.</li>
+<li>
+<strong>Increment</strong> only when a change would break a reader. Breaking: renaming a field or moving it to a different parent, removing one, changing what one means or its type, restructuring a container. <strong>Not</strong> breaking: adding a field.</li>
+</ul><p>Incrementing on an additive change refuses a reader that could have read the file perfectly well. The call is made at design time, alongside model-escalation flags – not at implementation time.</p>
+<p><strong>Classify by effect on a reader, not by the shape of the edit.</strong> A content-bearing addition is reader-safe and writer-breaking: the number must not move, and the writer-side stop comes from the vocabulary check instead.</p>
+<p><strong>Per-file response.</strong> The number moves for both documents on a break and always describes the shape the file actually has. What differs is the reader’s response, because only one file is rebuildable: a too-new <strong>manifest</strong> makes a reader warn and rebuild; a too-new <strong>per-artifact metadata</strong> document makes a reader refuse. Writers refuse in both cases. Do not “simplify” this by freezing the manifest’s number – a frozen number cannot distinguish a truncated manifest from a future-shaped one, since both present with the expected key missing.</p>
+</div>
+<div class="section level3">
+<h3 id="the-writer-refusals">The writer refusals<a class="anchor" aria-label="anchor" href="#the-writer-refusals"></a></h3>
+<p>Two mechanisms, <strong>complementary, neither sufficient alone.</strong> Document them together or you oversell whichever you name.</p>
+<table class="table"><colgroup><col width="50%"><col width="50%"></colgroup><thead><tr><th>Change</th>
+<th>Caught by</th>
+</tr></thead><tbody><tr><td>field added</td>
+<td>
+<strong>vocabulary check</strong> – the number does not move</td>
+</tr><tr><td>field renamed</td>
+<td>vocabulary check, and the number too</td>
+</tr><tr><td>field removed</td>
+<td>
+<strong>the number</strong> – the old name is still in an append-only vocabulary, so nothing looks unrecognised</td>
+</tr><tr><td>type or meaning change</td>
+<td>
+<strong>the number</strong> – no new name appears</td>
+</tr><tr><td>container restructured</td>
+<td>
+<strong>the number</strong> – no new name appears</td>
+</tr><tr><td>policy block for a non-format reason</td>
+<td>
+<strong>the writer floor</strong> only</td>
+</tr></tbody></table><p><strong>The vocabulary check</strong>: before writing, a build inspects the top-level keys of each datom-owned document and refuses if it meets one it cannot classify – neither in its identity list nor on its documented excluded list. Evidence-based, so no configuration and no network. <code>custom</code> is opaque and classified as a whole. Chosen over a declared floor as the primary mechanism because <strong>it cannot be forgotten</strong>: a floor protects a repo only if somebody remembers to raise it.</p>
+<p><strong>The vocabulary list is append-only, and this is the discipline the rest depends on.</strong> Never stop recognising a name that has ever existed, including names you no longer write; retire by marking, never by deleting. A build that forgets a name meets an <em>older</em> file, fails to classify a key it should know, and refuses it – blocking the <strong>upgrade</strong> direction, the one direction that must always work.</p>
+<p><strong>Do not add directional logic to it.</strong> A newer build’s vocabulary is a superset of every older one’s, so the check cannot fire on the upgrade path. A guard for that case would be dead code protecting an unreachable state.</p>
+<p><strong>All write-side refusals bind from 0.1.1 forward only.</strong> 0.1.0 has no schema check, no vocabulary check and no floor read, and none can be added to a released build. When describing these refusals, separate the population that can be stopped from the one that cannot – “an older build writing into a newer repo” hides that distinction.</p>
+<p><strong>A refusal must leave no partial state.</strong> Every forward-compatibility check runs before any hashing, any local file write, and any commit. Aborting mid-pipeline leaves a half-finished write, which is worse than the disagreement being prevented.</p>
+<p><code>schema_version</code> is the <strong>contract</strong>; <code>datom_version</code> is <strong>provenance</strong>. One schema version spans many releases, so the schema-to-release mapping must be published in the docs – it is not inferable from either field, and it is the only question a refusal message raises.</p>
+</div>
+<div class="section level3">
+<h3 id="which-files-may-break-and-which-may-never">Which files may break, and which may never<a class="anchor" aria-label="anchor" href="#which-files-may-break-and-which-may-never"></a></h3>
+<table class="table"><colgroup><col width="33%"><col width="33%"><col width="33%"></colgroup><thead><tr><th>File</th>
+<th>May break?</th>
+<th>Why</th>
+</tr></thead><tbody><tr><td><code>.metadata/manifest.json</code></td>
+<td>
+<strong>yes</strong>, with a hatch</td>
+<td>
+<strong>Derived.</strong> Every fact in it also lives in per-artifact metadata or the storage listing, so a build that cannot read it can rebuild one.</td>
+</tr><tr><td><code>{name}/.metadata/metadata.json</code></td>
+<td><strong>never</strong></td>
+<td>
+<strong>Source of truth.</strong> Nothing can rebuild it, and a legacy-shaped copy hashes differently from the recorded version – change detection recomputes identity from the stored file, so dual-write there helps old readers by making older writers mint a version on every run.</td>
+</tr></tbody></table><p>For per-artifact metadata the four rules are <strong>absolute</strong>: additive only, forever.</p>
+</div>
+<div class="section level3">
+<h3 id="pitfalls-worth-knowing-before-you-touch-either-file">Pitfalls worth knowing before you touch either file<a class="anchor" aria-label="anchor" href="#pitfalls-worth-knowing-before-you-touch-either-file"></a></h3>
+<!-- Deliberately not counted in the heading. It read "Two pitfalls" while carrying three, which is
+     the same restate-a-count defect these documents keep finding elsewhere. Derive the list. -->
+<ul><li>
+<strong>Identity hashing must select fields by allowlist, never by exclusion.</strong> Hashing everything-except-a-list means a build that has never heard of a field folds it into the hash and reports a change on content that did not move. An allowlist fails the <strong>opposite</strong> way, and it is the more dangerous way if untested: it silently <em>excludes</em> a new field, so identity quietly stops responding to real content. Whenever you add a field to a metadata builder, classify it – in the hash list or on the documented excluded list – and there is a test that fails if you do not.</li>
+<li>
+<strong>Classify a field WHEN you start writing it, never earlier.</strong> Classifying a name ahead of the code that produces it looks like tidy preparation and quietly costs the field its protection: the carry-forward rule below rescues only names a build cannot place, so a name that is already on a list is invisible to it. A document arriving from a newer datom with that field on it therefore loses it on rewrite – silently, if the field is on the not-identity list, because no version moves to signal the loss. If you must classify early, say why at the site and add the name to the exception list in the classification test, which is what forces the decision into the open.</li>
+<li>
+<strong>A field added to any datom-owned document is never destroyed by a build that does not understand it.</strong> Preserve unrecognised top-level keys rather than rebuilding the document from scratch, at <strong>four</strong> levels: per-artifact metadata, manifest entries, manifest top level, and version-history entries. The reason is information loss, not version churn – churn settles either way. Two of the four need no code, because those documents are read-edited-written rather than rebuilt; they are tested anyway, since a refactor to rebuilding removes the guarantee without failing anything else.</li>
+<li>
+<strong>A silent repair is a silent degradation.</strong> If a read path recovers from an unreadable document – by rebuilding a derived file, for instance – it must say so and point at the upgrade. A recovery nobody is told about becomes a permanent invisible fallback, which is the failure the schema check exists to remove.</li>
+</ul></div>
+</div>
+<div class="section level2">
 <h2 id="engineering-notes-gotchas--pitfalls">Engineering Notes (gotchas &amp; pitfalls)<a class="anchor" aria-label="anchor" href="#engineering-notes-gotchas--pitfalls"></a></h2>
 <p>Implementation gotchas, edge cases, and hard-won pitfalls live in <strong><code>dev/engineering-notes.md</code></strong>. <strong>Read it before editing <code>R/</code>.</strong> It is kept out of this core file so the always-loaded instructions stay small; it is the on-demand reference. When you discover a new gotcha, add it there (not here).</p>
 </div>
@@ -257,7 +344,7 @@ dev/engineering-notes.md         ← Gotchas &amp; pitfalls (read before editing
 <li>
 <strong>Read before writing</strong>: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don’t edit based on the spec’s task description alone.</li>
 <li>
-<strong>Full test suite before every commit</strong>: Run <code>devtools::test()</code> (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost.</li>
+<strong>Full test suite before every commit</strong>: Run <code>devtools::test()</code> (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost. 2a. <strong>A guard’s test must fail when that guard ALONE is removed.</strong> Delete the condition, run the suite, and watch. A test that stays green under the deletion is testing a different guarantee than its name claims – so a green suite is evidence only for the guards whose tests have been watched going red. Where a behaviour is protected by more than one condition, each condition needs a case that isolates it; one break that reddens both proves neither. This is a convention rather than an anecdote because it produced an instance in <strong>four</strong> separate tasks, two of them shipped and found afterwards by probing. <strong>Do not restate the catalogue here</strong> – the four instances, the canonical case, and the procedure (run a control; a probe that reddens nothing is ambiguous rather than a pass; a crude probe is not evidence) live in <code>dev/engineering-notes.md</code> under “A test can observe a layer that cannot distinguish the two behaviours” and “Probing a guard”. Read those before writing a test for a guard whose failure mode you cannot state.</li>
 <li>
 <strong>One logical change per commit</strong>: Don’t bundle unrelated fixes. Squash related incremental commits before pushing if they tell a cleaner story as one. Scope chunks so this is the natural outcome — if a chunk’s scope feels ambiguous before you start, that’s a signal to split it.</li>
 <li>
@@ -265,7 +352,7 @@ dev/engineering-notes.md         ← Gotchas &amp; pitfalls (read before editing
 <li>
 <strong>E2E after spec completion</strong>: Unit tests are necessary but not sufficient. Before marking a spec complete, run real end-to-end workflows via <code>dev/dev-sandbox.R</code> to catch integration bugs. 5a. <strong>Long text in CLI calls — always use a temp file, first try</strong>: For <code>gh issue create --body</code>, <code>gh pr create --body</code>, <code>git commit -F</code>, or any CLI call that takes multi-line text: write the text to a temp file with <code>create_file</code> first, then pass <code>--body-file /tmp/filename.md</code> or <code>git commit -F /tmp/msg.md</code>. Never attempt the inline heredoc (<code>&lt;&lt; 'EOF'</code>) or <code>--body "..."</code> form first — shell quoting and terminal emulation always mangle them and risk duplicate side effects (e.g. duplicate issues). For short single-line messages (&lt; 80 chars), inline <code>--message</code> / <code>-m</code> is fine. 5b. <strong>Check in before implementing</strong>: When the user asks a question (clarifying, exploratory, or directional), answer the question first. Do not implement anything until the user has confirmed the direction. The signal that implementation is wanted is explicit: “go ahead”, “do it”, “yes”, or equivalent — not merely absence of objection. 5d. <strong>Mandatory chunk checkpoint</strong>: After completing and committing a chunk, STOP. Post a one-paragraph summary of what shipped and any decisions made, then ask: “Ready to proceed to Chunk N: [name]?” Do not start the next chunk until the user replies with an explicit go-ahead. This applies even if the next chunk seems obvious or low-risk. Completing a chunk is not permission to start the next one. 5e. <strong>Approval signals are explicit, not contextual</strong>: The following are NOT approval to proceed: silence, a question about the work just done, a comment about model behavior, a request to “queue” a model switch, or any message that does not directly address the next action. Explicit approval looks like: “go ahead”, “yes”, “do it”, “proceed”, “continue”, or equivalent affirmatives directed at the next step. 5c. <strong>Before retrying any remote-mutating action, verify remote state first</strong>: Before a second attempt at <code>gh issue create</code>, <code>git push</code>, <code>gh pr create</code>, etc., run a read-only check (<code>gh issue list</code>, <code>git log --remotes</code>, <code>gh pr list</code>) to confirm whether the first attempt already succeeded. Acting on stale local evidence is how duplicates happen.</li>
 <li>
-<strong>Spec completion is mandatory</strong>: When all tasks are done, harvest durable learnings (API/design → <code>dev/datom_specification.md</code>; gotchas/pitfalls → <code>dev/engineering-notes.md</code>; conventions → these instructions; deferrals → README Backlog), update the <code>dev/README.md</code> Active Specs table, and commit. <strong>Specs persist — do NOT delete them</strong> (this replaces the old “delete the phase doc” rule). Then PR + merge + delete the branch. Do NOT start the next spec until this is done.</li>
+<strong>Spec completion is mandatory</strong>: When all tasks are done, harvest durable learnings (API/design → <code>dev/datom_specification.md</code>; gotchas/pitfalls → <code>dev/engineering-notes.md</code>; conventions → these instructions; deferrals → README Backlog), update the <code>dev/README.md</code> Active Specs table, and commit. <strong>Specs persist — do NOT delete them</strong> (this replaces the old “delete the phase doc” rule). Then PR + merge + delete the branch. Do NOT start the next spec until this is done. 7a. <strong><code>NEWS.md</code> states what changed, whether it breaks, and what to do — reasoning goes elsewhere.</strong> One or two lines per change, with the upgrade-critical items first, because a reader who stops after two items must have hit the two that can cost them data or discovery. Detail belongs in roxygen (per-verb behaviour, refusals, return shape) or a vignette (cross-cutting narrative), and NEWS points at it: <code>?verb</code>, <code>vignette("name")</code>. <strong>Never cite <code>dev/</code> or <code>.kiro/</code> from NEWS, a vignette, or roxygen</strong> — both are <code>.Rbuildignore</code>d, so from an installed package those paths do not exist. That is not hypothetical: one spec satisfied its documentation requirement by writing to two files that do not ship, and nobody noticed until a user asked where the article was. <strong>Do not delete an explanation that has nowhere to go</strong> — verbose beats lost, so move the destination first and cut second. The datom-sets release block went from 7,700 words to 1,500 this way; the mapping of every removed claim to its destination is in the <code>sets-release-readiness</code> spec’s Task 4 record, which is the format to reuse.</li>
 </ol></div>
 <div class="section level2">
 <h2 id="model-escalation">Model Escalation<a class="anchor" aria-label="anchor" href="#model-escalation"></a></h2>

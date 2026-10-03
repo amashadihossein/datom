@@ -14,6 +14,13 @@ The same workflow directly in object storage.
 - [Starting on
   S3](https://amashadihossein.github.io/datom/articles/start-on-s3.md):
 
+### Citable sets
+
+Name and cite an exact collection of data versions.
+
+- [Citing a Set of
+  Tables](https://amashadihossein.github.io/datom/articles/citable-sets.md):
+
 ### Lineage
 
 Trace how derived tables descend from their sources.

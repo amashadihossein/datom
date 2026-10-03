@@ -11,7 +11,7 @@ any user-supplied custom metadata."><meta property="og:image" content="https://a
 
     <a class="navbar-brand me-2" href="../index.html">datom</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -44,7 +44,7 @@ any user-supplied custom metadata."><meta property="og:image" content="https://a
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Build Metadata Object</h1>
-      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/v0.1.2/R/read_write.R" class="external-link"><code>R/read_write.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/amashadihossein/datom/blob/main/R/read_write.R" class="external-link"><code>R/read_write.R</code></a></small>
       <div class="d-none name"><code>dot-datom_build_metadata.Rd</code></div>
     </div>
 
@@ -65,7 +65,8 @@ any user-supplied custom metadata.</p>
 <span>  parents <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  source_lineage <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  original_file_sha <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  column_hashes <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  original_format <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  project <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -109,16 +110,37 @@ Included in the metadata <strong>only when non-NULL</strong>; the derived path o
 from the object entirely (not present-with-NULL).</p></dd>
 
 
-<dt id="arg-column-hashes">column_hashes<a class="anchor" aria-label="anchor" href="#arg-column-hashes"></a></dt>
-<dd><p>Ordered list of per-column <code>list(name, sha)</code> digests
-from <code><a href="dot-datom_canonical_hash.html">.datom_canonical_hash()</a></code>, or NULL. Excluded from <code>metadata_sha</code>
-(see <code><a href="dot-datom_compute_metadata_sha.html">.datom_compute_metadata_sha()</a></code>).</p></dd>
+<dt id="arg-original-format">original_format<a class="anchor" aria-label="anchor" href="#arg-original-format"></a></dt>
+<dd><p>Extension of the source file (<code>"csv"</code>, <code>"parquet"</code>,
+...), for imported tables. Recorded on the same only-when-non-NULL terms as
+<code>original_file_sha</code>, and for one reason: it was previously written onto the
+manifest row and nowhere else, which made it the single field a
+reconstructed index had to drop. It is <strong>not</strong> part of the version identity
+– see <code>.datom_metadata_excluded_fields</code>.</p></dd>
+
+
+<dt id="arg-project">project<a class="anchor" aria-label="anchor" href="#arg-project"></a></dt>
+<dd><p>The name of the project whose namespace this artifact is being
+written into, from the writing repo's own <code>.datom/project.yaml</code>. Recorded on
+the only-when-non-NULL terms <code>original_file_sha</code> uses, and last in the
+signature to match the order the other optional fields were added in. Note
+what that does <strong>not</strong> buy: every existing caller passes <code>data</code> and
+<code>data_sha</code> positionally and everything else by name, so an argument inserted
+higher up would shift nothing today – it is a convention here, not a guard.</p>
+<p>Why the writer records it at all: a <strong>reader</strong> connection's <code>project_name</code>
+is a string the caller passed to <code><a href="datom_get_conn.html">datom_get_conn()</a></code> and nothing compares it
+against the repo, so anything derived from that label is unverified. A write
+always has a clone, so the name written here is the repo's own declaration –
+which is what later lets <code><a href="datom_member.html">datom_member()</a></code> and <code><a href="datom_parent.html">datom_parent()</a></code> cite a project
+without trusting a label.</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>Named list suitable for writing as metadata.json. Always carries
-<code>hash_algo = "datom-cv1"</code> and declares <code>parquet_sha</code> (left NULL here and
+<code>kind = "table"</code> (which artifact kind the document describes),
+<code>schema_version</code> (the format the document is written in) and
+<code>hash_algo = "datom-cv1"</code>, and declares <code>parquet_sha</code> (left NULL here and
 populated by <code><a href="datom_write.html">datom_write()</a></code> after change detection, since the stored-
 object hash is not knowable until then; it is excluded from <code>metadata_sha</code>
 so this deferred assignment is safe).</p>
