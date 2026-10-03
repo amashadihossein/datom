@@ -69,9 +69,9 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd323f14a8/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd323f14a8/repo
-#> ✔ Committed "6af985f" on "master": Add notes
+#> ℹ Created store directory /tmp/Rtmpvh48Dj/datom-example-1a761a7d75b3/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/Rtmpvh48Dj/datom-example-1a761a7d75b3/repo
+#> ✔ Committed "597111a" on "master": Add notes
 #> ✔ Pushed "master" to the data remote.
 #> ℹ Nothing to push -- "master" matches the remote.
 ```

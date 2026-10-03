@@ -45,13 +45,13 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd2475b992/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd2475b992/repo
+#> ℹ Created store directory /tmp/Rtmpvh48Dj/datom-example-1a7633cd98b6/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/Rtmpvh48Dj/datom-example-1a7633cd98b6/repo
 #> 
 #> ── datom status ──
 #> 
 #> ℹ Project: "example_project"
-#> ℹ Root: "/tmp/RtmphTeynu/datom-example-1afd2475b992/storage"
+#> ℹ Root: "/tmp/Rtmpvh48Dj/datom-example-1a7633cd98b6/storage"
 #> ℹ Role: "developer"
 #> ℹ Tables on local: 0
 #> ✔ Git: clean (no uncommitted changes)

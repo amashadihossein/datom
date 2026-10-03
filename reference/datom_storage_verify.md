@@ -98,10 +98,10 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd72e987ac/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd72e987ac/repo
+#> ℹ Created store directory /tmp/Rtmpvh48Dj/datom-example-1a7623ff3842/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/Rtmpvh48Dj/datom-example-1a7623ff3842/repo
 #> ✔ Wrote "dm" (full): "b5cbba45"
-#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd72e987ac/storage2.
+#> ℹ Created store directory /tmp/Rtmpvh48Dj/datom-example-1a7623ff3842/storage2.
 #> ℹ Copying 5 objects ("local" -> "local")...
 #> ✔ Copied 5 objects (7,929 bytes total).
 #> ℹ Verifying 5 objects -- "structural (size)" mode...

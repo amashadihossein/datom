@@ -105,9 +105,9 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   unlink(tmp, recursive = TRUE)
 }
-#> ℹ Created store directory /tmp/RtmphTeynu/datom-example-1afd415a50ba/storage.
-#> ✔ Initialized datom repository "example_project" at /tmp/RtmphTeynu/datom-example-1afd415a50ba/repo
-#> ✔ Committed "c35507f" on "master": Add build script
+#> ℹ Created store directory /tmp/Rtmpvh48Dj/datom-example-1a76183193b1/storage.
+#> ✔ Initialized datom repository "example_project" at /tmp/Rtmpvh48Dj/datom-example-1a76183193b1/repo
+#> ✔ Committed "5046879" on "master": Add build script
 #> ℹ Nothing to commit -- no staged changes.
 #> ℹ Remote already has every commit on "master".
 ```
