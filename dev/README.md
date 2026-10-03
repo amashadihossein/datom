@@ -107,6 +107,11 @@ hotfix goes through a short-lived branch and a PR.
    - **`dev` ahead of `main`:** branch off **`main`**, fix, PR into `main`, submit, then **merge
      `main` into `dev`** so `dev` is never behind (done after 0.1.2: `17a84ce`, "Merge branch 'main'
      into dev"). This is the one case where work branches off `main`.
+   - **Interrupted mid-feature?** Commit the work in progress on its feature branch (push it if you
+     like), or `git stash -u`, then `git switch main` in `datom`. The hotfix gets its own branch, so
+     a second working folder is not needed -- and one breaks submitting (see "Why the primary
+     clone" below). The 0.1.2 fix used `../datom-cran-fix` although `datom` had a clean tree at the
+     time; no reason was recorded, and switching would have worked.
 
 4. **Submitting.** **Only from the primary `datom` clone, never from a git worktree** (see "Why the
    primary clone" below). `devtools::submit_cran()` asks questions that cannot be answered under
