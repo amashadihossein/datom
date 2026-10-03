@@ -20,7 +20,7 @@ check failures.
 
 ## R CMD check results
 
-<!-- TODO: win-builder R-devel result -->
+win-builder, R-devel: `Status: OK` -- 0 errors, 0 warnings, 0 notes.
 
 Local `--as-cran`: 0 errors, 0 warnings, 0 notes.
 
@@ -31,7 +31,7 @@ when it is not present.
 
 ## Test environments
 
-* win-builder, R-devel <!-- TODO: win-builder R-devel result -->
+* win-builder, R-devel (2026-09-30 r90605 ucrt), x86_64-w64-mingw32 -- Status: OK
 * local macOS Tahoe 26.6.2, aarch64-apple-darwin24.4.0, R 4.5.2 (2025-10-31)
 * GitHub Actions, all passing on the submitted source:
   * macos-latest, R release
