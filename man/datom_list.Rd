@@ -2,7 +2,7 @@
 % Please edit documentation in R/query.R
 \name{datom_list}
 \alias{datom_list}
-\title{List Available Tables}
+\title{List the Tables and Sets in a Project}
 \usage{
 datom_list(conn, pattern = NULL, include_versions = FALSE, short_hash = TRUE)
 }
@@ -17,11 +17,13 @@ datom_list(conn, pattern = NULL, include_versions = FALSE, short_hash = TRUE)
 columns to 8 characters for readability. Set to FALSE for full hashes.}
 }
 \value{
-Data frame with table info (name, current_version, last_updated, etc.).
+Data frame with artifact info (name, kind, current_version,
+last_updated, etc.).
 }
 \description{
-Lists tables from S3 manifest. Reads \code{.metadata/manifest.json} from S3
-and returns a data frame with one row per table.
+Returns one row per table and set in the project, with its current version
+and when it was last updated. Works with both developer and reader
+connections.
 }
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a

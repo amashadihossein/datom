@@ -2,36 +2,75 @@
 % Please edit documentation in R/lineage.R
 \name{datom_parent}
 \alias{datom_parent}
-\title{Declare a parent for lineage}
+\title{Name an Input for a Table You Are About to Write}
 \usage{
-datom_parent(conn, table, version)
+datom_parent(conn, table, version = NULL, x = NULL, tags = NULL)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} scoped to the parent's project store, from
 \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
-\item{table}{Parent table name (single non-empty validated string).}
+\item{table}{Parent table name (single non-empty validated string). With \code{x},
+a character vector of one or more member names.}
 
-\item{version}{Parent version (metadata_sha; single non-empty string).}
+\item{version}{Parent version (metadata_sha; single non-empty string).
+Exactly one of \code{version} and \code{x} is required.}
+
+\item{x}{Optional \code{datom_set} from \code{\link[=datom_get_set]{datom_get_set()}} (or one being built)
+whose members supply the versions. Exactly one of \code{version} and \code{x} is
+required.}
+
+\item{tags}{Optional named list of labels narrowing a member name the set
+holds more than once, e.g. \code{list(type = "input")}. Only with \code{x}.}
 }
 \value{
-A list with exactly \code{source}, \code{table}, \code{version}, \code{data_sha}, and
-\code{source_lineage}. \code{source} is the parent connection's \code{project_name};
-\code{source_lineage} is \code{NULL} when the snapshot carries none.
+Without \code{x}, a list with exactly \code{source}, \code{table}, \code{version},
+\code{data_sha}, and \code{source_lineage}. \code{source} is the project the parent's own
+metadata says it belongs to, falling back to the project manifest and then
+to the connection's name (see \code{.datom_declared_project()}) -- \strong{not} simply
+the name on \code{conn}, which on a reader connection is an unverified label and
+which \code{source} cannot afford, since it is part of the declaring table's
+version. \code{source_lineage} is \code{NULL} when the snapshot carries none. With
+\code{x}, an unnamed list of such records, one per \code{table}, in the order given.
 }
 \description{
-Resolves a parent table against a single project connection and returns a
-pure-data lineage record. The parent's authoritative \code{data_sha} and its
-\code{source_lineage} are read from the parent's own versioned metadata
-snapshot at \verb{\{table\}/.metadata/\{version\}.json}; a caller cannot supply or
-override \code{data_sha} (there is no \code{data_sha} parameter). The returned
-record retains no live connection and is serializable as plain data.
+Use before \code{\link[=datom_write]{datom_write()}} when the table you are writing was made from other
+datom tables. Each call names one input -- one table at one exact version --
+and returns a note that \code{\link[=datom_write]{datom_write()}} saves with the new table, so its
+\link[=datom-package]{lineage} records what it was made from. For several inputs,
+make one call each and pass them together as a list to \code{parents}. If the
+inputs are members of a set, pass the set as \code{x} and name several tables at
+once; each gets the version the set pins.
 }
 \details{
+The parent's data fingerprint is read from the parent's own saved record; you
+cannot supply it, so a lineage entry cannot claim data the parent never had.
+The record is plain data with no connection inside, so it can be saved and
+reused.
+
 Same-project and cross-project parents are declared identically -- the
 only difference is which connection is passed. \code{source} is always derived
 from the connection's \code{project_name}.
 }
+\section{Taking the version from a set}{
+
+When the inputs of a derivation are members of a set, pass the set as \code{x}
+instead of a \code{version}: each \code{table} is looked up among the set's members and
+declared at the version the set pins. That keeps the parents a derived table
+records in step with the set it is derived through, without looking each
+version up by hand.
+
+The member is chosen exactly as \code{\link[=datom_fetch_member]{datom_fetch_member()}} chooses it. A name
+held by two members -- a current table beside a locked baseline, say -- stops
+and lists both; narrow with \code{tags}. A member that is itself a set stops too,
+since only a table can be a parent.
+
+With \code{x}, \code{table} may name several tables and the result is \strong{always a
+list} of parent records, even for one table, so it can be passed straight to
+the \code{parents} argument of \code{\link[=datom_write]{datom_write()}}. Without \code{x} the result is one
+record, as it always was.
+}
+
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
 # local directory for object storage.

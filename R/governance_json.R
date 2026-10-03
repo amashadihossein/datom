@@ -162,8 +162,8 @@
 #' @return Invisible NULL.
 #' @keywords internal
 .datom_storage_delete_governance_json <- function(conn) {
-  # Chunk 7 wires .datom_storage_delete_key(); use prefix-delete for now
-  # to handle both backends without introducing a new dispatch function yet.
+  # Deletes via prefix-delete on the exact key, which works on both backends
+  # without adding a single-key delete to the storage dispatch layer.
   .datom_storage_delete_prefix(conn, ".metadata/governance.json")
   invisible(NULL)
 }

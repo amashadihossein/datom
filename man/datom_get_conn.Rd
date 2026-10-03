@@ -2,7 +2,7 @@
 % Please edit documentation in R/conn.R
 \name{datom_get_conn}
 \alias{datom_get_conn}
-\title{Get a datom Connection}
+\title{Get a Pointer to a datom Project}
 \usage{
 datom_get_conn(path = NULL, store = NULL, project_name = NULL, endpoint = NULL)
 }
@@ -22,7 +22,13 @@ Ignored when \code{path} is provided (read from yaml).}
 A \code{datom_conn} object.
 }
 \description{
-Flexible connection for both developers and readers.
+Returns a pointer to the project, called a \link[=datom-package]{connection}
+(\code{conn}): a record of which project you are working on, where its data is
+kept, and whether you can write. Almost every other datom function takes it
+as its first argument. Nothing stays open; it only checks once that the
+storage (and, for a developer, the GitHub repository) can be reached.
+Developers pass \code{path} (their local copy) and \code{store}; readers, who have no
+local copy, pass \code{store} and \code{project_name}.
 }
 \details{
 \strong{Developer} (local repo + store): provide \code{path} and \code{store}. Reads

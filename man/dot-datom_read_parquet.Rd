@@ -16,8 +16,8 @@
 \item{parquet_sha}{Expected SHA-256 of the stored parquet object bytes, from
 the resolved metadata (see \code{\link[=.datom_resolve_version]{.datom_resolve_version()}}). When non-empty, the
 downloaded file is verified against it and a mismatch aborts. When \code{NULL}
-or empty (pre-cv1 metadata, or a version-pinned read before task 5.1
-persists it), the integrity check is skipped and the read succeeds.}
+or empty -- which now happens only for pre-cv1 metadata -- the integrity
+check is skipped and the read succeeds.}
 }
 \value{
 Data frame.

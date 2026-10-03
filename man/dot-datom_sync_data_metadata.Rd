@@ -18,16 +18,29 @@ keys) and \code{tables} (list of per-table sync results).
 }
 \description{
 Mirrors the data repo's metadata to the data store so readers see current
-state: the manifest (\code{.metadata/manifest.json}) and each table's metadata
-(\code{{name}/.metadata/metadata.json}, \code{version_history.json}).
+state: the manifest (\code{.metadata/manifest.json}) and each artifact's metadata
+(\code{{name}/.metadata/metadata.json}, \code{version_history.json}). \strong{Every artifact
+of either kind}, not tables only -- discovery is \code{.datom_clone_artifact_names()}
+and has been kind-agnostic since sets existed.
 }
 \details{
+\strong{It is not metadata-only, and the name understates it.} For a \strong{set}, a
+payload missing from storage is restored from the clone -- see
+\code{.datom_restore_set_payload()} in this file for the three conditions on that.
+So this function can put content into storage, not just documents about
+content.
+
 Data-only: governance files (dispatch.json, ref.json, migration_history.json)
 are not touched here. Governance sync is owned by the governance layer
 (\code{gov_sync_dispatch()}).
 
+\strong{Two public routes reach this}, and both get the restore: \code{datom_write(conn)}
+with no \code{data} and no \code{name} (the mirror-everything route), and
+\code{datom_validate(fix = TRUE)}. Describing the restore as repair-only would
+leave a reader surprised to see it fire under a write verb.
+
 Used after a failed upload, or by \code{datom_validate(fix = TRUE)}, to bring
-storage metadata back in line with the local data clone. Requires a
-developer connection with a local repo path.
+storage back in line with the local data clone. Requires a developer
+connection with a local repo path.
 }
 \keyword{internal}

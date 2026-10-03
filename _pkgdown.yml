@@ -25,6 +25,11 @@ navbar:
       href: https://github.com/amashadihossein/datom
 
 reference:
+  - title: "Key terms"
+    desc: "What datom's words mean: project, store, connection, table, version, set"
+    contents:
+      - datom-package
+
   - title: "Connection & Setup"
     desc: "Create connections, initialize repositories"
     contents:
@@ -55,6 +60,22 @@ reference:
       - datom_read
       - datom_write
       - datom_check_hashable
+
+  - title: "Sets"
+    desc: "Write and read a versioned, citable set of artifacts, and declare its members"
+    contents:
+      - datom_member
+      - datom_write_set
+      - datom_get_set
+      - datom_fetch_member
+      - datom_list_members
+      - datom_structure_members
+      - datom_assemble_set
+      - datom_add_member
+      - datom_update_members
+      - datom_remove_members
+      - print.datom_set
+      - print.datom_link
 
   - title: "Query & Status"
     desc: "List tables, view history, check status"
@@ -90,11 +111,14 @@ reference:
       datom_repo_delete instead.
     contents:
       - datom_storage_list
+      - datom_storage_read_json
       - datom_storage_delete_prefix
       - datom_storage_copy
       - datom_storage_verify
       - datom_repo_set_data_store
       - datom_repo_attach_governance
+      - datom_repo_commit
+      - datom_repo_push
 
   - title: "Teardown"
     desc: "Permanently remove a project's data repo and local clone"
@@ -118,6 +142,11 @@ articles:
     desc: "The same workflow directly in object storage."
     contents:
       - start-on-s3
+
+  - title: "Citable sets"
+    desc: "Name and cite an exact collection of data versions."
+    contents:
+      - citable-sets
 
   - title: "Lineage"
     desc: "Trace how derived tables descend from their sources."

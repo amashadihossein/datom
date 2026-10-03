@@ -634,7 +634,7 @@ test_that("Feature: datom-cv1, provenance -- hash_algo and imported-path origina
     fs::path(fx$repo_dir, ".datom", "manifest.json")
   )
   expect_identical(
-    manifest_json$tables$dm$original_file_sha,
+    manifest_json$artifacts$dm$original_file_sha,
     imported$original_file_sha
   )
   expect_identical(imported$table_type, "imported")

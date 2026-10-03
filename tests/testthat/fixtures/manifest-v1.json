@@ -1,0 +1,20 @@
+{
+  "project_name": "frozen_v1_project",
+  "updated_at": "2026-05-14T09:12:44Z",
+  "tables": {
+    "dm": {
+      "current_version": "6b1f0a2c4d5e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708",
+      "current_data_sha": "a4c9e2f10b3d5678901234567890abcdef1234567890abcdef1234567890abcd",
+      "last_updated": "2026-05-14T09:12:44Z",
+      "size_bytes": 20416,
+      "version_count": 2,
+      "original_file_sha": "3f2a1b0c9d8e7f60514233445566778899aabbccddeeff00112233445566778",
+      "original_format": "csv"
+    }
+  },
+  "summary": {
+    "total_tables": 1,
+    "total_size_bytes": 20416,
+    "total_versions": 2
+  }
+}

@@ -18,7 +18,7 @@ disclosure timeline with you.
 datom never persists credentials to disk. Credentials are passed explicitly at
 connection time and stored in memory only for the lifetime of the R session.
 For best practices on supplying credentials safely (keychain, environment
-variables, CI secret stores), see the "Start on S3" article
+variables, CI secret stores), see the "Starting on S3" article
 (`vignette("start-on-s3", package = "datom")`) and the package website.
 
 Because `datom_store` objects hold credentials in memory as plaintext, do not

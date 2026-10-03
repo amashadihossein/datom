@@ -12,7 +12,9 @@ datom_summary(conn)
 \value{
 A \code{datom_summary} S3 object (a list with class \code{"datom_summary"})
 containing: \code{project_name}, \code{role}, \code{backend}, \code{root}, \code{prefix},
-\code{table_count}, \code{total_versions}, \code{last_updated}, \code{remote_url}.
+\code{table_count}, \code{set_count}, \code{total_versions}, \code{last_updated}, \code{remote_url}.
+\code{table_count} counts tables only and \code{set_count} counts sets;
+\code{total_versions} stays tables-only, so no counter changed meaning.
 \code{remote_url} is \code{NULL} for readers (no local data clone).
 }
 \description{

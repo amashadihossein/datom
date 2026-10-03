@@ -2,27 +2,38 @@
 % Please edit documentation in R/example-data.R
 \name{datom_example_data}
 \alias{datom_example_data}
-\title{Load Example EDC Data}
+\title{Load Example Clinical Trial Data}
 \usage{
-datom_example_data(domain = c("dm", "ex", "lb", "ae"), cutoff_date = NULL)
+datom_example_data(
+  domain = c("dm", "ex", "lb", "ae", "vs"),
+  cutoff_date = NULL
+)
 }
 \arguments{
 \item{domain}{One of \code{"dm"} (demographics, 48 rows), \code{"ex"} (exposure,
-48 rows), \code{"lb"} (labs, ~720 rows: 3 visits x 5 tests per subject),
-or \code{"ae"} (adverse events, ~80 rows).}
+48 rows), \code{"lb"} (labs, 720 rows: 3 visits x 5 tests per subject),
+\code{"ae"} (adverse events, ~80 rows), or \code{"vs"} (vital signs, 432 rows:
+3 visits x 3 tests per subject, taken on the same dates as the labs).}
 
 \item{cutoff_date}{Optional date string (\code{"YYYY-MM-DD"}) to filter
 rows whose primary date column is on or before this date, simulating
 a point-in-time EDC extract. The date column used per domain:
-\code{RFSTDTC} (dm), \code{EXSTDTC} (ex), \code{LBDTC} (lb), \code{AESTDTC} (ae).}
+\code{RFSTDTC} (dm), \code{EXSTDTC} (ex), \code{LBDTC} (lb), \code{AESTDTC} (ae),
+\code{VSDTC} (vs).}
 }
 \value{
 A data frame.
 }
 \description{
-Loads bundled clinical trial example data for use in examples and
-vignettes. The data simulates a Phase II study (STUDY-001) with 48
-subjects enrolled over 6 months across four SDTM-flavored domains.
+Returns one of five small, made-up tables from a simulated clinical trial
+of 48 subjects: demographics, exposure (dosing), lab results, adverse events
+or vital signs. Set \code{cutoff_date} to get the data as it stood on that date,
+which mimics a new data delivery each month; \code{\link[=datom_example_cutoffs]{datom_example_cutoffs()}} lists
+the dates the examples use.
+}
+\details{
+The data simulates STUDY-001, a Phase II study enrolling over six months;
+table and column names loosely follow SDTM.
 }
 \examples{
 # Full demographics

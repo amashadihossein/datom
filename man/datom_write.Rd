@@ -2,7 +2,7 @@
 % Please edit documentation in R/read_write.R
 \name{datom_write}
 \alias{datom_write}
-\title{Write a datom Table}
+\title{Save a Data Frame as a datom Table}
 \usage{
 datom_write(
   conn,
@@ -22,8 +22,12 @@ datom_write(
 
 \item{data}{Data frame to write. If NULL with name, does metadata-only sync.}
 
-\item{name}{Table name. If NULL with NULL data, does a data-only metadata
-sync to storage (manifest + per-table metadata).}
+\item{name}{Table name. If NULL with NULL data, mirrors the clone's
+storage-side documents for \strong{every} artifact of either kind: the manifest,
+and each artifact's metadata, version history and versioned snapshots. On
+that route a \strong{set} whose stored payload is missing also has it restored
+from the clone -- see \code{\link[=datom_validate]{datom_validate()}}, which shares the mechanism, for
+the conditions on that.}
 
 \item{metadata}{Optional list of custom metadata.}
 
@@ -55,7 +59,11 @@ imported self-entry path, set by \code{\link[=datom_sync]{datom_sync()}}. Unused
 List with deployment details.
 }
 \description{
-Writes data to a datom repository. Commits to git, pushes, and syncs to S3.
+Saves a data frame as a new version of a named \link[=datom-package]{table}: the
+data goes to storage, and a record of the change is committed and pushed to
+the project's GitHub repository. If nothing has changed since the last
+version, nothing is saved. To bring in files rather than data frames, use
+\code{\link[=datom_sync]{datom_sync()}}.
 }
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a

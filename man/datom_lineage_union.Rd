@@ -2,7 +2,7 @@
 % Please edit documentation in R/lineage.R
 \name{datom_lineage_union}
 \alias{datom_lineage_union}
-\title{Union and deduplicate source_lineage lists}
+\title{Union and Deduplicate source_lineage Lists}
 \usage{
 datom_lineage_union(lineages)
 }

@@ -47,6 +47,80 @@
 }
 
 
+# --- Relative artifact keys ---------------------------------------------------
+#
+# Two key shapes exist and are easy to confuse:
+#
+#   FULL     `{prefix}/datom/{...}`  -- built by `.datom_build_storage_key()`,
+#            used only inside the backend layer (`.datom_s3_*`, `.datom_local_*`).
+#   RELATIVE `{...}`                 -- what the `.datom_storage_*()` dispatch
+#            layer takes, because each backend prepends the full prefix itself.
+#
+# Business logic therefore must NOT call `.datom_build_storage_key()`: passing a
+# full key to `.datom_storage_write_json()` would double-prefix it. The helpers
+# below build the relative keys instead, so call sites stop hand-rolling
+# `paste0()` and the `.parquet` vs `.json` extension decision lives in one place.
+#
+# They also apply the `.datom_validate_name()` / `.datom_validate_sha()` guards,
+# which several call sites previously omitted -- any caller-influenced value
+# spliced into a key can otherwise escape the namespace on the local backend.
+
+
+#' Build the Relative Key for an Artifact's Payload
+#'
+#' The stored data object for an artifact: parquet for a table, JSON for a set.
+#' This is the single place that decision is made.
+#'
+#' @param name Artifact name (validated).
+#' @param sha Content hash addressing the payload -- `data_sha` (validated as
+#'   6-64 hex, since it is spliced into a storage key).
+#' @param kind `"table"` (parquet payload) or `"set"` (JSON payload).
+#' @return Character relative key, e.g. `"dm/9f2a....parquet"`.
+#' @keywords internal
+.datom_artifact_payload_key <- function(name, sha, kind = c("table", "set")) {
+  kind <- match.arg(kind)
+  .datom_validate_name(name)
+  .datom_validate_sha(sha, arg = "data_sha")
+
+  ext <- switch(kind, table = ".parquet", set = ".json")
+  paste0(name, "/", sha, ext)
+}
+
+
+#' Build the Relative Key for an Artifact's Current-State Metadata
+#'
+#' @param name Artifact name (validated).
+#' @param which `"metadata"` for `metadata.json` (current state) or
+#'   `"version_history"` for `version_history.json` (the version index).
+#' @return Character relative key, e.g. `"dm/.metadata/metadata.json"`.
+#' @keywords internal
+.datom_artifact_meta_key <- function(name, which = c("metadata", "version_history")) {
+  which <- match.arg(which)
+  .datom_validate_name(name)
+
+  paste0(name, "/.metadata/", which, ".json")
+}
+
+
+#' Build the Relative Key for a Versioned Metadata Snapshot
+#'
+#' Note this is a different directory from the payload key: the snapshot lives
+#' under `.metadata/` and is addressed by `metadata_sha` (the version), whereas
+#' the payload sits beside it addressed by `data_sha` (the content). Both end in
+#' `.json` for a set, which is exactly why they are easy to confuse.
+#'
+#' @param name Artifact name (validated).
+#' @param metadata_sha The version (validated as 6-64 hex).
+#' @return Character relative key, e.g. `"dm/.metadata/c3d4....json"`.
+#' @keywords internal
+.datom_artifact_snapshot_key <- function(name, metadata_sha) {
+  .datom_validate_name(name)
+  .datom_validate_sha(metadata_sha, arg = "version")
+
+  paste0(name, "/.metadata/", metadata_sha, ".json")
+}
+
+
 #' Parse S3 URI into Components
 #'
 #' Extracts bucket and prefix from an `s3://` URI.

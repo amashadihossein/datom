@@ -55,9 +55,12 @@ Set to \code{FALSE} for tests or offline use.}
 A \code{datom_store} object.
 }
 \description{
-Bundles a governance store component, a data store component, and git config
-into a single store object. Role (developer vs reader) is derived from
-\code{github_pat} presence.
+A store tells datom where a project's data is kept -- a local folder
+(\code{\link[=datom_store_local]{datom_store_local()}}) or an S3 bucket (\code{\link[=datom_store_s3]{datom_store_s3()}}) -- and, if you
+will be writing, your GitHub token. With a token you are a
+\link[=datom-package]{developer} and can write; without one you are a reader and
+can only read. Pass the store to \code{\link[=datom_init_repo]{datom_init_repo()}} to start a project, or
+to \code{\link[=datom_get_conn]{datom_get_conn()}} to connect to one.
 }
 \examples{
 tmp <- tempfile("datom_store_")

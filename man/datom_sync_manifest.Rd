@@ -2,32 +2,95 @@
 % Please edit documentation in R/sync.R
 \name{datom_sync_manifest}
 \alias{datom_sync_manifest}
-\title{Scan and Prepare Manifest for Sync}
+\title{Preview What a Sync Will Change}
 \usage{
-datom_sync_manifest(conn, path = NULL, pattern = "*")
+datom_sync_manifest(conn, path = NULL, pattern = "*", sources = NULL)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object from \code{\link[=datom_get_conn]{datom_get_conn()}}.}
 
 \item{path}{Optional path to input files directory. Defaults to
-\verb{input_files/} inside the repo.}
+\verb{input_files/} inside the repo. Not accepted on a product repo, which reads
+no files.}
 
-\item{pattern}{Glob pattern for file matching. Default \code{"*"}.
+\item{pattern}{Glob pattern for file matching. Default \code{"*"}. On a product
+repo it filters source artifact names instead.}
+
+\item{sources}{On a product repo only, and required there: one \code{datom_conn},
+or a list of them, for the projects the set's inputs come from. Each
+connection's project name is what members are matched on. Refused on an
+ordinary repo.}
+}
+\value{
+On an ordinary repo, a data frame with columns: name, file, format,
+original_file_sha, status (one of \code{"new"}, \code{"changed"}, \code{"unchanged"},
+\code{"unsupported_format"}).
+
+On a product repo, a data frame with columns \code{project}, \code{name}, \code{kind},
+\code{version_from} (\code{NA} for a new artifact), \code{version_to} (\code{NA} for a member that
+was not compared) and \code{status} (one of \code{"new"}, \code{"changed"},
+\code{"unchanged"}, \code{"ambiguous"}, \code{"not_checked"}, \code{"excluded"}). Versions are
+full 64-character strings.
+}
+\description{
+Looks at the files in the project's \verb{input_files/} folder and returns one
+row per file, saying whether it is new, changed, unchanged since it was last
+synced, or in a format datom cannot read. Nothing is written. Review the
+result, drop any rows you do not want, then pass it to \code{\link[=datom_sync]{datom_sync()}}.
+}
+\details{
+A file counts as changed when its bytes differ from the file last synced
+under that name.
 
 Files whose format is outside datom's ingestion allowlist (flat tabular
 formats only) are flagged \code{"unsupported_format"} up front, without blocking
-their allowlisted siblings.}
+their allowlisted siblings.
+
+On a product repo (\code{mode: product}) it maps the repo's set against source
+projects instead -- see "On a product repo" below.
 }
-\value{
-Data frame with columns: name, file, format, original_file_sha,
-status (one of \code{"new"}, \code{"changed"}, \code{"unchanged"},
-\code{"unsupported_format"}).
+\section{On a product repo}{
+
+A product repo owns one set (named in \code{.datom/project.yaml}), and this call
+compares that set, as stored, with what each source project holds now. It
+reads one manifest per source and the stored set; it writes nothing.
+
+Tables and sets are treated alike: a set a source holds gets a row, and a
+member that is a set is compared exactly as a table member is, so a set built
+from other sets syncs the same way.
+
+One row per artifact in the sources whose name matches \code{pattern}:
+\itemize{
+\item \code{new} -- no member points at it (every row, when the set has no version
+yet);
+\item \code{changed} / \code{unchanged} -- one member points at it, at an older / the
+current version;
+\item \code{ambiguous} -- two or more members point at it (a live table beside a
+frozen baseline, say), so neither will move. Move one with
+\code{\link[=datom_update_members]{datom_update_members()}}, narrowing by \code{member} and \code{tags}.
 }
-\description{
-Scans a flat \verb{input_files/} directory and computes file SHAs. Compares
-against the current \code{.datom/manifest.json} to detect new or changed files.
-Returns a manifest data frame for review before calling \code{\link[=datom_sync]{datom_sync()}}.
+
+Plus one row for each member the call did not compare:
+\itemize{
+\item \code{excluded} -- its artifact is in a source but does not match \code{pattern};
+\item \code{not_checked} -- its project was not passed in \code{sources}.
 }
+
+The preview never proposes removing a member. A member whose artifact is no
+longer listed in its source is named in the messages and left pinned. Members
+in the repo's own project are outputs and get no row: re-derive them, then
+move them with \code{\link[=datom_update_members]{datom_update_members()}}.
+
+It stops when \code{sources} includes the repo's own project, and when a source
+connection's project name differs from the name that project's own manifest
+records.
+
+\strong{Tables and sets are saved at different points.} On an ordinary repo,
+\code{\link[=datom_sync]{datom_sync()}} writes each table as it syncs. On a product repo it hands the
+edited set back, and the set is saved only by \code{\link[=datom_write_set]{datom_write_set()}} -- one
+version for the whole edit, which you can look at or add to first.
+}
+
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
 # local directory for object storage.

@@ -1,0 +1,306 @@
+# Tasks -- sets release readiness
+
+**Source issue**: [#114](https://github.com/amashadihossein/datom/issues/114).
+**Branch**: `spec/sets-release-readiness`, cut from `dev`. **PRs into `dev`, not `main`.**
+**Test baseline**: **4292** at spec start (FAIL 0 / WARN 0 / SKIP 0). Report the count in every commit
+message; it must never drop.
+
+---
+
+## Where things stand
+
+**Nothing is started.** The spec was written 2026-09-21, immediately after `datom-sets` merged into
+`dev` (PR [#97](https://github.com/amashadihossein/datom/pull/97)).
+
+**Start here.** Branch `spec/sets-release-readiness` at `origin/dev` (`688c7ac`), working tree clean,
+4292 tests, `R CMD check --as-cran` 0/0/0, and `dev/check-spec.R` passing **for `datom-sets`** -- that
+script is scoped to that spec and gives a misleading result against this one, which
+`requirements.md` explains at the end. Read `design.md` section 1 first -- three short files, each of
+which prevents a specific mistake.
+
+**The execution order is fixed and the reason is in `design.md` section 2**: the script produces the
+transcripts the vignette shows, and the vignette is the destination NEWS needs before anything can be
+cut from it. Reordering does not just delay value, it produces documentation that is confidently wrong.
+
+```
+1 -> 2 -> 3 -> 4
+```
+
+**Three decisions are already taken in `design.md`**, so do not reopen them without a reason: one
+vignette rather than two (4.1), `sandbox_up()` gains `mode`/`set` passthrough rather than the script
+calling `datom_init_repo()` directly (3.1), and the credentialed script asserts the **integration**
+facts rather than re-asserting set semantics the offline script already covers (3.2).
+
+**Two owner questions are open in `requirements.md`**, both with defaults, so silence is safe: the
+bucket and repo naming for the credentialed run, and how aggressively NEWS is cut.
+
+---
+
+- [x] **1. `sandbox_up()` learns the second artifact kind** &nbsp; **[DONE 2026-09-21 -- see the DONE record]**
+
+  The smallest possible first step, and it unblocks everything else in task 2. `sandbox_up()`
+  (`dev/dev-sandbox.R`) calls `datom_init_repo()` with no `mode` or `set`, so it cannot create a repo a
+  set write will accept.
+
+  - Add `mode = NULL` and `set = NULL` to `.sandbox_defaults()` and pass both through to
+    `datom_init_repo()`. **Defaulting to NULL is what keeps every existing caller unaffected** -- and
+    `datom_init_repo()` already refuses `set` without `mode`, so a half-supplied pair fails at the door
+    rather than producing a repo that looks fine until the first set write.
+  - Confirm by hand that `sandbox_up(..., mode = "product", set = "x")` produces a
+    `.datom/project.yaml` carrying both fields, and that an ordinary `sandbox_up()` call produces a file
+    with **neither key present** -- not `mode: ~`. The distinction is real: a declared empty value and
+    an absent key are different documents, and the package's own constructor works around exactly this
+    (`R/conn.R`, the note about `list()` versus assignment).
+  - `dev/` is not shipped, so this is dev tooling. **No test count change is expected.**
+  - _Requirements: R1.1. Design: 3.1. Invariants: I1 (no `R/` behaviour change)._
+
+  **DONE RECORD (2026-09-21).** Four lines of change in `dev/dev-sandbox.R`: `mode` and `set` in
+  `.sandbox_defaults()`, both passed through to `datom_init_repo()`. Tests **4292** (FAIL 0 / WARN 0 /
+  SKIP 0), unchanged as expected -- `dev/` is not shipped and no package code was touched.
+
+  **Verified in four directions, offline, with no credentials** -- a local store plus a local bare remote
+  plus a dummy PAT, which works because a local remote needs no authentication and the token is only a
+  role selector:
+
+  | Check | Result |
+  |---|---|
+  | `mode`/`set` supplied | `project.yaml` carries `mode: product`, `set: trial_product` |
+  | nothing supplied | **neither key present at all** -- and asserted on the raw file text, not just on the parsed names, because the failure being excluded is `mode: ~` rather than a missing name |
+  | a real set write into the product repo | accepted, `action = "full"`, and it took the set's name from the config rather than an argument |
+  | a set write into the plain repo | refused, condition class `datom_set_mode_required` |
+
+  **The third row is worth more than it looks, and it changes what task 2 uniquely owes.** That set was
+  written through `datom_init_repo()` + `datom_get_conn()` -- the real entry path, the thing
+  `dev/e2e-sets.R` cannot reach because it hand-builds the connection. So the *shape* of AC5 is now
+  demonstrated offline. What remains genuinely exclusive to the credentialed script is narrower than
+  `design.md` 3.2 implies: **GitHub repo creation through the API, S3 as the store, and `ref.json`
+  resolution against a real one.** Task 2 should not spend its length re-proving the entry path in the
+  abstract; it should prove the parts only real infrastructure can.
+
+  **Why the NULL passthrough is safe, recorded because it looks careless.** `cfg$mode` is `NULL` for
+  every existing caller and is passed anyway. That is fine because `datom_init_repo()` assigns these two
+  onto its config list **after** building it, and assigning NULL to a list element removes it -- whereas a
+  NULL inside a `list()` constructor is a present element that yaml writes as `mode: ~`. The placement in
+  `R/conn.R` is what protects this, not the guard beside it, which is exactly what the note at that site
+  says. The absent-key assertion above is what would catch it if that ever changed.
+
+- [x] **2. The credentialed end-to-end script** &nbsp; **[DONE 2026-09-23 -- passed against real GitHub and real S3. See the DONE record; one item is left open there and it needs the owner, not a session.]**
+
+  New `dev/e2e-sets-s3.R`: the set surface against a real GitHub repo and a real S3 bucket, in the style
+  of `dev/e2e-solo-s3.R`, reusing `sandbox_store()` / `sandbox_up()` / `sandbox_down()`.
+
+  **IT IS TWO REPOS, NOT ONE, AND THAT WAS FORCED RATHER THAN CHOSEN (owner-decided 2026-09-21).** The
+  first draft had one product repo onboarding CSVs and citing them. **A product repo refuses
+  `datom_sync_manifest()` and `datom_sync()`** -- it builds its artifacts, it does not import them
+  (`R/sync.R:546`, `:749`, class `datom_import_on_product`). So a set's members must live elsewhere, and
+  "elsewhere" is the case sets exist for: a citation that crosses projects. The shape is now an ordinary
+  inputs repo that onboards files exactly as `vignette("start-on-s3")` describes, plus a product repo in
+  its own directory whose set cites it. **That buys a fifth thing the offline script cannot reach** -- a
+  member whose recorded project is not the set's -- and it is the topology the vignette will show.
+
+  **This also exposed a hole in task 1's verification**: `sandbox_up(mode = "product", populate = TRUE)`
+  can never work, and task 1 only tested `populate = FALSE`. Left for task 2's own commit to fix, by
+  refusing the pair at the door rather than failing deep inside populate.
+
+  - **Assert the integration facts, not the semantics** -- the table in `design.md` 3.2 lists exactly
+    which, and why each one cannot be asserted offline. Re-asserting what the 4292 unit tests and the
+    51 offline claims already pin makes the script slow to read and buys nothing.
+  - **Credentials checked first**, before the store is built, naming the missing one and the scope it
+    needs (R1.6). Getting this wrong leaves a half-created repo and orphaned objects.
+  - **Teardown on both exit paths**, and **verified by listing what remains** rather than by
+    `sandbox_down()`'s return value. `sandbox_down()` reports success whether or not there was anything
+    to remove, which is the same shape of defect the guard-test rule exists for
+    (`.github/copilot-instructions.md` rule 2a).
+  - **Every claim asserted, non-zero exit on any mismatch** (R1.4), same contract as `dev/e2e-sets.R`.
+    Then **break one claim on purpose and watch it exit non-zero** -- AC2, and the standard this project
+    holds coverage to.
+  - **Run it.** This is a script whose entire purpose is to be run: "it exists" is not the deliverable.
+    The transcript goes in the DONE record (AC1), along with the listing that proves teardown (AC3).
+  - **If a claim fails because datom is wrong**, that is a defect with its own issue -- do not adjust the
+    script until it passes (R1.8).
+  - Not added to CI, and not run by `R CMD check` (R1.7, I5).
+  - _Requirements: R1 (all). Design: 3. Acceptance: AC1, AC2, AC3, AC4, AC5, AC6. Properties: P1, P2,
+    P3, P4._
+
+  **DONE RECORD (2026-09-23). It passed against real GitHub and real S3**, owner-run -- AWS credentials
+  are not reachable from a session here, so every real run of this script is the owner's. Tests **4292**
+  (FAIL 0 / WARN 0 / SKIP 0) throughout; no package code was touched, only `dev/`.
+
+  **It took three rounds, and the two defects are worth carrying because neither was findable the way I
+  was looking.**
+
+  | Round | What broke | Why the previous check missed it |
+  |---|---|---|
+  | 1 (offline dry run) | one product repo onboarding its own CSVs | a design error, not a typo: **a product repo refuses `datom_sync()`**. Reading the requirement would never have caught it; running it did, in seconds, for free |
+  | 2 (first real run) | `datom_store_s3()` aborted -- no credential defaults, and the reader store passed none | **the offline dry run could not catch it.** The local backend takes no credentials, so that line was never the line under test. A whole class of defect lives exactly there |
+  | 3 | nothing | passed |
+
+  **Round 2's lesson generalises and belongs in the notes**: an offline stand-in for a credentialed path
+  cannot test the credential plumbing, so the lines it replaces are the lines that stay unexercised.
+  Swapping the backend is a good way to test *logic* and a useless way to test *configuration*.
+
+  **The shape it settled into, which is the shape the vignette will show**: an ordinary inputs repo that
+  onboards CSVs exactly as `vignette("start-on-s3")` describes, plus a product repo in its own directory
+  whose set cites it. Two repos was forced rather than chosen -- see the note in the task body -- and it
+  bought a fifth thing the offline script cannot reach: **a member whose recorded project is not the
+  set's.**
+
+  **Teardown is a separate step, and that came from the owner watching a run.** The walk leaves a live
+  product repo citing a live inputs repo; the original `finally` destroyed it on the way out, including
+  on failure, which is exactly when that state is worth having. `DATOM_E2E_KEEP=1` now defers it and
+  prints the connections, a few things to try, and the `e2e_teardown()` call. One trap is documented at
+  the point it bites: **source the script, do not `Rscript` it, when keeping things up** -- otherwise the
+  session exits and takes the connections with it.
+
+  **What is verified, and by what.**
+
+  | Claim | Verified by |
+  |---|---|
+  | AC1 -- a real run passes | the owner's run, 2026-09-23 |
+  | AC3 -- teardown leaves nothing | the run's own post-teardown listing: both prefixes empty, both clones gone, and `gh repo view` failing for both repos |
+  | AC5 -- a set written through the real entry path reads back | the run, plus the offline entry-path coverage task 1 added |
+  | AC6 -- a storage-only reader with no PAT resolves the set and fetches a member's data | the run, including the half that matters: the product reader **cannot** reach the data alone, and can once given the inputs project's credentials |
+  | AC2 -- a failed claim exits non-zero | **demonstrated offline**, not against real infrastructure: three failing claims produced `SETS_E2E_S3_RESULT: FAILED` and a non-zero exit. The exit path is shared code, so a deliberate break against S3 would travel the same line -- recorded as the weaker evidence it is rather than claimed as equivalent |
+  | AC4 -- a clear failure on missing credentials | **NOT independently verified.** The guard is one `nzchar(Sys.getenv("GITHUB_PAT"))` check before anything is built, and it has never been watched firing |
+
+  **ONE ITEM IS LEFT OPEN AND IT NEEDS THE OWNER.** The transcript of the passing run was not captured
+  -- AC1 asks for it in this record, and what exists is the owner's confirmation plus a partial paste from
+  the **failing** round-2 run. This matters beyond bookkeeping: **task 3's vignette must show output that
+  was observed** (R2.4, AC8), and the only source of real S3 output is a run. So the next real run should
+  be captured whole, and it is the input to the vignette rather than a formality. Until then, task 3 can
+  be drafted but its output blocks cannot be filled in honestly.
+
+- [ ] **3. The vignette that ships**
+
+  New `vignettes/citable-sets.Rmd`, listed in `_pkgdown.yml`. Shape is in `design.md` 4.2 -- seven
+  sections, why before how, no function call on the first screen.
+
+  - **Every output block comes from a run somebody watched**, task 2's or the offline script's, and the
+    DONE record says which produced which (AC8, I3). Chunks are `eval = FALSE` like the existing
+    vignettes, so **nothing verifies the output** -- that is the whole risk, and a composed transcript
+    is invisible to every check in this repo.
+  - Two properties a reader will otherwise assume wrongly, both required explicitly: **nesting resolves
+    one level** (R2.5) and **a citation never drifts to latest** (R2.6).
+  - `R CMD check --as-cran` stays 0E/0W with the vignette added (AC7, P5).
+  - _Requirements: R2 (all). Design: 4. Acceptance: AC7, AC8. Properties: P5._
+
+- [x] **4. `NEWS.md` goes terse, and the convention is written down** &nbsp; **[DONE 2026-09-25 -- 792 lines to 152. Mapping table in the DONE record.]**
+
+  - **Build the mapping table before deleting anything** (`design.md` 5.1): for every claim in the
+    development block, name its destination -- stays, roxygen, vignette, or nowhere. **Nowhere means it
+    stays** (R3.2, I4). The table goes in the DONE record, because AC9's claim is "every removal has a
+    destination", not "it got shorter".
+  - **The `artifacts` rename and the writer refusals go first** (R3.3). A reader who stops after two
+    items must have hit the two that can cost them discovery of their own data.
+  - Every kept claim points at `vignette()` or `?verb` (R3.4). **Nothing points at `dev/` or `.kiro/`**
+    (R3.5, I2, AC10) -- neither ships, which is the mistake this spec exists to correct.
+  - Leave the block headed "development version": assigning a version is a release decision with its own
+    moving parts (R3.7).
+  - Write the convention into `.github/copilot-instructions.md` (R3.6, AC11), including the never-cite-
+    `dev/` clause, which is the durable lesson here.
+  - _Requirements: R3 (all). Design: 5. Acceptance: AC9, AC10, AC11. Properties: P6._
+
+  **DONE RECORD (2026-09-25).** The development block went from **792 lines / 7,709 words to 152 lines /
+  1,509 words**, in 17 sections down to 6. Tests 4292; `R CMD check --as-cran` 0/0/0 with NEWS shipped.
+
+  **THE MAPPING, BUILT BEFORE ANYTHING WAS DELETED** (R3.2). Destinations, not word counts, are what AC9
+  asks about.
+
+  | Old section | Destination |
+  |---|---|
+  | the `artifacts` rename, its discovery-only exposure, the upgrade warning | **stays, first** -- upgrade-critical |
+  | format numbers, the writer refusals, the 0.1.1-forward bound, reads-limp/writes-stop | **stays, second** -- upgrade-critical, and its fuller form lives in `dev/datom_specification.md`, which **does not ship**, so cutting it further would have left nothing a user can read |
+  | `datom_list`/`summary`/`status` column and counter changes | stays, compressed into one bullet each |
+  | the whole set surface: write, get, member, assemble, add, fetch, list, structure, update, remove | **condensed to one bullet each, pointing at `vignette("citable-sets")`** for the narrative and `?verb` for behaviour |
+  | product mode, `include_paths`, the joint commit | one bullet, with the vignette carrying the why |
+  | `datom_validate()` on sets, payload restore | one bullet; `?datom_validate` has the detail |
+  | `kind` as identity, and the one extra version it mints per table | stays -- it changes what a user observes |
+  | `datom_repo_commit`/`push`, the `paths = NULL` asymmetry | short section, `?datom_repo_commit` for the rest |
+  | `commit_sha`, derived-not-authored, storage-copy-only, content-not-code | short section; the content-not-code paragraph **stays** because it is the one most likely to be reported as a bug |
+  | `project` field, `datom_storage_read_json`, manifest rebuild, allowlist hashing, #104 | one bullet each under "Smaller changes" |
+  | every probe count, defect narrative, rejected alternative and "what a later change must not undo" | **dropped from NEWS** -- contributor archaeology, and it is all still in `.kiro/specs/datom-sets/` |
+
+  **Verified mechanically rather than by eye**, because "did anything lose its home" is exactly the
+  question a reading misses:
+
+  * **every exported verb** named in the old block resolves to at least one of NEWS, the vignette, or
+    `man/` -- 19 verbs, **zero with no destination**;
+  * **fifteen field and concept names** (`schema_version`, `min_writer_version`, `document_sha`,
+    `datom-sv1`, `original_format`, `custom`, `set_count`, ...) likewise, zero orphans. Five survive in
+    roxygen only, which is the intended home for per-field detail and which ships;
+  * **no line in NEWS cites `dev/` or `.kiro/`** (R3.5, AC10).
+
+  **The version heading is deliberately still "development version"** (R3.7). Assigning a version pulls
+  in `DESCRIPTION`, `cran-comments.md` and the CRAN-SUBMISSION dance, which is release work rather than
+  documentation work.
+
+  **The convention is now rule 7a in `.github/copilot-instructions.md`** (AC11), including the clause
+  that caused this task to exist: never cite `dev/` or `.kiro/` from NEWS, a vignette or roxygen, because
+  both are `.Rbuildignore`d and from an installed package those paths do not exist. The previous spec
+  satisfied its documentation requirement by writing to two files that do not ship, and it took a user
+  asking where the article was to notice.
+
+- [x] **5. Spec Completion Procedure** &nbsp; **[DONE 2026-09-25]**
+
+  - Full suite green at 4292 or above; `R CMD check --as-cran` 0E/0W; `dev/check-spec.R` still passing
+    **for `datom-sets`**, run with no argument. It does not gate this spec and reports a **false pass**
+    against it -- the reasoning is in `requirements.md` under the note on that script. Do not point it
+    at this spec, and do not fix what it says there.
+  - Harvest durable learnings: gotchas to `dev/engineering-notes.md`, conventions to
+    `.github/copilot-instructions.md`, deferrals to the `dev/README.md` Backlog **with the
+    needs-an-issue decision made** (that lifecycle step was added 2026-09-20).
+  - `dev/README.md`: move the spec Active -> Completed with date, test count and summary. **The spec
+    persists -- do not delete it.**
+  - PR into `dev`, merge. **Leave the branch** unless the owner says otherwise -- the last spec's branch
+    was kept deliberately to avoid accidental deletion.
+  - _Requirements: R4. Acceptance: AC12._
+
+  **DONE RECORD (2026-09-25). THE SPEC IS COMPLETE.** Tests **4292** (FAIL 0 / WARN 0 / SKIP 0),
+  unchanged from spec start, which is the expected result: R4.1 forbade any behaviour change and none
+  happened. `R CMD check --as-cran` 0 errors / 0 warnings with the new vignette;
+  `dev/check-spec.R` passing for `datom-sets` (it does not gate this spec -- see the note in
+  `requirements.md`).
+
+  **`dev/e2e-solo-s3.R` got the same fixed-name treatment**, owner-approved, so both credentialed
+  scripts now pre-clean instead of accumulating orphans. It was the script that established the
+  timestamped pattern this spec moved away from, so leaving it behind would have left the older
+  convention as the one a reader copies.
+
+  **Four things harvested to `dev/engineering-notes.md`**, each with the incident that produced it:
+
+  | Lesson | Why it is not obvious |
+  |---|---|
+  | an offline stand-in cannot test the configuration it stands in for | the local-backend dry run caught a real design error in seconds **and** was structurally blind to the missing credential argument that killed the first real run -- because that was the line it replaced. The heuristic: whatever the stand-in had to change is what stays untested |
+  | timestamped test resources trade a loud failure for a quiet one | a name collision announces itself; an orphan repo does not. Fixed names plus delete-if-exists invert it, and give up only concurrent runs |
+  | macOS keychain access is per **binary** | so a dev script reading a keychain nags forever and cannot work under `Rscript` at all. Dev scripts read the environment only; getting secrets into it is the caller's business |
+  | teardown belongs in its own step, not a `finally` | the state a walk leaves is worth querying, and on a failure it is the state needed to understand the failure -- which the old shape destroyed on the way out |
+
+  **One convention added** (`.github/copilot-instructions.md` rule 7a): NEWS states what changed,
+  whether it breaks and what to do, with detail in roxygen or a vignette, and **never a citation to
+  `dev/` or `.kiro/`** because neither ships. That clause exists because the previous spec satisfied its
+  documentation requirement by writing to two `.Rbuildignore`d files, and it took a user asking where the
+  vignette was to notice.
+
+  **Two deferrals, both filed with issues** per the lifecycle step added in the last spec: the
+  cross-study pooled-product vignette (Case B), and generalising `dev/check-spec.R`, which gives a
+  **false pass** against any spec but the one it was written for -- it matched this spec's `AC1`-`AC12`
+  against tests belonging to another spec's criteria of the same numbers and reported 8 of 12 covered
+  when none were.
+
+  **Two criteria close on weaker evidence than the rest, and both are named rather than glossed.** AC2
+  (a failed claim exits non-zero) was demonstrated offline rather than against S3 -- shared exit path, so
+  the risk is low, but it is not the same evidence. AC4 (a clear failure on missing credentials) **was**
+  verified in the end, incidentally: removing the AWS variables made the script refuse before creating
+  anything, which is the guard firing for real.
+
+---
+
+## Decisions
+
+Record decisions as they are made, so a fresh session does not relitigate them.
+
+| Date | Decision | Where |
+|---|---|---|
+| 2026-09-21 | **Spec created, cut from `dev` rather than continuing on `spec/datom-sets`.** That branch is merged, its PR is closed, and its records describe a finished spec; new commits on it would produce a PR whose diff is already-merged commits plus new ones. The branch itself is **kept** rather than deleted, at the owner's request, to avoid an accidental loss -- it can go later, and every commit on it is reachable from `dev`'s merge commit either way. | this file |
+| 2026-09-21 | **One spec covering all three gaps rather than three specs.** They chain: the credentialed run produces the transcripts the vignette shows, and the vignette is the destination NEWS needs before anything can be cut. Splitting them would let the NEWS work start first, which is the one ordering that produces confidently wrong documentation. | `design.md` 2 |
+| 2026-09-21 | **The vignette's chunks stay `eval = FALSE`, matching the existing six.** It keeps credentials out of the build and raises no CRAN problem -- at the cost that nothing verifies the output shown, which is why observed-run provenance is a requirement (R2.4) rather than a preference. Evaluating against a local backend was considered and rejected: the vignette's subject is the storage-only reader and the real entry path, which a local fixture cannot show, so it would quietly demonstrate something narrower than it claims. | `design.md` 4.3, 8 |

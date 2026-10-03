@@ -2,7 +2,7 @@
 % Please edit documentation in R/query.R
 \name{datom_get_lineage}
 \alias{datom_get_lineage}
-\title{Get Lineage for a Table}
+\title{Show a Table's Original Sources or Direct Inputs}
 \usage{
 datom_get_lineage(conn, name, version = NULL, depth = c("source", "parents"))
 }
@@ -24,12 +24,16 @@ For \code{depth = "parents"}: list of parent entries (each with \code{source},
 \code{table}, \code{version}, \code{data_sha}), or \code{NULL} if no lineage is recorded.
 }
 \description{
-Reads lineage metadata for a table. Depending on \code{depth}, returns either
-the pre-computed transitive source list (\code{source_lineage}) or the immediate
-parent list (\code{parents}). Both fields are stored flat in the table's
-metadata -- no walking or cross-project resolution is performed.
+Answers "where did this table come from?" from the table's own record. By
+default (\code{depth = "source"}) it lists the original imported tables at the
+start of the chain, skipping the tables in between; \code{depth = "parents"}
+lists only its direct inputs, one step back. Works for any version, and with
+reader connections.
 }
 \details{
+It needs access to this table's project only, not to the projects its
+sources live in.
+
 The two fields answer different questions:
 \itemize{
 \item \code{"source"}: "what raw datasets does this table ultimately depend on?"
