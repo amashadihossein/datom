@@ -19,3 +19,7 @@ dev/archive/
 # feature branch can sweep it in via `git add .`. See dev/README.md, "CRAN-SUBMISSION".
 # Deliberate exception, if ever needed: `git add -f CRAN-SUBMISSION`.
 /CRAN-SUBMISSION
+
+# Working notes and reports written by coding agents (e.g. pre-submission check
+# reports). Not project history, and excluded from the package build too.
+/.agents/
