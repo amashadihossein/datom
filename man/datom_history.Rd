@@ -13,16 +13,19 @@ datom_history(conn, name, n = 10, short_hash = FALSE)
 
 \item{n}{Maximum number of versions to return. Default 10.}
 
-\item{short_hash}{If TRUE (default), truncates version and data SHA
-columns to 8 characters for readability. Set to FALSE for full hashes.}
+\item{short_hash}{If TRUE, truncates version and data SHA columns to 8
+characters for readability. Default FALSE, so the \code{version} column can be
+passed straight to \code{\link[=datom_read]{datom_read()}}.}
 }
 \value{
 Data frame with columns: version, data_sha, timestamp, author,
 commit_message, commit_sha.
 }
 \description{
-Shows version history for a table by reading \code{version_history.json}
-from S3. Returns the most recent \code{n} versions.
+Returns the versions of a table or set, newest first (the 10 most recent by
+default): when each was saved, by whom, and with what message. Pass a value
+from the \code{version} column to \code{\link[=datom_read]{datom_read()}}, or to \code{\link[=datom_get_set]{datom_get_set()}} for a
+set, to read that version back.
 }
 \section{A version is content, not code}{
 

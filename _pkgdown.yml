@@ -25,6 +25,11 @@ navbar:
       href: https://github.com/amashadihossein/datom
 
 reference:
+  - title: "Key terms"
+    desc: "What datom's words mean: project, store, connection, table, version, set"
+    contents:
+      - datom-package
+
   - title: "Connection & Setup"
     desc: "Create connections, initialize repositories"
     contents:

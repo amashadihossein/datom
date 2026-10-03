@@ -120,7 +120,7 @@
 }
 
 
-#' Start assembling a set
+#' Start Assembling a Set
 #'
 #' Returns an empty set, to be filled in with [datom_add_member()] and written
 #' with [datom_write_set()]:
@@ -309,7 +309,7 @@ datom_assemble_set <- function(conn, name = NULL, tags = NULL) {
 }
 
 
-#' Add one member to a set
+#' Add One Member to a Set
 #'
 #' Declares one member and appends it to a set -- an empty one from
 #' [datom_assemble_set()] or one read back with [datom_get_set()] -- validating

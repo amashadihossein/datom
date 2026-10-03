@@ -2,7 +2,7 @@
 % Please edit documentation in R/set-draft.R
 \name{datom_assemble_set}
 \alias{datom_assemble_set}
-\title{Start assembling a set}
+\title{Start Assembling a Set}
 \usage{
 datom_assemble_set(conn, name = NULL, tags = NULL)
 }

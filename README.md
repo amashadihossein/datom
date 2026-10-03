@@ -12,7 +12,7 @@ experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](h
 coverage](https://codecov.io/gh/amashadihossein/datom/graph/badge.svg)](https://app.codecov.io/gh/amashadihossein/datom)
 <!-- badges: end -->
 
-## A right-sized foundation for versioned, traceable data
+## A Unified Framework for Versioned, Traceable Tabular Data
 
 Analytical work depends on data that continues to change. A single
 project may involve dozens or hundreds of tables, with further tables

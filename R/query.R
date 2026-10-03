@@ -27,11 +27,11 @@
 }
 
 
-#' List Available Artifacts
+#' List the Tables and Sets in a Project
 #'
-#' Lists artifacts from the data store's manifest. Reads
-#' `.metadata/manifest.json` and returns a data frame with one row per
-#' artifact, typed by `kind`.
+#' Returns one row per table and set in the project, with its current version
+#' and when it was last updated. Works with both developer and reader
+#' connections.
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param pattern Optional glob pattern for filtering table names.
@@ -134,8 +134,10 @@ datom_list <- function(conn,
 
 #' Show Version History
 #'
-#' Shows version history for a table by reading `version_history.json`
-#' from S3. Returns the most recent `n` versions.
+#' Returns the versions of a table or set, newest first (the 10 most recent by
+#' default): when each was saved, by whom, and with what message. Pass a value
+#' from the `version` column to [datom_read()], or to [datom_get_set()] for a
+#' set, to read that version back.
 #'
 #' @section A version is content, not code:
 #'
@@ -169,8 +171,9 @@ datom_list <- function(conn,
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
 #' @param n Maximum number of versions to return. Default 10.
-#' @param short_hash If TRUE (default), truncates version and data SHA
-#'   columns to 8 characters for readability. Set to FALSE for full hashes.
+#' @param short_hash If TRUE, truncates version and data SHA columns to 8
+#'   characters for readability. Default FALSE, so the `version` column can be
+#'   passed straight to [datom_read()].
 #'
 #' @return Data frame with columns: version, data_sha, timestamp, author,
 #'   commit_message, commit_sha.
@@ -340,12 +343,16 @@ datom_get_parents <- function(conn, name, version = NULL) {
 }
 
 
-#' Get Lineage for a Table
+#' Show a Table's Original Sources or Direct Inputs
 #'
-#' Reads lineage metadata for a table. Depending on `depth`, returns either
-#' the pre-computed transitive source list (`source_lineage`) or the immediate
-#' parent list (`parents`). Both fields are stored flat in the table's
-#' metadata -- no walking or cross-project resolution is performed.
+#' Answers "where did this table come from?" from the table's own record. By
+#' default (`depth = "source"`) it lists the original imported tables at the
+#' start of the chain, skipping the tables in between; `depth = "parents"`
+#' lists only its direct inputs, one step back. Works for any version, and with
+#' reader connections.
+#'
+#' It needs access to this table's project only, not to the projects its
+#' sources live in.
 #'
 #' The two fields answer different questions:
 #' - `"source"`: "what raw datasets does this table ultimately depend on?"

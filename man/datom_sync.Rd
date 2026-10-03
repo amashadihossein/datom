@@ -2,7 +2,7 @@
 % Please edit documentation in R/sync.R
 \name{datom_sync}
 \alias{datom_sync}
-\title{Sync Files to datom Repository}
+\title{Bring New and Changed Files Into a Project}
 \usage{
 datom_sync(
   conn,
@@ -48,13 +48,14 @@ its \code{datom_edits} attribute. Its \code{version} and \code{data_sha} are emp
 any row was applied.
 }
 \description{
-Processes new/changed files from a manifest produced by
-\code{\link[=datom_sync_manifest]{datom_sync_manifest()}}. Imports each file via \code{rio::import()}, converts to
-a data frame, and calls \code{\link[=datom_write]{datom_write()}} to store as parquet in S3 with git
-metadata. Updates the local \code{.datom/manifest.json} after each successful
-write.
+Takes the preview from \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} and saves each new or changed
+file as a version of a table named after the file; unchanged files are
+skipped. This is the usual way to bring files into datom. To save a data
+frame you built in R, use \code{\link[=datom_write]{datom_write()}}.
 }
 \details{
+Reading files needs the rio package (\code{install.packages("rio")}).
+
 Rows flagged \code{"unsupported_format"} by \code{\link[=datom_sync_manifest]{datom_sync_manifest()}} are reported
 as \code{result = "error"} with the recourse in the \code{error} column; the rest of
 the batch still processes.

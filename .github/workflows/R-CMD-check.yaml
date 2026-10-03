@@ -104,6 +104,17 @@ jobs:
         if: needs.changes.outputs.code == 'true' && matrix.config.os == 'ubuntu-latest' && matrix.config.r == 'release'
         run: git config --global init.defaultBranch main
 
+      # GitHub's Windows runners set core.autocrlf = true system-wide, so git
+      # (and libgit2, which git2r wraps) rewrites the \r\n that writeLines()
+      # produces on Windows to \n when a fixture file is added. CRAN's and
+      # win-builder's Windows machines do not, which is how three 0.2.0 tests
+      # passed here and failed on win-builder. Turning it off for the user (a
+      # higher-precedence level than the system setting) makes this leg behave
+      # like CRAN's. Runs after checkout, so only test fixtures are affected.
+      - name: Match CRAN's Windows line-ending behaviour for git
+        if: needs.changes.outputs.code == 'true' && runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
       - uses: r-lib/actions/check-r-package@v2
         if: needs.changes.outputs.code == 'true'
         with:

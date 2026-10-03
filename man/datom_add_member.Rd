@@ -2,7 +2,7 @@
 % Please edit documentation in R/set-draft.R
 \name{datom_add_member}
 \alias{datom_add_member}
-\title{Add one member to a set}
+\title{Add One Member to a Set}
 \usage{
 datom_add_member(x, member, version = NULL, tags = NULL, conn = NULL)
 }

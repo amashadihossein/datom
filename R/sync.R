@@ -513,11 +513,15 @@ datom_pull <- function(conn) {
 }
 
 
-#' Scan and Prepare Manifest for Sync
+#' Preview What a Sync Will Change
 #'
-#' Scans a flat `input_files/` directory and computes file SHAs. Compares
-#' against the current `.datom/manifest.json` to detect new or changed files.
-#' Returns a manifest data frame for review before calling [datom_sync()].
+#' Looks at the files in the project's `input_files/` folder and returns one
+#' row per file, saying whether it is new, changed, unchanged since it was last
+#' synced, or in a format datom cannot read. Nothing is written. Review the
+#' result, drop any rows you do not want, then pass it to [datom_sync()].
+#'
+#' A file counts as changed when its bytes differ from the file last synced
+#' under that name.
 #'
 #' Files whose format is outside datom's ingestion allowlist (flat tabular
 #' formats only) are flagged `"unsupported_format"` up front, without blocking
@@ -762,13 +766,14 @@ datom_sync_manifest <- function(conn,
 }
 
 
-#' Sync Files to datom Repository
+#' Bring New and Changed Files Into a Project
 #'
-#' Processes new/changed files from a manifest produced by
-#' [datom_sync_manifest()]. Imports each file via `rio::import()`, converts to
-#' a data frame, and calls [datom_write()] to store as parquet in S3 with git
-#' metadata. Updates the local `.datom/manifest.json` after each successful
-#' write.
+#' Takes the preview from [datom_sync_manifest()] and saves each new or changed
+#' file as a version of a table named after the file; unchanged files are
+#' skipped. This is the usual way to bring files into datom. To save a data
+#' frame you built in R, use [datom_write()].
+#'
+#' Reading files needs the rio package (`install.packages("rio")`).
 #'
 #' Rows flagged `"unsupported_format"` by [datom_sync_manifest()] are reported
 #' as `result = "error"` with the recourse in the `error` column; the rest of

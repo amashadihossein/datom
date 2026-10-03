@@ -1,6 +1,6 @@
 # Lineage helpers
 
-#' Union and deduplicate source_lineage lists
+#' Union and Deduplicate source_lineage Lists
 #'
 #' Takes a list of zero or more `source_lineage` lists and returns their
 #' deduplicated union. Each entry is a list with `project`, `table`, and
@@ -76,14 +76,20 @@ datom_lineage_union <- function(lineages) {
 
 # --- Parent constructor --------------------------------------------------
 
-#' Declare a parent for lineage
+#' Name an Input for a Table You Are About to Write
 #'
-#' Resolves a parent table against a single project connection and returns a
-#' pure-data lineage record. The parent's authoritative `data_sha` and its
-#' `source_lineage` are read from the parent's own versioned metadata
-#' snapshot at `{table}/.metadata/{version}.json`; a caller cannot supply or
-#' override `data_sha` (there is no `data_sha` parameter). The returned
-#' record retains no live connection and is serializable as plain data.
+#' Use before [datom_write()] when the table you are writing was made from other
+#' datom tables. Each call names one input -- one table at one exact version --
+#' and returns a note that [datom_write()] saves with the new table, so its
+#' [lineage][datom-package] records what it was made from. For several inputs,
+#' make one call each and pass them together as a list to `parents`. If the
+#' inputs are members of a set, pass the set as `x` and name several tables at
+#' once; each gets the version the set pins.
+#'
+#' The parent's data fingerprint is read from the parent's own saved record; you
+#' cannot supply it, so a lineage entry cannot claim data the parent never had.
+#' The record is plain data with no connection inside, so it can be saved and
+#' reused.
 #'
 #' Same-project and cross-project parents are declared identically -- the
 #' only difference is which connection is passed. `source` is always derived

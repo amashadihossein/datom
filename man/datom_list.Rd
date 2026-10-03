@@ -2,7 +2,7 @@
 % Please edit documentation in R/query.R
 \name{datom_list}
 \alias{datom_list}
-\title{List Available Artifacts}
+\title{List the Tables and Sets in a Project}
 \usage{
 datom_list(conn, pattern = NULL, include_versions = FALSE, short_hash = TRUE)
 }
@@ -21,9 +21,9 @@ Data frame with artifact info (name, kind, current_version,
 last_updated, etc.).
 }
 \description{
-Lists artifacts from the data store's manifest. Reads
-\code{.metadata/manifest.json} and returns a data frame with one row per
-artifact, typed by \code{kind}.
+Returns one row per table and set in the project, with its current version
+and when it was last updated. Works with both developer and reader
+connections.
 }
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a

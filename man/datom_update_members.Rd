@@ -2,7 +2,7 @@
 % Please edit documentation in R/set-edit.R
 \name{datom_update_members}
 \alias{datom_update_members}
-\title{Repoint a set's members at newer versions}
+\title{Repoint a Set's Members at Newer Versions}
 \usage{
 datom_update_members(
   x,

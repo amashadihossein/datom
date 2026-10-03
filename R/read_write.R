@@ -1,15 +1,16 @@
 #' Read a datom Table
 #'
-#' Unified read function with dispatch via `dispatch.json`. Reads from S3
-#' metadata cache for data readers.
+#' Returns a table as a data frame: the current version by default, or a past
+#' version when you pass `version` (copy it from [datom_history()]). Works with
+#' both developer and reader connections. To read a set, use [datom_get_set()].
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param name Table name.
 #' @param version Optional metadata_sha (datom version). If NULL, uses current.
-#' @param context Optional context for dispatch (e.g., "default", "cached").
-#' @param ... Additional parameters forwarded to routed function.
+#' @param context Reserved; currently ignored.
+#' @param ... Reserved; currently ignored.
 #'
-#' @return Data frame or routed function result.
+#' @return A data frame.
 #' @export
 #'
 #' @examples
@@ -1050,9 +1051,13 @@ datom_read <- function(conn,
 }
 
 
-#' Write a datom Table
+#' Save a Data Frame as a datom Table
 #'
-#' Writes data to a datom repository. Commits to git, pushes, and syncs to S3.
+#' Saves a data frame as a new version of a named [table][datom-package]: the
+#' data goes to storage, and a record of the change is committed and pushed to
+#' the project's GitHub repository. If nothing has changed since the last
+#' version, nothing is saved. To bring in files rather than data frames, use
+#' [datom_sync()].
 #'
 #' @param conn A `datom_conn` object from [datom_get_conn()].
 #' @param data Data frame to write. If NULL with name, does metadata-only sync.

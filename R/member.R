@@ -419,7 +419,7 @@
 }
 
 
-#' Declare a member of a set
+#' Declare a Member of a Set
 #'
 #' Resolves one artifact version against a single project connection and returns
 #' a pure-data member record to pass to a set write. The record is a pointer:

@@ -2,7 +2,7 @@
 % Please edit documentation in R/conn.R
 \name{datom_init_repo}
 \alias{datom_init_repo}
-\title{Initialize a datom Repository}
+\title{Create a New datom Project}
 \usage{
 datom_init_repo(
   path = ".",
@@ -65,8 +65,12 @@ override leaves you believing you took a namespace over when you did not.
 Invisible TRUE on success.
 }
 \description{
-One-time setup for data developers. Creates folder structure, initializes
-git with remote, sets up configuration files, and pushes to S3.
+Run once to start a new \link[=datom-package]{project}. It creates the project
+folder (including an \verb{input_files/} folder for files you want to bring in),
+sets up git, pushes a first commit to GitHub -- creating the GitHub
+repository if \code{create_repo = TRUE} -- and records the new, empty project in
+storage. The store must carry a GitHub token; to join a project that already
+exists, use \code{\link[=datom_clone]{datom_clone()}} instead.
 }
 \details{
 Initializes the \strong{data repository only}. The project is left as a solo

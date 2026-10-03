@@ -2,7 +2,7 @@
 % Please edit documentation in R/member.R
 \name{datom_member}
 \alias{datom_member}
-\title{Declare a member of a set}
+\title{Declare a Member of a Set}
 \usage{
 datom_member(conn, name, version, tags = NULL)
 }

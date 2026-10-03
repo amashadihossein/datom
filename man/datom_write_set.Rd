@@ -2,7 +2,7 @@
 % Please edit documentation in R/set.R
 \name{datom_write_set}
 \alias{datom_write_set}
-\title{Write a datom Set}
+\title{Save a Set as a New Version}
 \usage{
 datom_write_set(
   conn,
@@ -47,10 +47,10 @@ version), \code{member_count} (the count after normalisation), \code{action}
 (\code{"none"} or \code{"full"}) and \code{commit_sha}.
 }
 \description{
-Writes a \strong{set}: a versioned, citable, content-addressed collection of
-pointers at existing datom artifacts. A set holds no data of its own -- its
-payload is the member list plus text labels -- so writing one neither copies
-nor moves anything a member contains.
+Saves a \link[=datom-package]{set}: a named list of exact versions of tables (or
+other sets), plus labels, that you can cite with one version string. A set
+holds no data, so saving one copies nothing. Saving the same members and
+labels again creates no new version.
 }
 \details{
 One repo holds one set. The repo declares which, in \code{.datom/project.yaml}:

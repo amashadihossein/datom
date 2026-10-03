@@ -834,7 +834,12 @@ rv_tree_content <- function(repo, path, rev = "HEAD") {
     stop("rv_tree_content(): expected one entry at ", path, ", found ", nrow(row),
          call. = FALSE)
   }
-  git2r::content(git2r::lookup(repo, row$sha[[1L]]))
+  # writeLines() ends lines with \r\n on Windows, and git2r::content() splits on
+  # \n only, so a fixture line comes back as "changed\r" there -- unless git's
+  # core.autocrlf is set, as on GitHub's Windows runners but not on CRAN's or
+  # win-builder's. These tests assert which version was committed, not its line
+  # endings, so drop the \r.
+  sub("\r$", "", git2r::content(git2r::lookup(repo, row$sha[[1L]])))
 }
 
 

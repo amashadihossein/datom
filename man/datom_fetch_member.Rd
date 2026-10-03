@@ -2,7 +2,7 @@
 % Please edit documentation in R/set-members.R
 \name{datom_fetch_member}
 \alias{datom_fetch_member}
-\title{Fetch one member of a set}
+\title{Get the Data Behind One Member of a Set}
 \usage{
 datom_fetch_member(conn, x, member, tags = NULL, version = NULL)
 }
@@ -26,12 +26,14 @@ Whatever the member points at: a data frame for a \code{table} member, a
 \code{datom_set} for a \code{set} member.
 }
 \description{
-Resolves one member of a set to what it points at: a table member to its data,
-a set member to another set. It is the named route to the same resolution a
-member's own \verb{$fetch} link performs, and it goes through the same code -- so
-the two cannot drift.
+Returns what one \link[=datom-package]{member} of a set points at, at the exact
+version the set records: a data frame for a table, another set for a set.
+Name the member, as in \code{datom_fetch_member(conn, x, "dm")}, and pass a
+connection to that member's own project.
 }
 \details{
+\code{x$members[[i]]$fetch(conn)} does the same thing.
+
 This is kind dispatch at the \strong{member} level, which is the only level it
 belongs at. Iterating members, a caller cannot know each one's kind in advance;
 at the top level they named one artifact they chose, which is why

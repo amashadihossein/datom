@@ -2,7 +2,7 @@
 % Please edit documentation in R/set-edit.R
 \name{datom_remove_members}
 \alias{datom_remove_members}
-\title{Drop members from a set}
+\title{Drop Members from a Set}
 \usage{
 datom_remove_members(x, member = NULL, tags = NULL, version = NULL)
 }
