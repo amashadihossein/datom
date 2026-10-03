@@ -60,187 +60,149 @@ A unit of work is a **Kiro spec** under `.kiro/specs/{feature}/` (see Workflow m
 | Current work, tasks, decisions | `.kiro/specs/{feature}/` | Persists |
 | Implementation gotchas discovered | `dev/engineering-notes.md` | Persists |
 
-## Branching During CRAN Submission
+## Branching and Releases
 
-> **STATUS 2026-09-08 -- 0.1.1 IS RELEASED; 0.1.2 IS SUBMITTED AND AWAITING CRAN.** So the freeze
-> still holds, for the same reason it always did: if CRAN asks for another fix, `main` must reflect
-> exactly what they received. Verified state, so nobody has to re-derive it: `main` is at `cb60007`,
-> which is the commit submitted as 0.1.2; `dev` (`17a84ce`, in the `../datom-cran-depends` worktree) is
-> level with it; **`spec/datom-sets` is now AHEAD of both** -- it took the 0.1.2 fix via
-> `main -> dev -> spec/datom-sets` and has since accumulated Task 6's work, so "level with `main`" is
-> no longer true of it and a cold reader should take its head from `git log` rather than from this
-> line, which only claims to track `main` and `dev`;
-> tag `v0.1.1` exists on the remote at `1eaee26` with its GitHub release published; **no `v0.1.2` tag
-> or release yet, and there must not be one until CRAN accepts** -- the tag is created by the release
-> step, not by hand. `CRAN-SUBMISSION` for 0.1.2 sits untracked in the **`../datom-cran-fix`**
-> worktree, which is therefore the checkout that must publish the release and **must not be removed
-> before then**. The 0.1.1 acceptance ran in the documented order (publish first, then merge), and
-> the ordering hazards in "`CRAN-SUBMISSION`" below are what made that necessary -- they apply
-> unchanged to 0.1.2.
->
-> **What 0.1.2 was.** CRAN's check farm reported `tests` ERROR on four Linux flavors after accepting
-> 0.1.1: test fixtures hardcoded `refs/heads/master` when pushing to a throwaway remote, and
-> `git2r::init()` honours git's `init.defaultBranch`, so on a machine configured for any other name
-> the fixture pushed a branch that had never been created. 26 failures, all the same error, all
-> during setup. Test-only -- no `R/` file changed. Issues
-> [#106](https://github.com/amashadihossein/datom/issues/106) and
-> [#108](https://github.com/amashadihossein/datom/issues/108), PRs #107, #109, #110. **The step 3
-> route below (fix on `main`, rebuild, resubmit the same version) did NOT apply**, because a released
-> version cannot be resubmitted -- it needed a patch bump, which is now the precedent for any
-> post-acceptance defect.
->
-> **Three tools silently misbehave in a git worktree, where `.git` is a FILE rather than a
-> directory.** All three bit during the 0.1.2 fix and all three fail without saying anything, so
-> check for them rather than trusting a green run: `R CMD build` sweeps `.git` into the tarball
-> (fixed -- `^\.git$` is now in `.Rbuildignore`); `devtools::submit_cran()` skips writing
-> `CRAN-SUBMISSION` entirely, because `devtools:::uses_git()` is a directory test, and it also
-> swallows its own "don't forget to tag this release" reminder (the 0.1.2 record in
-> `../datom-cran-fix` was reconstructed by hand from the built tarball's timestamp and `main`'s head);
-> and the `.gitignore` rule for `CRAN-SUBMISSION` exists **only on `spec/datom-sets`**, so on a
-> `main` checkout the artifact is untracked and unignored -- never `git add .` there. See
-> `dev/engineering-notes.md`.
->
-> **OWNER INTENT, stated 2026-09-01: `dev` becomes PERMANENT.** The target pattern is
-> `feature -> dev -> main`, with `dev` as the testing ground / alpha source rather than a
-> submission-freeze device. So **"delete the `dev` branch" in Acceptance step 4 is ON HOLD** -- do not
-> run it. The rest of this section still describes how things work today and stays until the new
-> pattern is designed and written down (release cadence, what `main` means when it is no longer the
-> only long-lived branch, and where pkgdown deploys from are the parts that need deciding, not just
-> the branch names).
->
-> **WHAT IS ON `dev` AND NOT ON `main` CHANGED IN KIND ON 2026-09-21, and the next release plan has to
-> account for it.** Until then it was documentation-only: a derived-columns section in
-> `vignettes/design-version-shas.Rmd` (the only one that ships in the package), this branching section,
-> a 3-line specification correction, a 1-line conventions edit, and the 0.1.2 bookkeeping in this
-> block. `dev` now also carries the **whole `datom-sets` feature** -- thirteen new exports, a second
-> artifact kind, and a **breaking** change to the manifest's artifact list, plus the
-> forward-compatibility machinery that makes that rename survivable. So `dev` is no longer a
-> documentation delta ahead of a released `main`; it is the next release. Two consequences worth
-> writing down rather than rediscovering: the version on `dev` is **0.2.0** (bumped 2026-09-29 at the
-> close of `set-sync-ergonomics`, a minor bump because sets are a new artifact kind and the manifest
-> rename breaks older readers), and `NEWS.md` is headed `# datom 0.2.0`, while `cran-comments.md`
-> still describes the 0.1.2 submission and is rewritten when the next one is prepared; and the
-> breaking manifest change means the release notes' upgrade
-> warning is aimed at a real population -- everyone sharing a repo has to upgrade before anyone writes
-> to it.
->
-> **`main` is protected and takes only PRs**, enforced for admins, with `ubuntu-latest (release)` and
-> `pkgdown` as required status checks (strict). This was verified rather than assumed during the
-> 0.1.2 fix, so a "commit the fix directly on `main`" reading of step 3 below is not available in
-> practice -- use a short-lived branch and a PR. A related permission limit worth knowing before
-> planning any CI change: pushing anything under `.github/workflows/` needs a token scope that also
-> grants the ability to rewrite CI, and CI runs with repository secrets, so that scope was
-> deliberately **not** acquired. Workflow edits go through GitHub's web editor, which authenticates
-> with the browser session instead (that is how #109 landed).
+(Called "Branching During CRAN Submission" until 2026-10-03; older specs cite it by that name. The
+temporary-`dev` freeze model it used to describe was retired after 0.2.0 shipped.)
 
-When a version has been submitted to CRAN and is awaiting acceptance, we freeze
-`main` and develop on a long-lived `dev` branch.
-
-### Why
-
-If CRAN requests a surgical fix, we need `main` to reflect exactly what was
-submitted so the fix can be applied cleanly and resubmitted without dragging in
-unrelated work. Meanwhile, feature development continues on `dev` as the
-single aggregation point.
+Two long-lived branches. **`main` is never ahead of `dev`.**
 
 ### Branch roles
 
-| Branch | Purpose | Who merges into it |
-|--------|---------|-------------------|
-| `main` | Frozen at the submitted state. pkgdown deploys from here. `install_github()` installs from here. | Only: (a) CRAN-requested fixes, or (b) `dev` merge after acceptance. |
-| `dev` | Aggregator for ongoing work while submission is in flight. | Feature branches PR into `dev`. |
-| `issue-{N}-*` / `spec/*` | Feature branches, same as before. | PR into **`dev`** (not `main`) during submission freeze. |
+| Branch | What it is | What merges into it |
+|--------|-----------|---------------------|
+| `main` | Matches what is on CRAN. pkgdown deploys from it; `install_github()` installs from it. Changes only when a release is prepared or CRAN needs a fix. | PRs only: `dev` -> `main` (merge commit) for a release, or a hotfix branch when `dev` is ahead (see Hotfix). |
+| `dev` | Permanent. The latest work, for beta testing. Every change goes through it. Not protected. | Feature, spec and release-prep branches, by PR (squash or merge). And `main` itself: fast-forwarded to `main` after every release, `main` merged in after a hotfix made while `dev` was ahead. |
+| `issue-{N}-*` / `spec/*` / release-prep | Short-lived working branches. | Branch off `dev`, PR into `dev`, delete after merge. Sole exception: the hotfix made while `dev` is ahead branches off `main` (see Hotfix). |
+
+**`main` is protected and takes only PRs**, enforced for admins, with `ubuntu-latest (release)` and
+`pkgdown` as required status checks (strict). So nothing is ever committed directly on `main`; even a
+hotfix goes through a short-lived branch and a PR.
 
 ### Workflow
 
-1. **Normal development (no pending submission):** feature branches off `main`,
-   PR into `main`. The `dev` branch does not exist or is deleted.
+1. **General development.** Branch off `dev`, PR into `dev` (squash or merge is fine), repeat.
 
-2. **Submission pending:**
-   - `dev` is created off `main` at the submitted commit.
-   - Feature branches branch off `dev` and PR into `dev`.
-   - `main` is not touched unless CRAN requests a fix.
+2. **Release.**
+   - Release-prep branch off `dev` (version bump, `NEWS.md`, `cran-comments.md`), PR into `dev`.
+   - Pre-submission checks. `devtools::check_win_devel()` uploads the built source to
+     win-builder.r-project.org and emails the maintainer: **ask the maintainer before each upload.**
+     GitHub's Windows runners set `core.autocrlf=true` while CRAN's and win-builder's do not, so
+     `R-CMD-check.yaml` pins `core.autocrlf false` on its Windows leg; before that pin, the 0.2.0
+     win-builder run caught 3 test failures CI had hidden.
+   - PR `dev` -> `main`, merged with a **merge commit, not a squash**. A squash leaves `main` with a
+     commit `dev` lacks, so the next `dev` -> `main` PR shows hundreds of already-merged commits as
+     new.
+   - **Close the gap at once.** After the merge, `main` is one merge commit ahead of `dev` with
+     identical files. Fast-forward `dev` to it, so "`main` is never ahead of `dev`" holds literally:
+     `git fetch origin && git push origin origin/main:dev` (done for 0.2.0 on 2026-10-03).
+   - Submit from `main` (see "Submitting" below).
 
-3. **CRAN requests a fix:**
-   - Fix is committed directly on `main` (or via a short-lived branch off
-     `main`).
-   - Rebuild tarball from `main`, resubmit.
-   - Merge the fix into `dev` so they don't diverge:
-     `git checkout dev && git merge main`.
+3. **Hotfix** (e.g. CRAN asks for a fix). A released version cannot be resubmitted, so a fix after
+   acceptance needs a patch bump (the 0.1.2 precedent: test fixtures hardcoded
+   `refs/heads/master`, [#106](https://github.com/amashadihossein/datom/issues/106),
+   [#108](https://github.com/amashadihossein/datom/issues/108)).
+   - **`dev` and `main` in sync:** branch off `dev`, fix, PR into `dev`, then PR `dev` -> `main`
+     (merge commit), fast-forward `dev`, submit -- the same as a release.
+   - **`dev` ahead of `main`:** branch off **`main`**, fix, PR into `main`, submit, then **merge
+     `main` into `dev`** so `dev` is never behind (done after 0.1.2: `17a84ce`, "Merge branch 'main'
+     into dev"). This is the one case where work branches off `main`.
+   - **Interrupted mid-feature?** Commit the work in progress on its feature branch (push it if you
+     like), or `git stash -u`, then `git switch main` in `datom`. The hotfix gets its own branch, so
+     a second working folder is not needed -- and one breaks submitting (see "Why the primary
+     clone" below). The 0.1.2 fix used `../datom-cran-fix` although `datom` had a clean tree at the
+     time; no reason was recorded, and switching would have worked.
 
-4. **Acceptance:**
-   - **Publish the release FIRST, before merging** -- `usethis::use_github_release()` from a
-     `main` checkout that still has the `CRAN-SUBMISSION` artifact beside it. Order matters:
-     see "CRAN-SUBMISSION" below for why doing it after the merge can silently tag the wrong
-     commit.
-   - Merge `dev` into `main`: `git checkout main && git merge dev`.
-   - ~~Delete the `dev` branch (local + remote).~~ **ON HOLD as of 2026-09-01 -- do not run this.**
-     See the STATUS block at the top of this section: `dev` is becoming permanent.
-   - ~~Resume normal workflow (feature branches off `main`).~~ Same hold: the target is
-     `feature -> dev -> main`.
+4. **Submitting.** **Only from the primary `datom` clone, never from a git worktree** (see "Why the
+   primary clone" below). `devtools::submit_cran()` asks questions that cannot be answered under
+   `Rscript`, so the maintainer runs it in an interactive R session.
+   - In `datom`: `git switch main`; the tree must be clean and match `origin/main`.
+   - Make sure no stale `CRAN-SUBMISSION` is lying in the folder from an earlier release (see the
+     section below); `submit_cran()` overwrites it, but only if it gets as far as writing one.
+   - `devtools::submit_cran()`, then click the confirmation link in CRAN's email.
+   - Confirm the record: `read.dcf("CRAN-SUBMISSION")` must show the new version and `main`'s SHA
+     (`git rev-parse main`). Add a row to the record table below.
+   - `git switch dev`. The file is gitignored and `.Rbuildignore`d, so it stays in the folder across
+     the switch until the release step consumes it.
+
+5. **Acceptance.** In the same `datom` folder:
+   - `git switch main`, then `usethis::use_github_release()`. It reads `CRAN-SUBMISSION`, creates the
+     tag and GitHub release through the GitHub API at the recorded SHA with the `NEWS.md` section as
+     notes, and deletes `CRAN-SUBMISSION`. It first runs `git push` of the current branch whenever
+     local is not behind the remote; with `main` identical to `origin/main` that push has nothing to
+     send, and it was not blocked by branch protection on 2026-10-03.
+   - If `dev` is not already level with `main`, fast-forward it (`git push origin origin/main:dev`),
+     then `git switch dev`.
+
+**Why the primary clone.** `devtools::submit_cran()` (devtools 2.4.6) writes `CRAN-SUBMISSION` only
+if `.git` is a **directory**: the writing step, `devtools:::flag_release()`, begins
+`if (!uses_git(pkg$path)) return(invisible())`, and `uses_git()` is
+`dir_exists(path(path, ".git"))`. In a worktree `.git` is a file, so the step exits silently -- no
+record, and no "don't forget to tag this release" reminder either, since that message sits one line
+above the write. The upload itself is unaffected. This happened for **both 0.1.2 and 0.2.0** (both
+submitted from `../datom-cran-fix`), and both records were rewritten by hand. Other tools that
+misbehave in a worktree are listed in `dev/engineering-notes.md`.
 
 ### Constraints
 
-- **pkgdown** always deploys from `main`. Vignette previews during development
-  require a local build (`pkgdown::build_site()`).
-- **GitHub default branch** stays `main` — this is what `install_github()`
-  resolves and what new clones check out.
-- **`CRAN-SUBMISSION`** is an untracked, transient artifact -- see the next section. (An earlier
-  version of this line said it "on `main` records the submitted SHA", which was never true: the
-  file has never been committed on any branch.)
+- **pkgdown** always deploys from `main`. Vignette previews of `dev` work need a local build
+  (`pkgdown::build_site()`).
+- **GitHub default branch** stays `main` -- this is what `install_github()` resolves and what new
+  clones check out.
+- **Workflow files can be pushed from the command line.** The branch for #123, which edits
+  `.github/workflows/R-CMD-check.yaml`, was pushed with plain `git push` on 2026-10-03 and accepted.
+  (An earlier note here said such pushes needed GitHub's web editor; #109 did land that way, but the
+  restriction did not hold on 2026-10-03.)
+- **`CRAN-SUBMISSION`** is an untracked, transient artifact that has never been committed on any
+  branch -- see the next section.
 
 ### `CRAN-SUBMISSION`
 
 **What it is.** `devtools::submit_cran()` writes it next to `DESCRIPTION`, recording the version,
 the submission timestamp, and the SHA of the commit that was submitted. It is a **handoff
 artifact**, not a record meant to live in the repo: `usethis::use_github_release()` reads it to
-populate the release notes and **deletes it on success**. The durable record of a submission is
+populate the release and **deletes it on success**. The durable record of a submission is
 therefore the **GitHub release and its tag**, which point at the submitted commit.
 
 **Rules.**
 
 - **Never committed.** It is in `.gitignore` (and `.Rbuildignore`), so no branch can sweep it into
-  a commit via `git add .`. Nothing is lost by that, because it was never tracked in the first
-  place and the release is the real record. Deliberate exception if one is ever wanted:
-  `git add -f`.
-- **Written only by `devtools::submit_cran()` run from `main`**, which is the only branch whose
-  tree matches what CRAN received. Never hand-edited, never regenerated from a feature branch.
+  a commit via `git add .`. Nothing is lost by that, because the release is the real record.
+  Deliberate exception if one is ever wanted: `git add -f`.
+- **Written only by `devtools::submit_cran()` run from `main` in the primary clone**, which is the
+  only branch whose tree matches what CRAN received. Not hand-edited, except to repair a record that
+  `submit_cran()` failed to write (as for 0.1.2 and 0.2.0); never regenerated from a feature branch.
 - **Never deleted by hand** while a submission is pending -- `use_github_release()` removes it as
   part of publishing.
 
 **Two hazards, both silent.**
 
-1. **Absent file means "HEAD is the submitted state".** usethis says so explicitly: with no
-   `CRAN-SUBMISSION` present it assumes the current SHA, version, and NEWS *are* the submitted
-   ones. Run `use_github_release()` after merging `dev` into `main` and the release names the
-   **merge commit** rather than the commit CRAN actually received. Hence the ordering in
-   Acceptance step 4: publish, then merge.
-2. **The artifact lives in whichever working directory `submit_cran()` ran in**, and that is not
-   necessarily where `main` is checked out later. If it is missing at release time, check other
-   worktrees (`git worktree list`) before assuming it was never created -- and cross-check the SHA
-   against the record below.
+1. **Absent file means "HEAD is the submitted state".** With no `CRAN-SUBMISSION` present,
+   `use_github_release()` assumes the current SHA, version, and `NEWS.md` *are* the submitted ones.
+   Under this model `main` is merged before submission and does not move until the next release, so
+   running it on `main` with the file missing still tags the right commit -- but only if `main` has
+   not moved since submission and you are actually on `main`. Run it from `dev`, or after a later
+   merge into `main`, and it tags the wrong commit. If the file is missing, check `git rev-parse main`
+   against the record table below before running it.
+2. **A stale file is worse than a missing one.** The artifact lives in whichever folder
+   `submit_cran()` ran in, and it survives branch switches. If an earlier release's file is still
+   there (because a later `submit_cran()` ran elsewhere and wrote nothing here),
+   `use_github_release()` tags the **old** version's SHA. Before running it, `read.dcf("CRAN-SUBMISSION")`
+   must show the version being released.
 
-**Record for the pending 0.1.1 submission** (belt to the artifact's braces, since the artifact
-is untracked by design and this file is not):
+**Record of submissions** (belt to the artifact's braces, since the artifact is untracked by design
+and this file is not). Add a row at each submission. All three below are **historical**: each
+artifact has been consumed and the tag is the durable record.
 
-| Version | Submitted (UTC) | SHA | Artifact location |
+| Version | Submitted (UTC) | SHA | Artifact |
 |---|---|---|---|
-| 0.1.1 | 2026-08-21 23:39:19 | `1eaee2660f9d4d19d0d5fec979bba4617a1bc776` (`main` head, "Declare Depends: R (>= 4.1.0) explicitly (#99)") | consumed 2026-09-07 by `use_github_release()`; durable record is tag `v0.1.1` |
-| 0.1.2 | 2026-09-08 04:11:41 | `cb60007f59c5274b8f816c6422ee5ca86e0ac5f3` (`main` head, "Correct the check-results section of cran-comments for 0.1.2 (#110)") | the `../datom-cran-fix` worktree, uncommitted -- **reconstructed by hand**, see below |
+| 0.1.1 | 2026-08-21 23:39:19 | `1eaee2660f9d4d19d0d5fec979bba4617a1bc776` (`main` head, "Declare Depends: R (>= 4.1.0) explicitly (#99)") | consumed 2026-09-07 by `use_github_release()`; tag `v0.1.1` |
+| 0.1.2 | 2026-09-08 04:11:41 | `cb60007f59c5274b8f816c6422ee5ca86e0ac5f3` (`main` head, "Correct the check-results section of cran-comments for 0.1.2 (#110)") | **hand-written** (submitted from the `../datom-cran-fix` worktree); tag `v0.1.2` |
+| 0.2.0 | 2026-10-03 19:29 (CRAN incoming 21:29 Vienna) | `6da9a64b8d8f32e2720cc4629100781de7ea0d0b` (`main` head, "Merge pull request #124 from amashadihossein/dev") | **hand-written** (submitted from the `../datom-cran-fix` worktree); accepted and on CRAN 2026-10-03; tag `v0.2.0` created by `use_github_release()` at that SHA |
 
-Add a row here at each submission. It costs one line and it is the thing that makes the release
-verifiable if the artifact goes missing.
-
-**It went missing for 0.1.2, which is why this table now earns its keep.** `submit_cran()` ran from a
-git **worktree**, and the step that writes the artifact (`devtools:::flag_release()`) begins
-`if (!uses_git(pkg$path)) return(invisible())` where `uses_git()` tests for a `.git` **directory**.
-In a worktree `.git` is a file, so the step exited silently -- no artifact, and no "don't forget to
-tag this release" reminder either, since that message sits one line above the write in the same
-function. The submission itself was unaffected; only the local bookkeeping was skipped. The 0.1.2
-record was rebuilt from `main`'s head (verified unmoved and level with `origin/main`) and the built
-tarball's mtime in the R temp directory, then confirmed parseable by `usethis:::get_release_data()`.
-**Check for the artifact after every `submit_cran()` run from a worktree**, or run the submission
-from a normal clone instead.
+How the 0.1.2 record was rebuilt, for the next time one goes missing: from `main`'s head (verified
+unmoved and level with `origin/main`) and the built tarball's mtime in the R temp directory, then
+confirmed parseable by `usethis:::get_release_data()`.
 
 ---
 
@@ -519,12 +481,12 @@ To support step-through debugging:
 
 Every spec gets its own feature branch:
 
-1. **Create branch**: `git checkout -b spec/{feature}` (from `main`)
+1. **Create branch**: `git checkout -b spec/{feature} dev` (from `dev`)
 2. **Develop on branch**: All commits for the spec go here
-3. **PR when complete**: Open a pull request to `main`
+3. **PR when complete**: Open a pull request into `dev` (releases reach `main` separately; see "Branching and Releases")
 4. **Merge + delete**: Squash-merge or merge, then delete the branch
 
-The spec is created/edited *on the branch* (not on `main`). Specs persist after merge — the
+The spec is created/edited *on the branch* (not on `dev` or `main`). Specs persist after merge — the
 Spec Completion Procedure does **not** delete them (this replaces the old phase-doc deletion).
 
 ### Git Commit Cadence
@@ -537,8 +499,8 @@ Within chunks (on the spec branch):
 
 Example:
 ```bash
-# Start the spec branch
-git checkout -b spec/store-relocate
+# Start the spec branch (off dev)
+git checkout -b spec/store-relocate dev
 
 # Within the first task
 git add R/remotes.R tests/testthat/test-remotes.R
@@ -547,9 +509,9 @@ git commit -m "store-relocate: datom_remotes_s3 constructor + validation"
 # More work...
 git commit -m "store-relocate: .datom_install_remotes + env var bridge"
 
-# Spec complete — PR to main
+# Spec complete — PR into dev
 git push -u origin spec/store-relocate
-# Open PR, merge, delete branch
+# Open PR into dev, merge, delete branch
 ```
 
 ## Maintenance Rules
@@ -584,7 +546,7 @@ When all of a spec's tasks are done, perform these steps **in order before start
    per step 1.
 
 4. **PR + merge + delete branch**:
-   - Open a PR from `phase/{n}-{name}` to `main`
+   - Open a PR from the spec branch (`spec/{feature}`; legacy `phase/{n}-{name}`) into `dev`
    - Merge (squash or regular)
    - Delete the feature branch (remote and local)
 
