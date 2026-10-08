@@ -1214,3 +1214,35 @@ refusing if the recorded code differs from the vignette's. Five things it taught
 
 Unresolved: under `Rscript` the runner finished, printed its result, and did not exit unless stdin
 was closed (`< /dev/null`). Sourcing from a session avoids it.
+
+### Tests without suggested packages: which tests need a guard, and where it goes
+
+CRAN's "noSuggests" check runs the tests with every Suggests package absent, including `git2r` and
+`rio`. Issue #92 found 47 failures there in 0.2.0. Reproduce from a built tarball (the `noSuggests`
+job in `R-CMD-check.yaml` runs the same thing):
+
+```
+_R_CHECK_DEPENDS_ONLY_=true _R_CHECK_FORCE_SUGGESTS_=false NOT_CRAN=false \
+  R CMD check --no-manual --no-vignettes --no-build-vignettes --ignore-vignettes datom_*.tar.gz
+```
+
+**Which tests fail is not the obvious set.** A test that calls `git2r::` itself already skips: on
+CRAN, testthat (>= 3.3.0, hence the floor in DESCRIPTION) turns a missing-package error into a skip.
+A test that reaches git or rio only **through a datom verb** fails, because datom's own
+`.datom_check_git2r()` / `.datom_check_rio()` stops with an ordinary error that testthat reports as a
+failure. So the guard belongs on tests that call datom, not on tests that call git2r -- the opposite
+of where it looks needed.
+
+**Where the guard goes.** Put `skip_if_no_git2r()` (in `helper-git.R`) in a fixture only when
+**every** caller of that fixture needs git; otherwise put it at the top of each test that does. A
+fixture guard on a shared fixture skips tests that would have passed -- for #92, guarding
+`create_test_datom_repo()` or `setup_gov_matrix_env()` would have dropped 6 passing tests. No
+file-level skips: `test-conn.R` would lose over a hundred passing tests. Some tests use no fixture
+at all (a verb checks git2r before validating its arguments), so a per-test guard is the only
+option for them.
+
+**Two settings that hide the problem.** `NOT_CRAN=true` (which `devtools::test()` and
+`r-lib/actions/setup-r` both set) disables the auto-skip, so about 660 direct-`git2r::` tests fail
+on a machine without git2r; that is accepted and out of scope, and the CI job pins `NOT_CRAN=false`
+for that reason. And `withr` cannot be absent when `setup.R` runs, because it is a hard Import of
+testthat -- a guard for its absence could never fire, so `setup.R` carries a comment instead.
