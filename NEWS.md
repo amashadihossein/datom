@@ -1,3 +1,10 @@
+# datom (development version)
+
+* The test suite now passes when suggested packages such as git2r and rio are not
+  installed, as in CRAN's "noSuggests" check (#92). Running the tests now needs
+  testthat 3.3.0 or later, which skips a test on CRAN when a package it needs is
+  missing.
+
 # datom 0.2.0
 
 This release adds a second kind of artifact -- a **set**, which is a citable list

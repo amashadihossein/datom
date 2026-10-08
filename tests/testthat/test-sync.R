@@ -749,6 +749,7 @@ test_that("Feature: datom-cv1, Property 16: manifest flags unsupported formats w
 })
 
 test_that("Feature: datom-cv1, Property 16: datom_sync reports the allowlist recourse and continues", {
+  skip_if_not_installed("rio")
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"

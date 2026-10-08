@@ -285,6 +285,7 @@ there (not here).
 - No `access.json` (renamed to `dispatch.json`)
 - No direct `.datom_s3_*()` calls from business logic (use `.datom_storage_*()` dispatch)
 - No phase/chunk numbers in `R/` source comments (e.g. `# Phase 7`, `# Chunk 3`) — they are meaningless to public readers. Use descriptive comments instead.
+- No unconditional use of a Suggests package (`git2r`, `rio`, `mockery`, `withr`, among others): `requireNamespace()` in `R/` and examples; in tests, `skip_if_no_git2r()` / `skip_if_not_installed()` for any test that reaches the package only **through datom**. The `noSuggests` CI job catches a miss. Where the guard goes: `dev/engineering-notes.md`, "Tests without suggested packages".
 
 ## Critical Thinking
 

@@ -38,6 +38,7 @@ test_that(".datom_gov_clone_open() opens a valid git repo", {
 })
 
 test_that(".datom_gov_clone_open() aborts when path is not a git repo", {
+  skip_if_no_git2r()
   dir <- withr::local_tempdir()
   expect_error(
     .datom_gov_clone_open(dir),
@@ -46,6 +47,7 @@ test_that(".datom_gov_clone_open() aborts when path is not a git repo", {
 })
 
 test_that(".datom_gov_clone_open() aborts when path does not exist", {
+  skip_if_no_git2r()
   expect_error(
     .datom_gov_clone_open("/nonexistent/path"),
     "Gov clone not found"
@@ -156,6 +158,7 @@ test_that(".datom_gov_clone_init() aborts when path exists with different remote
 })
 
 test_that(".datom_gov_clone_init() aborts when path exists but is not a git repo", {
+  skip_if_no_git2r()
   non_git_dir <- withr::local_tempdir()
   # Create a non-empty non-git directory
   writeLines("something", fs::path(non_git_dir, "file.txt"))

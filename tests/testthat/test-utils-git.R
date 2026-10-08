@@ -20,6 +20,7 @@ create_test_repo_with_commit <- create_test_repo
 # =============================================================================
 
 test_that(".datom_check_git2r succeeds when git2r is available", {
+  skip_if_no_git2r()
   # git2r is installed in dev environment
 
   expect_true(.datom_check_git2r())
@@ -49,6 +50,7 @@ test_that(".datom_git_author returns name and email from local config", {
 })
 
 test_that(".datom_git_author aborts on non-git directory", {
+  skip_if_no_git2r()
   dir <- withr::local_tempdir()
   expect_error(.datom_git_author(dir), "Not a git repository")
 })
@@ -250,6 +252,7 @@ test_that(".datom_git_branch returns branch name", {
 })
 
 test_that(".datom_git_branch aborts on non-git directory", {
+  skip_if_no_git2r()
   dir <- withr::local_tempdir()
   expect_error(.datom_git_branch(dir), "Not a git repository")
 })
@@ -351,6 +354,7 @@ test_that(".datom_git_commit returns HEAD SHA when files are unchanged", {
 })
 
 test_that(".datom_git_commit errors on non-git directory", {
+  skip_if_no_git2r()
   dir <- withr::local_tempdir()
   writeLines("x", file.path(dir, "file.txt"))
   expect_error(.datom_git_commit(dir, "file.txt", "Nope"), "Not a git repository")
@@ -505,6 +509,7 @@ test_that(".datom_git_push aborts when no remote configured", {
 })
 
 test_that(".datom_git_push aborts on non-git directory", {
+  skip_if_no_git2r()
   dir <- withr::local_tempdir()
   expect_error(.datom_git_push(dir), "Not a git repository")
 })
@@ -722,6 +727,7 @@ test_that(".datom_git_push upstream failure does not fail the push (#74 F)", {
 })
 
 test_that(".datom_git_pull aborts on non-git directory", {
+  skip_if_no_git2r()
   dir <- withr::local_tempdir()
   expect_error(.datom_git_pull(dir), "Not a git repository")
 })
@@ -876,6 +882,7 @@ test_that(".datom_check_git_current proceeds when fetch fails and cached refs ar
 })
 
 test_that(".datom_check_git_current aborts on non-git directory", {
+  skip_if_no_git2r()
   dir <- withr::local_tempdir()
   expect_error(.datom_check_git_current(dir), "Not a git repository")
 })
@@ -886,6 +893,7 @@ test_that(".datom_check_git_current aborts on non-git directory", {
 # =============================================================================
 
 test_that(".datom_check_git_reachable returns invisible TRUE when data_repo_url is NULL", {
+  skip_if_no_git2r()
   conn <- new_datom_conn(
     project_name = "p", root = "/tmp", client = NULL,
     role = "reader", backend = "local"

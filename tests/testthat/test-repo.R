@@ -3,6 +3,7 @@
 # --- helpers ------------------------------------------------------------------
 
 make_dev_conn <- function(path, gov_root = NULL) {
+  skip_if_no_git2r()
   structure(
     list(
       project_name  = "TEST_PROJECT",
@@ -61,12 +62,14 @@ write_project_yaml <- function(path, extra_storage = NULL, schema_version = NULL
 # === Input validation =========================================================
 
 test_that("datom_repo_set_data_store() errors on non-conn", {
+  skip_if_no_git2r()
   store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
   expect_error(datom_repo_set_data_store("not-conn", store), "datom_conn")
   expect_error(datom_repo_set_data_store(NULL, store),       "datom_conn")
 })
 
 test_that("datom_repo_set_data_store() errors on reader role", {
+  skip_if_no_git2r()
   conn <- structure(
     list(role = "reader", path = "/tmp", project_name = "X", gov_root = NULL),
     class = "datom_conn"
@@ -76,6 +79,7 @@ test_that("datom_repo_set_data_store() errors on reader role", {
 })
 
 test_that("datom_repo_set_data_store() errors when conn has no path", {
+  skip_if_no_git2r()
   conn <- structure(
     list(role = "developer", path = NULL, project_name = "X", gov_root = NULL),
     class = "datom_conn"
@@ -558,6 +562,7 @@ test_that("datom_repo_delete() governance guard refuses governed conns", {
 # Developer conn with a distinct data-store root (so the storage mirror lands
 # outside the git clone) and a local data backend.
 make_attach_conn <- function(clone_path, store_root) {
+  skip_if_no_git2r()
   structure(
     list(
       project_name   = "TEST_PROJECT",
@@ -581,6 +586,7 @@ make_attach_conn <- function(clone_path, store_root) {
 }
 
 test_that("datom_repo_attach_governance() errors on non-conn", {
+  skip_if_no_git2r()
   store <- datom_store_local(withr::local_tempdir(), validate = FALSE)
   expect_error(
     datom_repo_attach_governance("x", "https://example.com/gov.git", store),
@@ -589,6 +595,7 @@ test_that("datom_repo_attach_governance() errors on non-conn", {
 })
 
 test_that("datom_repo_attach_governance() errors on reader role", {
+  skip_if_no_git2r()
   conn <- structure(
     list(role = "reader", path = "/tmp", project_name = "X"),
     class = "datom_conn"
@@ -601,6 +608,7 @@ test_that("datom_repo_attach_governance() errors on reader role", {
 })
 
 test_that("datom_repo_attach_governance() errors when conn has no path", {
+  skip_if_no_git2r()
   conn <- structure(
     list(role = "developer", path = NULL, project_name = "X"),
     class = "datom_conn"

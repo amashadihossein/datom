@@ -380,6 +380,7 @@ create_test_datom_repo <- function(project_name = "testproj",
 
 
 test_that("developer path reads project.yaml and creates connection", {
+  skip_if_no_git2r()
   dir <- create_test_datom_repo(project_name = "myproj", bucket = "my-bucket")
 
   comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
@@ -401,6 +402,7 @@ test_that("developer path reads project.yaml and creates connection", {
 })
 
 test_that("developer path carries the repo's declared minimum writer version", {
+  skip_if_no_git2r()
   # The field is optional and lives in project.yaml. It rides on the connection
   # because that file is already parsed here, which is what lets the write entry
   # check it without an extra read. Absent must stay indistinguishable from "no
@@ -476,6 +478,7 @@ test_that("developer path refuses before reading a single field out of the confi
 })
 
 test_that("developer path treats an absent format as v1 and changes nothing (AC39b)", {
+  skip_if_no_git2r()
   # Every repo written so far is in this state. Not merely "does not abort":
   # no warning and no changed field either, since a silent degradation would be
   # the failure this check exists to remove.
@@ -501,6 +504,7 @@ test_that("developer path treats an absent format as v1 and changes nothing (AC3
 })
 
 test_that("developer path still tolerates an unrecognised key in project.yaml (AC39d)", {
+  skip_if_no_git2r()
   # THE CLAUSE A LATER TIDY-UP BREAKS. project.yaml is hand-edited, so an
   # unrecognised key is as likely a typo or a private note as it is evidence of a
   # newer datom -- which is why the vocabulary check that guards the manifest and
@@ -527,6 +531,7 @@ test_that("developer path still tolerates an unrecognised key in project.yaml (A
 })
 
 test_that("developer path uses reader role when store is reader", {
+  skip_if_no_git2r()
   dir <- create_test_datom_repo(project_name = "myproj", bucket = "my-bucket")
 
   comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
@@ -544,6 +549,7 @@ test_that("developer path uses reader role when store is reader", {
 })
 
 test_that("developer path uses prefix from store", {
+  skip_if_no_git2r()
   dir <- create_test_datom_repo(prefix = "alpha/beta/")
 
   comp <- datom_store_s3(bucket = "test-bucket", prefix = "alpha/beta/",
@@ -559,6 +565,7 @@ test_that("developer path uses prefix from store", {
 })
 
 test_that("developer path uses region from store", {
+  skip_if_no_git2r()
   dir <- create_test_datom_repo(region = "eu-west-1")
 
   comp <- datom_store_s3(bucket = "test-bucket", prefix = "test-prefix/",
@@ -623,6 +630,7 @@ test_that("developer path cross-checks prefix mismatch (#74 H)", {
 })
 
 test_that("developer path prefix check treats NULL and empty as equal (#74 H)", {
+  skip_if_no_git2r()
   # yaml records an empty prefix (round-trips as empty); the store has no
   # prefix (NULL). Normalization must make these compare equal. Local backend
   # keeps the test off the network.
@@ -682,6 +690,7 @@ setup_gov_matrix_env <- function(write_gov_json = FALSE, env = parent.frame()) {
 }
 
 test_that("four-state matrix [no gov.json + no store$gov]: proceeds as no-gov", {
+  skip_if_no_git2r()
   env <- setup_gov_matrix_env(write_gov_json = FALSE)
   data_comp <- datom_store_local(path = env$store_dir, validate = FALSE)
   store <- datom_store(governance = NULL, data = data_comp,
@@ -692,6 +701,7 @@ test_that("four-state matrix [no gov.json + no store$gov]: proceeds as no-gov", 
 })
 
 test_that("four-state matrix [no gov.json + store$gov set]: warns, treats as no-gov", {
+  skip_if_no_git2r()
   env <- setup_gov_matrix_env(write_gov_json = FALSE)
   gov_comp  <- datom_store_local(path = env$store_dir, validate = FALSE)
   data_comp <- datom_store_local(path = env$store_dir, validate = FALSE)
@@ -720,6 +730,7 @@ test_that("four-state matrix [gov.json present + no store$gov]: aborts with clea
 })
 
 test_that("four-state matrix [gov.json present + store$gov set]: proceeds with gov fields", {
+  skip_if_no_git2r()
   env <- setup_gov_matrix_env(write_gov_json = TRUE)
   gov_comp  <- datom_store_local(path = env$store_dir, validate = FALSE)
   data_comp <- datom_store_local(path = env$store_dir, validate = FALSE)
@@ -970,6 +981,7 @@ test_that("reader fully-specified store: unchanged behavior (no regression)", {
 
 setup_creds_dev_env <- function(data_prefix = NULL, data_region = "ap-southeast-1",
                                 env = parent.frame()) {
+  skip_if_no_git2r()
   gov_store_dir <- as.character(fs::path_norm(withr::local_tempdir(.local_envir = env)))
   data_root     <- as.character(fs::path_norm(withr::local_tempdir(.local_envir = env)))
   work_dir      <- withr::local_tempdir(.local_envir = env)
@@ -1083,6 +1095,7 @@ setup_init_env <- function(env = parent.frame()) {
 # --- Input validation ---------------------------------------------------------
 
 test_that("datom_init_repo aborts on invalid project_name", {
+  skip_if_no_git2r()
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
                        data_repo_url = "https://github.com/x/y.git", validate = FALSE)
@@ -1090,6 +1103,7 @@ test_that("datom_init_repo aborts on invalid project_name", {
 })
 
 test_that("datom_init_repo rejects non-store object", {
+  skip_if_no_git2r()
   expect_error(
     datom_init_repo(path = withr::local_tempdir(), project_name = "p",
                     store = list(bucket = "b")),
@@ -1098,6 +1112,7 @@ test_that("datom_init_repo rejects non-store object", {
 })
 
 test_that("datom_init_repo rejects reader store", {
+  skip_if_no_git2r()
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   reader_store <- datom_store(governance = comp, data = comp, validate = FALSE)
   expect_error(
@@ -1108,6 +1123,7 @@ test_that("datom_init_repo rejects reader store", {
 })
 
 test_that("datom_init_repo rejects create_repo with data_repo_url", {
+  skip_if_no_git2r()
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
                        data_repo_url = "https://github.com/x/y.git", validate = FALSE)
@@ -1119,6 +1135,7 @@ test_that("datom_init_repo rejects create_repo with data_repo_url", {
 })
 
 test_that("datom_init_repo errors when no data_repo_url and create_repo is FALSE", {
+  skip_if_no_git2r()
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
                        validate = FALSE)
@@ -2493,6 +2510,7 @@ test_that(".datom_s3_client passes endpoint to paws config", {
 })
 
 test_that("datom_get_conn forwards endpoint to developer path", {
+  skip_if_no_git2r()
   dir <- create_test_datom_repo(project_name = "myproj")
 
   comp <- datom_store_s3(bucket = "test-bucket", prefix = "test-prefix/",
@@ -2575,22 +2593,26 @@ test_that("mock_datom_conn includes endpoint field as NULL", {
 # --- datom_clone() -------------------------------------------------------------
 
 test_that("datom_clone rejects non-store object", {
+  skip_if_no_git2r()
   expect_error(datom_clone(path = "x", store = list(a = 1)), "datom_store")
 })
 
 test_that("datom_clone rejects reader store", {
+  skip_if_no_git2r()
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, validate = FALSE)
   expect_error(datom_clone(path = "x", store = store), "developer")
 })
 
 test_that("datom_clone rejects store without data_repo_url", {
+  skip_if_no_git2r()
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x", validate = FALSE)
   expect_error(datom_clone(path = "x", store = store), "data_repo_url")
 })
 
 test_that("datom_clone rejects empty path", {
+  skip_if_no_git2r()
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
                        data_repo_url = "https://x.git", validate = FALSE)
@@ -2598,6 +2620,7 @@ test_that("datom_clone rejects empty path", {
 })
 
 test_that("datom_clone rejects non-empty target directory", {
+  skip_if_no_git2r()
   comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
                        data_repo_url = "https://x.git", validate = FALSE)
