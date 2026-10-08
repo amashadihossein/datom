@@ -38,6 +38,10 @@ if (!nzchar(Sys.getenv("DATOM_ALLOW_REAL_NETWORK"))) {
     }
   }
 
+  # withr is only a suggested package of datom, but it is a hard Import of
+  # testthat, so it is always installed whenever this file runs. A guard for
+  # its absence could never fire, so there is none -- and a missing withr can
+  # therefore never silently switch this egress guard off.
   # S3 chokepoint (datom namespace).
   .datom_s3_client_orig <- getFromNamespace(".datom_s3_client", "datom")
   assignInNamespace(".datom_s3_client", .datom_block_egress(".datom_s3_client"),

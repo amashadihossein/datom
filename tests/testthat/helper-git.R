@@ -29,3 +29,15 @@ test_head_branch <- function(repo) {
 test_head_refspec <- function(repo) {
   paste0("refs/heads/", test_head_branch(repo))
 }
+
+#' Skip a Test When git2r Is Not Installed
+#'
+#' git2r is a suggested package. A test that calls `git2r::` itself skips on
+#' its own when git2r is missing, because testthat treats a missing-package
+#' error as a skip on CRAN. A test that reaches git only through datom does
+#' not: datom's own check stops with an ordinary error, which testthat
+#' reports as a failure. Call this first in any such test, or in a fixture
+#' whose every user needs git.
+skip_if_no_git2r <- function() {
+  testthat::skip_if_not_installed("git2r")
+}
