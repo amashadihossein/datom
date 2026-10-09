@@ -67,6 +67,7 @@ reference:
       - datom_member
       - datom_write_set
       - datom_get_set
+      - datom_find_member
       - datom_fetch_member
       - datom_list_members
       - datom_structure_members

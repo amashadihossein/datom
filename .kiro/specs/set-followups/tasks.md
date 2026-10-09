@@ -5,11 +5,11 @@ for the owner's go-ahead.
 
 ## Where things stand
 
-Spec written 2026-10-08. No task started.
+Spec written 2026-10-08. Task 1 done 2026-10-08 (4731 tests); task 2 next.
 
 ## Tasks
 
-- [ ] **1. `datom_find_member()`: rename, export, accept a set** (R1; AC1-AC5, AC9)
+- [x] **1. `datom_find_member()`: rename, export, accept a set** (R1; AC1-AC5, AC9)
   - Rename the internal and its callers and links; accept a set or a member list; refuse anything else.
   - Roxygen + examples, NAMESPACE, `_pkgdown.yml`, NEWS line, `dev/datom_pathways.md` set-read card.
   - Tests: unique name on a set and on `x$members`; ambiguous refusal; narrowing by tags and by

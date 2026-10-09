@@ -1,4 +1,9 @@
 # datom (development version)
+* New `datom_find_member()` returns the one member of a set a name refers to --
+  its exact version and labels -- with no connection and no storage read, so a
+  reader holding only the set can ask what it cites. An ambiguous name stops and
+  lists the candidates; narrow with `tags` or `version` (#112,
+  `?datom_find_member`).
 
 * The test suite now passes when suggested packages such as git2r and rio are not
   installed, as in CRAN's "noSuggests" check (#92). Running the tests now needs

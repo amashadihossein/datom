@@ -1271,6 +1271,7 @@ Returns: a `datom_set` -- `name`, `project`, `version`, `data_sha`, `tags`, `mem
 
 ```r
 datom_fetch_member(conn, x, member, tags = NULL, version = NULL)
+datom_find_member(x, member, tags = NULL, version = NULL)
 datom_list_members(x)
 datom_structure_members(x, by, missing = "untagged")
 ```
@@ -1280,6 +1281,7 @@ Which route to reach for depends on what you want back:
 | You want | Route |
 |---|---|
 | a member's **data** | `datom_fetch_member()`, or the member's own `$fetch(conn)` |
+| one member's **facts by name**, refusing an ambiguous name | `datom_find_member(x, "dm")` |
 | one member's **facts** -- its pin, its labels | the record itself: `x$members[[i]]$id$version` |
 | **every** member's facts as a frame | `datom_list_members()` -- one row per member per label |
 | members **grouped** by label | `datom_structure_members(x, by = "type")` |
@@ -1294,7 +1296,7 @@ unique(rows$version[rows$name == "dm"])
 #> "a7e6450429d2..." "d95a47e89aac..."     # two answers, no complaint
 ```
 
-Narrow by label instead, which is what labels are for (`rows$key == "role" & rows$value == "current"`), or pass `tags` / `version` to `datom_fetch_member()`, which **refuses** an ambiguous name and lists the candidates rather than picking one. A by-name lookup that stops at the record without fetching the data is not exported yet; it is tracked in [#112](https://github.com/amashadihossein/datom/issues/112).
+Narrow by label instead, which is what labels are for (`rows$key == "role" & rows$value == "current"`), or pass `tags` / `version` to `datom_fetch_member()`, which **refuses** an ambiguous name and lists the candidates rather than picking one. To get the record alone, with no connection and no storage read, use `datom_find_member()`, which refuses the same way.
 
 #### datom_update_members() / datom_remove_members() — Data Developers
 
