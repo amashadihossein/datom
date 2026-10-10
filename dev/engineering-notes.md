@@ -1246,3 +1246,27 @@ option for them.
 on a machine without git2r; that is accepted and out of scope, and the CI job pins `NOT_CRAN=false`
 for that reason. And `withr` cannot be absent when `setup.R` runs, because it is a hard Import of
 testthat -- a guard for its absence could never fire, so `setup.R` carries a comment instead.
+
+### Line-number citations in a spec rot; cite by function name
+
+Measured 2026-10-08, 18 days after the datom-sets spec closed: 207 of its 321 distinct `file:line`
+citations sat in a file edited above the cited line, so most now point at the wrong code.
+`dev/check-spec.R` could see only the 14 that happened to land on a blank line -- the rest land on
+real-but-unrelated lines and pass. Fixing the 14 would have turned the check green over ~190 wrong
+citations, and any later edit re-breaks them.
+
+So: **cite code by function name** in specs (`.datom_check_schema_version()` in
+`R/utils-validate.R`). A move within the file does not break it; a rename or removal does, and
+check 4b of `dev/check-spec.R` sees that. A closed spec's line citations are kept as history
+("this line, on that day") and reported as a note. Function names in `dev/check-spec.R`'s check 4b
+are gated only in **ticked tasks of an open spec**: a requirement may name a function not yet
+written, and a closed spec legitimately names functions later renamed.
+
+### A probe that trips the writer's vocabulary check is too crude
+
+Probing "a set's metadata carries exactly these fields" (AC42) by adding an **unknown** field to the
+set metadata builder reddened eight tests, because every later write of that set now meets a field
+the writer cannot classify and refuses (the forward-compatibility vocabulary check). That reddens
+the target test, but also everything downstream, so it cannot show the target test is what guards
+the property. Add a field the build **does** recognise but a set must not carry (e.g.
+`size_bytes`, a table field on the excluded list): only the field-set tests fail.

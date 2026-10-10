@@ -247,7 +247,23 @@ for (cite in sort(citations)) {
                                         if (nzchar(shown)) shown else "<blank>"))
 }
 
-if (length(out_of_range) > 0L || length(blank_target) > 0L) {
+# A CLOSED spec (every task ticked) is a historical record: its line citations
+# meant "this line, on that day", and every later edit to R/ moves them. Added
+# 2026-10-08 (set-followups) after measuring datom-sets 18 days after it closed:
+# 207 of its 321 distinct citations sat in files edited above the cited line, and
+# this check could see only the 14 that happened to land on a blank. Fixing those
+# 14 would have turned it green over ~190 silently wrong ones. So on a closed
+# spec, line problems are reported as a note; the gate that survives edits is
+# check 4b below, which follows function NAMES rather than line numbers.
+spec_closed <- length(task_starts) > 0L &&
+  !any(grepl("^- \\[ \\] \\*\\*\\d+\\.", spec$tasks.md, perl = TRUE))
+
+if ((length(out_of_range) > 0L || length(blank_target) > 0L) && spec_closed) {
+  note("code citations (closed spec: line numbers are historical)",
+       sprintf("%d out of range, %d on blank lines; not a failure, because every",
+               length(out_of_range), length(blank_target)),
+       "task is ticked. Cite functions by name in new specs (check 4b follows them).")
+} else if (length(out_of_range) > 0L || length(blank_target) > 0L) {
   fail("code citations",
        c(if (length(out_of_range)) c("citations pointing outside the file:", out_of_range),
          if (length(blank_target)) c("citations resolving to nothing:", blank_target)),
@@ -262,6 +278,52 @@ if (nzchar(Sys.getenv("SPEC_CHECK_SHOW_CITATIONS")) && length(cite_report) > 0L)
   cat("\n  cited lines (review that each says what the spec claims):\n")
   for (line in cite_report) cat(sprintf("    %s\n", line))
   cat("\n")
+}
+
+# --- check 4b: cited datom functions still exist -------------------------------
+# A citation by function name (`.datom_check_schema_version()`) survives code
+# moving within a file, which a line number does not; what breaks it is a rename
+# or a removal, and that is mechanically checkable. Added 2026-10-08
+# (set-followups) alongside the convention to cite by name.
+#
+# SCOPE. Only `datom_*` / `.datom_*` names written with `()`. A name is defined if
+# some file under R/ assigns it a function. Names are gated only where they
+# describe work already done -- the bodies of ticked tasks in a spec that is still
+# open. Everywhere else they are reported as a note, because a requirement may
+# name a function not written yet, and a closed spec legitimately records names
+# that were later renamed or retired.
+fn_re <- "\\.?datom_[A-Za-z0-9_.]*[A-Za-z0-9](?=\\(\\))"
+r_files <- list.files(file.path(repo_root, "R"), pattern = "[.][Rr]$",
+                      full.names = TRUE)
+r_text <- unlist(lapply(r_files, read_lines_safe), use.names = FALSE)
+def_re <- "^\\s*`?(\\.?datom_[A-Za-z0-9_.]+)`?\\s*(<-|=)\\s*function\\b"
+defined_fns <- unique(sub(paste0(def_re, ".*$"), "\\1",
+                          r_text[grepl(def_re, r_text, perl = TRUE)], perl = TRUE))
+
+cited_fns <- all_matches(all_lines, fn_re)
+missing_fns <- sort(setdiff(cited_fns, defined_fns))
+
+done_lines <- unlist(lapply(seq_along(task_starts), function(i) {
+  body <- spec$tasks.md[bounds[i]:(bounds[i + 1L] - 1L)]
+  if (grepl("^- \\[x\\]", body[[1L]])) body else character()
+}), use.names = FALSE)
+gated_missing <- if (spec_closed) character() else
+  sort(intersect(missing_fns, all_matches(done_lines, fn_re)))
+
+if (length(gated_missing) > 0L) {
+  fail("cited functions exist",
+       "named in a ticked task but defined nowhere under R/ (renamed or removed?):",
+       paste(gated_missing, collapse = ", "))
+} else if (length(missing_fns) > 0L) {
+  note("cited functions exist",
+       sprintf("%d of %d cited names are not defined under R/ -- renamed, retired,",
+               length(missing_fns), length(cited_fns)),
+       sprintf("or not yet written; not gated here (%s). Listed:",
+               if (spec_closed) "closed spec" else "none in a ticked task"),
+       paste(missing_fns, collapse = ", "))
+} else {
+  pass("cited functions exist",
+       sprintf("%d cited datom functions, all defined under R/", length(cited_fns)))
 }
 
 # --- check 5: superseded wording ---------------------------------------------

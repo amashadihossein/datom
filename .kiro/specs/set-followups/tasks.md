@@ -5,7 +5,7 @@ for the owner's go-ahead.
 
 ## Where things stand
 
-Spec written 2026-10-08. Task 1 done 2026-10-08 (4731 tests); task 2 done 2026-10-09 (4744 tests); task 3 done 2026-10-09 (4744 tests); task 4 (close out) next.
+Spec written 2026-10-08. Task 1 done 2026-10-08 (4731 tests); task 2 done 2026-10-09 (4744 tests); task 3 done 2026-10-09 (4744 tests); task 4 done 2026-10-09. **Spec complete.**
 
 ## Tasks
 
@@ -39,8 +39,19 @@ Spec written 2026-10-08. Task 1 done 2026-10-08 (4731 tests); task 2 done 2026-1
     `dev` at `d9727b2` and `8b8e37b`, before this spec: line citations in the datom-sets spec point
     at lines that later edits moved. Not fixed here; raised with the owner.
 
-- [ ] **4. Close out** (AC10)
+- [x] **4. Close out** (AC8 remainder, AC10)
   - `R CMD check --as-cran`; harvest learnings (`dev/engineering-notes.md`, spec); update
     `dev/README.md` (Active Specs, Completed Phases, Backlog rows for #103 / #111 / #112); PR into
     `dev`; close #103, #111, #112 after merge.
-  - Acceptance: AC10.
+  - **Added (owner, 2026-10-09): the checker's line citations.** `dev/check-spec.R` reports line
+    problems in a closed spec (every task ticked) as a note; new check 4b fails when a `datom_*()`
+    name cited in a ticked task of an open spec is defined nowhere under `R/`, and notes the rest;
+    `.github/copilot-instructions.md` item 0c says to cite code by function name.
+  - **Probes for check 4b**, on a three-file made-up spec: real names only -> ok; a missing name in
+    a ticked task -> FAIL naming it; the same name in an unticked task only -> note. On a copy of
+    datom-sets with one task unticked, both the citation check and 4b fail as before, so "closed"
+    is what relaxes them.
+  - **Done 2026-10-09.** `R CMD check --as-cran --no-manual`: Status OK. Full suite 4744. Checker
+    exits 0 on datom-sets. Learnings in `dev/engineering-notes.md`. PR and the three issue closes
+    follow the merge.
+  - Acceptance: AC8, AC10.

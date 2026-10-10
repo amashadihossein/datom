@@ -62,18 +62,22 @@ rules have tests that nothing would notice disappearing.
 
 ## Acceptance checks
 
-- [ ] AC1 `datom_find_member(x, "lb")` on a set read back returns the one record; the same call on
+- [x] AC1 `datom_find_member(x, "lb")` on a set read back returns the one record; the same call on
       `x$members` returns the identical record.
-- [ ] AC2 An ambiguous name is refused with the message naming both candidates; `tags =` and
+- [x] AC2 An ambiguous name is refused with the message naming both candidates; `tags =` and
       `version =` (prefix) each narrow it to one.
-- [ ] AC3 The lookup works with no connection and no storage access (a test proves no storage read).
-- [ ] AC4 A non-set, non-list `x` is refused with a clear message.
-- [ ] AC5 No reference to `.datom_find_member` remains in `R/` or `tests/`.
-- [ ] AC6 `?datom_schema` exists, renders in `R CMD check`, and carries the two-row table.
-- [ ] AC7 Each of the five upgrade messages suggests `install.packages("datom")`; the four
+- [x] AC3 The lookup works with no connection and no storage access (a test proves no storage read).
+- [x] AC4 A non-set, non-list `x` is refused with a clear message.
+- [x] AC5 No reference to `.datom_find_member` remains in `R/` or `tests/`.
+- [x] AC6 `?datom_schema` exists, renders in `R CMD check`, and carries the two-row table.
+- [x] AC7 Each of the five upgrade messages suggests `install.packages("datom")`; the four
       format-related ones name `?datom_schema`; the writer-floor one does not.
-- [ ] AC8 `Rscript dev/check-spec.R` (default spec, datom-sets) passes, reporting 43 criteria defined
-      with AC42 and AC43 named under `tests/`.
-- [ ] AC9 Each new guard or behaviour above has a test that was watched failing when that behaviour
+- [x] AC8 `Rscript dev/check-spec.R` (default spec, datom-sets) passes, reporting 43 criteria defined
+      with AC42 and AC43 named under `tests/`. **Met 2026-10-09 after one owner-agreed change**: the
+      "code citations" check had failed on `dev` before this spec, because most of datom-sets' line
+      citations had drifted. Rather than fix line numbers that re-drift, Task 4 made line problems
+      in a closed spec a note, added check 4b (cited function names still exist), and set the
+      convention to cite by function name. The checker now exits 0.
+- [x] AC9 Each new guard or behaviour above has a test that was watched failing when that behaviour
       alone was broken.
-- [ ] AC10 Full suite passes with the count reported; `R CMD check --as-cran` 0 errors, 0 warnings.
+- [x] AC10 Full suite passes with the count reported; `R CMD check --as-cran` 0 errors, 0 warnings.

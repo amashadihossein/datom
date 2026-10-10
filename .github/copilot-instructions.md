@@ -319,7 +319,9 @@ in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files)
       properties), `tasks.md` (the chunk breakdown + status). If the spec does not yet exist,
       create it (requirements → design → tasks) — do NOT create a `dev/phase_*.md`. Flag any
       tasks that warrant model escalation (see Model Escalation below) at plan time, not
-      mid-task.
+      mid-task. **Cite code by function name** (`.datom_check_schema_version()` in
+      `R/utils-validate.R`), not by line number: every edit above a cited line moves it, and
+      `dev/check-spec.R` can follow a name but not a line.
    d. Register the spec as active in the `dev/README.md` Active Specs table.
    e. Work through tasks in order (1 task / small related group = 1 chunk = 1 commit).
       Updating status is part of completing each task: mark the task done in `tasks.md` in the
