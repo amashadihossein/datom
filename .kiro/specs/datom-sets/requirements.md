@@ -108,7 +108,7 @@ Additive unless marked **[BREAKING]**.
     thing and two places to look for it. `datom_write_set()` therefore has no `metadata =`
     parameter.
 
-**Acceptance**: a written set's metadata has exactly the keys R1.3 lists -- asserted with
+**Acceptance**: AC42 (numbered 2026-10-08) -- a written set's metadata has exactly the keys R1.3 lists -- asserted with
 `setequal(names(meta), <the list>)` on the written file, not merely by checking absences, so an
 added field fails the test.
 
@@ -618,7 +618,7 @@ produce identical `data_sha` for every golden fixture, on both x86_64 and arm64.
   - Arbitrarily many folder structures cost nothing, because none of them is stored.
 
 **Acceptance**: AC9 (self-reference refused) and AC15 (nesting resolves one level, no traversal)
-below; plus a hand-assembled member list is refused with a message pointing at `datom_member()`
+below; plus AC43 (numbered 2026-10-08): a hand-assembled member list is refused with a message pointing at `datom_member()`
 (mirroring the `remedy` pattern in `.datom_validate_parents()`).
 
 ### R5 -- Storage layout
@@ -1699,6 +1699,8 @@ These are the behaviors most likely to be silently mis-implemented. **Each gets 
 | **AC40** | **Repointing a member changes the version and nothing else.** (a) A repointed member's labels are **byte-identical** to what they were, not merely present -- rebuilding a record from name and version drops them silently, and labels are content, so this is the clause that catches an identity change nobody asked for (R24.3). (b) The report names every member that moved with its `old -> new` versions, grouped by project. (c) An update that finds nothing new returns an object whose payload is byte-identical, so the write reports no change and mints **no** version -- asserted through the write, because that is where "free" is actually observable (R24.7). (d) Selecting members by label repoints only those, leaving the rest pinned. |
 | **AC41** | **The four ways an edit declines to act, each tested separately so a regression names which one leaked.** (a) A member whose project has **no supplied connection** refuses the whole call, naming that project -- not a partial update (R24.5). (b) A member whose artifact no longer exists is **reported and left**, and the resulting set still writes, because its pin is still readable (R24.5). (c) Two members sharing a name are **skipped and reported** with both versions, never collapsed onto one version and never refused as a whole sweep (R24.6, R2.14a). (d) A connection whose label matches but whose store holds a **different project's** artifact of that name is refused by comparing the rebuilt member's recorded project against the one it replaced (R24.4). Clause (d) is the one that cannot be found by inspection -- it needs two stores and a mislabelled connection, which is the fixture that already exists for the no-gate tests. |
 | **AC38** | **The upgrade chain runs after the check, and runs zero steps when there is nothing to do.** (a) A document declaring a version above `.datom_supported_schema` never reaches the dispatcher -- asserted by observing the abort's condition class, not by inspecting the document. (b) A **current-version** document runs **zero** upgrade steps, which catches the `seq()` counts-down defect (R22.10). (c) Applying the chain twice equals applying it once. |
+| **AC42** | **A written set's metadata carries exactly the fields R1.3 lists.** Asserted with `setequal(names(meta), <the list>)` on the **written file**, not by checking absences, so an added field fails the test. **Added 2026-10-08 by the `set-followups` spec** (issue #111): this was R1's prose acceptance statement, tested since Task 8 but unnumbered, so the criteria-named-in-tests check could not see it. Owned by Task 29. |
+| **AC43** | **A hand-assembled member list is refused, with a message pointing at `datom_member()`.** A member list built by hand rather than through `datom_member()` is refused at write time, and the message names `datom_member()` as the remedy. **Added 2026-10-08 by the `set-followups` spec** (issue #111): R4's prose acceptance statement, tested since Task 9 but unnumbered. Owned by Task 29. |
 
 Plus the standing project gates:
 
