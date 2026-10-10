@@ -549,6 +549,7 @@ test_that("a top-level field the build cannot place refuses the write, naming it
   # which document changed under them, or by how much.
   expect_match(conditionMessage(err), "future_field")
   expect_match(conditionMessage(err), "dm/metadata.json")
+  expect_upgrade_hint(conditionMessage(err), schema_pointer = TRUE)
 })
 
 test_that("a document whose every field classifies passes silently", {
@@ -631,6 +632,9 @@ test_that("a repo declaring a newer writer than this build refuses the write (AC
   )
   expect_match(conditionMessage(err), "999.0.0")
   expect_match(conditionMessage(err), as.character(utils::packageVersion("datom")))
+  # The floor is a policy, not a data format, so `?datom_schema` would not
+  # answer the question: the hint must leave the pointer out.
+  expect_upgrade_hint(conditionMessage(err), schema_pointer = FALSE)
 })
 
 test_that("no declared floor means no floor -- nothing changes at all (AC36b)", {
@@ -863,10 +867,11 @@ test_that("a manifest with no reachable artifact list refuses the write", {
     }
   )
 
-  expect_error(
+  err <- expect_error(
     datom_write(fx$conn, data = fc_data(5), name = "dm"),
     class = "datom_shape_unreachable"
   )
+  expect_upgrade_hint(conditionMessage(err), schema_pointer = TRUE)
   # And it really did not write: the artifact list is still missing rather than
   # replaced by a one-entry list naming only this write.
   expect_false("artifacts" %in% names(fc_clone_manifest(fx)))

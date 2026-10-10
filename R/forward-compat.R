@@ -267,7 +267,7 @@
       "This repo accepts writes from datom {as.character(floor)} or newer.",
       "x" = "Installed datom is {as.character(installed)}.",
       "i" = "Declared by {.field min_writer_version} in {.file project.yaml}.",
-      "i" = "Upgrade with {.code remotes::install_github('amashadihossein/datom')}."
+      .datom_upgrade_bullets(schema_pointer = FALSE)
     ),
     class = "datom_writer_floor"
   )
@@ -327,8 +327,8 @@
       "x" = "Unrecognised: {.field {unknown}}.",
       "i" = "A newer datom wrote this document, and this build would rewrite it \\
              without accounting for what it cannot place.",
-      "i" = "Upgrade with {.code remotes::install_github('amashadihossein/datom')}, \\
-             or write from the build that produced it."
+      .datom_upgrade_bullets(),
+      "i" = "Alternatively, write from the build that produced it."
     ),
     class = "datom_vocabulary_unknown"
   )
@@ -400,8 +400,8 @@
                  artifact list this build can reach.",
           "i" = "A newer datom may have restructured it. Writing now would \\
                  replace it with a shape this build invented.",
-          "i" = "Upgrade with {.code remotes::install_github('amashadihossein/datom')}, \\
-                 or restore the file from git history."
+          .datom_upgrade_bullets(),
+          "i" = "Alternatively, restore the file from git history."
         ),
         class = "datom_shape_unreachable"
       )

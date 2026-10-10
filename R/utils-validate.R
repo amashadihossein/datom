@@ -272,11 +272,66 @@
 
 # --- Repo schema version contract ---------------------------------------------
 
+#' Which datom release reads which data format
+#'
+#' Every manifest and metadata file datom writes records a format number, in a
+#' field called `schema_version`. If a repo was written in a format your datom
+#' does not know, datom stops and asks you to upgrade. This page says which
+#' release you need.
+#'
+#' @section Format versions:
+#'
+#' | Format (`schema_version`) | Written by | Read by |
+#' |---|---|---|
+#' | 1 | every release before 0.2.0 (these files carry no `schema_version` field; a missing field means 1) | all releases |
+#' | 2 | 0.2.0 and later | 0.2.0 and later |
+#'
+#' @section When the number changes:
+#'
+#' * The number moves only for a change that would break an older reader: a
+#'   field renamed, removed, or given a different meaning or type, or a file
+#'   restructured. It never moves for an added field, so new rows are rare.
+#' * A row is added to the table above each time it moves.
+#' * The `datom_version` field in a file records which release wrote it, not
+#'   which release is needed to read it.
+#' * Releases before 0.2.0 do not check the number at all, so instead of
+#'   stopping on a format-2 repo they show it as empty.
+#' * `.datom/project.yaml` carries its own format number. Every release so far
+#'   writes and reads it as 1.
+#'
+#' @name datom_schema
+NULL
+
 # Highest repo schema version this build of datom can read.
 #
 # v1 is every repo written before the artifact namespace existed: those files
 # carry no `schema_version` field at all, and an absent field means v1.
+#
+# When this number moves, add a row to the table in `?datom_schema` above.
 .datom_supported_schema <- 2L
+
+#' Upgrade Hint for a Refusal Message
+#'
+#' The cli bullets every "this build is too old" message carries, kept in one
+#' place so the wording cannot drift between sites: CRAN first, GitHub for a
+#' development build. Holds no glue variables, so it is safe to splice into any
+#' caller's `cli_abort()` or `cli_warn()`.
+#'
+#' @param schema_pointer If `TRUE` (default), add a line pointing at
+#'   `?datom_schema`. `FALSE` for a refusal that is not about a data format
+#'   (the writer floor), where that page would not answer the question.
+#' @return A named character vector of cli bullets.
+#' @keywords internal
+.datom_upgrade_bullets <- function(schema_pointer = TRUE) {
+  c(
+    "i" = "Upgrade with {.code install.packages(\"datom\")}, or \\
+           {.code remotes::install_github(\"amashadihossein/datom\")} for a \\
+           development build.",
+    if (schema_pointer) {
+      c("i" = "See {.code ?datom_schema} for which datom version reads this repo.")
+    }
+  )
+}
 
 # Highest `.datom/project.yaml` format this build can read.
 #
@@ -380,7 +435,7 @@
         "This repo uses datom schema v{declared}, which this build cannot {operation}.",
         "x" = "Declared by {.val {source}}.",
         "x" = "Installed datom {utils::packageVersion('datom')} supports up to v{supported}.",
-        "i" = "Upgrade with {.code remotes::install_github('amashadihossein/datom')}."
+        .datom_upgrade_bullets()
       ),
       class = "datom_schema_unsupported"
     )

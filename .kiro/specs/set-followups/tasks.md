@@ -5,7 +5,7 @@ for the owner's go-ahead.
 
 ## Where things stand
 
-Spec written 2026-10-08. Task 1 done 2026-10-08 (4731 tests); task 2 next.
+Spec written 2026-10-08. Task 1 done 2026-10-08 (4731 tests); task 2 done 2026-10-09 (4744 tests); task 3 next.
 
 ## Tasks
 
@@ -16,7 +16,7 @@ Spec written 2026-10-08. Task 1 done 2026-10-08 (4731 tests); task 2 next.
     version prefix; no connection / no storage read; bad `x` refused. Probe each.
   - Acceptance: AC1, AC2, AC3, AC4, AC5, AC9.
 
-- [ ] **2. `?datom_schema` and the upgrade messages** (R2; AC6, AC7, AC9)
+- [x] **2. `?datom_schema` and the upgrade messages** (R2; AC6, AC7, AC9)
   - Help page with the two-row table; five messages suggest CRAN then GitHub; four point at
     `?datom_schema`. NEWS line.
   - Tests assert the new text on each of the five; probe one per message.

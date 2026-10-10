@@ -215,7 +215,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Branch | Status |
 |---|---|---|
-| [set-followups](../.kiro/specs/set-followups/) | `spec/set-followups` | Task 1 (`datom_find_member()`) done 2026-10-08; task 2 (`?datom_schema`, upgrade messages) next. Issues #112, #103, #111. |
+| [set-followups](../.kiro/specs/set-followups/) | `spec/set-followups` | Tasks 1-2 done (`datom_find_member()` 2026-10-08; `?datom_schema` and upgrade messages 2026-10-09, 4744 tests); task 3 (AC42/AC43) next. Issues #112, #103, #111. |
 
 Previously: `set-sync-ergonomics` completed 2026-09-29, `vignettes-sets-arc` on 2026-09-26, `sets-release-readiness` on 2026-09-25 and
 `datom-sets` on 2026-09-21 -- all under Completed Phases below. Specs persist as documentation under `.kiro/specs/`; they are not deleted on

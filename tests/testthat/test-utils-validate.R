@@ -456,7 +456,7 @@ test_that(".datom_check_schema_version refuses a newer version with recourse (AC
   msg <- conditionMessage(err)
   expect_match(msg, "v3")
   expect_match(msg, "manifest.json")
-  expect_match(msg, "install_github")
+  expect_upgrade_hint(msg, schema_pointer = TRUE)
   # The supported ceiling must render as a number, not as cli markup: the
   # constant's leading dot makes `{.datom_supported_schema}` a cli style.
   expect_match(msg, "supports up to v2")

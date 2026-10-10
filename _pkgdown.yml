@@ -105,6 +105,11 @@ reference:
       - datom_validate
       - is_valid_datom_repo
 
+  - title: "Data formats"
+    desc: "Which datom release reads which data format version"
+    contents:
+      - datom_schema
+
   - title: "Storage Extension API"
     desc: >
       Low-level storage and data-repo primitives for package developers (e.g.

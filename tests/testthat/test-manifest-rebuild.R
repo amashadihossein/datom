@@ -211,7 +211,7 @@ test_that("an absent artifact key is rebuilt, with one warning naming the upgrad
   warnings <- capture_warnings(result <- datom_list(conn))
 
   expect_length(warnings, 1L)
-  expect_match(warnings, "install_github")
+  expect_upgrade_hint(warnings, schema_pointer = TRUE)
   expect_equal(sort(result$name), c("ae", "dm"))
 })
 
