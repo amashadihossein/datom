@@ -108,9 +108,9 @@ unstaged <- function(repo) unlist(git2r::status(repo)$unstaged, use.names = FALS
 # simpler. The listing is used here deliberately, to exercise that verb end to
 # end.
 #
-# What genuinely does not exist is a by-NAME lookup that stops at the record:
-# `datom_fetch_member()` resolves a name safely and then fetches the data. Filed
-# as issue #112. It matters for these two helpers, because the listing is
+# A by-name lookup that stops at the record now exists, `datom_find_member()`
+# (#112); these helpers keep the listing on purpose, to exercise it end to end.
+# That choice matters for these two helpers, because the listing is
 # label-exploded -- one row per member per label -- and goes silently plural when
 # a name is cited at two versions, which is why both wrap the result in
 # `unique()` and why a set with such a pair would need a label filter here.

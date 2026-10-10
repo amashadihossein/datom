@@ -201,7 +201,7 @@ datom_parent <- function(conn, table, version = NULL, x = NULL, tags = NULL) {
 #' Declare Parents at the Versions a Set Pins
 #'
 #' The `x =` route of [datom_parent()]. Each name is resolved by
-#' [.datom_find_member()], the resolver [datom_fetch_member()] uses for a name,
+#' [datom_find_member()], the resolver [datom_fetch_member()] uses for a name,
 #' so the two verbs cannot pick different members for the same name and labels.
 #' Tag validation is the same call with the same remedy, for the same reason.
 #'
@@ -236,7 +236,7 @@ datom_parent <- function(conn, table, version = NULL, x = NULL, tags = NULL) {
   # and purrr re-signals a mapped function's error as its own.
   lapply(table, function(name) {
     .datom_validate_name(name)
-    record <- .datom_find_member(members, name, tags)
+    record <- datom_find_member(members, name, tags)
     id <- .datom_member_id(record)
 
     if (!identical(id$kind, "table")) {

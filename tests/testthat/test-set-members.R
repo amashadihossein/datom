@@ -1,4 +1,4 @@
-# Finding and shaping a set's members: the three verbs over a `datom_set`.
+# Finding and shaping a set's members: the four verbs over a `datom_set`.
 #
 # Two kinds of fixture, deliberately. The two shaping verbs do no IO at all, so
 # they are tested against a set built by hand -- which is also the only way to
@@ -630,6 +630,142 @@ test_that("the arguments are validated", {
     "named list"
   )
   expect_error(datom_fetch_member(fx$conn, got$x, "dm", version = 1L),
+               "single non-empty string")
+})
+
+
+# === datom_find_member ========================================================
+#
+# The by-name lookup on its own: the record, with no connection and no fetch.
+# `datom_fetch_member()`, `datom_parent(x = )` and the edit verbs all resolve a
+# name through it, so the tests above exercise it too; these pin what it promises
+# to a caller who calls it directly.
+
+# dm twice -- the baseline FIRST -- and lb once. Narrowing tests select the
+# second dm, so a "return the first match" break cannot pass them by luck.
+fm_two_dm <- function() {
+  sm_set(
+    sm_member("dm", tags = list(release = "baseline"), version = sm_version(1L)),
+    sm_member("dm", tags = list(release = "current"), version = sm_version(2L)),
+    sm_member("lb", version = sm_version(3L))
+  )
+}
+
+test_that("a set read back finds one member by name, and its member list finds the same record (#112)", {
+  fx <- local_member_project()
+  v_dm <- fm_table(fx, "dm")
+  v_lb <- fm_table(fx, "lb")
+  suppressMessages(datom_write_set(fx$conn, list(
+    datom_member(fx$conn, "dm", v_dm),
+    datom_member(fx$conn, "lb", v_lb)
+  )))
+  x <- datom_get_set(fx$conn, "product-a")
+
+  r_set <- datom_find_member(x, "lb")
+  expect_identical(r_set$id$version, v_lb)
+
+  r_list <- datom_find_member(x$members, "lb")
+  expect_identical(r_set, r_list)
+
+  at <- which(vapply(x$members, function(m) m$id$name, character(1L)) == "lb")
+  expect_identical(r_set, x$members[[at]])
+})
+
+test_that("an ambiguous name is refused, naming both candidates (#112)", {
+  err <- expect_error(datom_find_member(fm_two_dm(), "dm"),
+                      class = "datom_member_ambiguous")
+  msg <- cli::ansi_strip(conditionMessage(err))
+
+  expect_match(msg, "aaaaaaaa")
+  expect_match(msg, "bbbbbbbb")
+  expect_match(msg, "release=baseline")
+  expect_match(msg, "release=current")
+  expect_match(msg, "tags = list")
+  expect_match(msg, "version = ")
+})
+
+test_that("a label narrows an ambiguous name to one record (#112)", {
+  got <- datom_find_member(fm_two_dm(), "dm", tags = list(release = "current"))
+  expect_identical(got$id$version, sm_version(2L))
+})
+
+test_that("a version prefix narrows an ambiguous name to one record (#112)", {
+  x <- fm_two_dm()
+  expect_identical(datom_find_member(x, "dm", version = "bbbb")$id$version,
+                   sm_version(2L))
+  expect_identical(
+    datom_find_member(x, "dm", version = sm_version(2L))$id$version,
+    sm_version(2L)
+  )
+})
+
+test_that("the lookup needs no connection and reads no storage, on a reader's set (#112)", {
+  expect_false("conn" %in% names(formals(datom_find_member)))
+
+  fx <- local_member_project()
+  v <- fm_table(fx, "dm")
+  suppressMessages(datom_write_set(fx$conn, list(
+    datom_member(fx$conn, "dm", v)
+  )))
+  reader <- fx$conn
+  reader$path <- NULL
+  reader$role <- "reader"
+  x <- datom_get_set(reader, "product-a")
+
+  # Counted rather than inferred from the result: a lookup that also read
+  # storage would return the very same record, so only the count can tell the
+  # two apart.
+  reads <- 0L
+  no_read <- function(...) {
+    reads <<- reads + 1L
+    stop("no storage read expected")
+  }
+  local_mocked_bindings(
+    .datom_storage_read_json = no_read,
+    .datom_storage_download = no_read,
+    .datom_storage_exists = no_read,
+    .datom_storage_list_objects = no_read
+  )
+
+  expect_identical(datom_find_member(x, "dm")$id$version, v)
+  expect_identical(reads, 0L)
+})
+
+test_that("an x that is neither a set nor a list is refused (#112)", {
+  err <- expect_error(datom_find_member("dm", "dm"), class = "datom_not_a_set")
+  expect_match(cli::ansi_strip(conditionMessage(err)), "datom_get_set")
+  expect_error(datom_find_member(42, "dm"), class = "datom_not_a_set")
+})
+
+test_that("a data frame is refused as x, though R counts it as a list (#112)", {
+  expect_error(
+    datom_find_member(datom_list_members(sm_mixed_set()), "dm"),
+    class = "datom_not_a_set"
+  )
+})
+
+test_that("an empty member list is a set with no members, not a refusal (#112)", {
+  err <- expect_error(datom_find_member(list(), "dm"),
+                      class = "datom_member_not_found")
+  expect_match(cli::ansi_strip(conditionMessage(err)), "no members at all")
+})
+
+test_that("member must be a name; a record or a link is refused (#112)", {
+  x <- fm_two_dm()
+  expect_error(datom_find_member(x, x$members[[3L]]),
+               class = "datom_member_unusable")
+  expect_error(datom_find_member(x, 42), class = "datom_member_unusable")
+})
+
+test_that("malformed tags are refused before the lookup (#112)", {
+  expect_error(
+    datom_find_member(fm_two_dm(), "dm", tags = list("unnamed")),
+    "named list"
+  )
+})
+
+test_that("a non-string version is refused before the lookup (#112)", {
+  expect_error(datom_find_member(fm_two_dm(), "dm", version = 1L),
                "single non-empty string")
 })
 

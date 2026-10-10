@@ -20,7 +20,7 @@ An unnamed list of parent records, one per \code{table}.
 }
 \description{
 The \verb{x =} route of \code{\link[=datom_parent]{datom_parent()}}. Each name is resolved by
-\code{\link[=.datom_find_member]{.datom_find_member()}}, the resolver \code{\link[=datom_fetch_member]{datom_fetch_member()}} uses for a name,
+\code{\link[=datom_find_member]{datom_find_member()}}, the resolver \code{\link[=datom_fetch_member]{datom_fetch_member()}} uses for a name,
 so the two verbs cannot pick different members for the same name and labels.
 Tag validation is the same call with the same remedy, for the same reason.
 }

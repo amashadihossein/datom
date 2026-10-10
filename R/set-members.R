@@ -1,12 +1,13 @@
-# Finding and shaping a set's members: three verbs over the object
+# Finding and shaping a set's members: four verbs over the object
 # `datom_get_set()` returns.
 #
 # NONE OF THESE READS A DOCUMENT THE SET READ DID NOT ALREADY READ.
 # `datom_fetch_member()` performs exactly the reads `datom_read()` /
 # `datom_get_set()` perform, because it resolves the pointer through the same
-# link core `$fetch` is built from. The other two do no IO at all -- they are
-# pure functions of the set object plus a caller-supplied axis, which is what
-# keeps them from being a stored view configuration.
+# link core `$fetch` is built from. `datom_find_member()` and the two shaping
+# verbs do no IO at all -- they are pure functions of the set object plus
+# caller-supplied arguments, which is what keeps the shaping verbs from being a
+# stored view configuration.
 #
 # FOUR THINGS HERE ARE LOAD-BEARING AND EASY TO UNDO BY TIDYING.
 #
@@ -406,24 +407,132 @@
 }
 
 
-#' Find the One Member a Name Refers To
+#' Find the One Member of a Set a Name Refers To
 #'
-#' **An ambiguous name aborts and teaches.** Two members can legitimately share a
-#' name -- the same artifact at two versions, for instance a current table beside
-#' a locked baseline -- so a name is not a key, and answering with the first match
-#' would be plausible and wrong. The abort lists the candidates with their
-#' versions and tags and names the two ways to narrow: `tags`, which is the
-#' navigation axis people reach for, and `version`, for exact pinning.
+#' Returns the member record a name refers to -- its `id` (project, name,
+#' kind, and the exact version the set pins) and its labels -- without
+#' fetching what it points at. Use it to ask which version a set cites:
+#' `datom_find_member(x, "dm")$id$version`.
 #'
-#' @param members The set's member list.
-#' @param name The name to look up.
-#' @param tags Optional label filter.
-#' @param version Optional version, or a prefix of one.
-#' @return One member record.
-#' @keywords internal
-.datom_find_member <- function(members, name, tags = NULL, version = NULL) {
+#' It needs no connection and reads nothing from storage: it looks only at
+#' the members already in `x`. So a reader who can read a set but none of
+#' its members' projects can still use it.
+#'
+#' @section A name is not a key:
+#' The same artifact at two versions is a legal pair of members -- a current
+#' table beside a locked baseline, say -- so a name held by two members stops
+#' with an error listing both, with their versions and labels, rather than
+#' answering with the first. Narrow with `tags`, which is the navigation
+#' axis, or pin one exactly with `version`.
+#'
+#' The record works with every verb that takes a member:
+#' [datom_fetch_member()] for its data, [datom_remove_members()] to drop it,
+#' [datom_update_members()] to repoint it.
+#'
+#' @param x A `datom_set` from [datom_get_set()] or [datom_assemble_set()],
+#'   or a set's member list (`x$members`).
+#' @param member The member's name, a single string. A member record or a
+#'   link already names one member, so neither is accepted here.
+#' @param tags Optional named list of labels narrowing an ambiguous name,
+#'   e.g. `list(release = "baseline")`. A member matches when it carries
+#'   every label listed.
+#' @param version Optional version, or a prefix of one, narrowing an
+#'   ambiguous name.
+#'
+#' @return One member record: a list with `id` (`project`, `name`, `kind`,
+#'   `version`) and, when the member has labels, `tags`. A record from a set
+#'   read back with [datom_get_set()] also carries its `fetch` link.
+#' @seealso [datom_list_members()] to see every member and its labels,
+#'   [datom_fetch_member()] to get a member's data.
+#' @export
+#'
+#' @examples
+#' # This verb reads only the members already in a set, so a set built by
+#' # hand shows it. In practice `x` comes from datom_get_set().
+#' x <- structure(
+#'   list(
+#'     name = "study001-adam", project = "study001", version = NULL,
+#'     data_sha = NULL, tags = NULL,
+#'     members = list(
+#'       list(
+#'         id = list(project = "study001", name = "dm", kind = "table",
+#'                   version = strrep("a", 64)),
+#'         tags = list(release = "current")
+#'       ),
+#'       list(
+#'         id = list(project = "study001", name = "dm", kind = "table",
+#'                   version = strrep("b", 64)),
+#'         tags = list(release = "baseline")
+#'       ),
+#'       list(
+#'         id = list(project = "study001", name = "lb", kind = "table",
+#'                   version = strrep("c", 64))
+#'       )
+#'     )
+#'   ),
+#'   class = "datom_set"
+#' )
+#'
+#' # Which version of lb does this set cite?
+#' datom_find_member(x, "lb")$id$version
+#'
+#' # The member list works the same way.
+#' identical(datom_find_member(x$members, "lb"), datom_find_member(x, "lb"))
+#'
+#' # dm is cited twice, so the name alone stops and lists both.
+#' try(datom_find_member(x, "dm"))
+#'
+#' # Narrow by label, or pin one by a version prefix.
+#' datom_find_member(x, "dm", tags = list(release = "baseline"))$id$version
+#' datom_find_member(x, "dm", version = "aaaa")$id$version
+datom_find_member <- function(x, member, tags = NULL, version = NULL) {
+  members <- if (inherits(x, "datom_set")) .datom_set_members(x) else x
+
+  if (!is.list(members) || is.data.frame(members)) {
+    cli::cli_abort(
+      c(
+        "{.arg x} must be a {.cls datom_set} or a set's member list, not \\
+         {.cls {class(x)}}.",
+        "i" = "Read the set first -- \\
+               {.code x <- datom_get_set(conn, \"my-product\")} -- then pass \\
+               {.code x} or {.code x$members}."
+      ),
+      class = "datom_not_a_set"
+    )
+  }
+
+  if (!.datom_is_text_scalar(member)) {
+    cli::cli_abort(
+      c(
+        "{.arg member} must be a member's name, a single non-empty string.",
+        "i" = "You passed {.cls {class(member)}}.",
+        "i" = "A member record or a link already names one exact member, so \\
+               there is nothing to look up: its version is \\
+               {.code record$id$version}."
+      ),
+      class = "datom_member_unusable"
+    )
+  }
+
+  if (!is.null(tags)) {
+    .datom_validate_tag_map(
+      tags, "tags",
+      remedy = "Narrow by labels a member carries, e.g. \\
+                {.code list(release = \"baseline\")}."
+    )
+  }
+  if (!is.null(version) && !.datom_is_text_scalar(version)) {
+    cli::cli_abort(
+      c(
+        "{.arg version} must be a single non-empty string.",
+        "i" = "A version, or a prefix of one, as {.fn datom_history} reports \\
+               them."
+      )
+    )
+  }
+
   named <- Filter(
-    function(m) identical(.datom_id_text(m$id, "name"), name),
+    function(m) identical(.datom_id_text(m$id, "name"), member),
     members
   )
 
@@ -433,7 +542,7 @@
     ))
     cli::cli_abort(
       c(
-        "This set has no member named {.val {name}}.",
+        "This set has no member named {.val {member}}.",
         "i" = if (length(available) == 0L) {
           "The set has no members at all."
         } else {
@@ -461,8 +570,8 @@
   if (length(narrowed) == 0L) {
     cli::cli_abort(
       c(
-        "No member named {.val {name}} matches what you narrowed by.",
-        "i" = "{length(named)} member{?s} named {.val {name}}:",
+        "No member named {.val {member}} matches what you narrowed by.",
+        "i" = "{length(named)} member{?s} named {.val {member}}:",
         .datom_line_bullets(lines),
         "i" = "A label filter needs the key and the exact value; a version may \\
                be given as a prefix."
@@ -475,7 +584,7 @@
     lines <- .datom_member_lines(narrowed)
     cli::cli_abort(
       c(
-        "{.val {name}} names {length(narrowed)} members of this set.",
+        "{.val {member}} names {length(narrowed)} members of this set.",
         "i" = "That is legal: the same artifact at two versions is two \\
                members, such as a current table beside a locked baseline.",
         .datom_line_bullets(lines),
@@ -525,7 +634,7 @@
   shape <- got$shape
 
   if (is.null(got$record)) {
-    return(.datom_find_member(members, member, tags, version))
+    return(datom_find_member(members, member, tags, version))
   }
 
   if (!is.null(tags) || !is.null(version)) {

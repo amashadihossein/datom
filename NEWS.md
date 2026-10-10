@@ -1,4 +1,14 @@
 # datom (development version)
+* New `datom_find_member()` returns the one member of a set a name refers to --
+  its exact version and labels -- with no connection and no storage read, so a
+  reader holding only the set can ask what it cites. An ambiguous name stops and
+  lists the candidates; narrow with `tags` or `version` (#112,
+  `?datom_find_member`).
+
+* A message asking you to upgrade datom now suggests `install.packages("datom")`
+  first and GitHub for a development build. The ones about data formats also
+  point at the new `?datom_schema`, which lists the datom release that reads
+  each format (#103).
 
 * The test suite now passes when suggested packages such as git2r and rio are not
   installed, as in CRAN's "noSuggests" check (#92). Running the tests now needs

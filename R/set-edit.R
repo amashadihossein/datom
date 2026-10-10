@@ -158,7 +158,7 @@
 
 #' Which Members Does This Call Refer To?
 #'
-#' The plural selector both edit verbs share. [.datom_find_member()] resolves
+#' The plural selector both edit verbs share. [datom_find_member()] resolves
 #' exactly **one** member and aborts on an ambiguous name, which is right for a
 #' fetch and only half of what an edit needs: an edit legitimately acts on many.
 #'
@@ -176,7 +176,7 @@
 #' while skipping a name it cannot choose between, whereas a caller who named one
 #' member asked for something that cannot be done, so it is a user error and the
 #' narrowing arguments are what resolve it. The abort comes from
-#' [.datom_find_member()] rather than from a second copy of that message.
+#' [datom_find_member()] rather than from a second copy of that message.
 #'
 #' `tags` and `version` narrow a **name** or a sweep. Supplied beside a record or
 #' a link they are refused rather than ignored, because ignoring them would act
@@ -196,7 +196,7 @@
     shape <- got$shape
 
     if (is.null(got$record)) {
-      record <- .datom_find_member(members, member, tags, version)
+      record <- datom_find_member(members, member, tags, version)
       return(which(vapply(
         members, function(m) identical(m, record), logical(1L)
       )))

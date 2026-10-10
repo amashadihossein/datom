@@ -495,7 +495,7 @@ test_that("set-level tags go through the tag grammar (AC27)", {
   )
 })
 
-test_that("a hand-assembled member list is refused, pointing at datom_member()", {
+test_that("a hand-assembled member list is refused, pointing at datom_member() (AC43)", {
   fx <- local_set_project()
   sw_table(fx, "dm")
 
@@ -875,7 +875,7 @@ test_that("member versions advancing produces a new data_sha and a new version (
 
 # === the metadata document ====================================================
 
-test_that("a written set's metadata carries exactly the fields a set declares", {
+test_that("a written set's metadata carries exactly the fields a set declares (AC42)", {
   # Asserted on the FILE. `jsonlite` writes a NULL element as `{}` rather than
   # omitting it, so a `document_sha` left unpopulated would satisfy a names-only
   # field-set check while carrying an empty object -- and a later read could

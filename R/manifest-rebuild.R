@@ -376,8 +376,8 @@
       "x" = why,
       "i" = "Listed storage instead and found {n} artifact{?s}. Nothing was \\
              written -- the recorded index is unchanged.",
-      "i" = "Upgrade with {.code remotes::install_github('amashadihossein/datom')} \\
-             so this repo is read from its own index again."
+      .datom_upgrade_bullets(),
+      "i" = "Once upgraded, this repo is read from its own index again."
     ),
     class = "datom_manifest_rebuilt"
   )

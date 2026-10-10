@@ -67,6 +67,7 @@ reference:
       - datom_member
       - datom_write_set
       - datom_get_set
+      - datom_find_member
       - datom_fetch_member
       - datom_list_members
       - datom_structure_members
@@ -103,6 +104,11 @@ reference:
     contents:
       - datom_validate
       - is_valid_datom_repo
+
+  - title: "Data formats"
+    desc: "Which datom release reads which data format version"
+    contents:
+      - datom_schema
 
   - title: "Storage Extension API"
     desc: >

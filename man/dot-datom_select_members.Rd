@@ -27,7 +27,7 @@
 An integer vector of positions in \code{members}, never empty.
 }
 \description{
-The plural selector both edit verbs share. \code{\link[=.datom_find_member]{.datom_find_member()}} resolves
+The plural selector both edit verbs share. \code{\link[=datom_find_member]{datom_find_member()}} resolves
 exactly \strong{one} member and aborts on an ambiguous name, which is right for a
 fetch and only half of what an edit needs: an edit legitimately acts on many.
 }
@@ -46,7 +46,7 @@ tension with the caller who sweeps: a sweep can honour "refresh everything"
 while skipping a name it cannot choose between, whereas a caller who named one
 member asked for something that cannot be done, so it is a user error and the
 narrowing arguments are what resolve it. The abort comes from
-\code{\link[=.datom_find_member]{.datom_find_member()}} rather than from a second copy of that message.
+\code{\link[=datom_find_member]{datom_find_member()}} rather than from a second copy of that message.
 
 \code{tags} and \code{version} narrow a \strong{name} or a sweep. Supplied beside a record or
 a link they are refused rather than ignored, because ignoring them would act
