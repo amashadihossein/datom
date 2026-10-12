@@ -92,6 +92,12 @@
 #'
 #' Idempotent: re-setting the same values is a no-op from git's perspective.
 #'
+#' When a fallback value is used (no global `user.name`, or no global
+#' `user.email`), a console note says so, once per R session: it names the
+#' identity datom commits will carry and shows how to set a global one. A
+#' complete global identity produces no note. The note is informational only;
+#' the fallback is written exactly as before.
+#'
 #' @param repo A `git2r::repository` handle.
 #' @param fallback_name Identity used when no global `user.name` is set.
 #' @param fallback_email Identity used when no global `user.email` is set.
@@ -105,6 +111,7 @@
   global <- git2r::config()$global %||% list()
   name   <- global$user.name  %||% fallback_name
   email  <- global$user.email %||% fallback_email
+  falling_back <- is.null(global$user.name) || is.null(global$user.email)
 
   git2r::config(repo, user.name = name, user.email = email)
 
@@ -116,7 +123,61 @@
     git2r::config(repo, "http.followRedirects" = "true")
   }
 
+  if (falling_back) .datom_notify_identity_fallback(name, email)
+
   invisible(repo)
+}
+
+
+# datom's only session state: notices already shown in this R session. A
+# one-shot flag, not a cache -- nothing here is ever invalidated. The binding
+# is locked in the namespace but the environment's contents are not, so mutate
+# it with assign(envir =); `.datom_session$x <- v` also works, but rebinds a
+# local copy of the name.
+.datom_session <- new.env(parent = emptyenv())
+
+
+#' Announce the Placeholder Git Identity
+#'
+#' Prints a short console note saying datom commits will carry a placeholder
+#' git identity, and how to set a real one globally. Shown at most once per R
+#' session: the flag is set only when the note is actually emitted, so a call
+#' made with a real identity never uses up the notice.
+#'
+#' An ordinary `cli` message, not a warning condition: nothing is wrong, the
+#' commits work, and the note must not trip `options(warn = 2)` or `tryCatch()`
+#' handlers that watch for warnings.
+#'
+#' @param name,email The identity datom is about to write to the repo's local
+#'   config (the effective values, so a partial fallback shows the real half).
+#' @return Invisible `TRUE` when the note was shown, `FALSE` when it had
+#'   already been shown this session.
+#' @keywords internal
+.datom_notify_identity_fallback <- function(name, email) {
+  if (isTRUE(.datom_session$git_identity_notice_shown)) return(invisible(FALSE))
+  assign("git_identity_notice_shown", TRUE, envir = .datom_session)
+
+  # Built first: `{.code {name} <{email}>}` styles each value separately and
+  # splits the placeholder into two code spans.
+  identity <- paste0(name, " <", email, ">")
+
+  cli::cli_alert_warning(paste0(
+    "No complete global git identity found. datom commits will be attributed ",
+    "to the placeholder {.code {identity}}."
+  ))
+  cli::cli_alert_info(
+    "Set an identity so your writes are attributed to you:"
+  )
+  cli::cli_alert_info(paste0(
+    "In R: {.code git2r::config(global = TRUE, user.name = \"Your Name\", ",
+    "user.email = \"you@example.com\")}"
+  ))
+  cli::cli_alert_info(paste0(
+    "Or in a shell: {.code git config --global user.name \"Your Name\" && ",
+    "git config --global user.email \"you@example.com\"}"
+  ))
+
+  invisible(TRUE)
 }
 
 

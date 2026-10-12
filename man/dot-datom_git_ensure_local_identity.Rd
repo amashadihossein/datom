@@ -28,5 +28,11 @@ present; otherwise fallback constants are used.
 }
 \details{
 Idempotent: re-setting the same values is a no-op from git's perspective.
+
+When a fallback value is used (no global \code{user.name}, or no global
+\code{user.email}), a console note says so, once per R session: it names the
+identity datom commits will carry and shows how to set a global one. A
+complete global identity produces no note. The note is informational only;
+the fallback is written exactly as before.
 }
 \keyword{internal}

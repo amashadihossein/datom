@@ -36,7 +36,8 @@
 #
 # Not memoised on purpose. A session cache is already deferred package-wide
 # pending its invalidation design (`dev/datom_specification.md:2031`), and adding
-# one here would put session state into a library that has none in order to speed
+# one here would put a cache into a library whose only session state is the
+# one-shot notice flag `.datom_session` (`R/utils-git.R`), in order to speed
 # up a state the next ordinary write removes. Upgrading, or writing once, is the
 # fix.
 

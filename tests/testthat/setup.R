@@ -62,3 +62,25 @@ if (!nzchar(Sys.getenv("DATOM_ALLOW_REAL_NETWORK"))) {
     )
   }
 }
+
+# Placeholder git identity note -------------------------------------------------
+#
+# datom prints a note, once per R session, when it falls back to the placeholder
+# git identity. On a host with no global git identity (CI) that would land inside
+# whichever unrelated test first falls back, so mark it as already shown for the
+# suite. Tests of the note itself reset the flag with
+# `local_identity_notice_state(shown = FALSE)`.
+.datom_session_env <- getFromNamespace(".datom_session", "datom")
+.datom_notice_was_shown <- .datom_session_env$git_identity_notice_shown
+assign("git_identity_notice_shown", TRUE, envir = .datom_session_env)
+# Put the flag back afterwards, so a developer without a global git identity
+# still sees the note in a live session once the suite has run.
+withr::defer(
+  if (is.null(.datom_notice_was_shown)) {
+    rm("git_identity_notice_shown", envir = .datom_session_env)
+  } else {
+    assign("git_identity_notice_shown", .datom_notice_was_shown,
+           envir = .datom_session_env)
+  },
+  teardown_env()
+)

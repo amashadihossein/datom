@@ -10,6 +10,11 @@
   point at the new `?datom_schema`, which lists the datom release that reads
   each format (#103).
 
+* datom now says so, once per R session, when it falls back to the placeholder
+  git identity `datom <datom@noreply>` because no global git `user.name` or
+  `user.email` is set, and shows how to set a real one. Commits are made as
+  before; only the note is new (#70).
+
 * The test suite now passes when suggested packages such as git2r and rio are not
   installed, as in CRAN's "noSuggests" check (#92). Running the tests now needs
   testthat 3.3.0 or later, which skips a test on CRAN when a package it needs is
