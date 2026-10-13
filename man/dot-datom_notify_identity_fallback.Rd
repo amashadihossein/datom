@@ -4,11 +4,15 @@
 \alias{.datom_notify_identity_fallback}
 \title{Announce the Placeholder Git Identity}
 \usage{
-.datom_notify_identity_fallback(name, email)
+.datom_notify_identity_fallback(name, email, both_missing)
 }
 \arguments{
 \item{name, email}{The identity datom is about to write to the repo's local
 config (the effective values, so a partial fallback shows the real half).}
+
+\item{both_missing}{\code{TRUE} when neither global value was set, so the whole
+identity is the placeholder; \code{FALSE} when one half is the user's own, and
+the note calls it "this identity" rather than "the placeholder".}
 }
 \value{
 Invisible \code{TRUE} when the note was shown, \code{FALSE} when it had

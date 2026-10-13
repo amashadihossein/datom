@@ -15,6 +15,12 @@
   `user.email` is set, and shows how to set a real one. Commits are made as
   before; only the note is new (#70).
 
+* When creating the GitHub repo fails with HTTP 403 or 404, the error now adds a
+  hint about the token permissions creation needs (classic token: `repo`;
+  fine-grained: Administration, write). Nothing else changes. `datom_store()`'s
+  `validate` checks only that the token authenticates, not what it may do
+  (#70, `?datom_store`).
+
 * The test suite now passes when suggested packages such as git2r and rio are not
   installed, as in CRAN's "noSuggests" check (#92). Running the tests now needs
   testthat 3.3.0 or later, which skips a test on CRAN when a package it needs is

@@ -112,6 +112,7 @@
   name   <- global$user.name  %||% fallback_name
   email  <- global$user.email %||% fallback_email
   falling_back <- is.null(global$user.name) || is.null(global$user.email)
+  both_missing <- is.null(global$user.name) && is.null(global$user.email)
 
   git2r::config(repo, user.name = name, user.email = email)
 
@@ -123,7 +124,7 @@
     git2r::config(repo, "http.followRedirects" = "true")
   }
 
-  if (falling_back) .datom_notify_identity_fallback(name, email)
+  if (falling_back) .datom_notify_identity_fallback(name, email, both_missing)
 
   invisible(repo)
 }
@@ -150,20 +151,24 @@
 #'
 #' @param name,email The identity datom is about to write to the repo's local
 #'   config (the effective values, so a partial fallback shows the real half).
+#' @param both_missing `TRUE` when neither global value was set, so the whole
+#'   identity is the placeholder; `FALSE` when one half is the user's own, and
+#'   the note calls it "this identity" rather than "the placeholder".
 #' @return Invisible `TRUE` when the note was shown, `FALSE` when it had
 #'   already been shown this session.
 #' @keywords internal
-.datom_notify_identity_fallback <- function(name, email) {
+.datom_notify_identity_fallback <- function(name, email, both_missing) {
   if (isTRUE(.datom_session$git_identity_notice_shown)) return(invisible(FALSE))
   assign("git_identity_notice_shown", TRUE, envir = .datom_session)
 
   # Built first: `{.code {name} <{email}>}` styles each value separately and
   # splits the placeholder into two code spans.
   identity <- paste0(name, " <", email, ">")
+  what <- if (isTRUE(both_missing)) "the placeholder" else "this identity:"
 
   cli::cli_alert_warning(paste0(
     "No complete global git identity found. datom commits will be attributed ",
-    "to the placeholder {.code {identity}}."
+    "to {what} {.code {identity}}."
   ))
   cli::cli_alert_info(
     "Set an identity so your writes are attributed to you:"

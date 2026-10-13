@@ -967,6 +967,82 @@ test_that(".datom_create_github_repo() propagates API errors on create", {
   )
 })
 
+# --- the token-permission hint on a failed create ------------------------------
+#
+# The existence check answers 404 (no such repo), then the create request fails
+# with `fail()`. HTTP failures are raised by httr2 itself, so they carry the real
+# classes (`httr2_http_403`, ...) the hint is chosen by.
+
+# Returns the condition `.datom_create_github_repo()` aborts with.
+create_repo_error <- function(fail, org = "org") {
+  mockery::stub(
+    .datom_create_github_repo, "httr2::req_perform",
+    function(req, ...) {
+      if (identical(req$method, "POST")) fail()
+      structure(list(url = req$url, status_code = 404L), class = "httr2_response")
+    }
+  )
+  mockery::stub(
+    .datom_create_github_repo, "httr2::resp_status",
+    function(resp) resp$status_code
+  )
+  tryCatch(
+    .datom_create_github_repo("repo", pat = "ghp_test", org = org),
+    error = function(e) e
+  )
+}
+
+http_failure <- function(status) {
+  function() httr2::resp_check_status(httr2::response(status_code = status))
+}
+
+create_error_text <- function(err) cli::ansi_strip(conditionMessage(err))
+
+test_that(".datom_create_github_repo() hints at token permissions on 403", {
+  err <- create_repo_error(http_failure(403L))
+  text <- create_error_text(err)
+
+  expect_match(text, "Failed to create GitHub repo", fixed = TRUE)
+  expect_match(text, "Underlying error: HTTP 403 Forbidden", fixed = TRUE)
+  expect_match(text, "lacks permission to create the repository", fixed = TRUE)
+  expect_match(text, "Classic token: needs the `repo` scope", fixed = TRUE)
+  expect_match(text, "Fine-grained token: needs the Administration", fixed = TRUE)
+  # The httr2 error stays attached for anyone who needs the response.
+  expect_s3_class(err$parent, "httr2_http_403")
+})
+
+test_that(".datom_create_github_repo() hints at token permissions on 404", {
+  text <- create_error_text(create_repo_error(http_failure(404L)))
+
+  expect_match(text, "Underlying error: HTTP 404 Not Found", fixed = TRUE)
+  expect_match(text, "lacks permission to create the repository", fixed = TRUE)
+})
+
+test_that(".datom_create_github_repo() gives no permission hint on 422", {
+  # 422 is a taken or invalid name: a permission hint would mislead.
+  text <- create_error_text(create_repo_error(http_failure(422L)))
+
+  expect_match(text, "Underlying error: HTTP 422", fixed = TRUE)
+  expect_no_match(text, "lacks permission", fixed = TRUE)
+})
+
+test_that(".datom_create_github_repo() gives no permission hint on 401", {
+  # 401 is a bad token, not a token short of a permission.
+  text <- create_error_text(create_repo_error(http_failure(401L)))
+
+  expect_match(text, "Underlying error: HTTP 401", fixed = TRUE)
+  expect_no_match(text, "lacks permission", fixed = TRUE)
+})
+
+test_that(".datom_create_github_repo() gives no permission hint on a non-HTTP error", {
+  text <- create_error_text(
+    create_repo_error(function() stop("Could not resolve host: api.github.com"))
+  )
+
+  expect_match(text, "Underlying error: Could not resolve host", fixed = TRUE)
+  expect_no_match(text, "lacks permission", fixed = TRUE)
+})
+
 
 # ==============================================================================
 # .datom_delete_github_repo

@@ -39,7 +39,9 @@
 #'   server's API root, e.g. `"https://github.mycompany.com/api/v3"`. A
 #'   trailing `/` is stripped for consistency.
 #' @param validate If `TRUE` (default), validate GitHub PAT via API.
-#'   Set to `FALSE` for tests or offline use.
+#'   Set to `FALSE` for tests or offline use. This checks only that the token
+#'   authenticates (a `GET /user` call), not that it can create repositories
+#'   or push to them.
 #'
 #' @return A `datom_store` object.
 #' @export
@@ -519,9 +521,44 @@ print.datom_store <- function(x, ...) {
   }, error = function(e) {
     cli::cli_abort(c(
       "Failed to create GitHub repo {.val {repo_name}}.",
-      "i" = "Underlying error: {conditionMessage(e)}"
+      "i" = "Underlying error: {conditionMessage(e)}",
+      .datom_github_create_permission_hint(e)
     ), parent = e)
   })
+}
+
+
+#' Hint at Token Permissions When Creating a GitHub Repo Fails
+#'
+#' Extra lines for the "Failed to create GitHub repo" error when GitHub
+#' answered 403 or 404, the statuses a token without permission to create the
+#' repository gets. Classified by the condition class httr2 raises
+#' (`httr2_http_403`, `httr2_http_404`), not by matching the message text.
+#' Any other failure -- 401 (the token itself is bad), 422 (the name is taken
+#' or invalid), or an error that is not an HTTP response at all -- gets no
+#' hint, because a permission hint would point the user the wrong way.
+#'
+#' Hedged on purpose: a 403 can also come from an organisation's policies.
+#'
+#' @param e The condition caught from the create request.
+#' @return A named character vector of `"i"` lines, or `character(0)`.
+#' @keywords internal
+.datom_github_create_permission_hint <- function(e) {
+  if (!inherits(e, c("httr2_http_403", "httr2_http_404"))) return(character(0))
+
+  c(
+    "i" = "This often means the token lacks permission to create the repository.",
+    "i" = paste0(
+      "Classic token: needs the {.code repo} scope ({.code public_repo} is not ",
+      "enough: datom creates private repos). For an org repo, you must ",
+      "also be a member allowed to create repositories there, and the token ",
+      "may need SSO authorisation."
+    ),
+    "i" = paste0(
+      "Fine-grained token: needs the {.field Administration} repository ",
+      "permission set to write."
+    )
+  )
 }
 
 

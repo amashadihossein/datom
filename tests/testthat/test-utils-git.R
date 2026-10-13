@@ -255,7 +255,7 @@ test_that(".datom_git_ensure_local_identity says so when neither global value is
 
   text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
 
-  expect_match(text, "placeholder", fixed = TRUE)
+  expect_match(text, "attributed to the placeholder `datom <datom@noreply>`", fixed = TRUE)
 })
 
 test_that(".datom_git_ensure_local_identity says so when only user.name is missing", {
@@ -266,7 +266,9 @@ test_that(".datom_git_ensure_local_identity says so when only user.name is missi
 
   text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
 
-  expect_match(text, "placeholder", fixed = TRUE)
+  # Half of it is the user's own, so it is not called the placeholder.
+  expect_match(text, "attributed to this identity: `datom <me@lab.org>`", fixed = TRUE)
+  expect_no_match(text, "placeholder", fixed = TRUE)
   # The real half is kept; only the missing half is replaced.
   cfg <- git2r::config(repo)
   expect_equal(cfg$local$user.name, "datom")
@@ -281,7 +283,8 @@ test_that(".datom_git_ensure_local_identity says so when only user.email is miss
 
   text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
 
-  expect_match(text, "placeholder", fixed = TRUE)
+  expect_match(text, "attributed to this identity: `Me <datom@noreply>`", fixed = TRUE)
+  expect_no_match(text, "placeholder", fixed = TRUE)
   cfg <- git2r::config(repo)
   expect_equal(cfg$local$user.name, "Me")
   expect_equal(cfg$local$user.email, "datom@noreply")
