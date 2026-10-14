@@ -451,18 +451,22 @@ test_that(".datom_git_ensure_local_identity's note names the placeholder and bot
     'git2r::config(git2r::repository("', path, '"), ',
     'user.name = "Your Name", user.email = "you@example.com")'
   ), fixed = TRUE)
-  expect_match(text, paste0('git -C "', path, '" config user.name "Your Name"'),
-               fixed = TRUE)
-  expect_match(text, paste0('git -C "', path, '" config user.email "you@example.com"'),
-               fixed = TRUE)
   # For repos set up from now on.
   expect_match(text, paste0(
     'git2r::config(global = TRUE, ',
     'user.name = "Your Name", user.email = "you@example.com")'
   ), fixed = TRUE)
-  expect_match(text, 'git config --global user.name "Your Name"', fixed = TRUE)
-  expect_match(text, 'git config --global user.email "you@example.com"', fixed = TRUE)
-  # Windows PowerShell 5.1 rejects `&&`, so shell commands are separate lines.
+  # Each shell command is a whole line of its own, so it can be pasted alone
+  # and no joiner is needed (Windows PowerShell 5.1 rejects `&&`). A substring
+  # match would also pass with two commands on one line.
+  lines <- trimws(strsplit(text, "\n", fixed = TRUE)[[1]])
+  shell_cmds <- c(
+    paste0('git -C "', path, '" config user.name "Your Name"'),
+    paste0('git -C "', path, '" config user.email "you@example.com"'),
+    'git config --global user.name "Your Name"',
+    'git config --global user.email "you@example.com"'
+  )
+  purrr::walk(shell_cmds, function(cmd) expect_true(cmd %in% lines, label = cmd))
   expect_no_match(text, "&&", fixed = TRUE)
 })
 
