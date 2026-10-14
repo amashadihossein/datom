@@ -379,12 +379,49 @@ test_that(".datom_git_ensure_local_identity's note names the placeholder and bot
   repo <- git2r::init(withr::local_tempdir())
 
   text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
+  path <- as.character(fs::path_tidy(git2r::workdir(repo)))
 
   expect_match(text, "datom <datom@noreply>", fixed = TRUE)
-  expect_match(text, "git2r::config(global = TRUE", fixed = TRUE)
-  expect_match(text, "user.email = \"you@example.com\")", fixed = TRUE)
-  expect_match(text, "git config --global user.name", fixed = TRUE)
-  expect_match(text, "git config --global user.email", fixed = TRUE)
+  expect_match(text, path, fixed = TRUE)
+  # For this repo: datom already saved the placeholder in its own config.
+  expect_match(text, paste0(
+    'git2r::config(git2r::repository("', path, '"), ',
+    'user.name = "Your Name", user.email = "you@example.com")'
+  ), fixed = TRUE)
+  expect_match(text, paste0('git -C "', path, '" config user.name "Your Name"'),
+               fixed = TRUE)
+  expect_match(text, paste0('git -C "', path, '" config user.email "you@example.com"'),
+               fixed = TRUE)
+  # For repos set up from now on.
+  expect_match(text, paste0(
+    'git2r::config(global = TRUE, ',
+    'user.name = "Your Name", user.email = "you@example.com")'
+  ), fixed = TRUE)
+  expect_match(text, 'git config --global user.name "Your Name"', fixed = TRUE)
+  expect_match(text, 'git config --global user.email "you@example.com"', fixed = TRUE)
+  # Windows PowerShell 5.1 rejects `&&`, so shell commands are separate lines.
+  expect_no_match(text, "&&", fixed = TRUE)
+})
+
+test_that(".datom_git_ensure_local_identity: the note's per-repo R fix gives the repo a real identity", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = FALSE)
+  local_mock_git_global(global = list())
+  repo <- git2r::init(withr::local_tempdir())
+  path <- as.character(fs::path_tidy(git2r::workdir(repo)))
+
+  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
+  expect_equal(.datom_git_author(path),
+               list(name = "datom", email = "datom@noreply"))
+
+  # Run the command exactly as the note printed it, not a hand-written copy.
+  lines <- trimws(strsplit(text, "\n", fixed = TRUE)[[1]])
+  fix <- lines[startsWith(lines, "git2r::config(git2r::repository(")]
+  expect_length(fix, 1)
+  eval(parse(text = fix))
+
+  expect_equal(.datom_git_author(path),
+               list(name = "Your Name", email = "you@example.com"))
 })
 
 test_that(".datom_git_ensure_local_identity's note names the fallback actually applied", {

@@ -94,9 +94,12 @@
 #'
 #' When a fallback value is used (no global `user.name`, or no global
 #' `user.email`), a console note says so, once per R session: it names the
-#' identity datom commits will carry and shows how to set a global one. A
-#' complete global identity produces no note. The note is informational only;
-#' the fallback is written exactly as before.
+#' identity datom commits will carry and the repo it was saved in, and shows
+#' two fixes -- how to set a real identity in that repo's own config (which
+#' overrides a global identity, so a global one alone would not change this
+#' repo), and how to set a global identity for repos set up later. A complete
+#' global identity produces no note. The note is informational only; the
+#' fallback is written exactly as before.
 #'
 #' @param repo A `git2r::repository` handle.
 #' @param fallback_name Identity used when no global `user.name` is set.
@@ -124,7 +127,12 @@
     git2r::config(repo, "http.followRedirects" = "true")
   }
 
-  if (falling_back) .datom_notify_identity_fallback(name, email, both_missing)
+  if (falling_back) {
+    # Forward slashes and no trailing slash, so the path is valid inside the
+    # R string the note prints, on Windows too.
+    path <- as.character(fs::path_tidy(git2r::workdir(repo)))
+    .datom_notify_identity_fallback(name, email, both_missing, path)
+  }
 
   invisible(repo)
 }
@@ -141,9 +149,23 @@
 #' Announce the Placeholder Git Identity
 #'
 #' Prints a short console note saying datom commits will carry a placeholder
-#' git identity, and how to set a real one globally. Shown at most once per R
-#' session: the flag is set only when the note is actually emitted, so a call
-#' made with a real identity never uses up the notice.
+#' git identity, and how to replace it. Shown at most once per R session: the
+#' flag is set only when the note is actually emitted, so a call made with a
+#' real identity never uses up the notice.
+#'
+#' The note gives two fixes, because datom has already written the identity
+#' into the repo's own git config, and a repo's own config overrides the global
+#' one: setting a global identity alone would leave this repo's commits on the
+#' placeholder.
+#' * **For this repo**: commands (in R, and as two shell lines) that set
+#'   `user.name` and `user.email` in the repo at `path`.
+#' * **For repos set up from now on**: commands that set a global identity.
+#'
+#' Command lines are printed with [cli::cli_verbatim()], one line per command:
+#' cli does not wrap them at console width, so each stays copy-pasteable, and
+#' glue does not interpolate a brace that may appear in `path`. Shell commands are
+#' separate lines rather than joined with `&&`, which Windows PowerShell 5.1
+#' rejects.
 #'
 #' An ordinary `cli` message, not a warning condition: nothing is wrong, the
 #' commits work, and the note must not trip `options(warn = 2)` or `tryCatch()`
@@ -154,10 +176,12 @@
 #' @param both_missing `TRUE` when neither global value was set, so the whole
 #'   identity is the placeholder; `FALSE` when one half is the user's own, and
 #'   the note calls it "this identity" rather than "the placeholder".
+#' @param path The repo's working folder, with forward slashes, shown in the
+#'   per-repo fix commands.
 #' @return Invisible `TRUE` when the note was shown, `FALSE` when it had
 #'   already been shown this session.
 #' @keywords internal
-.datom_notify_identity_fallback <- function(name, email, both_missing) {
+.datom_notify_identity_fallback <- function(name, email, both_missing, path) {
   if (isTRUE(.datom_session$git_identity_notice_shown)) return(invisible(FALSE))
   assign("git_identity_notice_shown", TRUE, envir = .datom_session)
 
@@ -165,22 +189,33 @@
   # splits the placeholder into two code spans.
   identity <- paste0(name, " <", email, ">")
   what <- if (isTRUE(both_missing)) "the placeholder" else "this identity:"
+  set_values <- 'user.name = "Your Name", user.email = "you@example.com")'
 
   cli::cli_alert_warning(paste0(
     "No complete global git identity found. datom commits will be attributed ",
     "to {what} {.code {identity}}."
   ))
-  cli::cli_alert_info(
-    "Set an identity so your writes are attributed to you:"
+  cli::cli_alert_info(paste0(
+    "datom saved it in this repo's own git config, which overrides a global ",
+    "identity. To fix this repo, in R:"
+  ))
+  cli::cli_verbatim(paste0(
+    '  git2r::config(git2r::repository("', path, '"), ', set_values
+  ))
+  cli::cli_alert_info("Or in a shell:")
+  cli::cli_verbatim(
+    paste0('  git -C "', path, '" config user.name "Your Name"'),
+    paste0('  git -C "', path, '" config user.email "you@example.com"')
   )
-  cli::cli_alert_info(paste0(
-    "In R: {.code git2r::config(global = TRUE, user.name = \"Your Name\", ",
-    "user.email = \"you@example.com\")}"
-  ))
-  cli::cli_alert_info(paste0(
-    "Or in a shell: {.code git config --global user.name \"Your Name\" && ",
-    "git config --global user.email \"you@example.com\"}"
-  ))
+  cli::cli_alert_info(
+    "For repos set up from now on, set a global identity. In R:"
+  )
+  cli::cli_verbatim(paste0("  git2r::config(global = TRUE, ", set_values))
+  cli::cli_alert_info("Or in a shell:")
+  cli::cli_verbatim(
+    '  git config --global user.name "Your Name"',
+    '  git config --global user.email "you@example.com"'
+  )
 
   invisible(TRUE)
 }

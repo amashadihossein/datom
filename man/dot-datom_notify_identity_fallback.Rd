@@ -4,7 +4,7 @@
 \alias{.datom_notify_identity_fallback}
 \title{Announce the Placeholder Git Identity}
 \usage{
-.datom_notify_identity_fallback(name, email, both_missing)
+.datom_notify_identity_fallback(name, email, both_missing, path)
 }
 \arguments{
 \item{name, email}{The identity datom is about to write to the repo's local
@@ -13,6 +13,9 @@ config (the effective values, so a partial fallback shows the real half).}
 \item{both_missing}{\code{TRUE} when neither global value was set, so the whole
 identity is the placeholder; \code{FALSE} when one half is the user's own, and
 the note calls it "this identity" rather than "the placeholder".}
+
+\item{path}{The repo's working folder, with forward slashes, shown in the
+per-repo fix commands.}
 }
 \value{
 Invisible \code{TRUE} when the note was shown, \code{FALSE} when it had
@@ -20,11 +23,27 @@ already been shown this session.
 }
 \description{
 Prints a short console note saying datom commits will carry a placeholder
-git identity, and how to set a real one globally. Shown at most once per R
-session: the flag is set only when the note is actually emitted, so a call
-made with a real identity never uses up the notice.
+git identity, and how to replace it. Shown at most once per R session: the
+flag is set only when the note is actually emitted, so a call made with a
+real identity never uses up the notice.
 }
 \details{
+The note gives two fixes, because datom has already written the identity
+into the repo's own git config, and a repo's own config overrides the global
+one: setting a global identity alone would leave this repo's commits on the
+placeholder.
+\itemize{
+\item \strong{For this repo}: commands (in R, and as two shell lines) that set
+\code{user.name} and \code{user.email} in the repo at \code{path}.
+\item \strong{For repos set up from now on}: commands that set a global identity.
+}
+
+Command lines are printed with \code{\link[cli:cli_verbatim]{cli::cli_verbatim()}}, one line per command:
+cli does not wrap them at console width, so each stays copy-pasteable, and
+glue does not interpolate a brace that may appear in \code{path}. Shell commands are
+separate lines rather than joined with \code{&&}, which Windows PowerShell 5.1
+rejects.
+
 An ordinary \code{cli} message, not a warning condition: nothing is wrong, the
 commits work, and the note must not trip \code{options(warn = 2)} or \code{tryCatch()}
 handlers that watch for warnings.

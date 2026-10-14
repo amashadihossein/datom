@@ -31,8 +31,11 @@ Idempotent: re-setting the same values is a no-op from git's perspective.
 
 When a fallback value is used (no global \code{user.name}, or no global
 \code{user.email}), a console note says so, once per R session: it names the
-identity datom commits will carry and shows how to set a global one. A
-complete global identity produces no note. The note is informational only;
-the fallback is written exactly as before.
+identity datom commits will carry and the repo it was saved in, and shows
+two fixes -- how to set a real identity in that repo's own config (which
+overrides a global identity, so a global one alone would not change this
+repo), and how to set a global identity for repos set up later. A complete
+global identity produces no note. The note is informational only; the
+fallback is written exactly as before.
 }
 \keyword{internal}
