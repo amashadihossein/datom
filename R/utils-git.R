@@ -219,7 +219,7 @@
   set_values <- 'user.name = "Your Name", user.email = "you@example.com")'
 
   cli::cli_alert_warning(paste0(
-    "No complete global git identity found. datom commits will be attributed ",
+    "No complete git identity found. datom commits will be attributed ",
     "to {what} {.code {identity}}."
   ))
   cli::cli_alert_info(paste0(

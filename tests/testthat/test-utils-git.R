@@ -444,6 +444,8 @@ test_that(".datom_git_ensure_local_identity's note names the placeholder and bot
   text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
   path <- as.character(fs::path_tidy(git2r::workdir(repo)))
 
+  # git found no identity at any config level, not just the global file.
+  expect_match(text, "No complete git identity found.", fixed = TRUE)
   expect_match(text, "datom <datom@noreply>", fixed = TRUE)
   expect_match(text, path, fixed = TRUE)
   # For this repo: datom already saved the placeholder in its own config.
