@@ -356,6 +356,24 @@ test_that(".datom_git_ensure_local_identity counts an empty global user.name as 
   expect_match(text, "attributed to this identity: `datom <me@lab.org>`", fixed = TRUE)
 })
 
+test_that(".datom_git_ensure_local_identity counts an empty global user.email as missing", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = FALSE)
+  local_mock_git_global(global = list(user.name = "Me", user.email = ""),
+                        signature = "real")
+  repo <- git2r::init(withr::local_tempdir())
+  # libgit2 refuses an empty email as well as an empty name, so copying ""
+  # into the repo would make the first commit fail.
+  git2r::config(repo, user.email = "")
+
+  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
+
+  cfg <- git2r::config(repo)
+  expect_equal(cfg$local$user.name, "Me")
+  expect_equal(cfg$local$user.email, "datom@noreply")
+  expect_match(text, "attributed to this identity: `Me <datom@noreply>`", fixed = TRUE)
+})
+
 test_that(".datom_git_ensure_local_identity keeps an http.followRedirects value already in the repo", {
   skip_if_no_git2r()
   local_mock_git_global(global = list(user.name  = "Global User",
