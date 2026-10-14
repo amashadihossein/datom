@@ -146,9 +146,10 @@
 
   # git2r's fetch reads http.followRedirects from local config; if the key is
   # absent (fresh clone or init) it throws "config value not found". Set it
-  # explicitly so fetch/push never hits this.
+  # explicitly so fetch/push never hits this, keeping any value already there.
+  # libgit2 lists config keys lower-cased, so read it back in lower case.
   local_cfg <- git2r::config(repo)$local %||% list()
-  if (is.null(local_cfg[["http.followRedirects"]])) {
+  if (is.null(local_cfg[["http.followredirects"]])) {
     git2r::config(repo, "http.followRedirects" = "true")
   }
 

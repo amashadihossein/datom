@@ -356,6 +356,19 @@ test_that(".datom_git_ensure_local_identity counts an empty global user.name as 
   expect_match(text, "attributed to this identity: `datom <me@lab.org>`", fixed = TRUE)
 })
 
+test_that(".datom_git_ensure_local_identity keeps an http.followRedirects value already in the repo", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+  repo <- git2r::init(withr::local_tempdir())
+  git2r::config(repo, "http.followRedirects" = "false")
+
+  .datom_git_ensure_local_identity(repo)
+
+  # libgit2 lists config keys lower-cased, whatever case they were set in.
+  expect_equal(git2r::config(repo)$local[["http.followredirects"]], "false")
+})
+
 test_that(".datom_git_ensure_local_identity says so only once per session", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
