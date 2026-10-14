@@ -49,7 +49,9 @@ server's API root, e.g. \code{"https://github.mycompany.com/api/v3"}. A
 trailing \code{/} is stripped for consistency.}
 
 \item{validate}{If \code{TRUE} (default), validate GitHub PAT via API.
-Set to \code{FALSE} for tests or offline use.}
+Set to \code{FALSE} for tests or offline use. This checks only that the token
+authenticates (a \code{GET /user} call), not that it can create repositories
+or push to them.}
 }
 \value{
 A \code{datom_store} object.

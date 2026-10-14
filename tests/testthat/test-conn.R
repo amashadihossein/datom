@@ -2660,6 +2660,40 @@ test_that("datom_clone aborts if cloned repo is not a datom repo", {
   })
 })
 
+test_that("datom_clone: a rejected clone does not use up the placeholder-identity note", {
+  skip_if_no_git2r()
+  withr::with_tempdir({
+    bare_dir <- withr::local_tempdir()
+    git2r::init(bare_dir, bare = TRUE)
+
+    work_dir <- withr::local_tempdir()
+    work_repo <- git2r::init(work_dir)
+    git2r::config(work_repo, user.name = "Test", user.email = "test@test.com")
+    writeLines("init", fs::path(work_dir, "README.md"))
+    git2r::add(work_repo, "README.md")
+    git2r::commit(work_repo, "Initial commit")
+    git2r::remote_add(work_repo, name = "origin", url = bare_dir)
+    git2r::push(work_repo, name = "origin",
+                refspec = test_head_refspec(work_repo), set_upstream = TRUE)
+
+    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
+    store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
+                         data_repo_url = bare_dir, validate = FALSE)
+
+    # From here on git has no identity: the clone would fall back if it set one.
+    local_identity_notice_state(shown = FALSE)
+    local_mock_git_global(global = list())
+
+    msgs <- testthat::capture_messages(expect_error(
+      datom_clone(path = "clone_target", store = store),
+      "not a datom repository"
+    ))
+
+    expect_false(.datom_session$git_identity_notice_shown)
+    expect_no_match(paste(msgs, collapse = ""), "placeholder", fixed = TRUE)
+  })
+})
+
 test_that("datom_clone clones and returns a datom_conn", {
   withr::with_tempdir({
     bare_dir <- withr::local_tempdir()

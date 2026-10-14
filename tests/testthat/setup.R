@@ -62,3 +62,15 @@ if (!nzchar(Sys.getenv("DATOM_ALLOW_REAL_NETWORK"))) {
     )
   }
 }
+
+# Placeholder git identity note -------------------------------------------------
+#
+# datom prints a note, once per R session, when it falls back to the placeholder
+# git identity. On a host with no global git identity (CI) that would land inside
+# whichever unrelated test first falls back, so mark it as already shown for the
+# suite. Tests of the note itself reset the flag with
+# `local_identity_notice_state(shown = FALSE)`. The flag is put back after the
+# suite, so a developer without a global git identity still sees the note in a
+# live session once the suite has run. (testthat sources helper files, where
+# the helper is defined, before setup files.)
+local_identity_notice_state(TRUE, env = teardown_env())

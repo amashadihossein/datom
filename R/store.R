@@ -39,7 +39,9 @@
 #'   server's API root, e.g. `"https://github.mycompany.com/api/v3"`. A
 #'   trailing `/` is stripped for consistency.
 #' @param validate If `TRUE` (default), validate GitHub PAT via API.
-#'   Set to `FALSE` for tests or offline use.
+#'   Set to `FALSE` for tests or offline use. This checks only that the token
+#'   authenticates (a `GET /user` call), not that it can create repositories
+#'   or push to them.
 #'
 #' @return A `datom_store` object.
 #' @export
@@ -433,6 +435,11 @@ print.datom_store <- function(x, ...) {
 #' - Repo exists + empty → reuse, return URL
 #' - Repo exists + has content → abort
 #'
+#' When the create request fails, the error keeps GitHub's own explanation
+#' (its `message`, and any `errors` details) next to the HTTP status, via
+#' `.datom_github_error_body()`, and may add a token-permission hint
+#' (`.datom_github_create_permission_hint()`).
+#'
 #' @param repo_name Repository name.
 #' @param pat GitHub personal access token.
 #' @param org GitHub organization. NULL for personal repos.
@@ -511,6 +518,7 @@ print.datom_store <- function(x, ...) {
       httr2::req_headers(!!!headers) |>
       httr2::req_body_json(body) |>
       httr2::req_method("POST") |>
+      httr2::req_error(body = .datom_github_error_body) |>
       httr2::req_perform()
 
     result <- httr2::resp_body_json(resp)
@@ -519,9 +527,93 @@ print.datom_store <- function(x, ...) {
   }, error = function(e) {
     cli::cli_abort(c(
       "Failed to create GitHub repo {.val {repo_name}}.",
-      "i" = "Underlying error: {conditionMessage(e)}"
+      "i" = "Underlying error: {conditionMessage(e)}",
+      .datom_github_create_permission_hint(e)
     ), parent = e)
   })
+}
+
+
+#' GitHub's Own Explanation of a Failed Request
+#'
+#' The `body` callback for [httr2::req_error()] on GitHub API requests, so a
+#' failed request's error carries the reason GitHub gave rather than only the
+#' HTTP status line.
+#'
+#' @param resp The failed `httr2_response`.
+#' @return GitHub's `message` field, followed by one line per entry of its
+#'   `errors` field when present (each entry's own `message`, or its fields
+#'   pasted together). `NULL` when the body is not JSON or its `message` is
+#'   not a non-empty string, so httr2 falls back to the status line alone.
+#' @keywords internal
+.datom_github_error_body <- function(resp) {
+  body <- tryCatch(
+    httr2::resp_body_json(resp, check_type = FALSE),
+    error = function(e) NULL
+  )
+  msg <- if (is.list(body)) body$message
+  # No length or NA check: `resp_body_json()` keeps JSON arrays as lists and
+  # `null` as NULL, so a `message` that is character is a single, non-NA
+  # string. A number, array, `null` or `""` falls to the status line alone.
+  if (!is.character(msg) || !nzchar(msg)) return(NULL)
+
+  details <- purrr::map_chr(body$errors %||% list(), function(entry) {
+    if (is.list(entry) && is.character(entry$message)) return(entry$message[[1]])
+    paste(unlist(entry), collapse = " ")
+  })
+  c(msg, details)
+}
+
+
+#' Hint at Token Permissions When Creating a GitHub Repo Fails
+#'
+#' Extra lines for the "Failed to create GitHub repo" error when GitHub
+#' answered 403 or 404, the statuses a token without permission to create the
+#' repository gets. Classified by the condition class httr2 raises
+#' (`httr2_http_403`, `httr2_http_404`), not by matching the message text.
+#' Any other failure -- 401 (the token itself is bad), 422 (the name is taken
+#' or invalid), or an error that is not an HTTP response at all -- gets no
+#' hint, because a permission hint would point the user the wrong way.
+#'
+#' A 403 whose response says the rate limit is used up (header
+#' `x-ratelimit-remaining` is `"0"`) gets no hint either: the token works, and
+#' GitHub's own text in the error says what happened. A 404 gets one more
+#' line: it can also mean the organisation name or the API URL is wrong.
+#'
+#' Hedged on purpose: a 403 can also come from an organisation's policies.
+#'
+#' @param e The condition caught from the create request. httr2 attaches the
+#'   response as `e$resp`.
+#' @return A named character vector of `"i"` lines, or `character(0)`.
+#' @keywords internal
+.datom_github_create_permission_hint <- function(e) {
+  if (!inherits(e, c("httr2_http_403", "httr2_http_404"))) return(character(0))
+
+  # httr2 attaches the response to every condition it raises, so the NULL
+  # check guards only a caller passing a hand-built condition: without it,
+  # reading the header would fail inside the create error's own handler.
+  remaining <- if (!is.null(e$resp)) {
+    httr2::resp_header(e$resp, "x-ratelimit-remaining")
+  }
+  if (identical(remaining, "0")) return(character(0))
+
+  hint <- c(
+    "i" = "This often means the token lacks permission to create the repository.",
+    "i" = paste0(
+      "Classic token: needs the {.code repo} scope ({.code public_repo} is not ",
+      "enough: datom creates private repos). For an org repo, you must ",
+      "also be a member allowed to create repositories there, and the token ",
+      "may need SSO authorisation."
+    ),
+    "i" = paste0(
+      "Fine-grained token: needs the {.field Administration} repository ",
+      "permission set to write."
+    )
+  )
+  if (!inherits(e, "httr2_http_404")) return(hint)
+
+  c(hint,
+    "i" = "A 404 can also mean the organisation name or the API URL is wrong.")
 }
 
 

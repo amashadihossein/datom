@@ -847,10 +847,6 @@ datom_clone <- function(path, store, ...) {
     }
   )
 
-  # Ensure the fresh clone has a local git identity so the first datom_write()
-  # commit succeeds even on a host with no global git config (CI, fresh box).
-  .datom_git_ensure_local_identity(git2r::repository(as.character(path)))
-
   # Verify this is actually a datom repo
   yaml_path <- fs::path(path, ".datom", "project.yaml")
   if (!fs::file_exists(yaml_path)) {
@@ -860,6 +856,12 @@ datom_clone <- function(path, store, ...) {
       "i" = "Use {.fn datom_init_repo} to initialize a new datom project."
     ))
   }
+
+  # Ensure the fresh clone has a local git identity so the first datom_write()
+  # commit succeeds even on a host with no global git config (CI, fresh box).
+  # After the check above, so a clone about to be rejected does not use up the
+  # once-per-session placeholder-identity note.
+  .datom_git_ensure_local_identity(git2r::repository(as.character(path)))
 
   # --- Clone or verify gov repo when gov_repo_url is set ---------------------
   if (!is.null(store$gov_repo_url) && nzchar(store$gov_repo_url)) {

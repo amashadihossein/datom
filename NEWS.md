@@ -10,6 +10,22 @@
   point at the new `?datom_schema`, which lists the datom release that reads
   each format (#103).
 
+* When datom sets up a repo, it now gives it the git identity git itself would
+  use (including `~/.config/git/config` and conditional includes) instead of
+  reading only the global config file, and an empty `user.name` or
+  `user.email` counts as missing. When there is none and it saves the
+  placeholder `datom <datom@noreply>` instead, it says so once per R session.
+  The note shows how to fix that repo -- its own config overrides a global
+  identity, so setting a global one alone does not -- and how to set a global
+  identity for repos set up later, both as git2r commands in R (#70).
+
+* When creating the GitHub repo fails, the error now includes GitHub's own
+  explanation. A 403 or 404 adds a hint about the token permissions creation
+  needs (classic token: `repo`; fine-grained: Administration, write), except
+  when GitHub says the rate limit is used up; a 404 also says the organisation
+  name or API URL may be wrong. `datom_store()`'s `validate` checks only that
+  the token authenticates, not what it may do (#70, `?datom_store`).
+
 * The test suite now passes when suggested packages such as git2r and rio are not
   installed, as in CRAN's "noSuggests" check (#92). Running the tests now needs
   testthat 3.3.0 or later, which skips a test on CRAN when a package it needs is
