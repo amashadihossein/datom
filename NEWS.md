@@ -10,13 +10,15 @@
   point at the new `?datom_schema`, which lists the datom release that reads
   each format (#103).
 
-* datom now says so, once per R session, when it saves the placeholder git
-  identity `datom <datom@noreply>` into a repo it sets up because no global git
-  `user.name` or `user.email` is set. The note shows how to fix that repo --
-  its own config overrides a global identity, so setting a global one alone
-  does not -- and how to set a global identity for repos set up later. Each
-  command is on its own line, so it pastes into PowerShell. Commits are made as
-  before; only the note is new (#70).
+* When datom sets up a repo, it now gives it the git identity git itself would
+  use (including `~/.config/git/config` and conditional includes) instead of
+  reading only the global config file, and an empty `user.name` or
+  `user.email` counts as missing. When there is none and it saves the
+  placeholder `datom <datom@noreply>` instead, it says so once per R session.
+  The note shows how to fix that repo -- its own config overrides a global
+  identity, so setting a global one alone does not -- and how to set a global
+  identity for repos set up later. Each command is on its own line, so it
+  pastes into PowerShell (#70).
 
 * When creating the GitHub repo fails with HTTP 403 or 404, the error now adds a
   hint about the token permissions creation needs (classic token: `repo`;

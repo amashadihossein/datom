@@ -13,9 +13,11 @@
 \arguments{
 \item{repo}{A \code{git2r::repository} handle.}
 
-\item{fallback_name}{Identity used when no global \code{user.name} is set.}
+\item{fallback_name}{Identity used when git resolves no identity and no
+global \code{user.name} is set.}
 
-\item{fallback_email}{Identity used when no global \code{user.email} is set.}
+\item{fallback_email}{Identity used when git resolves no identity and no
+global \code{user.email} is set.}
 }
 \value{
 Invisible \code{repo}.
@@ -23,19 +25,28 @@ Invisible \code{repo}.
 \description{
 Sets \code{user.name} and \code{user.email} on the \strong{local} config of \code{repo} so that
 \code{git2r::default_signature(repo)} succeeds even when the host has no global
-git identity (e.g. CI runners). Values are taken from global config when
-present; otherwise fallback constants are used.
+git identity (e.g. CI runners).
 }
 \details{
+Values come from the identity git itself would use for \code{repo}, resolved by
+\code{git2r::default_signature()}, which reads every config level -- including
+\verb{~/.config/git/config}, the system config and \code{includeIf} includes, not
+just the global file. Only when that fails, or resolves to the fallback
+placeholder itself (a repo datom already gave the placeholder), are the
+global values used, with an empty value counted as missing, and the
+fallback constant for any missing half.
+
 Idempotent: re-setting the same values is a no-op from git's perspective.
 
-When a fallback value is used (no global \code{user.name}, or no global
-\code{user.email}), a console note says so, once per R session: it names the
+When a fallback value is used (git resolves no identity, or only the
+placeholder, and the global \code{user.name} or \code{user.email} is missing or
+empty), a console note says so, once per R session: it names the
 identity datom commits will carry and the repo it was saved in, and shows
 two fixes -- how to set a real identity in that repo's own config (which
 overrides a global identity, so a global one alone would not change this
-repo), and how to set a global identity for repos set up later. A complete
-global identity produces no note. The note is informational only; the
+repo), and how to set a global identity for repos set up later. A real
+identity, resolved by git or complete in the global config, produces no
+note. The note is informational only; the
 fallback is written exactly as before.
 }
 \keyword{internal}

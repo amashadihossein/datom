@@ -87,23 +87,34 @@
 #'
 #' Sets `user.name` and `user.email` on the **local** config of `repo` so that
 #' `git2r::default_signature(repo)` succeeds even when the host has no global
-#' git identity (e.g. CI runners). Values are taken from global config when
-#' present; otherwise fallback constants are used.
+#' git identity (e.g. CI runners).
+#'
+#' Values come from the identity git itself would use for `repo`, resolved by
+#' `git2r::default_signature()`, which reads every config level -- including
+#' `~/.config/git/config`, the system config and `includeIf` includes, not
+#' just the global file. Only when that fails, or resolves to the fallback
+#' placeholder itself (a repo datom already gave the placeholder), are the
+#' global values used, with an empty value counted as missing, and the
+#' fallback constant for any missing half.
 #'
 #' Idempotent: re-setting the same values is a no-op from git's perspective.
 #'
-#' When a fallback value is used (no global `user.name`, or no global
-#' `user.email`), a console note says so, once per R session: it names the
+#' When a fallback value is used (git resolves no identity, or only the
+#' placeholder, and the global `user.name` or `user.email` is missing or
+#' empty), a console note says so, once per R session: it names the
 #' identity datom commits will carry and the repo it was saved in, and shows
 #' two fixes -- how to set a real identity in that repo's own config (which
 #' overrides a global identity, so a global one alone would not change this
-#' repo), and how to set a global identity for repos set up later. A complete
-#' global identity produces no note. The note is informational only; the
+#' repo), and how to set a global identity for repos set up later. A real
+#' identity, resolved by git or complete in the global config, produces no
+#' note. The note is informational only; the
 #' fallback is written exactly as before.
 #'
 #' @param repo A `git2r::repository` handle.
-#' @param fallback_name Identity used when no global `user.name` is set.
-#' @param fallback_email Identity used when no global `user.email` is set.
+#' @param fallback_name Identity used when git resolves no identity and no
+#'   global `user.name` is set.
+#' @param fallback_email Identity used when git resolves no identity and no
+#'   global `user.email` is set.
 #' @return Invisible `repo`.
 #' @keywords internal
 .datom_git_ensure_local_identity <- function(repo,
@@ -111,11 +122,25 @@
                                               fallback_email = "datom@noreply") {
   .datom_check_git2r()
 
-  global <- git2r::config()$global %||% list()
-  name   <- global$user.name  %||% fallback_name
-  email  <- global$user.email %||% fallback_email
-  falling_back <- is.null(global$user.name) || is.null(global$user.email)
-  both_missing <- is.null(global$user.name) && is.null(global$user.email)
+  # The identity git would actually use, from every config level. libgit2
+  # refuses a missing or empty name or email, so this fails for those too. A
+  # resolved placeholder is a repo datom set up before, not a real identity.
+  resolved <- tryCatch(git2r::default_signature(repo), error = function(e) NULL)
+  is_placeholder <- !is.null(resolved) &&
+    identical(resolved$name, fallback_name) &&
+    identical(resolved$email, fallback_email)
+  use_resolved <- !is.null(resolved) && !is_placeholder
+
+  global    <- git2r::config()$global %||% list()
+  has_name  <- nzchar(global$user.name  %||% "")
+  has_email <- nzchar(global$user.email %||% "")
+  fb_name   <- if (has_name)  global$user.name  else fallback_name
+  fb_email  <- if (has_email) global$user.email else fallback_email
+
+  name  <- if (use_resolved) resolved$name  else fb_name
+  email <- if (use_resolved) resolved$email else fb_email
+  falling_back <- !use_resolved && !(has_name && has_email)
+  both_missing <- !use_resolved && !has_name && !has_email
 
   git2r::config(repo, user.name = name, user.email = email)
 
