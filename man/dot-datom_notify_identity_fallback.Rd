@@ -23,9 +23,10 @@ already been shown this session.
 }
 \description{
 Prints a short console note saying datom commits will carry a placeholder
-git identity, and how to replace it. Shown at most once per R session: the
-flag is set only when the note is actually emitted, so a call made with a
-real identity never uses up the notice.
+git identity, and how to replace it. Shown at most once per R session. A
+call made with a real identity never uses up the notice, but a note that was
+emitted and hidden -- for example under \code{suppressMessages()}, or in a knitr
+chunk with \code{message = FALSE} -- still counts as shown.
 }
 \details{
 The note gives two fixes, because datom has already written the identity
