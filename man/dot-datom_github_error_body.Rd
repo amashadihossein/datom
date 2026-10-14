@@ -12,8 +12,8 @@
 \value{
 GitHub's \code{message} field, followed by one line per entry of its
 \code{errors} field when present (each entry's own \code{message}, or its fields
-pasted together). \code{NULL} when the body is not JSON or has no non-empty
-\code{message}, so httr2 falls back to the status line alone.
+pasted together). \code{NULL} when the body is not JSON or its \code{message} is
+not a non-empty string, so httr2 falls back to the status line alone.
 }
 \description{
 The \code{body} callback for \code{\link[httr2:req_error]{httr2::req_error()}} on GitHub API requests, so a

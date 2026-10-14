@@ -543,8 +543,8 @@ print.datom_store <- function(x, ...) {
 #' @param resp The failed `httr2_response`.
 #' @return GitHub's `message` field, followed by one line per entry of its
 #'   `errors` field when present (each entry's own `message`, or its fields
-#'   pasted together). `NULL` when the body is not JSON or has no non-empty
-#'   `message`, so httr2 falls back to the status line alone.
+#'   pasted together). `NULL` when the body is not JSON or its `message` is
+#'   not a non-empty string, so httr2 falls back to the status line alone.
 #' @keywords internal
 .datom_github_error_body <- function(resp) {
   body <- tryCatch(
@@ -552,9 +552,10 @@ print.datom_store <- function(x, ...) {
     error = function(e) NULL
   )
   msg <- if (is.list(body)) body$message
-  if (!is.character(msg) || length(msg) != 1L || is.na(msg) || !nzchar(msg)) {
-    return(NULL)
-  }
+  # No length or NA check: `resp_body_json()` keeps JSON arrays as lists and
+  # `null` as NULL, so a `message` that is character is a single, non-NA
+  # string. A number, array, `null` or `""` falls to the status line alone.
+  if (!is.character(msg) || !nzchar(msg)) return(NULL)
 
   details <- purrr::map_chr(body$errors %||% list(), function(entry) {
     if (is.list(entry) && is.character(entry$message)) return(entry$message[[1]])
@@ -588,6 +589,9 @@ print.datom_store <- function(x, ...) {
 .datom_github_create_permission_hint <- function(e) {
   if (!inherits(e, c("httr2_http_403", "httr2_http_404"))) return(character(0))
 
+  # httr2 attaches the response to every condition it raises, so the NULL
+  # check guards only a caller passing a hand-built condition: without it,
+  # reading the header would fail inside the create error's own handler.
   remaining <- if (!is.null(e$resp)) {
     httr2::resp_header(e$resp, "x-ratelimit-remaining")
   }

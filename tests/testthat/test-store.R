@@ -1129,6 +1129,30 @@ test_that(".datom_github_error_body() returns GitHub's message and its errors de
   expect_null(.datom_github_error_body(json_resp("")))
 })
 
+test_that(".datom_github_error_body() falls back to the status line on an unusable message", {
+  json_resp <- function(json) {
+    httr2::response(status_code = 422L,
+                    headers = list("content-type" = "application/json"),
+                    body = charToRaw(json))
+  }
+
+  expect_null(.datom_github_error_body(json_resp('{"message":""}')))
+  expect_null(.datom_github_error_body(json_resp('{"message":5}')))
+  expect_null(.datom_github_error_body(json_resp('{"message":["a","b"]}')))
+  expect_null(.datom_github_error_body(json_resp('{"message":null}')))
+})
+
+test_that(".datom_github_create_permission_hint() handles a 403 condition with no response", {
+  e <- structure(
+    class = c("httr2_http_403", "httr2_http", "httr2_error", "error", "condition"),
+    list(message = "HTTP 403 Forbidden.", call = NULL)
+  )
+
+  hint <- .datom_github_create_permission_hint(e)
+
+  expect_match(hint[[1]], "lacks permission to create the repository", fixed = TRUE)
+})
+
 
 # ==============================================================================
 # .datom_delete_github_repo
