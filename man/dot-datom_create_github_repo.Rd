@@ -37,5 +37,10 @@ Safety guard:
 \item Repo exists + empty → reuse, return URL
 \item Repo exists + has content → abort
 }
+
+When the create request fails, the error keeps GitHub's own explanation
+(its \code{message}, and any \code{errors} details) next to the HTTP status, via
+\code{.datom_github_error_body()}, and may add a token-permission hint
+(\code{.datom_github_create_permission_hint()}).
 }
 \keyword{internal}

@@ -978,7 +978,7 @@ create_repo_error <- function(fail, org = "org") {
   mockery::stub(
     .datom_create_github_repo, "httr2::req_perform",
     function(req, ...) {
-      if (identical(req$method, "POST")) fail()
+      if (identical(req$method, "POST")) fail(req)
       structure(list(url = req$url, status_code = 404L), class = "httr2_response")
     }
   )
@@ -992,8 +992,27 @@ create_repo_error <- function(fail, org = "org") {
   )
 }
 
+# A bare status, with no body and no request attached.
 http_failure <- function(status) {
-  function() httr2::resp_check_status(httr2::response(status_code = status))
+  function(req) httr2::resp_check_status(httr2::response(status_code = status))
+}
+
+# A failure as GitHub sends it: a body and headers, with the request attached,
+# so `resp_check_status()` runs httr2's own failure path, which calls the
+# request's `req_error(body =)` callback. (`setup.R` blocks the real
+# `req_perform()`, so `with_mocked_responses()` cannot be used here.)
+github_failure <- function(status, json,
+                           headers = list(),
+                           content_type = "application/json") {
+  function(req) {
+    resp <- httr2::response(
+      status_code = status,
+      headers = c(list("content-type" = content_type), headers),
+      body = charToRaw(json)
+    )
+    resp$request <- req
+    httr2::resp_check_status(resp)
+  }
 }
 
 create_error_text <- function(err) cli::ansi_strip(conditionMessage(err))
@@ -1036,11 +1055,77 @@ test_that(".datom_create_github_repo() gives no permission hint on 401", {
 
 test_that(".datom_create_github_repo() gives no permission hint on a non-HTTP error", {
   text <- create_error_text(
-    create_repo_error(function() stop("Could not resolve host: api.github.com"))
+    create_repo_error(function(req) stop("Could not resolve host: api.github.com"))
   )
 
   expect_match(text, "Underlying error: Could not resolve host", fixed = TRUE)
   expect_no_match(text, "lacks permission", fixed = TRUE)
+})
+
+test_that(".datom_create_github_repo() keeps GitHub's text and gives no permission hint on a rate limit", {
+  text <- create_error_text(create_repo_error(github_failure(
+    403L, '{"message":"API rate limit exceeded for user ID 1."}',
+    headers = list("x-ratelimit-remaining" = "0")
+  )))
+
+  expect_match(text, "API rate limit exceeded for user ID 1.", fixed = TRUE)
+  expect_no_match(text, "lacks permission", fixed = TRUE)
+  expect_no_match(text, "organisation name or the API URL", fixed = TRUE)
+})
+
+test_that(".datom_create_github_repo() keeps GitHub's text alongside the permission hint on a 403", {
+  text <- create_error_text(create_repo_error(github_failure(
+    403L, '{"message":"Resource not accessible by personal access token"}',
+    headers = list("x-ratelimit-remaining" = "4999")
+  )))
+
+  expect_match(text, "Resource not accessible by personal access token", fixed = TRUE)
+  expect_match(text, "lacks permission to create the repository", fixed = TRUE)
+  expect_no_match(text, "organisation name or the API URL", fixed = TRUE)
+})
+
+test_that(".datom_create_github_repo() says a 404 can mean a wrong org or API URL", {
+  text <- create_error_text(create_repo_error(
+    github_failure(404L, '{"message":"Not Found"}')
+  ))
+
+  expect_match(text, "Not Found", fixed = TRUE)
+  expect_match(text, "lacks permission to create the repository", fixed = TRUE)
+  expect_match(text, "organisation name or the API URL is wrong", fixed = TRUE)
+})
+
+test_that(".datom_create_github_repo() survives a failure body that is not JSON", {
+  text <- create_error_text(create_repo_error(
+    github_failure(404L, "<html>nope</html>", content_type = "text/html")
+  ))
+
+  expect_match(text, "Underlying error: HTTP 404 Not Found", fixed = TRUE)
+  expect_no_match(text, "nope", fixed = TRUE)
+})
+
+test_that(".datom_github_error_body() returns GitHub's message and its errors details", {
+  json_resp <- function(json) {
+    httr2::response(status_code = 422L,
+                    headers = list("content-type" = "application/json"),
+                    body = charToRaw(json))
+  }
+
+  expect_equal(
+    .datom_github_error_body(json_resp(paste0(
+      '{"message":"Repository creation failed.","errors":[{"resource":',
+      '"Repository","code":"custom","field":"name","message":',
+      '"name already exists on this account"}]}'
+    ))),
+    c("Repository creation failed.", "name already exists on this account")
+  )
+  expect_equal(
+    .datom_github_error_body(json_resp(
+      '{"message":"Validation Failed","errors":[{"resource":"Repository","code":"missing_field"}]}'
+    )),
+    c("Validation Failed", "Repository missing_field")
+  )
+  expect_null(.datom_github_error_body(json_resp('{"documentation_url":"x"}')))
+  expect_null(.datom_github_error_body(json_resp("")))
 })
 
 

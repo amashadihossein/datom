@@ -20,11 +20,12 @@
   identity for repos set up later. Each command is on its own line, so it
   pastes into PowerShell (#70).
 
-* When creating the GitHub repo fails with HTTP 403 or 404, the error now adds a
-  hint about the token permissions creation needs (classic token: `repo`;
-  fine-grained: Administration, write). Nothing else changes. `datom_store()`'s
-  `validate` checks only that the token authenticates, not what it may do
-  (#70, `?datom_store`).
+* When creating the GitHub repo fails, the error now includes GitHub's own
+  explanation. A 403 or 404 adds a hint about the token permissions creation
+  needs (classic token: `repo`; fine-grained: Administration, write), except
+  when GitHub says the rate limit is used up; a 404 also says the organisation
+  name or API URL may be wrong. `datom_store()`'s `validate` checks only that
+  the token authenticates, not what it may do (#70, `?datom_store`).
 
 * The test suite now passes when suggested packages such as git2r and rio are not
   installed, as in CRAN's "noSuggests" check (#92). Running the tests now needs

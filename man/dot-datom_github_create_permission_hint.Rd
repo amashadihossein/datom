@@ -7,7 +7,8 @@
 .datom_github_create_permission_hint(e)
 }
 \arguments{
-\item{e}{The condition caught from the create request.}
+\item{e}{The condition caught from the create request. httr2 attaches the
+response as \code{e$resp}.}
 }
 \value{
 A named character vector of \code{"i"} lines, or \code{character(0)}.
@@ -22,6 +23,11 @@ or invalid), or an error that is not an HTTP response at all -- gets no
 hint, because a permission hint would point the user the wrong way.
 }
 \details{
+A 403 whose response says the rate limit is used up (header
+\code{x-ratelimit-remaining} is \code{"0"}) gets no hint either: the token works, and
+GitHub's own text in the error says what happened. A 404 gets one more
+line: it can also mean the organisation name or the API URL is wrong.
+
 Hedged on purpose: a 403 can also come from an organisation's policies.
 }
 \keyword{internal}
