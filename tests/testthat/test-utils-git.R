@@ -115,7 +115,9 @@ test_that(".datom_git_author aborts when both name and email missing", {
     .package = "git2r"
   )
 
-  expect_error(.datom_git_author(dir), "user\\.name.*user\\.email")
+  err <- expect_error(.datom_git_author(dir), "user\\.name.*user\\.email")
+  # The remedy is a git2r call: datom does not need command-line git.
+  expect_match(conditionMessage(err), "git2r::config(global = TRUE", fixed = TRUE)
 })
 
 test_that(".datom_git_author falls back to global config", {
@@ -476,18 +478,9 @@ test_that(".datom_git_ensure_local_identity's note names the placeholder and bot
     'git2r::config(global = TRUE, ',
     'user.name = "Your Name", user.email = "you@example.com")'
   ), fixed = TRUE)
-  # Each shell command is a whole line of its own, so it can be pasted alone
-  # and no joiner is needed (Windows PowerShell 5.1 rejects `&&`). A substring
-  # match would also pass with two commands on one line.
-  lines <- trimws(strsplit(text, "\n", fixed = TRUE)[[1]])
-  shell_cmds <- c(
-    paste0('git -C "', path, '" config user.name "Your Name"'),
-    paste0('git -C "', path, '" config user.email "you@example.com"'),
-    'git config --global user.name "Your Name"',
-    'git config --global user.email "you@example.com"'
-  )
-  expect_contains(lines, shell_cmds)
-  expect_no_match(text, "&&", fixed = TRUE)
+  # git2r commands only: datom does not need command-line git.
+  expect_no_match(text, "git config --global", fixed = TRUE)
+  expect_no_match(text, "git -C", fixed = TRUE)
 })
 
 test_that(".datom_git_ensure_local_identity: the note's per-repo R fix gives the repo a real identity", {

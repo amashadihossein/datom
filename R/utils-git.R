@@ -75,7 +75,7 @@
     if (is.na(email)) missing <- c(missing, "user.email")
     cli::cli_abort(c(
       "Git config incomplete: {.field {missing}} not set.",
-      "i" = "Set with {.code git config --global user.name \"Your Name\"}"
+      "i" = "Set with {.code git2r::config(global = TRUE, user.name = \"Your Name\", user.email = \"you@example.com\")}"
     ))
   }
 
@@ -184,15 +184,16 @@
 #' into the repo's own git config, and a repo's own config overrides the global
 #' one: setting a global identity alone would leave this repo's commits on the
 #' placeholder.
-#' * **For this repo**: commands (in R, and as two shell lines) that set
-#'   `user.name` and `user.email` in the repo at `path`.
-#' * **For repos set up from now on**: commands that set a global identity.
+#' * **For this repo**: a git2r command that sets `user.name` and
+#'   `user.email` in the repo at `path`.
+#' * **For repos set up from now on**: a git2r command that sets a global
+#'   identity.
 #'
-#' Command lines are printed with [cli::cli_verbatim()], one line per command:
-#' cli does not wrap them at console width, so each stays copy-pasteable, and
-#' glue does not interpolate a brace that may appear in `path`. Shell commands are
-#' separate lines rather than joined with `&&`, which Windows PowerShell 5.1
-#' rejects.
+#' Commands are git2r calls only, never shell `git` commands: datom does not
+#' need command-line git, so a user may not have it installed. They are
+#' printed with [cli::cli_verbatim()]: cli does not wrap them at console
+#' width, so each stays copy-pasteable, and glue does not interpolate a brace
+#' that may appear in `path`.
 #'
 #' An ordinary `cli` message, not a warning condition: nothing is wrong, the
 #' commits work, and the note must not trip `options(warn = 2)` or `tryCatch()`
@@ -229,20 +230,10 @@
   cli::cli_verbatim(paste0(
     '  git2r::config(git2r::repository("', path, '"), ', set_values
   ))
-  cli::cli_alert_info("Or in a shell:")
-  cli::cli_verbatim(
-    paste0('  git -C "', path, '" config user.name "Your Name"'),
-    paste0('  git -C "', path, '" config user.email "you@example.com"')
-  )
   cli::cli_alert_info(
     "For repos set up from now on, set a global identity. In R:"
   )
   cli::cli_verbatim(paste0("  git2r::config(global = TRUE, ", set_values))
-  cli::cli_alert_info("Or in a shell:")
-  cli::cli_verbatim(
-    '  git config --global user.name "Your Name"',
-    '  git config --global user.email "you@example.com"'
-  )
 
   invisible(TRUE)
 }

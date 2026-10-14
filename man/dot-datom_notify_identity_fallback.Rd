@@ -34,16 +34,17 @@ into the repo's own git config, and a repo's own config overrides the global
 one: setting a global identity alone would leave this repo's commits on the
 placeholder.
 \itemize{
-\item \strong{For this repo}: commands (in R, and as two shell lines) that set
-\code{user.name} and \code{user.email} in the repo at \code{path}.
-\item \strong{For repos set up from now on}: commands that set a global identity.
+\item \strong{For this repo}: a git2r command that sets \code{user.name} and
+\code{user.email} in the repo at \code{path}.
+\item \strong{For repos set up from now on}: a git2r command that sets a global
+identity.
 }
 
-Command lines are printed with \code{\link[cli:cli_verbatim]{cli::cli_verbatim()}}, one line per command:
-cli does not wrap them at console width, so each stays copy-pasteable, and
-glue does not interpolate a brace that may appear in \code{path}. Shell commands are
-separate lines rather than joined with \code{&&}, which Windows PowerShell 5.1
-rejects.
+Commands are git2r calls only, never shell \code{git} commands: datom does not
+need command-line git, so a user may not have it installed. They are
+printed with \code{\link[cli:cli_verbatim]{cli::cli_verbatim()}}: cli does not wrap them at console
+width, so each stays copy-pasteable, and glue does not interpolate a brace
+that may appear in \code{path}.
 
 An ordinary \code{cli} message, not a warning condition: nothing is wrong, the
 commits work, and the note must not trip \code{options(warn = 2)} or \code{tryCatch()}

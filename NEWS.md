@@ -17,8 +17,7 @@
   placeholder `datom <datom@noreply>` instead, it says so once per R session.
   The note shows how to fix that repo -- its own config overrides a global
   identity, so setting a global one alone does not -- and how to set a global
-  identity for repos set up later. Each command is on its own line, so it
-  pastes into PowerShell (#70).
+  identity for repos set up later, both as git2r commands in R (#70).
 
 * When creating the GitHub repo fails, the error now includes GitHub's own
   explanation. A 403 or 404 adds a hint about the token permissions creation
