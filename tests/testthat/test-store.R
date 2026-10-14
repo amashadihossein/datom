@@ -1086,10 +1086,11 @@ test_that(".datom_create_github_repo() keeps GitHub's text alongside the permiss
 
 test_that(".datom_create_github_repo() says a 404 can mean a wrong org or API URL", {
   text <- create_error_text(create_repo_error(
-    github_failure(404L, '{"message":"Not Found"}')
+    github_failure(404L, '{"message":"No organisation named acme-typo"}')
   ))
 
-  expect_match(text, "Not Found", fixed = TRUE)
+  # A distinctive message: httr2's own status line already says "Not Found".
+  expect_match(text, "No organisation named acme-typo", fixed = TRUE)
   expect_match(text, "lacks permission to create the repository", fixed = TRUE)
   expect_match(text, "organisation name or the API URL is wrong", fixed = TRUE)
 })

@@ -486,7 +486,7 @@ test_that(".datom_git_ensure_local_identity's note names the placeholder and bot
     'git config --global user.name "Your Name"',
     'git config --global user.email "you@example.com"'
   )
-  purrr::walk(shell_cmds, function(cmd) expect_true(cmd %in% lines, label = cmd))
+  expect_contains(lines, shell_cmds)
   expect_no_match(text, "&&", fixed = TRUE)
 })
 
