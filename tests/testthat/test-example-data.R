@@ -87,3 +87,27 @@ test_that("datom_example_cutoffs returns six monthly cutoff dates", {
   expect_length(cuts, 6L)
   expect_named(cuts, paste0("month_", 1:6))
 })
+
+test_that("datom_example_file writes the same bytes on every system", {
+  dir <- withr::local_tempdir()
+  path <- datom_example_file("dm", cutoff_date = "2026-01-28", dir = dir)
+  expect_identical(path, as.character(fs::path(dir, "dm.csv")))
+
+  bytes <- readBin(path, "raw", file.size(path))
+  expect_false(any(bytes == as.raw(13)))   # no carriage returns
+
+  # The file's SHA-256, confirmed identical on macOS and Windows. Runs in
+  # every R CMD check job, Windows included.
+  expect_identical(
+    .datom_compute_original_file_sha(path),
+    "37ae4e5650b522e11ceaefef0a986e2e410401b908cd9ffb5a09a11955cef72d"
+  )
+})
+
+test_that("datom_example_file refuses a folder that does not exist", {
+  dir <- withr::local_tempdir()
+  expect_error(
+    datom_example_file("dm", dir = file.path(dir, "nope")),
+    "does not exist"
+  )
+})

@@ -135,6 +135,7 @@ reference:
     desc: "Bundled clinical trial data for examples and vignettes"
     contents:
       - datom_example_data
+      - datom_example_file
       - datom_example_cutoffs
 
 articles:
@@ -165,3 +166,8 @@ articles:
       - design-datom-model
       - design-version-shas
       - design-serverless
+
+  - title: "Help"
+    desc: "Where to look when something doesn't behave as you expect."
+    contents:
+      - troubleshooting

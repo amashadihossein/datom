@@ -61,6 +61,53 @@ datom_example_data <- function(domain = c("dm", "ex", "lb", "ae", "vs"),
 }
 
 
+#' Write an Example Table to a CSV File
+#'
+#' Writes [datom_example_data()] to `<dir>/<domain>.csv`, ready for
+#' [datom_sync()] to pick up from a repo's `input_files/` folder. Lines end
+#' with a line feed on every operating system, so the file has the same
+#' bytes -- and datom records the same version for it -- on Windows, macOS
+#' and Linux. (`write.csv()` on its own ends lines with a carriage return
+#' and line feed on Windows.)
+#'
+#' An existing file of the same name is overwritten, which is how the
+#' examples simulate a new monthly delivery.
+#'
+#' @inheritParams datom_example_data
+#' @param dir Existing folder to write into, typically a repo's
+#'   `input_files/`.
+#'
+#' @return The path of the written file, invisibly.
+#'
+#' @examples
+#' dir <- tempfile("inputs-")
+#' dir.create(dir)
+#' datom_example_file("dm", cutoff_date = "2026-01-28", dir = dir)
+#' list.files(dir)
+#' unlink(dir, recursive = TRUE)
+#'
+#' @export
+datom_example_file <- function(domain = c("dm", "ex", "lb", "ae", "vs"),
+                               cutoff_date = NULL,
+                               dir) {
+  domain <- match.arg(domain)
+  if (!fs::dir_exists(dir)) {
+    cli::cli_abort("Folder {.path {dir}} does not exist.")
+  }
+
+  path <- fs::path(dir, paste0(domain, ".csv"))
+
+  # Binary mode: on Windows a text-mode connection turns every line feed
+  # into carriage return + line feed, which changes the file's bytes and
+  # so its datom version.
+  con <- file(path, "wb")
+  on.exit(close(con))
+  utils::write.csv(datom_example_data(domain, cutoff_date), con, row.names = FALSE)
+
+  invisible(as.character(path))
+}
+
+
 #' Monthly Cutoff Dates for Example Study
 #'
 #' Returns a named vector of monthly cutoff dates for STUDY-001,

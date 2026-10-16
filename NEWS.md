@@ -1,4 +1,11 @@
 # datom (development version)
+* New `datom_example_file()` writes an example table to a CSV whose lines end
+  with `\n` on every system, so the file, and the version datom records for
+  it, is the same on Windows, macOS and Linux. The vignettes now use it; with
+  `write.csv()`, every version a Windows reader saw differed from the
+  article's.
+* New "Troubleshooting" article: a short index from common symptoms to the
+  article that explains each. "Version SHAs" gains a section on line endings.
 * New `datom_find_member()` returns the one member of a set a name refers to --
   its exact version and labels -- with no connection and no storage read, so a
   reader holding only the set can ask what it cites. An ambiguous name stops and
