@@ -64,7 +64,13 @@
 #' `~/.config/git/config` or an `includeIf` include is not seen here, because
 #' `git2r::config()` lists only the repo and global levels.
 #'
-#' Nothing is written to any git config.
+#' Nothing is written to any git config, so a global identity set later is
+#' used from the next commit on, in every repo.
+#'
+#' When a half is the fallback, a console note says so, the first time in an
+#' R session (see [.datom_notify_identity_fallback()]). A signature git
+#' resolved, or one complete from the repo and global config, uses up no
+#' note.
 #'
 #' @param repo A `git2r::repository` handle.
 #' @param fallback_name,fallback_email Values for a missing `user.name` or
@@ -113,6 +119,10 @@
   )
   attr(sig, "fallback") <- is.na(name) || is.na(email)
   attr(sig, "both_missing") <- is.na(name) && is.na(email)
+
+  if (attr(sig, "fallback")) {
+    .datom_notify_identity_fallback(sig$name, sig$email, attr(sig, "both_missing"))
+  }
   sig
 }
 
@@ -142,66 +152,20 @@
 }
 
 
-#' Ensure a Repo Has a Local Git Identity
+#' Set Up a Repo's Own Git Config for datom
 #'
-#' Sets `user.name` and `user.email` on the **local** config of `repo` so that
-#' `git2r::default_signature(repo)` succeeds even when the host has no global
-#' git identity (e.g. CI runners).
+#' Sets `http.followRedirects` on the **local** config of `repo`, keeping a
+#' value already there. Called on every repo datom creates or clones.
 #'
-#' Values come from the identity git itself would use for `repo`, resolved by
-#' `git2r::default_signature()`, which reads every config level -- including
-#' `~/.config/git/config`, the system config and `includeIf` includes, not
-#' just the global file. Only when that fails, or resolves to the fallback
-#' placeholder itself (a repo datom already gave the placeholder), are the
-#' global values used, with an empty value counted as missing, and the
-#' fallback constant for any missing half.
-#'
-#' Idempotent: re-setting the same values is a no-op from git's perspective.
-#'
-#' When a fallback value is used (git resolves no identity, or only the
-#' placeholder, and the global `user.name` or `user.email` is missing or
-#' empty), a console note says so, once per R session: it names the
-#' identity datom commits will carry and the repo it was saved in, and shows
-#' two fixes -- how to set a real identity in that repo's own config (which
-#' overrides a global identity, so a global one alone would not change this
-#' repo), and how to set a global identity for repos set up later. A real
-#' identity, resolved by git or complete in the global config, produces no
-#' note. The note is informational only; the
-#' fallback is written exactly as before.
+#' Writes no `user.name` or `user.email`: datom works out the identity at
+#' commit time instead (see [.datom_git_signature()]), so a repo's own config
+#' never holds an identity that would override the user's global one.
 #'
 #' @param repo A `git2r::repository` handle.
-#' @param fallback_name Identity used when git resolves no identity and no
-#'   global `user.name` is set.
-#' @param fallback_email Identity used when git resolves no identity and no
-#'   global `user.email` is set.
 #' @return Invisible `repo`.
 #' @keywords internal
-.datom_git_ensure_local_identity <- function(repo,
-                                              fallback_name  = "datom",
-                                              fallback_email = "datom@noreply") {
+.datom_git_ensure_local_config <- function(repo) {
   .datom_check_git2r()
-
-  # The identity git would actually use, from every config level. libgit2
-  # refuses a missing or empty name or email, so this fails for those too. A
-  # resolved placeholder is a repo datom set up before, not a real identity.
-  resolved <- tryCatch(git2r::default_signature(repo), error = function(e) NULL)
-  is_placeholder <- !is.null(resolved) &&
-    identical(resolved$name, fallback_name) &&
-    identical(resolved$email, fallback_email)
-  use_resolved <- !is.null(resolved) && !is_placeholder
-
-  global    <- git2r::config()$global %||% list()
-  has_name  <- nzchar(global$user.name  %||% "")
-  has_email <- nzchar(global$user.email %||% "")
-  fb_name   <- if (has_name)  global$user.name  else fallback_name
-  fb_email  <- if (has_email) global$user.email else fallback_email
-
-  name  <- if (use_resolved) resolved$name  else fb_name
-  email <- if (use_resolved) resolved$email else fb_email
-  falling_back <- !use_resolved && !(has_name && has_email)
-  both_missing <- !use_resolved && !has_name && !has_email
-
-  git2r::config(repo, user.name = name, user.email = email)
 
   # git2r's fetch reads http.followRedirects from local config; if the key is
   # absent (fresh clone or init) it throws "config value not found". Set it
@@ -210,13 +174,6 @@
   local_cfg <- git2r::config(repo)$local %||% list()
   if (is.null(local_cfg[["http.followredirects"]])) {
     git2r::config(repo, "http.followRedirects" = "true")
-  }
-
-  if (falling_back) {
-    # Forward slashes and no trailing slash, so the path is valid inside the
-    # R string the note prints, on Windows too.
-    path <- as.character(fs::path_tidy(git2r::workdir(repo)))
-    .datom_notify_identity_fallback(name, email, both_missing, path)
   }
 
   invisible(repo)
@@ -234,41 +191,33 @@
 #' Announce the Placeholder Git Identity
 #'
 #' Prints a short console note saying datom commits will carry a placeholder
-#' git identity, and how to replace it. Shown at most once per R session. A
-#' call made with a real identity never uses up the notice, but a note that was
-#' emitted and hidden -- for example under `suppressMessages()`, or in a knitr
-#' chunk with `message = FALSE` -- still counts as shown.
+#' git identity, and how to replace it. Called by [.datom_git_signature()]
+#' when it falls back, so the note comes at the commit, merge or
+#' version-history entry that needs the identity. Shown at most once per R
+#' session. A call made with a real identity never uses up the notice, but a
+#' note that was emitted and hidden -- for example under `suppressMessages()`,
+#' or in a knitr chunk with `message = FALSE` -- still counts as shown.
 #'
-#' The note gives two fixes, because datom has already written the identity
-#' into the repo's own git config, and a repo's own config overrides the global
-#' one: setting a global identity alone would leave this repo's commits on the
-#' placeholder.
-#' * **For this repo**: a git2r command that sets `user.name` and
-#'   `user.email` in the repo at `path`.
-#' * **For repos set up from now on**: a git2r command that sets a global
-#'   identity.
-#'
-#' Commands are git2r calls only, never shell `git` commands: datom does not
-#' need command-line git, so a user may not have it installed. They are
-#' printed with [cli::cli_verbatim()]: cli does not wrap them at console
-#' width, so each stays copy-pasteable, and glue does not interpolate a brace
-#' that may appear in `path`.
+#' The fix is a global identity: datom saves no identity in a repo's own git
+#' config, so a global one is used from the next commit on, in every repo.
+#' The command is a git2r call only, never a shell `git` command: datom does
+#' not need command-line git, so a user may not have it installed. It is
+#' printed with [cli::cli_verbatim()], so cli does not wrap it at console
+#' width and it stays copy-pasteable.
 #'
 #' An ordinary `cli` message, not a warning condition: nothing is wrong, the
 #' commits work, and the note must not trip `options(warn = 2)` or `tryCatch()`
 #' handlers that watch for warnings.
 #'
-#' @param name,email The identity datom is about to write to the repo's local
-#'   config (the effective values, so a partial fallback shows the real half).
-#' @param both_missing `TRUE` when neither global value was set, so the whole
+#' @param name,email The identity datom is about to commit with (the
+#'   effective values, so a partial fallback shows the real half).
+#' @param both_missing `TRUE` when neither half was found, so the whole
 #'   identity is the placeholder; `FALSE` when one half is the user's own, and
 #'   the note calls it "this identity" rather than "the placeholder".
-#' @param path The repo's working folder, with forward slashes, shown in the
-#'   per-repo fix commands.
 #' @return Invisible `TRUE` when the note was shown, `FALSE` when it had
 #'   already been shown this session.
 #' @keywords internal
-.datom_notify_identity_fallback <- function(name, email, both_missing, path) {
+.datom_notify_identity_fallback <- function(name, email, both_missing) {
   if (isTRUE(.datom_session$git_identity_notice_shown)) return(invisible(FALSE))
   assign("git_identity_notice_shown", TRUE, envir = .datom_session)
 
@@ -276,23 +225,19 @@
   # splits the placeholder into two code spans.
   identity <- paste0(name, " <", email, ">")
   what <- if (isTRUE(both_missing)) "the placeholder" else "this identity:"
-  set_values <- 'user.name = "Your Name", user.email = "you@example.com")'
 
   cli::cli_alert_warning(paste0(
     "No complete git identity found. datom commits will be attributed ",
     "to {what} {.code {identity}}."
   ))
   cli::cli_alert_info(paste0(
-    "datom saved it in this repo's own git config, which overrides a global ",
-    "identity. To fix this repo, in R:"
+    "Set a global identity and datom uses it from the next commit, in every ",
+    "repo. In R:"
   ))
   cli::cli_verbatim(paste0(
-    '  git2r::config(git2r::repository("', path, '"), ', set_values
+    '  git2r::config(global = TRUE, ',
+    'user.name = "Your Name", user.email = "you@example.com")'
   ))
-  cli::cli_alert_info(
-    "For repos set up from now on, set a global identity. In R:"
-  )
-  cli::cli_verbatim(paste0("  git2r::config(global = TRUE, ", set_values))
 
   invisible(TRUE)
 }

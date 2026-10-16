@@ -693,8 +693,9 @@ datom_init_repo <- function(path = ".",
   # --- Git init, remote, commit, push -----------------------------------------
   repo <- git2r::init(path)
 
-  # Set local config so default_signature works even without global git config.
-  .datom_git_ensure_local_identity(repo)
+  # The repo's own git config datom needs for fetch and push. No identity is
+  # written: commits work it out at commit time, so a global one is honoured.
+  .datom_git_ensure_local_config(repo)
 
   git2r::remote_add(repo, name = "origin", url = remote_url)
 
@@ -853,11 +854,9 @@ datom_clone <- function(path, store, ...) {
     ))
   }
 
-  # Ensure the fresh clone has a local git identity so the first datom_write()
-  # commit succeeds even on a host with no global git config (CI, fresh box).
-  # After the check above, so a clone about to be rejected does not use up the
-  # once-per-session placeholder-identity note.
-  .datom_git_ensure_local_identity(git2r::repository(as.character(path)))
+  # The repo's own git config datom needs for fetch and push. No identity is
+  # written: commits work it out at commit time, so a global one is honoured.
+  .datom_git_ensure_local_config(git2r::repository(as.character(path)))
 
   # --- Clone or verify gov repo when gov_repo_url is set ---------------------
   if (!is.null(store$gov_repo_url) && nzchar(store$gov_repo_url)) {

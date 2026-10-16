@@ -41,6 +41,12 @@ So a host with only a global \code{user.email} commits as
 \verb{~/.config/git/config} or an \code{includeIf} include is not seen here, because
 \code{git2r::config()} lists only the repo and global levels.
 
-Nothing is written to any git config.
+Nothing is written to any git config, so a global identity set later is
+used from the next commit on, in every repo.
+
+When a half is the fallback, a console note says so, the first time in an
+R session (see \code{\link[=.datom_notify_identity_fallback]{.datom_notify_identity_fallback()}}). A signature git
+resolved, or one complete from the repo and global config, uses up no
+note.
 }
 \keyword{internal}

@@ -133,6 +133,25 @@ test_that(".datom_gov_clone_init() clones when path does not exist", {
   expect_equal(as.character(result), as.character(clone_dir))
 })
 
+test_that(".datom_gov_clone_init() writes no git identity into the clone's own config", {
+  skip_if_no_git2r()
+  # A global identity is present, so a setup step that copied it into the
+  # clone's own config would have something to copy.
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+  bare_dir <- withr::local_tempdir()
+  git2r::init(bare_dir, bare = TRUE)
+  clone_dir <- fs::path(withr::local_tempdir(), "gov-clone")
+
+  suppressMessages(.datom_gov_clone_init(bare_dir, clone_dir))
+
+  local_cfg <- git2r::config(git2r::repository(clone_dir))$local
+  expect_null(local_cfg$user.name)
+  expect_null(local_cfg$user.email)
+  # libgit2 lists config keys lower-cased, whatever case they were set in.
+  expect_equal(local_cfg[["http.followredirects"]], "true")
+})
+
 test_that(".datom_gov_clone_init() is idempotent when clone already exists with matching URL", {
   bare_dir <- withr::local_tempdir()
   git2r::init(bare_dir, bare = TRUE)
@@ -195,7 +214,7 @@ test_that(".datom_gov_clone_init() forwards pat to git credentials on clone (#74
     }
   )
   mockery::stub(
-    .datom_gov_clone_init, ".datom_git_ensure_local_identity",
+    .datom_gov_clone_init, ".datom_git_ensure_local_config",
     function(...) invisible(NULL)
   )
 
@@ -220,7 +239,7 @@ test_that(".datom_gov_clone_init() sends NULL credentials when pat is NULL (#74 
     }
   )
   mockery::stub(
-    .datom_gov_clone_init, ".datom_git_ensure_local_identity",
+    .datom_gov_clone_init, ".datom_git_ensure_local_config",
     function(...) invisible(NULL)
   )
 
