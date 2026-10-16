@@ -64,8 +64,10 @@
 #' `~/.config/git/config` or an `includeIf` include is not seen here, because
 #' `git2r::config()` lists only the repo and global levels.
 #'
-#' Nothing is written to any git config, so a global identity set later is
-#' used from the next commit on, in every repo.
+#' No identity is written to any git config, so a global identity set later
+#' is used from the next commit on, in every repo. The one config change is
+#' removal: datom's own placeholder, if an older datom saved it in the repo's
+#' config, is removed first (see [.datom_git_drop_placeholder_identity()]).
 #'
 #' When a half is the fallback, a console note says so, the first time in an
 #' R session (see [.datom_notify_identity_fallback()]). A signature git
@@ -84,6 +86,11 @@
                                  fallback_name  = "datom",
                                  fallback_email = "datom@noreply") {
   .datom_check_git2r()
+
+  # First, before git resolves anything: a repo whose own config holds only
+  # the placeholder older datom saved there then picks up the real identity
+  # on this same call.
+  .datom_git_drop_placeholder_identity(repo)
 
   # libgit2 refuses a missing or empty name or email, so this fails for those too.
   resolved <- tryCatch(git2r::default_signature(repo), error = function(e) NULL)
@@ -124,6 +131,73 @@
     .datom_notify_identity_fallback(sig$name, sig$email, attr(sig, "both_missing"))
   }
   sig
+}
+
+
+#' Remove datom's Placeholder Identity from a Repo's Own Git Config
+#'
+#' Older datom saved `user.name = "datom"` and `user.email = "datom@noreply"`
+#' into the **local** config of every repo it set up when it found no
+#' identity, and a repo-level value overrides the user's global one. This
+#' removes each key whose value is exactly datom's placeholder for that key,
+#' independently: a repo with `datom <me@lab.org>` loses `user.name` and keeps
+#' the real email. The match is exact and case-sensitive, and only the repo's
+#' own config level is read, so a real identity saved in the repo -- by the
+#' user or by older datom copying the global one -- and every other key are
+#' left alone.
+#'
+#' Called first in [.datom_git_signature()], so it runs just before a repo's
+#' next commit, merge or version-history author. When something was removed,
+#' one line says what and from which repo; a second call has nothing to
+#' remove and says nothing. This line is separate from the once-per-session
+#' identity note. A removal that fails is a warning, never an error: the
+#' commit goes on with whatever identity git then resolves.
+#'
+#' @param repo A `git2r::repository` handle.
+#' @return Invisible character vector of the keys removed (empty if none).
+#' @keywords internal
+.datom_git_drop_placeholder_identity <- function(repo) {
+  .datom_check_git2r()
+
+  placeholder <- c(user.name = "datom", user.email = "datom@noreply")
+  # Both keys are lower-case already, which is how libgit2 lists them.
+  local_cfg <- git2r::config(repo)$local %||% list()
+  is_placeholder <- purrr::map_lgl(names(placeholder), function(key) {
+    identical(local_cfg[[key]], placeholder[[key]])
+  })
+  remove <- names(placeholder)[is_placeholder]
+  if (length(remove) == 0L) return(invisible(character(0)))
+
+  path <- as.character(fs::path_tidy(git2r::workdir(repo)))
+  # git2r::config(repo, key = NULL) deletes a key, and errors if it is absent;
+  # only keys just read from the repo's config get here.
+  removed <- tryCatch(
+    {
+      do.call(git2r::config,
+              c(list(repo), purrr::set_names(vector("list", length(remove)), remove)))
+      TRUE
+    },
+    error = function(e) {
+      cli::cli_warn(c(
+        "Could not remove the placeholder git identity datom had saved in this repo's own git config ({.path {path}}).",
+        "x" = conditionMessage(e),
+        "i" = "Commits go on with the identity git resolves, as before."
+      ))
+      FALSE
+    }
+  )
+  if (!removed) return(invisible(character(0)))
+
+  what <- if (length(remove) == 2L) {
+    "the placeholder git identity"
+  } else {
+    paste0("the placeholder git ", remove)
+  }
+  cli::cli_alert_info(paste0(
+    "Removed {what} datom had saved in this repo's own git config ",
+    "({.path {path}}). Commits now use the identity git finds."
+  ))
+  invisible(remove)
 }
 
 
