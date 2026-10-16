@@ -1,4 +1,13 @@
 # datom (development version)
+* datom no longer saves a git identity in a repo's own config. Each commit uses
+  the identity git itself finds, so a global identity applies from the next
+  commit in every repo. Where older datom saved the placeholder
+  `datom <datom@noreply>` in a repo, the next write or pull removes it and says
+  so. A real identity older datom saved there stays; remove it with
+  `git2r::config(git2r::repository(path), user.name = NULL, user.email = NULL)`.
+  With no identity anywhere, commits use the placeholder and a note says so once
+  per R session (#70, #131).
+
 * New `datom_example_file()` writes an example table to a CSV whose lines end
   with `\n` on every system, so the file, and the version datom records for
   it, is the same on Windows, macOS and Linux. The vignettes now use it; with
@@ -16,15 +25,6 @@
   first and GitHub for a development build. The ones about data formats also
   point at the new `?datom_schema`, which lists the datom release that reads
   each format (#103).
-
-* When datom sets up a repo, it now gives it the git identity git itself would
-  use (including `~/.config/git/config` and conditional includes) instead of
-  reading only the global config file, and an empty `user.name` or
-  `user.email` counts as missing. When there is none and it saves the
-  placeholder `datom <datom@noreply>` instead, it says so once per R session.
-  The note shows how to fix that repo -- its own config overrides a global
-  identity, so setting a global one alone does not -- and how to set a global
-  identity for repos set up later, both as git2r commands in R (#70).
 
 * When creating the GitHub repo fails, the error now includes GitHub's own
   explanation. A 403 or 404 adds a hint about the token permissions creation
