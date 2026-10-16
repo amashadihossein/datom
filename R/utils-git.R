@@ -45,9 +45,84 @@
 
 # --- Read-only queries --------------------------------------------------------
 
-#' Get Author Info from Git Config
+#' Resolve the Git Signature for a Commit or Merge
 #'
-#' Reads user.name and user.email from the repository's git config.
+#' Returns the identity datom passes explicitly to every commit and merge it
+#' makes in `repo`, so git2r never has to resolve one itself and fail on a
+#' host with no git identity.
+#'
+#' When git resolves a complete identity -- `git2r::default_signature()`
+#' reads every config level, including `~/.config/git/config`, the system
+#' config and `includeIf` includes -- that signature is returned unchanged,
+#' so commits are exactly what git itself would make.
+#'
+#' Otherwise a signature is built by hand, timestamped now. Each half is read
+#' from the repo's own config, then the global config, with an empty value
+#' counted as missing, and a half still missing is replaced by the fallback.
+#' So a host with only a global `user.email` commits as
+#' `fallback_name <that email>`. Half an identity that comes only from
+#' `~/.config/git/config` or an `includeIf` include is not seen here, because
+#' `git2r::config()` lists only the repo and global levels.
+#'
+#' Nothing is written to any git config.
+#'
+#' @param repo A `git2r::repository` handle.
+#' @param fallback_name,fallback_email Values for a missing `user.name` or
+#'   `user.email`.
+#' @return A `git_signature`. A hand-built one carries two attributes:
+#'   `fallback` (`TRUE`: at least one half is the fallback value) and
+#'   `both_missing` (`TRUE`: both halves are). A signature git resolved
+#'   carries neither, so `isTRUE(attr(sig, "fallback"))` is `FALSE` for it.
+#' @keywords internal
+.datom_git_signature <- function(repo,
+                                 fallback_name  = "datom",
+                                 fallback_email = "datom@noreply") {
+  .datom_check_git2r()
+
+  # libgit2 refuses a missing or empty name or email, so this fails for those too.
+  resolved <- tryCatch(git2r::default_signature(repo), error = function(e) NULL)
+  if (!is.null(resolved)) return(resolved)
+
+  # The global level is read without the repo handle: git2r::config(repo)
+  # lists it too, but this is the same file, read the same way.
+  local_cfg  <- git2r::config(repo)$local %||% list()
+  global_cfg <- git2r::config()$global %||% list()
+  pick <- function(key) {
+    values <- c(local_cfg[[key]] %||% "", global_cfg[[key]] %||% "")
+    values[nzchar(values)][1]
+  }
+  name  <- pick("user.name")
+  email <- pick("user.email")
+
+  # git2r's own shape for a signature: offset is minutes east of UTC. R
+  # documents gmtoff as possibly NA where the platform does not know it;
+  # libgit2 needs a number, and UTC is then the honest guess.
+  now <- Sys.time()
+  offset <- as.POSIXlt(now)$gmtoff
+  if (is.null(offset) || is.na(offset)) offset <- 0
+  sig <- structure(
+    list(
+      name  = if (is.na(name)) fallback_name else name,
+      email = if (is.na(email)) fallback_email else email,
+      when  = structure(
+        list(time = as.numeric(now), offset = offset / 60),
+        class = "git_time"
+      )
+    ),
+    class = "git_signature"
+  )
+  attr(sig, "fallback") <- is.na(name) || is.na(email)
+  attr(sig, "both_missing") <- is.na(name) && is.na(email)
+  sig
+}
+
+
+#' Get the Author datom Records for a Version
+#'
+#' The name and email of the signature datom commits with in this repo (see
+#' [.datom_git_signature()]), so the `author` in `version_history.json` is
+#' the commit's author. Never fails for a missing identity: a missing half
+#' is the fallback value, as in the commit.
 #'
 #' @param path Repository path.
 #' @return Named list with `name` and `email`.
@@ -62,24 +137,8 @@
     }
   )
 
-  cfg <- git2r::config(repo)
-  local_cfg <- cfg$local %||% list()
-  global_cfg <- cfg$global %||% list()
-
-  name <- local_cfg$user.name %||% global_cfg$user.name %||% NA_character_
-  email <- local_cfg$user.email %||% global_cfg$user.email %||% NA_character_
-
-  if (is.na(name) || is.na(email)) {
-    missing <- c()
-    if (is.na(name)) missing <- c(missing, "user.name")
-    if (is.na(email)) missing <- c(missing, "user.email")
-    cli::cli_abort(c(
-      "Git config incomplete: {.field {missing}} not set.",
-      "i" = "Set with {.code git2r::config(global = TRUE, user.name = \"Your Name\", user.email = \"you@example.com\")}"
-    ))
-  }
-
-  list(name = name, email = email)
+  sig <- .datom_git_signature(repo)
+  list(name = sig$name, email = sig$email)
 }
 
 
@@ -346,9 +405,11 @@
     return(as.character(head_commit$sha))
   }
 
-  # Commit
+  # Commit with an explicit signature: left NULL, git2r resolves one itself
+  # and fails on a host with no git identity.
+  sig <- .datom_git_signature(repo)
   commit_obj <- tryCatch(
-    git2r::commit(repo, message = message),
+    git2r::commit(repo, message = message, author = sig, committer = sig),
     error = function(e) {
       cli::cli_abort("Failed to commit: {e$message}")
     }
@@ -483,9 +544,12 @@
   )
 
   if (!is.null(upstream_ref)) {
-    # Merge upstream into current branch (merge expects the branch name string)
+    # Merge upstream into current branch (merge expects the branch name
+    # string). git2r asks for a merger signature even when already up to
+    # date, so pass one rather than let it fail on a host with no identity.
+    sig <- .datom_git_signature(repo)
     merge_result <- tryCatch(
-      git2r::merge(repo, upstream_ref$name),
+      git2r::merge(repo, upstream_ref$name, merger = sig),
       error = function(e) {
         cli::cli_abort(c(
           "Failed to merge upstream changes.",

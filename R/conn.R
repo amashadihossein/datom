@@ -698,20 +698,16 @@ datom_init_repo <- function(path = ".",
 
   git2r::remote_add(repo, name = "origin", url = remote_url)
 
-  # Stage data-repo files only (dispatch.json and ref.json live in gov repo)
+  # Stage data-repo files only (dispatch.json and ref.json live in gov repo).
+  # Through the same commit path as every write, so the init commit gets the
+  # same explicit signature.
   staged_files <- c(
     ".datom/project.yaml",
     ".datom/manifest.json",
     ".gitignore",
     "README.md"
   )
-  git2r::add(repo, staged_files)
-
-  git2r::commit(
-    repo,
-    message = "Initialize datom repository",
-    author = git2r::default_signature(repo)
-  )
+  .datom_git_commit(path, staged_files, "Initialize datom repository")
 
   # Push initial commit (remote is brand-new/empty -- skip pre-push pull)
   .datom_git_push(path, pat = store$github_pat, pull_first = FALSE)

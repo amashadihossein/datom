@@ -1966,8 +1966,11 @@ test_that("datom_init_repo cleans up on git commit failure", {
 
   local_mocked_bindings(.datom_git_push = function(...) invisible(TRUE))
 
-  # Mock git2r::commit to fail
-  mockery::stub(datom_init_repo, "git2r::commit", function(...) stop("commit failed"))
+  # Mock git2r::commit to fail. The init commit goes through
+  # .datom_git_commit(), so the binding is replaced in git2r's namespace
+  # rather than stubbed inside datom_init_repo().
+  local_mocked_bindings(commit = function(...) stop("commit failed"),
+                        .package = "git2r")
 
   expect_error(
     datom_init_repo(path = env$work_dir, project_name = "testproj",

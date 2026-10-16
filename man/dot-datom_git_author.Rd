@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils-git.R
 \name{.datom_git_author}
 \alias{.datom_git_author}
-\title{Get Author Info from Git Config}
+\title{Get the Author datom Records for a Version}
 \usage{
 .datom_git_author(path)
 }
@@ -13,6 +13,9 @@
 Named list with \code{name} and \code{email}.
 }
 \description{
-Reads user.name and user.email from the repository's git config.
+The name and email of the signature datom commits with in this repo (see
+\code{\link[=.datom_git_signature]{.datom_git_signature()}}), so the \code{author} in \code{version_history.json} is
+the commit's author. Never fails for a missing identity: a missing half
+is the fallback value, as in the commit.
 }
 \keyword{internal}
