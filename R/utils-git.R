@@ -177,11 +177,13 @@
               c(list(repo), purrr::set_names(vector("list", length(remove)), remove)))
       TRUE
     },
+    # git2r deletes the keys one after another, so a failure on the second
+    # can follow a successful first: the wording must not claim nothing went.
     error = function(e) {
       cli::cli_warn(c(
-        "Could not remove the placeholder git identity datom had saved in this repo's own git config ({.path {path}}).",
+        "Could not finish removing the placeholder git identity datom had saved in this repo's own git config ({.path {path}}).",
         "x" = conditionMessage(e),
-        "i" = "Commits go on with the identity git resolves, as before."
+        "i" = "Part of it may already be gone. Commits go on with the identity git resolves."
       ))
       FALSE
     }

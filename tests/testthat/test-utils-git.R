@@ -629,6 +629,26 @@ test_that("nothing to remove: no message and no change", {
   expect_identical(git2r::config(repo)$local, before)
 })
 
+test_that("only the repo's own config level is read: a global placeholder is left alone", {
+  skip_if_no_git2r()
+  repo <- git2r::init(withr::local_tempdir())
+  # Every git2r::config() call sees the placeholder at the global level only,
+  # and none at the repo's own level.
+  local_mocked_bindings(
+    config = function(...) {
+      list(global = list(user.name = "datom", user.email = "datom@noreply"),
+           local = list())
+    },
+    .package = "git2r"
+  )
+
+  expect_no_warning(
+    expect_no_message(res <- .datom_git_drop_placeholder_identity(repo))
+  )
+
+  expect_identical(res, character(0))
+})
+
 test_that("a second call after a removal says nothing", {
   skip_if_no_git2r()
   local_mock_git_global(global = list(user.name  = "Global User",
@@ -673,7 +693,7 @@ test_that("a removal that fails is a warning, and the commit still goes ahead", 
   msgs <- testthat::capture_messages(
     expect_warning(
       sha <- .datom_git_commit(info$path, "table.json", "Add table"),
-      "Could not remove the placeholder git identity"
+      "Could not finish removing the placeholder git identity"
     )
   )
 
