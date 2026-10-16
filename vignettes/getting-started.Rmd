@@ -191,11 +191,7 @@ in the input folder:
 # Files placed here are the raw material for datom_sync().
 input_dir <- path(dev_dir, "input_files")
 
-write.csv(
-  datom_example_data("dm", cutoff_date = "2026-01-28"),
-  path(input_dir, "dm.csv"),
-  row.names = FALSE
-)
+datom_example_file("dm", cutoff_date = "2026-01-28", dir = input_dir)
 ```
 
 Scan the folder to build a sync manifest -- datom detects what is new, changed,
@@ -257,11 +253,7 @@ A month passes. The month-2 extract arrives with new subjects. Overwrite the
 input file and sync again:
 
 ```{r}
-write.csv(
-  datom_example_data("dm", cutoff_date = "2026-02-28"),
-  path(input_dir, "dm.csv"),
-  row.names = FALSE
-)
+datom_example_file("dm", cutoff_date = "2026-02-28", dir = input_dir)
 
 manifest <- datom_sync_manifest(conn)
 #> i Scanned 1 file: 0 new, 1 changed, 0 unchanged.
@@ -329,14 +321,10 @@ domains:
 ```{r}
 cutoff <- "2026-03-28"
 
-write.csv(datom_example_data("dm", cutoff_date = cutoff),
-          path(input_dir, "dm.csv"), row.names = FALSE)
-write.csv(datom_example_data("ex", cutoff_date = cutoff),
-          path(input_dir, "ex.csv"), row.names = FALSE)
-write.csv(datom_example_data("lb", cutoff_date = cutoff),
-          path(input_dir, "lb.csv"), row.names = FALSE)
-write.csv(datom_example_data("ae", cutoff_date = cutoff),
-          path(input_dir, "ae.csv"), row.names = FALSE)
+datom_example_file("dm", cutoff_date = cutoff, dir = input_dir)
+datom_example_file("ex", cutoff_date = cutoff, dir = input_dir)
+datom_example_file("lb", cutoff_date = cutoff, dir = input_dir)
+datom_example_file("ae", cutoff_date = cutoff, dir = input_dir)
 ```
 
 Scan and sync in one pass:

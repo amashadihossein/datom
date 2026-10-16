@@ -100,8 +100,8 @@ self-entry.
 # input_files/ lives inside the git clone and is the sync inbox.
 input_dir <- file.path("path/to/my-study-dev", "input_files")
 
-write.csv(raw_dm, file.path(input_dir, "dm.csv"), row.names = FALSE)
-write.csv(raw_lb, file.path(input_dir, "lb.csv"), row.names = FALSE)
+datom_example_file("dm", dir = input_dir)
+datom_example_file("lb", dir = input_dir)
 
 manifest <- datom_sync_manifest(conn)   # scans input_files/
 datom_sync(conn, manifest)              # onboards; self-lineage recorded

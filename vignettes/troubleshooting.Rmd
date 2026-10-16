@@ -1,0 +1,46 @@
+---
+title: "Troubleshooting"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Troubleshooting}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Each entry names a symptom and points to the article that explains it. Where
+no article covers a topic yet, the answer is given here.
+
+## My versions don't match an article's, or a colleague's
+
+First compare `data_sha` (`current_data_sha` in `datom_list()`). If it
+matches, the values are identical and only the recorded provenance differs;
+if it doesn't, the values themselves differ. Both cases are covered in
+[Version SHAs](design-version-shas.html):
+
+- *Line endings: the same data, two different files* -- the usual cause when
+  a script writes the input files on Windows and on macOS or Linux.
+- *One caveat that is not ours to fix* -- reading decimal numbers from text
+  can give slightly different values on different machines.
+- *Derived columns: when arithmetic breaks cross-platform identity* -- the
+  same calculation can give slightly different results on different machines.
+
+## A sync made a new version, but the data didn't change
+
+See *Change classification* in [Version SHAs](design-version-shas.html): a
+new source file or new parents make a new version even when the values are
+identical.
+
+## `datom_write()` refuses one of my columns
+
+See *The datom table contract* and *The recourse table* in
+[Version SHAs](design-version-shas.html). `datom_check_hashable()` checks a
+table before you write it.
+
+## `datom_sync()` refuses a file
+
+See *The ingestion allowlist* in [Version SHAs](design-version-shas.html).
+
+## Setting up tokens and keys
+
+See *Configure your environment* in [Getting Started](getting-started.html)
+and *Load your secrets* in [Starting on S3](start-on-s3.html).

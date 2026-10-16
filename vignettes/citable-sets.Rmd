@@ -383,11 +383,7 @@ vital signs (`vs`). The imported project takes it in, as before:
 
 ```{r refresh-sync}
 for (domain in c("dm", "ex", "lb", "ae", "vs")) {
-  write.csv(
-    x         = datom_example_data(domain = domain, cutoff_date = "2026-04-28"),
-    file      = fs::path(inputs_imported, paste0(domain, ".csv")),
-    row.names = FALSE
-  )
+  datom_example_file(domain, cutoff_date = "2026-04-28", dir = inputs_imported)
 }
 
 manifest <- datom_sync_manifest(conn = conn_write_imported)
