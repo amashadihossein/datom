@@ -376,6 +376,9 @@ arrangement -- none of this changes anything.
   `original_file_sha` is a SHA-256 of the file's bytes, so any tool in any
   language computes it identically. Change detection on inputs therefore does
   not depend on the hashing algorithm at all.
+  It hashes bytes, though: the same data written as two differently
+  formatted files, for example with Windows and Unix line endings, gets two
+  hashes. See *Line endings* below.
 
 ### One caveat that is not ours to fix
 
@@ -447,6 +450,45 @@ Worth keeping in perspective: this is a property of the platform's decimal
 parser, not of datom, and it affects any analysis reading that CSV with or
 without datom. What datom adds is that the difference becomes *visible* instead
 of silent.
+
+### Line endings: the same data, two different files
+
+`original_file_sha` hashes the source file's bytes, and line endings are
+bytes. On Windows, `write.csv()` ends each line with a carriage return and a
+line feed (`\r\n`); on macOS and Linux, with a line feed alone (`\n`). Write
+the same data frame to CSV on both and you get two files:
+
+| | macOS / Linux | Windows |
+|---|---|---|
+| Line ending from `write.csv()` | `\n` | `\r\n` |
+| `data_sha` | same | same |
+| `original_file_sha`, and so the version | differs | differs |
+
+This is the `metadata_only` case from *Change classification*: the content is
+shared and stored once, and only the recorded provenance differs. Anything
+downstream follows: a derived table records its parents' versions and a set
+pins its members' versions, so those differ too.
+
+To tell which kind of difference you have, compare `data_sha`
+(`current_data_sha` in `datom_list()`, or the `data_sha` column of
+`datom_history()`). Equal means the values match and only the provenance
+differs.
+
+When a script writes the input files, write them through a binary
+connection so every system gets `\n`:
+
+```r
+con <- file(path, "wb")
+write.csv(x, con, row.names = FALSE)
+close(con)
+```
+
+`datom_example_file()` does this for the example tables, which is why the
+articles' versions reproduce on any system. A file delivered to you, such as
+an EDC export, keeps the same bytes wherever it is copied, unless a tool
+rewrites its line endings on the way: re-saving it in a spreadsheet program,
+for example, or a git setting that converts line endings. datom keeps
+`input_files/` out of git, so git never touches files waiting to be synced.
 
 ## Derived columns: when arithmetic breaks cross-platform identity
 

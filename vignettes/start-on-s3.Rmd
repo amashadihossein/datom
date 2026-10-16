@@ -193,11 +193,7 @@ folder:
 ```{r step1-write}
 inputs_imported <- fs::path(workdir_imported, "input_files")
 
-write.csv(
-  x         = datom_example_data(domain = "dm", cutoff_date = "2026-01-28"),
-  file      = fs::path(inputs_imported, "dm.csv"),
-  row.names = FALSE
-)
+datom_example_file("dm", cutoff_date = "2026-01-28", dir = inputs_imported)
 ```
 
 Scan the folder, then sync:
@@ -242,11 +238,7 @@ nrow(datom_read(conn = conn_write_imported, name = "dm"))
 The month-2 extract arrives with new subjects:
 
 ```{r step2}
-write.csv(
-  x         = datom_example_data(domain = "dm", cutoff_date = "2026-02-28"),
-  file      = fs::path(inputs_imported, "dm.csv"),
-  row.names = FALSE
-)
+datom_example_file("dm", cutoff_date = "2026-02-28", dir = inputs_imported)
 
 manifest <- datom_sync_manifest(conn = conn_write_imported)
 #> i Scanned 1 file: 0 new, 1 changed, 0 unchanged.
@@ -298,11 +290,7 @@ The month-3 extract brings four tables at once: demographics (`dm`), dosing
 
 ```{r step4}
 for (domain in c("dm", "ex", "lb", "ae")) {
-  write.csv(
-    x         = datom_example_data(domain = domain, cutoff_date = "2026-03-28"),
-    file      = fs::path(inputs_imported, paste0(domain, ".csv")),
-    row.names = FALSE
-  )
+  datom_example_file(domain, cutoff_date = "2026-03-28", dir = inputs_imported)
 }
 
 manifest <- datom_sync_manifest(conn = conn_write_imported)
