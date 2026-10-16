@@ -3135,6 +3135,91 @@ test_that("a repo set up with no git identity commits as a global identity set l
   expect_equal(last$author$email, "global@cfg.com")
 })
 
+# A repo set up by datom, then given its own identity (`values`, set in the
+# repo's own config), written to once with a different global identity in
+# force. Returns the new commit's author and the author recorded in the table's
+# version history.
+write_with_repo_identity <- function(env, values) {
+  suppressMessages(datom_init_repo(
+    path = env$work_dir, project_name = "identity_test", store = env$store
+  ))
+  repo <- git2r::repository(env$work_dir)
+  do.call(git2r::config, c(list(repo), values))
+
+  conn <- muffle_conn_warnings(
+    datom_get_conn(path = env$work_dir, store = env$store)
+  )
+  suppressMessages(datom_write(conn, data = data.frame(x = 1:3), name = "tbl"))
+
+  last <- git2r::last_commit(repo)
+  history <- jsonlite::read_json(
+    fs::path(env$work_dir, "tbl", "version_history.json")
+  )
+  list(message = last$message, commit = last$author,
+       recorded = history[[length(history)]]$author)
+}
+
+test_that("a repo's own complete git identity wins over a different global one (#131)", {
+  skip_if_no_git2r()
+  env <- setup_local_init_env()
+  # The shared mock stands in for the host's global config. With the repo's
+  # own identity complete it hands resolution to the real
+  # git2r::default_signature, so libgit2 itself picks between the levels here.
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+
+  res <- write_with_repo_identity(env, list(user.name  = "Local Person",
+                                            user.email = "local@lab.org"))
+
+  expect_false(identical(res$message, "Initialize datom repository"))
+  expect_equal(res$commit$name, "Local Person")
+  expect_equal(res$commit$email, "local@lab.org")
+  expect_equal(res$recorded$name, "Local Person")
+  expect_equal(res$recorded$email, "local@lab.org")
+})
+
+test_that("a repo's own user.name wins and the global user.email fills the other half (#131)", {
+  skip_if_no_git2r()
+  env <- setup_local_init_env()
+  global <- list(user.name = "Global User", user.email = "global@cfg.com")
+  local_mock_git_global(global = global, signature = "real")
+  # git resolves each half separately, repo level over global, so a repo with
+  # only its own user.name commits as that name with the global email. The
+  # shared mock's stand-in for git2r::default_signature cannot show this: when
+  # the repo's own identity is incomplete it returns the global one whole. So
+  # this test resolves each half the way libgit2 does. It mocks rather than
+  # pointing HOME at a temp global config because libgit2 does not reliably
+  # follow HOME / XDG_CONFIG_HOME once loaded (see helper-git.R).
+  real_config <- git2r::config
+  local_mocked_bindings(
+    default_signature = function(repo, ...) {
+      local <- real_config(repo)$local %||% list()
+      pick <- function(key) {
+        values <- c(local[[key]] %||% "", global[[key]] %||% "")
+        values[nzchar(values)][1]
+      }
+      name <- pick("user.name")
+      email <- pick("user.email")
+      if (is.na(name) || is.na(email)) stop("config value 'user.name' was not found")
+      structure(
+        list(name = name, email = email,
+             when = structure(list(time = as.numeric(Sys.time()), offset = 0),
+                              class = "git_time")),
+        class = "git_signature"
+      )
+    },
+    .package = "git2r"
+  )
+
+  res <- write_with_repo_identity(env, list(user.name = "Local Person"))
+
+  expect_false(identical(res$message, "Initialize datom repository"))
+  expect_equal(res$commit$name, "Local Person")
+  expect_equal(res$commit$email, "global@cfg.com")
+  expect_equal(res$recorded$name, "Local Person")
+  expect_equal(res$recorded$email, "global@cfg.com")
+})
+
 
 # =============================================================================
 # Phase 13: .datom_check_data_reachable()
