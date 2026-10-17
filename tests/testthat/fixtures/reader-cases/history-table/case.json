@@ -1,0 +1,38 @@
+{
+  "description": "A table's history, newest first: version, data_sha, timestamp, author, commit_message, commit_sha.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "history",
+    "name": "dm",
+    "n": 100
+  },
+  "expect": {
+    "ok": true,
+    "rows": [
+      {
+        "version": "4e5101f41289cb27ea027ee5ed1742f16b66a7a9b46c4d2042407a0501aada29",
+        "data_sha": "1559abb23a8946144e1d5ff6e7a8d20b07f587df33913deda88e86760beb6920",
+        "timestamp": "2026-10-17T03:22:17Z",
+        "author": "Reader Cases <reader-cases@example.com>",
+        "commit_message": "Describe the table",
+        "commit_sha": "4d3b5f6862faf7152827686d5a40676b93fc8881"
+      },
+      {
+        "version": "fbe383026378ea353ef0d1dc00dd550445b9b3087b0f6ffe180628d03c92b9b5",
+        "data_sha": "1559abb23a8946144e1d5ff6e7a8d20b07f587df33913deda88e86760beb6920",
+        "timestamp": "2026-10-17T03:22:17Z",
+        "author": "Reader Cases <reader-cases@example.com>",
+        "commit_message": "Second data cut",
+        "commit_sha": "8c5f9e75cfdee52265e434851aecd5700a2e3d70"
+      },
+      {
+        "version": "4151f1814ff783660a740336800624c5149b339c63e954e3b662fbc4bb2c37a7",
+        "data_sha": "0ec43fdc936b420d5beba1312224a408e6e1a304b009a246b76412ebf8425c2f",
+        "timestamp": "2026-10-17T03:22:17Z",
+        "author": "Reader Cases <reader-cases@example.com>",
+        "commit_message": "First data cut",
+        "commit_sha": "029111d969afc64be5a96b55a8bf7365fceac20f"
+      }
+    ]
+  }
+}

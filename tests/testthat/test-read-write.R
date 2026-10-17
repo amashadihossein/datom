@@ -317,7 +317,8 @@ test_that("errors when version not found in history", {
 
   expect_error(
     .datom_resolve_version(metadata_list, version = "nonexistent", name = "tbl"),
-    "not found"
+    "not found",
+    class = "datom_version_not_found", inherit = FALSE
   )
 })
 
@@ -454,7 +455,8 @@ test_that("errors on ambiguous prefix", {
 
   expect_error(
     .datom_resolve_version(metadata_list, version = "abc123", name = "tbl"),
-    "ambiguous"
+    "ambiguous",
+    class = "datom_version_ambiguous", inherit = FALSE
   )
 })
 
@@ -612,7 +614,8 @@ test_that("read-time integrity: mismatched parquet_sha aborts before parsing", {
 
   expect_error(
     .datom_read_parquet(conn, "customers", "abc123", parquet_sha = wrong_sha),
-    "integrity check"
+    "integrity check",
+    class = "datom_parquet_integrity_failure", inherit = FALSE
   )
 })
 

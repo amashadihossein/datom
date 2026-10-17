@@ -203,7 +203,8 @@ datom_read <- function(conn,
       c(
         "Version {.val {version}} not found in history for {.val {name}}.",
         "i" = "Use {.fn datom_history} to see available versions."
-      )
+      ),
+      class = "datom_version_not_found"
     )
   }
 
@@ -213,7 +214,8 @@ datom_read <- function(conn,
         "Version prefix {.val {version}} is ambiguous for {.val {name}}.",
         "i" = "It matches {length(match_indices)} versions. Use a longer prefix.",
         "i" = "Use {.fn datom_history} to see available versions."
-      )
+      ),
+      class = "datom_version_ambiguous"
     )
   }
 
@@ -282,7 +284,8 @@ datom_read <- function(conn,
           "x" = "Expected {.field parquet_sha}: {.val {parquet_sha}}",
           "x" = "Actual SHA-256: {.val {actual}}",
           "i" = "The stored object may be corrupted or tampered with. Do not trust this data."
-        )
+        ),
+        class = "datom_parquet_integrity_failure"
       )
     }
   }

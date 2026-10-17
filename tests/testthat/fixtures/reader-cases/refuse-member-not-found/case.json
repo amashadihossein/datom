@@ -1,0 +1,16 @@
+{
+  "description": "Fetch a member the set does not have",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "fetch_member",
+    "set": "trial_product",
+    "set_version": null,
+    "member": "ae",
+    "tags": null,
+    "version": null
+  },
+  "expect": {
+    "ok": false,
+    "error": "member_not_found"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "description": "Metadata declares a newer format than supported",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "dm",
+    "version": null
+  },
+  "expect": {
+    "ok": false,
+    "error": "schema_unsupported"
+  },
+  "edited": "schema_version set to 3 in dm's metadata.json."
+}

@@ -634,7 +634,10 @@ test_that("an id value that is not a text scalar aborts, naming the member", {
 
   err <- expect_error(
     datom_get_set(fx$conn, "product-a"),
-    class = "datom_set_member_malformed"
+    # inherit = FALSE: a plain `class =` also matches on a wrapping error's
+    # parent, so it passes when purrr re-signals the abort as its own class --
+    # which a caller's tryCatch(datom_set_member_malformed = ) never sees.
+    class = "datom_set_member_malformed", inherit = FALSE
   )
   expect_match(conditionMessage(err), "members\\[\\[2\\]\\]")
   expect_match(conditionMessage(err), "id\\$name")
@@ -651,7 +654,7 @@ test_that("a member missing an id field of its own aborts", {
 
   err <- expect_error(
     datom_get_set(fx$conn, "product-a"),
-    class = "datom_set_member_malformed"
+    class = "datom_set_member_malformed", inherit = FALSE
   )
   expect_match(conditionMessage(err), "id\\$kind")
 })

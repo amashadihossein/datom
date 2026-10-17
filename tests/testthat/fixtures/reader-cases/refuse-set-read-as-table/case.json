@@ -1,0 +1,13 @@
+{
+  "description": "A set read as a table",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "trial_product",
+    "version": null
+  },
+  "expect": {
+    "ok": false,
+    "error": "kind_mismatch"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "description": "A table's data file with one byte changed. Refused before parsing.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "dm",
+    "version": null
+  },
+  "expect": {
+    "ok": false,
+    "error": "integrity_mismatch"
+  },
+  "edited": "Flipped every bit of byte 64 of dm's current parquet file."
+}

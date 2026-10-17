@@ -1489,7 +1489,10 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
 
   id[] <- lapply(id, .datom_read_string_array)
 
-  purrr::walk(c("project", "name", "kind", "version"), function(field) {
+  # lapply() rather than purrr::walk(): purrr re-signals an abort from the
+  # function it calls as its own `purrr_error_indexed`, which would hide the
+  # `datom_set_member_malformed` class callers dispatch on.
+  lapply(c("project", "name", "kind", "version"), function(field) {
     fld <- paste0("id$", field)
     if (!(field %in% names(id)) || !.datom_is_text_scalar(id[[field]])) {
       malformed(

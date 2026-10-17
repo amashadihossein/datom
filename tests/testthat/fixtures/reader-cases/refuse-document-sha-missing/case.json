@@ -1,0 +1,14 @@
+{
+  "description": "A set version with no document_sha",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_set",
+    "name": "trial_product",
+    "version": null
+  },
+  "expect": {
+    "ok": false,
+    "error": "document_sha_missing"
+  },
+  "edited": "Removed the document_sha line from the set's metadata.json."
+}

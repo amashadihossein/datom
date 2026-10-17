@@ -1,0 +1,13 @@
+{
+  "description": "A version not in the history",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "dm",
+    "version": "ffffffff"
+  },
+  "expect": {
+    "ok": false,
+    "error": "version_not_found"
+  }
+}

@@ -9,3 +9,4 @@ exactly the regression it was created to catch -- so treat any diff here as a mi
 | File | Shape it preserves |
 |---|---|
 | `manifest-v1.json` | manifest as written before the artifact namespace existed: no `schema_version` field, artifacts listed under `tables`, one real table entry, a `summary` block |
+| `reader-cases/` | shared reader cases: small stores R datom wrote, each with the result any reader must produce. Run by `test-reader-cases.R` and by the Python reader. See `reader-cases/README.md` |

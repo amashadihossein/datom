@@ -1,0 +1,30 @@
+{
+  "description": "A set's history",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "history",
+    "name": "trial_product",
+    "n": 100
+  },
+  "expect": {
+    "ok": true,
+    "rows": [
+      {
+        "version": "6d702efe2ad905205014c2faa35618164d1605f988ae4a87cce5b9493539f9c2",
+        "data_sha": "7c5004a0f7e136da767e35a9dc7f0d175477521139bf3b6acb7a48a97e38114f",
+        "timestamp": "2026-10-17T03:22:18Z",
+        "author": "Reader Cases <reader-cases@example.com>",
+        "commit_message": "Final product",
+        "commit_sha": "62db40cb7dca131638ab7f62f5f41eee6c267a0f"
+      },
+      {
+        "version": "6c1fe6611b20b310cc45af556d328a7c793b0275f11ec92b689dd1a5a2aada8c",
+        "data_sha": "18d4e2842d6066bcc41966e9ccaeb4faddad54b6e0bd3d3c4a236e0d07544d3b",
+        "timestamp": "2026-10-17T03:22:18Z",
+        "author": "Reader Cases <reader-cases@example.com>",
+        "commit_message": "Interim product",
+        "commit_sha": "2c74477ec60893af119d759d40ab2cddb5d26ab8"
+      }
+    ]
+  }
+}
