@@ -74,9 +74,17 @@
 #' resolved, or one complete from the repo and global config, uses up no
 #' note.
 #'
+#' With `cleanup = FALSE` nothing is removed, and a placeholder value in the
+#' repo's own config is instead counted as missing, the way it would be once
+#' removed. git is then not asked, since it would report the placeholder as a
+#' real identity. [datom_get_conn()] uses this to give the note before the
+#' first commit without changing any config.
+#'
 #' @param repo A `git2r::repository` handle.
 #' @param fallback_name,fallback_email Values for a missing `user.name` or
 #'   `user.email`.
+#' @param cleanup `TRUE` (commits and merges): remove datom's old placeholder
+#'   from the repo's own config first. `FALSE`: read only.
 #' @return A `git_signature`. A hand-built one carries two attributes:
 #'   `fallback` (`TRUE`: at least one half is the fallback value) and
 #'   `both_missing` (`TRUE`: both halves are). A signature git resolved
@@ -84,21 +92,29 @@
 #' @keywords internal
 .datom_git_signature <- function(repo,
                                  fallback_name  = "datom",
-                                 fallback_email = "datom@noreply") {
+                                 fallback_email = "datom@noreply",
+                                 cleanup = TRUE) {
   .datom_check_git2r()
 
   # First, before git resolves anything: a repo whose own config holds only
   # the placeholder older datom saved there then picks up the real identity
   # on this same call.
-  .datom_git_drop_placeholder_identity(repo)
+  if (cleanup) .datom_git_drop_placeholder_identity(repo)
+
+  local_cfg <- git2r::config(repo)$local %||% list()
+  # Read only: count each placeholder half as missing, as cleanup would leave
+  # it, and skip git, which would return the placeholder as the identity.
+  stale <- if (cleanup) character(0) else .datom_git_placeholder_keys(local_cfg)
+  local_cfg[stale] <- NULL
 
   # libgit2 refuses a missing or empty name or email, so this fails for those too.
-  resolved <- tryCatch(git2r::default_signature(repo), error = function(e) NULL)
+  resolved <- if (length(stale) == 0L) {
+    tryCatch(git2r::default_signature(repo), error = function(e) NULL)
+  }
   if (!is.null(resolved)) return(resolved)
 
   # The global level is read without the repo handle: git2r::config(repo)
   # lists it too, but this is the same file, read the same way.
-  local_cfg  <- git2r::config(repo)$local %||% list()
   global_cfg <- git2r::config()$global %||% list()
   pick <- function(key) {
     values <- c(local_cfg[[key]] %||% "", global_cfg[[key]] %||% "")
@@ -134,6 +150,22 @@
 }
 
 
+#' Which Keys in a Repo's Own Git Config Hold datom's Placeholder
+#'
+#' @param local_cfg The repo's own config level, as `git2r::config(repo)$local`.
+#' @return Character vector of `user.name` / `user.email`, each present when its
+#'   value is exactly datom's placeholder for that key.
+#' @noRd
+.datom_git_placeholder_keys <- function(local_cfg) {
+  placeholder <- c(user.name = "datom", user.email = "datom@noreply")
+  # Both keys are lower-case already, which is how libgit2 lists them.
+  is_placeholder <- purrr::map_lgl(names(placeholder), function(key) {
+    identical(local_cfg[[key]], placeholder[[key]])
+  })
+  names(placeholder)[is_placeholder]
+}
+
+
 #' Remove datom's Placeholder Identity from a Repo's Own Git Config
 #'
 #' Older datom saved `user.name = "datom"` and `user.email = "datom@noreply"`
@@ -159,13 +191,7 @@
 .datom_git_drop_placeholder_identity <- function(repo) {
   .datom_check_git2r()
 
-  placeholder <- c(user.name = "datom", user.email = "datom@noreply")
-  # Both keys are lower-case already, which is how libgit2 lists them.
-  local_cfg <- git2r::config(repo)$local %||% list()
-  is_placeholder <- purrr::map_lgl(names(placeholder), function(key) {
-    identical(local_cfg[[key]], placeholder[[key]])
-  })
-  remove <- names(placeholder)[is_placeholder]
+  remove <- .datom_git_placeholder_keys(git2r::config(repo)$local %||% list())
   if (length(remove) == 0L) return(invisible(character(0)))
 
   path <- as.character(fs::path_tidy(git2r::workdir(repo)))

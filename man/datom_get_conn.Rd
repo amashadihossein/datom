@@ -33,7 +33,9 @@ local copy, pass \code{store} and \code{project_name}.
 \details{
 \strong{Developer} (local repo + store): provide \code{path} and \code{store}. Reads
 project identity from \code{.datom/project.yaml}; uses store for credentials and
-S3 config. Cross-checks bucket/prefix between yaml and store.
+S3 config. Cross-checks bucket/prefix between yaml and store. When git finds
+no complete identity to commit with, a note says so (once per R session),
+before anything is committed; no git config is changed.
 
 \strong{Reader} (no local repo): provide \code{store} and \code{project_name}. Store
 provides everything.

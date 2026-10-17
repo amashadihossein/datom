@@ -7,7 +7,8 @@
 .datom_git_signature(
   repo,
   fallback_name = "datom",
-  fallback_email = "datom@noreply"
+  fallback_email = "datom@noreply",
+  cleanup = TRUE
 )
 }
 \arguments{
@@ -15,6 +16,9 @@
 
 \item{fallback_name, fallback_email}{Values for a missing \code{user.name} or
 \code{user.email}.}
+
+\item{cleanup}{\code{TRUE} (commits and merges): remove datom's old placeholder
+from the repo's own config first. \code{FALSE}: read only.}
 }
 \value{
 A \code{git_signature}. A hand-built one carries two attributes:
@@ -50,5 +54,11 @@ When a half is the fallback, a console note says so, the first time in an
 R session (see \code{\link[=.datom_notify_identity_fallback]{.datom_notify_identity_fallback()}}). A signature git
 resolved, or one complete from the repo and global config, uses up no
 note.
+
+With \code{cleanup = FALSE} nothing is removed, and a placeholder value in the
+repo's own config is instead counted as missing, the way it would be once
+removed. git is then not asked, since it would report the placeholder as a
+real identity. \code{\link[=datom_get_conn]{datom_get_conn()}} uses this to give the note before the
+first commit without changing any config.
 }
 \keyword{internal}

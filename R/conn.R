@@ -903,7 +903,9 @@ datom_clone <- function(path, store, ...) {
 #'
 #' **Developer** (local repo + store): provide `path` and `store`. Reads
 #' project identity from `.datom/project.yaml`; uses store for credentials and
-#' S3 config. Cross-checks bucket/prefix between yaml and store.
+#' S3 config. Cross-checks bucket/prefix between yaml and store. When git finds
+#' no complete identity to commit with, a note says so (once per R session),
+#' before anything is committed; no git config is changed.
 #'
 #' **Reader** (no local repo): provide `store` and `project_name`. Store
 #' provides everything.
@@ -962,11 +964,25 @@ datom_get_conn <- function(path = NULL,
     cli::cli_abort("{.arg store} must be a {.cls datom_store} object.")
   }
 
-  if (!is.null(path)) {
-    .datom_get_conn_developer(path, store, endpoint = endpoint)
-  } else {
-    .datom_get_conn_reader(store, project_name, endpoint = endpoint)
+  if (is.null(path)) {
+    return(.datom_get_conn_reader(store, project_name, endpoint = endpoint))
   }
+
+  conn <- .datom_get_conn_developer(path, store, endpoint = endpoint)
+
+  # A writer with no git identity would otherwise learn so at the first
+  # commit, which then carries the placeholder for good. Read only: removing
+  # an old placeholder from the repo's config waits for that commit. The
+  # result is dropped (the once-per-session note is the point), and nothing
+  # here may stop a connection.
+  if (identical(conn$role, "developer")) {
+    tryCatch(
+      .datom_git_signature(git2r::repository(as.character(path)), cleanup = FALSE),
+      error = function(e) NULL
+    )
+  }
+
+  conn
 }
 
 

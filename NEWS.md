@@ -6,7 +6,8 @@
   so. A real identity older datom saved there stays; remove it with
   `git2r::config(git2r::repository(path), user.name = NULL, user.email = NULL)`.
   With no identity anywhere, commits use the placeholder and a note says so once
-  per R session (#70, #131).
+  per R session (#70, #131). Writers now see that note when they connect with
+  `datom_get_conn()`, before the first commit (#144).
 
 * New `datom_example_file()` writes an example table to a CSV whose lines end
   with `\n` on every system, so the file, and the version datom records for
