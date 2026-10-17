@@ -297,6 +297,37 @@ there (not here).
 
 These patterns are non-negotiable for every session:
 
+**Rigor matches risk: name the tier before starting.** Added 2026-10-16, after issue #131 (a fix
+of a few hundred lines) took hours: every step ran as a separate review loop, the full suite and
+the guard probes ran several times per commit, and work stopped for approval after every commit.
+That is the right price for changing how datom hashes; it is the wrong price for a bug fix.
+
+**Classify by the worst thing a mistake could do**, not by the size of the diff:
+
+| Tier | Worst case of a mistake | Examples |
+|---|---|---|
+| **0 Trivial** | A reader is confused | Typo, wording, comment, NEWS line, README, issue text |
+| **1 Small** | One feature misbehaves, loudly | A bug fix or message change in one area; a new test; a vignette edit |
+| **2 Standard** | Several features misbehave, or a user-visible behaviour changes | A new or changed exported function; a change across several files or modules (#131 was this) |
+| **3 Foundational** | Silent damage: wrong data, wrong versions, a check that stops checking | Version identity (hashing), the shape of a datom-owned document, forward-compatibility or integrity checks, storage / `ref.json` routing, credential handling |
+
+What each tier gets:
+
+| | 0 Trivial | 1 Small | 2 Standard | 3 Foundational |
+|---|---|---|---|---|
+| Process | Branch, commit, PR | `CONTRIBUTING.md` issue workflow | Same, with a short written plan (issue comment or chat) | The spec-driven workflow (item 0) |
+| Up-front stop | None | None, unless the direction is unclear | Once, on the plan | Requirements, design, tasks |
+| Decisions | -- | Batched, one message, each with a default | Batched, one message, each with a default | One at a time (`.kiro/steering/communication.md`) |
+| Tests | None, or a build of the edited doc | Filtered while working; full suite + `devtools::check()` once, before the PR | Same as Tier 1 | Full suite before every commit (item 2), E2E at the end (item 5) |
+| Guard probes (item 2a) | -- | Each new guard, once, against its own test file | Same as Tier 1 | Every guard, per item 2a |
+| Review | Owner, on the PR | Owner, on the PR | Owner, on the PR | Independent review where flagged at plan time (Model Escalation) |
+| Stops during work | -- | One, at the PR | One, at the PR | After every chunk (item 5d) |
+| How the work runs | One working session. No sub-agents or workflow runs; no report files. Commit messages and the PR are the record | Same | Same | May use separate agents for independent review; the spec is the record |
+
+**Escalate as soon as the evidence changes.** If a Tier 1 or 2 change turns out to touch anything
+in Tier 3's row, or grows past about five commits, stop, say which tier it now is and why, and ask
+before continuing. De-escalating works the same way.
+
 **Workflow model — spec = phase.** A unit of multi-step work is a **Kiro spec** under
 `.kiro/specs/{feature}/`. Its `requirements.md` + `design.md` + `tasks.md` replace the legacy
 `dev/phase_{n}_{name}.md` phase doc. All branch, chunk, checkpoint, test, and review
@@ -311,7 +342,7 @@ in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files)
    "Issue resolution workflow". That document is the single source of truth;
    do not duplicate or paraphrase it here.
 
-0. **Follow the dev process for multi-step work**: Any task spanning more than a single commit **must** follow the spec-driven workflow:
+0. **Follow the dev process for Tier 3 work**: Any Tier 3 task (see "Rigor matches risk" above), and any task the owner asks to run as a spec, **must** follow the spec-driven workflow. Tiers 0-2 follow `CONTRIBUTING.md` instead, even when they span several commits:
    a. Read `dev/README.md` and relevant dev docs (spec, architecture) to understand current state.
    b. Create a feature branch off `dev`: `git checkout -b spec/{feature} dev`.
    c. The plan lives in the spec under `.kiro/specs/{feature}/`: `requirements.md` (goal +
@@ -333,14 +364,14 @@ in Kiro (native specs) and Copilot (read/maintain the same `.kiro/specs/` files)
       (`dev` -> `main` happens only at release time; see `dev/README.md` "Branching and Releases".)
    Never jump straight to coding on multi-step work. The spec is the plan AND the audit trail.
 1. **Read before writing**: At the start of each chunk, read the relevant source functions AND their callers before editing. Trace the full call chain — don't edit based on the spec's task description alone.
-2. **Full test suite before every commit**: Run `devtools::test()` (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost.
-2a. **A guard's test must fail when that guard ALONE is removed.** Delete the condition, run the suite, and watch. A test that stays green under the deletion is testing a different guarantee than its name claims -- so a green suite is evidence only for the guards whose tests have been watched going red. Where a behaviour is protected by more than one condition, each condition needs a case that isolates it; one break that reddens both proves neither. This is a convention rather than an anecdote because it produced an instance in **four** separate tasks, two of them shipped and found afterwards by probing. **Do not restate the catalogue here** -- the four instances, the canonical case, and the procedure (run a control; a probe that reddens nothing is ambiguous rather than a pass; a crude probe is not evidence) live in `dev/engineering-notes.md` under "A test can observe a layer that cannot distinguish the two behaviours" and "Probing a guard". Read those before writing a test for a guard whose failure mode you cannot state.
+2. **Full test suite before every commit (Tier 3)**: Run `devtools::test()` (unfiltered) and verify the total count. Report the count in every commit message. If the count drops, something was lost. **Tiers 1-2**: filtered runs (`devtools::test(filter = ...)`) while working, then the unfiltered suite once before the PR; report the count and its delta against `dev` in the PR description and the last commit, and explain any drop.
+2a. **A guard's test must fail when that guard ALONE is removed.** Delete the condition, run the suite, and watch. A test that stays green under the deletion is testing a different guarantee than its name claims -- so a green suite is evidence only for the guards whose tests have been watched going red. Where a behaviour is protected by more than one condition, each condition needs a case that isolates it; one break that reddens both proves neither. This is a convention rather than an anecdote because it produced an instance in **four** separate tasks, two of them shipped and found afterwards by probing. **Do not restate the catalogue here** -- the four instances, the canonical case, and the procedure (run a control; a probe that reddens nothing is ambiguous rather than a pass; a crude probe is not evidence) live in `dev/engineering-notes.md` under "A test can observe a layer that cannot distinguish the two behaviours" and "Probing a guard". Read those before writing a test for a guard whose failure mode you cannot state. **Cost control**: probe a guard once, against its own test file rather than the full suite, and record the result in the commit message; nobody re-runs a recorded probe.
 3. **One logical change per commit**: Don't bundle unrelated fixes. Squash related incremental commits before pushing if they tell a cleaner story as one. Scope chunks so this is the natural outcome — if a chunk's scope feels ambiguous before you start, that's a signal to split it.
 4. **Simplicity over cleverness**: If a change doesn't alter behavior, don't add it. When in doubt, do less. Actively resist complexity that exists only for marginally better UX or edge-case coverage.
 5. **E2E after spec completion**: Unit tests are necessary but not sufficient. Before marking a spec complete, run real end-to-end workflows via `dev/dev-sandbox.R` to catch integration bugs.
 5a. **Long text in CLI calls — always use a temp file, first try**: For `gh issue create --body`, `gh pr create --body`, `git commit -F`, or any CLI call that takes multi-line text: write the text to a temp file with `create_file` first, then pass `--body-file /tmp/filename.md` or `git commit -F /tmp/msg.md`. Never attempt the inline heredoc (`<< 'EOF'`) or `--body "..."` form first — shell quoting and terminal emulation always mangle them and risk duplicate side effects (e.g. duplicate issues). For short single-line messages (< 80 chars), inline `--message` / `-m` is fine.
 5b. **Check in before implementing**: When the user asks a question (clarifying, exploratory, or directional), answer the question first. Do not implement anything until the user has confirmed the direction. The signal that implementation is wanted is explicit: "go ahead", "do it", "yes", or equivalent — not merely absence of objection.
-5d. **Mandatory chunk checkpoint**: After completing and committing a chunk, STOP. Post a one-paragraph summary of what shipped and any decisions made, then ask: "Ready to proceed to Chunk N: [name]?" Do not start the next chunk until the user replies with an explicit go-ahead. This applies even if the next chunk seems obvious or low-risk. Completing a chunk is not permission to start the next one.
+5d. **Mandatory chunk checkpoint (Tier 3)**: Tiers 0-2 stop once, at the PR, instead. After completing and committing a chunk, STOP. Post a one-paragraph summary of what shipped and any decisions made, then ask: "Ready to proceed to Chunk N: [name]?" Do not start the next chunk until the user replies with an explicit go-ahead. This applies even if the next chunk seems obvious or low-risk. Completing a chunk is not permission to start the next one.
 5e. **Approval signals are explicit, not contextual**: The following are NOT approval to proceed: silence, a question about the work just done, a comment about model behavior, a request to "queue" a model switch, or any message that does not directly address the next action. Explicit approval looks like: "go ahead", "yes", "do it", "proceed", "continue", or equivalent affirmatives directed at the next step.
 5c. **Before retrying any remote-mutating action, verify remote state first**: Before a second attempt at `gh issue create`, `git push`, `gh pr create`, etc., run a read-only check (`gh issue list`, `git log --remotes`, `gh pr list`) to confirm whether the first attempt already succeeded. Acting on stale local evidence is how duplicates happen.
 7. **Spec completion is mandatory**: When all tasks are done, harvest durable learnings (API/design → `dev/datom_specification.md`; gotchas/pitfalls → `dev/engineering-notes.md`; conventions → these instructions; deferrals → README Backlog), update the `dev/README.md` Active Specs table, and commit. **Specs persist — do NOT delete them** (this replaces the old "delete the phase doc" rule). Then PR into `dev` + merge + delete the branch. Do NOT start the next spec until this is done.

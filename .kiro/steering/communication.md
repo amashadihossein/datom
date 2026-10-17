@@ -23,6 +23,11 @@ answer, then raise the next. (Agreed 2026-09-27, after a turn-by-turn design ses
   one at a time.
 - **One point per turn.** Say what the point is in a sentence or two, give the options with what each
   costs, say which way you lean, and state the default you will take if I say nothing. Then stop.
+- **Exception: decisions on Tier 1-2 work** (see "Rigor matches risk" in
+  `.github/copilot-instructions.md`). When you have a clear lean on each, send them together in one
+  message, each with its default, and I reply only where I disagree. (Added 2026-10-16: three
+  decisions asked one at a time on #131 cost three round trips of "fine with your call".) Design
+  discussions and Tier 3 work stay one point at a time.
 - **Show, briefly.** A three-line code sketch or a two-row comparison beats a paragraph.
 - **When I answer, confirm in one line and move to the next point.** Do not restate the whole
   decision.
