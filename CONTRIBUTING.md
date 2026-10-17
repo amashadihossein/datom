@@ -74,9 +74,13 @@ self-assigned, follow these steps:
    For large cross-cutting work, follow the full phase-doc process described in
    `dev/README.md`.
 
-5. **Develop.** Make the change. Run `devtools::test()` (unfiltered) before
-   every commit and include the test count in the commit message. If the count
-   drops, something was lost. Keep commits small and logically focused.
+5. **Develop.** Make the change. Run the relevant tests
+   (`devtools::test(filter = ...)`) as you go, and the unfiltered
+   `devtools::test()` once before opening the PR. Put the test count in the PR
+   and the last commit message. If the count drops, something was lost. Keep
+   commits small and logically focused. (Foundational changes, such as hashing or
+   the shape of a datom-owned document, run the full suite before every commit
+   instead; see "Rigor matches risk" in `.github/copilot-instructions.md`.)
 
 6. **Clean up.** Before opening a PR:
    - Remove dead code, debug prints, and stray comments.
