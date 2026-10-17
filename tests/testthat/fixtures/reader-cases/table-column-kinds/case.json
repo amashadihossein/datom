@@ -1,0 +1,18 @@
+{
+  "description": "A table using every column kind datom supports: logical, integer, double, character, factor, Date, date-time with a time zone, difftime, integer64, labelled. Each column has a missing value.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "kinds",
+    "version": null
+  },
+  "expect": {
+    "ok": true,
+    "version": "50b6cdaa6f2fb98ea5f21d6ae3fb40a9996e2b61e33f84f6045974edb62eec5e",
+    "data_sha": "34d9d288b2b85dee46eff242d3624972b8fdbaad104355178fdd1401b181e76a",
+    "nrow": 3,
+    "ncol": 10,
+    "colnames": ["lgl", "int", "dbl", "chr", "fct", "date", "dttm", "dur", "i64", "lbl"],
+    "arrow_types": ["bool", "int32", "double", "string", "dictionary<values=string, indices=int8>", "date32[day]", "timestamp[us, tz=America/New_York]", "duration[s]", "int64", "double"]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "description": "A set payload whose member id has a version that is not a string. The payload's recorded hash was updated, so the hash check passes and the member check is what refuses it.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_set",
+    "name": "trial_product",
+    "version": null
+  },
+  "expect": {
+    "ok": false,
+    "error": "set_member_malformed"
+  },
+  "edited": "In the current payload, the first member's version became the number 42; document_sha in metadata.json updated to the edited payload's hash."
+}

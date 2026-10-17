@@ -1,0 +1,14 @@
+{
+  "description": "A set's payload with changed bytes. The payload is still valid JSON, so only the hash check catches it.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_set",
+    "name": "trial_product",
+    "version": null
+  },
+  "expect": {
+    "ok": false,
+    "error": "integrity_mismatch"
+  },
+  "edited": "Changed \"Final cut\" to \"Final cuT\" in the current set payload."
+}

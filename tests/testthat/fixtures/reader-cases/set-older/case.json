@@ -1,0 +1,44 @@
+{
+  "description": "Read a set at an older version by a prefix of its id",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_set",
+    "name": "trial_product",
+    "version": "6c1fe661"
+  },
+  "expect": {
+    "ok": true,
+    "name": "trial_product",
+    "project": "STUDY_001",
+    "version": "6c1fe6611b20b310cc45af556d328a7c793b0275f11ec92b689dd1a5a2aada8c",
+    "data_sha": "18d4e2842d6066bcc41966e9ccaeb4faddad54b6e0bd3d3c4a236e0d07544d3b",
+    "members": [
+      {
+        "id": {
+          "project": "STUDY_001",
+          "name": "dm",
+          "kind": "table",
+          "version": "4151f1814ff783660a740336800624c5149b339c63e954e3b662fbc4bb2c37a7"
+        },
+        "tags": {
+          "domain": ["demographics", "safety"],
+          "type": ["input"]
+        }
+      },
+      {
+        "id": {
+          "project": "STUDY_001",
+          "name": "lb",
+          "kind": "table",
+          "version": "4afda7d0b08c9f0203f267a416717b6b7b9177ac2ade671e9a5b37a9da72892c"
+        },
+        "tags": {
+          "type": ["input"]
+        }
+      }
+    ],
+    "tags": {
+      "description": ["Interim cut"]
+    }
+  }
+}

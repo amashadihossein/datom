@@ -1,0 +1,14 @@
+{
+  "description": "Metadata declares a malformed format number",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "dm",
+    "version": null
+  },
+  "expect": {
+    "ok": false,
+    "error": "schema_invalid"
+  },
+  "edited": "schema_version set to 2.5 in dm's metadata.json."
+}

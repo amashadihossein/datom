@@ -1,0 +1,13 @@
+{
+  "description": "A version prefix that matches two versions: one character shared by the first characters of two of vt's versions.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "vt",
+    "version": "f"
+  },
+  "expect": {
+    "ok": false,
+    "error": "version_ambiguous"
+  }
+}

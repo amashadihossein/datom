@@ -1,0 +1,54 @@
+{
+  "description": "Read a set at its current version. It cites dm at two versions (a baseline beside the current cut) and an untagged lb. Members come back as pointers; nothing is fetched.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_set",
+    "name": "trial_product",
+    "version": null
+  },
+  "expect": {
+    "ok": true,
+    "name": "trial_product",
+    "project": "STUDY_001",
+    "version": "6d702efe2ad905205014c2faa35618164d1605f988ae4a87cce5b9493539f9c2",
+    "data_sha": "7c5004a0f7e136da767e35a9dc7f0d175477521139bf3b6acb7a48a97e38114f",
+    "members": [
+      {
+        "id": {
+          "project": "STUDY_001",
+          "name": "dm",
+          "kind": "table",
+          "version": "4151f1814ff783660a740336800624c5149b339c63e954e3b662fbc4bb2c37a7"
+        },
+        "tags": {
+          "role": ["baseline"],
+          "type": ["input"]
+        }
+      },
+      {
+        "id": {
+          "project": "STUDY_001",
+          "name": "dm",
+          "kind": "table",
+          "version": "4e5101f41289cb27ea027ee5ed1742f16b66a7a9b46c4d2042407a0501aada29"
+        },
+        "tags": {
+          "role": ["current"],
+          "type": ["input"]
+        }
+      },
+      {
+        "id": {
+          "project": "STUDY_001",
+          "name": "lb",
+          "kind": "table",
+          "version": "4afda7d0b08c9f0203f267a416717b6b7b9177ac2ade671e9a5b37a9da72892c"
+        }
+      }
+    ],
+    "tags": {
+      "area": ["oncology", "phase 2"],
+      "description": ["Final cut"]
+    }
+  }
+}

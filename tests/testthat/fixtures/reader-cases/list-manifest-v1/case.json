@@ -1,0 +1,29 @@
+{
+  "description": "List a repo whose manifest is in the older format: tables under `tables`, no `kind`, no `schema_version`. It is converted in memory.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "list"
+  },
+  "expect": {
+    "ok": true,
+    "rows": [
+      {
+        "name": "dm",
+        "kind": "table",
+        "current_version": "4e5101f41289cb27ea027ee5ed1742f16b66a7a9b46c4d2042407a0501aada29",
+        "current_data_sha": "1559abb23a8946144e1d5ff6e7a8d20b07f587df33913deda88e86760beb6920",
+        "last_updated": "2026-10-17T03:22:17Z",
+        "version_count": 3
+      },
+      {
+        "name": "lb",
+        "kind": "table",
+        "current_version": "4afda7d0b08c9f0203f267a416717b6b7b9177ac2ade671e9a5b37a9da72892c",
+        "current_data_sha": "ccae6419952c12b7c327c7daae80262db1a4ae0299f2c42128951443e578b857",
+        "last_updated": "2026-10-17T03:22:17Z",
+        "version_count": 1
+      }
+    ]
+  },
+  "edited": "Rewrote .metadata/manifest.json in the v1 shape: `artifacts` renamed to `tables`, every `kind` and the `schema_version` removed, only dm and lb kept."
+}

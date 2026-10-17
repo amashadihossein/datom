@@ -1,0 +1,18 @@
+{
+  "description": "Read a table at an older version by a unique prefix of its id",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "dm",
+    "version": "fbe38302"
+  },
+  "expect": {
+    "ok": true,
+    "version": "fbe383026378ea353ef0d1dc00dd550445b9b3087b0f6ffe180628d03c92b9b5",
+    "data_sha": "1559abb23a8946144e1d5ff6e7a8d20b07f587df33913deda88e86760beb6920",
+    "nrow": 6,
+    "ncol": 4,
+    "colnames": ["USUBJID", "AGE", "SEX", "RFSTDTC"],
+    "arrow_types": ["string", "int32", "dictionary<values=string, indices=int8>", "date32[day]"]
+  }
+}

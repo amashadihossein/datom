@@ -1,0 +1,20 @@
+{
+  "description": "A project whose storage holds a governance marker. The read succeeds with a warning that the supplied location may go stale after a data move.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "dm",
+    "version": null
+  },
+  "expect": {
+    "ok": true,
+    "version": "4e5101f41289cb27ea027ee5ed1742f16b66a7a9b46c4d2042407a0501aada29",
+    "data_sha": "1559abb23a8946144e1d5ff6e7a8d20b07f587df33913deda88e86760beb6920",
+    "nrow": 6,
+    "ncol": 4,
+    "colnames": ["USUBJID", "AGE", "SEX", "RFSTDTC"],
+    "arrow_types": ["string", "int32", "dictionary<values=string, indices=int8>", "date32[day]"],
+    "warnings": ["governance_attached"]
+  },
+  "edited": "Wrote a valid .metadata/governance.json by hand."
+}

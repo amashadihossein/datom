@@ -1,0 +1,21 @@
+{
+  "description": "Fetch one member's data from a set, narrowing a repeated name by a version prefix instead of a label.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "fetch_member",
+    "set": "trial_product",
+    "set_version": null,
+    "member": "dm",
+    "tags": null,
+    "version": "4151f181"
+  },
+  "expect": {
+    "ok": true,
+    "version": "4151f1814ff783660a740336800624c5149b339c63e954e3b662fbc4bb2c37a7",
+    "data_sha": "0ec43fdc936b420d5beba1312224a408e6e1a304b009a246b76412ebf8425c2f",
+    "nrow": 5,
+    "ncol": 4,
+    "colnames": ["USUBJID", "AGE", "SEX", "RFSTDTC"],
+    "arrow_types": ["string", "int32", "dictionary<values=string, indices=int8>", "date32[day]"]
+  }
+}

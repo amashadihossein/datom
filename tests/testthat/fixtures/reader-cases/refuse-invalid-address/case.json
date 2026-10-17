@@ -1,0 +1,14 @@
+{
+  "description": "A data address in metadata that isn't 6 to 64 lowercase hex characters. Refused before any storage path is built.",
+  "generated_with": "datom 0.2.0",
+  "call": {
+    "op": "read_table",
+    "name": "dm",
+    "version": null
+  },
+  "expect": {
+    "ok": false,
+    "error": "invalid_address"
+  },
+  "edited": "data_sha set to \"../x\" in dm's metadata.json."
+}
