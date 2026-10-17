@@ -12,7 +12,8 @@
 \item{arg}{Name of the calling argument, used in the error message.}
 }
 \value{
-Invisible \code{x} on success. Aborts otherwise.
+Invisible \code{x} on success. Aborts with class \code{datom_invalid_sha}
+otherwise.
 }
 \description{
 Ensures a user-supplied SHA-like string is 6-64 lowercase hex characters.

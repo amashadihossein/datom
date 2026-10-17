@@ -9,6 +9,14 @@
   per R session (#70, #131). Writers now see that note when they connect with
   `datom_get_conn()`, before the first commit (#144).
 
+* Four read errors now carry a condition class, so code can catch them by
+  class rather than by message: `datom_parquet_integrity_failure` (a table's
+  stored data fails its hash check), `datom_version_not_found`,
+  `datom_version_ambiguous` and `datom_invalid_sha`. Messages are unchanged.
+  A malformed member in a stored set now reaches the caller as
+  `datom_set_member_malformed`; it used to arrive wrapped as
+  `purrr_error_indexed` (#129).
+
 * New `datom_example_file()` writes an example table to a CSV whose lines end
   with `\n` on every system, so the file, and the version datom records for
   it, is the same on Windows, macOS and Linux. The vignettes now use it; with

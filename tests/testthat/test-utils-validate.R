@@ -353,6 +353,13 @@ test_that(".datom_validate_sha rejects non-scalar / NA / non-character", {
   expect_error(.datom_validate_sha(character(0)), "hex")
 })
 
+test_that(".datom_validate_sha refuses with a stable class", {
+  # Readers outside R map this class to the language-neutral `invalid_address`
+  # (tests/testthat/fixtures/reader-cases/README.md).
+  expect_error(.datom_validate_sha("../x"),
+               class = "datom_invalid_sha", inherit = FALSE)
+})
+
 test_that(".datom_validate_sha uses the arg label in the message", {
   err <- expect_error(.datom_validate_sha("zzz", arg = "data_sha"))
   expect_match(conditionMessage(err), "data_sha")

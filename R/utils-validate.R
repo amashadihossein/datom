@@ -73,12 +73,16 @@
 #'
 #' @param x Value to validate.
 #' @param arg Name of the calling argument, used in the error message.
-#' @return Invisible `x` on success. Aborts otherwise.
+#' @return Invisible `x` on success. Aborts with class `datom_invalid_sha`
+#'   otherwise.
 #' @keywords internal
 .datom_validate_sha <- function(x, arg = "version") {
   if (!is.character(x) || length(x) != 1L || is.na(x) ||
       !grepl("^[0-9a-f]{6,64}$", x)) {
-    cli::cli_abort("{.arg {arg}} must be 6-64 lowercase hex characters.")
+    cli::cli_abort(
+      "{.arg {arg}} must be 6-64 lowercase hex characters.",
+      class = "datom_invalid_sha"
+    )
   }
   invisible(x)
 }
