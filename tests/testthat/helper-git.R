@@ -113,8 +113,14 @@ local_mock_git_global <- function(global = list(),
       global_complete <- nzchar(global$user.name %||% "") &&
         nzchar(global$user.email %||% "")
       if (!global_complete) stop("config value 'user.name' was not found")
-      structure(list(name = global$user.name, email = global$user.email),
-                class = "git_signature")
+      # The full git2r shape, `when` included: datom passes this signature
+      # straight to git2r::commit(), which refuses one without a `when`.
+      structure(
+        list(name = global$user.name, email = global$user.email,
+             when = structure(list(time = as.numeric(Sys.time()), offset = 0),
+                              class = "git_time")),
+        class = "git_signature"
+      )
     },
     .package = "git2r",
     .env = env

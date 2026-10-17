@@ -693,25 +693,22 @@ datom_init_repo <- function(path = ".",
   # --- Git init, remote, commit, push -----------------------------------------
   repo <- git2r::init(path)
 
-  # Set local config so default_signature works even without global git config.
-  .datom_git_ensure_local_identity(repo)
+  # The repo's own git config datom needs for fetch and push. No identity is
+  # written: commits work it out at commit time, so a global one is honoured.
+  .datom_git_ensure_local_config(repo)
 
   git2r::remote_add(repo, name = "origin", url = remote_url)
 
-  # Stage data-repo files only (dispatch.json and ref.json live in gov repo)
+  # Stage data-repo files only (dispatch.json and ref.json live in gov repo).
+  # Through the same commit path as every write, so the init commit gets the
+  # same explicit signature.
   staged_files <- c(
     ".datom/project.yaml",
     ".datom/manifest.json",
     ".gitignore",
     "README.md"
   )
-  git2r::add(repo, staged_files)
-
-  git2r::commit(
-    repo,
-    message = "Initialize datom repository",
-    author = git2r::default_signature(repo)
-  )
+  .datom_git_commit(path, staged_files, "Initialize datom repository")
 
   # Push initial commit (remote is brand-new/empty -- skip pre-push pull)
   .datom_git_push(path, pat = store$github_pat, pull_first = FALSE)
@@ -857,11 +854,9 @@ datom_clone <- function(path, store, ...) {
     ))
   }
 
-  # Ensure the fresh clone has a local git identity so the first datom_write()
-  # commit succeeds even on a host with no global git config (CI, fresh box).
-  # After the check above, so a clone about to be rejected does not use up the
-  # once-per-session placeholder-identity note.
-  .datom_git_ensure_local_identity(git2r::repository(as.character(path)))
+  # The repo's own git config datom needs for fetch and push. No identity is
+  # written: commits work it out at commit time, so a global one is honoured.
+  .datom_git_ensure_local_config(git2r::repository(as.character(path)))
 
   # --- Clone or verify gov repo when gov_repo_url is set ---------------------
   if (!is.null(store$gov_repo_url) && nzchar(store$gov_repo_url)) {
@@ -908,7 +903,9 @@ datom_clone <- function(path, store, ...) {
 #'
 #' **Developer** (local repo + store): provide `path` and `store`. Reads
 #' project identity from `.datom/project.yaml`; uses store for credentials and
-#' S3 config. Cross-checks bucket/prefix between yaml and store.
+#' S3 config. Cross-checks bucket/prefix between yaml and store. When git finds
+#' no complete identity to commit with, a note says so (once per R session),
+#' before anything is committed; no git config is changed.
 #'
 #' **Reader** (no local repo): provide `store` and `project_name`. Store
 #' provides everything.
@@ -967,11 +964,25 @@ datom_get_conn <- function(path = NULL,
     cli::cli_abort("{.arg store} must be a {.cls datom_store} object.")
   }
 
-  if (!is.null(path)) {
-    .datom_get_conn_developer(path, store, endpoint = endpoint)
-  } else {
-    .datom_get_conn_reader(store, project_name, endpoint = endpoint)
+  if (is.null(path)) {
+    return(.datom_get_conn_reader(store, project_name, endpoint = endpoint))
   }
+
+  conn <- .datom_get_conn_developer(path, store, endpoint = endpoint)
+
+  # A writer with no git identity would otherwise learn so at the first
+  # commit, which then carries the placeholder for good. Read only: removing
+  # an old placeholder from the repo's config waits for that commit. The
+  # result is dropped (the once-per-session note is the point), and nothing
+  # here may stop a connection.
+  if (identical(conn$role, "developer")) {
+    tryCatch(
+      .datom_git_signature(git2r::repository(as.character(path)), cleanup = FALSE),
+      error = function(e) NULL
+    )
+  }
+
+  conn
 }
 
 

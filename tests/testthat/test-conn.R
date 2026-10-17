@@ -1966,8 +1966,11 @@ test_that("datom_init_repo cleans up on git commit failure", {
 
   local_mocked_bindings(.datom_git_push = function(...) invisible(TRUE))
 
-  # Mock git2r::commit to fail
-  mockery::stub(datom_init_repo, "git2r::commit", function(...) stop("commit failed"))
+  # Mock git2r::commit to fail. The init commit goes through
+  # .datom_git_commit(), so the binding is replaced in git2r's namespace
+  # rather than stubbed inside datom_init_repo().
+  local_mocked_bindings(commit = function(...) stop("commit failed"),
+                        .package = "git2r")
 
   expect_error(
     datom_init_repo(path = env$work_dir, project_name = "testproj",
@@ -2660,40 +2663,6 @@ test_that("datom_clone aborts if cloned repo is not a datom repo", {
   })
 })
 
-test_that("datom_clone: a rejected clone does not use up the placeholder-identity note", {
-  skip_if_no_git2r()
-  withr::with_tempdir({
-    bare_dir <- withr::local_tempdir()
-    git2r::init(bare_dir, bare = TRUE)
-
-    work_dir <- withr::local_tempdir()
-    work_repo <- git2r::init(work_dir)
-    git2r::config(work_repo, user.name = "Test", user.email = "test@test.com")
-    writeLines("init", fs::path(work_dir, "README.md"))
-    git2r::add(work_repo, "README.md")
-    git2r::commit(work_repo, "Initial commit")
-    git2r::remote_add(work_repo, name = "origin", url = bare_dir)
-    git2r::push(work_repo, name = "origin",
-                refspec = test_head_refspec(work_repo), set_upstream = TRUE)
-
-    comp <- datom_store_s3(bucket = "b", access_key = "k", secret_key = "s", validate = FALSE)
-    store <- datom_store(governance = comp, data = comp, github_pat = "ghp_x",
-                         data_repo_url = bare_dir, validate = FALSE)
-
-    # From here on git has no identity: the clone would fall back if it set one.
-    local_identity_notice_state(shown = FALSE)
-    local_mock_git_global(global = list())
-
-    msgs <- testthat::capture_messages(expect_error(
-      datom_clone(path = "clone_target", store = store),
-      "not a datom repository"
-    ))
-
-    expect_false(.datom_session$git_identity_notice_shown)
-    expect_no_match(paste(msgs, collapse = ""), "placeholder", fixed = TRUE)
-  })
-})
-
 test_that("datom_clone clones and returns a datom_conn", {
   withr::with_tempdir({
     bare_dir <- withr::local_tempdir()
@@ -2748,16 +2717,13 @@ test_that("datom_clone clones and returns a datom_conn", {
   })
 })
 
-test_that("datom_clone sets a local git identity on the fresh clone (#74 E)", {
+test_that("datom_clone writes no git identity into the clone's own config (#131)", {
+  skip_if_no_git2r()
   withr::with_tempdir({
-    # Point HOME/XDG at empty dirs so there is no global git identity --
-    # mimics a CI runner / fresh box. Without the local-identity fix the
-    # first datom_write() commit would fail in git2r::commit().
-    empty_home <- withr::local_tempdir()
-    withr::local_envvar(
-      HOME = empty_home,
-      XDG_CONFIG_HOME = empty_home
-    )
+    # A global identity is present, so a setup step that copied it into the
+    # clone's own config would have something to copy.
+    local_mock_git_global(global = list(user.name  = "Global User",
+                                        user.email = "global@cfg.com"))
 
     bare_dir <- withr::local_tempdir()
     git2r::init(bare_dir, bare = TRUE)
@@ -2792,8 +2758,10 @@ test_that("datom_clone sets a local git identity on the fresh clone (#74 E)", {
 
     cloned_repo <- git2r::repository("clone_target")
     local_cfg <- git2r::config(cloned_repo)$local
-    expect_true(!is.null(local_cfg$user.name) && nzchar(local_cfg$user.name))
-    expect_true(!is.null(local_cfg$user.email) && nzchar(local_cfg$user.email))
+    expect_null(local_cfg$user.name)
+    expect_null(local_cfg$user.email)
+    # libgit2 lists config keys lower-cased, whatever case they were set in.
+    expect_equal(local_cfg[["http.followredirects"]], "true")
   })
 })
 
@@ -3118,6 +3086,140 @@ test_that("datom_get_conn works with local stores after init", {
   expect_null(conn$client)
 })
 
+test_that("datom_init_repo writes no git identity into the repo's own config (#131)", {
+  skip_if_no_git2r()
+  env <- setup_local_init_env()
+  # A global identity is present, so a setup step that copied it into the
+  # repo's own config would have something to copy.
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+
+  suppressMessages(datom_init_repo(
+    path = env$work_dir, project_name = "identity_test", store = env$store
+  ))
+
+  local_cfg <- git2r::config(git2r::repository(env$work_dir))$local
+  expect_null(local_cfg$user.name)
+  expect_null(local_cfg$user.email)
+  # libgit2 lists config keys lower-cased, whatever case they were set in.
+  expect_equal(local_cfg[["http.followredirects"]], "true")
+})
+
+test_that("a repo set up with no git identity commits as a global identity set later (#131)", {
+  skip_if_no_git2r()
+  env <- setup_local_init_env()
+
+  # Set up on a host with no git identity at all, as on a CI runner. The init
+  # commit itself has to go through without one.
+  local({
+    local_mock_git_global(global = list())
+    suppressMessages(datom_init_repo(
+      path = env$work_dir, project_name = "identity_test", store = env$store
+    ))
+  })
+
+  # The user then sets a global identity. The next write must commit as it,
+  # not as anything setup left behind in the repo.
+  local({
+    local_mock_git_global(global = list(user.name  = "Global User",
+                                        user.email = "global@cfg.com"))
+    conn <- muffle_conn_warnings(
+      datom_get_conn(path = env$work_dir, store = env$store)
+    )
+    suppressMessages(datom_write(conn, data = data.frame(x = 1:3), name = "tbl"))
+  })
+
+  last <- git2r::last_commit(git2r::repository(env$work_dir))
+  expect_false(identical(last$message, "Initialize datom repository"))
+  expect_equal(last$author$name, "Global User")
+  expect_equal(last$author$email, "global@cfg.com")
+})
+
+# A repo set up by datom, then given its own identity (`values`, set in the
+# repo's own config), written to once with a different global identity in
+# force. Returns the new commit's author and the author recorded in the table's
+# version history.
+write_with_repo_identity <- function(env, values) {
+  suppressMessages(datom_init_repo(
+    path = env$work_dir, project_name = "identity_test", store = env$store
+  ))
+  repo <- git2r::repository(env$work_dir)
+  do.call(git2r::config, c(list(repo), values))
+
+  conn <- muffle_conn_warnings(
+    datom_get_conn(path = env$work_dir, store = env$store)
+  )
+  suppressMessages(datom_write(conn, data = data.frame(x = 1:3), name = "tbl"))
+
+  last <- git2r::last_commit(repo)
+  history <- jsonlite::read_json(
+    fs::path(env$work_dir, "tbl", "version_history.json")
+  )
+  list(message = last$message, commit = last$author,
+       recorded = history[[length(history)]]$author)
+}
+
+test_that("a repo's own complete git identity wins over a different global one (#131)", {
+  skip_if_no_git2r()
+  env <- setup_local_init_env()
+  # The shared mock stands in for the host's global config. With the repo's
+  # own identity complete it hands resolution to the real
+  # git2r::default_signature, so libgit2 itself picks between the levels here.
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+
+  res <- write_with_repo_identity(env, list(user.name  = "Local Person",
+                                            user.email = "local@lab.org"))
+
+  expect_false(identical(res$message, "Initialize datom repository"))
+  expect_equal(res$commit$name, "Local Person")
+  expect_equal(res$commit$email, "local@lab.org")
+  expect_equal(res$recorded$name, "Local Person")
+  expect_equal(res$recorded$email, "local@lab.org")
+})
+
+test_that("a repo's own user.name wins and the global user.email fills the other half (#131)", {
+  skip_if_no_git2r()
+  env <- setup_local_init_env()
+  global <- list(user.name = "Global User", user.email = "global@cfg.com")
+  local_mock_git_global(global = global, signature = "real")
+  # git resolves each half separately, repo level over global, so a repo with
+  # only its own user.name commits as that name with the global email. The
+  # shared mock's stand-in for git2r::default_signature cannot show this: when
+  # the repo's own identity is incomplete it returns the global one whole. So
+  # this test resolves each half the way libgit2 does. It mocks rather than
+  # pointing HOME at a temp global config because libgit2 does not reliably
+  # follow HOME / XDG_CONFIG_HOME once loaded (see helper-git.R).
+  real_config <- git2r::config
+  local_mocked_bindings(
+    default_signature = function(repo, ...) {
+      local <- real_config(repo)$local %||% list()
+      pick <- function(key) {
+        values <- c(local[[key]] %||% "", global[[key]] %||% "")
+        values[nzchar(values)][1]
+      }
+      name <- pick("user.name")
+      email <- pick("user.email")
+      if (is.na(name) || is.na(email)) stop("config value 'user.name' was not found")
+      structure(
+        list(name = name, email = email,
+             when = structure(list(time = as.numeric(Sys.time()), offset = 0),
+                              class = "git_time")),
+        class = "git_signature"
+      )
+    },
+    .package = "git2r"
+  )
+
+  res <- write_with_repo_identity(env, list(user.name = "Local Person"))
+
+  expect_false(identical(res$message, "Initialize datom repository"))
+  expect_equal(res$commit$name, "Local Person")
+  expect_equal(res$commit$email, "global@cfg.com")
+  expect_equal(res$recorded$name, "Local Person")
+  expect_equal(res$recorded$email, "global@cfg.com")
+})
+
 
 # =============================================================================
 # Phase 13: .datom_check_data_reachable()
@@ -3370,4 +3472,179 @@ test_that("Property 5: .datom_conn_for(conn,'gov')$backend == gov_backend, indep
     expect_equal(gov$backend, gov_backend,
                  info = paste("data:", data_backend, "gov:", gov_backend))
   })
+})
+
+
+# =============================================================================
+# datom_get_conn() -- the git identity note for writers
+# =============================================================================
+#
+# A writer connection asks git for the identity datom will commit with and, if
+# none is complete, gives the once-per-session note before anything is
+# committed. Read only: datom's old placeholder in a repo's own config is
+# counted as missing but not removed (that waits for the first commit).
+# The host's global config is mocked by local_mock_git_global() (helper-git.R).
+
+# An offline writer setup: local storage and a bare repo as the remote. The
+# init commit's own note is hidden; each test resets the flag afterwards.
+setup_identity_conn_env <- function(env = parent.frame()) {
+  tmp <- withr::local_tempdir(.local_envir = env)
+  remote <- as.character(fs::path(tmp, "remote.git"))
+  fs::dir_create(remote)
+  git2r::init(remote, bare = TRUE)
+  storage <- as.character(fs::path(tmp, "storage"))
+  store <- datom_store(
+    data = datom_store_local(storage),
+    github_pat = "example-token", # role selector; a local remote needs none
+    data_repo_url = remote,
+    validate = FALSE
+  )
+  path <- as.character(fs::path(tmp, "repo"))
+  suppressMessages(datom_init_repo(path, "identity_proj", store))
+  list(
+    path = path,
+    repo = git2r::repository(path),
+    store = store,
+    reader_store = datom_store(data = datom_store_local(storage))
+  )
+}
+
+identity_note_count <- function(msgs) {
+  sum(grepl("No complete git identity", cli::ansi_strip(msgs), fixed = TRUE))
+}
+
+capture_conn_messages <- function(expr) {
+  conn <- NULL
+  msgs <- testthat::capture_messages(conn <- expr)
+  list(conn = conn, msgs = msgs)
+}
+
+test_that("a writer connection gives the identity note once, and the first write adds none", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+  env <- setup_identity_conn_env()
+  local_identity_notice_state(shown = FALSE)
+
+  res <- capture_conn_messages(datom_get_conn(path = env$path, store = env$store))
+
+  expect_equal(identity_note_count(res$msgs), 1)
+  expect_equal(res$conn$role, "developer")
+
+  write_msgs <- testthat::capture_messages(
+    datom_write(res$conn, data = datom_example_data("dm"), name = "dm")
+  )
+  expect_equal(identity_note_count(write_msgs), 0)
+  # The write still commits, as the placeholder.
+  head_author <- git2r::last_commit(env$repo)$author
+  expect_equal(head_author$name, "datom")
+})
+
+test_that("a writer connection with a full global identity says nothing", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+  env <- setup_identity_conn_env()
+  local_identity_notice_state(shown = FALSE)
+
+  res <- capture_conn_messages(datom_get_conn(path = env$path, store = env$store))
+
+  expect_equal(identity_note_count(res$msgs), 0)
+  expect_false(isTRUE(.datom_session$git_identity_notice_shown))
+})
+
+test_that("a writer connection whose repo has its own full identity says nothing", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+  env <- setup_identity_conn_env()
+  git2r::config(env$repo, user.name = "Local Person", user.email = "local@lab.org")
+  local_identity_notice_state(shown = FALSE)
+
+  res <- capture_conn_messages(datom_get_conn(path = env$path, store = env$store))
+
+  expect_equal(identity_note_count(res$msgs), 0)
+  expect_false(isTRUE(.datom_session$git_identity_notice_shown))
+})
+
+test_that("a reader connection gives no identity note, with or without a path", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+  env <- setup_identity_conn_env()
+  local_identity_notice_state(shown = FALSE)
+
+  with_path <- capture_conn_messages(
+    datom_get_conn(path = env$path, store = env$reader_store)
+  )
+  no_path <- capture_conn_messages(
+    datom_get_conn(store = env$reader_store, project_name = "identity_proj")
+  )
+
+  expect_equal(with_path$conn$role, "reader")
+  expect_equal(no_path$conn$role, "reader")
+  expect_equal(identity_note_count(c(with_path$msgs, no_path$msgs)), 0)
+  expect_false(isTRUE(.datom_session$git_identity_notice_shown))
+})
+
+test_that("a writer connection counts the old placeholder as missing and leaves it in place", {
+  skip_if_no_git2r()
+  removal_line <- "datom had saved in this repo's own git config"
+
+  # With a real global identity: silent, and the placeholder is still there.
+  local({
+    local_mock_git_global(global = list(user.name  = "Global User",
+                                        user.email = "global@cfg.com"))
+    env <- setup_identity_conn_env()
+    git2r::config(env$repo, user.name = "datom", user.email = "datom@noreply")
+    local_identity_notice_state(shown = FALSE)
+
+    res <- capture_conn_messages(datom_get_conn(path = env$path, store = env$store))
+
+    expect_equal(identity_note_count(res$msgs), 0)
+    expect_false(any(grepl(removal_line, res$msgs, fixed = TRUE)))
+    local_cfg <- git2r::config(env$repo)$local
+    expect_equal(local_cfg$user.name, "datom")
+    expect_equal(local_cfg$user.email, "datom@noreply")
+  })
+
+  # With no global identity: the note, and still no change.
+  local({
+    local_mock_git_global(global = list())
+    env <- setup_identity_conn_env()
+    git2r::config(env$repo, user.name = "datom", user.email = "datom@noreply")
+    local_identity_notice_state(shown = FALSE)
+
+    res <- capture_conn_messages(datom_get_conn(path = env$path, store = env$store))
+
+    expect_equal(identity_note_count(res$msgs), 1)
+    expect_false(any(grepl(removal_line, res$msgs, fixed = TRUE)))
+    local_cfg <- git2r::config(env$repo)$local
+    expect_equal(local_cfg$user.name, "datom")
+    expect_equal(local_cfg$user.email, "datom@noreply")
+  })
+})
+
+test_that("a writer connection leaves the repo's git config unchanged", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+  env <- setup_identity_conn_env()
+  local_identity_notice_state(shown = FALSE)
+  config_file <- fs::path(env$path, ".git", "config")
+  before_cfg <- git2r::config(env$repo)$local
+  before_md5 <- unname(tools::md5sum(config_file))
+
+  suppressMessages(datom_get_conn(path = env$path, store = env$store))
+
+  expect_identical(git2r::config(env$repo)$local, before_cfg)
+  expect_identical(unname(tools::md5sum(config_file)), before_md5)
+})
+
+test_that("a failing identity check does not stop a writer connection", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+  env <- setup_identity_conn_env()
+  local_mocked_bindings(.datom_git_signature = function(...) stop("identity check broke"))
+
+  conn <- expect_no_error(datom_get_conn(path = env$path, store = env$store))
+
+  expect_s3_class(conn, "datom_conn")
+  expect_equal(conn$role, "developer")
 })

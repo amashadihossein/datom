@@ -4,18 +4,15 @@
 \alias{.datom_notify_identity_fallback}
 \title{Announce the Placeholder Git Identity}
 \usage{
-.datom_notify_identity_fallback(name, email, both_missing, path)
+.datom_notify_identity_fallback(name, email, both_missing)
 }
 \arguments{
-\item{name, email}{The identity datom is about to write to the repo's local
-config (the effective values, so a partial fallback shows the real half).}
+\item{name, email}{The identity datom is about to commit with (the
+effective values, so a partial fallback shows the real half).}
 
-\item{both_missing}{\code{TRUE} when neither global value was set, so the whole
+\item{both_missing}{\code{TRUE} when neither half was found, so the whole
 identity is the placeholder; \code{FALSE} when one half is the user's own, and
 the note calls it "this identity" rather than "the placeholder".}
-
-\item{path}{The repo's working folder, with forward slashes, shown in the
-per-repo fix commands.}
 }
 \value{
 Invisible \code{TRUE} when the note was shown, \code{FALSE} when it had
@@ -23,28 +20,20 @@ already been shown this session.
 }
 \description{
 Prints a short console note saying datom commits will carry a placeholder
-git identity, and how to replace it. Shown at most once per R session. A
-call made with a real identity never uses up the notice, but a note that was
-emitted and hidden -- for example under \code{suppressMessages()}, or in a knitr
-chunk with \code{message = FALSE} -- still counts as shown.
+git identity, and how to replace it. Called by \code{\link[=.datom_git_signature]{.datom_git_signature()}}
+when it falls back, so the note comes at the commit, merge or
+version-history entry that needs the identity. Shown at most once per R
+session. A call made with a real identity never uses up the notice, but a
+note that was emitted and hidden -- for example under \code{suppressMessages()},
+or in a knitr chunk with \code{message = FALSE} -- still counts as shown.
 }
 \details{
-The note gives two fixes, because datom has already written the identity
-into the repo's own git config, and a repo's own config overrides the global
-one: setting a global identity alone would leave this repo's commits on the
-placeholder.
-\itemize{
-\item \strong{For this repo}: a git2r command that sets \code{user.name} and
-\code{user.email} in the repo at \code{path}.
-\item \strong{For repos set up from now on}: a git2r command that sets a global
-identity.
-}
-
-Commands are git2r calls only, never shell \code{git} commands: datom does not
-need command-line git, so a user may not have it installed. They are
-printed with \code{\link[cli:cli_verbatim]{cli::cli_verbatim()}}: cli does not wrap them at console
-width, so each stays copy-pasteable, and glue does not interpolate a brace
-that may appear in \code{path}.
+The fix is a global identity: datom saves no identity in a repo's own git
+config, so a global one is used from the next commit on, in every repo.
+The command is a git2r call only, never a shell \code{git} command: datom does
+not need command-line git, so a user may not have it installed. It is
+printed with \code{\link[cli:cli_verbatim]{cli::cli_verbatim()}}, so cli does not wrap it at console
+width and it stays copy-pasteable.
 
 An ordinary \code{cli} message, not a warning condition: nothing is wrong, the
 commits work, and the note must not trip \code{options(warn = 2)} or \code{tryCatch()}

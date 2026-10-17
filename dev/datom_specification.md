@@ -2296,7 +2296,7 @@ datom will remain a client: reading gov state freely, writing only via the seam 
 - `datom_get_conn(store = ..., project_name = ...)` builds connection from store (reader path)
 - Credentials passed directly to `paws.storage::s3()` — no env var bridge
 - `endpoint`: optional S3 endpoint override stored in conn; when set, all `.datom_s3_*` calls route through it. Used by datomanager to enforce S3 access point routing.
-- `datom_init_repo()` sets local git config (`user.name`, `user.email`) from global config or fallback — `git2r::default_signature()` requires local config on freshly init'd repos
+- datom writes no git identity into a repo's config: `datom_init_repo()`, `datom_clone()` and the gov clone set only `http.followRedirects`. Every commit and pull merge gets an explicit signature from `.datom_git_signature()`, resolved at that moment: git's own identity when complete, otherwise each missing half replaced by the placeholder `datom <datom@noreply>`, with a note once per R session. The version-history `author` is the same signature. Before resolving, it removes from the repo's own config any key older datom saved with exactly the placeholder value (each key independently) and says so; a real identity is left alone (#131)
 
 ### Dependency Strategy
 
@@ -2325,7 +2325,7 @@ All stored as parquet regardless of input format.
 - Store-provided storage credentials and `github_pat`
 - GitHub PAT permissions and remote access
 - S3 bucket existence and write permissions
-- Git user.name and user.email configured
+- Git identity is not required: a missing `user.name` or `user.email` falls back to the placeholder at commit time (see Connection Architecture above)
 - Validate prefix doesn't conflict with existing data
 
 **Connection**:

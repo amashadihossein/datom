@@ -55,355 +55,281 @@ test_that(".datom_git_author aborts on non-git directory", {
   expect_error(.datom_git_author(dir), "Not a git repository")
 })
 
-test_that(".datom_git_author aborts when user.name missing", {
+# These run on a fresh `git2r::init()` repo with nothing in its own config, and
+# local_mock_git_global() (helper-git.R) stands in for the host's global config
+# and for git's own resolution, so the host's identity never leaks in. No commit
+# is needed: the author comes from the signature, not from the log.
+
+test_that(".datom_git_author falls back to the placeholder when no identity is found", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
   dir <- withr::local_tempdir()
-  repo <- git2r::init(dir)
-  # Set only email, not name
-  git2r::config(repo, user.email = "only@email.com")
+  git2r::init(dir)
 
-  # Need a commit — use system git to bypass git2r's own validation
-  writeLines("init", fs::path(dir, "README.md"))
-  system2("git", c("-C", dir, "add", "README.md"), stdout = FALSE, stderr = FALSE)
-  withr::with_envvar(
-    c(GIT_AUTHOR_NAME = "tmp", GIT_COMMITTER_NAME = "tmp"),
-    system2("git", c("-C", dir, "commit", "-m", "init"), stdout = FALSE, stderr = FALSE)
-  )
-
-  # Mock global config to ensure it doesn't fall back
-  local_mocked_bindings(
-    config = function(...) list(local = list(user.email = "only@email.com"), global = list()),
-    .package = "git2r"
-  )
-
-  expect_error(.datom_git_author(dir), "user\\.name.*not set")
+  expect_equal(.datom_git_author(dir),
+               list(name = "datom", email = "datom@noreply"))
 })
 
-test_that(".datom_git_author aborts when user.email missing", {
+test_that(".datom_git_author keeps a global user.email and falls back for user.name", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.email = "only@email.com"))
+  dir <- withr::local_tempdir()
+  git2r::init(dir)
+
+  expect_equal(.datom_git_author(dir),
+               list(name = "datom", email = "only@email.com"))
+})
+
+test_that(".datom_git_author keeps a repo user.name and falls back for user.email", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
   dir <- withr::local_tempdir()
   repo <- git2r::init(dir)
   git2r::config(repo, user.name = "Only Name")
 
-  writeLines("init", fs::path(dir, "README.md"))
-  system2("git", c("-C", dir, "add", "README.md"), stdout = FALSE, stderr = FALSE)
-  withr::with_envvar(
-    c(GIT_AUTHOR_EMAIL = "tmp@tmp.com", GIT_COMMITTER_EMAIL = "tmp@tmp.com"),
-    system2("git", c("-C", dir, "commit", "-m", "init"), stdout = FALSE, stderr = FALSE)
-  )
-
-  local_mocked_bindings(
-    config = function(...) list(local = list(user.name = "Only Name"), global = list()),
-    .package = "git2r"
-  )
-
-  expect_error(.datom_git_author(dir), "user\\.email.*not set")
+  expect_equal(.datom_git_author(dir),
+               list(name = "Only Name", email = "datom@noreply"))
 })
 
-test_that(".datom_git_author aborts when both name and email missing", {
+test_that(".datom_git_author uses a complete global identity", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
   dir <- withr::local_tempdir()
-  repo <- git2r::init(dir)
+  git2r::init(dir)
 
-  writeLines("init", fs::path(dir, "README.md"))
-  system2("git", c("-C", dir, "add", "README.md"), stdout = FALSE, stderr = FALSE)
-  withr::with_envvar(
-    c(GIT_AUTHOR_NAME = "tmp", GIT_COMMITTER_NAME = "tmp",
-      GIT_AUTHOR_EMAIL = "t@t.com", GIT_COMMITTER_EMAIL = "t@t.com"),
-    system2("git", c("-C", dir, "commit", "-m", "init"), stdout = FALSE, stderr = FALSE)
-  )
-
-  local_mocked_bindings(
-    config = function(...) list(local = list(), global = list()),
-    .package = "git2r"
-  )
-
-  err <- expect_error(.datom_git_author(dir), "user\\.name.*user\\.email")
-  # The remedy is a git2r call: datom does not need command-line git.
-  expect_match(conditionMessage(err), "git2r::config(global = TRUE", fixed = TRUE)
+  expect_equal(.datom_git_author(dir),
+               list(name = "Global User", email = "global@cfg.com"))
 })
 
-test_that(".datom_git_author falls back to global config", {
-  dir <- withr::local_tempdir()
-  repo <- git2r::init(dir)
-
-  writeLines("init", fs::path(dir, "README.md"))
-  system2("git", c("-C", dir, "add", "README.md"), stdout = FALSE, stderr = FALSE)
-  withr::with_envvar(
-    c(GIT_AUTHOR_NAME = "tmp", GIT_COMMITTER_NAME = "tmp",
-      GIT_AUTHOR_EMAIL = "t@t.com", GIT_COMMITTER_EMAIL = "t@t.com"),
-    system2("git", c("-C", dir, "commit", "-m", "init"), stdout = FALSE, stderr = FALSE)
-  )
-
-  # Mock: no local config, values in global
+test_that(".datom_git_author returns an identity only git's own resolution sees", {
+  skip_if_no_git2r()
+  # Neither the repo nor the global file has an identity, but git resolves one
+  # anyway -- as it does from ~/.config/git/config or an includeIf include,
+  # which git2r::config() does not list.
+  local_mock_git_global(global = list())
   local_mocked_bindings(
-    config = function(...) list(
-      local = list(),
-      global = list(user.name = "Global User", user.email = "global@cfg.com")
-    ),
+    default_signature = function(...) {
+      structure(list(name = "Xdg Person", email = "xdg@lab.org",
+                     when = structure(list(time = 0, offset = 0),
+                                      class = "git_time")),
+                class = "git_signature")
+    },
     .package = "git2r"
   )
+  dir <- withr::local_tempdir()
+  git2r::init(dir)
 
-  result <- .datom_git_author(dir)
-  expect_equal(result$name, "Global User")
-  expect_equal(result$email, "global@cfg.com")
+  expect_equal(.datom_git_author(dir),
+               list(name = "Xdg Person", email = "xdg@lab.org"))
 })
 
 
 # =============================================================================
-# .datom_git_ensure_local_identity()
+# .datom_git_signature()
+# =============================================================================
+
+test_that(".datom_git_signature returns git's own signature unchanged", {
+  skip_if_no_git2r()
+  resolved <- structure(
+    list(name = "Real Person", email = "real@lab.org",
+         when = structure(list(time = 1, offset = 60), class = "git_time")),
+    class = "git_signature"
+  )
+  local_mocked_bindings(default_signature = function(...) resolved,
+                        .package = "git2r")
+  repo <- git2r::init(withr::local_tempdir())
+
+  sig <- .datom_git_signature(repo)
+
+  expect_identical(sig, resolved)
+  expect_false(isTRUE(attr(sig, "fallback")))
+})
+
+test_that(".datom_git_signature builds a full git2r signature when git finds none", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+  repo <- git2r::init(withr::local_tempdir())
+
+  sig <- .datom_git_signature(repo)
+
+  expect_s3_class(sig, "git_signature")
+  expect_s3_class(sig$when, "git_time")
+  expect_type(sig$when$time, "double")
+  expect_type(sig$when$offset, "double")
+  expect_equal(sig$name, "datom")
+  expect_equal(sig$email, "datom@noreply")
+  expect_true(attr(sig, "fallback"))
+  expect_true(attr(sig, "both_missing"))
+})
+
+test_that(".datom_git_signature flags a half fallback as not both missing", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.name = "Me"))
+  repo <- git2r::init(withr::local_tempdir())
+
+  sig <- .datom_git_signature(repo)
+
+  expect_equal(sig$name, "Me")
+  expect_equal(sig$email, "datom@noreply")
+  expect_true(attr(sig, "fallback"))
+  expect_false(attr(sig, "both_missing"))
+})
+
+test_that(".datom_git_signature counts an empty repo value as missing", {
+  skip_if_no_git2r()
+  # The repo's empty user.name would win over the global one if it counted.
+  local_mock_git_global(global = list(user.name = "Global Name"))
+  repo <- git2r::init(withr::local_tempdir())
+  git2r::config(repo, user.name = "")
+
+  expect_equal(.datom_git_signature(repo)$name, "Global Name")
+})
+
+test_that(".datom_git_signature uses the fallbacks it is given", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+  repo <- git2r::init(withr::local_tempdir())
+
+  sig <- .datom_git_signature(repo, fallback_name = "CI Bot",
+                              fallback_email = "ci@example.com")
+
+  expect_equal(sig$name, "CI Bot")
+  expect_equal(sig$email, "ci@example.com")
+})
+
+
+# =============================================================================
+# .datom_git_ensure_local_config()
 # =============================================================================
 
 # local_mock_git_global() lives in helper-git.R, shared with test-conn.R.
 
-test_that(".datom_git_ensure_local_identity copies global identity to local", {
+test_that(".datom_git_ensure_local_config sets http.followRedirects and no identity", {
+  skip_if_no_git2r()
+  # A global identity is present, so a helper that copied it into the repo's
+  # own config would have something to copy.
   local_mock_git_global(global = list(user.name  = "Global User",
                                       user.email = "global@cfg.com"))
+  repo <- git2r::init(withr::local_tempdir())
 
-  dir <- withr::local_tempdir()
-  repo <- git2r::init(dir)
+  res <- .datom_git_ensure_local_config(repo)
 
-  res <- .datom_git_ensure_local_identity(repo)
   expect_identical(res, repo)
-
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "Global User")
-  expect_equal(cfg$local$user.email, "global@cfg.com")
+  cfg <- git2r::config(repo)$local
+  expect_null(cfg$user.name)
+  expect_null(cfg$user.email)
+  # libgit2 lists config keys lower-cased, whatever case they were set in.
+  expect_equal(cfg[["http.followredirects"]], "true")
 })
 
-test_that(".datom_git_ensure_local_identity falls back when no global config", {
+test_that(".datom_git_ensure_local_config keeps an http.followRedirects value already in the repo", {
+  skip_if_no_git2r()
   local_mock_git_global(global = list())
+  repo <- git2r::init(withr::local_tempdir())
+  git2r::config(repo, "http.followRedirects" = "false")
 
-  dir <- withr::local_tempdir()
-  repo <- git2r::init(dir)
+  .datom_git_ensure_local_config(repo)
 
-  .datom_git_ensure_local_identity(repo)
-
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "datom")
-  expect_equal(cfg$local$user.email, "datom@noreply")
-})
-
-test_that(".datom_git_ensure_local_identity respects custom fallbacks", {
-  local_mock_git_global(global = list())
-
-  dir <- withr::local_tempdir()
-  repo <- git2r::init(dir)
-
-  .datom_git_ensure_local_identity(
-    repo,
-    fallback_name  = "CI Bot",
-    fallback_email = "ci@example.com"
-  )
-
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "CI Bot")
-  expect_equal(cfg$local$user.email, "ci@example.com")
-})
-
-test_that(".datom_git_ensure_local_identity enables default_signature on a fresh repo", {
-  # Regression test for the CI failure: .datom_gov_clone_init() previously
-  # did not set local identity, so a subsequent commit via
-  # git2r::default_signature() failed on hosts without global git config.
-  # Here we cannot easily simulate "no global config" against libgit2
-  # itself, but we can verify that after the helper runs, local config has
-  # the expected values and default_signature returns them.
-  local_mock_git_global(global = list())
-
-  dir <- withr::local_tempdir()
-  repo <- git2r::init(dir)
-
-  .datom_git_ensure_local_identity(repo)
-
-  sig <- git2r::default_signature(repo)
-  # Local config takes precedence over global, so we get the fallback.
-  expect_equal(sig$name, "datom")
-  expect_equal(sig$email, "datom@noreply")
+  # libgit2 lists config keys lower-cased, whatever case they were set in.
+  expect_equal(git2r::config(repo)$local[["http.followredirects"]], "false")
 })
 
 
 # --- the placeholder-identity note ---------------------------------------------
 #
-# Every block here starts from a session that has not shown the note
-# (`local_identity_notice_state(shown = FALSE)`); setup.R pre-marks it as shown
-# for the rest of the suite, which would otherwise hide whether the note fires.
-# One cli line is one message condition, so these count messages only as
-# "some" or "none", never an exact number.
+# The note comes from .datom_git_signature(), at the first commit, merge or
+# version-history entry that falls back. Every block here starts from a session
+# that has not shown it (`local_identity_notice_state(shown = FALSE)`); setup.R
+# pre-marks it as shown for the rest of the suite, which would otherwise hide
+# whether the note fires. One cli line is one message condition, so these count
+# messages only as "some" or "none", never an exact number.
 
 # All the text the call printed, colour and link codes stripped.
 identity_notice_text <- function(expr) {
   cli::ansi_strip(paste(testthat::capture_messages(expr), collapse = ""))
 }
 
-test_that(".datom_git_ensure_local_identity says so when neither global value is set", {
+test_that(".datom_git_signature says so when no identity is found", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
   local_mock_git_global(global = list())
   repo <- git2r::init(withr::local_tempdir())
 
-  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
+  text <- identity_notice_text(.datom_git_signature(repo))
 
   expect_match(text, "attributed to the placeholder `datom <datom@noreply>`", fixed = TRUE)
 })
 
-test_that(".datom_git_ensure_local_identity says so when only user.name is missing", {
+test_that(".datom_git_signature says so when only user.name is missing", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
   local_mock_git_global(global = list(user.email = "me@lab.org"))
   repo <- git2r::init(withr::local_tempdir())
 
-  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
+  text <- identity_notice_text(.datom_git_signature(repo))
 
   # Half of it is the user's own, so it is not called the placeholder.
   expect_match(text, "attributed to this identity: `datom <me@lab.org>`", fixed = TRUE)
   expect_no_match(text, "placeholder", fixed = TRUE)
-  # The real half is kept; only the missing half is replaced.
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "datom")
-  expect_equal(cfg$local$user.email, "me@lab.org")
 })
 
-test_that(".datom_git_ensure_local_identity says so when only user.email is missing", {
+test_that(".datom_git_signature says so when only user.email is missing", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
   local_mock_git_global(global = list(user.name = "Me"))
   repo <- git2r::init(withr::local_tempdir())
 
-  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
+  text <- identity_notice_text(.datom_git_signature(repo))
 
   expect_match(text, "attributed to this identity: `Me <datom@noreply>`", fixed = TRUE)
   expect_no_match(text, "placeholder", fixed = TRUE)
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "Me")
-  expect_equal(cfg$local$user.email, "datom@noreply")
 })
 
-test_that(".datom_git_ensure_local_identity is silent when a real identity is present", {
+test_that(".datom_git_signature says nothing when git resolves an identity", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
   local_mock_git_global(global = list(user.name  = "Global User",
                                       user.email = "global@cfg.com"))
   repo <- git2r::init(withr::local_tempdir())
 
-  expect_no_message(.datom_git_ensure_local_identity(repo))
-
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "Global User")
-  expect_equal(cfg$local$user.email, "global@cfg.com")
-  # libgit2 lists config keys lower-cased, whatever case they were set in.
-  expect_equal(cfg$local[["http.followredirects"]], "true")
+  expect_no_message(.datom_git_signature(repo))
+  expect_false(isTRUE(.datom_session$git_identity_notice_shown))
 })
 
-test_that(".datom_git_ensure_local_identity uses the identity git resolves, and says nothing", {
+test_that(".datom_git_signature says nothing when the config gives a complete identity git did not resolve", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
-  # No global identity as far as the global file goes; the real
-  # default_signature() resolves the repo's own identity, which wins over any
-  # level of the host's config, so the host's identity cannot leak in.
-  local_mock_git_global(global = list(), signature = "real")
-  repo <- git2r::init(withr::local_tempdir())
-  git2r::config(repo, user.name = "Local Person", user.email = "local@lab.org")
-
-  expect_no_message(.datom_git_ensure_local_identity(repo))
-
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "Local Person")
-  expect_equal(cfg$local$user.email, "local@lab.org")
-})
-
-test_that(".datom_git_ensure_local_identity falls back and says so when git resolves no identity", {
-  skip_if_no_git2r()
-  local_identity_notice_state(shown = FALSE)
-  local_mock_git_global(global = list(), signature = "real")
+  # git's own resolution fails, so the signature is built by hand, but both
+  # halves come from the global config: nothing is a fallback.
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
   local_mocked_bindings(
     default_signature = function(...) stop("no identity"),
     .package = "git2r"
   )
   repo <- git2r::init(withr::local_tempdir())
 
-  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
-
-  expect_match(text, "attributed to the placeholder `datom <datom@noreply>`", fixed = TRUE)
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "datom")
-  expect_equal(cfg$local$user.email, "datom@noreply")
+  expect_no_message(sig <- .datom_git_signature(repo))
+  expect_equal(sig$name, "Global User")
+  expect_false(isTRUE(.datom_session$git_identity_notice_shown))
 })
 
-test_that(".datom_git_ensure_local_identity treats a resolved placeholder as no identity", {
-  skip_if_no_git2r()
-  local_identity_notice_state(shown = FALSE)
-  local_mock_git_global(global = list(), signature = "real")
-  repo <- git2r::init(withr::local_tempdir())
-  # A repo datom set up earlier: the placeholder is already in its own config,
-  # so git resolves it, but it is not a real identity.
-  git2r::config(repo, user.name = "datom", user.email = "datom@noreply")
-
-  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
-
-  expect_match(text, "attributed to the placeholder `datom <datom@noreply>`", fixed = TRUE)
-})
-
-test_that(".datom_git_ensure_local_identity counts an empty global user.name as missing", {
-  skip_if_no_git2r()
-  local_identity_notice_state(shown = FALSE)
-  local_mock_git_global(global = list(user.name = "", user.email = "me@lab.org"),
-                        signature = "real")
-  repo <- git2r::init(withr::local_tempdir())
-  # An empty name in the repo's own config wins over the host's, and libgit2
-  # refuses an empty name, so the real default_signature() fails here.
-  git2r::config(repo, user.name = "")
-
-  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
-
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "datom")
-  expect_equal(cfg$local$user.email, "me@lab.org")
-  expect_match(text, "attributed to this identity: `datom <me@lab.org>`", fixed = TRUE)
-})
-
-test_that(".datom_git_ensure_local_identity counts an empty global user.email as missing", {
-  skip_if_no_git2r()
-  local_identity_notice_state(shown = FALSE)
-  local_mock_git_global(global = list(user.name = "Me", user.email = ""),
-                        signature = "real")
-  repo <- git2r::init(withr::local_tempdir())
-  # libgit2 refuses an empty email as well as an empty name, so copying ""
-  # into the repo would make the first commit fail.
-  git2r::config(repo, user.email = "")
-
-  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
-
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "Me")
-  expect_equal(cfg$local$user.email, "datom@noreply")
-  expect_match(text, "attributed to this identity: `Me <datom@noreply>`", fixed = TRUE)
-})
-
-test_that(".datom_git_ensure_local_identity keeps an http.followRedirects value already in the repo", {
-  skip_if_no_git2r()
-  local_mock_git_global(global = list(user.name  = "Global User",
-                                      user.email = "global@cfg.com"))
-  repo <- git2r::init(withr::local_tempdir())
-  git2r::config(repo, "http.followRedirects" = "false")
-
-  .datom_git_ensure_local_identity(repo)
-
-  # libgit2 lists config keys lower-cased, whatever case they were set in.
-  expect_equal(git2r::config(repo)$local[["http.followredirects"]], "false")
-})
-
-test_that(".datom_git_ensure_local_identity says so only once per session", {
+test_that(".datom_git_signature says so only once per session", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
   local_mock_git_global(global = list())
   repo1 <- git2r::init(withr::local_tempdir())
   repo2 <- git2r::init(withr::local_tempdir())
 
-  first <- identity_notice_text(.datom_git_ensure_local_identity(repo1))
-  second <- testthat::capture_messages(.datom_git_ensure_local_identity(repo2))
+  first <- identity_notice_text(.datom_git_signature(repo1))
+  second <- testthat::capture_messages(.datom_git_signature(repo2))
 
   expect_match(first, "placeholder", fixed = TRUE)
   expect_length(second, 0)
 })
 
-test_that(".datom_git_ensure_local_identity: a real identity does not use up the one-time note", {
+test_that(".datom_git_signature: a real identity does not use up the one-time note", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
 
@@ -411,115 +337,384 @@ test_that(".datom_git_ensure_local_identity: a real identity does not use up the
     local_mock_git_global(global = list(user.name  = "Global User",
                                         user.email = "global@cfg.com"))
     repo <- git2r::init(withr::local_tempdir())
-    expect_no_message(.datom_git_ensure_local_identity(repo))
+    expect_no_message(.datom_git_signature(repo))
   })
 
   local({
     local_mock_git_global(global = list())
     repo <- git2r::init(withr::local_tempdir())
-    text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
+    text <- identity_notice_text(.datom_git_signature(repo))
     expect_match(text, "placeholder", fixed = TRUE)
   })
 })
 
-test_that(".datom_git_ensure_local_identity still writes the fallback and errors on nothing", {
+test_that(".datom_git_signature's note is a message, not a warning", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
   local_mock_git_global(global = list())
   repo <- git2r::init(withr::local_tempdir())
 
-  # The flag is fresh, so the note path really runs here; the existing
-  # "falls back" test runs with the note already marked shown and would never
-  # notice the note code failing.
-  msgs <- testthat::capture_messages(
-    expect_no_error(res <- .datom_git_ensure_local_identity(repo))
-  )
-
-  expect_gt(length(msgs), 0)
-  expect_identical(res, repo)
-  cfg <- git2r::config(repo)
-  expect_equal(cfg$local$user.name, "datom")
-  expect_equal(cfg$local$user.email, "datom@noreply")
-  # libgit2 lists config keys lower-cased, whatever case they were set in.
-  expect_equal(cfg$local[["http.followredirects"]], "true")
+  expect_no_warning(suppressMessages(.datom_git_signature(repo)))
+  expect_true(.datom_session$git_identity_notice_shown)
 })
 
-test_that(".datom_git_ensure_local_identity's note is a message, not a warning", {
+test_that(".datom_git_signature's note gives the global fix only, as a git2r command", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
   local_mock_git_global(global = list())
   repo <- git2r::init(withr::local_tempdir())
-
-  expect_no_warning(
-    suppressMessages(.datom_git_ensure_local_identity(repo))
-  )
-})
-
-test_that(".datom_git_ensure_local_identity's note names the placeholder and both remedies", {
-  skip_if_no_git2r()
-  local_identity_notice_state(shown = FALSE)
-  local_mock_git_global(global = list())
-  repo <- git2r::init(withr::local_tempdir())
-
-  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
   path <- as.character(fs::path_tidy(git2r::workdir(repo)))
+
+  text <- identity_notice_text(.datom_git_signature(repo))
 
   # git found no identity at any config level, not just the global file.
   expect_match(text, "No complete git identity found.", fixed = TRUE)
-  expect_match(text, "datom <datom@noreply>", fixed = TRUE)
-  expect_match(text, path, fixed = TRUE)
-  # For this repo: datom already saved the placeholder in its own config.
   expect_match(text, paste0(
-    'git2r::config(git2r::repository("', path, '"), ',
-    'user.name = "Your Name", user.email = "you@example.com")'
+    "Set a global identity and datom uses it from the next commit, ",
+    "in every repo. In R:"
   ), fixed = TRUE)
-  # For repos set up from now on.
   expect_match(text, paste0(
     'git2r::config(global = TRUE, ',
     'user.name = "Your Name", user.email = "you@example.com")'
   ), fixed = TRUE)
+  # No per-repo fix: datom saves no identity in the repo, so there is nothing
+  # there for a global identity to be overridden by.
+  expect_no_match(text, "git2r::repository(", fixed = TRUE)
+  expect_no_match(text, path, fixed = TRUE)
   # git2r commands only: datom does not need command-line git.
-  expect_no_match(text, "git config --global", fixed = TRUE)
+  expect_no_match(text, "git config", fixed = TRUE)
   expect_no_match(text, "git -C", fixed = TRUE)
 })
 
-test_that(".datom_git_ensure_local_identity: the note's per-repo R fix gives the repo a real identity", {
+test_that(".datom_git_signature: the note's R fix sets a global identity", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
   local_mock_git_global(global = list())
   repo <- git2r::init(withr::local_tempdir())
-  path <- as.character(fs::path_tidy(git2r::workdir(repo)))
 
-  text <- identity_notice_text(.datom_git_ensure_local_identity(repo))
-  expect_equal(.datom_git_author(path),
-               list(name = "datom", email = "datom@noreply"))
+  text <- identity_notice_text(.datom_git_signature(repo))
 
-  # Run the command exactly as the note printed it, not a hand-written copy.
+  # Run the command exactly as the note printed it, not a hand-written copy,
+  # against a stand-in that records the call instead of writing the host's
+  # real global config.
   lines <- trimws(strsplit(text, "\n", fixed = TRUE)[[1]])
-  fix <- lines[startsWith(lines, "git2r::config(git2r::repository(")]
+  fix <- lines[startsWith(lines, "git2r::config(")]
   expect_length(fix, 1)
+  captured <- NULL
+  local_mocked_bindings(
+    config = function(...) {
+      captured <<- list(...)
+      invisible(NULL)
+    },
+    .package = "git2r"
+  )
   eval(parse(text = fix))
 
-  expect_equal(.datom_git_author(path),
-               list(name = "Your Name", email = "you@example.com"))
+  expect_equal(captured, list(global = TRUE, user.name = "Your Name",
+                              user.email = "you@example.com"))
 })
 
-test_that(".datom_git_ensure_local_identity's note names the fallback actually applied", {
+test_that(".datom_git_signature's note names the fallback actually applied", {
   skip_if_no_git2r()
   local_identity_notice_state(shown = FALSE)
   local_mock_git_global(global = list())
   repo <- git2r::init(withr::local_tempdir())
 
   text <- identity_notice_text(
-    .datom_git_ensure_local_identity(
-      repo,
-      fallback_name  = "CI Bot",
-      fallback_email = "ci@example.com"
-    )
+    .datom_git_signature(repo, fallback_name = "CI Bot",
+                         fallback_email = "ci@example.com")
   )
 
   expect_match(text, "CI Bot <ci@example.com>", fixed = TRUE)
   expect_false(grepl("datom@noreply", text, fixed = TRUE))
+})
+
+test_that(".datom_git_commit gives the note at commit time and still commits", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = FALSE)
+  local_mock_git_global(global = list())
+  dir <- withr::local_tempdir()
+  repo <- git2r::init(dir)
+  writeLines("data", fs::path(dir, "table.json"))
+
+  # The flag is fresh, so the note path really runs inside the commit.
+  text <- identity_notice_text(
+    expect_no_error(sha <- .datom_git_commit(dir, "table.json", "Add table"))
+  )
+
+  expect_match(text, "attributed to the placeholder `datom <datom@noreply>`", fixed = TRUE)
+  expect_equal(git2r::lookup(repo, sha)$author$name, "datom")
+})
+
+
+# =============================================================================
+# .datom_git_drop_placeholder_identity()
+# =============================================================================
+#
+# Older datom saved `datom <datom@noreply>` into a repo's own config when it
+# found no identity. .datom_git_signature() removes each half that is exactly
+# that placeholder, before git resolves an identity. Every test runs on a fresh
+# `git2r::init()` repo with the values set in its own config, under
+# local_mock_git_global(), so the host's real config is never read or written.
+
+# A fresh repo whose own config holds `values` (a named list of config keys).
+repo_with_local_config <- function(values, env = parent.frame()) {
+  dir <- withr::local_tempdir(.local_envir = env)
+  repo <- git2r::init(dir)
+  do.call(git2r::config, c(list(repo), values))
+  list(path = dir, repo = repo)
+}
+
+# Commit one new file through datom: the author, and every message printed.
+commit_capturing_messages <- function(info) {
+  writeLines("data", fs::path(info$path, "table.json"))
+  sha <- NULL
+  msgs <- cli::ansi_strip(testthat::capture_messages(
+    sha <- .datom_git_commit(info$path, "table.json", "Add table")
+  ))
+  author <- git2r::lookup(info$repo, sha)$author
+  list(name = author$name, email = author$email, msgs = msgs)
+}
+
+removal_line <- "datom had saved in this repo's own git config"
+
+test_that("placeholder in the repo's config is removed and the commit uses the global identity", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = FALSE)
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+  info <- repo_with_local_config(list(user.name = "datom",
+                                      user.email = "datom@noreply"))
+  path <- as.character(fs::path_tidy(git2r::workdir(info$repo)))
+
+  res <- commit_capturing_messages(info)
+
+  expect_equal(res$name, "Global User")
+  expect_equal(res$email, "global@cfg.com")
+  local_cfg <- git2r::config(info$repo)$local
+  expect_null(local_cfg$user.name)
+  expect_null(local_cfg$user.email)
+  removed <- res$msgs[grepl(removal_line, res$msgs, fixed = TRUE)]
+  expect_length(removed, 1)
+  expect_match(removed, "Removed the placeholder git identity", fixed = TRUE)
+  expect_match(removed, path, fixed = TRUE)
+  expect_match(removed, "Commits now use the identity git finds.", fixed = TRUE)
+  expect_false(any(grepl("No complete git identity", res$msgs, fixed = TRUE)))
+  # The removal line does not use up the once-per-session identity note.
+  expect_false(isTRUE(.datom_session$git_identity_notice_shown))
+})
+
+test_that("placeholder removed with no global identity: removal line, then the note, then a placeholder commit", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = FALSE)
+  local_mock_git_global(global = list())
+  info <- repo_with_local_config(list(user.name = "datom",
+                                      user.email = "datom@noreply"))
+
+  res <- commit_capturing_messages(info)
+
+  expect_equal(res$name, "datom")
+  expect_equal(res$email, "datom@noreply")
+  local_cfg <- git2r::config(info$repo)$local
+  expect_null(local_cfg$user.name)
+  expect_null(local_cfg$user.email)
+  removed_at <- which(grepl(removal_line, res$msgs, fixed = TRUE))
+  note_at <- which(grepl("No complete git identity", res$msgs, fixed = TRUE))
+  expect_length(removed_at, 1)
+  expect_length(note_at, 1)
+  expect_lt(removed_at, note_at)
+})
+
+test_that("only a placeholder user.name is removed; a real repo email is kept", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = FALSE)
+  local_mock_git_global(global = list(user.name = "Global Name"))
+  info <- repo_with_local_config(list(user.name = "datom",
+                                      user.email = "me@lab.org"))
+
+  res <- commit_capturing_messages(info)
+
+  local_cfg <- git2r::config(info$repo)$local
+  expect_null(local_cfg$user.name)
+  expect_equal(local_cfg$user.email, "me@lab.org")
+  expect_equal(res$name, "Global Name")
+  expect_equal(res$email, "me@lab.org")
+  removed <- res$msgs[grepl(removal_line, res$msgs, fixed = TRUE)]
+  expect_length(removed, 1)
+  expect_match(removed, "Removed the placeholder git user.name", fixed = TRUE)
+})
+
+test_that("only a placeholder user.email is removed; a real repo name is kept", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = FALSE)
+  local_mock_git_global(global = list(user.email = "global@lab.org"))
+  info <- repo_with_local_config(list(user.name = "Local Name",
+                                      user.email = "datom@noreply"))
+
+  res <- commit_capturing_messages(info)
+
+  local_cfg <- git2r::config(info$repo)$local
+  expect_equal(local_cfg$user.name, "Local Name")
+  expect_null(local_cfg$user.email)
+  expect_equal(res$name, "Local Name")
+  expect_equal(res$email, "global@lab.org")
+  removed <- res$msgs[grepl(removal_line, res$msgs, fixed = TRUE)]
+  expect_length(removed, 1)
+  expect_match(removed, "Removed the placeholder git user.email", fixed = TRUE)
+})
+
+test_that("a real identity in the repo's config is untouched and nothing is said", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = FALSE)
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+  info <- repo_with_local_config(list(user.name = "Local Person",
+                                      user.email = "local@lab.org"))
+
+  expect_no_message(sig <- .datom_git_signature(info$repo))
+
+  local_cfg <- git2r::config(info$repo)$local
+  expect_equal(local_cfg$user.name, "Local Person")
+  expect_equal(local_cfg$user.email, "local@lab.org")
+  expect_equal(sig$name, "Local Person")
+})
+
+test_that("values close to the placeholder are untouched", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+  near_misses <- list(
+    list(user.name = "Datom",  user.email = "datom@noreply.com"),
+    list(user.name = "datom ", user.email = "Datom@noreply")
+  )
+
+  purrr::walk(near_misses, function(values) {
+    info <- repo_with_local_config(values)
+    expect_no_message(.datom_git_drop_placeholder_identity(info$repo))
+    local_cfg <- git2r::config(info$repo)$local
+    expect_identical(local_cfg$user.name, values$user.name)
+    expect_identical(local_cfg$user.email, values$user.email)
+  })
+})
+
+test_that("removing the placeholder leaves every other key in the repo's config", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+  info <- repo_with_local_config(list(user.name = "datom",
+                                      user.email = "datom@noreply",
+                                      "http.followRedirects" = "true"))
+  git2r::remote_add(info$repo, "origin", "https://example.com/org/repo.git")
+  before <- git2r::config(info$repo)$local
+
+  suppressMessages(.datom_git_drop_placeholder_identity(info$repo))
+
+  after <- git2r::config(info$repo)$local
+  expect_identical(after,
+                   before[setdiff(names(before), c("user.name", "user.email"))])
+  # libgit2 lists config keys lower-cased, whatever case they were set in.
+  expect_equal(after[["http.followredirects"]], "true")
+  expect_equal(git2r::remote_url(info$repo, "origin"),
+               "https://example.com/org/repo.git")
+})
+
+test_that("nothing to remove: no message and no change", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+  repo <- git2r::init(withr::local_tempdir())
+  before <- git2r::config(repo)$local
+
+  expect_no_message(res <- .datom_git_drop_placeholder_identity(repo))
+
+  expect_identical(res, character(0))
+  expect_identical(git2r::config(repo)$local, before)
+})
+
+test_that("only the repo's own config level is read: a global placeholder is left alone", {
+  skip_if_no_git2r()
+  repo <- git2r::init(withr::local_tempdir())
+  # Every git2r::config() call sees the placeholder at the global level only,
+  # and none at the repo's own level.
+  local_mocked_bindings(
+    config = function(...) {
+      list(global = list(user.name = "datom", user.email = "datom@noreply"),
+           local = list())
+    },
+    .package = "git2r"
+  )
+
+  expect_no_warning(
+    expect_no_message(res <- .datom_git_drop_placeholder_identity(repo))
+  )
+
+  expect_identical(res, character(0))
+})
+
+test_that("a second call after a removal says nothing", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+  info <- repo_with_local_config(list(user.name = "datom",
+                                      user.email = "datom@noreply"))
+
+  first <- cli::ansi_strip(testthat::capture_messages(
+    .datom_git_signature(info$repo)
+  ))
+
+  expect_true(any(grepl(removal_line, first, fixed = TRUE)))
+  expect_no_message(.datom_git_signature(info$repo))
+})
+
+test_that("a removal that fails is a warning, and the commit still goes ahead", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = FALSE)
+  real_config <- git2r::config
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+  info <- repo_with_local_config(list(user.name = "datom",
+                                      user.email = "datom@noreply"))
+  # Only a call that deletes a key (`key = NULL`) fails; reads still work.
+  local_mocked_bindings(
+    config = function(...) {
+      args <- list(...)
+      if (length(args) > 1 && any(purrr::map_lgl(args[-1], is.null))) {
+        stop("config file is locked")
+      }
+      if (length(args) > 0 && inherits(args[[1]], "git_repository")) {
+        return(do.call(real_config, args))
+      }
+      list(global = list(user.name = "Global User",
+                         user.email = "global@cfg.com"),
+           local = list())
+    },
+    .package = "git2r"
+  )
+  writeLines("data", fs::path(info$path, "table.json"))
+
+  msgs <- testthat::capture_messages(
+    expect_warning(
+      sha <- .datom_git_commit(info$path, "table.json", "Add table"),
+      "Could not finish removing the placeholder git identity"
+    )
+  )
+
+  # The placeholder is still in the repo's config, so git commits as it.
+  expect_equal(git2r::lookup(info$repo, sha)$author$name, "datom")
+  expect_false(any(grepl("Removed the placeholder", msgs, fixed = TRUE)))
+})
+
+test_that("the removal line shows even after the identity note has been shown", {
+  skip_if_no_git2r()
+  local_identity_notice_state(shown = TRUE)
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+  info <- repo_with_local_config(list(user.name = "datom",
+                                      user.email = "datom@noreply"))
+
+  msgs <- cli::ansi_strip(testthat::capture_messages(
+    .datom_git_signature(info$repo)
+  ))
+
+  expect_true(any(grepl(removal_line, msgs, fixed = TRUE)))
 })
 
 
@@ -659,6 +854,75 @@ test_that(".datom_git_commit uses author from git config", {
   commit_obj <- git2r::lookup(info$repo, sha)
   expect_equal(commit_obj$author$name, "Committer X")
   expect_equal(commit_obj$author$email, "cx@lab.org")
+})
+
+# --- commits on a repo with no identity of its own ------------------------------
+#
+# A fresh `git2r::init()` repo with nothing in its own config, under
+# local_mock_git_global() (helper-git.R). With `global = list()` that is a host
+# with no git identity at all, on any machine: git2r's own signature lookup
+# fails, exactly as it does on a CI runner.
+
+# Commit one new file through datom and return the commit's author.
+commit_author_on_fresh_repo <- function() {
+  dir <- withr::local_tempdir(.local_envir = parent.frame())
+  repo <- git2r::init(dir)
+  writeLines("data", fs::path(dir, "table.json"))
+  sha <- .datom_git_commit(dir, "table.json", "Add table")
+  author <- git2r::lookup(repo, sha)$author
+  list(name = author$name, email = author$email,
+       local = git2r::config(repo)$local %||% list())
+}
+
+test_that(".datom_git_commit commits as the placeholder when no identity is found", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+
+  res <- commit_author_on_fresh_repo()
+
+  expect_equal(res$name, "datom")
+  expect_equal(res$email, "datom@noreply")
+})
+
+test_that(".datom_git_commit commits as a global identity when there is one", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.name  = "Global User",
+                                      user.email = "global@cfg.com"))
+
+  res <- commit_author_on_fresh_repo()
+
+  expect_equal(res$name, "Global User")
+  expect_equal(res$email, "global@cfg.com")
+})
+
+test_that(".datom_git_commit keeps a global user.email when user.name is missing", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.email = "me@lab.org"))
+
+  res <- commit_author_on_fresh_repo()
+
+  expect_equal(res$name, "datom")
+  expect_equal(res$email, "me@lab.org")
+})
+
+test_that(".datom_git_commit keeps a global user.name when user.email is missing", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list(user.name = "Me"))
+
+  res <- commit_author_on_fresh_repo()
+
+  expect_equal(res$name, "Me")
+  expect_equal(res$email, "datom@noreply")
+})
+
+test_that(".datom_git_commit writes no identity to the repo's own config", {
+  skip_if_no_git2r()
+  local_mock_git_global(global = list())
+
+  res <- commit_author_on_fresh_repo()
+
+  expect_null(res$local$user.name)
+  expect_null(res$local$user.email)
 })
 
 test_that(".datom_git_commit can update an existing file", {
@@ -1013,6 +1277,27 @@ test_that(".datom_git_push upstream failure does not fail the push (#74 F)", {
     "could not set upstream"
   )
   expect_true(result)
+})
+
+test_that(".datom_git_pull succeeds with no identity when already up to date", {
+  skip_if_no_git2r()
+  # git2r asks for a merger signature even when there is nothing to merge, so
+  # a host with no git identity fails here unless datom passes one.
+  local_mock_git_global(global = list())
+
+  bare_dir <- withr::local_tempdir()
+  git2r::init(bare_dir, bare = TRUE)
+  work_dir <- withr::local_tempdir()
+  work_repo <- git2r::init(work_dir)
+  # As datom's own repo setup does; not an identity.
+  git2r::config(work_repo, "http.followRedirects" = "true")
+  git2r::remote_add(work_repo, name = "origin", url = bare_dir)
+  writeLines("init", fs::path(work_dir, "README.md"))
+  .datom_git_commit(work_dir, "README.md", "Initial commit")
+  git2r::push(work_repo, name = "origin", refspec = test_head_refspec(work_repo),
+              set_upstream = TRUE)
+
+  expect_true(.datom_git_pull(work_dir))
 })
 
 test_that(".datom_git_pull aborts on non-git directory", {
