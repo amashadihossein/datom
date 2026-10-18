@@ -41,6 +41,24 @@ dev/engineering-notes.md         ← Gotchas & pitfalls (read before editing R/)
 - Units of work are Kiro specs under `.kiro/specs/{feature}/` (requirements → design → tasks); they persist as durable documentation
 - Keep `tasks.md` status current as you work; durable learnings migrate to the spec docs / `dev/engineering-notes.md`
 
+## Working beside datom-py (one workspace, two repos)
+
+Added 2026-10-17. The Python reader, `amashadihossein/datom-py`, is a sibling clone (`../datom-py`)
+opened in the same editor workspace, so its code is in view when it helps. The two repos stay
+separate:
+
+- **A change touches one repo.** Work that needs both is two issues and two PRs: the R change merges
+  into `dev` first, then datom-py bumps the R commit it pins. Never edit one repo as part of the
+  other's task.
+- **The pin is the only link.** datom-py's tests fetch the shared reader cases
+  (`tests/testthat/fixtures/reader-cases/`) from one pinned commit of this repo. They never read this
+  checkout, so a branch switch here cannot break them.
+- **Each repo keeps its own rules.** This file and `.kiro/steering/` govern `datom/`;
+  `datom-py/.kiro/steering/conventions.md` governs `datom-py/`. Branches, PRs and issues belong to the
+  repo whose files change. Check which repo a git command runs in before running it.
+- **R datom is the reference.** A read behaviour changes here first, with a new reader case; datom-py
+  follows. A committed case is never edited (see the cases README).
+
 ## Architecture Context
 
 datom is the foundational layer for the daapr ecosystem:

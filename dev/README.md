@@ -217,6 +217,10 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 |---|---|---|
 | _none_ | | No spec active. |
 
+In the sibling repo `datom-py` (the Python reader, #129 part 2): spec `s3-reader` on branch
+`spec/s3-reader`, requirements approved 2026-10-17, design next. Its specs live in
+`datom-py/.kiro/specs/`; see "Working beside datom-py" in `.github/copilot-instructions.md`.
+
 Previously: `set-followups` completed 2026-10-09, `set-sync-ergonomics` on 2026-09-29, `vignettes-sets-arc` on 2026-09-26, `sets-release-readiness` on 2026-09-25 and
 `datom-sets` on 2026-09-21 -- all under Completed Phases below. Specs persist as documentation under `.kiro/specs/`; they are not deleted on
 completion, so the full requirements, design and task records for anything listed there are still on
