@@ -1098,6 +1098,13 @@ the common one and it looks exactly like the first two. Real examples, all from 
 So before recording "nothing reddened, therefore a hole": confirm the edit changes an
 observable. Compute both values side by side if that is quicker than reasoning about it.
 
+**Count errors as well as failures when a script reads testthat's results.** An
+`expect_error(..., class = )` that meets an error of a different class does not fail: it lets the
+error through, and testthat records the test under `error`, not `failed`. A harness summing only
+`as.data.frame(devtools::test(...))$failed` therefore reports a removed class as green. Sum
+`failed` and `error`. Found 2026-10-16 on #129, when every class probe, and the control, came back
+zero; the control alone could not have caught it, since it was rightly zero.
+
 **A crude probe reads like evidence and is not.** An edit that makes the package fail to
 load, or reddens 80 tests because the write path no longer works, answers nothing about
 the criterion you were asking about. Narrow it until exactly the intended behaviour
