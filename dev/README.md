@@ -217,8 +217,9 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 |---|---|---|
 | _none_ | | No spec active. |
 
-In the sibling repo `datom-py` (the Python reader, #129 part 2): spec `s3-reader` on branch
-`spec/s3-reader`, requirements approved 2026-10-17, design next. Its specs live in
+In the sibling repo `datom-py` (the Python reader, #129 part 2): 0.1.0 is on PyPI (released
+2026-10-20), with S3 as a preview. Its spec `s3-reader` still has three hardening tasks open
+(pickling, guard probes, CI on the newest botocore). Its specs live in
 `datom-py/.kiro/specs/`; see "Working beside datom-py" in `.github/copilot-instructions.md`.
 
 Previously: `set-followups` completed 2026-10-09, `set-sync-ergonomics` on 2026-09-29, `vignettes-sets-arc` on 2026-09-26, `sets-release-readiness` on 2026-09-25 and

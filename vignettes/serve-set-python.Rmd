@@ -1,0 +1,142 @@
+---
+title: "Serving a Set from Python"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Serving a Set from Python}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{=html}
+<link rel="stylesheet" href="../inst/vignette-setup/datom.css">
+```
+
+This article continues [Citing a Set of Tables](citable-sets.html): same set,
+same bucket. Run it before that article's teardown. The set was written in R;
+here a Python program reads it, for example to serve it from an API.
+
+The Python reader is the [`datom` package on PyPI](https://github.com/amashadihossein/datom-py).
+It only reads.
+
+## Install
+
+Python 3.10 or later:
+
+```sh
+pip install "datom[s3]" keyring
+```
+
+`[s3]` adds S3 support. `keyring` is not part of datom; it holds the keys here,
+as it does in the R articles.
+
+## Credentials
+
+datom never looks for credentials. AWS environment variables, `~/.aws/` and
+instance roles are all ignored. You pass a function that returns the keys, and
+datom calls it when it needs them. Store the keys once in the OS keychain:
+
+```sh
+keyring set study001 aws_access_key_id
+keyring set study001 aws_secret_access_key
+```
+
+```python
+import datom
+import keyring
+
+def study001_keys():
+    return {
+        "access_key": keyring.get_password("study001", "aws_access_key_id"),
+        "secret_key": keyring.get_password("study001", "aws_secret_access_key"),
+    }
+```
+
+With AWS single sign-on, `datom.sso_credentials("my-profile")` makes the
+function for you; run `aws sso login --profile my-profile` first.
+
+## Read the set
+
+```python
+store_liver_safety = datom.store_s3(
+    "study001", prefix="liver-safety/", region="us-east-1", credentials=study001_keys
+)
+conn_liver_safety = datom.get_conn(store_liver_safety, project_name="study001-liver-safety")
+
+x = datom.get_set(conn_liver_safety, "study001-liver-safety")
+x
+#> DatomSet(name='study001-liver-safety', project='study001-liver-safety', version='35e39f62', members=6)
+```
+
+That is version 3, written after the refresh. `version="d2d0456b"` reads version
+1. Reading a set fetches no member data.
+
+## Fetch a member
+
+```python
+liver_flags = datom.fetch_member(conn_liver_safety, x, "liver_flags")
+```
+
+`liver_flags` is a pandas data frame at the version the set pins, `0f89dd1b`,
+not whatever is current.
+
+The inputs live in the imported project, so they need their own connection, as
+in R:
+
+```python
+store_imported = datom.store_s3(
+    "study001", prefix="imported/", region="us-east-1", credentials=study001_keys
+)
+conn_imported = datom.get_conn(store_imported, project_name="study001-imported")
+
+lb = datom.fetch_member(conn_imported, x, "lb")
+```
+
+Fetching `lb` through `conn_liver_safety` stops, naming the project `lb`
+belongs to.
+
+## Behind an API
+
+A small [FastAPI](https://fastapi.tiangolo.com/) app serving `liver_flags`:
+
+```python
+from fastapi import FastAPI, Response
+
+SET_VERSION = "35e39f62"   # the version your report cites
+
+x = datom.get_set(conn_liver_safety, "study001-liver-safety", version=SET_VERSION)
+liver_flags = datom.fetch_member(conn_liver_safety, x, "liver_flags")
+
+app = FastAPI()
+
+@app.get("/version")
+def version():
+    return {"set": x.name, "version": x.version}
+
+@app.get("/liver-flags")
+def get_liver_flags():
+    return Response(liver_flags.to_json(orient="records"), media_type="application/json")
+```
+
+The pin keeps the API serving what the report cites, even after someone writes
+version 4. A pinned version never changes, so reading it once at startup is
+safe. To move the API, change the pin and restart.
+
+This app has no authentication: anyone who can reach it can read the data. Put
+access control in front of it before exposing it.
+
+## What Python checks
+
+The same checks as R, before handing over any data: the document's format
+version, that a set is a set and a table a table, that the version asked for
+matches exactly one, and that the downloaded bytes match their recorded hash.
+A failed check raises a `datom.DatomError` whose `code`, such as
+`integrity_mismatch`, says which.
+
+Not yet:
+
+- **Writing.** Tables and sets are written in R.
+- **Governance lookup.** Python reads from the bucket and prefix you give. If
+  the project has governance attached, it warns that the location may move.
+
+S3 support is a preview. The [datom-py README](https://github.com/amashadihossein/datom-py#readme)
+has the details.

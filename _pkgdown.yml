@@ -154,6 +154,7 @@ articles:
     desc: "Name and cite an exact collection of data versions."
     contents:
       - citable-sets
+      - serve-set-python
 
   - title: "Lineage"
     desc: "Trace how derived tables descend from their sources."
