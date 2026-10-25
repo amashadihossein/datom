@@ -510,6 +510,8 @@ One project holds the study's onboarded tables. A second holds a set that names
 exact versions of them, plus the output derived from them, the code that derived
 it, and three versions of history. One string cites any of those versions.
 
+To read this set from Python, see [Serving a Set from Python](serve-set-python.html) before the teardown.
+
 Pooling several studies into one set is a separate article.
 
 ## Teardown
