@@ -41,6 +41,11 @@
   when GitHub says the rate limit is used up; a 404 also says the organisation
   name or API URL may be wrong. `datom_store()`'s `validate` checks only that
   the token authenticates, not what it may do (#70, `?datom_store`).
+* "Starting on S3" gains a section on using a company GitHub: an organisation,
+  GitHub Enterprise Server, or Enterprise Cloud with data residency
+  (`*.ghe.com`), which needs its own `github_api_url` (#136, `?datom_store`).
+* Messages that point at datomanager for governance now say it is planned and
+  not yet released (#136).
 
 * The test suite now passes when suggested packages such as git2r and rio are not
   installed, as in CRAN's "noSuggests" check (#92). Running the tests now needs

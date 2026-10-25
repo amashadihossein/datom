@@ -22,7 +22,8 @@ is_valid_datom_repo(
 TRUE or FALSE.
 }
 \description{
-Validates datom repository structure. Used internally and by dpbuild.
+Validates datom repository structure. Used internally, and by packages
+built on datom to check a repository before working in it.
 }
 \examples{
 # A plain directory is not a valid datom repository.

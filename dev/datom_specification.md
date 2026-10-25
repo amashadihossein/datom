@@ -13,7 +13,7 @@ The package enables version-controlled data management by abstracting tables as 
 - Tracking complete data lineage
 - Accessing any historical version for reproducibility
 
-The primary utility motivating datom is building version-tracked data products. Companion packages (dpbuild, dpdeploy, and dpi) build upon datom to collectively enable creating, managing, and accessing reproducible data products in clinical and scientific workflows.
+The primary utility motivating datom is building version-tracked data products. A product layer built on datom (a new package, name still open; see #141) is planned to create, manage and give access to reproducible data products in clinical and scientific workflows. daapr and its packages (dpbuild, dpdeploy, dpi) are a separate, pins-based world: they stay untouched, run in parallel, and have no migration path to datom.
 
 datom versions **two kinds of artifact**, and both live in one namespace keyed by name. A **table** is the tabular data described above. A **set** is a versioned, citable collection of pointers at exact versions of other artifacts, plus free-text labels -- so "product v47" is one string that resolves to the fifty inputs it was built from, each pinned. A set stores no data of its own and reading one requires access to the set's project only, which is what lets a fifty-member product be citable by someone entitled to none of its members. See "Set Identity = data_sha" for its identity regime and "Set Operations" for the verbs.
 
@@ -243,7 +243,7 @@ Result: datom version unchanged ("xyz789")
 |-----------|-------------|---------------------|
 | **Data developers** | Create and update datasets, manage evolving clinical/scientific data | Storage credentials (AWS for S3, none for local) + GITHUB_PAT |
 | **Data readers** | Consume versioned data for analysis, need reproducible access | Storage credentials (AWS for S3, none for local) |
-| **Data products** | Analytical applications built on versioned datoms (via dpbuild, dpdeploy, dpi) | AWS credentials only |
+| **Data products** | Analytical applications built on versioned datoms (via a product layer built on datom) | AWS credentials only |
 
 Developer vs reader role is derived from the `github_pat` field on the `datom_store()` object. Users may source that value from `keyring`, `Sys.getenv("GITHUB_PAT")`, CI secrets, or another runtime secret store before constructing the store.
 
@@ -990,7 +990,7 @@ Flexible connection for both developers and readers:
 |----------|------------|
 | Developer (has repo) | `path = "my_project"` — reads from .datom/project.yaml; optional `store` for credentials |
 | Reader (S3 only) | `store` + `project_name` — store provides everything |
-| dpbuild / dp_dev | `store` + `project_name` — programmatic setup |
+| A package built on datom (e.g. a product layer) | `store` + `project_name` — programmatic setup |
 | datomanager (access points) | `endpoint` — S3 access point URL overriding default endpoint |
 
 `endpoint`: Optional S3 endpoint URL. When `NULL` (default), standard S3 is used. datomanager sets this to route reads through S3 access points for IAM enforcement. Stored in the returned `datom_conn` object and forwarded to all S3 operations.
@@ -1499,7 +1499,7 @@ is_valid_datom_repo(
 )
 ```
 
-Validates datom repository structure. Used internally by datom functions and externally by dpbuild.
+Validates datom repository structure. Used internally by datom functions, and by packages built on datom to check a repository before working in it.
 
 | Check | Validates |
 |-------|-----------|
@@ -1527,7 +1527,7 @@ list(
 )
 ```
 
-**dpbuild integration:** `dp_repository_check()` calls `datom_repository_check()` internally — a valid dp repository is a superset of a valid datom repository.
+**Packages built on datom:** a package that adds its own content to the data repo (a product layer committing code and `renv.lock`, for instance) can build its own repository check on top of this one, so that a valid repository for that package is always a valid datom repository too.
 
 ---
 
@@ -2435,7 +2435,10 @@ Team workflows are fully supported:
 
 ---
 
-## Key Differences from Current dpbuild/pins Approach
+## Key Differences from the pins-based daapr Approach
+
+daapr (dpbuild, dpdeploy, dpi) keeps using pins and runs in parallel with datom; this table compares the two designs, it is not a migration plan.
+
 
 | Aspect | Current (pins) | datom |
 |--------|---------------|------|
@@ -2470,4 +2473,4 @@ datom provides robust data versioning optimized for clinical data science workfl
 11. project.yaml authoritative; dispatch.json and S3 metadata derived
 12. Two-store architecture: governance (dispatch, ref, migration history) and data (manifest, tables)
 
-This architecture keeps datom focused on core versioning while providing clear extension points for enterprise features. As part of the larger data product ecosystem (with dpbuild, dpdeploy, and dpi), datom serves as the foundational layer for reproducible analytical workflows.
+This architecture keeps datom focused on core versioning while providing clear extension points for enterprise features. datom is the foundational layer for reproducible analytical workflows; packages built on it (a product layer, datomanager for governance) add the rest.

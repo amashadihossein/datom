@@ -32,12 +32,15 @@
 #' @param gov_local_path Local directory path for the governance clone. If NULL
 #'   (default), the clone is placed as a sibling of the data repo, named after
 #'   the basename of `gov_repo_url` (e.g., `"acme-gov"`).
-#' @param github_org GitHub organization for repo creation. NULL for personal repos.
+#' @param github_org GitHub organization to create the repo in. `NULL`
+#'   (default) creates it in the personal account of the token's owner.
 #' @param github_api_url GitHub API base URL. `NULL` (default) uses
-#'   `"https://api.github.com"`, which is correct for github.com and GitHub
-#'   Enterprise Cloud (GHEC). For GitHub Enterprise Server (GHES) pass the
-#'   server's API root, e.g. `"https://github.mycompany.com/api/v3"`. A
-#'   trailing `/` is stripped for consistency.
+#'   `"https://api.github.com"`, which is correct for github.com and for
+#'   GitHub Enterprise Cloud (GHEC) on github.com. GHEC with data residency
+#'   (a `*.ghe.com` address) uses `"https://api.SUBDOMAIN.ghe.com"`. For
+#'   GitHub Enterprise Server (GHES) pass the server's API root, e.g.
+#'   `"https://github.mycompany.com/api/v3"`. A trailing `/` is stripped for
+#'   consistency.
 #' @param validate If `TRUE` (default), validate GitHub PAT via API.
 #'   Set to `FALSE` for tests or offline use. This checks only that the token
 #'   authenticates (a `GET /user` call), not that it can create repositories
