@@ -140,6 +140,41 @@ store_write_imported <- datom_store(
 datom checks that it can reach the bucket as the store is built, so a wrong
 credential shows up here rather than at the first sync.
 
+### On a company GitHub
+
+The store above creates the repository in the token owner's personal account
+on github.com. For your company's GitHub, tell the store which organisation to
+use and, if needed, which server:
+
+```{r store-write-org}
+store_write_imported <- datom_store(
+  data = datom_store_s3(
+    bucket     = bucket,
+    prefix     = prefix_imported,
+    region     = region,
+    access_key = Sys.getenv("AWS_ACCESS_KEY_ID"),
+    secret_key = Sys.getenv("AWS_SECRET_ACCESS_KEY")
+  ),
+  github_pat     = Sys.getenv("GITHUB_PAT"),
+  github_org     = "my-org",                              # create the repo here
+  github_api_url = "https://github.mycompany.com/api/v3"  # Enterprise Server only
+)
+```
+
+- **`github_org`** is the organisation the repository is created in. You need
+  permission to create repositories there.
+- **`github_api_url`** says which GitHub server to talk to. Leave it out for
+  github.com, including GitHub Enterprise Cloud on github.com. Enterprise
+  Cloud with data residency (an address ending in `.ghe.com`) uses
+  `https://api.SUBDOMAIN.ghe.com`. Enterprise Server uses its own address
+  followed by `/api/v3`.
+- **A token works only on the server that issued it.** A github.com token is
+  refused by your company's Enterprise Server, and the other way round.
+- **A classic token may need single sign-on authorisation** for each
+  organisation that requires it: in GitHub's token settings, choose
+  *Configure SSO* next to the token. Without it, creating the repository fails
+  with a permission error.
+
 ## Create the repository
 
 ```{r init}
@@ -366,11 +401,15 @@ The read goes straight to S3, not through GitHub.
 Two things are deliberately left out of this article:
 
 - **Governance**: a shared register of projects, managed reader access and
-  managed teardown. It is optional, provided by the companion package
-  `datomanager`, and starting on S3 does not commit you to it.
+  managed teardown. It is optional, and starting on S3 does not commit you to
+  it. It will come from the companion package `datomanager`, which is planned
+  and not yet released.
 - **Migration**: moving an existing project's data from one store to another
-  while keeping its history. That is also a `datomanager` workflow. You started
-  on S3, so you do not need it now.
+  while keeping its history. Managed migration will also be a `datomanager`
+  workflow. A project without governance can already be moved with datom
+  alone: `datom_storage_copy()` copies the data, then
+  `datom_repo_set_data_store()` points the project at its new location. You
+  started on S3, so you do not need either now.
 
 ## Teardown
 

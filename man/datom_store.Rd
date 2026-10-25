@@ -40,13 +40,16 @@ and referenced here by every project that uses it.}
 (default), the clone is placed as a sibling of the data repo, named after
 the basename of \code{gov_repo_url} (e.g., \code{"acme-gov"}).}
 
-\item{github_org}{GitHub organization for repo creation. NULL for personal repos.}
+\item{github_org}{GitHub organization to create the repo in. \code{NULL}
+(default) creates it in the personal account of the token's owner.}
 
 \item{github_api_url}{GitHub API base URL. \code{NULL} (default) uses
-\code{"https://api.github.com"}, which is correct for github.com and GitHub
-Enterprise Cloud (GHEC). For GitHub Enterprise Server (GHES) pass the
-server's API root, e.g. \code{"https://github.mycompany.com/api/v3"}. A
-trailing \code{/} is stripped for consistency.}
+\code{"https://api.github.com"}, which is correct for github.com and for
+GitHub Enterprise Cloud (GHEC) on github.com. GHEC with data residency
+(a \verb{*.ghe.com} address) uses \code{"https://api.SUBDOMAIN.ghe.com"}. For
+GitHub Enterprise Server (GHES) pass the server's API root, e.g.
+\code{"https://github.mycompany.com/api/v3"}. A trailing \code{/} is stripped for
+consistency.}
 
 \item{validate}{If \code{TRUE} (default), validate GitHub PAT via API.
 Set to \code{FALSE} for tests or offline use. This checks only that the token

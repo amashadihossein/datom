@@ -191,7 +191,7 @@ new_datom_conn <- function(project_name,
 
   cli::cli_abort(c(
     "{what} requires governance, but this project has no governance attached.",
-    "i" = "Use {.fn gov_attach} (from the datomanager package) to enable governance for this project."
+    "i" = "Governance is attached with {.fn gov_attach} from the datomanager package, which is planned and not yet released."
   ))
 }
 
@@ -1164,7 +1164,7 @@ datom_get_conn <- function(path = NULL,
     cli::cli_warn(c(
       "Project {.val {project_name}} has no governance attached.",
       "i" = "The governance store credentials supplied will be ignored.",
-      "i" = "Use {.fn gov_attach} (from the datomanager package) if you intend to attach governance."
+      "i" = "Governance is attached with {.fn gov_attach} from the datomanager package, which is planned and not yet released."
     ))
   }
 

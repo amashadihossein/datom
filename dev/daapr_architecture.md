@@ -1,5 +1,20 @@
 # daapr: Data-as-a-Product Framework
 
+> **Status (2026-10): the plan below is superseded.** It describes moving dpbuild, dpdeploy and
+> dpi onto datom. That is no longer the plan. There are now two parallel worlds:
+>
+> - **daapr** (dpbuild, dpdeploy, dpi) stays on pins, untouched. There is no migration path from
+>   it to datom.
+> - **datom** gets its own packages built on it: a product layer, a new package whose name is
+>   still open ([#141](https://github.com/amashadihossein/datom/issues/141)), and datomanager for
+>   governance and migration ([#140](https://github.com/amashadihossein/datom/issues/140)).
+>
+> The rest of this document is kept as the record of the earlier vision, unedited. Some of what it
+> says about datom itself is also out of date (`.redirect.json` and `routing.json`, for instance,
+> became `ref.json` and `dispatch.json`); `datom_specification.md` is authoritative. Where the
+> lineage contract below says "dpbuild", read "a product layer built on datom". The current
+> ecosystem roadmap is the set of "Roadmap" issues, #134 to #142.
+
 ## Executive Summary
 
 daapr is an R framework implementing the Data-as-a-Product (DaaP) methodology, bringing together data and code joint versioning with automated workflow management. The framework enables clinical and scientific teams to create reproducible, version-controlled data products through an orchestrated set of packages.

@@ -441,11 +441,12 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
 
 # --- The sanctioned git-mutation surface --------------------------------------
 #
-# datom_repo_commit() and datom_repo_push() exist so a downstream package
-# (dpbuild, dpdeploy) can commit its own content -- code, environment, framework
-# state -- into the data repo without importing git2r. Every git mutation of the
-# data repo goes through datom; these two are the human-moment half of that, and
-# `.datom_git_commit()` / `.datom_git_push()` remain the machine-moment half.
+# datom_repo_commit() and datom_repo_push() exist so a package built on datom
+# (such as a product layer) can commit its own content -- code, environment,
+# framework state -- into the data repo without importing git2r. Every git
+# mutation of the data repo goes through datom; these two are the human-moment
+# half of that, and `.datom_git_commit()` / `.datom_git_push()` remain the
+# machine-moment half.
 #
 # The distinction between the two halves is the whole point and is not cosmetic.
 # A machine moment (inside datom_write() / datom_write_set()) stages an explicit

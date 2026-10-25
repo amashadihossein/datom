@@ -1,6 +1,7 @@
 #' Check if Path is a Valid datom Repository
 #'
-#' Validates datom repository structure. Used internally and by dpbuild.
+#' Validates datom repository structure. Used internally, and by packages
+#' built on datom to check a repository before working in it.
 #'
 #' @param path Path to evaluate.
 #' @param checks Which checks to perform. Any combination of "all", "git",

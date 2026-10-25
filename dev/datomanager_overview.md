@@ -272,7 +272,7 @@ Every table written via `datom_write()` should include a `parents` field in `met
 - Each parent entry has: `source` (project_name of source data space), `table` (table name), `version` (metadata_sha at derivation time)
 - For tables derived within the same project, `source` equals `conn$project_name`
 
-**Why:** datomanager walks lineage upward to compute access gates. dpbuild also uses lineage for data product construction. Even without datomanager, lineage serves datom's own reproducibility story.
+**Why:** datomanager walks lineage upward to compute access gates. A product layer built on datom also uses lineage for data product construction. Even without datomanager, lineage serves datom's own reproducibility story.
 
 **Files to modify:**
 

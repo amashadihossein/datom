@@ -61,13 +61,16 @@ separate:
 
 ## Architecture Context
 
-datom is the foundational layer for the daapr ecosystem:
+datom is the foundational layer that other packages build on:
 - **datom** → versioned table storage (this package)
-- **dpbuild** → data product construction
-- **dpdeploy** → deployment orchestration  
-- **dpi** → data product access
+- **a product layer** (new package, name open, #141) → building and reproducing data products
+- **datomanager** (planned, #140) → governance, managed migration, org policy
 
-See `dev/datom_specification.md` for full spec and `dev/daapr_architecture.md` for ecosystem context.
+daapr and its packages (dpbuild, dpdeploy, dpi) are a separate, pins-based world: untouched, run in
+parallel, no migration path to datom. Do not describe them as datom's future callers.
+
+See `dev/datom_specification.md` for full spec. `dev/daapr_architecture.md` records the earlier
+vision of moving daapr onto datom, which is superseded.
 
 ## Coding Style
 

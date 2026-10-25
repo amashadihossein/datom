@@ -1,8 +1,8 @@
 ---
-title: "Looking Ahead: datom in the daapr Stack"
+title: "Looking Ahead: What Builds on datom"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Looking Ahead: datom in the daapr Stack}
+  %\VignetteIndexEntry{Looking Ahead: What Builds on datom}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -17,8 +17,8 @@ knitr::opts_chunk$set(
 
 You've now seen datom's core surface, from a single first extract through
 monthly versioning, bulk imports, and data lineage. This article steps back
-and frames where datom fits in the wider **daapr** ecosystem -- and,
-just as importantly, what datom deliberately does **not** do.
+and frames what is planned to build on datom -- and, just as importantly,
+what datom deliberately does **not** do.
 
 ## What datom is
 
@@ -61,31 +61,32 @@ This list is deliberate. Each item exists to keep datom small enough
 that the *next* layer can be opinionated without fighting the
 foundation.
 
-## The daapr stack
+## What builds on datom
 
-**daapr** -- *data as a product, in R* -- is the umbrella name for a
-small family of packages that build on datom. The vision is a set of
-tightly-scoped tools, each owning one job:
+datom holds only what every user needs. Anything specific to one kind of
+use is optional, or lives in a package built on datom. The plan is a few
+tightly-scoped packages, each owning one job:
 
 | Package    | Role                                                          | Status      |
 |------------|---------------------------------------------------------------|-------------|
 | **datom**  | Versioned table storage. Source of truth for raw + derived tables. | Shipped.    |
-| **dpbuild**| Construct **data products** -- bundles of tables, derivations, metadata, and tests -- from a datom-backed input set. Owns the build graph. | Planned.    |
-| **dpdeploy**| Promote and deploy data products to consumption environments. Owns release semantics. | Planned.    |
-| **dpi**    | Consumer-facing access. The R package an analyst or app uses to *read* a published data product, without thinking about stores or version SHAs. | Planned.    |
+| **A product layer** (name open) | Build **data products** -- a set of inputs, the derived tables, and the code and environment that made them -- and check that they reproduce. | Planned.    |
+| **datomanager** | Governance: a shared register of projects, managed migration between stores, org-wide policy. | Planned.    |
 
-The arrows are one-directional: dpi reads from a deployed product;
-dpdeploy publishes what dpbuild builds; dpbuild reads from datom.
-datom does not know any of those packages exist -- they consume its
-public API the same way your analysis scripts do.
+The arrows are one-directional: those packages read and write through
+datom; datom does not know they exist. They consume its public API the
+same way your analysis scripts do.
 
-The split exists because the four jobs have genuinely different shapes.
-A versioned table store wants to be tiny, durable, and boring (this
-package). A build system wants opinions about graphs, caching, and
-test discipline (dpbuild). A deploy tool wants opinions about
-environments, approvals, and rollbacks (dpdeploy). A consumer client
-wants opinions about discoverability, schema stability, and offline
-caching (dpi). Bundling them produces a worse version of each.
+The split exists because the jobs have genuinely different shapes. A
+versioned table store wants to be tiny, durable, and boring (this
+package). A product layer wants opinions about build steps,
+reproducibility and release. Governance wants opinions about who may do
+what across an organisation. Bundling them produces a worse version of
+each.
+
+**daapr** and its packages (dpbuild, dpdeploy, dpi) are a separate,
+pins-based framework. They stay as they are and run in parallel with
+datom; there is no migration path from one to the other.
 
 ## What this means for you today
 
@@ -100,12 +101,11 @@ you have:
 That set is enough for many clinical workflows -- particularly extract
 management, simple monthly snapshots, and regulator-friendly history.
 
-When the upstack packages ship, the work you've done here keeps
-working. dpbuild will read tables out of datom the same way you do
-today. dpi will pin to version SHAs the same way the audit script in
-the previous article does. The contract is the public API of this
-package; nothing about how you've structured your projects will need to
-change.
+When the packages built on datom ship, the work you've done here keeps
+working. A product layer will read tables out of datom the same way you
+do today, and pin to versions the same way the audit script in the
+previous article does. The contract is the public API of this package;
+nothing about how you've structured your projects will need to change.
 
 ## Where to go next
 
