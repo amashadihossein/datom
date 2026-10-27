@@ -43,6 +43,106 @@
 }
 
 
+# --- Repo addresses -----------------------------------------------------------
+
+#' Classify a Git Repo Address
+#'
+#' Sorts a data repo address into the kinds datom treats differently, using
+#' git's own rules for telling a path from a URL:
+#'
+#' - `"folder"`: a `file://` URL or a plain path -- relative, absolute, a
+#'   Windows drive path (`C:\...`, `C:/...`: a single letter before the colon
+#'   is a drive, as in git) or a UNC share (`\\server\share`, `//server/share`).
+#' - `"https"`: an `https://` URL.
+#' - `"ssh"`: an `ssh://` (or `git+ssh://`, `ssh+git://`) URL, or the scp-like
+#'   form `user@host:path` / `host:path`, which git reads as SSH whenever a
+#'   colon comes before the first slash.
+#' - `"other"`: any other `scheme://` URL (`http://`, `git://`, ...).
+#'
+#' Pure string work: no network and no file system, so a reader-only session
+#' (no git2r) can call it.
+#'
+#' @param url A single non-empty string.
+#' @return One of `"folder"`, `"https"`, `"ssh"`, `"other"`.
+#' @keywords internal
+.datom_git_address_kind <- function(url) {
+  if (grepl("^file://", url, ignore.case = TRUE)) return("folder")
+  if (grepl("^https://", url, ignore.case = TRUE)) return("https")
+  if (grepl("^(ssh|git\\+ssh|ssh\\+git)://", url, ignore.case = TRUE)) return("ssh")
+  if (grepl("^[A-Za-z][A-Za-z0-9+.-]*://", url)) return("other")
+  # Before the scp-like test: "C:\data" has a colon before any slash.
+  if (grepl("^[A-Za-z]:", url)) return("folder")
+  if (grepl("^\\\\\\\\|^//", url)) return("folder")
+  if (grepl("^[^/\\\\]+:", url)) return("ssh")
+  "folder"
+}
+
+
+#' Local Path Behind a Folder Address
+#'
+#' Strips `file://` from a folder address so it can be handed to the file
+#' system. `file:///C:/x` becomes `C:/x`; a plain path is returned unchanged.
+#'
+#' @param url A folder address (see [.datom_git_address_kind()]).
+#' @return A path string.
+#' @keywords internal
+.datom_folder_address_path <- function(url) {
+  if (!grepl("^file://", url, ignore.case = TRUE)) return(url)
+  path <- sub("^file://", "", url, ignore.case = TRUE)
+  if (grepl("^/[A-Za-z]:", path)) path <- substring(path, 2L)
+  path
+}
+
+
+#' Refuse a Repo Address datom Cannot Write Through
+#'
+#' The address half of the writer rule in [datom_store()]: a folder needs no
+#' credential, an `https://` address needs `github_pat`, and every other kind
+#' is refused. Runs before any token check, clone, write or push.
+#'
+#' SSH is refused with or without a token: pushing over SSH would use the keys
+#' of the user's SSH agent, which is datom finding a credential on its own.
+#' Support for an explicitly supplied SSH key belongs to pluggable git hosts,
+#' and lifting this refusal then breaks no caller.
+#'
+#' @param url The repo address, or `NULL`.
+#' @param pat The GitHub token, or `NULL`.
+#' @param arg Argument name used in messages.
+#' @return Invisible `TRUE`; aborts otherwise.
+#' @keywords internal
+.datom_check_repo_address <- function(url, pat, arg = "data_repo_url") {
+  if (is.null(url)) return(invisible(TRUE))
+
+  kind <- .datom_git_address_kind(url)
+
+  if (kind == "folder") return(invisible(TRUE))
+
+  if (kind == "https") {
+    if (!is.null(pat)) return(invisible(TRUE))
+    cli::cli_abort(c(
+      "{.arg {arg}} {.val {url}} is a web address, which needs {.arg github_pat}.",
+      "i" = "Pass {.arg github_pat} to write to it.",
+      "i" = "To write without a token, use a folder address instead: the path to a bare git repo.",
+      "i" = "To read only, leave {.arg {arg}} out."
+    ))
+  }
+
+  if (kind == "ssh") {
+    cli::cli_abort(c(
+      "SSH repo addresses are not supported yet: {.val {url}}.",
+      "i" = "Use an {.code https://} address with {.arg github_pat}, or a folder address.",
+      "i" = "datom does not push with your SSH agent's keys, because it never picks up a credential on its own."
+    ))
+  }
+
+  cli::cli_abort(c(
+    "{.arg {arg}} {.val {url}} is not an address datom can write to.",
+    "i" = "Use an {.code https://} address with {.arg github_pat}, or a folder address.",
+    "i" = "datom sends a token only over {.code https://}."
+  ))
+}
+
+
 # --- Read-only queries --------------------------------------------------------
 
 #' Resolve the Git Signature for a Commit or Merge

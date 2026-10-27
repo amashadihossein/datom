@@ -1899,10 +1899,11 @@ test_that("datom_get_conn reader path returns conn with all gov fields NULL for 
     access_key = "AKIAEXAMPLE", secret_key = "secretkey",
     validate = FALSE
   )
+  # A reader store: no repo address, no token. (Before #134 this passed an
+  # https address with no token, which used to make a reader and now stops.)
   store <- datom_store(
     governance = NULL,
     data = data_comp,
-    data_repo_url = "https://github.com/example/repo.git",
     validate = FALSE
   )
 
