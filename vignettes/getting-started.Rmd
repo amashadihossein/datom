@@ -64,6 +64,10 @@ tell it to live** (S3 or a local directory). Even when data lives on a local
 filesystem, metadata still goes to a git remote -- that is how version history
 stays reproducible across machines.
 
+This article uses GitHub. To try datom with no GitHub account and no token,
+keeping the git repo in a folder instead, see
+[Try datom without GitHub or AWS](try-offline.html).
+
 You need two things, both one-time:
 
 - **A GitHub account** with a personal access token (PAT) scoped to `repo`.

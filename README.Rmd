@@ -149,6 +149,10 @@ pak::pak("amashadihossein/datom")
 > history. Every `datom_write()` is a commit; every `datom_read()` resolves
 > to an exact content SHA. No one can silently overwrite history.
 
+**No GitHub account?** [Try datom without GitHub or
+AWS](https://amashadihossein.github.io/datom/articles/try-offline.html) keeps
+everything in local folders, with no token.
+
 **Before you start:** you need a GitHub personal access token (PAT) scoped to
 `repo`. While you don't need to have this token stored in your OS keychain, use of
 `keyring` is recommended for security and ease of use.

@@ -1,0 +1,118 @@
+---
+title: "Try datom without GitHub or AWS"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Try datom without GitHub or AWS}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = requireNamespace("git2r", quietly = TRUE)
+)
+options(cli.unicode = FALSE, cli.hyperlink = FALSE, cli.hyperlink_file = FALSE)
+```
+
+```{=html}
+<link rel="stylesheet" href="../inst/vignette-setup/datom.css">
+```
+
+<div class="datom-callout datom-callout-goal" markdown="1">
+**Goal:** a working datom project in a few minutes, with no GitHub account, no
+token and no cloud account. Everything lives in folders on your machine, and
+this article runs as written.
+</div>
+
+A datom project has two parts: a **git repo** that records every change, and
+**storage** that holds the data itself. Both can be folders:
+
+- the git repo is a *bare* git repo in a folder (one with no working files,
+  which is what a git server holds), and datom creates it for you;
+- storage is a folder too, through `datom_store_local()`.
+
+A folder repo needs no token. Point both at a shared network drive and a
+small team can work this way. For GitHub, see [Getting Started](getting-started.html);
+for S3, see [Starting on S3](start-on-s3.html).
+
+## Pick the folders
+
+```{r folders}
+library(datom)
+
+home      <- file.path(tempdir(), "datom-try")
+remote    <- file.path(home, "study-001.git")  # the git repo; datom creates it
+storage   <- file.path(home, "storage")        # where the data goes
+workspace <- file.path(home, "study-001")      # your working copy
+dir.create(home)
+```
+
+Temporary folders keep the article tidy. For real work, use folders that last,
+and for a team, folders everyone can reach.
+
+## Start the project
+
+A store with a folder address is a writer store, with no token:
+
+```{r store}
+store <- datom_store(
+  data          = datom_store_local(path = storage),
+  data_repo_url = remote
+)
+store$role
+```
+
+`create_repo = TRUE` makes the bare repo at that address. Its parent folder must
+already exist; datom never creates parents, so a typo stops here rather than
+creating a stray folder.
+
+```{r init}
+datom_init_repo(workspace, project_name = "STUDY_001", store = store,
+                create_repo = TRUE)
+```
+
+## Write and read a table
+
+```{r write-read}
+conn <- datom_get_conn(path = workspace, store = store)
+
+datom_write(conn, data = datom_example_data("dm"), name = "dm",
+            message = "First extract")
+
+dm <- datom_read(conn, "dm")
+nrow(dm)
+datom_list(conn)[, c("name", "current_version")]
+```
+
+## A second writer
+
+A colleague who can reach both folders clones the project with the same store:
+
+```{r clone}
+colleague <- datom_clone(file.path(home, "study-001-colleague"), store)
+datom_list(colleague)$name
+```
+
+## A reader
+
+A reader needs only the storage folder: no git, no repo address.
+
+```{r reader}
+reader_store <- datom_store(data = datom_store_local(path = storage))
+reader <- datom_get_conn(store = reader_store, project_name = "STUDY_001")
+identical(datom_read(reader, "dm"), dm)
+```
+
+## What is not supported yet
+
+- **SSH addresses** (`git@github.com:...` or `ssh://...`) stop with a message.
+  Pushing over SSH would use your SSH agent's keys, and datom never picks up a
+  credential on its own. Use an `https://` address with a token, or a folder.
+- **Moving a project from a folder to GitHub** has no supported route yet. To
+  start on GitHub, follow [Getting Started](getting-started.html).
+
+```{r cleanup, include = FALSE}
+unlink(home, recursive = TRUE)
+```
