@@ -287,10 +287,17 @@ print.datom_conn <- function(x, ...) {
 #'
 #' Run once to start a new [project][datom-package]. It creates the project
 #' folder (including an `input_files/` folder for files you want to bring in),
-#' sets up git, pushes a first commit to GitHub -- creating the GitHub
-#' repository if `create_repo = TRUE` -- and records the new, empty project in
-#' storage. The store must carry a GitHub token; to join a project that already
-#' exists, use [datom_clone()] instead.
+#' sets up git, pushes a first commit to the project's git repo -- creating it
+#' if `create_repo = TRUE` -- and records the new, empty project in storage.
+#' The store must be a writer store: one with a repo address or a GitHub token
+#' (see [datom_store()]). To join a project that already exists, use
+#' [datom_clone()] instead.
+#'
+#' The git repo can be on GitHub (an `https://` address and a token) or in a
+#' folder (a local or network path, no token). A folder address must hold an
+#' empty bare git repo, or be a new or empty folder with `create_repo = TRUE`;
+#' anything else stops before a single file is written. Its parent folder must
+#' already exist.
 #'
 #' Initializes the **data repository only**. The project is left as a solo
 #' project: `project.yaml` is the location authority, no `governance.json` /
@@ -302,12 +309,16 @@ print.datom_conn <- function(x, ...) {
 #' @param path Path to the project folder. Defaults to current directory.
 #' @param project_name Project name, used for S3 namespace and git repo.
 #' @param store A `datom_store` object (from `datom_store()`). Must have role
-#'   `"developer"` (i.e., `github_pat` provided).
-#' @param create_repo If `TRUE`, create a GitHub repo via API. Mutually
-#'   exclusive with providing `data_repo_url` on the store.
+#'   `"developer"`: a `data_repo_url`, or a `github_pat` to create a GitHub
+#'   repo.
+#' @param create_repo If `TRUE`, create the repo. With a folder
+#'   `data_repo_url`, creates an empty bare git repo there (reusing one that is
+#'   already empty). With no `data_repo_url`, creates a GitHub repo via the API,
+#'   using the store's token. Refused with an `https://` `data_repo_url`.
 #' @param repo_name GitHub repo name when `create_repo = TRUE`. Defaults to
 #'   `project_name`. Useful when the project name (e.g., `"STUDY_001"`) isn't
-#'   a good GitHub repo name.
+#'   a good GitHub repo name. Refused with a folder address, whose path
+#'   already names the repo.
 #' @param max_file_size_gb Maximum file size limit in GB. Default 1000 (1TB).
 #' @param git_ignore Character vector of patterns to add to .gitignore.
 #' @param mode Project mode, or `NULL` (the default) for an ordinary data repo
@@ -452,15 +463,33 @@ datom_init_repo <- function(path = ".",
 
   # --- Resolve data_repo_url -------------------------------------------------
   remote_url <- store$data_repo_url
+  is_folder_remote <- !is.null(remote_url) &&
+    .datom_git_address_kind(remote_url) == "folder"
 
-  if (isTRUE(create_repo) && !is.null(remote_url)) {
+  # A folder address is checked in full here, before the namespace check and
+  # before any local file, so a refusal leaves nothing behind. The bare repo
+  # itself is created only just before the first push (see below).
+  folder_remote <- NULL
+  if (is_folder_remote) {
+    if (!missing(repo_name)) {
+      cli::cli_abort(c(
+        "{.arg repo_name} does not apply to a folder address.",
+        "i" = "The folder path {.path {remote_url}} already names the repo."
+      ))
+    }
+    folder_remote <- .datom_init_folder_remote(remote_url, create = isTRUE(create_repo))
+    remote_url <- folder_remote$url
+  }
+
+  if (isTRUE(create_repo) && !is.null(remote_url) && !is_folder_remote) {
     cli::cli_abort(c(
-      "{.arg create_repo} and {.arg data_repo_url} are mutually exclusive.",
-      "i" = "Either set {.code create_repo = TRUE} or provide {.arg data_repo_url} on the store, not both."
+      "{.arg create_repo} and a web {.arg data_repo_url} are mutually exclusive.",
+      "i" = "Either set {.code create_repo = TRUE} to create a GitHub repo, or provide {.arg data_repo_url} on the store, not both.",
+      "i" = "With a folder address, {.code create_repo = TRUE} creates a bare git repo there."
     ))
   }
 
-  if (isTRUE(create_repo)) {
+  if (isTRUE(create_repo) && !is_folder_remote) {
     remote_url <- .datom_create_github_repo(
       repo_name = repo_name,
       pat = store$github_pat,
@@ -481,6 +510,7 @@ datom_init_repo <- function(path = ".",
   # created or touched here (governance attaches later via the governance layer).
   .git_pushed <- FALSE
   .init_success <- FALSE
+  .bare_created <- FALSE
   .safe_delete <- function(p, is_dir = TRUE) {
     tryCatch(
       if (is_dir) fs::dir_delete(p) else fs::file_delete(p),
@@ -590,6 +620,15 @@ datom_init_repo <- function(path = ".",
           length(fs::dir_ls(path, all = TRUE)) == 0L) {
         .safe_delete(path)
       }
+      # A bare repo this call created and never pushed to holds nothing. An
+      # empty folder the caller made beforehand is emptied again, not removed.
+      if (.bare_created && folder_remote$existed) {
+        purrr::walk(fs::dir_ls(folder_remote$path, all = TRUE), function(p) {
+          .safe_delete(p, is_dir = fs::is_dir(p))
+        })
+      } else if (.bare_created) {
+        .safe_delete(folder_remote$path)
+      }
     }
   }, add = TRUE)
 
@@ -696,6 +735,13 @@ datom_init_repo <- function(path = ".",
   # The repo's own git config datom needs for fetch and push. No identity is
   # written: commits work it out at commit time, so a global one is honoured.
   .datom_git_ensure_local_config(repo)
+
+  if (isTRUE(folder_remote$create)) {
+    fs::dir_create(folder_remote$path)
+    git2r::init(folder_remote$path, bare = TRUE)
+    .bare_created <- TRUE
+    cli::cli_alert_success("Created bare git repo {.path {folder_remote$path}}.")
+  }
 
   git2r::remote_add(repo, name = "origin", url = remote_url)
 

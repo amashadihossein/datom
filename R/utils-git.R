@@ -866,6 +866,90 @@
 }
 
 
+#' Check a Folder Address for a New Project
+#'
+#' The folder half of [datom_init_repo()]: decides from what is at the folder
+#' whether init can go ahead, and whether it must create the bare repo. Changes
+#' nothing; init creates the repo just before its first push, so a refusal
+#' anywhere before that leaves the folder as it was.
+#'
+#' | At the folder | `create = TRUE` | `create = FALSE` |
+#' |---|---|---|
+#' | Nothing, or an empty folder; parent exists | Create the bare repo | Stop: no repo; suggest `create_repo = TRUE` |
+#' | Parent folder missing | Stop (parents are never created) | Stop |
+#' | Empty bare repo | Reuse | Use |
+#' | Bare repo with history | Stop: already has content | Stop: a new project needs an empty repo |
+#' | Git repo with a working tree, or not a git repo | Stop | Stop |
+#'
+#' Whatever will be written to -- the folder, or its parent when the folder is
+#' to be created -- must be writable.
+#'
+#' A relative path is made absolute, because a relative remote in git config
+#' would be resolved against whatever folder git later runs in. An absolute
+#' path or a `file://` URL is recorded exactly as given.
+#'
+#' @param url The store's folder address.
+#' @param create `create_repo` from [datom_init_repo()].
+#' @return A list: `url` (the remote to record: the address as given, or the
+#'   absolute path for a relative one), `path` (the absolute local path), `create`
+#'   (`TRUE` when init must create the bare repo), `existed` (`TRUE` when the
+#'   folder was already there).
+#' @keywords internal
+.datom_init_folder_remote <- function(url, create) {
+  path <- as.character(fs::path_abs(.datom_folder_address_path(url)))
+  state <- .datom_folder_remote_state(path)
+  is_file_url <- grepl("^file://", url, ignore.case = TRUE)
+
+  result <- function(needs_create) {
+    target <- if (needs_create && state == "absent") dirname(path) else path
+    if (!.datom_folder_writable(target)) {
+      cli::cli_abort(c(
+        "Cannot write to {.path {target}}.",
+        "i" = "The project's git repo goes there. Check the folder's permissions."
+      ))
+    }
+    list(
+      url = if (is_file_url || fs::is_absolute_path(url)) url else path,
+      path = path,
+      create = needs_create,
+      existed = state != "absent"
+    )
+  }
+
+  switch(state,
+    absent = ,
+    empty_dir = {
+      if (create) return(result(TRUE))
+      cli::cli_abort(c(
+        "There is no git repo at {.path {path}}.",
+        "i" = "Set {.code create_repo = TRUE} to create a bare git repo there."
+      ))
+    },
+    no_parent = cli::cli_abort(c(
+      "The folder {.path {dirname(path)}} does not exist.",
+      "i" = "datom never creates parent folders for a repo address, so check the path for a typo."
+    )),
+    empty_bare = {
+      if (create) cli::cli_alert_info("Reusing empty bare git repo {.path {path}}.")
+      result(FALSE)
+    },
+    bare_with_history = cli::cli_abort(c(
+      "The git repo at {.path {path}} already has content.",
+      "x" = "A new project needs an empty repo.",
+      "i" = "To work on the project already in it, use {.fn datom_clone}."
+    )),
+    not_bare = cli::cli_abort(c(
+      "The git repo at {.path {path}} has a working tree; datom needs a bare repo.",
+      "i" = "Point {.arg data_repo_url} at an empty or missing folder and set {.code create_repo = TRUE}."
+    )),
+    not_git = cli::cli_abort(c(
+      "{.path {path}} is not a git repo.",
+      "i" = "Point {.arg data_repo_url} at an empty or missing folder and set {.code create_repo = TRUE}."
+    ))
+  )
+}
+
+
 #' Is a Folder Writable
 #'
 #' @param path An existing folder.
