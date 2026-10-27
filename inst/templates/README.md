@@ -21,7 +21,7 @@ git clone {{{remote_url}}}
 
 ### 2. Create a store and connect
 
-**Developer** (has git clone + storage + GitHub access):
+**Developer** (has git clone + storage + access to the git repo):
 
 ```r
 library(datom)
@@ -29,7 +29,7 @@ library(datom)
 store <- datom_store(
   governance    = {{{gov_constructor}}},
   data          = {{{store_constructor}}},
-  github_pat    = Sys.getenv("GITHUB_PAT"),
+{{{pat_line}}}
   data_repo_url = "{{{remote_url}}}"
 )
 

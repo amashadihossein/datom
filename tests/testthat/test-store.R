@@ -549,6 +549,97 @@ test_that("datom_store() derives reader role when github_pat is NULL", {
   expect_equal(store$role, "reader")
 })
 
+test_that("datom_store() makes a writer from a folder address with no token (#134)", {
+  comp <- make_component()
+  store <- datom_store(data = comp, data_repo_url = file.path(tempdir(), "remote.git"))
+  expect_equal(store$role, "developer")
+  expect_null(store$github_pat)
+
+  file_url <- datom_store(data = comp, data_repo_url = "file:///srv/git/remote.git")
+  expect_equal(file_url$role, "developer")
+})
+
+test_that("datom_store() keeps a folder address with a token a writer (#134)", {
+  comp <- make_component()
+  store <- datom_store(data = comp, github_pat = "ghp_x",
+                       data_repo_url = "/srv/git/remote.git", validate = FALSE)
+  expect_equal(store$role, "developer")
+})
+
+test_that("datom_store() stops on an https address with no token (#134)", {
+  comp <- make_component()
+  expect_error(
+    datom_store(data = comp, data_repo_url = "https://github.com/org/repo.git"),
+    "web address, which needs .*github_pat"
+  )
+})
+
+test_that("datom_store() refuses an address before checking the token with GitHub (#134)", {
+  comp <- make_component()
+  local_mocked_bindings(
+    .datom_validate_github_pat = function(...) stop("network reached")
+  )
+  expect_error(
+    datom_store(data = comp, data_repo_url = "git@github.com:org/repo.git",
+                github_pat = "ghp_x", validate = TRUE),
+    "SSH repo addresses are not supported yet"
+  )
+})
+
+test_that("datom_store() stops on an SSH address, with or without a token (#134)", {
+  comp <- make_component()
+  for (url in c("git@github.com:org/repo.git", "ssh://git@host/org/repo.git")) {
+    expect_error(datom_store(data = comp, data_repo_url = url),
+                 "SSH repo addresses are not supported yet")
+    expect_error(datom_store(data = comp, data_repo_url = url,
+                             github_pat = "ghp_x", validate = FALSE),
+                 "SSH repo addresses are not supported yet")
+  }
+})
+
+test_that("datom_store() stops on a non-https scheme, with or without a token (#134)", {
+  comp <- make_component()
+  for (url in c("http://example.com/repo.git", "git://example.com/repo.git")) {
+    expect_error(datom_store(data = comp, data_repo_url = url),
+                 "not an address datom can write to")
+    expect_error(datom_store(data = comp, data_repo_url = url,
+                             github_pat = "ghp_x", validate = FALSE),
+                 "not an address datom can write to")
+  }
+})
+
+# --- Repo address classification (#134) ---------------------------------------
+
+test_that(".datom_git_address_kind() classifies folder addresses", {
+  folders <- c(
+    "/srv/git/remote.git", "remote.git", "./remote.git", "../a/remote.git",
+    "~/git/remote.git",
+    "file:///srv/git/remote.git", "FILE:///srv/x", "file:///C:/git/remote.git",
+    "C:\\git\\remote.git", "C:/git/remote.git", "d:\\x",
+    "\\\\server\\share\\remote.git", "//server/share/remote.git"
+  )
+  for (u in folders) expect_identical(.datom_git_address_kind(u), "folder", info = u)
+})
+
+test_that(".datom_git_address_kind() classifies https, ssh and other addresses", {
+  expect_identical(.datom_git_address_kind("https://github.com/o/r.git"), "https")
+  expect_identical(.datom_git_address_kind("HTTPS://github.com/o/r.git"), "https")
+
+  ssh <- c("git@github.com:o/r.git", "github.com:o/r.git", "ssh://git@h/o/r.git",
+           "git+ssh://h/o/r.git", "ssh+git://h/o/r.git")
+  for (u in ssh) expect_identical(.datom_git_address_kind(u), "ssh", info = u)
+
+  other <- c("http://h/o/r.git", "git://h/o/r.git", "ftp://h/r.git")
+  for (u in other) expect_identical(.datom_git_address_kind(u), "other", info = u)
+})
+
+test_that(".datom_folder_address_path() strips file:// and keeps plain paths", {
+  expect_identical(.datom_folder_address_path("/srv/x.git"), "/srv/x.git")
+  expect_identical(.datom_folder_address_path("file:///srv/x.git"), "/srv/x.git")
+  expect_identical(.datom_folder_address_path("file:///C:/x.git"), "C:/x.git")
+  expect_identical(.datom_folder_address_path("C:\\x.git"), "C:\\x.git")
+})
+
 # --- datom_store: construction ------------------------------------------------
 
 test_that("datom_store() creates valid developer store", {

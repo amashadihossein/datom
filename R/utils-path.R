@@ -248,8 +248,17 @@
     .datom_store_constructor_snippet(gov)
   }
 
+  # A folder remote needs no token; passing Sys.getenv("GITHUB_PAT") would hand
+  # datom_store() an empty string when the variable is unset, which it refuses.
+  pat_line <- if (.datom_git_address_kind(remote_url) == "folder") {
+    "  # no github_pat: a folder remote needs no token"
+  } else {
+    '  github_pat    = Sys.getenv("GITHUB_PAT"),'
+  }
+
   glue::glue(
     template,
+    pat_line          = pat_line,
     project_name      = project_name,
     backend           = backend,
     root              = root,

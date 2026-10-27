@@ -1146,6 +1146,238 @@ test_that("datom_init_repo errors when no data_repo_url and create_repo is FALSE
   )
 })
 
+# --- datom_init_repo with a folder address (#134) -----------------------------
+
+# A writer store with a folder remote and local storage: no token, no cloud.
+folder_store <- function(remote, root) {
+  datom_store(
+    data = datom_store_local(file.path(root, "storage")),
+    data_repo_url = remote
+  )
+}
+
+test_that("datom_init_repo creates a bare repo at a new folder address, with no token (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  store <- folder_store(remote, root)
+  expect_null(store$github_pat)
+
+  expect_message(
+    datom_init_repo(file.path(root, "repo"), "proj", store, create_repo = TRUE),
+    "Created bare git repo"
+  )
+
+  expect_identical(.datom_folder_remote_state(remote), "bare_with_history")
+  conn <- datom_get_conn(file.path(root, "repo"), store)
+  expect_equal(conn$role, "developer")
+})
+
+test_that("datom_init_repo reuses an empty bare repo with create_repo = TRUE (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  dir.create(remote)
+  git2r::init(remote, bare = TRUE)
+
+  expect_message(
+    datom_init_repo(file.path(root, "repo"), "proj", folder_store(remote, root),
+                    create_repo = TRUE),
+    "Reusing empty bare git repo"
+  )
+  expect_identical(.datom_folder_remote_state(remote), "bare_with_history")
+})
+
+test_that("datom_init_repo creates the bare repo in an empty folder the caller made (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  dir.create(remote)
+
+  datom_init_repo(file.path(root, "repo"), "proj", folder_store(remote, root),
+                  create_repo = TRUE)
+  expect_identical(.datom_folder_remote_state(remote), "bare_with_history")
+})
+
+test_that("datom_init_repo accepts a file:// folder address (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  # A valid file URL on every system: file:///C:/... on Windows.
+  url <- paste0("file://", if (.Platform$OS.type == "windows") "/" else "",
+                gsub("\\\\", "/", remote))
+
+  datom_init_repo(file.path(root, "repo"), "proj", folder_store(url, root),
+                  create_repo = TRUE)
+  expect_identical(.datom_folder_remote_state(remote), "bare_with_history")
+  repo <- git2r::repository(file.path(root, "repo"))
+  # Recorded as a plain absolute path, not the URL: git cannot use every
+  # file:// form, and the recorded remote is what datom checks at connect.
+  recorded <- git2r::remote_url(repo, "origin")
+  expect_false(grepl("^file://", recorded))
+  expect_identical(fs::path_real(recorded), fs::path_real(remote))
+})
+
+test_that("datom_clone records a folder address as a plain absolute path (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  url <- paste0("file://", if (.Platform$OS.type == "windows") "/" else "",
+                gsub("\\\\", "/", remote))
+  store <- folder_store(url, root)
+  datom_init_repo(file.path(root, "repo"), "proj", store, create_repo = TRUE)
+
+  datom_clone(file.path(root, "copy"), store)
+
+  recorded <- git2r::remote_url(git2r::repository(file.path(root, "copy")), "origin")
+  expect_false(grepl("^file://", recorded))
+  expect_true(fs::is_absolute_path(recorded))
+  expect_identical(fs::path_real(recorded), fs::path_real(remote))
+})
+
+test_that("datom_init_repo records a relative folder address as an absolute path (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  withr::local_dir(root)
+
+  datom_init_repo("repo", "proj", folder_store("remote.git", root), create_repo = TRUE)
+
+  repo <- git2r::repository(file.path(root, "repo"))
+  recorded <- git2r::remote_url(repo, "origin")
+  expect_true(fs::is_absolute_path(recorded))
+  expect_identical(fs::path_real(recorded), fs::path_real(file.path(root, "remote.git")))
+})
+
+test_that("datom_init_repo stops at a missing folder without create_repo, writing nothing (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+
+  expect_error(
+    datom_init_repo(file.path(root, "repo"), "proj", folder_store(remote, root)),
+    "no git repo at.*create_repo = TRUE"
+  )
+  expect_false(fs::dir_exists(remote))
+  expect_false(fs::dir_exists(file.path(root, "repo")))
+})
+
+test_that("datom_init_repo never creates a missing parent folder (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "typo", "remote.git")
+
+  for (create in c(TRUE, FALSE)) {
+    expect_error(
+      datom_init_repo(file.path(root, "repo"), "proj", folder_store(remote, root),
+                      create_repo = create),
+      "does not exist.*typo"
+    )
+  }
+  expect_false(fs::dir_exists(file.path(root, "typo")))
+  expect_false(fs::dir_exists(file.path(root, "repo")))
+})
+
+test_that("datom_init_repo refuses a bare repo with history before writing anything (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  datom_init_repo(file.path(root, "first"), "proj", folder_store(remote, root),
+                  create_repo = TRUE)
+
+  for (create in c(TRUE, FALSE)) {
+    expect_error(
+      datom_init_repo(file.path(root, "second"), "proj2", folder_store(remote, root),
+                      create_repo = create),
+      "already has content"
+    )
+  }
+  expect_false(fs::dir_exists(file.path(root, "second")))
+})
+
+test_that("datom_init_repo refuses a folder that is not a bare git repo (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+
+  work <- file.path(root, "work")
+  dir.create(work)
+  git2r::init(work)
+  expect_error(
+    datom_init_repo(file.path(root, "repo"), "proj", folder_store(work, root),
+                    create_repo = TRUE),
+    "has a working tree"
+  )
+
+  plain <- file.path(root, "plain")
+  dir.create(plain)
+  writeLines("x", file.path(plain, "notes.txt"))
+  expect_error(
+    datom_init_repo(file.path(root, "repo"), "proj", folder_store(plain, root),
+                    create_repo = TRUE),
+    "is not a git repo"
+  )
+  expect_false(fs::dir_exists(file.path(root, "repo")))
+})
+
+test_that("datom_init_repo refuses repo_name with a folder address (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  expect_error(
+    datom_init_repo(file.path(root, "repo"), "proj",
+                    folder_store(file.path(root, "remote.git"), root),
+                    create_repo = TRUE, repo_name = "other"),
+    "repo_name.*does not apply to a folder address"
+  )
+})
+
+test_that("datom_init_repo refuses to create a bare repo in a read-only parent (#134)", {
+  skip_if_no_git2r()
+  skip_on_os("windows") # file.access() cannot see a read-only folder there
+  root <- withr::local_tempdir()
+  parent <- file.path(root, "locked")
+  dir.create(parent)
+  Sys.chmod(parent, mode = "0555")
+  withr::defer(Sys.chmod(parent, mode = "0755"))
+  skip_if(file.access(parent, 2L) == 0L, "running as a user who can write anyway (root)")
+
+  expect_error(
+    datom_init_repo(file.path(root, "repo"), "proj",
+                    folder_store(file.path(parent, "remote.git"), root),
+                    create_repo = TRUE),
+    "Cannot write to"
+  )
+  expect_false(fs::dir_exists(file.path(root, "repo")))
+})
+
+test_that("datom_init_repo removes a bare repo it created when init fails before the push (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  local_mocked_bindings(.datom_git_commit = function(...) stop("commit failed"))
+
+  expect_error(
+    datom_init_repo(file.path(root, "repo"), "proj", folder_store(remote, root),
+                    create_repo = TRUE),
+    "commit failed"
+  )
+  expect_false(fs::dir_exists(remote))
+})
+
+test_that("datom_init_repo empties, not removes, a folder the caller made when init fails (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  dir.create(remote)
+  local_mocked_bindings(.datom_git_commit = function(...) stop("commit failed"))
+
+  expect_error(
+    datom_init_repo(file.path(root, "repo"), "proj", folder_store(remote, root),
+                    create_repo = TRUE),
+    "commit failed"
+  )
+  expect_true(fs::dir_exists(remote))
+  expect_length(fs::dir_ls(remote, all = TRUE), 0L)
+})
+
 test_that("datom_init_repo aborts on invalid max_file_size_gb", {
   env <- setup_init_env()
   expect_error(datom_init_repo(path = env$work_dir, project_name = "testproj",
@@ -1218,7 +1450,7 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   expect_equal(cfg$storage$data$prefix, "data/")
   expect_equal(cfg$storage$data$region, "eu-west-1")
   expect_equal(cfg$storage$max_file_size_gb, 500)
-  expect_equal(cfg$repos$data$remote_url, env$bare_dir)
+  expect_identical(fs::path_real(cfg$repos$data$remote_url), fs::path_real(env$bare_dir))
   # No top-level storage$type, storage$root, or storage$credentials
   expect_null(cfg$storage$type)
   expect_null(cfg$storage$root)
@@ -1284,7 +1516,9 @@ test_that("datom_init_repo initializes git with remote", {
   repo <- git2r::repository(env$work_dir)
   remotes <- git2r::remotes(repo)
   expect_true("origin" %in% remotes)
-  expect_equal(git2r::remote_url(repo, remote = "origin"), env$bare_dir)
+  # Compared as paths: datom records a folder remote in normalised form.
+  expect_identical(fs::path_real(git2r::remote_url(repo, remote = "origin")),
+                   fs::path_real(env$bare_dir))
 })
 
 test_that("datom_init_repo makes initial commit", {
@@ -1367,7 +1601,7 @@ test_that("datom_init_repo stores project_name in config for hyphenated names", 
 
   cfg <- yaml::read_yaml(fs::path(work_dir, ".datom", "project.yaml"))
   expect_equal(cfg$project_name, "my-data")
-  expect_equal(cfg$repos$data$remote_url, bare_dir)
+  expect_identical(fs::path_real(cfg$repos$data$remote_url), fs::path_real(bare_dir))
 })
 
 test_that("datom_init_repo passes is_valid_datom_repo checks", {
@@ -1840,7 +2074,7 @@ test_that("datom_init_repo no-gov omits repos.governance from project.yaml", {
   # repos.governance must be absent
   expect_null(cfg$repos$governance)
   # repos.data still present
-  expect_equal(cfg$repos$data$remote_url, env$bare_dir)
+  expect_identical(fs::path_real(cfg$repos$data$remote_url), fs::path_real(env$bare_dir))
 })
 
 test_that("datom_init_repo no-gov does not create gov clone", {
@@ -1899,10 +2133,11 @@ test_that("datom_get_conn reader path returns conn with all gov fields NULL for 
     access_key = "AKIAEXAMPLE", secret_key = "secretkey",
     validate = FALSE
   )
+  # A reader store: no repo address, no token. (Before #134 this passed an
+  # https address with no token, which used to make a reader and now stops.)
   store <- datom_store(
     governance = NULL,
     data = data_comp,
-    data_repo_url = "https://github.com/example/repo.git",
     validate = FALSE
   )
 
@@ -3495,9 +3730,7 @@ setup_identity_conn_env <- function(env = parent.frame()) {
   storage <- as.character(fs::path(tmp, "storage"))
   store <- datom_store(
     data = datom_store_local(storage),
-    github_pat = "example-token", # role selector; a local remote needs none
-    data_repo_url = remote,
-    validate = FALSE
+    data_repo_url = remote # a folder remote needs no token
   )
   path <- as.character(fs::path(tmp, "repo"))
   suppressMessages(datom_init_repo(path, "identity_proj", store))

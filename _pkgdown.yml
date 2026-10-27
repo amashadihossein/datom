@@ -145,6 +145,11 @@ articles:
     contents:
       - getting-started
 
+  - title: "Try without GitHub or AWS"
+    desc: "A whole project in local folders: no token, no cloud account."
+    contents:
+      - try-offline
+
   - title: "Start on S3"
     desc: "The same workflow directly in object storage."
     contents:

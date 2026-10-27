@@ -25,14 +25,18 @@ datom_init_repo(
 \item{project_name}{Project name, used for S3 namespace and git repo.}
 
 \item{store}{A \code{datom_store} object (from \code{datom_store()}). Must have role
-\code{"developer"} (i.e., \code{github_pat} provided).}
+\code{"developer"}: a \code{data_repo_url}, or a \code{github_pat} to create a GitHub
+repo.}
 
-\item{create_repo}{If \code{TRUE}, create a GitHub repo via API. Mutually
-exclusive with providing \code{data_repo_url} on the store.}
+\item{create_repo}{If \code{TRUE}, create the repo. With a folder
+\code{data_repo_url}, creates an empty bare git repo there (reusing one that is
+already empty). With no \code{data_repo_url}, creates a GitHub repo via the API,
+using the store's token. Refused with an \verb{https://} \code{data_repo_url}.}
 
 \item{repo_name}{GitHub repo name when \code{create_repo = TRUE}. Defaults to
 \code{project_name}. Useful when the project name (e.g., \code{"STUDY_001"}) isn't
-a good GitHub repo name.}
+a good GitHub repo name. Refused with a folder address, whose path
+already names the repo.}
 
 \item{max_file_size_gb}{Maximum file size limit in GB. Default 1000 (1TB).}
 
@@ -67,12 +71,19 @@ Invisible TRUE on success.
 \description{
 Run once to start a new \link[=datom-package]{project}. It creates the project
 folder (including an \verb{input_files/} folder for files you want to bring in),
-sets up git, pushes a first commit to GitHub -- creating the GitHub
-repository if \code{create_repo = TRUE} -- and records the new, empty project in
-storage. The store must carry a GitHub token; to join a project that already
-exists, use \code{\link[=datom_clone]{datom_clone()}} instead.
+sets up git, pushes a first commit to the project's git repo -- creating it
+if \code{create_repo = TRUE} -- and records the new, empty project in storage.
+The store must be a writer store: one with a repo address or a GitHub token
+(see \code{\link[=datom_store]{datom_store()}}). To join a project that already exists, use
+\code{\link[=datom_clone]{datom_clone()}} instead.
 }
 \details{
+The git repo can be on GitHub (an \verb{https://} address and a token) or in a
+folder (a local or network path, no token). A folder address must hold an
+empty bare git repo, or be a new or empty folder with \code{create_repo = TRUE};
+anything else stops before a single file is written. Its parent folder must
+already exist.
+
 Initializes the \strong{data repository only}. The project is left as a solo
 project: \code{project.yaml} is the location authority, no \code{governance.json} /
 \code{dispatch.json} / \code{ref.json} is written, and \code{project.yaml} omits the
@@ -91,9 +102,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   store <- datom_store(
     data = datom_store_local(file.path(tmp, "storage")),
-    github_pat = "example-token", # role selector; a local remote needs none
-    data_repo_url = remote,
-    validate = FALSE
+    data_repo_url = remote # a folder remote needs no token
   )
 
   datom_init_repo(

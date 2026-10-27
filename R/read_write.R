@@ -24,9 +24,7 @@
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
@@ -1104,9 +1102,7 @@ datom_read <- function(conn,
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)

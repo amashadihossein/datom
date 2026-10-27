@@ -10,10 +10,30 @@
 #'
 #' A store tells datom where a project's data is kept -- a local folder
 #' ([datom_store_local()]) or an S3 bucket ([datom_store_s3()]) -- and, if you
-#' will be writing, your GitHub token. With a token you are a
-#' [developer][datom-package] and can write; without one you are a reader and
-#' can only read. Pass the store to [datom_init_repo()] to start a project, or
-#' to [datom_get_conn()] to connect to one.
+#' will be writing, where its git repo is. Pass the store to
+#' [datom_init_repo()] to start a project, or to [datom_get_conn()] to connect
+#' to one.
+#'
+#' @section Writer or reader:
+#' A store with a repo address (`data_repo_url`) or a GitHub token
+#' (`github_pat`) is a [developer][datom-package] store and can write; a store
+#' with neither is a reader store and can only read. What the address needs:
+#'
+#' | `data_repo_url` | Token | Result |
+#' |---|---|---|
+#' | A folder: a local or network path, or a `file://` URL | not needed | Writer |
+#' | `https://...` | `github_pat` | Writer |
+#' | `https://...` | none | Stops: a web address needs `github_pat` |
+#' | SSH (`git@host:...`, `ssh://...`) or another scheme | either | Stops: not supported |
+#' | none | `github_pat` | Writer; [datom_init_repo()] can create the GitHub repo |
+#' | none | none | Reader |
+#'
+#' A folder address points at a bare git repo, which [datom_init_repo()]
+#' creates with `create_repo = TRUE`. It needs no GitHub account, and with
+#' [datom_store_local()] no cloud account either.
+#'
+#' SSH is refused because pushing over SSH would use your SSH agent's keys,
+#' and datom never picks up a credential on its own.
 #'
 #' @param governance A store component (e.g., `datom_store_s3()`) for governance
 #'   files (dispatch, ref, migration history), or `NULL` for a no-governance
@@ -22,10 +42,14 @@
 #'   `gov_local_path` must also be `NULL` in that case.
 #' @param data A store component (e.g., `datom_store_s3()`) for data files
 #'   (manifest, tables, metadata).
-#' @param github_pat GitHub personal access token. If provided, role is
-#'   `"developer"`. If NULL, role is `"reader"`.
-#' @param data_repo_url GitHub remote URL for the data repository. Required when
-#'   `github_pat` is provided and `create_repo = FALSE` in `datom_init_repo()`.
+#' @param github_pat GitHub personal access token, needed for an `https://`
+#'   `data_repo_url` and for creating a GitHub repo. `NULL` (default) for a
+#'   folder address or a reader. See "Writer or reader" below.
+#' @param data_repo_url Address of the data repository's git remote: an
+#'   `https://` URL (with `github_pat`), or a folder holding a bare git repo
+#'   (no token needed). Any address makes the store a writer. Required by
+#'   [datom_init_repo()] unless it creates a GitHub repo, and by
+#'   [datom_clone()].
 #' @param gov_repo_url GitHub remote URL for the shared governance repository.
 #'   The governance repo is created once per org (via the datomanager package)
 #'   and referenced here by every project that uses it.
@@ -51,13 +75,17 @@
 #'
 #' @examples
 #' tmp <- tempfile("datom_store_")
+#'
+#' # Writer: a folder address needs no token.
 #' store <- datom_store(
-#'   data = datom_store_local(path = tmp),
-#'   data_repo_url = "https://github.com/example/my-project",
-#'   validate = FALSE
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   data_repo_url = file.path(tmp, "remote.git")
 #' )
 #' store
 #' is_datom_store(store)
+#'
+#' # Reader: no address, no token.
+#' datom_store(data = datom_store_local(path = file.path(tmp, "storage")))
 #' unlink(tmp, recursive = TRUE)
 datom_store <- function(governance = NULL,
                         data,
@@ -158,7 +186,13 @@ datom_store <- function(governance = NULL,
   resolved_api_url <- github_api_url %||% "https://api.github.com"
 
   # --- Role derivation --------------------------------------------------------
-  role <- if (!is.null(github_pat)) "developer" else "reader"
+  # Any repo address makes a writer, and so does a token alone (datom_init_repo
+  # can then create the GitHub repo). The address check refuses, here and before
+  # any token check or network call, every address whose credential is missing
+  # or one datom will not use, so a store that gets past it can write.
+  .datom_check_repo_address(data_repo_url, github_pat)
+
+  role <- if (!is.null(github_pat) || !is.null(data_repo_url)) "developer" else "reader"
 
   # --- GitHub PAT validation --------------------------------------------------
   github_identity <- NULL
@@ -199,9 +233,8 @@ datom_store <- function(governance = NULL,
 #' @examples
 #' tmp <- tempfile("datom_store_")
 #' store <- datom_store(
-#'   data = datom_store_local(path = tmp),
-#'   data_repo_url = "https://github.com/example/my-project",
-#'   validate = FALSE
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   data_repo_url = file.path(tmp, "remote.git")
 #' )
 #' is_datom_store(store)
 #' is_datom_store("not a store")
@@ -223,9 +256,8 @@ is_datom_store <- function(x) {
 #' @examples
 #' tmp <- tempfile("datom_store_")
 #' store <- datom_store(
-#'   data = datom_store_local(path = tmp),
-#'   data_repo_url = "https://github.com/example/my-project",
-#'   validate = FALSE
+#'   data = datom_store_local(path = file.path(tmp, "storage")),
+#'   data_repo_url = file.path(tmp, "remote.git")
 #' )
 #' print(store)
 #' unlink(tmp, recursive = TRUE)

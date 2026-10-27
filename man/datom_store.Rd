@@ -26,11 +26,15 @@ promoted to governance (via the datomanager package); \code{gov_repo_url} and
 \item{data}{A store component (e.g., \code{datom_store_s3()}) for data files
 (manifest, tables, metadata).}
 
-\item{github_pat}{GitHub personal access token. If provided, role is
-\code{"developer"}. If NULL, role is \code{"reader"}.}
+\item{github_pat}{GitHub personal access token, needed for an \verb{https://}
+\code{data_repo_url} and for creating a GitHub repo. \code{NULL} (default) for a
+folder address or a reader. See "Writer or reader" below.}
 
-\item{data_repo_url}{GitHub remote URL for the data repository. Required when
-\code{github_pat} is provided and \code{create_repo = FALSE} in \code{datom_init_repo()}.}
+\item{data_repo_url}{Address of the data repository's git remote: an
+\verb{https://} URL (with \code{github_pat}), or a folder holding a bare git repo
+(no token needed). Any address makes the store a writer. Required by
+\code{\link[=datom_init_repo]{datom_init_repo()}} unless it creates a GitHub repo, and by
+\code{\link[=datom_clone]{datom_clone()}}.}
 
 \item{gov_repo_url}{GitHub remote URL for the shared governance repository.
 The governance repo is created once per org (via the datomanager package)
@@ -62,19 +66,45 @@ A \code{datom_store} object.
 \description{
 A store tells datom where a project's data is kept -- a local folder
 (\code{\link[=datom_store_local]{datom_store_local()}}) or an S3 bucket (\code{\link[=datom_store_s3]{datom_store_s3()}}) -- and, if you
-will be writing, your GitHub token. With a token you are a
-\link[=datom-package]{developer} and can write; without one you are a reader and
-can only read. Pass the store to \code{\link[=datom_init_repo]{datom_init_repo()}} to start a project, or
-to \code{\link[=datom_get_conn]{datom_get_conn()}} to connect to one.
+will be writing, where its git repo is. Pass the store to
+\code{\link[=datom_init_repo]{datom_init_repo()}} to start a project, or to \code{\link[=datom_get_conn]{datom_get_conn()}} to connect
+to one.
 }
+\section{Writer or reader}{
+
+A store with a repo address (\code{data_repo_url}) or a GitHub token
+(\code{github_pat}) is a \link[=datom-package]{developer} store and can write; a store
+with neither is a reader store and can only read. What the address needs:\tabular{lll}{
+   \code{data_repo_url} \tab Token \tab Result \cr
+   A folder: a local or network path, or a \verb{file://} URL \tab not needed \tab Writer \cr
+   \verb{https://...} \tab \code{github_pat} \tab Writer \cr
+   \verb{https://...} \tab none \tab Stops: a web address needs \code{github_pat} \cr
+   SSH (\code{git@host:...}, \verb{ssh://...}) or another scheme \tab either \tab Stops: not supported \cr
+   none \tab \code{github_pat} \tab Writer; \code{\link[=datom_init_repo]{datom_init_repo()}} can create the GitHub repo \cr
+   none \tab none \tab Reader \cr
+}
+
+
+A folder address points at a bare git repo, which \code{\link[=datom_init_repo]{datom_init_repo()}}
+creates with \code{create_repo = TRUE}. It needs no GitHub account, and with
+\code{\link[=datom_store_local]{datom_store_local()}} no cloud account either.
+
+SSH is refused because pushing over SSH would use your SSH agent's keys,
+and datom never picks up a credential on its own.
+}
+
 \examples{
 tmp <- tempfile("datom_store_")
+
+# Writer: a folder address needs no token.
 store <- datom_store(
-  data = datom_store_local(path = tmp),
-  data_repo_url = "https://github.com/example/my-project",
-  validate = FALSE
+  data = datom_store_local(path = file.path(tmp, "storage")),
+  data_repo_url = file.path(tmp, "remote.git")
 )
 store
 is_datom_store(store)
+
+# Reader: no address, no token.
+datom_store(data = datom_store_local(path = file.path(tmp, "storage")))
 unlink(tmp, recursive = TRUE)
 }

@@ -43,4 +43,11 @@ See *The ingestion allowlist* in [Version SHAs](design-version-shas.html).
 ## Setting up tokens and keys
 
 See *Configure your environment* in [Getting Started](getting-started.html)
-and *Load your secrets* in [Starting on S3](start-on-s3.html).
+and *Load your secrets* in [Starting on S3](start-on-s3.html). To try datom
+with no token at all, see [Try datom without GitHub or AWS](try-offline.html).
+
+## `datom_store()` stops on my repo address
+
+A web (`https://`) address needs `github_pat`; a folder address needs none. SSH
+addresses and schemes other than `https://` are not supported yet. See
+"Writer or reader" in `?datom_store`.

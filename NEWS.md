@@ -1,4 +1,25 @@
 # datom (development version)
+* **Breaking:** `datom_store()` with an `https://` `data_repo_url` and no
+  `github_pat` now stops; it used to make a read-only store. Leave out
+  `data_repo_url` for a reader. SSH addresses (`git@host:...`, `ssh://`) and
+  other schemes (`http://`, `git://`) also stop, with or without a token, and a
+  developer whose clone pushes over SSH now stops at `datom_get_conn()`: datom
+  does not push with your SSH agent's keys. Use an `https://` address or a
+  folder (#134).
+
+* **Breaking:** a store with a folder `data_repo_url` and no token used to be a
+  reader; it is now a writer. `datom_get_conn(store =, project_name =)` with no
+  `path` stops for it. For a reader, leave out `data_repo_url` (#134).
+
+* You can now write without a GitHub token: any `data_repo_url` makes a writer
+  store, and a folder address (a local or network path, or `file://`) needs no
+  token. `datom_init_repo(create_repo = TRUE)` creates an empty bare git repo
+  at a folder address, and refuses a folder that is not empty or whose parent
+  is missing before writing anything. `datom_get_conn()` stops if a folder
+  remote is missing, is not a git repo, or cannot be written to. Examples no
+  longer pass a placeholder token. See "Writer or reader" in `?datom_store` and
+  the new article "Try datom without GitHub or AWS" (#134).
+
 * datom no longer saves a git identity in a repo's own config. Each commit uses
   the identity git itself finds, so a global identity applies from the next
   commit in every repo. Where older datom saved the placeholder

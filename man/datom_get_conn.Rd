@@ -26,7 +26,7 @@ Returns a pointer to the project, called a \link[=datom-package]{connection}
 (\code{conn}): a record of which project you are working on, where its data is
 kept, and whether you can write. Almost every other datom function takes it
 as its first argument. Nothing stays open; it only checks once that the
-storage (and, for a developer, the GitHub repository) can be reached.
+storage (and, for a developer, the git repository) can be reached.
 Developers pass \code{path} (their local copy) and \code{store}; readers, who have no
 local copy, pass \code{store} and \code{project_name}.
 }
@@ -51,9 +51,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   store <- datom_store(
     data = datom_store_local(file.path(tmp, "storage")),
-    github_pat = "example-token", # role selector; a local remote needs none
-    data_repo_url = remote,
-    validate = FALSE
+    data_repo_url = remote # a folder remote needs no token
   )
   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 

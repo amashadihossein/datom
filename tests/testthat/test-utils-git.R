@@ -1477,12 +1477,14 @@ test_that(".datom_check_git_reachable returns invisible TRUE when data_repo_url 
 })
 
 test_that(".datom_check_git_reachable returns invisible TRUE for reachable local bare repo", {
+  skip_if_no_git2r()
   bare_dir <- withr::local_tempdir()
   git2r::init(bare_dir, bare = TRUE)
 
+  # A developer, so the folder is actually checked (a reader skips it).
   conn <- new_datom_conn(
     project_name = "p", root = "/tmp", client = NULL,
-    role = "reader", backend = "local",
+    role = "developer", path = withr::local_tempdir(), backend = "local",
     data_repo_url = bare_dir
   )
   expect_no_error(.datom_check_git_reachable(conn))
@@ -1583,34 +1585,196 @@ test_that(".datom_check_git_reachable conn returned on HTTPS network timeout", {
   ))
 })
 
-test_that(".datom_check_git_reachable warns (not errors) on SSH any error", {
-  dir <- withr::local_tempdir()
-  conn <- new_datom_conn(
+# Before #134 an SSH remote was tried with the SSH agent and only warned on
+# failure. A developer is now stopped before git is asked anything.
+dev_conn_with_remote <- function(remote_url, role = "developer") {
+  dir <- withr::local_tempdir(.local_envir = parent.frame())
+  new_datom_conn(
     project_name = "p", root = dir, client = NULL,
-    role = "developer", path = dir, backend = "local",
-    data_repo_url = "git@github.com:test/repo.git"
+    role = role, path = if (role == "developer") dir, backend = "local",
+    data_repo_url = remote_url
   )
+}
+
+test_that(".datom_check_git_reachable stops a developer on an SSH remote without asking git (#134)", {
+  skip_if_no_git2r()
   local_mocked_bindings(
-    remote_ls = function(...) stop("Failed to authenticate SSH session"),
+    remote_ls = function(...) stop("git asked"),
     .package = "git2r"
   )
-  expect_warning(.datom_check_git_reachable(conn), "reachability")
+  for (url in c("git@github.com:test/repo.git", "ssh://git@host/test/repo.git")) {
+    expect_error(.datom_check_git_reachable(dev_conn_with_remote(url)),
+                 "is an SSH address, which datom does not support")
+  }
 })
 
-test_that(".datom_check_git_reachable SSH error does not abort (warn only)", {
-  # SSH 403-equivalent must not abort -- we can't distinguish from offline
-  dir <- withr::local_tempdir()
-  conn <- new_datom_conn(
-    project_name = "p", root = dir, client = NULL,
-    role = "developer", path = dir, backend = "local",
-    data_repo_url = "git@github.com:test/repo.git"
-  )
+test_that(".datom_check_git_reachable stops a developer on a non-https scheme (#134)", {
+  skip_if_no_git2r()
   local_mocked_bindings(
-    remote_ls = function(...) stop("403 forbidden"),
+    remote_ls = function(...) stop("git asked"),
     .package = "git2r"
   )
-  expect_no_error(withCallingHandlers(
-    .datom_check_git_reachable(conn),
-    warning = function(w) invokeRestart("muffleWarning")
+  expect_error(
+    .datom_check_git_reachable(dev_conn_with_remote("http://example.com/repo.git")),
+    "not an https:// address"
+  )
+})
+
+test_that(".datom_check_git_reachable lets a reader through on SSH and folder remotes (#134)", {
+  skip_if_no_git2r()
+  local_mocked_bindings(
+    remote_ls = function(...) stop("git asked"),
+    .package = "git2r"
+  )
+  missing <- file.path(withr::local_tempdir(), "gone.git")
+  for (url in c("git@github.com:test/repo.git", missing)) {
+    expect_invisible(.datom_check_git_reachable(dev_conn_with_remote(url, role = "reader")))
+  }
+})
+
+test_that(".datom_check_git_reachable passes a developer on a writable bare folder remote (#134)", {
+  skip_if_no_git2r()
+  bare_dir <- withr::local_tempdir()
+  git2r::init(bare_dir, bare = TRUE)
+  expect_invisible(.datom_check_git_reachable(dev_conn_with_remote(bare_dir)))
+  expect_invisible(.datom_check_git_reachable(
+    dev_conn_with_remote(paste0("file://", bare_dir))
   ))
+})
+
+test_that(".datom_check_git_reachable stops a developer whose folder remote is missing (#134)", {
+  skip_if_no_git2r()
+  gone <- file.path(withr::local_tempdir(), "gone.git")
+  expect_error(.datom_check_git_reachable(dev_conn_with_remote(gone)),
+               "does not exist")
+  expect_error(
+    .datom_check_git_reachable(dev_conn_with_remote(file.path(gone, "deeper.git"))),
+    "does not exist"
+  )
+})
+
+test_that(".datom_check_git_reachable stops a developer whose folder remote is not a git repo (#134)", {
+  skip_if_no_git2r()
+  plain <- withr::local_tempdir()
+  writeLines("x", file.path(plain, "notes.txt"))
+  expect_error(.datom_check_git_reachable(dev_conn_with_remote(plain)),
+               "is not a git repo")
+
+  empty <- withr::local_tempdir()
+  expect_error(.datom_check_git_reachable(dev_conn_with_remote(empty)),
+               "is not a git repo")
+})
+
+test_that(".datom_check_git_reachable stops a developer whose folder remote has a working tree (#134)", {
+  skip_if_no_git2r()
+  work <- withr::local_tempdir()
+  git2r::init(work)
+  expect_error(.datom_check_git_reachable(dev_conn_with_remote(work)),
+               "has a working tree")
+})
+
+test_that(".datom_check_git_reachable stops a developer whose folder remote is read-only (#134)", {
+  skip_if_no_git2r()
+  skip_on_os("windows") # file.access() cannot see a read-only folder there
+  bare_dir <- withr::local_tempdir()
+  git2r::init(bare_dir, bare = TRUE)
+  Sys.chmod(bare_dir, mode = "0555")
+  withr::defer(Sys.chmod(bare_dir, mode = "0755"))
+  skip_if(file.access(bare_dir, 2L) == 0L, "running as a user who can write anyway (root)")
+
+  expect_error(.datom_check_git_reachable(dev_conn_with_remote(bare_dir)),
+               "cannot be written to")
+})
+
+# --- .datom_folder_address_path() (#134) --------------------------------------
+
+test_that(".datom_folder_address_path decodes file:// URLs like git does (#134)", {
+  expect_identical(.datom_folder_address_path("file:///srv/my%20repo.git"), "/srv/my repo.git")
+  expect_identical(.datom_folder_address_path("file://localhost/srv/x.git"), "/srv/x.git")
+})
+
+# --- .datom_undo_folder_remote() (#134) ---------------------------------------
+
+# A bare repo at `remote` holding one commit, pushed from a working repo.
+make_bare_with_history <- function(root) {
+  remote <- file.path(root, "remote.git")
+  dir.create(remote)
+  git2r::init(remote, bare = TRUE)
+  src <- file.path(root, "src")
+  dir.create(src)
+  repo <- git2r::init(src)
+  git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+  writeLines("x", file.path(src, "f.txt"))
+  git2r::add(repo, "f.txt")
+  git2r::commit(repo, "first")
+  git2r::remote_add(repo, name = "origin", url = remote)
+  git2r::push(repo, name = "origin", refspec = test_head_refspec(repo))
+  remote
+}
+
+test_that("undoing a folder remote leaves one that has history (#134)", {
+  skip_if_no_git2r()
+  remote <- make_bare_with_history(withr::local_tempdir())
+  for (existed in c(FALSE, TRUE)) {
+    expect_message(
+      .datom_undo_folder_remote(list(path = remote, existed = existed)),
+      "in place"
+    )
+    expect_identical(.datom_folder_remote_state(remote), "bare_with_history")
+  }
+})
+
+test_that("undoing a folder remote removes an empty one it created (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  dir.create(remote)
+  git2r::init(remote, bare = TRUE)
+  .datom_undo_folder_remote(list(path = remote, existed = FALSE))
+  expect_false(fs::dir_exists(remote))
+})
+
+# --- .datom_folder_remote_state() (#134) --------------------------------------
+
+test_that(".datom_folder_remote_state() tells every folder state apart", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+
+  expect_identical(.datom_folder_remote_state(file.path(root, "new.git")), "absent")
+  expect_identical(.datom_folder_remote_state(file.path(root, "no", "new.git")), "no_parent")
+
+  dir.create(file.path(root, "empty"))
+  expect_identical(.datom_folder_remote_state(file.path(root, "empty")), "empty_dir")
+
+  dir.create(file.path(root, "plain"))
+  writeLines("x", file.path(root, "plain", "f.txt"))
+  expect_identical(.datom_folder_remote_state(file.path(root, "plain")), "not_git")
+  expect_identical(.datom_folder_remote_state(file.path(root, "plain", "f.txt")), "not_git")
+
+  work <- file.path(root, "work")
+  dir.create(work)
+  git2r::init(work)
+  expect_identical(.datom_folder_remote_state(work), "not_bare")
+
+  # A plain folder inside a repo is not that repo.
+  dir.create(file.path(work, "sub"))
+  writeLines("x", file.path(work, "sub", "f.txt"))
+  expect_identical(.datom_folder_remote_state(file.path(work, "sub")), "not_git")
+
+  bare <- file.path(root, "bare.git")
+  dir.create(bare)
+  git2r::init(bare, bare = TRUE)
+  expect_identical(.datom_folder_remote_state(bare), "empty_bare")
+
+  # Give the bare repo a commit by pushing one from a working repo.
+  src <- file.path(root, "src")
+  dir.create(src)
+  repo <- git2r::init(src)
+  git2r::config(repo, user.name = "Test", user.email = "test@test.com")
+  writeLines("x", file.path(src, "f.txt"))
+  git2r::add(repo, "f.txt")
+  git2r::commit(repo, "first")
+  git2r::remote_add(repo, name = "origin", url = bare)
+  git2r::push(repo, name = "origin", refspec = test_head_refspec(repo))
+  expect_identical(.datom_folder_remote_state(bare), "bare_with_history")
 })
