@@ -80,8 +80,9 @@
 
 #' Local Path Behind a Folder Address
 #'
-#' Strips `file://` from a folder address so it can be handed to the file
-#' system. `file:///C:/x` becomes `C:/x`; a plain path is returned unchanged.
+#' Strips `file://` (and a `localhost` host) from a folder address and decodes
+#' it, as git does, so it can be handed to the file system. `file:///C:/x`
+#' becomes `C:/x`; a plain path is returned unchanged.
 #'
 #' @param url A folder address (see [.datom_git_address_kind()]).
 #' @return A path string.
@@ -89,8 +90,25 @@
 .datom_folder_address_path <- function(url) {
   if (!grepl("^file://", url, ignore.case = TRUE)) return(url)
   path <- sub("^file://", "", url, ignore.case = TRUE)
+  path <- sub("^localhost(?=/)", "", path, ignore.case = TRUE, perl = TRUE)
+  path <- utils::URLdecode(path)
   if (grepl("^/[A-Za-z]:", path)) path <- substring(path, 2L)
   path
+}
+
+
+#' Absolute Path datom Records as a Folder Remote
+#'
+#' `file://` removed (and decoded, as git does), `~` expanded, made absolute,
+#' forward slashes. git is always given this, never the address as typed, so
+#' what datom checks is what git pushes to: git cannot push to a
+#' `file://C:\...` address, and does not expand `~`.
+#'
+#' @param url A folder address (see [.datom_git_address_kind()]).
+#' @return An absolute path string.
+#' @keywords internal
+.datom_folder_remote_path <- function(url) {
+  as.character(fs::path_abs(fs::path_expand(.datom_folder_address_path(url))))
 }
 
 
@@ -884,21 +902,20 @@
 #' Whatever will be written to -- the folder, or its parent when the folder is
 #' to be created -- must be writable.
 #'
-#' A relative path is made absolute, because a relative remote in git config
-#' would be resolved against whatever folder git later runs in. An absolute
-#' path or a `file://` URL is recorded exactly as given.
+#' Every folder address is recorded as a plain absolute path
+#' ([.datom_folder_remote_path()]), never as typed: a relative remote in git
+#' config would be resolved against whatever folder git later runs in, git
+#' cannot push to `file://C:\...`, and it does not expand `~`.
 #'
 #' @param url The store's folder address.
 #' @param create `create_repo` from [datom_init_repo()].
-#' @return A list: `url` (the remote to record: the address as given, or the
-#'   absolute path for a relative one), `path` (the absolute local path), `create`
-#'   (`TRUE` when init must create the bare repo), `existed` (`TRUE` when the
-#'   folder was already there).
+#' @return A list: `url` and `path` (both the absolute path to record and
+#'   check), `create` (`TRUE` when init must create the bare repo), `existed`
+#'   (`TRUE` when the folder was already there).
 #' @keywords internal
 .datom_init_folder_remote <- function(url, create) {
-  path <- as.character(fs::path_abs(.datom_folder_address_path(url)))
+  path <- .datom_folder_remote_path(url)
   state <- .datom_folder_remote_state(path)
-  is_file_url <- grepl("^file://", url, ignore.case = TRUE)
 
   result <- function(needs_create) {
     target <- if (needs_create && state == "absent") dirname(path) else path
@@ -909,7 +926,7 @@
       ))
     }
     list(
-      url = if (is_file_url || fs::is_absolute_path(url)) url else path,
+      url = path,
       path = path,
       create = needs_create,
       existed = state != "absent"
@@ -950,6 +967,40 @@
 }
 
 
+#' Undo a Folder Remote That datom_init_repo() Created
+#'
+#' Removes the bare repo, or empties the folder when the caller had made it
+#' beforehand -- but only while it holds no history. Once someone else has
+#' pushed to it (two inits racing on one shared drive, where this call's push
+#' was refused because the other got there first), it is theirs and is left in
+#' place with a message.
+#'
+#' @param folder_remote The list from [.datom_init_folder_remote()]; uses
+#'   `path` and `existed`.
+#' @return Invisible `TRUE` when something was removed, `FALSE` otherwise.
+#' @keywords internal
+.datom_undo_folder_remote <- function(folder_remote) {
+  path <- folder_remote$path
+  if (!fs::dir_exists(path)) return(invisible(FALSE))
+
+  if (.datom_folder_remote_state(path) == "bare_with_history") {
+    cli::cli_alert_warning(
+      "Left the git repo at {.path {path}} in place: it now has history this call did not write."
+    )
+    return(invisible(FALSE))
+  }
+
+  if (isTRUE(folder_remote$existed)) {
+    purrr::walk(fs::dir_ls(path, all = TRUE), function(p) {
+      if (fs::is_dir(p)) fs::dir_delete(p) else fs::file_delete(p)
+    })
+  } else {
+    fs::dir_delete(path)
+  }
+  invisible(TRUE)
+}
+
+
 #' Is a Folder Writable
 #'
 #' @param path An existing folder.
@@ -965,8 +1016,8 @@
 #'
 #' The folder branch of [.datom_check_git_reachable()]. A folder can be
 #' checked fully and offline, so unlike a web address every problem stops
-#' the connection: the folder is missing, it is not a git repo, or it cannot
-#' be written to.
+#' the connection: the folder is missing, it is not a git repo, it is a repo
+#' with a working tree rather than a bare one, or it cannot be written to.
 #'
 #' @param remote_url The clone's remote, a folder address.
 #' @return Invisible `TRUE`; aborts otherwise.
@@ -986,6 +1037,13 @@
     cli::cli_abort(c(
       "The git remote folder {.path {path}} is not a git repo.",
       "i" = "This clone pushes to that folder, which should hold a bare git repo."
+    ))
+  }
+
+  if (state == "not_bare") {
+    cli::cli_abort(c(
+      "The git remote folder {.path {path}} has a working tree; datom pushes only to a bare repo.",
+      "i" = "Point this clone at a bare repo with {.code git2r::remote_set_url(git2r::repository(<clone>), \"origin\", <bare repo>)}."
     ))
   }
 
@@ -1011,7 +1069,8 @@
 #' Failure behaviour, by the kind of address ([.datom_git_address_kind()]):
 #' - No `data_repo_url`: returns invisibly (structural pass, no network needed).
 #' - Folder, developer: hard abort if the folder is missing, is not a git repo,
-#'   or is not writable ([.datom_check_folder_remote()]). No network.
+#'   is not bare, or is not writable ([.datom_check_folder_remote()]). No
+#'   network.
 #' - SSH or another non-https scheme, developer: hard abort, as in
 #'   [datom_store()]: datom does not push with the SSH agent's keys, and sends
 #'   a token only over https.

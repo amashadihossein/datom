@@ -7,6 +7,10 @@
   does not push with your SSH agent's keys. Use an `https://` address or a
   folder (#134).
 
+* **Breaking:** a store with a folder `data_repo_url` and no token used to be a
+  reader; it is now a writer. `datom_get_conn(store =, project_name =)` with no
+  `path` stops for it. For a reader, leave out `data_repo_url` (#134).
+
 * You can now write without a GitHub token: any `data_repo_url` makes a writer
   store, and a folder address (a local or network path, or `file://`) needs no
   token. `datom_init_repo(create_repo = TRUE)` creates an empty bare git repo

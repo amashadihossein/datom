@@ -25,7 +25,8 @@ Failure behaviour, by the kind of address (\code{\link[=.datom_git_address_kind]
 \itemize{
 \item No \code{data_repo_url}: returns invisibly (structural pass, no network needed).
 \item Folder, developer: hard abort if the folder is missing, is not a git repo,
-or is not writable (\code{\link[=.datom_check_folder_remote]{.datom_check_folder_remote()}}). No network.
+is not bare, or is not writable (\code{\link[=.datom_check_folder_remote]{.datom_check_folder_remote()}}). No
+network.
 \item SSH or another non-https scheme, developer: hard abort, as in
 \code{\link[=datom_store]{datom_store()}}: datom does not push with the SSH agent's keys, and sends
 a token only over https.

@@ -13,7 +13,8 @@
 A path string.
 }
 \description{
-Strips \verb{file://} from a folder address so it can be handed to the file
-system. \verb{file:///C:/x} becomes \verb{C:/x}; a plain path is returned unchanged.
+Strips \verb{file://} (and a \code{localhost} host) from a folder address and decodes
+it, as git does, so it can be handed to the file system. \verb{file:///C:/x}
+becomes \verb{C:/x}; a plain path is returned unchanged.
 }
 \keyword{internal}

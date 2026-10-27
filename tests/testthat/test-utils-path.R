@@ -125,6 +125,22 @@ test_that("round-trip with no prefix", {
 
 # --- .datom_render_readme() ----------------------------------------------------
 
+test_that("render_readme leaves out the token for a folder remote (#134)", {
+  folder <- .datom_render_readme(
+    project_name = "STUDY_001", backend = "local", root = "/srv/storage",
+    prefix = NULL, remote_url = "/srv/git/study.git"
+  )
+  expect_match(folder, "a folder remote needs no token", fixed = TRUE)
+  expect_no_match(folder, 'Sys.getenv("GITHUB_PAT")', fixed = TRUE)
+
+  web <- .datom_render_readme(
+    project_name = "STUDY_001", backend = "local", root = "/srv/storage",
+    prefix = NULL, remote_url = "https://github.com/org/repo.git"
+  )
+  expect_match(web, 'Sys.getenv("GITHUB_PAT")', fixed = TRUE)
+  expect_no_match(web, "a folder remote needs no token", fixed = TRUE)
+})
+
 test_that("render_readme returns a character string", {
   readme <- .datom_render_readme(
     project_name = "STUDY_001",

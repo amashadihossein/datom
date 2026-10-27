@@ -12,10 +12,9 @@
 \item{create}{\code{create_repo} from \code{\link[=datom_init_repo]{datom_init_repo()}}.}
 }
 \value{
-A list: \code{url} (the remote to record: the address as given, or the
-absolute path for a relative one), \code{path} (the absolute local path), \code{create}
-(\code{TRUE} when init must create the bare repo), \code{existed} (\code{TRUE} when the
-folder was already there).
+A list: \code{url} and \code{path} (both the absolute path to record and
+check), \code{create} (\code{TRUE} when init must create the bare repo), \code{existed}
+(\code{TRUE} when the folder was already there).
 }
 \description{
 The folder half of \code{\link[=datom_init_repo]{datom_init_repo()}}: decides from what is at the folder
@@ -37,8 +36,9 @@ anywhere before that leaves the folder as it was.
 Whatever will be written to -- the folder, or its parent when the folder is
 to be created -- must be writable.
 
-A relative path is made absolute, because a relative remote in git config
-would be resolved against whatever folder git later runs in. An absolute
-path or a \verb{file://} URL is recorded exactly as given.
+Every folder address is recorded as a plain absolute path
+(\code{\link[=.datom_folder_remote_path]{.datom_folder_remote_path()}}), never as typed: a relative remote in git
+config would be resolved against whatever folder git later runs in, git
+cannot push to \verb{file://C:\\...}, and it does not expand \code{~}.
 }
 \keyword{internal}

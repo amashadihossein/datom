@@ -1203,13 +1203,36 @@ test_that("datom_init_repo accepts a file:// folder address (#134)", {
   skip_if_no_git2r()
   root <- withr::local_tempdir()
   remote <- file.path(root, "remote.git")
-  url <- paste0("file://", remote)
+  # A valid file URL on every system: file:///C:/... on Windows.
+  url <- paste0("file://", if (.Platform$OS.type == "windows") "/" else "",
+                gsub("\\\\", "/", remote))
 
   datom_init_repo(file.path(root, "repo"), "proj", folder_store(url, root),
                   create_repo = TRUE)
   expect_identical(.datom_folder_remote_state(remote), "bare_with_history")
   repo <- git2r::repository(file.path(root, "repo"))
-  expect_identical(git2r::remote_url(repo, "origin"), url)
+  # Recorded as a plain absolute path, not the URL: git cannot use every
+  # file:// form, and the recorded remote is what datom checks at connect.
+  recorded <- git2r::remote_url(repo, "origin")
+  expect_false(grepl("^file://", recorded))
+  expect_identical(fs::path_real(recorded), fs::path_real(remote))
+})
+
+test_that("datom_clone records a folder address as a plain absolute path (#134)", {
+  skip_if_no_git2r()
+  root <- withr::local_tempdir()
+  remote <- file.path(root, "remote.git")
+  url <- paste0("file://", if (.Platform$OS.type == "windows") "/" else "",
+                gsub("\\\\", "/", remote))
+  store <- folder_store(url, root)
+  datom_init_repo(file.path(root, "repo"), "proj", store, create_repo = TRUE)
+
+  datom_clone(file.path(root, "copy"), store)
+
+  recorded <- git2r::remote_url(git2r::repository(file.path(root, "copy")), "origin")
+  expect_false(grepl("^file://", recorded))
+  expect_true(fs::is_absolute_path(recorded))
+  expect_identical(fs::path_real(recorded), fs::path_real(remote))
 })
 
 test_that("datom_init_repo records a relative folder address as an absolute path (#134)", {
@@ -1427,7 +1450,7 @@ test_that("datom_init_repo creates project.yaml with correct fields", {
   expect_equal(cfg$storage$data$prefix, "data/")
   expect_equal(cfg$storage$data$region, "eu-west-1")
   expect_equal(cfg$storage$max_file_size_gb, 500)
-  expect_equal(cfg$repos$data$remote_url, env$bare_dir)
+  expect_identical(fs::path_real(cfg$repos$data$remote_url), fs::path_real(env$bare_dir))
   # No top-level storage$type, storage$root, or storage$credentials
   expect_null(cfg$storage$type)
   expect_null(cfg$storage$root)
@@ -1493,7 +1516,9 @@ test_that("datom_init_repo initializes git with remote", {
   repo <- git2r::repository(env$work_dir)
   remotes <- git2r::remotes(repo)
   expect_true("origin" %in% remotes)
-  expect_equal(git2r::remote_url(repo, remote = "origin"), env$bare_dir)
+  # Compared as paths: datom records a folder remote in normalised form.
+  expect_identical(fs::path_real(git2r::remote_url(repo, remote = "origin")),
+                   fs::path_real(env$bare_dir))
 })
 
 test_that("datom_init_repo makes initial commit", {
@@ -1576,7 +1601,7 @@ test_that("datom_init_repo stores project_name in config for hyphenated names", 
 
   cfg <- yaml::read_yaml(fs::path(work_dir, ".datom", "project.yaml"))
   expect_equal(cfg$project_name, "my-data")
-  expect_equal(cfg$repos$data$remote_url, bare_dir)
+  expect_identical(fs::path_real(cfg$repos$data$remote_url), fs::path_real(bare_dir))
 })
 
 test_that("datom_init_repo passes is_valid_datom_repo checks", {
@@ -2049,7 +2074,7 @@ test_that("datom_init_repo no-gov omits repos.governance from project.yaml", {
   # repos.governance must be absent
   expect_null(cfg$repos$governance)
   # repos.data still present
-  expect_equal(cfg$repos$data$remote_url, env$bare_dir)
+  expect_identical(fs::path_real(cfg$repos$data$remote_url), fs::path_real(env$bare_dir))
 })
 
 test_that("datom_init_repo no-gov does not create gov clone", {

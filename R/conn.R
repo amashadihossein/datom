@@ -508,6 +508,7 @@ datom_init_repo <- function(path = ".",
   .git_pushed <- FALSE
   .init_success <- FALSE
   .bare_created <- FALSE
+  .bare_dir_created <- FALSE
   .safe_delete <- function(p, is_dir = TRUE) {
     tryCatch(
       if (is_dir) fs::dir_delete(p) else fs::file_delete(p),
@@ -617,14 +618,10 @@ datom_init_repo <- function(path = ".",
           length(fs::dir_ls(path, all = TRUE)) == 0L) {
         .safe_delete(path)
       }
-      # A bare repo this call created and never pushed to holds nothing. An
-      # empty folder the caller made beforehand is emptied again, not removed.
-      if (.bare_created && folder_remote$existed) {
-        purrr::walk(fs::dir_ls(folder_remote$path, all = TRUE), function(p) {
-          .safe_delete(p, is_dir = fs::is_dir(p))
-        })
-      } else if (.bare_created) {
-        .safe_delete(folder_remote$path)
+      # Undo the bare repo this call created, unless someone else has pushed
+      # to it meanwhile (see .datom_undo_folder_remote()).
+      if (.bare_dir_created || .bare_created) {
+        tryCatch(.datom_undo_folder_remote(folder_remote), error = function(e) NULL)
       }
     }
   }, add = TRUE)
@@ -735,6 +732,7 @@ datom_init_repo <- function(path = ".",
 
   if (isTRUE(folder_remote$create)) {
     fs::dir_create(folder_remote$path)
+    .bare_dir_created <- TRUE
     git2r::init(folder_remote$path, bare = TRUE)
     .bare_created <- TRUE
     cli::cli_alert_success("Created bare git repo {.path {folder_remote$path}}.")
@@ -870,6 +868,12 @@ datom_clone <- function(path, store, ...) {
       "Target directory {.path {path}} already exists and is not empty.",
       "i" = "Use an empty or non-existent directory."
     ))
+  }
+
+  # A folder address is given to git as a plain absolute path, as in
+  # datom_init_repo(): git cannot use `file://C:\...` and does not expand `~`.
+  if (.datom_git_address_kind(remote_url) == "folder") {
+    remote_url <- .datom_folder_remote_path(remote_url)
   }
 
   # Clone with git credentials (PAT from store; no env-var fallback)

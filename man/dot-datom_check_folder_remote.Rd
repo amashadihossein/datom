@@ -15,7 +15,7 @@ Invisible \code{TRUE}; aborts otherwise.
 \description{
 The folder branch of \code{\link[=.datom_check_git_reachable]{.datom_check_git_reachable()}}. A folder can be
 checked fully and offline, so unlike a web address every problem stops
-the connection: the folder is missing, it is not a git repo, or it cannot
-be written to.
+the connection: the folder is missing, it is not a git repo, it is a repo
+with a working tree rather than a bare one, or it cannot be written to.
 }
 \keyword{internal}
