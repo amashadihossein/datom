@@ -828,20 +828,113 @@
 }
 
 
+#' What Is at a Folder Repo Address
+#'
+#' Looks at the folder a folder address points to, without changing anything.
+#' Shared by the connection-time check ([.datom_check_folder_remote()]) and by
+#' [datom_init_repo()], which decide differently on the same answers.
+#'
+#' The folder is opened as a git repo only at that exact path, never by walking
+#' up to a parent repo, so a plain folder inside some other repo reads as
+#' `"not_git"`.
+#'
+#' @param path Local path (see [.datom_folder_address_path()]).
+#' @return One of:
+#'   - `"absent"`: nothing there, parent folder exists;
+#'   - `"no_parent"`: nothing there, parent folder missing too;
+#'   - `"empty_dir"`: an empty folder;
+#'   - `"not_git"`: a file, or a folder with content that is not a git repo;
+#'   - `"not_bare"`: a git repo with a working tree;
+#'   - `"empty_bare"`: a bare git repo with no commits;
+#'   - `"bare_with_history"`: a bare git repo with commits.
+#' @keywords internal
+.datom_folder_remote_state <- function(path) {
+  if (!fs::dir_exists(path)) {
+    if (fs::file_exists(path)) return("not_git")
+    return(if (fs::dir_exists(dirname(path))) "absent" else "no_parent")
+  }
+
+  # discover = FALSE: git2r's default walks up to a parent repo.
+  repo <- tryCatch(git2r::repository(path, discover = FALSE), error = function(e) NULL)
+  if (is.null(repo)) {
+    if (length(fs::dir_ls(path, all = TRUE)) == 0L) return("empty_dir")
+    return("not_git")
+  }
+
+  if (!git2r::is_bare(repo)) return("not_bare")
+  if (git2r::is_empty(repo)) "empty_bare" else "bare_with_history"
+}
+
+
+#' Is a Folder Writable
+#'
+#' @param path An existing folder.
+#' @return `TRUE` or `FALSE`. On Windows, R's write test for a folder can
+#'   report a read-only folder as writable; a push then fails instead.
+#' @keywords internal
+.datom_folder_writable <- function(path) {
+  isTRUE(unname(file.access(path, mode = 2L)) == 0L)
+}
+
+
+#' Check a Folder Remote at Connection Time
+#'
+#' The folder branch of [.datom_check_git_reachable()]. A folder can be
+#' checked fully and offline, so unlike a web address every problem stops
+#' the connection: the folder is missing, it is not a git repo, or it cannot
+#' be written to.
+#'
+#' @param remote_url The clone's remote, a folder address.
+#' @return Invisible `TRUE`; aborts otherwise.
+#' @keywords internal
+.datom_check_folder_remote <- function(remote_url) {
+  path <- .datom_folder_address_path(remote_url)
+  state <- .datom_folder_remote_state(path)
+
+  if (state %in% c("absent", "no_parent")) {
+    cli::cli_abort(c(
+      "The git remote folder {.path {path}} does not exist.",
+      "i" = "This clone pushes to that folder. Check that it has not been moved or deleted, and that its drive or share is available."
+    ))
+  }
+
+  if (state %in% c("empty_dir", "not_git")) {
+    cli::cli_abort(c(
+      "The git remote folder {.path {path}} is not a git repo.",
+      "i" = "This clone pushes to that folder, which should hold a bare git repo."
+    ))
+  }
+
+  if (!.datom_folder_writable(path)) {
+    cli::cli_abort(c(
+      "The git remote folder {.path {path}} cannot be written to.",
+      "i" = "Writing a table pushes to that folder. Check its permissions."
+    ))
+  }
+
+  invisible(TRUE)
+}
+
+
 #' Validate Git Remote Reachability
 #'
-#' Checks that the data git remote URL is reachable and that credentials work.
+#' Checks that the data git remote is reachable and that credentials work.
 #' Called at conn-construction time in `.datom_get_conn_developer()` alongside
-#' `.datom_check_data_reachable()`.
+#' `.datom_check_data_reachable()`. The remote is the clone's own `origin`,
+#' not the store's `data_repo_url`, so this is where a clone made before
+#' datom refused SSH is caught.
 #'
-#' Failure behaviour:
+#' Failure behaviour, by the kind of address ([.datom_git_address_kind()]):
 #' - No `data_repo_url`: returns invisibly (structural pass, no network needed).
+#' - Folder, developer: hard abort if the folder is missing, is not a git repo,
+#'   or is not writable ([.datom_check_folder_remote()]). No network.
+#' - SSH or another non-https scheme, developer: hard abort, as in
+#'   [datom_store()]: datom does not push with the SSH agent's keys, and sends
+#'   a token only over https.
+#' - Folder, SSH or other, reader: returns invisibly. A reader never pushes.
 #' - HTTPS, auth failure (HTTP 401/403): hard abort pointing to `github_pat`.
 #' - HTTPS, URL not found (HTTP 404): hard abort.
 #' - HTTPS, network error (timeout/DNS): warn-only (offline-tolerant).
-#' - SSH, any error: warn-only (cannot reliably distinguish "no agent" from
-#'   "offline").
-#' - SSH, success: invisible TRUE.
 #'
 #' @param conn A `datom_conn` object. Uses `conn$data_repo_url` and
 #'   `conn$github_pat`.
@@ -853,7 +946,23 @@
   remote_url <- conn$data_repo_url
   if (is.null(remote_url) || !nzchar(remote_url)) return(invisible(TRUE))
 
-  is_https <- grepl("^https://", remote_url, ignore.case = TRUE)
+  kind <- .datom_git_address_kind(remote_url)
+
+  # A reader built on a clone never pushes, so what the clone pushes to is not
+  # its concern: only a developer is stopped for a folder or SSH remote.
+  if (kind != "https" && !identical(conn$role, "developer")) return(invisible(TRUE))
+
+  if (kind == "folder") return(.datom_check_folder_remote(remote_url))
+
+  if (kind != "https") {
+    what <- if (kind == "ssh") "an SSH address" else "not an https:// address"
+    cli::cli_abort(c(
+      "This clone's git remote {.val {remote_url}} is {what}, which datom does not support.",
+      "i" = "datom does not push with your SSH agent's keys, and sends a token only over {.code https://}.",
+      "i" = "Point the clone at an {.code https://} address or a folder, e.g. {.code git2r::remote_set_url(git2r::repository(path), \"origin\", url)}."
+    ))
+  }
+
   cred <- .datom_git_credentials(remote_url, pat = conn$github_pat)
 
   tryCatch({
@@ -861,16 +970,6 @@
     invisible(TRUE)
   }, error = function(e) {
     msg <- conditionMessage(e)
-
-    if (!is_https) {
-      # SSH: cannot distinguish auth failure from no agent / offline -> warn
-      cli::cli_warn(c(
-        "Could not verify git remote reachability for {.url {remote_url}}.",
-        "i" = "Underlying error: {msg}",
-        "i" = "Proceeding anyway -- operations may fail if the remote is unreachable."
-      ))
-      return(invisible(TRUE))
-    }
 
     # HTTPS: classify by error message content
     if (grepl("401|403|unauthorized|forbidden|authentication required|access denied",
