@@ -45,9 +45,7 @@
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
@@ -193,9 +191,7 @@ datom_repo_set_data_store <- function(conn, new_store, message = NULL) {
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
@@ -348,9 +344,7 @@ datom_repo_delete <- function(conn, confirm, force_gov_attached = FALSE) {
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
@@ -626,9 +620,7 @@ datom_repo_attach_governance <- function(conn, gov_repo_url, gov_store,
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
@@ -763,9 +755,7 @@ datom_repo_commit <- function(conn, message, paths = NULL, push = TRUE) {
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)

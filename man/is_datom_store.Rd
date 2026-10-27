@@ -18,9 +18,8 @@ Check if Object is a datom Store
 \examples{
 tmp <- tempfile("datom_store_")
 store <- datom_store(
-  data = datom_store_local(path = tmp),
-  data_repo_url = "https://github.com/example/my-project",
-  validate = FALSE
+  data = datom_store_local(path = file.path(tmp, "storage")),
+  data_repo_url = file.path(tmp, "remote.git")
 )
 is_datom_store(store)
 is_datom_store("not a store")

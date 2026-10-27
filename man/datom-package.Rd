@@ -12,16 +12,18 @@ Provides versioned storage for tabular data without a database or a server. Each
 
 \itemize{
 \item \strong{Project}: one body of data you manage together, such as one clinical
-study. It has a name, a GitHub repository that records every change, and a
-storage location that holds the data itself; the data never goes into git.
-Created once with \code{\link[=datom_init_repo]{datom_init_repo()}}.
+study. It has a name, a git repository that records every change (on
+GitHub, or in a folder), and a storage location that holds the data
+itself; the data never goes into git. Created once with
+\code{\link[=datom_init_repo]{datom_init_repo()}}.
 \item \strong{Store}: tells datom where a project's data lives (a local folder or an
-S3 bucket) and, if you will write, your GitHub token. Built with
-\code{\link[=datom_store]{datom_store()}}.
-\item \strong{Developer and reader}: the two roles. A developer has a GitHub token and
-a local copy of the project, and can write. A reader needs only access to
-the storage -- no token, no git -- and can only read. datom picks the role
-from whether the store carries a token.
+S3 bucket) and, if you will write, where its git repository is -- with
+your GitHub token if that is on GitHub. Built with \code{\link[=datom_store]{datom_store()}}.
+\item \strong{Developer and reader}: the two roles. A developer has the repository's
+address and a local copy of the project, and can write. A reader needs
+only access to the storage -- no address, no token, no git -- and can only
+read. datom picks the role from whether the store carries an address or a
+token.
 \item \strong{Connection (\code{conn})}: a pointer to one project, returned by
 \code{\link[=datom_get_conn]{datom_get_conn()}}. It records which project, where its data is kept, and
 your role, and it is the first argument to almost every other function.

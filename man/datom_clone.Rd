@@ -10,7 +10,7 @@ datom_clone(path, store, ...)
 \item{path}{Local path to clone into.}
 
 \item{store}{A \code{datom_store} object (from \code{datom_store()}). Must have
-\code{data_repo_url} set and role \code{"developer"} (i.e., \code{github_pat} provided).}
+\code{data_repo_url} set (with \code{github_pat} if it is an \verb{https://} address).}
 
 \item{...}{Additional arguments passed to \code{\link[git2r:clone]{git2r::clone()}}.}
 }
@@ -38,9 +38,7 @@ if (requireNamespace("git2r", quietly = TRUE)) {
 
   store <- datom_store(
     data = datom_store_local(file.path(tmp, "storage")),
-    github_pat = "example-token", # role selector; a local remote needs none
-    data_repo_url = remote,
-    validate = FALSE
+    data_repo_url = remote # a folder remote needs no token
   )
   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 

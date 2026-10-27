@@ -14,20 +14,25 @@
 Invisible TRUE on success. Warns on network error (offline use ok).
 }
 \description{
-Checks that the data git remote URL is reachable and that credentials work.
+Checks that the data git remote is reachable and that credentials work.
 Called at conn-construction time in \code{.datom_get_conn_developer()} alongside
-\code{.datom_check_data_reachable()}.
+\code{.datom_check_data_reachable()}. The remote is the clone's own \code{origin},
+not the store's \code{data_repo_url}, so this is where a clone made before
+datom refused SSH is caught.
 }
 \details{
-Failure behaviour:
+Failure behaviour, by the kind of address (\code{\link[=.datom_git_address_kind]{.datom_git_address_kind()}}):
 \itemize{
 \item No \code{data_repo_url}: returns invisibly (structural pass, no network needed).
+\item Folder, developer: hard abort if the folder is missing, is not a git repo,
+or is not writable (\code{\link[=.datom_check_folder_remote]{.datom_check_folder_remote()}}). No network.
+\item SSH or another non-https scheme, developer: hard abort, as in
+\code{\link[=datom_store]{datom_store()}}: datom does not push with the SSH agent's keys, and sends
+a token only over https.
+\item Folder, SSH or other, reader: returns invisibly. A reader never pushes.
 \item HTTPS, auth failure (HTTP 401/403): hard abort pointing to \code{github_pat}.
 \item HTTPS, URL not found (HTTP 404): hard abort.
 \item HTTPS, network error (timeout/DNS): warn-only (offline-tolerant).
-\item SSH, any error: warn-only (cannot reliably distinguish "no agent" from
-"offline").
-\item SSH, success: invisible TRUE.
 }
 }
 \keyword{internal}

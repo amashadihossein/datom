@@ -863,9 +863,7 @@
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   # A product repo declares itself as one and names the single set it owns.
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store,
@@ -1152,9 +1150,7 @@ datom_update_members <- function(x, conn, member = NULL, tags = NULL,
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   # A product repo declares itself as one and names the single set it owns.
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store,

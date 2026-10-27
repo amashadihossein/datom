@@ -3705,9 +3705,7 @@ setup_identity_conn_env <- function(env = parent.frame()) {
   storage <- as.character(fs::path(tmp, "storage"))
   store <- datom_store(
     data = datom_store_local(storage),
-    github_pat = "example-token", # role selector; a local remote needs none
-    data_repo_url = remote,
-    validate = FALSE
+    data_repo_url = remote # a folder remote needs no token
   )
   path <- as.character(fs::path(tmp, "repo"))
   suppressMessages(datom_init_repo(path, "identity_proj", store))

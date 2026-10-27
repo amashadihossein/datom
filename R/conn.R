@@ -225,9 +225,7 @@ is_datom_conn <- function(x) {
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'   conn <- datom_get_conn(file.path(tmp, "repo"), store)
@@ -354,9 +352,7 @@ print.datom_conn <- function(x, ...) {
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'
 #'   datom_init_repo(
@@ -398,7 +394,8 @@ datom_init_repo <- function(path = ".",
   if (store$role != "developer") {
     cli::cli_abort(c(
       "{.fn datom_init_repo} requires a developer store.",
-      "i" = "Provide {.arg github_pat} when creating the store."
+      "i" = "Give {.fn datom_store} a {.arg data_repo_url}: a folder needs no token, an {.code https://} address needs {.arg github_pat}.",
+      "i" = "Or give it only {.arg github_pat} and set {.code create_repo = TRUE} to create a GitHub repo."
     ))
   }
 
@@ -812,7 +809,7 @@ datom_init_repo <- function(path = ".",
 #'
 #' @param path Local path to clone into.
 #' @param store A `datom_store` object (from `datom_store()`). Must have
-#'   `data_repo_url` set and role `"developer"` (i.e., `github_pat` provided).
+#'   `data_repo_url` set (with `github_pat` if it is an `https://` address).
 #' @param ... Additional arguments passed to [git2r::clone()].
 #'
 #' @return A `datom_conn` object (developer role).
@@ -828,9 +825,7 @@ datom_init_repo <- function(path = ".",
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'
@@ -851,7 +846,7 @@ datom_clone <- function(path, store, ...) {
   if (store$role != "developer") {
     cli::cli_abort(c(
       "{.fn datom_clone} requires a developer store.",
-      "i" = "Provide {.arg github_pat} when creating the store."
+      "i" = "Give {.fn datom_store} the project's {.arg data_repo_url}: a folder needs no token, an {.code https://} address needs {.arg github_pat}."
     ))
   }
 
@@ -943,7 +938,7 @@ datom_clone <- function(path, store, ...) {
 #' (`conn`): a record of which project you are working on, where its data is
 #' kept, and whether you can write. Almost every other datom function takes it
 #' as its first argument. Nothing stays open; it only checks once that the
-#' storage (and, for a developer, the GitHub repository) can be reached.
+#' storage (and, for a developer, the git repository) can be reached.
 #' Developers pass `path` (their local copy) and `store`; readers, who have no
 #' local copy, pass `store` and `project_name`.
 #'
@@ -978,9 +973,7 @@ datom_clone <- function(path, store, ...) {
 #'
 #'   store <- datom_store(
 #'     data = datom_store_local(file.path(tmp, "storage")),
-#'     github_pat = "example-token", # role selector; a local remote needs none
-#'     data_repo_url = remote,
-#'     validate = FALSE
+#'     data_repo_url = remote # a folder remote needs no token
 #'   )
 #'   datom_init_repo(file.path(tmp, "repo"), "example_project", store)
 #'
