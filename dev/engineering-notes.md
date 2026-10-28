@@ -821,6 +821,14 @@ Three cheap habits remove it:
   fired when it should); the vignette dry run did. `sprintf()` returns `character(0)` for empty
   input, and a test that a clean call prints only its summary line pins it.
 
+### The restore must run inside a function
+
+A probe script that edits a file and puts it back with `on.exit()` must do so inside a function. At
+the top level of `Rscript`, `on.exit()` never fires. The script exits with the edit still in place,
+and each later probe stacks its edit on top. On #134 that left five probe edits in two source files,
+found only by checking the files against a saved copy. Wrap the edit, load and test in
+`main <- function() {...}`, and check with `diff` against the saved copy after the run.
+
 ### A closure leaks a connection only once the connection has been FORCED
 
 Also 2026-09-14, while pinning that `$fetch` on a set member carries no credentials. The hazard is
