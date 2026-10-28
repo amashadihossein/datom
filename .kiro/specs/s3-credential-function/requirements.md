@@ -145,9 +145,11 @@ Single sign-on involves two lifetimes: the keys (about an hour, renewed by R2.3)
 them (set by the organisation, often 8-12 hours). Only the login's end can stop a job, because the
 function then fails until the user runs `aws sso login` again.
 
-1. **Check before git.** Every write checks its keys before its git commit, renewing them if they are
-   within 15 minutes of expiry. A function that fails there stops the write before git or storage is
-   touched. (A write commits and pushes git, then uploads to storage, in
+1. **Check before anything changes.** Every write checks its keys before any local file write or git
+   commit, renewing them if they are within 15 minutes of expiry. A function that fails there stops
+   the write before the clone, git or storage is touched. (Before the commit is not early enough:
+   the write updates the clone's manifest first, and `datom_sync_manifest()` compares input files
+   against that manifest, so a later re-run would think the table synced.) (A write commits and pushes git, then uploads to storage, in
    `.datom_commit_and_mirror()` in `R/read_write.R`; a failure after the push leaves git ahead of
    storage.)
 2. **A credential failure stops `datom_sync()`.** Today it catches each artifact's error and moves

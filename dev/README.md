@@ -215,7 +215,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Branch | Status |
 |---|---|---|
-| [s3-credential-function](../.kiro/specs/s3-credential-function/) (#134, part 3b) | `spec/s3-credential-function` | Requirements approved 2026-10-27. **Paused** before design, waiting on [#155](https://github.com/amashadihossein/datom/issues/155) (a write that fails after its git push leaves a version with no data file), which goes first. |
+| [s3-credential-function](../.kiro/specs/s3-credential-function/) (#134, part 3b) | `spec/s3-credential-function` | Requirements approved 2026-10-27; design drafted, not reviewed (resume at its "Not yet traced" list). **Paused**, waiting on [#155](https://github.com/amashadihossein/datom/issues/155) (a write that fails after its git push leaves a version with no data file), which goes first. |
 
 In the sibling repo `datom-py` (the Python reader, #129 part 2): 0.1.0 is on PyPI (released
 2026-10-20), with S3 as a preview. Its spec `s3-reader` still has three hardening tasks open

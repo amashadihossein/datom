@@ -1,0 +1,6 @@
+Package: credprobe
+Version: 0.0.1
+Title: Throwaway Probe
+Description: Throwaway probe of what a saved R session writes.
+License: MIT
+Encoding: UTF-8
