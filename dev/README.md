@@ -215,7 +215,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Branch | Status |
 |---|---|---|
-| _none_ | | No spec active. |
+| [s3-credential-function](../.kiro/specs/s3-credential-function/) (#134, part 3b) | `spec/s3-credential-function` | Requirements approved 2026-10-27; design next. |
 
 In the sibling repo `datom-py` (the Python reader, #129 part 2): 0.1.0 is on PyPI (released
 2026-10-20), with S3 as a preview. Its spec `s3-reader` still has three hardening tasks open
