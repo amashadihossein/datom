@@ -124,8 +124,13 @@ handed in is specific to paws.
 
 1. **Function form.** The current keys, their expiry and the paws client live only in a private
    environment inside datom's namespace, filed under a random id. The store holds the function and
-   the id; the connection holds the id. Neither holds a key, a token, an expiry or a paws client.
-   `print()` says credentials come from a function.
+   the id; the connection holds the id and the function. Neither holds a key, a token, an expiry or
+   a paws client. `print()` says credentials come from a function.
+   - **Parallel workers** (owner, 2026-10-27): a worker started as a fresh R process (`parLapply`,
+     `future` multisession, `callr`, always on Windows) receives only the connection's bytes, so the
+     id is not found there; because the connection carries the function, the worker calls it and
+     carries on, once per worker. A forked worker (`mclapply`) starts with the private memory and
+     finds the id. datom itself runs nothing in parallel.
 2. `serialize()` of such a store or connection, and a saved session (`.RData`) holding them, contain
    no key or token the function returned, including after requests have been made. (A function
    that carries keys inside itself, for example a closure over literal strings, is the caller's
@@ -133,6 +138,45 @@ handed in is specific to paws.
 3. When the id is not found (a fresh R that loaded a saved session), datom calls the function again.
 4. **Keys passed directly** are unchanged from today: held in the store and the connection. The docs
    say so, and say a saved session or cache can then write them to disk.
+
+### R4a. Long-running jobs (owner, 2026-10-27)
+
+Single sign-on involves two lifetimes: the keys (about an hour, renewed by R2.3) and the login behind
+them (set by the organisation, often 8-12 hours). Only the login's end can stop a job, because the
+function then fails until the user runs `aws sso login` again.
+
+1. **Check before git.** Every write checks its keys before its git commit, renewing them if they are
+   within 15 minutes of expiry. A function that fails there stops the write before git or storage is
+   touched. (A write commits and pushes git, then uploads to storage, in
+   `.datom_commit_and_mirror()` in `R/read_write.R`; a failure after the push leaves git ahead of
+   storage.)
+2. **A credential failure stops `datom_sync()`.** Today it catches each artifact's error and moves
+   on, so an expired login would fail every remaining artifact, each calling the function again.
+   A `datom_credentials_failed` or `datom_credentials_invalid` error ends the sync instead; artifacts
+   already synced stay synced, and the report says which.
+
+### R4b. Failure modes, guarded and documented
+
+Every failure mode known from the research and the design discussion is listed here. Each is either
+**guarded** (a test that goes red if the behaviour returns) or **documented** (stated in the user
+docs, R6), and some are both. `design.md` carries this table forward; spec completion copies it into
+`dev/engineering-notes.md` so later changes keep the guards.
+
+| # | Failure mode | What the user sees | Guarded | Documented |
+|---|---|---|---|---|
+| FM1 | Keys expire during a session | Nothing; datom renews them | test (R5.4) | |
+| FM2 | Single sign-on login expired before a write | Stop before git, naming `aws sso login` | test | yes |
+| FM3 | Login expires between a write's git push and its upload | Git ahead of storage; repaired by `datom_validate(fix = TRUE)` | | yes |
+| FM4 | Login expires during `datom_sync()` | The sync stops; earlier artifacts stay synced | test | yes |
+| FM5 | Code reaches a function-built connection's client directly, skipping renewal | Error at once (there is no `conn$client`) | test | |
+| FM6 | paws starts searching the machine even when given keys with no expiry time | Would be silent | test (R5.2), the only alarm | |
+| FM7 | `AWS_ENDPOINT_URL*` set, or `endpoint_url` in `~/.aws/config` | Refused, or overridden by the explicit address | test | yes |
+| FM8 | The function returns malformed or expired keys, or raises | `datom_credentials_invalid` / `datom_credentials_failed`, no value echoed | test | yes |
+| FM9 | Local clock wrong by more than the 15-minute margin | AWS refuses the request | | yes |
+| FM10 | Session saved (`.RData`, a cache) with a function-built store or connection | No key in the file; a fresh R calls the function again | test | yes |
+| FM11 | Session saved with a store built from keys passed directly | The keys are in the file | | yes |
+| FM12 | Connection sent to a fresh-process parallel worker | The worker calls the function once; on macOS the keychain may prompt per process | test | yes |
+| FM13 | Keys held in the user's own variables, or written literally inside the function | Saved with the session; outside datom's control | | yes |
 
 ### R5. Tests
 
@@ -150,10 +194,12 @@ handed in is specific to paws.
 1. `?datom_store_s3` and `?datom_store_s3_creds`: the `credentials` argument, the returned list, an
    example function reading keys from the OS keychain (`keyring`), and the credential rule in plain
    words: what datom never reads, what it never stores.
-2. The trade-off between the two forms: keys passed directly are the easy route and the way out, and
+2. A "When credentials run out or leak" section in `?datom_store_s3` covering every failure mode
+   R4b marks documented: what the user sees and what to do.
+3. The trade-off between the two forms: keys passed directly are the easy route and the way out, and
    a saved session or cache can write them to disk; the function form keeps them out. Recommend
    never saving the workspace (`usethis::use_blank_slate()`).
-3. A `NEWS.md` line.
+4. A `NEWS.md` line.
 
 ## Out of scope
 
@@ -230,4 +276,6 @@ PR (one repo per change). Points to carry over:
 | AC5 | The function is not called at construction under `validate = FALSE`, and is called again near expiry | R2.3 |
 | AC6 | A function-built store and connection print, serialise and save (`.RData`) with no key or token, after requests too; in a fresh R the function is called again | R4 |
 | AC7 | `AWS_ENDPOINT_URL*` set is refused; otherwise requests go only to the given or standard address; China regions are refused | R3.4 |
-| AC8 | Each test for AC1-AC7 is recorded going red when its guard alone is removed | R5.3 |
+| AC8 | A function failing at a write's key check stops before git is touched; a credential failure ends `datom_sync()` | R4a |
+| AC9 | Every failure mode in R4b marked guarded has its test, and every one marked documented appears in `?datom_store_s3` | R4b, R6.2 |
+| AC10 | Each test for AC1-AC9 is recorded going red when its guard alone is removed | R5.3 |
