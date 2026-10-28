@@ -166,7 +166,7 @@ docs, R6), and some are both. `design.md` carries this table forward; spec compl
 |---|---|---|---|---|
 | FM1 | Keys expire during a session | Nothing; datom renews them | test (R5.4) | |
 | FM2 | Single sign-on login expired before a write | Stop before git, naming `aws sso login` | test | yes |
-| FM3 | Login expires between a write's git push and its upload | Git ahead of storage; repaired by `datom_validate(fix = TRUE)` | | yes |
+| FM3 | Login expires between a write's git push and its data upload | Git ahead of storage; readers still see the previous version. **No datom route repairs it today** (existing behaviour, confirmed 2026-10-27 with a folder remote and local storage; [#155](https://github.com/amashadihossein/datom/issues/155), fixed ahead of this spec's design): re-running the same `datom_write()` finds the version already in the clone's history and skips the upload, and `datom_validate(fix = TRUE)` copies the metadata to storage without the data file, after which readers' current version fails. R4a.1 makes this rare for credentials; it does not fix it | | yes |
 | FM4 | Login expires during `datom_sync()` | The sync stops; earlier artifacts stay synced | test | yes |
 | FM5 | Code reaches a function-built connection's client directly, skipping renewal | Error at once (there is no `conn$client`) | test | |
 | FM6 | paws starts searching the machine even when given keys with no expiry time | Would be silent | test (R5.2), the only alarm | |
