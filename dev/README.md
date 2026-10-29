@@ -215,7 +215,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Branch | Status |
 |---|---|---|
-| _none_ | | No spec active. |
+| [interrupted-commands](../.kiro/specs/interrupted-commands/) (#155) | `spec/interrupted-commands` | Requirements drafted 2026-10-28, awaiting approval; no open questions. #134 part 3b (`spec/s3-credential-function`) is paused until this merges. |
 
 In the sibling repo `datom-py` (the Python reader, #129 part 2): 0.1.0 is on PyPI (released
 2026-10-20), with S3 as a preview. Its spec `s3-reader` still has three hardening tasks open
