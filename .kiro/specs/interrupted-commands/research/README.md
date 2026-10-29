@@ -17,5 +17,8 @@ Rerun from the repo root, for example:
   a write broken at the manifest step, then compared with what a reader's `datom_list()` shows.
 - `other_command_probe.R`: a write of `dm` broken at its commit or its push, then a write of `lb`;
   reads GitHub's copy of the manifest and of `dm/metadata.json` with the git CLI.
+- `two_writers_probe.R`: two clones of one project write different tables without pulling in
+  between; reports whether the second write's push hits a merge conflict, and in which files
+  (result: a conflict in `.datom/manifest.json` only).
 
 Results are recorded in `../requirements.md`, "Findings".
