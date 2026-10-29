@@ -11,6 +11,8 @@ measured 2026-10-27 for the s3-credential-function spec at the same commit).
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
+A second review the same day reworded R3.7 against #105 and broadened R8's merge-conflict row; it led
+to D12 and R3.8 (datom resolves a conflict only in the manifest).
 
 ## Goal
 
@@ -115,6 +117,7 @@ below it (`.datom_check_writer_floor()`, also on 0.2.0's repair route); 0.1.0 do
 | D9 | **`datom_repo_commit()` resets a datom write that never committed** before it stages anything, as every other command does (D3). A plain `git commit` from a terminal is outside datom's reach and is discouraged in the help | Leave datom's files out of the commit (the clone stays unclean after an add-everything commit); refuse until the datom write is dealt with |
 | D10 | **The git and config commands push, and say so.** `datom_repo_push()`, `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_set_data_store()` do not publish a datom write whose commit they push; they name it and say the next datom write or `datom_validate(fix = TRUE)` publishes it | Publish what they push (commands about git or config start writing to storage, and after a data-store change "which storage" has two answers); refuse to push (blocks a product layer's commit) |
 | D11 | **Teams writing one repo with mixed datom versions are not guarded against** (Q3). In practice everyone writing to a repo upgrades together. Recorded in R8 | Set `min_writer_version` at init for new repos and ask existing owners to add it; check for the data file before publishing any version |
+| D12 | **datom resolves a merge conflict confined to `.datom/manifest.json`** by rebuilding the manifest from the artifacts' files in the merged clone, completing the merge, and saying so (R3.8). The manifest is derived, so nothing can be lost. Conflicts in any other file stop the command as today and stay with #105 | Leave every conflict to #105: a write whose push broke while a colleague pushed would not finish on a re-run, the main conflict R3.7 leaves |
 
 ## Requirements
 
@@ -221,10 +224,20 @@ Applies, before their own work, to `datom_write()` (every route), `datom_write_s
      unpushed commits fast-forwards; a merge happens only when it holds unpushed commits, as today's
      push already does. #105 suggests stopping instead of merging at this point; in practice such a
      merge almost always conflicts on `.datom/manifest.json` (R8), so the two end the same way.
-   - A merge conflict stops the command before storage changes.
+   - A merge conflict stops the command before storage changes, unless R3.8 resolves it.
    - If the fetch fails, the command publishes nothing and says why. Whether a write still commits
      locally when offline, as `datom_sync()` allows today (#104), is settled in the design.
    - `datom_sync()` pulls once per call, not once per table.
+8. **A conflict only in the manifest is resolved** (D12). When a pull, whether R3.7's or the one
+   inside a write's own push, stops on a merge conflict and `.datom/manifest.json` is the only
+   conflicted file, datom:
+   - rebuilds the manifest from the artifacts' files in the merged clone (`metadata.json`,
+     `version_history.json`, and `set.json` for a set), taking fields no artifact file holds, such
+     as `project_name` and any top-level field this build does not know, from the remote's copy;
+   - completes the merge and carries on, with a message saying the manifest was rebuilt.
+
+   A conflict in any other file, including a `version_history.json` (two people wrote the same
+   artifact), stops the command before storage changes, as today.
 
 ### R4. Syncing files
 
@@ -248,7 +261,8 @@ writes nothing and is unchanged.
 
 1. It applies R3.1 first: files that were never committed are reset, never published.
 2. It pulls (R3.7), pushes any unpushed commits, then publishes every artifact from git (D6). A
-   merge conflict stops the repair before storage changes, and so does a failed fetch.
+   merge conflict that R3.8 does not resolve stops the repair before storage changes, and so does a
+   failed fetch.
 3. It reports what it did for each artifact.
 4. The route of `datom_write()` that mirrors everything (no `data`, no `name`) shares this routine
    and behaves the same.
@@ -282,6 +296,10 @@ writes nothing and is unchanged.
    its writes leave storage holding the first clone's newer version; a merge conflict and a failed
    fetch each leave storage unchanged; the scan in the behind clone does not report the newer
    version as `unpublished`.
+7. R3.8 is tested with two clones writing different tables without a pull in between, and with a
+   write whose push broke while the other clone pushed: the re-run finishes, the rebuilt manifest
+   names both tables, and the stored manifest matches it. Two clones writing the **same** table
+   still stop on the conflict in its `version_history.json`, with storage unchanged.
 
 ### R8. Residual failure modes
 
@@ -293,7 +311,7 @@ and what to do).
 |---|---|---|
 | A write broke before its commit, leaving its data file in storage with no version naming it | Nothing; the file costs space. For sensitive data, the bytes are in the bucket although no version exists | Documented in `?datom_write` |
 | A project a released datom already broke (#155 before this fix) | A re-run or the repair can still leave its readers failing | Documented in `NEWS.md` (one line) |
-| A push rejected by a merge conflict (#105) | The command stops before storage changes, as today. Every write rewrites `.datom/manifest.json`'s `updated_at` and `summary` lines (`.datom_update_manifest_entry()`), so two writes from different clones conflict there even when they touch different tables (`two_writers_probe.R`, 2026-10-28). R3.7's pull at the start makes this rarer, because a write then commits on top of the remote. It stays likely after a broken push while a colleague pushed: the re-run stops on a conflict in datom's own files. Until #105's recovery command exists, the user follows the conflict message: keep the remote copy of datom's files and re-run | Guarded by existing tests |
+| A push rejected by a merge conflict (#105) | The command stops before storage changes, as today. Every write rewrites `.datom/manifest.json`'s `updated_at` and `summary` lines (`.datom_update_manifest_entry()`), so two writes from different clones conflict there even when they touch different tables (`two_writers_probe.R`, 2026-10-28). R3.7's pull at the start makes this rarer, because a write then commits on top of the remote. It stays likely after a broken push while a colleague pushed. A conflict only in the manifest is now resolved by datom (R3.8). What still stops the command: a conflict in a `version_history.json` (two people wrote the same artifact) or in the user's own files. Until #105's recovery command exists, the user follows the conflict message: keep the remote copy of datom's files and re-run | Guarded by existing tests, and by R7.7 for what R3.8 resolves and what it leaves |
 | Two R sessions writing through one clone at the same time | Not supported, as today | Documented |
 | On an S3-compatible service that ignores conditional writes, two writers store the same new content at the same moment with different bytes (different arrow versions) | Both see the key absent and upload; the second file replaces the first. One of the two versions records a hash the stored file no longer has, so reading it is refused by the hash check. Loud, not silent | Documented, beside `endpoint` in `?datom_get_conn` |
 | A file put at a data address by hand, or corrupted in storage, is adopted by a re-run (R1.3, second case) | The re-run records that file's hash, so reads return its content without complaint. No datom write produces such a file. A decode-and-compare check was declined on 2026-10-28: it costs a full download and decode on every re-run that reaches R1.3's second case | Documented in `dev/engineering-notes.md`; not checked |
@@ -328,8 +346,9 @@ and what to do).
    `.datom_resolve_parquet_sha()`, `.datom_push_metadata_s3()`, `.datom_restore_set_payload()` and
    the ordering comment in `.datom_sync_metadata()`.
 5. User-facing help: `?datom_write` and `?datom_write_set` (the order, a re-run finishes, R8's
-   leftover file, and: commit your own files with `datom_repo_commit()`, because a plain
-   `git commit` can capture a datom write halfway through), `?datom_sync_manifest` (the new status,
+   leftover file, a conflict only in the manifest is resolved by datom, and: commit your own files
+   with `datom_repo_commit()`, because a plain `git commit` can capture a datom write halfway
+   through), `?datom_sync_manifest` (the new status,
    "published"), `?datom_validate` (the repair pushes), `?datom_init_repo` (a re-run finishes),
    `?datom_repo_commit` (it resets a datom write that never committed), and the four commands of
    R3.6 (they push a datom write's commit without publishing it, and say so).
@@ -340,7 +359,8 @@ and what to do).
 ## Out of scope
 
 - Rescuing states a released datom already created (D7).
-- A command to recover from a push rejected by a merge conflict (#105).
+- A command to recover from a push rejected by a merge conflict (#105), beyond the conflict only in
+  the manifest that R3.8 resolves.
 - A command to delete data files no version names.
 - datom-py: what readers see does not change, so no shared reader case changes.
 - Publishing from `datom_repo_push()`, `datom_repo_commit()`, `datom_repo_attach_governance()` or
