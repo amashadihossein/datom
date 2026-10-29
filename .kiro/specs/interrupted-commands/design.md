@@ -2,7 +2,7 @@
 
 **Status**: DRAFT, 2026-10-28, not yet reviewed. Requirements approved the same day
 (`requirements.md`). Design decisions for the owner are in section 9: DD1 decided (a failed fetch
-stops the command); DD2 and DD3 open. The routine and its file were named `heal` by the owner on
+stops the command); DD2 decided (every pull resolves a manifest-only conflict); DD3 open. The routine and its file were named `heal` by the owner on
 2026-10-28 (first drafted as "settle" in `R/finish.R`).
 **Read first**: `requirements.md` (terms, findings, decisions D1-D12, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
@@ -238,7 +238,7 @@ Finishing uploads the clone's manifest and reports success, as the last step of 
 | # | Decision | Status | Cost |
 |---|---|---|---|
 | DD1 | **A failed fetch at the start stops every command in R3** before it changes anything. Today `datom_sync()` warns and carries on offline (#104), then fails at the push with a local commit left behind | **Decided 2026-10-28: stop** | An offline user cannot even commit locally through datom; they re-run when online, which they must do anyway to push |
-| DD2 | **R3.8 sits inside `.datom_git_pull()`**, so `datom_pull()` and the four push commands also resolve a manifest-only conflict, not just the commands in R3 | Open; lean yes | Commands outside R3 start rewriting the manifest during a merge. The alternative is a second pull function for R3 alone |
+| DD2 | **R3.8 sits inside `.datom_git_pull()`**, so `datom_pull()` and the four push commands also resolve a manifest-only conflict, not just the commands in R3 | **Decided 2026-10-28: yes** | Commands outside R3 rewrite the manifest during a merge, and say so. This happens only when the clone holds an unpushed commit that changed the manifest (in practice a datom write whose push failed), a colleague pushed a datom write since, and the manifest is the only conflicted file. A fast-forward, or a merge of commits that never touched the manifest, rebuilds nothing. The alternative was a second pull function for R3 alone, leaving `datom_pull()` to stop on a conflict a write would resolve by itself |
 | DD3 | **`datom_sync()` pulls a clone that is behind instead of refusing.** Today it stops with "pull first" | Open; lean pull | A user who expected the refusal gets a merge instead; a conflict outside the manifest still stops it |
 
 ## 10. Proven, and not yet traced
