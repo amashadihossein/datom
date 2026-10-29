@@ -9,8 +9,8 @@ each stop for the owner's approval; decisions are taken one at a time.
 measured 2026-10-27 for the s3-credential-function spec at the same commit).
 **Status**: DRAFT, decisions agreed in chat on 2026-10-28; not yet approved as a whole.
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
-R2.2, R4.2 and R8 tightened, Q3 open; the review's proposal to decode a stored file before adopting
-its hash was declined (R8).
+R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
+its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
 
 ## Goal
 
@@ -110,10 +110,11 @@ below it (`.datom_check_writer_floor()`, also on 0.2.0's repair route); 0.1.0 do
 | D4 | **A new scan status, `unpublished`**, for a table whose committed version readers cannot see yet. "Published" is defined in the help | Keep `unchanged` and print a line (misleads a script that checks `all(status == "unchanged")`) |
 | D5 | **`datom_init_repo()` is in scope.** A re-run in a half-initialised folder finishes instead of refusing, under narrow conditions | Leave it refusing and pointing at the repair |
 | D6 | **`datom_validate(fix = TRUE)` pushes** unpushed commits, then publishes | Publish only what GitHub has and name `datom_repo_push()` for the rest |
-| D7 | **No rescue for states a released datom already created.** datom is experimental; the fix is designed for what new writes can produce. Q3 qualifies this: a teammate still on a released datom keeps creating such states after the upgrade | Storage checks before every skip, correcting a version's recorded hash after an arrow upgrade, flagging sets that pin a version with no data file, restoring a set payload from an older commit |
+| D7 | **No rescue for states a released datom already created.** datom is experimental; the fix is designed for what new writes can produce. D11 extends this to teammates still writing with a released datom | Storage checks before every skip, correcting a version's recorded hash after an arrow upgrade, flagging sets that pin a version with no data file, restoring a set payload from an older commit |
 | D8 | **The rule is written into `.github/copilot-instructions.md`** (wording in R9), with the detail in `dev/datom_specification.md` | Specification and engineering notes only (loaded on demand, so a session editing a write might not see it) |
 | D9 | **`datom_repo_commit()` resets a datom write that never committed** before it stages anything, as every other command does (D3). A plain `git commit` from a terminal is outside datom's reach and is discouraged in the help | Leave datom's files out of the commit (the clone stays unclean after an add-everything commit); refuse until the datom write is dealt with |
 | D10 | **The git and config commands push, and say so.** `datom_repo_push()`, `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_set_data_store()` do not publish a datom write whose commit they push; they name it and say the next datom write or `datom_validate(fix = TRUE)` publishes it | Publish what they push (commands about git or config start writing to storage, and after a data-store change "which storage" has two answers); refuse to push (blocks a product layer's commit) |
+| D11 | **Teams writing one repo with mixed datom versions are not guarded against** (Q3). In practice everyone writing to a repo upgrades together. Recorded in R8 | Set `min_writer_version` at init for new repos and ask existing owners to add it; check for the data file before publishing any version |
 
 ## Requirements
 
@@ -293,7 +294,7 @@ and what to do).
 | Two R sessions writing through one clone at the same time | Not supported, as today | Documented |
 | On an S3-compatible service that ignores conditional writes, two writers store the same new content at the same moment with different bytes (different arrow versions) | Both see the key absent and upload; the second file replaces the first. One of the two versions records a hash the stored file no longer has, so reading it is refused by the hash check. Loud, not silent | Documented, beside `endpoint` in `?datom_get_conn` |
 | A file put at a data address by hand, or corrupted in storage, is adopted by a re-run (R1.3, second case) | The re-run records that file's hash, so reads return its content without complaint. No datom write produces such a file. A decode-and-compare check was declined on 2026-10-28: it costs a full download and decode on every re-run that reaches R1.3's second case | Documented in `dev/engineering-notes.md`; not checked |
-| A teammate still on a released datom writes to the repo after others upgrade | Pending Q3 | Pending Q3 |
+| A teammate still on a released datom writes to the repo after others upgrade, and a write of theirs breaks after its push (D11) | An upgraded teammate's next write publishes that version without its data file, and its readers fail | Documented in `NEWS.md`: upgrade everyone who writes to a repo together. Not guarded (owner, 2026-10-28: does not happen in practice) |
 
 ### R9. Documentation
 
@@ -330,7 +331,8 @@ and what to do).
    `?datom_repo_commit` (it resets a datom write that never committed), and the four commands of
    R3.6 (they push a datom write's commit without publishing it, and say so).
 6. `NEWS.md`: the behaviour changes, upgrade-relevant first (the repair now pushes; the new scan
-   status), and R8's line on projects already affected.
+   status; upgrade everyone who writes to a repo together), and R8's line on projects already
+   affected.
 
 ## Out of scope
 
@@ -343,10 +345,11 @@ and what to do).
 
 ## Open questions
 
-Q1 (committing your own files while a datom write is unfinished) was settled as D9, and Q2
-(commands that push an unpublished datom write) as D10, both on 2026-10-28.
+None open. Q1 (committing your own files while a datom write is unfinished) was settled as D9, Q2
+(commands that push an unpublished datom write) as D10, and Q3 (below, kept for the record) as D11,
+all on 2026-10-28.
 
-- **Q3. Teammates still on a released datom.** A teammate on 0.2.0 still commits and pushes before
+- **Q3 (settled as D11). Teammates still on a released datom.** A teammate on 0.2.0 still commits and pushes before
   uploading, so a break on their side leaves a pushed version with no data file. After this spec,
   an upgraded teammate turns that into damage in two ways:
   - R1.3's first case reuses the hash from the clone's history for the same content, uploads
