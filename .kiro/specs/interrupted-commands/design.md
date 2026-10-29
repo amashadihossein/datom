@@ -1,21 +1,23 @@
 # Design -- interrupted commands finish on a re-run
 
 **Status**: DRAFT, 2026-10-28, not yet reviewed. Requirements approved the same day
-(`requirements.md`). Three design decisions need the owner (DD1-DD3 below); everything else follows
-from the requirements.
+(`requirements.md`). Design decisions for the owner are in section 9: DD1 decided (a failed fetch
+stops the command); DD2 and DD3 open. The routine and its file were named `heal` by the owner on
+2026-10-28 (first drafted as "settle" in `R/finish.R`).
 **Read first**: `requirements.md` (terms, findings, decisions D1-D12, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
 
 ## 1. The shape in one picture
 
-Every command that changes things starts with the same routine, **settle**, then does its own work in
-the new order. Settle is where "a re-run finishes" and "another command finds unfinished work" both
-live, so there is one implementation of them, not one per command.
+Every command that changes things starts with the same routine, **heal**, then does its own work in
+the new order. Heal is datom's self-healing step: it is where "a re-run finishes" and "another
+command finds unfinished work" both live, so there is one implementation of them, not one per
+command.
 
 ```
 command(conn, ...)
   door checks (unchanged: role, path, forward-compat entry, ref guard)
-  settle(conn)                                  R2.4, R3.1-R3.4, R3.7, R3.8
+  heal(conn)                                    R2.4, R3.1-R3.4, R3.7, R3.8
     a. reset datom files that never committed   (local only)
     b. pull: fetch, then merge                  (conflict only in the manifest -> rebuild it)
     c. forward-compat entry check again         (the pull may have brought new documents)
@@ -31,23 +33,27 @@ command(conn, ...)
 
 **Invariant this rests on: the manifest is always published last.** Every route that writes storage
 publishes an artifact's documents first and the manifest after. So a stored manifest row that matches
-git means that artifact's documents are current too, and settle can find all unpublished work with one
+git means that artifact's documents are current too, and heal can find all unpublished work with one
 read of the stored manifest (R3.4). Today `.datom_sync_data_metadata()` writes the manifest **first**;
 that order is reversed (section 6).
 
 ## 2. Functions, by file
 
-New functions live in one new file, `R/finish.R`, so the "finish what is unfinished" logic has one
-home. Existing functions keep their files.
+The interruption logic lives in one new file, `R/heal.R`, so the code that repairs what an interrupted
+command left behind has one home and can be read and extended in one place. Two kinds of change sit
+elsewhere, on purpose: the storage primitives (upload only if absent, the stored file's hash) live with
+their backend peers, because datom keeps each backend's code together behind one dispatch layer; and
+each command gains a call to `.datom_heal()` in its own file, plus the reordered steps inside the two
+write commands.
 
 | File | Function | New / changed | Role |
 |---|---|---|---|
-| `R/finish.R` | `.datom_settle_clone(conn, artifact = NULL)` | new | Steps a-d of section 1. Returns what it reset and what it published, for the caller's messages |
-| `R/finish.R` | `.datom_reset_unfinished(conn)` | new | Step a. Finds datom-owned files that differ from the last commit and puts them back (section 4) |
-| `R/finish.R` | `.datom_unpublished_artifacts(conn, stored)` | new | Names the artifacts whose committed version readers cannot see: in unpushed commits, or whose clone manifest row differs from the stored one |
-| `R/finish.R` | `.datom_publish_artifacts(conn, names)` | new | Step d's publish: for each name, the clone's metadata, history and snapshot through `.datom_push_metadata_s3()`; then the manifest, last |
-| `R/finish.R` | `.datom_resolve_manifest_conflict(path)` | new | R3.8: rebuilds `.datom/manifest.json` after a merge whose only conflict it is, stages it, commits the merge (section 5) |
-| `R/finish.R` | `.datom_pushed_artifacts(path)` | new | Artifacts touched by commits the remote lacks; feeds the R3.6 message and step d |
+| `R/heal.R` | `.datom_heal(conn, artifact = NULL)` | new | Steps a-d of section 1. Returns what it reset and what it published, for the caller's messages |
+| `R/heal.R` | `.datom_reset_unfinished(conn)` | new | Step a. Finds datom-owned files that differ from the last commit and puts them back (section 4) |
+| `R/heal.R` | `.datom_unpublished_artifacts(conn, stored)` | new | Names the artifacts whose committed version readers cannot see: in unpushed commits, or whose clone manifest row differs from the stored one |
+| `R/heal.R` | `.datom_publish_artifacts(conn, names)` | new | Step d's publish: for each name, the clone's metadata, history and snapshot through `.datom_push_metadata_s3()`; then the manifest, last |
+| `R/heal.R` | `.datom_resolve_manifest_conflict(path)` | new | R3.8: rebuilds `.datom/manifest.json` after a merge whose only conflict it is, stages it, commits the merge (section 5) |
+| `R/heal.R` | `.datom_pushed_artifacts(path)` | new | Artifacts touched by commits the remote lacks; feeds the R3.6 message and step d |
 | `R/manifest-rebuild.R` | `.datom_manifest_row(meta, history, member_count)` | new, extracted | The row-building half of `.datom_rebuild_manifest_entry()`, which keeps its storage reads and calls it. The clone-side rebuild in section 5 calls it too, so the two rebuilds cannot drift |
 | `R/utils-storage.R` | `.datom_storage_upload_absent(conn, local_path, key)` | new | R1.2: check, then upload only if absent. Returns `"uploaded"` or `"exists"` |
 | `R/utils-storage.R` | `.datom_storage_object_sha256(conn, key)` | new | R1.3: the SHA-256 (hex) of the bytes stored at `key` |
@@ -55,14 +61,14 @@ home. Existing functions keep their files.
 | `R/utils-local.R` | `.datom_local_upload_absent()`, `.datom_local_object_sha256()` | new | Local halves (section 3) |
 | `R/utils-git.R` | `.datom_git_pull(path, pat)` | changed | On a conflict whose only file is `.datom/manifest.json`, calls `.datom_resolve_manifest_conflict()` instead of aborting. Every other conflict aborts as today |
 | `R/utils-git.R` | `.datom_git_head_file(path, rel)` | new | A file's content as committed in HEAD (`git2r::revparse_single(repo, "HEAD:<rel>")`) |
-| `R/read_write.R` | `datom_write()` | changed | Settle first; data file before clone files; internal `.settled` argument so `datom_sync()` settles once per call (R3.7) |
+| `R/read_write.R` | `datom_write()` | changed | Heals first; data file before clone files; internal `.healed` argument so `datom_sync()` heals once per call (R3.7) |
 | `R/read_write.R` | `.datom_commit_and_mirror()` | changed | Loses its `upload` argument: the data file is already stored. Keeps commit, push, metadata, manifest, in that order |
 | `R/read_write.R` | `.datom_resolve_parquet_sha()`, `.datom_resolve_document_sha()` | changed | The R1.3 decision, including the stored-file case, and now performing the upload (section 3) |
 | `R/set.R` | `datom_write_set()` | changed | Payload built in a temp file; uploaded first; the clone's `set.json` takes the stored bytes when they differ (R1.5) |
-| `R/utils-sha.R` | `.datom_sync_metadata()` | changed | Its opening pull is replaced by settle |
+| `R/utils-sha.R` | `.datom_sync_metadata()` | changed | Its opening pull is replaced by heal |
 | `R/sync.R` | `datom_sync_manifest()` | changed | Compares against HEAD's manifest; `unpublished` status (section 7) |
-| `R/sync.R` | `datom_sync()` | changed | Settles once instead of `.datom_check_git_current()`; `unpublished` rows are reported as published by settle |
-| `R/sync.R` | `.datom_sync_data_metadata()` | changed | Settles (so it pushes first, R5.2), then mirrors every artifact, then the manifest last |
+| `R/sync.R` | `datom_sync()` | changed | Heals once instead of `.datom_check_git_current()`; `unpublished` rows are reported as published by heal |
+| `R/sync.R` | `.datom_sync_data_metadata()` | changed | Heals (so it pushes first, R5.2), then mirrors every artifact, then the manifest last |
 | `R/sync.R` | `.datom_read_manifest()` | changed | A third scope, `"head"`, reading HEAD's copy through `.datom_git_head_file()` with the same schema check and upgrade |
 | `R/sync.R` | `.datom_restore_set_payload()` | changed | Uploads through `.datom_storage_upload_absent()` |
 | `R/validate.R` | `datom_validate()` | changed | Messages only: the fix now pushes and reports per artifact (R5.3) |
@@ -116,9 +122,18 @@ hashed there. It is written to a temp file instead, hashed and uploaded (or adop
 stored payload's (case 1 or 2) and the fresh bytes differ, the stored payload is downloaded (it is
 small) and written to `set.json` instead, so git and storage hold one spelling (R1.5).
 
-## 4. Settle, step by step
+## 4. Heal, step by step
 
-`.datom_settle_clone(conn, artifact)`:
+`.datom_heal(conn, artifact)`.
+
+**What heal repairs, and what it leaves** (its docstring says both):
+
+| Heals | Leaves |
+|---|---|
+| datom's own files from a write that broke before its commit (reset) | a merge conflict outside the manifest (#105) |
+| a clone behind GitHub (pulled) | damage a released datom left behind (D7, D11) |
+| a merge conflict only in the manifest (rebuilt) | a file someone put in storage by hand |
+| committed work GitHub or storage lacks (pushed, then published) | anything when GitHub cannot be reached: it stops instead (DD1) |
 
 **a. Reset what never committed** (`.datom_reset_unfinished()`; R2.4, R3.1). "Datom-owned files" are,
 for each artifact directory, `metadata.json`, `version_history.json` and `set.json`, plus
@@ -133,7 +148,8 @@ for each artifact directory, `metadata.json`, `version_history.json` and `set.js
 - The message names each artifact reset and says to re-run its write.
 
 **b. Pull** (R3.7): `.datom_git_pull()`, i.e. fetch then merge, with R3.8 inside it. A conflict
-elsewhere aborts before storage changes. A failed fetch: see DD1.
+elsewhere aborts before storage changes. A failed fetch stops the command before it changes anything,
+with a message saying datom could not reach the remote (DD1).
 
 **c. Check the documents again**: `.datom_check_write_entry(conn, artifact)`, because the pull can
 bring a manifest or metadata from a newer datom. Same reasoning as the existing re-check in
@@ -155,8 +171,8 @@ today's change detection (`.datom_has_changes()`, against storage) answers corre
 whose own write already finished reports `none` (R2.1). A break at step 6 is caught by step d of the
 next run (R2.3).
 
-**Who calls settle**: `datom_write()` (all three routes), `datom_write_set()`, `datom_sync()` (once
-per call, then `datom_write(.settled = TRUE)` per table), `.datom_sync_data_metadata()` (so the repair
+**Who calls heal**: `datom_write()` (all three routes), `datom_write_set()`, `datom_sync()` (once
+per call, then `datom_write(.healed = TRUE)` per table), `.datom_sync_data_metadata()` (so the repair
 and the mirror-everything route). `datom_repo_commit()` calls step a only (R3.5). The four push
 commands call none of it (D10).
 
@@ -185,7 +201,7 @@ clone sees every table.
 
 ## 6. The repair and the mirror-everything route (R5)
 
-`.datom_sync_data_metadata(conn, .confirm)` becomes: settle (which resets, pulls, pushes and publishes
+`.datom_sync_data_metadata(conn, .confirm)` becomes: heal (which resets, pulls, pushes and publishes
 anything behind), then `.datom_sync_one_artifact()` for every artifact as today (metadata, history,
 snapshots, a set's payload restored from the clone if absent), then the manifest **last**. The
 confirmation prompt on the `datom_write(conn)` route says it may push. `datom_validate(fix = TRUE)`
@@ -195,13 +211,13 @@ reports per artifact what was reset, pushed and published (R5.3).
 
 `datom_sync_manifest()`:
 - reads HEAD's manifest through `.datom_read_manifest(conn, "head")` (R4.1);
-- fetches (no merge; the scan changes nothing), then computes `unpublished` as in step d of settle.
+- fetches (no merge; the scan changes nothing), then computes `unpublished` as in heal's step d.
   If the fetch fails it warns and counts only artifacts in unpushed commits. If the clone is behind
   after the fetch, it does not compare rows against storage (the stored ones may be a colleague's
   newer versions) and says to run `datom_pull()` (R4.2);
 - status order: `unsupported_format`, `new`, `changed`, `unpublished`, `unchanged`.
 
-`datom_sync()` replaces `.datom_check_git_current()` with one settle (see DD3), which publishes every
+`datom_sync()` replaces `.datom_check_git_current()` with one heal (see DD3), which publishes every
 `unpublished` row; those rows come back with `result = "success"` without an import (R4.3).
 
 ## 8. `datom_init_repo()` re-run (R6)
@@ -219,11 +235,11 @@ Finishing uploads the clone's manifest and reports success, as the last step of 
 
 ## 9. Design decisions for the owner
 
-| # | Decision | Lean | Cost |
+| # | Decision | Status | Cost |
 |---|---|---|---|
-| DD1 | **A failed fetch at the start stops every command in R3** before it changes anything. Today `datom_sync()` warns and carries on offline (#104), then fails at the push with a local commit left behind | Stop | An offline user cannot even commit locally through datom; they re-run when online, which they must do anyway to push |
-| DD2 | **R3.8 sits inside `.datom_git_pull()`**, so `datom_pull()` and the four push commands also resolve a manifest-only conflict, not just the commands in R3 | Yes | Commands outside R3 start rewriting the manifest during a merge. The alternative is a second pull function for R3 alone |
-| DD3 | **`datom_sync()` pulls a clone that is behind instead of refusing.** Today it stops with "pull first" | Pull | A user who expected the refusal gets a merge instead; a conflict outside the manifest still stops it |
+| DD1 | **A failed fetch at the start stops every command in R3** before it changes anything. Today `datom_sync()` warns and carries on offline (#104), then fails at the push with a local commit left behind | **Decided 2026-10-28: stop** | An offline user cannot even commit locally through datom; they re-run when online, which they must do anyway to push |
+| DD2 | **R3.8 sits inside `.datom_git_pull()`**, so `datom_pull()` and the four push commands also resolve a manifest-only conflict, not just the commands in R3 | Open; lean yes | Commands outside R3 start rewriting the manifest during a merge. The alternative is a second pull function for R3 alone |
+| DD3 | **`datom_sync()` pulls a clone that is behind instead of refusing.** Today it stops with "pull first" | Open; lean pull | A user who expected the refusal gets a merge instead; a conflict outside the manifest still stops it |
 
 ## 10. Proven, and not yet traced
 
@@ -242,8 +258,8 @@ Not yet traced, each resolved in the task that needs it:
    committing.
 2. Real S3: `IfNoneMatch = "*"` refused with 412, and `ChecksumSHA256` returned by `head_object` for
    an object put with one. End-to-end run only (`dev/e2e-solo-s3.R`).
-3. The settle step d when the stored manifest cannot be read for a reason other than absence (the
-   storage reader can rebuild it and warn); which of those outcomes counts as "behind".
+3. Heal's step d when the stored manifest cannot be read for a reason other than absence (the storage
+   reader can rebuild it and warn); which of those outcomes counts as "behind".
 4. Whether any existing test asserts the old order or the manifest-first mirror and needs rewriting
    (the test "nothing reaches storage when the git push fails" in `test-write-set.R` does).
 5. Message wording for reset, publish and R3.6, and whether they are `cli` alerts or warnings with a
@@ -261,6 +277,7 @@ Not yet traced, each resolved in the task that needs it:
 | P6 | A manifest-only conflict is resolved and the rebuilt manifest names every artifact of both sides; any other conflict leaves storage unchanged | R3.8, R7.7 |
 | P7 | The manifest is the last thing any route publishes | section 1 |
 | P8 | Files datom does not own are never reset | R3.1, R3.5 |
+| P9 | A failed fetch at the start leaves the clone, git and storage unchanged | DD1, R3.7 |
 
 Each new guard's test is probed once by removing that guard alone (conventions item 2a).
 
@@ -277,6 +294,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | An S3-compatible service that ignores conditional writes, two writers, same new content, same moment | One version's reads are refused by the hash check. Loud | Documented beside `endpoint` |
 | A file put at a data address by hand, adopted by a re-run | Its content is read without a content check | Documented in `dev/engineering-notes.md`; not checked |
 | A teammate still on a released datom (D11) | An upgraded teammate's write can publish their data-less version | Documented in `NEWS.md` |
+| GitHub unreachable at the start of a command (DD1) | The command stops with a message and changes nothing; the user re-runs when online | Guarded (P9); documented in `?datom_write` |
 
 ## 13. Task outline (becomes `tasks.md` once this design is approved)
 
@@ -285,10 +303,10 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | 1 | Storage: upload only if absent, and the stored file's hash, both backends | |
 | 2 | Tables: data file first and the R1.3 decision; `.datom_commit_and_mirror()` without the upload; break-at-each-step tests for `datom_write()` | design spot-check before starting (it changes the core write path) |
 | 3 | Sets: payload via a temp file, R1.5; the same tests for `datom_write_set()` | |
-| 4 | Settle: reset, pull, check, push and publish; wired into the write routes; tests for R3 and R3.7 | design spot-check before starting (every write command calls it) |
+| 4 | Heal (`R/heal.R`): reset, pull, check, push and publish; wired into the write routes; tests for R3, R3.7 and DD1 | design spot-check before starting (every write command calls it) |
 | 5 | R3.8 in `.datom_git_pull()`, with `.datom_manifest_row()` extracted; tests R7.7 | |
-| 6 | Scan and sync: HEAD's manifest, `unpublished`, one settle per sync | |
-| 7 | Repair and mirror-everything: settle first, manifest last, per-artifact report | |
+| 6 | Scan and sync: HEAD's manifest, `unpublished`, one heal per sync | |
+| 7 | Repair and mirror-everything: heal first, manifest last, per-artifact report | |
 | 8 | `datom_repo_commit()` reset; the R3.6 message on the four push commands | purity audit after (tasks 2-8 touch many files) |
 | 9 | `datom_init_repo()` re-run | |
 | 10 | Docs: help pages, NEWS, `dev/datom_specification.md`, the conventions section, the datom-sets I5 note, engineering notes | test coverage review before |
