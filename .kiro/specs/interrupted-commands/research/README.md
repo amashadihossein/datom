@@ -20,5 +20,8 @@ Rerun from the repo root, for example:
 - `two_writers_probe.R`: two clones of one project write different tables without pulling in
   between; reports whether the second write's push hits a merge conflict, and in which files
   (result: a conflict in `.datom/manifest.json` only).
+- `merge_completion_probe.R`: after such a conflict, rewrites the manifest, stages it and commits
+  through git2r (R3.8). Result: a two-parent merge commit, `MERGE_HEAD` removed, the push lands,
+  and a fresh clone sees every table.
 
 Results are recorded in `../requirements.md`, "Findings".

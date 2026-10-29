@@ -7,7 +7,7 @@
 each stop for the owner's approval; decisions are taken one at a time.
 **Test baseline**: 5142 expectations, 0 failed, 0 skipped (`devtools::test()` on `dev` at `347a403`,
 measured 2026-10-27 for the s3-credential-function spec at the same commit).
-**Status**: DRAFT, decisions agreed in chat on 2026-10-28; not yet approved as a whole.
+**Status**: **Approved by the owner on 2026-10-28.** Decisions agreed in chat the same day.
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
