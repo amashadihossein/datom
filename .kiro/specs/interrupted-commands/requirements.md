@@ -8,6 +8,9 @@ each stop for the owner's approval; decisions are taken one at a time.
 **Test baseline**: 5142 expectations, 0 failed, 0 skipped (`devtools::test()` on `dev` at `347a403`,
 measured 2026-10-27 for the s3-credential-function spec at the same commit).
 **Status**: DRAFT, decisions agreed in chat on 2026-10-28; not yet approved as a whole.
+Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
+R2.2, R4.2 and R8 tightened, Q3 open; the review's proposal to decode a stored file before adopting
+its hash was declined (R8).
 
 ## Goal
 
@@ -84,6 +87,19 @@ timestamp), `datom_repo_set_data_store()`, `datom_repo_delete()`, `datom_repo_co
 **Re-serialising the same data frame** gives identical parquet bytes within one arrow version
 (checked on arrow 23); an arrow upgrade can change them.
 
+**Fetching** (read from the code, 2026-10-28): the repair never fetches; `datom_validate()` reaches
+storage through `.datom_sync_data_metadata()`, which makes no git call. `datom_write()` and
+`datom_write_set()` pull (fetch, then merge) only inside their push, in `.datom_git_push()`.
+`datom_sync()` fetches at its start and stops if the clone is behind (`.datom_check_git_current()`),
+but warns and carries on when the fetch fails (#104). `.datom_git_ahead()` compares against the
+remote as of the last fetch. So a clone that is behind GitHub would publish an older version over a
+colleague's newer one, through the repair or through R3.2 as first drafted.
+
+**Teammates on a released datom** (read from the code): 0.2.0 still commits and pushes before it
+uploads. `min_writer_version` in `.datom/project.yaml` exists, and datom 0.1.1 onward refuse to write
+below it (`.datom_check_writer_floor()`, also on 0.2.0's repair route); 0.1.0 does not read it.
+`datom_init_repo()` does not set it today.
+
 ## Decisions (owner, 2026-10-28)
 
 | # | Decision | Options set aside |
@@ -94,7 +110,7 @@ timestamp), `datom_repo_set_data_store()`, `datom_repo_delete()`, `datom_repo_co
 | D4 | **A new scan status, `unpublished`**, for a table whose committed version readers cannot see yet. "Published" is defined in the help | Keep `unchanged` and print a line (misleads a script that checks `all(status == "unchanged")`) |
 | D5 | **`datom_init_repo()` is in scope.** A re-run in a half-initialised folder finishes instead of refusing, under narrow conditions | Leave it refusing and pointing at the repair |
 | D6 | **`datom_validate(fix = TRUE)` pushes** unpushed commits, then publishes | Publish only what GitHub has and name `datom_repo_push()` for the rest |
-| D7 | **No rescue for states a released datom already created.** datom is experimental; the fix is designed for what new writes can produce | Storage checks before every skip, correcting a version's recorded hash after an arrow upgrade, flagging sets that pin a version with no data file, restoring a set payload from an older commit |
+| D7 | **No rescue for states a released datom already created.** datom is experimental; the fix is designed for what new writes can produce. Q3 qualifies this: a teammate still on a released datom keeps creating such states after the upgrade | Storage checks before every skip, correcting a version's recorded hash after an arrow upgrade, flagging sets that pin a version with no data file, restoring a set payload from an older commit |
 | D8 | **The rule is written into `.github/copilot-instructions.md`** (wording in R9), with the detail in `dev/datom_specification.md` | Specification and engineering notes only (loaded on demand, so a session editing a write might not see it) |
 | D9 | **`datom_repo_commit()` resets a datom write that never committed** before it stages anything, as every other command does (D3). A plain `git commit` from a terminal is outside datom's reach and is discouraged in the help | Leave datom's files out of the commit (the clone stays unclean after an add-everything commit); refuse until the datom write is dealt with |
 | D10 | **The git and config commands push, and say so.** `datom_repo_push()`, `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_set_data_store()` do not publish a datom write whose commit they push; they name it and say the next datom write or `datom_validate(fix = TRUE)` publishes it | Publish what they push (commands about git or config start writing to storage, and after a data-store change "which storage" has two answers); refuse to push (blocks a product layer's commit) |
@@ -119,7 +135,11 @@ Applies to `datom_write()` (data-frame route) and `datom_write_set()`.
 
 2. **A stored data file is never replaced**, on every backend datom supports, including an
    S3-compatible service reached through `endpoint` that may not honour a conditional write.
-   - S3: the upload is conditional on the key being absent. "Already there" is not an error.
+   - Every backend checks whether the key exists before uploading, so a re-run never resends a
+     large file that is already stored.
+   - S3: the upload is then also conditional on the key being absent. "Already there" is not an
+     error. On a service that ignores the condition, the rule is check, then upload; the race that
+     leaves is in R8.
    - Local store: a half-copied file never appears at the final key.
    - The metadata documents and the manifest are still overwritten, as today: they are the current
      pointers.
@@ -130,6 +150,12 @@ Applies to `datom_write()` (data-frame route) and `datom_write_set()`.
      broke after its upload, or a colleague stored the same content): record the stored file's
      hash, not the fresh bytes' hash.
    - Otherwise: upload and record the fresh bytes' hash.
+
+   The stored file's hash in the second case costs a read. On S3 it comes from the SHA-256 that S3
+   keeps with the file when datom uploads it with one, which datom does for every data file from
+   this release on; for a file stored without one, datom downloads and hashes it. On a local store
+   datom hashes the file. Only re-runs and writes of content already stored reach this. The stored
+   file's content is not decoded and checked against `data_sha` (R8).
 4. A `metadata_only` write (the content is unchanged) carries the current hash forward and uploads
    nothing, as today.
 5. A set's `set.json` in the clone always holds the same bytes as its stored payload. When R1.3
@@ -151,6 +177,10 @@ Applies to `datom_write()` (data-frame route) and `datom_write_set()`.
    | 5 | the stored metadata matches the clone's |
    | 6 | the stored manifest matches the clone's |
 
+   Marks 3 and 4 compare against the remote as of the last fetch, so each command fetches once, at
+   its start, before any decision that depends on the remote (R3.7). A write's push still pulls
+   first, as today.
+
 3. A re-run that finds nothing to write still publishes the manifest if the stored manifest differs
    from the clone's committed one (the break at step 6 above).
 4. If a break left an artifact's files in the clone disagreeing with each other (metadata, history,
@@ -168,9 +198,10 @@ Applies, before their own work, to `datom_write()` (every route), `datom_write_s
    artifact and says to re-run its write. Files datom does not own are never touched, including a
    set write's `include_paths`.
 2. **Committed but not published** (in unpushed commits, or pushed while storage lacks its metadata
-   or manifest row): it is pushed and then published from git, and the message names it.
-3. Publishing builds storage from git as it is at that moment, never from a remembered state, so a
-   newer version a colleague pushed in between is what storage ends up holding.
+   or manifest row): after the pull in R3.7, it is pushed and then published from git, and the
+   message names it.
+3. Publishing builds storage from git as it is after the pull in R3.7, never from a remembered state,
+   so a newer version a colleague pushed in between is what storage ends up holding.
 4. Finding unpublished work costs one read of the stored manifest per command, not one read per
    artifact.
 5. `datom_repo_commit()` applies R3.1 before it stages anything (D9), so a commit of the caller's
@@ -181,6 +212,15 @@ Applies, before their own work, to `datom_write()` (every route), `datom_write_s
    version, they name each such artifact and say that readers cannot see it until the next datom
    write or `datom_validate(fix = TRUE)` publishes it. Every version in commits being pushed is
    unpublished by definition, since publishing follows the push, so this needs no storage read.
+7. **The clone is brought up to date before anything is published.** At its start, before any
+   decision that depends on the remote and before publishing anything, each command in R3 brings
+   the clone up to date with the remote by the pull a push already makes: fetch, then merge.
+   - A clone that has diverged from the remote is merged, not refused: that is the ordinary state of
+     a write whose push broke while a colleague pushed, and today's push merges it.
+   - A merge conflict stops the command before storage changes.
+   - If the fetch fails, the command publishes nothing and says why. Whether a write still commits
+     locally when offline, as `datom_sync()` allows today (#104), is settled in the design.
+   - `datom_sync()` pulls once per call, not once per table.
 
 ### R4. Syncing files
 
@@ -192,6 +232,9 @@ writes nothing and is unchanged.
 2. It reports a new status, `unpublished`, for a table whose input file is unchanged against the last
    commit but whose committed version is not published. When storage cannot be reached, it still
    reports tables with unpushed commits and warns that it could not check storage.
+   - The scan fetches first. A table whose stored version is newer than the clone's (a colleague
+     published after the clone's last pull) is **not** `unpublished`; the scan says the clone is
+     behind and names `datom_pull()`.
 3. `datom_sync()` treats `unpublished` rows as work: it pushes and publishes them without
    re-importing the file.
 4. `datom_sync()` applies R3 before deciding there is nothing to sync.
@@ -200,8 +243,8 @@ writes nothing and is unchanged.
 ### R5. The repair: `datom_validate(fix = TRUE)`
 
 1. It applies R3.1 first: files that were never committed are reset, never published.
-2. It pushes any unpushed commits, then publishes every artifact from git (D6). A push that stops
-   on a merge conflict stops the repair before storage changes.
+2. It pulls (R3.7), pushes any unpushed commits, then publishes every artifact from git (D6). A
+   merge conflict stops the repair before storage changes, and so does a failed fetch.
 3. It reports what it did for each artifact.
 4. The route of `datom_write()` that mirrors everything (no `data`, no `name`) shares this routine
    and behaves the same.
@@ -231,6 +274,10 @@ writes nothing and is unchanged.
 4. Every new guard's test goes red when that guard alone is removed (conventions item 2a), probed
    once and recorded in the commit message.
 5. No test uses AWS or GitHub: folder remotes, local storage, and a mocked S3 client.
+6. R3.7 is tested with two clones of one project: when the second clone is behind, its repair and
+   its writes leave storage holding the first clone's newer version; a merge conflict and a failed
+   fetch each leave storage unchanged; the scan in the behind clone does not report the newer
+   version as `unpublished`.
 
 ### R8. Residual failure modes
 
@@ -244,6 +291,9 @@ and what to do).
 | A project a released datom already broke (#155 before this fix) | A re-run or the repair can still leave its readers failing | Documented in `NEWS.md` (one line) |
 | A push rejected by a merge conflict (#105) | The command stops before storage changes, as today | Guarded by existing tests |
 | Two R sessions writing through one clone at the same time | Not supported, as today | Documented |
+| On an S3-compatible service that ignores conditional writes, two writers store the same new content at the same moment with different bytes (different arrow versions) | Both see the key absent and upload; the second file replaces the first. One of the two versions records a hash the stored file no longer has, so reading it is refused by the hash check. Loud, not silent | Documented, beside `endpoint` in `?datom_get_conn` |
+| A file put at a data address by hand, or corrupted in storage, is adopted by a re-run (R1.3, second case) | The re-run records that file's hash, so reads return its content without complaint. No datom write produces such a file. A decode-and-compare check was declined on 2026-10-28: it costs a full download and decode on every re-run that reaches R1.3's second case | Documented in `dev/engineering-notes.md`; not checked |
+| A teammate still on a released datom writes to the repo after others upgrade | Pending Q3 | Pending Q3 |
 
 ### R9. Documentation
 
@@ -293,8 +343,22 @@ and what to do).
 
 ## Open questions
 
-None. Q1 (committing your own files while a datom write is unfinished) was settled as D9, and Q2
+Q1 (committing your own files while a datom write is unfinished) was settled as D9, and Q2
 (commands that push an unpublished datom write) as D10, both on 2026-10-28.
+
+- **Q3. Teammates still on a released datom.** A teammate on 0.2.0 still commits and pushes before
+  uploading, so a break on their side leaves a pushed version with no data file. After this spec,
+  an upgraded teammate turns that into damage in two ways:
+  - R1.3's first case reuses the hash from the clone's history for the same content, uploads
+    nothing, and publishes a version whose data file is missing;
+  - R3.2 publishes the 0.2.0 teammate's committed version during a write of **any** table, so an
+    unrelated write turns a readable project unreadable.
+
+  Should repos guard against older writers with the existing `min_writer_version` field in
+  `.datom/project.yaml`? The review that raised this recommends that `datom_init_repo()` set it for
+  new repos and that `NEWS.md` tell owners of existing repos to add it. Setting it only at init
+  leaves every existing repo unguarded until its owner acts, so other routes are compared when Q3
+  is taken.
 
 ## Related
 
