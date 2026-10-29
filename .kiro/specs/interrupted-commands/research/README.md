@@ -23,5 +23,9 @@ Rerun from the repo root, for example:
 - `merge_completion_probe.R`: after such a conflict, rewrites the manifest, stages it and commits
   through git2r (R3.8). Result: a two-parent merge commit, `MERGE_HEAD` removed, the push lands,
   and a fresh clone sees every table.
+- `git2r_primitives_probe.R`: the git2r calls the design relies on, on a throwaway repo: read a file
+  as committed in HEAD, list files changed between two commits, reset chosen files to HEAD leaving
+  others alone, see an untracked directory. All four work on git2r 0.36.2.
 
-Results are recorded in `../requirements.md`, "Findings".
+Results are recorded in `../requirements.md` ("Findings") and `../design.md` ("Proven, and not yet
+traced").
