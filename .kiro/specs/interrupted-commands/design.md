@@ -2,7 +2,9 @@
 
 **Status**: DRAFT, 2026-10-28, not yet reviewed. Requirements approved the same day
 (`requirements.md`). Design decisions for the owner are in section 9: DD1 decided (a failed fetch
-stops the command); DD2 decided (every pull resolves a manifest-only conflict); DD3 open. The routine and its file were named `heal` by the owner on
+stops the command); DD2 decided (every pull resolves a manifest-only conflict); DD3 decided
+(`datom_sync()` pulls a behind clone). All design decisions are taken; the design as a whole awaits
+approval. The routine and its file were named `heal` by the owner on
 2026-10-28 (first drafted as "settle" in `R/finish.R`).
 **Read first**: `requirements.md` (terms, findings, decisions D1-D12, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
@@ -239,7 +241,7 @@ Finishing uploads the clone's manifest and reports success, as the last step of 
 |---|---|---|---|
 | DD1 | **A failed fetch at the start stops every command in R3** before it changes anything. Today `datom_sync()` warns and carries on offline (#104), then fails at the push with a local commit left behind | **Decided 2026-10-28: stop** | An offline user cannot even commit locally through datom; they re-run when online, which they must do anyway to push |
 | DD2 | **R3.8 sits inside `.datom_git_pull()`**, so `datom_pull()` and the four push commands also resolve a manifest-only conflict, not just the commands in R3 | **Decided 2026-10-28: yes** | Commands outside R3 rewrite the manifest during a merge, and say so. This happens only when the clone holds an unpushed commit that changed the manifest (in practice a datom write whose push failed), a colleague pushed a datom write since, and the manifest is the only conflicted file. A fast-forward, or a merge of commits that never touched the manifest, rebuilds nothing. The alternative was a second pull function for R3 alone, leaving `datom_pull()` to stop on a conflict a write would resolve by itself |
-| DD3 | **`datom_sync()` pulls a clone that is behind instead of refusing.** Today it stops with "pull first" | Open; lean pull | A user who expected the refusal gets a merge instead; a conflict outside the manifest still stops it |
+| DD3 | **`datom_sync()` pulls a clone that is behind instead of refusing.** Today it stops with "pull first" (`.datom_check_git_current()`), the only command that does | **Decided 2026-10-28: pull** | A preview built before the pull can be stale. Probed (`research/stale_preview_probe.R`): when a colleague already imported the same file, the stale `new` row is re-read, the write finds no change and stores nothing, and the row reports `success`. Today that row's line also says "synced (new)", which claims work that did not happen; task 6 makes it say the table was already up to date. A conflict outside the manifest still stops the sync before storage changes |
 
 ## 10. Proven, and not yet traced
 
@@ -305,7 +307,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | 3 | Sets: payload via a temp file, R1.5; the same tests for `datom_write_set()` | |
 | 4 | Heal (`R/heal.R`): reset, pull, check, push and publish; wired into the write routes; tests for R3, R3.7 and DD1 | design spot-check before starting (every write command calls it) |
 | 5 | R3.8 in `.datom_git_pull()`, with `.datom_manifest_row()` extracted; tests R7.7 | |
-| 6 | Scan and sync: HEAD's manifest, `unpublished`, one heal per sync | |
+| 6 | Scan and sync: HEAD's manifest, `unpublished`, one heal per sync (which pulls a behind clone, DD3); a row whose write found no change says it was already up to date | |
 | 7 | Repair and mirror-everything: heal first, manifest last, per-artifact report | |
 | 8 | `datom_repo_commit()` reset; the R3.6 message on the four push commands | purity audit after (tasks 2-8 touch many files) |
 | 9 | `datom_init_repo()` re-run | |

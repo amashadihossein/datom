@@ -26,6 +26,9 @@ Rerun from the repo root, for example:
 - `git2r_primitives_probe.R`: the git2r calls the design relies on, on a throwaway repo: read a file
   as committed in HEAD, list files changed between two commits, reset chosen files to HEAD leaving
   others alone, see an untracked directory. All four work on git2r 0.36.2.
+- `stale_preview_probe.R` (DD3): you build a sync preview, a colleague imports the same file and
+  pushes, you pull and sync with the old preview. Result: the write finds no change, stores nothing,
+  and the row reports `success` (its line wrongly says "synced (new)").
 
 Results are recorded in `../requirements.md` ("Findings") and `../design.md` ("Proven, and not yet
 traced").
