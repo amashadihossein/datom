@@ -1,6 +1,6 @@
 # Design -- interrupted commands finish on a re-run
 
-**Status**: DRAFT, 2026-10-28, not yet reviewed. Requirements approved the same day
+**Status**: **Approved by the owner on 2026-10-28.** Requirements approved the same day
 (`requirements.md`). Design decisions for the owner are in section 9: DD1 decided (a failed fetch
 stops the command); DD2 decided (every pull resolves a manifest-only conflict); DD3 decided
 (`datom_sync()` pulls a behind clone); DD4 decided (no check before publishing). All design decisions
