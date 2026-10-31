@@ -15,8 +15,8 @@ storage: `{name}/.metadata/metadata.json`, `{name}/.metadata/version_history.jso
 (`{name}/{data_sha}.parquet`, or a set's `{name}/{data_sha}.json`). It reports `metadata_missing_s3`,
 `history_missing_s3` and `data_missing_s3`. Snapshots (`{name}/.metadata/{version}.json`) are
 checked only for the versions a set pins as members (`members_unresolvable`). From #155 it also
-reports `metadata_stale_s3`: the stored `metadata.json` holds a different version from the clone's
-last commit.
+reports `manifest_mismatch_s3`: an artifact's row in the stored manifest names a different version
+from the one recorded for its stored `metadata.json`. That compares storage with itself only.
 
 ## What it does not see
 
@@ -72,6 +72,12 @@ not published. They remain possible from:
   of the recorded version from git.
 - **Every version's snapshot**: one existence check per version, or one listing per artifact; cost
   grows with history length. Restoring them means rebuilding from git, as above.
+- **Storage against git** (designed in #155 as `metadata_stale_s3`, then replaced by the storage-only
+  `manifest_mismatch_s3`): compare the stored `metadata.json` with the clone's last committed copy,
+  both versions recomputed. It catches storage behind git even when the stored manifest is behind
+  too, which the storage-only check cannot see. It needs a fetch first, a skip when the clone is
+  behind the remote (a colleague's newer version would otherwise read as stale), and the same method
+  of working out the version on both sides.
 
 Each new status needs its help text in `?datom_validate`, a NEWS line, and a test that goes red when
 the check is removed. Whatever is chosen, `datom_validate()`'s summary should not imply more
