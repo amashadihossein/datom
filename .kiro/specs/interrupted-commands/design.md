@@ -18,7 +18,7 @@ minimum paws versions to the real-S3 check (section 10), and noted that paws' de
 trigger the rejected-headers case on its own (sections 3 and 12). A third review the same day led
 to requirements D13: hand edits of datom's own files are not supported, so the metadata-only route
 passes no `artifact` to heal and no longer commits a hand edit (sections 2, 4 and 12).
-**Read first**: `requirements.md` (terms, findings, decisions D1-D12, requirements R1-R9). This
+**Read first**: `requirements.md` (terms, findings, decisions D1-D13, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
 
 ## 1. The shape in one picture
