@@ -274,11 +274,14 @@ writes nothing and is unchanged.
 5. `datom_validate(fix = FALSE)` is unchanged except for one new status and the fetch it needs
    (amended with the owner on 2026-10-28):
    - It reports `metadata_stale_s3` for an artifact whose stored `metadata.json` holds a different
-     version from the clone's. This catches a stored current version left behind git, which nothing
-     else reports (design section 12).
+     version from the one in the clone's last commit. This catches a stored current version left
+     behind git, which nothing else reports (design section 12). The last commit, not the working
+     tree, because a write that broke before its commit leaves a working-tree version that was
+     never committed; that is an unfinished write, not stale storage.
    - It fetches first, without merging, so it still changes nothing. When the clone is behind the
      remote, it skips this comparison and says to run `datom_pull()`, because a colleague's newer
-     stored version would otherwise be reported as stale.
+     stored version would otherwise be reported as stale. When the fetch fails, it warns and skips
+     the comparison, as the scan does (R4.2).
    - With `fix = TRUE`, heal pulls first, so the comparison runs on a current clone.
 
 ### R6. `datom_init_repo()` re-run
@@ -314,8 +317,10 @@ writes nothing and is unchanged.
    names both tables, and the stored manifest matches it. Two clones writing the **same** table
    still stop on the conflict in its `version_history.json`, with storage unchanged.
 8. R5.5's new status is tested: `datom_validate()` reports `metadata_stale_s3` for an artifact whose
-   stored `metadata.json` holds an older version than the clone's, `datom_validate(fix = TRUE)`
-   clears it, and a clone that is only behind the remote does not report it.
+   stored `metadata.json` holds an older version than the one in the clone's last commit, and
+   `datom_validate(fix = TRUE)` clears it. It is not reported on a clone that is only behind the
+   remote, nor for a write that broke before its commit; a failed fetch skips the comparison with a
+   warning.
 
 ### R8. Residual failure modes
 

@@ -85,7 +85,7 @@ write commands.
 | `R/sync.R` | `.datom_read_manifest()` | changed | A third scope, `"head"`, reading HEAD's copy through `.datom_git_head_file()` with the same schema check and upgrade |
 | `R/sync.R` | `.datom_restore_set_payload()` | changed | Uploads through `.datom_storage_upload_absent()` |
 | `R/validate.R` | `datom_validate()` | changed | The fix now pushes and reports per artifact (R5.3); a fetch first, for the new status (R5.5, section 6) |
-| `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and reports `metadata_stale_s3` when its version differs from the clone's (section 6) |
+| `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and reports `metadata_stale_s3` when its version differs from the one in the clone's last commit (section 6) |
 | `R/repo.R` | `datom_repo_commit()` | changed | `.datom_reset_unfinished()` before staging (R3.5); the R3.6 message when it pushes |
 | `R/repo.R` | `datom_repo_push()`, `datom_repo_attach_governance()`, `datom_repo_set_data_store()` | changed | The R3.6 message around their push |
 | `R/conn.R` | `datom_init_repo()` | changed | Finishes a half-initialised folder (section 8) |
@@ -255,10 +255,14 @@ may push. `datom_validate(fix = TRUE)` reports per artifact what was reset, push
 **A new status, `metadata_stale_s3`** (R5.5, amended 2026-10-28). Without it, `datom_validate()`
 says "All checks passed" on the crossed publish, because today it only checks that each stored file
 exists. `.datom_validate_one_table()` now also reads the stored `metadata.json` (one small read per
-artifact, in validate only) and compares its version with the clone's; a difference is
-`metadata_stale_s3`. To keep a behind clone from reporting a colleague's newer version as stale,
-`datom_validate()` fetches first, without merging: when the clone is behind the remote it skips the
-comparison and says to run `datom_pull()`, as the scan does (section 7). With `fix = TRUE`, heal has
+artifact, in validate only) and compares its version with the version in the clone's **last commit**,
+read through `.datom_git_head_file()` (one local git read per artifact); a difference is
+`metadata_stale_s3`. Not the working-tree file: a write that broke before its commit leaves a
+version there that was never committed, and calling storage stale would misdiagnose an unfinished
+write that `fix = TRUE` resets rather than publishes. To keep a behind clone from reporting a
+colleague's newer version as stale, `datom_validate()` fetches first, without merging: when the
+clone is behind the remote it skips the comparison and says to run `datom_pull()`, and when the fetch
+fails it warns and skips the comparison, both as the scan does (section 7). With `fix = TRUE`, heal has
 already pulled, so the comparison runs on a current clone and the repair then clears it.
 `.datom_validate_unfixable_tables()` does not list the new status: the repair fixes it.
 
@@ -340,7 +344,7 @@ Not yet traced, each resolved in the task that needs it:
 | P8 | Files datom does not own are never reset | R3.1, R3.5 |
 | P9 | A failed fetch at the start leaves the clone, git and storage unchanged | DD1, R3.7 |
 | P10 | After a publish lands behind a colleague's newer one, the next datom command in an up-to-date clone leaves storage at git's latest | DD4 |
-| P11 | `datom_validate()` reports `metadata_stale_s3` when an artifact's stored `metadata.json` holds an older version than the clone's, and never on a clone that is only behind the remote | R5.5, R7.8 |
+| P11 | `datom_validate()` reports `metadata_stale_s3` when an artifact's stored `metadata.json` holds a different version from the one in the clone's last commit, and never on a clone that is only behind the remote, nor for a write that broke before its commit; a failed fetch skips the comparison with a warning | R5.5, R7.8 |
 
 Each new guard's test is probed once by removing that guard alone (conventions item 2a).
 
