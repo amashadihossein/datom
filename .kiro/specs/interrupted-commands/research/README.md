@@ -29,7 +29,7 @@ Rerun from the repo root, for example:
 - `stale_preview_probe.R` (DD3): you build a sync preview, a colleague imports the same file and
   pushes, you pull and sync with the old preview. Result: the write finds no change, stores nothing,
   and the row reports `success` (its line wrongly says "synced (new)").
-- `publish_race_probe.R` (the publish rule): you push `dm` v2; before your publish runs, a colleague
+- `publish_race_probe.R` (design DD4): you push `dm` v2; before your publish runs, a colleague
   pulls, writes v3, pushes and publishes it; then your publish lands. Result on today's code: GitHub's
   latest is v3, storage's current is v2, and a reader gets v2.
 

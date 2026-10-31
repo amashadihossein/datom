@@ -205,7 +205,9 @@ Applies, before their own work, to `datom_write()` (every route), `datom_write_s
    or manifest row): after the pull in R3.7, it is pushed and then published from git, and the
    message names it.
 3. Publishing builds storage from git as it is after the pull in R3.7, never from a remembered state,
-   so a newer version a colleague pushed in between is what storage ends up holding.
+   so a newer version a colleague pushed in between is what storage ends up holding. A colleague who
+   publishes after that pull can be overwritten until the next datom command in an up-to-date clone
+   republishes; accepted by the owner on 2026-10-28 (design DD4).
 4. Finding unpublished work costs one read of the stored manifest per command, not one read per
    artifact.
 5. `datom_repo_commit()` applies R3.1 before it stages anything (D9), so a commit of the caller's
