@@ -13,6 +13,12 @@ publish can be overwritten until the next command (design DD4); R5.5 and R7.8 ad
 `metadata_stale_s3` status to `datom_validate()`. During the review of `tasks.md`: R8 gains a row for
 S3-compatible services that reject the new headers; and, in its third review, D13 (hand edits of
 datom's own files are not supported), with R3.1, R9.1, R9.5, R9.6 and R9.7 amended to match.
+**Amended 2026-10-30** with the owner, from a full-spec review by another agent (of `b76961b`): R3.9
+added (a command that finds a merge in progress stops, touches nothing, and says how to finish it),
+and R8's merge-conflict row corrected (no version is published, though the data file may be in
+storage; the recovery takes the remote copy of all of an artifact's files with
+`git checkout MERGE_HEAD --` and finishes with `git commit`). The last sentence of R3.8 carries the
+same correction ("before any publish", not "before storage changes").
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -247,7 +253,16 @@ Applies, before their own work, to `datom_write()` (every route), `datom_write_s
    - completes the merge and carries on, with a message saying the manifest was rebuilt.
 
    A conflict in any other file, including a `version_history.json` (two people wrote the same
-   artifact), stops the command before storage changes, as today.
+   artifact), stops the command before any publish, as today (from D1 a write's data file may
+   already be in storage, unnamed, when the conflict comes at its push).
+9. **A merge in progress** (added 2026-10-30, owner, full-spec review of `b76961b`). When a command
+   finds the clone in the middle of a merge, it stops before changing anything and says so: that a
+   merge is in progress, which files conflict, and how to finish it. For each artifact with a
+   conflict, take the remote copy of all its datom files and the manifest
+   (`git checkout MERGE_HEAD -- <name>/metadata.json <name>/version_history.json .datom/manifest.json`,
+   plus `<name>/set.json` for a set), resolve your own files, `git commit`, and re-run. It never
+   resets or rewrites a file while a merge is in progress. The one exception is R3.8's conflict only
+   in the manifest, which datom resolves and reports.
 
 ### R4. Syncing files
 
@@ -337,7 +352,7 @@ and what to do).
 |---|---|---|
 | A write broke before its commit, leaving its data file in storage with no version naming it | Nothing; the file costs space. For sensitive data, the bytes are in the bucket although no version exists | Documented in `?datom_write` |
 | A project a released datom already broke (#155 before this fix) | A re-run or the repair can still leave its readers failing | Documented in `NEWS.md` (one line) |
-| A push rejected by a merge conflict (#105) | The command stops before storage changes, as today. Every write rewrites `.datom/manifest.json`'s `updated_at` and `summary` lines (`.datom_update_manifest_entry()`), so two writes from different clones conflict there even when they touch different tables (`two_writers_probe.R`, 2026-10-28). R3.7's pull at the start makes this rarer, because a write then commits on top of the remote. It stays likely after a broken push while a colleague pushed. A conflict only in the manifest is now resolved by datom (R3.8). What still stops the command: a conflict in a `version_history.json` (two people wrote the same artifact) or in the user's own files. Until #105's recovery command exists, the user follows the conflict message: keep the remote copy of datom's files and re-run | Guarded by existing tests, and by R7.7 for what R3.8 resolves and what it leaves |
+| A push rejected by a merge conflict (#105) | The command stops before any publish: no version is published, though the write's data file may already be in storage, unnamed (D1). Every write rewrites `.datom/manifest.json`'s `updated_at` and `summary` lines (`.datom_update_manifest_entry()`), so two writes from different clones conflict there even when they touch different tables (`two_writers_probe.R`, 2026-10-28). R3.7's pull at the start makes this rarer, because a write then commits on top of the remote. It stays likely after a broken push while a colleague pushed. A conflict only in the manifest is now resolved by datom (R3.8). What still stops the command: a conflict in a `version_history.json` (two people wrote the same artifact) or in the user's own files. Until #105's recovery command exists, the user follows the conflict message, which every later command repeats until the merge is finished (R3.9): for each artifact with a conflict, take the remote copy of all its datom files and the manifest (`git checkout MERGE_HEAD -- ...`), resolve their own files, finish with `git commit`, and re-run | Guarded by existing tests, and by R7.7 for what R3.8 resolves and what it leaves |
 | Two R sessions writing through one clone at the same time | Not supported, as today | Documented |
 | An S3-compatible service that rejects `IfNoneMatch` or `ChecksumSHA256` outright (400 or 501), added 2026-10-28 from the review of `tasks.md` | Every write stops at its first step, the data file upload, with the service's own error; nothing in the clone, git or storage changes. No fallback until a user needs one. paws alone can trigger this: from `paws.common` 0.9.0, every upload carries a checksum by default, datom's metadata uploads included, so such a service can fail even without datom's new arguments | Documented, beside `endpoint` in `?datom_get_conn` |
 | On an S3-compatible service that ignores conditional writes, two writers store the same new content at the same moment with different bytes (different arrow versions) | Both see the key absent and upload; the second file replaces the first. One of the two versions records a hash the stored file no longer has, so reading it is refused by the hash check. Loud, not silent | Documented, beside `endpoint` in `?datom_get_conn` |

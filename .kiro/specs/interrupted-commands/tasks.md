@@ -114,6 +114,17 @@ of that artifact may skip its own failed publish: no, since a broken history sto
 R9.5 is not amended; the instructions live in the stop message. The repair publishing behind
 artifacts twice (heal, then the repair) is kept, with one sentence in section 6.
 
+A full-spec review by another agent of `b76961b`, evaluated with the owner one point at a time the
+same day. All five findings taken; settle 1-3 before task 4a and 4-5 before 4b:
+
+| Finding | Outcome |
+|---|---|
+| 1. Heal undoes the documented recovery from a merge conflict | Heal's new step 0 stops on a merge in progress and touches nothing (task 4a). Requirements amended: R3.9 added, R8's merge row and R3.8's last sentence corrected (owner: datom must call out a merge in progress, never quietly change files during one). Added: the conflict message's "nothing written to storage" is false from task 2 |
+| 2. Heal's reset can reach a user's `metadata.json` | `.datom_clone_artifact_names()` counts a folder only if the manifest names it or its `metadata.json` declares a datom `hash_algo`, for all three callers (task 4a). Added: today's repair publishes such a folder, and the format check reads it |
+| 3. Heal publishes artifacts the format check never looked at | `touch` decides what the check reads, separate from `artifact`; step d checks what it publishes (tasks 4a and 4b) |
+| 4. Heal's stop restores only the broken file | Restore all of the artifact's datom files from one commit. A probe added: `git checkout --theirs` does nothing to a file that merged cleanly, so the merge instructions use `git checkout MERGE_HEAD --` (design section 10) |
+| 5. A raw parser error on a write | One shared reader for the clone's datom files gives heal's stop message (task 4b) |
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D13) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
@@ -270,9 +281,22 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
 - [ ] **4a. Heal: reset, pull, check** (R2.4, R2.5, R3.1, R3.5's helper, R3.7; DD1; design sections 1
   and 4)
   - **Escalation first: design spot-check on a more capable model**, covering 4a and 4b.
-  - New `R/heal.R`: `.datom_heal()` with steps a-c (reset what never committed, pull, re-check the
-    documents, stop on a failed fetch) and `.datom_reset_unfinished()`. `artifact` takes several
-    names. Its docstring says what heal repairs and what it leaves (design section 4's table).
+  - New `R/heal.R`: `.datom_heal()` with steps 0 and a-c (stop on a merge in progress, reset what
+    never committed, pull, re-check the documents, stop on a failed fetch) and
+    `.datom_reset_unfinished()`. `artifact` takes several names and only words the reset messages;
+    `touch` (defaulting to `artifact`) names what the format check reads, so the metadata-only route
+    checks its table only (design section 4). Its docstring says what heal repairs and what it leaves
+    (design section 4's table).
+  - Step 0 (R3.9): `.git/MERGE_HEAD`, or a file `git2r::status()` reports as `conflicted`, stops
+    heal before it resets anything, with design section 4's instructions
+    (`git checkout MERGE_HEAD --` for all of each conflicted artifact's datom files and the
+    manifest, resolve your own files, `git commit`, re-run). The conflict message in
+    `.datom_git_pull()` gives the same steps, not `--theirs` and re-run, and its last line says no
+    version is published though this write's data file may already be in storage.
+  - `R/sync.R`: `.datom_clone_artifact_names()` counts a folder only if the manifest (last commit or
+    working tree) names it, or its `metadata.json` declares a datom `hash_algo` (design section 4,
+    step a). This changes its other two callers too: the repair no longer publishes a user's folder,
+    and the forward-compatibility check on the mirror-everything route no longer reads one.
   - Wire heal in exactly one place per route (design section 4): the data-frame route in
     `datom_write()` (with the internal `.healed` argument), the metadata-only route inside
     `.datom_sync_metadata()` (replacing its pull, with no `artifact`: requirements D13), and
@@ -305,9 +329,18 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     with the second behind, whose write leaves storage at the first clone's newer version, and a
     conflict outside the manifest leaving storage unchanged (P5's write case, R7.6); a mistyped
     argument refused before heal runs; heal called exactly once by each of the data-frame route, the
-    metadata-only route and `datom_write_set()`, counted through a mock.
-  - Guards to probe: the reset, the pull before any decision, the re-run entry check, the fetch-failure
-    stop, a refusal check placed before heal.
+    metadata-only route and `datom_write_set()`, counted through a mock; a merge conflict resolved
+    with `git checkout MERGE_HEAD --` and re-run without committing makes heal stop with the
+    instructions, leaving the clone, git and storage unchanged and `MERGE_HEAD` in place, and after
+    `git commit` a re-run finishes the write (R3.9); the stop message names every datom file of the
+    conflicted artifact, not only the conflicted one; a user's tracked `app/metadata.json` with
+    uncommitted edits, and an untracked one, survive heal untouched (P8), the repair does not publish
+    either, and the forward-compatibility check does not refuse because of one; a first write broken
+    after its files and before its manifest row is still reset; the metadata-only route is not
+    refused by a newer-datom field in an unrelated table with nothing pending.
+  - Guards to probe: the merge-in-progress stop, the reset, the `hash_algo` rule for artifact
+    folders, the pull before any decision, the re-run entry check, the fetch-failure stop, a refusal
+    check placed before heal.
   - Acceptance: P4 for the routes healed here (the data-frame route, the metadata-only route and
     `datom_write_set()`; the rest is task 7's), P8, P9 and P5 for writes; D13 on the metadata-only
     route; `research/other_command_probe.R` shows `dm` reset when
@@ -321,8 +354,15 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - `.datom_publish_artifacts()` publishes the manifest only if every artifact's documents were
     published; when heal's publish fails, the command stops before its own work (design section 6).
     The stop names the artifact, the file and the underlying error; for a file that does not parse
-    it says to restore it from the last commit where it parses, commit it with `git`, and re-run
-    (design section 4, step d).
+    it says to restore all of that artifact's datom files from the last commit where they parse
+    (`git checkout <commit> -- <name>/metadata.json <name>/version_history.json`, plus `set.json`
+    for a set), commit with `git`, and re-run the write that was lost (design section 4, step d).
+  - One shared reader for datom's own files in the clone gives that stop, with a condition class, on
+    a file that does not parse. It is used by heal's publish, `.datom_lookup_history_object_sha()`,
+    `.datom_write_metadata_local()` and the version count in `.datom_update_manifest_entry()`;
+    `.datom_prior_metadata()` keeps treating a broken `metadata.json` as absent.
+  - Step d checks every artifact it is about to publish with `.datom_check_write_entry()` before
+    anything is published, beyond those step c checked (design section 4, step d).
   - A publish from the clone keys each snapshot by `.datom_recorded_current_version()` of the
     clone's `metadata.json` and history, never a recompute, and writes the snapshot only when
     `.datom_compute_metadata_sha()` agrees; otherwise it skips the snapshot with a warning naming
@@ -343,9 +383,13 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     `metadata.json` that does not hash to its recorded version (a hand edit committed with plain
     git, as 0.2.0's metadata-only route did) leaves the previous version's snapshot byte-identical,
     puts no snapshot under the recomputed id, warns naming the artifact, and still publishes the
-    manifest.
+    manifest; a pulled, unpublished artifact carrying a field this build cannot classify stops heal
+    before any publish, storage unchanged and the artifact named; a committed unparseable
+    `version_history.json` with nothing pending makes a write of that artifact stop, before anything
+    changes, with the restore instructions, matched by the condition class.
   - Guards to probe: the unpublished-artifact comparison, the manifest-last order, the manifest
-    held back after a failed artifact, the recorded-version agreement check.
+    held back after a failed artifact, the recorded-version agreement check, the format check over
+    step d's publish list, the shared reader's stop.
   - Acceptance: P1 (all six steps, tables and sets), P10, R3.4; `research/other_command_probe.R`
     shows `dm` published when its write broke after its commit.
 

@@ -31,7 +31,8 @@ command.
 ```
 command(conn, ...)
   every refusal check that needs no storage state heal can change      (see below)
-  heal(conn, artifact = <names this command will write>)              R2.4, R3.1-R3.4, R3.7, R3.8
+  heal(conn, artifact = <names this command will write>)              R2.4, R3.1-R3.4, R3.7-R3.9
+    0. a merge in progress -> stop, touch nothing, say how to finish it
     a. reset datom files that never committed   (local only)
     b. pull: fetch, then merge                  (conflict only in the manifest -> rebuild it)
     c. forward-compat entry check again         (the pull may have brought new documents)
@@ -88,7 +89,8 @@ write commands.
 
 | File | Function | New / changed | Role |
 |---|---|---|---|
-| `R/heal.R` | `.datom_heal(conn, artifact = NULL)` | new | Steps a-d of section 1. `artifact` names the artifacts the command is about to write (several for `datom_sync()`, none for the repair), which sets the wording of reset messages (section 4). Returns what it reset and what it published, for the caller's messages |
+| `R/heal.R` | `.datom_heal(conn, artifact = NULL, touch = artifact)` | new | Steps 0 and a-d of section 4. `artifact` names the artifacts the command is about to write (several for `datom_sync()`, none for the repair), which sets the wording of reset messages; `touch` names every artifact it will write or publish, for the format check (section 4). Returns what it reset and what it published, for the caller's messages |
+| `R/heal.R` | a shared reader for datom's own files in the clone (named in task 4b) | new | Parses an artifact's `version_history.json` (and the documents heal publishes); on a file that does not parse, stops with the artifact, the file, the parser's error and the restore-all-files steps of section 4, step d, with a condition class. Used by heal's publish, `.datom_lookup_history_object_sha()`, `.datom_write_metadata_local()` and the manifest row's version count in `.datom_update_manifest_entry()`. `.datom_prior_metadata()` keeps treating a broken `metadata.json` as absent, since the write replaces it |
 | `R/heal.R` | `.datom_reset_unfinished(conn)` | new | Step a. Finds datom-owned files that differ from the last commit and puts them back (section 4) |
 | `R/heal.R` | `.datom_unpublished_artifacts(conn, stored)` | new | Names the artifacts whose committed version readers cannot see: in unpushed commits, or whose clone manifest row differs from the stored one |
 | `R/heal.R` | `.datom_publish_artifacts(conn, names)` | new | **The one publish path.** For each name, the clone's snapshot, history and `metadata.json` (last) through `.datom_push_metadata_s3()`; then the manifest, last, and only if every artifact's documents were published (section 6). A publish from the clone names the recorded version and writes the snapshot only when the document hashes to it (section 4, step d). Heal's step d, a write's steps 5-6, the metadata-only route and the repair all go through it |
@@ -101,7 +103,8 @@ write commands.
 | `R/utils-local.R` | `.datom_local_upload_absent()`, `.datom_local_object_sha256()` | new | Local halves (section 3) |
 | `R/utils-local.R` | `.datom_is_temp_key(key)` | new | Recognises the temporary file names a local upload uses (section 3) |
 | `R/storage.R` | `datom_storage_copy()`, `datom_storage_verify()` | changed | Skip temporary files left by an interrupted local upload; `datom_storage_list()` is unchanged |
-| `R/utils-git.R` | `.datom_git_pull(path, pat)` | changed | On a conflict whose only file is `.datom/manifest.json`, calls `.datom_resolve_manifest_conflict()` instead of aborting. Every other conflict aborts as today |
+| `R/utils-git.R` | `.datom_git_pull(path, pat)` | changed | On a conflict whose only file is `.datom/manifest.json`, calls `.datom_resolve_manifest_conflict()` instead of aborting. Every other conflict aborts as today, with a message giving section 4's step 0 instructions (`git checkout MERGE_HEAD --` for all of each conflicted artifact's datom files and the manifest, then `git commit`), not `--theirs` and re-run |
+| `R/sync.R` | `.datom_clone_artifact_names(conn)` | changed | A folder counts only if the manifest (last commit or working tree) names it, or its `metadata.json` declares a datom `hash_algo` (section 4, step a). Its three callers: heal's reset, the repair, and the forward-compatibility check on the mirror-everything route |
 | `R/utils-git.R` | `.datom_git_head_file(path, rel)` | new | A file's content as committed in HEAD (`git2r::revparse_single(repo, "HEAD:<rel>")`) |
 | `R/utils-git.R` | `.datom_check_git_current()` | deleted | Its only caller, `datom_sync()`, heals instead (DD3), and its offline "warn and carry on" is replaced by DD1. The comments naming it in `datom_repo_commit()`, `.datom_git_ahead()` and `.datom_git_push()` are rewritten |
 | `DESCRIPTION` | `paws.storage` | changed | `(>= 0.8.0)`: the first release with both `IfNoneMatch` (since 0.7.0) and `ChecksumType` (since 0.8.0), checked against the CRAN sources |
@@ -207,22 +210,48 @@ small) and written to `set.json` instead, so git and storage hold one spelling (
 
 ## 4. Heal, step by step
 
-`.datom_heal(conn, artifact)`.
+`.datom_heal(conn, artifact, touch)`. `artifact` names the artifacts the command is about to write
+again, and only sets the wording of the reset messages (step a). `touch` names every artifact the
+command will write or publish, and decides which documents the format check reads (step d);
+it defaults to `artifact`, and `NULL` means every artifact (full-spec review of `b76961b`, owner,
+2026-10-30).
 
 **What heal repairs, and what it leaves** (its docstring says both):
 
 | Heals | Leaves |
 |---|---|
-| datom's own files from a write that broke before its commit (reset) | a merge conflict outside the manifest (#105) |
+| datom's own files from a write that broke before its commit (reset) | a merge conflict outside the manifest (#105): heal stops and says how to finish it (step 0) |
 | a clone behind GitHub (pulled) | damage a released datom left behind (D7, D11) |
 | a merge conflict only in the manifest (rebuilt) | a file someone put in storage by hand |
 | committed work GitHub or storage lacks (pushed, then published) | anything when GitHub cannot be reached: it stops instead (DD1) |
 | a stale publish by another clone, the next time it runs (section 4, last part) | the one crossing of two publishes in section 12, which `datom_validate()` reports and its fix clears |
 
+**0. A merge in progress** (R3.9; full-spec review of `b76961b`, owner, 2026-10-30). If
+`.git/MERGE_HEAD` exists, or `git2r::status()` reports a file as `conflicted`, heal stops before it
+resets anything, and the message says so: a merge is in progress, which files conflict, and how to
+finish it. For each artifact with a conflict, take the remote copy of **all** its datom files and the
+manifest, `git checkout MERGE_HEAD -- <name>/metadata.json <name>/version_history.json
+.datom/manifest.json` (plus `<name>/set.json` for a set); resolve your own files; `git commit`; re-run
+your write, which rebuilds your side from the data. Without this step, step a would reset a file the
+user had resolved back to the local side, and the next pull would conflict again: a loop.
+`datom_repo_commit()` cannot finish the merge either, because it resets datom's files first (D9). That
+`git commit` is the one plain-git step datom asks for. `git checkout --theirs` is not suggested: on a
+file that merged cleanly it does nothing ("Updated 0 paths"), leaving that artifact half local and
+half remote (probed 2026-10-30, section 10).
+
 **a. Reset what never committed** (`.datom_reset_unfinished()`; R2.4, R3.1). "Datom-owned files" are,
-for each artifact directory, `metadata.json`, `version_history.json` and `set.json`, plus
-`.datom/manifest.json`. Nothing else: not `.datom/project.yaml`, not `.datom/governance.json`, not
-`include_paths`, not `input_files/`.
+for each artifact `.datom_clone_artifact_names()` returns, `metadata.json`, `version_history.json` and
+`set.json`, plus `.datom/manifest.json`. Nothing else: not `.datom/project.yaml`, not
+`.datom/governance.json`, not `include_paths`, not `input_files/`.
+- **Which folders are artifacts** (full-spec review of `b76961b`, owner, 2026-10-30). A top-level
+  folder is a datom artifact if the manifest names it, in the last commit or in the working tree, or
+  if its `metadata.json` parses and declares a datom `hash_algo` (`datom-cv1` for a table,
+  `datom-sv1` for a set). The second rule catches a first write broken before its manifest row, and
+  keeps the helper independent of the manifest, which the repair needs. Today the helper counts any
+  top-level folder holding a `metadata.json`, so a user's `app/metadata.json` would have its
+  uncommitted edits reset, or be deleted if untracked; the same rule makes today's repair publish
+  such a folder as an artifact and the forward-compatibility check read it. The helper is tightened
+  once, for all three callers.
 - `git2r::status()` (staged, unstaged and untracked) lists what differs from HEAD. Untracked entries
   come back as directories (`lb/`), so an untracked directory is expanded and only the three file
   names are kept.
@@ -240,12 +269,16 @@ for each artifact directory, `metadata.json`, `version_history.json` and `set.js
   (section 10, item 5).
 
 **b. Pull** (R3.7): `.datom_git_pull()`, i.e. fetch then merge, with R3.8 inside it. A conflict
-elsewhere aborts before storage changes. A failed fetch stops the command before it changes anything,
-with a message saying datom could not reach the remote (DD1).
+elsewhere aborts before any publish, leaving the clone mid-merge; its message gives step 0's
+instructions, and ends "No version is published. This write's data file may already be in storage,
+unnamed until the write finishes" (from task 2 the data file is uploaded before the push). A failed
+fetch stops the command before it changes anything, with a message saying datom could not reach the
+remote (DD1).
 
-**c. Check the documents again**: `.datom_check_write_entry(conn, artifact)`, because the pull can
-bring a manifest or metadata from a newer datom. Same reasoning as the existing re-check in
-`.datom_sync_metadata()`.
+**c. Check the documents again**: `.datom_check_write_entry(conn, touch)` for the command's own
+artifacts, because the pull can bring a manifest or metadata from a newer datom. Same reasoning as
+the existing re-check in `.datom_sync_metadata()`. The metadata-only route passes its table as
+`touch`, so it checks that table, not every artifact. Step d extends the check to what it publishes.
 
 **d. Push and publish** (R3.2-R3.4):
 - If `.datom_git_ahead()` is above 0, or `NA`: note `.datom_pushed_artifacts()`, then
@@ -254,6 +287,14 @@ bring a manifest or metadata from a newer datom. Same reasoning as the existing 
   is unpublished). `.datom_unpublished_artifacts()` = the pushed artifacts, plus every artifact whose
   clone row's `current_version` differs from the stored row's. After the pull the clone holds at
   least what GitHub holds, so a difference found here means storage is behind this clone (R3.3).
+- **Check every artifact about to be published** (full-spec review of `b76961b`, owner,
+  2026-10-30): `.datom_check_write_entry()` on each name in that list that step c did not check,
+  before anything is published. A colleague on a newer datom whose publish broke leaves a pulled
+  artifact this clone would otherwise publish unexamined, and publishing reads the JSON and writes it
+  back with datom's serialiser, which can change it (a one-element list comes back as a single
+  value). The version-agreement check below does not catch it: an older build hashes only the fields
+  it knows. A refusal stops the command after the push and before any publish; a re-run after
+  upgrading datom publishes it.
 - `.datom_publish_artifacts()` for those names, manifest last, and only if every artifact's
   documents were published (section 6); when heal's publish fails, the command stops before its own
   work. A set's payload is not re-uploaded here: under D1 it is in storage before its commit exists.
@@ -261,9 +302,15 @@ bring a manifest or metadata from a newer datom. Same reasoning as the existing 
   2026-10-30). A failure that repeats on every run needs one of datom's files committed outside datom
   that does not parse (a hand edit committed with `git`, or a merge conflict in
   `version_history.json` resolved by hand); an uncommitted one is reset in step a first. For that
-  case the message says how to get out: restore the file from the last commit where it parses (after
-  a merge, the remote's copy), commit it with `git`, and re-run. `datom_repo_commit()` cannot commit
-  it, because it resets datom's own files first (D9). A write of the same artifact gets no exception:
+  case the message says how to get out: restore **all** of that artifact's datom files from the last
+  commit where they parse, `git checkout <commit> -- <name>/metadata.json <name>/version_history.json`
+  (plus `<name>/set.json` for a set), commit with `git`, and re-run the write that was lost. Restoring
+  only the broken file would leave `metadata.json` describing a version its history no longer
+  records: the snapshot would be skipped and the manifest row would name no version (full-spec review
+  of `b76961b`, owner, 2026-10-30). `datom_repo_commit()` cannot commit it, because it resets datom's
+  own files first (D9). The same message comes from every read of that file, through one shared
+  reader (section 2), so a write of the artifact with nothing pending gives it too, not a raw parser
+  error. A write of the same artifact gets no exception:
   a broken history stops that write anyway, since it reads the history to decide the data file's
   hash before it uploads, and a broken `metadata.json` is restored by one git command. The help is
   not changed (R9.5 unamended); the stop message is where the user meets the problem.
@@ -307,13 +354,13 @@ for the table's next write or `datom_validate(fix = TRUE)` (section 12).
 fetches twice or reads the stored manifest twice (R3.4), and no prompt is answered after heal has
 acted (second review of `tasks.md`, owner, 2026-10-28):
 
-| Route | Where heal runs | `artifact` |
-|---|---|---|
-| `datom_write(conn, data, name)` | in `datom_write()`, after the checks that run before heal (section 1) | the table's name |
-| `datom_write(conn, name =)`, the metadata-only route | inside `.datom_sync_metadata()`, replacing its pull | none: the route never writes the table again, it publishes what is committed, so the table's own uncommitted files get the warning, not the "writing it again now" message. A hand edit of them is reset like any unfinished write (requirements D13) |
-| `datom_write(conn)` and `datom_validate(fix = TRUE)` | inside `.datom_sync_data_metadata()`, after its confirmation prompt | none: it never redoes a write |
-| `datom_write_set()` | in `datom_write_set()`, after its checks | the set's name |
-| `datom_sync()` | once per call, before the first table | every table it is about to write; then `datom_write(.healed = TRUE)` per table |
+| Route | Where heal runs | `artifact` (message wording) | `touch` (format check) |
+|---|---|---|---|
+| `datom_write(conn, data, name)` | in `datom_write()`, after the checks that run before heal (section 1) | the table's name | the same |
+| `datom_write(conn, name =)`, the metadata-only route | inside `.datom_sync_metadata()`, replacing its pull | none: the route never writes the table again, it publishes what is committed, so the table's own uncommitted files get the warning, not the "writing it again now" message. A hand edit of them is reset like any unfinished write (requirements D13) | the table's name: the route publishes it, so its documents are checked, and no other artifact's are |
+| `datom_write(conn)` and `datom_validate(fix = TRUE)` | inside `.datom_sync_data_metadata()`, after its confirmation prompt | none: it never redoes a write | `NULL`: it publishes every artifact, so every one is checked |
+| `datom_write_set()` | in `datom_write_set()`, after its checks | the set's name | the same |
+| `datom_sync()` | once per call, before the first table | every table it is about to write; then `datom_write(.healed = TRUE)` per table | the same |
 
 `datom_write()` itself does not heal on the two routes without data: it hands them to those helper
 functions before anything else runs. `datom_repo_commit()` calls step a only (R3.5). The four push
@@ -471,6 +518,19 @@ Proven on 2026-10-28 (scripts in `research/`):
   (`BadDigest`, HTTP 400), so the header reaches S3. On `paws.common` 0.9.0 the upload with datom's
   own `ChecksumSHA256` succeeds: paws skips its default checksum when the caller supplies one
   (`has_checksum_header()` in its `custom_checksum.R`).
+- **A merge in progress, 2026-10-30** (throwaway git2r 0.36.2 probes, two clones of one bare
+  remote). After `git2r::merge()` reports a conflict, `.git/MERGE_HEAD` exists and
+  `git2r::status()` lists each conflicted file under `unstaged` as `conflicted`; both stay until the
+  merge is committed. `git checkout --theirs <file>` on a file that merged cleanly does nothing
+  ("Updated 0 paths from the index"), so a user following "keep the remote version with `--theirs`"
+  can leave an artifact's `metadata.json` local beside a remote `version_history.json`.
+  `git checkout MERGE_HEAD -- <files>` takes the remote copy of conflicted and clean files alike and
+  clears the conflict; `git commit` then completes the merge and removes `MERGE_HEAD`.
+- **No datom command writes `{name}/.metadata/` in a clone, 2026-10-30** (a real write of `dm` three
+  times, then a listing of the clone): only `metadata.json` and `version_history.json`; snapshots go
+  straight to storage. 0.2.0's metadata-only route publishing a hand edit leaves a stored
+  `metadata.json` whose version no history entry, manifest row or snapshot records (probed the same
+  day).
 
 Not yet traced, each resolved in the task that needs it:
 1. Unstaging chosen paths with `git2r::reset(repo, path = ...)` after a break between staging and
@@ -511,7 +571,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 |---|---|---|
 | A write broke before its commit, leaving its data file in storage with no version naming it | Nothing; costs space. For sensitive data, the bytes are in the bucket although no version exists | Documented in `?datom_write` |
 | A project a released datom already broke | A re-run or the repair can still leave its readers failing | Documented in `NEWS.md` |
-| A merge conflict outside the manifest (two people wrote the same artifact, or the user's own files) | The command stops before storage changes; the message says to keep the remote copy of datom's files and re-run | Guarded by existing tests and R7.7; #105 owns the recovery command |
+| A merge conflict outside the manifest (two people wrote the same artifact, or the user's own files) | The command stops before any publish; no version is published, though this write's data file may already be in storage, unnamed. The message, and heal's stop on every later command until the merge is finished (R3.9), say: take the remote copy of all of each conflicted artifact's datom files and the manifest (`git checkout MERGE_HEAD -- ...`), resolve your own files, `git commit`, re-run | Guarded by existing tests, R7.7, and task 4a's merge-in-progress test; #105 owns a recovery command |
 | Two R sessions writing through one clone at once | Not supported | Documented |
 | An S3-compatible service that ignores conditional writes, two writers, same new content, same moment | One version's reads are refused by the hash check. Loud | Documented beside `endpoint` |
 | An S3-compatible service that rejects `IfNoneMatch` or `ChecksumSHA256` (400 or 501) | Every write stops at its first step with the service's own error; nothing changes. No fallback (owner, 2026-10-28). paws alone can trigger this: from `paws.common` 0.9.0, every upload carries a checksum by default, datom's metadata uploads included, so such a service can fail even without datom's new arguments | Documented beside `endpoint` |
@@ -523,7 +583,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | The same, with the two publishes crossing so the stored manifest names the newer version and the stored metadata holds the older one (DD4) | Readers get the superseded version, and heal does not notice, until the table's next write or `datom_validate(fix = TRUE)` | Reported by `datom_validate()` as `metadata_stale_s3`; fixed by `datom_validate(fix = TRUE)` or the table's next write (section 6, P11) |
 | A version's snapshot is missing from storage (no route in this spec can cause it: every route uploads the snapshot before `metadata.json`; left by 0.2.0's write interrupted between `metadata.json` and the snapshot, D7, or by storage losing a file outside datom) | Not reported by `datom_validate()`, which checks only that `metadata.json`, the history and the data file exist. `datom_read(version = )` of that version fails. From task 7, `datom_validate(fix = TRUE)` restores the **current** version's snapshot from the clone's `metadata.json` (section 6); an older version's is restored by nothing | Not guarded. Documented in `dev/engineering-notes.md` at completion; the check, and restoring older snapshots from git, go to a follow-up issue (draft: `draft-issue-validate-completeness.md`) |
 | 0.2.0's `datom_write(conn, name =)` published a hand edit of `metadata.json` | The stored `metadata.json` describes a version that no history entry, manifest row or snapshot records. Readers are told the previous version, and a read pinned to it returns the pre-edit metadata. `datom_validate()` reports nothing | Not guarded (D7). D13 and task 4b stop new cases. Every publish from the clone skips that artifact's snapshot and warns, leaving the previous version's snapshot intact (section 4, step d). Goes to the follow-up issue |
-| One of datom's files, committed outside datom, does not parse, in an artifact whose publish is pending | Every datom write, and the repair, stops at heal, naming the artifact, the file and the parser's error, until the file is restored and committed | Guarded (task 4b's stop test). The way out is in the stop message itself (section 4, step d) |
+| One of datom's files, committed outside datom, does not parse | Every command that reads that file stops with the same message, naming the artifact, the file and the parser's error, and saying to restore all of that artifact's datom files from one commit: heal (every write, and the repair) while the artifact's publish is pending, and a write of that artifact at any time | Guarded (task 4b's tests, through the shared reader). The way out is in the stop message itself (section 4, step d) |
 | A file put at a data address by hand, adopted by a re-run | Its content is read without a content check | Documented in `dev/engineering-notes.md`; not checked |
 | A teammate still on a released datom (D11) | An upgraded teammate's write can publish their data-less version | Documented in `NEWS.md` |
 | GitHub unreachable at the start of a command (DD1) | The command stops with a message and changes nothing; the user re-runs when online | Guarded (P9); documented in `?datom_write` |
