@@ -96,6 +96,15 @@ clone, so the repair's snapshot loop copied nothing.
 | 4. The clone-folder loop | Deleted with its function; the affected tests and notes listed in task 7 |
 | 5. (added) Which version a publish from the clone names | The recorded version, never a recompute; the snapshot written only when the document hashes to it, else skipped with a warning that does not hold back the manifest (task 4b, design section 4) |
 
+A final read of task 2 against the code, with the owner, the same day, after `4009717`. Two findings:
+the modification-time checks that four table tests use to prove "no upload" cannot fail once the
+upload never overwrites, and one of them is the only guard of the history-reuse branch (task 2
+re-points them to count upload calls and probes the branch; task 3 does the same for one set test);
+and a version can pair a stored file's hash with the fresh file's size, as the metadata-only and
+revert paths already do (a docstring sentence, no code change). Checked with no change: no refusal
+that can fire comes after the new first-step upload, the history lookup reads the clone, no table
+test asserts the old order.
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D13) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
@@ -193,6 +202,18 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     watched going red once with their counter left on the old function, to show the old counter
     can no longer catch an upload; and the four `.datom_resolve_parquet_sha()` unit tests,
     rewritten for its new arguments. Rewrites only, no test removed.
+  - In `test-identity-contract.R`, the "no upload" checks in S3, S4, S6 and "revert-to-older content
+    reuses the history parquet_sha" count calls to `.datom_storage_upload_absent()` (expect none)
+    instead of relying on a backdated modification time, which the new upload never changes. The
+    revert test is the only guard of the history branch of the hash decision (R1.3, first case),
+    which spares a revert from hashing the stored file (a download for a file stored before this
+    spec, which has no S3 checksum). Update the "Prove 'no upload' with a backdated mtime" entry in
+    `dev/engineering-notes.md`: from this task a data file's upload never overwrites, so a
+    modification time cannot show whether one was attempted.
+  - The rewritten docstring of `.datom_resolve_parquet_sha()` also says: `size_bytes` describes the
+    freshly written parquet; when the recorded hash is a stored file's (an existing file, a
+    metadata-only carry, or a revert), the stored file can differ in size if a different arrow
+    version wrote it; nothing reads `size_bytes` beyond the manifest's counters. No code change.
   - **Update `research/write_steps_probe.R` before using it as evidence.** Break step 1 by replacing
     `.datom_storage_upload_absent()`; add a step-2 break by replacing `.datom_update_manifest_entry()`
     (metadata and history written, no manifest row); keep the commit, push, metadata and manifest
@@ -206,7 +227,8 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     commit the stored history names: until 4b, a re-run after a push break makes a second commit
     (`metadata.json`'s `created_at` moves) and the stored history names it, as today's code does.
   - Guards to probe: the upload placed before the first clone write; the `"exists"` branch of the
-    hash decision (record the stored file's hash, not the fresh bytes'); `metadata.json` uploaded
+    hash decision (record the stored file's hash, not the fresh bytes'); the history branch of the
+    hash decision (against the revert test, now counting upload calls); `metadata.json` uploaded
     last within step 5.
   - Acceptance: P1 for steps 1-5 and P3 for `datom_write()`; the updated
     `research/write_steps_probe.R` shows, for steps 1-5, the break firing and the re-run reading the
@@ -222,7 +244,10 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     and `.datom_restore_set_payload()` (R9.4).
   - Re-point the set-repair test "a stored payload that is present is never re-uploaded" in
     `test-validate-sets.R` to `.datom_storage_upload_absent()`; left on the old function it would
-    stay green whatever the repair uploads.
+    stay green whatever the repair uploads. Likewise "re-writing content already in history does not
+    touch the stored payload (AC29b)" in `test-write-set.R`: count calls to
+    `.datom_storage_upload_absent()` instead of relying on a backdated modification time, which the
+    new upload never changes.
   - **Update `research/set_steps_probe.R`** the same way as task 2's probe; its step-2 break leaves
     `set.json`, metadata and history written.
   - Tests: the break table's steps 1-5 for `datom_write_set()` (P1); a re-run with a different
