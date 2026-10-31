@@ -1,16 +1,18 @@
 # Design -- interrupted commands finish on a re-run
 
 **Status**: **Approved by the owner on 2026-10-28.** Requirements approved the same day
-(`requirements.md`). Design decisions for the owner are in section 9: DD1 decided (a failed fetch
-stops the command); DD2 decided (every pull resolves a manifest-only conflict); DD3 decided
-(`datom_sync()` pulls a behind clone); DD4 decided (no check before publishing). All design decisions
-are taken; the design as a whole awaits approval. The routine and its file were named `heal` by the
-owner on 2026-10-28 (first drafted as "settle" in `R/finish.R`). A review by another agent the same day,
-evaluated with the owner, added the hard-link upload on a local store and the whole-file condition on
-S3's stored checksum (section 3); later ones added recognisable temporary names on a local store,
-skipped by storage copy and verify (section 3), and the `metadata_stale_s3` status in
-`datom_validate()` (section 6; requirements R5.5 and R7.8 amended with the owner). It also added a check before every publish; the owner dropped that
-check after weighing what the current version is for (DD4).
+(`requirements.md`). Design decisions DD1-DD4 are in section 9. The routine and its file were named
+`heal` by the owner on 2026-10-28 (first drafted as "settle" in `R/finish.R`).
+
+Reviews by another agent, evaluated with the owner on 2026-10-28, added: the hard-link upload on a
+local store and the whole-file condition on S3's stored checksum (section 3); recognisable temporary
+names on a local store, skipped by storage copy and verify (section 3); and the `metadata_stale_s3`
+status in `datom_validate()` (section 6; requirements R5.5 and R7.8 amended). A check before every
+publish was also added, then dropped by the owner after weighing what the current version is for
+(DD4). The review of `tasks.md` the same day added: which checks run before heal (section 1); the
+wording of heal's reset messages and several names in its `artifact` argument (section 4); the 409
+response and services that reject the new headers (section 3, section 12); the pull inside
+`datom_get_conn()` under DD2; and the real-S3 check moved to task 1 (section 10).
 **Read first**: `requirements.md` (terms, findings, decisions D1-D12, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
 
@@ -23,12 +25,13 @@ command.
 
 ```
 command(conn, ...)
-  door checks (unchanged: role, path, forward-compat entry, ref guard)
-  heal(conn)                                    R2.4, R3.1-R3.4, R3.7, R3.8
+  every refusal check that needs no storage state heal can change      (see below)
+  heal(conn, artifact = <names this command will write>)              R2.4, R3.1-R3.4, R3.7, R3.8
     a. reset datom files that never committed   (local only)
     b. pull: fetch, then merge                  (conflict only in the manifest -> rebuild it)
     c. forward-compat entry check again         (the pull may have brought new documents)
     d. push unpushed commits, then publish      (artifacts whose stored manifest row is behind git)
+  change detection, and the table-or-set check
   own work, new order (a write):
     1. data file -> storage, only if absent     R1.1-R1.3
     2. clone files                              (metadata, history, manifest row, set.json)
@@ -46,7 +49,24 @@ publishes an artifact's documents first and the manifest after. So a stored mani
 git means that artifact's documents are current too, and heal can find all unpublished work with one
 read of the stored manifest (R3.4). Today `.datom_sync_data_metadata()` writes the manifest **first**;
 that order is reversed (section 6). One ordering of two publishes landing at once breaks this
-invariant; it is the last row of section 12.
+invariant; it is a row of section 12.
+
+**What runs before heal, and what after** (from the review of `tasks.md`, owner, 2026-10-28). Heal can
+reset files, merge, push and publish, so a mistyped argument must be refused before it runs (R9.1:
+every refusal check runs before the first step).
+
+| Before heal | After heal, and why |
+|---|---|
+| Argument checks: connection, role, clone path, name, the data frame, parents and lineage. For a set: the product-repo checks (`.datom_check_set_write_gates()`, `.datom_check_set_project()`), `include_paths`, the payload checks, `.datom_check_set_parents()` | Change detection (`.datom_has_changes()`): it reads the stored metadata, which heal may just have published; run first, it can call a write "full" for a version heal then publishes |
+| The format and version compatibility check on the clone's files (`.datom_check_write_entry()`), re-run inside heal after its pull | The table-or-set check (`.datom_check_artifact_kind()`): it reads the same stored document, and heal's pull can bring a colleague's set of the same name |
+| The data-location check (`.datom_check_ref_current()`); heal does not change it | |
+| Hashing the data and writing the parquet to a temporary file: local only, and unhashable data is refused here | |
+| The confirmation prompt of `datom_write(conn)`, the mirror-everything route; otherwise answering "no" would still push and publish | |
+
+The two checks after heal refuse after heal has acted. That is accepted: heal only finishes work that
+was already committed, or resets work that never committed, as any later command would, so a refusal
+there undoes nothing. `datom_sync()` follows the same rule: the preview's columns and the `rio`
+package are checked before its one heal; a file that fails to import is an error on that row only.
 
 ## 2. Functions, by file
 
@@ -59,7 +79,7 @@ write commands.
 
 | File | Function | New / changed | Role |
 |---|---|---|---|
-| `R/heal.R` | `.datom_heal(conn, artifact = NULL)` | new | Steps a-d of section 1. Returns what it reset and what it published, for the caller's messages |
+| `R/heal.R` | `.datom_heal(conn, artifact = NULL)` | new | Steps a-d of section 1. `artifact` names the artifacts the command is about to write (several for `datom_sync()`, none for the repair), which sets the wording of reset messages (section 4). Returns what it reset and what it published, for the caller's messages |
 | `R/heal.R` | `.datom_reset_unfinished(conn)` | new | Step a. Finds datom-owned files that differ from the last commit and puts them back (section 4) |
 | `R/heal.R` | `.datom_unpublished_artifacts(conn, stored)` | new | Names the artifacts whose committed version readers cannot see: in unpushed commits, or whose clone manifest row differs from the stored one |
 | `R/heal.R` | `.datom_publish_artifacts(conn, names)` | new | **The one publish path.** For each name, the clone's metadata, history and snapshot through `.datom_push_metadata_s3()`; then the manifest, last. Heal's step d, a write's steps 5-6 and the metadata-only route all go through it |
@@ -74,6 +94,8 @@ write commands.
 | `R/storage.R` | `datom_storage_copy()`, `datom_storage_verify()` | changed | Skip temporary files left by an interrupted local upload; `datom_storage_list()` is unchanged |
 | `R/utils-git.R` | `.datom_git_pull(path, pat)` | changed | On a conflict whose only file is `.datom/manifest.json`, calls `.datom_resolve_manifest_conflict()` instead of aborting. Every other conflict aborts as today |
 | `R/utils-git.R` | `.datom_git_head_file(path, rel)` | new | A file's content as committed in HEAD (`git2r::revparse_single(repo, "HEAD:<rel>")`) |
+| `R/utils-git.R` | `.datom_check_git_current()` | deleted | Its only caller, `datom_sync()`, heals instead (DD3), and its offline "warn and carry on" is replaced by DD1. The comments naming it in `datom_repo_commit()`, `.datom_git_ahead()` and `.datom_git_push()` are rewritten |
+| `DESCRIPTION` | `paws.storage` | changed | `(>= 0.8.0)`: the first release with both `IfNoneMatch` (since 0.7.0) and `ChecksumType` (since 0.8.0), checked against the CRAN sources |
 | `R/read_write.R` | `datom_write()` | changed | Heals first; data file before clone files; internal `.healed` argument so `datom_sync()` heals once per call (R3.7) |
 | `R/read_write.R` | `.datom_commit_and_mirror()` | changed | Loses its `upload` argument: the data file is already stored. Commits and pushes, then publishes through `.datom_publish_artifacts()` |
 | `R/read_write.R` | `.datom_resolve_parquet_sha()`, `.datom_resolve_document_sha()` | changed | The R1.3 decision, including the stored-file case, and now performing the upload (section 3) |
@@ -124,6 +146,16 @@ otherwise               -> .datom_storage_upload_absent(tmp, key)
   S3 is checked in the end-to-end run, not in unit tests (R7.5).
 - On a service that ignores `IfNoneMatch`, the `head_object` check still runs first; the race left
   is the R8 row.
+- **409 is an ordinary upload failure** (owner, 2026-10-28). AWS returns 412 when two conditional
+  uploads to one key collide (the first to finish wins), and 409 when a delete finishes before a
+  conditional upload completes. In datom only a teardown deletes data files, so a 409 needs a
+  teardown racing a write. The write stops with the usual upload error; the upload is its first step,
+  so nothing in the clone has changed, and a re-run finishes. No retry: it could upload into a
+  project being torn down.
+- **No fallback for a service that rejects the new headers** (owner, 2026-10-28). A service that
+  answers `IfNoneMatch` or `ChecksumSHA256` with 400 or 501 makes every write stop at its first step,
+  with the service's own error and nothing changed. Recorded in section 12 and beside `endpoint` in
+  the help; a fallback can be added when a user needs one.
 
 **Local** (`R/utils-local.R`):
 - `.datom_local_upload_absent()`: if the target exists, `"exists"`. Otherwise copy to a temporary
@@ -176,7 +208,15 @@ for each artifact directory, `metadata.json`, `version_history.json` and `set.js
 - Tracked files: unstaged with `git2r::reset(repo, path = ...)`, then `git2r::checkout(repo, path =
   ..., force = TRUE)` (the checkout half is probed; the unstaging half is not yet, see section 10).
   Untracked datom files (an artifact's first write that never committed) are deleted.
-- The message names each artifact reset and says to re-run its write.
+- The message depends on whose files were reset (owner, 2026-10-28):
+
+  | Whose files | Message |
+  |---|---|
+  | An artifact in `artifact`, which this command is about to write | Information only: "Found an unfinished write of `dm` that stopped before its commit; writing it again now." |
+  | Any other artifact | A warning: "Reset an unfinished write of `lb` that stopped before its commit. Run that write again to save it." |
+
+  Whether these are `cli` alerts or warnings with a class a test can count is settled in task 4a
+  (section 10, item 5).
 
 **b. Pull** (R3.7): `.datom_git_pull()`, i.e. fetch then merge, with R3.8 inside it. A conflict
 elsewhere aborts before storage changes. A failed fetch stops the command before it changes anything,
@@ -214,10 +254,12 @@ stored manifest names the newer version while the stored metadata holds the olde
 no difference. `datom_validate()` reports that case as `metadata_stale_s3` (section 6), and it waits
 for the table's next write or `datom_validate(fix = TRUE)` (section 12).
 
-**Who calls heal**: `datom_write()` (all three routes), `datom_write_set()`, `datom_sync()` (once
-per call, then `datom_write(.healed = TRUE)` per table), `.datom_sync_data_metadata()` (so the repair
-and the mirror-everything route). `datom_repo_commit()` calls step a only (R3.5). The four push
-commands call none of it (D10).
+**Who calls heal, and with which `artifact`**: `datom_write()` (all three routes; the name it writes,
+none on the mirror-everything route), `datom_write_set()` (the set's name), `datom_sync()` (once per
+call, with every table it is about to write, then `datom_write(.healed = TRUE)` per table),
+`.datom_sync_data_metadata()` (so the repair and the mirror-everything route; none, since it never
+redoes a write). `datom_repo_commit()` calls step a only (R3.5). The four push commands call none of
+it (D10).
 
 ## 5. A conflict only in the manifest (R3.8)
 
@@ -297,7 +339,7 @@ Finishing uploads the clone's manifest and reports success, as the last step of 
 | # | Decision | Status | Cost |
 |---|---|---|---|
 | DD1 | **A failed fetch at the start stops every command in R3** before it changes anything. Today `datom_sync()` warns and carries on offline (#104), then fails at the push with a local commit left behind | **Decided 2026-10-28: stop** | An offline user cannot even commit locally through datom; they re-run when online, which they must do anyway to push |
-| DD2 | **R3.8 sits inside `.datom_git_pull()`**, so `datom_pull()` and the four push commands also resolve a manifest-only conflict, not just the commands in R3 | **Decided 2026-10-28: yes** | Commands outside R3 rewrite the manifest during a merge, and say so. This happens only when the clone holds an unpushed commit that changed the manifest (in practice a datom write whose push failed), a colleague pushed a datom write since, and the manifest is the only conflicted file. A fast-forward, or a merge of commits that never touched the manifest, rebuilds nothing. The alternative was a second pull function for R3 alone, leaving `datom_pull()` to stop on a conflict a write would resolve by itself |
+| DD2 | **R3.8 sits inside `.datom_git_pull()`**, so `datom_pull()`, the four push commands, and the migration pull inside `datom_get_conn()` (in `.datom_resolve_data_location()`, `R/ref.R`) also resolve a manifest-only conflict, not just the commands in R3. That last caller pulls only on a governed project whose data moved; there, getting a connection can make a local merge commit and says so, where today it aborts and leaves the clone mid-merge (added from the review of `tasks.md`, owner, 2026-10-28) | **Decided 2026-10-28: yes** | Commands outside R3 rewrite the manifest during a merge, and say so. This happens only when the clone holds an unpushed commit that changed the manifest (in practice a datom write whose push failed), a colleague pushed a datom write since, and the manifest is the only conflicted file. A fast-forward, or a merge of commits that never touched the manifest, rebuilds nothing. The alternative was a second pull function for R3 alone, leaving `datom_pull()` to stop on a conflict a write would resolve by itself |
 | DD3 | **`datom_sync()` pulls a clone that is behind instead of refusing.** Today it stops with "pull first" (`.datom_check_git_current()`), the only command that does | **Decided 2026-10-28: pull** | A preview built before the pull can be stale. Probed (`research/stale_preview_probe.R`): when a colleague already imported the same file, the stale `new` row is re-read, the write finds no change and stores nothing, and the row reports `success`. Today that row's line also says "synced (new)", which claims work that did not happen; task 6 makes it say the table was already up to date. A conflict outside the manifest still stops the sync before storage changes |
 | DD4 | **No check before publishing.** Every publish writes git's latest state as the publishing clone sees it; a publish that lands after a colleague's newer one is corrected by the next datom command in any up-to-date clone (section 4, "Two publishes at once") | **Decided 2026-10-28: no check** | Readers can get a superseded current version until that next command. Set aside: a check before every publish that skipped an artifact whose stored version the clone had never seen, with the manifest merged row by row. It made the pointer right a few seconds sooner in one race, at the cost of code, tests and a blind spot (a colleague's revert to an older version looks to it like stale storage). The current version is a pointer the owners move, and reproducible reads name their version, so the sooner-by-seconds was not worth it |
 
@@ -315,14 +357,21 @@ Proven on 2026-10-28 (scripts in `research/`):
   (checked in a throwaway R session).
 - paws turns an S3 error into a condition classed by HTTP status (read from
   `paws.common::aws_error()`). paws.storage 0.9.0 accepts `IfNoneMatch`, `ChecksumSHA256` and
-  `ChecksumMode`, and its `head_object` output carries `ChecksumSHA256` and `ChecksumType`.
+  `ChecksumMode`, and its `head_object` output carries `ChecksumSHA256` and `ChecksumType`. From the
+  CRAN sources: `IfNoneMatch` is in `paws.storage` from 0.7.0 (2024-09), `ChecksumType` from 0.8.0
+  (2025-02), hence the `(>= 0.8.0)` pin.
+- From AWS's documentation on conditional writes: two conditional uploads to one key give 412 to all
+  but the first to finish; a delete that finishes before a conditional upload gives 409.
 
 Not yet traced, each resolved in the task that needs it:
 1. Unstaging chosen paths with `git2r::reset(repo, path = ...)` after a break between staging and
    committing.
 2. Real S3: `IfNoneMatch = "*"` refused with 412, and `ChecksumSHA256` with `ChecksumType`
-   `FULL_OBJECT` returned by `head_object` for an object put with one. End-to-end run only
-   (`dev/e2e-solo-s3.R`).
+   `FULL_OBJECT` returned by `head_object` for an object put with one. Settled in **task 1** by a
+   small probe with the owner's credentials (`research/s3_conditional_probe.R`), before the tasks
+   that depend on it (moved from the end-to-end run in task 11, owner, 2026-10-28). The probe runs on
+   the paws versions installed here and on CRAN's current ones (`paws.storage` 0.11.0 with
+   `paws.common` 0.9.0, which attaches a checksum to every upload by default).
 3. Heal's step d when the stored manifest cannot be read for a reason other than absence (the storage
    reader can rebuild it and warn); which of those outcomes counts as "behind".
 4. Whether any existing test asserts the old order or the manifest-first mirror and needs rewriting
@@ -359,6 +408,8 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | A merge conflict outside the manifest (two people wrote the same artifact, or the user's own files) | The command stops before storage changes; the message says to keep the remote copy of datom's files and re-run | Guarded by existing tests and R7.7; #105 owns the recovery command |
 | Two R sessions writing through one clone at once | Not supported | Documented |
 | An S3-compatible service that ignores conditional writes, two writers, same new content, same moment | One version's reads are refused by the hash check. Loud | Documented beside `endpoint` |
+| An S3-compatible service that rejects `IfNoneMatch` or `ChecksumSHA256` (400 or 501) | Every write stops at its first step with the service's own error; nothing changes. No fallback (owner, 2026-10-28) | Documented beside `endpoint` |
+| An S3 409: a teardown deletes a data file while a write uploads it | The write stops with the usual upload error before the clone changes; a re-run finishes | Documented in `dev/engineering-notes.md` |
 | A local store on a file system without hard links, two writers, same new content, same moment | The second move replaces the first file; one version's reads are refused by the hash check. Loud | Documented in `?datom_store_local` |
 | A crash during a local upload leaves a temporary file (`.{name}.tmp`) beside the data file | Nothing for readers. A leftover after the link costs no space (a hard link shares the bytes); one left mid-copy takes space. `datom_storage_list()` shows it; copy and verify skip it | Guarded (a test that copy and verify skip it); documented in `?datom_store_local` |
 | Two people publish the same table within seconds, and the older publish lands last (DD4) | Readers get the superseded version as current until the next datom command in any up-to-date clone republishes it. Reads that name a version are unaffected | Guarded (P10); documented in `dev/engineering-notes.md` |
@@ -367,18 +418,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | A teammate still on a released datom (D11) | An upgraded teammate's write can publish their data-less version | Documented in `NEWS.md` |
 | GitHub unreachable at the start of a command (DD1) | The command stops with a message and changes nothing; the user re-runs when online | Guarded (P9); documented in `?datom_write` |
 
-## 13. Task outline (becomes `tasks.md` once this design is approved)
+## 13. Tasks
 
-| # | Task | Escalation flag |
-|---|---|---|
-| 1 | Storage: upload only if absent (S3 conditional; local hard link with its fallback and recognisable temporary names, skipped by `datom_storage_copy()` and `datom_storage_verify()`), and the stored file's hash (whole-file checksum only), both backends | |
-| 2 | Tables: data file first and the R1.3 decision; `.datom_commit_and_mirror()` without the upload; break-at-each-step tests for `datom_write()` | design spot-check before starting (it changes the core write path) |
-| 3 | Sets: payload via a temp file, R1.5; the same tests for `datom_write_set()` | |
-| 4 | Heal (`R/heal.R`): reset, pull, check, push and publish; the one publish path, which a write's steps 5-6 move onto; wired into the write routes; tests for R3, R3.7, DD1 and P10 | design spot-check before starting (every write command calls it) |
-| 5 | R3.8 in `.datom_git_pull()`, with `.datom_manifest_row()` extracted; tests R7.7 | |
-| 6 | Scan and sync: HEAD's manifest, `unpublished`, one heal per sync (which pulls a behind clone, DD3); a row whose write found no change says it was already up to date | |
-| 7 | Repair and mirror-everything: heal first, manifest last, per-artifact report; `datom_validate()`'s fetch and the `metadata_stale_s3` status; tests R7.8 | |
-| 8 | `datom_repo_commit()` reset; the R3.6 message on the four push commands | purity audit after (tasks 2-8 touch many files) |
-| 9 | `datom_init_repo()` re-run | |
-| 10 | Docs: help pages, NEWS, `dev/datom_specification.md`, the conventions section, the datom-sets I5 note, engineering notes | test coverage review before |
-| 11 | End-to-end on local and on real S3; spec completion | |
+The task list is `tasks.md`. The outline that stood here was replaced by it on 2026-10-28, so the
+two cannot disagree.
