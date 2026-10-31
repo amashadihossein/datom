@@ -20,8 +20,8 @@ what shipped and wait for the owner's go-ahead before the next one.
 
 Requirements approved 2026-10-28 (amended the same day: R3.3, R5.5, R7.8, an R8 row, and D13 with
 R3.1 and R9). Design approved 2026-10-28 with decisions DD1-DD4. **Task list approved by the owner on
-2026-10-28**, after the four reviews below. **Task 1 done 2026-10-30. Next: task 2, after its
-design spot-check on a more capable model.**
+2026-10-28**, after the four reviews below. **Task 1 done 2026-10-30. Task 2's design spot-check done
+the same day (below); next is task 2.**
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
@@ -60,6 +60,20 @@ taken, the second with a wider outcome:
 covers R9.7; "decisions D1-D13" here and in `design.md`; task 4a removes the commit-and-push block of
 the metadata-only route, which after D13 has nothing to commit.
 
+**Design spot-check before task 2, 2026-10-30**, of `99ca67c`, by another agent, evaluated with the
+owner one point at a time. All five points taken, three with additions:
+
+| Point | Outcome |
+|---|---|
+| 1. Task 2 cannot drop the `upload` argument of `.datom_commit_and_mirror()`: `datom_write_set()` still passes it | Task 2 stops passing it from `datom_write()`; task 3 removes it, with that function's docstring correction |
+| 2. `metadata.json` is uploaded first within step 5, so a break after it makes the re-run report "none" and publish nothing more | `.datom_push_metadata_s3()` uploads snapshot, history, then `metadata.json` last (task 2; design section 1); a break between history and `metadata.json` joins the break table; a guard to probe |
+| 3. The resolver checks existence and then the upload checks again | The resolver calls `.datom_storage_upload_absent()` directly; `"exists"` records the stored file's hash (design section 3). Added: the P3 fixture stores the same data in different bytes, or the probe of the `"exists"` branch cannot fail |
+| 4. Until 4b a re-run after a push break makes a second commit, and the stored history names it | Task 2's break tests assert only what a reader sees and the recorded hash; 4b tests the first-commit rule. Added: heal's publish passes no commit id, a write's own publish passes the one it made (design section 4, step d) |
+| 5. About 22 tests stub the old upload | Added: two of them count uploads and would stay green whatever the write uploads; task 2 re-points them and watches them go red once, task 3 re-points the set-repair one. The shared stub goes in `helper-mock.R`, not `helper-interrupt.R` (it has nothing to do with breaks) |
+
+Also noted by the review, no change: a full write whose content matches a stored pre-cv1 file now keeps
+that file and records its hash (R1.2); task 2's resolver docstring says so.
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D13) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
@@ -74,7 +88,7 @@ what a reader sees (the new version reads; the stored manifest names it).
 
 | Command | Task | Steps broken |
 |---|---|---|
-| `datom_write()`, data-frame route | 2 (steps 1-5), 4b (step 6) | data file upload; clone files; commit; push; metadata upload; manifest upload |
+| `datom_write()`, data-frame route | 2 (steps 1-5), 4b (step 6) | data file upload; clone files; commit; push; metadata upload (the whole step, and between the history upload and `metadata.json`); manifest upload |
 | `datom_write_set()` | 3 (steps 1-5), 4b (step 6) | the same six |
 | `datom_write(conn, name =)`, the metadata-only route | 4b | its push; its metadata upload |
 | `datom_sync()` | 6 | the second of three tables, at its file import, data file upload, commit, push and manifest upload; then re-scan and re-sync, and every table reads |
@@ -136,21 +150,42 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
 - [ ] **2. Tables: the data file first** (R1.1, R1.3, R1.4, R2.1; design section 3)
   - **Escalation first: design spot-check on a more capable model.**
   - `R/read_write.R`: `.datom_resolve_parquet_sha()` decides and uploads through
-    `.datom_storage_upload_absent()`, recording the stored file's hash when the file is already
-    there; `datom_write()` calls it before `.datom_write_metadata_local()`;
-    `.datom_commit_and_mirror()` loses its `upload` argument.
-  - Correct the old-order docstrings of `.datom_commit_and_mirror()` and
-    `.datom_resolve_parquet_sha()` (R9.4).
+    `.datom_storage_upload_absent()`, with no separate existence check first (design section 3):
+    `"exists"` records `.datom_storage_object_sha256()`, `"uploaded"` the fresh bytes' hash;
+    `datom_write()` calls it before `.datom_write_metadata_local()`. `datom_write()` stops passing
+    `upload` to `.datom_commit_and_mirror()`; the argument stays for `datom_write_set()` until
+    task 3, and its description gains "only the set write passes it".
+  - `.datom_push_metadata_s3()` uploads the snapshot, then the history, then `metadata.json` last,
+    because change detection reads it as the mark that step 5 is done (design section 1).
+  - Correct the old-order docstrings of `.datom_resolve_parquet_sha()` and
+    `.datom_push_metadata_s3()` (R9.4). The resolver's says that a full write whose content matches a
+    stored file with no recorded hash (written before datom-cv1) now keeps that file and records its
+    hash, where it used to overwrite it (R1.2). `.datom_commit_and_mirror()`'s is task 3's.
   - Create `tests/testthat/helper-interrupt.R`. Rewrite any existing test that asserts the old order
     (design section 10, item 4).
+  - Re-point every test that stubs or counts `.datom_storage_upload()` for a table's data file to
+    `.datom_storage_upload_absent()`, through one shared stub in `helper-mock.R` that can record
+    the keys it was given (about 18 do-nothing stubs on a fake S3 connection in `test-read-write.R`,
+    plus its full-write upload test). Name in the commit message: the two counting tests, the
+    refused-table test in `test-hashable.R` and the metadata-only write in `test-read-write.R`,
+    watched going red once with their counter left on the old function, to show the old counter
+    can no longer catch an upload; and the four `.datom_resolve_parquet_sha()` unit tests,
+    rewritten for its new arguments. Rewrites only, no test removed.
   - **Update `research/write_steps_probe.R` before using it as evidence.** Break step 1 by replacing
     `.datom_storage_upload_absent()`; add a step-2 break by replacing `.datom_update_manifest_entry()`
     (metadata and history written, no manifest row); keep the commit, push, metadata and manifest
     breaks. A row counts only if its `raised` column is `TRUE`. Update `research/README.md`.
-  - Tests: the break table's steps 1-5 for `datom_write()` (P1); the recorded hash equals the stored
-    file's hash, including when the file was stored by an earlier broken run (P3).
-  - Guards to probe: the upload placed before the first clone write; the stored-file branch of the
-    hash decision.
+  - Tests: the break table's steps 1-5 for `datom_write()` (P1), step 5 broken both as a whole and
+    between the history upload and `metadata.json`; the recorded hash equals the stored file's hash,
+    including when the file was stored by an earlier broken run (P3). For that case the stored file
+    holds the same data in different bytes (other parquet options), so the recorded hash can only
+    match if it came from storage, and a read of the version then succeeds. The break tests assert
+    what a reader sees (P1) and the recorded hash (P3), not how many commits a re-run makes or which
+    commit the stored history names: until 4b, a re-run after a push break makes a second commit
+    (`metadata.json`'s `created_at` moves) and the stored history names it, as today's code does.
+  - Guards to probe: the upload placed before the first clone write; the `"exists"` branch of the
+    hash decision (record the stored file's hash, not the fresh bytes'); `metadata.json` uploaded
+    last within step 5.
   - Acceptance: P1 for steps 1-5 and P3 for `datom_write()`; the updated
     `research/write_steps_probe.R` shows, for steps 1-5, the break firing and the re-run reading the
     new version.
@@ -160,8 +195,12 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     `.datom_resolve_document_sha()`, then writes `set.json`; when the recorded hash is a stored
     payload's and the fresh bytes differ, `set.json` takes the stored bytes.
   - `.datom_restore_set_payload()` uploads through `.datom_storage_upload_absent()`.
-  - Correct the old-order docstrings of `.datom_resolve_document_sha()` and
-    `.datom_restore_set_payload()` (R9.4).
+  - `.datom_commit_and_mirror()` loses its `upload` argument, now that no caller passes it.
+  - Correct the old-order docstrings of `.datom_commit_and_mirror()`, `.datom_resolve_document_sha()`
+    and `.datom_restore_set_payload()` (R9.4).
+  - Re-point the set-repair test "a stored payload that is present is never re-uploaded" in
+    `test-validate-sets.R` to `.datom_storage_upload_absent()`; left on the old function it would
+    stay green whatever the repair uploads.
   - **Update `research/set_steps_probe.R`** the same way as task 2's probe; its step-2 break leaves
     `set.json`, metadata and history written.
   - Tests: the break table's steps 1-5 for `datom_write_set()` (P1); a re-run with a different
@@ -229,7 +268,9 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     (P1); another artifact's write broken after its commit is published (R7.2); a publish landing
     behind a colleague's newer one, corrected by the next command (P10); storage reads of
     `.metadata/manifest.json` counted through a mock: one during a write (R3.4; the three-table sync
-    count is task 6's, since sync heals once only from then).
+    count is task 6's, since sync heals once only from then); a re-run after a push break makes no
+    second commit, and the stored history names the version's first commit (the rule in
+    `R/version-commit.R`; design section 4, step d).
   - Guards to probe: the unpublished-artifact comparison, the manifest-last order.
   - Acceptance: P1 (all six steps, tables and sets), P10, R3.4; `research/other_command_probe.R`
     shows `dm` published when its write broke after its commit.

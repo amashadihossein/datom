@@ -42,7 +42,7 @@ command(conn, ...)
     2. clone files                              (metadata, history, manifest row, set.json)
     3. commit
     4. push (pulls first, as today; R3.8 applies)
-    5. metadata, history, snapshot -> storage
+    5. snapshot, history, then metadata.json -> storage   (metadata.json last)
     6. manifest -> storage                      (always last)
 
   every publish (heal's d, a write's 5-6, the repair) goes through one function,
@@ -54,7 +54,11 @@ publishes an artifact's documents first and the manifest after. So a stored mani
 git means that artifact's documents are current too, and heal can find all unpublished work with one
 read of the stored manifest (R3.4). Today `.datom_sync_data_metadata()` writes the manifest **first**;
 that order is reversed (section 6). One ordering of two publishes landing at once breaks this
-invariant; it is a row of section 12.
+invariant; it is a row of section 12. Within an artifact's documents, `metadata.json` goes last for
+the same reason: change detection reads it as the mark that step 5 is done, so a break before it
+lands leaves the re-run seeing a change and publishing all three again, where a break after an early
+`metadata.json` would make the re-run report "none" and publish nothing more (design spot-check
+before task 2, owner, 2026-10-30).
 
 **What runs before heal, and what after** (from the review of `tasks.md`, owner, 2026-10-28). Heal can
 reset files, merge, push and publish, so a mistyped argument must be refused before it runs (R9.1:
@@ -102,7 +106,8 @@ write commands.
 | `R/utils-git.R` | `.datom_check_git_current()` | deleted | Its only caller, `datom_sync()`, heals instead (DD3), and its offline "warn and carry on" is replaced by DD1. The comments naming it in `datom_repo_commit()`, `.datom_git_ahead()` and `.datom_git_push()` are rewritten |
 | `DESCRIPTION` | `paws.storage` | changed | `(>= 0.8.0)`: the first release with both `IfNoneMatch` (since 0.7.0) and `ChecksumType` (since 0.8.0), checked against the CRAN sources |
 | `R/read_write.R` | `datom_write()` | changed | Heals first; data file before clone files; internal `.healed` argument so `datom_sync()` heals once per call (R3.7) |
-| `R/read_write.R` | `.datom_commit_and_mirror()` | changed | Loses its `upload` argument: the data file is already stored. Commits and pushes, then publishes through `.datom_publish_artifacts()` |
+| `R/read_write.R` | `.datom_commit_and_mirror()` | changed | Loses its `upload` argument: the data file is already stored. The table write stops passing it in task 2; the argument goes in task 3, when the set write stops too. Commits and pushes, then publishes through `.datom_publish_artifacts()` |
+| `R/read_write.R` | `.datom_push_metadata_s3()` | changed | Uploads the snapshot, then the history, then `metadata.json` last (section 1) |
 | `R/read_write.R` | `.datom_resolve_parquet_sha()`, `.datom_resolve_document_sha()` | changed | The R1.3 decision, including the stored-file case, and now performing the upload (section 3) |
 | `R/set.R` | `datom_write_set()` | changed | Payload built in a temp file; uploaded first; the clone's `set.json` takes the stored bytes when they differ (R1.5) |
 | `R/utils-sha.R` | `.datom_sync_metadata()` | changed | Its opening pull is replaced by heal; it publishes through `.datom_publish_artifacts()`. It no longer commits a hand edit of the table's `metadata.json`: heal resets it first (requirements D13), so the route publishes what is committed |
@@ -129,11 +134,17 @@ uploads**, before any clone file changes. `.datom_resolve_document_sha()` is its
 ```
 metadata_only           -> carry current hash forward, no upload            (R1.4, unchanged)
 history names a hash    -> record it, no upload                             (R1.3 case 1; D7/D11: not re-checked)
-key exists in storage   -> record .datom_storage_object_sha256(key)         (case 2)
 otherwise               -> .datom_storage_upload_absent(tmp, key)
                              "uploaded" -> record the fresh bytes' hash      (case 3)
-                             "exists"   -> record the stored hash            (someone stored it in between)
+                             "exists"   -> record .datom_storage_object_sha256(key)
+                                           (case 2: an earlier run or a colleague stored it,
+                                            before this call or during it)
 ```
+
+No separate existence check comes first: the upload makes it (R1.2), so one path covers "stored
+before" and "stored in between", and a write of new content costs one S3 request fewer (design
+spot-check before task 2, owner, 2026-10-30). A file stored before datom-cv1, with no hash in the
+history, is kept and its hash recorded, where the old code overwrote it.
 
 **S3** (`R/utils-s3.R`):
 - `.datom_s3_upload_absent()`: `head_object` first (the R1.2 check); if absent, `put_object(...,
@@ -244,6 +255,10 @@ bring a manifest or metadata from a newer datom. Same reasoning as the existing 
   least what GitHub holds, so a difference found here means storage is behind this clone (R3.3).
 - `.datom_publish_artifacts()` for those names, manifest last. A set's payload is not re-uploaded
   here: under D1 it is in storage before its commit exists.
+- Heal's publish passes no commit id, so the stored history works it out from git: the first commit
+  that produced the version (`R/version-commit.R`). A write's own publish passes the commit it just
+  made; once heal runs first, a re-run makes no second commit, so the two agree (design spot-check
+  before task 2, owner, 2026-10-30).
 
 The command's own work then runs against a clone that is clean, current and fully published, so
 today's change detection (`.datom_has_changes()`, against storage) answers correctly, and a re-run
