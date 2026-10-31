@@ -8,6 +8,9 @@ each stop for the owner's approval; decisions are taken one at a time.
 **Test baseline**: 5142 expectations, 0 failed, 0 skipped (`devtools::test()` on `dev` at `347a403`,
 measured 2026-10-27 for the s3-credential-function spec at the same commit).
 **Status**: **Approved by the owner on 2026-10-28.** Decisions agreed in chat the same day.
+Amended with the owner later that day, during design review: R3.3 records that a colleague's later
+publish can be overwritten until the next command (design DD4); R5.5 and R7.8 add the
+`metadata_stale_s3` status to `datom_validate()`.
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -268,7 +271,15 @@ writes nothing and is unchanged.
 3. It reports what it did for each artifact.
 4. The route of `datom_write()` that mirrors everything (no `data`, no `name`) shares this routine
    and behaves the same.
-5. `datom_validate(fix = FALSE)` is unchanged.
+5. `datom_validate(fix = FALSE)` is unchanged except for one new status and the fetch it needs
+   (amended with the owner on 2026-10-28):
+   - It reports `metadata_stale_s3` for an artifact whose stored `metadata.json` holds a different
+     version from the clone's. This catches a stored current version left behind git, which nothing
+     else reports (design section 12).
+   - It fetches first, without merging, so it still changes nothing. When the clone is behind the
+     remote, it skips this comparison and says to run `datom_pull()`, because a colleague's newer
+     stored version would otherwise be reported as stale.
+   - With `fix = TRUE`, heal pulls first, so the comparison runs on a current clone.
 
 ### R6. `datom_init_repo()` re-run
 
@@ -302,6 +313,9 @@ writes nothing and is unchanged.
    write whose push broke while the other clone pushed: the re-run finishes, the rebuilt manifest
    names both tables, and the stored manifest matches it. Two clones writing the **same** table
    still stop on the conflict in its `version_history.json`, with storage unchanged.
+8. R5.5's new status is tested: `datom_validate()` reports `metadata_stale_s3` for an artifact whose
+   stored `metadata.json` holds an older version than the clone's, `datom_validate(fix = TRUE)`
+   clears it, and a clone that is only behind the remote does not report it.
 
 ### R8. Residual failure modes
 
@@ -351,7 +365,7 @@ and what to do).
    leftover file, a conflict only in the manifest is resolved by datom, and: commit your own files
    with `datom_repo_commit()`, because a plain `git commit` can capture a datom write halfway
    through), `?datom_sync_manifest` (the new status,
-   "published"), `?datom_validate` (the repair pushes), `?datom_init_repo` (a re-run finishes),
+   "published"), `?datom_validate` (the repair pushes; the new status `metadata_stale_s3`), `?datom_init_repo` (a re-run finishes),
    `?datom_repo_commit` (it resets a datom write that never committed), and the four commands of
    R3.6 (they push a datom write's commit without publishing it, and say so).
 6. `NEWS.md`: the behaviour changes, upgrade-relevant first (the repair now pushes; the new scan

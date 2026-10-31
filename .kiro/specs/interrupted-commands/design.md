@@ -7,8 +7,9 @@ stops the command); DD2 decided (every pull resolves a manifest-only conflict); 
 are taken; the design as a whole awaits approval. The routine and its file were named `heal` by the
 owner on 2026-10-28 (first drafted as "settle" in `R/finish.R`). A review by another agent the same day,
 evaluated with the owner, added the hard-link upload on a local store and the whole-file condition on
-S3's stored checksum (section 3); a later one added recognisable temporary names on a local store,
-skipped by storage copy and verify (section 3). It also added a check before every publish; the owner dropped that
+S3's stored checksum (section 3); later ones added recognisable temporary names on a local store,
+skipped by storage copy and verify (section 3), and the `metadata_stale_s3` status in
+`datom_validate()` (section 6; requirements R5.5 and R7.8 amended with the owner). It also added a check before every publish; the owner dropped that
 check after weighing what the current version is for (DD4).
 **Read first**: `requirements.md` (terms, findings, decisions D1-D12, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
@@ -83,7 +84,8 @@ write commands.
 | `R/sync.R` | `.datom_sync_data_metadata()` | changed | Heals (so it pushes first, R5.2), then mirrors every artifact, then the manifest last |
 | `R/sync.R` | `.datom_read_manifest()` | changed | A third scope, `"head"`, reading HEAD's copy through `.datom_git_head_file()` with the same schema check and upgrade |
 | `R/sync.R` | `.datom_restore_set_payload()` | changed | Uploads through `.datom_storage_upload_absent()` |
-| `R/validate.R` | `datom_validate()` | changed | Messages only: the fix now pushes and reports per artifact (R5.3) |
+| `R/validate.R` | `datom_validate()` | changed | The fix now pushes and reports per artifact (R5.3); a fetch first, for the new status (R5.5, section 6) |
+| `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and reports `metadata_stale_s3` when its version differs from the clone's (section 6) |
 | `R/repo.R` | `datom_repo_commit()` | changed | `.datom_reset_unfinished()` before staging (R3.5); the R3.6 message when it pushes |
 | `R/repo.R` | `datom_repo_push()`, `datom_repo_attach_governance()`, `datom_repo_set_data_store()` | changed | The R3.6 message around their push |
 | `R/conn.R` | `datom_init_repo()` | changed | Finishes a half-initialised folder (section 8) |
@@ -162,7 +164,7 @@ small) and written to `set.json` instead, so git and storage hold one spelling (
 | a clone behind GitHub (pulled) | damage a released datom left behind (D7, D11) |
 | a merge conflict only in the manifest (rebuilt) | a file someone put in storage by hand |
 | committed work GitHub or storage lacks (pushed, then published) | anything when GitHub cannot be reached: it stops instead (DD1) |
-| a stale publish by another clone, the next time it runs (section 4, last part) | the one interleaving of two publishes listed last in section 12 |
+| a stale publish by another clone, the next time it runs (section 4, last part) | the one crossing of two publishes in section 12, which `datom_validate()` reports and its fix clears |
 
 **a. Reset what never committed** (`.datom_reset_unfinished()`; R2.4, R3.1). "Datom-owned files" are,
 for each artifact directory, `metadata.json`, `version_history.json` and `set.json`, plus
@@ -209,7 +211,8 @@ members, lineage parents) and is unaffected. What matters is that the pointer en
 and the next datom command in any up-to-date clone does that: its heal sees the stored manifest row
 behind its own and republishes. One interleaving escapes it: when the two publishes cross so that the
 stored manifest names the newer version while the stored metadata holds the older one, step d sees
-no difference. That case waits for the table's next write or `datom_validate(fix = TRUE)` (section 12).
+no difference. `datom_validate()` reports that case as `metadata_stale_s3` (section 6), and it waits
+for the table's next write or `datom_validate(fix = TRUE)` (section 12).
 
 **Who calls heal**: `datom_write()` (all three routes), `datom_write_set()`, `datom_sync()` (once
 per call, then `datom_write(.healed = TRUE)` per table), `.datom_sync_data_metadata()` (so the repair
@@ -248,6 +251,16 @@ republishes every artifact rather than only those whose manifest row differs, it
 crossed-publish case of section 4. The confirmation prompt on the `datom_write(conn)` route says it
 may push. `datom_validate(fix = TRUE)` reports per artifact what was reset, pushed and published
 (R5.3).
+
+**A new status, `metadata_stale_s3`** (R5.5, amended 2026-10-28). Without it, `datom_validate()`
+says "All checks passed" on the crossed publish, because today it only checks that each stored file
+exists. `.datom_validate_one_table()` now also reads the stored `metadata.json` (one small read per
+artifact, in validate only) and compares its version with the clone's; a difference is
+`metadata_stale_s3`. To keep a behind clone from reporting a colleague's newer version as stale,
+`datom_validate()` fetches first, without merging: when the clone is behind the remote it skips the
+comparison and says to run `datom_pull()`, as the scan does (section 7). With `fix = TRUE`, heal has
+already pulled, so the comparison runs on a current clone and the repair then clears it.
+`.datom_validate_unfixable_tables()` does not list the new status: the repair fixes it.
 
 ## 7. The scan and the sync (R4)
 
@@ -327,6 +340,7 @@ Not yet traced, each resolved in the task that needs it:
 | P8 | Files datom does not own are never reset | R3.1, R3.5 |
 | P9 | A failed fetch at the start leaves the clone, git and storage unchanged | DD1, R3.7 |
 | P10 | After a publish lands behind a colleague's newer one, the next datom command in an up-to-date clone leaves storage at git's latest | DD4 |
+| P11 | `datom_validate()` reports `metadata_stale_s3` when an artifact's stored `metadata.json` holds an older version than the clone's, and never on a clone that is only behind the remote | R5.5, R7.8 |
 
 Each new guard's test is probed once by removing that guard alone (conventions item 2a).
 
@@ -344,7 +358,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | A local store on a file system without hard links, two writers, same new content, same moment | The second move replaces the first file; one version's reads are refused by the hash check. Loud | Documented in `?datom_store_local` |
 | A crash during a local upload leaves a temporary file (`.{name}.tmp`) beside the data file | Nothing for readers. A leftover after the link costs no space (a hard link shares the bytes); one left mid-copy takes space. `datom_storage_list()` shows it; copy and verify skip it | Guarded (a test that copy and verify skip it); documented in `?datom_store_local` |
 | Two people publish the same table within seconds, and the older publish lands last (DD4) | Readers get the superseded version as current until the next datom command in any up-to-date clone republishes it. Reads that name a version are unaffected | Guarded (P10); documented in `dev/engineering-notes.md` |
-| The same, with the two publishes crossing so the stored manifest names the newer version and the stored metadata holds the older one (DD4) | Readers get the superseded version, and heal does not notice, until the table's next write or `datom_validate(fix = TRUE)` | Documented in `dev/engineering-notes.md`; not guarded |
+| The same, with the two publishes crossing so the stored manifest names the newer version and the stored metadata holds the older one (DD4) | Readers get the superseded version, and heal does not notice, until the table's next write or `datom_validate(fix = TRUE)` | Reported by `datom_validate()` as `metadata_stale_s3`; fixed by `datom_validate(fix = TRUE)` or the table's next write (section 6, P11) |
 | A file put at a data address by hand, adopted by a re-run | Its content is read without a content check | Documented in `dev/engineering-notes.md`; not checked |
 | A teammate still on a released datom (D11) | An upgraded teammate's write can publish their data-less version | Documented in `NEWS.md` |
 | GitHub unreachable at the start of a command (DD1) | The command stops with a message and changes nothing; the user re-runs when online | Guarded (P9); documented in `?datom_write` |
@@ -359,7 +373,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | 4 | Heal (`R/heal.R`): reset, pull, check, push and publish; the one publish path, which a write's steps 5-6 move onto; wired into the write routes; tests for R3, R3.7, DD1 and P10 | design spot-check before starting (every write command calls it) |
 | 5 | R3.8 in `.datom_git_pull()`, with `.datom_manifest_row()` extracted; tests R7.7 | |
 | 6 | Scan and sync: HEAD's manifest, `unpublished`, one heal per sync (which pulls a behind clone, DD3); a row whose write found no change says it was already up to date | |
-| 7 | Repair and mirror-everything: heal first, manifest last, per-artifact report | |
+| 7 | Repair and mirror-everything: heal first, manifest last, per-artifact report; `datom_validate()`'s fetch and the `metadata_stale_s3` status; tests R7.8 | |
 | 8 | `datom_repo_commit()` reset; the R3.6 message on the four push commands | purity audit after (tasks 2-8 touch many files) |
 | 9 | `datom_init_repo()` re-run | |
 | 10 | Docs: help pages, NEWS, `dev/datom_specification.md`, the conventions section, the datom-sets I5 note, engineering notes | test coverage review before |
