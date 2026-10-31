@@ -105,6 +105,15 @@ revert paths already do (a docstring sentence, no code change). Checked with no 
 that can fire comes after the new first-step upload, the history lookup reads the clone, no table
 test asserts the old order.
 
+A review by another agent of `bfe176d`, evaluated with the owner the same day (agreeing with the rest
+of `4009717` and `bfe176d`): `metadata_stale_s3` recomputes the version of both documents, like for
+like (task 7, design section 6); heal's stop on a publish that fails every run names the artifact,
+the file and the error, and for a file that does not parse gives the way out, restore it from git and
+commit with `git` (task 4b, design section 4, a section 12 row). The reviewer asked whether a write
+of that artifact may skip its own failed publish: no, since a broken history stops that write anyway.
+R9.5 is not amended; the instructions live in the stop message. The repair publishing behind
+artifacts twice (heal, then the repair) is kept, with one sentence in section 6.
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D13) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
@@ -311,6 +320,9 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     corrected in task 2.)
   - `.datom_publish_artifacts()` publishes the manifest only if every artifact's documents were
     published; when heal's publish fails, the command stops before its own work (design section 6).
+    The stop names the artifact, the file and the underlying error; for a file that does not parse
+    it says to restore it from the last commit where it parses, commit it with `git`, and re-run
+    (design section 4, step d).
   - A publish from the clone keys each snapshot by `.datom_recorded_current_version()` of the
     clone's `metadata.json` and history, never a recompute, and writes the snapshot only when
     `.datom_compute_metadata_sha()` agrees; otherwise it skips the snapshot with a warning naming
@@ -325,7 +337,9 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     count is task 6's, since sync heals once only from then); a re-run after a push break makes no
     second commit, and the stored history names the version's first commit (the rule in
     `R/version-commit.R`; design section 4, step d); heal's publish failing for one artifact leaves
-    the manifest unpublished and the command stopped before its own work; a committed
+    the manifest unpublished and the command stopped before its own work, with a message naming
+    the artifact and the file; a committed unparseable `version_history.json` in an artifact whose
+    publish is pending gives that stop with the restore-and-commit instructions; a committed
     `metadata.json` that does not hash to its recorded version (a hand edit committed with plain
     git, as 0.2.0's metadata-only route did) leaves the previous version's snapshot byte-identical,
     puts no snapshot under the recomputed id, warns naming the artifact, and still publishes the
@@ -387,8 +401,9 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     upload that file" line in `dev/engineering-notes.md`: one function uploads the history from this
     task on.
   - `R/validate.R`: `datom_validate()` reports per artifact what was reset, pushed and published
-    (R5.3); fetches first; `.datom_validate_one_table()` reports `metadata_stale_s3` against the
-    version in the clone's last commit (R5.5).
+    (R5.3); fetches first; `.datom_validate_one_table()` reports `metadata_stale_s3` when the stored
+    `metadata.json` and the clone's last committed copy recompute to different versions, both with
+    `.datom_compute_metadata_sha()` (R5.5; design section 6).
   - Tests: R5.1-R5.4; the break table's repair row; R7.8 (stale reported and cleared; not reported on
     a behind clone or for a write broken before its commit; a failed fetch skips with a warning); a
     "no" at the prompt leaves git and storage unchanged, and heal never runs; heal called exactly
@@ -400,9 +415,10 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     `fix = TRUE`, and a read pinned to that version succeeds; one artifact failing leaves the
     manifest unpublished, the others published, and a message to re-run; a committed
     `metadata.json` that does not hash to its recorded version (task 4b's fixture) does not stop the
-    repair from publishing every other artifact and the manifest.
+    repair from publishing every other artifact and the manifest; the same fixture is not reported
+    as `metadata_stale_s3`, before or after `fix = TRUE` (R7.8).
   - Guards to probe: the reset before publishing, the manifest-last order, `metadata.json` last within
-    each artifact, the stale comparison, the behind-clone skip.
+    each artifact, the stale comparison like for like (both sides recomputed), the behind-clone skip.
   - Acceptance: R5.1-R5.5, P4 (for the mirror-everything route and the repair), P7, P11.
 
 - [ ] **8. The git and config commands** (R3.5, R3.6; D9, D10)
