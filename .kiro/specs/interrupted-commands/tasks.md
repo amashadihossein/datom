@@ -84,6 +84,18 @@ Checking that snapshot in `datom_validate()` was left out of this spec (no route
 gap; it belongs with the other storage-completeness checks validate lacks) and goes to a follow-up
 issue, drafted in `draft-issue-validate-completeness.md` and not yet filed.
 
+A further review by the same reviewer, of `ac54763`, evaluated with the owner one point at a time.
+Point 1 was confirmed by a real write (2026-10-30): no datom command puts `{name}/.metadata/` in a
+clone, so the repair's snapshot loop copied nothing.
+
+| Point | Outcome |
+|---|---|
+| 1. The repair cannot restore snapshots: the clone never holds them | Confirmed. Four statements corrected (design sections 6 and 12, the draft issue). Added: "Published" includes the snapshot, so the repair has never published in the requirements' sense (R5.2) |
+| 2. 0.2.0's metadata-only route is a source | Confirmed by a probe, but of a different state: the stored `metadata.json` describes a version nothing records, while readers are told the previous one. Its own row in section 12 and its own item in the draft issue |
+| 3. The repair uses the one publish path | Taken (task 7, design section 6); `.datom_sync_one_artifact()` deleted. Added: the manifest is published only if every artifact was (task 4b) |
+| 4. The clone-folder loop | Deleted with its function; the affected tests and notes listed in task 7 |
+| 5. (added) Which version a publish from the clone names | The recorded version, never a recompute; the snapshot written only when the document hashes to it, else skipped with a warning that does not hold back the manifest (task 4b, design section 4) |
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D13) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
@@ -270,8 +282,15 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
 - [ ] **4b. Heal: push and publish** (R2.2, R2.3, R3.2-R3.4; DD4; design section 4)
   - `R/heal.R`: heal's step d, `.datom_unpublished_artifacts()`, `.datom_publish_artifacts()` (the
     one publish path) and `.datom_pushed_artifacts()`. A write's steps 5-6 and the metadata-only
-    route move onto `.datom_publish_artifacts()`.
-  - Correct the old-order docstring of `.datom_push_metadata_s3()` (R9.4).
+    route move onto `.datom_publish_artifacts()`. (`.datom_push_metadata_s3()`'s docstring is
+    corrected in task 2.)
+  - `.datom_publish_artifacts()` publishes the manifest only if every artifact's documents were
+    published; when heal's publish fails, the command stops before its own work (design section 6).
+  - A publish from the clone keys each snapshot by `.datom_recorded_current_version()` of the
+    clone's `metadata.json` and history, never a recompute, and writes the snapshot only when
+    `.datom_compute_metadata_sha()` agrees; otherwise it skips the snapshot with a warning naming
+    the artifact, which does not count as a failure for the manifest rule. A write's own publish
+    passes the version it computed (design section 4, step d).
   - Settle design section 10 item 3 (a stored manifest unreadable for a reason other than absence) and
     item 5 for the publish messages, and record the answers in `design.md`.
   - Tests: the break table's step 6 for both write commands, and its rows for the metadata-only route
@@ -280,8 +299,14 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     `.metadata/manifest.json` counted through a mock: one during a write (R3.4; the three-table sync
     count is task 6's, since sync heals once only from then); a re-run after a push break makes no
     second commit, and the stored history names the version's first commit (the rule in
-    `R/version-commit.R`; design section 4, step d).
-  - Guards to probe: the unpublished-artifact comparison, the manifest-last order.
+    `R/version-commit.R`; design section 4, step d); heal's publish failing for one artifact leaves
+    the manifest unpublished and the command stopped before its own work; a committed
+    `metadata.json` that does not hash to its recorded version (a hand edit committed with plain
+    git, as 0.2.0's metadata-only route did) leaves the previous version's snapshot byte-identical,
+    puts no snapshot under the recomputed id, warns naming the artifact, and still publishes the
+    manifest.
+  - Guards to probe: the unpublished-artifact comparison, the manifest-last order, the manifest
+    held back after a failed artifact, the recorded-version agreement check.
   - Acceptance: P1 (all six steps, tables and sets), P10, R3.4; `research/other_command_probe.R`
     shows `dm` published when its write broke after its commit.
 
@@ -322,10 +347,20 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
 
 - [ ] **7. The repair** (R5; design section 6)
   - `R/sync.R`: `.datom_sync_data_metadata()` heals (so it pushes), right after its confirmation
-    prompt, which says it may push; then mirrors every artifact, then the manifest last (P7). This is
-    the only place the mirror-everything route and the repair heal (design section 4).
-  - `.datom_sync_one_artifact()` restores a set's payload, then uploads the snapshots, then the
-    history, then `metadata.json` last (design section 6).
+    prompt, which says it may push. This is the only place the mirror-everything route and the
+    repair heal (design section 4). Then it restores each set's payload where storage lacks it
+    (`.datom_restore_set_payload()`, data file first), publishes every artifact through
+    `.datom_publish_artifacts()` (snapshot, history, `metadata.json` last), then the manifest, only
+    if every artifact published (P7; design section 6).
+  - Delete `.datom_sync_one_artifact()` and its clone-folder snapshot loop: no datom command writes
+    `{name}/.metadata/` in a clone (confirmed 2026-10-30 by a real write). Name in the commit
+    message: the retired test "syncs metadata snapshots from .metadata dir" in `test-sync.R` and its
+    replacement (below); the two unit tests of the deleted function, rewritten against the repair
+    on a real project or retired where the publish path's own tests cover them; the stored-error
+    test "per-table metadata sync's stored error has no escape codes", re-pointed to the
+    per-artifact publish call. Update the header of `test-version-commit.R` and the "Three functions
+    upload that file" line in `dev/engineering-notes.md`: one function uploads the history from this
+    task on.
   - `R/validate.R`: `datom_validate()` reports per artifact what was reset, pushed and published
     (R5.3); fetches first; `.datom_validate_one_table()` reports `metadata_stale_s3` against the
     version in the clone's last commit (R5.5).
@@ -334,11 +369,15 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     "no" at the prompt leaves git and storage unchanged, and heal never runs; heal called exactly
     once by `datom_write(conn)` and by `datom_validate(fix = TRUE)`, counted through a mock; a write
     broken before its commit is reset, not published, by `datom_validate(fix = TRUE)` and by
-    `datom_write(conn)` (P4); the keys the repair writes for one artifact, recorded through a mock,
-    end with `metadata.json`, and a set's payload comes first.
+    `datom_write(conn)` (P4); the keys the repair writes, recorded through a mock, run snapshot,
+    history, `metadata.json` for each artifact, with a set's payload first and the manifest after
+    every artifact; a stored current snapshot deleted after a real write is back after
+    `fix = TRUE`, and a read pinned to that version succeeds; one artifact failing leaves the
+    manifest unpublished, the others published, and a message to re-run; a committed
+    `metadata.json` that does not hash to its recorded version (task 4b's fixture) does not stop the
+    repair from publishing every other artifact and the manifest.
   - Guards to probe: the reset before publishing, the manifest-last order, `metadata.json` last within
-    each artifact, the stale comparison, the
-    behind-clone skip.
+    each artifact, the stale comparison, the behind-clone skip.
   - Acceptance: R5.1-R5.5, P4 (for the mirror-everything route and the repair), P7, P11.
 
 - [ ] **8. The git and config commands** (R3.5, R3.6; D9, D10)
