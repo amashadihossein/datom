@@ -46,6 +46,14 @@ All six points taken:
 | 3. The `>= 0.8.0` floor never tested | Task 1's real-S3 probe gains a third run, `paws.storage` 0.8.0 with `paws.common` 0.8.0, in a throwaway library |
 | 4-6. Nits | 4a uses the design's "no storage state heal can change"; the break table says why `datom_sync()` breaks only some steps; the rejected-headers row says paws alone can trigger it |
 
+**Third review of this task list, 2026-10-28**, of `e3d4029`, evaluated with the owner. Both points
+taken, the second with a wider outcome:
+
+| Point | Outcome |
+|---|---|
+| 1. 4a claimed P4 before every route meets it | 4a claims P4 for the routes it heals; task 7 claims it for the mirror-everything route and the repair, with a test |
+| 2. The metadata-only route would print "writing it again now" for a write it never redoes | Checking it found the larger issue: the route commits a hand edit of `metadata.json`, which heal's reset would discard. Its documented purpose (editing `dispatch.json`) left with the governance layer, and the supported way to change custom metadata is `datom_write(conn, data, name, metadata = )`. The owner chose to drop hand-edit support and make that explicit (requirements D13): the route passes no `artifact`, so the user gets the reset warning; the convention, help, `NEWS.md` and the specification's route table say datom's own files are not hand-edited |
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D12) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
@@ -159,7 +167,8 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     names. Its docstring says what heal repairs and what it leaves (design section 4's table).
   - Wire heal in exactly one place per route (design section 4): the data-frame route in
     `datom_write()` (with the internal `.healed` argument), the metadata-only route inside
-    `.datom_sync_metadata()` (replacing its pull), and `datom_write_set()`. The mirror-everything
+    `.datom_sync_metadata()` (replacing its pull, with no `artifact`: requirements D13), and
+    `datom_write_set()`. The mirror-everything
     route is task 7's and behaves as today until then. Check order as in design section 1: every
     refusal check that needs no storage state heal can change runs before heal; change detection and
     the table-or-set check after. Writes still publish through the existing path; 4b moves them.
@@ -171,14 +180,23 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - **`research/other_command_probe.R`**: confirm each break fired.
   - Tests: another artifact's write broken before its commit, including a set write with
     `include_paths` (R7.2, P8); a re-run of the broken write itself, getting the information message;
-    no command publishes an uncommitted file (P4); a failed fetch changing nothing (P9); two clones
+    a metadata-only call (`datom_write(conn, name = "dm")`) after a write of `dm` broken before its
+    commit, getting the warning, not the information message, and publishing nothing new; a hand edit
+    of `dm/metadata.json` reset by that call (D13), replacing the hand-edit test in
+    `test-version-commit.R` (named in the commit message). That test also checks that this route
+    re-derives commit ids storage has lost; rebuild that check on a state the route still acts on,
+    such as stored metadata behind the clone's last commit, and say how in the commit message; none
+    of the routes healed here publishes an uncommitted file (P4);
+    a failed fetch changing nothing (P9); two clones
     with the second behind, whose write leaves storage at the first clone's newer version, and a
     conflict outside the manifest leaving storage unchanged (P5's write case, R7.6); a mistyped
     argument refused before heal runs; heal called exactly once by each of the data-frame route, the
     metadata-only route and `datom_write_set()`, counted through a mock.
   - Guards to probe: the reset, the pull before any decision, the re-run entry check, the fetch-failure
     stop, a refusal check placed before heal.
-  - Acceptance: P4, P8, P9 and P5 for writes; `research/other_command_probe.R` shows `dm` reset when
+  - Acceptance: P4 for the routes healed here (the data-frame route, the metadata-only route and
+    `datom_write_set()`; the rest is task 7's), P8, P9 and P5 for writes; D13 on the metadata-only
+    route; `research/other_command_probe.R` shows `dm` reset when
     its write broke before its commit, with the break confirmed.
 
 - [ ] **4b. Heal: push and publish** (R2.2, R2.3, R3.2-R3.4; DD4; design section 4)
@@ -242,10 +260,12 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - Tests: R5.1-R5.4; the break table's repair row; R7.8 (stale reported and cleared; not reported on
     a behind clone or for a write broken before its commit; a failed fetch skips with a warning); a
     "no" at the prompt leaves git and storage unchanged, and heal never runs; heal called exactly
-    once by `datom_write(conn)` and by `datom_validate(fix = TRUE)`, counted through a mock.
+    once by `datom_write(conn)` and by `datom_validate(fix = TRUE)`, counted through a mock; a write
+    broken before its commit is reset, not published, by `datom_validate(fix = TRUE)` and by
+    `datom_write(conn)` (P4).
   - Guards to probe: the reset before publishing, the manifest-last order, the stale comparison, the
     behind-clone skip.
-  - Acceptance: R5.1-R5.5, P7, P11.
+  - Acceptance: R5.1-R5.5, P4 (for the mirror-everything route and the repair), P7, P11.
 
 - [ ] **8. The git and config commands** (R3.5, R3.6; D9, D10)
   - `R/repo.R`: `datom_repo_commit()` calls `.datom_reset_unfinished()` before staging; it, and
@@ -276,7 +296,8 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     item 7a).
   - Search `R/` for any old-order wording left after tasks 2-4b ("serialization point", "After git,
     never before", "local -> git -> S3") and correct it (R9.4).
-  - `dev/datom_specification.md` (R9.2, R9.3); the conventions section in
+  - `dev/datom_specification.md` (R9.2, R9.3, and R9.7: the route table's `data = NULL` with `name`
+    row, which still says "after editing dispatch.json"); the conventions section in
     `.github/copilot-instructions.md` with the wording in R9.1; the note beside I5 in
     `.kiro/specs/datom-sets/design.md`; `dev/engineering-notes.md` gains design section 12's table.
   - Acceptance: R9.1-R9.6 done; every residual row in design section 12 is guarded or documented

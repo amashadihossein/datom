@@ -11,7 +11,8 @@ measured 2026-10-27 for the s3-credential-function spec at the same commit).
 Amended with the owner later that day, during design review: R3.3 records that a colleague's later
 publish can be overwritten until the next command (design DD4); R5.5 and R7.8 add the
 `metadata_stale_s3` status to `datom_validate()`. During the review of `tasks.md`: R8 gains a row for
-S3-compatible services that reject the new headers.
+S3-compatible services that reject the new headers; and, in its third review, D13 (hand edits of
+datom's own files are not supported), with R3.1, R9.1, R9.5, R9.6 and R9.7 amended to match.
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -122,6 +123,7 @@ below it (`.datom_check_writer_floor()`, also on 0.2.0's repair route); 0.1.0 do
 | D10 | **The git and config commands push, and say so.** `datom_repo_push()`, `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_set_data_store()` do not publish a datom write whose commit they push; they name it and say the next datom write or `datom_validate(fix = TRUE)` publishes it | Publish what they push (commands about git or config start writing to storage, and after a data-store change "which storage" has two answers); refuse to push (blocks a product layer's commit) |
 | D11 | **Teams writing one repo with mixed datom versions are not guarded against** (Q3). In practice everyone writing to a repo upgrades together. Recorded in R8 | Set `min_writer_version` at init for new repos and ask existing owners to add it; check for the data file before publishing any version |
 | D12 | **datom resolves a merge conflict confined to `.datom/manifest.json`** by rebuilding the manifest from the artifacts' files in the merged clone, completing the merge, and saying so (R3.8). The manifest is derived, so nothing can be lost. Conflicts in any other file stop the command as today and stay with #105 | Leave every conflict to #105: a write whose push broke while a colleague pushed would not finish on a re-run, the main conflict R3.7 leaves |
+| D13 | **Hand edits of datom's own files are not supported** (owner, 2026-10-28, third review of `tasks.md`). An artifact's `metadata.json`, `version_history.json` and `set.json`, and `.datom/manifest.json`, are written only by datom commands. An uncommitted change to one of them is treated as an unfinished write, whoever made it: the next datom command resets it and warns (R3.1). So the metadata-only route, `datom_write(conn, name =)`, no longer commits a hand edit; it publishes what is committed for that table. To change custom metadata, use `datom_write(conn, data, name, metadata = )`, which records a metadata-only version with its history entry and manifest row. Until now the route committed a hand-edited `metadata.json`, but only half-recorded it (no history entry, no manifest row), and its documented purpose, editing `dispatch.json`, left with the governance layer | Exempt the named table from the reset on that route: it protected a use with no documented purpose, and after a write broken before its commit it would commit that write's half-finished files as if they were an edit, leaving `datom_read()` and `datom_list()` naming different versions |
 
 ## Requirements
 
@@ -204,7 +206,9 @@ Applies, before their own work, to `datom_write()` (every route), `datom_write_s
 1. **Never committed** (an artifact's datom files differ from the last commit): they are reset to the
    last commit, including that artifact's row in `.datom/manifest.json`. The message names the
    artifact and says to re-run its write. Files datom does not own are never touched, including a
-   set write's `include_paths`.
+   set write's `include_paths`. This applies on every route, the metadata-only route
+   `datom_write(conn, name =)` included: a hand edit of a datom-owned file is treated as an
+   unfinished write and reset (D13).
 2. **Committed but not published** (in unpushed commits, or pushed while storage lacks its metadata
    or manifest row): after the pull in R3.7, it is pushed and then published from git, and the
    message names it.
@@ -357,6 +361,9 @@ and what to do).
    - Every step is safe to repeat, and every refusal check runs before the first step.
    - Each such command has a test that breaks it at each step, re-runs it, and checks
      what a reader sees.
+   - datom's own files (an artifact's metadata.json, version_history.json and set.json,
+     and .datom/manifest.json) are written only by datom commands. A hand edit is not
+     supported: the next command treats it as an unfinished write and resets it.
    ```
 
 2. `dev/datom_specification.md`: "Write Ordering & Resilience" is rewritten (its claims that re-runs
@@ -373,11 +380,18 @@ and what to do).
    with `datom_repo_commit()`, because a plain `git commit` can capture a datom write halfway
    through), `?datom_sync_manifest` (the new status,
    "published"), `?datom_validate` (the repair pushes; the new status `metadata_stale_s3`), `?datom_init_repo` (a re-run finishes),
+   `?datom_write`'s `data = NULL` with `name` route (it publishes what is committed for that table;
+   hand edits of datom's files are not supported and are reset; custom metadata is changed with
+   `datom_write(conn, data, name, metadata = )`, D13),
    `?datom_repo_commit` (it resets a datom write that never committed), and the four commands of
    R3.6 (they push a datom write's commit without publishing it, and say so).
-6. `NEWS.md`: the behaviour changes, upgrade-relevant first (the repair now pushes; the new scan
-   status; upgrade everyone who writes to a repo together), and R8's line on projects already
-   affected.
+6. `NEWS.md`: the behaviour changes, upgrade-relevant first (the repair now pushes; hand edits of
+   datom's own files are no longer committed by `datom_write(conn, name =)` but reset, with the
+   supported way to change custom metadata (D13); the new scan status; upgrade everyone who writes
+   to a repo together), and R8's line on projects already affected.
+7. `dev/datom_specification.md`'s table of `datom_write()` routes: the `data = NULL` with `name`
+   row no longer says "after editing dispatch.json"; it says the route publishes what is committed
+   for one table, and that datom's own files are not hand-edited (D13).
 
 ## Out of scope
 

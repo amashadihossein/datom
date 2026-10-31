@@ -15,7 +15,9 @@ response and services that reject the new headers (section 3, section 12); the p
 `datom_get_conn()` under DD2; and the real-S3 check moved to task 1 (section 10). A second review of
 `tasks.md` the same day placed heal in exactly one place per route (section 4), added the declared
 minimum paws versions to the real-S3 check (section 10), and noted that paws' default checksum can
-trigger the rejected-headers case on its own (sections 3 and 12).
+trigger the rejected-headers case on its own (sections 3 and 12). A third review the same day led
+to requirements D13: hand edits of datom's own files are not supported, so the metadata-only route
+passes no `artifact` to heal and no longer commits a hand edit (sections 2, 4 and 12).
 **Read first**: `requirements.md` (terms, findings, decisions D1-D12, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
 
@@ -103,7 +105,7 @@ write commands.
 | `R/read_write.R` | `.datom_commit_and_mirror()` | changed | Loses its `upload` argument: the data file is already stored. Commits and pushes, then publishes through `.datom_publish_artifacts()` |
 | `R/read_write.R` | `.datom_resolve_parquet_sha()`, `.datom_resolve_document_sha()` | changed | The R1.3 decision, including the stored-file case, and now performing the upload (section 3) |
 | `R/set.R` | `datom_write_set()` | changed | Payload built in a temp file; uploaded first; the clone's `set.json` takes the stored bytes when they differ (R1.5) |
-| `R/utils-sha.R` | `.datom_sync_metadata()` | changed | Its opening pull is replaced by heal; it publishes through `.datom_publish_artifacts()` |
+| `R/utils-sha.R` | `.datom_sync_metadata()` | changed | Its opening pull is replaced by heal; it publishes through `.datom_publish_artifacts()`. It no longer commits a hand edit of the table's `metadata.json`: heal resets it first (requirements D13), so the route publishes what is committed |
 | `R/sync.R` | `datom_sync_manifest()` | changed | Compares against HEAD's manifest; `unpublished` status (section 7) |
 | `R/sync.R` | `datom_sync()` | changed | Heals once instead of `.datom_check_git_current()`; `unpublished` rows are reported as published by heal |
 | `R/sync.R` | `.datom_sync_data_metadata()` | changed | Heals (so it pushes first, R5.2), then mirrors every artifact, then the manifest last |
@@ -266,7 +268,7 @@ acted (second review of `tasks.md`, owner, 2026-10-28):
 | Route | Where heal runs | `artifact` |
 |---|---|---|
 | `datom_write(conn, data, name)` | in `datom_write()`, after the checks that run before heal (section 1) | the table's name |
-| `datom_write(conn, name =)`, the metadata-only route | inside `.datom_sync_metadata()`, replacing its pull | the table's name |
+| `datom_write(conn, name =)`, the metadata-only route | inside `.datom_sync_metadata()`, replacing its pull | none: the route never writes the table again, it publishes what is committed, so the table's own uncommitted files get the warning, not the "writing it again now" message. A hand edit of them is reset like any unfinished write (requirements D13) |
 | `datom_write(conn)` and `datom_validate(fix = TRUE)` | inside `.datom_sync_data_metadata()`, after its confirmation prompt | none: it never redoes a write |
 | `datom_write_set()` | in `datom_write_set()`, after its checks | the set's name |
 | `datom_sync()` | once per call, before the first table | every table it is about to write; then `datom_write(.healed = TRUE)` per table |
@@ -427,6 +429,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | An S3-compatible service that rejects `IfNoneMatch` or `ChecksumSHA256` (400 or 501) | Every write stops at its first step with the service's own error; nothing changes. No fallback (owner, 2026-10-28). paws alone can trigger this: from `paws.common` 0.9.0, every upload carries a checksum by default, datom's metadata uploads included, so such a service can fail even without datom's new arguments | Documented beside `endpoint` |
 | An S3 409: a teardown deletes a data file while a write uploads it | The write stops with the usual upload error before the clone changes; a re-run finishes | Documented in `dev/engineering-notes.md` |
 | A local store on a file system without hard links, two writers, same new content, same moment | The second move replaces the first file; one version's reads are refused by the hash check. Loud | Documented in `?datom_store_local` |
+| Someone edits a datom-owned file by hand (an artifact's `metadata.json`, `version_history.json` or `set.json`, or `.datom/manifest.json`) (requirements D13) | The next datom command resets the edit and warns, naming the artifact; `datom_write(conn, name =)` no longer commits it. Custom metadata is changed with `datom_write(conn, data, name, metadata = )` | Guarded (task 4a's test); documented in `?datom_write` and `NEWS.md` |
 | A crash during a local upload leaves a temporary file (`.{name}.tmp`) beside the data file | Nothing for readers. A leftover after the link costs no space (a hard link shares the bytes); one left mid-copy takes space. `datom_storage_list()` shows it; copy and verify skip it | Guarded (a test that copy and verify skip it); documented in `?datom_store_local` |
 | Two people publish the same table within seconds, and the older publish lands last (DD4) | Readers get the superseded version as current until the next datom command in any up-to-date clone republishes it. Reads that name a version are unaffected | Guarded (P10); documented in `dev/engineering-notes.md` |
 | The same, with the two publishes crossing so the stored manifest names the newer version and the stored metadata holds the older one (DD4) | Readers get the superseded version, and heal does not notice, until the table's next write or `datom_validate(fix = TRUE)` | Reported by `datom_validate()` as `metadata_stale_s3`; fixed by `datom_validate(fix = TRUE)` or the table's next write (section 6, P11) |
