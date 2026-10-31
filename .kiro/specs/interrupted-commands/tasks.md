@@ -78,6 +78,12 @@ A follow-up from the same reviewer, the same day, of `b1f94fa`: the repair's per
 (`.datom_sync_one_artifact()`) uploads `metadata.json` first. Taken in task 7 (design section 6),
 with the set's payload moved to the front (data file first), where the review put it third.
 
+A wording fix from the same reviewer, of `1421262`: design section 6 overstated what `datom_validate()`
+reports after a repair break; narrowed, with a new section 12 row for a missing current snapshot.
+Checking that snapshot in `datom_validate()` was left out of this spec (no route in it can cause the
+gap; it belongs with the other storage-completeness checks validate lacks) and goes to a follow-up
+issue, drafted in `draft-issue-validate-completeness.md` and not yet filed.
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D13) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.

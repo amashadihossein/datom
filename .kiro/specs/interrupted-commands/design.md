@@ -350,8 +350,11 @@ payload, where a publish sends one version's documents. It follows the same orde
 `metadata.json` is what change detection and `metadata_stale_s3` read as the sign that a version is
 published. If the stored manifest already matches git, which is when the repair is usually run, a
 break after an early `metadata.json` would leave a missing history or snapshot that no check reports.
-With `metadata.json` last, `datom_validate()` still reports the artifact and the next `fix = TRUE`
-finishes it.
+With `metadata.json` last, a repair that breaks while publishing a version newer than the stored one
+leaves the old `metadata.json` in storage, so `datom_validate()` still reports `metadata_stale_s3`
+and the next `fix = TRUE` finishes it. When the stored `metadata.json` is already current and the
+repair is only filling in a missing snapshot, nothing reports a break, because `datom_validate()`
+does not check snapshots (section 12; wording fix from the same reviewer, owner, 2026-10-30).
 
 ## 7. The scan and the sync (R4)
 
@@ -468,6 +471,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | A crash during a local upload leaves a temporary file (`.{name}.tmp`) beside the data file | Nothing for readers. A leftover after the link costs no space (a hard link shares the bytes); one left mid-copy takes space. `datom_storage_list()` shows it; copy and verify skip it | Guarded (a test that copy and verify skip it); documented in `?datom_store_local` |
 | Two people publish the same table within seconds, and the older publish lands last (DD4) | Readers get the superseded version as current until the next datom command in any up-to-date clone republishes it. Reads that name a version are unaffected | Guarded (P10); documented in `dev/engineering-notes.md` |
 | The same, with the two publishes crossing so the stored manifest names the newer version and the stored metadata holds the older one (DD4) | Readers get the superseded version, and heal does not notice, until the table's next write or `datom_validate(fix = TRUE)` | Reported by `datom_validate()` as `metadata_stale_s3`; fixed by `datom_validate(fix = TRUE)` or the table's next write (section 6, P11) |
+| The current version's snapshot is missing from storage (no route in this spec can cause it: every route uploads the snapshot before `metadata.json`; left by 0.2.0's interrupted write, D7, or by storage losing a file outside datom) | Not reported by `datom_validate()`, which checks only that `metadata.json`, the history and the data file exist. `datom_read(version = )` of that version fails. `datom_validate(fix = TRUE)` puts it back, since it copies every snapshot in the clone | Not guarded. Documented in `dev/engineering-notes.md` at completion; the check goes to a follow-up issue (draft: `draft-issue-validate-completeness.md`), with the other storage-completeness checks `datom_validate()` lacks |
 | A file put at a data address by hand, adopted by a re-run | Its content is read without a content check | Documented in `dev/engineering-notes.md`; not checked |
 | A teammate still on a released datom (D11) | An upgraded teammate's write can publish their data-less version | Documented in `NEWS.md` |
 | GitHub unreachable at the start of a command (DD1) | The command stops with a message and changes nothing; the user re-runs when online | Guarded (P9); documented in `?datom_write` |
