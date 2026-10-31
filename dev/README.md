@@ -215,7 +215,7 @@ Units of work are **Kiro specs** under `.kiro/specs/{feature}/` (see Workflow mo
 
 | Spec | Branch | Status |
 |---|---|---|
-| [interrupted-commands](../.kiro/specs/interrupted-commands/) (#155) | `spec/interrupted-commands` | Requirements, design and task list approved 2026-10-28. Task 1 (storage: upload only if absent, stored-file hash; real-S3 probe passed) done 2026-10-30. Next is task 2 (tables: the data file first), after its design spot-check. #134 part 3b (`spec/s3-credential-function`) is paused until this merges. |
+| [interrupted-commands](../.kiro/specs/interrupted-commands/) (#155) | `spec/interrupted-commands` | Requirements, design and task list approved 2026-10-28. Task 1 (storage: upload only if absent, stored-file hash; real-S3 probe passed) done 2026-10-30. The same day: task 2's design spot-check, three further reviews, and a simplification pass set by the owner (requirements D14: where datom heals and where it stops, with a scenario table that is the yardstick for later reviews). Next is task 2 (tables: the data file first), awaiting the owner's go-ahead; read `tasks.md` "Where things stand" first. #134 part 3b (`spec/s3-credential-function`) is paused until this merges. |
 
 In the sibling repo `datom-py` (the Python reader, #129 part 2): 0.1.0 is on PyPI (released
 2026-10-20), with S3 as a preview. Its spec `s3-reader` still has three hardening tasks open

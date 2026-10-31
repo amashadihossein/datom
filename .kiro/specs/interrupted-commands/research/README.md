@@ -46,5 +46,21 @@ Rerun from the repo root, for example:
   child process prints a result line with every check passed; `DATOM_PROBE_FAKE_S3=1` runs the
   same walk offline against an in-memory stand-in, to test the script itself.
 
+Added 2026-10-30 during the design reviews (local only, no AWS or GitHub; recorded in `../design.md`
+section 10):
+
+- `clone_snapshot_probe.R`: writes `dm` three times, lists the clone, and records the keys the old
+  repair's per-artifact copy writes. Result: no datom command puts `{name}/.metadata/` in a clone, so
+  that copy never published a snapshot.
+- `snapshot_sources_probe.R`: a hand edit of `metadata.json` published by the metadata-only route,
+  and a write broken at its metadata upload followed by `datom_validate(fix = TRUE)`. Result: the
+  hand edit leaves a stored `metadata.json` whose version no history entry, manifest row or snapshot
+  records, while readers are told the previous version.
+- `merge_state_probe.R`: what git2r reports during a conflicted merge (`.git/MERGE_HEAD`, files
+  listed as `conflicted` under `unstaged`) before and after resolving one file.
+- `merge_restore_probe.R`: `git checkout --theirs` on a file that merged cleanly does nothing
+  ("Updated 0 paths"), while `git checkout MERGE_HEAD -- <files>` takes the remote copy of conflicted
+  and clean files alike; `git commit` then completes the merge.
+
 Results are recorded in `../requirements.md` ("Findings") and `../design.md` ("Proven, and not yet
 traced").
