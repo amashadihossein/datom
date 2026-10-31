@@ -36,6 +36,16 @@ point at a time. All fourteen points were taken, several with changes:
 | J. The pull inside `datom_get_conn()` | Listed under DD2 and accepted; a `datom_pull()` test added to task 5 |
 | K-N. Nits | `.datom_check_git_current()` deleted in task 6; the test-count rule above; each old-order docstring assigned to the task that edits its function; resuming #134 part 3b removed from task 11 (`dev/README.md` already says it) |
 
+**Second review of this task list, 2026-10-28**, of `e3d29b0`, evaluated with the owner the same way.
+All six points taken:
+
+| Point | Outcome |
+|---|---|
+| 1. The sync read-count test in 4b could not pass before task 6 | 4b counts the reads of one write; the three-table sync count moved to task 6, beside the heal-once test |
+| 2. Heal would run twice on the metadata-only route, and before the prompt on the mirror-everything route | Heal runs in exactly one place per route (design section 4): the data-frame route in `datom_write()`, the metadata-only route in `.datom_sync_metadata()`, the mirror-everything route in `.datom_sync_data_metadata()` after its prompt (task 7 only), the set write in `datom_write_set()`. A heal-once test per route |
+| 3. The `>= 0.8.0` floor never tested | Task 1's real-S3 probe gains a third run, `paws.storage` 0.8.0 with `paws.common` 0.8.0, in a throwaway library |
+| 4-6. Nits | 4a uses the design's "no storage state heal can change"; the break table says why `datom_sync()` breaks only some steps; the rejected-headers row says paws alone can trigger it |
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D12) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
@@ -60,6 +70,12 @@ what a reader sees (the new version reads; the stored manifest names it).
 
 `datom_sync_manifest()` changes nothing, so it has nothing to break.
 
+Why these steps for `datom_sync()`: task 2 already breaks every write step for one table, so sync's
+tests cover what sync adds, a break partway through a batch: its own import step, and one break on
+each side of the commit. Breaking the clone-file write ends the same way as breaking the data file
+upload (nothing committed, so heal resets it and the re-scan shows the table changed); breaking the
+metadata upload ends the same way as breaking the push (committed, so heal pushes and publishes it).
+
 ---
 
 - [ ] **1. Storage: upload only if absent, and the stored file's hash** (R1.2, R1.3; design section 3)
@@ -79,8 +95,11 @@ what a reader sees (the new version reads; the stored manifest names it).
   - New `research/s3_conditional_probe.R`, run with the owner's credentials (from the environment or
     keyring, as `dev/e2e-solo-s3.R` does; never in the script): under a throwaway prefix, upload a
     file, upload again "only if absent", read the checksum back with `ChecksumMode = "ENABLED"`, then
-    delete the prefix. Run on the paws versions installed here and on CRAN's current ones
-    (`paws.storage` 0.11.0, `paws.common` 0.9.0). Record the result in design section 10, item 2.
+    delete the prefix. Run on three version pairs: the ones installed here (`paws.storage` 0.9.0,
+    `paws.common` 0.8.8); the declared minimum (`paws.storage` 0.8.0 with `paws.common` 0.8.0, which
+    it requires), installed from CRAN's archive into a throwaway library for that run only; and
+    CRAN's current ones (`paws.storage` 0.11.0, `paws.common` 0.9.0). Record the results in design
+    section 10, item 2.
   - Nothing calls the new upload yet, so no behaviour changes for users in this task.
   - Tests: an existing file with different bytes survives a second upload, on both backends (P2);
     a failure mid-copy leaves nothing at the final key; the no-hard-link fallback; the S3 arguments,
@@ -91,7 +110,7 @@ what a reader sees (the new version reads; the stored manifest names it).
   - Acceptance: P2 holds on both backends; the S3 calls carry the conditional and checksum arguments;
     `datom_storage_copy()` and `datom_storage_verify()` ignore a temporary file that
     `datom_storage_list()` still shows; the real-S3 probe shows 412 for the second upload and a
-    whole-file `ChecksumSHA256` matching the file, on both paws version pairs.
+    whole-file `ChecksumSHA256` matching the file, on all three paws version pairs.
 
 - [ ] **2. Tables: the data file first** (R1.1, R1.3, R1.4, R2.1; design section 3)
   - **Escalation first: design spot-check on a more capable model.**
@@ -138,11 +157,13 @@ what a reader sees (the new version reads; the stored manifest names it).
   - New `R/heal.R`: `.datom_heal()` with steps a-c (reset what never committed, pull, re-check the
     documents, stop on a failed fetch) and `.datom_reset_unfinished()`. `artifact` takes several
     names. Its docstring says what heal repairs and what it leaves (design section 4's table).
-  - Wire heal into `datom_write()` (all three routes, with the internal `.healed` argument),
-    `datom_write_set()` and `.datom_sync_metadata()`, in the check order of design section 1: every
-    refusal check that needs no storage state before heal, change detection and the table-or-set
-    check after, the mirror-everything route's confirmation prompt before. Writes still publish
-    through the existing path; 4b moves them. `R/utils-git.R`: `.datom_git_head_file()`.
+  - Wire heal in exactly one place per route (design section 4): the data-frame route in
+    `datom_write()` (with the internal `.healed` argument), the metadata-only route inside
+    `.datom_sync_metadata()` (replacing its pull), and `datom_write_set()`. The mirror-everything
+    route is task 7's and behaves as today until then. Check order as in design section 1: every
+    refusal check that needs no storage state heal can change runs before heal; change detection and
+    the table-or-set check after. Writes still publish through the existing path; 4b moves them.
+    `R/utils-git.R`: `.datom_git_head_file()`.
   - Reset messages as in design section 4: information for an artifact the command is about to
     write, a warning for any other. Correct the ordering comment in `.datom_sync_metadata()` (R9.4).
   - Settle design section 10 item 1 (unstaging chosen paths) and item 5 for the reset messages
@@ -153,7 +174,8 @@ what a reader sees (the new version reads; the stored manifest names it).
     no command publishes an uncommitted file (P4); a failed fetch changing nothing (P9); two clones
     with the second behind, whose write leaves storage at the first clone's newer version, and a
     conflict outside the manifest leaving storage unchanged (P5's write case, R7.6); a mistyped
-    argument refused before heal runs.
+    argument refused before heal runs; heal called exactly once by each of the data-frame route, the
+    metadata-only route and `datom_write_set()`, counted through a mock.
   - Guards to probe: the reset, the pull before any decision, the re-run entry check, the fetch-failure
     stop, a refusal check placed before heal.
   - Acceptance: P4, P8, P9 and P5 for writes; `research/other_command_probe.R` shows `dm` reset when
@@ -169,8 +191,8 @@ what a reader sees (the new version reads; the stored manifest names it).
   - Tests: the break table's step 6 for both write commands, and its rows for the metadata-only route
     (P1); another artifact's write broken after its commit is published (R7.2); a publish landing
     behind a colleague's newer one, corrected by the next command (P10); storage reads of
-    `.metadata/manifest.json` counted through a mock: one during a write, still one during a
-    three-table sync (R3.4).
+    `.metadata/manifest.json` counted through a mock: one during a write (R3.4; the three-table sync
+    count is task 6's, since sync heals once only from then).
   - Guards to probe: the unpublished-artifact comparison, the manifest-last order.
   - Acceptance: P1 (all six steps, tables and sets), P10, R3.4; `research/other_command_probe.R`
     shows `dm` published when its write broke after its commit.
@@ -203,22 +225,24 @@ what a reader sees (the new version reads; the stored manifest names it).
     comments that name it: the branch-guard comment in `datom_repo_commit()` (the guard and its reason
     stay), the docstring of `.datom_git_ahead()`, and the upstream note in `.datom_git_push()`.
   - Tests: R4.1-R4.5; the break table's `datom_sync()` row; the stale preview of DD3; heal called once
-    in a three-table sync, counted through a mock (R3.7); a scan with storage reads failing reports
+    in a three-table sync, and one storage read of `.metadata/manifest.json` during it, both counted
+    through a mock (R3.7, R3.4); a scan with storage reads failing reports
     tables in unpushed commits as `unpublished` and warns (R4.2), separately from a failed fetch.
   - Guards to probe: the comparison against the last commit, the behind-clone skip.
   - Acceptance: R4.1-R4.5 and R3.7's once-per-sync rule; `research/sync_and_manifest_probe.R` and
     `research/stale_preview_probe.R` show the table published and the honest message.
 
 - [ ] **7. The repair** (R5; design section 6)
-  - `R/sync.R`: `.datom_sync_data_metadata()` heals first (so it pushes), mirrors every artifact,
-    then the manifest last (P7); the `datom_write(conn)` prompt says it may push, and is answered
-    before heal runs.
+  - `R/sync.R`: `.datom_sync_data_metadata()` heals (so it pushes), right after its confirmation
+    prompt, which says it may push; then mirrors every artifact, then the manifest last (P7). This is
+    the only place the mirror-everything route and the repair heal (design section 4).
   - `R/validate.R`: `datom_validate()` reports per artifact what was reset, pushed and published
     (R5.3); fetches first; `.datom_validate_one_table()` reports `metadata_stale_s3` against the
     version in the clone's last commit (R5.5).
   - Tests: R5.1-R5.4; the break table's repair row; R7.8 (stale reported and cleared; not reported on
     a behind clone or for a write broken before its commit; a failed fetch skips with a warning); a
-    "no" at the prompt leaves git and storage unchanged.
+    "no" at the prompt leaves git and storage unchanged, and heal never runs; heal called exactly
+    once by `datom_write(conn)` and by `datom_validate(fix = TRUE)`, counted through a mock.
   - Guards to probe: the reset before publishing, the manifest-last order, the stale comparison, the
     behind-clone skip.
   - Acceptance: R5.1-R5.5, P7, P11.
@@ -245,7 +269,9 @@ what a reader sees (the new version reads; the stored manifest names it).
   - **Escalation first: test coverage review on a more capable model**, including the break table
     checked against the tests that exist.
   - Roxygen for every help page in R9.5, then `devtools::document()`. Beside `endpoint` in
-    `?datom_get_conn`: a service that ignores conditional writes, and one that rejects the new headers.
+    `?datom_get_conn`: a service that ignores conditional writes, and one that rejects the new
+    headers, including that paws alone can trigger the latter (from `paws.common` 0.9.0 every upload
+    carries a checksum by default).
     `NEWS.md` (R9.6; cite only `?verb` and `vignette(...)`, never `dev/` or `.kiro/`, conventions
     item 7a).
   - Search `R/` for any old-order wording left after tasks 2-4b ("serialization point", "After git,

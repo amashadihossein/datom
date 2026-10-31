@@ -12,7 +12,10 @@ publish was also added, then dropped by the owner after weighing what the curren
 (DD4). The review of `tasks.md` the same day added: which checks run before heal (section 1); the
 wording of heal's reset messages and several names in its `artifact` argument (section 4); the 409
 response and services that reject the new headers (section 3, section 12); the pull inside
-`datom_get_conn()` under DD2; and the real-S3 check moved to task 1 (section 10).
+`datom_get_conn()` under DD2; and the real-S3 check moved to task 1 (section 10). A second review of
+`tasks.md` the same day placed heal in exactly one place per route (section 4), added the declared
+minimum paws versions to the real-S3 check (section 10), and noted that paws' default checksum can
+trigger the rejected-headers case on its own (sections 3 and 12).
 **Read first**: `requirements.md` (terms, findings, decisions D1-D12, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
 
@@ -155,7 +158,9 @@ otherwise               -> .datom_storage_upload_absent(tmp, key)
 - **No fallback for a service that rejects the new headers** (owner, 2026-10-28). A service that
   answers `IfNoneMatch` or `ChecksumSHA256` with 400 or 501 makes every write stop at its first step,
   with the service's own error and nothing changed. Recorded in section 12 and beside `endpoint` in
-  the help; a fallback can be added when a user needs one.
+  the help; a fallback can be added when a user needs one. paws alone can trigger this: from
+  `paws.common` 0.9.0, every upload carries a checksum by default, datom's metadata uploads included,
+  so such a service can fail even without datom's new arguments.
 
 **Local** (`R/utils-local.R`):
 - `.datom_local_upload_absent()`: if the target exists, `"exists"`. Otherwise copy to a temporary
@@ -254,12 +259,21 @@ stored manifest names the newer version while the stored metadata holds the olde
 no difference. `datom_validate()` reports that case as `metadata_stale_s3` (section 6), and it waits
 for the table's next write or `datom_validate(fix = TRUE)` (section 12).
 
-**Who calls heal, and with which `artifact`**: `datom_write()` (all three routes; the name it writes,
-none on the mirror-everything route), `datom_write_set()` (the set's name), `datom_sync()` (once per
-call, with every table it is about to write, then `datom_write(.healed = TRUE)` per table),
-`.datom_sync_data_metadata()` (so the repair and the mirror-everything route; none, since it never
-redoes a write). `datom_repo_commit()` calls step a only (R3.5). The four push commands call none of
-it (D10).
+**Who calls heal, and with which `artifact`**: heal runs in exactly one place per route, so no route
+fetches twice or reads the stored manifest twice (R3.4), and no prompt is answered after heal has
+acted (second review of `tasks.md`, owner, 2026-10-28):
+
+| Route | Where heal runs | `artifact` |
+|---|---|---|
+| `datom_write(conn, data, name)` | in `datom_write()`, after the checks that run before heal (section 1) | the table's name |
+| `datom_write(conn, name =)`, the metadata-only route | inside `.datom_sync_metadata()`, replacing its pull | the table's name |
+| `datom_write(conn)` and `datom_validate(fix = TRUE)` | inside `.datom_sync_data_metadata()`, after its confirmation prompt | none: it never redoes a write |
+| `datom_write_set()` | in `datom_write_set()`, after its checks | the set's name |
+| `datom_sync()` | once per call, before the first table | every table it is about to write; then `datom_write(.healed = TRUE)` per table |
+
+`datom_write()` itself does not heal on the two routes without data: it hands them to those helper
+functions before anything else runs. `datom_repo_commit()` calls step a only (R3.5). The four push
+commands call none of it (D10).
 
 ## 5. A conflict only in the manifest (R3.8)
 
@@ -370,8 +384,10 @@ Not yet traced, each resolved in the task that needs it:
    `FULL_OBJECT` returned by `head_object` for an object put with one. Settled in **task 1** by a
    small probe with the owner's credentials (`research/s3_conditional_probe.R`), before the tasks
    that depend on it (moved from the end-to-end run in task 11, owner, 2026-10-28). The probe runs on
-   the paws versions installed here and on CRAN's current ones (`paws.storage` 0.11.0 with
-   `paws.common` 0.9.0, which attaches a checksum to every upload by default).
+   three paws version pairs: the ones installed here (`paws.storage` 0.9.0, `paws.common` 0.8.8); the
+   declared minimum (`paws.storage` 0.8.0 with the `paws.common` 0.8.0 it requires), in a throwaway
+   library; and CRAN's current ones (`paws.storage` 0.11.0 with `paws.common` 0.9.0, which attaches a
+   checksum to every upload by default).
 3. Heal's step d when the stored manifest cannot be read for a reason other than absence (the storage
    reader can rebuild it and warn); which of those outcomes counts as "behind".
 4. Whether any existing test asserts the old order or the manifest-first mirror and needs rewriting
@@ -408,7 +424,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | A merge conflict outside the manifest (two people wrote the same artifact, or the user's own files) | The command stops before storage changes; the message says to keep the remote copy of datom's files and re-run | Guarded by existing tests and R7.7; #105 owns the recovery command |
 | Two R sessions writing through one clone at once | Not supported | Documented |
 | An S3-compatible service that ignores conditional writes, two writers, same new content, same moment | One version's reads are refused by the hash check. Loud | Documented beside `endpoint` |
-| An S3-compatible service that rejects `IfNoneMatch` or `ChecksumSHA256` (400 or 501) | Every write stops at its first step with the service's own error; nothing changes. No fallback (owner, 2026-10-28) | Documented beside `endpoint` |
+| An S3-compatible service that rejects `IfNoneMatch` or `ChecksumSHA256` (400 or 501) | Every write stops at its first step with the service's own error; nothing changes. No fallback (owner, 2026-10-28). paws alone can trigger this: from `paws.common` 0.9.0, every upload carries a checksum by default, datom's metadata uploads included, so such a service can fail even without datom's new arguments | Documented beside `endpoint` |
 | An S3 409: a teardown deletes a data file while a write uploads it | The write stops with the usual upload error before the clone changes; a re-run finishes | Documented in `dev/engineering-notes.md` |
 | A local store on a file system without hard links, two writers, same new content, same moment | The second move replaces the first file; one version's reads are refused by the hash check. Loud | Documented in `?datom_store_local` |
 | A crash during a local upload leaves a temporary file (`.{name}.tmp`) beside the data file | Nothing for readers. A leftover after the link costs no space (a hard link shares the bytes); one left mid-copy takes space. `datom_storage_list()` shows it; copy and verify skip it | Guarded (a test that copy and verify skip it); documented in `?datom_store_local` |
