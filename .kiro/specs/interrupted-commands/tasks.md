@@ -20,7 +20,8 @@ what shipped and wait for the owner's go-ahead before the next one.
 
 Requirements approved 2026-10-28 (amended the same day: R3.3, R5.5, R7.8, an R8 row, and D13 with
 R3.1 and R9). Design approved 2026-10-28 with decisions DD1-DD4. **Task list approved by the owner on
-2026-10-28**, after the four reviews below. **No code yet: the next step is task 1.**
+2026-10-28**, after the four reviews below. **Task 1 done 2026-10-30. Next: task 2, after its
+design spot-check on a more capable model.**
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
@@ -91,7 +92,14 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
 
 ---
 
-- [ ] **1. Storage: upload only if absent, and the stored file's hash** (R1.2, R1.3; design section 3)
+- [x] **1. Storage: upload only if absent, and the stored file's hash** (R1.2, R1.3; design section 3)
+  - **Done 2026-10-30.** Suite 5142 -> 5214 expectations, none removed. The real-S3 probe passed 11
+    of 11 checks on all three paws pairs (design section 10). Taken beyond the list, and flagged at the
+    task's checkpoint: help text for `datom_storage_list()`, `datom_storage_copy()` and
+    `datom_storage_verify()` now, not in task 10; a stored S3 checksum must also decode to exactly
+    32 bytes; the internal `.datom_s3_whole_file_sha256()` holds the trust rule; the part-count
+    suffix test uses a stand-in lenient decoder, because jsonlite's decoder refuses a suffixed value
+    by itself and would otherwise hide the rule's removal.
   - `R/utils-storage.R`: `.datom_storage_upload_absent()` and `.datom_storage_object_sha256()`,
     dispatching to the backends.
   - `R/utils-s3.R`: `.datom_s3_upload_absent()` (`head_object` first, then `put_object` with

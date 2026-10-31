@@ -43,6 +43,100 @@
 }
 
 
+#' Upload a File to Local Storage Only If Its Key Is Absent
+#'
+#' A stored file is never replaced, and a half-copied file never appears at the
+#' final key. If the key is absent, the file is copied to a temporary name in
+#' the same folder, hard-linked to the final name, and the temporary name is
+#' deleted. A hard link refuses when the target exists, so a file another writer
+#' stored in between is left intact and reported as `"exists"`; a plain move
+#' would replace it.
+#'
+#' When the link fails and the target is still absent, the file system has no
+#' hard links (some network drives, exFAT), and the upload falls back to a
+#' move. That leaves a race: a file stored between the check and the move is
+#' replaced.
+#'
+#' The temporary name is recognised by `.datom_is_temp_key()`. It is deleted
+#' when the function exits, on success or error; only a crash leaves one.
+#'
+#' @param conn A `datom_conn` object with `backend = "local"`.
+#' @param local_path Local file path to upload.
+#' @param key Relative storage key (after `prefix/datom/`).
+#' @return `"uploaded"` or `"exists"`.
+#' @keywords internal
+.datom_local_upload_absent <- function(conn, local_path, key) {
+  if (!fs::file_exists(local_path)) {
+    cli::cli_abort("File not found: {.path {local_path}}")
+  }
+
+  dest <- as.character(.datom_local_path(conn, key))
+  if (fs::file_exists(dest)) return("exists")
+
+  fs::dir_create(fs::path_dir(dest))
+  tmp <- file.path(
+    fs::path_dir(dest),
+    paste0(".", fs::path_file(dest), ".", basename(tempfile("")), ".tmp")
+  )
+  on.exit(unlink(tmp), add = TRUE)
+  fs::file_copy(local_path, tmp)
+
+  if (isTRUE(suppressWarnings(file.link(tmp, dest)))) return("uploaded")
+  if (fs::file_exists(dest)) return("exists")
+
+  if (!isTRUE(file.rename(tmp, dest))) {
+    cli::cli_abort(
+      c(
+        "Failed to move an uploaded file into place in the local store.",
+        "x" = "Root: {.path {conn$root}}",
+        "x" = "Key: {.val {key}}"
+      )
+    )
+  }
+  "uploaded"
+}
+
+
+#' Is This Storage Key a Local Upload's Temporary File?
+#'
+#' `.datom_local_upload_absent()` copies into a temporary name beside the final
+#' key: a leading `.` and a `.tmp` suffix, for example
+#' `dm/.{data_sha}.parquet.1a2b3c4d.tmp`. A crash between the copy and the
+#' clean-up can leave one behind. `datom_storage_copy()` and
+#' `datom_storage_verify()` skip these; `datom_storage_list()` still shows them.
+#' Readers never meet them, because they read exact keys.
+#'
+#' @param key Character vector of storage keys, relative or full.
+#' @return Logical vector, one element per key.
+#' @keywords internal
+.datom_is_temp_key <- function(key) {
+  grepl("^\\..*\\.tmp$", basename(key))
+}
+
+
+#' SHA-256 of a File in Local Storage
+#'
+#' @param conn A `datom_conn` object with `backend = "local"`.
+#' @param key Relative storage key (after `prefix/datom/`).
+#' @return The SHA-256 as a lowercase hex string.
+#' @keywords internal
+.datom_local_object_sha256 <- function(conn, key) {
+  path <- as.character(.datom_local_path(conn, key))
+
+  if (!fs::file_exists(path)) {
+    cli::cli_abort(
+      c(
+        "File not found in local store.",
+        "x" = "Root: {.path {conn$root}}",
+        "x" = "Key: {.val {key}}"
+      )
+    )
+  }
+
+  digest::digest(file = path, algo = "sha256")
+}
+
+
 #' Download File from Local Storage
 #'
 #' Copies a file from the store directory to a local path. Creates parent

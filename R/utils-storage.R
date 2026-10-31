@@ -24,6 +24,56 @@
 }
 
 
+#' Upload a Data File to Storage Only If Its Key Is Absent
+#'
+#' The upload every data file goes through (a table's parquet, a set's
+#' payload): a stored data file is never replaced. Each backend checks whether
+#' the key exists first, so a re-run never resends a file that is already
+#' stored, and then uploads only if the key is still absent.
+#'
+#' Metadata documents and the manifest keep using the unconditional
+#' `.datom_storage_upload()` and `.datom_storage_write_json()`: they are the
+#' current pointers and are meant to be overwritten.
+#'
+#' @param conn A `datom_conn` object.
+#' @param local_path Local file path to upload.
+#' @param key Relative storage key (after `prefix/datom/`).
+#' @return `"uploaded"`, or `"exists"` when a file was already stored at `key`,
+#'   before the call or put there by another writer during it. "Already there"
+#'   is not an error.
+#' @keywords internal
+.datom_storage_upload_absent <- function(conn, local_path, key) {
+  backend <- conn$backend %||% "s3"
+  switch(backend,
+    s3 = .datom_s3_upload_absent(conn, local_path, key),
+    local = .datom_local_upload_absent(conn, local_path, key),
+    cli::cli_abort("Unsupported storage backend: {.val {backend}}")
+  )
+}
+
+
+#' SHA-256 of the Bytes Stored at a Key
+#'
+#' The hash a version records when its data file is already in storage: the
+#' hash of what is stored, not of freshly built bytes. On S3 it is read from the
+#' checksum S3 keeps with the object when that checksum covers the whole file,
+#' and otherwise the file is downloaded and hashed. On a local store the file is
+#' hashed.
+#'
+#' @param conn A `datom_conn` object.
+#' @param key Relative storage key (after `prefix/datom/`).
+#' @return The SHA-256 as a lowercase hex string.
+#' @keywords internal
+.datom_storage_object_sha256 <- function(conn, key) {
+  backend <- conn$backend %||% "s3"
+  switch(backend,
+    s3 = .datom_s3_object_sha256(conn, key),
+    local = .datom_local_object_sha256(conn, key),
+    cli::cli_abort("Unsupported storage backend: {.val {backend}}")
+  )
+}
+
+
 #' Download File from Storage
 #'
 #' @param conn A `datom_conn` object.

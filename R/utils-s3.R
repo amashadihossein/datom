@@ -94,6 +94,158 @@
 }
 
 
+#' Upload a File to S3 Only If Its Key Is Absent
+#'
+#' Checks with a HEAD request first, so a re-run never resends a large file
+#' that is already stored. If the key is absent, uploads with
+#' `IfNoneMatch = "*"`: S3 then refuses the upload with HTTP 412 when another
+#' writer stored the key in between, and that refusal is returned as
+#' `"exists"`. On an S3-compatible service that ignores the condition only the
+#' check protects the stored file, and the race between check and upload
+#' remains.
+#'
+#' The upload carries the file's SHA-256 (`ChecksumSHA256`, base64 of the raw
+#' digest). S3 verifies it on arrival and keeps it with the object, so
+#' `.datom_s3_object_sha256()` can read the stored file's hash later without
+#' downloading it.
+#'
+#' Every other failure stops with the usual upload error. That includes a 409,
+#' which AWS returns when a delete of the key finishes while the upload runs;
+#' in datom only a teardown deletes data files, so it is not retried, which
+#' could upload into a project being torn down.
+#'
+#' @param conn A `datom_conn` object.
+#' @param local_path Local file path to upload.
+#' @param s3_key Relative S3 key (after `prefix/datom/`).
+#' @return `"uploaded"` or `"exists"`.
+#' @keywords internal
+.datom_s3_upload_absent <- function(conn, local_path, s3_key) {
+  if (!fs::file_exists(local_path)) {
+    cli::cli_abort("File not found: {.path {local_path}}")
+  }
+
+  if (.datom_s3_exists(conn, s3_key)) return("exists")
+
+  full_key <- .datom_build_storage_key(conn$prefix, s3_key)
+  body <- readBin(local_path, what = "raw", n = fs::file_size(local_path))
+  checksum <- jsonlite::base64_enc(
+    digest::digest(body, algo = "sha256", serialize = FALSE, raw = TRUE)
+  )
+
+  tryCatch(
+    {
+      conn$client$put_object(
+        Bucket = conn$root,
+        Key = full_key,
+        Body = body,
+        IfNoneMatch = "*",
+        ChecksumSHA256 = checksum
+      )
+      "uploaded"
+    },
+    http_412 = function(e) "exists",
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Failed to upload file to S3.",
+          "x" = "Root: {.val {conn$root}}",
+          "x" = "Key: {.val {full_key}}",
+          "x" = "Local path: {.path {local_path}}",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
+}
+
+
+#' SHA-256 of the Bytes Stored at an S3 Key
+#'
+#' Asks S3 for the checksum it keeps with the object (`ChecksumMode =
+#' "ENABLED"`) and uses it only when it is the SHA-256 of the whole file (see
+#' `.datom_s3_whole_file_sha256()`). Otherwise downloads the object and hashes
+#' it.
+#'
+#' @param conn A `datom_conn` object.
+#' @param s3_key Relative S3 key (after `prefix/datom/`).
+#' @return The SHA-256 as a lowercase hex string.
+#' @keywords internal
+.datom_s3_object_sha256 <- function(conn, s3_key) {
+  full_key <- .datom_build_storage_key(conn$prefix, s3_key)
+
+  head <- tryCatch(
+    conn$client$head_object(
+      Bucket = conn$root,
+      Key = full_key,
+      ChecksumMode = "ENABLED"
+    ),
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Failed to read a stored file's checksum from S3.",
+          "x" = "Root: {.val {conn$root}}",
+          "x" = "Key: {.val {full_key}}",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
+
+  stored <- .datom_s3_whole_file_sha256(head$ChecksumSHA256, head$ChecksumType)
+  if (!is.null(stored)) return(stored)
+
+  resp <- tryCatch(
+    conn$client$get_object(Bucket = conn$root, Key = full_key),
+    error = function(e) {
+      cli::cli_abort(
+        c(
+          "Failed to download a stored file from S3 to hash it.",
+          "x" = "Root: {.val {conn$root}}",
+          "x" = "Key: {.val {full_key}}",
+          "i" = "Underlying error: {conditionMessage(e)}"
+        ),
+        parent = e
+      )
+    }
+  )
+  digest::digest(resp$Body, algo = "sha256", serialize = FALSE)
+}
+
+
+#' The Whole-File SHA-256 in an S3 Checksum, If It Is One
+#'
+#' A stored `ChecksumSHA256` is the file's SHA-256 only when it covers the
+#' whole file: `ChecksumType` is `FULL_OBJECT`, or there is no type and the
+#' value carries no `-N` part-count suffix. A file uploaded in parts carries a
+#' checksum of its parts' checksums instead (type `COMPOSITE`, value ending in
+#' `-N`), and read as a plain hash it would record a wrong one, so every read
+#' of that version would be refused.
+#'
+#' The suffix rule does not rely on the base64 decoder refusing a suffixed
+#' value (the one used here does, a lenient one would not), and a value that
+#' does not decode to exactly 32 bytes is not trusted either.
+#'
+#' @param checksum The `ChecksumSHA256` field of a `head_object()` response.
+#' @param type The `ChecksumType` field of the same response.
+#' @return The SHA-256 as a lowercase hex string, or `NULL` when the checksum
+#'   is absent or does not cover the whole file.
+#' @keywords internal
+.datom_s3_whole_file_sha256 <- function(checksum, type) {
+  present <- function(x) is.character(x) && length(x) == 1L && !is.na(x) && nzchar(x)
+
+  if (!present(checksum)) return(NULL)
+  if (present(type) && !identical(type, "FULL_OBJECT")) return(NULL)
+  if (!present(type) && grepl("-[0-9]+$", checksum)) return(NULL)
+
+  digest_raw <- tryCatch(jsonlite::base64_dec(checksum), error = function(e) NULL)
+  if (length(digest_raw) != 32L) return(NULL)
+
+  paste(as.character(digest_raw), collapse = "")
+}
+
+
 #' Download File from S3
 #'
 #' Downloads an S3 object and writes it to a local path. Creates parent

@@ -219,6 +219,268 @@ test_that("upload error includes bucket, key, and local path", {
 })
 
 
+# --- .datom_s3_upload_absent() -------------------------------------------------
+
+# A condition shaped like the one paws raises for an HTTP error
+# (`paws.common::aws_error()`): classed by status, then by status family.
+paws_http_error <- function(status, code) {
+  family <- (status %/% 100) * 100
+  structure(
+    list(
+      message = sprintf("%s (HTTP %d). Raised by a test.", code, status),
+      call = NULL,
+      status_code = status
+    ),
+    class = c(
+      "paws_error", paste0("http_", unique(c(status, family, "error"))),
+      "error", "condition"
+    )
+  )
+}
+
+sha256_hex_of_base64 <- function(b64) {
+  paste(as.character(jsonlite::base64_dec(b64)), collapse = "")
+}
+
+test_that("uploads an absent key only-if-absent, carrying the file's SHA-256", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("fake parquet content"), path)
+
+    mock_head <- mockery::mock(stop(paws_http_error(404, "NotFound")))
+    mock_put <- mockery::mock(list(ETag = "\"abc\""))
+    conn <- mock_datom_conn(
+      list(head_object = mock_head, put_object = mock_put),
+      root = "my-bucket", prefix = "proj"
+    )
+
+    result <- .datom_s3_upload_absent(conn, path, "dm/abc.parquet")
+
+    expect_identical(result, "uploaded")
+    mockery::expect_called(mock_put, 1)
+    args <- mockery::mock_args(mock_put)[[1]]
+    expect_equal(args$Bucket, "my-bucket")
+    expect_equal(args$Key, "proj/datom/dm/abc.parquet")
+    expect_equal(args$Body, charToRaw("fake parquet content"))
+    expect_identical(args$IfNoneMatch, "*")
+    expect_identical(
+      sha256_hex_of_base64(args$ChecksumSHA256),
+      digest::digest(file = path, algo = "sha256")
+    )
+  })
+})
+
+test_that("a stored key is reported as exists and never uploaded again (P2)", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("different bytes"), path)
+
+    mock_head <- mockery::mock(list(ContentLength = 12))
+    mock_put <- mockery::mock(list())
+    conn <- mock_datom_conn(list(head_object = mock_head, put_object = mock_put))
+
+    expect_identical(.datom_s3_upload_absent(conn, path, "dm/abc.parquet"), "exists")
+    mockery::expect_called(mock_put, 0)
+  })
+})
+
+test_that("a 412 (stored by another writer in between) is reported as exists", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("content"), path)
+
+    mock_head <- mockery::mock(stop(paws_http_error(404, "NotFound")))
+    mock_put <- mockery::mock(stop(paws_http_error(412, "PreconditionFailed")))
+    conn <- mock_datom_conn(list(head_object = mock_head, put_object = mock_put))
+
+    expect_identical(.datom_s3_upload_absent(conn, path, "dm/abc.parquet"), "exists")
+    mockery::expect_called(mock_put, 1)
+  })
+})
+
+test_that("a 409 is an ordinary upload failure, neither retried nor re-checked", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("content"), path)
+
+    mock_head <- mockery::mock(stop(paws_http_error(404, "NotFound")))
+    mock_put <- mockery::mock(
+      stop(paws_http_error(409, "ConditionalRequestConflict"))
+    )
+    conn <- mock_datom_conn(list(head_object = mock_head, put_object = mock_put))
+
+    expect_error(
+      .datom_s3_upload_absent(conn, path, "dm/abc.parquet"),
+      "Failed to upload file to S3"
+    )
+    mockery::expect_called(mock_put, 1)
+    mockery::expect_called(mock_head, 1)
+  })
+})
+
+test_that("an existence check that cannot look stops before uploading", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("content"), path)
+
+    mock_head <- mockery::mock(stop(paws_http_error(403, "AccessDenied")))
+    mock_put <- mockery::mock(list())
+    conn <- mock_datom_conn(list(head_object = mock_head, put_object = mock_put))
+
+    expect_error(
+      .datom_s3_upload_absent(conn, path, "dm/abc.parquet"),
+      "Failed to check"
+    )
+    mockery::expect_called(mock_put, 0)
+  })
+})
+
+test_that(".datom_s3_upload_absent() errors when the local file does not exist", {
+  mock_head <- mockery::mock(list())
+  conn <- mock_datom_conn(list(head_object = mock_head))
+
+  expect_error(
+    .datom_s3_upload_absent(conn, "nonexistent.parquet", "k"),
+    "File not found"
+  )
+  mockery::expect_called(mock_head, 0)
+})
+
+test_that(".datom_storage_upload_absent() dispatches to the S3 backend", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("content"), path)
+
+    mock_head <- mockery::mock(stop(paws_http_error(404, "NotFound")))
+    mock_put <- mockery::mock(list())
+    conn <- mock_datom_conn(list(head_object = mock_head, put_object = mock_put))
+
+    expect_identical(
+      .datom_storage_upload_absent(conn, path, "dm/abc.parquet"),
+      "uploaded"
+    )
+    expect_identical(mockery::mock_args(mock_put)[[1]]$IfNoneMatch, "*")
+  })
+})
+
+
+# --- .datom_s3_object_sha256() -------------------------------------------------
+
+# A stored body, and an S3 checksum of DIFFERENT bytes. A test that trusts the
+# checksum then returns a different answer from one that downloads and hashes,
+# so each case can tell the two routes apart.
+stored_body <- charToRaw("the stored file's bytes")
+other_checksum <- jsonlite::base64_enc(
+  digest::digest(charToRaw("something else"), algo = "sha256",
+                 serialize = FALSE, raw = TRUE)
+)
+body_checksum <- jsonlite::base64_enc(
+  digest::digest(stored_body, algo = "sha256", serialize = FALSE, raw = TRUE)
+)
+
+checksum_conn <- function(checksum, type) {
+  mock_head <- mockery::mock(list(ChecksumSHA256 = checksum, ChecksumType = type))
+  mock_get <- mockery::mock(list(Body = stored_body))
+  list(
+    conn = mock_datom_conn(
+      list(head_object = mock_head, get_object = mock_get),
+      root = "my-bucket", prefix = "proj"
+    ),
+    head = mock_head,
+    get = mock_get
+  )
+}
+
+test_that("a FULL_OBJECT checksum is used without downloading", {
+  m <- checksum_conn(body_checksum, "FULL_OBJECT")
+
+  result <- .datom_s3_object_sha256(m$conn, "dm/abc.parquet")
+
+  expect_identical(result, digest::digest(stored_body, algo = "sha256", serialize = FALSE))
+  mockery::expect_called(m$get, 0)
+  args <- mockery::mock_args(m$head)[[1]]
+  expect_equal(args$Key, "proj/datom/dm/abc.parquet")
+  expect_identical(args$ChecksumMode, "ENABLED")
+})
+
+test_that("a checksum with no type and no part-count suffix is used", {
+  m <- checksum_conn(body_checksum, character(0))
+
+  result <- .datom_s3_object_sha256(m$conn, "dm/abc.parquet")
+
+  expect_identical(result, digest::digest(stored_body, algo = "sha256", serialize = FALSE))
+  mockery::expect_called(m$get, 0)
+})
+
+test_that("a COMPOSITE checksum is not trusted: the file is downloaded and hashed", {
+  # No suffix on the value, so only the type can refuse it.
+  m <- checksum_conn(other_checksum, "COMPOSITE")
+
+  result <- .datom_s3_object_sha256(m$conn, "dm/abc.parquet")
+
+  expect_identical(result, digest::digest(stored_body, algo = "sha256", serialize = FALSE))
+  mockery::expect_called(m$get, 1)
+})
+
+test_that("a checksum with a part-count suffix and no type is not trusted", {
+  m <- checksum_conn(paste0(other_checksum, "-3"), character(0))
+
+  result <- .datom_s3_object_sha256(m$conn, "dm/abc.parquet")
+
+  expect_identical(result, digest::digest(stored_body, algo = "sha256", serialize = FALSE))
+  mockery::expect_called(m$get, 1)
+})
+
+test_that("the part-count suffix is refused even by a decoder that ignores it", {
+  # jsonlite's decoder errors on a suffixed value, which would also refuse it.
+  # A lenient decoder that dropped the suffix would not, so the suffix rule has
+  # to refuse on its own: this test isolates it.
+  lenient <- function(x) jsonlite::base64_dec(sub("-[0-9]+$", "", x))
+  mockery::stub(.datom_s3_whole_file_sha256, "jsonlite::base64_dec", lenient)
+
+  expect_null(.datom_s3_whole_file_sha256(paste0(other_checksum, "-3"), character(0)))
+  expect_type(.datom_s3_whole_file_sha256(other_checksum, character(0)), "character")
+})
+
+test_that("an absent checksum means download and hash", {
+  m <- checksum_conn(character(0), character(0))
+
+  result <- .datom_s3_object_sha256(m$conn, "dm/abc.parquet")
+
+  expect_identical(result, digest::digest(stored_body, algo = "sha256", serialize = FALSE))
+  mockery::expect_called(m$get, 1)
+})
+
+test_that("a FULL_OBJECT checksum that is not a 32-byte digest is not trusted", {
+  short <- jsonlite::base64_enc(as.raw(1:16))
+  m <- checksum_conn(short, "FULL_OBJECT")
+
+  result <- .datom_s3_object_sha256(m$conn, "dm/abc.parquet")
+
+  expect_identical(result, digest::digest(stored_body, algo = "sha256", serialize = FALSE))
+  mockery::expect_called(m$get, 1)
+})
+
+test_that(".datom_s3_object_sha256() wraps a failed checksum read with context", {
+  mock_head <- mockery::mock(stop(paws_http_error(403, "AccessDenied")))
+  conn <- mock_datom_conn(list(head_object = mock_head), root = "my-bucket")
+
+  expect_error(
+    .datom_s3_object_sha256(conn, "dm/abc.parquet"),
+    "Failed to read a stored file's checksum"
+  )
+})
+
+test_that(".datom_storage_object_sha256() dispatches to the S3 backend", {
+  m <- checksum_conn(body_checksum, "FULL_OBJECT")
+
+  expect_identical(
+    .datom_storage_object_sha256(m$conn, "dm/abc.parquet"),
+    digest::digest(stored_body, algo = "sha256", serialize = FALSE)
+  )
+})
+
+
 # --- .datom_s3_download() ------------------------------------------------------
 
 test_that("downloads file and writes to local path", {

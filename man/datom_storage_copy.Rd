@@ -31,6 +31,10 @@ Server-side \code{copy_object} (same-region optimisation) is reserved for a
 future release.
 }
 
+A temporary file left by an interrupted upload to a local store (its name
+starts with \code{.} and ends in \code{.tmp}) is not copied; \code{\link[=datom_storage_list]{datom_storage_list()}}
+still shows it.
+
 This is a policy-free primitive. It does not modify the source namespace,
 update \code{project.yaml}, or switch \code{ref.json}. For a complete managed
 migration (governed projects) use \code{datomanager::gov_migrate_data()}.

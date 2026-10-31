@@ -18,7 +18,10 @@ datom_storage_verify(
 
 \item{keys}{Character vector of relative keys (after \verb{\{prefix\}/datom/}) to
 verify. \code{NULL} (default) verifies every key returned by
-\code{datom_storage_list(from_conn)}. Pass a subset to verify a sample.}
+\code{datom_storage_list(from_conn)}, except a temporary file left by an
+interrupted upload to a local store (its name starts with \code{.} and ends in
+\code{.tmp}), which \code{\link[=datom_storage_copy]{datom_storage_copy()}} does not copy either. Pass a subset
+to verify a sample.}
 
 \item{mode}{\code{"structural"} (default) or \code{"content"}. See above.}
 }

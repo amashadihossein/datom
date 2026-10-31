@@ -146,9 +146,11 @@ otherwise               -> .datom_storage_upload_absent(tmp, key)
   `FULL_OBJECT`, or `ChecksumType` is absent and the value carries no `-N` suffix. A file uploaded in
   parts carries a checksum of the parts' checksums instead (suffix `-N`, type `COMPOSITE`), and read
   as a plain hash it would record a wrong one. In every other case, `get_object` and hash the body.
-  datom uploads in one piece today, so this guards the multipart uploads planned in #73. The
-  arguments and the `ChecksumType` field exist in paws.storage 0.9.0; their behaviour against real
-  S3 is checked in the end-to-end run, not in unit tests (R7.5).
+  datom uploads in one piece today, so this guards the multipart uploads planned in #73. A value
+  that does not decode to exactly 32 bytes is not trusted either (added in task 1): a service
+  returning the checksum in another format would otherwise record a wrong hash for good. The
+  arguments and the `ChecksumType` field exist from paws.storage 0.8.0; their behaviour against real
+  S3 is checked by `research/s3_conditional_probe.R` (section 10), not in unit tests (R7.5).
 - On a service that ignores `IfNoneMatch`, the `head_object` check still runs first; the race left
   is the R8 row.
 - **409 is an ordinary upload failure** (owner, 2026-10-28). AWS returns 412 when two conditional
@@ -378,18 +380,24 @@ Proven on 2026-10-28 (scripts in `research/`):
   (2025-02), hence the `(>= 0.8.0)` pin.
 - From AWS's documentation on conditional writes: two conditional uploads to one key give 412 to all
   but the first to finish; a delete that finishes before a conditional upload gives 409.
+- **Real S3, 2026-10-30** (`research/s3_conditional_probe.R`, run by the owner against bucket
+  `datom-test`, task 1): 11 of 11 checks passed on each of the three paws pairs, `paws.storage`
+  0.9.0 / `paws.common` 0.8.8 (installed here), 0.8.0 / 0.8.0 (the declared minimum) and 0.11.0 /
+  0.9.0 (CRAN's current). An "only if absent" upload of a stored key is refused with a condition of
+  class `http_412` (classes `paws_error http_412 http_400 http_error`), and datom's upload reports it
+  as `"exists"`, leaving the stored bytes unchanged. `head_object(ChecksumMode = "ENABLED")` returns
+  `ChecksumType` `FULL_OBJECT` and a `ChecksumSHA256` equal to the file's SHA-256, so
+  `.datom_s3_object_sha256()` reads the hash without downloading. A wrong `ChecksumSHA256` is refused
+  (`BadDigest`, HTTP 400), so the header reaches S3. On `paws.common` 0.9.0 the upload with datom's
+  own `ChecksumSHA256` succeeds: paws skips its default checksum when the caller supplies one
+  (`has_checksum_header()` in its `custom_checksum.R`).
 
 Not yet traced, each resolved in the task that needs it:
 1. Unstaging chosen paths with `git2r::reset(repo, path = ...)` after a break between staging and
    committing.
-2. Real S3: `IfNoneMatch = "*"` refused with 412, and `ChecksumSHA256` with `ChecksumType`
-   `FULL_OBJECT` returned by `head_object` for an object put with one. Settled in **task 1** by a
-   small probe with the owner's credentials (`research/s3_conditional_probe.R`), before the tasks
-   that depend on it (moved from the end-to-end run in task 11, owner, 2026-10-28). The probe runs on
-   three paws version pairs: the ones installed here (`paws.storage` 0.9.0, `paws.common` 0.8.8); the
-   declared minimum (`paws.storage` 0.8.0 with the `paws.common` 0.8.0 it requires), in a throwaway
-   library; and CRAN's current ones (`paws.storage` 0.11.0 with `paws.common` 0.9.0, which attaches a
-   checksum to every upload by default).
+2. ~~Real S3: `IfNoneMatch = "*"` refused with 412, and `ChecksumSHA256` with `ChecksumType`
+   `FULL_OBJECT` returned by `head_object`.~~ **Settled 2026-10-30 in task 1**, on all three paws
+   version pairs: see "Real S3, 2026-10-30" under Proven above.
 3. Heal's step d when the stored manifest cannot be read for a reason other than absence (the storage
    reader can rebuild it and warn); which of those outcomes counts as "behind".
 4. Whether any existing test asserts the old order or the manifest-first mirror and needs rewriting

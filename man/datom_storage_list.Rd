@@ -24,6 +24,10 @@ Keys are returned in their full storage-key form -- for S3 that is
 \code{"{prefix}/datom/..."} relative to the bucket root; for local backends it
 is a path relative to \code{conn$root}. This mirrors the contract of the
 internal \code{.datom_storage_list_objects()} dispatch layer.
+
+Every file is listed, including a temporary file an interrupted upload to a
+local store can leave beside a data file (its name starts with \code{.} and ends
+in \code{.tmp}). \code{\link[=datom_storage_copy]{datom_storage_copy()}} and \code{\link[=datom_storage_verify]{datom_storage_verify()}} skip those.
 }
 \examples{
 # Offline, self-contained: a bare git repo stands in for GitHub and a
