@@ -7,7 +7,8 @@ stops the command); DD2 decided (every pull resolves a manifest-only conflict); 
 are taken; the design as a whole awaits approval. The routine and its file were named `heal` by the
 owner on 2026-10-28 (first drafted as "settle" in `R/finish.R`). A review by another agent the same day,
 evaluated with the owner, added the hard-link upload on a local store and the whole-file condition on
-S3's stored checksum (section 3). It also added a check before every publish; the owner dropped that
+S3's stored checksum (section 3); a later one added recognisable temporary names on a local store,
+skipped by storage copy and verify (section 3). It also added a check before every publish; the owner dropped that
 check after weighing what the current version is for (DD4).
 **Read first**: `requirements.md` (terms, findings, decisions D1-D12, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
@@ -68,6 +69,8 @@ write commands.
 | `R/utils-storage.R` | `.datom_storage_object_sha256(conn, key)` | new | R1.3: the SHA-256 (hex) of the bytes stored at `key` |
 | `R/utils-s3.R` | `.datom_s3_upload_absent()`, `.datom_s3_object_sha256()` | new | S3 halves (section 3) |
 | `R/utils-local.R` | `.datom_local_upload_absent()`, `.datom_local_object_sha256()` | new | Local halves (section 3) |
+| `R/utils-local.R` | `.datom_is_temp_key(key)` | new | Recognises the temporary file names a local upload uses (section 3) |
+| `R/storage.R` | `datom_storage_copy()`, `datom_storage_verify()` | changed | Skip temporary files left by an interrupted local upload; `datom_storage_list()` is unchanged |
 | `R/utils-git.R` | `.datom_git_pull(path, pat)` | changed | On a conflict whose only file is `.datom/manifest.json`, calls `.datom_resolve_manifest_conflict()` instead of aborting. Every other conflict aborts as today |
 | `R/utils-git.R` | `.datom_git_head_file(path, rel)` | new | A file's content as committed in HEAD (`git2r::revparse_single(repo, "HEAD:<rel>")`) |
 | `R/read_write.R` | `datom_write()` | changed | Heals first; data file before clone files; internal `.healed` argument so `datom_sync()` heals once per call (R3.7) |
@@ -129,6 +132,13 @@ otherwise               -> .datom_storage_upload_absent(tmp, key)
   again: the target now exists means `"exists"`; it does not means the file system has no hard links
   (some network drives, exFAT), and datom falls back to check, then move, which leaves the race in
   section 12. A half-copied file only ever sits under the temporary name.
+- The temporary name is recognisable: a leading `.` and a `.tmp` suffix, for example
+  `dm/.{data_sha}.parquet.{random}.tmp`, matched by one helper, `.datom_is_temp_key()`.
+  `datom_storage_copy()` and `datom_storage_verify()` skip such files, so a leftover from a crash
+  between the link and the clean-up is never carried to a new location or reported as a mismatch.
+  `datom_storage_list()` keeps showing every file, so a leftover can still be seen. Readers never
+  touch these files (they read exact keys), and the manifest rebuild already ignores them (it finds
+  artifacts only through `{name}/.metadata/metadata.json`).
 - `.datom_local_object_sha256()`: hash the file.
 
 `.datom_storage_upload()` (unconditional) stays for metadata documents. After this spec its only
@@ -332,6 +342,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | Two R sessions writing through one clone at once | Not supported | Documented |
 | An S3-compatible service that ignores conditional writes, two writers, same new content, same moment | One version's reads are refused by the hash check. Loud | Documented beside `endpoint` |
 | A local store on a file system without hard links, two writers, same new content, same moment | The second move replaces the first file; one version's reads are refused by the hash check. Loud | Documented in `?datom_store_local` |
+| A crash during a local upload leaves a temporary file (`.{name}.tmp`) beside the data file | Nothing for readers. A leftover after the link costs no space (a hard link shares the bytes); one left mid-copy takes space. `datom_storage_list()` shows it; copy and verify skip it | Guarded (a test that copy and verify skip it); documented in `?datom_store_local` |
 | Two people publish the same table within seconds, and the older publish lands last (DD4) | Readers get the superseded version as current until the next datom command in any up-to-date clone republishes it. Reads that name a version are unaffected | Guarded (P10); documented in `dev/engineering-notes.md` |
 | The same, with the two publishes crossing so the stored manifest names the newer version and the stored metadata holds the older one (DD4) | Readers get the superseded version, and heal does not notice, until the table's next write or `datom_validate(fix = TRUE)` | Documented in `dev/engineering-notes.md`; not guarded |
 | A file put at a data address by hand, adopted by a re-run | Its content is read without a content check | Documented in `dev/engineering-notes.md`; not checked |
@@ -342,7 +353,7 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 
 | # | Task | Escalation flag |
 |---|---|---|
-| 1 | Storage: upload only if absent (S3 conditional; local hard link with its fallback), and the stored file's hash (whole-file checksum only), both backends | |
+| 1 | Storage: upload only if absent (S3 conditional; local hard link with its fallback and recognisable temporary names, skipped by `datom_storage_copy()` and `datom_storage_verify()`), and the stored file's hash (whole-file checksum only), both backends | |
 | 2 | Tables: data file first and the R1.3 decision; `.datom_commit_and_mirror()` without the upload; break-at-each-step tests for `datom_write()` | design spot-check before starting (it changes the core write path) |
 | 3 | Sets: payload via a temp file, R1.5; the same tests for `datom_write_set()` | |
 | 4 | Heal (`R/heal.R`): reset, pull, check, push and publish; the one publish path, which a write's steps 5-6 move onto; wired into the write routes; tests for R3, R3.7, DD1 and P10 | design spot-check before starting (every write command calls it) |
