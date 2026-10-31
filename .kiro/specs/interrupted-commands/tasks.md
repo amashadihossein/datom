@@ -18,8 +18,9 @@ what shipped and wait for the owner's go-ahead before the next one.
 
 ## Where things stand
 
-Requirements approved 2026-10-28 (amended the same day: R3.3, R5.5, R7.8, and an R8 row). Design
-approved 2026-10-28 with decisions DD1-DD4. **No code yet.**
+Requirements approved 2026-10-28 (amended the same day: R3.3, R5.5, R7.8, an R8 row, and D13 with
+R3.1 and R9). Design approved 2026-10-28 with decisions DD1-DD4. **Task list approved by the owner on
+2026-10-28**, after the four reviews below. **No code yet: the next step is task 1.**
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
