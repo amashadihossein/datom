@@ -91,7 +91,7 @@ write commands.
 | `R/heal.R` | `.datom_heal(conn, artifact = NULL)` | new | Steps a-d of section 1. `artifact` names the artifacts the command is about to write (several for `datom_sync()`, none for the repair), which sets the wording of reset messages (section 4). Returns what it reset and what it published, for the caller's messages |
 | `R/heal.R` | `.datom_reset_unfinished(conn)` | new | Step a. Finds datom-owned files that differ from the last commit and puts them back (section 4) |
 | `R/heal.R` | `.datom_unpublished_artifacts(conn, stored)` | new | Names the artifacts whose committed version readers cannot see: in unpushed commits, or whose clone manifest row differs from the stored one |
-| `R/heal.R` | `.datom_publish_artifacts(conn, names)` | new | **The one publish path.** For each name, the clone's metadata, history and snapshot through `.datom_push_metadata_s3()`; then the manifest, last. Heal's step d, a write's steps 5-6 and the metadata-only route all go through it |
+| `R/heal.R` | `.datom_publish_artifacts(conn, names)` | new | **The one publish path for a version's documents** (the repair keeps its own function, in the same order; section 6). For each name, the clone's metadata, history and snapshot through `.datom_push_metadata_s3()`; then the manifest, last. Heal's step d, a write's steps 5-6 and the metadata-only route all go through it |
 | `R/heal.R` | `.datom_resolve_manifest_conflict(path)` | new | R3.8: rebuilds `.datom/manifest.json` after a merge whose only conflict it is, stages it, commits the merge (section 5) |
 | `R/heal.R` | `.datom_pushed_artifacts(path)` | new | Artifacts touched by commits the remote lacks; feeds the R3.6 message and step d |
 | `R/manifest-rebuild.R` | `.datom_manifest_row(meta, history, member_count)` | new, extracted | The row-building half of `.datom_rebuild_manifest_entry()`, which keeps its storage reads and calls it. The clone-side rebuild in section 5 calls it too, so the two rebuilds cannot drift |
@@ -116,6 +116,7 @@ write commands.
 | `R/sync.R` | `.datom_sync_data_metadata()` | changed | Heals (so it pushes first, R5.2), then mirrors every artifact, then the manifest last |
 | `R/sync.R` | `.datom_read_manifest()` | changed | A third scope, `"head"`, reading HEAD's copy through `.datom_git_head_file()` with the same schema check and upgrade |
 | `R/sync.R` | `.datom_restore_set_payload()` | changed | Uploads through `.datom_storage_upload_absent()` |
+| `R/sync.R` | `.datom_sync_one_artifact()` | changed | Restores a set's payload, then uploads the snapshots, then the history, then `metadata.json` last (section 6) |
 | `R/validate.R` | `datom_validate()` | changed | The fix now pushes and reports per artifact (R5.3); a fetch first, for the new status (R5.5, section 6) |
 | `R/validate.R` | `.datom_validate_one_table()` | changed | Reads the stored `metadata.json` and reports `metadata_stale_s3` when its version differs from the one in the clone's last commit (section 6) |
 | `R/repo.R` | `datom_repo_commit()` | changed | `.datom_reset_unfinished()` before staging (R3.5); the R3.6 message when it pushes |
@@ -340,6 +341,17 @@ clone is behind the remote it skips the comparison and says to run `datom_pull()
 fails it warns and skips the comparison, both as the scan does (section 7). With `fix = TRUE`, heal has
 already pulled, so the comparison runs on a current clone and the repair then clears it.
 `.datom_validate_unfixable_tables()` does not list the new status: the repair fixes it.
+
+**The repair's per-artifact copy keeps its own function, in the same order** (follow-up to the design
+spot-check before task 2, owner, 2026-10-30). `.datom_sync_one_artifact()` is not replaced by
+`.datom_publish_artifacts()`, because it copies every snapshot in the clone and can restore a set's
+payload, where a publish sends one version's documents. It follows the same order: the set's payload
+(data file first), then the snapshots, then the history, then `metadata.json` last. The stored
+`metadata.json` is what change detection and `metadata_stale_s3` read as the sign that a version is
+published. If the stored manifest already matches git, which is when the repair is usually run, a
+break after an early `metadata.json` would leave a missing history or snapshot that no check reports.
+With `metadata.json` last, `datom_validate()` still reports the artifact and the next `fix = TRUE`
+finishes it.
 
 ## 7. The scan and the sync (R4)
 

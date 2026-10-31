@@ -74,6 +74,10 @@ owner one point at a time. All five points taken, three with additions:
 Also noted by the review, no change: a full write whose content matches a stored pre-cv1 file now keeps
 that file and records its hash (R1.2); task 2's resolver docstring says so.
 
+A follow-up from the same reviewer, the same day, of `b1f94fa`: the repair's per-artifact copy
+(`.datom_sync_one_artifact()`) uploads `metadata.json` first. Taken in task 7 (design section 6),
+with the set's payload moved to the front (data file first), where the review put it third.
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D13) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
@@ -314,6 +318,8 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - `R/sync.R`: `.datom_sync_data_metadata()` heals (so it pushes), right after its confirmation
     prompt, which says it may push; then mirrors every artifact, then the manifest last (P7). This is
     the only place the mirror-everything route and the repair heal (design section 4).
+  - `.datom_sync_one_artifact()` restores a set's payload, then uploads the snapshots, then the
+    history, then `metadata.json` last (design section 6).
   - `R/validate.R`: `datom_validate()` reports per artifact what was reset, pushed and published
     (R5.3); fetches first; `.datom_validate_one_table()` reports `metadata_stale_s3` against the
     version in the clone's last commit (R5.5).
@@ -322,8 +328,10 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     "no" at the prompt leaves git and storage unchanged, and heal never runs; heal called exactly
     once by `datom_write(conn)` and by `datom_validate(fix = TRUE)`, counted through a mock; a write
     broken before its commit is reset, not published, by `datom_validate(fix = TRUE)` and by
-    `datom_write(conn)` (P4).
-  - Guards to probe: the reset before publishing, the manifest-last order, the stale comparison, the
+    `datom_write(conn)` (P4); the keys the repair writes for one artifact, recorded through a mock,
+    end with `metadata.json`, and a set's payload comes first.
+  - Guards to probe: the reset before publishing, the manifest-last order, `metadata.json` last within
+    each artifact, the stale comparison, the
     behind-clone skip.
   - Acceptance: R5.1-R5.5, P4 (for the mirror-everything route and the repair), P7, P11.
 
