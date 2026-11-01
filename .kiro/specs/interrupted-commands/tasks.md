@@ -196,6 +196,10 @@ the owner.
 item (S1) taken into task 3 with the owner: a new data file on S3 is hashed twice, so the resolvers
 hash once and pass the hash to the upload.
 
+**Task 3's checkpoint, 2026-10-31**: approved by the owner, of `3ddaa80`, with no review by another
+agent. Next is task 4a, in a new session; it opens with the design spot-check flagged at planning
+(covering 4a and 4b) before any code.
+
 **Spec review is closed as of this round** (owner, 2026-10-31). From here:
 - Open items stay with the tasks that already own them (design section 10).
 - Each task gets one review at its checkpoint, against the scenario table at the top of this file.
