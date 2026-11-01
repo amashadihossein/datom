@@ -27,6 +27,14 @@ runs in every git-touching command, and finishes the merge itself once only the 
 R5.5 and R7.8 rewritten from `metadata_stale_s3` (storage against the clone's last commit) to
 `manifest_mismatch_s3` (storage against itself); R9.5 renames the status to match; R8's merge row
 follows R3.9.
+**Amended 2026-10-31** with the owner, from a review by another agent (of `058f29b`): D14 gains a
+seventh principle (a user's own git operations in the clone are off the supported path; datom does
+not guide them, but never leaves the project stuck), and S8 names them. R3.9 tells a merge of the
+remote branch, which is what datom's pull makes, from any other: it finishes the first itself and
+stops on the second until `datom_pull(conn, finish_merge = TRUE)` or `git merge --abort`. R3.8 runs
+the format check on what the merge brought in before rebuilding the manifest, and every refusal of
+that check names its evidence. The scan's new status becomes `unpushed`, set from the clone alone
+(D4, R4.2, R4.3, R4.5, R7.6). R8's merge row, R9.5 and R9.6 follow.
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -128,7 +136,7 @@ below it (`.datom_check_writer_floor()`, also on 0.2.0's repair route); 0.1.0 do
 | D1 | **Data file first.** A write uploads its data file before anything in the clone changes, and never overwrites a stored data file. Metadata and manifest still go to storage only after the push. A version exists once GitHub has it; a data file no commit names is invisible to readers | Keep git first and keep a copy of the data file in the clone until its upload succeeds. Set aside after a survey: Git LFS, DVC, Delta Lake and Iceberg all store the data before publishing the pointer, and git first leaves a version a colleague can pull but not read |
 | D2 | **No separate record of a write in progress.** Every step leaves a mark in git or storage, and a re-run reads those marks to see where the last run stopped | A record file in a git-ignored folder of the clone: a second account of the same state that can drift, and only the clone that broke would have it |
 | D3 | **The commit is the line.** A command that finds another artifact's write unfinished resets that artifact's files if the write never committed, and publishes it from git if it did. It says which in either case | Refuse until the user finishes it (one break stops a whole sync); commit the unfinished files (can publish a write the user stopped on purpose) |
-| D4 | **A new scan status, `unpublished`**, for a table whose committed version readers cannot see yet. "Published" is defined in the help | Keep `unchanged` and print a line (misleads a script that checks `all(status == "unchanged")`) |
+| D4 | **A new scan status, `unpushed`**, for a table whose input file is unchanged but whose committed version is in commits not yet pushed, so readers cannot see it. Set from the clone alone. Renamed from `unpublished` and narrowed on 2026-10-31 (owner, review of `058f29b`): the scan no longer fetches or reads storage, so a table pushed but not yet published (S4) shows `unchanged`, and `datom_sync()` publishes it anyway because it finishes committed work before deciding there is nothing to sync (R4.4). "Published" is defined in the help | Keep `unchanged` and print a line (misleads a script that checks `all(status == "unchanged")`). The narrowing leaves that one case, a table pushed but not published; no documented workflow skips `datom_sync()` on the scan's statuses |
 | D5 | **`datom_init_repo()` is in scope.** A re-run in a half-initialised folder finishes instead of refusing, under narrow conditions | Leave it refusing and pointing at the repair |
 | D6 | **`datom_validate(fix = TRUE)` pushes** unpushed commits, then publishes | Publish only what GitHub has and name `datom_repo_push()` for the rest |
 | D7 | **No rescue for states a released datom already created.** datom is experimental; the fix is designed for what new writes can produce. D11 extends this to teammates still writing with a released datom | Storage checks before every skip, correcting a version's recorded hash after an arrow upgrade, flagging sets that pin a version with no data file, restoring a set payload from an older commit |
@@ -138,7 +146,7 @@ below it (`.datom_check_writer_floor()`, also on 0.2.0's repair route); 0.1.0 do
 | D11 | **Teams writing one repo with mixed datom versions are not guarded against** (Q3). In practice everyone writing to a repo upgrades together. Recorded in R8 | Set `min_writer_version` at init for new repos and ask existing owners to add it; check for the data file before publishing any version |
 | D12 | **datom resolves a merge conflict confined to `.datom/manifest.json`** by rebuilding the manifest from the artifacts' files in the merged clone, completing the merge, and saying so (R3.8). The manifest is derived, so nothing can be lost. Conflicts in any other file stop the command as today and stay with #105 | Leave every conflict to #105: a write whose push broke while a colleague pushed would not finish on a re-run, the main conflict R3.7 leaves |
 | D13 | **Hand edits of datom's own files are not supported** (owner, 2026-10-28, third review of `tasks.md`). An artifact's `metadata.json`, `version_history.json` and `set.json`, and `.datom/manifest.json`, are written only by datom commands. An uncommitted change to one of them is treated as an unfinished write, whoever made it: the next datom command resets it and warns (R3.1). So the metadata-only route, `datom_write(conn, name =)`, no longer commits a hand edit; it publishes what is committed for that table. To change custom metadata, use `datom_write(conn, data, name, metadata = )`, which records a metadata-only version with its history entry and manifest row. Until now the route committed a hand-edited `metadata.json`, but only half-recorded it (no history entry, no manifest row), and its documented purpose, editing `dispatch.json`, left with the governance layer | Exempt the named table from the reset on that route: it protected a use with no documented purpose, and after a write broken before its commit it would commit that write's half-finished files as if they were an edit, leaving `datom_read()` and `datom_list()` naming different versions |
-| D14 | **Where datom heals and where it stops** (owner, 2026-10-30, simplification pass). Automate only what is common: re-running the same command finishes the job, and any command finishes work already committed but not yet published. Rarer situations, chiefly two developers' work overlapping, stop before doing harm with a short message, and datom supports the manual step it asks for. States left by older releases, hand edits and files changed in storage by hand are documented only. **Every stop and every report names a way out**, even a manual one. The yardstick is the scenario table below | Build recovery for every scenario a review can imagine: each automation adds code and edge cases, and can put the common path at risk |
+| D14 | **Where datom heals and where it stops** (owner, 2026-10-30, simplification pass). Automate only what is common: re-running the same command finishes the job, and any command finishes work already committed but not yet published. Rarer situations, chiefly two developers' work overlapping, stop before doing harm with a short message, and datom supports the manual step it asks for. States left by older releases, hand edits and files changed in storage by hand are documented only. **Every stop and every report names a way out**, even a manual one. A user's own git operations in the clone get no guidance, only the guarantee that the project is never left stuck (added 2026-10-31). The yardstick is the scenario table below | Build recovery for every scenario a review can imagine: each automation adds code and edge cases, and can put the common path at risk |
 
 ### D14 in full: where datom heals and where it stops
 
@@ -160,6 +168,12 @@ The owner's principles, set 2026-10-30 to stop fixes accumulating one review at 
    only (D7, D11, D13).
 6. Every stop and every report names a way out. Before a "stop with a message" is adopted, the
    recovery it gives is traced once.
+7. A user working the clone directly with git (their own merges, rebases, inspection merges) is off
+   the supported path and rare (owner, 2026-10-31). datom does not add checks or guidance for those
+   workflows. What it must never do is leave the project stuck or inconsistent: protecting the
+   project comes first, and less code is better. A guard for such a case is added only if, without
+   it, the project could be locked out or left unreadable; an outcome that is consistent and undoable
+   with ordinary git needs none.
 
 | # | Scenario | How often | What datom does |
 |---|---|---|---|
@@ -170,7 +184,7 @@ The owner's principles, set 2026-10-30 to stop fixes accumulating one review at 
 | S5 | `datom_init_repo()` interrupted | Occasionally | A re-run finishes |
 | S6 | A teammate pushed earlier; this clone is behind | Occasionally | Pulls at the start, on its own |
 | S7 | Two developers' work overlaps (a merge conflict, a publish race) | Rarely | Stops before harm with a short message, or reports; the manual step is supported |
-| S8 | An older datom, hand edits, files changed in storage by hand | Rare, unsupported | Documented only |
+| S8 | An older datom, hand edits, files changed in storage by hand, the user's own git operations in the clone | Rare, unsupported | Documented only; never left stuck (principle 7) |
 
 A review finding names its scenario. An S7 finding defaults to "stop with a message" (or a report
 from `datom_validate()`), an S8 finding to "document".
@@ -300,23 +314,41 @@ Applies, before their own work, to `datom_write()` (every route), `datom_write_s
      that disagree with their artifact's files in the merged clone (`metadata.json`,
      `version_history.json`, and `set.json` for a set), adding a row for an artifact the copy lacks
      (simplified 2026-10-30, owner: no comparison with the merge base);
+   - before that rebuild writes anything, runs the format check (the forward-compatibility check a
+     write runs at its door) on the remote's copy and on every artifact's files in the merged clone
+     (added 2026-10-31, owner). The merge may have brought documents from a newer datom, which this
+     build must not rewrite. A refusal commits nothing, leaves the merge in progress, and says to
+     upgrade datom and re-run, or to drop the merge with `git merge --abort`;
    - completes the merge and carries on, with a message saying the manifest was rebuilt.
+
+   Every refusal of the format check names its evidence, so a wrong inference can be reported as a
+   bug: the document, the fields or format number this build cannot read, and the installed datom
+   version (owner, 2026-10-31).
 
    A conflict in any other file, including a `version_history.json` (two people wrote the same
    artifact), stops the command before any publish, as today (from D1 a write's data file may
    already be in storage, unnamed, when the conflict comes at its push).
 9. **A merge in progress** (added 2026-10-30, owner, full-spec review of `b76961b`; reworded the
-   same day in the simplification pass). Every datom command that touches git checks first whether
-   the clone is in the middle of a merge, and never resets or rewrites a file while one is in
-   progress without saying so.
-   - While any file other than `.datom/manifest.json` still conflicts, it stops before changing
-     anything and says: a merge is in progress, which files conflict, and how to finish it. For each
-     conflicted artifact, take the remote copy of all its datom files
-     (`git checkout MERGE_HEAD -- <name>/metadata.json <name>/version_history.json`, plus
+   same day in the simplification pass, and on 2026-10-31 from the review of `058f29b`). Every datom
+   command that touches git checks first whether the clone is in the middle of a merge, and never
+   resets or rewrites a file while one is in progress without saying so. It tells two kinds apart
+   by what is being merged, not by any text or record: a **merge of the remote branch** brings in
+   the branch the clone's branch tracks (the commit being merged in is that branch's tip as last
+   fetched, or behind it). That is the only merge datom's pull makes, interrupted or not; a user's
+   own `git pull` makes the same merge and is treated the same way.
+   - **A merge of the remote branch.** While any file other than `.datom/manifest.json` still
+     conflicts, it stops before changing anything and says: a merge is in progress, which files
+     conflict, and how to finish it. For each conflicted artifact, take the remote copy of all its
+     datom files (`git checkout MERGE_HEAD -- <name>/metadata.json <name>/version_history.json`, plus
      `<name>/set.json` for a set; datom fills in the names), resolve your own files and `git add`
-     them, then re-run.
-   - When only the manifest is left, or nothing, it rebuilds the manifest as in R3.8, finishes the
-     merge and says so. The user never edits the manifest or runs `git commit` for a merge.
+     them, then re-run. When only the manifest is left, or nothing, it rebuilds the manifest as in
+     R3.8, finishes the merge and says so. The user never edits the manifest or runs `git commit`
+     for such a merge.
+   - **Any other merge** (of a local branch or another remote, started outside datom). It stops
+     before changing anything, names the merge, and gives two ways out: resolve it with git and run
+     `datom_pull(conn, finish_merge = TRUE)`, which rebuilds the manifest as in R3.8 and commits the
+     merge; or drop it with `git merge --abort`. No datom command commits such a merge unless asked,
+     and with nothing in progress `finish_merge` does nothing.
    - Taking the remote's whole manifest by hand is not suggested: its rows for the clone's other
      unpushed writes would stay stale, and nothing would report it.
 
@@ -327,16 +359,16 @@ writes nothing and is unchanged.
 
 1. `datom_sync_manifest()` compares each input file against the manifest **in the last commit**, not
    against the working-tree file.
-2. It reports a new status, `unpublished`, for a table whose input file is unchanged against the last
-   commit but whose committed version is not published. When storage cannot be reached, it still
-   reports tables with unpushed commits and warns that it could not check storage.
-   - The scan fetches first. A table whose stored version is newer than the clone's (a colleague
-     published after the clone's last pull) is **not** `unpublished`; the scan says the clone is
-     behind and names `datom_pull()`.
-3. `datom_sync()` treats `unpublished` rows as work: it pushes and publishes them without
-   re-importing the file.
+2. It reports a new status, `unpushed`, for a table whose input file is unchanged against the last
+   commit but whose committed version is in commits not yet pushed. It reads the clone only: no
+   fetch and no storage read (narrowed 2026-10-31, owner, review of `058f29b`; D4). A table pushed
+   but not yet published shows `unchanged`, and R4.4 publishes it.
+3. `datom_sync()` treats `unpushed` rows as work: it pushes and publishes them without re-importing
+   the file.
 4. `datom_sync()` applies R3 before deciding there is nothing to sync.
-5. `?datom_sync_manifest` defines "published" where it lists the statuses.
+5. `?datom_sync_manifest` defines "published" where it lists the statuses, and says that `unpushed`
+   looks at the clone only: a table pushed but not yet published shows `unchanged` until the next
+   `datom_sync()` or write publishes it.
 
 ### R5. The repair: `datom_validate(fix = TRUE)`
 
@@ -388,8 +420,8 @@ writes nothing and is unchanged.
 5. No test uses AWS or GitHub: folder remotes, local storage, and a mocked S3 client.
 6. R3.7 is tested with two clones of one project: when the second clone is behind, its repair and
    its writes leave storage holding the first clone's newer version; a merge conflict and a failed
-   fetch each leave storage unchanged; the scan in the behind clone does not report the newer
-   version as `unpublished`.
+   fetch each leave storage unchanged. (A scan clause was dropped on 2026-10-31: a scan that reads
+   only the clone cannot report a colleague's newer version, R4.2.)
 7. R3.8 is tested with two clones writing different tables without a pull in between, and with a
    write whose push broke while the other clone pushed: the re-run finishes, the rebuilt manifest
    names both tables, and the stored manifest matches it. Two clones writing the **same** table
@@ -410,7 +442,7 @@ and what to do).
 |---|---|---|
 | A write broke before its commit, leaving its data file in storage with no version naming it | Nothing; the file costs space. For sensitive data, the bytes are in the bucket although no version exists | Documented in `?datom_write` |
 | A project a released datom already broke (#155 before this fix) | A re-run or the repair can still leave its readers failing | Documented in `NEWS.md` (one line) |
-| A push rejected by a merge conflict (#105) | The command stops before any publish: no version is published, though the write's data file may already be in storage, unnamed (D1). Every write rewrites `.datom/manifest.json`'s `updated_at` and `summary` lines (`.datom_update_manifest_entry()`), so two writes from different clones conflict there even when they touch different tables (`two_writers_probe.R`, 2026-10-28). R3.7's pull at the start makes this rarer, because a write then commits on top of the remote. It stays likely after a broken push while a colleague pushed. A conflict only in the manifest is now resolved by datom (R3.8). What still stops the command: a conflict in a `version_history.json` (two people wrote the same artifact) or in the user's own files. Until #105's recovery command exists, the user follows the conflict message, which every later datom command repeats until the conflict is resolved (R3.9): for each conflicted artifact, take the remote copy of all its datom files (`git checkout MERGE_HEAD -- ...`, names filled in), resolve their own files and `git add` them, and re-run; datom then rebuilds the manifest and finishes the merge | Guarded by existing tests, and by R7.7 for what R3.8 resolves and what it leaves |
+| A push rejected by a merge conflict (#105) | The command stops before any publish: no version is published, though the write's data file may already be in storage, unnamed (D1). Every write rewrites `.datom/manifest.json`'s `updated_at` and `summary` lines (`.datom_update_manifest_entry()`), so two writes from different clones conflict there even when they touch different tables (`two_writers_probe.R`, 2026-10-28). R3.7's pull at the start makes this rarer, because a write then commits on top of the remote. It stays likely after a broken push while a colleague pushed. A conflict only in the manifest is now resolved by datom (R3.8). What still stops the command: a conflict in a `version_history.json` (two people wrote the same artifact) or in the user's own files. Until #105's recovery command exists, the user follows the conflict message, which every later datom command repeats until the conflict is resolved (R3.9): for each conflicted artifact, take the remote copy of all its datom files (`git checkout MERGE_HEAD -- ...`, names filled in), resolve their own files and `git add` them, and re-run; datom then rebuilds the manifest and finishes the merge. A merge started outside datom, of anything but the remote branch, is never finished unasked: every command stops, and `datom_pull(conn, finish_merge = TRUE)` or `git merge --abort` ends it (R3.9) | Guarded by existing tests, by R7.7 for what R3.8 resolves and what it leaves, and by the merge check's tests |
 | Two R sessions writing through one clone at the same time | Not supported, as today | Documented |
 | An S3-compatible service that rejects `IfNoneMatch` or `ChecksumSHA256` outright (400 or 501), added 2026-10-28 from the review of `tasks.md` | Every write stops at its first step, the data file upload, with the service's own error; nothing in the clone, git or storage changes. No fallback until a user needs one. paws alone can trigger this: from `paws.common` 0.9.0, every upload carries a checksum by default, datom's metadata uploads included, so such a service can fail even without datom's new arguments | Documented, beside `endpoint` in `?datom_get_conn` |
 | On an S3-compatible service that ignores conditional writes, two writers store the same new content at the same moment with different bytes (different arrow versions) | Both see the key absent and upload; the second file replaces the first. One of the two versions records a hash the stored file no longer has, so reading it is refused by the hash check. Loud, not silent | Documented, beside `endpoint` in `?datom_get_conn` |
@@ -451,8 +483,9 @@ and what to do).
 5. User-facing help: `?datom_write` and `?datom_write_set` (the order, a re-run finishes, R8's
    leftover file, a conflict only in the manifest is resolved by datom, and: commit your own files
    with `datom_repo_commit()`, because a plain `git commit` can capture a datom write halfway
-   through), `?datom_sync_manifest` (the new status,
-   "published"), `?datom_validate` (the repair pushes; the new status `manifest_mismatch_s3`), `?datom_init_repo` (a re-run finishes),
+   through), `?datom_sync_manifest` (the new status `unpushed`,
+   "published", and that a table pushed but not yet published shows `unchanged`), `?datom_pull`
+   (`finish_merge`, for a merge datom did not start, R3.9), `?datom_validate` (the repair pushes; the new status `manifest_mismatch_s3`), `?datom_init_repo` (a re-run finishes),
    `?datom_write`'s `data = NULL` with `name` route (it publishes what is committed for that table;
    hand edits of datom's files are not supported and are reset; custom metadata is changed with
    `datom_write(conn, data, name, metadata = )`, D13),
@@ -460,7 +493,8 @@ and what to do).
    R3.6 (they push a datom write's commit without publishing it, and say so).
 6. `NEWS.md`: the behaviour changes, upgrade-relevant first (the repair now pushes; hand edits of
    datom's own files are no longer committed by `datom_write(conn, name =)` but reset, with the
-   supported way to change custom metadata (D13); the new scan status; upgrade everyone who writes
+   supported way to change custom metadata (D13); the new scan status `unpushed`; a merge datom did
+   not start stops every command until `datom_pull(conn, finish_merge = TRUE)`; upgrade everyone who writes
    to a repo together), and R8's line on projects already affected.
 7. `dev/datom_specification.md`'s table of `datom_write()` routes: the `data = NULL` with `name`
    row no longer says "after editing dispatch.json"; it says the route publishes what is committed

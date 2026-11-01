@@ -27,7 +27,7 @@ what shipped and wait for the owner's go-ahead before the next one.
 | S5 | `datom_init_repo()` interrupted | Occasionally | A re-run finishes |
 | S6 | A teammate pushed earlier; this clone is behind | Occasionally | Pulls at the start, on its own |
 | S7 | Two developers' work overlaps (a merge conflict, a publish race) | Rarely | Stops before harm with a short message, or reports; the manual step is supported |
-| S8 | An older datom, hand edits, files changed in storage by hand | Rare, unsupported | Documented only |
+| S8 | An older datom, hand edits, files changed in storage by hand, the user's own git operations in the clone | Rare, unsupported | Documented only; never left stuck (D14, principle 7) |
 
 A finding names its scenario. An S7 finding defaults to "stop with a message" (or a report from
 `datom_validate()`), an S8 finding to "document". Every stop and every report names a way out, and the
@@ -40,7 +40,8 @@ common path never reaches it.
 Requirements approved 2026-10-28 (amended the same day: R3.3, R5.5, R7.8, an R8 row, and D13 with
 R3.1 and R9). Design approved 2026-10-28 with decisions DD1-DD4. **Task list approved by the owner on
 2026-10-28**, after the four reviews below. **Task 1 done 2026-10-30. Task 2's design spot-check done
-the same day (below); next is task 2.**
+the same day (below). A review of `058f29b` on 2026-10-31 (below) changed tasks 4a, 5 and 6; next is
+still task 2.**
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
@@ -171,8 +172,21 @@ Also decided in the pass:
   unreadable for good after a crash between the push and the upload.
 - **Every stop and every report names a way out** (D14).
 
+**Review of `058f29b`, 2026-10-31**, by another agent, one pass against the scenario table, evaluated
+with the owner one point at a time. The owner set two principles for it, now D14's seventh: a user
+working the clone directly with git is off the supported path, so datom adds no guidance for it but
+must never leave the project stuck; and less code is better.
+
+| Point | Outcome |
+|---|---|
+| 1. The merge check would commit, and the next push share, a merge the user started (`git merge --no-commit feature` leaves nothing conflicted) | **Taken, reshaped.** The review's test (the merged commit equals the upstream tip) calls datom's own merge foreign once anything fetches during it (probed). The merge check decides by what is merged instead: a merge of the remote branch (the upstream tip is the merged commit or descends from it) is finished as before; any other stops, changing nothing, until `datom_pull(conn, finish_merge = TRUE)` or `git merge --abort` (R3.9; tasks 4a, 5). A user's own `git pull` counts as a merge of the remote branch. Set aside on the way: finishing every merge with an undo line, and a marker line in `.git/MERGE_MSG` (text a user could copy) |
+| 2. The scan keeps the fetch and storage read that validate dropped | **Taken, with a rename**: the status is `unpushed`, set from the clone alone; a table pushed but not yet published shows `unchanged`, and `datom_sync()` publishes it (D4, R4.2-R4.5, R7.6; task 6) |
+| 3. "D1-D13" | Fixed in `design.md` and below |
+| 4. (added in the evaluation) A rebase, cherry-pick or revert in progress | **Dropped** under the new principle: traced on paper, the worst outcome is a write to run again, nothing stuck |
+| 5. (added in the evaluation) The manifest rebuild ran before the format check, and a merge the merge check finished was never checked | **Taken**: the rebuild runs the format check first; a refusal commits nothing and leaves the merge in progress. At the owner's request every refusal of that check names its evidence (the document, the fields or format number, the installed datom version), so a wrong inference can be reported as a bug (R3.8; task 5) |
+
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
-(terms, decisions D1-D13) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
+(terms, decisions D1-D14) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
 reproduce today's failures; rerunning them after the relevant task is part of its acceptance.
 
 **Shared test helpers** (created in task 2, extended later): `tests/testthat/helper-interrupt.R`
@@ -328,12 +342,16 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   R3.9; DD1; design sections 1 and 4)
   - **Escalation first: design spot-check on a more capable model**, covering 4a and 4b.
   - New `R/heal.R`:
-    - **The merge check** (design section 4, step 0), independent of heal, with its stop branch:
-      while a file other than `.datom/manifest.json` conflicts, it stops before changing anything,
-      with the short message that names the conflicted files and fills in
+    - **The merge check** (design section 4, step 0), independent of heal, with its stop branches.
+      It first decides whether the merge in progress is a merge of the remote branch (`MERGE_HEAD`
+      equal to the upstream tip as last fetched, or the tip descending from it; local refs only).
+      Any other merge stops before changing anything, with the message naming it and giving
+      `datom_pull(conn, finish_merge = TRUE)` and `git merge --abort` as the ways out. For a merge of
+      the remote branch, while a file other than `.datom/manifest.json` conflicts, it stops before
+      changing anything, with the short message that names the conflicted files and fills in
       `git checkout MERGE_HEAD --` for all of each conflicted artifact's datom files. Its finishing
-      branch is task 5's; until then a merge with only the manifest left stops with the same
-      message.
+      branch and `finish_merge` are task 5's; until then a merge with only the manifest left stops
+      with the same message.
     - **`.datom_heal(conn, artifact = NULL)`** with step a only (`.datom_reset_unfinished()`), run
       only when `git status` shows an uncommitted datom file. `artifact` takes several names and
       only words the reset messages. Its docstring says what heal repairs and what it leaves (design
@@ -385,13 +403,21 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     clone, git or storage, and do not call the merge, recorded through mocks (P12)**; a merge in
     progress with `dm`'s files conflicting stops a write, `datom_pull()` and `datom_repo_push()`
     alike, each with the files listed and the command filled in for all of `dm`'s datom files,
-    leaving the clone, git and storage unchanged and `MERGE_HEAD` in place (R3.9); a pull that
+    leaving the clone, git and storage unchanged and `MERGE_HEAD` in place (R3.9); a user's
+    `git merge --no-commit` of a local branch (nothing conflicted) and a merge of another remote's
+    branch each stop a write and `datom_pull()` with the other-merge message, leaving the clone,
+    git and storage unchanged and `MERGE_HEAD` in place; datom's own conflicted merge after a later
+    `git fetch` moved the upstream tip, and a user's own conflicted `git pull`, each get the
+    merge-of-the-remote-branch message, not the other-merge one (`research/merge_source_probe.R`
+    shows the states to build); a pull that
     merges in another table carrying a field this build cannot classify stops the write with the
     upgrade message, before its own work; a user's tracked `app/metadata.json` with uncommitted
     edits, and an untracked one, survive heal untouched (P8), the repair does not publish either,
     and the forward-compatibility check does not refuse because of one; a first write broken after
     its files and before its manifest row is still reset.
-  - Guards to probe: the merge check's stop, the reset, the `hash_algo` rule for artifact folders,
+  - Guards to probe: the merge check's stop, the other-merge stop, each half of the
+    merge-of-the-remote-branch test (the equality, against a merge with no fetch since; the descent,
+    against the merge after a later fetch), the reset, the `hash_algo` rule for artifact folders,
     the merge only when behind (against the P12 test), the format check after a merge, the pull
     before any decision, the re-run entry check, the fetch-failure stop, a refusal check placed
     before the merge check. The reset's own gate (run only when `git status` shows something) has no
@@ -399,7 +425,7 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     says so.
   - Acceptance: P4 for the routes healed here (the data-frame route, the metadata-only route and
     `datom_write_set()`; the rest is task 7's), P8, P9, P12 for what 4a adds, P5 for writes, R3.9's
-    stop; D13 on the metadata-only route; `research/other_command_probe.R` shows `dm` reset when its
+    stops (both kinds of merge); D13 on the metadata-only route; `research/other_command_probe.R` shows `dm` reset when its
     write broke before its commit, with the break confirmed.
 
 - [ ] **4b. Heal: push and publish** (R2.2, R2.3, R3.2-R3.4; DD4; design section 4)
@@ -450,8 +476,20 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     manifest is the only conflicted file, so every pull gets it (`datom_pull()`, the push commands,
     and the migration pull in `.datom_resolve_data_location()`, `R/ref.R`; that last caller gets no
     test of its own, since its existing tests replace the pull with a stub), and the merge check's
-    finishing branch (design section 4, step 0): once a merge in progress has nothing conflicted but
-    the manifest, rebuild it, commit the merge, say so, and carry on.
+    finishing branch (design section 4, step 0): once a merge of the remote branch in progress has
+    nothing conflicted but the manifest, rebuild it, commit the merge ("Merge finished by datom
+    (manifest rebuilt)"), say so, and carry on.
+  - **The format check before the rebuild** (R3.8, design section 5 step 2): the function writes the
+    remote's copy in place of the conflict markers, runs `.datom_check_write_entry(conn, NULL)`, and
+    only then rebuilds rows and commits; a refusal stages and commits nothing and leaves the merge in
+    progress. Settle design section 10 item 6 (what the check needs where the caller holds no
+    connection) and record the answer in `design.md`.
+  - `R/forward-compat.R`: the vocabulary refusal and the unreachable-shape refusal also name the
+    installed datom version, so every refusal of the format check names its evidence (R3.8; the
+    schema and floor refusals already do). Matched by class, so no existing test changes.
+  - `R/sync.R`: `datom_pull()` gains `finish_merge = FALSE` (R3.9). When `TRUE`, the merge check
+    finishes a merge that is not of the remote branch the way it finishes one that is; with nothing
+    in progress it does nothing. Its help text is task 10's.
   - Tests (R7.7): two clones writing different tables without a pull in between, and a write whose push
     broke while the other clone pushed, both finish with a manifest naming both tables; `datom_pull()`
     resolves a manifest-only conflict; two clones writing the same table still stop, publishing
@@ -459,18 +497,27 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     wrong: a clone with unpushed writes of `dm` and `lb`, a teammate's pushed write of `dm`, the
     merge stopping on `dm`'s files, then `git checkout MERGE_HEAD --` for them and a re-run, which
     finishes the merge with both `dm`'s and `lb`'s rows agreeing with their files; a user's own file,
-    resolved and `git add`ed, goes into the merge commit.
+    resolved and `git add`ed, goes into the merge commit; a merge that brings in a manifest field this
+    build cannot classify, conflicting only in the manifest, stops before the rebuild both at the pull
+    and from the merge check, committing nothing and leaving `MERGE_HEAD` in place, with a message
+    naming the document, the field and the installed datom version, matched by the condition class;
+    the same message evidence for the unreachable-shape refusal; `datom_pull(conn, finish_merge =
+    TRUE)` finishes a user's `git merge --no-commit` of a local branch with the manifest rebuilt and
+    commits nothing while another file still conflicts; with no merge in progress it pulls as usual;
+    without `finish_merge` the user's merge stays untouched (task 4a's stop).
   - Guards to probe: the manifest-only condition, the row-against-files comparison, the merge check's
-    finishing branch.
-  - Acceptance: P6; `research/two_writers_probe.R` shows the second write finishing.
+    finishing branch, the format check before the rebuild (against the newer-field test), the
+    `finish_merge` branch.
+  - Acceptance: P6 (as extended on 2026-10-31); `research/two_writers_probe.R` shows the second write
+    finishing.
 
 - [ ] **6. Scan and sync** (R4, R3.7; DD3; design section 7)
   - `R/sync.R`: `.datom_read_manifest()` gains the `"head"` scope; `datom_sync_manifest()` compares
-    against it and reports `unpublished` (fetch first; a failed fetch warns and counts unpushed
-    commits only; storage unreachable warns and counts unpushed commits only; a behind clone skips the
-    storage comparison and names `datom_pull()`); status order as in design section 7.
+    against it and reports `unpushed` for tables `.datom_pushed_artifacts()` names, from the clone
+    alone: no fetch, no storage read, no warning branches, no special case for a clone that is behind
+    (R4.2, narrowed 2026-10-31); status order as in design section 7.
   - `datom_sync()` heals once, with every table it is about to write, instead of calling
-    `.datom_check_git_current()`, then calls `datom_write(.healed = TRUE)`; `unpublished` rows come
+    `.datom_check_git_current()`, then calls `datom_write(.healed = TRUE)`; `unpushed` rows come
     back `success` without an import; a row whose write found no change says it was already up to
     date.
   - Delete `.datom_check_git_current()` and its tests (named in the commit message). Rewrite the
@@ -478,9 +525,10 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     stay), the docstring of `.datom_git_ahead()`, and the upstream note in `.datom_git_push()`.
   - Tests: R4.1-R4.5; the break table's `datom_sync()` row; the stale preview of DD3; heal called once
     in a three-table sync, and one storage read of `.metadata/manifest.json` during it, both counted
-    through a mock (R3.7, R3.4); a scan with storage reads failing reports
-    tables in unpushed commits as `unpublished` and warns (R4.2), separately from a failed fetch.
-  - Guards to probe: the comparison against the last commit, the behind-clone skip.
+    through a mock (R3.7, R3.4); a scan makes no fetch and no storage read, recorded through mocks
+    (R4.2); a table pushed but not yet published shows `unchanged`, and the `datom_sync()` that
+    follows publishes it (R4.4, R4.5).
+  - Guards to probe: the comparison against the last commit, the unpushed check.
   - Acceptance: R4.1-R4.5 and R3.7's once-per-sync rule; `research/sync_and_manifest_probe.R` and
     `research/stale_preview_probe.R` show the table published and the honest message.
 

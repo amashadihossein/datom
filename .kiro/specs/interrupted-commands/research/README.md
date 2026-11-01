@@ -62,5 +62,13 @@ section 10):
   ("Updated 0 paths"), while `git checkout MERGE_HEAD -- <files>` takes the remote copy of conflicted
   and clean files alike; `git commit` then completes the merge.
 
+Added 2026-10-31 during the review of `058f29b` (local only; recorded in `../design.md` section 10):
+
+- `merge_source_probe.R`: for each kind of merge in progress, whether the commit being merged in is
+  the upstream tip as last fetched or behind it. Result: yes for datom's own conflicted pull (also
+  after a later `git fetch`) and for a user's `git pull`; no for a user's `git merge --no-commit` of
+  a local branch and for a merge of another remote's branch. This is the merge check's test for a
+  merge of the remote branch (requirements R3.9).
+
 Results are recorded in `../requirements.md` ("Findings") and `../design.md` ("Proven, and not yet
 traced").
