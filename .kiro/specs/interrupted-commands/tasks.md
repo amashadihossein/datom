@@ -40,8 +40,9 @@ common path never reaches it.
 Requirements approved 2026-10-28 (amended the same day: R3.3, R5.5, R7.8, an R8 row, and D13 with
 R3.1 and R9). Design approved 2026-10-28 with decisions DD1-DD4. **Task list approved by the owner on
 2026-10-28**, after the four reviews below. **Task 1 done 2026-10-30. Task 2's design spot-check done
-the same day (below). A review of `058f29b` on 2026-10-31 (below) changed tasks 4a, 5 and 6; next is
-still task 2.**
+the same day (below). A review of `058f29b` on 2026-10-31 (below) changed tasks 4a, 5 and 6, and a
+review of `bfad26c` the same day closed spec review (below). Next is task 2, awaiting the owner's
+go-ahead.**
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
@@ -184,6 +185,20 @@ must never leave the project stuck; and less code is better.
 | 3. "D1-D13" | Fixed in `design.md` and below |
 | 4. (added in the evaluation) A rebase, cherry-pick or revert in progress | **Dropped** under the new principle: traced on paper, the worst outcome is a write to run again, nothing stuck |
 | 5. (added in the evaluation) The manifest rebuild ran before the format check, and a merge the merge check finished was never checked | **Taken**: the rebuild runs the format check first; a refusal commits nothing and leaves the merge in progress. At the owner's request every refusal of that check names its evidence (the document, the fields or format number, the installed datom version), so a wrong inference can be reported as a bug (R3.8; task 5) |
+
+**Review of `bfad26c`, 2026-10-31**, by the same reviewer, one pass against the scenario table:
+everything in the round above agreed, and one nit taken (task 4a: both stop messages written once in
+their final text, tested there by condition class, the full text pinned in task 5). Evaluated with
+the owner.
+
+**Spec review is closed as of this round** (owner, 2026-10-31). From here:
+- Open items stay with the tasks that already own them (design section 10).
+- Each task gets one review at its checkpoint, against the scenario table at the top of this file.
+  Every finding names its scenario, the findings come in one list, and an S7 or S8 finding defaults
+  to "stop with a message" (or a report from `datom_validate()`) or to "document".
+- The model escalations flagged at planning still run as listed at the top of this file (design
+  spot-check before 4a, purity audit after 8, test coverage review before 10); task 2's spot-check
+  is done.
 
 Starting cold: `git checkout spec/interrupted-commands && git pull`, then read `requirements.md`
 (terms, decisions D1-D14) and `design.md` (sections 1-4 at least). The probe scripts in `research/`
@@ -352,6 +367,12 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
       `git checkout MERGE_HEAD --` for all of each conflicted artifact's datom files. Its finishing
       branch and `finish_merge` are task 5's; until then a merge with only the manifest left stops
       with the same message.
+    - **Both stop messages are written once, in their final text, here** (review of `bfad26c`,
+      owner, 2026-10-31). Two of their lines name behaviour task 5 builds: the other-merge stop's
+      `datom_pull(conn, finish_merge = TRUE)`, and the recipe's last line, "re-run your write: datom
+      rebuilds the manifest and finishes the merge". Nothing is released between the two tasks (one
+      PR), so 4a's tests match these stops by condition class and by the lines already true at 4a;
+      task 5's tests pin the full text. No placeholder `finish_merge` argument in 4a.
     - **`.datom_heal(conn, artifact = NULL)`** with step a only (`.datom_reset_unfinished()`), run
       only when `git status` shows an uncommitted datom file. `artifact` takes several names and
       only words the reset messages. Its docstring says what heal repairs and what it leaves (design
