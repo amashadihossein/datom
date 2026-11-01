@@ -30,9 +30,10 @@ write updates it.}
 \item{message}{Commit message.}
 
 \item{upload}{Optional \code{list(path =, key =)} naming a payload object to upload
-after the push -- the freshly serialized parquet for a table, the payload
-JSON for a set. \code{NULL} when the object is already stored and must not be
-rewritten.}
+after the push. Only the set write passes it, for its payload JSON; the
+table write has already stored its parquet before any clone file changed
+(\code{\link[=.datom_resolve_parquet_sha]{.datom_resolve_parquet_sha()}}). \code{NULL} when the object is already stored
+and must not be rewritten.}
 }
 \value{
 The commit SHA.

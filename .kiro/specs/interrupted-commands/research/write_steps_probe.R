@@ -3,6 +3,14 @@
 # Folder git remote + local storage; no AWS, no GitHub. Nothing in R/ is edited:
 # each break is a mocked binding that raises at one step.
 #
+# Updated in task 2 (2026-10-31) for the new order, data file first: the upload
+# break replaces `.datom_storage_upload_absent()` (data files no longer go
+# through `.datom_storage_upload()`, so a break there would never fire), and two
+# breaks are added: after the clone files (metadata and history written, no
+# manifest row) and at the stored history upload inside the metadata step.
+# A row counts only if its `raised` column is TRUE: a break that never fired
+# leaves a plain write that proves nothing.
+#
 # Run: Rscript .kiro/specs/interrupted-commands/research/write_steps_probe.R
 main <- function() {
   devtools::load_all("~/projects/dev/datom", quiet = TRUE)
@@ -39,15 +47,19 @@ main <- function() {
 
   boom <- function(...) stop("simulated break")
   real_write_json <- ns$.datom_storage_write_json
+  at_key <- function(wanted) function(conn, key, data) {
+    if (identical(key, wanted)) stop("simulated break")
+    real_write_json(conn, key, data)
+  }
+  # In the order a write runs them.
   breaks <- list(
+    upload = list(.datom_storage_upload_absent = boom),
+    clone_files = list(.datom_update_manifest_entry = boom),
     commit = list(.datom_git_commit = boom),
     push = list(.datom_git_push = boom),
-    upload = list(.datom_storage_upload = boom),
     metadata = list(.datom_push_metadata_s3 = boom),
-    manifest = list(.datom_storage_write_json = function(conn, key, data) {
-      if (identical(key, ".metadata/manifest.json")) stop("simulated break")
-      real_write_json(conn, key, data)
-    })
+    history = list(.datom_storage_write_json = at_key("dm/.metadata/version_history.json")),
+    manifest = list(.datom_storage_write_json = at_key(".metadata/manifest.json"))
   )
 
   for (step in names(breaks)) {
@@ -71,7 +83,7 @@ main <- function() {
     after_rerun <- reads_as(p$reader)
     v <- suppressMessages(suppressWarnings(datom_validate(p$conn)))
     cat(sprintf(
-      "break at %-8s | raised %-5s | reader after break %-10s | re-run action %-6s | reader after re-run %-10s | validate valid %s\n",
+      "break at %-11s | raised %-5s | reader after break %-10s | re-run action %-6s | reader after re-run %-10s | validate valid %s\n",
       step, inherits(e, "try-error"), after_break, rerun, after_rerun, v$valid
     ))
   }

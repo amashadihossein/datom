@@ -2,13 +2,13 @@
 % Please edit documentation in R/read_write.R
 \name{.datom_resolve_parquet_sha}
 \alias{.datom_resolve_parquet_sha}
-\title{Resolve the parquet_sha to Record and Whether to Upload}
+\title{Store a Table's Data File and Decide Which parquet_sha to Record}
 \usage{
 .datom_resolve_parquet_sha(
   conn,
   name,
   data_sha,
-  new_parquet_sha,
+  tmp_path,
   change_type,
   current
 )
@@ -20,40 +20,65 @@
 
 \item{data_sha}{Canonical content hash (the storage address).}
 
-\item{new_parquet_sha}{SHA-256 of the freshly-serialized parquet bytes.}
+\item{tmp_path}{The freshly serialized parquet file.}
 
 \item{change_type}{\code{"metadata_only"} or \code{"full"} (never \code{"none"}).}
 
 \item{current}{The current metadata (from \code{\link[=.datom_has_changes]{.datom_has_changes()}}), or NULL.}
 }
 \value{
-List with \code{parquet_sha} (character or NULL) and \code{upload} (logical).
+List with \code{parquet_sha} (character, or NULL for a carried pre-cv1
+table) and \code{outcome}, which says where it came from: \code{"carried"},
+\code{"history"}, \code{"uploaded"} or \code{"exists"}.
 }
 \description{
-For a write that is not a no-op, decides which \code{parquet_sha} the new metadata
-should carry and whether the freshly-serialized parquet bytes need uploading.
-The caller performs the actual upload AFTER the git push (git push is the
-serialization point); this function only decides.
+The first step of a table write that is not a no-op: it runs before any file
+in the clone changes. It makes sure the data file is in storage, uploading the
+freshly serialized parquet only if nothing is stored at its address yet, and
+returns the \code{parquet_sha} the new version records: always the hash of the
+bytes that are actually stored.
 }
 \details{
+\strong{Why first.} The pointers readers follow (metadata and manifest in storage)
+are published only after the commit and push, but the data file goes up
+before the clone, git or storage records anything about the version. So any
+version a clone records already has its data file stored, and a write that
+breaks at any later step leaves a version a re-run can finish. When the upload
+came after the push, a break between the two left a pushed version with no
+data file, and a re-run then skipped the upload because the clone's history
+already named the hash.
+
 Cases:
 \itemize{
-\item \code{metadata_only} -- the \code{data_sha} is unchanged, so the parquet object
-already exists; carry forward the current metadata's \code{parquet_sha} (which
-may be NULL for a pre-cv1 table, leaving the integrity check skipped) and
-do not upload.
-\item \code{full} where a prior version already recorded a \code{parquet_sha} for this
-exact \code{data_sha} -- the stored object exists and is pinned by that version;
-reuse its \code{parquet_sha} and do NOT re-upload (a fresh serialization can
-differ byte-for-byte and would break that version's integrity pin).
-\item \code{full} otherwise (brand-new content, or a legacy object with no recorded
-\code{parquet_sha}) -- upload these bytes and record their hash.
+\item \code{metadata_only} -- the \code{data_sha} is unchanged, so the data file is already
+stored; carry the current metadata's \code{parquet_sha} forward (it may be NULL
+for a table written before datom-cv1, leaving the read's integrity check
+skipped). No upload.
+\item \code{full}, and the clone's history already names a \code{parquet_sha} for this exact
+\code{data_sha} (a revert to older content, or a re-run after a break) -- record
+that hash. No upload, and the stored file is not re-checked: a version this
+code records had its file stored first. (A history left by an interrupted
+write of datom 0.2.0 or earlier can name a file that was never stored; that
+state is not repaired here.) This branch also spares a revert
+from hashing the stored file, which on S3 means a download for any file
+uploaded without a stored checksum (every file written by datom 0.2.0 or
+earlier).
+\item \code{full} otherwise -- upload through \code{\link[=.datom_storage_upload_absent]{.datom_storage_upload_absent()}}, which
+never replaces a stored file. \code{"uploaded"} records the fresh bytes' hash.
+\code{"exists"} records the stored file's hash (\code{\link[=.datom_storage_object_sha256]{.datom_storage_object_sha256()}}):
+an earlier run that broke, or a colleague, stored this content first, and
+possibly in different bytes (another arrow version). There is no separate
+existence check first: the upload makes it, so one path covers "stored
+before this call" and "stored during it".
 }
 
-This refines the design's literal step 7 (which gated on
-\code{.datom_storage_exists()}): a recorded \code{parquet_sha} is the precise thing we
-must not clobber, and its presence implies the object exists, so the history
-lookup subsumes the existence check with identical behavior and one fewer
-storage round-trip.
+\strong{A behaviour change in the last case:} a full write whose content matches a
+stored file with no recorded hash (one written before datom-cv1) now keeps
+that file and records its hash. The old code overwrote it with fresh bytes.
+
+\strong{\code{size_bytes} describes the fresh parquet, not necessarily the stored one.}
+When the recorded hash is a stored file's (an existing file, a metadata-only
+carry, or a revert), that file can differ in size if a different arrow
+version wrote it. Nothing reads \code{size_bytes} beyond the manifest's counters.
 }
 \keyword{internal}

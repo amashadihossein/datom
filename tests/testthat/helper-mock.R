@@ -39,6 +39,35 @@ mock_datom_conn <- function(mock_client,
   )
 }
 
+#' A stand-in for the data-file upload, `.datom_storage_upload_absent()`, that
+#' records the keys it was given.
+#'
+#' Hand `$fn` to `local_mocked_bindings(.datom_storage_upload_absent = )`;
+#' `$keys()` returns the storage keys it was called with, in order. With
+#' `result = NULL` it passes each call through to the real upload, so a test on
+#' a real project can count uploads without faking storage.
+#'
+#' **Counting this function, not the plain `.datom_storage_upload()`, is what
+#' makes a "no upload" assertion mean anything** since data files stopped going
+#' through the plain upload: a counter left on the old function stays at zero
+#' whatever the write does. Nor can a backdated modification time stand in for
+#' a count any more, because this upload never touches a stored file.
+#'
+#' @param result What the stand-in returns: `"uploaded"` (the default),
+#'   `"exists"`, or `NULL` to run the real upload.
+#' @return A list with `fn` and `keys`.
+mock_upload_absent <- function(result = "uploaded") {
+  keys <- character()
+  real <- get(".datom_storage_upload_absent", envir = asNamespace("datom"))
+  list(
+    fn = function(conn, local_path, key) {
+      keys <<- c(keys, key)
+      if (is.null(result)) real(conn, local_path, key) else result
+    },
+    keys = function() keys
+  )
+}
+
 #' Evaluate a connection-creating expression, muffling only the benign,
 #' well-understood conn-time warnings.
 #'

@@ -22,11 +22,18 @@ caller that made no commit.}
 Invisible character vector of S3 keys written.
 }
 \description{
-Uploads \code{metadata.json}, \code{version_history.json}, and a versioned snapshot
-to S3. Called AFTER git commit+push succeeds to maintain local → git → S3
-ordering.
+Uploads the version snapshot, then \code{version_history.json}, then
+\code{metadata.json} \strong{last}. Called after the commit and push; a table's data
+file is already stored by then, uploaded before any clone file changed.
 }
 \details{
+\strong{Why \code{metadata.json} last.} Change detection (\code{\link[=.datom_has_changes]{.datom_has_changes()}}) reads
+the stored \code{metadata.json}, so its arrival is the mark that this step is
+done. A break before it leaves the previous version there, and a re-run of
+the same write sees the change and finishes the job. With \code{metadata.json}
+first, a break after it made the re-run report "no changes" and leave the
+history and snapshot behind for good.
+
 \strong{The stored history carries one field the clone's copy cannot}, and this is
 the reason \code{commit_sha} exists as an argument here: the clone's
 \code{version_history.json} is inside the commit that would name it, so only a

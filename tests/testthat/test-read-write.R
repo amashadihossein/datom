@@ -1287,7 +1287,7 @@ test_that("datom_write records lean parents and derived source_lineage", {
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
@@ -1370,7 +1370,7 @@ test_that("datom_write does not read parent snapshots (no enrichment)", {
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
@@ -1416,7 +1416,7 @@ test_that("datom_write computes size_bytes from parquet", {
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
@@ -1445,7 +1445,7 @@ test_that("datom_write passes original_file_sha to version_history", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -1475,7 +1475,7 @@ test_that("datom_write defaults: derived type, no parents, no original_file_sha"
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
@@ -1527,7 +1527,7 @@ test_that("datom_write records .source_lineage on the imported path", {
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
@@ -1565,7 +1565,7 @@ test_that("datom_write allows NULL source_lineage when parents is also NULL", {
     captured_meta <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
@@ -1602,7 +1602,7 @@ test_that("datom_write updates manifest.json locally", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -1641,7 +1641,7 @@ test_that("datom_write includes manifest.json in git commit", {
     committed_files <- NULL
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_commit = function(path, files, message) {
         committed_files <<- files
@@ -1680,7 +1680,7 @@ test_that("datom_write pushes manifest.json to S3", {
     s3_keys <- character()
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) {
         s3_keys <<- c(s3_keys, sk)
         invisible(TRUE)
@@ -1717,7 +1717,7 @@ test_that("datom_write stores sync fields in manifest when provided", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -1758,7 +1758,7 @@ test_that("datom_write omits sync fields in manifest for derived tables", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -1938,46 +1938,90 @@ test_that("history parquet_sha lookup returns the most recent matching parquet_s
 
 # --- .datom_resolve_parquet_sha() ---------------------------------------------
 
+# The resolver stores the data file itself (only if absent), so each case is
+# checked for what it records AND for whether it called the upload.
+resolver_tmp_parquet <- function(env = parent.frame()) {
+  tmp <- withr::local_tempfile(fileext = ".parquet", .local_envir = env)
+  arrow::write_parquet(data.frame(x = 1:3), tmp)
+  tmp
+}
+
 test_that("resolve parquet_sha: metadata_only carries current parquet_sha, no upload", {
+  upload <- mock_upload_absent()
+  local_mocked_bindings(.datom_storage_upload_absent = upload$fn)
   current <- list(data_sha = "sha_a", parquet_sha = "pq_current")
   res <- .datom_resolve_parquet_sha(
-    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "metadata_only", current
+    mock_datom_conn(list()), "tbl", "sha_a", resolver_tmp_parquet(),
+    "metadata_only", current
   )
   expect_equal(res$parquet_sha, "pq_current")
-  expect_false(res$upload)
+  expect_identical(res$outcome, "carried")
+  expect_length(upload$keys(), 0L)
 })
 
 test_that("resolve parquet_sha: metadata_only on a pre-cv1 table carries NULL, no upload", {
+  upload <- mock_upload_absent()
+  local_mocked_bindings(.datom_storage_upload_absent = upload$fn)
   current <- list(data_sha = "sha_a")  # no parquet_sha recorded
   res <- .datom_resolve_parquet_sha(
-    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "metadata_only", current
+    mock_datom_conn(list()), "tbl", "sha_a", resolver_tmp_parquet(),
+    "metadata_only", current
   )
   expect_null(res$parquet_sha)
-  expect_false(res$upload)
+  expect_identical(res$outcome, "carried")
+  expect_length(upload$keys(), 0L)
 })
 
-test_that("resolve parquet_sha: full with no recorded parquet_sha uploads the new bytes", {
+test_that("resolve parquet_sha: full with nothing recorded or stored uploads the new bytes and records their hash", {
+  upload <- mock_upload_absent("uploaded")
   local_mocked_bindings(
-    .datom_lookup_history_parquet_sha = function(conn, name, data_sha) NULL
+    .datom_lookup_history_parquet_sha = function(conn, name, data_sha) NULL,
+    .datom_storage_upload_absent = upload$fn
   )
+  tmp <- resolver_tmp_parquet()
+  data_sha <- strrep("a", 64L)
   res <- .datom_resolve_parquet_sha(
-    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "full", NULL
+    mock_datom_conn(list()), "tbl", data_sha, tmp, "full", NULL
   )
-  expect_equal(res$parquet_sha, "pq_new")
-  expect_true(res$upload)
+  expect_equal(res$parquet_sha, digest::digest(file = tmp, algo = "sha256"))
+  expect_identical(res$outcome, "uploaded")
+  expect_identical(upload$keys(), .datom_artifact_payload_key("tbl", data_sha, "table"))
 })
 
 test_that("resolve parquet_sha: full reverting to a recorded data_sha reuses its sha, no upload", {
   # Revert-to-older: a prior version pinned this data_sha's parquet_sha, so we
-  # reuse it and must NOT overwrite the stored object.
+  # reuse it and do not even attempt an upload.
+  upload <- mock_upload_absent()
   local_mocked_bindings(
-    .datom_lookup_history_parquet_sha = function(conn, name, data_sha) "pq_reused"
+    .datom_lookup_history_parquet_sha = function(conn, name, data_sha) "pq_reused",
+    .datom_storage_upload_absent = upload$fn
   )
   res <- .datom_resolve_parquet_sha(
-    mock_datom_conn(list()), "tbl", "sha_a", "pq_new", "full", NULL
+    mock_datom_conn(list()), "tbl", "sha_a", resolver_tmp_parquet(), "full", NULL
   )
   expect_equal(res$parquet_sha, "pq_reused")
-  expect_false(res$upload)
+  expect_identical(res$outcome, "history")
+  expect_length(upload$keys(), 0L)
+})
+
+test_that("resolve parquet_sha: full with the file already stored records the stored file's hash, not the fresh one", {
+  # An earlier broken run, or a colleague, stored this content first -- maybe in
+  # different bytes. Recording the fresh bytes' hash would make every read of
+  # this version fail its integrity check.
+  upload <- mock_upload_absent("exists")
+  local_mocked_bindings(
+    .datom_lookup_history_parquet_sha = function(conn, name, data_sha) NULL,
+    .datom_storage_upload_absent = upload$fn,
+    .datom_storage_object_sha256 = function(conn, key) "pq_stored"
+  )
+  tmp <- resolver_tmp_parquet()
+  res <- .datom_resolve_parquet_sha(
+    mock_datom_conn(list()), "tbl", strrep("a", 64L), tmp, "full", NULL
+  )
+  expect_equal(res$parquet_sha, "pq_stored")
+  expect_false(identical(res$parquet_sha, digest::digest(file = tmp, algo = "sha256")))
+  expect_identical(res$outcome, "exists")
+  expect_length(upload$keys(), 1L)
 })
 
 test_that("full datom_write records parquet_sha and hash_algo, and no per-column hashes, in metadata.json", {
@@ -1994,7 +2038,7 @@ test_that("full datom_write records parquet_sha and hash_algo, and no per-column
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -2033,7 +2077,7 @@ test_that("a written table's metadata.json records the repo's project name", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -2064,7 +2108,7 @@ test_that("full datom_write persists all columns of a wide frame, in order, untr
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -2357,19 +2401,17 @@ test_that("performs full write: parquet + metadata + git", {
     conn$role <- "developer"
     conn$path <- getwd()
 
-    uploaded_keys <- character()
+    upload <- mock_upload_absent()
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, local_path, s3_key) {
-        uploaded_keys <<- c(uploaded_keys, s3_key)
-        invisible(TRUE)
-      },
+      .datom_storage_upload_absent = upload$fn,
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
 
     df <- data.frame(id = 1:5, val = letters[1:5])
     result <- datom_write(conn, data = df, name = "sales", message = "Add sales")
+    uploaded_keys <- upload$keys()
 
     # Returns correct structure
     expect_equal(result$name, "sales")
@@ -2405,13 +2447,10 @@ test_that("metadata-only write skips parquet upload", {
     conn$role <- "developer"
     conn$path <- getwd()
 
-    uploaded_keys <- character()
+    upload <- mock_upload_absent()
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) list(change_type = "metadata_only", current = NULL),
-      .datom_storage_upload = function(conn, local_path, s3_key) {
-        uploaded_keys <<- c(uploaded_keys, s3_key)
-        invisible(TRUE)
-      },
+      .datom_storage_upload_absent = upload$fn,
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -2421,7 +2460,7 @@ test_that("metadata-only write skips parquet upload", {
 
     expect_equal(result$action, "metadata_only")
     # No parquet upload
-    expect_length(uploaded_keys, 0)
+    expect_length(upload$keys(), 0)
 
     # But metadata was written + committed
     expect_true(fs::file_exists("tbl/metadata.json"))
@@ -2444,7 +2483,7 @@ test_that("uses default commit message when none provided", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -2744,7 +2783,7 @@ test_that("datom_write converts an old-shape manifest and keeps counting the tab
       .datom_has_changes = function(conn, name, d, m) {
         list(change_type = "full", current = NULL)
       },
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )
@@ -2784,7 +2823,7 @@ test_that("datom_write stamps the format on the metadata document it writes", {
       .datom_has_changes = function(conn, name, d, m) {
         list(change_type = "full", current = NULL)
       },
-      .datom_storage_upload = function(conn, lp, sk) invisible(TRUE),
+      .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
       .datom_git_push = function(path, pat = NULL) invisible(TRUE)
     )

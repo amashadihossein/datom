@@ -627,59 +627,89 @@ datom_read <- function(conn,
 }
 
 
-#' Resolve the parquet_sha to Record and Whether to Upload
+#' Store a Table's Data File and Decide Which parquet_sha to Record
 #'
-#' For a write that is not a no-op, decides which `parquet_sha` the new metadata
-#' should carry and whether the freshly-serialized parquet bytes need uploading.
-#' The caller performs the actual upload AFTER the git push (git push is the
-#' serialization point); this function only decides.
+#' The first step of a table write that is not a no-op: it runs before any file
+#' in the clone changes. It makes sure the data file is in storage, uploading the
+#' freshly serialized parquet only if nothing is stored at its address yet, and
+#' returns the `parquet_sha` the new version records: always the hash of the
+#' bytes that are actually stored.
+#'
+#' **Why first.** The pointers readers follow (metadata and manifest in storage)
+#' are published only after the commit and push, but the data file goes up
+#' before the clone, git or storage records anything about the version. So any
+#' version a clone records already has its data file stored, and a write that
+#' breaks at any later step leaves a version a re-run can finish. When the upload
+#' came after the push, a break between the two left a pushed version with no
+#' data file, and a re-run then skipped the upload because the clone's history
+#' already named the hash.
 #'
 #' Cases:
-#' * `metadata_only` -- the `data_sha` is unchanged, so the parquet object
-#'   already exists; carry forward the current metadata's `parquet_sha` (which
-#'   may be NULL for a pre-cv1 table, leaving the integrity check skipped) and
-#'   do not upload.
-#' * `full` where a prior version already recorded a `parquet_sha` for this
-#'   exact `data_sha` -- the stored object exists and is pinned by that version;
-#'   reuse its `parquet_sha` and do NOT re-upload (a fresh serialization can
-#'   differ byte-for-byte and would break that version's integrity pin).
-#' * `full` otherwise (brand-new content, or a legacy object with no recorded
-#'   `parquet_sha`) -- upload these bytes and record their hash.
+#' * `metadata_only` -- the `data_sha` is unchanged, so the data file is already
+#'   stored; carry the current metadata's `parquet_sha` forward (it may be NULL
+#'   for a table written before datom-cv1, leaving the read's integrity check
+#'   skipped). No upload.
+#' * `full`, and the clone's history already names a `parquet_sha` for this exact
+#'   `data_sha` (a revert to older content, or a re-run after a break) -- record
+#'   that hash. No upload, and the stored file is not re-checked: a version this
+#'   code records had its file stored first. (A history left by an interrupted
+#'   write of datom 0.2.0 or earlier can name a file that was never stored; that
+#'   state is not repaired here.) This branch also spares a revert
+#'   from hashing the stored file, which on S3 means a download for any file
+#'   uploaded without a stored checksum (every file written by datom 0.2.0 or
+#'   earlier).
+#' * `full` otherwise -- upload through [.datom_storage_upload_absent()], which
+#'   never replaces a stored file. `"uploaded"` records the fresh bytes' hash.
+#'   `"exists"` records the stored file's hash ([.datom_storage_object_sha256()]):
+#'   an earlier run that broke, or a colleague, stored this content first, and
+#'   possibly in different bytes (another arrow version). There is no separate
+#'   existence check first: the upload makes it, so one path covers "stored
+#'   before this call" and "stored during it".
 #'
-#' This refines the design's literal step 7 (which gated on
-#' `.datom_storage_exists()`): a recorded `parquet_sha` is the precise thing we
-#' must not clobber, and its presence implies the object exists, so the history
-#' lookup subsumes the existence check with identical behavior and one fewer
-#' storage round-trip.
+#' **A behaviour change in the last case:** a full write whose content matches a
+#' stored file with no recorded hash (one written before datom-cv1) now keeps
+#' that file and records its hash. The old code overwrote it with fresh bytes.
+#'
+#' **`size_bytes` describes the fresh parquet, not necessarily the stored one.**
+#' When the recorded hash is a stored file's (an existing file, a metadata-only
+#' carry, or a revert), that file can differ in size if a different arrow
+#' version wrote it. Nothing reads `size_bytes` beyond the manifest's counters.
 #'
 #' @param conn A `datom_conn` object.
 #' @param name Table name.
 #' @param data_sha Canonical content hash (the storage address).
-#' @param new_parquet_sha SHA-256 of the freshly-serialized parquet bytes.
+#' @param tmp_path The freshly serialized parquet file.
 #' @param change_type `"metadata_only"` or `"full"` (never `"none"`).
 #' @param current The current metadata (from [.datom_has_changes()]), or NULL.
-#' @return List with `parquet_sha` (character or NULL) and `upload` (logical).
+#' @return List with `parquet_sha` (character, or NULL for a carried pre-cv1
+#'   table) and `outcome`, which says where it came from: `"carried"`,
+#'   `"history"`, `"uploaded"` or `"exists"`.
 #' @keywords internal
-.datom_resolve_parquet_sha <- function(conn, name, data_sha, new_parquet_sha,
+.datom_resolve_parquet_sha <- function(conn, name, data_sha, tmp_path,
                                        change_type, current) {
-  # metadata_only: data_sha unchanged -> the parquet object already exists;
-  # carry the current object's parquet_sha forward, no upload.
   if (identical(change_type, "metadata_only")) {
-    return(list(parquet_sha = current$parquet_sha, upload = FALSE))
+    return(list(parquet_sha = current$parquet_sha, outcome = "carried"))
   }
 
-  # change_type == "full".
-  # version_history entries persist parquet_sha, so this lookup activates the
-  # revert-to-older reuse branch: writing content whose data_sha already appears
-  # in history reuses that version's recorded parquet_sha instead of
-  # re-uploading (a fresh serialization can differ byte-for-byte and would break
-  # the older version's integrity pin).
+  # A fresh serialization can differ byte-for-byte from the stored file, so a
+  # hash the history already pins is reused, never recomputed: recording the
+  # fresh bytes' hash would make the read's integrity check refuse a valid
+  # version.
   reused <- .datom_lookup_history_parquet_sha(conn, name, data_sha)
   if (!is.null(reused)) {
-    return(list(parquet_sha = reused, upload = FALSE))
+    return(list(parquet_sha = reused, outcome = "history"))
   }
 
-  list(parquet_sha = new_parquet_sha, upload = TRUE)
+  key <- .datom_artifact_payload_key(name, data_sha, "table")
+  outcome <- .datom_storage_upload_absent(conn, tmp_path, key)
+
+  parquet_sha <- if (identical(outcome, "exists")) {
+    .datom_storage_object_sha256(conn, key)
+  } else {
+    digest::digest(file = tmp_path, algo = "sha256")
+  }
+
+  list(parquet_sha = parquet_sha, outcome = outcome)
 }
 
 
@@ -736,9 +766,9 @@ datom_read <- function(conn,
 #' Scans the developer's local `version_history.json` (newest-first) for the
 #' most recent entry whose `data_sha` matches and that carries a non-empty hash
 #' in `field`. Returns NULL when none is found. Reads the local git clone
-#' (offline-friendly); a stale clone is tolerated because the subsequent git push
-#' serializes concurrent writers (a behind clone fails to push before it can
-#' upload).
+#' (offline-friendly). A stale clone does no harm to a table write: if the
+#' lookup misses an entry a colleague recorded, the upload that follows finds
+#' the file already stored and records the stored file's hash.
 #'
 #' One scan serves both kinds, because the question is identical in each case --
 #' *has this exact content already been stored, and under which byte hash?* --
@@ -909,9 +939,16 @@ datom_read <- function(conn,
 
 #' Push Metadata Files to S3
 #'
-#' Uploads `metadata.json`, `version_history.json`, and a versioned snapshot
-#' to S3. Called AFTER git commit+push succeeds to maintain local → git → S3
-#' ordering.
+#' Uploads the version snapshot, then `version_history.json`, then
+#' `metadata.json` **last**. Called after the commit and push; a table's data
+#' file is already stored by then, uploaded before any clone file changed.
+#'
+#' **Why `metadata.json` last.** Change detection ([.datom_has_changes()]) reads
+#' the stored `metadata.json`, so its arrival is the mark that this step is
+#' done. A break before it leaves the previous version there, and a re-run of
+#' the same write sees the change and finishes the job. With `metadata.json`
+#' first, a break after it made the re-run report "no changes" and leave the
+#' history and snapshot behind for good.
 #'
 #' **The stored history carries one field the clone's copy cannot**, and this is
 #' the reason `commit_sha` exists as an argument here: the clone's
@@ -953,11 +990,12 @@ datom_read <- function(conn,
   s3_history_key <- .datom_artifact_meta_key(name, "version_history")
   s3_versioned_key <- .datom_artifact_snapshot_key(name, metadata_sha)
 
-  .datom_storage_write_json(conn, s3_metadata_key, metadata)
-  .datom_storage_write_json(conn, s3_history_key, history)
+  # metadata.json last: see the docstring.
   .datom_storage_write_json(conn, s3_versioned_key, metadata)
+  .datom_storage_write_json(conn, s3_history_key, history)
+  .datom_storage_write_json(conn, s3_metadata_key, metadata)
 
-  invisible(c(s3_metadata_key, s3_history_key, s3_versioned_key))
+  invisible(c(s3_versioned_key, s3_history_key, s3_metadata_key))
 }
 
 
@@ -986,9 +1024,10 @@ datom_read <- function(conn,
 #'   write updates it.
 #' @param message Commit message.
 #' @param upload Optional `list(path =, key =)` naming a payload object to upload
-#'   after the push -- the freshly serialized parquet for a table, the payload
-#'   JSON for a set. `NULL` when the object is already stored and must not be
-#'   rewritten.
+#'   after the push. Only the set write passes it, for its payload JSON; the
+#'   table write has already stored its parquet before any clone file changed
+#'   ([.datom_resolve_parquet_sha()]). `NULL` when the object is already stored
+#'   and must not be rewritten.
 #' @return The commit SHA.
 #' @keywords internal
 .datom_commit_and_mirror <- function(conn, name, meta, metadata_sha, git_paths,
@@ -1227,13 +1266,12 @@ datom_write <- function(conn,
   #    mutation -- so a refusal leaves no partial state.
   data_sha <- .datom_canonical_hash(data)$data_sha
 
-  # 2. Serialize parquet to a temp file; capture its size and the stored-object
-  #    integrity hash (parquet_sha) of these exact bytes.
+  # 2. Serialize parquet to a temp file and capture its size. Its hash is taken
+  #    in step 5 only if these are the bytes that get stored.
   tmp <- tempfile(fileext = ".parquet")
   on.exit(unlink(tmp), add = TRUE)
   arrow::write_parquet(data, tmp)
   size_bytes <- as.numeric(fs::file_size(tmp))
-  new_parquet_sha <- digest::digest(file = tmp, algo = "sha256")
 
   # 3. Build metadata. parquet_sha is set in step 5 (after change detection);
   #    it is excluded from metadata_sha, so this deferral does not affect the
@@ -1277,10 +1315,12 @@ datom_write <- function(conn,
     )))
   }
 
-  # 5. Decide the parquet_sha to record and whether these bytes need uploading.
-  #    The upload itself stays AFTER the git push (step 8); this only decides.
+  # 5. The data file first: stored (only if absent) before any file in the
+  #    clone changes, and the parquet_sha recorded is that of the stored bytes.
+  #    Every refusal check above runs before this upload, so a refused write
+  #    stores nothing.
   parquet_decision <- .datom_resolve_parquet_sha(
-    conn, name, data_sha, new_parquet_sha, change_type, chg$current
+    conn, name, data_sha, tmp, change_type, chg$current
   )
   meta$parquet_sha <- parquet_decision$parquet_sha
 
@@ -1313,18 +1353,13 @@ datom_write <- function(conn,
     format = .original_format
   )
 
-  # 7. Commit + push, then mirror to storage -- in that order, shared with
-  #    datom_write_set(). The parquet upload is handed over as the payload object,
-  #    and is skipped entirely when step 5 decided the stored one must be reused.
+  # 7. Commit + push, then publish metadata and manifest to storage -- in that
+  #    order, shared with datom_write_set(). The data file is already stored
+  #    (step 5), so nothing is handed over for upload.
   commit_sha <- .datom_commit_and_mirror(
     conn, name, meta, metadata_sha,
     git_paths = write_result$git_paths,
-    message = message %||% paste0("Update ", name),
-    upload = if (isTRUE(parquet_decision$upload)) {
-      list(path = tmp, key = .datom_artifact_payload_key(name, data_sha, "table"))
-    } else {
-      NULL
-    }
+    message = message %||% paste0("Update ", name)
   )
 
   cli::cli_alert_success(

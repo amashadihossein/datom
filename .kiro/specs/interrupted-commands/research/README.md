@@ -9,8 +9,13 @@ Rerun from the repo root, for example:
 
     Rscript .kiro/specs/interrupted-commands/research/write_steps_probe.R
 
-- `write_steps_probe.R`: `datom_write()` broken at commit, push, upload, metadata and manifest, then
-  the same write re-run.
+- `write_steps_probe.R`: `datom_write()` broken at each step, then the same write re-run. Updated
+  in task 2 (2026-10-31) for the new order: the upload break replaces `.datom_storage_upload_absent()`,
+  and breaks after the clone files and at the stored history upload are added; a row counts only if
+  `raised` is `TRUE`. Result after task 2: every break fired; for the upload, the clone files, the
+  commit, the push, the metadata step and the history upload, the re-run reads v2; a break at the
+  manifest upload still leaves the re-run reporting `none` with the stored manifest one version
+  behind, which heal's publish (task 4b) finishes.
 - `set_steps_probe.R`: the same for `datom_write_set()` on a product repo, then
   `datom_validate(fix = TRUE)`.
 - `sync_and_manifest_probe.R`: `datom_sync()` broken at the push, then re-scanned and re-synced; and

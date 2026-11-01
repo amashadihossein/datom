@@ -495,10 +495,18 @@ matter whenever a test needs to prove something did *not* happen.
   normally with one), and a conn with `gov_root = NULL` makes `.datom_check_ref_current()` take
   its legacy-conn skip. See `local_identity_project()`, and `dev/e2e-cv1-identity.R` for the
   same fixture as a runnable walkthrough.
-- **Prove "no upload" with a backdated mtime**: `fs::file_touch(obj, modification_time = <old>)`
-  before the write, then assert the mtime survived. A re-upload goes through
-  `.datom_local_upload()` -> `fs::file_copy(overwrite = TRUE)` and would reset it. Byte
-  comparison cannot distinguish "not re-uploaded" from "re-uploaded identical bytes".
+- **Prove "no upload" by counting calls to the data-file upload, not with a backdated mtime.**
+  From #155 a table's data file goes through `.datom_storage_upload_absent()`, which never
+  touches a stored file, so a backdated modification time survives an attempted upload too and
+  proves nothing. Count calls instead: `mock_upload_absent(NULL)` in `helper-mock.R` passes each
+  call through to the real upload on a real project and records the keys. Byte comparison cannot
+  distinguish "not uploaded" from "uploaded identical bytes" either. Two traps found moving the
+  tests over (2026-10-31): a counter left on the old `.datom_storage_upload()` stays at zero
+  whatever the write does, so a "nothing was uploaded" test stays green with the guard removed;
+  and in `test-identity-contract.R` the revert test is the only guard of the history branch of the
+  hash decision, which only a count can see (without the branch the write finds the file stored
+  and records the same hash). **Sets still upload their payload through the plain upload until
+  #155 task 3**, so `test-write-set.R`'s backdated-mtime check still works until then.
 - **Prove "verified before parsed" with a valid imposter**: swapping in a *different but
   readable* parquet is the only corruption arrow would happily accept, so the abort can only
   come from the `parquet_sha` check. A single flipped byte fails either way and proves less.

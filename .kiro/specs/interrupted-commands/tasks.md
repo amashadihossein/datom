@@ -41,8 +41,8 @@ Requirements approved 2026-10-28 (amended the same day: R3.3, R5.5, R7.8, an R8 
 R3.1 and R9). Design approved 2026-10-28 with decisions DD1-DD4. **Task list approved by the owner on
 2026-10-28**, after the four reviews below. **Task 1 done 2026-10-30. Task 2's design spot-check done
 the same day (below). A review of `058f29b` on 2026-10-31 (below) changed tasks 4a, 5 and 6, and a
-review of `bfad26c` the same day closed spec review (below). Next is task 2, awaiting the owner's
-go-ahead.**
+review of `bfad26c` the same day closed spec review (below). Task 2 done 2026-10-31; next is task 3,
+awaiting the owner's go-ahead.**
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
@@ -273,7 +273,15 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     `datom_storage_list()` still shows; the real-S3 probe shows 412 for the second upload and a
     whole-file `ChecksumSHA256` matching the file, on all three paws version pairs.
 
-- [ ] **2. Tables: the data file first** (R1.1, R1.3, R1.4, R2.1; design section 3)
+- [x] **2. Tables: the data file first** (R1.1, R1.3, R1.4, R2.1; design section 3)
+  - **Done 2026-10-31.** Suite 5214 -> 5276 expectations, none removed. All four guards probed red
+    against their own tests, with a control that reddened nothing; the counting tests re-pointed and
+    watched (commit message). `research/write_steps_probe.R` updated: every break fired, and after
+    each of steps 1-5 the re-run reads v2. Differences from the list below: the second-clone fixture
+    is left for task 4a, its first user, rather than added unused; the step-5 break is tested at two
+    points inside the step, the stored history upload (the one that tells the new order from the
+    old) and the stored `metadata.json` upload; the resolver's unit tests gained a fifth, for the
+    "already stored" case; the resolver returns an `outcome` beside `parquet_sha`.
   - **Escalation first: design spot-check on a more capable model.**
   - `R/read_write.R`: `.datom_resolve_parquet_sha()` decides and uploads through
     `.datom_storage_upload_absent()`, with no separate existence check first (design section 3):
