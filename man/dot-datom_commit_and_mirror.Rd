@@ -4,15 +4,7 @@
 \alias{.datom_commit_and_mirror}
 \title{Commit, Push, Then Mirror to Storage}
 \usage{
-.datom_commit_and_mirror(
-  conn,
-  name,
-  meta,
-  metadata_sha,
-  git_paths,
-  message,
-  upload = NULL
-)
+.datom_commit_and_mirror(conn, name, meta, metadata_sha, git_paths, message)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object (developer, with a local path).}
@@ -28,30 +20,26 @@
 write updates it.}
 
 \item{message}{Commit message.}
-
-\item{upload}{Optional \code{list(path =, key =)} naming a payload object to upload
-after the push. Only the set write passes it, for its payload JSON; the
-table write has already stored its parquet before any clone file changed
-(\code{\link[=.datom_resolve_parquet_sha]{.datom_resolve_parquet_sha()}}). \code{NULL} when the object is already stored
-and must not be rewritten.}
 }
 \value{
 The commit SHA.
 }
 \description{
-The tail of every artifact write, in the one order that is allowed: local
-files are already on disk, this commits and pushes them, and only then does it
-touch storage. \strong{Git push is the serialization point} -- a clone that is
-behind fails to push before it can upload anything, which is what makes the
-reuse decisions in \code{.datom_resolve_parquet_sha()} /
-\code{.datom_resolve_document_sha()} safe against a concurrent writer. Nothing may
-reorder these two halves.
+The tail of every artifact write. By the time it runs, the data file (a
+table's parquet, a set's payload) is already stored, and the clone's files
+are on disk. This commits and pushes them, and only then publishes the files
+readers follow: the artifact's snapshot, history and \code{metadata.json}, then
+the manifest. \strong{The push still decides whose write readers see} -- a clone
+that cannot push publishes nothing they follow -- so two people's writes meet
+in git, as code does, before storage changes. The data file needs no such
+gate: it is content-addressed, never replaced once stored, and named by
+nothing until this publishes. Nothing may move a publish above the push.
 }
 \details{
 Extracted when the set write arrived, and the extraction is the point rather
 than tidiness: this sequence was previously inline in \code{\link[=datom_write]{datom_write()}}, so a
 second write verb had to either call it or grow a parallel copy -- and a second
-copy of "git must succeed before storage is touched" is a second place for that
-rule to be broken by a change that only looks at one of them.
+copy of "git must succeed before readers are pointed at a version" is a second
+place for that rule to be broken by a change that only looks at one of them.
 }
 \keyword{internal}

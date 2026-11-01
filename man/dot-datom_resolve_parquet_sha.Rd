@@ -63,8 +63,8 @@ state is not repaired here.) This branch also spares a revert
 from hashing the stored file, which on S3 means a download for any file
 uploaded without a stored checksum (every file written by datom 0.2.0 or
 earlier).
-\item \code{full} otherwise -- upload through \code{\link[=.datom_storage_upload_absent]{.datom_storage_upload_absent()}}, which
-never replaces a stored file. \code{"uploaded"} records the fresh bytes' hash.
+\item \code{full} otherwise -- upload through \code{\link[=.datom_store_data_file]{.datom_store_data_file()}}, which never
+replaces a stored file. \code{"uploaded"} records the fresh bytes' hash.
 \code{"exists"} records the stored file's hash (\code{\link[=.datom_storage_object_sha256]{.datom_storage_object_sha256()}}):
 an earlier run that broke, or a colleague, stored this content first, and
 possibly in different bytes (another arrow version). There is no separate

@@ -17,7 +17,13 @@ Rerun from the repo root, for example:
   manifest upload still leaves the re-run reporting `none` with the stored manifest one version
   behind, which heal's publish (task 4b) finishes.
 - `set_steps_probe.R`: the same for `datom_write_set()` on a product repo, then
-  `datom_validate(fix = TRUE)`.
+  `datom_validate(fix = TRUE)`. Updated in task 3 (2026-10-31) the same way: the upload break
+  replaces `.datom_storage_upload_absent()`, and breaks after the clone files, at the stored history
+  upload and at the stored manifest upload are added. Result after task 3: every break fired; for
+  the upload, the clone files, the commit, the push, the metadata step and the history upload, the
+  re-run reads v2. A break at the manifest upload leaves readers on v2 already (a set read follows
+  the stored `metadata.json`) and the re-run reporting `none` with the stored manifest one version
+  behind, which heal's publish (task 4b) finishes.
 - `sync_and_manifest_probe.R`: `datom_sync()` broken at the push, then re-scanned and re-synced; and
   a write broken at the manifest step, then compared with what a reader's `datom_list()` shows.
 - `other_command_probe.R`: a write of `dm` broken at its commit or its push, then a write of `lb`;
@@ -89,3 +95,7 @@ Added 2026-10-31 in task 2 (a tool, not a finding):
 
 Results are recorded in `../requirements.md` ("Findings") and `../design.md` ("Proven, and not yet
 traced").
+- `task3_guard_probes.R`: the same harness with task 3's probes (the payload stored before the
+  clone changes, the stored spelling copied to `set.json`, the S3 upload sending the hash it is given,
+  the resolvers passing their hash, the set resolver's history branch, the restore's two branches, and
+  the re-pointed repair counter with its old-function twin). Results in task 3's commit message.

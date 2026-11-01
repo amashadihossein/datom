@@ -3,6 +3,15 @@
 # and report again (sets have a restore route tables lack).
 # Folder git remote + local storage; no AWS, no GitHub. Nothing in R/ is edited.
 #
+# Updated in task 3 (2026-10-31) for the new order, payload first: the upload
+# break replaces `.datom_storage_upload_absent()` (the payload no longer goes
+# through `.datom_storage_upload()`, so a break there would never fire), and
+# three breaks are added: after the clone files (set.json, metadata and history
+# written, no manifest row), at the stored history upload inside the metadata
+# step, and at the stored manifest upload. A row counts only if its `raised`
+# column is TRUE: a break that never fired leaves a plain write that proves
+# nothing.
+#
 # Run: Rscript .kiro/specs/interrupted-commands/research/set_steps_probe.R
 main <- function() {
   devtools::load_all("~/projects/dev/datom", quiet = TRUE)
@@ -38,11 +47,19 @@ main <- function() {
 
   boom <- function(...) stop("simulated break")
   real_write_json <- ns$.datom_storage_write_json
+  at_key <- function(wanted) function(conn, key, data) {
+    if (identical(key, wanted)) stop("simulated break")
+    real_write_json(conn, key, data)
+  }
+  # In the order a set write runs them.
   breaks <- list(
+    upload = list(.datom_storage_upload_absent = boom),
+    clone_files = list(.datom_update_manifest_entry = boom),
     commit = list(.datom_git_commit = boom),
     push = list(.datom_git_push = boom),
-    upload = list(.datom_storage_upload = boom),
-    metadata = list(.datom_push_metadata_s3 = boom)
+    metadata = list(.datom_push_metadata_s3 = boom),
+    history = list(.datom_storage_write_json = at_key("adam/.metadata/version_history.json")),
+    manifest = list(.datom_storage_write_json = at_key(".metadata/manifest.json"))
   )
 
   for (step in names(breaks)) {
@@ -65,7 +82,7 @@ main <- function() {
     suppressMessages(suppressWarnings(datom_validate(p$conn, fix = TRUE)))
     after_fix <- reads_as(p$reader)
     cat(sprintf(
-      "break at %-8s | raised %-5s | reader after break %-10s | re-run %-5s | reader after re-run %-10s | after validate(fix) %s\n",
+      "break at %-11s | raised %-5s | reader after break %-10s | re-run %-5s | reader after re-run %-10s | after validate(fix) %s\n",
       step, inherits(e, "try-error"), after_break, rerun, after_rerun, after_fix
     ))
   }

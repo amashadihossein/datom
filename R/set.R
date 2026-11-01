@@ -2,8 +2,8 @@
 #
 # A set is a reference layer, not a data layer. Its payload is a JSON document of
 # pointers at existing artifact versions plus text labels, and everything else --
-# version history, content addressing, change detection, the git-gates-storage
-# ordering -- is the same machinery a table write uses.
+# version history, content addressing, change detection, the order of the
+# write -- is the same machinery a table write uses.
 #
 # THE WRITE CANONICALIZES; THE READ NEVER DOES. Every "same fact, two spellings"
 # decision is made once, on the way in. The read parses, normalizes
@@ -37,12 +37,13 @@
 #      file and history would have to be read by listing filenames, which is
 #      hand-maintaining what git already maintains.
 #
-#   4. NEVER RE-EMIT A PAYLOAD FOR A `data_sha` ALREADY IN HISTORY. Reuse the
-#      stored object and carry its recorded `document_sha` forward. Recomputing
-#      the hash from freshly emitted bytes while reusing the stored object records
-#      a hash of bytes nobody stored, and every per-chunk test passes -- it
-#      surfaces later as a refused read of a valid version. See
-#      `.datom_resolve_document_sha()`.
+#   4. NEVER RE-EMIT A PAYLOAD FOR A `data_sha` ALREADY STORED. Reuse the
+#      stored object, carry its recorded `document_sha` forward, and give the
+#      clone's `set.json` the stored bytes when the fresh ones are spelled
+#      differently. Recomputing the hash from freshly emitted bytes while reusing
+#      the stored object records a hash of bytes nobody stored, and every
+#      per-chunk test passes -- it surfaces later as a refused read of a valid
+#      version. See `.datom_resolve_document_sha()`.
 #
 #   5. `document_sha` IS POPULATED BEFORE THE METADATA DOCUMENT IS WRITTEN.
 #      `jsonlite` does not omit a NULL element, it writes `{}`, so a document
@@ -882,6 +883,22 @@
 }
 
 
+#' Write a Set Payload to a File
+#'
+#' The one place that decides how a payload is spelled in bytes. The bytes it
+#' writes are the ones stored at `{name}/{data_sha}.json` and kept in the
+#' clone's `set.json`, and `document_sha` is their hash.
+#'
+#' @param payload The tidied, validated and ordered payload.
+#' @param path File to write.
+#' @return Invisible `path`.
+#' @keywords internal
+.datom_write_set_payload <- function(payload, path) {
+  jsonlite::write_json(payload, path, auto_unbox = TRUE, pretty = TRUE)
+  invisible(path)
+}
+
+
 # --- the write verb ------------------------------------------------------------
 
 #' Save a Set as a New Version
@@ -1241,19 +1258,16 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
     )))
   }
 
-  # The git copy at its stable path, and the bytes every other hash refers to.
-  # Written before the metadata document so `document_sha` can describe real
-  # bytes, and it is the same file that gets uploaded, so the git and storage
-  # copies cannot hold two spellings of one `data_sha`.
-  set_dir <- fs::path(conn$path, name)
-  fs::dir_create(set_dir)
-  payload_path <- fs::path(set_dir, "set.json")
-  jsonlite::write_json(payload, payload_path, auto_unbox = TRUE, pretty = TRUE)
-
-  new_document_sha <- digest::digest(file = payload_path, algo = "sha256")
+  # The payload first: built in a temporary file and stored (only if absent)
+  # before anything in the clone changes, so a write that breaks at any later
+  # step leaves a version a re-run can finish. Every refusal check above runs
+  # before this upload, so a refused write stores nothing.
+  payload_tmp <- tempfile(fileext = ".json")
+  on.exit(unlink(payload_tmp), add = TRUE)
+  .datom_write_set_payload(payload, payload_tmp)
 
   document_decision <- .datom_resolve_document_sha(
-    conn, name, data_sha, new_document_sha, change_type, chg$current
+    conn, name, data_sha, payload_tmp, change_type, chg$current
   )
   meta$document_sha <- document_decision$document_sha
 
@@ -1273,6 +1287,25 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
       class = "datom_set_document_sha_missing"
     )
   }
+
+  # One spelling in git and storage. Several spellings share one `data_sha`, so
+  # when the recorded hash is a stored payload's (reused from the history, or
+  # found already stored) the fresh bytes can differ from it; the stored payload
+  # then becomes the clone's `set.json`. Otherwise git would hold bytes that do
+  # not match the recorded hash while storage holds bytes that do.
+  if (!identical(document_decision$outcome, "uploaded") &&
+      !identical(digest::digest(file = payload_tmp, algo = "sha256"),
+                 meta$document_sha)) {
+    .datom_storage_download(
+      conn, .datom_artifact_payload_key(name, data_sha, "set"), payload_tmp
+    )
+  }
+
+  # The git copy at its stable path, the same bytes as the stored payload.
+  set_dir <- fs::path(conn$path, name)
+  fs::dir_create(set_dir)
+  payload_path <- fs::path(set_dir, "set.json")
+  fs::file_copy(payload_tmp, payload_path, overwrite = TRUE)
 
   # Keep any top-level field the existing document holds that this build cannot
   # place -- the document above was rebuilt from scratch, which would delete it.
@@ -1313,15 +1346,7 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   commit_sha <- .datom_commit_and_mirror(
     conn, name, meta, metadata_sha,
     git_paths = c(write_result$git_paths, payload_path, include_paths),
-    message = messages$commit,
-    upload = if (isTRUE(document_decision$upload)) {
-      list(
-        path = payload_path,
-        key = .datom_artifact_payload_key(name, data_sha, "set")
-      )
-    } else {
-      NULL
-    }
+    message = messages$commit
   )
 
   n_members <- length(payload$members)

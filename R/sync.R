@@ -325,10 +325,12 @@ datom_pull <- function(conn) {
 
 #' Put a Set's Payload Back When Storage Has Lost It
 #'
-#' The write order is git first, storage second, so a write that committed and
-#' then failed to upload leaves a version whose payload is only in the clone.
-#' For a set that is repairable: git holds `{name}/set.json`, and those are the
-#' same bytes the upload would have sent.
+#' A set write stores its payload before anything in the clone changes, so a
+#' write of this release never leaves a committed version without one. A write
+#' by datom 0.2.0 or earlier can (it uploaded after the push, so a break between
+#' the two left the payload only in the clone), and so can a payload deleted
+#' from storage by hand. For a set that is repairable: git holds
+#' `{name}/set.json`, and those are the same bytes the upload would have sent.
 #'
 #' **It restores, and never overwrites.** The bytes at `{name}/{data_sha}.json`
 #' are written once: the recorded `document_sha` pins them, and putting a fresh
@@ -337,7 +339,10 @@ datom_pull <- function(conn) {
 #' only when the clone's bytes hash to the hash already recorded -- which is
 #' read, never recomputed. Both conditions are needed: refusing only the
 #' recompute still permits the worst outcome, an overwritten object keeping the
-#' old hash.
+#' old hash. The absence is checked first, so a stored payload is never hashed
+#' against the clone, and checked again by the upload itself
+#' ([.datom_storage_upload_absent()]), so a payload another writer stores in
+#' between is kept and nothing is reported as restored.
 #'
 #' **Declining is loud.** A silent decline is indistinguishable from a repair
 #' that worked, which is the failure the whole check exists to remove.
@@ -389,7 +394,9 @@ datom_pull <- function(conn) {
     return(character())
   }
 
-  .datom_storage_upload(conn, payload_path, key)
+  outcome <- .datom_storage_upload_absent(conn, payload_path, key, sha256 = actual)
+  if (identical(outcome, "exists")) return(character())
+
   cli::cli_alert_success(
     "Restored the stored payload for set {.val {name}} from the clone."
   )

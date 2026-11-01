@@ -38,15 +38,18 @@
 #' @param conn A `datom_conn` object.
 #' @param local_path Local file path to upload.
 #' @param key Relative storage key (after `prefix/datom/`).
+#' @param sha256 Optional SHA-256 of the file, lowercase hex, from a caller that
+#'   has already hashed it to record the hash. S3 sends it as the upload's
+#'   checksum instead of hashing the file again; the local backend ignores it.
 #' @return `"uploaded"`, or `"exists"` when a file was already stored at `key`,
 #'   before the call or put there by another writer during it. "Already there"
 #'   is not an error.
 #' @keywords internal
-.datom_storage_upload_absent <- function(conn, local_path, key) {
+.datom_storage_upload_absent <- function(conn, local_path, key, sha256 = NULL) {
   backend <- conn$backend %||% "s3"
   switch(backend,
-    s3 = .datom_s3_upload_absent(conn, local_path, key),
-    local = .datom_local_upload_absent(conn, local_path, key),
+    s3 = .datom_s3_upload_absent(conn, local_path, key, sha256 = sha256),
+    local = .datom_local_upload_absent(conn, local_path, key, sha256 = sha256),
     cli::cli_abort("Unsupported storage backend: {.val {backend}}")
   )
 }

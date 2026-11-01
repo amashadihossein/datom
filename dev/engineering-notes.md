@@ -505,8 +505,9 @@ matter whenever a test needs to prove something did *not* happen.
   whatever the write does, so a "nothing was uploaded" test stays green with the guard removed;
   and in `test-identity-contract.R` the revert test is the only guard of the history branch of the
   hash decision, which only a count can see (without the branch the write finds the file stored
-  and records the same hash). **Sets still upload their payload through the plain upload until
-  #155 task 3**, so `test-write-set.R`'s backdated-mtime check still works until then.
+  and records the same hash). A set's payload goes through the same upload (since #155 task 3),
+  and so does the repair's payload restore, so the set tests count calls the same way; the restore
+  checks for the stored payload first and only calls the upload when it is missing.
 - **Prove "verified before parsed" with a valid imposter**: swapping in a *different but
   readable* parquet is the only corruption arrow would happily accept, so the abort can only
   come from the `parquet_sha` check. A single flipped byte fails either way and proves less.

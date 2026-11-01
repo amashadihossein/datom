@@ -41,8 +41,9 @@ Requirements approved 2026-10-28 (amended the same day: R3.3, R5.5, R7.8, an R8 
 R3.1 and R9). Design approved 2026-10-28 with decisions DD1-DD4. **Task list approved by the owner on
 2026-10-28**, after the four reviews below. **Task 1 done 2026-10-30. Task 2's design spot-check done
 the same day (below). A review of `058f29b` on 2026-10-31 (below) changed tasks 4a, 5 and 6, and a
-review of `bfad26c` the same day closed spec review (below). Task 2 done 2026-10-31; next is task 3,
-awaiting the owner's go-ahead.**
+review of `bfad26c` the same day closed spec review (below). Task 2 done 2026-10-31, and task 3 the
+same day; next is task 4a, which opens with the design spot-check flagged at planning (covering 4a
+and 4b), awaiting the owner's go-ahead.**
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
@@ -341,7 +342,19 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     `research/write_steps_probe.R` shows, for steps 1-5, the break firing and the re-run reading the
     new version.
 
-- [ ] **3. Sets: the payload first** (R1.1, R1.5; design section 3)
+- [x] **3. Sets: the payload first** (R1.1, R1.5; design section 3)
+  - **Done 2026-10-31.** Suite 5276 -> 5356 expectations, none removed. Every guard probed red
+    against its own tests, with a control that reddened nothing (`research/task3_guard_probes.R`;
+    results in the commit message). `research/set_steps_probe.R` updated: every break fired, and
+    after each of steps 1-5 the re-run reads v2. Differences from the list below: both resolvers
+    share one new helper for their last case, `.datom_store_data_file()` (hash once, upload only if
+    absent, pick the hash), so "each resolver passes its hash" is one guard, probed against both
+    resolvers' tests; the payload's spelling lives in one new function,
+    `.datom_write_set_payload()`, which the R1.5 re-run test replaces to spell it differently; the
+    restore keeps its existence check before the hash check (so a stored payload is never compared
+    with the clone's) and reports nothing when the upload finds the payload stored after all, with
+    a test and a probe; `local_interrupt_project()` passes extra arguments to `datom_init_repo()`
+    for a product repo.
   - `R/set.R`: `datom_write_set()` builds the payload in a temp file, uploads or adopts it through
     `.datom_resolve_document_sha()`, then writes `set.json`; when the recorded hash is a stored
     payload's and the fresh bytes differ, `set.json` takes the stored bytes.

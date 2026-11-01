@@ -53,18 +53,25 @@ mock_datom_conn <- function(mock_client,
 #' whatever the write does. Nor can a backdated modification time stand in for
 #' a count any more, because this upload never touches a stored file.
 #'
+#' `$shas()` returns the `sha256` each call was given (`NA` where it was
+#' `NULL`), so a test can check that a caller hands the upload the hash it
+#' records rather than leaving the upload to hash the file again.
+#'
 #' @param result What the stand-in returns: `"uploaded"` (the default),
 #'   `"exists"`, or `NULL` to run the real upload.
-#' @return A list with `fn` and `keys`.
+#' @return A list with `fn`, `keys` and `shas`.
 mock_upload_absent <- function(result = "uploaded") {
   keys <- character()
+  shas <- character()
   real <- get(".datom_storage_upload_absent", envir = asNamespace("datom"))
   list(
-    fn = function(conn, local_path, key) {
+    fn = function(conn, local_path, key, sha256 = NULL) {
       keys <<- c(keys, key)
-      if (is.null(result)) real(conn, local_path, key) else result
+      shas <<- c(shas, if (is.null(sha256)) NA_character_ else sha256)
+      if (is.null(result)) real(conn, local_path, key, sha256 = sha256) else result
     },
-    keys = function() keys
+    keys = function() keys,
+    shas = function() shas
   )
 }
 

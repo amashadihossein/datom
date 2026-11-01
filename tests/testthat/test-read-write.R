@@ -1986,6 +1986,9 @@ test_that("resolve parquet_sha: full with nothing recorded or stored uploads the
   expect_equal(res$parquet_sha, digest::digest(file = tmp, algo = "sha256"))
   expect_identical(res$outcome, "uploaded")
   expect_identical(upload$keys(), .datom_artifact_payload_key("tbl", data_sha, "table"))
+  # One hash per write: the upload is given the hash recorded, not left to
+  # hash the file again.
+  expect_identical(upload$shas(), res$parquet_sha)
 })
 
 test_that("resolve parquet_sha: full reverting to a recorded data_sha reuses its sha, no upload", {

@@ -4,7 +4,7 @@
 \alias{.datom_s3_upload_absent}
 \title{Upload a File to S3 Only If Its Key Is Absent}
 \usage{
-.datom_s3_upload_absent(conn, local_path, s3_key)
+.datom_s3_upload_absent(conn, local_path, s3_key, sha256 = NULL)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object.}
@@ -12,6 +12,9 @@
 \item{local_path}{Local file path to upload.}
 
 \item{s3_key}{Relative S3 key (after \verb{prefix/datom/}).}
+
+\item{sha256}{Optional SHA-256 of the file, lowercase hex. \code{NULL} hashes the
+file here.}
 }
 \value{
 \code{"uploaded"} or \code{"exists"}.
@@ -29,7 +32,10 @@ remains.
 The upload carries the file's SHA-256 (\code{ChecksumSHA256}, base64 of the raw
 digest). S3 verifies it on arrival and keeps it with the object, so
 \code{.datom_s3_object_sha256()} can read the stored file's hash later without
-downloading it.
+downloading it. A caller that has already hashed the file, to record the
+hash, passes it as \code{sha256} and the file is not hashed a second time. S3
+refuses an upload whose checksum does not match the bytes (\code{BadDigest}), so
+a wrong \code{sha256} stops the upload rather than storing a file under it.
 
 Every other failure stops with the usual upload error. That includes a 409,
 which AWS returns when a delete of the key finishes while the upload runs;

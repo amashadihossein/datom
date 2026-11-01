@@ -270,6 +270,46 @@ test_that("uploads an absent key only-if-absent, carrying the file's SHA-256", {
   })
 })
 
+test_that("a hash the caller passes is the checksum sent, and the file is not hashed again", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("fake parquet content"), path)
+    # Deliberately not the file's hash, so a recomputed hash would show.
+    passed <- strrep("ab", 32L)
+
+    mock_head <- mockery::mock(stop(paws_http_error(404, "NotFound")))
+    mock_put <- mockery::mock(list())
+    conn <- mock_datom_conn(list(head_object = mock_head, put_object = mock_put))
+
+    .datom_s3_upload_absent(conn, path, "dm/abc.parquet", sha256 = passed)
+
+    expect_identical(
+      sha256_hex_of_base64(mockery::mock_args(mock_put)[[1]]$ChecksumSHA256),
+      passed
+    )
+  })
+})
+
+test_that("with no hash passed, the checksum sent is the one a correct passed hash gives", {
+  withr::with_tempdir({
+    path <- "data.parquet"
+    writeBin(charToRaw("fake parquet content"), path)
+
+    sent_checksum <- function(...) {
+      mock_head <- mockery::mock(stop(paws_http_error(404, "NotFound")))
+      mock_put <- mockery::mock(list())
+      conn <- mock_datom_conn(list(head_object = mock_head, put_object = mock_put))
+      .datom_s3_upload_absent(conn, path, "dm/abc.parquet", ...)
+      mockery::mock_args(mock_put)[[1]]$ChecksumSHA256
+    }
+
+    expect_identical(
+      sent_checksum(),
+      sent_checksum(sha256 = digest::digest(file = path, algo = "sha256"))
+    )
+  })
+})
+
 test_that("a stored key is reported as exists and never uploaded again (P2)", {
   withr::with_tempdir({
     path <- "data.parquet"

@@ -658,8 +658,8 @@ datom_read <- function(conn,
 #'   from hashing the stored file, which on S3 means a download for any file
 #'   uploaded without a stored checksum (every file written by datom 0.2.0 or
 #'   earlier).
-#' * `full` otherwise -- upload through [.datom_storage_upload_absent()], which
-#'   never replaces a stored file. `"uploaded"` records the fresh bytes' hash.
+#' * `full` otherwise -- upload through [.datom_store_data_file()], which never
+#'   replaces a stored file. `"uploaded"` records the fresh bytes' hash.
 #'   `"exists"` records the stored file's hash ([.datom_storage_object_sha256()]):
 #'   an earlier run that broke, or a colleague, stored this content first, and
 #'   possibly in different bytes (another arrow version). There is no separate
@@ -700,16 +700,46 @@ datom_read <- function(conn,
     return(list(parquet_sha = reused, outcome = "history"))
   }
 
-  key <- .datom_artifact_payload_key(name, data_sha, "table")
-  outcome <- .datom_storage_upload_absent(conn, tmp_path, key)
+  stored <- .datom_store_data_file(
+    conn, tmp_path, .datom_artifact_payload_key(name, data_sha, "table")
+  )
+  list(parquet_sha = stored$sha, outcome = stored$outcome)
+}
 
-  parquet_sha <- if (identical(outcome, "exists")) {
+
+#' Store a Data File If Its Address Is Empty, and Say Which Hash to Record
+#'
+#' The last case of both hash decisions, [.datom_resolve_parquet_sha()] and
+#' [.datom_resolve_document_sha()], in one place so the two kinds cannot drift.
+#' Uploads through [.datom_storage_upload_absent()], which never replaces a
+#' stored file:
+#' * `"uploaded"` -- the fresh bytes are what is stored; record their hash.
+#' * `"exists"` -- an earlier run that broke, or a colleague, stored this
+#'   content first, possibly in different bytes; record the stored file's hash
+#'   ([.datom_storage_object_sha256()]).
+#'
+#' **The file is hashed once, here, and the hash handed to the upload**, which
+#' on S3 sends it as the upload's checksum instead of hashing the file a second
+#' time. When the file turns out to be stored already, that hash goes unused:
+#' still one hash per write.
+#'
+#' @param conn A `datom_conn` object.
+#' @param tmp_path The freshly built data file.
+#' @param key Its storage address.
+#' @return List with `sha` (lowercase hex) and `outcome` (`"uploaded"` or
+#'   `"exists"`).
+#' @keywords internal
+.datom_store_data_file <- function(conn, tmp_path, key) {
+  fresh_sha <- digest::digest(file = tmp_path, algo = "sha256")
+  outcome <- .datom_storage_upload_absent(conn, tmp_path, key, sha256 = fresh_sha)
+
+  sha <- if (identical(outcome, "exists")) {
     .datom_storage_object_sha256(conn, key)
   } else {
-    digest::digest(file = tmp_path, algo = "sha256")
+    fresh_sha
   }
 
-  list(parquet_sha = parquet_sha, outcome = outcome)
+  list(sha = sha, outcome = outcome)
 }
 
 
@@ -728,6 +758,13 @@ datom_read <- function(conn,
 #' an ordinary tag-value reorder is enough, because several payload spellings
 #' share one `data_sha`.
 #'
+#' Like the parquet decision it **uploads**, and it runs before anything in the
+#' clone changes: the set write builds its payload in a temporary file, calls
+#' this, and only then writes `set.json`. So a version a clone records already
+#' has its payload stored, and a write that breaks at any later step leaves a
+#' version a re-run can finish. (When the upload came after the push, a break
+#' between the two left a pushed version with no stored payload.)
+#'
 #' Cases, mirroring the parquet ones:
 #' * `metadata_only` -- the `data_sha` is unchanged, so the payload object already
 #'   exists; carry the current metadata's `document_sha` forward and do not
@@ -735,29 +772,42 @@ datom_read <- function(conn,
 #'   `data_sha`, `hash_algo` and `kind`, so unchanged content means an unchanged
 #'   version), and handled anyway rather than assumed away.
 #' * `full` where a prior version already recorded a `document_sha` for this exact
-#'   `data_sha` -- reuse it and do **not** re-upload.
-#' * `full` otherwise -- upload these bytes and record their hash.
+#'   `data_sha` (a revert, or a re-run after a break) -- reuse it and do **not**
+#'   upload.
+#' * `full` otherwise -- upload through [.datom_store_data_file()], which never
+#'   replaces a stored payload: `"uploaded"` records these bytes' hash,
+#'   `"exists"` the stored payload's, which may be another spelling of the same
+#'   content.
+#'
+#' In every case but `"uploaded"` the recorded hash can be another spelling's,
+#' so the set write compares it with the fresh bytes and puts the stored
+#' payload in `set.json` when they differ (see [datom_write_set()]).
 #'
 #' @param conn A `datom_conn` object.
 #' @param name Set name.
 #' @param data_sha Canonical content hash (the storage address).
-#' @param new_document_sha SHA-256 of the payload bytes just written to the clone.
+#' @param tmp_path The freshly built payload file.
 #' @param change_type `"metadata_only"` or `"full"` (never `"none"`).
 #' @param current The current metadata (from [.datom_has_changes()]), or NULL.
-#' @return List with `document_sha` (character or NULL) and `upload` (logical).
+#' @return List with `document_sha` (character, or NULL when a metadata-only
+#'   change carries none) and `outcome`, which says where it came from:
+#'   `"carried"`, `"history"`, `"uploaded"` or `"exists"`.
 #' @keywords internal
-.datom_resolve_document_sha <- function(conn, name, data_sha, new_document_sha,
+.datom_resolve_document_sha <- function(conn, name, data_sha, tmp_path,
                                         change_type, current) {
   if (identical(change_type, "metadata_only")) {
-    return(list(document_sha = current$document_sha, upload = FALSE))
+    return(list(document_sha = current$document_sha, outcome = "carried"))
   }
 
   reused <- .datom_lookup_history_document_sha(conn, name, data_sha)
   if (!is.null(reused)) {
-    return(list(document_sha = reused, upload = FALSE))
+    return(list(document_sha = reused, outcome = "history"))
   }
 
-  list(document_sha = new_document_sha, upload = TRUE)
+  stored <- .datom_store_data_file(
+    conn, tmp_path, .datom_artifact_payload_key(name, data_sha, "set")
+  )
+  list(document_sha = stored$sha, outcome = stored$outcome)
 }
 
 
@@ -766,9 +816,9 @@ datom_read <- function(conn,
 #' Scans the developer's local `version_history.json` (newest-first) for the
 #' most recent entry whose `data_sha` matches and that carries a non-empty hash
 #' in `field`. Returns NULL when none is found. Reads the local git clone
-#' (offline-friendly). A stale clone does no harm to a table write: if the
-#' lookup misses an entry a colleague recorded, the upload that follows finds
-#' the file already stored and records the stored file's hash.
+#' (offline-friendly). A stale clone does no harm to a write of either kind: if
+#' the lookup misses an entry a colleague recorded, the upload that follows
+#' finds the file already stored and records the stored file's hash.
 #'
 #' One scan serves both kinds, because the question is identical in each case --
 #' *has this exact content already been stored, and under which byte hash?* --
@@ -1001,19 +1051,21 @@ datom_read <- function(conn,
 
 #' Commit, Push, Then Mirror to Storage
 #'
-#' The tail of every artifact write, in the one order that is allowed: local
-#' files are already on disk, this commits and pushes them, and only then does it
-#' touch storage. **Git push is the serialization point** -- a clone that is
-#' behind fails to push before it can upload anything, which is what makes the
-#' reuse decisions in `.datom_resolve_parquet_sha()` /
-#' `.datom_resolve_document_sha()` safe against a concurrent writer. Nothing may
-#' reorder these two halves.
+#' The tail of every artifact write. By the time it runs, the data file (a
+#' table's parquet, a set's payload) is already stored, and the clone's files
+#' are on disk. This commits and pushes them, and only then publishes the files
+#' readers follow: the artifact's snapshot, history and `metadata.json`, then
+#' the manifest. **The push still decides whose write readers see** -- a clone
+#' that cannot push publishes nothing they follow -- so two people's writes meet
+#' in git, as code does, before storage changes. The data file needs no such
+#' gate: it is content-addressed, never replaced once stored, and named by
+#' nothing until this publishes. Nothing may move a publish above the push.
 #'
 #' Extracted when the set write arrived, and the extraction is the point rather
 #' than tidiness: this sequence was previously inline in [datom_write()], so a
 #' second write verb had to either call it or grow a parallel copy -- and a second
-#' copy of "git must succeed before storage is touched" is a second place for that
-#' rule to be broken by a change that only looks at one of them.
+#' copy of "git must succeed before readers are pointed at a version" is a second
+#' place for that rule to be broken by a change that only looks at one of them.
 #'
 #' @param conn A `datom_conn` object (developer, with a local path).
 #' @param name Artifact name.
@@ -1023,28 +1075,16 @@ datom_read <- function(conn,
 #'   `.datom/manifest.json` is added here rather than by each caller, since every
 #'   write updates it.
 #' @param message Commit message.
-#' @param upload Optional `list(path =, key =)` naming a payload object to upload
-#'   after the push. Only the set write passes it, for its payload JSON; the
-#'   table write has already stored its parquet before any clone file changed
-#'   ([.datom_resolve_parquet_sha()]). `NULL` when the object is already stored
-#'   and must not be rewritten.
 #' @return The commit SHA.
 #' @keywords internal
 .datom_commit_and_mirror <- function(conn, name, meta, metadata_sha, git_paths,
-                                     message, upload = NULL) {
+                                     message) {
   git_files <- c(
     fs::path_rel(git_paths, conn$path),
     ".datom/manifest.json"
   )
   commit_sha <- .datom_git_commit(conn$path, git_files, message)
   .datom_git_push(conn$path, pat = conn$github_pat)
-
-  # After git, never before. `upload = NULL` is the reuse case: the object at
-  # this address is already stored and re-writing it would break the
-  # integrity hash recorded against it by the version that put it there.
-  if (!is.null(upload)) {
-    .datom_storage_upload(conn, upload$path, upload$key)
-  }
 
   # The commit is threaded through rather than re-derived: this function made it,
   # so the stored history can name it without a git walk.
@@ -1355,7 +1395,7 @@ datom_write <- function(conn,
 
   # 7. Commit + push, then publish metadata and manifest to storage -- in that
   #    order, shared with datom_write_set(). The data file is already stored
-  #    (step 5), so nothing is handed over for upload.
+  #    (step 5).
   commit_sha <- .datom_commit_and_mirror(
     conn, name, meta, metadata_sha,
     git_paths = write_result$git_paths,

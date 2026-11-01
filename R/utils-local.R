@@ -63,9 +63,11 @@
 #' @param conn A `datom_conn` object with `backend = "local"`.
 #' @param local_path Local file path to upload.
 #' @param key Relative storage key (after `prefix/datom/`).
+#' @param sha256 Ignored: a local store keeps no checksum beside a file. Taken
+#'   so the dispatcher can pass the same arguments to every backend.
 #' @return `"uploaded"` or `"exists"`.
 #' @keywords internal
-.datom_local_upload_absent <- function(conn, local_path, key) {
+.datom_local_upload_absent <- function(conn, local_path, key, sha256 = NULL) {
   if (!fs::file_exists(local_path)) {
     cli::cli_abort("File not found: {.path {local_path}}")
   }

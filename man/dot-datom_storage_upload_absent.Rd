@@ -4,7 +4,7 @@
 \alias{.datom_storage_upload_absent}
 \title{Upload a Data File to Storage Only If Its Key Is Absent}
 \usage{
-.datom_storage_upload_absent(conn, local_path, key)
+.datom_storage_upload_absent(conn, local_path, key, sha256 = NULL)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object.}
@@ -12,6 +12,10 @@
 \item{local_path}{Local file path to upload.}
 
 \item{key}{Relative storage key (after \verb{prefix/datom/}).}
+
+\item{sha256}{Optional SHA-256 of the file, lowercase hex, from a caller that
+has already hashed it to record the hash. S3 sends it as the upload's
+checksum instead of hashing the file again; the local backend ignores it.}
 }
 \value{
 \code{"uploaded"}, or \code{"exists"} when a file was already stored at \code{key},

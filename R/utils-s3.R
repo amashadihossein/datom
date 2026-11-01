@@ -107,7 +107,10 @@
 #' The upload carries the file's SHA-256 (`ChecksumSHA256`, base64 of the raw
 #' digest). S3 verifies it on arrival and keeps it with the object, so
 #' `.datom_s3_object_sha256()` can read the stored file's hash later without
-#' downloading it.
+#' downloading it. A caller that has already hashed the file, to record the
+#' hash, passes it as `sha256` and the file is not hashed a second time. S3
+#' refuses an upload whose checksum does not match the bytes (`BadDigest`), so
+#' a wrong `sha256` stops the upload rather than storing a file under it.
 #'
 #' Every other failure stops with the usual upload error. That includes a 409,
 #' which AWS returns when a delete of the key finishes while the upload runs;
@@ -117,9 +120,11 @@
 #' @param conn A `datom_conn` object.
 #' @param local_path Local file path to upload.
 #' @param s3_key Relative S3 key (after `prefix/datom/`).
+#' @param sha256 Optional SHA-256 of the file, lowercase hex. `NULL` hashes the
+#'   file here.
 #' @return `"uploaded"` or `"exists"`.
 #' @keywords internal
-.datom_s3_upload_absent <- function(conn, local_path, s3_key) {
+.datom_s3_upload_absent <- function(conn, local_path, s3_key, sha256 = NULL) {
   if (!fs::file_exists(local_path)) {
     cli::cli_abort("File not found: {.path {local_path}}")
   }
@@ -128,9 +133,12 @@
 
   full_key <- .datom_build_storage_key(conn$prefix, s3_key)
   body <- readBin(local_path, what = "raw", n = fs::file_size(local_path))
-  checksum <- jsonlite::base64_enc(
+  digest_raw <- if (is.null(sha256)) {
     digest::digest(body, algo = "sha256", serialize = FALSE, raw = TRUE)
-  )
+  } else {
+    .datom_hex_to_raw(sha256)
+  }
+  checksum <- jsonlite::base64_enc(digest_raw)
 
   tryCatch(
     {
@@ -157,6 +165,20 @@
       )
     }
   )
+}
+
+
+#' A Hex Digest as Raw Bytes
+#'
+#' The reverse of `digest::digest(..., raw = FALSE)`: two hex characters per
+#' byte. Used to turn a hash a caller already holds into S3's base64 checksum.
+#'
+#' @param hex A lowercase hex string.
+#' @return A raw vector, half as long as `hex`.
+#' @keywords internal
+.datom_hex_to_raw <- function(hex) {
+  starts <- seq(1L, nchar(hex), by = 2L)
+  as.raw(strtoi(substring(hex, starts, starts + 1L), base = 16L))
 }
 
 

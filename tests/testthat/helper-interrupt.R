@@ -14,10 +14,12 @@
 #' break-and-re-run test asks.
 #'
 #' @param project_name Project name.
+#' @param ... Passed to `datom_init_repo()`, e.g. `mode = "product", set =` for
+#'   a product repo that writes a set.
 #' @param env Frame whose exit removes the project.
 #' @return A list with `root`, `store`, `repo` (the clone's path), `conn` (the
 #'   developer connection) and `reader`.
-local_interrupt_project <- function(project_name = "P", env = parent.frame()) {
+local_interrupt_project <- function(project_name = "P", ..., env = parent.frame()) {
   skip_if_no_git2r()
   root <- withr::local_tempdir(.local_envir = env)
   storage <- file.path(root, "storage")
@@ -26,7 +28,7 @@ local_interrupt_project <- function(project_name = "P", env = parent.frame()) {
     data_repo_url = file.path(root, "remote.git")
   )
   repo <- file.path(root, "repo")
-  suppressMessages(datom_init_repo(repo, project_name, store, create_repo = TRUE))
+  suppressMessages(datom_init_repo(repo, project_name, store, create_repo = TRUE, ...))
   conn <- suppressMessages(datom_get_conn(repo, store))
   reader <- suppressMessages(datom_get_conn(
     store = datom_store(data = datom_store_local(storage)),
@@ -56,11 +58,13 @@ datom_test_break <- function(step) {
 #' Break a write at one named step, for the rest of the calling frame.
 #'
 #' Each step is a mocked binding that raises `datom_test_break`. Steps, in the
-#' order a table write runs them:
+#' order a table write or a set write runs them:
 #'
-#' * `"upload"` -- the data file upload, `.datom_storage_upload_absent()`;
-#' * `"clone_files"` -- after `metadata.json` and `version_history.json` are
-#'   written in the clone, before its manifest row (`.datom_update_manifest_entry()`);
+#' * `"upload"` -- the data file upload (a table's parquet, a set's payload),
+#'   `.datom_storage_upload_absent()`;
+#' * `"clone_files"` -- after `metadata.json` and `version_history.json` (and a
+#'   set's `set.json`) are written in the clone, before its manifest row
+#'   (`.datom_update_manifest_entry()`);
 #' * `"commit"` -- `.datom_git_commit()`;
 #' * `"push"` -- `.datom_git_push()`;
 #' * `"metadata"` -- the whole metadata upload, `.datom_push_metadata_s3()`;

@@ -4,7 +4,7 @@
 \alias{.datom_local_upload_absent}
 \title{Upload a File to Local Storage Only If Its Key Is Absent}
 \usage{
-.datom_local_upload_absent(conn, local_path, key)
+.datom_local_upload_absent(conn, local_path, key, sha256 = NULL)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object with \code{backend = "local"}.}
@@ -12,6 +12,9 @@
 \item{local_path}{Local file path to upload.}
 
 \item{key}{Relative storage key (after \verb{prefix/datom/}).}
+
+\item{sha256}{Ignored: a local store keeps no checksum beside a file. Taken
+so the dispatcher can pass the same arguments to every backend.}
 }
 \value{
 \code{"uploaded"} or \code{"exists"}.
