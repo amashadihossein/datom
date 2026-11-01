@@ -181,7 +181,10 @@ history, is kept and its hash recorded, where the old code overwrote it.
 
 **S3** (`R/utils-s3.R`):
 - `.datom_s3_upload_absent()`: `head_object` first (the R1.2 check); if absent, `put_object(...,
-  IfNoneMatch = "*", ChecksumSHA256 = <base64 of the raw SHA-256>)`. A refusal because the key
+  IfNoneMatch = "*", ChecksumSHA256 = <base64 of the raw SHA-256>)`. From task 3 the caller may pass
+  the file's SHA-256 (`sha256 =`, hex): the resolvers hash the fresh bytes once and pass it, so a new
+  file is hashed once, not once for the header and again for the record (task 2's checkpoint
+  review, owner, 2026-10-31). A refusal because the key
   appeared in between arrives as a condition of class `http_412` (paws builds the classes
   `paws_error`, `http_412`, `http_400`, `http_error`; read from `paws.common::aws_error()`), and
   is returned as `"exists"`.

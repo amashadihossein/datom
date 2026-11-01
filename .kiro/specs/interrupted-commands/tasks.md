@@ -191,6 +191,10 @@ everything in the round above agreed, and one nit taken (task 4a: both stop mess
 their final text, tested there by condition class, the full text pinned in task 5). Evaluated with
 the owner.
 
+**Task 2's checkpoint review, 2026-10-31**, by another agent, of `8185b7c`: approved. One optional
+item (S1) taken into task 3 with the owner: a new data file on S3 is hashed twice, so the resolvers
+hash once and pass the hash to the upload.
+
 **Spec review is closed as of this round** (owner, 2026-10-31). From here:
 - Open items stay with the tasks that already own them (design section 10).
 - Each task gets one review at its checkpoint, against the scenario table at the top of this file.
@@ -353,11 +357,26 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     new upload never changes.
   - **Update `research/set_steps_probe.R`** the same way as task 2's probe; its step-2 break leaves
     `set.json`, metadata and history written.
+  - **A new data file is hashed once** (task 2's checkpoint review, owner, 2026-10-31). Since task 2,
+    a new table file on S3 is hashed twice: `.datom_s3_upload_absent()` hashes the bytes for its
+    `ChecksumSHA256` header, and `.datom_resolve_parquet_sha()` hashes the file again on
+    `"uploaded"` (a local store hashes once; before task 2 a write hashed once). Fix:
+    `.datom_storage_upload_absent()` and both backends gain an optional `sha256 = NULL` (lowercase
+    hex). Both resolvers, `.datom_resolve_parquet_sha()` and `.datom_resolve_document_sha()`, hash
+    the fresh bytes once before the upload, pass the hash, and record it on `"uploaded"`. S3 turns
+    the passed hash into the header instead of hashing; with `NULL` it hashes as now; the local
+    backend ignores it. Accepted cost: when the file is already stored, the fresh bytes are hashed
+    without need, which is still one hash per write.
   - Tests: the break table's steps 1-5 for `datom_write_set()` (P1); a re-run with a different
     spelling of the same set leaves `set.json` byte-identical to the stored payload (R1.5). The test
     "nothing reaches storage when the git push fails" in `test-write-set.R` becomes "only the payload
-    reaches storage".
-  - Guards to probe: the stored-spelling branch.
+    reaches storage". For the single hash: on a mocked S3 client, a hash passed to
+    `.datom_s3_upload_absent()` is the one sent in `ChecksumSHA256` (pass a deliberately wrong one,
+    so a recomputed hash would show), and with no hash passed the header equals the one a correct
+    passed hash gives; each resolver passes the hash it records (captured through
+    `mock_upload_absent()`, extended to record the argument).
+  - Guards to probe: the stored-spelling branch; the S3 upload using the passed hash; each resolver
+    passing its hash. The harness from task 2, `research/task2_guard_probes.R`, is a template.
   - Acceptance: P1 for steps 1-5 of `datom_write_set()`; R1.5; the updated
     `research/set_steps_probe.R` shows, for steps 1-5, the break firing and the re-run reading the set.
 

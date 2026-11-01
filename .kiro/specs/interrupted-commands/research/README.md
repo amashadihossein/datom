@@ -75,5 +75,17 @@ Added 2026-10-31 during the review of `058f29b` (local only; recorded in `../des
   a local branch and for a merge of another remote's branch. This is the merge check's test for a
   merge of the remote branch (requirements R3.9).
 
+Added 2026-10-31 in task 2 (a tool, not a finding):
+
+- `task2_guard_probes.R`: the guard-probe harness task 2 used, kept as a template for later tasks.
+  Each probe applies one deliberate edit to `R/` or a test file, runs the named test files in a fresh
+  `Rscript` process (a probe counts only if that child prints its `RESULT` line, and both failures
+  and errors are counted), and restores every file from a fixed backup taken once from a tree that
+  parses; a control edit runs first and must redden nothing. Task 2's results are in its commit
+  message. Before reusing it, copy it, replace the probe list, give the backup folder a new name, and
+  check each edit still matches exactly once (the harness refuses an edit that does not). It deletes
+  its backup after a clean run; one left behind (after a crash) is restored over the tree by the
+  next run, so delete a stale one by hand before running against newer code.
+
 Results are recorded in `../requirements.md` ("Findings") and `../design.md` ("Proven, and not yet
 traced").
