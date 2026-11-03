@@ -80,6 +80,15 @@ Added 2026-10-31 during the review of `058f29b` (local only; recorded in `../des
   after a later `git fetch`) and for a user's `git pull`; no for a user's `git merge --no-commit` of
   a local branch and for a merge of another remote's branch. This is the merge check's test for a
   merge of the remote branch (requirements R3.9).
+- `dirty_pull_probe.R` (2026-10-31, design spot-check before task 4a): part 1, git2r only, fetches
+  and merges the upstream with the user's files in the way. Result on git2r 0.36.2: with a modified
+  or staged file the incoming commits change, or an untracked file where they add one, with or
+  without commits of the clone's own, `merge()` raises no error, returns `conflicts = NULL`, and
+  HEAD does not move; the controls catch up (a fast-forward returns `sha = NA`). Part 2, through a
+  real datom project: plain `git stash` leaves the untracked file, and `datom_pull()` reports
+  success while still behind; `git stash -u` then `datom_pull()` catches up, and `git stash pop`
+  reports a conflict or "already exists", keeping the stash. This is the pull's caught-up check
+  (requirements R3.7).
 
 Added 2026-10-31 in task 2 (a tool, not a finding):
 
