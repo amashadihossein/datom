@@ -38,7 +38,11 @@ storage; the writer floor is read from the clone's `project.yaml` on every write
 **Review of `4045fbd`, 2026-11-03**, by another agent, evaluated with the owner: the "version never
 seen" stop binds writes only and the repair overrides it (section 4, step d; it could lock every
 write and the repair); the branch case moves to the publish-branch rule's own issue; the pull stops
-on a clone with no upstream (step b); DD4's revert sentence narrowed (section 9).
+on a clone with no upstream (step b), withdrawn on 2026-11-04; DD4's revert sentence narrowed (section 9).
+**Review of `d616e98`, 2026-11-04**, by another agent, evaluated with the owner: no stop for a
+branch with no upstream, and a rejected push names the clone being behind (step b); a stored row for
+an artifact the clone lacks counts as differing (step d, "The manifest upload"); the metadata-only
+route stops on uncommitted edits of its table (section 4's route table).
 **Read first**: `requirements.md` (terms, findings, decisions D1-D14, requirements R1-R9). This
 document says how: which functions change, in which files, and how each command runs.
 
@@ -152,9 +156,10 @@ write commands.
 | `R/utils-local.R` | `.datom_local_upload_absent()`, `.datom_local_object_sha256()` | new | Local halves (section 3) |
 | `R/utils-local.R` | `.datom_is_temp_key(key)` | new | Recognises the temporary file names a local upload uses (section 3) |
 | `R/storage.R` | `datom_storage_copy()`, `datom_storage_verify()` | changed | Skip temporary files left by an interrupted local upload; `datom_storage_list()` is unchanged |
-| `R/utils-git.R` | `.datom_git_pull(path, pat)` | changed | The pull every write calls (R3.7), owned by the commands, not heal. Starts with the merge check; fetches; merges only if behind; on a conflict whose only file is `.datom/manifest.json`, calls `.datom_resolve_manifest_conflict()`. Every other conflict stops the command, leaving the merge in progress, with section 4's short merge message (not `--theirs` and re-run). **Then confirms it caught up**: HEAD contains the fetched upstream tip, decided by commit and never by `git2r::merge()`'s return fields (which come back `NULL` when the user's files block the merge); otherwise it stops with the `git stash -u` recipe (section 4, step b). With no upstream branch it stops, naming `git branch --set-upstream-to` (2026-11-03). Says whether HEAD moved (a fast-forward counts), so the write commands' pull step (named in task 4a) runs the forward-compatibility check on every artifact after a merge without a conflict, and only then (a merge with a conflict only in the manifest is checked inside the rebuild) |
+| `R/utils-git.R` | `.datom_git_pull(path, pat)` | changed | The pull every write calls (R3.7), owned by the commands, not heal. Starts with the merge check; fetches; merges only if behind; on a conflict whose only file is `.datom/manifest.json`, calls `.datom_resolve_manifest_conflict()`. Every other conflict stops the command, leaving the merge in progress, with section 4's short merge message (not `--theirs` and re-run). **Then confirms it caught up**: HEAD contains the fetched upstream tip, decided by commit and never by `git2r::merge()`'s return fields (which come back `NULL` when the user's files block the merge); otherwise it stops with the `git stash -u` recipe (section 4, step b). With no upstream branch it merges nothing, as today (no stop; 2026-11-04). Says whether HEAD moved (a fast-forward counts), so the write commands' pull step (named in task 4a) runs the forward-compatibility check on every artifact after a merge without a conflict, and only then (a merge with a conflict only in the manifest is checked inside the rebuild) |
 | `R/sync.R` | `.datom_clone_artifact_names(conn)` | changed | A folder counts only if the manifest (last commit or working tree) names it, or its `metadata.json` declares a datom `hash_algo` (section 4, step a). Its three callers: heal's reset, the repair, and the forward-compatibility check on the mirror-everything route |
 | `R/utils-git.R` | `.datom_git_head_file(path, rel)` | new | A file's content as committed in HEAD (`git2r::revparse_single(repo, "HEAD:<rel>")`) |
+| `R/utils-git.R` | `.datom_git_push(path, pat, pull_first)` | changed | When git rejects the push because the remote holds commits the clone lacks, the message says the clone is behind and to run `datom_pull(conn)` and re-run, instead of "check your credentials and remote access" (2026-11-04). Other push failures keep today's message |
 | `R/utils-git.R` | "does commit A contain commit B" (named in task 4a) | new | `TRUE` when A is B or descends from it (`git2r::descendant_of()` is `FALSE` for a commit and itself, so equality is tested first). The one test behind three decisions: the merge check's "a merge of the remote branch" (the tip contains `MERGE_HEAD`), the pull's "is the clone behind" (HEAD does not contain the tip), and its "did it catch up" (HEAD contains the tip) |
 | `R/forward-compat.R` | `.datom_check_writer_floor(conn)` | changed | Reads `min_writer_version` from the clone's `.datom/project.yaml` on every call, instead of the copy the connection took when it was made, so a minimum raised in the pull every write now makes is seen (design spot-check before task 4a). A `project.yaml` that cannot be read or parsed stops the write with a clear message rather than skipping the check. No clone, nothing to read: the check passes, and the role check refuses the write |
 | `R/conn.R` | `new_datom_conn()`, `.datom_get_conn_developer()` | changed | The `min_writer_version` field leaves the connection object (its only reader was the floor check), with the comment recording the stale-copy gap after a migration pull, now closed. The internal help pages that mention it, and the comments in `R/ref.R`, `R/set.R` and `R/utils-validate.R`, are updated. Tests that set the field (about 11 places in `test-conn.R`, `test-forward-compat.R` and `test-write-set.R`) write the setting into the fixture's `project.yaml` instead |
@@ -439,14 +444,18 @@ commits change, for a rare case, and the recipe works without knowing which file
 in `.datom_git_pull()`, so `datom_pull()` (which today says "Already up to date" in this state), the
 push commands and the migration pull get it too.
 
-**No upstream branch** (2026-11-03, owner, from a review of `4045fbd`). Today `.datom_git_pull()`
-fetches and, finding no upstream, merges nothing, so the caught-up check would have no tip to
-compare with and a clone could sit behind silently. The pull stops instead, before changing
-anything: "This branch has no upstream, so datom cannot tell whether the clone is current. Set it
-with `git branch --set-upstream-to=origin/<branch>`, then re-run." On the project's branch this
-happens only when init's step that sets the upstream after its first push failed (a warning today).
-Init's first push skips the pull (`pull_first = FALSE`), so it still reaches that step; the same
-fallback in `.datom_git_push()` is then reachable only from there.
+**No upstream branch: no stop** (owner, 2026-11-04, review of `d616e98`, withdrawing a stop added
+the day before). With no upstream the pull fetches and merges nothing, as today, and the caught-up
+check has no tip to compare with, so it does not run. On the project's branch this happens only
+when init failed to set the upstream after its first push (a warning today); a new code branch
+never has one, and `git branch --set-upstream-to=origin/<branch>` fails until the branch is pushed
+(checked), so a stop would block `datom_pull()` and the push commands there. Nothing unsafe follows
+on the publish branch: `.datom_git_ahead()` is `NA`, so heal pushes before it publishes; git
+rejects that push when the clone is behind (probed, section 10), which stops the command before
+storage changes, and a push that succeeds sets the upstream (the fallback in `.datom_git_push()`).
+**A rejected push names the cause**: when git refuses because the remote holds commits the clone
+lacks, the message says the clone is behind and to run `datom_pull(conn)` and re-run, instead of
+today's "check your credentials and remote access".
 
 **After a merge**, and only then, the forward-compatibility check runs on every artifact,
 `.datom_check_write_entry(conn, NULL)`, because the merge may have brought documents from a newer
@@ -465,7 +474,9 @@ refusal says to upgrade datom (D11) and comes before any publish (simplification
 that costs one read of the stored manifest, which step d then reuses (R3.4). "Differs", not
 "behind": a revert to earlier content is a different row, not an older one.
 - `.datom_unpublished_artifacts()` = every artifact whose clone row's `current_version` differs from
-  the stored row's (an absent stored manifest means all of them). A version in unpushed commits is
+  the stored row's (an absent stored manifest means all of them). A stored row for an artifact the
+  clone does not have counts as differing too (2026-11-04): the clone cannot publish it, so a write
+  stops on it, and the repair drops it and says so (below). A version in unpushed commits is
   always among them, because the manifest is published last, so the pushed artifacts are not added
   in (simplification, design spot-check before task 4a). After the pull the clone holds at least
   what GitHub holds, so a difference found here usually means storage is behind this clone (R3.3).
@@ -503,7 +514,8 @@ sends the clone's whole file. Heal's publish only reaches it when every differin
 checks above. A write's own step 6 has one more case: the pull inside its push can bring in a
 teammate's commit, whose row then names a version the teammate may not have stored yet (their upload
 is seconds behind, or failed). So when that pull moved HEAD, the write reads the stored manifest once
-more, and uploads only if every row other than its own agrees with it; otherwise it skips the upload,
+more, and uploads only if every row other than its own agrees with it (a stored row the clone lacks
+disagrees); otherwise it skips the upload,
 says the manifest was not published because another artifact's new version is not in storage yet,
 and names `datom_validate(fix = TRUE)`. The next write of any other artifact stops and names the same
 fix. Without a merge in the push, R3.4's one read already showed every other row agreeing, since the
@@ -564,7 +576,7 @@ between heal's reset and its publish:
 | Route | Where heal runs | `artifact` (what heal may act on) |
 |---|---|---|
 | `datom_write(conn, data, name)` | in `datom_write()`, after the checks that run before heal (section 1) | the table's name |
-| `datom_write(conn, name =)`, the metadata-only route | inside `.datom_sync_metadata()`, just before the route's own pull (the pull stays the route's) | open, settled before task 4a's code: the table's name (heal resets an uncommitted hand edit and warns, requirements D13), or none (the route stops on it, as on any artifact it does not rewrite). The route never writes the table again; it publishes what is committed |
+| `datom_write(conn, name =)`, the metadata-only route | inside `.datom_sync_metadata()`, just before the route's own pull (the pull stays the route's) | none (settled 2026-11-04): the route never rewrites the table's files, it publishes what is committed, so an uncommitted edit of them stops it, naming `datom_validate(fix = TRUE)`, as on any artifact a command does not rewrite. It still publishes the table's committed version when storage lacks it |
 | `datom_write(conn)` and `datom_validate(fix = TRUE)` | inside `.datom_sync_data_metadata()`, after its confirmation prompt | every artifact (`all = TRUE`): the repair |
 | `datom_write_set()` | in `datom_write_set()`, after its checks | the set's name |
 | `datom_sync()` | once per call, before the first table | every table in its preview; then `datom_write(.healed = TRUE)` per table |
@@ -838,13 +850,13 @@ Carried from R8, and into `dev/engineering-notes.md` at completion.
 | An S3-compatible service that rejects `IfNoneMatch` or `ChecksumSHA256` (400 or 501) | Every write stops at its first step with the service's own error; nothing changes. No fallback (owner, 2026-10-28). paws alone can trigger this: from `paws.common` 0.9.0, every upload carries a checksum by default, datom's metadata uploads included, so such a service can fail even without datom's new arguments | Documented beside `endpoint` |
 | An S3 409: a teardown deletes a data file while a write uploads it | The write stops with the usual upload error before the clone changes; a re-run finishes | Documented in `dev/engineering-notes.md` |
 | A local store on a file system without hard links, two writers, same new content, same moment | The second move replaces the first file; one version's reads are refused by the hash check. Loud | Documented in `?datom_store_local` |
-| Someone edits a datom-owned file by hand (an artifact's `metadata.json`, `version_history.json` or `set.json`, or `.datom/manifest.json`) (requirements D13) | A write of that artifact resets the edit and says so; any other write stops, naming the artifact and `datom_validate(fix = TRUE)`, which resets it; `datom_write(conn, name =)` no longer commits it. Custom metadata is changed with `datom_write(conn, data, name, metadata = )` | Guarded (task 4a's test); documented in `?datom_write` and `NEWS.md` |
+| Someone edits a datom-owned file by hand (an artifact's `metadata.json`, `version_history.json` or `set.json`, or `.datom/manifest.json`) (requirements D13) | A write of that artifact with data resets the edit and says so; any other write, and `datom_write(conn, name =)`, stops, naming the artifact and `datom_validate(fix = TRUE)`, which resets it; `datom_write(conn, name =)` no longer commits it. Custom metadata is changed with `datom_write(conn, data, name, metadata = )` | Guarded (task 4a's test); documented in `?datom_write` and `NEWS.md` |
 | A crash during a local upload leaves a temporary file (`.{name}.tmp`) beside the data file | Nothing for readers. A leftover after the link costs no space (a hard link shares the bytes); one left mid-copy takes space. `datom_storage_list()` shows it; copy and verify skip it | Guarded (a test that copy and verify skip it); documented in `?datom_store_local` |
 | Two people publish the same table within seconds, and the older publish lands last (DD4) | Readers get the superseded version as current until the table's next write or `datom_validate(fix = TRUE)` republishes it; any other write in an up-to-date clone stops and names that fix. Reads that name a version are unaffected | Guarded (P10); documented in `dev/engineering-notes.md` |
 | A write finds another artifact's unfinished work (requirements D14 principle 8) | The write stops before changing anything, naming the artifact, what was found and `datom_validate(fix = TRUE)`. After a storage failure on one table, every write of another table stops until someone runs the fix or re-runs that table's write. Accepted by the owner (2026-10-31): heal is needed in a small share of runs, and acting on another artifact is where its edge cases came from | Guarded (tasks 4a, 4b); documented in `?datom_write`, `?datom_write_set`, `?datom_sync` |
 | The user's own uncommitted or untracked files are in the way of the commits a pull brings in | The command stops before changing anything and gives the `git stash -u` recipe, including resolving what `git stash pop` reports | Guarded (task 4a: the caught-up check); the way out is in the message |
 | Storage names a version of an artifact that this clone's history does not contain (a publish seconds old; or storage edited by hand, or commits removed from GitHub, S8) | A write stops before changing anything: re-run, and if it persists, `datom_validate(fix = TRUE)`, which publishes the clone's version and names the stored version it replaced (an artifact the clone lacks loses its stored row, and the repair says so) | Guarded (task 4b: the containment check and the repair's override, R3.10) |
-| A clone with no upstream branch | The pull stops before changing anything, naming `git branch --set-upstream-to=origin/<branch>` | Guarded (task 4a) |
+| A clone with no upstream branch (init failed to set it) | Heal pushes before publishing; a clone that is behind has that push rejected, with a message saying to run `datom_pull(conn)`; a push that succeeds sets the upstream | Guarded (task 4a: the rejected-push message) |
 | A write's push brings in a teammate's commit whose version is not in storage yet | The write skips its manifest upload and says so, naming `datom_validate(fix = TRUE)`; its own documents are published. The next write of another artifact stops and names the same fix | Guarded (task 4b, R3.10) |
 | The same, with the two publishes crossing so the stored manifest names the newer version and the stored metadata holds the older one (DD4) | Readers get the superseded version, and heal does not notice, until the table's next write or `datom_validate(fix = TRUE)` | Reported by `datom_validate()` as `manifest_mismatch_s3`, naming the fix; fixed by `datom_validate(fix = TRUE)` or the table's next write (section 6, P11) |
 | A version's snapshot is missing from storage (no route in this spec can cause it: every route uploads the snapshot before `metadata.json`; left by 0.2.0's write interrupted between `metadata.json` and the snapshot, D7, or by storage losing a file outside datom) | Not reported by `datom_validate()`, which checks only that `metadata.json`, the history and the data file exist. `datom_read(version = )` of that version fails. From task 7, `datom_validate(fix = TRUE)` restores the **current** version's snapshot from the clone's `metadata.json` (section 6); an older version's is restored by nothing | Not guarded. Documented in `dev/engineering-notes.md` at completion; the check, and restoring older snapshots from git, go to a follow-up issue (draft: `draft-issue-validate-completeness.md`) |

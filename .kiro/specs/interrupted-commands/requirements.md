@@ -46,8 +46,13 @@ every other artifact's row agrees with storage). S3, S4, D13, R7.2, R9.1 and R9.
 **Amended 2026-11-03** with the owner, from a review of `4045fbd` by another agent: R3.10's
 "version never seen" stop applies to writes only, and the repair overrides it, saying what it
 replaced (it locked every write and the repair alike); the branch case leaves R3.10 for the
-publish-branch rule's own issue (Related); R3.7 stops on a clone with no upstream branch; D10, R3.6
-and R7.2 no longer say "the next datom write publishes it".
+publish-branch rule's own issue (Related); D10, R3.6 and R7.2 no longer say "the next datom write
+publishes it". **Amended 2026-11-04** with the owner, from a review of `d616e98`: the "no upstream"
+stop added to R3.7 the day before is dropped (heal's push already stops a clone that is behind, and
+the stop would have blocked `datom_pull()` and the push commands on any new code branch); a stored
+manifest row for an artifact the clone lacks counts as differing (R3, R3.10); the metadata-only
+route stops, rather than resets, on uncommitted edits of its table's files (D13, settled);
+`datom_sync()`'s own tables are every table in its preview (R4.4, settled).
 Reviewed 2026-10-28 (a review by another agent, evaluated with the owner): R3.7 added, R1.2, R1.3,
 R2.2, R4.2 and R8 tightened, Q3 raised; the review's proposal to decode a stored file before adopting
 its hash was declined (R8). Q3 settled the same day as D11 (no guard for mixed datom versions).
@@ -158,7 +163,7 @@ below it (`.datom_check_writer_floor()`, also on 0.2.0's repair route); 0.1.0 do
 | D10 | **The git and config commands push, and say so.** `datom_repo_push()`, `datom_repo_commit()`, `datom_repo_attach_governance()` and `datom_repo_set_data_store()` do not publish a datom write whose commit they push; they name it and say a write of that artifact, or `datom_validate(fix = TRUE)`, publishes it (amended 2026-11-03: under D14 principle 8 a write of any other artifact stops instead) | Publish what they push (commands about git or config start writing to storage, and after a data-store change "which storage" has two answers); refuse to push (blocks a product layer's commit) |
 | D11 | **Teams writing one repo with mixed datom versions are not guarded against** (Q3). In practice everyone writing to a repo upgrades together. Recorded in R8 | Set `min_writer_version` at init for new repos and ask existing owners to add it; check for the data file before publishing any version |
 | D12 | **datom resolves a merge conflict confined to `.datom/manifest.json`** by rebuilding the manifest from the artifacts' files in the merged clone, completing the merge, and saying so (R3.8). The manifest is derived, so nothing can be lost. Conflicts in any other file stop the command as today and stay with #105 | Leave every conflict to #105: a write whose push broke while a colleague pushed would not finish on a re-run, the main conflict R3.7 leaves |
-| D13 | **Hand edits of datom's own files are not supported** (owner, 2026-10-28, third review of `tasks.md`). An artifact's `metadata.json`, `version_history.json` and `set.json`, and `.datom/manifest.json`, are written only by datom commands. An uncommitted change to one of them is treated as an unfinished write, whoever made it: a write of that artifact resets it and says so, any other write stops and names `datom_validate(fix = TRUE)`, which resets it (R3; amended 2026-10-31). So the metadata-only route, `datom_write(conn, name =)`, no longer commits a hand edit; it publishes what is committed for that table (whether it resets or stops on such an edit is settled before task 4a's code). To change custom metadata, use `datom_write(conn, data, name, metadata = )`, which records a metadata-only version with its history entry and manifest row. Until now the route committed a hand-edited `metadata.json`, but only half-recorded it (no history entry, no manifest row), and its documented purpose, editing `dispatch.json`, left with the governance layer | Exempt the named table from the reset on that route: it protected a use with no documented purpose, and after a write broken before its commit it would commit that write's half-finished files as if they were an edit, leaving `datom_read()` and `datom_list()` naming different versions |
+| D13 | **Hand edits of datom's own files are not supported** (owner, 2026-10-28, third review of `tasks.md`). An artifact's `metadata.json`, `version_history.json` and `set.json`, and `.datom/manifest.json`, are written only by datom commands. An uncommitted change to one of them is treated as an unfinished write, whoever made it: a write of that artifact resets it and says so, any other write stops and names `datom_validate(fix = TRUE)`, which resets it (R3; amended 2026-10-31). So the metadata-only route, `datom_write(conn, name =)`, no longer commits a hand edit; it publishes what is committed for that table, and stops on an uncommitted edit of that table's files like any write on an artifact it does not rewrite (settled 2026-11-04). To change custom metadata, use `datom_write(conn, data, name, metadata = )`, which records a metadata-only version with its history entry and manifest row. Until now the route committed a hand-edited `metadata.json`, but only half-recorded it (no history entry, no manifest row), and its documented purpose, editing `dispatch.json`, left with the governance layer | Exempt the named table from the reset on that route: it protected a use with no documented purpose, and after a write broken before its commit it would commit that write's half-finished files as if they were an edit, leaving `datom_read()` and `datom_list()` naming different versions |
 | D14 | **Where datom heals and where it stops** (owner, 2026-10-30, simplification pass). Automate only what is common: re-running the same command finishes the job. (Until 2026-10-31 any command also finished other artifacts' committed work; principle 8 narrows that to the artifact the command writes, with a stop naming `datom_validate(fix = TRUE)` for the rest.) Rarer situations, chiefly two developers' work overlapping, stop before doing harm with a short message, and datom supports the manual step it asks for. States left by older releases, hand edits and files changed in storage by hand are documented only. **Every stop and every report names a way out**, even a manual one. A user's own git operations in the clone get no guidance, only the guarantee that the project is never left stuck (added 2026-10-31). The yardstick is the scenario table below | Build recovery for every scenario a review can imagine: each automation adds code and edge cases, and can put the common path at risk |
 
 ### D14 in full: where datom heals and where it stops
@@ -292,7 +297,8 @@ command, told apart by what they are asked to change:
   only the artifacts it is writing (R2.4, R2.3; for `datom_sync()`, every table it is about to write
   and every `unpushed` row). Before its own work, it checks every other artifact. If any has datom
   files that differ from the last commit, a commit not yet pushed, or a stored manifest row that
-  differs from the clone's, it **stops before changing anything**, naming each such artifact, what
+  differs from the clone's (a stored row for an artifact the clone does not have counts as
+  differing), it **stops before changing anything**, naming each such artifact, what
   was found, and the fix, `datom_validate(fix = TRUE)` ("or re-run, if a teammate has just written
   it"). Nothing in the clone, git or storage changes.
 - **The repair** (`datom_validate(fix = TRUE)` and `datom_write(conn)`, the mirror-everything route)
@@ -345,12 +351,16 @@ command, told apart by what they are asked to change:
      local changes are in the way (see `git status`), and gives the way out: `git stash -u`,
      `datom_pull(conn)`, `git stash pop`, resolve anything `git stash pop` reports, then re-run. The
      check is in the pull itself, so `datom_pull()`, the push commands and the migration pull get it.
-   - **No upstream branch** (2026-11-03, from a review of `4045fbd`, owner). Today the pull then
-     fetches and silently merges nothing, so a clone could sit behind with no sign. The pull stops
-     instead, before changing anything, naming
-     `git branch --set-upstream-to=origin/<branch>` (the branch filled in). On the project's branch
-     this happens only when init's step that sets the upstream failed, which today is a warning;
-     init's own first push skips the pull, so it is not affected.
+   - **No upstream branch: no new stop** (decided 2026-11-04, owner, review of `d616e98`; a stop
+     added on 2026-11-03 is withdrawn). A branch with no upstream is, on the project's branch, only
+     a clone whose init failed to set it (a warning today); a new code branch never has one. The
+     pull fetches and merges nothing, as today. Nothing unsafe follows: with no upstream datom cannot
+     tell whether the clone is ahead, so heal pushes before it publishes; git rejects that push when
+     the clone is behind, which stops the command before storage changes, and a push that succeeds
+     sets the upstream. A stop here would have blocked `datom_pull()` and the push commands on every
+     new code branch, where `git branch --set-upstream-to` does not even work yet. A rejected push
+     says the clone is behind and to run `datom_pull(conn)`, instead of today's "check your
+     credentials".
    - If the fetch fails, the command publishes nothing and says why. Whether a write still commits
      locally when offline, as `datom_sync()` allows today (#104), is settled in the design.
    - `datom_sync()` pulls once per call, not once per table.
@@ -419,7 +429,8 @@ command, told apart by what they are asked to change:
       ships in the same release (see "Related").
     - **The manifest goes up only when every other row agrees.** Every manifest upload sends the
       clone's whole file, so a write uploads it only when every other artifact's row agrees with the
-      stored manifest. Only when the pull inside the write's push brought in new commits does the
+      stored manifest; a stored row for an artifact the clone lacks disagrees, so it is never dropped
+      silently. Only when the pull inside the write's push brought in new commits does the
       write read the stored manifest again for this (R3.4's one read otherwise covers it). If a row
       disagrees (a teammate's new version whose files are not in storage yet), the write skips the
       manifest upload, says so, and names `datom_validate(fix = TRUE)`; the next write of any other
@@ -624,4 +635,8 @@ all on 2026-10-28.
 - **The publish-branch rule** ([#156](https://github.com/amashadihossein/datom/issues/156), owner, 2026-11-03): only the project's publish
   branch, recorded at init, writes to storage. Ships in the same release as this spec. This spec
   does not depend on it: with the repair overriding R3.10's stop, no state locks the project
-  whichever lands first.
+  whichever lands first. **Revised direction** (owner, 2026-11-04, not yet a spec): instead of
+  refusing on other branches, a write there goes to that branch's private lane, a store of its own,
+  with its record kept only in that store and nothing in git; see the draft
+  `.kiro/specs/publish-branch/lanes-principles-draft.md` on branch `spec/publish-branch`. Under it,
+  everything in this spec (git order, heal, the merge check) applies to the publish branch only.
