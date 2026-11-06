@@ -4,14 +4,20 @@
 \alias{.datom_stop_fetch_failed}
 \title{Stop When the Fetch Fails}
 \usage{
-.datom_stop_fetch_failed(remote_name, e, in_push, data_file_stored)
+.datom_stop_fetch_failed(
+  remote_name,
+  e,
+  in_push,
+  data_file_stored,
+  reset = character()
+)
 }
 \arguments{
 \item{remote_name}{The remote.}
 
 \item{e}{The condition git2r raised.}
 
-\item{in_push, data_file_stored}{See \code{\link[=.datom_git_pull]{.datom_git_pull()}}.}
+\item{in_push, data_file_stored, reset}{See \code{\link[=.datom_git_pull]{.datom_git_pull()}}.}
 }
 \value{
 Does not return.

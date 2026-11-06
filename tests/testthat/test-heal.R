@@ -543,15 +543,20 @@ test_that("with no upstream branch, a clone behind the remote has its push refus
   hl_write(fx$conn, "lb")
   stored_before <- hl_stored_manifest(fx)
 
+  storage_before <- snapshot_storage(fx)
+
   err <- expect_error(hl_write(b$conn, "ae"), class = "datom_push_rejected")
 
+  # The refused push is heal's, made before the write's own work: with no
+  # upstream it cannot tell what the remote holds, so it pushes first. So the
+  # write has not stored its data file either.
   msg <- hl_msg(err)
   expect_match(msg, "datom_pull(conn)", fixed = TRUE)
   expect_match(msg, "git branch --set-upstream-to=origin/", fixed = TRUE)
   expect_match(msg, "Nothing was pushed or published")
-  expect_match(msg, "data file may already be in storage")
+  expect_no_match(msg, "data file may already be in storage")
   expect_identical(hl_stored_manifest(fx), stored_before)
-  expect_false(.datom_storage_exists(fx$conn, .datom_artifact_meta_key("ae", "metadata")))
+  expect_identical(snapshot_storage(fx), storage_before)
 })
 
 test_that("datom_pull() and datom_repo_push() on a new local-only branch neither stop nor change anything, and the push sets an upstream", {
@@ -640,13 +645,20 @@ test_that("a project.yaml that does not parse stops the write", {
 
 # === where heal runs ===============================================================
 
+# Counts calls to heal's two halves, the reset and the publish; the counter
+# returns c(reset = , publish = ).
 local_heal_counter <- function(env = parent.frame()) {
-  calls <- 0L
-  real <- get(".datom_heal", envir = asNamespace("datom"))
+  calls <- c(reset = 0L, publish = 0L)
+  real_reset <- get(".datom_heal", envir = asNamespace("datom"))
+  real_publish <- get(".datom_heal_publish", envir = asNamespace("datom"))
   local_mocked_bindings(
     .datom_heal = function(...) {
-      calls <<- calls + 1L
-      real(...)
+      calls[["reset"]] <<- calls[["reset"]] + 1L
+      real_reset(...)
+    },
+    .datom_heal_publish = function(...) {
+      calls[["publish"]] <<- calls[["publish"]] + 1L
+      real_publish(...)
     },
     .env = env
   )
@@ -663,28 +675,28 @@ test_that("a mistyped argument is refused before heal runs", {
   # The argument's own refusal, not heal's stop on `lb`.
   expect_error(datom_write(fx$conn, data = "not a frame", name = "dm"),
                "must be a data frame")
-  expect_identical(calls(), 0L)
+  expect_identical(calls(), c(reset = 0L, publish = 0L))
 })
 
-test_that("heal runs exactly once on each route it is wired into", {
+test_that("heal runs exactly once on each route it is wired into, both halves", {
   fx <- hl_product_project()
   calls <- local_heal_counter()
 
   hl_write(fx$conn, "dm", 5L, "b")
-  expect_identical(calls(), 1L)
+  expect_identical(calls(), c(reset = 1L, publish = 1L))
 
   suppressMessages(datom_write(fx$conn, name = "dm"))
-  expect_identical(calls(), 2L)
+  expect_identical(calls(), c(reset = 2L, publish = 2L))
 
   hl_write_set(fx, "v1")
-  expect_identical(calls(), 3L)
+  expect_identical(calls(), c(reset = 3L, publish = 3L))
 })
 
 test_that("on a clean, current, published clone, nothing before a write's own work writes anything or merges (P12)", {
   fx <- local_interrupt_project()
   hl_write(fx$conn, "dm")
 
-  calls <- c(merge = 0L, reset = 0L, storage = 0L)
+  calls <- c(merge = 0L, reset = 0L, push = 0L, storage = 0L)
   count <- function(what) function(...) {
     calls[[what]] <<- calls[[what]] + 1L
     stop("not on the common path: ", what)
@@ -692,6 +704,7 @@ test_that("on a clean, current, published clone, nothing before a write's own wo
   local_mocked_bindings(
     .datom_git_merge_upstream = count("merge"),
     .datom_reset_unfinished = count("reset"),
+    .datom_git_push = count("push"),
     .datom_storage_write_json = count("storage"),
     .datom_storage_upload_absent = count("storage"),
     .datom_storage_upload = count("storage")
@@ -701,9 +714,12 @@ test_that("on a clean, current, published clone, nothing before a write's own wo
   .datom_check_merge(fx$repo)
   .datom_heal(fx$conn, artifact = "dm")
   moved <- .datom_pull_before_write(fx$conn)
+  published <- .datom_heal_publish(fx$conn, artifact = "dm")
 
   expect_false(moved)
-  expect_identical(calls, c(merge = 0L, reset = 0L, storage = 0L))
+  expect_length(published$published, 0L)
+  expect_false(published$pushed)
+  expect_identical(calls, c(merge = 0L, reset = 0L, push = 0L, storage = 0L))
   expect_identical(hl_snapshot(fx), before)
 })
 

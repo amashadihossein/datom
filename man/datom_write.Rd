@@ -57,8 +57,8 @@ imported self-entry path, set by \code{\link[=datom_sync]{datom_sync()}}. Unused
 (set by \code{datom_sync()}); NULL for derived.}
 
 \item{.healed}{Internal. \code{TRUE} when the caller has already run the merge
-check, heal and the pull for this call, so a sync heals and pulls once
-rather than once per table.}
+check, heal's reset, the pull and heal's publish for this call, so a sync
+heals and pulls once rather than once per table.}
 }
 \value{
 List with deployment details.

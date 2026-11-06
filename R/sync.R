@@ -1547,14 +1547,10 @@ datom_sync <- function(conn,
     .datom_manifest_skeleton(conn$project_name)
   }
 
-  # Count versions from version_history.json
-  vh_path <- fs::path(conn$path, name, "version_history.json")
-  version_count <- if (fs::file_exists(vh_path)) {
-    vh <- jsonlite::read_json(vh_path)
-    length(vh)
-  } else {
-    1L
-  }
+  # Count versions from version_history.json, through the shared reader of
+  # datom's own files in the clone.
+  vh <- .datom_read_clone_json(conn$path, paste0(name, "/version_history.json"))
+  version_count <- if (is.null(vh)) 1L else length(vh)
 
   entry <- list(
     kind = kind,

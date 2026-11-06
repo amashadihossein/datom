@@ -10,8 +10,9 @@
 #
 # Since task 4a (#155): a write heals only the artifact it is writing, so after
 # dm broke before its commit lb's write stops, naming dm and
-# `datom_validate(fix = TRUE)`, with nothing changed. After a break at dm's push
-# (committed, not pushed) lb's write still goes ahead until task 4b.
+# `datom_validate(fix = TRUE)`, with nothing changed. Since task 4b the same
+# holds after a break at dm's push (committed, not pushed): heal's publish finds
+# dm's stored row behind and stops lb's write before it pushes anything.
 #
 # Run from the repo root:
 #   Rscript .kiro/specs/interrupted-commands/research/other_command_probe.R

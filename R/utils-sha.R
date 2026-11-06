@@ -576,28 +576,38 @@
 }
 
 
-#' Publish One Table's Committed Metadata: `datom_write(conn, name =)`
+#' Publish One Table's Committed Version: `datom_write(conn, name =)`
 #'
 #' The metadata-only route. It rewrites none of the table's files: it publishes
-#' the table's `metadata.json` and `version_history.json` **as committed**, when
-#' the stored copy differs. It makes no commit.
+#' the table's committed version -- snapshot, `version_history.json` and
+#' `metadata.json`, then the manifest -- when storage lacks it. It makes no
+#' commit. The case it is for: a write whose push succeeded and whose storage
+#' upload failed, so GitHub has the new version and readers still see the old.
 #'
-#' datom's own files are not edited by hand (an uncommitted change to one is
-#' treated as an unfinished write), so heal runs here with no artifact of its
-#' own: any uncommitted change to a datom file, this table's included, stops the
-#' route before anything changes, naming `datom_validate(fix = TRUE)`. To change
-#' a table's custom metadata, write it with
+#' Heal runs here with **two lists**: the table is one the route publishes, and
+#' none whose files it writes again. So heal's publish pushes and publishes the
+#' table's committed version (the case above), while any uncommitted change to
+#' its files or its manifest row stops the route before anything changes,
+#' naming `datom_validate(fix = TRUE)`: datom's own files are not edited by hand
+#' (an uncommitted change to one is treated as an unfinished write). To change a
+#' table's custom metadata, write it with
 #' `datom_write(conn, data, name, metadata = )`.
 #'
 #' In order: heal's reset (which starts with the merge check), the route's own
-#' pull (the format check runs again after a merge), change detection against
-#' storage, a push when the clone holds commits the remote lacks (so storage
-#' never names a version GitHub does not have), then the upload. The history
-#' goes up with each entry's commit worked out from git.
+#' pull (the format check runs again after a merge), the check that the table
+#' exists, heal's publish (a push first when the clone holds commits the remote
+#' lacks, so storage never names a version GitHub does not have), then change
+#' detection against the stored `metadata.json`, which catches what heal's
+#' comparison of manifest rows cannot see: a stored `metadata.json` that differs
+#' while the stored manifest row agrees. Everything goes up through the one
+#' publish path, [.datom_publish_artifacts()], with each history entry's commit
+#' worked out from git.
 #'
 #' @param conn Connection object.
 #' @param name Table name.
-#' @return Summary of sync operation.
+#' @return Invisibly, a list with `name`, `metadata_sha` (the committed version)
+#'   and `action`: `"published"` when this call published the table, `"none"`
+#'   when storage already held it.
 #' @keywords internal
 .datom_sync_metadata <- function(conn, name) {
   .datom_validate_name(name)
@@ -619,16 +629,18 @@
   repo_path <- conn$path
   table_dir <- fs::path(repo_path, name)
 
-  # Heal with no artifact of its own, just before the route's own pull: this
-  # route rewrites no file, so any uncommitted change to a datom file stops it.
-  # The pull then brings the clone up to date. A collaborator on a newer datom
-  # can land their manifest or this table's metadata.json in it, so after a
-  # merge the forward-compatibility checks run again on every artifact, against
-  # what the pull left on disk; without a merge nothing new arrived, and the
-  # check at datom_write()'s door already read this table.
-  .datom_heal(conn)
-  .datom_pull_before_write(conn)
+  # Heal publishes this table and rewrites none of its files, so an uncommitted
+  # change to them stops the route. The pull then brings the clone up to date. A
+  # collaborator on a newer datom can land their manifest or this table's
+  # metadata.json in it, so after a merge the forward-compatibility checks run
+  # again on every artifact, against what the pull left on disk; without a merge
+  # nothing new arrived, and the check at datom_write()'s door already read this
+  # table.
+  healed <- .datom_heal(conn, artifact = name, rewrite = character())
+  .datom_pull_before_write(conn, reset = healed$reset)
 
+  # After the pull, which can bring the table in; before heal's publish, so a
+  # mistyped name pushes nothing.
   metadata_path <- fs::path(table_dir, "metadata.json")
   if (!fs::file_exists(metadata_path)) {
     cli::cli_abort(c(
@@ -637,12 +649,23 @@
     ))
   }
 
-  # Read metadata from git repo
+  # The case this route exists for -- the table's committed version pushed or
+  # not, its stored manifest row behind -- is heal's publish.
+  published <- .datom_heal_publish(conn, artifact = name)$published
+  if (name %in% names(published)) {
+    return(invisible(list(
+      name = name,
+      metadata_sha = published[[name]],
+      action = "published"
+    )))
+  }
 
-  metadata <- jsonlite::read_json(metadata_path, simplifyVector = TRUE)
+  metadata <- .datom_read_clone_json(repo_path, paste0(name, "/metadata.json"))
   metadata_sha <- .datom_compute_metadata_sha(metadata)
 
-  # Check for changes against S3
+  # The stored metadata.json can differ while the stored manifest row agrees
+  # (two publishes that crossed, or a document committed outside datom); heal
+  # compares manifest rows only, so the route checks the document itself.
   change_type <- .datom_has_changes(conn, name, metadata$data_sha, metadata_sha)$change_type
 
   if (change_type == "none") {
@@ -654,39 +677,16 @@
     )))
   }
 
-  history_path <- fs::path(table_dir, "version_history.json")
+  # The route makes no commit, so it has none to hand on: every history entry's
+  # `commit_sha` is worked out from git. See `R/version-commit.R`.
+  .datom_publish_artifacts(conn, name)
 
-  # The version is committed (heal stopped on anything uncommitted), but a write
-  # whose push broke leaves it unpushed: push first, so storage never names a
-  # version GitHub lacks. The push's own pull runs again just before it.
-  ahead <- .datom_git_ahead(repo_path)
-  if (is.na(ahead) || ahead > 0L) {
-    .datom_git_push(repo_path, pat = conn$github_pat)
-  }
-
-  s3_metadata_key <- .datom_artifact_meta_key(name, "metadata")
-  .datom_storage_write_json(conn, s3_metadata_key, metadata)
-
-  s3_keys <- s3_metadata_key
-
-  # This route makes no commit, so it has none to hand on: every entry's
-  # `commit_sha` is worked out from git, as the repair's are. See
-  # `R/version-commit.R`.
-  if (fs::file_exists(history_path)) {
-    history <- jsonlite::read_json(history_path)
-    history <- .datom_history_with_commit_shas(conn, name, history)
-    s3_history_key <- .datom_artifact_meta_key(name, "version_history")
-    .datom_storage_write_json(conn, s3_history_key, history)
-    s3_keys <- c(s3_keys, s3_history_key)
-  }
-
-  cli::cli_alert_success("Synced metadata for {.val {name}} to S3.")
+  cli::cli_alert_success("Published {.val {name}}'s committed version to storage.")
 
   invisible(list(
     name = name,
     metadata_sha = metadata_sha,
-    action = change_type,
-    s3_keys = s3_keys
+    action = "published"
   ))
 }
 

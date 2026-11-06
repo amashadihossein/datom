@@ -4,14 +4,14 @@
 \alias{.datom_reset_unfinished}
 \title{Put Back What a Write Left Before Its Commit}
 \usage{
-.datom_reset_unfinished(conn, unfinished, artifact = NULL, all = FALSE)
+.datom_reset_unfinished(conn, unfinished, rewrite = NULL, all = FALSE)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object with a local path.}
 
 \item{unfinished}{What \code{\link[=.datom_unfinished_files]{.datom_unfinished_files()}} found.}
 
-\item{artifact, all}{See \code{\link[=.datom_heal]{.datom_heal()}}.}
+\item{rewrite, all}{See \code{\link[=.datom_heal]{.datom_heal()}}.}
 }
 \value{
 The artifacts whose files were put back.
@@ -20,9 +20,9 @@ The artifacts whose files were put back.
 Decides first and acts second, so a stop changes nothing. Each uncommitted
 file belongs to the artifact whose folder holds it; the manifest's changes
 belong to the artifacts whose rows differ from HEAD's. When any of those is
-not the command's own (and \code{all} is \code{FALSE}), the command stops naming them.
-Otherwise every file is put back to the last commit: unstaged, then checked
-out from HEAD, or deleted when HEAD does not hold it (an artifact's first
-write), with its folder removed once empty.
+not one the command writes again (\code{rewrite}; \code{all} is \code{FALSE}), the command
+stops naming them. Otherwise every file is put back to the last commit:
+unstaged, then checked out from HEAD, or deleted when HEAD does not hold it
+(an artifact's first write), with its folder removed once empty.
 }
 \keyword{internal}

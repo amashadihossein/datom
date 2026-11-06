@@ -48,7 +48,9 @@ another agent followed (of `4045fbd` on 2026-11-03, of `d616e98` on 2026-11-04, 
 publish-branch rule was split out as #156. Task 4a's two open points were settled on 2026-11-04.
 Task 4a done the same day (its entry below lists what differs from the plan); its checkpoint
 review on 2026-11-05 (below) found two fixes, made the same day, and one point for task 4b, settled
-the same day (heal takes two lists). A review of the fixes closed task 4a. Next is task 4b,
+the same day (heal takes two lists). A review of the fixes closed task 4a. Task 4b done on
+2026-11-06 (its entry below lists seven differences from the plan, the first being that heal is now
+two calls with the command's pull between them); it awaits its checkpoint review. Next is task 5,
 awaiting the owner's go-ahead.**
 
 **Task 4a's checkpoint review, 2026-11-05**, by another agent, of `1958036`, evaluated with the
@@ -667,8 +669,40 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     when `dm`'s write broke before its commit, with the break confirmed; `research/dirty_pull_probe.R`
     rerun.
 
-- [ ] **4b. Heal: push and publish** (R2.2, R2.3, R3.2-R3.4, R3.10; DD4 as amended; D14 principle 8;
+- [x] **4b. Heal: push and publish** (R2.2, R2.3, R3.2-R3.4, R3.10; DD4 as amended; D14 principle 8;
   design section 4)
+  - **Done 2026-11-06.** Suite 5568 -> 5715 expectations, none removed; the rewritten tests are
+    named in the commit message. Every guard listed below probed red against its own tests, with a
+    control that reddened nothing (`research/task4b_guard_probes.R`; results in the commit
+    message), plus three not listed: heal's push not pulling, the history read before the local
+    metadata write, and the `rewrite` subset check. `research/other_command_probe.R`,
+    `write_steps_probe.R` and `set_steps_probe.R` rerun (`research/README.md`). Design section 10
+    items 3 and 5 settled there. Names: `.datom_heal_publish()`, `.datom_read_clone_json()` (the
+    shared reader), `.datom_stored_manifest()`, `.datom_storage_write_json_at()`. Differences from
+    the list below, each flagged at the checkpoint:
+    1. **Heal is two calls**, `.datom_heal()` (the merge check and the reset) and
+       `.datom_heal_publish()` (step d), with the route's pull between them: the pull is the
+       command's, so heal cannot make it, and step d must come after it. One place per route, three
+       consecutive lines; the heal-once test counts both halves.
+    2. **Heal's push does not pull.** A remote that moved since the route's pull makes git refuse
+       it; pulling there could bring in a teammate's unpublished version that heal's manifest
+       upload, which has no recheck, would then name. With no upstream it pushes before its checks
+       (git refuses when the clone is behind), so 4a's no-upstream test now sees heal's refused push,
+       before the data file is stored: no data-file line, storage unchanged.
+    3. Step d's stops say "Nothing was pushed or published" rather than "datom changed nothing",
+       since heal's reset or the pull may already have changed the clone.
+    4. The metadata-only route returns `action = "published"` or `"none"`, and keeps its own check
+       of the stored `metadata.json` after heal's publish (the committed-hand-edit test goes
+       through it).
+    5. **The repair's override is tested through heal's publish with `all = TRUE`**, called
+       directly; `datom_validate(fix = TRUE)` reaches it in task 7. Until then the way out the
+       stops name, today's repair, still clears both states (it uploads the clone's manifest and
+       documents), without saying what it replaced, and without pushing first.
+    6. `.datom_pushed_artifacts()` is left for task 6, its first user, as task 2 left the
+       second-clone fixture for its first user.
+    7. The two "push brings in a teammate's commit" tests replace the push with one that leaves
+       the clone as that merge would: a real merge of two datom writes conflicts in the manifest
+       until task 5, which now carries the end-to-end case.
   - **Heal takes two lists (task 4a's checkpoint review, point 3; settled by the owner on
     2026-11-05, recorded in design sections 2 and 4).** The background, as it was put to the owner:
     Heal does two things for a command's own table, and they are safe under different conditions:
@@ -823,6 +857,11 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     TRUE)` finishes a user's `git merge --no-commit` of a local branch with the manifest rebuilt and
     commits nothing while another file still conflicts; with no merge in progress it pulls as usual;
     without `finish_merge` the user's merge stays untouched (task 4a's stop).
+  - From task 4b (2026-11-06): the end-to-end case of the manifest upload's agreement check. Two
+    clones write different tables with no pull between, the first's publish broken after its push;
+    the second's push merges it (the manifest-only conflict rebuilt here), so its manifest would
+    name the first's unpublished version: the manifest is held back with the warning, and the second
+    write's own documents are published. Task 4b's tests simulate that merge inside the push.
   - Guards to probe: the manifest-only condition, the row-against-files comparison, the merge check's
     finishing branch, the format check before the rebuild (against the newer-field test), the
     `finish_merge` branch.

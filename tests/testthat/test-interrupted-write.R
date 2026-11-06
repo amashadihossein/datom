@@ -1,14 +1,18 @@
-# A table write that breaks partway, then is re-run (#155; design section 3).
+# A table write that breaks partway, then is re-run (#155; design sections 3
+# and 4).
 #
 # Each test builds a real project (folder git remote, local store), writes v1,
 # breaks a write of v2 at one step, re-runs the same write, and asks a reader
 # with no clone what it sees. Nothing in the datom stack is mocked except the
 # one binding that raises the break (`local_break_at()`, helper-interrupt.R).
 #
-# Steps 1-5 of the break table: the data file upload, the clone files, the
-# commit, the push, and the metadata upload (whole, and at two points inside
-# it). The manifest upload, step 6, is finished by a later command, not by a
-# re-run of the same write, and is tested with that command.
+# All six steps of the break table: the data file upload, the clone files, the
+# commit, the push, the metadata upload (whole, and at two points inside it),
+# and the manifest upload. A break before the commit leaves nothing committed:
+# heal's reset puts the files back and the re-run writes the version again
+# ("full"). A break at or after the commit leaves the version committed: heal's
+# publish pushes and publishes it, and the write itself then finds nothing to
+# do ("none"), making no second commit.
 
 interrupt_v1 <- function() datom_example_data("dm")
 
@@ -49,18 +53,23 @@ interrupt_break_write <- function(fx, step, data, name = "dm") {
 }
 
 # Break the write of v2 at `step`, re-run it, and check what a reader sees
-# (P1) and the hash the version records (P3).
-expect_rerun_finishes <- function(step) {
+# (P1) and the hash the version records (P3). `action` is what the re-run's own
+# write reports: "full" when nothing had committed, "none" when heal's publish
+# finished the committed version first.
+expect_rerun_finishes <- function(step, action) {
   fx <- local_interrupt_project()
   suppressMessages(datom_write(fx$conn, data = interrupt_v1(), name = "dm"))
+  repo <- git2r::repository(fx$repo)
 
   interrupt_break_write(fx, step, interrupt_v2())
+  head_after_break <- git2r::sha(git2r::last_commit(repo))
 
-  # Nothing readers follow moved: they still get v1.
-  expect_identical(interrupt_reads_as(fx), "v1")
+  # Nothing readers follow moved, except at the last step, where metadata.json
+  # already names v2 and only the manifest lags.
+  expect_identical(interrupt_reads_as(fx), if (step == "manifest") "v2" else "v1")
 
   rerun <- suppressMessages(datom_write(fx$conn, data = interrupt_v2(), name = "dm"))
-  expect_identical(rerun$action, "full")
+  expect_identical(rerun$action, action)
 
   # P1: the new version reads, and the stored manifest names it.
   expect_identical(interrupt_reads_as(fx), "v2")
@@ -69,43 +78,78 @@ expect_rerun_finishes <- function(step) {
   # P3: the hash the version records is the hash of the stored bytes.
   stored_meta <- .datom_storage_read_json(fx$conn, .datom_artifact_meta_key("dm", "metadata"))
   expect_identical(stored_meta$parquet_sha, interrupt_stored_file_sha(fx, rerun$data_sha))
+
+  # A version committed by the broken run is finished, not written again: no
+  # second commit, and the stored history names the broken run's commit as the
+  # one that produced it.
+  if (identical(action, "none")) {
+    expect_identical(git2r::sha(git2r::last_commit(repo)), head_after_break)
+    stored_history <- .datom_storage_read_json(
+      fx$conn, .datom_artifact_meta_key("dm", "version_history")
+    )
+    expect_identical(stored_history[[1]]$version, rerun$metadata_sha)
+    expect_identical(stored_history[[1]]$commit_sha, head_after_break)
+  }
 }
 
 
-# --- P1 and P3, steps 1-5 -----------------------------------------------------
+# --- P1 and P3, all six steps -------------------------------------------------
 
 test_that("a write broken at its data file upload finishes on a re-run", {
-  expect_rerun_finishes("upload")
+  expect_rerun_finishes("upload", "full")
 })
 
 test_that("a write broken after its clone files, before its manifest row, finishes on a re-run", {
-  expect_rerun_finishes("clone_files")
+  expect_rerun_finishes("clone_files", "full")
 })
 
 test_that("a write broken at its commit finishes on a re-run", {
-  expect_rerun_finishes("commit")
+  expect_rerun_finishes("commit", "full")
 })
 
 test_that("a write broken at its push finishes on a re-run", {
   # The case #155 was filed for: before the data file went first, the pushed
   # version had no data file, the re-run skipped the upload because the clone's
   # history already named its hash, and every read of it failed.
-  expect_rerun_finishes("push")
+  expect_rerun_finishes("push", "none")
 })
 
 test_that("a write broken at its metadata upload finishes on a re-run", {
-  expect_rerun_finishes("metadata")
+  expect_rerun_finishes("metadata", "none")
 })
 
 test_that("a write broken at the stored history upload finishes on a re-run", {
   # Snapshot stored, history and metadata.json not. With metadata.json uploaded
   # first (the old order), it would already name v2 here, the re-run would
   # report "no changes", and the stored history and manifest would stay behind.
-  expect_rerun_finishes("history")
+  expect_rerun_finishes("history", "none")
 })
 
 test_that("a write broken at the stored metadata.json upload finishes on a re-run", {
-  expect_rerun_finishes("metadata_json")
+  expect_rerun_finishes("metadata_json", "none")
+})
+
+test_that("a write broken at its manifest upload finishes on a re-run", {
+  # Step 6: everything but the manifest is published. Heal's publish sees the
+  # stored row behind the clone's and finishes it.
+  expect_rerun_finishes("manifest", "none")
+})
+
+test_that("after a break in the metadata upload, heal stores the snapshot at the key the history records", {
+  fx <- local_interrupt_project()
+  suppressMessages(datom_write(fx$conn, data = interrupt_v1(), name = "dm"))
+  interrupt_break_write(fx, "metadata", interrupt_v2())
+  v2 <- jsonlite::read_json(file.path(fx$repo, "dm", "version_history.json"))[[1]]$version
+  snapshot_key <- .datom_artifact_snapshot_key("dm", v2)
+  expect_false(.datom_storage_exists(fx$conn, snapshot_key))
+
+  suppressMessages(datom_write(fx$conn, data = interrupt_v2(), name = "dm"))
+
+  expect_true(.datom_storage_exists(fx$conn, snapshot_key))
+  expect_identical(
+    .datom_compute_metadata_sha(.datom_storage_read_json(fx$conn, snapshot_key)),
+    v2
+  )
 })
 
 

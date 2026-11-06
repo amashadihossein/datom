@@ -23,8 +23,10 @@ Invisible character vector of S3 keys written.
 }
 \description{
 Uploads the version snapshot, then \code{version_history.json}, then
-\code{metadata.json} \strong{last}. Called after the commit and push; a table's data
-file is already stored by then, uploaded before any clone file changed.
+\code{metadata.json} \strong{last}. Called by the one publish path,
+\code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}, after the commit and push; a table's data file
+is already stored by then, uploaded before any clone file changed. A failed
+upload names its key (\code{\link[=.datom_storage_write_json_at]{.datom_storage_write_json_at()}}).
 }
 \details{
 \strong{Why \code{metadata.json} last.} Change detection (\code{\link[=.datom_has_changes]{.datom_has_changes()}}) reads

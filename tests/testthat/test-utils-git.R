@@ -986,7 +986,8 @@ test_that(".datom_git_push pushes commits to remote", {
 
   result <- .datom_git_push(info$work_path)
 
-  expect_true(result)
+  # Nothing to pull in first, so the pull moved nothing.
+  expect_false(result)
   expect_invisible(.datom_git_push(info$work_path))
 
 
@@ -1022,8 +1023,9 @@ test_that(".datom_git_push fetches and merges upstream changes", {
   git2r::add(info$work_repo, "mine.txt")
   git2r::commit(info$work_repo, "My commit")
 
-  # Push should fetch, merge, then push
-  expect_no_error(.datom_git_push(info$work_path))
+  # Push should fetch, merge, then push, and say its pull brought commits in.
+  expect_no_error(pulled_in <- .datom_git_push(info$work_path))
+  expect_true(pulled_in)
 
   # Both commits should be in remote
   bare_log <- git2r::commits(info$bare_repo)
@@ -1067,15 +1069,21 @@ test_that(".datom_git_push aborts on non-git directory", {
   expect_error(.datom_git_push(dir), "Not a git repository")
 })
 
-test_that(".datom_git_push returns invisible TRUE", {
+test_that(".datom_git_push returns FALSE when its pull brought nothing in, and when it did not pull", {
+  # TRUE is reserved for a pull that moved HEAD (above): a write then checks the
+  # manifest it uploads against storage.
   info <- create_repo_with_remote()
 
   writeLines("more", fs::path(info$work_path, "extra.txt"))
   git2r::add(info$work_repo, "extra.txt")
   git2r::commit(info$work_repo, "Extra commit")
 
-  result <- .datom_git_push(info$work_path)
-  expect_true(result)
+  expect_false(.datom_git_push(info$work_path))
+
+  writeLines("again", fs::path(info$work_path, "extra.txt"))
+  git2r::add(info$work_repo, "extra.txt")
+  git2r::commit(info$work_repo, "Another commit")
+  expect_false(.datom_git_push(info$work_path, pull_first = FALSE))
 })
 
 
@@ -1288,7 +1296,7 @@ test_that(".datom_git_push upstream failure does not fail the push (#74 F)", {
     result <- .datom_git_push(info$work_path),
     "could not set upstream"
   )
-  expect_true(result)
+  expect_false(result)
 })
 
 test_that(".datom_git_pull succeeds with no identity, up to date and when it merges", {

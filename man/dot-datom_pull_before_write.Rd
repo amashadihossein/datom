@@ -4,10 +4,13 @@
 \alias{.datom_pull_before_write}
 \title{The Pull a Write Makes Before Its Own Work}
 \usage{
-.datom_pull_before_write(conn)
+.datom_pull_before_write(conn, reset = character())
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object with a local path.}
+
+\item{reset}{The artifacts heal's reset has just put back, so a stop here
+says so rather than "datom changed nothing".}
 }
 \value{
 Invisibly, whether HEAD moved.

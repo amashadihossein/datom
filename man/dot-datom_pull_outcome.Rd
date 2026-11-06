@@ -4,17 +4,18 @@
 \alias{.datom_pull_outcome}
 \title{What a Stop in the Pull Says Has Happened}
 \usage{
-.datom_pull_outcome(in_push)
+.datom_pull_outcome(in_push, reset = character())
 }
 \arguments{
-\item{in_push}{See \code{\link[=.datom_git_pull]{.datom_git_pull()}}.}
+\item{in_push, reset}{See \code{\link[=.datom_git_pull]{.datom_git_pull()}}.}
 }
 \value{
 One sentence.
 }
 \description{
-At the start of a command nothing has changed yet. Inside a push the caller
-may already have committed (and a write has stored its data file), so the
-honest statement is narrower.
+At the start of a command nothing has changed yet, unless heal's reset has
+just put back the command's own unfinished files, which the line above the
+stop reported. Inside a push the caller may already have committed (and a
+write has stored its data file), so the honest statement is narrower.
 }
 \keyword{internal}

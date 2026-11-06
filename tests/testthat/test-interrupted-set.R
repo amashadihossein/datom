@@ -7,9 +7,10 @@
 # (`local_break_at()`, helper-interrupt.R), or, where a test needs a second
 # spelling of one payload, the function that spells it.
 #
-# Steps 1-5 of the break table. The manifest upload, step 6, is finished by a
-# later command, not by a re-run of the same write, and is tested with that
-# command.
+# All six steps of the break table. A break before the commit leaves nothing
+# committed, so the re-run writes the version again ("full"); a break at or
+# after it leaves the version committed, so heal's publish finishes it and the
+# write itself finds nothing to do ("none").
 
 iset_project <- function(env = parent.frame()) {
   fx <- local_interrupt_project(mode = "product", set = "adam", env = env)
@@ -48,17 +49,18 @@ iset_break_write <- function(fx, step, description) {
 # Write v1, break the write of v2 at `step`, re-run it, and check what a reader
 # sees (P1), the hash the version records (P3), and that the clone and storage
 # hold one spelling of the payload (R1.5).
-expect_set_rerun_finishes <- function(step) {
+expect_set_rerun_finishes <- function(step, action) {
   fx <- iset_project()
   iset_write(fx, "v1")
 
   iset_break_write(fx, step, "v2")
 
-  # Nothing readers follow moved: they still get v1.
-  expect_identical(iset_reads_as(fx), "v1")
+  # Nothing readers follow moved, except at the last step, where metadata.json
+  # already names v2 and only the manifest lags.
+  expect_identical(iset_reads_as(fx), if (step == "manifest") "v2" else "v1")
 
   rerun <- iset_write(fx, "v2")
-  expect_identical(rerun$action, "full")
+  expect_identical(rerun$action, action)
 
   # P1: the new version reads, and the stored manifest names it.
   expect_identical(iset_reads_as(fx), "v2")
@@ -74,37 +76,41 @@ expect_set_rerun_finishes <- function(step) {
 }
 
 
-# --- P1 and P3, steps 1-5 -----------------------------------------------------
+# --- P1 and P3, all six steps -------------------------------------------------
 
 test_that("a set write broken at its payload upload finishes on a re-run", {
-  expect_set_rerun_finishes("upload")
+  expect_set_rerun_finishes("upload", "full")
 })
 
 test_that("a set write broken after its clone files, before its manifest row, finishes on a re-run", {
-  expect_set_rerun_finishes("clone_files")
+  expect_set_rerun_finishes("clone_files", "full")
 })
 
 test_that("a set write broken at its commit finishes on a re-run", {
-  expect_set_rerun_finishes("commit")
+  expect_set_rerun_finishes("commit", "full")
 })
 
 test_that("a set write broken at its push finishes on a re-run", {
   # Before the payload went first, this left a pushed version with no stored
   # payload, and the re-run reused the hash the clone's history named, so it
   # uploaded nothing and every read of the version failed.
-  expect_set_rerun_finishes("push")
+  expect_set_rerun_finishes("push", "none")
 })
 
 test_that("a set write broken at its metadata upload finishes on a re-run", {
-  expect_set_rerun_finishes("metadata")
+  expect_set_rerun_finishes("metadata", "none")
 })
 
 test_that("a set write broken at the stored history upload finishes on a re-run", {
-  expect_set_rerun_finishes("history")
+  expect_set_rerun_finishes("history", "none")
 })
 
 test_that("a set write broken at the stored metadata.json upload finishes on a re-run", {
-  expect_set_rerun_finishes("metadata_json")
+  expect_set_rerun_finishes("metadata_json", "none")
+})
+
+test_that("a set write broken at its manifest upload finishes on a re-run", {
+  expect_set_rerun_finishes("manifest", "none")
 })
 
 
@@ -137,17 +143,20 @@ iset_compact_spelling <- function(payload, path) {
   invisible(path)
 }
 
-test_that("a re-run that spells the payload differently keeps the stored spelling in set.json", {
-  # The re-run finds this content in the clone's history (the broken run wrote
-  # it there), so it records the stored payload's hash. Its own bytes differ, so
-  # set.json must take the stored ones, or git would hold bytes that do not
-  # match the recorded hash.
+test_that("a write of content already in the history, spelled differently, keeps the stored spelling in set.json", {
+  # A revert to v1: its content is in the clone's history, so the write records
+  # the stored payload's hash. Its own bytes differ, so set.json must take the
+  # stored ones, or git would hold bytes that do not match the recorded hash.
+  # (Until heal published committed versions, a re-run after a broken push
+  # reached this branch too; now heal finishes that version and the re-run
+  # writes nothing.)
   fx <- iset_project()
+  iset_write(fx, "v2")
   iset_write(fx, "v1")
-  iset_break_write(fx, "push", "v2")
 
   local_mocked_bindings(.datom_write_set_payload = iset_compact_spelling)
   rerun <- iset_write(fx, "v2")
+  expect_identical(rerun$action, "full")
 
   stored <- iset_stored_payload(fx, rerun$data_sha)
   expect_identical(readBin(iset_clone_payload(fx), "raw", 1e6), readBin(stored, "raw", 1e6))

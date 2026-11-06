@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils-sha.R
 \name{.datom_sync_metadata}
 \alias{.datom_sync_metadata}
-\title{Publish One Table's Committed Metadata: \code{datom_write(conn, name =)}}
+\title{Publish One Table's Committed Version: \code{datom_write(conn, name =)}}
 \usage{
 .datom_sync_metadata(conn, name)
 }
@@ -12,25 +12,35 @@
 \item{name}{Table name.}
 }
 \value{
-Summary of sync operation.
+Invisibly, a list with \code{name}, \code{metadata_sha} (the committed version)
+and \code{action}: \code{"published"} when this call published the table, \code{"none"}
+when storage already held it.
 }
 \description{
 The metadata-only route. It rewrites none of the table's files: it publishes
-the table's \code{metadata.json} and \code{version_history.json} \strong{as committed}, when
-the stored copy differs. It makes no commit.
+the table's committed version -- snapshot, \code{version_history.json} and
+\code{metadata.json}, then the manifest -- when storage lacks it. It makes no
+commit. The case it is for: a write whose push succeeded and whose storage
+upload failed, so GitHub has the new version and readers still see the old.
 }
 \details{
-datom's own files are not edited by hand (an uncommitted change to one is
-treated as an unfinished write), so heal runs here with no artifact of its
-own: any uncommitted change to a datom file, this table's included, stops the
-route before anything changes, naming \code{datom_validate(fix = TRUE)}. To change
-a table's custom metadata, write it with
+Heal runs here with \strong{two lists}: the table is one the route publishes, and
+none whose files it writes again. So heal's publish pushes and publishes the
+table's committed version (the case above), while any uncommitted change to
+its files or its manifest row stops the route before anything changes,
+naming \code{datom_validate(fix = TRUE)}: datom's own files are not edited by hand
+(an uncommitted change to one is treated as an unfinished write). To change a
+table's custom metadata, write it with
 \code{datom_write(conn, data, name, metadata = )}.
 
 In order: heal's reset (which starts with the merge check), the route's own
-pull (the format check runs again after a merge), change detection against
-storage, a push when the clone holds commits the remote lacks (so storage
-never names a version GitHub does not have), then the upload. The history
-goes up with each entry's commit worked out from git.
+pull (the format check runs again after a merge), the check that the table
+exists, heal's publish (a push first when the clone holds commits the remote
+lacks, so storage never names a version GitHub does not have), then change
+detection against the stored \code{metadata.json}, which catches what heal's
+comparison of manifest rows cannot see: a stored \code{metadata.json} that differs
+while the stored manifest row agrees. Everything goes up through the one
+publish path, \code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}, with each history entry's commit
+worked out from git.
 }
 \keyword{internal}

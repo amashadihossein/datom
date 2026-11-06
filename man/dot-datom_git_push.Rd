@@ -19,7 +19,10 @@ remote is empty (the first push, a wiped remote) pass \code{FALSE}.}
 already in storage, so a stop here says the file may be there unnamed.}
 }
 \value{
-Invisible TRUE on success.
+Invisibly, \code{TRUE} when the pull before the push moved HEAD (it
+brought in commits the clone lacked), \code{FALSE} otherwise. A write uses it to
+decide whether the manifest it uploads may name a teammate's version that
+storage does not hold yet (\code{\link[=.datom_publish_artifacts]{.datom_publish_artifacts()}}).
 }
 \description{
 Pulls first (\code{\link[=.datom_git_pull]{.datom_git_pull()}}, which stops on a merge conflict or when it

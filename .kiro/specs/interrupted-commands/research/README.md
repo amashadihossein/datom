@@ -15,7 +15,10 @@ Rerun from the repo root, for example:
   `raised` is `TRUE`. Result after task 2: every break fired; for the upload, the clone files, the
   commit, the push, the metadata step and the history upload, the re-run reads v2; a break at the
   manifest upload still leaves the re-run reporting `none` with the stored manifest one version
-  behind, which heal's publish (task 4b) finishes.
+  behind, which heal's publish (task 4b) finishes. Rerun after task 4b (2026-11-06): every break
+  fired and every re-run reads v2; from the push on, the re-run reports `none` because heal's
+  publish finished the committed version first. (The probe does not print the stored manifest;
+  `test-interrupted-write.R` checks it names v2 after every step's re-run.)
 - `set_steps_probe.R`: the same for `datom_write_set()` on a product repo, then
   `datom_validate(fix = TRUE)`. Updated in task 3 (2026-10-31) the same way: the upload break
   replaces `.datom_storage_upload_absent()`, and breaks after the clone files, at the stored history
@@ -23,7 +26,9 @@ Rerun from the repo root, for example:
   the upload, the clone files, the commit, the push, the metadata step and the history upload, the
   re-run reads v2. A break at the manifest upload leaves readers on v2 already (a set read follows
   the stored `metadata.json`) and the re-run reporting `none` with the stored manifest one version
-  behind, which heal's publish (task 4b) finishes.
+  behind, which heal's publish (task 4b) finishes. Rerun after task 4b (2026-11-06): every break
+  fired, every re-run reads v2, and from the push on the re-run reports `none` (heal finished it;
+  `test-interrupted-set.R` checks the stored manifest).
 - `sync_and_manifest_probe.R`: `datom_sync()` broken at the push, then re-scanned and re-synced; and
   a write broken at the manifest step, then compared with what a reader's `datom_list()` shows.
 - `other_command_probe.R`: a write of `dm` broken at its commit or its push, then a write of `lb`;
@@ -32,7 +37,10 @@ Rerun from the repo root, for example:
   stopped. Result after task 4a: both breaks fired; after `dm` broke at its commit, `lb`'s write
   stops (`datom_unfinished_work`), naming `dm`'s three files and `datom_validate(fix = TRUE)`, with
   HEAD unmoved and nothing of `lb` in storage; after `dm` broke at its push, `lb`'s write still goes
-  ahead and pushes `dm`'s commit, which task 4b's stop on a differing row ends.
+  ahead and pushes `dm`'s commit, which task 4b's stop on a differing row ends. Rerun after task 4b
+  (2026-11-06): both breaks fired, and after `dm`'s push break `lb`'s write now stops too
+  (`datom_unfinished_work`, "storage and this clone name different versions"), before pushing
+  anything: HEAD unmoved, GitHub's log and storage still at `dm` v1, nothing of `lb` in storage.
 - `two_writers_probe.R`: two clones of one project write different tables without pulling in
   between; reports whether the second write's push hits a merge conflict, and in which files
   (result: a conflict in `.datom/manifest.json` only).
@@ -134,3 +142,10 @@ Added 2026-11-04 in task 4a:
   the fetch-failure stop, the caught-up check, the rejected-push message, the pull before change
   detection, a refusal check placed before heal, the floor read from `project.yaml`). Results in
   task 4a's commit message.
+- `task4b_guard_probes.R`: the harness with task 4b's probes (the unpublished-row comparison, a
+  stored row the clone lacks, the manifest last and held back after a failure, the publish gate,
+  the stop on another artifact's row, step d counting `artifact` as the command's own, the
+  containment check and its "older" variant, the repair's override, the manifest agreement check,
+  heal's push not pulling, the shared reader's stop, reading the history before writing, the reset
+  limited to `rewrite`, the `rewrite` subset check, the "changed nothing" line). Same usage as task
+  4a's; the whole sweep takes about two minutes. Results are in task 4b's commit message.

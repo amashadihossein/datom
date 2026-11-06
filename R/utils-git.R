@@ -606,15 +606,19 @@
 #'   remote is empty (the first push, a wiped remote) pass `FALSE`.
 #' @param data_file_stored `TRUE` when the caller is a write whose data file is
 #'   already in storage, so a stop here says the file may be there unnamed.
-#' @return Invisible TRUE on success.
+#' @return Invisibly, `TRUE` when the pull before the push moved HEAD (it
+#'   brought in commits the clone lacked), `FALSE` otherwise. A write uses it to
+#'   decide whether the manifest it uploads may name a teammate's version that
+#'   storage does not hold yet ([.datom_publish_artifacts()]).
 #' @keywords internal
 .datom_git_push <- function(path, pat = NULL, pull_first = TRUE,
                             data_file_stored = FALSE) {
   .datom_check_git2r()
 
+  pulled_in <- FALSE
   if (isTRUE(pull_first)) {
-    .datom_git_pull(path, pat = pat, in_push = TRUE,
-                    data_file_stored = data_file_stored)
+    pulled_in <- .datom_git_pull(path, pat = pat, in_push = TRUE,
+                                 data_file_stored = data_file_stored)
   }
 
   .datom_check_git2r()
@@ -668,7 +672,7 @@
     })
   }
 
-  invisible(TRUE)
+  invisible(isTRUE(pulled_in))
 }
 
 
@@ -758,11 +762,13 @@
 #'   nothing (the caller may already have committed).
 #' @param data_file_stored `TRUE` when the caller is a write whose data file is
 #'   already in storage; a stop then says the file may be there, unnamed.
+#' @param reset The artifacts heal's reset put back just before this pull, so
+#'   a stop says datom put them back rather than that it changed nothing.
 #' @return Invisibly, `TRUE` when HEAD moved (a merge or a fast-forward),
 #'   `FALSE` otherwise.
 #' @keywords internal
 .datom_git_pull <- function(path, pat = NULL, in_push = FALSE,
-                            data_file_stored = FALSE) {
+                            data_file_stored = FALSE, reset = character()) {
   .datom_check_git2r()
 
   repo <- tryCatch(
@@ -797,7 +803,8 @@
     error = function(e) e
   )
   if (!is.null(fetched)) {
-    .datom_stop_fetch_failed(remote_name, fetched, in_push, data_file_stored)
+    .datom_stop_fetch_failed(remote_name, fetched, in_push, data_file_stored,
+                             reset = reset)
   }
 
   upstream_ref <- tryCatch(
@@ -823,7 +830,7 @@
   # and when the user's files stopped it from doing anything.
   head_after <- .datom_git_head_sha(repo)
   if (!.datom_git_contains(repo, head_after, tip)) {
-    .datom_stop_pull_blocked(in_push, data_file_stored, path)
+    .datom_stop_pull_blocked(in_push, data_file_stored, path, reset = reset)
   }
 
   invisible(!identical(head_before, head_after))
@@ -923,15 +930,21 @@
 
 #' What a Stop in the Pull Says Has Happened
 #'
-#' At the start of a command nothing has changed yet. Inside a push the caller
-#' may already have committed (and a write has stored its data file), so the
-#' honest statement is narrower.
+#' At the start of a command nothing has changed yet, unless heal's reset has
+#' just put back the command's own unfinished files, which the line above the
+#' stop reported. Inside a push the caller may already have committed (and a
+#' write has stored its data file), so the honest statement is narrower.
 #'
-#' @param in_push See [.datom_git_pull()].
+#' @param in_push,reset See [.datom_git_pull()].
 #' @return One sentence.
 #' @keywords internal
-.datom_pull_outcome <- function(in_push) {
-  if (isTRUE(in_push)) "Nothing was pushed or published." else "datom changed nothing."
+.datom_pull_outcome <- function(in_push, reset = character()) {
+  if (isTRUE(in_push)) return("Nothing was pushed or published.")
+  if (length(reset) == 0L) return("datom changed nothing.")
+  cli::format_inline(
+    "datom put back the unfinished files of {.val {reset}} (above) and changed \\
+     nothing else."
+  )
 }
 
 
@@ -957,16 +970,18 @@
 #'
 #' @param remote_name The remote.
 #' @param e The condition git2r raised.
-#' @param in_push,data_file_stored See [.datom_git_pull()].
+#' @param in_push,data_file_stored,reset See [.datom_git_pull()].
 #' @return Does not return.
 #' @keywords internal
-.datom_stop_fetch_failed <- function(remote_name, e, in_push, data_file_stored) {
+.datom_stop_fetch_failed <- function(remote_name, e, in_push, data_file_stored,
+                                     reset = character()) {
   msg <- conditionMessage(e)
+  outcome <- .datom_pull_outcome(in_push, reset)
   cli::cli_abort(
     c(
       "Could not fetch from the git remote {.val {remote_name}}.",
       "x" = "{msg}",
-      "i" = .datom_pull_outcome(in_push),
+      "i" = "{outcome}",
       .datom_data_file_note(data_file_stored),
       "i" = "Check your connection, credentials and remote access, then re-run."
     ),
@@ -1001,11 +1016,12 @@
 #'   commits touch, for a rare case, and the recipe works without knowing which
 #'   file blocks.
 #'
-#' @param in_push,data_file_stored See [.datom_git_pull()].
+#' @param in_push,data_file_stored,reset See [.datom_git_pull()].
 #' @param path Repository path, to look for datom's own uncommitted files.
 #' @return Does not return.
 #' @keywords internal
-.datom_stop_pull_blocked <- function(in_push, data_file_stored, path) {
+.datom_stop_pull_blocked <- function(in_push, data_file_stored, path,
+                                     reset = character()) {
   clone <- list(path = path)
   unfinished <- .datom_unfinished_files(clone)
   if (length(unfinished) > 0L) {
@@ -1014,11 +1030,12 @@
     )
   }
 
+  outcome <- .datom_pull_outcome(in_push, reset)
   cli::cli_abort(
     c(
       "Could not bring the clone up to date: local changes are in the way of \\
        the incoming commits (see {.code git status}).",
-      "i" = .datom_pull_outcome(in_push),
+      "i" = "{outcome}",
       .datom_data_file_note(data_file_stored),
       "i" = "Set them aside with {.code git stash -u}, run \\
              {.code datom_pull(conn)}, bring them back with \\

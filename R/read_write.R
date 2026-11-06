@@ -834,8 +834,10 @@ datom_read <- function(conn,
 #' @return The recorded hash, or NULL.
 #' @keywords internal
 .datom_lookup_history_object_sha <- function(conn, name, data_sha, field) {
-  history_path <- fs::path(conn$path, name, "version_history.json")
-  if (!fs::file_exists(history_path)) {
+  # A history that does not parse stops the write here, before its data file is
+  # uploaded, with the shared reader's way out.
+  history <- .datom_read_clone_json(conn$path, paste0(name, "/version_history.json"))
+  if (is.null(history)) {
     return(NULL)
   }
 
@@ -847,8 +849,6 @@ datom_read <- function(conn,
     value <- entry[[field]]
     if (is.character(value) && length(value) == 1L && !is.na(value)) value else ""
   }
-
-  history <- jsonlite::read_json(history_path)
 
   # detect() stops at the first match, and history is newest-first, so this is
   # the most recent version that pinned this content.
@@ -906,6 +906,13 @@ datom_read <- function(conn,
                                        original_file_sha = NULL) {
   repo_path <- conn$path
   table_dir <- fs::path(repo_path, name)
+
+  # The history is read before anything is written, so a history that does not
+  # parse stops the write with the shared reader's way out and changes nothing.
+  history_path <- fs::path(table_dir, "version_history.json")
+  history <- .datom_read_clone_json(repo_path, paste0(name, "/version_history.json")) %||%
+    list()
+
   fs::dir_create(table_dir)
 
   # metadata.json — current state
@@ -913,13 +920,6 @@ datom_read <- function(conn,
   jsonlite::write_json(metadata, metadata_path, auto_unbox = TRUE, pretty = TRUE)
 
   # version_history.json — append new entry
-  history_path <- fs::path(table_dir, "version_history.json")
-
-  history <- if (fs::file_exists(history_path)) {
-    jsonlite::read_json(history_path)
-  } else {
-    list()
-  }
 
   author <- tryCatch(
     .datom_git_author(repo_path),
@@ -990,8 +990,10 @@ datom_read <- function(conn,
 #' Push Metadata Files to S3
 #'
 #' Uploads the version snapshot, then `version_history.json`, then
-#' `metadata.json` **last**. Called after the commit and push; a table's data
-#' file is already stored by then, uploaded before any clone file changed.
+#' `metadata.json` **last**. Called by the one publish path,
+#' [.datom_publish_artifacts()], after the commit and push; a table's data file
+#' is already stored by then, uploaded before any clone file changed. A failed
+#' upload names its key ([.datom_storage_write_json_at()]).
 #'
 #' **Why `metadata.json` last.** Change detection ([.datom_has_changes()]) reads
 #' the stored `metadata.json`, so its arrival is the mark that this step is
@@ -1023,13 +1025,9 @@ datom_read <- function(conn,
 #' @keywords internal
 .datom_push_metadata_s3 <- function(conn, name, metadata, metadata_sha,
                                     commit_sha = NULL) {
-  # Read local version_history.json (written by .datom_write_metadata_local)
-  history_path <- fs::path(conn$path, name, "version_history.json")
-  history <- if (fs::file_exists(history_path)) {
-    jsonlite::read_json(history_path)
-  } else {
+  # The clone's version_history.json, as committed.
+  history <- .datom_read_clone_json(conn$path, paste0(name, "/version_history.json")) %||%
     list()
-  }
 
   # In memory, on the way out. The tracked file stays exactly as committed.
   history <- .datom_history_with_commit_shas(
@@ -1041,25 +1039,32 @@ datom_read <- function(conn,
   s3_versioned_key <- .datom_artifact_snapshot_key(name, metadata_sha)
 
   # metadata.json last: see the docstring.
-  .datom_storage_write_json(conn, s3_versioned_key, metadata)
-  .datom_storage_write_json(conn, s3_history_key, history)
-  .datom_storage_write_json(conn, s3_metadata_key, metadata)
+  .datom_storage_write_json_at(conn, s3_versioned_key, metadata)
+  .datom_storage_write_json_at(conn, s3_history_key, history)
+  .datom_storage_write_json_at(conn, s3_metadata_key, metadata)
 
   invisible(c(s3_versioned_key, s3_history_key, s3_metadata_key))
 }
 
 
-#' Commit, Push, Then Mirror to Storage
+#' Commit, Push, Then Publish to Storage
 #'
 #' The tail of every artifact write. By the time it runs, the data file (a
 #' table's parquet, a set's payload) is already stored, and the clone's files
 #' are on disk. This commits and pushes them, and only then publishes the files
-#' readers follow: the artifact's snapshot, history and `metadata.json`, then
-#' the manifest. **The push still decides whose write readers see** -- a clone
-#' that cannot push publishes nothing they follow -- so two people's writes meet
-#' in git, as code does, before storage changes. The data file needs no such
-#' gate: it is content-addressed, never replaced once stored, and named by
-#' nothing until this publishes. Nothing may move a publish above the push.
+#' readers follow, through the one publish path ([.datom_publish_artifacts()]):
+#' the artifact's snapshot, history and `metadata.json`, then the manifest.
+#' **The push still decides whose write readers see** -- a clone that cannot
+#' push publishes nothing they follow -- so two people's writes meet in git, as
+#' code does, before storage changes. The data file needs no such gate: it is
+#' content-addressed, never replaced once stored, and named by nothing until
+#' this publishes. Nothing may move a publish above the push.
+#'
+#' The documents go up as committed: the publish reads them back from the
+#' clone, so storage holds exactly what git holds. When the pull inside the
+#' push brought in a teammate's commit, the manifest goes up only if every
+#' other row agrees with storage, since the teammate's own upload may not have
+#' landed yet.
 #'
 #' Extracted when the set write arrived, and the extraction is the point rather
 #' than tidiness: this sequence was previously inline in [datom_write()], so a
@@ -1069,34 +1074,28 @@ datom_read <- function(conn,
 #'
 #' @param conn A `datom_conn` object (developer, with a local path).
 #' @param name Artifact name.
-#' @param meta The metadata document to mirror.
-#' @param metadata_sha The version being written.
 #' @param git_paths Absolute paths of the files this write produced in the clone.
 #'   `.datom/manifest.json` is added here rather than by each caller, since every
 #'   write updates it.
 #' @param message Commit message.
 #' @return The commit SHA.
 #' @keywords internal
-.datom_commit_and_mirror <- function(conn, name, meta, metadata_sha, git_paths,
-                                     message) {
+.datom_commit_and_mirror <- function(conn, name, git_paths, message) {
   git_files <- c(
     fs::path_rel(git_paths, conn$path),
     ".datom/manifest.json"
   )
   commit_sha <- .datom_git_commit(conn$path, git_files, message)
-  .datom_git_push(conn$path, pat = conn$github_pat, data_file_stored = TRUE)
+  pulled_in <- .datom_git_push(conn$path, pat = conn$github_pat,
+                               data_file_stored = TRUE)
 
   # The commit is threaded through rather than re-derived: this function made it,
   # so the stored history can name it without a git walk.
-  .datom_push_metadata_s3(conn, name, meta, metadata_sha, commit_sha = commit_sha)
-
-  # The manifest completes the round trip. Read back from the clone rather than
-  # passed in, so the mirrored copy is exactly the committed one.
-  manifest_path <- fs::path(conn$path, ".datom", "manifest.json")
-  if (fs::file_exists(manifest_path)) {
-    manifest_data <- jsonlite::read_json(manifest_path)
-    .datom_storage_write_json(conn, ".metadata/manifest.json", manifest_data)
-  }
+  .datom_publish_artifacts(
+    conn, name,
+    commit_sha = commit_sha,
+    recheck_manifest = isTRUE(pulled_in)
+  )
 
   commit_sha
 }
@@ -1167,8 +1166,8 @@ datom_read <- function(conn,
 #' @param .original_format Internal. Original file format
 #'   (set by `datom_sync()`); NULL for derived.
 #' @param .healed Internal. `TRUE` when the caller has already run the merge
-#'   check, heal and the pull for this call, so a sync heals and pulls once
-#'   rather than once per table.
+#'   check, heal's reset, the pull and heal's publish for this call, so a sync
+#'   heals and pulls once rather than once per table.
 #'
 #' @return List with deployment details.
 #' @export
@@ -1338,14 +1337,16 @@ datom_write <- function(conn,
   )
   metadata_sha <- .datom_compute_metadata_sha(meta)
 
-  # 3a. The merge check, heal's reset and the pull, after every check above
-  #     (each needs no storage state heal can change, so a mistyped argument is
-  #     refused before heal acts) and before change detection, which reads the
-  #     stored metadata. Heal acts on this table only: another artifact's
-  #     unfinished work stops the write here, before anything changes.
+  # 3a. The merge check, heal's reset, the pull, then heal's publish, after
+  #     every check above (each needs no storage state heal can change, so a
+  #     mistyped argument is refused before heal acts) and before change
+  #     detection, which reads the stored metadata heal may just have published.
+  #     Heal acts on this table only: another artifact's unfinished work stops
+  #     the write here, before anything is pushed or published.
   if (!isTRUE(.healed)) {
-    .datom_heal(conn, artifact = name)
-    .datom_pull_before_write(conn)
+    healed <- .datom_heal(conn, artifact = name)
+    .datom_pull_before_write(conn, reset = healed$reset)
+    .datom_heal_publish(conn, artifact = name)
   }
 
   # 4. Change detection (reuses the already-read current metadata).
@@ -1411,7 +1412,7 @@ datom_write <- function(conn,
   #    order, shared with datom_write_set(). The data file is already stored
   #    (step 5).
   commit_sha <- .datom_commit_and_mirror(
-    conn, name, meta, metadata_sha,
+    conn, name,
     git_paths = write_result$git_paths,
     message = message %||% paste0("Update ", name)
   )

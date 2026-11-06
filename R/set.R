@@ -1217,13 +1217,15 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   data_sha <- meta$data_sha
   metadata_sha <- .datom_compute_metadata_sha(meta)
 
-  # The merge check, heal's reset and the pull: after every check above, each of
-  # which needs no storage state heal can change, and before change detection,
-  # which reads the stored metadata. Heal acts on this set only; another
-  # artifact's unfinished work stops the write here, before anything changes.
+  # The merge check, heal's reset, the pull, then heal's publish: after every
+  # check above, each of which needs no storage state heal can change, and
+  # before change detection, which reads the stored metadata heal may just have
+  # published. Heal acts on this set only; another artifact's unfinished work
+  # stops the write here, before anything is pushed or published.
   # `include_paths` are the caller's files and are never reset.
-  .datom_heal(conn, artifact = name)
-  .datom_pull_before_write(conn)
+  healed <- .datom_heal(conn, artifact = name)
+  .datom_pull_before_write(conn, reset = healed$reset)
+  .datom_heal_publish(conn, artifact = name)
 
   chg <- .datom_has_changes(conn, name, data_sha, metadata_sha)
   change_type <- chg$change_type
@@ -1351,7 +1353,7 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   # this set" and no way to say which one the set pins. `NULL` drops out of
   # `c()`, so a write with no extra paths is byte-for-byte the previous one.
   commit_sha <- .datom_commit_and_mirror(
-    conn, name, meta, metadata_sha,
+    conn, name,
     git_paths = c(write_result$git_paths, payload_path, include_paths),
     message = messages$commit
   )

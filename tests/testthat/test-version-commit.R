@@ -1,13 +1,16 @@
 # The version-to-commit link: `commit_sha` on the stored version history.
 #
-# THREE FUNCTIONS UPLOAD `version_history.json`, and each one is a chance to
+# TWO FUNCTIONS UPLOAD `version_history.json`, and each one is a chance to
 # erase the field, because the clone's copy can never carry it -- that file is
-# inside the commit it would name. So there is one test per upload route, and
-# each was confirmed to redden when ONLY that route's merge is removed:
+# inside the commit it would name. There is one test per public route, and each
+# upload function's was confirmed to redden when ONLY its merge is removed:
 #
 #   the ordinary write     `.datom_push_metadata_s3()`   -> "the ordinary write ..."
 #   the repair             `.datom_sync_one_artifact()`  -> "datom_validate(fix = TRUE) ..."
-#   the metadata-only sync `.datom_sync_metadata()`      -> "the metadata-only route ..."
+#   the metadata-only sync `.datom_push_metadata_s3()`   -> "the metadata-only route ..."
+#
+# (The metadata-only route had an upload of its own until it moved onto the one
+# publish path, `.datom_publish_artifacts()`, which the write shares.)
 #
 # A single "after a repair the field is still there" test satisfies none of the
 # three: the ordinary write is the route that loses the field FIRST, on the second
@@ -189,7 +192,7 @@ test_that("the metadata-only route re-derives `commit_sha` that storage has lost
   head_before <- vc_head(fx)
 
   result <- suppressMessages(datom_write(fx$conn, data = NULL, name = "dm"))
-  expect_identical(result$action, "full")
+  expect_identical(result$action, "published")
   expect_identical(vc_head(fx), head_before)
 
   # Both versions get their commit ids back, worked out from git.

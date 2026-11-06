@@ -1333,6 +1333,10 @@ test_that("the kind comes from the STORAGE document, not the manifest row (AC4)"
   }
   strip_dm(fs::path(fx$repo_dir, ".datom", "manifest.json"))
   strip_dm(.datom_local_path(fx$conn, ".metadata/manifest.json"))
+  # Committed, as a pull would deliver it: left uncommitted, heal's reset puts
+  # the row back (the write is writing "dm") and its publish republishes it, so
+  # the two copies agree again and the test could not tell them apart.
+  git_commit_files(fx$repo_dir, ".datom/manifest.json", "A manifest that lags")
 
   # Still refused, because the storage document still says "dm" is a table.
   err <- expect_error(

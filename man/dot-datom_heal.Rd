@@ -2,37 +2,64 @@
 % Please edit documentation in R/heal.R
 \name{.datom_heal}
 \alias{.datom_heal}
-\title{Heal What an Interrupted Write Left Behind}
+\title{Heal What an Interrupted Write Left Behind: the Reset}
 \usage{
-.datom_heal(conn, artifact = NULL, all = FALSE)
+.datom_heal(conn, artifact = NULL, rewrite = artifact, all = FALSE)
 }
 \arguments{
 \item{conn}{A \code{datom_conn} object with a local path.}
 
-\item{artifact}{Names of the artifacts the command is writing, or \code{NULL} for
-none (the metadata-only route rewrites no file, so any uncommitted change
-to one stops it).}
+\item{artifact}{Names of the artifacts the command publishes, or \code{NULL} for
+none.}
+
+\item{rewrite}{Names of the artifacts whose files the command writes again:
+a subset of \code{artifact}, all of it by default. A name outside \code{artifact} is
+an internal error.}
 
 \item{all}{\code{TRUE} for the repair: act on every artifact.}
 }
 \value{
-Invisibly, a list with \code{reset} (the artifacts whose files were put
-back) and \code{published} (empty: publishing is not built here yet).
+Invisibly, a list with \code{reset}: the artifacts whose files were put
+back.
 }
 \description{
-Runs in exactly one place per route, after the checks that need no storage
-state heal can change and before change detection. It starts with the merge
-check, then resets what never committed (requirements R2.4, R3.1). Each step
-runs only when its own check finds something: here one \verb{git status}.
+Heal has two halves, and the command's own pull runs between them: this one,
+the reset (requirements R2.4, R3.1), and \code{\link[=.datom_heal_publish]{.datom_heal_publish()}}, which
+pushes and publishes what an earlier run committed. Each route calls the
+three in that order, in exactly one place, after the checks that need no
+storage state heal can change and before change detection:
 }
 \details{
+\if{html}{\out{<div class="sourceCode">}}\preformatted{healed <- .datom_heal(conn, artifact = name)
+.datom_pull_before_write(conn, reset = healed$reset)
+.datom_heal_publish(conn, artifact = name)
+}\if{html}{\out{</div>}}
+
+The pull sits between them because uncommitted datom files left by a crash
+make git refuse a merge that touches them (so the reset runs first), and
+what storage lacks is decided against the clone as the pull left it (so the
+publish runs after). It is a call of its own rather than one made from here
+because the pull belongs to the command: removing heal would leave it.
+
+This half starts with the merge check, then resets what never committed. It
+runs only when its own check finds something: one \verb{git status}.
+
+\strong{Two lists, because resetting and publishing are certain under different
+conditions.} \code{artifact} names what the command publishes; \code{rewrite}, a
+subset of it, names the artifacts whose files the command writes again. Only
+those may be put back: the metadata-only route publishes its table and
+rewrites none of its files, so there an uncommitted edit of the table stops
+the command instead (\code{rewrite = character()}).
+
 \strong{What heal repairs:}
 \itemize{
-\item the artifacts the command writes (\code{artifact}): their datom files left by a
-write that broke before its commit are put back to the last commit, with a
-message, and the command then writes them again;
-\item with \code{all = TRUE} (the repair), every artifact's, with a warning naming
-each, since that write is not run again.
+\item the artifacts in \code{rewrite}: their datom files left by a write that broke
+before its commit are put back to the last commit, with a message, and the
+command then writes them again;
+\item the artifacts in \code{artifact}: their committed versions GitHub or storage
+lacks are pushed and published (\code{\link[=.datom_heal_publish]{.datom_heal_publish()}});
+\item with \code{all = TRUE} (the repair), every artifact, both halves, with a warning
+naming each artifact reset, since that write is not run again.
 }
 
 \strong{What heal leaves:}
@@ -48,8 +75,9 @@ folders the manifest names, or whose \code{metadata.json} declares a datom
 \item damage a released datom left, files changed in storage by hand.
 }
 
-The shared \code{.datom/manifest.json} is reset only when every row differing from
-HEAD's belongs to an artifact the command writes; a differing row of any other
-artifact is that artifact's unfinished work, and stops the command.
+The shared \code{.datom/manifest.json} follows \code{rewrite} too: it is reset only when
+every row differing from HEAD's belongs to an artifact in \code{rewrite}; a
+differing row of any other artifact is that artifact's unfinished work, and
+stops the command.
 }
 \keyword{internal}

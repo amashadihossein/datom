@@ -4,7 +4,13 @@
 \alias{.datom_git_pull}
 \title{Pull from Remote (Fetch, and Merge Only When Behind)}
 \usage{
-.datom_git_pull(path, pat = NULL, in_push = FALSE, data_file_stored = FALSE)
+.datom_git_pull(
+  path,
+  pat = NULL,
+  in_push = FALSE,
+  data_file_stored = FALSE,
+  reset = character()
+)
 }
 \arguments{
 \item{path}{Repository path.}
@@ -18,6 +24,9 @@ nothing (the caller may already have committed).}
 
 \item{data_file_stored}{\code{TRUE} when the caller is a write whose data file is
 already in storage; a stop then says the file may be there, unnamed.}
+
+\item{reset}{The artifacts heal's reset put back just before this pull, so
+a stop says datom put them back rather than that it changed nothing.}
 }
 \value{
 Invisibly, \code{TRUE} when HEAD moved (a merge or a fast-forward),

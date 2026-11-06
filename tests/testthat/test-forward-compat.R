@@ -951,7 +951,7 @@ test_that("the metadata-only route re-checks after its pull", {
   fc_write(fx, fc_data(3))
 
   local_mocked_bindings(
-    .datom_git_pull = function(path, pat = NULL) {
+    .datom_git_pull = function(path, pat = NULL, ...) {
       fc_edit_clone_json(
         fs::path(path, "dm", "metadata.json"),
         function(doc) c(doc, list(arrived_in_the_pull = "x"))

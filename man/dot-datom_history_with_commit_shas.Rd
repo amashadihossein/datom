@@ -29,7 +29,7 @@ made no commit passes \code{NULL} and every entry is derived.}
 }
 \description{
 Returns \code{history} with a \code{commit_sha} on every entry whose producing commit is
-known, and unchanged entries where it is not. Called by each of the three
+known, and unchanged entries where it is not. Called by each of the two
 functions that upload \code{version_history.json}.
 }
 \details{
