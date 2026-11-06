@@ -401,12 +401,13 @@ test_that("developer path reads project.yaml and creates connection", {
   expect_equal(conn$path, as.character(fs::path_abs(dir)))
 })
 
-test_that("developer path carries the repo's declared minimum writer version", {
+test_that("the connection does not carry the writer floor; the write check reads project.yaml", {
   skip_if_no_git2r()
-  # The field is optional and lives in project.yaml. It rides on the connection
-  # because that file is already parsed here, which is what lets the write entry
-  # check it without an extra read. Absent must stay indistinguishable from "no
-  # limit", so both states are asserted.
+  # The field is optional and lives in project.yaml. It is not copied onto the
+  # connection, because every write pulls before its own work and a floor raised
+  # in that pull has to bind the write: the check reads the file each time.
+  # Absent must stay indistinguishable from "no limit", so both states are
+  # asserted.
   comp <- datom_store_s3(bucket = "my-bucket", prefix = "test-prefix/",
                          access_key = "k", secret_key = "s", validate = FALSE)
   store <- datom_store(governance = comp, data = comp, github_pat = "ghp_fake",
@@ -418,11 +419,12 @@ test_that("developer path carries the repo's declared minimum writer version", {
   declared <- create_test_datom_repo(bucket = "my-bucket",
                                      min_writer_version = "9.9.9")
   conn <- muffle_conn_warnings(datom_get_conn(path = declared, store = store))
-  expect_identical(conn$min_writer_version, "9.9.9")
+  expect_false("min_writer_version" %in% names(conn))
+  expect_error(.datom_check_writer_floor(conn), class = "datom_writer_floor")
 
   silent <- create_test_datom_repo(bucket = "my-bucket")
   conn <- muffle_conn_warnings(datom_get_conn(path = silent, store = store))
-  expect_null(conn$min_writer_version)
+  expect_silent(.datom_check_writer_floor(conn))
 })
 
 

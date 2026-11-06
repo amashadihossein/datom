@@ -81,12 +81,11 @@
 #'    it is the precondition the self-reference refusal depends on -- that refusal
 #'    needs the set's own identity, and this is where it is established.
 #'
-#' **Read from `project.yaml`, not from the connection.** Only
-#' `min_writer_version` rides on a `datom_conn`; `mode` and `set` are read here,
-#' at the one place that needs them, so nothing has to be threaded through
-#' connection construction for two fields with one consumer. If a later caller
-#' wants them on the conn it is a move with one call site to update, rather than a
-#' decision to reopen.
+#' **Read from `project.yaml`, not from the connection.** No field that
+#' authorises a write rides on a `datom_conn`: `mode` and `set` are read here,
+#' and `min_writer_version` by the writer-floor check, each from the file as it
+#' is at write time, because a hand edit or a pull can replace it after the
+#' connection was built.
 #'
 #' **`datom_init_repo(mode = "product", set = <name>)` is what declares both
 #' fields**, so the supported route into this check is a repo created that way. It
@@ -1217,6 +1216,14 @@ datom_write_set <- function(conn, members, tags = NULL, name = NULL,
   meta <- .datom_build_set_metadata(payload, project = conn$project_name)
   data_sha <- meta$data_sha
   metadata_sha <- .datom_compute_metadata_sha(meta)
+
+  # The merge check, heal's reset and the pull: after every check above, each of
+  # which needs no storage state heal can change, and before change detection,
+  # which reads the stored metadata. Heal acts on this set only; another
+  # artifact's unfinished work stops the write here, before anything changes.
+  # `include_paths` are the caller's files and are never reset.
+  .datom_heal(conn, artifact = name)
+  .datom_pull_before_write(conn)
 
   chg <- .datom_has_changes(conn, name, data_sha, metadata_sha)
   change_type <- chg$change_type

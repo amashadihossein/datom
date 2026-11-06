@@ -963,9 +963,11 @@ test_that(".datom_sync_data_metadata syncs per-table metadata to storage", {
   withr::with_tempdir({
     conn <- .setup_sync_metadata_conn()
 
+    # A datom `hash_algo`, as every table written today declares: a folder that
+    # only holds a metadata.json is not an artifact.
     fs::dir_create("customers")
-    jsonlite::write_json(list(data_sha = "abc"), "customers/metadata.json",
-                         auto_unbox = TRUE)
+    jsonlite::write_json(list(data_sha = "abc", hash_algo = "datom-cv1"),
+                         "customers/metadata.json", auto_unbox = TRUE)
     jsonlite::write_json(list(versions = list()), "customers/version_history.json",
                          auto_unbox = TRUE)
 
@@ -1030,10 +1032,10 @@ test_that(".datom_sync_data_metadata handles per-table errors gracefully", {
     conn <- .setup_sync_metadata_conn()
 
     fs::dir_create("good_tbl")
-    jsonlite::write_json(list(data_sha = "d1"), "good_tbl/metadata.json",
+    jsonlite::write_json(list(data_sha = "d1", hash_algo = "datom-cv1"), "good_tbl/metadata.json",
                          auto_unbox = TRUE)
     fs::dir_create("bad_tbl")
-    jsonlite::write_json(list(data_sha = "d2"), "bad_tbl/metadata.json",
+    jsonlite::write_json(list(data_sha = "d2", hash_algo = "datom-cv1"), "bad_tbl/metadata.json",
                          auto_unbox = TRUE)
 
     local_mocked_bindings(
@@ -1056,7 +1058,7 @@ test_that(".datom_sync_data_metadata syncs metadata snapshots from .metadata dir
     conn <- .setup_sync_metadata_conn()
 
     fs::dir_create("orders")
-    jsonlite::write_json(list(data_sha = "d1"), "orders/metadata.json",
+    jsonlite::write_json(list(data_sha = "d1", hash_algo = "datom-cv1"), "orders/metadata.json",
                          auto_unbox = TRUE)
     fs::dir_create("orders/.metadata")
     jsonlite::write_json(list(version = 1), "orders/.metadata/abc123.json",
@@ -1102,8 +1104,8 @@ test_that(".datom_sync_data_metadata handles multiple tables", {
 
     for (nm in c("alpha", "beta", "gamma")) {
       fs::dir_create(nm)
-      jsonlite::write_json(list(data_sha = nm), paste0(nm, "/metadata.json"),
-                           auto_unbox = TRUE)
+      jsonlite::write_json(list(data_sha = nm, hash_algo = "datom-cv1"),
+                           paste0(nm, "/metadata.json"), auto_unbox = TRUE)
     }
 
     local_mocked_bindings(
@@ -1803,7 +1805,7 @@ test_that("per-table metadata sync's stored error has no escape codes", {
     conn$path <- getwd()
 
     fs::dir_create(fs::path("dm"))
-    writeLines("{}", "dm/metadata.json")
+    writeLines('{"hash_algo": "datom-cv1"}', "dm/metadata.json")
 
     local_mocked_bindings(
       .datom_sync_one_artifact = function(conn, name) {

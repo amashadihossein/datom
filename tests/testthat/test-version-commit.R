@@ -172,25 +172,27 @@ test_that("datom_validate(fix = TRUE) re-derives `commit_sha` instead of strippi
 test_that("the metadata-only route re-derives `commit_sha` that storage has lost", {
   fx <- local_commit_link_project()
   vc_write(fx, "dm", 3L)
+  stored_v1 <- .datom_storage_read_json(fx$conn, .datom_artifact_meta_key("dm", "metadata"))
   vc_write(fx, "dm", 5L)
   expected <- vc_links(vc_stored_history(fx, "dm"))
 
   vc_strip_stored_links(fx, "dm")
   expect_true(all(is.na(vc_links(vc_stored_history(fx, "dm")))))
 
-  # This route exists for a metadata edit made by hand in the clone. `custom` is
-  # hashed into the version, so the edit changes the version while leaving
-  # `data_sha` alone -- which is exactly the `metadata_only` classification the
-  # route needs in order to do anything at all.
-  meta_path <- fs::path(fx$repo_dir, "dm", "metadata.json")
-  meta <- jsonlite::read_json(meta_path, simplifyVector = TRUE)
-  meta$custom <- list(note = "hand-edited")
-  jsonlite::write_json(meta, meta_path, auto_unbox = TRUE, pretty = TRUE)
+  # The route publishes what is committed when storage differs, and makes no
+  # commit of its own (a hand edit of the clone's metadata.json stops it). So the
+  # state it acts on is storage behind the clone's last commit: the stored
+  # metadata.json put back to the first version's.
+  .datom_storage_write_json(
+    fx$conn, .datom_artifact_meta_key("dm", "metadata"), stored_v1
+  )
+  head_before <- vc_head(fx)
 
   result <- suppressMessages(datom_write(fx$conn, data = NULL, name = "dm"))
-  expect_identical(result$action, "metadata_only")
+  expect_identical(result$action, "full")
+  expect_identical(vc_head(fx), head_before)
 
-  # Both pre-existing versions get their commit ids back, worked out from git.
+  # Both versions get their commit ids back, worked out from git.
   links <- vc_links(vc_stored_history(fx, "dm"))
   expect_identical(links[names(expected)], expected)
 })

@@ -13,22 +13,27 @@
 Character vector of artifact names, possibly empty.
 }
 \description{
-Enumerates the artifact directories in the git checkout by the one signal
-that identifies them: a directory holding a \code{metadata.json}. Deliberately
-independent of the manifest, so it still answers correctly when the manifest
-is the document under suspicion.
+A top-level folder is a datom artifact when \strong{the manifest names it} (as
+committed in HEAD, or in the working tree), or when \strong{its \code{metadata.json}
+parses and declares a datom \code{hash_algo}} (\code{datom-cv1} for a table,
+\code{datom-sv1} for a set). The second rule catches an artifact's first write
+broken before its manifest row, and keeps the answer independent of the
+manifest when the manifest is the document under suspicion.
 }
 \details{
-Two callers, and they must agree. The data-side metadata sync mirrors exactly
+A folder that merely holds a \code{metadata.json} is not enough: a joint repo can
+carry a user's own \code{app/metadata.json}, and heal's reset would then discard
+its edits, the repair would publish it, and the format check would refuse a
+write over the user's own fields.
+
+Three callers, and they must agree: heal's reset (\code{\link[=.datom_heal]{.datom_heal()}}) puts back
+exactly these artifacts' files, the data-side metadata sync mirrors exactly
 these artifacts to storage, and the write-entry check inspects exactly the
-documents that route is about to write -- so discovering them twice, in two
-spellings, is how the door ends up checking a different set than the one that
-gets written.
+documents that route is about to write.
 
 The directory filter is the pre-existing one: dotfiles out, plus the fixed
 list of non-artifact directories a joint repo carries (\verb{R/}, \verb{tests/},
-\verb{renv/}, and so on). It is a convenience rather than the discriminator --
-\code{metadata.json} is what actually decides -- which is why a foreign directory
-not on the list is tolerated rather than misread (R14.2).
+\verb{renv/}, and so on). It saves reading their files; the two rules above are
+what decide.
 }
 \keyword{internal}

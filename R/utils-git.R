@@ -586,21 +586,35 @@
 
 #' Push to Remote
 #'
-#' Pulls (fetch + merge) first to detect conflicts, then pushes.
-#' Aborts on merge conflicts -- user must resolve manually per spec.
+#' Pulls first ([.datom_git_pull()], which stops on a merge conflict or when it
+#' cannot bring the clone up to date), then pushes.
+#'
+#' **A push git refuses because the remote holds commits the clone lacks says
+#' so**, and names `datom_pull(conn)` as the way out, instead of the credentials
+#' advice other push failures get. The pull just before the push normally rules
+#' this out; it remains on a branch with no upstream, where the pull merges
+#' nothing, and in the seconds between the pull and the push. With no upstream
+#' the message first says how to set one, because `datom_pull()` merges nothing
+#' until there is one. libgit2 says "non-fastforwardable" when it has fetched the
+#' remote's commit and "not present locally" when it has not, so both are
+#' matched.
 #'
 #' @param path Repository path.
 #' @param pat GitHub personal access token. Passed directly to
 #'   `.datom_git_credentials()`. NULL means unauthenticated.
+#' @param pull_first Pull before pushing (default). Callers that know the
+#'   remote is empty (the first push, a wiped remote) pass `FALSE`.
+#' @param data_file_stored `TRUE` when the caller is a write whose data file is
+#'   already in storage, so a stop here says the file may be there unnamed.
 #' @return Invisible TRUE on success.
 #' @keywords internal
-.datom_git_push <- function(path, pat = NULL, pull_first = TRUE) {
+.datom_git_push <- function(path, pat = NULL, pull_first = TRUE,
+                            data_file_stored = FALSE) {
   .datom_check_git2r()
 
-  # Callers that know the remote is empty (first push, wiped remote) pass
-  # pull_first = FALSE to skip the pre-push sync entirely.
   if (isTRUE(pull_first)) {
-    .datom_git_pull(path, pat = pat)
+    .datom_git_pull(path, pat = pat, in_push = TRUE,
+                    data_file_stored = data_file_stored)
   }
 
   .datom_check_git2r()
@@ -616,6 +630,10 @@
     git2r::push(repo, name = remote_name, refspec = glue::glue("refs/heads/{branch_name}"),
                 credentials = cred),
     error = function(e) {
+      if (grepl("non-fastforwardable|not present locally", conditionMessage(e))) {
+        .datom_stop_push_rejected(repo, remote_name, branch_name, e,
+                                  data_file_stored)
+      }
       cli::cli_abort(c(
         "Failed to push to remote {.val {remote_name}}.",
         "x" = e$message,
@@ -654,18 +672,97 @@
 }
 
 
-#' Pull from Remote (Fetch + Merge)
+#' Stop on a Push git Refused Because the Clone Is Behind
 #'
-#' Fetches from the remote and merges upstream changes into the current
-#' branch. Aborts on merge conflicts - user must resolve manually.
-#' This is the primary defense against diverged histories.
+#' Called from [.datom_git_push()] when libgit2 refuses the push because the
+#' remote branch holds commits the clone lacks. The way out is to pull and
+#' re-run. On a branch with no upstream [datom_pull()] merges nothing, so the
+#' message first says how to set one; the remote branch exists (the refusal says
+#' so) and the pull inside the push has just fetched it, so the command works.
+#'
+#' @param repo A `git2r::repository` handle.
+#' @param remote_name,branch_name The remote and branch being pushed.
+#' @param e The condition git2r raised.
+#' @param data_file_stored See [.datom_git_push()].
+#' @return Does not return.
+#' @keywords internal
+.datom_stop_push_rejected <- function(repo, remote_name, branch_name, e,
+                                      data_file_stored = FALSE) {
+  msg <- conditionMessage(e)
+  upstream <- tryCatch(
+    git2r::branch_get_upstream(git2r::repository_head(repo)),
+    error = function(e) NULL
+  )
+  way_out <- if (is.null(upstream)) {
+    c(
+      "i" = "This branch tracks no remote branch, so set one first: \\
+             {.code git branch --set-upstream-to={remote_name}/{branch_name}}.",
+      "i" = "Then run {.code datom_pull(conn)} to bring the clone up to date, \\
+             and re-run."
+    )
+  } else {
+    c("i" = "Run {.code datom_pull(conn)} to bring the clone up to date, then re-run.")
+  }
+
+  cli::cli_abort(
+    c(
+      "The remote {.val {remote_name}} has commits this clone does not, so git \\
+       refused the push.",
+      "x" = "{msg}",
+      "i" = "Nothing was pushed or published.",
+      .datom_data_file_note(data_file_stored),
+      way_out
+    ),
+    class = "datom_push_rejected"
+  )
+}
+
+
+#' Pull from Remote (Fetch, and Merge Only When Behind)
+#'
+#' The pull every write makes before it writes to the git remote or to storage
+#' (requirements R3.7), and the one [datom_pull()], the push commands and the
+#' migration pull make. Owned by the commands, not by heal: removing heal would
+#' leave it in place.
+#'
+#' In order:
+#'
+#' 1. **The merge check** ([.datom_check_merge()]): a merge in progress stops
+#'    the command before anything changes.
+#' 2. **Fetch.** A failure stops the command with a message saying the remote
+#'    could not be reached; nothing has changed.
+#' 3. **Merge only if the clone is behind**: HEAD does not contain the upstream
+#'    tip just fetched. A clone level with the remote, or ahead of it, merges
+#'    nothing. With no upstream branch nothing is merged, as before: a new code
+#'    branch never has one, and on the project's branch heal pushes before it
+#'    publishes, which git refuses when the clone is behind.
+#' 4. A conflict stops the command, leaving the merge in progress, with the
+#'    merge check's message (it lists the conflicted files and says how to
+#'    finish) ending "No version is published."
+#' 5. **It confirms it caught up**: HEAD must contain the tip. git2r's merge
+#'    silently does nothing when the user's own uncommitted or untracked files
+#'    are in the way of the incoming commits -- no error, no `MERGE_HEAD`, and
+#'    `conflicts = NULL` in its result -- so this is decided by commit, never by
+#'    `git2r::merge()`'s return fields. Otherwise it stops with the
+#'    `git stash -u` recipe.
+#'
+#' Whether HEAD moved is returned for [.datom_pull_before_write()], which runs
+#' the format check on every artifact after a merge. A fast-forward counts:
+#' git2r returns `sha = NA` for one, so its return fields cannot say.
 #'
 #' @param path Repository path.
 #' @param pat GitHub personal access token. Passed directly to
 #'   `.datom_git_credentials()`. NULL means unauthenticated.
-#' @return Invisible TRUE on success.
+#' @param in_push `TRUE` for the pull inside [.datom_git_push()]: a stop then
+#'   says nothing was pushed or published, rather than that datom changed
+#'   nothing (the caller may already have committed).
+#' @param data_file_stored `TRUE` when the caller is a write whose data file is
+#'   already in storage; a stop then says the file may be there, unnamed.
+#' @return Invisibly, `TRUE` when HEAD moved (a merge or a fast-forward),
+#'   `FALSE` otherwise.
 #' @keywords internal
-.datom_git_pull <- function(path, pat = NULL) {
+.datom_git_pull <- function(path, pat = NULL, in_push = FALSE,
+                            data_file_stored = FALSE) {
   .datom_check_git2r()
 
   repo <- tryCatch(
@@ -675,7 +772,10 @@
     }
   )
 
-  # Verify remote exists
+  # Before the fetch: a merge in progress is the user's or an interrupted pull's,
+  # and nothing below may touch the clone while it lasts.
+  .datom_check_merge(path)
+
   remotes <- git2r::remotes(repo)
   if (length(remotes) == 0L) {
     cli::cli_abort(c(
@@ -685,66 +785,225 @@
   }
 
   remote_name <- remotes[[1L]]
-
-  # Build credentials for HTTPS remotes
   remote_url <- git2r::remote_url(repo, remote_name)
   cred <- .datom_git_credentials(remote_url, pat = pat)
 
-  # Fetch from remote
-  tryCatch(
-    git2r::fetch(repo, name = remote_name, credentials = cred),
-    error = function(e) {
-      cli::cli_abort(c(
-        "Failed to fetch from remote {.val {remote_name}}.",
-        "x" = e$message,
-        "i" = "Check your credentials and remote access."
-      ))
-    }
+  # Acted on outside the handler, so the stop is raised from this function.
+  fetched <- tryCatch(
+    {
+      git2r::fetch(repo, name = remote_name, credentials = cred)
+      NULL
+    },
+    error = function(e) e
   )
+  if (!is.null(fetched)) {
+    .datom_stop_fetch_failed(remote_name, fetched, in_push, data_file_stored)
+  }
 
-  # Check if upstream branch exists
   upstream_ref <- tryCatch(
     git2r::branch_get_upstream(git2r::repository_head(repo)),
     error = function(e) NULL
   )
+  if (is.null(upstream_ref)) return(invisible(FALSE))
 
-  if (!is.null(upstream_ref)) {
-    # Merge upstream into current branch (merge expects the branch name
-    # string). git2r asks for a merger signature even when already up to
-    # date, so pass one rather than let it fail on a host with no identity.
-    sig <- .datom_git_signature(repo)
-    merge_result <- tryCatch(
-      git2r::merge(repo, upstream_ref$name, merger = sig),
-      error = function(e) {
-        cli::cli_abort(c(
-          "Failed to merge upstream changes.",
-          "x" = e$message
-        ))
-      }
-    )
+  tip <- git2r::branch_target(upstream_ref)
+  head_before <- .datom_git_head_sha(repo)
 
-    if (isTRUE(merge_result$conflicts)) {
-      # Do NOT tell the caller to pull -- the pull is what produced this.
-      # Conflicts here are almost always in datom's own generated JSON
-      # (`version_history.json`, `.datom/manifest.json`), which a re-run
-      # rebuilds from the data, so keeping the remote side is the safe
-      # resolution rather than a hand-merge of hashes.
-      cli::cli_abort(c(
-        "Merge conflict detected \u2014 manual resolution required.",
-        "i" = "See the conflicting files with {.code git status}.",
-        "i" = paste(
-          "For datom's own files ({.file version_history.json},",
-          "{.file .datom/manifest.json}), keep the remote version",
-          "({.code git checkout --theirs <file>}) and re-run your write --",
-          "it rebuilds your side from the data."
-        ),
-        "i" = "For your own files, resolve by hand, then commit and re-run.",
-        "i" = "Nothing has been written to storage, so no version is half-published."
-      ))
-    }
+  # Level with the remote or ahead of it: nothing to merge, so no merge runs.
+  if (.datom_git_contains(repo, head_before, tip)) return(invisible(FALSE))
+
+  merge_result <- .datom_git_merge_upstream(repo, upstream_ref)
+
+  if (isTRUE(merge_result$conflicts)) {
+    .datom_stop_merge_conflict(path, after_pull = TRUE,
+                               data_file_stored = data_file_stored)
   }
 
-  invisible(TRUE)
+  # Decided by commit: merge() returns conflicts = NULL both when it succeeded
+  # and when the user's files stopped it from doing anything.
+  head_after <- .datom_git_head_sha(repo)
+  if (!.datom_git_contains(repo, head_after, tip)) {
+    .datom_stop_pull_blocked(in_push, data_file_stored)
+  }
+
+  invisible(!identical(head_before, head_after))
+}
+
+
+#' Merge the Upstream Branch Into the Current One
+#'
+#' The one call to `git2r::merge()` in the pull, in its own function so a test
+#' can count it: the pull merges only when the clone is behind.
+#'
+#' git2r asks for a merger signature even when already up to date, so one is
+#' passed rather than letting it fail on a host with no git identity.
+#'
+#' @param repo A `git2r::repository` handle.
+#' @param upstream_ref The branch's upstream, from `git2r::branch_get_upstream()`.
+#' @return `git2r::merge()`'s result.
+#' @keywords internal
+.datom_git_merge_upstream <- function(repo, upstream_ref) {
+  sig <- .datom_git_signature(repo)
+  tryCatch(
+    git2r::merge(repo, upstream_ref$name, merger = sig),
+    error = function(e) {
+      msg <- conditionMessage(e)
+      cli::cli_abort(c(
+        "Failed to merge upstream changes.",
+        "x" = "{msg}"
+      ))
+    }
+  )
+}
+
+
+#' Does Commit A Contain Commit B
+#'
+#' `TRUE` when A is B or descends from it. The one test behind three decisions:
+#' the merge check's "is this a merge of the remote branch" (the upstream tip
+#' contains `MERGE_HEAD`), and the pull's "is the clone behind" (HEAD does not
+#' contain the tip) and "did it catch up" (HEAD contains the tip).
+#'
+#' Equality is tested first because `git2r::descendant_of()` is `FALSE` for a
+#' commit and itself. A commit that cannot be looked up, or a missing one, gives
+#' `FALSE`: every caller then stops or merges, never skips a step.
+#'
+#' @param repo A `git2r::repository` handle.
+#' @param a,b Commit SHAs, or `NA`.
+#' @return `TRUE` or `FALSE`.
+#' @keywords internal
+.datom_git_contains <- function(repo, a, b) {
+  if (length(a) != 1L || length(b) != 1L || is.na(a) || is.na(b)) return(FALSE)
+  if (identical(a, b)) return(TRUE)
+  isTRUE(tryCatch(
+    git2r::descendant_of(git2r::lookup(repo, a), git2r::lookup(repo, b)),
+    error = function(e) FALSE
+  ))
+}
+
+
+#' The SHA HEAD Points At
+#'
+#' @param repo A `git2r::repository` handle.
+#' @return The SHA, or `NA_character_` in a repo with no commits.
+#' @keywords internal
+.datom_git_head_sha <- function(repo) {
+  tryCatch(
+    as.character(git2r::revparse_single(repo, "HEAD")$sha),
+    error = function(e) NA_character_
+  )
+}
+
+
+#' A File as Committed in HEAD
+#'
+#' Reads one file's content from a commit rather than from the working tree,
+#' so a caller can compare the two. `head` names the commit: `"HEAD"` by
+#' default, or another head such as `"MERGE_HEAD"`.
+#'
+#' @param path Repository path.
+#' @param rel The file's path relative to the repo root, with forward slashes.
+#' @param head The commit to read from.
+#' @return The file's content as one string, or `NULL` when the commit does not
+#'   hold the file, or `path` is not a git repo.
+#' @keywords internal
+.datom_git_head_file <- function(path, rel, head = "HEAD") {
+  repo <- tryCatch(git2r::repository(path), error = function(e) NULL)
+  if (is.null(repo)) return(NULL)
+
+  obj <- tryCatch(
+    git2r::revparse_single(repo, paste0(head, ":", rel)),
+    error = function(e) NULL
+  )
+  if (is.null(obj) || !git2r::is_blob(obj)) return(NULL)
+
+  git2r::content(obj, split = FALSE)
+}
+
+
+#' What a Stop in the Pull Says Has Happened
+#'
+#' At the start of a command nothing has changed yet. Inside a push the caller
+#' may already have committed (and a write has stored its data file), so the
+#' honest statement is narrower.
+#'
+#' @param in_push See [.datom_git_pull()].
+#' @return One sentence.
+#' @keywords internal
+.datom_pull_outcome <- function(in_push) {
+  if (isTRUE(in_push)) "Nothing was pushed or published." else "datom changed nothing."
+}
+
+
+#' The Line a Write's Stop Adds Once Its Data File Is Stored
+#'
+#' A write stores its data file before anything in the clone changes, so a stop
+#' at its push leaves that file in storage with no version naming it.
+#'
+#' @param data_file_stored See [.datom_git_push()].
+#' @return A named character vector of one cli bullet, or `character()`.
+#' @keywords internal
+.datom_data_file_note <- function(data_file_stored) {
+  if (!isTRUE(data_file_stored)) return(character())
+  c("i" = "This write's data file may already be in storage, unnamed until the \\
+           write finishes.")
+}
+
+
+#' Stop When the Fetch Fails
+#'
+#' A failed fetch stops the command before it changes anything (design DD1):
+#' the remote cannot be compared with, so nothing that depends on it is decided.
+#'
+#' @param remote_name The remote.
+#' @param e The condition git2r raised.
+#' @param in_push,data_file_stored See [.datom_git_pull()].
+#' @return Does not return.
+#' @keywords internal
+.datom_stop_fetch_failed <- function(remote_name, e, in_push, data_file_stored) {
+  msg <- conditionMessage(e)
+  cli::cli_abort(
+    c(
+      "Could not fetch from the git remote {.val {remote_name}}.",
+      "x" = "{msg}",
+      "i" = .datom_pull_outcome(in_push),
+      .datom_data_file_note(data_file_stored),
+      "i" = "Check your connection, credentials and remote access, then re-run."
+    ),
+    class = "datom_fetch_failed"
+  )
+}
+
+
+#' Stop When the Pull Could Not Catch Up
+#'
+#' The user's own uncommitted or untracked files are in the way of the commits
+#' the pull brings in. The recipe is traced (`research/dirty_pull_probe.R`):
+#' `-u`, because a plain `git stash` leaves an untracked file in the way; and
+#' "resolve anything `git stash pop` reports", because pop can report a conflict
+#' or refuse to restore an untracked file, keeping the stash, and a set write
+#' listing such a file in `include_paths` would otherwise commit conflict
+#' markers. The files are not named: that would mean comparing the clone's
+#' changes with what the incoming commits touch, for a rare case, and the recipe
+#' works without knowing which file blocks.
+#'
+#' @param in_push,data_file_stored See [.datom_git_pull()].
+#' @return Does not return.
+#' @keywords internal
+.datom_stop_pull_blocked <- function(in_push, data_file_stored) {
+  cli::cli_abort(
+    c(
+      "Could not bring the clone up to date: local changes are in the way of \\
+       the incoming commits (see {.code git status}).",
+      "i" = .datom_pull_outcome(in_push),
+      .datom_data_file_note(data_file_stored),
+      "i" = "Set them aside with {.code git stash -u}, run \\
+             {.code datom_pull(conn)}, bring them back with \\
+             {.code git stash pop}, resolve anything {.code git stash pop} \\
+             reports, then re-run."
+    ),
+    class = "datom_pull_blocked"
+  )
 }
 
 

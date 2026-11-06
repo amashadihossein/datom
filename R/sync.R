@@ -1040,22 +1040,27 @@ datom_sync <- function(conn,
 
 #' The Artifacts Present in the Local Clone
 #'
-#' Enumerates the artifact directories in the git checkout by the one signal
-#' that identifies them: a directory holding a `metadata.json`. Deliberately
-#' independent of the manifest, so it still answers correctly when the manifest
-#' is the document under suspicion.
+#' A top-level folder is a datom artifact when **the manifest names it** (as
+#' committed in HEAD, or in the working tree), or when **its `metadata.json`
+#' parses and declares a datom `hash_algo`** (`datom-cv1` for a table,
+#' `datom-sv1` for a set). The second rule catches an artifact's first write
+#' broken before its manifest row, and keeps the answer independent of the
+#' manifest when the manifest is the document under suspicion.
 #'
-#' Two callers, and they must agree. The data-side metadata sync mirrors exactly
+#' A folder that merely holds a `metadata.json` is not enough: a joint repo can
+#' carry a user's own `app/metadata.json`, and heal's reset would then discard
+#' its edits, the repair would publish it, and the format check would refuse a
+#' write over the user's own fields.
+#'
+#' Three callers, and they must agree: heal's reset ([.datom_heal()]) puts back
+#' exactly these artifacts' files, the data-side metadata sync mirrors exactly
 #' these artifacts to storage, and the write-entry check inspects exactly the
-#' documents that route is about to write -- so discovering them twice, in two
-#' spellings, is how the door ends up checking a different set than the one that
-#' gets written.
+#' documents that route is about to write.
 #'
 #' The directory filter is the pre-existing one: dotfiles out, plus the fixed
 #' list of non-artifact directories a joint repo carries (`R/`, `tests/`,
-#' `renv/`, and so on). It is a convenience rather than the discriminator --
-#' `metadata.json` is what actually decides -- which is why a foreign directory
-#' not on the list is tolerated rather than misread (R14.2).
+#' `renv/`, and so on). It saves reading their files; the two rules above are
+#' what decide.
 #'
 #' @param conn A `datom_conn` object with a local path.
 #' @return Character vector of artifact names, possibly empty.
@@ -1068,12 +1073,43 @@ datom_sync <- function(conn,
   dirs <- dirs[!grepl("^\\.", fs::path_file(dirs))]
   dirs <- dirs[!fs::path_file(dirs) %in%
     c("input_files", "renv", "man", "R", "tests", "vignettes", "src")]
+  if (length(dirs) == 0L) return(character())
+
+  named <- union(
+    .datom_manifest_names_at(conn$path, "HEAD"),
+    .datom_manifest_names_at(conn$path)
+  )
 
   dirs <- dirs[purrr::map_lgl(dirs, function(d) {
-    fs::file_exists(fs::path(d, "metadata.json"))
+    if (fs::path_file(d) %in% named) return(TRUE)
+    meta_path <- fs::path(d, "metadata.json")
+    if (!fs::file_exists(meta_path)) return(FALSE)
+    meta <- tryCatch(jsonlite::read_json(meta_path), error = function(e) NULL)
+    is.list(meta) && isTRUE(meta$hash_algo %in% c("datom-cv1", "datom-sv1"))
   })]
 
   as.character(fs::path_file(dirs))
+}
+
+
+#' The Artifact Names a Manifest Lists
+#'
+#' @param path Repository path.
+#' @param head `NULL` for the working tree's `.datom/manifest.json`, or a commit
+#'   to read it from (`"HEAD"`, `"MERGE_HEAD"`).
+#' @return Character vector, empty when there is no manifest or it does not
+#'   parse.
+#' @keywords internal
+.datom_manifest_names_at <- function(path, head = NULL) {
+  text <- if (is.null(head)) {
+    manifest_path <- fs::path(path, ".datom", "manifest.json")
+    if (fs::file_exists(manifest_path)) {
+      paste(readLines(manifest_path, warn = FALSE), collapse = "\n")
+    }
+  } else {
+    .datom_git_head_file(path, ".datom/manifest.json", head = head)
+  }
+  as.character(names(.datom_manifest_rows(text)))
 }
 
 

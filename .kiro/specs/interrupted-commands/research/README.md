@@ -27,7 +27,12 @@ Rerun from the repo root, for example:
 - `sync_and_manifest_probe.R`: `datom_sync()` broken at the push, then re-scanned and re-synced; and
   a write broken at the manifest step, then compared with what a reader's `datom_list()` shows.
 - `other_command_probe.R`: a write of `dm` broken at its commit or its push, then a write of `lb`;
-  reads GitHub's copy of the manifest and of `dm/metadata.json` with the git CLI.
+  reads GitHub's copy of the manifest and of `dm/metadata.json` with the git CLI. Updated in task
+  4a (2026-11-04): a row counts only if its break fired, and it reports whether `lb`'s write
+  stopped. Result after task 4a: both breaks fired; after `dm` broke at its commit, `lb`'s write
+  stops (`datom_unfinished_work`), naming `dm`'s three files and `datom_validate(fix = TRUE)`, with
+  HEAD unmoved and nothing of `lb` in storage; after `dm` broke at its push, `lb`'s write still goes
+  ahead and pushes `dm`'s commit, which task 4b's stop on a differing row ends.
 - `two_writers_probe.R`: two clones of one project write different tables without pulling in
   between; reports whether the second write's push hits a merge conflict, and in which files
   (result: a conflict in `.datom/manifest.json` only).
@@ -88,7 +93,9 @@ Added 2026-10-31 during the review of `058f29b` (local only; recorded in `../des
   real datom project: plain `git stash` leaves the untracked file, and `datom_pull()` reports
   success while still behind; `git stash -u` then `datom_pull()` catches up, and `git stash pop`
   reports a conflict or "already exists", keeping the stash. This is the pull's caught-up check
-  (requirements R3.7).
+  (requirements R3.7). Rerun after task 4a (2026-11-04): part 1 unchanged (it is git2r alone); in
+  part 2 the plain-`git stash` case now has `datom_pull()` stop with the `git stash -u` message
+  (`datom_pull_blocked`) instead of reporting success, and the two `-u` cases catch up as before.
 
 Added 2026-10-31 in task 2 (a tool, not a finding):
 
@@ -108,3 +115,22 @@ traced").
   clone changes, the stored spelling copied to `set.json`, the S3 upload sending the hash it is given,
   the resolvers passing their hash, the set resolver's history branch, the restore's two branches, and
   the re-pointed repair counter with its old-function twin). Results in task 3's commit message.
+
+Added 2026-11-04 in task 4a:
+
+- `task4a_git_facts_probe.R`: git2r facts task 4a's code relies on (git2r 0.36.2). (1)
+  `git2r::reset(repo, path = )` unstages chosen paths: a staged edit becomes an unstaged one, a
+  staged new file becomes untracked; `checkout(path =, force = TRUE)` then restores the tracked one
+  (design section 10, item 1). (2) `git2r::merge(commit_on_success = FALSE)` of a local branch that
+  has diverged leaves `MERGE_HEAD` and `MERGE_MSG` ("Merge branch 'feature'") with nothing
+  conflicted, as `git merge --no-commit` does; one that can fast-forward just moves HEAD. (3) A push
+  of a clone behind its remote fails with "cannot push because a reference ... contains commits that
+  are not present locally" before a fetch and "cannot push non-fastforwardable reference" after one,
+  with or without an upstream branch. (4) `git2r::stash(untracked = TRUE)` and `stash_pop()` set
+  aside and restore a modified and an untracked file.
+- `task4a_guard_probes.R`: the harness with task 4a's probes (the merge check's two stops and each
+  half of its test, the reset, the stop on another artifact's files, the manifest-row check, the
+  folder rules, merge only when behind, a fast-forward counting as a merge, the re-run entry check,
+  the fetch-failure stop, the caught-up check, the rejected-push message, the pull before change
+  detection, a refusal check placed before heal, the floor read from `project.yaml`). Results in
+  task 4a's commit message.

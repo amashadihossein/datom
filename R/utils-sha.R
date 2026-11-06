@@ -576,7 +576,24 @@
 }
 
 
-#' Sync Single Table Metadata to S3
+#' Publish One Table's Committed Metadata: `datom_write(conn, name =)`
+#'
+#' The metadata-only route. It rewrites none of the table's files: it publishes
+#' the table's `metadata.json` and `version_history.json` **as committed**, when
+#' the stored copy differs. It makes no commit.
+#'
+#' datom's own files are not edited by hand (an uncommitted change to one is
+#' treated as an unfinished write), so heal runs here with no artifact of its
+#' own: any uncommitted change to a datom file, this table's included, stops the
+#' route before anything changes, naming `datom_validate(fix = TRUE)`. To change
+#' a table's custom metadata, write it with
+#' `datom_write(conn, data, name, metadata = )`.
+#'
+#' In order: heal's reset (which starts with the merge check), the route's own
+#' pull (the format check runs again after a merge), change detection against
+#' storage, a push when the clone holds commits the remote lacks (so storage
+#' never names a version GitHub does not have), then the upload. The history
+#' goes up with each entry's commit worked out from git.
 #'
 #' @param conn Connection object.
 #' @param name Table name.
@@ -602,21 +619,15 @@
   repo_path <- conn$path
   table_dir <- fs::path(repo_path, name)
 
-  # Pull before write to ensure fresh state
-  .datom_git_pull(repo_path, pat = conn$github_pat)
-
-  # The forward-compatibility checks ran at datom_write()'s door -- and the pull
-  # above has just replaced the documents they read. A collaborator on a newer
-  # datom can land their manifest or their metadata.json in that pull, so the
-  # answer from the door describes a state this route no longer has. Re-run them
-  # here, against what the pull actually left on disk.
-  #
-  # Cheap and safe to repeat: every step is a local file read and none of them
-  # mutates anything. The alternative considered was for the door to own the
-  # freshness instead -- one fetch there and no route pulling afterwards -- but a
-  # fetch does not update the working tree, so it would not make these reads any
-  # fresher, and dropping this pull would leave the commit below on a stale base.
-  .datom_check_write_entry(conn, name)
+  # Heal with no artifact of its own, just before the route's own pull: this
+  # route rewrites no file, so any uncommitted change to a datom file stops it.
+  # The pull then brings the clone up to date. A collaborator on a newer datom
+  # can land their manifest or this table's metadata.json in it, so after a
+  # merge the forward-compatibility checks run again on every artifact, against
+  # what the pull left on disk; without a merge nothing new arrived, and the
+  # check at datom_write()'s door already read this table.
+  .datom_heal(conn)
+  .datom_pull_before_write(conn)
 
   metadata_path <- fs::path(table_dir, "metadata.json")
   if (!fs::file_exists(metadata_path)) {
@@ -643,48 +654,27 @@
     )))
   }
 
-  # Git commit + push first (local -> git -> S3 ordering)
   history_path <- fs::path(table_dir, "version_history.json")
 
-  git_files <- character()
-  if (fs::file_exists(metadata_path)) {
-    git_files <- c(git_files, fs::path_rel(metadata_path, repo_path))
-  }
-  if (fs::file_exists(history_path)) {
-    git_files <- c(git_files, fs::path_rel(history_path, repo_path))
+  # The version is committed (heal stopped on anything uncommitted), but a write
+  # whose push broke leaves it unpushed: push first, so storage never names a
+  # version GitHub lacks. The push's own pull runs again just before it.
+  ahead <- .datom_git_ahead(repo_path)
+  if (is.na(ahead) || ahead > 0L) {
+    .datom_git_push(repo_path, pat = conn$github_pat)
   }
 
-  commit_sha <- tryCatch(
-    {
-      sha <- .datom_git_commit(repo_path, git_files, paste0("Sync metadata for ", name))
-      .datom_git_push(repo_path, pat = conn$github_pat)
-      sha
-    },
-    error = function(e) {
-      cli::cli_abort(c(
-        "Git commit/push failed for {.val {name}}. S3 sync aborted.",
-        "x" = conditionMessage(e),
-        "i" = "Resolve the git issue and re-run. S3 was not modified."
-      ))
-    }
-  )
-
-  # Sync metadata files to S3 (only after git succeeds)
   s3_metadata_key <- .datom_artifact_meta_key(name, "metadata")
   .datom_storage_write_json(conn, s3_metadata_key, metadata)
 
   s3_keys <- s3_metadata_key
 
-  # Sync version_history.json if it exists locally.
-  #
-  # The commit made above is threaded in, so the version this route just recorded
-  # names its producing commit without a git walk. Older entries keep whatever
-  # storage holds, or are worked out from git. See `R/version-commit.R`.
+  # This route makes no commit, so it has none to hand on: every entry's
+  # `commit_sha` is worked out from git, as the repair's are. See
+  # `R/version-commit.R`.
   if (fs::file_exists(history_path)) {
     history <- jsonlite::read_json(history_path)
-    history <- .datom_history_with_commit_shas(
-      conn, name, history, version = metadata_sha, commit_sha = commit_sha
-    )
+    history <- .datom_history_with_commit_shas(conn, name, history)
     s3_history_key <- .datom_artifact_meta_key(name, "version_history")
     .datom_storage_write_json(conn, s3_history_key, history)
     s3_keys <- c(s3_keys, s3_history_key)
@@ -696,8 +686,7 @@
     name = name,
     metadata_sha = metadata_sha,
     action = change_type,
-    s3_keys = s3_keys,
-    commit_sha = commit_sha
+    s3_keys = s3_keys
   ))
 }
 

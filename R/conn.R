@@ -9,6 +9,11 @@
 #' The primary fields (`root`, `prefix`, `region`, `client`) refer to
 #' the **data store**. Governance store fields are prefixed with `gov_`.
 #'
+#' The repo's writer floor (`min_writer_version`) is not held here: the write
+#' check reads it from the clone's `project.yaml` on every write
+#' ([.datom_check_writer_floor()]), so a floor raised in a pull binds the write
+#' it arrived in.
+#'
 #' @param project_name Project name string.
 #' @param root Storage root (S3 bucket name or local directory path).
 #' @param prefix Storage prefix (can be NULL).
@@ -35,11 +40,6 @@
 #' @param github_api_url GitHub API base URL. Sourced from
 #'   `store$github_api_url` at conn-construction time. Defaults to
 #'   `"https://api.github.com"` when not set.
-#' @param min_writer_version The lowest version of datom this repo accepts
-#'   writes from, read from `project.yaml` at conn-construction time. `NULL`
-#'   means the repo declares no such limit, which is every repo written so far.
-#'   Held on the connection because the file it comes from is already parsed
-#'   there, so the write-entry check costs no extra read.
 #'
 #' @return A `datom_conn` object.
 #' @keywords internal
@@ -60,8 +60,7 @@ new_datom_conn <- function(project_name,
                           backend = "s3",
                           data_repo_url = NULL,
                           github_pat = NULL,
-                          github_api_url = NULL,
-                          min_writer_version = NULL) {
+                          github_api_url = NULL) {
   role <- match.arg(role)
   backend <- match.arg(backend, c("s3", "local"))
 
@@ -125,8 +124,7 @@ new_datom_conn <- function(project_name,
       gov_local_path = gov_local_path,
       data_repo_url = data_repo_url,
       github_pat    = github_pat,
-      github_api_url = github_api_url,
-      min_writer_version = min_writer_version
+      github_api_url = github_api_url
     ),
     class = "datom_conn"
   )
@@ -1284,21 +1282,10 @@ datom_get_conn <- function(path = NULL,
   conn$github_pat <- store$github_pat
   conn$github_api_url <- store$github_api_url
 
-  # The repo's declared minimum writer version, if it declares one. Read here
-  # because project.yaml is already parsed on this path; the write entry then
-  # costs no extra read. Absent in every repo written so far, and absent must
-  # stay indistinguishable from "no limit" -- see .datom_check_writer_floor().
-  #
-  # RESIDUAL, recorded rather than fixed: `cfg` is the PRE-PULL parse. When
-  # .datom_resolve_data_location() above detects a migration it pulls git, which
-  # can replace project.yaml -- so a floor raised in that pull is missed for this
-  # session. The pulled file's FORMAT is checked (the re-read in `R/ref.R` gates
-  # it), but the floor is not, because this assignment runs off the older copy.
-  # Fixing it means re-parsing after the resolve returns, which is a change to
-  # connection construction with the writer-floor test surface attached; the
-  # window is one session on a migrating repo, and the next connection reads the
-  # pulled file.
-  conn$min_writer_version <- cfg$min_writer_version
+  # The repo's declared minimum writer version is deliberately NOT copied onto
+  # the connection: the write check reads it from project.yaml on every write
+  # (.datom_check_writer_floor()), because a pull -- the one every write makes,
+  # or the migration pull above -- can raise it after this parse.
 
   # The repo's declared mode, for the ONE consumer that only reports: the mode
   # line in datom_status(). Absent means an ordinary data repo.

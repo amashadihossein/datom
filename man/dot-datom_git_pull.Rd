@@ -2,22 +2,58 @@
 % Please edit documentation in R/utils-git.R
 \name{.datom_git_pull}
 \alias{.datom_git_pull}
-\title{Pull from Remote (Fetch + Merge)}
+\title{Pull from Remote (Fetch, and Merge Only When Behind)}
 \usage{
-.datom_git_pull(path, pat = NULL)
+.datom_git_pull(path, pat = NULL, in_push = FALSE, data_file_stored = FALSE)
 }
 \arguments{
 \item{path}{Repository path.}
 
 \item{pat}{GitHub personal access token. Passed directly to
 \code{.datom_git_credentials()}. NULL means unauthenticated.}
+
+\item{in_push}{\code{TRUE} for the pull inside \code{\link[=.datom_git_push]{.datom_git_push()}}: a stop then
+says nothing was pushed or published, rather than that datom changed
+nothing (the caller may already have committed).}
+
+\item{data_file_stored}{\code{TRUE} when the caller is a write whose data file is
+already in storage; a stop then says the file may be there, unnamed.}
 }
 \value{
-Invisible TRUE on success.
+Invisibly, \code{TRUE} when HEAD moved (a merge or a fast-forward),
+\code{FALSE} otherwise.
 }
 \description{
-Fetches from the remote and merges upstream changes into the current
-branch. Aborts on merge conflicts - user must resolve manually.
-This is the primary defense against diverged histories.
+The pull every write makes before it writes to the git remote or to storage
+(requirements R3.7), and the one \code{\link[=datom_pull]{datom_pull()}}, the push commands and the
+migration pull make. Owned by the commands, not by heal: removing heal would
+leave it in place.
+}
+\details{
+In order:
+\enumerate{
+\item \strong{The merge check} (\code{\link[=.datom_check_merge]{.datom_check_merge()}}): a merge in progress stops
+the command before anything changes.
+\item \strong{Fetch.} A failure stops the command with a message saying the remote
+could not be reached; nothing has changed.
+\item \strong{Merge only if the clone is behind}: HEAD does not contain the upstream
+tip just fetched. A clone level with the remote, or ahead of it, merges
+nothing. With no upstream branch nothing is merged, as before: a new code
+branch never has one, and on the project's branch heal pushes before it
+publishes, which git refuses when the clone is behind.
+\item A conflict stops the command, leaving the merge in progress, with the
+merge check's message (it lists the conflicted files and says how to
+finish) ending "No version is published."
+\item \strong{It confirms it caught up}: HEAD must contain the tip. git2r's merge
+silently does nothing when the user's own uncommitted or untracked files
+are in the way of the incoming commits -- no error, no \code{MERGE_HEAD}, and
+\code{conflicts = NULL} in its result -- so this is decided by commit, never by
+\code{git2r::merge()}'s return fields. Otherwise it stops with the
+\verb{git stash -u} recipe.
+}
+
+Whether HEAD moved is returned for \code{\link[=.datom_pull_before_write]{.datom_pull_before_write()}}, which runs
+the format check on every artifact after a merge. A fast-forward counts:
+git2r returns \code{sha = NA} for one, so its return fields cannot say.
 }
 \keyword{internal}

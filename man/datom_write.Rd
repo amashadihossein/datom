@@ -14,7 +14,8 @@ datom_write(
   .source_lineage = NULL,
   .table_type = "derived",
   .original_file_sha = NULL,
-  .original_format = NULL
+  .original_format = NULL,
+  .healed = FALSE
 )
 }
 \arguments{
@@ -54,6 +55,10 @@ imported self-entry path, set by \code{\link[=datom_sync]{datom_sync()}}. Unused
 
 \item{.original_format}{Internal. Original file format
 (set by \code{datom_sync()}); NULL for derived.}
+
+\item{.healed}{Internal. \code{TRUE} when the caller has already run the merge
+check, heal and the pull for this call, so a sync heals and pulls once
+rather than once per table.}
 }
 \value{
 List with deployment details.

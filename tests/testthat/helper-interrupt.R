@@ -112,3 +112,91 @@ local_break_at <- function(step, name = NULL, env = parent.frame()) {
   do.call(testthat::local_mocked_bindings, c(bindings, list(.env = env)))
   invisible(NULL)
 }
+
+
+#' A teammate's clone of an interrupt project.
+#'
+#' Made with `datom_clone()`, as a teammate joins, so its branch tracks the
+#' remote's. Two clones of one project are how a test makes one of them behind,
+#' or gives the remote commits a clone lacks.
+#'
+#' @param fx A project from `local_interrupt_project()`.
+#' @param name Folder name under the project's root.
+#' @return A list with `repo` (the clone's path) and `conn`.
+local_second_clone <- function(fx, name = "repo2") {
+  path <- file.path(fx$root, name)
+  conn <- suppressMessages(datom_clone(path, fx$store))
+  list(repo = path, conn = conn)
+}
+
+
+#' Everything a test compares to say a command changed nothing in a clone.
+#'
+#' HEAD, whether a merge is in progress, `git status`, and the bytes of every
+#' file in the working tree. `.git/` is left out of the file list on purpose: a
+#' fetch rewrites `FETCH_HEAD` and the remote-tracking refs, which is reading
+#' the remote, not changing the project.
+#'
+#' @param path The clone's path.
+#' @return A list to compare with `expect_identical()`.
+snapshot_clone <- function(path) {
+  repo <- git2r::repository(path)
+  files <- fs::dir_ls(path, recurse = TRUE, all = TRUE, type = "file")
+  files <- files[!grepl("(^|/)\\.git(/|$)", fs::path_rel(files, path))]
+  status <- git2r::status(repo, staged = TRUE, unstaged = TRUE, untracked = TRUE)
+  list(
+    head = as.character(git2r::revparse_single(repo, "HEAD")$sha),
+    merging = fs::file_exists(fs::path(repo$path, "MERGE_HEAD")),
+    status = lapply(unclass(status), function(x) sort(unlist(x))),
+    files = stats::setNames(
+      unname(tools::md5sum(files)),
+      as.character(fs::path_rel(files, path))
+    )[order(as.character(fs::path_rel(files, path)))]
+  )
+}
+
+
+#' The branch tips of a project's bare remote.
+#'
+#' @param fx A project from `local_interrupt_project()`.
+#' @return A named character vector, branch name to SHA.
+snapshot_remote <- function(fx) {
+  bare <- git2r::repository(file.path(fx$root, "remote.git"))
+  heads <- git2r::branches(bare, flags = "local")
+  tips <- vapply(heads, git2r::branch_target, character(1))
+  tips[order(names(tips))]
+}
+
+
+#' Every file in a project's storage, with its bytes' hash.
+#'
+#' @param fx A project from `local_interrupt_project()`.
+#' @return A named character vector, path to MD5.
+snapshot_storage <- function(fx) {
+  dir <- file.path(fx$root, "storage")
+  files <- fs::dir_ls(dir, recurse = TRUE, all = TRUE, type = "file")
+  rel <- as.character(fs::path_rel(files, dir))
+  stats::setNames(unname(tools::md5sum(files)), rel)[order(rel)]
+}
+
+
+#' Commit and push files in a clone with git2r, outside datom.
+#'
+#' How a test makes a teammate's commit that datom did not write: a user file,
+#' a hand-edited `project.yaml`, or a document "from a newer datom".
+#'
+#' @param path The clone's path.
+#' @param files Repo-relative paths, already written.
+#' @param message Commit message.
+#' @param push Push to the remote too (default).
+#' @return Invisibly the new commit's SHA.
+git_commit_files <- function(path, files, message, push = TRUE) {
+  repo <- git2r::repository(path)
+  git2r::add(repo, files)
+  sig <- .datom_git_signature(repo)
+  commit <- git2r::commit(repo, message, author = sig, committer = sig)
+  if (push) {
+    git2r::push(repo, name = "origin", refspec = test_head_refspec(repo))
+  }
+  invisible(as.character(commit$sha))
+}

@@ -4,19 +4,36 @@
 \alias{.datom_git_push}
 \title{Push to Remote}
 \usage{
-.datom_git_push(path, pat = NULL, pull_first = TRUE)
+.datom_git_push(path, pat = NULL, pull_first = TRUE, data_file_stored = FALSE)
 }
 \arguments{
 \item{path}{Repository path.}
 
 \item{pat}{GitHub personal access token. Passed directly to
 \code{.datom_git_credentials()}. NULL means unauthenticated.}
+
+\item{pull_first}{Pull before pushing (default). Callers that know the
+remote is empty (the first push, a wiped remote) pass \code{FALSE}.}
+
+\item{data_file_stored}{\code{TRUE} when the caller is a write whose data file is
+already in storage, so a stop here says the file may be there unnamed.}
 }
 \value{
 Invisible TRUE on success.
 }
 \description{
-Pulls (fetch + merge) first to detect conflicts, then pushes.
-Aborts on merge conflicts -- user must resolve manually per spec.
+Pulls first (\code{\link[=.datom_git_pull]{.datom_git_pull()}}, which stops on a merge conflict or when it
+cannot bring the clone up to date), then pushes.
+}
+\details{
+\strong{A push git refuses because the remote holds commits the clone lacks says
+so}, and names \code{datom_pull(conn)} as the way out, instead of the credentials
+advice other push failures get. The pull just before the push normally rules
+this out; it remains on a branch with no upstream, where the pull merges
+nothing, and in the seconds between the pull and the push. With no upstream
+the message first says how to set one, because \code{datom_pull()} merges nothing
+until there is one. libgit2 says "non-fastforwardable" when it has fetched the
+remote's commit and "not present locally" when it has not, so both are
+matched.
 }
 \keyword{internal}

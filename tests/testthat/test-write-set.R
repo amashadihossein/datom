@@ -351,7 +351,7 @@ test_that("a set write respects the repo's declared writer floor", {
   fx <- local_set_project()
   members <- sw_one_member(fx)
 
-  fx$conn$min_writer_version <- "99.0.0"
+  write_writer_floor(fx$repo_dir, "99.0.0")
 
   expect_error(
     datom_write_set(fx$conn, members, name = "product-a"),
@@ -1172,9 +1172,7 @@ test_that("only the payload reaches storage when the git push fails", {
   members <- sw_one_member(fx)
 
   local_mocked_bindings(
-    .datom_git_push = function(path, pat = NULL, pull_first = TRUE) {
-      stop("push refused")
-    }
+    .datom_git_push = function(...) stop("push refused")
   )
 
   expect_error(datom_write_set(fx$conn, members, name = "product-a"),

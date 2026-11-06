@@ -39,12 +39,11 @@ it is the precondition the self-reference refusal depends on -- that refusal
 needs the set's own identity, and this is where it is established.
 }
 
-\strong{Read from \code{project.yaml}, not from the connection.} Only
-\code{min_writer_version} rides on a \code{datom_conn}; \code{mode} and \code{set} are read here,
-at the one place that needs them, so nothing has to be threaded through
-connection construction for two fields with one consumer. If a later caller
-wants them on the conn it is a move with one call site to update, rather than a
-decision to reopen.
+\strong{Read from \code{project.yaml}, not from the connection.} No field that
+authorises a write rides on a \code{datom_conn}: \code{mode} and \code{set} are read here,
+and \code{min_writer_version} by the writer-floor check, each from the file as it
+is at write time, because a hand edit or a pull can replace it after the
+connection was built.
 
 \strong{\verb{datom_init_repo(mode = "product", set = <name>)} is what declares both
 fields}, so the supported route into this check is a repo created that way. It

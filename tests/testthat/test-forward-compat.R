@@ -82,9 +82,20 @@ fc_stored_history <- function(fx, name) {
 }
 
 # Edit a JSON document in place, in the clone or in storage.
+#
+# A clone edit is COMMITTED, as a document from a newer datom is when it arrives
+# (in a pull). Left uncommitted it would be an unfinished write: heal puts
+# datom's own files back to the last commit before a write runs, and the round
+# trips below would then test a document that never reached the write.
 fc_edit_clone_json <- function(path, edit) {
   doc <- jsonlite::read_json(path)
   jsonlite::write_json(edit(doc), path, auto_unbox = TRUE, pretty = TRUE)
+
+  repo <- git2r::repository(fs::path_dir(path))
+  rel <- fs::path_rel(fs::path_real(path), fs::path_real(git2r::workdir(repo)))
+  git2r::add(repo, rel)
+  git2r::commit(repo, paste("Edit", rel))
+  invisible(NULL)
 }
 
 fc_edit_stored_json <- function(conn, key, edit) {
@@ -622,9 +633,22 @@ test_that("the manifest top-level vocabulary covers what a real write produces",
 
 # --- the writer floor ---------------------------------------------------------
 
-test_that("a repo declaring a newer writer than this build refuses the write (AC36a)", {
+# A connection on a clone whose project.yaml declares `floor` (absent when NULL).
+# The check reads the file on every call, so the floor is set there.
+fc_floor_conn <- function(floor = NULL, env = parent.frame()) {
+  dir <- withr::local_tempdir(.local_envir = env)
+  fs::dir_create(fs::path(dir, ".datom"))
+  yaml::write_yaml(list(project_name = "fc-project"),
+                   fs::path(dir, ".datom", "project.yaml"))
+  if (!is.null(floor)) write_writer_floor(dir, floor)
+
   conn <- mock_datom_conn(list())
-  conn$min_writer_version <- "999.0.0"
+  conn$path <- as.character(dir)
+  conn
+}
+
+test_that("a repo declaring a newer writer than this build refuses the write (AC36a)", {
+  conn <- fc_floor_conn("999.0.0")
 
   err <- expect_error(
     .datom_check_writer_floor(conn),
@@ -639,41 +663,69 @@ test_that("a repo declaring a newer writer than this build refuses the write (AC
 
 test_that("no declared floor means no floor -- nothing changes at all (AC36b)", {
   # Every repo written so far is in this state, so this is the clause that keeps
-  # the mechanism from being a breaking change on the day it ships.
-  conn <- mock_datom_conn(list())
-  expect_null(conn$min_writer_version)
-  expect_silent(.datom_check_writer_floor(conn))
+  # the mechanism from being a breaking change on the day it ships. No clone at
+  # all has nothing to read, and the role check refuses that write instead.
+  expect_silent(.datom_check_writer_floor(fc_floor_conn()))
+  expect_silent(.datom_check_writer_floor(mock_datom_conn(list())))
 })
 
 test_that("a floor at or below this build passes", {
-  conn <- mock_datom_conn(list())
-
-  conn$min_writer_version <- as.character(utils::packageVersion("datom"))
-  expect_silent(.datom_check_writer_floor(conn))
-
-  conn$min_writer_version <- "0.0.1"
-  expect_silent(.datom_check_writer_floor(conn))
+  expect_silent(.datom_check_writer_floor(
+    fc_floor_conn(as.character(utils::packageVersion("datom")))
+  ))
+  expect_silent(.datom_check_writer_floor(fc_floor_conn("0.0.1")))
 })
 
 test_that("an unusable floor value aborts rather than being ignored", {
   # Treating a malformed policy field as an absent one turns a typo into a
   # silently disabled policy -- the failure this whole section exists to avoid,
-  # arriving through the mechanism meant to prevent it.
-  conn <- mock_datom_conn(list())
-
-  for (bad in list("not a version", "", NA_character_, list("0.1.0"))) {
-    conn$min_writer_version <- bad
+  # arriving through the mechanism meant to prevent it. Each value as it reads
+  # back from project.yaml: a one-item YAML list reads back as a plain string,
+  # so the list case is a two-item one.
+  for (bad in list("not a version", "", NA_character_, c("0.1.0", "0.2.0"), TRUE)) {
     expect_error(
-      .datom_check_writer_floor(conn),
+      .datom_check_writer_floor(fc_floor_conn(bad)),
       class = "datom_writer_floor_invalid"
     )
   }
 })
 
+test_that("the floor is read from project.yaml at each check, not when the connection was made", {
+  # Every write pulls before its own work, and a floor raised in that pull has to
+  # bind the write it arrived in. A copy taken when the connection was made would
+  # miss it for the whole session.
+  conn <- fc_floor_conn()
+  expect_silent(.datom_check_writer_floor(conn))
+
+  write_writer_floor(conn$path, "999.0.0")
+  expect_error(.datom_check_writer_floor(conn), class = "datom_writer_floor")
+})
+
+test_that("a project.yaml that cannot be parsed stops the write rather than skipping the floor", {
+  # A floor that cannot be read is not the same as no floor.
+  conn <- fc_floor_conn()
+  writeLines("project_name: [unclosed", fs::path(conn$path, ".datom", "project.yaml"))
+
+  err <- expect_error(
+    .datom_check_writer_floor(conn),
+    class = "datom_project_config_unreadable"
+  )
+  expect_match(conditionMessage(err), "project.yaml")
+  expect_match(conditionMessage(err), "git checkout -- .datom/project.yaml",
+               fixed = TRUE)
+
+  # Parsed, but not a set of named fields.
+  writeLines("just a string", fs::path(conn$path, ".datom", "project.yaml"))
+  expect_error(
+    .datom_check_writer_floor(conn),
+    class = "datom_project_config_unreadable"
+  )
+})
+
 test_that("the floor stops a write before anything is hashed or written", {
   fx <- local_fc_project()
   fc_write(fx, fc_data(3))
-  fx$conn$min_writer_version <- "999.0.0"
+  write_writer_floor(fx$repo_dir, "999.0.0")
 
   before <- .datom_compute_metadata_sha(fc_clone_metadata(fx, "dm"))
   expect_error(
@@ -926,7 +978,7 @@ test_that("datom_validate(fix = TRUE) goes through the write entry", {
   # therefore sits on the function, not on each caller.
   fx <- local_fc_project()
   fc_write(fx, fc_data(3))
-  fx$conn$min_writer_version <- "999.0.0"
+  write_writer_floor(fx$repo_dir, "999.0.0")
 
   # datom_validate() catches the failure and reports it rather than aborting, so
   # the assertion is on what it says and on storage being untouched.

@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils-sha.R
 \name{.datom_sync_metadata}
 \alias{.datom_sync_metadata}
-\title{Sync Single Table Metadata to S3}
+\title{Publish One Table's Committed Metadata: \code{datom_write(conn, name =)}}
 \usage{
 .datom_sync_metadata(conn, name)
 }
@@ -15,6 +15,22 @@
 Summary of sync operation.
 }
 \description{
-Sync Single Table Metadata to S3
+The metadata-only route. It rewrites none of the table's files: it publishes
+the table's \code{metadata.json} and \code{version_history.json} \strong{as committed}, when
+the stored copy differs. It makes no commit.
+}
+\details{
+datom's own files are not edited by hand (an uncommitted change to one is
+treated as an unfinished write), so heal runs here with no artifact of its
+own: any uncommitted change to a datom file, this table's included, stops the
+route before anything changes, naming \code{datom_validate(fix = TRUE)}. To change
+a table's custom metadata, write it with
+\code{datom_write(conn, data, name, metadata = )}.
+
+In order: heal's reset (which starts with the merge check), the route's own
+pull (the format check runs again after a merge), change detection against
+storage, a push when the clone holds commits the remote lacks (so storage
+never names a version GitHub does not have), then the upload. The history
+goes up with each entry's commit worked out from git.
 }
 \keyword{internal}

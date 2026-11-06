@@ -328,9 +328,8 @@
         # The pull above may have replaced this file, so the copy checked when the
         # connection started parsing is not the copy being read now. Gated here
         # too, or a config arriving in the migration pull is the one config never
-        # checked. What this does NOT cover is `min_writer_version`, which the
-        # caller assigns from the pre-pull parse -- see the note at that
-        # assignment in `.datom_get_conn_developer()`.
+        # checked. A `min_writer_version` the pull brings in needs nothing here:
+        # the write check reads it from this file on every write.
         .datom_check_project_schema(cfg, source = yaml_path)
         yaml_root <- cfg$storage$data$root
         if (!is.null(yaml_root) && !identical(yaml_root, ref_location$root)) {

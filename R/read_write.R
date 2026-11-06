@@ -1084,7 +1084,7 @@ datom_read <- function(conn,
     ".datom/manifest.json"
   )
   commit_sha <- .datom_git_commit(conn$path, git_files, message)
-  .datom_git_push(conn$path, pat = conn$github_pat)
+  .datom_git_push(conn$path, pat = conn$github_pat, data_file_stored = TRUE)
 
   # The commit is threaded through rather than re-derived: this function made it,
   # so the stored history can name it without a git walk.
@@ -1166,6 +1166,9 @@ datom_read <- function(conn,
 #'   (set by `datom_sync()`); NULL for derived.
 #' @param .original_format Internal. Original file format
 #'   (set by `datom_sync()`); NULL for derived.
+#' @param .healed Internal. `TRUE` when the caller has already run the merge
+#'   check, heal and the pull for this call, so a sync heals and pulls once
+#'   rather than once per table.
 #'
 #' @return List with deployment details.
 #' @export
@@ -1234,7 +1237,8 @@ datom_write <- function(conn,
                        .source_lineage = NULL,
                        .table_type = "derived",
                        .original_file_sha = NULL,
-                       .original_format = NULL) {
+                       .original_format = NULL,
+                       .healed = FALSE) {
 
   if (!inherits(conn, "datom_conn")) {
     cli::cli_abort("conn must be a datom_conn object from datom_get_conn()")
@@ -1333,6 +1337,16 @@ datom_write <- function(conn,
     project = conn$project_name
   )
   metadata_sha <- .datom_compute_metadata_sha(meta)
+
+  # 3a. The merge check, heal's reset and the pull, after every check above
+  #     (each needs no storage state heal can change, so a mistyped argument is
+  #     refused before heal acts) and before change detection, which reads the
+  #     stored metadata. Heal acts on this table only: another artifact's
+  #     unfinished work stops the write here, before anything changes.
+  if (!isTRUE(.healed)) {
+    .datom_heal(conn, artifact = name)
+    .datom_pull_before_write(conn)
+  }
 
   # 4. Change detection (reuses the already-read current metadata).
   chg <- .datom_has_changes(conn, name, data_sha, metadata_sha)

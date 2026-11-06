@@ -1142,9 +1142,15 @@ test_that(".datom_git_pull fetches and merges upstream changes", {
 test_that(".datom_git_pull is no-op when already up to date", {
   info <- create_repo_with_remote()
 
-  # Nothing upstream — should succeed silently
+  # Nothing upstream: no error, HEAD does not move, and no merge is attempted.
+  merges <- 0L
+  local_mocked_bindings(.datom_git_merge_upstream = function(...) {
+    merges <<- merges + 1L
+    stop("a pull that is level with the remote must not merge")
+  })
   expect_no_error(.datom_git_pull(info$work_path))
-  expect_true(.datom_git_pull(info$work_path))
+  expect_false(.datom_git_pull(info$work_path))
+  expect_identical(merges, 0L)
 })
 
 test_that(".datom_git_pull aborts on merge conflict", {
@@ -1185,17 +1191,23 @@ test_that(".datom_git_pull conflict message gives an actionable recourse", {
   git2r::add(info$work_repo, "README.md")
   git2r::commit(info$work_repo, "My conflicting edit")
 
-  err <- tryCatch(.datom_git_pull(info$work_path), error = function(e) e)
+  err <- expect_error(.datom_git_pull(info$work_path), class = "datom_merge_conflict")
   msg <- paste(cli::ansi_strip(conditionMessage(err)), collapse = " ")
 
-  # Names the tool that shows the damage and the resolution for datom's own
-  # generated files, which is the case an operator actually hits
-  expect_match(msg, "git status")
-  expect_match(msg, "--theirs")
-  expect_match(msg, "version_history.json")
+  # Names the conflicted file, says how to finish, and that nothing is
+  # published. README.md is the user's own file, so there is no datom file to
+  # take the remote copy of.
+  expect_match(msg, "README.md")
+  expect_match(msg, "Resolve your own files")
+  expect_match(msg, "re-run your write")
+  expect_match(msg, "No version is published")
+  expect_no_match(msg, "git checkout MERGE_HEAD")
+
+  # The merge is left in progress for the user to finish.
+  expect_true(fs::file_exists(fs::path(info$work_path, ".git", "MERGE_HEAD")))
 
   # Must NOT tell the caller to pull -- the pull is what produced this
-  expect_no_match(msg, "Pull latest changes")
+  expect_no_match(msg, "datom_pull")
 })
 
 test_that(".datom_git_pull aborts when no remote configured", {
@@ -1279,10 +1291,11 @@ test_that(".datom_git_push upstream failure does not fail the push (#74 F)", {
   expect_true(result)
 })
 
-test_that(".datom_git_pull succeeds with no identity when already up to date", {
+test_that(".datom_git_pull succeeds with no identity, up to date and when it merges", {
   skip_if_no_git2r()
-  # git2r asks for a merger signature even when there is nothing to merge, so
-  # a host with no git identity fails here unless datom passes one.
+  # git2r asks for a merger signature for every merge, so a host with no git
+  # identity fails at the merge unless datom passes one. Up to date, the pull
+  # does not merge at all.
   local_mock_git_global(global = list())
 
   bare_dir <- withr::local_tempdir()
@@ -1297,7 +1310,20 @@ test_that(".datom_git_pull succeeds with no identity when already up to date", {
   git2r::push(work_repo, name = "origin", refspec = test_head_refspec(work_repo),
               set_upstream = TRUE)
 
+  expect_false(.datom_git_pull(work_dir))
+
+  # A teammate (with their own identity, in their own clone) pushes; this host,
+  # with none, has to merge.
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(bare_dir, other_dir, progress = FALSE)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+  writeLines("upstream", fs::path(other_dir, "upstream.txt"))
+  git2r::add(other_repo, "upstream.txt")
+  git2r::commit(other_repo, "Upstream commit")
+  git2r::push(other_repo, name = "origin", refspec = test_head_refspec(other_repo))
+
   expect_true(.datom_git_pull(work_dir))
+  expect_true(fs::file_exists(fs::path(work_dir, "upstream.txt")))
 })
 
 test_that(".datom_git_pull aborts on non-git directory", {
@@ -1306,11 +1332,22 @@ test_that(".datom_git_pull aborts on non-git directory", {
   expect_error(.datom_git_pull(dir), "Not a git repository")
 })
 
-test_that(".datom_git_pull returns invisible TRUE", {
+test_that(".datom_git_pull returns, invisibly, whether HEAD moved", {
   info <- create_repo_with_remote()
-  result <- .datom_git_pull(info$work_path)
-  expect_true(result)
+  expect_false(.datom_git_pull(info$work_path))
   expect_invisible(.datom_git_pull(info$work_path))
+
+  # A fast-forward moves HEAD too: git2r reports `sha = NA` for one, so the
+  # answer is read from HEAD, not from merge()'s result.
+  other_dir <- withr::local_tempdir()
+  other_repo <- git2r::clone(info$bare_path, other_dir, progress = FALSE)
+  git2r::config(other_repo, user.name = "Other User", user.email = "other@lab.org")
+  writeLines("upstream", fs::path(other_dir, "upstream.txt"))
+  git2r::add(other_repo, "upstream.txt")
+  git2r::commit(other_repo, "Upstream commit")
+  git2r::push(other_repo, name = "origin", refspec = test_head_refspec(other_repo))
+
+  expect_true(.datom_git_pull(info$work_path))
 })
 
 

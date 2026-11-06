@@ -230,12 +230,49 @@
 #' Treating a malformed floor as no floor would turn a typo in a policy field
 #' into a silently disabled policy.
 #'
+#' **Read from the clone's `.datom/project.yaml` on every call**, never from a
+#' copy taken when the connection was made: every write now pulls before its own
+#' work, and a floor raised in a commit that pull brings in has to bind the write
+#' it arrived in. The parse is gated like every other read of this file (its
+#' declared format first). A file that exists but cannot be read or parsed stops
+#' the write: a floor that cannot be read is not the same as no floor. No clone,
+#' or a clone with no `project.yaml`, has no declaration to read and passes; a
+#' write without a clone is refused by the role check, and a connection cannot
+#' be made from a clone without the file.
+#'
 #' @param conn A `datom_conn` object.
 #' @return Invisibly `NULL`. Aborts when the running build is older than the
 #'   declared floor.
 #' @keywords internal
 .datom_check_writer_floor <- function(conn) {
-  declared <- conn$min_writer_version
+  if (is.null(conn$path) || !nzchar(conn$path)) return(invisible(NULL))
+
+  yaml_path <- fs::path(conn$path, ".datom", "project.yaml")
+  if (!fs::file_exists(yaml_path)) return(invisible(NULL))
+
+  cfg <- tryCatch(yaml::read_yaml(yaml_path), error = function(e) e)
+  if (inherits(cfg, "error") || !(is.null(cfg) || is.list(cfg))) {
+    reason <- if (inherits(cfg, "error")) {
+      conditionMessage(cfg)
+    } else {
+      "It does not hold a set of named fields."
+    }
+    cli::cli_abort(
+      c(
+        "Cannot read {.file .datom/project.yaml}, so datom cannot check which \\
+         versions of datom this repo accepts writes from.",
+        "x" = "{reason}",
+        "i" = "datom changed nothing.",
+        "i" = "Restore the file from git ({.code git checkout -- .datom/project.yaml}) \\
+               or correct it, then re-run."
+      ),
+      class = "datom_project_config_unreadable"
+    )
+  }
+
+  .datom_check_project_schema(cfg, source = yaml_path, operation = "write")
+
+  declared <- cfg$min_writer_version
   if (is.null(declared)) return(invisible(NULL))
 
   usable <- length(declared) == 1L && !is.na(declared) &&

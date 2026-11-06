@@ -46,7 +46,8 @@ same day. The design spot-check before task 4a (covering 4a and 4b) was done and
 owner the same day (below): a write now heals only the artifact it is writing. Two reviews by
 another agent followed (of `4045fbd` on 2026-11-03, of `d616e98` on 2026-11-04, both below), and a
 publish-branch rule was split out as #156. Task 4a's two open points were settled on 2026-11-04.
-Next is task 4a's code, awaiting the owner's go-ahead.**
+Task 4a done the same day (its entry below lists what differs from the plan). Next is its
+checkpoint review, then task 4b, awaiting the owner's go-ahead.**
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
@@ -456,8 +457,37 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
   - Acceptance: P1 for steps 1-5 of `datom_write_set()`; R1.5; the updated
     `research/set_steps_probe.R` shows, for steps 1-5, the break firing and the re-run reading the set.
 
-- [ ] **4a. The merge check, heal's reset, and the pull** (R2.4, R2.5, R3.1, R3.5's helper, R3.7,
+- [x] **4a. The merge check, heal's reset, and the pull** (R2.4, R2.5, R3.1, R3.5's helper, R3.7,
   R3.9, R3.10's stop for other artifacts; DD1; D14 principle 8; design sections 1 and 4)
+  - **Done 2026-11-04.** Suite 5356 -> 5549 expectations, none removed; the rewritten tests are named
+    in the commit message. Every guard listed below probed red against its own tests, with a control
+    that reddened nothing (`research/task4a_guard_probes.R`; results in the commit message), plus two
+    not listed: the manifest is reset only when every differing row is the write's own (a new test),
+    and the old folder rule (against the `app/metadata.json` test). `research/other_command_probe.R`
+    and `research/dirty_pull_probe.R` rerun (`research/README.md`). Names settled:
+    `.datom_check_merge()`, `.datom_git_contains()`, `.datom_pull_before_write()`,
+    `.datom_unfinished_files()` (heal's gate), `.datom_git_merge_upstream()` (the pull's one merge,
+    so a test can count it), and `data_file_stored` / `in_push` on the pull and the push. Design
+    section 10 items 1 and 5 settled there. Differences from the list below, each flagged at the
+    checkpoint:
+    1. **The metadata-only route pushes first when the clone holds commits the remote lacks**, then
+       publishes. The removed block's push half did run: it pushed a commit a broken write had left
+       unpushed. Without it the route would publish a version GitHub lacks until task 4b's publish
+       pushes; 4b replaces it.
+    2. **A rejected push on a branch with no upstream** first gives
+       `git branch --set-upstream-to=<remote>/<branch>`: traced, `datom_pull()` merges nothing without
+       an upstream, so "run `datom_pull(conn)`" alone loops. Until 4b the refused push is the write's
+       own, after its data file is stored; no document or manifest is published.
+    3. **A clone with no `project.yaml` passes the floor** (no declaration, as with no clone); one that
+       exists but does not parse stops the write (`datom_project_config_unreadable`).
+    4. The stop on another artifact's uncommitted files names two ways out: re-run that artifact's
+       write (which resets and rewrites it) or `datom_validate(fix = TRUE)`.
+    5. Heal's reset also puts back a manifest whose uncommitted changes touch no artifact's row, with
+       an information line.
+    6. Test fixtures that planted a document by an uncommitted edit now commit it, as a pull would:
+       heal would otherwise reset it before the write, and the test would check nothing (the
+       `column_hashes` tests in `test-forward-compat.R` stayed green that way until
+       `fc_edit_clone_json()` was changed to commit).
   - **Escalation first: design spot-check on a more capable model**, covering 4a and 4b. **Done
     2026-10-31** ("Where things stand"); the bullets below include its outcome.
   - **Two points found while recording the spot-check, settled by the owner on 2026-11-04:**

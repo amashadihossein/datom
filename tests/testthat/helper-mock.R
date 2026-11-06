@@ -196,6 +196,29 @@ mock_rebuildable_store <- function(manifest,
   invisible(NULL)
 }
 
+#' Declare the lowest datom version a fixture repo accepts writes from.
+#'
+#' The writer floor is read from the clone's `.datom/project.yaml` on every
+#' write, so a test sets it there, as a repo would, rather than on a connection.
+#' Other fields of an existing file are kept.
+#'
+#' @param repo_dir The clone's root.
+#' @param version The value of `min_writer_version`, written as given (a test of
+#'   an unusable value passes one).
+#' @return Invisibly the path written.
+write_writer_floor <- function(repo_dir, version) {
+  datom_dir <- fs::path(repo_dir, ".datom")
+  fs::dir_create(datom_dir)
+  path <- fs::path(datom_dir, "project.yaml")
+
+  existing <- if (fs::file_exists(path)) yaml::read_yaml(path) else list()
+  existing["min_writer_version"] <- list(version)
+
+  yaml::write_yaml(existing, path)
+
+  invisible(path)
+}
+
 #' Declare a fixture repo a product repo that owns one named set.
 #'
 #' The gates on a set write read `.datom/project.yaml` directly.

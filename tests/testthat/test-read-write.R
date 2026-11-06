@@ -1292,7 +1292,8 @@ test_that("datom_write records lean parents and derived source_lineage", {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     # Resolved parent records as produced by datom_parent(): each carries
@@ -1380,7 +1381,8 @@ test_that("datom_write does not read parent snapshots (no enrichment)", {
       .datom_storage_read_json = function(conn, s3_key) {
         cli::cli_abort("no parent snapshot reads allowed during write")
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     parents <- list(list(
@@ -1421,7 +1423,8 @@ test_that("datom_write computes size_bytes from parquet", {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1:100), name = "tbl")
@@ -1447,7 +1450,8 @@ test_that("datom_write passes original_file_sha to version_history", {
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(
@@ -1480,7 +1484,8 @@ test_that("datom_write defaults: derived type, no parents, no original_file_sha"
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "plain_tbl")
@@ -1532,7 +1537,8 @@ test_that("datom_write records .source_lineage on the imported path", {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     # Imported self-entry path (as datom_sync passes it): no parents.
@@ -1570,7 +1576,8 @@ test_that("datom_write allows NULL source_lineage when parents is also NULL", {
         if (grepl("metadata.json$", sk)) captured_meta <<- d
         invisible(TRUE)
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     # No parents, no source_lineage -- this is the rare direct datom_write() without parents
@@ -1604,7 +1611,8 @@ test_that("datom_write updates manifest.json locally", {
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1:5), name = "my_tbl")
@@ -1647,7 +1655,8 @@ test_that("datom_write includes manifest.json in git commit", {
         committed_files <<- files
         "fake_sha"
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "tbl")
@@ -1685,7 +1694,8 @@ test_that("datom_write pushes manifest.json to S3", {
         s3_keys <<- c(s3_keys, sk)
         invisible(TRUE)
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "tbl")
@@ -1719,7 +1729,8 @@ test_that("datom_write stores sync fields in manifest when provided", {
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(
@@ -1760,7 +1771,8 @@ test_that("datom_write omits sync fields in manifest for derived tables", {
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "derived_tbl")
@@ -1789,9 +1801,14 @@ test_that("datom_write skips manifest update when no changes detected", {
       summary = list(total_tables = 0L)
     )
     jsonlite::write_json(empty_manifest, ".datom/manifest.json", auto_unbox = TRUE)
+    # Committed, as a repo's manifest always is: an uncommitted one is an
+    # unfinished write, which heal would put back.
+    git2r::add(repo, ".datom/manifest.json")
+    git2r::commit(repo, "manifest")
 
     local_mocked_bindings(
-      .datom_has_changes = function(conn, name, d, m) list(change_type = "none", current = NULL)
+      .datom_has_changes = function(conn, name, d, m) list(change_type = "none", current = NULL),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "unchanged_tbl")
@@ -2043,7 +2060,8 @@ test_that("full datom_write records parquet_sha and hash_algo, and no per-column
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(id = 1:3, v = letters[1:3]), name = "t")
@@ -2082,7 +2100,8 @@ test_that("a written table's metadata.json records the repo's project name", {
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(id = 1:3, v = letters[1:3]), name = "t")
@@ -2113,7 +2132,8 @@ test_that("full datom_write persists all columns of a wide frame, in order, untr
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     wide <- data.frame(
@@ -2380,8 +2400,11 @@ test_that("skips write when no changes detected", {
   conn$role <- "developer"
   conn$path <- "/tmp/fakerepo"
 
+  # No repo at that path: heal and the pull are stubbed, as git is elsewhere here.
   local_mocked_bindings(
-    .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) list(change_type = "none", current = NULL)
+    .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) list(change_type = "none", current = NULL),
+    .datom_heal = function(...) invisible(NULL),
+    .datom_pull_before_write = function(...) invisible(FALSE)
   )
 
   df <- data.frame(x = 1:3)
@@ -2409,7 +2432,8 @@ test_that("performs full write: parquet + metadata + git", {
       .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) list(change_type = "full", current = NULL),
       .datom_storage_upload_absent = upload$fn,
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     df <- data.frame(id = 1:5, val = letters[1:5])
@@ -2455,7 +2479,8 @@ test_that("metadata-only write skips parquet upload", {
       .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) list(change_type = "metadata_only", current = NULL),
       .datom_storage_upload_absent = upload$fn,
       .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     df <- data.frame(x = 1)
@@ -2488,7 +2513,8 @@ test_that("uses default commit message when none provided", {
       .datom_has_changes = function(conn, name, d, m) list(change_type = "full", current = NULL),
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1), name = "my_table")
@@ -2508,7 +2534,9 @@ test_that("data_sha is deterministic for same data", {
     .datom_has_changes = function(conn, name, new_data_sha, new_metadata_sha) {
       shas <<- c(shas, new_data_sha)
       list(change_type = "none", current = NULL)
-    }
+    },
+    .datom_heal = function(...) invisible(NULL),
+    .datom_pull_before_write = function(...) invisible(FALSE)
   )
 
   df <- data.frame(x = 1:10, y = letters[1:10])
@@ -2548,8 +2576,11 @@ test_that("errors when metadata.json missing from local repo", {
     conn$role <- "developer"
     conn$path <- getwd()
 
+    # Not a git repo: heal and the route's pull are stubbed, as the push is in
+    # the tests below, so the missing file is what is reported.
     local_mocked_bindings(
-      .datom_git_pull = function(...) invisible(TRUE)
+      .datom_heal = function(...) invisible(NULL),
+      .datom_pull_before_write = function(...) invisible(FALSE)
     )
 
     expect_error(.datom_sync_metadata(conn, "ghost"), "No metadata found")
@@ -2569,7 +2600,8 @@ test_that("skips sync when no changes detected", {
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "none", current = NULL),
-      .datom_git_pull = function(...) invisible(TRUE)
+      .datom_heal = function(...) invisible(NULL),
+      .datom_pull_before_write = function(...) invisible(FALSE)
     )
 
     result <- .datom_sync_metadata(conn, "tbl")
@@ -2603,7 +2635,7 @@ test_that("syncs metadata.json to S3 on change", {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE)
     )
 
     result <- .datom_sync_metadata(conn, "tbl")
@@ -2643,7 +2675,7 @@ test_that("syncs version_history.json to S3 when present", {
         s3_keys <<- c(s3_keys, s3_key)
         invisible(TRUE)
       },
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE)
     )
 
     result <- .datom_sync_metadata(conn, "tbl")
@@ -2655,7 +2687,10 @@ test_that("syncs version_history.json to S3 when present", {
   })
 })
 
-test_that("commits and pushes after sync", {
+test_that("makes no commit, and pushes before it publishes when the remote lacks commits", {
+  # The route publishes what is committed and rewrites nothing, so it has
+  # nothing to commit. A commit the remote lacks (a write whose push broke) is
+  # pushed first, so storage never names a version GitHub does not have.
   withr::with_tempdir({
     repo <- git2r::init(".")
     git2r::config(repo, user.name = "Test", user.email = "test@test.com")
@@ -2670,27 +2705,36 @@ test_that("commits and pushes after sync", {
     fs::dir_create("tbl")
     meta <- list(data_sha = "sha1", nrow = 5L, ncol = 2L)
     jsonlite::write_json(meta, "tbl/metadata.json", auto_unbox = TRUE)
+    git2r::add(repo, "tbl/metadata.json")
+    git2r::commit(repo, "Write tbl")
+    head_before <- git2r::commits(repo)[[1]]$sha
 
-    pushed <- FALSE
+    events <- character()
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "metadata_only", current = NULL),
-      .datom_git_pull = function(...) invisible(TRUE),
-      .datom_storage_write_json = function(conn, s3_key, data) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) {
-        pushed <<- TRUE
+      .datom_git_pull = function(...) invisible(FALSE),
+      .datom_git_ahead = function(path) 1L,
+      .datom_storage_write_json = function(conn, s3_key, data) {
+        events <<- c(events, "upload")
+        invisible(TRUE)
+      },
+      .datom_git_push = function(...) {
+        events <<- c(events, "push")
         invisible(TRUE)
       }
     )
 
-    result <- .datom_sync_metadata(conn, "tbl")
+    .datom_sync_metadata(conn, "tbl")
 
-    # Git commit was made
-    log <- git2r::commits(repo)
-    expect_match(log[[1]]$message, "Sync metadata for tbl")
+    expect_identical(git2r::commits(repo)[[1]]$sha, head_before)
+    expect_identical(events[[1]], "push")
+    expect_true("upload" %in% events)
 
-    # Push was called
-    expect_true(pushed)
-    expect_true(nzchar(result$commit_sha))
+    # Level with the remote: no push.
+    events <- character()
+    local_mocked_bindings(.datom_git_ahead = function(path) 0L)
+    .datom_sync_metadata(conn, "tbl")
+    expect_false("push" %in% events)
   })
 })
 
@@ -2733,7 +2777,7 @@ test_that(".datom_sync_metadata forwards conn$github_pat to pull and push (#74 A
   })
 })
 
-test_that("aborts S3 sync when git commit/push fails", {
+test_that("a failed push publishes nothing", {
   withr::with_tempdir({
     conn <- mock_datom_conn(list())
     conn$role <- "developer"
@@ -2746,17 +2790,18 @@ test_that("aborts S3 sync when git commit/push fails", {
     s3_called <- FALSE
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) list(change_type = "metadata_only", current = NULL),
-      .datom_git_pull = function(...) invisible(TRUE),
+      .datom_heal = function(...) invisible(NULL),
+      .datom_pull_before_write = function(...) invisible(FALSE),
+      .datom_git_ahead = function(path) 1L,
       .datom_storage_write_json = function(conn, s3_key, data) {
         s3_called <<- TRUE
         invisible(TRUE)
       },
-      .datom_git_commit = function(path, files, message) stop("Not a git repo"),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) stop("push refused")
     )
 
     # Git failure aborts the operation — S3 is never touched
-    expect_error(.datom_sync_metadata(conn, "tbl"), "Git commit/push failed")
+    expect_error(.datom_sync_metadata(conn, "tbl"), "push refused")
     expect_false(s3_called)
   })
 })
@@ -2781,6 +2826,10 @@ test_that("datom_write converts an old-shape manifest and keeps counting the tab
     conn$path <- getwd()
     fs::dir_create(".datom")
     fs::file_copy(fixture, ".datom/manifest.json")
+    # Committed, as a repo's manifest always is: an uncommitted one is an
+    # unfinished write, which heal would put back.
+    git2r::add(repo, ".datom/manifest.json")
+    git2r::commit(repo, "v1 manifest")
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) {
@@ -2788,7 +2837,8 @@ test_that("datom_write converts an old-shape manifest and keeps counting the tab
       },
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1:5), name = "lb")
@@ -2821,6 +2871,8 @@ test_that("datom_write stamps the format on the metadata document it writes", {
       list(schema_version = 2L, artifacts = list(), summary = list()),
       ".datom/manifest.json", auto_unbox = TRUE
     )
+    git2r::add(repo, ".datom/manifest.json")
+    git2r::commit(repo, "manifest")
 
     local_mocked_bindings(
       .datom_has_changes = function(conn, name, d, m) {
@@ -2828,7 +2880,8 @@ test_that("datom_write stamps the format on the metadata document it writes", {
       },
       .datom_storage_upload_absent = mock_upload_absent()$fn,
       .datom_storage_write_json = function(conn, sk, d) invisible(TRUE),
-      .datom_git_push = function(path, pat = NULL) invisible(TRUE)
+      .datom_git_push = function(...) invisible(TRUE),
+      .datom_git_pull = function(...) invisible(FALSE)
     )
 
     datom_write(conn, data = data.frame(x = 1:5), name = "dm")
