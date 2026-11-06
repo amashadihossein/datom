@@ -47,8 +47,9 @@ owner the same day (below): a write now heals only the artifact it is writing. T
 another agent followed (of `4045fbd` on 2026-11-03, of `d616e98` on 2026-11-04, both below), and a
 publish-branch rule was split out as #156. Task 4a's two open points were settled on 2026-11-04.
 Task 4a done the same day (its entry below lists what differs from the plan); its checkpoint
-review on 2026-11-05 (below) found two fixes, made the same day, and one point to settle before
-task 4b's code. Next is that point, then task 4b, awaiting the owner's go-ahead.**
+review on 2026-11-05 (below) found two fixes, made the same day, and one point for task 4b, settled
+the same day (heal takes two lists). A review of the fixes closed task 4a. Next is task 4b,
+awaiting the owner's go-ahead.**
 
 **Task 4a's checkpoint review, 2026-11-05**, by another agent, of `1958036`, evaluated with the
 owner. The reviewer re-ran the full suite on 4a and its parent and five of the guard probes, and ran
@@ -61,12 +62,22 @@ Both findings were reproduced here before fixing:
 |---|---|
 | 1. `datom_pull()` after a write broken before its commit (S3 + S6): the write's uncommitted manifest blocks the merge, and the stash recipe then leaves conflict markers in `.datom/manifest.json`; every later write stops on a manifest it cannot tie to an artifact, so the only way out until task 7 is hand-merging datom's JSON | **Fixed**: when the pull cannot catch up and datom's own uncommitted files are among the local changes, the stop names the artifact and says to re-run that write (which finishes, traced) or `datom_validate(fix = TRUE)`; only the user's files gets the stash recipe as before. The artifacts are told apart by one helper shared with heal's reset, `.datom_unfinished_owners()`. Same class, `datom_pull_blocked` |
 | 2. A crash on a repo whose committed manifest is in the old format (S3; written by 0.1.x): the write converts the manifest as it edits it, so HEAD's rows (v1, no `kind`) and the working tree's all differed, and each write stopped naming the other | **Fixed**: `.datom_manifest_rows_changed()` checks the format of both copies and converts them before comparing, as `.datom_update_manifest_entry()` does. Not a rescue of a broken state (D7): a v1 manifest is a supported format every write converts |
-| 3. For 4b: the metadata-only route heals with no artifact of its own, but 4b's publish stops on any differing row the command does not write, and the route's own table is the only one it has work for | **Open**, to settle with the owner before 4b's code and record in design sections 2 and 4. The proposal (two lists: what the command publishes, and what it rewrites) and the case against a yes/no switch are in task 4b's first bullet |
+| 3. For 4b: the metadata-only route heals with no artifact of its own, but 4b's publish stops on any differing row the command does not write, and the route's own table is the only one it has work for | **Settled 2026-11-05: heal takes two lists**, what the command publishes (`artifact`) and the subset whose files it writes again (`rewrite`); a yes/no switch was set aside because it goes wrong for `datom_sync()`. Recorded in design sections 2 and 4 and task 4b's first bullet |
 
 The reviewer also listed the interim states that keep tasks 4a-7 in one PR: a merge with only the
 manifest left loops on "re-run your write" until task 5; `datom_validate(fix = TRUE)`, which the new
 stops name, resets nothing until task 7; another artifact's unpushed commit is still pushed, and its
 manifest row uploaded, by a different write until 4b.
+
+**Review of `b6b83b1` and `bcd0e41`, 2026-11-05**, by the same reviewer, evaluated with the owner:
+both fixes verified (the full suite, the reviewer's two repros, each new guard reddening only its own
+test), and **task 4a closes**. On the open point, the reviewer recommended two lists, with two
+additions, all taken (task 4b's first bullet). The reviewer also traced, without a test, datom's
+files and the user's own file both in the way: run here, it holds for `datom_pull()` (it names the
+write; the write's re-run puts its files back, then gives the stash recipe; the user's edit
+survives); `datom_repo_push()` with nothing to push never pulls, so it says "Nothing to push" and
+names nothing, which is correct. One optional nit taken into task 4b: the pull's stop says "datom
+changed nothing" even when heal has just put back the command's own files.
 
 **Review of this task list, 2026-10-28.** A review by another agent, evaluated with the owner one
 point at a time. All fourteen points were taken, several with changes:
@@ -658,7 +669,8 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
 
 - [ ] **4b. Heal: push and publish** (R2.2, R2.3, R3.2-R3.4, R3.10; DD4 as amended; D14 principle 8;
   design section 4)
-  - **Settle first, with the owner (task 4a's checkpoint review, point 3; open as of 2026-11-05).**
+  - **Heal takes two lists (task 4a's checkpoint review, point 3; settled by the owner on
+    2026-11-05, recorded in design sections 2 and 4).** The background, as it was put to the owner:
     Heal does two things for a command's own table, and they are safe under different conditions:
     putting back uncommitted files (step a) only when the command writes those files again, and
     pushing and publishing a committed version (step d) when the command publishes that table
@@ -670,20 +682,34 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     work and stop, instead of publishing v2. Today the route copies only the clone's
     `dm/metadata.json` and `dm/version_history.json` to storage, not the snapshot or the manifest;
     moving it onto `.datom_publish_artifacts()` below makes it publish all four.
-    - **Proposed (the default): two lists.** `.datom_heal(conn, artifact, rewrite = artifact, all)`:
-      `artifact` is what the command may push and publish, `rewrite` the subset whose files it
-      writes again, so step a may reset only those. The metadata-only route passes
+    - **Decided: two lists.** `.datom_heal(conn, artifact = NULL, rewrite = artifact, all = FALSE)`:
+      `artifact` is what the command may push and publish (step d), `rewrite` the subset whose files
+      it writes again, so step a may reset only those. The metadata-only route passes
       `artifact = name, rewrite = character()`; the data-frame route and the set write pass one name
       as now. `datom_sync()` (task 6) passes every table in its preview as `artifact` and only the
-      rows it writes (`new`, `changed`) as `rewrite`.
-    - **Set aside unless the owner prefers it: one yes/no switch** (`rewrites = FALSE`). It is
-      wrong for `datom_sync()`: a preview row `unchanged` whose files have uncommitted edits would
-      be reset with "writing it again now" and then skipped, losing the edits under a false message;
-      two lists stop on it instead, naming `datom_validate(fix = TRUE)`.
-    - Once settled, record it in design section 2 (heal's row) and section 4 (the route table's
-      metadata-only row), and add a test: after a write of `dm` broken at its metadata upload,
-      `datom_write(conn, name = "dm")` publishes v2's documents and the manifest, and still stops on
-      an uncommitted edit of `dm`'s files.
+      rows it writes (`new`, `changed`) as `rewrite`. Added by the review of `b6b83b1`, taken:
+      (1) the manifest follows `rewrite` too: one set decides both the files and the manifest rows
+      step a may put back, so on the metadata-only route an uncommitted row of its own table stops
+      the command; (2) `rewrite` must be a subset of `artifact` (heal refuses a name outside it, an
+      internal error), "writing it again now" is said only for `rewrite`, and `all = TRUE` covers
+      both steps for every artifact.
+    - **Set aside: one yes/no switch** (`rewrites = FALSE`). It is wrong for `datom_sync()`: a
+      preview row `unchanged` whose files have uncommitted edits would be reset with "writing it
+      again now" and then skipped, losing the edits under a false message; two lists stop on it
+      instead, naming `datom_validate(fix = TRUE)`.
+    - Tests: after a write of `dm` broken at its metadata upload, `datom_write(conn, name = "dm")`
+      publishes v2's documents and the manifest, and still stops on an uncommitted edit of `dm`'s
+      files and on an uncommitted change to `dm`'s manifest row; a name in `rewrite` outside
+      `artifact` is refused. Guards to probe: step d counting `artifact` as the command's own
+      (against the publish test), step a resetting only `rewrite` (against the two stop tests).
+  - **"datom changed nothing" only when heal reset nothing** (review of `b6b83b1`, optional nit,
+    taken). When heal has just put back the command's own files and the pull then stops (the user's
+    files in the way, a failed fetch), the stop says datom put back the unfinished files of `dm`
+    (the line above) and changed nothing else. Heal already returns what it reset; the write's pull
+    step passes it to the pull's stops. Test: a write of `dm` broken before its commit, then a
+    teammate's commit and the user's own file in the way: the re-run prints the reset line and
+    stops with the stash recipe, without "datom changed nothing" (traced 2026-11-05 on the code
+    of `b6b83b1`: today it says it).
   - `R/heal.R`: heal's step d, run only when the clone is ahead of the remote or a stored manifest
     row differs from the clone's (one read of the stored manifest, reused by the publish);
     `.datom_unpublished_artifacts()` (rows that differ; no union with the pushed artifacts) and
@@ -809,7 +835,10 @@ metadata upload ends the same way as breaking the push (committed, so heal pushe
     alone: no fetch, no storage read, no warning branches, no special case for a clone that is behind
     (R4.2, narrowed 2026-10-31); status order as in design section 7.
   - `datom_sync()` heals once, with every table in its preview as `artifact` (task 4a, point
-    2), instead of calling `.datom_check_git_current()`, then calls `datom_write(.healed = TRUE)`;
+    2) and the rows it writes (`new`, `changed`) as `rewrite` (task 4a's checkpoint review,
+    2026-11-05; a test: an `unchanged` preview row with uncommitted edits stops the sync, naming
+    `datom_validate(fix = TRUE)`, and its edits survive), instead of calling
+    `.datom_check_git_current()`, then calls `datom_write(.healed = TRUE)`;
     unfinished work on a table outside the preview stops it before anything changes, naming
     `datom_validate(fix = TRUE)`, with a test; `unpushed` rows come
     back `success` without an import; a row whose write found no change says it was already up to
